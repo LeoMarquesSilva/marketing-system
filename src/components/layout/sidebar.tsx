@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
@@ -36,7 +36,13 @@ function getInitials(name: string) {
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { profile, signOut } = useAuth();
+
+  const handleSignOut = async () => {
+    await signOut();
+    router.replace("/login");
+  };
   const [pendingAlterations, setPendingAlterations] = useState(0);
 
   useEffect(() => {
@@ -167,7 +173,7 @@ export function Sidebar() {
         )}
 
         <button
-          onClick={() => signOut()}
+          onClick={handleSignOut}
           title="Sair"
           aria-label="Sair da conta"
           className="flex h-8 w-8 items-center justify-center rounded-xl text-white/30 hover:bg-white/10 hover:text-white/70 transition-all duration-200"
@@ -201,7 +207,7 @@ export function Sidebar() {
         );
       })}
       <button
-        onClick={signOut}
+        onClick={handleSignOut}
         className="flex flex-col items-center gap-1 px-3 py-2 text-white/40 hover:text-red-400 transition-colors"
       >
         <LogOut className="h-5 w-5" />

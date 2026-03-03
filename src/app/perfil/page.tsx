@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { ProfileForm } from "@/components/perfil/profile-form";
+import { ChangePasswordForm } from "@/components/perfil/change-password-form";
 import { useRouter } from "next/navigation";
 
 export default function PerfilPage() {
@@ -46,6 +47,8 @@ export default function PerfilPage() {
         <p className="text-xs text-muted-foreground mb-4">Atualize seu nome, e-mail, foto e departamento</p>
         <ProfileForm profile={profile} />
       </div>
+
+      <ChangePasswordForm />
     </div>
   );
 }
