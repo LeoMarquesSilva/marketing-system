@@ -72,7 +72,7 @@ export async function fetchMarketingRequests(
     return [];
   }
 
-  let requests = (data ?? []) as MarketingRequest[];
+  let requests = (data ?? []) as unknown as MarketingRequest[];
 
   // Designer: filtro extra para garantir que tarefas sem assignee nunca apareçam
   if (options?.role === "designer" && options?.userId) {
@@ -128,7 +128,7 @@ export async function fetchUnlinkedRequests(): Promise<MarketingRequest[]> {
     console.error("Erro ao buscar solicitações não vinculadas:", error);
     return [];
   }
-  return (data ?? []) as MarketingRequest[];
+  return (data ?? []) as unknown as MarketingRequest[];
 }
 
 export async function linkSolicitante(
@@ -228,7 +228,7 @@ export async function updateMarketingRequest(
     .single();
 
   if (error) return { data: null, error: error.message };
-  return { data: data as MarketingRequest, error: null };
+  return { data: data as unknown as MarketingRequest, error: null };
 }
 
 export async function deleteMarketingRequest(

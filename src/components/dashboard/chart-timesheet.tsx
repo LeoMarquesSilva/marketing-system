@@ -273,8 +273,9 @@ export function ChartTimesheet() {
                   layout="vertical"
                   margin={{ left: 4, right: 16, top: 4, bottom: 4 }}
                   onClick={(data) => {
-                    if (data?.activePayload?.[0]) {
-                      const name = data.activePayload[0].payload?.name as string;
+                    const payload = (data as { activePayload?: { payload?: { name?: string } }[] })?.activePayload?.[0]?.payload;
+                    const name = payload?.name;
+                    if (name) {
                       setSelectedDesigner((prev) => prev === name ? null : name);
                     }
                   }}

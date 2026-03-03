@@ -11,6 +11,11 @@ const mockBase = {
   assignee_id: null as string | null,
   workflow_stage: null as string | null,
   assignee_user: null as { name: string; avatar_url: string | null } | null,
+  completion_type: null as "design_concluido" | "postagem_feita" | "conteudo_entregue" | null,
+  priority: "normal" as const,
+  deadline: null as string | null,
+  stage_changed_at: null as string | null,
+  solicitante_user: null as { name: string; department: string; avatar_url: string | null } | null,
 };
 
 export const MOCK_REQUESTS: MarketingRequest[] = [
