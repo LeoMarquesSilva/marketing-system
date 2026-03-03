@@ -110,7 +110,7 @@ export async function fetchMarketingRequests(
   }
 
   let requests = (data ?? []) as unknown as MarketingRequest[];
-  if (error === null && data && requests.length > 0 && (requests[0] as Record<string, unknown>).art_link === undefined) {
+  if (error === null && data && requests.length > 0 && (requests[0] as unknown as Record<string, unknown>).art_link === undefined) {
     requests = requests.map((r) => ({ ...r, art_link: null })) as MarketingRequest[];
   }
 
