@@ -8,16 +8,22 @@ export const dynamic = "force-dynamic";
 const ASSIGNEE_NAME = "Valentina Iacovacci";
 
 export default async function DashboardPage() {
-  const [requests, users] = await Promise.all([
-    fetchMarketingRequestsForAuth(),
-    fetchUsers(),
-  ]);
+  let displayRequests = MOCK_REQUESTS;
+  let assigneeAvatarUrl: string | undefined;
 
-  const displayRequests = requests.length === 0 ? MOCK_REQUESTS : requests;
-  const assigneeUser = users.find(
-    (u) => u.name.toLowerCase() === ASSIGNEE_NAME.toLowerCase()
-  );
-  const assigneeAvatarUrl = assigneeUser?.avatar_url ?? undefined;
+  try {
+    const [requests, users] = await Promise.all([
+      fetchMarketingRequestsForAuth(),
+      fetchUsers(),
+    ]);
+    displayRequests = requests.length === 0 ? MOCK_REQUESTS : requests;
+    const assigneeUser = users.find(
+      (u) => u.name.toLowerCase() === ASSIGNEE_NAME.toLowerCase()
+    );
+    assigneeAvatarUrl = assigneeUser?.avatar_url ?? undefined;
+  } catch {
+    // Env vars ausentes ou Supabase indisponível: usa mock
+  }
 
   return (
     <DashboardClient
