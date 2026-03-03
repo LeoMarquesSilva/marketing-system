@@ -7,6 +7,7 @@ import { ConcluidosTab } from "@/components/planner/concluidos-tab";
 import { KanbanCardDetail } from "@/components/planner/kanban-card-detail";
 import { NewRequestDialog } from "@/components/planner/new-request-dialog";
 import type { MarketingRequest } from "@/lib/marketing-requests";
+import { updateMarketingRequest } from "@/lib/marketing-requests";
 import type { User } from "@/lib/users";
 import { Button } from "@/components/ui/button";
 import { LayoutGrid, CheckCircle2, PlusCircle } from "lucide-react";
@@ -79,6 +80,14 @@ export function PlannerClient({ initialRequests, designers, users }: PlannerClie
     setDetailOpen(true);
   };
 
+  const handleMarkComplete = async (requestId: string, completionType: string) => {
+    const { error } = await updateMarketingRequest(requestId, {
+      workflow_stage: "concluido",
+      completion_type: completionType as "design_concluido" | "postagem_feita" | "conteudo_entregue",
+    });
+    if (!error) handleRefresh();
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -119,6 +128,7 @@ export function PlannerClient({ initialRequests, designers, users }: PlannerClie
           requests={requests}
           onRefresh={handleRefresh}
           onCardClick={handleCardClick}
+          onMarkComplete={handleMarkComplete}
           timeTotals={timeTotals}
           commentsCounts={commentsCounts}
           pendingAlterationsCounts={pendingAlterationsCounts}

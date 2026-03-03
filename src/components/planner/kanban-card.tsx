@@ -8,9 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getAreaIcon } from "@/lib/area-icons";
 import { getTypeColor } from "@/lib/type-icons";
+import { COMPLETION_TYPES } from "@/lib/constants";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Calendar, Clock, MessageSquare, AlertCircle, CheckCircle2, X, Flag, CalendarX2 } from "lucide-react";
+import { Calendar, Clock, MessageSquare, AlertCircle, CheckCircle2, X, Flag, CalendarX2, CheckCircle } from "lucide-react";
 import type { MarketingRequest, RequestPriority } from "@/lib/marketing-requests";
 import { fetchCommentsForRequest, type RequestComment } from "@/lib/request-comments";
 import { differenceInDays, isPast, parseISO } from "date-fns";
@@ -55,6 +56,7 @@ const PRIORITY_CONFIG: Record<
 interface KanbanCardProps {
   request: MarketingRequest;
   onClick?: () => void;
+  onMarkComplete?: (requestId: string, completionType: string) => void;
   timeTotal?: string;
   commentsCount?: number;
   pendingAlterationsCount?: number;
@@ -63,12 +65,14 @@ interface KanbanCardProps {
 export function KanbanCard({
   request,
   onClick,
+  onMarkComplete,
   timeTotal,
   commentsCount = 0,
   pendingAlterationsCount = 0,
 }: KanbanCardProps) {
   const didDrag = useRef(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
+  const [completeOpen, setCompleteOpen] = useState(false);
   const [previewComments, setPreviewComments] = useState<RequestComment[]>([]);
   const [loadingComments, setLoadingComments] = useState(false);
 
@@ -251,9 +255,54 @@ export function KanbanCard({
         {/* Divisor */}
         <div className="border-t border-border/20" />
 
-        {/* Footer: comentários + alterações pendentes + avatares */}
+        {/* Footer: comentários + alterações + Concluir + avatares */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
+            {/* Concluir (popover com tipo de conclusão) */}
+            {onMarkComplete && request.workflow_stage !== "concluido" && (
+              <PopoverPrimitive.Root open={completeOpen} onOpenChange={setCompleteOpen}>
+                <PopoverPrimitive.Trigger asChild>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); setCompleteOpen(true); }}
+                    onKeyDown={(e) => { e.stopPropagation(); }}
+                    className="flex items-center gap-1 text-xs rounded-full px-2 py-1 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-100/80 dark:hover:bg-emerald-950/40 transition-colors"
+                    aria-label="Concluir tarefa"
+                  >
+                    <CheckCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    Concluir
+                  </button>
+                </PopoverPrimitive.Trigger>
+                <PopoverPrimitive.Portal>
+                  <PopoverPrimitive.Content
+                    side="top"
+                    align="start"
+                    sideOffset={6}
+                    className="z-50 w-56 rounded-xl border border-white/50 dark:border-border/50 bg-white/95 dark:bg-card/95 backdrop-blur-xl shadow-xl p-2 space-y-0.5 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
+                    onInteractOutside={() => setCompleteOpen(false)}
+                  >
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-2 py-1.5">
+                      Tipo de conclusão
+                    </p>
+                    {COMPLETION_TYPES.map((t) => (
+                      <button
+                        key={t.value}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onMarkComplete(request.id, t.value);
+                          setCompleteOpen(false);
+                        }}
+                        className="w-full text-left text-sm px-3 py-2 rounded-lg hover:bg-muted/60 transition-colors flex items-center gap-2"
+                      >
+                        <CheckCircle className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                        {t.label}
+                      </button>
+                    ))}
+                  </PopoverPrimitive.Content>
+                </PopoverPrimitive.Portal>
+              </PopoverPrimitive.Root>
+            )}
             {/* Botão de comentários com popover */}
             <PopoverPrimitive.Root open={commentsOpen} onOpenChange={setCommentsOpen}>
               <PopoverPrimitive.Trigger asChild>

@@ -18,6 +18,7 @@ interface KanbanColumnProps {
   icon?: LucideIcon;
   requests: MarketingRequest[];
   onCardClick?: (request: MarketingRequest) => void;
+  onMarkComplete?: (requestId: string, completionType: string) => void;
   timeTotals?: Record<string, string>;
   commentsCounts?: Record<string, number>;
   pendingAlterationsCounts?: Record<string, number>;
@@ -29,6 +30,7 @@ export function KanbanColumn({
   icon: Icon,
   requests,
   onCardClick,
+  onMarkComplete,
   timeTotals,
   commentsCounts,
   pendingAlterationsCounts,
@@ -57,6 +59,7 @@ export function KanbanColumn({
             key={request.id}
             request={request}
             onClick={() => onCardClick?.(request)}
+            onMarkComplete={onMarkComplete}
             timeTotal={timeTotals?.[request.id]}
             commentsCount={commentsCounts?.[request.id] ?? 0}
             pendingAlterationsCount={pendingAlterationsCounts?.[request.id] ?? 0}

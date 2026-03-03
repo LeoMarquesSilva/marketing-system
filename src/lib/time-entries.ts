@@ -207,3 +207,10 @@ export function totalDurationForEntries(entries: TimeEntry[]): string {
   }
   return `${minutes}min`;
 }
+
+/** Exclui um registro de timesheet (uso admin) */
+export async function deleteTimeEntry(entryId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("time_entries").delete().eq("id", entryId);
+  if (error) return { error: error.message };
+  return { error: null };
+}

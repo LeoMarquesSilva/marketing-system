@@ -143,3 +143,10 @@ export async function resolveAlteration(
   if (error) return { error: error.message };
   return { error: null };
 }
+
+/** Exclui um comentário (uso admin) */
+export async function deleteComment(commentId: string): Promise<{ error: string | null }> {
+  const { error } = await supabase.from("request_comments").delete().eq("id", commentId);
+  if (error) return { error: error.message };
+  return { error: null };
+}

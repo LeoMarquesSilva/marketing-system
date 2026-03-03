@@ -84,6 +84,8 @@ src/
 
 ## Banco de Dados (Supabase)
 
+**Regra do projeto:** Todas as alterações e operações de banco (migrations, DDL, RLS) devem ser feitas via **MCP Supabase** (`user-supabase-marketing-system`). Ver `.cursor/rules/supabase-mcp.mdc`. Autenticar com `mcp_auth` quando o servidor pedir.
+
 ### Tabelas principais
 
 **`marketing_requests`**
@@ -91,11 +93,12 @@ src/
 id, title, description, request_type, requesting_area,
 workflow_stage, completion_type,
 assignee, assignee_id,          -- designer atribuído
-solicitante, solicitante_id,    -- quem solicitou
+solicitante, solicitante_id,    -- quem solicitou (revisor quando em Revisão)
 requested_at, delivered_at,
-priority TEXT ('urgente'|'alta'|'normal'|'baixa'),  -- adicionado
-deadline DATE,                                       -- adicionado
-stage_changed_at TIMESTAMPTZ                         -- adicionado + trigger
+priority TEXT ('urgente'|'alta'|'normal'|'baixa'),
+deadline DATE,
+stage_changed_at TIMESTAMPTZ,
+art_link TEXT                   -- link da arte (preenchido ao enviar para Revisão)
 ```
 
 **`request_comments`**

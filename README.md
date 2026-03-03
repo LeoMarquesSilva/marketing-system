@@ -35,10 +35,13 @@ NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=sua-anon-key
 ```
 
-4. Execute o SQL no **SQL Editor** do painel Supabase:
-   - `supabase-schema.sql` — tabela `marketing_requests`
-   - `supabase-users-schema.sql` — tabela `users` (sincronizada com o outro sistema)
-   - `supabase-migration-solicitante-id.sql` — vincula solicitante ao usuário (após popular `users`)
+4. Migrações e SQL no banco:
+   - **Preferência:** usar o MCP Supabase (`user-supabase-marketing-system`) para aplicar migrations (autenticar com `mcp_auth` se necessário). Ver `.cursor/rules/supabase-mcp.mdc`.
+   - **Alternativa:** executar no **SQL Editor** do painel Supabase:
+     - `supabase-schema.sql` — tabela `marketing_requests`
+     - `supabase-users-schema.sql` — tabela `users` (sincronizada com o outro sistema)
+     - `supabase-migration-solicitante-id.sql` — vincula solicitante ao usuário (após popular `users`)
+     - `supabase-migration-art-link.sql` — coluna `art_link` (link da arte)
 
 ### 3. Executar o projeto
 

@@ -31,6 +31,7 @@ export interface MarketingRequest {
   priority: RequestPriority;
   deadline: string | null;
   stage_changed_at: string | null;
+  art_link: string | null;
   solicitante_user?: { name: string; department: string; avatar_url: string | null } | null;
   assignee_user?: { name: string; avatar_url: string | null } | null;
 }
@@ -41,11 +42,29 @@ export interface FetchMarketingRequestsOptions {
   supabaseClient?: SupabaseClient;
 }
 
-// Colunas necessárias para o Kanban + cards de concluídos
+// Colunas necessárias para o Kanban + cards de concluídos (inclui link e referências para o modal)
 const KANBAN_SELECT =
   "id, title, description, requesting_area, status, requested_at, delivered_at, " +
   "assignee, assignee_id, solicitante, solicitante_id, request_type, " +
+  "link, referencias, nome_advogado, art_link, " +
   "workflow_stage, completion_type, priority, deadline, stage_changed_at";
+
+const KANBAN_SELECT_WITHOUT_ART_LINK =
+  "id, title, description, requesting_area, status, requested_at, delivered_at, " +
+  "assignee, assignee_id, solicitante, solicitante_id, request_type, " +
+  "link, referencias, nome_advogado, " +
+  "workflow_stage, completion_type, priority, deadline, stage_changed_at";
+
+function logSupabaseError(context: string, err: unknown) {
+  const e = err as { message?: string; code?: string; details?: string; hint?: string };
+  console.error(
+    `${context}:`,
+    e?.message ?? String(err),
+    e?.code != null ? `[${e.code}]` : "",
+    e?.details ? `| ${e.details}` : "",
+    e?.hint ? `| ${e.hint}` : ""
+  );
+}
 
 export async function fetchMarketingRequests(
   options?: FetchMarketingRequestsOptions
@@ -58,21 +77,42 @@ export async function fetchMarketingRequests(
 
   if (options?.userId && options?.role && options.role !== "admin") {
     if (options.role === "designer") {
-      // Designer: só tarefas onde assignee_id = user (exclui assignee_id null)
       query = query.eq("assignee_id", options.userId);
     } else if (options.role === "solicitante") {
       query = query.eq("solicitante_id", options.userId);
     }
   }
 
-  const { data, error } = await query;
+  let { data, error } = await query;
 
   if (error) {
-    console.error("Erro ao buscar solicitações:", error);
-    return [];
+    logSupabaseError("Erro ao buscar solicitações", error);
+    const msg = String((error as { message?: string }).message ?? "");
+    if (msg.includes("art_link") && msg.toLowerCase().includes("does not exist")) {
+      query = client
+        .from("marketing_requests")
+        .select(KANBAN_SELECT_WITHOUT_ART_LINK)
+        .order("requested_at", { ascending: false });
+      if (options?.userId && options?.role && options.role !== "admin") {
+        if (options.role === "designer") query = query.eq("assignee_id", options.userId!);
+        else if (options.role === "solicitante") query = query.eq("solicitante_id", options.userId!);
+      }
+      const fallback = await query;
+      if (fallback.error) {
+        logSupabaseError("Erro ao buscar solicitações (fallback sem art_link)", fallback.error);
+        return [];
+      }
+      data = fallback.data;
+      error = null;
+    } else {
+      return [];
+    }
   }
 
   let requests = (data ?? []) as unknown as MarketingRequest[];
+  if (error === null && data && requests.length > 0 && (requests[0] as Record<string, unknown>).art_link === undefined) {
+    requests = requests.map((r) => ({ ...r, art_link: null })) as MarketingRequest[];
+  }
 
   // Designer: filtro extra para garantir que tarefas sem assignee nunca apareçam
   if (options?.role === "designer" && options?.userId) {
@@ -194,6 +234,7 @@ export interface UpdateRequestInput {
   completion_type?: CompletionType | null;
   priority?: RequestPriority;
   deadline?: string | null;
+  art_link?: string | null;
 }
 
 export async function updateMarketingRequest(
@@ -219,6 +260,7 @@ export async function updateMarketingRequest(
   if (input.completion_type !== undefined) updates.completion_type = input.completion_type;
   if (input.priority !== undefined) updates.priority = input.priority;
   if (input.deadline !== undefined) updates.deadline = input.deadline;
+  if (input.art_link !== undefined) updates.art_link = input.art_link;
 
   const { data, error } = await supabase
     .from("marketing_requests")

@@ -8,7 +8,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,17 +17,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import { getAreaIcon } from "@/lib/area-icons";
-import { getTypeColor } from "@/lib/type-icons";
 import { WORKFLOW_STAGES, COMPLETION_TYPES } from "@/lib/constants";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { MarketingRequest } from "@/lib/marketing-requests";
-import { updateMarketingRequest } from "@/lib/marketing-requests";
+import { updateMarketingRequest, deleteMarketingRequest } from "@/lib/marketing-requests";
 import {
   fetchTimeEntriesForRequest,
   formatDuration,
   totalDurationForEntries,
+  deleteTimeEntry,
   type TimeEntry,
 } from "@/lib/time-entries";
 import { useAuth } from "@/contexts/auth-context";
@@ -40,9 +40,10 @@ import {
   fetchCommentsForRequest,
   createComment,
   resolveAlteration,
+  deleteComment,
   type RequestComment,
 } from "@/lib/request-comments";
-import { Play, Pause, Square, MessageSquare, Edit3, AlertCircle, CheckCircle2, Flag, CalendarX2, Clock, Calendar, Layers, Circle } from "lucide-react";
+import { Play, Pause, Square, MessageSquare, Edit3, AlertCircle, CheckCircle2, Flag, CalendarX2, Clock, Calendar, Layers, Circle, ChevronDown, ChevronUp, Link2, Trash2 } from "lucide-react";
 import type { RequestPriority } from "@/lib/marketing-requests";
 
 const PRIORITY_OPTIONS: { value: RequestPriority; label: string; className: string }[] = [
@@ -93,6 +94,13 @@ export function KanbanCardDetail({
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [isSavingTitle, setIsSavingTitle] = useState(false);
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const [deleteRequestConfirmOpen, setDeleteRequestConfirmOpen] = useState(false);
+  const [isDeletingRequest, setIsDeletingRequest] = useState(false);
+  const [artLinkDraft, setArtLinkDraft] = useState("");
+  const [isSavingArtLink, setIsSavingArtLink] = useState(false);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
 
   const canUseTimesheet = profile && request && (isAdmin || profile.id === request.assignee_id);
   const canStartTimer = profile && request && (isAdmin || profile.id === request.assignee_id);
@@ -105,7 +113,11 @@ export function KanbanCardDetail({
   const liveElapsed = useStopwatch(activeEntry?.started_at ?? null);
 
   useEffect(() => {
-    if (!open || !request) return;
+    if (!open || !request) {
+      setDescriptionExpanded(false);
+      return;
+    }
+    setArtLinkDraft(request.art_link ?? "");
     const load = async () => {
       const [entries, commentsList, log] = await Promise.all([
         fetchTimeEntriesForRequest(request.id),
@@ -117,7 +129,7 @@ export function KanbanCardDetail({
       setActivityLog(log);
     };
     load();
-  }, [open, request?.id]);
+  }, [open, request?.id, request?.art_link]);
 
   const handleStart = async () => {
     if (!request) return;
@@ -162,7 +174,6 @@ export function KanbanCardDetail({
   if (!request) return null;
 
   const AreaIcon = getAreaIcon(request.requesting_area);
-  const typeColor = getTypeColor(request.request_type || "");
   const workflowLabel =
     WORKFLOW_STAGES.find((s) => s.value === request.workflow_stage)?.label ??
     request.workflow_stage;
@@ -251,6 +262,48 @@ export function KanbanCardDetail({
     }
   };
 
+  const handleDeleteRequest = async () => {
+    if (!request) return;
+    setIsDeletingRequest(true);
+    const { error } = await deleteMarketingRequest(request.id);
+    setIsDeletingRequest(false);
+    setDeleteRequestConfirmOpen(false);
+    if (!error) {
+      onOpenChange(false);
+      onRefresh?.();
+    }
+  };
+
+  const handleSaveArtLink = async () => {
+    if (!request) return;
+    const value = artLinkDraft.trim() || null;
+    if (value === (request.art_link ?? "")) return;
+    setIsSavingArtLink(true);
+    await updateMarketingRequest(request.id, { art_link: value });
+    setIsSavingArtLink(false);
+    onRefresh?.();
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    setDeletingCommentId(commentId);
+    const { error } = await deleteComment(commentId);
+    setDeletingCommentId(null);
+    if (!error) {
+      setComments((prev) => prev.filter((c) => c.id !== commentId));
+      onRefresh?.();
+    }
+  };
+
+  const handleDeleteTimeEntry = async (entryId: string) => {
+    setDeletingEntryId(entryId);
+    const { error } = await deleteTimeEntry(entryId);
+    setDeletingEntryId(null);
+    if (!error) {
+      setTimeEntries((prev) => prev.filter((e) => e.id !== entryId));
+      onRefresh?.();
+    }
+  };
+
   const modalDescription = `Detalhes da solicitação: ${request.requesting_area}, solicitado em ${format(new Date(request.requested_at), "dd/MM/yyyy", { locale: ptBR })}`;
 
   const sectionClass =
@@ -264,80 +317,72 @@ export function KanbanCardDetail({
         className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden p-0 gap-0 rounded-2xl border border-white/50 dark:border-white/10 bg-gradient-to-br from-white/95 via-white/90 to-white/85 dark:from-background dark:via-background dark:to-background/95 backdrop-blur-xl shadow-[0_24px_64px_-12px_rgba(0,0,0,0.2),0_0_0_1px_rgba(0,0,0,0.05)]"
         aria-describedby="kanban-detail-description"
       >
-        {/* Header fixo */}
-        <div className="shrink-0 border-b border-white/30 dark:border-border/50 px-6 pt-5 pb-4 pr-12 bg-white/80 dark:bg-[linear-gradient(135deg,var(--primary-dark-from)_0%,var(--primary-dark-to)_100%)] backdrop-blur-sm">
+        {/* Header fixo — compacto */}
+        <div className="shrink-0 border-b border-white/30 dark:border-border/50 px-6 py-4 pr-12 bg-white/80 dark:bg-[linear-gradient(135deg,var(--primary-dark-from)_0%,var(--primary-dark-to)_100%)] backdrop-blur-sm">
           <DialogHeader className="space-y-0 text-left">
-
-            {/* Nível 1 — tipo (contexto, menor) */}
-            {request.request_type && (
-              <div className="mb-2">
-                <Badge
-                  variant="secondary"
-                  className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium border-0 ${typeColor}`}
-                >
-                  {request.request_type}
-                </Badge>
-              </div>
-            )}
-
-            {/* Nível 2 — título (principal, editável por admin) */}
-            <DialogTitle className="text-lg font-bold tracking-tight text-foreground leading-snug">
-              {isAdmin && isEditingTitle ? (
-                <input
-                  autoFocus
-                  value={titleDraft}
-                  onChange={(e) => setTitleDraft(e.target.value)}
-                  onBlur={handleSaveTitle}
-                  onKeyDown={(e) => { if (e.key === "Enter") handleSaveTitle(); if (e.key === "Escape") setIsEditingTitle(false); }}
-                  disabled={isSavingTitle}
-                  className="w-full bg-white/30 dark:bg-white/10 border border-white/50 dark:border-white/20 rounded-lg px-2 py-0.5 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-white/50"
-                />
-              ) : (
-                <span
-                  className={isAdmin ? "cursor-text hover:bg-white/20 dark:hover:bg-white/10 rounded-lg px-1 -mx-1 transition-colors" : ""}
-                  title={isAdmin ? "Clique para editar o título" : undefined}
-                  onClick={() => { if (isAdmin) { setTitleDraft(request.title); setIsEditingTitle(true); } }}
-                >
-                  {request.title}
-                </span>
-              )}
-            </DialogTitle>
-
-            {/* Nível 3 — descrição (briefing resumido) */}
+            <DialogTitle className="text-base font-bold tracking-tight text-foreground leading-snug">
+                {isAdmin && isEditingTitle ? (
+                  <input
+                    autoFocus
+                    value={titleDraft}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                    onBlur={handleSaveTitle}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleSaveTitle(); if (e.key === "Escape") setIsEditingTitle(false); }}
+                    disabled={isSavingTitle}
+                    className="w-full bg-white/30 dark:bg-white/10 border border-white/50 dark:border-white/20 rounded-lg px-2 py-0.5 text-base font-bold focus:outline-none focus:ring-2 focus:ring-white/50"
+                  />
+                ) : (
+                  <span
+                    className={isAdmin ? "cursor-text hover:bg-white/20 dark:hover:bg-white/10 rounded-lg px-1 -mx-1 transition-colors" : ""}
+                    title={isAdmin ? "Clique para editar o título" : undefined}
+                    onClick={() => { if (isAdmin) { setTitleDraft(request.title); setIsEditingTitle(true); } }}
+                  >
+                    {request.title}
+                  </span>
+                )}
+              </DialogTitle>
             {request.description && (
-              <p className="mt-1.5 text-sm text-muted-foreground/80 leading-relaxed line-clamp-2">
+              <p className={cn(
+                "mt-1.5 text-sm text-muted-foreground/90 leading-relaxed",
+                !descriptionExpanded && "line-clamp-2"
+              )}>
                 {request.description}
               </p>
             )}
-
-            {/* Nível 4 — meta compacta (solicitante · área · data) */}
-            <div className="mt-3 pt-3 border-t border-black/5 dark:border-white/10 flex flex-wrap items-center gap-x-3 gap-y-1">
+            {request.description && request.description.length > 120 && (
+              <button
+                type="button"
+                onClick={() => setDescriptionExpanded((v) => !v)}
+                className="mt-0.5 text-xs font-medium text-primary hover:underline inline-flex items-center gap-0.5"
+              >
+                {descriptionExpanded ? <>Ver menos <ChevronUp className="h-3 w-3" /></> : <>Ver mais <ChevronDown className="h-3 w-3" /></>}
+              </button>
+            )}
+            <div className="mt-2 pt-2 border-t border-black/10 dark:border-white/15 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-muted-foreground/90">
               {(request.solicitante_user || request.solicitante) && (
                 <span className="flex items-center gap-1.5">
                   {request.solicitante_user ? (
-                    <Avatar className="h-5 w-5 shrink-0 border border-white/50 dark:border-white/20">
+                    <Avatar className="h-4 w-4 shrink-0 border border-white/50 dark:border-white/20">
                       <AvatarImage src={request.solicitante_user.avatar_url || undefined} />
-                      <AvatarFallback className="text-[9px] bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10 dark:text-white">
+                      <AvatarFallback className="text-[8px] bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10 dark:text-white">
                         {getInitials(request.solicitante_user.name)}
                       </AvatarFallback>
                     </Avatar>
                   ) : null}
-                  <span className="text-xs font-medium text-foreground/80">
-                    {request.solicitante_user?.name || request.solicitante}
-                  </span>
+                  {request.solicitante_user?.name || request.solicitante}
                 </span>
               )}
               {request.requesting_area && (
                 <>
-                  <span className="text-muted-foreground/40 text-xs select-none">·</span>
-                  <span className="flex items-center gap-1 text-xs text-muted-foreground/70">
+                  <span className="text-muted-foreground/40 select-none">·</span>
+                  <span className="flex items-center gap-1">
                     <AreaIcon className="h-3 w-3 shrink-0" aria-hidden />
                     {request.requesting_area}
                   </span>
                 </>
               )}
-              <span className="text-muted-foreground/40 text-xs select-none">·</span>
-              <span className="flex items-center gap-1 text-xs text-muted-foreground/70">
+              <span className="text-muted-foreground/40 select-none">·</span>
+              <span className="flex items-center gap-1">
                 <Calendar className="h-3 w-3 shrink-0" aria-hidden />
                 {format(new Date(request.requested_at), "dd/MM/yyyy", { locale: ptBR })}
               </span>
@@ -351,7 +396,85 @@ export function KanbanCardDetail({
 
         {/* Área rolável */}
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-6 space-y-5">
-          {/* 1. Informações — estado atual da tarefa */}
+          {/* Link da arte — designer/revisor preenche ao enviar para revisão */}
+          {(request.workflow_stage === "revisao" || request.workflow_stage === "revisado" || request.workflow_stage === "revisao_autor" || request.workflow_stage === "concluido" || request.art_link || canUseTimesheet || isAdmin) && (
+            <section aria-labelledby="art-link-heading" className={sectionClass}>
+              <h4 id="art-link-heading" className={sectionTitleClass}>
+                <Link2 className="h-4 w-4 shrink-0" aria-hidden /> Link da arte
+              </h4>
+              {(canUseTimesheet || isAdmin) ? (
+                <div className="space-y-2">
+                  <input
+                    type="url"
+                    placeholder="https://..."
+                    value={artLinkDraft}
+                    onChange={(e) => setArtLinkDraft(e.target.value)}
+                    onBlur={handleSaveArtLink}
+                    disabled={isSavingArtLink}
+                    className="flex h-9 w-full rounded-xl border border-input bg-white/80 dark:bg-background/50 px-3 py-1 text-sm text-foreground shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50"
+                  />
+                  {request.art_link && (
+                    <a
+                      href={request.art_link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 dark:bg-primary/20 text-sm font-medium text-primary hover:bg-primary/20 dark:hover:bg-primary/30 border border-primary/20"
+                    >
+                      <Link2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      Abrir arte
+                    </a>
+                  )}
+                </div>
+              ) : request.art_link ? (
+                <a
+                  href={request.art_link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 dark:bg-primary/20 text-sm font-medium text-primary hover:bg-primary/20 dark:hover:bg-primary/30 border border-primary/20"
+                >
+                  <Link2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  Abrir arte
+                </a>
+              ) : (
+                <p className="text-sm text-muted-foreground italic">Ainda não informado.</p>
+              )}
+            </section>
+          )}
+
+          {/* Link e referências — primeiro na área rolável */}
+          {(request.link || request.referencias) && (
+            <section aria-labelledby="links-heading" className={sectionClass}>
+              <h4 id="links-heading" className={sectionTitleClass}>
+                <Link2 className="h-4 w-4 shrink-0" aria-hidden /> Link e referências
+              </h4>
+              <div className="space-y-3">
+                {request.link && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Link</p>
+                    <a
+                      href={request.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 dark:bg-primary/20 text-sm font-medium text-primary hover:bg-primary/20 dark:hover:bg-primary/30 border border-primary/20"
+                    >
+                      <Link2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      Abrir link
+                    </a>
+                  </div>
+                )}
+                {request.referencias && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Referências</p>
+                    <p className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">
+                      {request.referencias}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* Informações — estado atual da tarefa */}
           <section aria-labelledby="metadata-heading" className={sectionClass}>
             <h4 id="metadata-heading" className={sectionTitleClass}>
               Informações
@@ -533,30 +656,6 @@ export function KanbanCardDetail({
             </section>
           )}
 
-          {request.link && (
-            <section aria-labelledby="link-heading" className={sectionClass}>
-              <h4 id="link-heading" className={sectionTitleClass}>Link</h4>
-              <a
-                href={request.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-primary hover:underline break-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded"
-                aria-label={`Abrir link em nova aba: ${request.link}`}
-              >
-                {request.link}
-              </a>
-            </section>
-          )}
-
-          {request.referencias && (
-            <section aria-labelledby="referencias-heading" className={sectionClass}>
-              <h4 id="referencias-heading" className={sectionTitleClass}>Referências</h4>
-              <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                {request.referencias}
-              </p>
-            </section>
-          )}
-
           <section aria-labelledby="comments-heading" className={sectionClass}>
             <h4 id="comments-heading" className={`${sectionTitleClass} flex items-center gap-2`}>
               <MessageSquare className="h-4 w-4 shrink-0" aria-hidden />
@@ -644,17 +743,30 @@ export function KanbanCardDetail({
                                 {format(new Date(c.created_at), "dd/MM HH:mm", { locale: ptBR })}
                               </span>
                             </div>
-                            {canResolve && (
-                              <button
-                                type="button"
-                                onClick={() => handleResolveAlteration(c.id)}
-                                className="shrink-0 flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-100/80 dark:bg-emerald-950/30 hover:bg-emerald-200/80 dark:hover:bg-emerald-900/40 rounded-full px-2.5 py-1 transition-colors"
-                                aria-label="Marcar alteração como resolvida"
-                              >
-                                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
-                                Resolver
-                              </button>
-                            )}
+                            <div className="flex items-center gap-1 shrink-0">
+                              {canResolve && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleResolveAlteration(c.id)}
+                                  className="flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-100/80 dark:bg-emerald-950/30 hover:bg-emerald-200/80 dark:hover:bg-emerald-900/40 rounded-full px-2.5 py-1 transition-colors"
+                                  aria-label="Marcar alteração como resolvida"
+                                >
+                                  <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
+                                  Resolver
+                                </button>
+                              )}
+                              {isAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteComment(c.id)}
+                                  disabled={deletingCommentId === c.id}
+                                  className="p-1.5 rounded-full text-muted-foreground hover:text-red-600 hover:bg-red-100/80 dark:hover:bg-red-950/40 transition-colors disabled:opacity-50"
+                                  aria-label="Excluir comentário"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                                </button>
+                              )}
+                            </div>
                           </div>
                           <p className="text-sm text-muted-foreground/90 mt-1 whitespace-pre-wrap break-words">
                             {c.body}
@@ -767,6 +879,17 @@ export function KanbanCardDetail({
                           <span className={`font-mono font-semibold tabular-nums shrink-0 ${!e.ended_at ? "text-emerald-600 dark:text-emerald-400" : ""}`}>
                             {!e.ended_at ? liveElapsed : formatDuration(e.started_at, e.ended_at)}
                           </span>
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTimeEntry(e.id)}
+                              disabled={deletingEntryId === e.id}
+                              className="p-1 rounded-full text-muted-foreground hover:text-red-600 hover:bg-red-100/80 dark:hover:bg-red-950/40 transition-colors disabled:opacity-50 shrink-0"
+                              aria-label="Excluir registro de tempo"
+                            >
+                              <Trash2 className="h-3 w-3" aria-hidden />
+                            </button>
+                          )}
                         </li>
                       ))}
                     </ul>
@@ -809,6 +932,22 @@ export function KanbanCardDetail({
             </section>
           )}
 
+          {/* Excluir solicitação (admin) */}
+          {isAdmin && (
+            <section className={sectionClass}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setDeleteRequestConfirmOpen(true)}
+                disabled={isDeletingRequest}
+                className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 dark:text-red-400 dark:border-red-900/50 dark:hover:bg-red-950/40"
+              >
+                <Trash2 className="h-4 w-4 mr-2" aria-hidden />
+                Excluir solicitação
+              </Button>
+            </section>
+          )}
+
           {/* Activity log */}
           {activityLog.length > 0 && (
             <section aria-labelledby="activity-heading" className={sectionClass}>
@@ -842,6 +981,30 @@ export function KanbanCardDetail({
           )}
         </div>
       </DialogContent>
+
+      {/* Confirmação de exclusão da solicitação */}
+      <Dialog open={deleteRequestConfirmOpen} onOpenChange={setDeleteRequestConfirmOpen}>
+        <DialogContent className="max-w-sm rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Excluir solicitação</DialogTitle>
+            <DialogDescription>
+              Esta ação não pode ser desfeita. A solicitação e todos os comentários e registros de tempo serão removidos.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 justify-end pt-2">
+            <Button variant="outline" onClick={() => setDeleteRequestConfirmOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteRequest}
+              disabled={isDeletingRequest}
+            >
+              {isDeletingRequest ? "Excluindo..." : "Excluir"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }
