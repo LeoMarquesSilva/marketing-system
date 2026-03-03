@@ -8,6 +8,7 @@ const mockBase = {
   link: null as string | null,
   referencias: null as string | null,
   nome_advogado: null as string | null,
+  art_link: null as string | null,
   assignee_id: null as string | null,
   workflow_stage: null as string | null,
   assignee_user: null as { name: string; avatar_url: string | null } | null,
