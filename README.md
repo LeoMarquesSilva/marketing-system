@@ -25,10 +25,10 @@ npm install
 2. Copie o arquivo de exemplo de variáveis de ambiente:
 
 ```bash
-cp .env.local.example .env.local
+cp .env.example .env.local
 ```
 
-3. Preencha `.env.local` com suas credenciais (disponíveis em **Settings > API**):
+3. Preencha `.env.local` com suas credenciais (disponíveis em **Settings > API** do Supabase):
 
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
@@ -105,6 +105,25 @@ Coloque o arquivo `app_c009c0e4f1_users_rows.csv` na raiz do projeto. O script p
 
 - `supabase-migration-add-columns.sql` — adiciona `solicitante` e `request_type`
 - `supabase-migration-solicitante-id.sql` — adiciona `solicitante_id` (FK para users)
+
+## Deploy na Vercel
+
+1. **Envie o código para o GitHub** (repositório: [LeoMarquesSilva/marketing-system](https://github.com/LeoMarquesSilva/marketing-system)):
+
+   ```bash
+   git branch -M main
+   git push -u origin main
+   ```
+
+2. **Conecte na Vercel:** [vercel.com](https://vercel.com) → **Add New Project** → **Import** o repositório `LeoMarquesSilva/marketing-system`.
+
+3. **Variáveis de ambiente** (Settings → Environment Variables):
+   - `NEXT_PUBLIC_SUPABASE_URL` — URL do projeto Supabase
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` — chave anon/public
+
+4. **Deploy:** a Vercel detecta Next.js e faz o build automaticamente. Após o deploy, acesse a URL gerada (ex.: `marketing-system-xxx.vercel.app`).
+
+5. **Supabase:** em **Authentication → URL Configuration**, adicione a URL da Vercel em **Redirect URLs** (ex.: `https://seu-app.vercel.app/**`) para o login funcionar.
 
 ## Nota
 
