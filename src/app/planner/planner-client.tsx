@@ -39,7 +39,7 @@ export function PlannerClient({ initialRequests, designers, users }: PlannerClie
       return initialRequests.filter((req) => req.assignee_id === profile.id);
     }
     return initialRequests;
-  }, [initialRequests, profile?.id, profile?.role, profile?.department]);
+  }, [initialRequests, profile]);
 
   useEffect(() => {
     if (!profile?.id || requests.length === 0) return;

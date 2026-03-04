@@ -41,7 +41,7 @@ export function ChartByArea({ data }: ChartByAreaProps) {
             className="flex shrink-0 flex-col border-r border-border pr-4"
             style={{ width: LABELS_WIDTH }}
           >
-            {data.map((item, i) => {
+            {data.map((item) => {
               const Icon = getAreaIcon(item.area);
               return (
                 <div

@@ -75,7 +75,7 @@ export function TimerProvider({ children }: { children: ReactNode }) {
       }
       return result;
     },
-    [profile?.id]
+    [profile]
   );
 
   const pause = useCallback(

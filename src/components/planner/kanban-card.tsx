@@ -15,6 +15,7 @@ import { Calendar, Clock, MessageSquare, AlertCircle, CheckCircle2, X, Flag, Cal
 import type { MarketingRequest, RequestPriority } from "@/lib/marketing-requests";
 import { fetchCommentsForRequest, type RequestComment } from "@/lib/request-comments";
 import { differenceInDays, isPast, parseISO } from "date-fns";
+import { getDeadlineMoment } from "@/lib/marketing-requests";
 import { useTimer } from "@/contexts/timer-context";
 import { useStopwatch } from "@/hooks/use-stopwatch";
 
@@ -96,9 +97,12 @@ export function KanbanCard({
   const showPriorityBadge = priority !== "normal";
 
   const deadlineDate = request.deadline ? parseISO(request.deadline) : null;
-  const isOverdue = deadlineDate ? isPast(deadlineDate) && request.workflow_stage !== "concluido" : false;
+  const deadlineMoment = getDeadlineMoment(request.deadline, request.deadline_time);
+  const isOverdue = deadlineMoment ? isPast(deadlineMoment) && request.workflow_stage !== "concluido" : false;
   const deadlineLabel = deadlineDate
-    ? format(deadlineDate, "dd/MM", { locale: ptBR })
+    ? request.deadline_time
+      ? `${format(deadlineDate, "dd/MM/yyyy", { locale: ptBR })} ${request.deadline_time}`
+      : format(deadlineDate, "dd/MM/yyyy", { locale: ptBR })
     : null;
 
   const stageChangedAt = request.stage_changed_at ?? request.requested_at;
@@ -196,7 +200,7 @@ export function KanbanCard({
           </span>
           <span className="flex items-center gap-1">
             <Calendar className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
-            {format(new Date(request.requested_at), "dd/MM/yy", { locale: ptBR })}
+            {format(new Date(request.requested_at), "dd/MM/yyyy", { locale: ptBR })}
           </span>
           {isTimerActive ? (
             <span className="flex items-center gap-1 font-mono font-semibold text-emerald-600 dark:text-emerald-400">
@@ -379,7 +383,7 @@ export function KanbanCard({
                                 </span>
                               )}
                               <span className="text-[10px] text-muted-foreground ml-auto">
-                                {format(new Date(c.created_at), "dd/MM HH:mm", { locale: ptBR })}
+                                {format(new Date(c.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
                               </span>
                             </div>
                             <p className="text-xs text-muted-foreground/90 line-clamp-2 whitespace-pre-wrap break-words">

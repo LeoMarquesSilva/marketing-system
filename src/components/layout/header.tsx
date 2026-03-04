@@ -43,15 +43,26 @@ function HeaderInner() {
   const handleSearch = useCallback(
     (value: string) => {
       setSearch(value);
-      const params = new URLSearchParams(searchParams.toString());
-      if (value.trim()) {
-        params.set("q", value.trim());
-      } else {
-        params.delete("q");
+      const trimmed = value.trim();
+      if (isSearchable) {
+        const params = new URLSearchParams(searchParams.toString());
+        if (trimmed) params.set("q", trimmed);
+        else params.delete("q");
+        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+      } else if (trimmed) {
+        router.push(`/solicitacoes?q=${encodeURIComponent(trimmed)}`);
       }
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     },
-    [pathname, router, searchParams]
+    [pathname, router, searchParams, isSearchable]
+  );
+
+  const handleSearchKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter") {
+        handleSearch(search);
+      }
+    },
+    [handleSearch, search]
   );
 
   return (
@@ -70,26 +81,23 @@ function HeaderInner() {
         </h1>
       </div>
 
-      {/* Search — centro (visível apenas em páginas buscáveis) */}
-      {isSearchable ? (
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" aria-hidden />
-          <Input
-            placeholder={`Buscar em ${pageLabel.toLowerCase()}...`}
-            value={search}
-            onChange={(e) => handleSearch(e.target.value)}
-            className={cn(
-              "pl-8 h-8 text-sm",
-              "rounded-xl border-black/10 dark:border-white/10",
-              "bg-black/[0.03] dark:bg-white/[0.04]",
-              "placeholder:text-muted-foreground/50",
-              "focus-visible:ring-[#101f2e]/20 focus-visible:border-[#101f2e]/30"
-            )}
-          />
-        </div>
-      ) : (
-        <div className="flex-1" />
-      )}
+      {/* Search — global: em páginas buscáveis atualiza ?q=; em outras, Enter leva a /solicitacoes?q= */}
+      <div className="relative flex-1 max-w-xs">
+        <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/60" aria-hidden />
+        <Input
+          placeholder={isSearchable ? `Buscar em ${pageLabel.toLowerCase()}...` : "Buscar no sistema..."}
+          value={search}
+          onChange={(e) => (isSearchable ? handleSearch(e.target.value) : setSearch(e.target.value))}
+          onKeyDown={handleSearchKeyDown}
+          className={cn(
+            "pl-8 h-8 text-sm",
+            "rounded-xl border-black/10 dark:border-white/10",
+            "bg-black/[0.03] dark:bg-white/[0.04]",
+            "placeholder:text-muted-foreground/50",
+            "focus-visible:ring-[#101f2e]/20 focus-visible:border-[#101f2e]/30"
+          )}
+        />
+      </div>
 
       {/* Logo horizontal — âncora direita */}
       {/* eslint-disable-next-line @next/next/no-img-element */}

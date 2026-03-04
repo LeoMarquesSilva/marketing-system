@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { DatePickerField } from "@/components/ui/date-picker-field";
 import {
   Select,
   SelectContent,
@@ -223,7 +224,8 @@ export function RequestsTable({
                     </span>
                   ) : req.deadline ? (
                     <span className="text-xs text-muted-foreground">
-                      {format(new Date(req.deadline), "dd/MM", { locale: ptBR })}
+                      {format(new Date(req.deadline), "dd/MM/yyyy", { locale: ptBR })}
+                      {req.deadline_time ? ` ${req.deadline_time}` : ""}
                     </span>
                   ) : (
                     <span className="text-xs text-muted-foreground/40">—</span>
@@ -306,7 +308,7 @@ export function RequestsTableWithFilters({
       return initialRequests.filter((req) => req.assignee_id === profile.id);
     }
     return initialRequests;
-  }, [initialRequests, profile?.id, profile?.role, profile?.department]);
+  }, [initialRequests, profile]);
 
   const completedCount = useMemo(
     () => requests.filter((r) => r.status === "completed").length,
@@ -457,19 +459,17 @@ export function RequestsTableWithFilters({
               ))}
             </SelectContent>
           </Select>
-          <Input
-            type="date"
+          <DatePickerField
             value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
+            onChange={setDateFrom}
+            placeholder="DD/MM/AAAA"
             className="w-[130px] h-9 rounded-xl border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] text-sm"
-            title="Data inicial"
           />
-          <Input
-            type="date"
+          <DatePickerField
             value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
+            onChange={setDateTo}
+            placeholder="DD/MM/AAAA"
             className="w-[130px] h-9 rounded-xl border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] text-sm"
-            title="Data final"
           />
         </div>
 

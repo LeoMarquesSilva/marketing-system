@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Scripts Node.js usam require(); não fazem parte do bundle.
+    "scripts/**",
   ]),
 ]);
 

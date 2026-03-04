@@ -44,6 +44,7 @@ import {
   type RequestComment,
 } from "@/lib/request-comments";
 import { Play, Pause, Square, MessageSquare, Edit3, AlertCircle, CheckCircle2, Flag, CalendarX2, Clock, Calendar, Layers, Circle, ChevronDown, ChevronUp, Link2, Trash2 } from "lucide-react";
+import { DatePickerField } from "@/components/ui/date-picker-field";
 import type { RequestPriority } from "@/lib/marketing-requests";
 
 const PRIORITY_OPTIONS: { value: RequestPriority; label: string; className: string }[] = [
@@ -91,6 +92,7 @@ export function KanbanCardDetail({
   const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([]);
   const [isSavingPriority, setIsSavingPriority] = useState(false);
   const [isSavingDeadline, setIsSavingDeadline] = useState(false);
+  const [isSavingDeadlineTime, setIsSavingDeadlineTime] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [isSavingTitle, setIsSavingTitle] = useState(false);
@@ -242,6 +244,14 @@ export function KanbanCardDetail({
     onRefresh?.();
   };
 
+  const handleDeadlineTimeChange = async (value: string) => {
+    if (!request) return;
+    setIsSavingDeadlineTime(true);
+    await updateMarketingRequest(request.id, { deadline_time: value || null });
+    setIsSavingDeadlineTime(false);
+    onRefresh?.();
+  };
+
   const handleResolveAlteration = async (commentId: string) => {
     if (!profile) return;
     const { error } = await resolveAlteration(commentId, profile.id);
@@ -357,6 +367,41 @@ export function KanbanCardDetail({
               >
                 {descriptionExpanded ? <>Ver menos <ChevronUp className="h-3 w-3" /></> : <>Ver mais <ChevronDown className="h-3 w-3" /></>}
               </button>
+            )}
+            {(request.created_by_user?.name || request.created_by || request.assignee_user || request.assignee) && (
+              <div className="mt-2 pt-2 border-t border-black/10 dark:border-white/15 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground/90">
+                {(request.created_by_user?.name || request.created_by) && (
+                  <span className="flex items-center gap-1.5">
+                    {request.created_by_user ? (
+                      <Avatar className="h-4 w-4 shrink-0 border border-white/50 dark:border-white/20">
+                        <AvatarImage src={request.created_by_user.avatar_url || undefined} />
+                        <AvatarFallback className="text-[8px] bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10 dark:text-white">
+                          {getInitials(request.created_by_user.name)}
+                        </AvatarFallback>
+                      </Avatar>
+                    ) : null}
+                    Criado por {request.created_by_user?.name ?? request.created_by}
+                  </span>
+                )}
+                {(request.assignee_user || request.assignee) && (
+                  <>
+                    {(request.created_by_user?.name || request.created_by) && (
+                      <span className="text-muted-foreground/40 select-none">·</span>
+                    )}
+                    <span className="flex items-center gap-1.5">
+                      {request.assignee_user ? (
+                        <Avatar className="h-4 w-4 shrink-0 border border-white/50 dark:border-white/20">
+                          <AvatarImage src={request.assignee_user.avatar_url || undefined} />
+                          <AvatarFallback className="text-[8px] bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10 dark:text-white">
+                            {getInitials(request.assignee_user.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                      ) : null}
+                      Atribuído a {request.assignee_user?.name ?? request.assignee}
+                    </span>
+                  </>
+                )}
+              </div>
             )}
             <div className="mt-2 pt-2 border-t border-black/10 dark:border-white/15 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-muted-foreground/90">
               {(request.solicitante_user || request.solicitante) && (
@@ -549,53 +594,72 @@ export function KanbanCardDetail({
             </div>
           </section>
 
-          {/* 2. Prioridade + Prazo — urgência */}
+          {/* 2. Prioridade */}
           <section aria-labelledby="priority-heading" className={sectionClass}>
             <h4 id="priority-heading" className={sectionTitleClass}>
-              Prioridade · Prazo
+              Prioridade
             </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <p className="text-xs text-muted-foreground">Prioridade</p>
-                {isAdmin ? (
-                  <Select value={request.priority ?? "normal"} onValueChange={handlePriorityChange} disabled={isSavingPriority}>
-                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {PRIORITY_OPTIONS.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>
-                          <span className={`flex items-center gap-2 font-medium ${opt.className}`}>
-                            <Flag className="h-3.5 w-3.5" aria-hidden />{opt.label}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <p className="flex items-center gap-1.5 text-sm font-medium">
-                    <Flag className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
-                    {PRIORITY_OPTIONS.find((o) => o.value === (request.priority ?? "normal"))?.label ?? "Normal"}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-1.5 sm:border-l sm:border-border/50 sm:pl-4">
-                <p className="text-xs text-muted-foreground">Prazo de entrega</p>
-                {isAdmin ? (
-                  <input
-                    type="date"
-                    defaultValue={request.deadline ?? ""}
-                    onBlur={(e) => handleDeadlineChange(e.target.value)}
-                    disabled={isSavingDeadline}
-                    className="flex h-9 w-full rounded-xl border border-input bg-white/80 dark:bg-background/50 px-3 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50"
-                  />
-                ) : (
-                  <p className="flex items-center gap-1.5 text-sm font-medium">
-                    <CalendarX2 className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
-                    {request.deadline
-                      ? format(new Date(request.deadline), "dd/MM/yyyy", { locale: ptBR })
-                      : <span className="text-muted-foreground italic">Sem prazo</span>}
-                  </p>
-                )}
-              </div>
+            <div className="space-y-1.5">
+              {isAdmin ? (
+                <Select value={request.priority ?? "normal"} onValueChange={handlePriorityChange} disabled={isSavingPriority}>
+                  <SelectTrigger className="w-full max-w-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {PRIORITY_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        <span className={`flex items-center gap-2 font-medium ${opt.className}`}>
+                          <Flag className="h-3.5 w-3.5" aria-hidden />{opt.label}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <p className="flex items-center gap-1.5 text-sm font-medium">
+                  <Flag className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
+                  {PRIORITY_OPTIONS.find((o) => o.value === (request.priority ?? "normal"))?.label ?? "Normal"}
+                </p>
+              )}
+            </div>
+          </section>
+
+          {/* 3. Prazo de entrega (data + horário em linha própria) */}
+          <section aria-labelledby="deadline-heading" className={sectionClass}>
+            <h4 id="deadline-heading" className={sectionTitleClass}>
+              Prazo de entrega
+            </h4>
+            <div className="space-y-2">
+              {isAdmin ? (
+                <div className="flex flex-wrap gap-3 items-end">
+                  <div className="space-y-1.5 min-w-[140px]">
+                    <p className="text-xs text-muted-foreground">Data</p>
+                    <DatePickerField
+                      value={request.deadline ?? ""}
+                      onChange={handleDeadlineChange}
+                      placeholder="DD/MM/AAAA"
+                      disabled={isSavingDeadline}
+                    />
+                  </div>
+                  <div className="space-y-1.5 min-w-[100px]">
+                    <p className="text-xs text-muted-foreground">Horário</p>
+                    <input
+                      type="time"
+                      defaultValue={request.deadline_time ?? ""}
+                      onBlur={(e) => handleDeadlineTimeChange(e.target.value)}
+                      disabled={isSavingDeadlineTime}
+                      className="flex h-9 w-full rounded-xl border border-input bg-white/80 dark:bg-background/50 px-3 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <p className="flex items-center gap-1.5 text-sm font-medium">
+                  <CalendarX2 className="h-4 w-4 shrink-0 opacity-70" aria-hidden />
+                  {request.deadline
+                    ? request.deadline_time
+                      ? `${format(new Date(request.deadline), "dd/MM/yyyy", { locale: ptBR })} às ${request.deadline_time}`
+                      : format(new Date(request.deadline), "dd/MM/yyyy", { locale: ptBR })
+                    : <span className="text-muted-foreground italic">Sem prazo</span>}
+                </p>
+              )}
             </div>
           </section>
 
@@ -740,7 +804,7 @@ export function KanbanCardDetail({
                                 </span>
                               )}
                               <span className="text-xs text-muted-foreground">
-                                {format(new Date(c.created_at), "dd/MM HH:mm", { locale: ptBR })}
+                                {format(new Date(c.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
                               </span>
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
@@ -873,7 +937,7 @@ export function KanbanCardDetail({
                           </span>
                           {/* Date */}
                           <span className="shrink-0">
-                            {format(new Date(e.started_at), "dd/MM HH:mm", { locale: ptBR })}
+                            {format(new Date(e.started_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
                           </span>
                           {/* Duration */}
                           <span className={`font-mono font-semibold tabular-nums shrink-0 ${!e.ended_at ? "text-emerald-600 dark:text-emerald-400" : ""}`}>

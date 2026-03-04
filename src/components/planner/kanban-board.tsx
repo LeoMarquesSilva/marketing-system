@@ -228,7 +228,7 @@ export function KanbanBoard({ requests, onRefresh, onCardClick, onMarkComplete, 
             <>
               <div className="space-y-2 pt-2">
                 <label htmlFor="revisao-art-link" className="text-sm font-medium text-foreground">
-                  Link da arte
+                  Link da arte <span className="text-destructive">*</span>
                 </label>
                 <input
                   id="revisao-art-link"
@@ -237,13 +237,20 @@ export function KanbanBoard({ requests, onRefresh, onCardClick, onMarkComplete, 
                   value={revisaoArtLink}
                   onChange={(e) => setRevisaoArtLink(e.target.value)}
                   className="flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-required="true"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Obrigatório para enviar para revisão.
+                </p>
               </div>
               <div className="flex gap-2 justify-end pt-4">
                 <Button variant="outline" onClick={handleCancelMoveToRevisao}>
                   Cancelar
                 </Button>
-                <Button onClick={handleConfirmMoveToRevisao} disabled={isSubmittingRevisao}>
+                <Button
+                  onClick={handleConfirmMoveToRevisao}
+                  disabled={isSubmittingRevisao || !revisaoArtLink.trim()}
+                >
                   {isSubmittingRevisao ? "Enviando..." : "Enviar para revisão"}
                 </Button>
               </div>

@@ -22,10 +22,13 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { UserSelect } from "@/components/solicitacoes/user-select";
+import { UserSelectSearch } from "@/components/solicitacoes/user-select-search";
+import { DatePickerField } from "@/components/ui/date-picker-field";
 import { REQUEST_TYPES, STATUS_OPTIONS } from "@/lib/constants";
 import type { User } from "@/lib/users";
 import { supabase } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
 
 const formSchema = z.object({
   request_type: z.string().min(1, "Tipo de solicitação é obrigatório"),
@@ -36,10 +39,10 @@ const formSchema = z.object({
   assignee_id: z.string().optional(),
   link: z.string().optional(),
   referencias: z.string().optional(),
-  nome_advogado: z.string().optional(),
   status: z.enum(["pending", "in_progress", "completed"]),
   priority: z.enum(["urgente", "alta", "normal", "baixa"]),
   deadline: z.string().optional(),
+  deadline_time: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -53,6 +56,7 @@ interface RequestFormProps {
 
 export function RequestForm({ users, designers, onSuccess, embedded }: RequestFormProps) {
   const router = useRouter();
+  const { profile } = useAuth();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -65,10 +69,10 @@ export function RequestForm({ users, designers, onSuccess, embedded }: RequestFo
       assignee_id: "",
       link: "",
       referencias: "",
-      nome_advogado: "",
       status: "pending",
       priority: "normal",
       deadline: "",
+      deadline_time: "",
     },
   });
 
@@ -95,9 +99,11 @@ export function RequestForm({ users, designers, onSuccess, embedded }: RequestFo
         request_type: values.request_type || null,
         link: values.link || null,
         referencias: values.referencias || null,
-        nome_advogado: values.nome_advogado || null,
         priority: values.priority ?? "normal",
         deadline: values.deadline || null,
+        deadline_time: values.deadline_time || null,
+        created_by_id: profile?.id ?? null,
+        created_by: profile?.name ?? null,
       });
 
       if (error) throw error;
@@ -155,7 +161,7 @@ export function RequestForm({ users, designers, onSuccess, embedded }: RequestFo
                   <FormItem>
                     <FormLabel>Solicitante</FormLabel>
                     <FormControl>
-                      <UserSelect
+                      <UserSelectSearch
                         users={users}
                         value={field.value || ""}
                         onValueChange={(v) => {
@@ -166,7 +172,11 @@ export function RequestForm({ users, designers, onSuccess, embedded }: RequestFo
                             form.setValue("solicitante", u.name);
                           }
                         }}
-                        placeholder="Selecione o solicitante (nome e área)"
+                        onSelect={(u) => {
+                          form.setValue("requesting_area", u.department);
+                          form.setValue("solicitante", u.name);
+                        }}
+                        placeholder="Pesquisar ou selecionar solicitante"
                       />
                     </FormControl>
                     <FormMessage />
@@ -284,23 +294,6 @@ export function RequestForm({ users, designers, onSuccess, embedded }: RequestFo
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="nome_advogado"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Nome do advogado</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="Advogado que escreveu/solicitou"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
             {designers.length > 0 ? (
               <FormField
                 control={form.control}
@@ -372,9 +365,27 @@ export function RequestForm({ users, designers, onSuccess, embedded }: RequestFo
                 name="deadline"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Prazo de entrega</FormLabel>
+                    <FormLabel>Prazo de entrega (data)</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} className="w-full" />
+                      <DatePickerField
+                        id={field.name}
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        placeholder="DD/MM/AAAA"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="deadline_time"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Horário de entrega</FormLabel>
+                    <FormControl>
+                      <Input type="time" {...field} className="w-full" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -424,14 +435,7 @@ export function RequestForm({ users, designers, onSuccess, embedded }: RequestFo
   );
 
   if (embedded) {
-    return (
-      <div className="pt-2">
-        <p className="text-sm text-muted-foreground mb-4">
-          Preencha os dados conforme a planilha de solicitações
-        </p>
-        {formContent}
-      </div>
-    );
+    return <div className="pt-0">{formContent}</div>;
   }
 
   return (

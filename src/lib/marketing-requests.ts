@@ -2,6 +2,29 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/utils/supabase/client";
 import { differenceInDays } from "date-fns";
 
+/**
+ * Retorna o momento exato do prazo (data + horário) para comparação.
+ * Se houver deadline_time, usa esse horário no dia; senão, considera fim do dia (23:59:59).
+ */
+export function getDeadlineMoment(
+  deadline: string | null,
+  deadlineTime: string | null
+): Date | null {
+  if (!deadline || !deadline.trim()) return null;
+  const parts = deadline.trim().split("-").map(Number);
+  if (parts.length < 3) return null;
+  const [y, m, d] = parts;
+  const date = new Date(y, m - 1, d);
+  if (Number.isNaN(date.getTime())) return null;
+  if (deadlineTime && deadlineTime.trim()) {
+    const timeParts = deadlineTime.trim().split(":").map((s) => parseInt(s, 10) || 0);
+    date.setHours(timeParts[0] ?? 0, timeParts[1] ?? 0, 0, 0);
+  } else {
+    date.setHours(23, 59, 59, 999);
+  }
+  return date;
+}
+
 import type { WorkflowStage, CompletionType } from "@/lib/constants";
 
 export type UserRole = "admin" | "designer" | "solicitante";
@@ -30,10 +53,14 @@ export interface MarketingRequest {
   completion_type: CompletionType | null;
   priority: RequestPriority;
   deadline: string | null;
+  deadline_time: string | null;
   stage_changed_at: string | null;
   art_link: string | null;
+  created_by_id: string | null;
+  created_by: string | null;
   solicitante_user?: { name: string; department: string; avatar_url: string | null } | null;
   assignee_user?: { name: string; avatar_url: string | null } | null;
+  created_by_user?: { name: string; avatar_url: string | null } | null;
 }
 
 export interface FetchMarketingRequestsOptions {
@@ -46,14 +73,14 @@ export interface FetchMarketingRequestsOptions {
 const KANBAN_SELECT =
   "id, title, description, requesting_area, status, requested_at, delivered_at, " +
   "assignee, assignee_id, solicitante, solicitante_id, request_type, " +
-  "link, referencias, nome_advogado, art_link, " +
-  "workflow_stage, completion_type, priority, deadline, stage_changed_at";
+  "link, referencias, nome_advogado, art_link, created_by_id, created_by, " +
+  "workflow_stage, completion_type, priority, deadline, deadline_time, stage_changed_at";
 
 const KANBAN_SELECT_WITHOUT_ART_LINK =
   "id, title, description, requesting_area, status, requested_at, delivered_at, " +
   "assignee, assignee_id, solicitante, solicitante_id, request_type, " +
-  "link, referencias, nome_advogado, " +
-  "workflow_stage, completion_type, priority, deadline, stage_changed_at";
+  "link, referencias, nome_advogado, created_by_id, created_by, " +
+  "workflow_stage, completion_type, priority, deadline, deadline_time, stage_changed_at";
 
 function logSupabaseError(context: string, err: unknown) {
   const e = err as { message?: string; code?: string; details?: string; hint?: string };
@@ -120,7 +147,7 @@ export async function fetchMarketingRequests(
   }
   const ids = [
     ...new Set(
-      requests.flatMap((r) => [r.solicitante_id, r.assignee_id].filter(Boolean))
+      requests.flatMap((r) => [r.solicitante_id, r.assignee_id, r.created_by_id].filter(Boolean))
     ),
   ] as string[];
 
@@ -149,6 +176,10 @@ export async function fetchMarketingRequests(
     assignee_user:
       r.assignee_id && usersMap[r.assignee_id]
         ? { name: usersMap[r.assignee_id].name, avatar_url: usersMap[r.assignee_id].avatar_url }
+        : null,
+    created_by_user:
+      r.created_by_id && usersMap[r.created_by_id]
+        ? { name: usersMap[r.created_by_id].name, avatar_url: usersMap[r.created_by_id].avatar_url }
         : null,
   }));
 }
@@ -234,6 +265,7 @@ export interface UpdateRequestInput {
   completion_type?: CompletionType | null;
   priority?: RequestPriority;
   deadline?: string | null;
+  deadline_time?: string | null;
   art_link?: string | null;
 }
 
@@ -260,6 +292,7 @@ export async function updateMarketingRequest(
   if (input.completion_type !== undefined) updates.completion_type = input.completion_type;
   if (input.priority !== undefined) updates.priority = input.priority;
   if (input.deadline !== undefined) updates.deadline = input.deadline;
+  if (input.deadline_time !== undefined) updates.deadline_time = input.deadline_time;
   if (input.art_link !== undefined) updates.art_link = input.art_link;
 
   const { data, error } = await supabase
@@ -321,11 +354,11 @@ export function computeDashboardMetrics(requests: MarketingRequest[]) {
   const pendingCount = requests.filter((r) => r.status === "pending").length;
   const inProgressCount = requests.filter((r) => r.status === "in_progress").length;
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const overdueCount = requests.filter(
-    (r) => r.status !== "completed" && r.deadline && new Date(r.deadline) < today
-  ).length;
+  const overdueCount = requests.filter((r) => {
+    if (r.status === "completed") return false;
+    const moment = getDeadlineMoment(r.deadline, r.deadline_time);
+    return moment !== null && now > moment;
+  }).length;
   const unassignedCount = requests.filter(
     (r) => r.status !== "completed" && !r.assignee_id
   ).length;

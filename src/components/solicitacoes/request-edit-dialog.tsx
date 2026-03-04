@@ -29,6 +29,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { UserSelect } from "@/components/solicitacoes/user-select";
+import { DatePickerField } from "@/components/ui/date-picker-field";
 import { REQUEST_TYPES, STATUS_OPTIONS, WORKFLOW_STAGES } from "@/lib/constants";
 import type { User } from "@/lib/users";
 import type { MarketingRequest } from "@/lib/marketing-requests";
@@ -44,7 +45,6 @@ const formSchema = z.object({
   assignee_id: z.string().optional(),
   link: z.string().optional(),
   referencias: z.string().optional(),
-  nome_advogado: z.string().optional(),
   status: z.enum(["pending", "in_progress", "completed"]),
   workflow_stage: z.string().optional(),
   requested_at: z.string().min(1, "Data de solicitação é obrigatória"),
@@ -81,7 +81,6 @@ export function RequestEditDialog({
       assignee_id: "",
       link: "",
       referencias: "",
-      nome_advogado: "",
       status: "pending",
       workflow_stage: "tarefas",
       requested_at: "",
@@ -100,7 +99,6 @@ export function RequestEditDialog({
         assignee_id: request.assignee_id || "",
         link: request.link || "",
         referencias: request.referencias || "",
-        nome_advogado: request.nome_advogado || "",
         status: request.status,
         workflow_stage: request.workflow_stage || "tarefas",
         requested_at: request.requested_at
@@ -130,7 +128,6 @@ export function RequestEditDialog({
       solicitante_id: values.solicitante_id || null,
       link: values.link || null,
       referencias: values.referencias || null,
-      nome_advogado: values.nome_advogado || null,
       workflow_stage: (values.workflow_stage as "tarefas" | "revisao" | "revisado" | "revisao_autor" | "concluido") || null,
       requested_at: values.requested_at,
       delivered_at: values.delivered_at || null,
@@ -290,23 +287,6 @@ export function RequestEditDialog({
               )}
             />
 
-            <FormField
-              control={form.control}
-              name="nome_advogado"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Nome do advogado</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="Advogado que escreveu/solicitou"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
             {designers.length > 0 ? (
               <FormField
                 control={form.control}
@@ -409,7 +389,12 @@ export function RequestEditDialog({
                   <FormItem>
                     <FormLabel>Solicitado em</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} />
+                      <DatePickerField
+                        id={field.name}
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        placeholder="DD/MM/AAAA"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -422,7 +407,12 @@ export function RequestEditDialog({
                   <FormItem>
                     <FormLabel>Entregue em</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} />
+                      <DatePickerField
+                        id={field.name}
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        placeholder="DD/MM/AAAA"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

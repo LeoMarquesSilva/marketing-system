@@ -25,7 +25,7 @@ export function DashboardClient({ requests }: DashboardClientProps) {
       return requests.filter((req) => req.assignee_id === profile.id);
     }
     return requests;
-  }, [requests, profile?.id, profile?.role, profile?.department]);
+  }, [requests, profile]);
 
   const normalizedRequests = useMemo(() => {
     return requestsFiltered;

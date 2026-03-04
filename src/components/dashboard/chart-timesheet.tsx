@@ -162,7 +162,7 @@ export function ChartTimesheet() {
   const dailyTrend = useMemo(() => {
     const days = Array.from({ length: 14 }, (_, i) => {
       const d = startOfDay(subDays(new Date(), 13 - i));
-      return { date: d, label: format(d, "dd/MM", { locale: ptBR }), ms: 0 };
+      return { date: d, label: format(d, "dd/MM/yyyy", { locale: ptBR }), ms: 0 };
     });
     for (const e of filtered) {
       const entryDay = startOfDay(new Date(e.started_at)).getTime();

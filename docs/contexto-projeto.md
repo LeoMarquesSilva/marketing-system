@@ -97,8 +97,11 @@ solicitante, solicitante_id,    -- quem solicitou (revisor quando em Revisão)
 requested_at, delivered_at,
 priority TEXT ('urgente'|'alta'|'normal'|'baixa'),
 deadline DATE,
+deadline_time TEXT,             -- horário de entrega no dia (HH:mm)
 stage_changed_at TIMESTAMPTZ,
-art_link TEXT                   -- link da arte (preenchido ao enviar para Revisão)
+art_link TEXT,                  -- link da arte (obrigatório ao enviar para Revisão)
+created_by_id UUID REFERENCES users(id),  -- quem criou a solicitação (gestor)
+created_by TEXT                 -- nome no momento da criação
 ```
 
 **`request_comments`**

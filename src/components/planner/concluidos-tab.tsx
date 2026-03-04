@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
+import { DatePickerField } from "@/components/ui/date-picker-field";
 import {
   Select,
   SelectContent,
@@ -240,19 +241,17 @@ export function ConcluidosTab({ requests, onCardClick }: ConcluidosTabProps) {
             ))}
           </SelectContent>
         </Select>
-        <Input
-          type="date"
+        <DatePickerField
           value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
+          onChange={setDateFrom}
+          placeholder="DD/MM/AAAA"
           className="w-[130px] h-9 rounded-xl border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] text-sm"
-          title="Entregue a partir de"
         />
-        <Input
-          type="date"
+        <DatePickerField
           value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)}
+          onChange={setDateTo}
+          placeholder="DD/MM/AAAA"
           className="w-[130px] h-9 rounded-xl border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] text-sm"
-          title="Entregue até"
         />
 
         {/* Summary pill */}
