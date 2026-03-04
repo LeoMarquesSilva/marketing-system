@@ -9,6 +9,7 @@ import {
   Link2,
   Users,
   Columns3,
+  ClipboardList,
   LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,7 @@ const navItems = [
   { href: "/", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/planner", icon: Columns3, label: "Planner" },
   { href: "/solicitacoes", icon: List, label: "Solicitações" },
+  { href: "/vios-tarefas", icon: ClipboardList, label: "Tarefas VIOS" },
   { href: "/vincular-solicitantes", icon: Link2, label: "Vincular Solicitantes" },
   { href: "/usuarios", icon: Users, label: "Usuários" },
 ];

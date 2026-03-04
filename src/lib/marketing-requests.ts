@@ -104,7 +104,10 @@ export async function fetchMarketingRequests(
 
   if (options?.userId && options?.role && options.role !== "admin") {
     if (options.role === "designer") {
-      query = query.eq("assignee_id", options.userId);
+      // Designer: suas tarefas (assignee = ela) + tudo que está em Revisão, Revisado ou Revisão autor
+      query = query.or(
+        `assignee_id.eq.${options.userId},workflow_stage.in.(revisao,revisado,revisao_autor)`
+      );
     } else if (options.role === "solicitante") {
       query = query.eq("solicitante_id", options.userId);
     }
@@ -121,8 +124,13 @@ export async function fetchMarketingRequests(
         .select(KANBAN_SELECT_WITHOUT_ART_LINK)
         .order("requested_at", { ascending: false });
       if (options?.userId && options?.role && options.role !== "admin") {
-        if (options.role === "designer") query = query.eq("assignee_id", options.userId!);
-        else if (options.role === "solicitante") query = query.eq("solicitante_id", options.userId!);
+        if (options.role === "designer") {
+          query = query.or(
+            `assignee_id.eq.${options.userId},workflow_stage.in.(revisao,revisado,revisao_autor)`
+          );
+        } else if (options.role === "solicitante") {
+          query = query.eq("solicitante_id", options.userId!);
+        }
       }
       const fallback = await query;
       if (fallback.error) {
@@ -141,10 +149,7 @@ export async function fetchMarketingRequests(
     requests = requests.map((r) => ({ ...r, art_link: null })) as MarketingRequest[];
   }
 
-  // Designer: filtro extra para garantir que tarefas sem assignee nunca apareçam
-  if (options?.role === "designer" && options?.userId) {
-    requests = requests.filter((r) => r.assignee_id === options.userId);
-  }
+  // Designer: já filtrado na query (assignee = user OU stage in revisao/revisado/revisao_autor)
   const ids = [
     ...new Set(
       requests.flatMap((r) => [r.solicitante_id, r.assignee_id, r.created_by_id].filter(Boolean))

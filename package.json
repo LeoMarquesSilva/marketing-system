@@ -11,7 +11,9 @@
     "import-users": "node scripts/import-users.js",
     "link-solicitantes": "node scripts/link-solicitantes.js",
     "update-assignee": "node scripts/update-assignee.js",
-    "create-auth-users": "node scripts/create-auth-users.js"
+    "create-auth-users": "node scripts/create-auth-users.js",
+    "import-vios": "node scripts/import-vios.js",
+    "update-responsaveis-leonardo": "node scripts/update-responsaveis-remove-leonardo.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
