@@ -10,6 +10,7 @@ export interface ViosTask {
   tarefa: string;
   etiquetas_tarefa: string | null;
   descricao: string | null;
+  comentarios: string | null;
   historico: string | null;
   data_limite: string | null;
   data_conclusao: string | null;
@@ -27,7 +28,7 @@ export interface ViosTask {
 }
 
 const VIOS_TASKS_SELECT =
-  "id, vios_id, ci_processo, area_processo, tarefa, etiquetas_tarefa, descricao, historico, data_limite, data_conclusao, hora_conclusao, responsaveis, assignee_id, status, usuario_concluiu, marketing_request_id, imported_at, created_at, updated_at";
+  "id, vios_id, ci_processo, area_processo, tarefa, etiquetas_tarefa, descricao, comentarios, historico, data_limite, data_conclusao, hora_conclusao, responsaveis, assignee_id, status, usuario_concluiu, marketing_request_id, imported_at, created_at, updated_at";
 
 type ViosTaskRow = ViosTask & {
   users?: { name: string; avatar_url: string | null } | { name: string; avatar_url: string | null }[] | null;
@@ -55,11 +56,18 @@ function mapTaskRow(row: ViosTaskRow): ViosTask {
 /** Nome do analista de marketing a ser sempre desconsiderado da coluna Responsáveis. */
 const NOME_ANALISTA_EXCLUIR = "Leonardo Marques Silva";
 
-/** Remove o nome do analista da lista de responsáveis (pipe-separada). */
+/** Normaliza nome para comparação (trim + colapsa espaços internos). */
+function normalizeNameForCompare(name: string): string {
+  return name.trim().replace(/\s+/g, " ");
+}
+
+const NOME_ANALISTA_NORMALIZED = normalizeNameForCompare(NOME_ANALISTA_EXCLUIR);
+
+/** Remove o nome do analista da lista de responsáveis (pipe-separada). Aceita variações com espaços extras. */
 export function filterLeonardoFromResponsaveis(responsaveis: string | null): string | null {
   if (!responsaveis?.trim()) return responsaveis;
   const parts = responsaveis.split(/\s*\|\s*/).map((p) => p.trim()).filter(Boolean);
-  const filtered = parts.filter((p) => p !== NOME_ANALISTA_EXCLUIR);
+  const filtered = parts.filter((p) => normalizeNameForCompare(p) !== NOME_ANALISTA_NORMALIZED);
   return filtered.length > 0 ? filtered.join(" | ") : null;
 }
 
@@ -162,13 +170,31 @@ export async function fetchViosTasks(
   const { data, error, count } = await query;
 
   if (error) {
-    console.error("Erro ao buscar tarefas VIOS:", error);
+    const msg = error?.message ?? JSON.stringify(error);
+    console.error("Erro ao buscar tarefas VIOS:", msg);
     return { tasks: [], total: 0 };
   }
 
   const rows = (data ?? []) as unknown as ViosTaskRow[];
   const tasks = rows.map(mapTaskRow);
   return { tasks, total: count ?? tasks.length };
+}
+
+/**
+ * Busca a tarefa VIOS vinculada a uma solicitação do Planner (marketing_request_id = requestId).
+ * Usado para exibir a seção "Origem VIOS" no detalhe da solicitação.
+ */
+export async function fetchViosTaskByMarketingRequestId(
+  requestId: string
+): Promise<ViosTask | null> {
+  const { data, error } = await supabase
+    .from("vios_tasks")
+    .select(VIOS_TASKS_SELECT)
+    .eq("marketing_request_id", requestId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return mapTaskRow(data as unknown as ViosTaskRow);
 }
 
 /**

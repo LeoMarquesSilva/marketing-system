@@ -1,0 +1,19 @@
+{
+  "name": "vios-app",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Download relatório VIOS e sync para Supabase (tarefas MATERIAL MARKETING)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "download": "node index.js",
+    "sync": "node sync-to-supabasemkt.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.98.0",
+    "axios": "^1.7.0",
+    "csv-parse": "^6.1.0",
+    "dotenv": "^17.3.1",
+    "playwright": "^1.49.0"
+  }
+}

@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { UserSelectCompact } from "@/components/solicitacoes/user-select-compact";
+import { UserSelectSearch } from "@/components/solicitacoes/user-select-search";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Check, Loader2 } from "lucide-react";
@@ -130,11 +130,11 @@ export function VincularSolicitantesTable({
             {selectedIds.size} selecionado(s)
           </span>
           <div className="min-w-[200px] flex-1">
-            <UserSelectCompact
+            <UserSelectSearch
               users={users}
               value={batchUserId}
               onValueChange={setBatchUserId}
-              placeholder="Usuário para vincular em lote"
+              placeholder="Pesquisar ou selecionar usuário para vincular em lote"
             />
           </div>
           <Button
@@ -235,13 +235,13 @@ export function VincularSolicitantesTable({
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <UserSelectCompact
+                          <UserSelectSearch
                             users={users}
                             value={selectedUser[req.id] || ""}
                             onValueChange={(userId) =>
                               setSelectedUser((prev) => ({ ...prev, [req.id]: userId }))
                             }
-                            placeholder="Selecione o usuário..."
+                            placeholder="Pesquisar ou selecionar usuário..."
                           />
                           <Button
                             size="sm"

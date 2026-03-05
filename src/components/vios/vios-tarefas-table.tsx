@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { UserSelectCompact } from "@/components/solicitacoes/user-select-compact";
+import { UserSelectSearch } from "@/components/solicitacoes/user-select-search";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +22,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import { Loader2, Pencil, Check, X, Send, CalendarX2, CheckCircle2, AlertCircle } from "lucide-react";
 import { AreaWithIcon } from "@/components/solicitacoes/area-with-icon";
@@ -59,15 +58,6 @@ function entregueNoPrazo(task: ViosTask): boolean | null {
   const conclusao = startOfDay(parseISO(task.data_conclusao));
   const limite = startOfDay(new Date(task.data_limite + "T12:00:00"));
   return conclusao <= limite;
-}
-
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
 }
 
 interface ViosTarefasTableProps {
@@ -344,6 +334,7 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
               <TableHead>CI</TableHead>
               <TableHead>Área</TableHead>
               <TableHead>Etiqueta</TableHead>
+              <TableHead className="min-w-[140px]">Comentários</TableHead>
               <TableHead className="min-w-[180px]">Responsáveis (advogado)</TableHead>
               <TableHead>Data limite</TableHead>
               <TableHead>Entregue em</TableHead>
@@ -369,6 +360,9 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
                 </TableCell>
                 <TableCell className="max-w-[160px] truncate" title={task.etiquetas_tarefa ?? ""}>
                   {task.etiquetas_tarefa ?? "—"}
+                </TableCell>
+                <TableCell className="max-w-[140px] truncate" title={task.comentarios ?? ""}>
+                  {task.comentarios ?? "—"}
                 </TableCell>
                 <TableCell>
                   {editingResponsaveisId === task.vios_id ? (
@@ -474,35 +468,25 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center gap-2">
-                    {(task.assignee_id && (task.assignee_name || task.assignee_avatar_url)) && (
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <Avatar className="h-6 w-6 border border-white/50">
-                          <AvatarImage src={task.assignee_avatar_url || undefined} alt={task.assignee_name ?? ""} />
-                          <AvatarFallback className="text-[8px] bg-primary/10 text-primary">
-                            {task.assignee_name ? getInitials(task.assignee_name) : "?"}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="text-sm truncate max-w-[80px]" title={task.assignee_name ?? ""}>
-                          {task.assignee_name}
-                        </span>
-                      </div>
-                    )}
-                    <UserSelectCompact
-                      users={users}
-                      value={selectedUser[task.vios_id] ?? task.assignee_id ?? ""}
-                      onValueChange={(userId) =>
-                        setSelectedUser((prev) => ({
-                          ...prev,
-                          [task.vios_id]: userId,
-                        }))
-                      }
-                      placeholder="Vincular advogado..."
-                    />
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="min-w-[200px] max-w-[280px] shrink">
+                      <UserSelectSearch
+                        users={users}
+                        value={selectedUser[task.vios_id] ?? task.assignee_id ?? ""}
+                        onValueChange={(userId) =>
+                          setSelectedUser((prev) => ({
+                            ...prev,
+                            [task.vios_id]: userId,
+                          }))
+                        }
+                        placeholder="Pesquisar ou selecionar advogado..."
+                      />
+                    </div>
                     {(selectedUser[task.vios_id] !== undefined ||
                       task.assignee_id) && (
                       <Button
                         size="sm"
+                        className="shrink-0"
                         onClick={() => handleLink(task)}
                         disabled={linkingId === task.vios_id}
                       >

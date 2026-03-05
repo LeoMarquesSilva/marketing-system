@@ -1,8 +1,11 @@
 /**
- * Script para importar relatório VIOS (tarefas MATERIAL MARKETING - REELS/POST/ARTIGO) para o Supabase.
- * Uso: node scripts/import-vios.js [caminho-do-arquivo.csv|.xlsx]
- * Sem argumento: usa public/tarefas-vios-amostra2.csv ou primeiro .xlsx na raiz.
- * Requer: .env.local com NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY
+ * Sincroniza CSV de tarefas VIOS para o Supabase.
+ * Filtra apenas: MATERIAL MARKETING - REELS/POST/ARTIGO
+ *
+ * Uso: node sync-to-supabase.js <caminho-do-csv>
+ * Ou importado: const { syncViosToSupabase } = require('./sync-to-supabase');
+ *
+ * Requer .env: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY
  */
 
 require("dotenv").config({ path: ".env.local" });
@@ -11,34 +14,13 @@ const fs = require("fs");
 const path = require("path");
 const { createClient } = require("@supabase/supabase-js");
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-if (!url || !key) {
-  console.error("Configure .env.local com NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY");
-  process.exit(1);
-}
-
-const supabase = createClient(url, key);
-
 const VIOS_TASK_LABEL = "MATERIAL MARKETING - REELS/POST/ARTIGO";
-
-/** Nome do analista de marketing a ser sempre desconsiderado da coluna Responsáveis. */
 const NOME_ANALISTA_EXCLUIR = "Leonardo Marques Silva";
 
 function normalizeNameForCompare(name) {
   return String(name || "").trim().replace(/\s+/g, " ");
 }
 
-function filterLeonardoFromResponsaveis(str) {
-  if (!str?.trim()) return str;
-  const normalized = normalizeNameForCompare(NOME_ANALISTA_EXCLUIR);
-  const parts = str.split(/\s*\|\s*/).map((p) => p.trim()).filter(Boolean);
-  const filtered = parts.filter((p) => normalizeNameForCompare(p) !== normalized);
-  return filtered.length > 0 ? filtered.join(" | ") : null;
-}
-
-// Nomes de colunas do relatório VIOS (no export, a tarefa pode vir em "Tarefa" ou "Tarefa Pai")
 const COL_NAMES = {
   CI: "CI",
   CI_PROCESSO: "CI do Processo",
@@ -49,7 +31,6 @@ const COL_NAMES = {
   TAREFA_PAI: "Tarefa Pai",
   ETIQUETAS_TAREFA: "Etiquetas da Tarefa",
   DESCRICAO: "Descrição",
-  COMENTARIOS: "Comentários",
   HISTORICO: "Histórico",
   RESPONSAVEL_PROCESSO: "Responsável pelo processo",
   RESPONSAVEIS: "Responsáveis",
@@ -58,6 +39,14 @@ const COL_NAMES = {
   DATA_CONCLUSAO: "Data da Conclusão",
   HORA_CONCLUSAO: "Hora da Conclusão",
 };
+
+function filterLeonardoFromResponsaveis(str) {
+  if (!str?.trim()) return str;
+  const normalized = normalizeNameForCompare(NOME_ANALISTA_EXCLUIR);
+  const parts = str.split(/\s*\|\s*/).map((p) => p.trim()).filter(Boolean);
+  const filtered = parts.filter((p) => normalizeNameForCompare(p) !== normalized);
+  return filtered.length > 0 ? filtered.join(" | ") : null;
+}
 
 function findColKey(record, ...candidates) {
   const keys = Object.keys(record || {});
@@ -85,23 +74,7 @@ function readCSV(filePath) {
     relax_column_count: true,
     bom: true,
   });
-  const headers = records.length ? Object.keys(records[0]) : [];
-  return { headers, rows: records };
-}
-
-function readExcel(filePath) {
-  const XLSX = require("xlsx");
-  const wb = XLSX.readFile(filePath);
-  const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-  const headers = raw[0] || [];
-  const rows = raw.slice(1).map((row) => {
-    const obj = {};
-    headers.forEach((h, i) => {
-      obj[h] = row[i] != null ? String(row[i]).trim() : "";
-    });
-    return obj;
-  });
-  return { headers, rows };
+  return { rows: records };
 }
 
 function parseDateDDMMYYYY(val) {
@@ -131,18 +104,6 @@ function mapViosStatus(viosStatus) {
   return "pendente";
 }
 
-function normalizeArea(area) {
-  const a = (area || "").trim();
-  const map = {
-    "Special Situations": "Distressed Deals - Special Situations",
-    "Civel": "Cível",
-    "Área Cível": "Cível",
-    "Área Trabalhista": "Trabalhista",
-    "Área Controladoria": "Operações Legais",
-  };
-  return map[a] || a || "Outros";
-}
-
 function findUserId(userList, name) {
   if (!name || !String(name).trim()) return null;
   const s = String(name).trim().toLowerCase().replace(/\s+/g, " ");
@@ -166,9 +127,7 @@ function rowToViosTask(record, userList) {
   if (!viosId) return null;
 
   const tarefaPai = getRecordVal(record, COL_NAMES.TAREFA_PAI);
-  const tarefaDetalhe = getRecordVal(record, COL_NAMES.TAREFA);
   if (tarefaPai !== VIOS_TASK_LABEL) return null;
-  const tarefa = tarefaPai;
 
   const responsaveisRaw = getRecordVal(record, COL_NAMES.RESPONSAVEIS) || getRecordVal(record, COL_NAMES.RESPONSAVEL_PROCESSO);
   const responsaveisBruto = responsaveisRaw.replace(/\s*\|\s*/g, " | ").trim();
@@ -189,10 +148,9 @@ function rowToViosTask(record, userList) {
     vios_id: viosId,
     ci_processo: getRecordVal(record, COL_NAMES.CI_PROCESSO) || null,
     area_processo: getRecordVal(record, COL_NAMES.AREA_PROCESSO) || null,
-    tarefa,
+    tarefa: tarefaPai,
     etiquetas_tarefa: getRecordVal(record, COL_NAMES.ETIQUETAS_TAREFA) || null,
     descricao: getRecordVal(record, COL_NAMES.DESCRICAO) || null,
-    comentarios: getRecordVal(record, COL_NAMES.COMENTARIOS) || null,
     historico: getRecordVal(record, COL_NAMES.HISTORICO) || null,
     data_limite: dataLimite,
     data_conclusao: dataConclusao,
@@ -207,44 +165,27 @@ function rowToViosTask(record, userList) {
   };
 }
 
-// IMPORTANTE: Promoção para o Planner NUNCA deve ser feita aqui.
-// Tarefas VIOS ficam APENAS em vios_tasks. Só vão ao Planner quando o usuário
-// clicar em "Enviar ao Planner" na aba Tarefas VIOS (promoteViosTaskToPlanner).
+/**
+ * Sincroniza o CSV para o Supabase.
+ * @param {string} csvPath - Caminho absoluto ou relativo do arquivo CSV
+ * @returns {Promise<{ inserted: number; updated: number; total: number }>}
+ */
+async function syncViosToSupabase(csvPath) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-async function main() {
-  const inputPath = process.argv[2] || path.join(__dirname, "..", "public", "tarefas-vios-amostra2.csv");
-  const resolved = path.isAbsolute(inputPath) ? inputPath : path.resolve(process.cwd(), inputPath);
+  if (!url || !key) {
+    throw new Error(`Configure .env com NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY`);
+  }
 
+  const resolved = path.isAbsolute(csvPath) ? csvPath : path.resolve(process.cwd(), csvPath);
   if (!fs.existsSync(resolved)) {
-    const fallback = path.join(__dirname, "..", "tarefas-vios-amostra2.csv");
-    if (fs.existsSync(fallback)) {
-      console.log("Usando fallback:", fallback);
-      return mainWithPath(fallback);
-    }
-    console.error("Arquivo não encontrado:", resolved);
-    process.exit(1);
+    throw new Error(`Arquivo não encontrado: ${resolved}`);
   }
 
-  await mainWithPath(resolved);
-}
+  const supabase = createClient(url, key);
 
-async function mainWithPath(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  let rows = [];
-
-  if (ext === ".csv") {
-    const { rows: rawRows } = readCSV(filePath);
-    rows = rawRows;
-  } else if (ext === ".xlsx" || ext === ".xls") {
-    const { rows: rawRows } = readExcel(filePath);
-    rows = rawRows;
-  } else {
-    console.error("Formato não suportado. Use .csv ou .xlsx");
-    process.exit(1);
-  }
-
-  console.log("Linhas lidas:", rows.length);
-
+  const { rows } = readCSV(resolved);
   const { data: users } = await supabase.from("users").select("id, name");
   const userList = users || [];
 
@@ -254,11 +195,8 @@ async function mainWithPath(filePath) {
     if (task) tasks.push(task);
   }
 
-  console.log("Tarefas filtradas (MATERIAL MARKETING - REELS/POST/ARTIGO):", tasks.length);
-
   if (tasks.length === 0) {
-    console.log("Nenhuma tarefa para importar.");
-    return;
+    return { inserted: 0, updated: 0, total: 0 };
   }
 
   const viosIds = tasks.map((t) => t.vios_id);
@@ -276,11 +214,12 @@ async function mainWithPath(filePath) {
     for (let i = 0; i < toInsert.length; i += BATCH) {
       const chunk = toInsert.slice(i, i + BATCH);
       const { error: inErr } = await supabase.from("vios_tasks").insert(chunk);
-      if (inErr) console.error("Erro ao inserir lote:", inErr);
+      if (inErr) throw new Error(`Erro ao inserir lote: ${inErr.message}`);
     }
   }
 
   for (const task of toUpdate) {
+    const existing = existingMap.get(task.vios_id);
     const { error: upErr } = await supabase
       .from("vios_tasks")
       .update({
@@ -289,7 +228,6 @@ async function mainWithPath(filePath) {
         tarefa: task.tarefa,
         etiquetas_tarefa: task.etiquetas_tarefa,
         descricao: task.descricao,
-        comentarios: task.comentarios,
         historico: task.historico,
         data_limite: task.data_limite,
         data_conclusao: task.data_conclusao,
@@ -300,18 +238,30 @@ async function mainWithPath(filePath) {
         usuario_concluiu: task.usuario_concluiu,
         imported_at: task.imported_at,
         updated_at: task.updated_at,
+        marketing_request_id: existing?.marketing_request_id ?? null,
       })
       .eq("vios_id", task.vios_id);
-    if (upErr) console.error("Erro ao atualizar vios_id", task.vios_id, upErr);
+    if (upErr) throw new Error(`Erro ao atualizar vios_id ${task.vios_id}: ${upErr.message}`);
   }
 
-  console.log("Inseridos:", toInsert.length, "Atualizados:", toUpdate.length);
-
-  // Promoção para o Planner é feita apenas pelo gatilho manual na aba "Tarefas VIOS".
-  console.log("Importação concluída.");
+  return { inserted: toInsert.length, updated: toUpdate.length, total: tasks.length };
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// CLI
+if (require.main === module) {
+  const csvPath = process.argv[2];
+  if (!csvPath) {
+    console.error("Uso: node sync-to-supabase.js <caminho-do-csv>");
+    process.exit(1);
+  }
+  syncViosToSupabase(csvPath)
+    .then((r) => {
+      console.log(`✅ Sync concluído: ${r.inserted} inseridos, ${r.updated} atualizados (${r.total} tarefas MATERIAL MARKETING)`);
+    })
+    .catch((err) => {
+      console.error("❌ Erro no sync:", err.message);
+      process.exit(1);
+    });
+}
+
+module.exports = { syncViosToSupabase };

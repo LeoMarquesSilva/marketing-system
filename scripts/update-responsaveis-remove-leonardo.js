@@ -20,10 +20,15 @@ const supabase = createClient(url, key);
 
 const NOME_ANALISTA_EXCLUIR = "Leonardo Marques Silva";
 
+function normalizeNameForCompare(name) {
+  return String(name || "").trim().replace(/\s+/g, " ");
+}
+
 function filterLeonardoFromResponsaveis(str) {
   if (!str?.trim()) return null;
+  const normalized = normalizeNameForCompare(NOME_ANALISTA_EXCLUIR);
   const parts = str.split(/\s*\|\s*/).map((p) => p.trim()).filter(Boolean);
-  const filtered = parts.filter((p) => p !== NOME_ANALISTA_EXCLUIR);
+  const filtered = parts.filter((p) => normalizeNameForCompare(p) !== normalized);
   return filtered.length > 0 ? filtered.join(" | ") : null;
 }
 
@@ -32,7 +37,7 @@ async function main() {
     .from("vios_tasks")
     .select("vios_id, responsaveis")
     .not("responsaveis", "is", null)
-    .ilike("responsaveis", `%${NOME_ANALISTA_EXCLUIR}%`);
+    .ilike("responsaveis", "%Leonardo%Marques%Silva%");
 
   if (fetchErr) {
     console.error("Erro ao buscar tarefas:", fetchErr.message);
