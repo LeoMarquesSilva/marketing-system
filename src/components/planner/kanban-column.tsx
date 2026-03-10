@@ -4,7 +4,10 @@ import { useDroppable } from "@dnd-kit/core";
 import { LucideIcon } from "lucide-react";
 import { KanbanCard } from "./kanban-card";
 import type { MarketingRequest } from "@/lib/marketing-requests";
-import type { CompletionTypeConfig } from "@/lib/app-settings";
+import type {
+  CompletionTypeConfig,
+  KanbanColumnWidth,
+} from "@/lib/app-settings";
 
 export type ColumnId =
   | "tarefas"
@@ -24,6 +27,8 @@ interface KanbanColumnProps {
   commentsCounts?: Record<string, number>;
   pendingAlterationsCounts?: Record<string, number>;
   completionTypes?: CompletionTypeConfig[];
+  columnWidth?: KanbanColumnWidth;
+  showTimeOnCards?: boolean;
 }
 
 export function KanbanColumn({
@@ -37,15 +42,18 @@ export function KanbanColumn({
   commentsCounts,
   pendingAlterationsCounts,
   completionTypes = [],
+  columnWidth = "fixed",
+  showTimeOnCards = true,
 }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id,
   });
+  const widthClass = columnWidth === "compact" ? "w-64" : "w-72";
 
   return (
     <div
       ref={setNodeRef}
-      className={`flex shrink-0 w-72 flex-col rounded-lg border bg-muted/30 transition-colors ${
+      className={`flex shrink-0 ${widthClass} flex-col rounded-lg border bg-muted/30 transition-colors ${
         isOver ? "ring-2 ring-primary ring-offset-2" : ""
       }`}
     >
@@ -63,7 +71,7 @@ export function KanbanColumn({
             request={request}
             onClick={() => onCardClick?.(request)}
             onMarkComplete={onMarkComplete}
-            timeTotal={timeTotals?.[request.id]}
+            timeTotal={showTimeOnCards ? timeTotals?.[request.id] : undefined}
             commentsCount={commentsCounts?.[request.id] ?? 0}
             pendingAlterationsCount={pendingAlterationsCounts?.[request.id] ?? 0}
             completionTypes={completionTypes}

@@ -162,6 +162,7 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
           workflowColumns={workflowColumns}
           completionTypes={appSettings.completionTypes}
           stageMoveRules={appSettings.stageMoveRules}
+          kanbanDisplayOptions={appSettings.kanbanDisplayOptions}
         />
       )}
       {activeTab === "concluidos" && (

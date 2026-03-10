@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import type { KanbanVisibility, StageMoveRules } from "@/lib/app-settings";
+import type {
+  KanbanVisibility,
+  StageMoveRules,
+  KanbanDisplayOptions,
+} from "@/lib/app-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +18,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const kanbanVisibility = body.kanbanVisibility as KanbanVisibility | undefined;
     const stageMoveRules = body.stageMoveRules as StageMoveRules | undefined;
+    const kanbanDisplayOptions = body.kanbanDisplayOptions as KanbanDisplayOptions | undefined;
     const accessToken = body.accessToken as string | undefined;
     const refreshToken = body.refreshToken as string | undefined;
 
@@ -68,6 +73,22 @@ export async function POST(request: Request) {
       );
     if (err2) {
       return NextResponse.json({ error: err2.message }, { status: 500 });
+    }
+
+    if (kanbanDisplayOptions != null && typeof kanbanDisplayOptions === "object") {
+      const { error: err3 } = await supabase
+        .from("app_settings")
+        .upsert(
+          {
+            key: "kanban_display_options",
+            value: kanbanDisplayOptions,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "key" }
+        );
+      if (err3) {
+        return NextResponse.json({ error: err3.message }, { status: 500 });
+      }
     }
 
     return NextResponse.json({ ok: true });

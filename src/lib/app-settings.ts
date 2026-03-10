@@ -31,12 +31,23 @@ export interface StageMoveRule {
 
 export type StageMoveRules = Record<string, StageMoveRule>;
 
+/** Opções de exibição do board Kanban (largura de coluna, ordenação, tempo nos cards) */
+export type KanbanColumnWidth = "fixed" | "compact";
+export type KanbanCardSort = "priority" | "deadline";
+
+export interface KanbanDisplayOptions {
+  columnWidth?: KanbanColumnWidth;
+  cardSort?: KanbanCardSort;
+  showTimeOnCards?: boolean;
+}
+
 export interface AppSettings {
   workflowStages: WorkflowStageConfig[];
   plannerTabs: PlannerTabId[];
   completionTypes: CompletionTypeConfig[];
   kanbanVisibility: KanbanVisibility;
   stageMoveRules: StageMoveRules;
+  kanbanDisplayOptions: KanbanDisplayOptions;
 }
 
 // --- Defaults (fallback when DB is empty or fails) ---
@@ -58,7 +69,13 @@ const DEFAULT_COMPLETION_TYPES: CompletionTypeConfig[] = COMPLETION_TYPES.map(
 const DEFAULT_KANBAN_VISIBILITY: KanbanVisibility = "designer_own_admin_all";
 
 const DEFAULT_STAGE_MOVE_RULES: StageMoveRules = {
-  revisao: { showArtLinkDialog: true, keepAssignee: false },
+  revisao: { showArtLinkDialog: true, keepAssignee: true },
+};
+
+const DEFAULT_KANBAN_DISPLAY_OPTIONS: KanbanDisplayOptions = {
+  columnWidth: "fixed",
+  cardSort: "priority",
+  showTimeOnCards: true,
 };
 
 function parseWorkflowStages(value: unknown): WorkflowStageConfig[] {
@@ -118,11 +135,29 @@ function parseStageMoveRules(value: unknown): StageMoveRules {
       const r = rule as Record<string, unknown>;
       out[stage] = {
         showArtLinkDialog: Boolean(r.showArtLinkDialog ?? true),
-        keepAssignee: Boolean(r.keepAssignee ?? false),
+        keepAssignee: Boolean(r.keepAssignee ?? true),
       };
     }
   }
   return Object.keys(out).length > 0 ? out : DEFAULT_STAGE_MOVE_RULES;
+}
+
+function parseKanbanDisplayOptions(value: unknown): KanbanDisplayOptions {
+  if (!value || typeof value !== "object") return DEFAULT_KANBAN_DISPLAY_OPTIONS;
+  const obj = value as Record<string, unknown>;
+  const columnWidth = obj.columnWidth as string | undefined;
+  const cardSort = obj.cardSort as string | undefined;
+  return {
+    columnWidth:
+      columnWidth === "compact" || columnWidth === "fixed"
+        ? columnWidth
+        : DEFAULT_KANBAN_DISPLAY_OPTIONS.columnWidth,
+    cardSort:
+      cardSort === "deadline" || cardSort === "priority"
+        ? cardSort
+        : DEFAULT_KANBAN_DISPLAY_OPTIONS.cardSort,
+    showTimeOnCards: Boolean(obj.showTimeOnCards ?? true),
+  };
 }
 
 /** Monta AppSettings a partir do mapa bruto (ex.: retorno da API). Usado pela rota POST /api/admin/settings. */
@@ -135,6 +170,7 @@ export async function parseAppSettingsFromMap(
     completionTypes: parseCompletionTypes(map?.get("completion_types")),
     kanbanVisibility: parseKanbanVisibility(map?.get("kanban_visibility")),
     stageMoveRules: parseStageMoveRules(map?.get("stage_move_rules")),
+    kanbanDisplayOptions: parseKanbanDisplayOptions(map?.get("kanban_display_options")),
   };
 }
 
@@ -169,6 +205,7 @@ export async function getAppSettingsUncached(): Promise<AppSettings> {
     completionTypes: parseCompletionTypes(map?.get("completion_types")),
     kanbanVisibility: parseKanbanVisibility(map?.get("kanban_visibility")),
     stageMoveRules: parseStageMoveRules(map?.get("stage_move_rules")),
+    kanbanDisplayOptions: parseKanbanDisplayOptions(map?.get("kanban_display_options")),
   };
 }
 
@@ -302,7 +339,8 @@ export async function updateCompletionTypes(
 
 export async function updateKanbanRules(
   kanbanVisibility: KanbanVisibility,
-  stageMoveRules: StageMoveRules
+  stageMoveRules: StageMoveRules,
+  kanbanDisplayOptions?: KanbanDisplayOptions
 ): Promise<{ error: string | null }> {
   const result = await ensureAdmin();
   if (result.error) return { error: result.error };
@@ -324,5 +362,19 @@ export async function updateKanbanRules(
       { onConflict: "key" }
     );
   if (err2) return { error: err2.message };
+
+  if (kanbanDisplayOptions != null) {
+    const { error: err3 } = await supabase
+      .from("app_settings")
+      .upsert(
+        {
+          key: "kanban_display_options",
+          value: kanbanDisplayOptions,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "key" }
+      );
+    if (err3) return { error: err3.message };
+  }
   return { error: null };
 }

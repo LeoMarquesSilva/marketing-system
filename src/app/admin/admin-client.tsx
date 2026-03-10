@@ -21,6 +21,9 @@ import type {
   CompletionTypeConfig,
   KanbanVisibility,
   StageMoveRules,
+  KanbanDisplayOptions,
+  KanbanColumnWidth,
+  KanbanCardSort,
 } from "@/lib/app-settings";
 import {
   updateWorkflowStages,
@@ -55,6 +58,12 @@ export function AdminClient({ initialSettings }: AdminClientProps) {
   const [stageMoveRules, setStageMoveRules] = useState<StageMoveRules>(
     initialSettings.stageMoveRules
   );
+  const [kanbanDisplayOptions, setKanbanDisplayOptions] =
+    useState<KanbanDisplayOptions>(initialSettings.kanbanDisplayOptions ?? {
+      columnWidth: "fixed",
+      cardSort: "priority",
+      showTimeOnCards: true,
+    });
 
   const [workflowError, setWorkflowError] = useState<string | null>(null);
   const [workflowSaving, setWorkflowSaving] = useState(false);
@@ -62,6 +71,8 @@ export function AdminClient({ initialSettings }: AdminClientProps) {
   const [plannerSaving, setPlannerSaving] = useState(false);
   const [kanbanRulesError, setKanbanRulesError] = useState<string | null>(null);
   const [kanbanRulesSaving, setKanbanRulesSaving] = useState(false);
+  type ConfigTab = "workflow" | "planner" | "kanban";
+  const [configTab, setConfigTab] = useState<ConfigTab>("workflow");
 
   const handleWorkflowStageChange = useCallback(
     (index: number, field: keyof WorkflowStageConfig, value: string | number | boolean) => {
@@ -133,13 +144,28 @@ export function AdminClient({ initialSettings }: AdminClientProps) {
     router.refresh();
   };
 
-  const revisaoRule = stageMoveRules.revisao ?? { showArtLinkDialog: true, keepAssignee: false };
-  const setRevisaoRule = (field: "showArtLinkDialog" | "keepAssignee", value: boolean) => {
-    setStageMoveRules((prev) => ({
-      ...prev,
-      revisao: { ...(prev.revisao ?? {}), [field]: value },
-    }));
-  };
+  const stagesWithRules = workflowStages.filter(
+    (s) => s.showInKanban && s.value !== "concluido"
+  );
+  const setStageRule = useCallback(
+    (stageValue: string, field: "showArtLinkDialog" | "keepAssignee", value: boolean) => {
+      setStageMoveRules((prev) => ({
+        ...prev,
+        [stageValue]: { ...(prev[stageValue] ?? {}), [field]: value },
+      }));
+    },
+    []
+  );
+  const getStageRule = useCallback(
+    (stageValue: string) => {
+      const r = stageMoveRules[stageValue];
+      return {
+        showArtLinkDialog: Boolean(r?.showArtLinkDialog ?? true),
+        keepAssignee: Boolean(r?.keepAssignee ?? true),
+      };
+    },
+    [stageMoveRules]
+  );
 
   const handleSaveKanbanRules = async () => {
     setKanbanRulesError(null);
@@ -158,6 +184,7 @@ export function AdminClient({ initialSettings }: AdminClientProps) {
         body: JSON.stringify({
           kanbanVisibility,
           stageMoveRules,
+          kanbanDisplayOptions,
           accessToken: session.access_token,
           refreshToken: session.refresh_token ?? undefined,
         }),
@@ -177,7 +204,33 @@ export function AdminClient({ initialSettings }: AdminClientProps) {
 
   return (
     <div className="space-y-6">
-      {/* Workflow (Kanban) */}
+      <div className="border-b border-border">
+        <nav className="flex gap-1" aria-label="Configurações">
+          {(
+            [
+              { id: "workflow" as ConfigTab, label: "Workflow" },
+              { id: "planner" as ConfigTab, label: "Planner" },
+              { id: "kanban" as ConfigTab, label: "Kanban" },
+            ] as const
+          ).map(({ id, label }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setConfigTab(id)}
+              className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
+                configTab === id
+                  ? "bg-muted text-foreground border border-b-0 border-border -mb-px"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+              }`}
+              aria-current={configTab === id ? "page" : undefined}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {configTab === "workflow" && (
       <Card>
         <CardHeader>
           <CardTitle>Workflow (Kanban)</CardTitle>
@@ -261,8 +314,9 @@ export function AdminClient({ initialSettings }: AdminClientProps) {
           </Button>
         </CardFooter>
       </Card>
+      )}
 
-      {/* Regras do Planner */}
+      {configTab === "planner" && (
       <Card>
         <CardHeader>
           <CardTitle>Regras do Planner</CardTitle>
@@ -350,13 +404,14 @@ export function AdminClient({ initialSettings }: AdminClientProps) {
           </Button>
         </CardFooter>
       </Card>
+      )}
 
-      {/* Regras do Kanban */}
+      {configTab === "kanban" && (
       <Card>
         <CardHeader>
           <CardTitle>Regras do Kanban</CardTitle>
           <CardDescription>
-            Quem vê as tarefas no board, diálogos ao mover entre etapas e se o responsável é mantido.
+            Quem vê as tarefas no board, diálogos ao mover entre etapas e se o atribuído (designer) é mantido ou trocado ao mover o card. Lembrete: <strong>Criado</strong> = quem criou a solicitação; <strong>Solicitante</strong> = quem solicitou o trabalho; <strong>Atribuído</strong> = designer responsável pela arte.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -396,28 +451,108 @@ export function AdminClient({ initialSettings }: AdminClientProps) {
           </div>
 
           <div>
-            <Label className="text-base font-semibold">Ao mover tarefa para Revisão</Label>
-            <p className="text-sm text-muted-foreground mb-2">
-              Comportamento do diálogo e do responsável ao arrastar para a etapa Revisão.
+            <Label className="text-base font-semibold">Regras ao mover tarefa (por etapa)</Label>
+            <p className="text-sm text-muted-foreground mb-3">
+              Ao arrastar um card para uma coluna: exigir link da arte (só Revisão) e se o <strong>atribuído</strong> (designer) deve ser mantido ou trocado pelo <strong>solicitante</strong> (não confundir com Criado).
             </p>
-            <div className="flex flex-col gap-2">
+            <div className="space-y-4">
+              {stagesWithRules.map((stage) => {
+                const rule = getStageRule(stage.value);
+                return (
+                  <div
+                    key={stage.value}
+                    className="rounded-lg border bg-muted/20 p-3 space-y-2"
+                  >
+                    <p className="text-sm font-medium text-foreground">
+                      Ao mover para {stage.label}
+                    </p>
+                    <div className="flex flex-col gap-2 pl-1">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={rule.showArtLinkDialog}
+                          onChange={(e) =>
+                            setStageRule(stage.value, "showArtLinkDialog", e.target.checked)
+                          }
+                          className="h-4 w-4 rounded border-input"
+                        />
+                        <span className="text-sm">Exigir link da arte (abrir diálogo antes de mover)</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={rule.keepAssignee}
+                          onChange={(e) =>
+                            setStageRule(stage.value, "keepAssignee", e.target.checked)
+                          }
+                          className="h-4 w-4 rounded border-input"
+                        />
+                        <span className="text-sm">Manter o atribuído (designer); desmarcado = o atribuído passa a ser o solicitante</span>
+                      </label>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-base font-semibold">Exibição do board</Label>
+            <p className="text-sm text-muted-foreground mb-2">
+              Largura das colunas, ordenação dos cards e exibição de tempo.
+            </p>
+            <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+              <div>
+                <Label className="text-sm text-muted-foreground">Largura das colunas</Label>
+                <div className="flex gap-4 mt-1">
+                  {(["fixed", "compact"] as KanbanColumnWidth[]).map((w) => (
+                    <label key={w} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="columnWidth"
+                        checked={kanbanDisplayOptions.columnWidth === w}
+                        onChange={() =>
+                          setKanbanDisplayOptions((prev) => ({ ...prev, columnWidth: w }))
+                        }
+                        className="h-4 w-4"
+                      />
+                      <span className="text-sm">{w === "fixed" ? "Padrão (288px)" : "Compacto (256px)"}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <Label className="text-sm text-muted-foreground">Ordenação dos cards na coluna</Label>
+                <div className="flex gap-4 mt-1">
+                  {(["priority", "deadline"] as KanbanCardSort[]).map((s) => (
+                    <label key={s} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="cardSort"
+                        checked={kanbanDisplayOptions.cardSort === s}
+                        onChange={() =>
+                          setKanbanDisplayOptions((prev) => ({ ...prev, cardSort: s }))
+                        }
+                        className="h-4 w-4"
+                      />
+                      <span className="text-sm">{s === "priority" ? "Prioridade" : "Prazo"}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={revisaoRule.showArtLinkDialog}
-                  onChange={(e) => setRevisaoRule("showArtLinkDialog", e.target.checked)}
+                  checked={Boolean(kanbanDisplayOptions.showTimeOnCards ?? true)}
+                  onChange={(e) =>
+                    setKanbanDisplayOptions((prev) => ({
+                      ...prev,
+                      showTimeOnCards: e.target.checked,
+                    }))
+                  }
                   className="h-4 w-4 rounded border-input"
                 />
-                <span className="text-sm">Exigir link da arte (abrir diálogo antes de mover)</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={revisaoRule.keepAssignee}
-                  onChange={(e) => setRevisaoRule("keepAssignee", e.target.checked)}
-                  className="h-4 w-4 rounded border-input"
-                />
-                <span className="text-sm">Manter responsável (não trocar para o solicitante ao mover para Revisão)</span>
+                <span className="text-sm">Exibir tempo registrado nos cards</span>
               </label>
             </div>
           </div>
@@ -428,6 +563,7 @@ export function AdminClient({ initialSettings }: AdminClientProps) {
           </Button>
         </CardFooter>
       </Card>
+      )}
     </div>
   );
 }

@@ -35,7 +35,11 @@ import {
 } from "@/lib/marketing-requests";
 import { logActivity } from "@/lib/activity-log";
 import { useAuth } from "@/contexts/auth-context";
-import type { CompletionTypeConfig, StageMoveRules } from "@/lib/app-settings";
+import type {
+  CompletionTypeConfig,
+  StageMoveRules,
+  KanbanDisplayOptions,
+} from "@/lib/app-settings";
 
 const DEFAULT_WORKFLOW_COLUMNS: { id: ColumnId; title: string; icon: LucideIcon }[] = [
   { id: "tarefas", title: "Tarefas", icon: ClipboardList },
@@ -67,17 +71,31 @@ interface KanbanBoardProps {
   workflowColumns?: WorkflowColumnConfig[];
   completionTypes?: CompletionTypeConfig[];
   stageMoveRules?: StageMoveRules;
+  kanbanDisplayOptions?: KanbanDisplayOptions;
 }
 
 const PRIORITY_ORDER: Record<string, number> = { urgente: 0, alta: 1, normal: 2, baixa: 3 };
 
 function getRequestsForColumn(
   requests: MarketingRequest[],
-  columnId: string
+  columnId: string,
+  cardSort: "priority" | "deadline" = "priority"
 ): MarketingRequest[] {
-  return requests
-    .filter((r) => (r.workflow_stage || "tarefas") === columnId)
-    .sort((a, b) => (PRIORITY_ORDER[a.priority ?? "normal"] ?? 2) - (PRIORITY_ORDER[b.priority ?? "normal"] ?? 2));
+  const filtered = requests.filter(
+    (r) => (r.workflow_stage || "tarefas") === columnId
+  );
+  if (cardSort === "deadline") {
+    return filtered.sort((a, b) => {
+      const aDead = a.deadline ? new Date(a.deadline).getTime() : Infinity;
+      const bDead = b.deadline ? new Date(b.deadline).getTime() : Infinity;
+      return aDead - bDead;
+    });
+  }
+  return filtered.sort(
+    (a, b) =>
+      (PRIORITY_ORDER[a.priority ?? "normal"] ?? 2) -
+      (PRIORITY_ORDER[b.priority ?? "normal"] ?? 2)
+  );
 }
 
 export function KanbanBoard({
@@ -91,8 +109,21 @@ export function KanbanBoard({
   workflowColumns: workflowColumnsProp,
   completionTypes = [],
   stageMoveRules = {},
+  kanbanDisplayOptions = {},
 }: KanbanBoardProps) {
-  const revisaoRule = stageMoveRules.revisao ?? { showArtLinkDialog: true, keepAssignee: false };
+  const displayOpts = {
+    columnWidth: kanbanDisplayOptions.columnWidth ?? "fixed",
+    cardSort: kanbanDisplayOptions.cardSort ?? "priority",
+    showTimeOnCards: kanbanDisplayOptions.showTimeOnCards ?? true,
+  };
+  const getStageRule = useCallback(
+    (stageId: string) =>
+      stageMoveRules[stageId] ?? {
+        showArtLinkDialog: true,
+        keepAssignee: true,
+      },
+    [stageMoveRules]
+  );
   const columns = useMemo(() => {
     if (workflowColumnsProp && workflowColumnsProp.length > 0) {
       return workflowColumnsProp.map((col) => ({
@@ -111,6 +142,7 @@ export function KanbanBoard({
   const [revisaoArtLink, setRevisaoArtLink] = useState("");
   const [isSubmittingRevisao, setIsSubmittingRevisao] = useState(false);
   const { profile } = useAuth();
+  const revisaoRule = getStageRule("revisao");
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -172,22 +204,23 @@ export function KanbanBoard({
       }
 
       const prevStage = (request.workflow_stage || "tarefas") as string;
+      const targetRule = getStageRule(targetColumnId);
 
-      if (targetColumnId === "revisao" && revisaoRule.showArtLinkDialog) {
+      if (targetColumnId === "revisao" && targetRule.showArtLinkDialog) {
         setActiveRequest(null);
         setRevisaoArtLink(request.art_link ?? "");
         setPendingMoveToRevisao({ request, prevStage });
         return;
       }
 
-      if (targetColumnId === "revisao" && !revisaoRule.showArtLinkDialog) {
+      if (targetColumnId === "revisao" && !targetRule.showArtLinkDialog) {
         setActiveRequest(null);
         const artLink = request.art_link ?? null;
         const updatePayload: Parameters<typeof updateMarketingRequest>[1] = {
           workflow_stage: "revisao",
           art_link: artLink,
         };
-        if (!revisaoRule.keepAssignee) {
+        if (!targetRule.keepAssignee) {
           updatePayload.assignee_id = request.solicitante_id ?? undefined;
           updatePayload.assignee = request.solicitante ?? null;
         }
@@ -205,13 +238,26 @@ export function KanbanBoard({
         | "revisao"
         | "revisado"
         | "revisao_autor";
-      const { error } = await updateWorkflowStage(requestId, stage);
-      if (!error) {
-        logActivity(requestId, "stage_changed", prevStage, stage, profile?.id ?? null, profile?.name ?? null);
-        onRefresh();
+      if (!targetRule.keepAssignee && (request.solicitante_id ?? request.solicitante)) {
+        const updatePayload: Parameters<typeof updateMarketingRequest>[1] = {
+          workflow_stage: stage,
+          assignee_id: request.solicitante_id ?? undefined,
+          assignee: request.solicitante ?? null,
+        };
+        const { error } = await updateMarketingRequest(request.id, updatePayload);
+        if (!error) {
+          logActivity(requestId, "stage_changed", prevStage, stage, profile?.id ?? null, profile?.name ?? null);
+          onRefresh();
+        }
+      } else {
+        const { error } = await updateWorkflowStage(requestId, stage);
+        if (!error) {
+          logActivity(requestId, "stage_changed", prevStage, stage, profile?.id ?? null, profile?.name ?? null);
+          onRefresh();
+        }
       }
     },
-    [requests, onRefresh, resolveTargetColumn, profile?.id, profile?.name, revisaoRule]
+    [requests, onRefresh, resolveTargetColumn, profile?.id, profile?.name, getStageRule]
   );
 
   const handleConfirmMoveToRevisao = useCallback(async () => {
@@ -256,13 +302,15 @@ export function KanbanBoard({
               id={col.id}
               title={col.title}
               icon={col.icon}
-              requests={getRequestsForColumn(requests, col.id)}
+              requests={getRequestsForColumn(requests, col.id, displayOpts.cardSort)}
               onCardClick={handleCardClick}
               onMarkComplete={onMarkComplete}
               timeTotals={timeTotals}
               commentsCounts={commentsCounts}
               pendingAlterationsCounts={pendingAlterationsCounts}
               completionTypes={completionTypes}
+              columnWidth={displayOpts.columnWidth}
+              showTimeOnCards={displayOpts.showTimeOnCards}
             />
           ))}
         </div>
@@ -284,7 +332,7 @@ export function KanbanBoard({
           <DialogHeader>
             <DialogTitle>Enviar para revisão</DialogTitle>
             <DialogDescription>
-              Informe o link da arte para o revisor acessar. O responsável desta tarefa passará a ser o solicitante (revisor).
+              Informe o link da arte para o revisor acessar. Conforme a configuração do Kanban, o atribuído (designer) pode ser mantido ou trocado pelo solicitante (revisor).
             </DialogDescription>
           </DialogHeader>
           {pendingMoveToRevisao && (
