@@ -1,16 +1,16 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Reduz tempo de compilação ao importar só o que é usado desses pacotes
-  optimizePackageImports: [
-    "lucide-react",
-    "recharts",
-    "date-fns",
-    "@radix-ui/react-select",
-    "@radix-ui/react-dialog",
-    "@radix-ui/react-popover",
-    "@radix-ui/react-label",
-  ],
+  // lucide-react, recharts e date-fns já são otimizados por padrão no Next.js 16.
+  // Radix: usar experimental.optimizePackageImports (tipagem pode não incluir; cast abaixo).
+  experimental: {
+    optimizePackageImports: [
+      "@radix-ui/react-select",
+      "@radix-ui/react-dialog",
+      "@radix-ui/react-popover",
+      "@radix-ui/react-label",
+    ],
+  } as NextConfig["experimental"],
 };
 
 export default nextConfig;
