@@ -15,6 +15,7 @@ import {
 import { getAreaIcon } from "@/lib/area-icons";
 import { getTypeColor } from "@/lib/type-icons";
 import { COMPLETION_TYPES } from "@/lib/constants";
+import type { CompletionTypeConfig } from "@/lib/app-settings";
 import type { MarketingRequest } from "@/lib/marketing-requests";
 import { format, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -45,10 +46,17 @@ const COMPLETION_CONFIG: Record<string, { label: string; className: string; dotC
 interface CompletedCardProps {
   req: MarketingRequest;
   onClick?: () => void;
+  completionTypes?: CompletionTypeConfig[];
 }
 
-function CompletedCard({ req, onClick }: CompletedCardProps) {
-  const completion = req.completion_type ? COMPLETION_CONFIG[req.completion_type] : null;
+function CompletedCard({ req, onClick, completionTypes }: CompletedCardProps) {
+  const configStyle = req.completion_type ? COMPLETION_CONFIG[req.completion_type] : null;
+  const labelFromSettings = completionTypes?.find((c) => c.value === req.completion_type)?.label;
+  const completion = configStyle
+    ? configStyle
+    : labelFromSettings
+      ? { label: labelFromSettings, className: "bg-muted text-muted-foreground", dotClass: "bg-muted-foreground" }
+      : null;
   const solicitante = req.solicitante_user?.name ?? req.solicitante;
   const designer = req.assignee_user?.name ?? req.assignee;
   const daysToDeliver = req.delivered_at
@@ -170,9 +178,11 @@ function CompletedCard({ req, onClick }: CompletedCardProps) {
 interface ConcluidosTabProps {
   requests: MarketingRequest[];
   onCardClick?: (request: MarketingRequest) => void;
+  completionTypes?: CompletionTypeConfig[];
 }
 
-export function ConcluidosTab({ requests, onCardClick }: ConcluidosTabProps) {
+export function ConcluidosTab({ requests, onCardClick, completionTypes }: ConcluidosTabProps) {
+  const completionOptions = completionTypes?.length ? completionTypes : COMPLETION_TYPES.map((c) => ({ value: c.value, label: c.label }));
   const [search, setSearch] = useState("");
   const [completionFilter, setCompletionFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
@@ -236,7 +246,7 @@ export function ConcluidosTab({ requests, onCardClick }: ConcluidosTabProps) {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos os tipos</SelectItem>
-            {COMPLETION_TYPES.map((t) => (
+            {completionOptions.map((t) => (
               <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
             ))}
           </SelectContent>
@@ -303,6 +313,7 @@ export function ConcluidosTab({ requests, onCardClick }: ConcluidosTabProps) {
                   key={req.id}
                   req={req}
                   onClick={() => onCardClick?.(req)}
+                  completionTypes={completionOptions}
                 />
               ))}
             </div>

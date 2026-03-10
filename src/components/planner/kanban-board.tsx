@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   DndContext,
   DragEndEvent,
@@ -15,6 +15,7 @@ import {
   Eye,
   CheckCircle,
   UserCheck,
+  LayoutGrid,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -34,13 +35,26 @@ import {
 } from "@/lib/marketing-requests";
 import { logActivity } from "@/lib/activity-log";
 import { useAuth } from "@/contexts/auth-context";
+import type { CompletionTypeConfig, StageMoveRules } from "@/lib/app-settings";
 
-const WORKFLOW_COLUMNS: { id: ColumnId; title: string; icon: LucideIcon }[] = [
+const DEFAULT_WORKFLOW_COLUMNS: { id: ColumnId; title: string; icon: LucideIcon }[] = [
   { id: "tarefas", title: "Tarefas", icon: ClipboardList },
   { id: "revisao", title: "Revisão", icon: Eye },
   { id: "revisado", title: "Revisado", icon: CheckCircle },
   { id: "revisao_autor", title: "Revisão autor", icon: UserCheck },
 ];
+
+const STAGE_ICONS: Record<string, LucideIcon> = {
+  tarefas: ClipboardList,
+  revisao: Eye,
+  revisado: CheckCircle,
+  revisao_autor: UserCheck,
+};
+
+interface WorkflowColumnConfig {
+  id: string;
+  title: string;
+}
 
 interface KanbanBoardProps {
   requests: MarketingRequest[];
@@ -50,21 +64,45 @@ interface KanbanBoardProps {
   timeTotals?: Record<string, string>;
   commentsCounts?: Record<string, number>;
   pendingAlterationsCounts?: Record<string, number>;
+  workflowColumns?: WorkflowColumnConfig[];
+  completionTypes?: CompletionTypeConfig[];
+  stageMoveRules?: StageMoveRules;
 }
 
 const PRIORITY_ORDER: Record<string, number> = { urgente: 0, alta: 1, normal: 2, baixa: 3 };
 
 function getRequestsForColumn(
   requests: MarketingRequest[],
-  columnId: ColumnId
+  columnId: string
 ): MarketingRequest[] {
-  const stage = columnId as "tarefas" | "revisao" | "revisado" | "revisao_autor";
   return requests
-    .filter((r) => (r.workflow_stage || "tarefas") === stage)
+    .filter((r) => (r.workflow_stage || "tarefas") === columnId)
     .sort((a, b) => (PRIORITY_ORDER[a.priority ?? "normal"] ?? 2) - (PRIORITY_ORDER[b.priority ?? "normal"] ?? 2));
 }
 
-export function KanbanBoard({ requests, onRefresh, onCardClick, onMarkComplete, timeTotals, commentsCounts, pendingAlterationsCounts }: KanbanBoardProps) {
+export function KanbanBoard({
+  requests,
+  onRefresh,
+  onCardClick,
+  onMarkComplete,
+  timeTotals,
+  commentsCounts,
+  pendingAlterationsCounts,
+  workflowColumns: workflowColumnsProp,
+  completionTypes = [],
+  stageMoveRules = {},
+}: KanbanBoardProps) {
+  const revisaoRule = stageMoveRules.revisao ?? { showArtLinkDialog: true, keepAssignee: false };
+  const columns = useMemo(() => {
+    if (workflowColumnsProp && workflowColumnsProp.length > 0) {
+      return workflowColumnsProp.map((col) => ({
+        id: col.id as ColumnId,
+        title: col.title,
+        icon: STAGE_ICONS[col.id] ?? LayoutGrid,
+      }));
+    }
+    return DEFAULT_WORKFLOW_COLUMNS;
+  }, [workflowColumnsProp]);
   const [activeRequest, setActiveRequest] = useState<MarketingRequest | null>(null);
   const [pendingMoveToRevisao, setPendingMoveToRevisao] = useState<{
     request: MarketingRequest;
@@ -99,15 +137,17 @@ export function KanbanBoard({ requests, onRefresh, onCardClick, onMarkComplete, 
     return (req.workflow_stage || "tarefas") as ColumnId;
   }, []);
 
+  const columnIds = useMemo(() => columns.map((c) => c.id), [columns]);
+
   const resolveTargetColumn = useCallback(
     (overId: string): ColumnId | null => {
-      if (["tarefas", "revisao", "revisado", "revisao_autor"].includes(overId)) {
+      if (columnIds.includes(overId as ColumnId)) {
         return overId as ColumnId;
       }
       const req = requests.find((r) => r.id === overId);
       return req ? getColumnForRequest(req) : null;
     },
-    [requests, getColumnForRequest]
+    [requests, getColumnForRequest, columnIds]
   );
 
   const handleDragEnd = useCallback(
@@ -133,10 +173,29 @@ export function KanbanBoard({ requests, onRefresh, onCardClick, onMarkComplete, 
 
       const prevStage = (request.workflow_stage || "tarefas") as string;
 
-      if (targetColumnId === "revisao") {
+      if (targetColumnId === "revisao" && revisaoRule.showArtLinkDialog) {
         setActiveRequest(null);
         setRevisaoArtLink(request.art_link ?? "");
         setPendingMoveToRevisao({ request, prevStage });
+        return;
+      }
+
+      if (targetColumnId === "revisao" && !revisaoRule.showArtLinkDialog) {
+        setActiveRequest(null);
+        const artLink = request.art_link ?? null;
+        const updatePayload: Parameters<typeof updateMarketingRequest>[1] = {
+          workflow_stage: "revisao",
+          art_link: artLink,
+        };
+        if (!revisaoRule.keepAssignee) {
+          updatePayload.assignee_id = request.solicitante_id ?? undefined;
+          updatePayload.assignee = request.solicitante ?? null;
+        }
+        const { error } = await updateMarketingRequest(request.id, updatePayload);
+        if (!error) {
+          logActivity(request.id, "stage_changed", prevStage, "revisao", profile?.id ?? null, profile?.name ?? null);
+          onRefresh();
+        }
         return;
       }
 
@@ -152,7 +211,7 @@ export function KanbanBoard({ requests, onRefresh, onCardClick, onMarkComplete, 
         onRefresh();
       }
     },
-    [requests, onRefresh, resolveTargetColumn, profile?.id, profile?.name]
+    [requests, onRefresh, resolveTargetColumn, profile?.id, profile?.name, revisaoRule]
   );
 
   const handleConfirmMoveToRevisao = useCallback(async () => {
@@ -160,12 +219,15 @@ export function KanbanBoard({ requests, onRefresh, onCardClick, onMarkComplete, 
     const { request, prevStage } = pendingMoveToRevisao;
     setIsSubmittingRevisao(true);
     const artLink = revisaoArtLink.trim() || null;
-    const { error } = await updateMarketingRequest(request.id, {
+    const payload: Parameters<typeof updateMarketingRequest>[1] = {
       workflow_stage: "revisao",
       art_link: artLink,
-      assignee_id: request.solicitante_id,
-      assignee: request.solicitante ?? null,
-    });
+    };
+    if (!revisaoRule.keepAssignee) {
+      payload.assignee_id = request.solicitante_id ?? undefined;
+      payload.assignee = request.solicitante ?? null;
+    }
+    const { error } = await updateMarketingRequest(request.id, payload);
     setIsSubmittingRevisao(false);
     setPendingMoveToRevisao(null);
     setRevisaoArtLink("");
@@ -173,7 +235,7 @@ export function KanbanBoard({ requests, onRefresh, onCardClick, onMarkComplete, 
       logActivity(request.id, "stage_changed", prevStage, "revisao", profile?.id ?? null, profile?.name ?? null);
       onRefresh();
     }
-  }, [pendingMoveToRevisao, revisaoArtLink, profile?.id, profile?.name, onRefresh]);
+  }, [pendingMoveToRevisao, revisaoArtLink, revisaoRule.keepAssignee, profile?.id, profile?.name, onRefresh]);
 
   const handleCancelMoveToRevisao = useCallback(() => {
     setPendingMoveToRevisao(null);
@@ -188,7 +250,7 @@ export function KanbanBoard({ requests, onRefresh, onCardClick, onMarkComplete, 
         onDragEnd={handleDragEnd}
       >
         <div className="flex gap-4 overflow-x-auto pb-4 min-h-[500px]">
-          {WORKFLOW_COLUMNS.map((col) => (
+          {columns.map((col) => (
             <KanbanColumn
               key={col.id}
               id={col.id}
@@ -200,6 +262,7 @@ export function KanbanBoard({ requests, onRefresh, onCardClick, onMarkComplete, 
               timeTotals={timeTotals}
               commentsCounts={commentsCounts}
               pendingAlterationsCounts={pendingAlterationsCounts}
+              completionTypes={completionTypes}
             />
           ))}
         </div>

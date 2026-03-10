@@ -4,6 +4,7 @@ import { useDroppable } from "@dnd-kit/core";
 import { LucideIcon } from "lucide-react";
 import { KanbanCard } from "./kanban-card";
 import type { MarketingRequest } from "@/lib/marketing-requests";
+import type { CompletionTypeConfig } from "@/lib/app-settings";
 
 export type ColumnId =
   | "tarefas"
@@ -22,6 +23,7 @@ interface KanbanColumnProps {
   timeTotals?: Record<string, string>;
   commentsCounts?: Record<string, number>;
   pendingAlterationsCounts?: Record<string, number>;
+  completionTypes?: CompletionTypeConfig[];
 }
 
 export function KanbanColumn({
@@ -34,6 +36,7 @@ export function KanbanColumn({
   timeTotals,
   commentsCounts,
   pendingAlterationsCounts,
+  completionTypes = [],
 }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id,
@@ -63,6 +66,7 @@ export function KanbanColumn({
             timeTotal={timeTotals?.[request.id]}
             commentsCount={commentsCounts?.[request.id] ?? 0}
             pendingAlterationsCount={pendingAlterationsCounts?.[request.id] ?? 0}
+            completionTypes={completionTypes}
           />
         ))}
       </div>

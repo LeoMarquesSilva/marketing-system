@@ -20,6 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 import { getAreaIcon } from "@/lib/area-icons";
 import { WORKFLOW_STAGES, COMPLETION_TYPES } from "@/lib/constants";
+import type { CompletionTypeConfig } from "@/lib/app-settings";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { MarketingRequest } from "@/lib/marketing-requests";
@@ -70,6 +71,7 @@ interface KanbanCardDetailProps {
   onOpenChange: (open: boolean) => void;
   onRefresh?: () => void;
   designers?: User[];
+  completionTypes?: CompletionTypeConfig[];
 }
 
 export function KanbanCardDetail({
@@ -78,7 +80,11 @@ export function KanbanCardDetail({
   onOpenChange,
   onRefresh,
   designers = [],
+  completionTypes,
 }: KanbanCardDetailProps) {
+  const completionOptions = completionTypes?.length
+    ? completionTypes
+    : COMPLETION_TYPES.map((c) => ({ value: c.value, label: c.label }));
   const { profile } = useAuth();
   const timer = useTimer();
   const [completionType, setCompletionType] = useState<string>("");
@@ -985,7 +991,7 @@ export function KanbanCardDetail({
                     <SelectValue placeholder="Tipo de conclusão" />
                   </SelectTrigger>
                   <SelectContent>
-                    {COMPLETION_TYPES.map((t) => (
+                    {completionOptions.map((t) => (
                       <SelectItem key={t.value} value={t.value}>
                         {t.label}
                       </SelectItem>

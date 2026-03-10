@@ -266,8 +266,8 @@ export function ChartTimesheet() {
                 </button>
               )}
             </div>
-            <div className="h-[200px]">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[200px] min-h-[200px] w-full min-w-0">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
                 <BarChart
                   data={byUser}
                   layout="vertical"
@@ -322,8 +322,8 @@ export function ChartTimesheet() {
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Tendência diária (14 dias)
           </p>
-          <div className="h-[200px]">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-[200px] min-h-[200px] w-full min-w-0">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>
               <AreaChart
                 data={dailyTrend}
                 margin={{ left: 0, right: 8, top: 4, bottom: 4 }}

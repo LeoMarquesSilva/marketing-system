@@ -11,6 +11,7 @@ import {
   Columns3,
   ClipboardList,
   LogOut,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -18,7 +19,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { fetchCommentStats } from "@/lib/request-comments";
 import { fetchMarketingRequests } from "@/lib/marketing-requests";
 
-const navItems = [
+const baseNavItems = [
   { href: "/", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/planner", icon: Columns3, label: "Planner" },
   { href: "/solicitacoes", icon: List, label: "Solicitações" },
@@ -26,6 +27,8 @@ const navItems = [
   { href: "/vincular-solicitantes", icon: Link2, label: "Vincular Solicitantes" },
   { href: "/usuarios", icon: Users, label: "Usuários" },
 ];
+
+const adminNavItem = { href: "/admin", icon: Settings, label: "Configurações" };
 
 function getInitials(name: string) {
   return name
@@ -93,7 +96,7 @@ export function Sidebar() {
 
       {/* Nav items */}
       <nav className="flex flex-1 flex-col items-center gap-1 w-full px-3" aria-label="Navegação principal">
-        {navItems.map((item) => {
+        {[...baseNavItems, ...(profile?.role === "admin" ? [adminNavItem] : [])].map((item) => {
           const isActive =
             pathname === item.href ||
             (item.href !== "/" && pathname.startsWith(item.href));
@@ -187,7 +190,7 @@ export function Sidebar() {
 
     {/* Mobile bottom navigation */}
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around bg-gradient-to-r from-[#101f2e] to-[#0a141c] border-t border-white/[0.06] h-16 px-2 shadow-[0_-4px_20px_rgba(0,0,0,0.2)]">
-      {navItems.slice(0, 5).map((item) => {
+      {[...baseNavItems, ...(profile?.role === "admin" ? [adminNavItem] : [])].slice(0, 5).map((item) => {
         const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href + "/"));
         return (
           <Link

@@ -9,22 +9,50 @@ import { NewRequestDialog } from "@/components/planner/new-request-dialog";
 import type { MarketingRequest } from "@/lib/marketing-requests";
 import { updateMarketingRequest } from "@/lib/marketing-requests";
 import type { User } from "@/lib/users";
+import type { AppSettings } from "@/lib/app-settings";
 import { Button } from "@/components/ui/button";
-import { LayoutGrid, CheckCircle2, PlusCircle } from "lucide-react";
+import { LayoutGrid, CheckCircle2, PlusCircle, Share2 } from "lucide-react";
+import { PostsTab } from "@/components/planner/posts-tab";
 import { useAuth } from "@/contexts/auth-context";
 import { fetchTimeTotalsByRequest } from "@/lib/time-entries";
 import { fetchCommentStats } from "@/lib/request-comments";
+
+const TAB_ICONS = {
+  kanban: LayoutGrid,
+  concluidos: CheckCircle2,
+  posts: Share2,
+} as const;
 
 interface PlannerClientProps {
   initialRequests: MarketingRequest[];
   designers: User[];
   users: User[];
+  appSettings: AppSettings;
 }
 
-export function PlannerClient({ initialRequests, designers, users }: PlannerClientProps) {
+export function PlannerClient({ initialRequests, designers, users, appSettings }: PlannerClientProps) {
   const router = useRouter();
   const { profile } = useAuth();
-  const [activeTab, setActiveTab] = useState<"kanban" | "concluidos">("kanban");
+  const enabledTabs = appSettings.plannerTabs;
+  const firstTab = enabledTabs[0] ?? "kanban";
+  const [activeTab, setActiveTab] = useState<"kanban" | "concluidos" | "posts">(firstTab);
+
+  useEffect(() => {
+    if (!enabledTabs.includes(activeTab)) {
+      setActiveTab(firstTab);
+    }
+  }, [enabledTabs, activeTab, firstTab]);
+
+  const workflowColumns = useMemo(() => {
+    return appSettings.workflowStages
+      .filter((s) => s.showInKanban)
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((s) => ({
+        id: s.value,
+        title: s.label,
+      }));
+  }, [appSettings.workflowStages]);
+
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [newRequestOpen, setNewRequestOpen] = useState(false);
@@ -33,13 +61,16 @@ export function PlannerClient({ initialRequests, designers, users }: PlannerClie
   const [pendingAlterationsCounts, setPendingAlterationsCounts] = useState<Record<string, number>>({});
 
   const requests = useMemo(() => {
+    if (appSettings.kanbanVisibility === "everyone_all") {
+      return initialRequests;
+    }
     const r = (profile?.role ?? "").toLowerCase();
     const isDesigner = r === "designer" || profile?.department === "Marketing";
     if (isDesigner && profile?.id) {
       return initialRequests.filter((req) => req.assignee_id === profile.id);
     }
     return initialRequests;
-  }, [initialRequests, profile]);
+  }, [initialRequests, profile, appSettings.kanbanVisibility]);
 
   useEffect(() => {
     if (!profile?.id || requests.length === 0) return;
@@ -88,34 +119,30 @@ export function PlannerClient({ initialRequests, designers, users }: PlannerClie
     if (!error) handleRefresh();
   };
 
+  const tabLabels = { kanban: "Kanban", concluidos: "Concluídos", posts: "Posts" } as const;
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex gap-2 border-b flex-1">
-        <button
-          type="button"
-          onClick={() => setActiveTab("kanban")}
-          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-            activeTab === "kanban"
-              ? "border-primary text-primary"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <LayoutGrid className="h-4 w-4" />
-          Kanban
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("concluidos")}
-          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-            activeTab === "concluidos"
-              ? "border-primary text-primary"
-              : "border-transparent text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <CheckCircle2 className="h-4 w-4" />
-          Concluídos
-        </button>
+          {enabledTabs.map((tab) => {
+            const Icon = TAB_ICONS[tab];
+            return (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                  activeTab === tab
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {tabLabels[tab]}
+              </button>
+            );
+          })}
         </div>
         <Button onClick={() => setNewRequestOpen(true)}>
           <PlusCircle className="h-4 w-4 mr-2" />
@@ -132,10 +159,20 @@ export function PlannerClient({ initialRequests, designers, users }: PlannerClie
           timeTotals={timeTotals}
           commentsCounts={commentsCounts}
           pendingAlterationsCounts={pendingAlterationsCounts}
+          workflowColumns={workflowColumns}
+          completionTypes={appSettings.completionTypes}
+          stageMoveRules={appSettings.stageMoveRules}
         />
       )}
       {activeTab === "concluidos" && (
         <ConcluidosTab
+          requests={requests}
+          onCardClick={handleCardClick}
+          completionTypes={appSettings.completionTypes}
+        />
+      )}
+      {activeTab === "posts" && (
+        <PostsTab
           requests={requests}
           onCardClick={handleCardClick}
         />
@@ -147,6 +184,7 @@ export function PlannerClient({ initialRequests, designers, users }: PlannerClie
         onOpenChange={setDetailOpen}
         onRefresh={handleRefresh}
         designers={designers}
+        completionTypes={appSettings.completionTypes}
       />
 
       <NewRequestDialog

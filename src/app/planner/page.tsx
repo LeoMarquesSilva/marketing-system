@@ -1,6 +1,9 @@
 import { unstable_cache } from "next/cache";
+import { createClient } from "@/utils/supabase/server";
+import { fetchMarketingRequests } from "@/lib/marketing-requests";
 import { fetchMarketingRequestsForAuth } from "@/lib/marketing-requests-server";
 import { fetchActiveUsers, fetchDesigners } from "@/lib/users";
+import { getAppSettingsUncached } from "@/lib/app-settings";
 import { PlannerClient } from "./planner-client";
 
 export const dynamic = "force-dynamic";
@@ -18,11 +21,16 @@ const getCachedUsers = unstable_cache(
 );
 
 export default async function PlannerPage() {
-  const [requests, designers, users] = await Promise.all([
-    fetchMarketingRequestsForAuth(),
+  const [designers, users, appSettings] = await Promise.all([
     getCachedDesigners(),
     getCachedUsers(),
+    getAppSettingsUncached(),
   ]);
+
+  const requests =
+    appSettings.kanbanVisibility === "everyone_all"
+      ? await fetchMarketingRequests({ supabaseClient: await createClient() })
+      : await fetchMarketingRequestsForAuth();
 
   return (
     <div className="space-y-6">
@@ -39,6 +47,7 @@ export default async function PlannerPage() {
         initialRequests={requests}
         designers={designers}
         users={users}
+        appSettings={appSettings}
       />
     </div>
   );

@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getAreaIcon } from "@/lib/area-icons";
 import { getTypeColor } from "@/lib/type-icons";
 import { COMPLETION_TYPES } from "@/lib/constants";
+import type { CompletionTypeConfig } from "@/lib/app-settings";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Calendar, Clock, MessageSquare, AlertCircle, CheckCircle2, X, Flag, CalendarX2, CheckCircle } from "lucide-react";
@@ -61,6 +62,7 @@ interface KanbanCardProps {
   timeTotal?: string;
   commentsCount?: number;
   pendingAlterationsCount?: number;
+  completionTypes?: CompletionTypeConfig[];
 }
 
 export function KanbanCard({
@@ -70,7 +72,9 @@ export function KanbanCard({
   timeTotal,
   commentsCount = 0,
   pendingAlterationsCount = 0,
+  completionTypes,
 }: KanbanCardProps) {
+  const completionOptions = completionTypes?.length ? completionTypes : COMPLETION_TYPES.map((c) => ({ value: c.value, label: c.label }));
   const didDrag = useRef(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
@@ -288,7 +292,7 @@ export function KanbanCard({
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-2 py-1.5">
                       Tipo de conclusão
                     </p>
-                    {COMPLETION_TYPES.map((t) => (
+                    {completionOptions.map((t) => (
                       <button
                         key={t.value}
                         type="button"
