@@ -1,13 +1,17 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
+import { DndContext, DragEndEvent, DragStartEvent, DragOverlay, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { DatePickerField } from "@/components/ui/date-picker-field";
-import { Calendar } from "@/components/ui/calendar";
 import type { MarketingRequest } from "@/lib/marketing-requests";
-import { format, startOfDay } from "date-fns";
+import { updateMarketingRequest } from "@/lib/marketing-requests";
+import { format, startOfDay, addDays, startOfWeek } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { ScheduleHeader } from "./schedule-header";
+import { ScheduleGrid } from "./schedule-grid";
+import { ScheduleDisponivelCard, ScheduleDisponivelCardOverlay } from "./schedule-disponivel-card";
 import {
   Search,
   ExternalLink,
@@ -16,6 +20,7 @@ import {
   CalendarCheck,
   CalendarDays,
   LayoutGrid,
+  Inbox,
 } from "lucide-react";
 import { getAreaIcon } from "@/lib/area-icons";
 import { cn } from "@/lib/utils";
@@ -158,11 +163,15 @@ function PostCard({ req, isPostado, onClick }: PostCardProps) {
   );
 }
 
+export interface PostCardClickOptions {
+  isPostado: boolean;
+}
+
 interface PostsColumnProps {
   title: string;
   requests: MarketingRequest[];
   isPostado: boolean;
-  onCardClick?: (request: MarketingRequest) => void;
+  onCardClick?: (request: MarketingRequest, options: PostCardClickOptions) => void;
 }
 
 function PostsColumn({
@@ -186,7 +195,7 @@ function PostsColumn({
             key={req.id}
             req={req}
             isPostado={isPostado}
-            onClick={() => onCardClick?.(req)}
+            onClick={() => onCardClick?.(req, { isPostado })}
           />
         ))}
       </div>
@@ -196,15 +205,22 @@ function PostsColumn({
 
 interface PostsTabProps {
   requests: MarketingRequest[];
-  onCardClick?: (request: MarketingRequest) => void;
+  onCardClick?: (request: MarketingRequest, options: PostCardClickOptions) => void;
+  onRefresh?: () => void;
 }
 
-export function PostsTab({ requests, onCardClick }: PostsTabProps) {
+export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [viewMode, setViewMode] = useState<"colunas" | "calendario">("colunas");
-  const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date | undefined>(undefined);
+  const [scheduleRangeStart, setScheduleRangeStart] = useState<Date>(() => {
+    const start = startOfWeek(new Date(), { weekStartsOn: 1 });
+    return startOfDay(start);
+  });
+  const [activeDragRequest, setActiveDragRequest] = useState<MarketingRequest | null>(null);
+  const SCHEDULE_DAYS = 7;
+  const scheduleRangeEnd = addDays(scheduleRangeStart, SCHEDULE_DAYS - 1);
 
   const posts = useMemo(
     () =>
@@ -253,22 +269,33 @@ export function PostsTab({ requests, onCardClick }: PostsTabProps) {
     [filtered]
   );
 
-  const postsByDate = useMemo(() => {
-    const map = new Map<string, MarketingRequest[]>();
-    for (const req of filtered) {
-      const d = new Date(req.delivered_at || req.requested_at);
-      const key = format(startOfDay(d), "yyyy-MM-dd");
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(req);
-    }
-    return map;
-  }, [filtered]);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  );
 
-  const postsForSelectedDate = useMemo(() => {
-    if (!selectedCalendarDate) return [];
-    const key = format(startOfDay(selectedCalendarDate), "yyyy-MM-dd");
-    return postsByDate.get(key) ?? [];
-  }, [selectedCalendarDate, postsByDate]);
+  const handleScheduleDragStart = useCallback((event: DragStartEvent) => {
+    const data = event.active.data?.current as { type?: string; request?: MarketingRequest } | undefined;
+    if (data?.type === "post-disponivel" && data?.request) {
+      setActiveDragRequest(data.request);
+    }
+  }, []);
+
+  const handleScheduleDragEnd = useCallback(
+    async (event: DragEndEvent) => {
+      setActiveDragRequest(null);
+      const { active, over } = event;
+      if (!over) return;
+      const dayKey = over.data?.current?.dayKey as string | undefined;
+      const dragData = active.data?.current as { type?: string; request?: MarketingRequest } | undefined;
+      if (dragData?.type !== "post-disponivel" || !dragData?.request?.id || !dayKey) return;
+      const { error } = await updateMarketingRequest(dragData.request.id, {
+        completion_type: "postagem_feita",
+        posted_at: `${dayKey}T12:00:00.000Z`,
+      });
+      if (!error) onRefresh?.();
+    },
+    [onRefresh]
+  );
 
   return (
     <div className="space-y-5">
@@ -362,54 +389,63 @@ export function PostsTab({ requests, onCardClick }: PostsTabProps) {
       )}
 
       {filtered.length > 0 && viewMode === "calendario" && (
-        <div className="space-y-6">
-          <div className="rounded-xl border bg-card p-4 shadow-sm">
-            <Calendar
-              mode="single"
-              selected={selectedCalendarDate}
-              onSelect={setSelectedCalendarDate}
-              locale={ptBR}
-              captionLayout="dropdown"
-              fromYear={new Date().getFullYear() - 1}
-              toYear={new Date().getFullYear() + 1}
-            />
-          </div>
-          {selectedCalendarDate ? (
-            <section aria-labelledby="posts-do-dia">
-              <h2
-                id="posts-do-dia"
-                className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"
-              >
-                <CalendarCheck className="h-4 w-4 text-emerald-600/70" aria-hidden />
-                Posts em {format(selectedCalendarDate, "dd/MM/yyyy", { locale: ptBR })}
-                <span className="text-muted-foreground font-normal">
-                  ({postsForSelectedDate.length} post{postsForSelectedDate.length !== 1 ? "s" : ""})
+        <DndContext
+          sensors={sensors}
+          onDragStart={handleScheduleDragStart}
+          onDragEnd={handleScheduleDragEnd}
+        >
+          <div className="flex gap-4 items-start">
+            <aside className="w-72 shrink-0 rounded-xl border bg-card p-4 shadow-sm">
+              <div className="flex items-center gap-2 pb-3 border-b border-border">
+                <Inbox className="h-4 w-4 text-muted-foreground" aria-hidden />
+                <h3 className="font-semibold text-sm">Disponível no banco</h3>
+                <span className="ml-auto text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                  {disponivel.length}
                 </span>
-              </h2>
-              {postsForSelectedDate.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4">
-                  Nenhum post nesta data.
-                </p>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                  {postsForSelectedDate.map((req) => (
-                    <PostCard
+              </div>
+              <p className="text-xs text-muted-foreground mt-3 mb-4">
+                Arraste para o dia da postagem no calendário.
+              </p>
+              <div className="flex flex-col gap-3 max-h-[420px] overflow-y-auto">
+                {disponivel.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-4 text-center">
+                    Nenhum post disponível.
+                  </p>
+                ) : (
+                  disponivel.map((req) => (
+                    <ScheduleDisponivelCard
                       key={req.id}
-                      req={req}
-                      isPostado={req.completion_type === "postagem_feita"}
-                      onClick={() => onCardClick?.(req)}
+                      request={req}
+                      onClick={() => onCardClick?.(req, { isPostado: false })}
                     />
-                  ))}
-                </div>
-              )}
-            </section>
-          ) : (
-            <p className="text-sm text-muted-foreground py-4 flex items-center gap-2">
-              <CalendarDays className="h-4 w-4" aria-hidden />
-              Selecione um dia no calendário para ver os posts.
-            </p>
-          )}
-        </div>
+                  ))
+                )}
+              </div>
+            </aside>
+            <div className="flex-1 min-w-0 space-y-4">
+              <ScheduleHeader
+                title="Agenda"
+                rangeStart={scheduleRangeStart}
+                rangeEnd={scheduleRangeEnd}
+                onPrevRange={() => setScheduleRangeStart((d) => addDays(d, -SCHEDULE_DAYS))}
+                onNextRange={() => setScheduleRangeStart((d) => addDays(d, SCHEDULE_DAYS))}
+                showFilters={false}
+                showPublish={true}
+              />
+              <ScheduleGrid
+                posts={postado}
+                rangeStart={scheduleRangeStart}
+                rangeEnd={scheduleRangeEnd}
+                onCardClick={onCardClick}
+              />
+            </div>
+          </div>
+          <DragOverlay dropAnimation={null} style={{ zIndex: 9999 }}>
+            {activeDragRequest ? (
+              <ScheduleDisponivelCardOverlay request={activeDragRequest} />
+            ) : null}
+          </DragOverlay>
+        </DndContext>
       )}
     </div>
   );

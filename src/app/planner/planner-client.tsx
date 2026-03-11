@@ -13,6 +13,7 @@ import type { AppSettings } from "@/lib/app-settings";
 import { Button } from "@/components/ui/button";
 import { LayoutGrid, CheckCircle2, PlusCircle, Share2 } from "lucide-react";
 import { PostsTab } from "@/components/planner/posts-tab";
+import { PostAvailableDetailDialog } from "@/components/planner/post-available-detail-dialog";
 import { useAuth } from "@/contexts/auth-context";
 import { fetchTimeTotalsByRequest } from "@/lib/time-entries";
 import { fetchCommentStats } from "@/lib/request-comments";
@@ -55,6 +56,8 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
 
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [postAvailableRequestId, setPostAvailableRequestId] = useState<string | null>(null);
+  const [postAvailableOpen, setPostAvailableOpen] = useState(false);
   const [newRequestOpen, setNewRequestOpen] = useState(false);
   const [timeTotals, setTimeTotals] = useState<Record<string, string>>({});
   const [commentsCounts, setCommentsCounts] = useState<Record<string, number>>({});
@@ -109,6 +112,16 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
   const handleCardClick = (request: MarketingRequest) => {
     setSelectedRequestId(request.id);
     setDetailOpen(true);
+  };
+
+  const handlePostsCardClick = (request: MarketingRequest, options: { isPostado: boolean }) => {
+    if (options.isPostado) {
+      setSelectedRequestId(request.id);
+      setDetailOpen(true);
+    } else {
+      setPostAvailableRequestId(request.id);
+      setPostAvailableOpen(true);
+    }
   };
 
   const handleMarkComplete = async (requestId: string, completionType: string) => {
@@ -175,7 +188,8 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
       {activeTab === "posts" && (
         <PostsTab
           requests={requests}
-          onCardClick={handleCardClick}
+          onCardClick={handlePostsCardClick}
+          onRefresh={handleRefresh}
         />
       )}
 
@@ -186,6 +200,16 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
         onRefresh={handleRefresh}
         designers={designers}
         completionTypes={appSettings.completionTypes}
+      />
+
+      <PostAvailableDetailDialog
+        request={postAvailableRequestId != null ? requests.find((r) => r.id === postAvailableRequestId) ?? null : null}
+        open={postAvailableOpen}
+        onOpenChange={(open) => {
+          setPostAvailableOpen(open);
+          if (!open) setPostAvailableRequestId(null);
+        }}
+        onSuccess={handleRefresh}
       />
 
       <NewRequestDialog

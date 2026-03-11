@@ -44,7 +44,7 @@ import {
   deleteComment,
   type RequestComment,
 } from "@/lib/request-comments";
-import { Play, Pause, Square, MessageSquare, Edit3, AlertCircle, CheckCircle2, Flag, CalendarX2, Clock, Calendar, Layers, Circle, ChevronDown, ChevronUp, Link2, Trash2, FileText } from "lucide-react";
+import { Play, Pause, Square, MessageSquare, Edit3, AlertCircle, CheckCircle2, Flag, CalendarX2, Clock, Calendar, Layers, Circle, ChevronDown, ChevronUp, Link2, Trash2, FileText, RotateCcw } from "lucide-react";
 import { fetchViosTaskByMarketingRequestId, filterLeonardoFromResponsaveis, type ViosTask } from "@/lib/vios-tasks";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import type { RequestPriority } from "@/lib/marketing-requests";
@@ -112,6 +112,7 @@ export function KanbanCardDetail({
   const [isSavingArtLink, setIsSavingArtLink] = useState(false);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
+  const [isRevertingToDisponivel, setIsRevertingToDisponivel] = useState(false);
 
   const canUseTimesheet = profile && request && (isAdmin || profile.id === request.assignee_id);
   const canStartTimer = profile && request && (isAdmin || profile.id === request.assignee_id);
@@ -200,6 +201,20 @@ export function KanbanCardDetail({
       completion_type: type as "design_concluido" | "postagem_feita" | "conteudo_entregue",
     });
     setIsMarkingComplete(false);
+    if (!error) {
+      onRefresh?.();
+      onOpenChange(false);
+    }
+  };
+
+  const handleRevertToDisponivel = async () => {
+    if (!request) return;
+    setIsRevertingToDisponivel(true);
+    const { error } = await updateMarketingRequest(request.id, {
+      completion_type: "design_concluido",
+      posted_at: null,
+    });
+    setIsRevertingToDisponivel(false);
     if (!error) {
       onRefresh?.();
       onOpenChange(false);
@@ -1009,6 +1024,30 @@ export function KanbanCardDetail({
               </div>
             </section>
           )}
+
+          {/* Voltar para disponível no banco — quando post foi marcado como postado por engano */}
+          {isConcluido &&
+            request.request_type === "Post Redes Sociais" &&
+            request.completion_type === "postagem_feita" && (
+              <section aria-labelledby="revert-post-heading" className={sectionClass}>
+                <h4 id="revert-post-heading" className={sectionTitleClass}>
+                  Post marcado como postado
+                </h4>
+                <p className="text-sm text-muted-foreground mb-2">
+                  Marquei errado ou agendei no dia errado? Este post voltará para &quot;Disponível no banco&quot; e você poderá arrastá-lo de novo para o dia correto.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRevertToDisponivel}
+                  disabled={isRevertingToDisponivel}
+                  className="border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-800/50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+                >
+                  <RotateCcw className="h-4 w-4 mr-2 shrink-0" aria-hidden />
+                  {isRevertingToDisponivel ? "Revertendo…" : "Voltar para disponível no banco"}
+                </Button>
+              </section>
+            )}
 
           {/* Excluir solicitação (admin) */}
           {isAdmin && (

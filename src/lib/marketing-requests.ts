@@ -56,6 +56,7 @@ export interface MarketingRequest {
   deadline_time: string | null;
   stage_changed_at: string | null;
   art_link: string | null;
+  posted_at: string | null;
   created_by_id: string | null;
   created_by: string | null;
   solicitante_user?: { name: string; department: string; avatar_url: string | null } | null;
@@ -73,24 +74,32 @@ export interface FetchMarketingRequestsOptions {
 const KANBAN_SELECT =
   "id, title, description, requesting_area, status, requested_at, delivered_at, " +
   "assignee, assignee_id, solicitante, solicitante_id, request_type, " +
-  "link, referencias, nome_advogado, art_link, created_by_id, created_by, " +
+  "link, referencias, nome_advogado, art_link, posted_at, created_by_id, created_by, " +
   "workflow_stage, completion_type, priority, deadline, deadline_time, stage_changed_at";
 
 const KANBAN_SELECT_WITHOUT_ART_LINK =
   "id, title, description, requesting_area, status, requested_at, delivered_at, " +
   "assignee, assignee_id, solicitante, solicitante_id, request_type, " +
-  "link, referencias, nome_advogado, created_by_id, created_by, " +
+  "link, referencias, nome_advogado, posted_at, created_by_id, created_by, " +
   "workflow_stage, completion_type, priority, deadline, deadline_time, stage_changed_at";
 
 function logSupabaseError(context: string, err: unknown) {
-  const e = err as { message?: string; code?: string; details?: string; hint?: string };
-  console.error(
-    `${context}:`,
-    e?.message ?? String(err),
-    e?.code != null ? `[${e.code}]` : "",
-    e?.details ? `| ${e.details}` : "",
-    e?.hint ? `| ${e.hint}` : ""
-  );
+  if (typeof console === "undefined" || !console.error) return;
+  try {
+    const e = err as { message?: string; code?: string; details?: string; hint?: string };
+    const msg = [
+      context,
+      e?.message ?? String(err),
+      e?.code != null ? `[${e.code}]` : "",
+      e?.details ?? "",
+      e?.hint ?? "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    console.error(msg);
+  } catch {
+    // avoid rethrowing when logging fails
+  }
 }
 
 export async function fetchMarketingRequests(
@@ -272,6 +281,7 @@ export interface UpdateRequestInput {
   deadline?: string | null;
   deadline_time?: string | null;
   art_link?: string | null;
+  posted_at?: string | null;
 }
 
 export async function updateMarketingRequest(
@@ -299,6 +309,7 @@ export async function updateMarketingRequest(
   if (input.deadline !== undefined) updates.deadline = input.deadline;
   if (input.deadline_time !== undefined) updates.deadline_time = input.deadline_time;
   if (input.art_link !== undefined) updates.art_link = input.art_link;
+  if (input.posted_at !== undefined) updates.posted_at = input.posted_at;
 
   const { data, error } = await supabase
     .from("marketing_requests")
