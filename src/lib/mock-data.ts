@@ -9,6 +9,7 @@ const mockBase = {
   referencias: null as string | null,
   nome_advogado: null as string | null,
   art_link: null as string | null,
+  posted_at: null as string | null,
   created_by_id: null as string | null,
   created_by: null as string | null,
   assignee_id: null as string | null,
