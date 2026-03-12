@@ -7,11 +7,11 @@ import { Input } from "@/components/ui/input";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import type { MarketingRequest } from "@/lib/marketing-requests";
 import { updateMarketingRequest } from "@/lib/marketing-requests";
-import { format, startOfDay, addDays, startOfWeek } from "date-fns";
+import { format, startOfDay, addDays, startOfWeek, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ScheduleHeader } from "./schedule-header";
 import { ScheduleGrid } from "./schedule-grid";
-import { ScheduleDisponivelCard, ScheduleDisponivelCardOverlay } from "./schedule-disponivel-card";
+import { ScheduleDisponivelCard, ScheduleDisponivelCardOverlay, type DisponivelAgeTier } from "./schedule-disponivel-card";
 import {
   Search,
   ExternalLink,
@@ -26,6 +26,15 @@ import { getAreaIcon } from "@/lib/area-icons";
 import { cn } from "@/lib/utils";
 
 const POST_TYPE = "Post Redes Sociais";
+
+/** Idade para cor do card: novo (até 14 dias), médio (15–45 dias, amarelo), antigo (>45 dias). */
+function getDisponivelAgeTier(request: MarketingRequest): DisponivelAgeTier {
+  const concluidoAt = request.stage_changed_at ?? request.delivered_at ?? request.requested_at;
+  const days = differenceInDays(new Date(), new Date(concluidoAt));
+  if (days <= 14) return "new";
+  if (days <= 45) return "medium";
+  return "old";
+}
 
 const POSTADO_TAG_CLASS =
   "bg-emerald-100/80 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400";
@@ -148,14 +157,18 @@ function PostCard({ req, isPostado, onClick }: PostCardProps) {
             );
           })()}
         </div>
-        <div className="flex items-center gap-2" title="Data para planejamento">
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/10">
-            <CalendarCheck className="h-3 w-3 text-emerald-600/70" aria-hidden />
+        <div className="flex flex-col gap-0.5" title="Solicitado e concluído">
+          <span className="text-[11px] text-muted-foreground/90">
+            Solicitado em {format(new Date(req.requested_at), "dd/MM/yyyy", { locale: ptBR })}
           </span>
-          <span className="text-[11px] font-medium text-foreground/80">
-            {req.delivered_at
-              ? format(new Date(req.delivered_at), "dd/MM/yyyy", { locale: ptBR })
-              : format(new Date(req.requested_at), "dd/MM/yyyy", { locale: ptBR })}
+          <span className="text-[11px] font-medium text-foreground/80 flex items-center gap-1">
+            <CalendarCheck className="h-3 w-3 text-emerald-600/70 shrink-0" aria-hidden />
+            Concluído em{" "}
+            {format(
+              new Date(req.stage_changed_at ?? req.delivered_at ?? req.requested_at),
+              "dd/MM/yyyy",
+              { locale: ptBR }
+            )}
           </span>
         </div>
       </div>
@@ -250,8 +263,8 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
       filtered
         .filter((r) => r.completion_type !== "postagem_feita")
         .sort((a, b) => {
-          const da = a.delivered_at ?? a.requested_at;
-          const db = b.delivered_at ?? b.requested_at;
+          const da = a.stage_changed_at ?? a.delivered_at ?? a.requested_at;
+          const db = b.stage_changed_at ?? b.delivered_at ?? b.requested_at;
           return new Date(db).getTime() - new Date(da).getTime();
         }),
     [filtered]
@@ -394,35 +407,9 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
           onDragStart={handleScheduleDragStart}
           onDragEnd={handleScheduleDragEnd}
         >
-          <div className="flex gap-4 items-start">
-            <aside className="w-72 shrink-0 rounded-xl border bg-card p-4 shadow-sm">
-              <div className="flex items-center gap-2 pb-3 border-b border-border">
-                <Inbox className="h-4 w-4 text-muted-foreground" aria-hidden />
-                <h3 className="font-semibold text-sm">Disponível no banco</h3>
-                <span className="ml-auto text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                  {disponivel.length}
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-3 mb-4">
-                Arraste para o dia da postagem no calendário.
-              </p>
-              <div className="flex flex-col gap-3 max-h-[420px] overflow-y-auto">
-                {disponivel.length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-4 text-center">
-                    Nenhum post disponível.
-                  </p>
-                ) : (
-                  disponivel.map((req) => (
-                    <ScheduleDisponivelCard
-                      key={req.id}
-                      request={req}
-                      onClick={() => onCardClick?.(req, { isPostado: false })}
-                    />
-                  ))
-                )}
-              </div>
-            </aside>
-            <div className="flex-1 min-w-0 space-y-4">
+          <div className="flex flex-col gap-4 w-full">
+            {/* Agenda em largura total */}
+            <div className="w-full space-y-4">
               <ScheduleHeader
                 title="Agenda"
                 rangeStart={scheduleRangeStart}
@@ -439,6 +426,37 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
                 onCardClick={onCardClick}
               />
             </div>
+
+            {/* Disponível no banco — faixa horizontal abaixo da agenda */}
+            <aside className="w-full rounded-xl border bg-card p-4 shadow-sm">
+              <div className="flex items-center gap-2 pb-3 border-b border-border">
+                <Inbox className="h-4 w-4 text-muted-foreground" aria-hidden />
+                <h3 className="font-semibold text-sm">Disponível no banco</h3>
+                <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                  {disponivel.length}
+                </span>
+                <p className="text-xs text-muted-foreground ml-2">
+                  Arraste para o dia da postagem no calendário acima.
+                </p>
+              </div>
+              <div className="flex gap-3 mt-3 overflow-x-auto pb-2 min-h-[100px]">
+                {disponivel.length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-6 text-center w-full">
+                    Nenhum post disponível.
+                  </p>
+                ) : (
+                  disponivel.map((req) => (
+                    <div key={req.id} className="flex shrink-0 w-[280px]">
+                      <ScheduleDisponivelCard
+                        request={req}
+                        ageTier={getDisponivelAgeTier(req)}
+                        onClick={() => onCardClick?.(req, { isPostado: false })}
+                      />
+                    </div>
+                  ))
+                )}
+              </div>
+            </aside>
           </div>
           <DragOverlay dropAnimation={null} style={{ zIndex: 9999 }}>
             {activeDragRequest ? (

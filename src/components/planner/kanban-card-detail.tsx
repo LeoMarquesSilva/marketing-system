@@ -44,7 +44,7 @@ import {
   deleteComment,
   type RequestComment,
 } from "@/lib/request-comments";
-import { Play, Pause, Square, MessageSquare, Edit3, AlertCircle, CheckCircle2, Flag, CalendarX2, Clock, Calendar, Layers, Circle, ChevronDown, ChevronUp, Link2, Trash2, FileText, RotateCcw } from "lucide-react";
+import { Play, Pause, Square, MessageSquare, Edit3, AlertCircle, CheckCircle2, Flag, CalendarX2, Clock, Calendar, CalendarCheck, Layers, Circle, ChevronDown, ChevronUp, Link2, Trash2, FileText, RotateCcw } from "lucide-react";
 import { fetchViosTaskByMarketingRequestId, filterLeonardoFromResponsaveis, type ViosTask } from "@/lib/vios-tasks";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import type { RequestPriority } from "@/lib/marketing-requests";
@@ -358,6 +358,25 @@ export function KanbanCardDetail({
       >
         {/* Header fixo — compacto */}
         <div className="shrink-0 border-b border-white/30 dark:border-border/50 px-6 py-4 pr-12 bg-white/80 dark:bg-[linear-gradient(135deg,var(--primary-dark-from)_0%,var(--primary-dark-to)_100%)] backdrop-blur-sm">
+          {request.workflow_stage === "concluido" && (
+            <div className="mb-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm">
+              <span className="text-muted-foreground/90">
+                Solicitado em {format(new Date(request.requested_at), "dd/MM/yyyy", { locale: ptBR })}
+              </span>
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1.5 font-semibold text-emerald-700 dark:bg-emerald-400/20 dark:text-emerald-300 border border-emerald-400/30 dark:border-emerald-500/30"
+                title="Data em que o design foi concluído — define a ordem sugerida de postagem"
+              >
+                <CalendarCheck className="h-4 w-4 shrink-0" aria-hidden />
+                Concluído em{" "}
+                {format(
+                  new Date(request.stage_changed_at ?? request.delivered_at ?? request.requested_at),
+                  "dd/MM/yyyy",
+                  { locale: ptBR }
+                )}
+              </span>
+            </div>
+          )}
           <DialogHeader className="space-y-0 text-left">
             <DialogTitle className="text-base font-bold tracking-tight text-foreground leading-snug">
                 {isAdmin && isEditingTitle ? (
