@@ -12,6 +12,9 @@ import {
   ClipboardList,
   LogOut,
   Settings,
+  Sparkles,
+  Newspaper,
+  Heart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -23,12 +26,18 @@ const baseNavItems = [
   { href: "/", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/planner", icon: Columns3, label: "Planner" },
   { href: "/solicitacoes", icon: List, label: "Solicitações" },
+  { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteúdo para Post" },
+  { href: "/vibe-marketing", icon: Sparkles, label: "Vibe Marketing" },
+  { href: "/clima", icon: Heart, label: "Clima" },
   { href: "/vios-tarefas", icon: ClipboardList, label: "Tarefas VIOS" },
   { href: "/vincular-solicitantes", icon: Link2, label: "Vincular Solicitantes" },
   { href: "/usuarios", icon: Users, label: "Usuários" },
 ];
 
-const adminNavItem = { href: "/admin", icon: Settings, label: "Configurações" };
+const adminNavItems = [
+  { href: "/admin", icon: Settings, label: "Configurações" },
+  { href: "/admin/conteudo-temas", icon: Newspaper, label: "Temas RSS" },
+];
 
 function getInitials(name: string) {
   return name
@@ -96,7 +105,7 @@ export function Sidebar() {
 
       {/* Nav items */}
       <nav className="flex flex-1 flex-col items-center gap-1 w-full px-3" aria-label="Navegação principal">
-        {[...baseNavItems, ...(profile?.role === "admin" ? [adminNavItem] : [])].map((item) => {
+        {[...baseNavItems, ...(profile?.role === "admin" ? adminNavItems : [])].map((item) => {
           const isActive =
             pathname === item.href ||
             (item.href !== "/" && pathname.startsWith(item.href));
@@ -190,7 +199,7 @@ export function Sidebar() {
 
     {/* Mobile bottom navigation */}
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around bg-gradient-to-r from-[#101f2e] to-[#0a141c] border-t border-white/[0.06] h-16 px-2 shadow-[0_-4px_20px_rgba(0,0,0,0.2)]">
-      {[...baseNavItems, ...(profile?.role === "admin" ? [adminNavItem] : [])].slice(0, 5).map((item) => {
+      {[...baseNavItems, ...(profile?.role === "admin" ? adminNavItems : [])].slice(0, 5).map((item) => {
         const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href + "/"));
         return (
           <Link
