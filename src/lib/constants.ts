@@ -45,11 +45,12 @@ export const STATUS_OPTIONS = [
  * Etapas do workflow do Kanban Planner
  */
 export const WORKFLOW_STAGES = [
-  { value: "tarefas", label: "Tarefas" },
-  { value: "revisao", label: "Revisão" },
-  { value: "revisado", label: "Revisado" },
-  { value: "revisao_autor", label: "Revisão autor" },
-  { value: "concluido", label: "Concluído" },
+  { value: "tarefas", label: "Aguardando produção" },
+  { value: "em_producao", label: "Em produção" },
+  { value: "revisao", label: "Em revisão" },
+  { value: "revisao_autor", label: "Ajustes solicitados" },
+  { value: "revisado", label: "Aprovado / pronto" },
+  { value: "concluido", label: "Concluído / publicado" },
 ] as const;
 
 export type WorkflowStage = (typeof WORKFLOW_STAGES)[number]["value"];

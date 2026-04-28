@@ -14,7 +14,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import { Clock, TrendingUp, Award, Timer, Download } from "lucide-react";
-import { format, subDays, startOfDay } from "date-fns";
+import { differenceInCalendarDays, format, subDays, startOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { fetchTimesheetForDashboard, type TimesheetRawEntry } from "@/lib/time-entries";
 import { useAuth } from "@/contexts/auth-context";
@@ -117,18 +117,33 @@ function exportToCSV(entries: TimesheetRawEntry[]) {
   URL.revokeObjectURL(url);
 }
 
-export function ChartTimesheet() {
+interface ChartTimesheetProps {
+  dateRange?: {
+    from: Date | null;
+    to: Date | null;
+    label: string;
+  };
+}
+
+export function ChartTimesheet({ dateRange }: ChartTimesheetProps) {
   const { profile } = useAuth();
   const [entries, setEntries] = useState<TimesheetRawEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDesigner, setSelectedDesigner] = useState<string | null>(null);
+  const rangeFrom = dateRange?.from?.toISOString() ?? null;
+  const rangeTo = dateRange?.to?.toISOString() ?? null;
 
   useEffect(() => {
-    fetchTimesheetForDashboard(30).then((data) => {
+    let cancelled = false;
+    fetchTimesheetForDashboard(30, dateRange).then((data) => {
+      if (cancelled) return;
       setEntries(data);
       setLoading(false);
     });
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [dateRange, rangeFrom, rangeTo]);
 
   // For designers, only show their own data
   const filtered = useMemo(() => {
@@ -158,10 +173,16 @@ export function ChartTimesheet() {
       .map((u) => ({ name: u.name.split(" ")[0], fullName: u.name, hours: msToHours(u.ms), ms: u.ms }));
   }, [filtered]);
 
-  // Daily trend — last 14 days
+  // Daily trend — selected range, capped to 14 points for readability
   const dailyTrend = useMemo(() => {
-    const days = Array.from({ length: 14 }, (_, i) => {
-      const d = startOfDay(subDays(new Date(), 13 - i));
+    const end = startOfDay(dateRange?.to ?? new Date());
+    const start = dateRange?.from ? startOfDay(dateRange.from) : startOfDay(subDays(end, 13));
+    const diffDays = Math.max(1, differenceInCalendarDays(end, start) + 1);
+    const length = Math.min(14, diffDays);
+    const firstDay = diffDays > 14 ? subDays(end, 13) : start;
+
+    const days = Array.from({ length }, (_, i) => {
+      const d = startOfDay(subDays(firstDay, -i));
       return { date: d, label: format(d, "dd/MM/yyyy", { locale: ptBR }), ms: 0 };
     });
     for (const e of filtered) {
@@ -170,7 +191,7 @@ export function ChartTimesheet() {
       if (bucket) bucket.ms += entryDurationMs(e);
     }
     return days.map((d) => ({ label: d.label, hours: msToHours(d.ms) }));
-  }, [filtered]);
+  }, [filtered, dateRange]);
 
   // When a designer is selected in the chart, show only their data in KPIs
   const activeFiltered = useMemo(() => {
@@ -200,7 +221,9 @@ export function ChartTimesheet() {
     return (
       <div className="rounded-2xl border border-white/50 dark:border-border/50 bg-white/70 dark:bg-card/80 backdrop-blur-sm p-8 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.08)] text-center">
         <Timer className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
-        <p className="text-sm font-medium text-muted-foreground">Nenhum registro de tempo nos últimos 30 dias</p>
+        <p className="text-sm font-medium text-muted-foreground">
+          Nenhum registro de tempo {dateRange ? "no período selecionado" : "nos últimos 30 dias"}
+        </p>
         <p className="text-xs text-muted-foreground/60 mt-1">Inicie o cronômetro no Planner para registrar horas</p>
       </div>
     );
@@ -213,7 +236,7 @@ export function ChartTimesheet() {
         <Timer className="h-4 w-4 text-[#101f2e]/60" aria-hidden />
         <h3 className="text-base font-semibold text-foreground">Timesheet — Visão de Gestão</h3>
         <span className="ml-2 text-xs text-muted-foreground bg-muted/60 rounded-full px-2.5 py-0.5">
-          últimos 30 dias
+          {dateRange?.label ?? "últimos 30 dias"}
         </span>
         <button
           onClick={() => exportToCSV(filtered)}
@@ -320,7 +343,7 @@ export function ChartTimesheet() {
         {/* Daily trend — area chart */}
         <div className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Tendência diária (14 dias)
+            Tendência diária
           </p>
           <div className="h-[200px] min-h-[200px] w-full min-w-0">
             <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200}>

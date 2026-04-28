@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Popover as PopoverPrimitive } from "radix-ui";
@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getAreaIcon } from "@/lib/area-icons";
 import { getTypeColor } from "@/lib/type-icons";
 import { COMPLETION_TYPES } from "@/lib/constants";
-import type { CompletionTypeConfig } from "@/lib/app-settings";
+import type { CompletionTypeConfig, StageSlaDays } from "@/lib/app-settings";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Calendar, Clock, MessageSquare, AlertCircle, CheckCircle2, X, Flag, CalendarX2, CheckCircle } from "lucide-react";
@@ -63,7 +63,16 @@ interface KanbanCardProps {
   commentsCount?: number;
   pendingAlterationsCount?: number;
   completionTypes?: CompletionTypeConfig[];
+  stageSlaDays?: StageSlaDays;
 }
+
+const PRODUCTION_STAGES = new Set(["tarefas", "em_producao"]);
+
+const STAGE_DELAY_LABELS: Record<string, string> = {
+  revisao: "Revisão atrasada",
+  revisao_autor: "Ajustes atrasados",
+  revisado: "Pronto para fechamento",
+};
 
 export function KanbanCard({
   request,
@@ -73,6 +82,7 @@ export function KanbanCard({
   commentsCount = 0,
   pendingAlterationsCount = 0,
   completionTypes,
+  stageSlaDays = {},
 }: KanbanCardProps) {
   const completionOptions = completionTypes?.length ? completionTypes : COMPLETION_TYPES.map((c) => ({ value: c.value, label: c.label }));
   const didDrag = useRef(false);
@@ -88,7 +98,9 @@ export function KanbanCard({
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({ id: request.id, data: { request } });
 
-  if (isDragging) didDrag.current = true;
+  useEffect(() => {
+    if (isDragging) didDrag.current = true;
+  }, [isDragging]);
 
   const style = transform ? { transform: CSS.Translate.toString(transform) } : undefined;
 
@@ -102,7 +114,13 @@ export function KanbanCard({
 
   const deadlineDate = request.deadline ? parseISO(request.deadline) : null;
   const deadlineMoment = getDeadlineMoment(request.deadline, request.deadline_time);
-  const isOverdue = deadlineMoment ? isPast(deadlineMoment) && request.workflow_stage !== "concluido" : false;
+  const stage = request.workflow_stage || "tarefas";
+  const isProductionStage = PRODUCTION_STAGES.has(stage);
+  const isProductionOverdue =
+    Boolean(deadlineMoment) &&
+    isPast(deadlineMoment!) &&
+    request.workflow_stage !== "concluido" &&
+    isProductionStage;
   const deadlineLabel = deadlineDate
     ? request.deadline_time
       ? `${format(deadlineDate, "dd/MM/yyyy", { locale: ptBR })} ${request.deadline_time}`
@@ -111,7 +129,16 @@ export function KanbanCard({
 
   const stageChangedAt = request.stage_changed_at ?? request.requested_at;
   const daysInStage = differenceInDays(new Date(), new Date(stageChangedAt));
-  const showDaysWarning = daysInStage >= 3 && request.workflow_stage !== "concluido";
+  const stageSla = stageSlaDays[stage];
+  const isStageOverdue =
+    request.workflow_stage !== "concluido" &&
+    !isProductionStage &&
+    stageSla != null &&
+    daysInStage >= stageSla;
+  const stageDelayLabel = STAGE_DELAY_LABELS[stage] ?? "Etapa atrasada";
+  const productionDelayDays = deadlineMoment
+    ? Math.max(1, differenceInDays(new Date(), deadlineMoment))
+    : 0;
 
   const cardLabel = `${request.title} — ${request.request_type}, ${request.requesting_area}, ${format(new Date(request.requested_at), "dd/MM/yyyy", { locale: ptBR })}`;
 
@@ -224,30 +251,30 @@ export function KanbanCard({
           )}
         </div>
 
-        {/* Deadline + dias no estágio */}
-        {(deadlineLabel || showDaysWarning) && (
+        {/* Deadline + SLA operacional */}
+        {(deadlineLabel || isStageOverdue) && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
             {deadlineLabel && (
               <span className={`flex items-center gap-1 font-medium ${
-                isOverdue
+                isProductionOverdue
                   ? "text-red-600 dark:text-red-400"
                   : "text-muted-foreground"
               }`}>
                 <CalendarX2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                Prazo: {deadlineLabel}
-                {isOverdue && " · Vencido"}
+                {isProductionStage ? "Prazo produção" : "Prazo original"}: {deadlineLabel}
+                {isProductionOverdue && ` · Produção vencida há ${productionDelayDays}d`}
               </span>
             )}
-            {showDaysWarning && (
+            {isStageOverdue && (
               <span className={`flex items-center gap-1 ${
-                daysInStage >= 7
+                daysInStage >= (stageSla ?? 0) + 3
                   ? "text-red-500 dark:text-red-400 font-medium"
-                  : daysInStage >= 4
+                  : daysInStage >= (stageSla ?? 0)
                   ? "text-amber-600 dark:text-amber-400"
                   : "text-muted-foreground"
               }`}>
                 <Flag className="h-3 w-3 shrink-0" aria-hidden />
-                {daysInStage}d neste estágio
+                {stageDelayLabel} há {daysInStage}d
               </span>
             )}
           </div>

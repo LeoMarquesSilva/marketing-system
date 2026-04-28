@@ -1,16 +1,19 @@
 "use client";
 
 import { useDroppable } from "@dnd-kit/core";
-import { LucideIcon } from "lucide-react";
+import { LucideIcon, RefreshCw } from "lucide-react";
 import { KanbanCard } from "./kanban-card";
+import { Button } from "@/components/ui/button";
 import type { MarketingRequest } from "@/lib/marketing-requests";
 import type {
   CompletionTypeConfig,
   KanbanColumnWidth,
+  StageSlaDays,
 } from "@/lib/app-settings";
 
 export type ColumnId =
   | "tarefas"
+  | "em_producao"
   | "revisao"
   | "revisado"
   | "revisao_autor"
@@ -27,8 +30,11 @@ interface KanbanColumnProps {
   commentsCounts?: Record<string, number>;
   pendingAlterationsCounts?: Record<string, number>;
   completionTypes?: CompletionTypeConfig[];
+  stageSlaDays?: StageSlaDays;
   columnWidth?: KanbanColumnWidth;
   showTimeOnCards?: boolean;
+  showRefreshButton?: boolean;
+  onRefresh?: () => void;
 }
 
 export function KanbanColumn({
@@ -42,8 +48,11 @@ export function KanbanColumn({
   commentsCounts,
   pendingAlterationsCounts,
   completionTypes = [],
+  stageSlaDays,
   columnWidth = "fixed",
   showTimeOnCards = true,
+  showRefreshButton = false,
+  onRefresh,
 }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({
     id,
@@ -63,6 +72,19 @@ export function KanbanColumn({
         <span className="ml-auto text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
           {requests.length}
         </span>
+        {showRefreshButton && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            onClick={onRefresh}
+            title={`Recarregar etapa ${title}`}
+            aria-label={`Recarregar etapa ${title}`}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+          </Button>
+        )}
       </div>
       <div className="flex flex-col gap-2 p-3 min-h-[120px] overflow-y-auto">
         {requests.map((request) => (
@@ -75,6 +97,7 @@ export function KanbanColumn({
             commentsCount={commentsCounts?.[request.id] ?? 0}
             pendingAlterationsCount={pendingAlterationsCounts?.[request.id] ?? 0}
             completionTypes={completionTypes}
+            stageSlaDays={stageSlaDays}
           />
         ))}
       </div>

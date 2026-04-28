@@ -128,7 +128,7 @@ export function RequestEditDialog({
       solicitante_id: values.solicitante_id || null,
       link: values.link || null,
       referencias: values.referencias || null,
-      workflow_stage: (values.workflow_stage as "tarefas" | "revisao" | "revisado" | "revisao_autor" | "concluido") || null,
+      workflow_stage: (values.workflow_stage as "tarefas" | "em_producao" | "revisao" | "revisado" | "revisao_autor" | "concluido") || null,
       requested_at: values.requested_at,
       delivered_at: values.delivered_at || null,
     });

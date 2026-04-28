@@ -16,6 +16,7 @@ import {
   CheckCircle,
   UserCheck,
   LayoutGrid,
+  PlayCircle,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -39,17 +40,20 @@ import type {
   CompletionTypeConfig,
   StageMoveRules,
   KanbanDisplayOptions,
+  StageSlaDays,
 } from "@/lib/app-settings";
 
 const DEFAULT_WORKFLOW_COLUMNS: { id: ColumnId; title: string; icon: LucideIcon }[] = [
-  { id: "tarefas", title: "Tarefas", icon: ClipboardList },
-  { id: "revisao", title: "Revisão", icon: Eye },
-  { id: "revisado", title: "Revisado", icon: CheckCircle },
-  { id: "revisao_autor", title: "Revisão autor", icon: UserCheck },
+  { id: "tarefas", title: "Aguardando produção", icon: ClipboardList },
+  { id: "em_producao", title: "Em produção", icon: PlayCircle },
+  { id: "revisao", title: "Em revisão", icon: Eye },
+  { id: "revisao_autor", title: "Ajustes solicitados", icon: UserCheck },
+  { id: "revisado", title: "Aprovado / pronto", icon: CheckCircle },
 ];
 
 const STAGE_ICONS: Record<string, LucideIcon> = {
   tarefas: ClipboardList,
+  em_producao: PlayCircle,
   revisao: Eye,
   revisado: CheckCircle,
   revisao_autor: UserCheck,
@@ -63,6 +67,8 @@ interface WorkflowColumnConfig {
 interface KanbanBoardProps {
   requests: MarketingRequest[];
   onRefresh: () => void;
+  showColumnRefresh?: boolean;
+  onColumnRefresh?: (columnId: string) => void;
   onCardClick?: (request: MarketingRequest) => void;
   onMarkComplete?: (requestId: string, completionType: string) => void;
   timeTotals?: Record<string, string>;
@@ -71,6 +77,7 @@ interface KanbanBoardProps {
   workflowColumns?: WorkflowColumnConfig[];
   completionTypes?: CompletionTypeConfig[];
   stageMoveRules?: StageMoveRules;
+  stageSlaDays?: StageSlaDays;
   kanbanDisplayOptions?: KanbanDisplayOptions;
 }
 
@@ -101,6 +108,8 @@ function getRequestsForColumn(
 export function KanbanBoard({
   requests,
   onRefresh,
+  showColumnRefresh = false,
+  onColumnRefresh,
   onCardClick,
   onMarkComplete,
   timeTotals,
@@ -109,6 +118,7 @@ export function KanbanBoard({
   workflowColumns: workflowColumnsProp,
   completionTypes = [],
   stageMoveRules = {},
+  stageSlaDays,
   kanbanDisplayOptions = {},
 }: KanbanBoardProps) {
   const displayOpts = {
@@ -141,6 +151,7 @@ export function KanbanBoard({
   } | null>(null);
   const [revisaoArtLink, setRevisaoArtLink] = useState("");
   const [isSubmittingRevisao, setIsSubmittingRevisao] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
   const { profile } = useAuth();
   const revisaoRule = getStageRule("revisao");
 
@@ -185,6 +196,7 @@ export function KanbanBoard({
   const handleDragEnd = useCallback(
     async (event: DragEndEvent) => {
       const { active, over } = event;
+      setMoveError(null);
       if (!over) {
         setActiveRequest(null);
         return;
@@ -228,6 +240,8 @@ export function KanbanBoard({
         if (!error) {
           logActivity(request.id, "stage_changed", prevStage, "revisao", profile?.id ?? null, profile?.name ?? null);
           onRefresh();
+        } else {
+          setMoveError("Não foi possível mover a solicitação. Tente recarregar o Kanban.");
         }
         return;
       }
@@ -235,6 +249,7 @@ export function KanbanBoard({
       setActiveRequest(null);
       const stage = targetColumnId as
         | "tarefas"
+        | "em_producao"
         | "revisao"
         | "revisado"
         | "revisao_autor";
@@ -248,12 +263,16 @@ export function KanbanBoard({
         if (!error) {
           logActivity(requestId, "stage_changed", prevStage, stage, profile?.id ?? null, profile?.name ?? null);
           onRefresh();
+        } else {
+          setMoveError("Não foi possível mover a solicitação. Tente recarregar o Kanban.");
         }
       } else {
         const { error } = await updateWorkflowStage(requestId, stage);
         if (!error) {
           logActivity(requestId, "stage_changed", prevStage, stage, profile?.id ?? null, profile?.name ?? null);
           onRefresh();
+        } else {
+          setMoveError("Não foi possível mover a solicitação. Tente recarregar o Kanban.");
         }
       }
     },
@@ -275,17 +294,21 @@ export function KanbanBoard({
     }
     const { error } = await updateMarketingRequest(request.id, payload);
     setIsSubmittingRevisao(false);
-    setPendingMoveToRevisao(null);
-    setRevisaoArtLink("");
     if (!error) {
+      setMoveError(null);
+      setPendingMoveToRevisao(null);
+      setRevisaoArtLink("");
       logActivity(request.id, "stage_changed", prevStage, "revisao", profile?.id ?? null, profile?.name ?? null);
       onRefresh();
+    } else {
+      setMoveError("Não foi possível enviar para revisão. Confira o link e tente novamente.");
     }
   }, [pendingMoveToRevisao, revisaoArtLink, revisaoRule.keepAssignee, profile?.id, profile?.name, onRefresh]);
 
   const handleCancelMoveToRevisao = useCallback(() => {
     setPendingMoveToRevisao(null);
     setRevisaoArtLink("");
+    setMoveError(null);
   }, []);
 
   return (
@@ -295,6 +318,11 @@ export function KanbanBoard({
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
+        {moveError && (
+          <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+            {moveError}
+          </div>
+        )}
         <div className="flex gap-4 overflow-x-auto pb-4 min-h-[500px]">
           {columns.map((col) => (
             <KanbanColumn
@@ -309,8 +337,14 @@ export function KanbanBoard({
               commentsCounts={commentsCounts}
               pendingAlterationsCounts={pendingAlterationsCounts}
               completionTypes={completionTypes}
+              stageSlaDays={stageSlaDays}
               columnWidth={displayOpts.columnWidth}
               showTimeOnCards={displayOpts.showTimeOnCards}
+              showRefreshButton={showColumnRefresh}
+              onRefresh={() => {
+                if (onColumnRefresh) onColumnRefresh(col.id);
+                else onRefresh();
+              }}
             />
           ))}
         </div>
@@ -353,6 +387,11 @@ export function KanbanBoard({
                 <p className="text-xs text-muted-foreground">
                   Obrigatório para enviar para revisão.
                 </p>
+                {moveError && (
+                  <p className="text-xs font-medium text-destructive">
+                    {moveError}
+                  </p>
+                )}
               </div>
               <div className="flex gap-2 justify-end pt-4">
                 <Button variant="outline" onClick={handleCancelMoveToRevisao}>

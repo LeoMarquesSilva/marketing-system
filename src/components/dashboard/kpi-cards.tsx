@@ -9,6 +9,7 @@ interface KpiCardsProps {
   completedCount: number;
   overdueCount?: number;
   unassignedCount?: number;
+  isPeriodFiltered?: boolean;
 }
 
 interface KpiCardProps {
@@ -56,13 +57,14 @@ export function KpiCards({
   completedCount,
   overdueCount = 0,
   unassignedCount = 0,
+  isPeriodFiltered = false,
 }: KpiCardsProps) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
       <KpiCard
         label="Total"
         value={total}
-        sub="solicitações registradas"
+        sub={isPeriodFiltered ? "solicitações no período" : "solicitações registradas"}
         icon={<FileText className="h-4 w-4" />}
       />
       <KpiCard

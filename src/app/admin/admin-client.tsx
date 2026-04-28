@@ -24,6 +24,7 @@ import type {
   KanbanDisplayOptions,
   KanbanColumnWidth,
   KanbanCardSort,
+  StageSlaDays,
 } from "@/lib/app-settings";
 import {
   updateWorkflowStages,
@@ -57,6 +58,9 @@ export function AdminClient({ initialSettings }: AdminClientProps) {
   );
   const [stageMoveRules, setStageMoveRules] = useState<StageMoveRules>(
     initialSettings.stageMoveRules
+  );
+  const [stageSlaDays, setStageSlaDays] = useState<StageSlaDays>(
+    initialSettings.stageSlaDays
   );
   const [kanbanDisplayOptions, setKanbanDisplayOptions] =
     useState<KanbanDisplayOptions>(initialSettings.kanbanDisplayOptions ?? {
@@ -166,6 +170,12 @@ export function AdminClient({ initialSettings }: AdminClientProps) {
     },
     [stageMoveRules]
   );
+  const setStageSla = useCallback((stageValue: string, value: number) => {
+    setStageSlaDays((prev) => ({
+      ...prev,
+      [stageValue]: Math.max(1, value || 1),
+    }));
+  }, []);
 
   const handleSaveKanbanRules = async () => {
     setKanbanRulesError(null);
@@ -185,6 +195,7 @@ export function AdminClient({ initialSettings }: AdminClientProps) {
           kanbanVisibility,
           stageMoveRules,
           kanbanDisplayOptions,
+          stageSlaDays,
           accessToken: session.access_token,
           refreshToken: session.refresh_token ?? undefined,
         }),
@@ -493,6 +504,33 @@ export function AdminClient({ initialSettings }: AdminClientProps) {
                   </div>
                 );
               })}
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-base font-semibold">Prazos por etapa (SLA)</Label>
+            <p className="text-sm text-muted-foreground mb-3">
+              Define quantos dias cada etapa pode ficar parada antes de aparecer como atrasada. O prazo original da solicitação continua valendo para produção.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {stagesWithRules.map((stage) => (
+                <div
+                  key={stage.value}
+                  className="flex items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{stage.label}</p>
+                    <p className="text-xs text-muted-foreground">Dias permitidos nesta etapa</p>
+                  </div>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={stageSlaDays[stage.value] ?? 2}
+                    onChange={(e) => setStageSla(stage.value, parseInt(e.target.value, 10) || 1)}
+                    className="w-20"
+                  />
+                </div>
+              ))}
             </div>
           </div>
 

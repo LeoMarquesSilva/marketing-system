@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { KanbanBoard } from "@/components/planner/kanban-board";
 import { ConcluidosTab } from "@/components/planner/concluidos-tab";
@@ -11,12 +11,13 @@ import { updateMarketingRequest } from "@/lib/marketing-requests";
 import type { User } from "@/lib/users";
 import type { AppSettings } from "@/lib/app-settings";
 import { Button } from "@/components/ui/button";
-import { LayoutGrid, CheckCircle2, PlusCircle, Share2 } from "lucide-react";
+import { LayoutGrid, CheckCircle2, PlusCircle, Share2, Wifi, WifiOff } from "lucide-react";
 import { PostsTab } from "@/components/planner/posts-tab";
 import { PostAvailableDetailDialog } from "@/components/planner/post-available-detail-dialog";
 import { useAuth } from "@/contexts/auth-context";
 import { fetchTimeTotalsByRequest } from "@/lib/time-entries";
 import { fetchCommentStats } from "@/lib/request-comments";
+import { supabase } from "@/utils/supabase/client";
 
 const TAB_ICONS = {
   kanban: LayoutGrid,
@@ -30,6 +31,8 @@ interface PlannerClientProps {
   users: User[];
   appSettings: AppSettings;
 }
+
+type RealtimeStatus = "connecting" | "connected" | "unavailable";
 
 export function PlannerClient({ initialRequests, designers, users, appSettings }: PlannerClientProps) {
   const router = useRouter();
@@ -62,6 +65,9 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
   const [timeTotals, setTimeTotals] = useState<Record<string, string>>({});
   const [commentsCounts, setCommentsCounts] = useState<Record<string, number>>({});
   const [pendingAlterationsCounts, setPendingAlterationsCounts] = useState<Record<string, number>>({});
+  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("connecting");
+  const [lastRealtimeSyncAt, setLastRealtimeSyncAt] = useState<Date | null>(null);
+  const requestsRef = useRef<MarketingRequest[]>([]);
 
   const requests = useMemo(() => {
     if (appSettings.kanbanVisibility === "everyone_all") {
@@ -76,38 +82,110 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
   }, [initialRequests, profile, appSettings.kanbanVisibility]);
 
   useEffect(() => {
-    if (!profile?.id || requests.length === 0) return;
-    const assigneeRequestIds = requests
-      .filter((r) => r.assignee_id === profile.id)
-      .map((r) => r.id);
-    if (assigneeRequestIds.length === 0) return;
-    fetchTimeTotalsByRequest(assigneeRequestIds, profile.id).then(setTimeTotals);
-  }, [requests, profile?.id]);
+    requestsRef.current = requests;
+  }, [requests]);
+
+  const loadPlannerMetadata = useCallback(
+    async (targetRequests: MarketingRequest[]) => {
+      if (targetRequests.length === 0) {
+        return {
+          commentsCounts: {},
+          pendingAlterationsCounts: {},
+          timeTotals: {},
+        };
+      }
+
+      const ids = targetRequests.map((r) => r.id);
+      const assigneeRequestIds = profile?.id
+        ? targetRequests.filter((r) => r.assignee_id === profile.id).map((r) => r.id)
+        : [];
+
+      const [commentStats, timeTotalsResult] = await Promise.all([
+        fetchCommentStats(ids),
+        profile?.id && assigneeRequestIds.length > 0
+          ? fetchTimeTotalsByRequest(assigneeRequestIds, profile.id)
+          : Promise.resolve({}),
+      ]);
+
+      return {
+        commentsCounts: commentStats.commentsCounts,
+        pendingAlterationsCounts: commentStats.pendingAlterationsCounts,
+        timeTotals: timeTotalsResult,
+      };
+    },
+    [profile?.id]
+  );
+
+  const applyPlannerMetadata = useCallback(
+    (metadata: Awaited<ReturnType<typeof loadPlannerMetadata>>) => {
+      setCommentsCounts(metadata.commentsCounts);
+      setPendingAlterationsCounts(metadata.pendingAlterationsCounts);
+      setTimeTotals(metadata.timeTotals);
+    },
+    []
+  );
 
   useEffect(() => {
-    if (requests.length === 0) return;
-    const ids = requests.map((r) => r.id);
-    fetchCommentStats(ids).then(({ commentsCounts, pendingAlterationsCounts }) => {
-      setCommentsCounts(commentsCounts);
-      setPendingAlterationsCounts(pendingAlterationsCounts);
-    });
-  }, [requests]);
+    let active = true;
+
+    loadPlannerMetadata(requests)
+      .then((metadata) => {
+        if (active) applyPlannerMetadata(metadata);
+      })
+      .catch((error) => {
+        console.error("Erro ao carregar metadados do Planner:", error);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [requests, loadPlannerMetadata, applyPlannerMetadata]);
 
   const selectedRequest =
     selectedRequestId != null
       ? requests.find((r) => r.id === selectedRequestId) ?? null
       : null;
 
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
     router.refresh();
-    if (requests.length > 0) {
-      const ids = requests.map((r) => r.id);
-      fetchCommentStats(ids).then(({ commentsCounts, pendingAlterationsCounts }) => {
-        setCommentsCounts(commentsCounts);
-        setPendingAlterationsCounts(pendingAlterationsCounts);
+    loadPlannerMetadata(requestsRef.current)
+      .then(applyPlannerMetadata)
+      .catch((error) => {
+        console.error("Erro ao recarregar Planner:", error);
       });
-    }
-  };
+  }, [router, loadPlannerMetadata, applyPlannerMetadata]);
+
+  useEffect(() => {
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const channel = supabase
+      .channel("planner-marketing-requests")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "marketing_requests" },
+        () => {
+          if (refreshTimer) clearTimeout(refreshTimer);
+          refreshTimer = setTimeout(() => {
+            handleRefresh();
+            setLastRealtimeSyncAt(new Date());
+          }, 500);
+        }
+      )
+      .subscribe((status, error) => {
+        if (status === "SUBSCRIBED") {
+          setRealtimeStatus("connected");
+          return;
+        }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          setRealtimeStatus("unavailable");
+          if (error) console.error("Erro no Realtime do Planner:", error);
+        }
+      });
+
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      supabase.removeChannel(channel);
+    };
+  }, [handleRefresh]);
 
   const handleCardClick = (request: MarketingRequest) => {
     setSelectedRequestId(request.id);
@@ -157,10 +235,27 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
             );
           })}
         </div>
-        <Button onClick={() => setNewRequestOpen(true)}>
-          <PlusCircle className="h-4 w-4 mr-2" />
-          Nova Solicitação
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div
+            className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium ${
+              realtimeStatus === "connected"
+                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400"
+                : "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
+            }`}
+            title={lastRealtimeSyncAt ? `Última atualização em tempo real: ${lastRealtimeSyncAt.toLocaleTimeString("pt-BR")}` : undefined}
+          >
+            {realtimeStatus === "connected" ? (
+              <Wifi className="h-3.5 w-3.5" aria-hidden />
+            ) : (
+              <WifiOff className="h-3.5 w-3.5" aria-hidden />
+            )}
+            {realtimeStatus === "connected" ? "Tempo real ativo" : "Tempo real indisponível"}
+          </div>
+          <Button onClick={() => setNewRequestOpen(true)}>
+            <PlusCircle className="h-4 w-4 mr-2" />
+            Nova Solicitação
+          </Button>
+        </div>
       </div>
 
       {activeTab === "kanban" && (
@@ -175,7 +270,10 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
           workflowColumns={workflowColumns}
           completionTypes={appSettings.completionTypes}
           stageMoveRules={appSettings.stageMoveRules}
+          stageSlaDays={appSettings.stageSlaDays}
           kanbanDisplayOptions={appSettings.kanbanDisplayOptions}
+          showColumnRefresh={realtimeStatus === "unavailable"}
+          onColumnRefresh={handleRefresh}
         />
       )}
       {activeTab === "concluidos" && (
@@ -196,7 +294,10 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
       <KanbanCardDetail
         request={selectedRequest}
         open={detailOpen}
-        onOpenChange={setDetailOpen}
+        onOpenChange={(open) => {
+          setDetailOpen(open);
+          if (!open) setSelectedRequestId(null);
+        }}
         onRefresh={handleRefresh}
         designers={designers}
         completionTypes={appSettings.completionTypes}

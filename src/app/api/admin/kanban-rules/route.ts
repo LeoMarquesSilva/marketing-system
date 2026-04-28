@@ -4,6 +4,7 @@ import type {
   KanbanVisibility,
   StageMoveRules,
   KanbanDisplayOptions,
+  StageSlaDays,
 } from "@/lib/app-settings";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,7 @@ export async function POST(request: Request) {
     const kanbanVisibility = body.kanbanVisibility as KanbanVisibility | undefined;
     const stageMoveRules = body.stageMoveRules as StageMoveRules | undefined;
     const kanbanDisplayOptions = body.kanbanDisplayOptions as KanbanDisplayOptions | undefined;
+    const stageSlaDays = body.stageSlaDays as StageSlaDays | undefined;
     const accessToken = body.accessToken as string | undefined;
     const refreshToken = body.refreshToken as string | undefined;
 
@@ -88,6 +90,22 @@ export async function POST(request: Request) {
         );
       if (err3) {
         return NextResponse.json({ error: err3.message }, { status: 500 });
+      }
+    }
+
+    if (stageSlaDays != null && typeof stageSlaDays === "object") {
+      const { error: err4 } = await supabase
+        .from("app_settings")
+        .upsert(
+          {
+            key: "stage_sla_days",
+            value: stageSlaDays,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "key" }
+        );
+      if (err4) {
+        return NextResponse.json({ error: err4.message }, { status: 500 });
       }
     }
 

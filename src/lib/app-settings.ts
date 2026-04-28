@@ -30,6 +30,7 @@ export interface StageMoveRule {
 }
 
 export type StageMoveRules = Record<string, StageMoveRule>;
+export type StageSlaDays = Record<string, number>;
 
 /** Opções de exibição do board Kanban (largura de coluna, ordenação, tempo nos cards) */
 export type KanbanColumnWidth = "fixed" | "compact";
@@ -47,17 +48,19 @@ export interface AppSettings {
   completionTypes: CompletionTypeConfig[];
   kanbanVisibility: KanbanVisibility;
   stageMoveRules: StageMoveRules;
+  stageSlaDays: StageSlaDays;
   kanbanDisplayOptions: KanbanDisplayOptions;
 }
 
 // --- Defaults (fallback when DB is empty or fails) ---
 
 const DEFAULT_WORKFLOW_STAGES: WorkflowStageConfig[] = [
-  { value: "tarefas", label: "Tarefas", sortOrder: 0, showInKanban: true },
-  { value: "revisao", label: "Revisão", sortOrder: 1, showInKanban: true },
-  { value: "revisado", label: "Revisado", sortOrder: 2, showInKanban: true },
-  { value: "revisao_autor", label: "Revisão autor", sortOrder: 3, showInKanban: true },
-  { value: "concluido", label: "Concluído", sortOrder: 4, showInKanban: false },
+  { value: "tarefas", label: "Aguardando produção", sortOrder: 0, showInKanban: true },
+  { value: "em_producao", label: "Em produção", sortOrder: 1, showInKanban: true },
+  { value: "revisao", label: "Em revisão", sortOrder: 2, showInKanban: true },
+  { value: "revisao_autor", label: "Ajustes solicitados", sortOrder: 3, showInKanban: true },
+  { value: "revisado", label: "Aprovado / pronto", sortOrder: 4, showInKanban: true },
+  { value: "concluido", label: "Concluído / publicado", sortOrder: 5, showInKanban: false },
 ];
 
 const DEFAULT_PLANNER_TABS: PlannerTabId[] = ["kanban", "concluidos", "posts"];
@@ -70,6 +73,12 @@ const DEFAULT_KANBAN_VISIBILITY: KanbanVisibility = "designer_own_admin_all";
 
 const DEFAULT_STAGE_MOVE_RULES: StageMoveRules = {
   revisao: { showArtLinkDialog: true, keepAssignee: true },
+};
+
+const DEFAULT_STAGE_SLA_DAYS: StageSlaDays = {
+  revisao: 2,
+  revisao_autor: 2,
+  revisado: 1,
 };
 
 const DEFAULT_KANBAN_DISPLAY_OPTIONS: KanbanDisplayOptions = {
@@ -142,6 +151,19 @@ function parseStageMoveRules(value: unknown): StageMoveRules {
   return Object.keys(out).length > 0 ? out : DEFAULT_STAGE_MOVE_RULES;
 }
 
+function parseStageSlaDays(value: unknown): StageSlaDays {
+  if (!value || typeof value !== "object") return DEFAULT_STAGE_SLA_DAYS;
+  const obj = value as Record<string, unknown>;
+  const out: StageSlaDays = {};
+  for (const [stage, days] of Object.entries(obj)) {
+    const parsed = Number(days);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      out[stage] = Math.floor(parsed);
+    }
+  }
+  return { ...DEFAULT_STAGE_SLA_DAYS, ...out };
+}
+
 function parseKanbanDisplayOptions(value: unknown): KanbanDisplayOptions {
   if (!value || typeof value !== "object") return DEFAULT_KANBAN_DISPLAY_OPTIONS;
   const obj = value as Record<string, unknown>;
@@ -170,6 +192,7 @@ export async function parseAppSettingsFromMap(
     completionTypes: parseCompletionTypes(map?.get("completion_types")),
     kanbanVisibility: parseKanbanVisibility(map?.get("kanban_visibility")),
     stageMoveRules: parseStageMoveRules(map?.get("stage_move_rules")),
+    stageSlaDays: parseStageSlaDays(map?.get("stage_sla_days")),
     kanbanDisplayOptions: parseKanbanDisplayOptions(map?.get("kanban_display_options")),
   };
 }
@@ -205,6 +228,7 @@ export async function getAppSettingsUncached(): Promise<AppSettings> {
     completionTypes: parseCompletionTypes(map?.get("completion_types")),
     kanbanVisibility: parseKanbanVisibility(map?.get("kanban_visibility")),
     stageMoveRules: parseStageMoveRules(map?.get("stage_move_rules")),
+    stageSlaDays: parseStageSlaDays(map?.get("stage_sla_days")),
     kanbanDisplayOptions: parseKanbanDisplayOptions(map?.get("kanban_display_options")),
   };
 }
@@ -340,7 +364,8 @@ export async function updateCompletionTypes(
 export async function updateKanbanRules(
   kanbanVisibility: KanbanVisibility,
   stageMoveRules: StageMoveRules,
-  kanbanDisplayOptions?: KanbanDisplayOptions
+  kanbanDisplayOptions?: KanbanDisplayOptions,
+  stageSlaDays?: StageSlaDays
 ): Promise<{ error: string | null }> {
   const result = await ensureAdmin();
   if (result.error) return { error: result.error };
@@ -375,6 +400,19 @@ export async function updateKanbanRules(
         { onConflict: "key" }
       );
     if (err3) return { error: err3.message };
+  }
+  if (stageSlaDays != null) {
+    const { error: err4 } = await supabase
+      .from("app_settings")
+      .upsert(
+        {
+          key: "stage_sla_days",
+          value: stageSlaDays,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "key" }
+      );
+    if (err4) return { error: err4.message };
   }
   return { error: null };
 }
