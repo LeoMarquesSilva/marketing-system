@@ -34,7 +34,6 @@ type PeriodPreset =
   | "30d"
   | "90d"
   | "month"
-  | "quarter"
   | "semester"
   | "year"
   | "custom";
@@ -82,13 +81,6 @@ function getPresetRange(preset: PeriodPreset, customFrom: string, customTo: stri
   if (preset === "month") {
     return {
       from: new Date(today.getFullYear(), today.getMonth(), 1),
-      to: endOfToday,
-    };
-  }
-  if (preset === "quarter") {
-    const quarterStartMonth = Math.floor(today.getMonth() / 3) * 3;
-    return {
-      from: new Date(today.getFullYear(), quarterStartMonth, 1),
       to: endOfToday,
     };
   }
@@ -162,7 +154,6 @@ export function DashboardClient({ requests }: DashboardClientProps) {
     if (periodPreset === "30d") return "Últimos 30 dias";
     if (periodPreset === "90d") return "Últimos 90 dias";
     if (periodPreset === "month") return "Mês atual";
-    if (periodPreset === "quarter") return "Trimestre atual";
     if (periodPreset === "semester") return "Semestre atual";
     if (periodPreset === "year") return "Ano atual";
     const from = customFrom ? customFrom.split("-").reverse().join("/") : "início";
@@ -408,7 +399,6 @@ export function DashboardClient({ requests }: DashboardClientProps) {
                   <SelectItem value="30d">Últimos 30 dias</SelectItem>
                   <SelectItem value="90d">Últimos 90 dias</SelectItem>
                   <SelectItem value="month">Mês atual</SelectItem>
-                  <SelectItem value="quarter">Trimestre atual</SelectItem>
                   <SelectItem value="semester">Semestre atual</SelectItem>
                   <SelectItem value="year">Ano atual</SelectItem>
                   <SelectItem value="custom">Personalizado</SelectItem>
