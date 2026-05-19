@@ -152,21 +152,29 @@ export async function fetchTimesheetForDashboard(
   const since = new Date();
   since.setDate(since.getDate() - days);
 
-  let query = supabase
-    .from("time_entries")
-    .select("id, request_id, user_id, started_at, ended_at, users(name), marketing_requests(title)")
-    .gte("started_at", (options?.from ?? since).toISOString())
-    .limit(10000);
-
-  if (options?.to) {
-    query = query.lte("started_at", options.to.toISOString());
+  function buildBase() {
+    let q = supabase
+      .from("time_entries")
+      .select("id, request_id, user_id, started_at, ended_at, users(name), marketing_requests(title)")
+      .gte("started_at", (options?.from ?? since).toISOString());
+    if (options?.to) q = q.lte("started_at", options.to.toISOString());
+    return q;
   }
 
-  const { data } = await query;
+  const PAGE = 1000;
+  const allRows: unknown[] = [];
+  let page = 0;
+  while (true) {
+    const { data } = await buildBase().range(page * PAGE, (page + 1) * PAGE - 1);
+    if (!data || data.length === 0) break;
+    allRows.push(...data);
+    if (data.length < PAGE) break;
+    page++;
+  }
 
-  if (!data) return [];
+  if (allRows.length === 0) return [];
 
-  return (data as unknown as Array<{
+  return (allRows as Array<{
     id: string;
     request_id: string;
     user_id: string;

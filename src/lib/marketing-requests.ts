@@ -106,57 +106,58 @@ export async function fetchMarketingRequests(
   options?: FetchMarketingRequestsOptions
 ): Promise<MarketingRequest[]> {
   const client = options?.supabaseClient ?? supabase;
-  let query = client
-    .from("marketing_requests")
-    .select(KANBAN_SELECT)
-    .order("requested_at", { ascending: false })
-    .limit(10000);
 
-  if (options?.userId && options?.role && options.role !== "admin") {
-    if (options.role === "designer") {
-      // Designer: suas tarefas (assignee = ela) + tudo que está em Revisão, Revisado ou Revisão autor
-      query = query.or(
-        `assignee_id.eq.${options.userId},workflow_stage.in.(revisao,revisado,revisao_autor)`
-      );
-    } else if (options.role === "solicitante") {
-      query = query.eq("solicitante_id", options.userId);
+  function buildBase(selectStr: string) {
+    let q = client
+      .from("marketing_requests")
+      .select(selectStr)
+      .order("requested_at", { ascending: false });
+    if (options?.userId && options?.role && options.role !== "admin") {
+      if (options.role === "designer") {
+        q = q.or(
+          `assignee_id.eq.${options.userId},workflow_stage.in.(revisao,revisado,revisao_autor)`
+        );
+      } else if (options.role === "solicitante") {
+        q = q.eq("solicitante_id", options.userId!);
+      }
     }
+    return q;
   }
 
-  let { data, error } = await query;
+  async function fetchAllPages(selectStr: string) {
+    const PAGE = 1000;
+    const rows: unknown[] = [];
+    let page = 0;
+    while (true) {
+      const { data, error } = await buildBase(selectStr).range(page * PAGE, (page + 1) * PAGE - 1);
+      if (error) return { rows: null as unknown[] | null, error };
+      if (!data || data.length === 0) break;
+      rows.push(...data);
+      if (data.length < PAGE) break;
+      page++;
+    }
+    return { rows, error: null };
+  }
+
+  let { rows, error } = await fetchAllPages(KANBAN_SELECT);
 
   if (error) {
     logSupabaseError("Erro ao buscar solicitações", error);
     const msg = String((error as { message?: string }).message ?? "");
     if (msg.includes("art_link") && msg.toLowerCase().includes("does not exist")) {
-      query = client
-        .from("marketing_requests")
-        .select(KANBAN_SELECT_WITHOUT_ART_LINK)
-        .order("requested_at", { ascending: false })
-        .limit(10000);
-      if (options?.userId && options?.role && options.role !== "admin") {
-        if (options.role === "designer") {
-          query = query.or(
-            `assignee_id.eq.${options.userId},workflow_stage.in.(revisao,revisado,revisao_autor)`
-          );
-        } else if (options.role === "solicitante") {
-          query = query.eq("solicitante_id", options.userId!);
-        }
-      }
-      const fallback = await query;
+      const fallback = await fetchAllPages(KANBAN_SELECT_WITHOUT_ART_LINK);
       if (fallback.error) {
         logSupabaseError("Erro ao buscar solicitações (fallback sem art_link)", fallback.error);
         return [];
       }
-      data = fallback.data;
-      error = null;
+      rows = fallback.rows;
     } else {
       return [];
     }
   }
 
-  let requests = (data ?? []) as unknown as MarketingRequest[];
-  if (error === null && data && requests.length > 0 && (requests[0] as unknown as Record<string, unknown>).art_link === undefined) {
+  let requests = (rows ?? []) as unknown as MarketingRequest[];
+  if (requests.length > 0 && (requests[0] as unknown as Record<string, unknown>).art_link === undefined) {
     requests = requests.map((r) => ({ ...r, art_link: null })) as MarketingRequest[];
   }
 
