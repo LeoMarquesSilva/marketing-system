@@ -56,35 +56,6 @@ function parseInputDate(value: string, endOfDay = false) {
   return date;
 }
 
-function getQuarterFromMonth(month: number) {
-  return Math.floor(month / 3) + 1;
-}
-
-function getQuarterKey(date: Date) {
-  return `${date.getFullYear()}-Q${getQuarterFromMonth(date.getMonth())}`;
-}
-
-function getQuarterLabel(quarterKey: string) {
-  const [year, quarter] = quarterKey.split("-");
-  return `${quarter} ${year}`;
-}
-
-function parseQuarterKey(quarterKey: string) {
-  const [yearPart, quarterPart] = quarterKey.split("-Q");
-  const year = Number(yearPart);
-  const quarter = Number(quarterPart);
-  if (!year || !quarter || quarter < 1 || quarter > 4) return null;
-  return { year, quarter };
-}
-
-function getQuarterDateRange(quarterKey: string) {
-  const parsed = parseQuarterKey(quarterKey);
-  if (!parsed) return null;
-  const startMonth = (parsed.quarter - 1) * 3;
-  const from = new Date(parsed.year, startMonth, 1, 0, 0, 0, 0);
-  const to = new Date(parsed.year, startMonth + 3, 0, 23, 59, 59, 999);
-  return { from, to };
-}
 
 function getEntryDurationMs(entry: TimesheetRawEntry) {
   const start = new Date(entry.started_at).getTime();
@@ -151,7 +122,6 @@ export function DashboardClient({ requests }: DashboardClientProps) {
   const [periodPreset, setPeriodPreset] = useState<PeriodPreset>("all");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
-  const [exportQuarter, setExportQuarter] = useState<string>("");
   const [isExporting, setIsExporting] = useState(false);
 
   const requestsFiltered = useMemo(() => {
@@ -168,34 +138,6 @@ export function DashboardClient({ requests }: DashboardClientProps) {
     [periodPreset, customFrom, customTo]
   );
 
-  const availableQuarters = useMemo(() => {
-    const keys = Array.from(
-      new Set(
-        requestsFiltered
-          .map((request) => new Date(request.requested_at))
-          .filter((date) => !Number.isNaN(date.getTime()))
-          .map((date) => getQuarterKey(date))
-      )
-    );
-
-    return keys.sort((a, b) => (a > b ? -1 : 1));
-  }, [requestsFiltered]);
-
-  const selectedExportQuarter = useMemo(() => {
-    if (exportQuarter && availableQuarters.includes(exportQuarter)) return exportQuarter;
-    const currentQuarter = getQuarterKey(new Date());
-    if (availableQuarters.includes(currentQuarter)) return currentQuarter;
-    return availableQuarters[0] ?? "";
-  }, [availableQuarters, exportQuarter]);
-
-  const exportQuarterRequests = useMemo(() => {
-    if (!selectedExportQuarter) return [];
-    return requestsFiltered.filter((request) => {
-      const requestedAt = new Date(request.requested_at);
-      if (Number.isNaN(requestedAt.getTime())) return false;
-      return getQuarterKey(requestedAt) === selectedExportQuarter;
-    });
-  }, [requestsFiltered, selectedExportQuarter]);
 
   const normalizedRequests = useMemo(() => {
     const { from, to } = periodRange;
@@ -251,22 +193,23 @@ export function DashboardClient({ requests }: DashboardClientProps) {
     setCustomTo("");
   };
 
-  const handleExportQuarterToExcel = async () => {
-    if (!selectedExportQuarter || exportQuarterRequests.length === 0) return;
-
-    const quarterRange = getQuarterDateRange(selectedExportQuarter);
-    if (!quarterRange) return;
+  const handleExportToExcel = async () => {
+    if (normalizedRequests.length === 0) return;
 
     setIsExporting(true);
     try {
-      const timesheetEntries = await fetchTimesheetForDashboard(120, quarterRange);
       const role = (profile?.role ?? "").toLowerCase();
       const isDesigner = role === "designer" || profile?.department === "Marketing";
+
+      const fetchRange = periodRange.from && periodRange.to
+        ? { from: periodRange.from, to: periodRange.to }
+        : undefined;
+      const timesheetEntries = await fetchTimesheetForDashboard(3650, fetchRange);
       const visibleTimesheetEntries = isDesigner && profile?.id
         ? timesheetEntries.filter((entry) => entry.user_id === profile.id)
         : timesheetEntries;
 
-      const requestIdsSet = new Set(exportQuarterRequests.map((request) => request.id));
+      const requestIdsSet = new Set(normalizedRequests.map((r) => r.id));
       const linkedEntries = visibleTimesheetEntries.filter((entry) => requestIdsSet.has(entry.request_id));
 
       const timeByRequest = linkedEntries.reduce<Record<string, { ms: number; entries: number }>>(
@@ -280,18 +223,94 @@ export function DashboardClient({ requests }: DashboardClientProps) {
         {}
       );
 
-      const rows = exportQuarterRequests.map((request) => {
+      const totalTimesheetMs = linkedEntries.reduce((acc, e) => acc + getEntryDurationMs(e), 0);
+      const reviewCount = normalizedRequests.filter(
+        (r) => r.workflow_stage === "revisao" || r.workflow_stage === "revisao_autor"
+      ).length;
+      const uniqueAreas = new Set(normalizedRequests.map((r) => r.requesting_area).filter(Boolean)).size;
+
+      const monthCounts = normalizedRequests.reduce<Record<string, number>>((acc, r) => {
+        const d = new Date(r.requested_at);
+        if (Number.isNaN(d.getTime())) return acc;
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        acc[key] = (acc[key] ?? 0) + 1;
+        return acc;
+      }, {});
+      const monthsSorted = Object.keys(monthCounts).sort();
+      const avgPerMonth = monthsSorted.length > 0
+        ? Number((normalizedRequests.length / monthsSorted.length).toFixed(1))
+        : 0;
+
+      const topAreaEntry = dataByArea[0];
+      const top3Areas = dataByArea.slice(0, 3).map((a) => `${a.area} (${a.total})`).join(", ");
+      const topTypeEntry = dataByType[0];
+      const topMonthKey = monthsSorted.reduce(
+        (best, key) => (monthCounts[key] > (monthCounts[best] ?? 0) ? key : best),
+        monthsSorted[0] ?? ""
+      );
+      const topMonthLabel = topMonthKey
+        ? new Date(`${topMonthKey}-01`).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })
+        : "";
+      const topMonthPct = topMonthKey && normalizedRequests.length > 0
+        ? Number(((monthCounts[topMonthKey] / normalizedRequests.length) * 100).toFixed(1))
+        : 0;
+
+      // Aba 1: Dashboard (cards + insights + dados auxiliares)
+      const dashboardRows = [
+        { Secao: "Cards superiores", Indicador: "Demandas Recebidas", Valor: normalizedRequests.length },
+        { Secao: "Cards superiores", Indicador: "Demandas Concluídas", Valor: computeDashboardMetrics(normalizedRequests).completedCount },
+        { Secao: "Cards superiores", Indicador: "Demandas em Revisão", Valor: reviewCount },
+        { Secao: "Cards superiores", Indicador: "Tempo Aplicado em Atividades (horas)", Valor: Number((totalTimesheetMs / 3_600_000).toFixed(2)) },
+        { Secao: "Cards superiores", Indicador: "Demandas Médias por Mês", Valor: avgPerMonth },
+        { Secao: "Cards superiores", Indicador: "Áreas Atendidas", Valor: uniqueAreas },
+        { Secao: "", Indicador: "", Valor: "" },
+        { Secao: "Insights automáticos", Indicador: "Área com maior volume", Valor: topAreaEntry ? `${topAreaEntry.area} (${topAreaEntry.total})` : "" },
+        { Secao: "Insights automáticos", Indicador: "Top 3 áreas", Valor: top3Areas },
+        { Secao: "Insights automáticos", Indicador: "Tipo de entrega mais solicitado", Valor: topTypeEntry ? `${topTypeEntry.name} (${topTypeEntry.value})` : "" },
+        { Secao: "Insights automáticos", Indicador: "Quantidade de tipos diferentes", Valor: dataByType.length },
+        { Secao: "Insights automáticos", Indicador: "Mês com maior volume", Valor: topMonthLabel },
+        { Secao: "Insights automáticos", Indicador: "Percentual do mês sobre o período total", Valor: topMonthPct > 0 ? `${topMonthPct}%` : "" },
+        { Secao: "", Indicador: "", Valor: "" },
+        { Secao: "Dados auxiliares", Indicador: "Total do período analisado", Valor: normalizedRequests.length },
+        { Secao: "Dados auxiliares", Indicador: "Data inicial do filtro", Valor: periodRange.from ? periodRange.from.toLocaleDateString("pt-BR") : "Início do histórico" },
+        { Secao: "Dados auxiliares", Indicador: "Data final do filtro", Valor: periodRange.to ? periodRange.to.toLocaleDateString("pt-BR") : "Hoje" },
+        { Secao: "Dados auxiliares", Indicador: "Quantidade de meses considerados", Valor: monthsSorted.length },
+      ];
+
+      // Aba 2: Demandas por Área
+      const areaRows = dataByArea.map((a) => ({
+        Área: a.area,
+        "Quantidade de Demandas": a.total,
+        "Percentual (%)": normalizedRequests.length > 0
+          ? Number(((a.total / normalizedRequests.length) * 100).toFixed(1))
+          : 0,
+      }));
+
+      // Aba 3: Tipos de Entrega
+      const tipoRows = dataByType.map((t) => ({
+        "Tipo de Entrega": t.name,
+        "Quantidade": t.value,
+      }));
+
+      // Aba 4: Evolução Mensal
+      const evolucaoRows = monthsSorted.map((key) => ({
+        Mês: new Date(`${key}-01`).toLocaleDateString("pt-BR", { month: "long", year: "numeric" }),
+        "Quantidade de Demandas": monthCounts[key],
+      }));
+
+      // Aba 5: Solicitações (dados brutos)
+      const solicitacoesRows = normalizedRequests.map((request) => {
         const totals = timeByRequest[request.id] ?? { ms: 0, entries: 0 };
         return {
           ID: request.id,
           Titulo: request.title,
-          Area: request.requesting_area,
+          Área: request.requesting_area,
           Status: request.status,
           Etapa: request.workflow_stage ?? "",
           Tipo: request.request_type ?? "",
           Prioridade: request.priority,
           Solicitante: request.solicitante ?? "",
-          Responsavel: request.assignee ?? "",
+          Responsável: request.assignee ?? "",
           "Solicitado em": request.requested_at
             ? new Date(request.requested_at).toLocaleDateString("pt-BR")
             : "",
@@ -299,7 +318,7 @@ export function DashboardClient({ requests }: DashboardClientProps) {
           "Entregue em": request.delivered_at
             ? new Date(request.delivered_at).toLocaleDateString("pt-BR")
             : "",
-          "Tipo de conclusao": request.completion_type ?? "",
+          "Tipo de conclusão": request.completion_type ?? "",
           "Tempo total (h)": Number((totals.ms / 3_600_000).toFixed(2)),
           "Tempo total (formatado)": formatDurationFromMs(totals.ms),
           "Registros de timesheet": totals.entries,
@@ -308,23 +327,34 @@ export function DashboardClient({ requests }: DashboardClientProps) {
         };
       });
 
+      // Aba 6: Timesheet
       const timesheetRows = linkedEntries.map((entry) => ({
-        "Solicitacao ID": entry.request_id,
-        Solicitacao: entry.request_title ?? "",
+        "Solicitação ID": entry.request_id,
+        Solicitação: entry.request_title ?? "",
         Designer: entry.user_name ?? "Desconhecido",
-        "Inicio": new Date(entry.started_at).toLocaleString("pt-BR"),
-        "Fim": entry.ended_at ? new Date(entry.ended_at).toLocaleString("pt-BR") : "Em andamento",
-        "Duracao (h)": Number((getEntryDurationMs(entry) / 3_600_000).toFixed(2)),
-        "Duracao (formatada)": formatDurationFromMs(getEntryDurationMs(entry)),
+        Início: new Date(entry.started_at).toLocaleString("pt-BR"),
+        Fim: entry.ended_at ? new Date(entry.ended_at).toLocaleString("pt-BR") : "Em andamento",
+        "Duração (h)": Number((getEntryDurationMs(entry) / 3_600_000).toFixed(2)),
+        "Duração (formatada)": formatDurationFromMs(getEntryDurationMs(entry)),
       }));
 
       const wb = XLSX.utils.book_new();
-      const dashboardWs = XLSX.utils.json_to_sheet(rows);
-      const timesheetWs = XLSX.utils.json_to_sheet(timesheetRows);
-      XLSX.utils.book_append_sheet(wb, dashboardWs, "Solicitacoes");
-      XLSX.utils.book_append_sheet(wb, timesheetWs, "Timesheet");
-      const filename = `dashboard-${selectedExportQuarter.toLowerCase()}.xlsx`;
-      XLSX.writeFile(wb, filename);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dashboardRows), "Dashboard");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(areaRows), "Por Area");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tipoRows), "Por Tipo");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(evolucaoRows), "Evolucao Mensal");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(solicitacoesRows), "Solicitacoes");
+      if (timesheetRows.length > 0) {
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(timesheetRows), "Timesheet");
+      }
+
+      const fromLabel = periodRange.from
+        ? periodRange.from.toLocaleDateString("pt-BR").replace(/\//g, "-")
+        : "inicio";
+      const toLabel = periodRange.to
+        ? periodRange.to.toLocaleDateString("pt-BR").replace(/\//g, "-")
+        : "hoje";
+      XLSX.writeFile(wb, `dashboard-${fromLabel}-a-${toLabel}.xlsx`);
     } finally {
       setIsExporting(false);
     }
@@ -420,33 +450,19 @@ export function DashboardClient({ requests }: DashboardClientProps) {
 
             <div className="space-y-1.5">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Exportar trimestre
+                Exportar período
               </span>
-              <div className="flex gap-2">
-                <Select value={selectedExportQuarter} onValueChange={setExportQuarter}>
-                  <SelectTrigger className="h-9 w-full min-w-[150px] bg-white/80 dark:bg-input/30">
-                    <SelectValue placeholder="Selecione o trimestre" />
-                  </SelectTrigger>
-                  <SelectContent align="end">
-                    {availableQuarters.map((quarter) => (
-                      <SelectItem key={quarter} value={quarter}>
-                        {getQuarterLabel(quarter)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-9 whitespace-nowrap"
-                  onClick={handleExportQuarterToExcel}
-                  disabled={!selectedExportQuarter || exportQuarterRequests.length === 0 || isExporting}
-                >
-                  <Download className="h-3.5 w-3.5" aria-hidden />
-                  {isExporting ? "Gerando..." : "Excel"}
-                </Button>
-              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 whitespace-nowrap"
+                onClick={handleExportToExcel}
+                disabled={normalizedRequests.length === 0 || isExporting}
+              >
+                <Download className="h-3.5 w-3.5" aria-hidden />
+                {isExporting ? "Gerando..." : "Baixar Excel"}
+              </Button>
             </div>
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
