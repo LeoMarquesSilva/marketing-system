@@ -135,7 +135,7 @@ export function ChartTimesheet({ dateRange }: ChartTimesheetProps) {
 
   useEffect(() => {
     let cancelled = false;
-    fetchTimesheetForDashboard(30, dateRange).then((data) => {
+    fetchTimesheetForDashboard(3650, dateRange).then((data) => {
       if (cancelled) return;
       setEntries(data);
       setLoading(false);
