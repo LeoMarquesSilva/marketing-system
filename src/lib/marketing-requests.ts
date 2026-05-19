@@ -340,7 +340,7 @@ export async function updateWorkflowStage(
 }
 
 export function isRequestDone(r: MarketingRequest): boolean {
-  return r.status === "completed" || r.workflow_stage === "concluido" || !!r.delivered_at;
+  return r.workflow_stage === "concluido";
 }
 
 export function computeDashboardMetrics(requests: MarketingRequest[]) {
