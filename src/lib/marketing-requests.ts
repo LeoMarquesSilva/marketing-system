@@ -349,8 +349,11 @@ export function computeDashboardMetrics(requests: MarketingRequest[]) {
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
   });
 
+  const isDone = (r: MarketingRequest) =>
+    r.status === "completed" || r.workflow_stage === "concluido";
+
   const completedWithDelivery = requests.filter(
-    (r) => r.status === "completed" && r.delivered_at
+    (r) => isDone(r) && r.delivered_at
   );
 
   const avgDays =
@@ -366,17 +369,17 @@ export function computeDashboardMetrics(requests: MarketingRequest[]) {
         }, 0) / completedWithDelivery.length
       : null;
 
-  const completedCount = requests.filter((r) => r.status === "completed").length;
-  const pendingCount = requests.filter((r) => r.status === "pending").length;
-  const inProgressCount = requests.filter((r) => r.status === "in_progress").length;
+  const completedCount = requests.filter(isDone).length;
+  const pendingCount = requests.filter((r) => !isDone(r) && r.status === "pending").length;
+  const inProgressCount = requests.filter((r) => !isDone(r) && r.status === "in_progress").length;
 
   const overdueCount = requests.filter((r) => {
-    if (r.status === "completed") return false;
+    if (isDone(r)) return false;
     const moment = getDeadlineMoment(r.deadline, r.deadline_time);
     return moment !== null && now > moment;
   }).length;
   const unassignedCount = requests.filter(
-    (r) => r.status !== "completed" && !r.assignee_id
+    (r) => !isDone(r) && !r.assignee_id
   ).length;
 
   const areaCounts = requests.reduce(
@@ -407,12 +410,11 @@ export function computeDashboardMetrics(requests: MarketingRequest[]) {
 
   const statusCounts = requests.reduce(
     (acc, r) => {
-      const label =
-        r.status === "pending"
+      const label = isDone(r)
+        ? "Concluído"
+        : r.status === "pending"
           ? "Pendente"
-          : r.status === "in_progress"
-            ? "Em andamento"
-            : "Concluído";
+          : "Em andamento";
       acc[label] = (acc[label] || 0) + 1;
       return acc;
     },
