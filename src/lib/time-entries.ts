@@ -155,7 +155,8 @@ export async function fetchTimesheetForDashboard(
   let query = supabase
     .from("time_entries")
     .select("id, request_id, user_id, started_at, ended_at, users(name), marketing_requests(title)")
-    .gte("started_at", (options?.from ?? since).toISOString());
+    .gte("started_at", (options?.from ?? since).toISOString())
+    .limit(10000);
 
   if (options?.to) {
     query = query.lte("started_at", options.to.toISOString());

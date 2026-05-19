@@ -109,7 +109,8 @@ export async function fetchMarketingRequests(
   let query = client
     .from("marketing_requests")
     .select(KANBAN_SELECT)
-    .order("requested_at", { ascending: false });
+    .order("requested_at", { ascending: false })
+    .limit(10000);
 
   if (options?.userId && options?.role && options.role !== "admin") {
     if (options.role === "designer") {
@@ -131,7 +132,8 @@ export async function fetchMarketingRequests(
       query = client
         .from("marketing_requests")
         .select(KANBAN_SELECT_WITHOUT_ART_LINK)
-        .order("requested_at", { ascending: false });
+        .order("requested_at", { ascending: false })
+        .limit(10000);
       if (options?.userId && options?.role && options.role !== "admin") {
         if (options.role === "designer") {
           query = query.or(
@@ -350,7 +352,7 @@ export function computeDashboardMetrics(requests: MarketingRequest[]) {
   });
 
   const isDone = (r: MarketingRequest) =>
-    r.status === "completed" || r.workflow_stage === "concluido";
+    r.status === "completed" || r.workflow_stage === "concluido" || !!r.delivered_at;
 
   const completedWithDelivery = requests.filter(
     (r) => isDone(r) && r.delivered_at
