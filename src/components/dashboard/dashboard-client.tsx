@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { MarketingRequest } from "@/lib/marketing-requests";
-import { computeDashboardMetrics } from "@/lib/marketing-requests";
+import { computeDashboardMetrics, isRequestDone } from "@/lib/marketing-requests";
 import { useAuth } from "@/contexts/auth-context";
 import { fetchTimesheetForDashboard, type TimesheetRawEntry } from "@/lib/time-entries";
 import { CalendarRange, Download, X } from "lucide-react";
@@ -124,14 +124,17 @@ export function DashboardClient({ requests }: DashboardClientProps) {
   const [customTo, setCustomTo] = useState("");
   const [isExporting, setIsExporting] = useState(false);
 
-  const requestsFiltered = useMemo(() => {
+  const isDesigner = useMemo(() => {
     const r = (profile?.role ?? "").toLowerCase();
-    const isDesigner = r === "designer" || profile?.department === "Marketing";
+    return r === "designer" || profile?.department === "Marketing";
+  }, [profile]);
+
+  const requestsFiltered = useMemo(() => {
     if (isDesigner && profile?.id) {
       return requests.filter((req) => req.assignee_id === profile.id);
     }
     return requests;
-  }, [requests, profile]);
+  }, [requests, isDesigner, profile?.id]);
 
   const periodRange = useMemo(
     () => getPresetRange(periodPreset, customFrom, customTo),
@@ -193,14 +196,32 @@ export function DashboardClient({ requests }: DashboardClientProps) {
     setCustomTo("");
   };
 
+  const dashboardMetrics = useMemo(
+    () => computeDashboardMetrics(normalizedRequests),
+    [normalizedRequests]
+  );
+
+  const exportMonthData = useMemo(() => {
+    const counts = normalizedRequests.reduce<Record<string, number>>((acc, r) => {
+      const d = new Date(r.requested_at);
+      if (Number.isNaN(d.getTime())) return acc;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      acc[key] = (acc[key] ?? 0) + 1;
+      return acc;
+    }, {});
+    const sorted = Object.keys(counts).sort();
+    const topKey = sorted.reduce(
+      (best, key) => (counts[key] > (counts[best] ?? 0) ? key : best),
+      sorted[0] ?? ""
+    );
+    return { counts, sorted, topKey };
+  }, [normalizedRequests]);
+
   const handleExportToExcel = async () => {
     if (normalizedRequests.length === 0) return;
 
     setIsExporting(true);
     try {
-      const role = (profile?.role ?? "").toLowerCase();
-      const isDesigner = role === "designer" || profile?.department === "Marketing";
-
       const fetchRange = periodRange.from && periodRange.to
         ? { from: periodRange.from, to: periodRange.to }
         : undefined;
@@ -223,20 +244,14 @@ export function DashboardClient({ requests }: DashboardClientProps) {
         {}
       );
 
+      const { completedCount, dataByArea, dataByType } = dashboardMetrics;
+      const { counts: monthCounts, sorted: monthsSorted, topKey: topMonthKey } = exportMonthData;
+
       const totalTimesheetMs = linkedEntries.reduce((acc, e) => acc + getEntryDurationMs(e), 0);
       const reviewCount = normalizedRequests.filter(
         (r) => r.workflow_stage === "revisao" || r.workflow_stage === "revisao_autor"
       ).length;
       const uniqueAreas = new Set(normalizedRequests.map((r) => r.requesting_area).filter(Boolean)).size;
-
-      const monthCounts = normalizedRequests.reduce<Record<string, number>>((acc, r) => {
-        const d = new Date(r.requested_at);
-        if (Number.isNaN(d.getTime())) return acc;
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-        acc[key] = (acc[key] ?? 0) + 1;
-        return acc;
-      }, {});
-      const monthsSorted = Object.keys(monthCounts).sort();
       const avgPerMonth = monthsSorted.length > 0
         ? Number((normalizedRequests.length / monthsSorted.length).toFixed(1))
         : 0;
@@ -244,10 +259,6 @@ export function DashboardClient({ requests }: DashboardClientProps) {
       const topAreaEntry = dataByArea[0];
       const top3Areas = dataByArea.slice(0, 3).map((a) => `${a.area} (${a.total})`).join(", ");
       const topTypeEntry = dataByType[0];
-      const topMonthKey = monthsSorted.reduce(
-        (best, key) => (monthCounts[key] > (monthCounts[best] ?? 0) ? key : best),
-        monthsSorted[0] ?? ""
-      );
       const topMonthLabel = topMonthKey
         ? new Date(`${topMonthKey}-01`).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })
         : "";
@@ -255,10 +266,9 @@ export function DashboardClient({ requests }: DashboardClientProps) {
         ? Number(((monthCounts[topMonthKey] / normalizedRequests.length) * 100).toFixed(1))
         : 0;
 
-      // Aba 1: Dashboard (cards + insights + dados auxiliares)
       const dashboardRows = [
         { Secao: "Cards superiores", Indicador: "Demandas Recebidas", Valor: normalizedRequests.length },
-        { Secao: "Cards superiores", Indicador: "Demandas Concluídas", Valor: computeDashboardMetrics(normalizedRequests).completedCount },
+        { Secao: "Cards superiores", Indicador: "Demandas Concluídas", Valor: completedCount },
         { Secao: "Cards superiores", Indicador: "Demandas em Revisão", Valor: reviewCount },
         { Secao: "Cards superiores", Indicador: "Tempo Aplicado em Atividades (horas)", Valor: Number((totalTimesheetMs / 3_600_000).toFixed(2)) },
         { Secao: "Cards superiores", Indicador: "Demandas Médias por Mês", Valor: avgPerMonth },
@@ -277,7 +287,6 @@ export function DashboardClient({ requests }: DashboardClientProps) {
         { Secao: "Dados auxiliares", Indicador: "Quantidade de meses considerados", Valor: monthsSorted.length },
       ];
 
-      // Aba 2: Demandas por Área
       const areaRows = dataByArea.map((a) => ({
         Área: a.area,
         "Quantidade de Demandas": a.total,
@@ -286,19 +295,16 @@ export function DashboardClient({ requests }: DashboardClientProps) {
           : 0,
       }));
 
-      // Aba 3: Tipos de Entrega
       const tipoRows = dataByType.map((t) => ({
         "Tipo de Entrega": t.name,
         "Quantidade": t.value,
       }));
 
-      // Aba 4: Evolução Mensal
       const evolucaoRows = monthsSorted.map((key) => ({
         Mês: new Date(`${key}-01`).toLocaleDateString("pt-BR", { month: "long", year: "numeric" }),
         "Quantidade de Demandas": monthCounts[key],
       }));
 
-      // Aba 5: Solicitações (dados brutos)
       const solicitacoesRows = normalizedRequests.map((request) => {
         const totals = timeByRequest[request.id] ?? { ms: 0, entries: 0 };
         return {
@@ -327,16 +333,18 @@ export function DashboardClient({ requests }: DashboardClientProps) {
         };
       });
 
-      // Aba 6: Timesheet
-      const timesheetRows = linkedEntries.map((entry) => ({
-        "Solicitação ID": entry.request_id,
-        Solicitação: entry.request_title ?? "",
-        Designer: entry.user_name ?? "Desconhecido",
-        Início: new Date(entry.started_at).toLocaleString("pt-BR"),
-        Fim: entry.ended_at ? new Date(entry.ended_at).toLocaleString("pt-BR") : "Em andamento",
-        "Duração (h)": Number((getEntryDurationMs(entry) / 3_600_000).toFixed(2)),
-        "Duração (formatada)": formatDurationFromMs(getEntryDurationMs(entry)),
-      }));
+      const timesheetRows = linkedEntries.map((entry) => {
+        const durationMs = getEntryDurationMs(entry);
+        return {
+          "Solicitação ID": entry.request_id,
+          Solicitação: entry.request_title ?? "",
+          Designer: entry.user_name ?? "Desconhecido",
+          Início: new Date(entry.started_at).toLocaleString("pt-BR"),
+          Fim: entry.ended_at ? new Date(entry.ended_at).toLocaleString("pt-BR") : "Em andamento",
+          "Duração (h)": Number((durationMs / 3_600_000).toFixed(2)),
+          "Duração (formatada)": formatDurationFromMs(durationMs),
+        };
+      });
 
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dashboardRows), "Dashboard");
@@ -370,7 +378,7 @@ export function DashboardClient({ requests }: DashboardClientProps) {
     dataByArea,
     dataByStatus,
     dataByType,
-  } = computeDashboardMetrics(normalizedRequests);
+  } = dashboardMetrics;
 
   return (
     <div className="space-y-6">

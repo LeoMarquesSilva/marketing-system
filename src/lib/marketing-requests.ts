@@ -339,6 +339,10 @@ export async function updateWorkflowStage(
   return updateMarketingRequest(id, { workflow_stage });
 }
 
+export function isRequestDone(r: MarketingRequest): boolean {
+  return r.status === "completed" || r.workflow_stage === "concluido" || !!r.delivered_at;
+}
+
 export function computeDashboardMetrics(requests: MarketingRequest[]) {
   const now = new Date();
   const currentMonth = now.getMonth();
@@ -351,8 +355,7 @@ export function computeDashboardMetrics(requests: MarketingRequest[]) {
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
   });
 
-  const isDone = (r: MarketingRequest) =>
-    r.status === "completed" || r.workflow_stage === "concluido" || !!r.delivered_at;
+  const isDone = isRequestDone;
 
   const completedWithDelivery = requests.filter(
     (r) => isDone(r) && r.delivered_at
