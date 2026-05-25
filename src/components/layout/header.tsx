@@ -14,6 +14,7 @@ const PAGE_LABELS: Record<string, string> = {
   "/vincular-solicitantes": "Vincular Solicitantes",
   "/usuarios": "Usuários",
   "/perfil": "Meu Perfil",
+  "/instagram-insights": "Instagram Insights",
 };
 
 function getPageLabel(pathname: string): string {

@@ -15,7 +15,10 @@ interface UserSelectProps {
   value: string;
   onValueChange: (value: string) => void;
   placeholder?: string;
+  allowClear?: boolean;
 }
+
+const CLEAR_VALUE = "__none__";
 
 function getInitials(name: string) {
   return name
@@ -31,11 +34,15 @@ export function UserSelect({
   value,
   onValueChange,
   placeholder = "Selecione o solicitante",
+  allowClear = false,
 }: UserSelectProps) {
   const selected = users.find((u) => u.id === value);
 
   return (
-    <Select value={value || undefined} onValueChange={onValueChange}>
+    <Select
+      value={value || undefined}
+      onValueChange={(v) => onValueChange(v === CLEAR_VALUE ? "" : v)}
+    >
       <SelectTrigger className="w-full">
         <SelectValue placeholder={placeholder}>
           {selected && (
@@ -51,6 +58,9 @@ export function UserSelect({
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
+        {allowClear && (
+          <SelectItem value={CLEAR_VALUE}>Nenhum</SelectItem>
+        )}
         {users.map((user) => (
           <SelectItem key={user.id} value={user.id}>
             <span className="flex items-center gap-2">

@@ -26,6 +26,10 @@ interface UserSelectSearchProps {
   onValueChange: (value: string) => void;
   onSelect?: (user: User) => void;
   placeholder?: string;
+  /** Filtra usuários pelo departamento (área) */
+  departmentFilter?: string;
+  allowClear?: boolean;
+  disabled?: boolean;
 }
 
 export function UserSelectSearch({
@@ -34,16 +38,29 @@ export function UserSelectSearch({
   onValueChange,
   onSelect,
   placeholder = "Pesquisar ou selecionar solicitante",
+  departmentFilter,
+  allowClear = false,
+  disabled = false,
 }: UserSelectSearchProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
+  const pool = useMemo(() => {
+    if (!departmentFilter) return users;
+    const filtered = users.filter((u) => u.department === departmentFilter);
+    const selected = users.find((u) => u.id === value);
+    if (selected && !filtered.some((u) => u.id === selected.id)) {
+      return [selected, ...filtered];
+    }
+    return filtered;
+  }, [users, departmentFilter, value]);
+
   const selected = users.find((u) => u.id === value);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return users.slice(0, DISPLAY_LIMIT);
+    if (!search.trim()) return pool.slice(0, DISPLAY_LIMIT);
     const q = search.trim().toLowerCase();
-    return users
+    return pool
       .filter(
         (u) =>
           u.name.toLowerCase().includes(q) ||
@@ -51,11 +68,17 @@ export function UserSelectSearch({
           (u.email ?? "").toLowerCase().includes(q)
       )
       .slice(0, DISPLAY_LIMIT);
-  }, [users, search]);
+  }, [pool, search]);
 
   const handleSelect = (user: User) => {
     onValueChange(user.id);
     onSelect?.(user);
+    setOpen(false);
+    setSearch("");
+  };
+
+  const handleClear = () => {
+    onValueChange("");
     setOpen(false);
     setSearch("");
   };
@@ -68,8 +91,9 @@ export function UserSelectSearch({
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          disabled={disabled}
           className="w-full justify-between h-9 font-normal"
-          onClick={() => !open && setOpen(true)}
+          onClick={() => !disabled && !open && setOpen(true)}
         >
           {selected ? (
             <span className="flex items-center gap-2 truncate">
@@ -78,7 +102,9 @@ export function UserSelectSearch({
                 <AvatarFallback className="text-[10px]">{getInitials(selected.name)}</AvatarFallback>
               </Avatar>
               {selected.name}
-              <span className="text-muted-foreground text-sm hidden sm:inline">({selected.department})</span>
+              <span className="text-muted-foreground text-sm hidden sm:inline">
+                ({selected.department})
+              </span>
             </span>
           ) : (
             <span className="text-muted-foreground">{placeholder}</span>
@@ -96,7 +122,11 @@ export function UserSelectSearch({
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar por nome, área ou email..."
+                placeholder={
+                  departmentFilter
+                    ? `Buscar em ${departmentFilter}...`
+                    : "Buscar por nome, área ou email..."
+                }
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-8 h-8"
@@ -105,8 +135,23 @@ export function UserSelectSearch({
             </div>
           </div>
           <ul className="max-h-[240px] overflow-y-auto p-1">
+            {allowClear && (
+              <li>
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  className="w-full rounded-md px-2 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent"
+                >
+                  Nenhum
+                </button>
+              </li>
+            )}
             {filtered.length === 0 ? (
-              <li className="py-4 text-center text-sm text-muted-foreground">Nenhum resultado</li>
+              <li className="py-4 text-center text-sm text-muted-foreground">
+                {departmentFilter
+                  ? `Nenhum colaborador em ${departmentFilter}`
+                  : "Nenhum resultado"}
+              </li>
             ) : (
               filtered.map((user) => (
                 <li key={user.id}>
@@ -124,16 +169,20 @@ export function UserSelectSearch({
                     </Avatar>
                     <div className="min-w-0 flex-1 truncate">
                       <span className="font-medium">{user.name}</span>
-                      <span className="text-muted-foreground text-xs ml-1">({user.department})</span>
+                      {!departmentFilter && (
+                        <span className="text-muted-foreground text-xs ml-1">
+                          ({user.department})
+                        </span>
+                      )}
                     </div>
                   </button>
                 </li>
               ))
             )}
           </ul>
-          {users.length > DISPLAY_LIMIT && !search.trim() && (
+          {pool.length > DISPLAY_LIMIT && !search.trim() && (
             <p className="px-2 py-1.5 text-xs text-muted-foreground border-t">
-              Digite para buscar entre {users.length} solicitantes
+              Digite para buscar entre {pool.length} colaborador{pool.length !== 1 ? "es" : ""}
             </p>
           )}
         </PopoverPrimitive.Content>

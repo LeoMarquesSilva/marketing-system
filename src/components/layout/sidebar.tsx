@@ -15,6 +15,7 @@ import {
   Sparkles,
   Newspaper,
   Heart,
+  Instagram,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -29,6 +30,7 @@ const baseNavItems = [
   { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteúdo para Post" },
   { href: "/vibe-marketing", icon: Sparkles, label: "Vibe Marketing" },
   { href: "/clima", icon: Heart, label: "Clima" },
+  { href: "/instagram-insights", icon: Instagram, label: "Instagram Insights" },
   { href: "/vios-tarefas", icon: ClipboardList, label: "Tarefas VIOS" },
   { href: "/vincular-solicitantes", icon: Link2, label: "Vincular Solicitantes" },
   { href: "/usuarios", icon: Users, label: "Usuários" },
