@@ -14,7 +14,6 @@ import {
   ExternalLink,
   Loader2,
   Instagram,
-  UserCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,30 +24,40 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { AreaSelectWithCreate } from "@/components/usuarios/area-select-with-create";
-import { AreaWithIcon } from "@/components/solicitacoes/area-with-icon";
-import { UserSelectSearch } from "@/components/solicitacoes/user-select-search";
 import type { Area } from "@/lib/areas";
 import type { User } from "@/lib/users";
 import type { InstagramAccountStats, InstagramPost } from "@/lib/instagram-posts";
 import {
-  computeAreaDashboards,
-  computeInteractionsByArea,
-  computeInteractionsBySolicitante,
+  computeEngagementActionsByArea,
+  computeEngagementActionsBySolicitante,
   paginateItems,
 } from "@/lib/instagram-analytics";
 import { InstagramAreaDashboard } from "@/components/instagram/instagram-area-dashboard";
 import { InstagramBarChart } from "@/components/instagram/instagram-bar-chart";
 import { InstagramPagination } from "@/components/instagram/instagram-pagination";
+import { InstagramReportExport } from "@/components/instagram/instagram-report-export";
+import { InstagramPostEngagementMetrics } from "@/components/instagram/instagram-engagement-metrics";
 import {
-  isInstitutionalArea,
+  computeAggregateEngagementRate,
+  formatEngagementRate,
+} from "@/lib/instagram-engagement";
+import {
+  InstagramPostLinkEditor,
+  type PostLinkPatch,
+} from "@/components/instagram/instagram-post-link-editor";
+import {
+  getPostAreas,
+  getPostSolicitantes,
+  isCollabPost,
   isPostFullyLinked,
   isPostPendingLink,
   getPendingLinkLabels,
 } from "@/lib/instagram-link-rules";
 import { getInstagramMediaLabel, INSTAGRAM_MEDIA_TYPE_FILTERS } from "@/lib/instagram-media-type";
 import { postHasTag } from "@/lib/instagram-post-tags";
+import { isUserActive, sortUsersActiveFirst } from "@/lib/user-status";
+import { FormerEmployeeBadge } from "@/components/usuarios/former-employee-badge";
+import { AreaWithIcon } from "@/components/solicitacoes/area-with-icon";
 import { cn } from "@/lib/utils";
 
 const SYNC_SINCE = "2025-01-01T00:00:00.000Z";
@@ -80,15 +89,6 @@ function truncateCaption(caption: string | null, max = 120) {
   if (!caption) return "Sem legenda";
   const line = caption.split("\n")[0];
   return line.length > max ? `${line.slice(0, max)}…` : line;
-}
-
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
 }
 
 type LinkFilter = "all" | "pendentes" | "vinculados";
@@ -149,6 +149,7 @@ export function InstagramInsightsClient({
   const [accountStats, setAccountStats] = useState(initialAccountStats);
   const [areas, setAreas] = useState(initialAreas);
   const [users] = useState(initialUsers);
+  const sortedUsers = useMemo(() => sortUsersActiveFirst(users), [users]);
   const [areaFilter, setAreaFilter] = useState<string>("all");
   const [mediaTypeFilter, setMediaTypeFilter] = useState<string>("all");
   const [tagFilter, setTagFilter] = useState<string>("all");
@@ -171,43 +172,74 @@ export function InstagramInsightsClient({
     return posts.filter((p) => {
       if (linkFilter === "pendentes" && !isPostPendingLink(p)) return false;
       if (linkFilter === "vinculados" && !isPostFullyLinked(p)) return false;
-      if (areaFilter === "sem_area" && p.area) return false;
-      if (areaFilter !== "all" && areaFilter !== "sem_area" && p.area !== areaFilter) return false;
+
+      const postAreas = getPostAreas(p);
+      const postSolicitantes = getPostSolicitantes(p);
+
+      if (areaFilter === "sem_area" && postAreas.length > 0) return false;
+      if (areaFilter !== "all" && areaFilter !== "sem_area" && !postAreas.includes(areaFilter)) {
+        return false;
+      }
       if (mediaTypeFilter !== "all" && p.media_type !== mediaTypeFilter) return false;
       if (tagFilter === "Newsletter" && !postHasTag(p.tags, "Newsletter")) return false;
       if (tagFilter === "sem_tag" && (p.tags?.length ?? 0) > 0) return false;
-      if (solicitanteFilter === "sem_solicitante" && p.solicitante_id) return false;
-      if (solicitanteFilter !== "all" && solicitanteFilter !== "sem_solicitante" && p.solicitante_id !== solicitanteFilter) return false;
+      if (solicitanteFilter === "sem_solicitante" && postSolicitantes.length > 0) return false;
+      if (
+        solicitanteFilter !== "all" &&
+        solicitanteFilter !== "sem_solicitante" &&
+        !postSolicitantes.some((s) => s.id === solicitanteFilter)
+      ) {
+        return false;
+      }
       return true;
     });
   }, [posts, areaFilter, mediaTypeFilter, tagFilter, solicitanteFilter, linkFilter]);
 
   const kpis = useMemo(() => {
-    const withArea = filteredPosts.filter((p) => p.area);
-    const withSolicitante = filteredPosts.filter((p) => p.solicitante_id);
+    const withArea = filteredPosts.filter((p) => getPostAreas(p).length > 0);
+    const withSolicitante = filteredPosts.filter((p) => getPostSolicitantes(p).length > 0);
     const totalReach = filteredPosts.reduce((s, p) => s + p.reach, 0);
     const totalViews = filteredPosts.reduce((s, p) => s + p.views, 0);
-    const totalInteractions = filteredPosts.reduce((s, p) => s + p.total_interactions, 0);
-    const avgEngagement =
-      filteredPosts.length > 0 ? totalInteractions / filteredPosts.length : 0;
+    const engagementRate = computeAggregateEngagementRate(filteredPosts);
 
-    return { withArea: withArea.length, withSolicitante: withSolicitante.length, totalReach, totalViews, avgEngagement };
+    return {
+      withArea: withArea.length,
+      withSolicitante: withSolicitante.length,
+      totalReach,
+      totalViews,
+      engagementRate,
+    };
   }, [filteredPosts]);
 
   const chartByArea = useMemo(
-    () => computeInteractionsByArea(filteredPosts),
+    () => computeEngagementActionsByArea(filteredPosts),
     [filteredPosts]
   );
 
   const chartBySolicitante = useMemo(
-    () => computeInteractionsBySolicitante(filteredPosts, users),
+    () => computeEngagementActionsBySolicitante(filteredPosts, users),
     [filteredPosts, users]
   );
 
-  const areaDashboards = useMemo(
-    () => computeAreaDashboards(filteredPosts, areas, users),
-    [filteredPosts, areas, users]
-  );
+  const reportFilterDescription = useMemo(() => {
+    const parts: string[] = [];
+    if (linkFilter === "pendentes") parts.push("Pendentes de vínculo");
+    else if (linkFilter === "vinculados") parts.push("Já vinculados");
+    if (areaFilter === "sem_area") parts.push("Sem área");
+    else if (areaFilter !== "all") parts.push(`Área: ${areaFilter}`);
+    if (mediaTypeFilter !== "all") {
+      const label = INSTAGRAM_MEDIA_TYPE_FILTERS.find((f) => f.value === mediaTypeFilter)?.label;
+      parts.push(`Formato: ${label ?? mediaTypeFilter}`);
+    }
+    if (tagFilter === "Newsletter") parts.push("Tag: Newsletter");
+    else if (tagFilter === "sem_tag") parts.push("Sem tags");
+    if (solicitanteFilter === "sem_solicitante") parts.push("Sem solicitante");
+    else if (solicitanteFilter !== "all") {
+      const user = users.find((u) => u.id === solicitanteFilter);
+      parts.push(`Solicitante: ${user?.name ?? solicitanteFilter}`);
+    }
+    return parts.length ? parts.join(" · ") : "Todos os posts desde 2025";
+  }, [linkFilter, areaFilter, mediaTypeFilter, tagFilter, solicitanteFilter, users]);
 
   const pagination = useMemo(
     () => paginateItems(filteredPosts, page, pageSize),
@@ -264,48 +296,38 @@ export function InstagramInsightsClient({
     }
   }, [reloadPosts]);
 
-  const handleAssignmentChange = useCallback(
-    async (
-      postId: string,
-      patch: {
-        area?: string | null;
-        solicitante_id?: string | null;
-        solicitante?: string | null;
-      }
-    ) => {
-      setSavingPostId(postId);
-      try {
-        const res = await fetch(`/api/instagram/posts/${postId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(patch),
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error ?? "Erro ao salvar");
+  const handleAssignmentChange = useCallback(async (postId: string, patch: PostLinkPatch) => {
+    setSavingPostId(postId);
+    try {
+      const res = await fetch(`/api/instagram/posts/${postId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Erro ao salvar");
 
-        setPosts((prev) =>
-          prev.map((p) => {
-            if (p.id !== postId) return p;
-            return {
-              ...p,
-              ...(patch.area !== undefined ? { area: patch.area || null } : {}),
-              ...(patch.solicitante_id !== undefined
-                ? { solicitante_id: patch.solicitante_id || null }
-                : {}),
-              ...(patch.solicitante !== undefined
-                ? { solicitante: patch.solicitante || null }
-                : {}),
-            };
-          })
-        );
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setSavingPostId(null);
-      }
-    },
-    []
-  );
+      setPosts((prev) =>
+        prev.map((p) => {
+          if (p.id !== postId) return p;
+          const primary = patch.solicitantes[0];
+          return {
+            ...p,
+            areas: patch.areas,
+            area: patch.areas[0] ?? null,
+            solicitantes: patch.solicitantes,
+            solicitante_id: primary?.id ?? null,
+            solicitante: primary?.name ?? null,
+            skip_participants: patch.skip_participants ?? p.skip_participants,
+          };
+        })
+      );
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSavingPostId(null);
+    }
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -389,9 +411,10 @@ export function InstagramInsightsClient({
           <SelectContent>
             <SelectItem value="all">Todos os solicitantes</SelectItem>
             <SelectItem value="sem_solicitante">Sem solicitante</SelectItem>
-            {users.map((u) => (
+            {sortedUsers.map((u) => (
               <SelectItem key={u.id} value={u.id}>
                 {u.name}
+                {!isUserActive(u) ? " (Ex-funcionário)" : ""}
               </SelectItem>
             ))}
           </SelectContent>
@@ -404,6 +427,22 @@ export function InstagramInsightsClient({
             Atualizado {formatDate(accountStats.fetched_at)}
           </span>
         )}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/50 bg-white/60 dark:bg-card/50 px-4 py-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">Relatório por área</p>
+          <p className="text-xs text-muted-foreground truncate">
+            {filteredPosts.length} posts no filtro atual · {reportFilterDescription}
+          </p>
+        </div>
+        <InstagramReportExport
+          posts={filteredPosts}
+          areas={areas}
+          users={users}
+          accountStats={accountStats}
+          filterDescription={reportFilterDescription}
+        />
       </div>
 
       {syncError && (
@@ -426,34 +465,39 @@ export function InstagramInsightsClient({
           icon={<ImageIcon className="h-4 w-4" />}
         />
         <KpiCard
+          label="Taxa de engajamento"
+          value={formatEngagementRate(kpis.engagementRate)}
+          sub="(curtidas + comentários + salvamentos) ÷ alcance"
+          icon={<TrendingUp className="h-4 w-4" />}
+        />
+        <KpiCard
           label="Alcance total"
           value={formatNumber(kpis.totalReach)}
           sub={`${formatNumber(kpis.totalViews)} visualizações`}
           icon={<Eye className="h-4 w-4" />}
         />
-        <KpiCard
-          label="Interações médias"
-          value={formatNumber(Math.round(kpis.avgEngagement))}
-          sub={`${kpis.withArea} c/ área · ${kpis.withSolicitante} c/ solicitante`}
-          icon={<TrendingUp className="h-4 w-4" />}
-        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <InstagramBarChart
-          title="Interações por área"
+          title="Ações de engajamento por área"
           data={chartByArea}
           useAreaIcons
           emptyMessage="Atribua áreas às postagens para ver este gráfico."
         />
         <InstagramBarChart
-          title="Interações por solicitante"
+          title="Ações de engajamento por autor"
           data={chartBySolicitante}
-          emptyMessage="Atribua solicitantes às postagens para ver este gráfico."
+          emptyMessage="Atribua autores às postagens para ver este gráfico."
         />
       </div>
 
-      <InstagramAreaDashboard areas={areaDashboards} />
+      <InstagramAreaDashboard
+        posts={posts}
+        areas={areas}
+        users={users}
+        accountStats={accountStats}
+      />
 
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
@@ -482,7 +526,7 @@ export function InstagramInsightsClient({
             {posts.length === 0
               ? "Nenhum post sincronizado desde 2025. Clique em \"Sincronizar desde 2025\" para importar."
               : linkFilter === "pendentes"
-                ? "Todos os posts já estão vinculados (área e solicitante quando exigido)."
+                ? "Todos os posts já estão vinculados. Institucionais ficam pendentes até adicionar participante ou concluir sem participante."
                 : linkFilter === "vinculados"
                   ? "Nenhum post vinculado ainda. Use o filtro \"Pendentes\" para preencher."
                   : "Nenhum post corresponde aos filtros selecionados."}
@@ -505,9 +549,8 @@ export function InstagramInsightsClient({
       ) : (
         <div className="space-y-4">
           {pagination.items.map((post) => {
-            const solicitanteUser = post.solicitante_id
-              ? users.find((u) => u.id === post.solicitante_id)
-              : null;
+            const postAuthors = getPostSolicitantes(post);
+            const postAreasList = getPostAreas(post);
 
             return (
               <article
@@ -567,12 +610,42 @@ export function InstagramInsightsClient({
                               {tag}
                             </Badge>
                           ))}
+                          {isCollabPost(post) && (
+                            <Badge variant="outline" className="rounded-full text-sky-700 border-sky-300 bg-sky-50 text-[10px]">
+                              Collab
+                            </Badge>
+                          )}
                           {isPostFullyLinked(post) && (
                             <Badge variant="outline" className="rounded-full text-emerald-700 border-emerald-300 bg-emerald-50 text-[10px]">
                               Vinculado
                             </Badge>
                           )}
                         </div>
+                        {(postAreasList.length > 0 || postAuthors.length > 0) && (
+                          <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                            {postAreasList.map((area) => (
+                              <AreaWithIcon key={area} area={area} className="text-xs" />
+                            ))}
+                            {postAuthors.map((author) => {
+                              const user = users.find((u) => u.id === author.id);
+                              const inactive = user ? !isUserActive(user) : false;
+                              return (
+                                <span
+                                  key={author.id}
+                                  className={cn(
+                                    "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
+                                    inactive
+                                      ? "border-amber-200 bg-amber-50 text-amber-900"
+                                      : "border-border/60 bg-muted/40 text-foreground"
+                                  )}
+                                >
+                                  {user?.name ?? author.name}
+                                  {inactive && <FormerEmployeeBadge />}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
                         <p className="text-sm text-foreground leading-relaxed line-clamp-2">
                           {truncateCaption(post.caption, 200)}
                         </p>
@@ -593,109 +666,22 @@ export function InstagramInsightsClient({
                       )}
                     </div>
 
+                    <InstagramPostEngagementMetrics post={post} className="mt-1" />
+
                     <div className="flex flex-wrap gap-4 py-2 px-3 rounded-xl bg-black/[0.03]">
                       <MetricPill icon={<Eye className="h-3.5 w-3.5" />} value={post.views} label="Visualizações" />
-                      <MetricPill icon={<Users className="h-3.5 w-3.5" />} value={post.reach} label="Alcance" />
-                      <MetricPill icon={<Heart className="h-3.5 w-3.5" />} value={post.likes} label="Curtidas" />
-                      <MetricPill icon={<MessageCircle className="h-3.5 w-3.5" />} value={post.comments} label="Comentários" />
                       <MetricPill icon={<Share2 className="h-3.5 w-3.5" />} value={post.shares} label="Compartilhamentos" />
-                      <MetricPill icon={<Bookmark className="h-3.5 w-3.5" />} value={post.saves} label="Salvos" />
-                      <MetricPill icon={<TrendingUp className="h-3.5 w-3.5" />} value={post.total_interactions} label="Interações" />
                     </div>
 
-                    <div className="grid sm:grid-cols-2 gap-4 pt-1 border-t border-border/40">
-                      <div className="min-w-0">
-                        <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 block">
-                          Área responsável
-                        </label>
-                        <div className="relative">
-                          {savingPostId === post.id && (
-                            <Loader2 className="absolute right-10 top-2.5 h-4 w-4 animate-spin text-muted-foreground z-10" />
-                          )}
-                          <AreaSelectWithCreate
-                            areas={areas}
-                            value={post.area ?? ""}
-                            onValueChange={(val) => {
-                              const patch: {
-                                area: string | null;
-                                solicitante_id?: string | null;
-                                solicitante?: string | null;
-                              } = { area: val || null };
-
-                              if (post.solicitante_id && val && !isInstitutionalArea(val)) {
-                                const user = users.find((u) => u.id === post.solicitante_id);
-                                if (user && user.department !== val) {
-                                  patch.solicitante_id = null;
-                                  patch.solicitante = null;
-                                }
-                              }
-
-                              handleAssignmentChange(post.id, patch);
-                            }}
-                            onAreasChange={setAreas}
-                            placeholder="Selecione a área"
-                          />
-                        </div>
-                        {post.area && (
-                          <div className="mt-2">
-                            <AreaWithIcon area={post.area} className="text-sm" />
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="min-w-0">
-                        <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 block">
-                          Solicitante
-                          {isInstitutionalArea(post.area) && (
-                            <span className="normal-case font-normal text-muted-foreground/80 ml-1">
-                              (opcional)
-                            </span>
-                          )}
-                        </label>
-                        <UserSelectSearch
-                          users={users}
-                          value={post.solicitante_id ?? ""}
-                          departmentFilter={
-                            post.area && !isInstitutionalArea(post.area)
-                              ? post.area
-                              : undefined
-                          }
-                          allowClear
-                          disabled={!post.area}
-                          onValueChange={(userId) => {
-                            const user = userId ? users.find((u) => u.id === userId) : null;
-                            handleAssignmentChange(post.id, {
-                              solicitante_id: userId || null,
-                              solicitante: user?.name ?? null,
-                            });
-                          }}
-                          placeholder={
-                            !post.area
-                              ? "Selecione a área primeiro"
-                              : isInstitutionalArea(post.area)
-                                ? "Opcional — pesquisar solicitante"
-                                : "Pesquisar solicitante da área"
-                          }
-                        />
-                        {(solicitanteUser || post.solicitante) && (
-                          <div className="mt-2 flex items-center gap-2 text-sm">
-                            <Avatar className="h-6 w-6">
-                              <AvatarImage src={solicitanteUser?.avatar_url || undefined} />
-                              <AvatarFallback className="text-[10px]">
-                                {getInitials(solicitanteUser?.name ?? post.solicitante ?? "?")}
-                              </AvatarFallback>
-                            </Avatar>
-                            <span>{solicitanteUser?.name ?? post.solicitante}</span>
-                          </div>
-                        )}
-                        {!post.solicitante_id && !post.solicitante && (
-                          <p className="mt-2 text-xs text-muted-foreground flex items-center gap-1">
-                            <UserCircle className="h-3.5 w-3.5" />
-                            Nenhum solicitante atribuído
-                          </p>
-                        )}
-                      </div>
-                    </div>
+                    <InstagramPostLinkEditor
+                      key={`${post.id}-${getPostAreas(post).join("|")}-${getPostSolicitantes(post).map((s) => s.id).join("|")}-${post.skip_participants}`}
+                      post={post}
+                      areas={areas}
+                      users={users}
+                      saving={savingPostId === post.id}
+                      onAreasChange={setAreas}
+                      onSave={(patch) => handleAssignmentChange(post.id, patch)}
+                    />
                   </div>
                 </div>
               </article>

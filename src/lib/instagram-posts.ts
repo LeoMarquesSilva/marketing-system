@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import type { MetaAccountStats } from "./instagram-meta";
 import { detectPostTagsFromCaption, mergePostTags } from "./instagram-post-tags";
+import { normalizePostAssignments } from "./instagram-link-rules";
 
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
@@ -14,6 +15,11 @@ function getServiceClient() {
   return createClient(supabaseUrl, supabaseServiceKey);
 }
 
+export interface PostSolicitante {
+  id: string;
+  name: string;
+}
+
 export interface InstagramPost {
   id: string;
   ig_media_id: string;
@@ -24,8 +30,11 @@ export interface InstagramPost {
   permalink: string | null;
   published_at: string | null;
   area: string | null;
+  areas: string[];
   solicitante_id: string | null;
   solicitante: string | null;
+  solicitantes: PostSolicitante[];
+  skip_participants: boolean;
   tags: string[];
   likes: number;
   comments: number;
@@ -68,10 +77,30 @@ export async function fetchInstagramPosts(filters?: {
 
   const { data, error } = await query;
   if (error) throw new Error(error.message);
-  return (data ?? []).map((row) => ({
-    ...(row as InstagramPost),
-    tags: ((row as InstagramPost).tags ?? []) as string[],
-  }));
+  return (data ?? []).map(mapInstagramPostRow);
+}
+
+function parseSolicitantes(raw: unknown): PostSolicitante[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const { id, name } = item as { id?: string; name?: string };
+      if (!id || !name) return null;
+      return { id, name };
+    })
+    .filter((s): s is PostSolicitante => s !== null);
+}
+
+export function mapInstagramPostRow(row: Record<string, unknown>): InstagramPost {
+  const post = row as unknown as InstagramPost;
+  return {
+    ...post,
+    areas: (post.areas ?? []) as string[],
+    solicitantes: parseSolicitantes(post.solicitantes),
+    skip_participants: Boolean(post.skip_participants),
+    tags: (post.tags ?? []) as string[],
+  };
 }
 
 export async function fetchLatestAccountStats(): Promise<InstagramAccountStats | null> {
@@ -122,7 +151,9 @@ export async function upsertInstagramPosts(posts: SyncPost[]): Promise<number> {
 
   const { data: existingRows } = await supabase
     .from("instagram_posts")
-    .select("ig_media_id, area, solicitante_id, solicitante, tags")
+    .select(
+      "ig_media_id, area, areas, solicitante_id, solicitante, solicitantes, skip_participants, tags"
+    )
     .in("ig_media_id", mediaIds);
 
   const existingMap = new Map(
@@ -130,8 +161,11 @@ export async function upsertInstagramPosts(posts: SyncPost[]): Promise<number> {
       r.ig_media_id as string,
       {
         area: r.area as string | null,
+        areas: (r.areas as string[] | null) ?? [],
         solicitante_id: r.solicitante_id as string | null,
         solicitante: r.solicitante as string | null,
+        solicitantes: parseSolicitantes(r.solicitantes),
+        skip_participants: Boolean(r.skip_participants),
         tags: (r.tags as string[] | null) ?? [],
       },
     ])
@@ -151,8 +185,15 @@ export async function upsertInstagramPosts(posts: SyncPost[]): Promise<number> {
       permalink: post.permalink ?? null,
       published_at: post.published_at,
       area: existing?.area ?? null,
+      areas: existing?.areas?.length ? existing.areas : existing?.area ? [existing.area] : [],
       solicitante_id: existing?.solicitante_id ?? null,
       solicitante: existing?.solicitante ?? null,
+      solicitantes: existing?.solicitantes?.length
+        ? existing.solicitantes
+        : existing?.solicitante_id
+          ? [{ id: existing.solicitante_id, name: existing.solicitante ?? "" }]
+          : [],
+      skip_participants: existing?.skip_participants ?? false,
       tags,
       likes: post.likes,
       comments: post.comments,
@@ -209,21 +250,60 @@ export async function updatePostAssignments(
   postId: string,
   assignments: {
     area?: string | null;
+    areas?: string[] | null;
     solicitante_id?: string | null;
     solicitante?: string | null;
+    solicitantes?: PostSolicitante[] | null;
+    skip_participants?: boolean;
   }
 ): Promise<void> {
   const supabase = getServiceClient();
-  const updates: Record<string, string | null> = {};
+  const hasArrayUpdate =
+    assignments.areas !== undefined || assignments.solicitantes !== undefined;
+
+  if (hasArrayUpdate) {
+    const normalized = normalizePostAssignments({
+      areas: assignments.areas ?? undefined,
+      solicitantes: assignments.solicitantes ?? undefined,
+      skip_participants: assignments.skip_participants,
+    });
+
+    const payload: Record<string, unknown> = {
+      areas: normalized.areas,
+      solicitantes: normalized.solicitantes,
+      area: normalized.area,
+      solicitante_id: normalized.solicitante_id,
+      solicitante: normalized.solicitante,
+    };
+
+    if (normalized.skip_participants !== undefined) {
+      payload.skip_participants = normalized.skip_participants;
+    }
+
+    const { error } = await supabase
+      .from("instagram_posts")
+      .update(payload)
+      .eq("id", postId);
+
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  const updates: Record<string, string | string[] | boolean | null> = {};
 
   if (assignments.area !== undefined) {
-    updates.area = assignments.area?.trim() || null;
+    const area = assignments.area?.trim() || null;
+    updates.area = area;
+    updates.areas = area ? [area] : [];
   }
   if (assignments.solicitante_id !== undefined) {
     updates.solicitante_id = assignments.solicitante_id || null;
   }
   if (assignments.solicitante !== undefined) {
     updates.solicitante = assignments.solicitante?.trim() || null;
+  }
+  if (assignments.skip_participants !== undefined) {
+    updates.skip_participants = assignments.skip_participants;
   }
 
   const { error } = await supabase

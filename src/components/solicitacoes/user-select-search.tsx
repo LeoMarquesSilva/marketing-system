@@ -7,6 +7,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, Search } from "lucide-react";
 import type { User } from "@/lib/users";
+import { isUserActive, sortUsersActiveFirst } from "@/lib/user-status";
+import { FormerEmployeeBadge } from "@/components/usuarios/former-employee-badge";
 import { cn } from "@/lib/utils";
 
 const DISPLAY_LIMIT = 20;
@@ -46,29 +48,35 @@ export function UserSelectSearch({
   const [search, setSearch] = useState("");
 
   const pool = useMemo(() => {
-    if (!departmentFilter) return users;
-    const filtered = users.filter((u) => u.department === departmentFilter);
-    const selected = users.find((u) => u.id === value);
-    if (selected && !filtered.some((u) => u.id === selected.id)) {
-      return [selected, ...filtered];
+    let list = users;
+    if (departmentFilter) {
+      list = users.filter((u) => u.department === departmentFilter);
+      const selected = users.find((u) => u.id === value);
+      if (selected && !list.some((u) => u.id === selected.id)) {
+        list = [selected, ...list];
+      }
     }
-    return filtered;
+    return sortUsersActiveFirst(list);
   }, [users, departmentFilter, value]);
 
   const selected = users.find((u) => u.id === value);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return pool.slice(0, DISPLAY_LIMIT);
-    const q = search.trim().toLowerCase();
-    return pool
-      .filter(
-        (u) =>
-          u.name.toLowerCase().includes(q) ||
-          (u.department ?? "").toLowerCase().includes(q) ||
-          (u.email ?? "").toLowerCase().includes(q)
-      )
-      .slice(0, DISPLAY_LIMIT);
+    const base = !search.trim()
+      ? pool
+      : pool.filter((u) => {
+          const q = search.trim().toLowerCase();
+          return (
+            u.name.toLowerCase().includes(q) ||
+            (u.department ?? "").toLowerCase().includes(q) ||
+            (u.email ?? "").toLowerCase().includes(q) ||
+            (!isUserActive(u) && "ex-funcionário".includes(q))
+          );
+        });
+    return base.slice(0, DISPLAY_LIMIT);
   }, [pool, search]);
+
+  const inactiveInPool = pool.filter((u) => !isUserActive(u)).length;
 
   const handleSelect = (user: User) => {
     onValueChange(user.id);
@@ -96,13 +104,14 @@ export function UserSelectSearch({
           onClick={() => !disabled && !open && setOpen(true)}
         >
           {selected ? (
-            <span className="flex items-center gap-2 truncate">
-              <Avatar className="h-5 w-5 shrink-0">
+            <span className="flex items-center gap-2 truncate min-w-0">
+              <Avatar className={cn("h-5 w-5 shrink-0", !isUserActive(selected) && "opacity-70")}>
                 <AvatarImage src={selected.avatar_url || undefined} alt={selected.name} />
                 <AvatarFallback className="text-[10px]">{getInitials(selected.name)}</AvatarFallback>
               </Avatar>
-              {selected.name}
-              <span className="text-muted-foreground text-sm hidden sm:inline">
+              <span className="truncate">{selected.name}</span>
+              {!isUserActive(selected) && <FormerEmployeeBadge />}
+              <span className="text-muted-foreground text-sm hidden sm:inline truncate">
                 ({selected.department})
               </span>
             </span>
@@ -118,13 +127,13 @@ export function UserSelectSearch({
           align="start"
           sideOffset={4}
         >
-          <div className="p-2 border-b">
+          <div className="p-2 border-b space-y-1.5">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder={
                   departmentFilter
-                    ? `Buscar em ${departmentFilter}...`
+                    ? `Buscar em ${departmentFilter} (inclui ex-funcionários)...`
                     : "Buscar por nome, área ou email..."
                 }
                 value={search}
@@ -133,6 +142,11 @@ export function UserSelectSearch({
                 autoFocus
               />
             </div>
+            {inactiveInPool > 0 && (
+              <p className="text-[11px] text-muted-foreground px-0.5">
+                Inclui {inactiveInPool} ex-funcionário{inactiveInPool !== 1 ? "s" : ""}
+              </p>
+            )}
           </div>
           <ul className="max-h-[240px] overflow-y-auto p-1">
             {allowClear && (
@@ -153,36 +167,45 @@ export function UserSelectSearch({
                   : "Nenhum resultado"}
               </li>
             ) : (
-              filtered.map((user) => (
-                <li key={user.id}>
-                  <button
-                    type="button"
-                    onClick={() => handleSelect(user)}
-                    className={cn(
-                      "w-full flex items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-accent",
-                      value === user.id && "bg-accent"
-                    )}
-                  >
-                    <Avatar className="h-6 w-6 shrink-0">
-                      <AvatarImage src={user.avatar_url || undefined} alt={user.name} />
-                      <AvatarFallback className="text-[10px]">{getInitials(user.name)}</AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0 flex-1 truncate">
-                      <span className="font-medium">{user.name}</span>
-                      {!departmentFilter && (
-                        <span className="text-muted-foreground text-xs ml-1">
-                          ({user.department})
-                        </span>
+              filtered.map((user) => {
+                const inactive = !isUserActive(user);
+                return (
+                  <li key={user.id}>
+                    <button
+                      type="button"
+                      onClick={() => handleSelect(user)}
+                      className={cn(
+                        "w-full flex items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-accent",
+                        value === user.id && "bg-accent",
+                        inactive && "opacity-90"
                       )}
-                    </div>
-                  </button>
-                </li>
-              ))
+                    >
+                      <Avatar className={cn("h-6 w-6 shrink-0", inactive && "opacity-75")}>
+                        <AvatarImage src={user.avatar_url || undefined} alt={user.name} />
+                        <AvatarFallback className="text-[10px]">{getInitials(user.name)}</AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={cn("font-medium", inactive && "text-muted-foreground")}>
+                            {user.name}
+                          </span>
+                          {inactive && <FormerEmployeeBadge />}
+                        </div>
+                        {!departmentFilter && (
+                          <span className="text-muted-foreground text-xs">
+                            {user.department}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  </li>
+                );
+              })
             )}
           </ul>
           {pool.length > DISPLAY_LIMIT && !search.trim() && (
             <p className="px-2 py-1.5 text-xs text-muted-foreground border-t">
-              Digite para buscar entre {pool.length} colaborador{pool.length !== 1 ? "es" : ""}
+              Digite para buscar entre {pool.length} pessoa{pool.length !== 1 ? "s" : ""}
             </p>
           )}
         </PopoverPrimitive.Content>

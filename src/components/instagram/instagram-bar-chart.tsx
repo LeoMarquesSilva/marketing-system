@@ -2,6 +2,8 @@
 
 import { getAreaIcon } from "@/lib/area-icons";
 import type { BarChartItem } from "@/lib/instagram-analytics";
+import { FormerEmployeeBadge } from "@/components/usuarios/former-employee-badge";
+import { cn } from "@/lib/utils";
 
 interface InstagramBarChartProps {
   title: string;
@@ -41,16 +43,30 @@ export function InstagramBarChart({
           const Icon = useAreaIcons ? getAreaIcon(item.label) : null;
           const pct = (item.total / maxValue) * 100;
           return (
-            <div key={item.label} className="flex items-center gap-3">
-              <div className="flex w-40 lg:w-44 shrink-0 items-center gap-2 min-w-0">
-                {Icon && (
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                    <Icon className="h-3.5 w-3.5" />
-                  </div>
+            <div key={`${item.label}-${item.sublabel ?? ""}`} className="flex items-center gap-3">
+              <div className="flex w-40 lg:w-48 shrink-0 flex-col gap-0.5 min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  {Icon && (
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                      <Icon className="h-3.5 w-3.5" />
+                    </div>
+                  )}
+                  <span
+                    className={cn(
+                      "text-sm font-medium truncate",
+                      item.isFormerEmployee && "text-muted-foreground"
+                    )}
+                    title={item.label}
+                  >
+                    {item.label}
+                  </span>
+                  {item.isFormerEmployee && <FormerEmployeeBadge />}
+                </div>
+                {item.sublabel && !item.isFormerEmployee && (
+                  <span className="text-[11px] text-muted-foreground truncate pl-9">
+                    {item.sublabel}
+                  </span>
                 )}
-                <span className="text-sm font-medium truncate" title={item.label}>
-                  {item.label}
-                </span>
               </div>
               <div className="flex-1 h-6 bg-muted/30 rounded-md overflow-hidden">
                 <div
