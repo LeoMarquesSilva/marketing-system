@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createConnection, SmitheryAuthorizationError } from "@smithery/api/mcp";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SERVERS, NAMESPACE, type ServerId } from "@/lib/smithery-servers";
+import { requireAdminUser, requireAuthenticatedUser } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,9 @@ export async function POST(request: Request) {
   }
 
   try {
+    const user = await requireAuthenticatedUser();
+    await requireAdminUser(user.id);
+
     const body = (await request.json().catch(() => ({}))) as ToolCallPayload;
     const { server = "vibe-marketing", tool, args = {} } = body;
 
@@ -78,6 +82,15 @@ export async function POST(request: Request) {
       content: [{ type: "text" as const, text: content }],
     });
   } catch (error) {
+    if (error instanceof Error && error.message === "Não autenticado.") {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+    if (
+      error instanceof Error &&
+      error.message === "Apenas administradores podem executar esta ação."
+    ) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
     if (error instanceof SmitheryAuthorizationError) {
       return NextResponse.json(
         {
@@ -100,6 +113,22 @@ export async function GET(request: Request) {
       { error: "SMITHERY_API_KEY não configurada." },
       { status: 500 }
     );
+  }
+
+  try {
+    const user = await requireAuthenticatedUser();
+    await requireAdminUser(user.id);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Não autenticado.") {
+      return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+    }
+    if (
+      error instanceof Error &&
+      error.message === "Apenas administradores podem executar esta ação."
+    ) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
+    return NextResponse.json({ error: "Erro de autenticação." }, { status: 500 });
   }
 
   const { searchParams } = new URL(request.url);

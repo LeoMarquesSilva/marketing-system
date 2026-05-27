@@ -5,4 +5,12 @@ const supabaseUrl =
 const supabaseAnonKey =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "placeholder-anon-key";
 
-export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    lock: async <R>(
+      _name: string,
+      _acquireTimeout: number,
+      fn: () => Promise<R>
+    ): Promise<R> => fn(),
+  },
+});

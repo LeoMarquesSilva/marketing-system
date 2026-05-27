@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   // Radix: usar experimental.optimizePackageImports (tipagem pode não incluir; cast abaixo).
   experimental: {
     optimizePackageImports: [
+      "lucide-react",
       "@radix-ui/react-select",
       "@radix-ui/react-dialog",
       "@radix-ui/react-popover",

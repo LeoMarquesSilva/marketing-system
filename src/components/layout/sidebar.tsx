@@ -16,12 +16,14 @@ import {
   Newspaper,
   Heart,
   Instagram,
+  Megaphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { fetchCommentStats } from "@/lib/request-comments";
 import { fetchMarketingRequests } from "@/lib/marketing-requests";
+import { useWhatsappUnreadCount } from "@/hooks/use-whatsapp-unread";
 
 const baseNavItems = [
   { href: "/", icon: LayoutDashboard, label: "Dashboard" },
@@ -31,6 +33,7 @@ const baseNavItems = [
   { href: "/vibe-marketing", icon: Sparkles, label: "Vibe Marketing" },
   { href: "/clima", icon: Heart, label: "Clima" },
   { href: "/instagram-insights", icon: Instagram, label: "Instagram Insights" },
+  { href: "/trafego-pago", icon: Megaphone, label: "Tráfego Pago" },
   { href: "/vios-tarefas", icon: ClipboardList, label: "Tarefas VIOS" },
   { href: "/vincular-solicitantes", icon: Link2, label: "Vincular Solicitantes" },
   { href: "/usuarios", icon: Users, label: "Usuários" },
@@ -60,6 +63,7 @@ export function Sidebar() {
     router.replace("/login");
   };
   const [pendingAlterations, setPendingAlterations] = useState(0);
+  const whatsappUnread = useWhatsappUnreadCount();
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -136,6 +140,11 @@ export function Sidebar() {
               {item.href === "/planner" && pendingAlterations > 0 && (
                 <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-400 text-[9px] font-bold text-[#101f2e] px-1 leading-none shadow-sm">
                   {pendingAlterations > 9 ? "9+" : pendingAlterations}
+                </span>
+              )}
+              {item.href === "/trafego-pago" && whatsappUnread > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-emerald-400 text-[9px] font-bold text-[#101f2e] px-1 leading-none shadow-sm">
+                  {whatsappUnread > 9 ? "9+" : whatsappUnread}
                 </span>
               )}
 

@@ -1,5 +1,6 @@
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
+import { requireAuthenticatedUser } from "@/lib/api-auth";
 
 export const maxDuration = 30;
 
@@ -15,6 +16,7 @@ export async function POST(req: Request) {
   const openai = createOpenAI({ apiKey });
 
   try {
+    await requireAuthenticatedUser();
     const body = await req.json();
     const { messages, context } = body as {
       messages: UIMessage[];
@@ -44,6 +46,12 @@ Responda em português brasileiro. Seja conciso e prático.`;
 
     return result.toUIMessageStreamResponse();
   } catch (error) {
+    if (error instanceof Error && error.message === "Não autenticado.") {
+      return new Response(JSON.stringify({ error: "Não autenticado." }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     const message =
       error instanceof Error ? error.message : "Erro ao processar chat.";
     return new Response(
