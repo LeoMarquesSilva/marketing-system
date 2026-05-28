@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Loader2, Plus, X, Users, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +32,7 @@ interface InstagramPostLinkEditorProps {
   areas: Area[];
   users: User[];
   saving?: boolean;
+  compact?: boolean;
   onAreasChange: (areas: Area[]) => void;
   onSave: (patch: PostLinkPatch) => void;
 }
@@ -50,6 +51,7 @@ export function InstagramPostLinkEditor({
   areas,
   users,
   saving = false,
+  compact = false,
   onAreasChange,
   onSave,
 }: InstagramPostLinkEditorProps) {
@@ -73,11 +75,11 @@ export function InstagramPostLinkEditor({
   const institutionalOnly =
     activeAreas.length > 0 && activeAreas.every((a) => isInstitutionalArea(a));
 
-  const departmentFilter = useMemo(() => {
-    if (collabMode || activeAreas.length !== 1) return undefined;
-    if (isInstitutionalArea(activeAreas[0])) return undefined;
-    return activeAreas[0];
-  }, [collabMode, activeAreas]);
+  const singleArea = activeAreas.length === 1 ? activeAreas[0] : undefined;
+  const departmentFilter =
+    !collabMode && singleArea && !isInstitutionalArea(singleArea)
+      ? singleArea
+      : undefined;
 
   const persist = (
     nextAreas: string[],
@@ -169,8 +171,13 @@ export function InstagramPostLinkEditor({
   );
 
   return (
-    <div className="space-y-4 pt-1 border-t border-border/40">
-      <div className="flex items-center justify-between gap-3 rounded-xl bg-muted/40 px-3 py-2.5">
+    <div className={cn(compact ? "space-y-2" : "space-y-4 pt-1 border-t border-border/40")}>
+      <div
+        className={cn(
+          "flex items-center justify-between gap-3 rounded-xl bg-muted/40 px-3",
+          compact ? "py-2" : "py-2.5"
+        )}
+      >
         <div className="flex items-center gap-2 min-w-0">
           <Users className="h-4 w-4 shrink-0 text-muted-foreground" />
           <Label className="text-sm font-medium">
@@ -192,8 +199,8 @@ export function InstagramPostLinkEditor({
         </Button>
       </div>
 
-      <div className="grid sm:grid-cols-2 gap-4">
-        <div className="min-w-0 space-y-3">
+      <div className={cn("grid sm:grid-cols-2", compact ? "gap-3" : "gap-4")}>
+        <div className={cn("min-w-0", compact ? "space-y-2" : "space-y-3")}>
           <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
             <Building2 className="h-3.5 w-3.5" />
             {collabMode ? "Áreas" : "Área responsável"}
@@ -244,7 +251,7 @@ export function InstagramPostLinkEditor({
             </Button>
           )}
 
-          {activeAreas.length > 0 && (
+          {activeAreas.length > 0 && !compact && (
             <div className="flex flex-wrap gap-1.5">
               {activeAreas.map((area) => (
                 <AreaWithIcon key={area} area={area} className="text-sm" />
@@ -258,7 +265,7 @@ export function InstagramPostLinkEditor({
           )}
         </div>
 
-        <div className="min-w-0 space-y-3">
+        <div className={cn("min-w-0", compact ? "space-y-2" : "space-y-3")}>
           <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             {collabMode ? "Autores" : "Solicitante"}
             {institutionalOnly && (
@@ -327,37 +334,39 @@ export function InstagramPostLinkEditor({
           )}
 
           {activeSolicitantes.length > 0 ? (
-            <div className="space-y-2">
-              {activeSolicitantes.map((s) => {
-                const user = users.find((u) => u.id === s.id);
-                const inactive = user ? !isUserActive(user) : false;
-                return (
-                  <div
-                    key={s.id}
-                    className={cn(
-                      "flex items-center gap-2 text-sm rounded-lg px-2 py-1.5",
-                      inactive && "bg-amber-50/80 border border-amber-200/60"
-                    )}
-                  >
-                    <Avatar className={cn("h-6 w-6", inactive && "opacity-75")}>
-                      <AvatarImage src={user?.avatar_url || undefined} />
-                      <AvatarFallback className="text-[10px]">
-                        {getInitials(user?.name ?? s.name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className={cn(inactive && "text-muted-foreground")}>
-                      {user?.name ?? s.name}
-                    </span>
-                    {inactive && <FormerEmployeeBadge />}
-                    {user?.department && (
-                      <span className="text-xs text-muted-foreground">
-                        ({user.department})
+            !compact && (
+              <div className="space-y-2">
+                {activeSolicitantes.map((s) => {
+                  const user = users.find((u) => u.id === s.id);
+                  const inactive = user ? !isUserActive(user) : false;
+                  return (
+                    <div
+                      key={s.id}
+                      className={cn(
+                        "flex items-center gap-2 text-sm rounded-lg px-2 py-1.5",
+                        inactive && "bg-amber-50/80 border border-amber-200/60"
+                      )}
+                    >
+                      <Avatar className={cn("h-6 w-6", inactive && "opacity-75")}>
+                        <AvatarImage src={user?.avatar_url || undefined} />
+                        <AvatarFallback className="text-[10px]">
+                          {getInitials(user?.name ?? s.name)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className={cn(inactive && "text-muted-foreground")}>
+                        {user?.name ?? s.name}
                       </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                      {inactive && <FormerEmployeeBadge />}
+                      {user?.department && (
+                        <span className="text-xs text-muted-foreground">
+                          ({user.department})
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )
           ) : institutionalOnly ? (
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground">

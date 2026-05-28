@@ -1,28 +1,42 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ImageIcon,
   Users,
   Share2,
   ExternalLink,
-  CalendarRange,
-  X,
   Building2,
   Trophy,
+  Clock3,
+  TrendingUp,
+  Eye,
+  Activity,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { DatePickerField } from "@/components/ui/date-picker-field";
-import { Label } from "@/components/ui/label";
 import { AreaWithIcon } from "@/components/solicitacoes/area-with-icon";
 import { FormerEmployeeBadge } from "@/components/usuarios/former-employee-badge";
 import { InstagramBarChart } from "@/components/instagram/instagram-bar-chart";
+import { InstagramPostThumbnail } from "@/components/instagram/instagram-post-thumbnail";
 import { InstagramEngagementMetrics } from "@/components/instagram/instagram-engagement-metrics";
 import { InstagramReportExport } from "@/components/instagram/instagram-report-export";
+import {
+  SectionCard,
+  KpiCard,
+  ComparisonStat,
+} from "@/components/instagram/instagram-section-card";
 import { getAreaIcon } from "@/lib/area-icons";
-import { computeAreaDashboards, computeEngagementActionsByArea, computeEngagementActionsBySolicitante, computeOfficeInsight, computeTopPostsByEngagement } from "@/lib/instagram-analytics";
+import {
+  computeAreaDashboards,
+  computeEngagementRateByArea,
+  computeEngagementRateBySolicitante,
+  computeOfficeInsight,
+  computeTopPostsByEngagement,
+  computePeriodComparison,
+  computeBestPostingHours,
+} from "@/lib/instagram-analytics";
 import {
   getPostAreas,
   getPostSolicitantes,
@@ -30,11 +44,13 @@ import {
 } from "@/lib/instagram-link-rules";
 import { getInstagramMediaLabel } from "@/lib/instagram-media-type";
 import { computeEngagementActionsFromPost } from "@/lib/instagram-engagement";
+import { filterPostsByArea } from "@/lib/instagram-report";
 import {
-  filterPostsByArea,
-  filterPostsByPeriod,
-  formatPeriodLabel,
-} from "@/lib/instagram-report";
+  filterByPeriod,
+  getPreviousRange,
+  formatRangeLabel,
+  type DateRange,
+} from "@/lib/instagram-period";
 import type { InstagramAccountStats, InstagramPost } from "@/lib/instagram-posts";
 import type { Area } from "@/lib/areas";
 import type { User } from "@/lib/users";
@@ -48,12 +64,18 @@ interface InstagramAreaDashboardProps {
   areas: Area[];
   users: User[];
   accountStats: InstagramAccountStats | null;
+  periodRange: DateRange | null;
+  periodLabel: string | null;
 }
 
 function formatNumber(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return n.toLocaleString("pt-BR");
+}
+
+function formatEngagementRate(rate: number) {
+  return `${rate.toFixed(1)}%`;
 }
 
 function formatDate(iso: string | null) {
@@ -102,93 +124,86 @@ function emptyAreaInsight(areaName: string) {
   };
 }
 
-function Metric({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-}) {
+function PeriodHint({ periodLabel, count, total }: { periodLabel: string | null; count: number; total: number }) {
   return (
-    <div className="rounded-xl bg-black/[0.03] px-3 py-2">
-      <div className="flex items-center gap-1.5 text-muted-foreground mb-0.5">
-        {icon}
-        <span className="text-[10px] font-semibold uppercase tracking-wider">{label}</span>
-      </div>
-      <p className="text-lg font-bold tabular-nums leading-none">{value}</p>
+    <p className="text-xs text-muted-foreground">
+      {periodLabel ? (
+        <>
+          <span className="font-medium text-foreground">{periodLabel}</span>
+          {" · "}
+          {count} de {total} post{total !== 1 ? "s" : ""}
+        </>
+      ) : (
+        <>Todos os {total} post{total !== 1 ? "s" : ""} desde 2025</>
+      )}
+    </p>
+  );
+}
+
+function PeriodComparisonGrid({ posts, periodRange }: { posts: InstagramPost[]; periodRange: DateRange | null }) {
+  const comparison = useMemo(
+    () =>
+      computePeriodComparison(posts, periodRange ? { range: periodRange } : { rangeDays: 30 }),
+    [posts, periodRange]
+  );
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-3">
+      <ComparisonStat
+        label="Taxa de engajamento"
+        value={formatEngagementRate(comparison.current.engagementRate)}
+        delta={comparison.deltaRatePts}
+        deltaSuffix=" p.p."
+        sub={`Anterior: ${formatEngagementRate(comparison.previous.engagementRate)}`}
+      />
+      <ComparisonStat
+        label="Alcance"
+        value={formatNumber(comparison.current.reach)}
+        delta={comparison.deltaReachPct}
+        deltaSuffix="%"
+        sub={`Anterior: ${formatNumber(comparison.previous.reach)}`}
+      />
+      <ComparisonStat
+        label="Posts publicados"
+        value={formatNumber(comparison.current.postsCount)}
+        delta={comparison.deltaPostsPct}
+        deltaSuffix="%"
+        sub={`Anterior: ${formatNumber(comparison.previous.postsCount)} posts`}
+      />
     </div>
   );
 }
 
-function AreaPeriodFilter({
-  periodFrom,
-  periodTo,
-  onPeriodFromChange,
-  onPeriodToChange,
-  onClear,
-  totalPosts,
-  filteredCount,
-  scopeLabel = "da área",
-}: {
-  periodFrom: string;
-  periodTo: string;
-  onPeriodFromChange: (value: string) => void;
-  onPeriodToChange: (value: string) => void;
-  onClear: () => void;
-  totalPosts: number;
-  filteredCount: number;
-  scopeLabel?: string;
-}) {
-  const periodLabel = formatPeriodLabel(periodFrom, periodTo);
-  const hasFilter = Boolean(periodFrom || periodTo);
+function BestHoursMini({ posts }: { posts: InstagramPost[] }) {
+  const hours = useMemo(
+    () => computeBestPostingHours(posts, { limit: 3, timeZone: "America/Sao_Paulo", minPosts: 2 }),
+    [posts]
+  );
+
+  if (hours.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">Sem histórico suficiente para recomendar horários.</p>
+    );
+  }
 
   return (
-    <div className="rounded-xl border border-border/50 bg-muted/30 p-4 space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <CalendarRange className="h-4 w-4 text-muted-foreground" />
-          Período
+    <div className="grid gap-3 sm:grid-cols-3">
+      {hours.map((slot, index) => (
+        <div key={slot.hour} className="rounded-xl border border-border/40 bg-background/50 p-4">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              #{index + 1} janela
+            </p>
+            <Badge variant="outline" className="rounded-full text-[10px]">
+              {slot.postsCount} post{slot.postsCount !== 1 ? "s" : ""}
+            </Badge>
+          </div>
+          <p className="mt-1 text-2xl font-bold tabular-nums">{slot.hourLabel}</p>
+          <p className="mt-1 text-sm font-semibold tabular-nums text-emerald-700">
+            {formatEngagementRate(slot.engagementRate)}
+          </p>
         </div>
-        {hasFilter && (
-          <Button type="button" variant="ghost" size="sm" className="h-8 rounded-lg" onClick={onClear}>
-            <X className="h-3.5 w-3.5 mr-1.5" />
-            Limpar período
-          </Button>
-        )}
-      </div>
-
-      <div className="grid sm:grid-cols-2 gap-3">
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Data inicial</Label>
-          <DatePickerField
-            value={periodFrom}
-            onChange={onPeriodFromChange}
-            placeholder="Desde..."
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Data final</Label>
-          <DatePickerField
-            value={periodTo}
-            onChange={onPeriodToChange}
-            placeholder="Até..."
-          />
-        </div>
-      </div>
-
-      <p className="text-xs text-muted-foreground">
-        {hasFilter ? (
-          <>
-            <span className="font-medium text-foreground">{periodLabel}</span>
-            {" · "}
-            {filteredCount} de {totalPosts} post{totalPosts !== 1 ? "s" : ""} no período
-          </>
-        ) : (
-          <>Mostrando todos os {totalPosts} posts {scopeLabel} desde 2025</>
-        )}
-      </p>
+      ))}
     </div>
   );
 }
@@ -211,7 +226,7 @@ function PostListRow({
   return (
     <div
       className={cn(
-        "flex gap-3 rounded-xl border border-border/40 bg-white/70 p-3 hover:bg-white transition-colors",
+        "flex gap-3 items-start rounded-xl border border-border/40 bg-background/50 p-3 hover:bg-background/80 transition-colors",
         rank === 1 && "border-amber-300/60 bg-amber-50/40",
         rank === 2 && "border-slate-300/60 bg-slate-50/40",
         rank === 3 && "border-orange-300/50 bg-orange-50/30"
@@ -230,20 +245,7 @@ function PostListRow({
           #{rank}
         </div>
       )}
-      <div className="relative h-16 w-16 shrink-0 rounded-lg overflow-hidden bg-muted">
-        {(post.thumbnail_url || post.media_url) ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={post.thumbnail_url || post.media_url || ""}
-            alt=""
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center">
-            <ImageIcon className="h-5 w-5 text-muted-foreground/40" />
-          </div>
-        )}
-      </div>
+      <InstagramPostThumbnail post={post} size="list" showBadge={false} />
 
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
@@ -312,42 +314,18 @@ function PostListRow({
   );
 }
 
-function TopPostsSection({
-  posts,
-  users,
-  title,
-  areaName,
-}: {
-  posts: InstagramPost[];
-  users: User[];
-  title: string;
-  areaName?: string;
-}) {
+function TopPostsList({ posts, users, areaName }: { posts: InstagramPost[]; users: User[]; areaName?: string }) {
   const topPosts = useMemo(() => computeTopPostsByEngagement(posts, 5), [posts]);
 
+  if (topPosts.length === 0) {
+    return <p className="text-sm text-muted-foreground">Nenhum post no período.</p>;
+  }
+
   return (
-    <div className="px-5 py-4 border-b border-border/40">
-      <div className="flex items-center gap-2 mb-3">
-        <Trophy className="h-4 w-4 text-amber-600" />
-        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          {title}
-        </h4>
-      </div>
-      {topPosts.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nenhum post no período.</p>
-      ) : (
-        <div className="space-y-2">
-          {topPosts.map((post, index) => (
-            <PostListRow
-              key={post.id}
-              post={post}
-              users={users}
-              areaName={areaName}
-              rank={index + 1}
-            />
-          ))}
-        </div>
-      )}
+    <div className="space-y-2">
+      {topPosts.map((post, index) => (
+        <PostListRow key={post.id} post={post} users={users} areaName={areaName} rank={index + 1} />
+      ))}
     </div>
   );
 }
@@ -355,37 +333,28 @@ function TopPostsSection({
 function OfficeDetailPanel({
   allPosts,
   filteredPosts,
-  periodFrom,
-  periodTo,
-  onPeriodFromChange,
-  onPeriodToChange,
-  onClearPeriod,
+  periodLabel,
+  periodRange,
   users,
   areas,
   accountStats,
 }: {
   allPosts: InstagramPost[];
   filteredPosts: InstagramPost[];
-  periodFrom: string;
-  periodTo: string;
-  onPeriodFromChange: (value: string) => void;
-  onPeriodToChange: (value: string) => void;
-  onClearPeriod: () => void;
+  periodLabel: string | null;
+  periodRange: DateRange | null;
   users: User[];
   areas: Area[];
   accountStats: InstagramAccountStats | null;
 }) {
   const insight = useMemo(() => computeOfficeInsight(filteredPosts), [filteredPosts]);
   const collabCount = filteredPosts.filter(isCollabPost).length;
-  const periodLabel = formatPeriodLabel(periodFrom, periodTo);
+  const engagementRate = insight.reach > 0 ? (insight.engagementActions / insight.reach) * 100 : 0;
+  const shares = filteredPosts.reduce((s, p) => s + p.shares, 0);
 
-  const chartByArea = useMemo(
-    () => computeEngagementActionsByArea(filteredPosts),
-    [filteredPosts]
-  );
-
+  const chartByArea = useMemo(() => computeEngagementRateByArea(filteredPosts), [filteredPosts]);
   const chartByAuthor = useMemo(
-    () => computeEngagementActionsBySolicitante(filteredPosts, users),
+    () => computeEngagementRateBySolicitante(filteredPosts, users),
     [filteredPosts, users]
   );
 
@@ -394,116 +363,99 @@ function OfficeDetailPanel({
     periodLabel ? `Período: ${periodLabel}` : "Todos os posts desde 2025",
   ].join(" · ");
 
+  if (filteredPosts.length === 0) {
+    return (
+      <SectionCard title="Escritório todo" description="Visão consolidada de todas as áreas">
+        <PeriodHint periodLabel={periodLabel} count={0} total={allPosts.length} />
+        <div className="mt-3 rounded-xl border border-dashed border-border/60 bg-background/40 p-8 text-center">
+          <p className="text-sm text-muted-foreground">Nenhum post no período selecionado.</p>
+        </div>
+      </SectionCard>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-white/60 bg-gradient-to-br from-white/90 via-white/70 to-white/50 backdrop-blur-xl shadow-[0_2px_16px_-4px_rgba(0,0,0,0.08)] overflow-hidden">
-        <div className="px-5 pt-5 pb-4 border-b border-border/40 space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 text-lg font-semibold">
-                <Building2 className="h-5 w-5 text-[#101f2e]" />
-                Escritório todo
-              </div>
-              <p className="text-sm text-muted-foreground mt-1">
-                {filteredPosts.length} post{filteredPosts.length !== 1 ? "s" : ""} no período
-                {collabCount > 0 && ` · ${collabCount} collab`}
-              </p>
-            </div>
-            <InstagramReportExport
-              posts={filteredPosts}
-              areas={areas}
-              users={users}
-              accountStats={accountStats}
-              filterDescription={reportFilterDescription}
-              compact
-              dialogTitle="Relatório — Escritório todo"
-            />
-          </div>
-
-          <AreaPeriodFilter
-            periodFrom={periodFrom}
-            periodTo={periodTo}
-            onPeriodFromChange={onPeriodFromChange}
-            onPeriodToChange={onPeriodToChange}
-            onClear={onClearPeriod}
-            totalPosts={allPosts.length}
-            filteredCount={filteredPosts.length}
-            scopeLabel="do escritório"
+      <SectionCard
+        title="Escritório todo"
+        description={`${filteredPosts.length} post${filteredPosts.length !== 1 ? "s" : ""}${collabCount > 0 ? ` · ${collabCount} collab` : ""}`}
+        action={
+          <InstagramReportExport
+            posts={filteredPosts}
+            areas={areas}
+            users={users}
+            accountStats={accountStats}
+            filterDescription={reportFilterDescription}
+            compact
+            dialogTitle="Relatório — Escritório todo"
           />
-
-          {filteredPosts.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border/60 bg-white/50 p-8 text-center">
-              <p className="text-sm text-muted-foreground">
-                Nenhum post no período selecionado.
-              </p>
-            </div>
-          ) : (
-            <>
-              <InstagramEngagementMetrics
-                variant="hero"
-                reach={insight.reach}
-                likes={insight.likes}
-                comments={insight.comments}
-                saves={insight.saves}
-              />
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <Metric icon={<ImageIcon className="h-3 w-3" />} label="Posts" value={String(insight.posts)} />
-                <Metric icon={<Users className="h-3 w-3" />} label="Views" value={formatNumber(insight.views)} />
-                <Metric
-                  icon={<Share2 className="h-3 w-3" />}
-                  label="Shares"
-                  value={formatNumber(filteredPosts.reduce((s, p) => s + p.shares, 0))}
-                />
-                <Metric
-                  icon={<Building2 className="h-3 w-3" />}
-                  label="Áreas"
-                  value={String(new Set(filteredPosts.flatMap(getPostAreas)).size)}
-                />
-              </div>
-
-              <p className="text-xs text-muted-foreground">
-                Média {formatNumber(Math.round(insight.avgEngagementActions))} ações de engajamento/post
-              </p>
-            </>
-          )}
+        }
+      >
+        <div className="space-y-4">
+          <PeriodHint periodLabel={periodLabel} count={filteredPosts.length} total={allPosts.length} />
+          <div className="grid gap-3 grid-cols-2 xl:grid-cols-4">
+            <KpiCard label="Posts" value={insight.posts} icon={<ImageIcon className="h-3.5 w-3.5" />} />
+            <KpiCard label="Taxa de engajamento" value={formatEngagementRate(engagementRate)} icon={<TrendingUp className="h-3.5 w-3.5" />} />
+            <KpiCard label="Alcance" value={formatNumber(insight.reach)} icon={<Eye className="h-3.5 w-3.5" />} />
+            <KpiCard label="Áreas ativas" value={new Set(filteredPosts.flatMap(getPostAreas)).size} icon={<Building2 className="h-3.5 w-3.5" />} />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {formatNumber(insight.likes)} curtidas · {formatNumber(insight.comments)} comentários ·{" "}
+            {formatNumber(insight.saves)} salvamentos · {formatNumber(insight.views)} visualizações ·{" "}
+            {formatNumber(shares)} compartilhamentos
+          </p>
         </div>
+      </SectionCard>
 
-        {filteredPosts.length > 0 && (
-          <>
-            <div className="grid lg:grid-cols-2 gap-4 p-5 border-b border-border/40">
-              <InstagramBarChart
-                title="Ações de engajamento por área"
-                data={chartByArea}
-                useAreaIcons
-                emptyMessage="Atribua áreas às postagens para ver este gráfico."
-              />
-              <InstagramBarChart
-                title="Ações de engajamento por autor"
-                data={chartByAuthor}
-                emptyMessage="Atribua autores às postagens para ver este gráfico."
-              />
-            </div>
+      {periodRange && (
+        <SectionCard
+          title={`Resumo · ${periodLabel ?? "período"}`}
+          description="Variação real de performance no período"
+          action={
+            <Badge variant="outline" className="rounded-full gap-1.5 font-normal text-muted-foreground">
+              <Activity className="h-3.5 w-3.5" />
+              Comparativo com {formatRangeLabel(getPreviousRange(periodRange))}
+            </Badge>
+          }
+        >
+          <PeriodComparisonGrid posts={allPosts} periodRange={periodRange} />
+        </SectionCard>
+      )}
 
-            <TopPostsSection
-              posts={filteredPosts}
-              users={users}
-              title="Top 5 posts do escritório"
-            />
+      <SectionCard title="Engajamento por área e por autor" description="Taxa de engajamento sobre alcance">
+        <div className="grid lg:grid-cols-2 gap-4 lg:items-start">
+          <InstagramBarChart
+            title="Taxa por área"
+            data={chartByArea}
+            useAreaIcons
+            valueFormatter={formatEngagementRate}
+            emptyMessage="Atribua áreas às postagens para ver este gráfico."
+          />
+          <InstagramBarChart
+            title="Taxa por autor"
+            data={chartByAuthor}
+            useAvatars
+            valueFormatter={formatEngagementRate}
+            emptyMessage="Atribua autores às postagens para ver este gráfico."
+          />
+        </div>
+      </SectionCard>
 
-            <div className="px-5 py-4">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-                Todos os posts ({filteredPosts.length})
-              </h4>
-              <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
-                {filteredPosts.map((post) => (
-                  <PostListRow key={post.id} post={post} users={users} />
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-      </div>
+      <SectionCard title="Melhores horários" description="Janelas com melhor taxa de engajamento" action={<Clock3 className="h-4 w-4 text-muted-foreground" />}>
+        <BestHoursMini posts={filteredPosts} />
+      </SectionCard>
+
+      <SectionCard title="Top 5 posts do escritório" description="Ranking por taxa de engajamento" action={<Trophy className="h-4 w-4 text-amber-600" />}>
+        <TopPostsList posts={filteredPosts} users={users} />
+      </SectionCard>
+
+      <SectionCard title={`Todos os posts (${filteredPosts.length})`} description="Lista completa do período">
+        <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+          {filteredPosts.map((post) => (
+            <PostListRow key={post.id} post={post} users={users} />
+          ))}
+        </div>
+      </SectionCard>
     </div>
   );
 }
@@ -513,11 +465,8 @@ function AreaDetailPanel({
   allAreaPosts,
   filteredAreaPosts,
   insight,
-  periodFrom,
-  periodTo,
-  onPeriodFromChange,
-  onPeriodToChange,
-  onClearPeriod,
+  periodLabel,
+  periodRange,
   users,
   areas,
   accountStats,
@@ -526,11 +475,8 @@ function AreaDetailPanel({
   allAreaPosts: InstagramPost[];
   filteredAreaPosts: InstagramPost[];
   insight: ReturnType<typeof computeAreaDashboards>[number];
-  periodFrom: string;
-  periodTo: string;
-  onPeriodFromChange: (value: string) => void;
-  onPeriodToChange: (value: string) => void;
-  onClearPeriod: () => void;
+  periodLabel: string | null;
+  periodRange: DateRange | null;
   users: User[];
   areas: Area[];
   accountStats: InstagramAccountStats | null;
@@ -539,45 +485,60 @@ function AreaDetailPanel({
   const totalLikes = filteredAreaPosts.reduce((s, p) => s + p.likes, 0);
   const totalComments = filteredAreaPosts.reduce((s, p) => s + p.comments, 0);
   const totalSaves = filteredAreaPosts.reduce((s, p) => s + p.saves, 0);
-  const periodLabel = formatPeriodLabel(periodFrom, periodTo);
+  const shares = filteredAreaPosts.reduce((s, p) => s + p.shares, 0);
+  const engagementRate = insight.reach > 0 ? (insight.engagementActions / insight.reach) * 100 : 0;
 
   const chartByAuthor = useMemo(() => {
-    const map = new Map<string, { total: number; name: string; isFormerEmployee: boolean }>();
+    const map = new Map<
+      string,
+      { reach: number; actions: number; name: string; isFormerEmployee: boolean; avatarUrl: string | null }
+    >();
     for (const post of filteredAreaPosts) {
       const actions = computeEngagementActionsFromPost(post);
       for (const s of getPostSolicitantes(post)) {
         const user = users.find((u) => u.id === s.id);
         const name = user?.name ?? s.name;
         const current = map.get(s.id) ?? {
-          total: 0,
+          reach: 0,
+          actions: 0,
           name,
           isFormerEmployee: user ? !isUserActive(user) : false,
+          avatarUrl: user?.avatar_url ?? null,
         };
         map.set(s.id, {
-          total: current.total + actions,
+          reach: current.reach + post.reach,
+          actions: current.actions + actions,
           name,
           isFormerEmployee: current.isFormerEmployee,
+          avatarUrl: current.avatarUrl ?? user?.avatar_url ?? null,
         });
       }
     }
     return Array.from(map.values())
-      .map(({ name, total, isFormerEmployee }) => ({
+      .map(({ name, reach, actions, isFormerEmployee, avatarUrl }) => ({
         label: name,
-        total,
+        total: reach > 0 ? (actions / reach) * 100 : 0,
         isFormerEmployee,
+        avatarUrl,
         sublabel: isFormerEmployee ? "Ex-funcionário" : undefined,
       }))
       .sort((a, b) => b.total - a.total);
   }, [filteredAreaPosts, users]);
 
   const chartByFormat = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, { reach: number; actions: number }>();
     for (const post of filteredAreaPosts) {
       const label = getInstagramMediaLabel(post.media_type);
-      map.set(label, (map.get(label) ?? 0) + computeEngagementActionsFromPost(post));
+      const current = map.get(label) ?? { reach: 0, actions: 0 };
+      current.reach += post.reach;
+      current.actions += computeEngagementActionsFromPost(post);
+      map.set(label, current);
     }
     return Array.from(map.entries())
-      .map(([label, total]) => ({ label, total }))
+      .map(([label, value]) => ({
+        label,
+        total: value.reach > 0 ? (value.actions / value.reach) * 100 : 0,
+      }))
       .sort((a, b) => b.total - a.total);
   }, [filteredAreaPosts]);
 
@@ -588,154 +549,139 @@ function AreaDetailPanel({
     periodLabel ? `Período: ${periodLabel}` : "Todos os posts vinculados",
   ].join(" · ");
 
+  if (filteredAreaPosts.length === 0) {
+    return (
+      <SectionCard
+        title={areaName}
+        description="Dashboard da área"
+        action={<AreaWithIcon area={areaName} className="text-sm" />}
+      >
+        <PeriodHint periodLabel={periodLabel} count={0} total={allAreaPosts.length} />
+        <div className="mt-3 rounded-xl border border-dashed border-border/60 bg-background/40 p-8 text-center">
+          <p className="text-sm text-muted-foreground">Nenhum post nesta área no período selecionado.</p>
+        </div>
+      </SectionCard>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-white/60 bg-gradient-to-br from-white/90 via-white/70 to-white/50 backdrop-blur-xl shadow-[0_2px_16px_-4px_rgba(0,0,0,0.08)] overflow-hidden">
-        <div className="px-5 pt-5 pb-4 border-b border-border/40 space-y-4">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <AreaWithIcon area={areaName} className="text-lg font-semibold" />
-              <p className="text-sm text-muted-foreground mt-1">
-                {filteredAreaPosts.length} post{filteredAreaPosts.length !== 1 ? "s" : ""} no período
-                {collabCount > 0 && ` · ${collabCount} collab`}
-              </p>
-            </div>
-            <InstagramReportExport
-              posts={filteredAreaPosts}
-              areas={areas}
-              users={users}
-              accountStats={accountStats}
-              focusArea={areaName}
-              filterDescription={reportFilterDescription}
-              compact
-              dialogTitle={`Relatório — ${areaName}`}
-            />
-          </div>
-
-          <AreaPeriodFilter
-            periodFrom={periodFrom}
-            periodTo={periodTo}
-            onPeriodFromChange={onPeriodFromChange}
-            onPeriodToChange={onPeriodToChange}
-            onClear={onClearPeriod}
-            totalPosts={allAreaPosts.length}
-            filteredCount={filteredAreaPosts.length}
+      <SectionCard
+        title={areaName}
+        description={`${filteredAreaPosts.length} post${filteredAreaPosts.length !== 1 ? "s" : ""}${collabCount > 0 ? ` · ${collabCount} collab` : ""}`}
+        action={
+          <InstagramReportExport
+            posts={filteredAreaPosts}
+            areas={areas}
+            users={users}
+            accountStats={accountStats}
+            focusArea={areaName}
+            filterDescription={reportFilterDescription}
+            compact
+            dialogTitle={`Relatório — ${areaName}`}
           />
-
-          {filteredAreaPosts.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-border/60 bg-white/50 p-8 text-center">
-              <p className="text-sm text-muted-foreground">
-                Nenhum post nesta área no período selecionado.
-              </p>
-            </div>
-          ) : (
-            <>
-              <InstagramEngagementMetrics
-                variant="hero"
-                reach={insight.reach}
-                likes={totalLikes}
-                comments={totalComments}
-                saves={totalSaves}
-              />
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                <Metric icon={<ImageIcon className="h-3 w-3" />} label="Posts" value={String(insight.posts)} />
-                <Metric icon={<Users className="h-3 w-3" />} label="Views" value={formatNumber(insight.views)} />
-                <Metric
-                  icon={<Share2 className="h-3 w-3" />}
-                  label="Shares"
-                  value={formatNumber(filteredAreaPosts.reduce((s, p) => s + p.shares, 0))}
-                />
-              </div>
-
-              <p className="text-xs text-muted-foreground">
-                Média {formatNumber(Math.round(insight.avgEngagementActions))} ações de engajamento/post ·{" "}
-                {collaboratorsWithPosts.length} colaborador
-                {collaboratorsWithPosts.length !== 1 ? "es" : ""} com posts
-              </p>
-            </>
-          )}
+        }
+      >
+        <div className="space-y-4">
+          <PeriodHint periodLabel={periodLabel} count={filteredAreaPosts.length} total={allAreaPosts.length} />
+          <div className="grid gap-3 grid-cols-2 xl:grid-cols-4">
+            <KpiCard label="Posts" value={insight.posts} icon={<ImageIcon className="h-3.5 w-3.5" />} />
+            <KpiCard label="Taxa de engajamento" value={formatEngagementRate(engagementRate)} icon={<TrendingUp className="h-3.5 w-3.5" />} />
+            <KpiCard label="Alcance" value={formatNumber(insight.reach)} icon={<Eye className="h-3.5 w-3.5" />} />
+            <KpiCard label="Colaboradores" value={collaboratorsWithPosts.length} icon={<Users className="h-3.5 w-3.5" />} />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {formatNumber(totalLikes)} curtidas · {formatNumber(totalComments)} comentários ·{" "}
+            {formatNumber(totalSaves)} salvamentos · {formatNumber(insight.views)} visualizações ·{" "}
+            {formatNumber(shares)} compartilhamentos
+          </p>
         </div>
+      </SectionCard>
 
-        {filteredAreaPosts.length > 0 && (
-          <>
-            <div className="grid lg:grid-cols-2 gap-4 p-5 border-b border-border/40">
-              <InstagramBarChart
-                title="Ações de engajamento por colaborador"
-                data={chartByAuthor}
-                emptyMessage="Nenhum autor vinculado nesta área."
-              />
-              <InstagramBarChart
-                title="Ações de engajamento por formato"
-                data={chartByFormat}
-                emptyMessage="Sem posts nesta área."
-              />
-            </div>
+      {periodRange && (
+        <SectionCard
+          title={`Resumo · ${periodLabel ?? "período"}`}
+          description="Variação real de performance no período"
+          action={
+            <Badge variant="outline" className="rounded-full gap-1.5 font-normal text-muted-foreground">
+              <Activity className="h-3.5 w-3.5" />
+              Comparativo com {formatRangeLabel(getPreviousRange(periodRange))}
+            </Badge>
+          }
+        >
+          <PeriodComparisonGrid posts={allAreaPosts} periodRange={periodRange} />
+        </SectionCard>
+      )}
 
-            <div className="px-5 py-4 border-b border-border/40">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-                Colaboradores ({collaboratorsWithPosts.length})
-              </h4>
-              {collaboratorsWithPosts.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nenhum colaborador com posts nesta área.</p>
-              ) : (
-                <div className="grid sm:grid-cols-2 gap-2">
-                  {collaboratorsWithPosts.map((collab) => (
-                    <div
-                      key={collab.userId}
-                      className={cn(
-                        "flex items-center gap-3 rounded-xl border border-border/40 bg-white/60 px-3 py-2.5",
-                        !collab.is_active && "border-amber-200/60 bg-amber-50/30"
-                      )}
-                    >
-                      <Avatar className={cn("h-8 w-8 shrink-0", !collab.is_active && "opacity-75")}>
-                        <AvatarImage src={collab.avatar_url || undefined} />
-                        <AvatarFallback className="text-[10px]">{getInitials(collab.name)}</AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <p className={cn("text-sm font-medium truncate", !collab.is_active && "text-muted-foreground")}>
-                            {collab.name}
-                          </p>
-                          {!collab.is_active && <FormerEmployeeBadge />}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {collab.posts} post{collab.posts !== 1 ? "s" : ""} ·{" "}
-                          {formatNumber(collab.engagementActions)} ações ·{" "}
-                          {formatNumber(collab.reach)} alcance
-                        </p>
-                      </div>
-                    </div>
-                  ))}
+      <SectionCard title="Engajamento por colaborador e formato" description="Taxa de engajamento sobre alcance">
+        <div className="grid lg:grid-cols-2 gap-4 lg:items-start">
+          <InstagramBarChart
+            title="Taxa por colaborador"
+            data={chartByAuthor}
+            useAvatars
+            valueFormatter={formatEngagementRate}
+            emptyMessage="Nenhum autor vinculado nesta área."
+          />
+          <InstagramBarChart
+            title="Taxa por formato"
+            data={chartByFormat}
+            valueFormatter={formatEngagementRate}
+            emptyMessage="Sem posts nesta área."
+          />
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Melhores horários" description="Janelas com melhor taxa de engajamento" action={<Clock3 className="h-4 w-4 text-muted-foreground" />}>
+        <BestHoursMini posts={filteredAreaPosts} />
+      </SectionCard>
+
+      <SectionCard title={`Colaboradores (${collaboratorsWithPosts.length})`} description="Quem produz conteúdo nesta área">
+        {collaboratorsWithPosts.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nenhum colaborador com posts nesta área.</p>
+        ) : (
+          <div className="grid sm:grid-cols-2 gap-2">
+            {collaboratorsWithPosts.map((collab) => (
+              <div
+                key={collab.userId}
+                className={cn(
+                  "flex items-center gap-3 rounded-xl border border-border/40 bg-background/50 px-3 py-2.5",
+                  !collab.is_active && "border-amber-200/60 bg-amber-50/30"
+                )}
+              >
+                <Avatar className={cn("h-8 w-8 shrink-0", !collab.is_active && "opacity-75")}>
+                  <AvatarImage src={collab.avatar_url || undefined} />
+                  <AvatarFallback className="text-[10px]">{getInitials(collab.name)}</AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p className={cn("text-sm font-medium truncate", !collab.is_active && "text-muted-foreground")}>
+                      {collab.name}
+                    </p>
+                    {!collab.is_active && <FormerEmployeeBadge />}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {collab.posts} post{collab.posts !== 1 ? "s" : ""} ·{" "}
+                    {formatEngagementRate(collab.reach > 0 ? (collab.engagementActions / collab.reach) * 100 : 0)} taxa ·{" "}
+                    {formatNumber(collab.reach)} alcance
+                  </p>
                 </div>
-              )}
-            </div>
-
-            <TopPostsSection
-              posts={filteredAreaPosts}
-              users={users}
-              title={`Top 5 posts — ${areaName}`}
-              areaName={areaName}
-            />
-
-            <div className="px-5 py-4">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-                Todos os posts da área ({filteredAreaPosts.length})
-              </h4>
-              <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
-                {filteredAreaPosts.map((post) => (
-                  <PostListRow
-                    key={post.id}
-                    post={post}
-                    users={users}
-                    areaName={areaName}
-                  />
-                ))}
               </div>
-            </div>
-          </>
+            ))}
+          </div>
         )}
-      </div>
+      </SectionCard>
+
+      <SectionCard title={`Top 5 posts — ${areaName}`} description="Ranking por taxa de engajamento" action={<Trophy className="h-4 w-4 text-amber-600" />}>
+        <TopPostsList posts={filteredAreaPosts} users={users} areaName={areaName} />
+      </SectionCard>
+
+      <SectionCard title={`Todos os posts da área (${filteredAreaPosts.length})`} description="Lista completa do período">
+        <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+          {filteredAreaPosts.map((post) => (
+            <PostListRow key={post.id} post={post} users={users} areaName={areaName} />
+          ))}
+        </div>
+      </SectionCard>
     </div>
   );
 }
@@ -745,6 +691,8 @@ export function InstagramAreaDashboard({
   areas,
   users,
   accountStats,
+  periodRange,
+  periodLabel,
 }: InstagramAreaDashboardProps) {
   const areaDashboards = useMemo(
     () => computeAreaDashboards(posts, areas, users),
@@ -757,29 +705,18 @@ export function InstagramAreaDashboard({
   );
 
   const [activeTab, setActiveTab] = useState<string>(OFFICE_TAB_ID);
-  const [periodFrom, setPeriodFrom] = useState("");
-  const [periodTo, setPeriodTo] = useState("");
 
-  useEffect(() => {
-    if (activeTab === OFFICE_TAB_ID) return;
-    if (!areasWithPosts.some((a) => a.area === activeTab)) {
-      setActiveTab(areasWithPosts.length > 0 ? areasWithPosts[0].area : OFFICE_TAB_ID);
-    }
-  }, [areasWithPosts, activeTab]);
-
-  useEffect(() => {
-    setPeriodFrom("");
-    setPeriodTo("");
-  }, [activeTab]);
-
-  const isOfficeView = activeTab === OFFICE_TAB_ID;
-  const selected = areasWithPosts.find((a) => a.area === activeTab);
+  const effectiveActiveTab =
+    activeTab === OFFICE_TAB_ID || areasWithPosts.some((a) => a.area === activeTab)
+      ? activeTab
+      : areasWithPosts[0]?.area ?? OFFICE_TAB_ID;
+  const isOfficeView = effectiveActiveTab === OFFICE_TAB_ID;
+  const selected = areasWithPosts.find((a) => a.area === effectiveActiveTab);
 
   const allOfficePosts = useMemo(() => sortPostsByDate(posts), [posts]);
-
   const filteredOfficePosts = useMemo(
-    () => sortPostsByDate(filterPostsByPeriod(allOfficePosts, periodFrom, periodTo)),
-    [allOfficePosts, periodFrom, periodTo]
+    () => sortPostsByDate(filterByPeriod(allOfficePosts, periodRange)),
+    [allOfficePosts, periodRange]
   );
 
   const allAreaPosts = useMemo(() => {
@@ -788,8 +725,8 @@ export function InstagramAreaDashboard({
   }, [posts, selected]);
 
   const filteredAreaPosts = useMemo(
-    () => sortPostsByDate(filterPostsByPeriod(allAreaPosts, periodFrom, periodTo)),
-    [allAreaPosts, periodFrom, periodTo]
+    () => sortPostsByDate(filterByPeriod(allAreaPosts, periodRange)),
+    [allAreaPosts, periodRange]
   );
 
   const periodInsight = useMemo(() => {
@@ -800,7 +737,7 @@ export function InstagramAreaDashboard({
 
   if (posts.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-border/60 bg-white/50 p-8 text-center">
+      <div className="rounded-2xl border border-dashed border-border/60 bg-background/40 p-8 text-center">
         <p className="text-sm text-muted-foreground">
           Sincronize posts para ver o dashboard do escritório e por área.
         </p>
@@ -810,23 +747,14 @@ export function InstagramAreaDashboard({
 
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-base font-semibold">Dashboard Instagram</h3>
-        <p className="text-sm text-muted-foreground mt-1">
-          Visão geral do escritório ou detalhe por área — filtre por período e veja o top 5.
-        </p>
-      </div>
-
+      {/* Seletor de área (mesmo conceito das abas, mantém o filtro de período global) */}
       <div className="overflow-x-auto -mx-1 px-1 pb-1">
-        <div className="flex gap-2 min-w-max border-b border-border/60 pb-3">
+        <div className="flex gap-2 min-w-max">
           <Button
-            variant={isOfficeView ? "default" : "ghost"}
+            variant={isOfficeView ? "default" : "outline"}
             size="sm"
             onClick={() => setActiveTab(OFFICE_TAB_ID)}
-            className={cn(
-              "gap-2 rounded-xl shrink-0 h-9",
-              isOfficeView && "bg-[#101f2e] hover:bg-[#101f2e]/90"
-            )}
+            className={cn("gap-2 rounded-xl shrink-0 h-9", isOfficeView && "bg-[#101f2e] hover:bg-[#101f2e]/90")}
             aria-current={isOfficeView ? "page" : undefined}
           >
             <Building2 className="h-3.5 w-3.5" />
@@ -844,17 +772,13 @@ export function InstagramAreaDashboard({
           {areasWithPosts.map((area) => {
             const Icon = getAreaIcon(area.area);
             const isActive = !isOfficeView && selected?.area === area.area;
-
             return (
               <Button
                 key={area.area}
-                variant={isActive ? "default" : "ghost"}
+                variant={isActive ? "default" : "outline"}
                 size="sm"
                 onClick={() => setActiveTab(area.area)}
-                className={cn(
-                  "gap-2 rounded-xl shrink-0 h-9",
-                  isActive && "bg-[#101f2e] hover:bg-[#101f2e]/90"
-                )}
+                className={cn("gap-2 rounded-xl shrink-0 h-9", isActive && "bg-[#101f2e] hover:bg-[#101f2e]/90")}
                 aria-current={isActive ? "page" : undefined}
               >
                 <Icon className="h-3.5 w-3.5" />
@@ -877,14 +801,8 @@ export function InstagramAreaDashboard({
         <OfficeDetailPanel
           allPosts={allOfficePosts}
           filteredPosts={filteredOfficePosts}
-          periodFrom={periodFrom}
-          periodTo={periodTo}
-          onPeriodFromChange={setPeriodFrom}
-          onPeriodToChange={setPeriodTo}
-          onClearPeriod={() => {
-            setPeriodFrom("");
-            setPeriodTo("");
-          }}
+          periodLabel={periodLabel}
+          periodRange={periodRange}
           users={users}
           areas={areas}
           accountStats={accountStats}
@@ -895,20 +813,14 @@ export function InstagramAreaDashboard({
           allAreaPosts={allAreaPosts}
           filteredAreaPosts={filteredAreaPosts}
           insight={periodInsight}
-          periodFrom={periodFrom}
-          periodTo={periodTo}
-          onPeriodFromChange={setPeriodFrom}
-          onPeriodToChange={setPeriodTo}
-          onClearPeriod={() => {
-            setPeriodFrom("");
-            setPeriodTo("");
-          }}
+          periodLabel={periodLabel}
+          periodRange={periodRange}
           users={users}
           areas={areas}
           accountStats={accountStats}
         />
       ) : (
-        <div className="rounded-2xl border border-dashed border-border/60 bg-white/50 p-8 text-center">
+        <div className="rounded-2xl border border-dashed border-border/60 bg-background/40 p-8 text-center">
           <p className="text-sm text-muted-foreground">
             Atribua áreas às postagens para ver dashboards por área.
           </p>

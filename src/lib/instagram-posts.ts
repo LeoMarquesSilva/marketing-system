@@ -116,6 +116,20 @@ export async function fetchLatestAccountStats(): Promise<InstagramAccountStats |
   return data as InstagramAccountStats | null;
 }
 
+export async function fetchAccountStatsHistory(
+  limit = 365
+): Promise<InstagramAccountStats[]> {
+  const supabase = getServiceClient();
+  const { data, error } = await supabase
+    .from("instagram_account_stats")
+    .select("*")
+    .order("fetched_at", { ascending: false })
+    .limit(limit);
+
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as InstagramAccountStats[]).reverse();
+}
+
 export async function upsertAccountStats(account: MetaAccountStats): Promise<void> {
   const supabase = getServiceClient();
   const { error } = await supabase.from("instagram_account_stats").insert({
