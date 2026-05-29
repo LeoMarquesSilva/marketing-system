@@ -72,6 +72,7 @@ const STAGE_DELAY_LABELS: Record<string, string> = {
   revisao: "Revisão atrasada",
   revisao_autor: "Ajustes atrasados",
   revisado: "Pronto para fechamento",
+  pronto_envio: "E-mail pendente",
 };
 
 export function KanbanCard({

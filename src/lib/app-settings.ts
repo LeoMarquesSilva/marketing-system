@@ -60,7 +60,8 @@ const DEFAULT_WORKFLOW_STAGES: WorkflowStageConfig[] = [
   { value: "revisao", label: "Em revisão", sortOrder: 2, showInKanban: true },
   { value: "revisao_autor", label: "Ajustes solicitados", sortOrder: 3, showInKanban: true },
   { value: "revisado", label: "Aprovado / pronto", sortOrder: 4, showInKanban: true },
-  { value: "concluido", label: "Concluído / publicado", sortOrder: 5, showInKanban: false },
+  { value: "pronto_envio", label: "Enviar por e-mail", sortOrder: 5, showInKanban: true },
+  { value: "concluido", label: "Concluído / publicado", sortOrder: 6, showInKanban: false },
 ];
 
 const DEFAULT_PLANNER_TABS: PlannerTabId[] = ["kanban", "concluidos", "posts"];
@@ -79,7 +80,37 @@ const DEFAULT_STAGE_SLA_DAYS: StageSlaDays = {
   revisao: 2,
   revisao_autor: 2,
   revisado: 1,
+  pronto_envio: 1,
 };
+
+function ensureProntoEnvioStage(stages: WorkflowStageConfig[]): WorkflowStageConfig[] {
+  if (stages.some((s) => s.value === "pronto_envio")) return stages;
+
+  const revisado = stages.find((s) => s.value === "revisado");
+  const baseSort = revisado?.sortOrder ?? Math.max(0, ...stages.map((s) => s.sortOrder));
+
+  const normalized = stages.map((stage) => {
+    if (stage.value === "revisado" && stage.label === "Pronto para envio") {
+      return { ...stage, label: "Aprovado / pronto" };
+    }
+    if (stage.value === "pronto_envio" && stage.label !== "Enviar por e-mail") {
+      return { ...stage, label: "Enviar por e-mail" };
+    }
+    if (stage.sortOrder > baseSort) {
+      return { ...stage, sortOrder: stage.sortOrder + 1 };
+    }
+    return stage;
+  });
+
+  normalized.push({
+    value: "pronto_envio",
+    label: "Enviar por e-mail",
+    sortOrder: baseSort + 1,
+    showInKanban: true,
+  });
+
+  return normalized;
+}
 
 const DEFAULT_KANBAN_DISPLAY_OPTIONS: KanbanDisplayOptions = {
   columnWidth: "fixed",
@@ -89,7 +120,7 @@ const DEFAULT_KANBAN_DISPLAY_OPTIONS: KanbanDisplayOptions = {
 
 function parseWorkflowStages(value: unknown): WorkflowStageConfig[] {
   if (!Array.isArray(value)) return DEFAULT_WORKFLOW_STAGES;
-  const parsed = value
+  const parsedRaw = value
     .filter(
       (item): item is Record<string, unknown> =>
         item != null && typeof item === "object"
@@ -101,7 +132,8 @@ function parseWorkflowStages(value: unknown): WorkflowStageConfig[] {
       showInKanban: Boolean(item.showInKanban ?? true),
     }))
     .filter((s) => s.value && s.label);
-  if (parsed.length === 0) return DEFAULT_WORKFLOW_STAGES;
+  if (parsedRaw.length === 0) return DEFAULT_WORKFLOW_STAGES;
+  const parsed = ensureProntoEnvioStage(parsedRaw);
   return parsed.sort((a, b) => a.sortOrder - b.sortOrder);
 }
 

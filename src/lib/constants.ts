@@ -50,6 +50,7 @@ export const WORKFLOW_STAGES = [
   { value: "revisao", label: "Em revisão" },
   { value: "revisao_autor", label: "Ajustes solicitados" },
   { value: "revisado", label: "Aprovado / pronto" },
+  { value: "pronto_envio", label: "Enviar por e-mail" },
   { value: "concluido", label: "Concluído / publicado" },
 ] as const;
 

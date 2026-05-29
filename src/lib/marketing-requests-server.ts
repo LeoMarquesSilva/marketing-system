@@ -4,7 +4,7 @@ import { fetchMarketingRequests, type UserRole } from "./marketing-requests";
 /**
  * Busca solicitações com filtro por role do usuário autenticado.
  * Usa o Supabase server client para obter a sessão.
- * admin: todas | designer: assignee_id = user OU workflow em revisao/revisado/revisao_autor | solicitante: solicitante_id = user
+ * admin: todas | designer: assignee_id = user OU workflow em revisao/revisado/pronto_envio/revisao_autor | solicitante: solicitante_id = user
  */
 export async function fetchMarketingRequestsForAuth() {
   try {

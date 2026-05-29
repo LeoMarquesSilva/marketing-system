@@ -14,6 +14,7 @@ import {
   ClipboardList,
   Eye,
   CheckCircle,
+  Send,
   UserCheck,
   LayoutGrid,
   PlayCircle,
@@ -49,6 +50,7 @@ const DEFAULT_WORKFLOW_COLUMNS: { id: ColumnId; title: string; icon: LucideIcon 
   { id: "revisao", title: "Em revisão", icon: Eye },
   { id: "revisao_autor", title: "Ajustes solicitados", icon: UserCheck },
   { id: "revisado", title: "Aprovado / pronto", icon: CheckCircle },
+  { id: "pronto_envio", title: "Enviar por e-mail", icon: Send },
 ];
 
 const STAGE_ICONS: Record<string, LucideIcon> = {
@@ -56,6 +58,7 @@ const STAGE_ICONS: Record<string, LucideIcon> = {
   em_producao: PlayCircle,
   revisao: Eye,
   revisado: CheckCircle,
+  pronto_envio: Send,
   revisao_autor: UserCheck,
 };
 
@@ -252,6 +255,7 @@ export function KanbanBoard({
         | "em_producao"
         | "revisao"
         | "revisado"
+        | "pronto_envio"
         | "revisao_autor";
       if (!targetRule.keepAssignee && (request.solicitante_id ?? request.solicitante)) {
         const updatePayload: Parameters<typeof updateMarketingRequest>[1] = {

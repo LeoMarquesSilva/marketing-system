@@ -16,6 +16,7 @@ export type ColumnId =
   | "em_producao"
   | "revisao"
   | "revisado"
+  | "pronto_envio"
   | "revisao_autor"
   | "concluido";
 

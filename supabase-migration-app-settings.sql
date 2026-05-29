@@ -29,9 +29,10 @@ INSERT INTO public.app_settings (key, value) VALUES
   ('workflow_stages', '[
     {"value": "tarefas", "label": "Tarefas", "sortOrder": 0, "showInKanban": true},
     {"value": "revisao", "label": "Revisão", "sortOrder": 1, "showInKanban": true},
-    {"value": "revisado", "label": "Revisado", "sortOrder": 2, "showInKanban": true},
-    {"value": "revisao_autor", "label": "Revisão autor", "sortOrder": 3, "showInKanban": true},
-    {"value": "concluido", "label": "Concluído", "sortOrder": 4, "showInKanban": false}
+    {"value": "revisado", "label": "Aprovado / pronto", "sortOrder": 2, "showInKanban": true},
+    {"value": "pronto_envio", "label": "Enviar por e-mail", "sortOrder": 3, "showInKanban": true},
+    {"value": "revisao_autor", "label": "Revisão autor", "sortOrder": 4, "showInKanban": true},
+    {"value": "concluido", "label": "Concluído", "sortOrder": 5, "showInKanban": false}
   ]'::jsonb),
   ('planner_tabs', '["kanban", "concluidos", "posts"]'::jsonb),
   ('completion_types', '[

@@ -1167,8 +1167,8 @@ export function KanbanCardDetail({
               <ol className="space-y-2">
                 {activityLog.map((entry) => {
                   const stageLabels: Record<string, string> = {
-                    tarefas: "Tarefas", revisao: "Revisão", revisado: "Revisado",
-                    revisao_autor: "Revisão Autor", concluido: "Concluído",
+                    tarefas: "Tarefas", revisao: "Revisão", revisado: "Aprovado / pronto",
+                    pronto_envio: "Enviar por e-mail", revisao_autor: "Revisão Autor", concluido: "Concluído",
                   };
                   const from = stageLabels[entry.from_value ?? ""] ?? entry.from_value ?? "—";
                   const to = stageLabels[entry.to_value ?? ""] ?? entry.to_value ?? "—";

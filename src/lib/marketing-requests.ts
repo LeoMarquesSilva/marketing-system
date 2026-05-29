@@ -115,7 +115,7 @@ export async function fetchMarketingRequests(
     if (options?.userId && options?.role && options.role !== "admin") {
       if (options.role === "designer") {
         q = q.or(
-          `assignee_id.eq.${options.userId},workflow_stage.in.(revisao,revisado,revisao_autor)`
+          `assignee_id.eq.${options.userId},workflow_stage.in.(revisao,revisado,pronto_envio,revisao_autor)`
         );
       } else if (options.role === "solicitante") {
         q = q.eq("solicitante_id", options.userId!);
@@ -161,7 +161,7 @@ export async function fetchMarketingRequests(
     requests = requests.map((r) => ({ ...r, art_link: null })) as MarketingRequest[];
   }
 
-  // Designer: já filtrado na query (assignee = user OU stage in revisao/revisado/revisao_autor)
+  // Designer: já filtrado na query (assignee = user OU stage in revisao/revisado/pronto_envio/revisao_autor)
   const ids = [
     ...new Set(
       requests.flatMap((r) => [r.solicitante_id, r.assignee_id, r.created_by_id].filter(Boolean))
