@@ -35,6 +35,9 @@ export const REQUEST_TYPES = [
   "Apresentação",
 ] as const;
 
+/** Inclui Onboarding (criado só via “Novo colaborador”) — filtros e edição */
+export const ALL_REQUEST_TYPES = [...REQUEST_TYPES, "Onboarding"] as const;
+
 export const STATUS_OPTIONS = [
   { value: "pending", label: "Pendente" },
   { value: "in_progress", label: "Em andamento" },

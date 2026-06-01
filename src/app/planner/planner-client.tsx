@@ -6,17 +6,19 @@ import { KanbanBoard } from "@/components/planner/kanban-board";
 import { ConcluidosTab } from "@/components/planner/concluidos-tab";
 import { KanbanCardDetail } from "@/components/planner/kanban-card-detail";
 import { NewRequestDialog } from "@/components/planner/new-request-dialog";
+import { OnboardingRequestDialog } from "@/components/planner/onboarding-request-dialog";
 import type { MarketingRequest } from "@/lib/marketing-requests";
 import { updateMarketingRequest } from "@/lib/marketing-requests";
 import type { User } from "@/lib/users";
 import type { AppSettings } from "@/lib/app-settings";
 import { Button } from "@/components/ui/button";
-import { LayoutGrid, CheckCircle2, PlusCircle, Share2, Wifi, WifiOff } from "lucide-react";
+import { LayoutGrid, CheckCircle2, PlusCircle, Share2, Wifi, WifiOff, UserPlus } from "lucide-react";
 import { PostsTab } from "@/components/planner/posts-tab";
 import { PostAvailableDetailDialog } from "@/components/planner/post-available-detail-dialog";
 import { useAuth } from "@/contexts/auth-context";
 import { fetchTimeTotalsByRequest } from "@/lib/time-entries";
 import { fetchCommentStats } from "@/lib/request-comments";
+import { fetchChecklistStats } from "@/lib/request-checklist";
 import { supabase } from "@/utils/supabase/client";
 
 const TAB_ICONS = {
@@ -62,9 +64,12 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
   const [postAvailableRequestId, setPostAvailableRequestId] = useState<string | null>(null);
   const [postAvailableOpen, setPostAvailableOpen] = useState(false);
   const [newRequestOpen, setNewRequestOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [timeTotals, setTimeTotals] = useState<Record<string, string>>({});
   const [commentsCounts, setCommentsCounts] = useState<Record<string, number>>({});
   const [pendingAlterationsCounts, setPendingAlterationsCounts] = useState<Record<string, number>>({});
+  const [checklistTotals, setChecklistTotals] = useState<Record<string, number>>({});
+  const [checklistCompleted, setChecklistCompleted] = useState<Record<string, number>>({});
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("connecting");
   const [lastRealtimeSyncAt, setLastRealtimeSyncAt] = useState<Date | null>(null);
   const requestsRef = useRef<MarketingRequest[]>([]);
@@ -92,6 +97,8 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
           commentsCounts: {},
           pendingAlterationsCounts: {},
           timeTotals: {},
+          checklistTotals: {},
+          checklistCompleted: {},
         };
       }
 
@@ -100,17 +107,20 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
         ? targetRequests.filter((r) => r.assignee_id === profile.id).map((r) => r.id)
         : [];
 
-      const [commentStats, timeTotalsResult] = await Promise.all([
+      const [commentStats, timeTotalsResult, checklistStats] = await Promise.all([
         fetchCommentStats(ids),
         profile?.id && assigneeRequestIds.length > 0
           ? fetchTimeTotalsByRequest(assigneeRequestIds, profile.id)
           : Promise.resolve({}),
+        fetchChecklistStats(ids),
       ]);
 
       return {
         commentsCounts: commentStats.commentsCounts,
         pendingAlterationsCounts: commentStats.pendingAlterationsCounts,
         timeTotals: timeTotalsResult,
+        checklistTotals: checklistStats.checklistTotals,
+        checklistCompleted: checklistStats.checklistCompleted,
       };
     },
     [profile?.id]
@@ -121,6 +131,8 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
       setCommentsCounts(metadata.commentsCounts);
       setPendingAlterationsCounts(metadata.pendingAlterationsCounts);
       setTimeTotals(metadata.timeTotals);
+      setChecklistTotals(metadata.checklistTotals);
+      setChecklistCompleted(metadata.checklistCompleted);
     },
     []
   );
@@ -251,6 +263,10 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
             )}
             {realtimeStatus === "connected" ? "Tempo real ativo" : "Tempo real indisponível"}
           </div>
+          <Button variant="outline" onClick={() => setOnboardingOpen(true)}>
+            <UserPlus className="h-4 w-4 mr-2" />
+            Novo colaborador
+          </Button>
           <Button onClick={() => setNewRequestOpen(true)}>
             <PlusCircle className="h-4 w-4 mr-2" />
             Nova Solicitação
@@ -267,6 +283,8 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
           timeTotals={timeTotals}
           commentsCounts={commentsCounts}
           pendingAlterationsCounts={pendingAlterationsCounts}
+          checklistTotals={checklistTotals}
+          checklistCompleted={checklistCompleted}
           workflowColumns={workflowColumns}
           completionTypes={appSettings.completionTypes}
           stageMoveRules={appSettings.stageMoveRules}
@@ -318,6 +336,13 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
         onOpenChange={setNewRequestOpen}
         onSuccess={handleRefresh}
         users={users}
+        designers={designers}
+      />
+
+      <OnboardingRequestDialog
+        open={onboardingOpen}
+        onOpenChange={setOnboardingOpen}
+        onSuccess={() => handleRefresh()}
         designers={designers}
       />
     </div>

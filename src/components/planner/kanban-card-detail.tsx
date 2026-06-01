@@ -48,6 +48,8 @@ import { Play, Pause, Square, MessageSquare, Edit3, AlertCircle, CheckCircle2, F
 import { fetchViosTaskByMarketingRequestId, filterLeonardoFromResponsaveis, type ViosTask } from "@/lib/vios-tasks";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import type { RequestPriority } from "@/lib/marketing-requests";
+import { RequestChecklistSection } from "@/components/planner/request-checklist-section";
+import { fetchChecklistForRequest, type ChecklistItem } from "@/lib/request-checklist";
 
 const PRIORITY_OPTIONS: { value: RequestPriority; label: string; className: string }[] = [
   { value: "urgente", label: "Urgente", className: "text-red-600 dark:text-red-400" },
@@ -113,6 +115,7 @@ export function KanbanCardDetail({
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
   const [isRevertingToDisponivel, setIsRevertingToDisponivel] = useState(false);
+  const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
 
   const canUseTimesheet = profile && request && (isAdmin || profile.id === request.assignee_id);
   const canStartTimer = profile && request && (isAdmin || profile.id === request.assignee_id);
@@ -131,16 +134,18 @@ export function KanbanCardDetail({
     }
     setArtLinkDraft(request.art_link ?? "");
     const load = async () => {
-      const [entries, commentsList, log, linkedVios] = await Promise.all([
+      const [entries, commentsList, log, linkedVios, checklist] = await Promise.all([
         fetchTimeEntriesForRequest(request.id),
         fetchCommentsForRequest(request.id),
         fetchActivityLog(request.id),
         fetchViosTaskByMarketingRequestId(request.id),
+        fetchChecklistForRequest(request.id),
       ]);
       setTimeEntries(entries);
       setComments(commentsList);
       setActivityLog(log);
       setViosTask(linkedVios);
+      setChecklistItems(checklist);
     };
     load();
   }, [open, request?.id, request?.art_link]);
@@ -767,6 +772,14 @@ export function KanbanCardDetail({
               <p className="text-sm">{request.nome_advogado}</p>
             </section>
           )}
+
+          <RequestChecklistSection
+            items={checklistItems}
+            onItemsChange={setChecklistItems}
+            userId={profile?.id ?? null}
+            sectionClass={sectionClass}
+            sectionTitleClass={sectionTitleClass}
+          />
 
           <section aria-labelledby="comments-heading" className={sectionClass}>
             <h4 id="comments-heading" className={`${sectionTitleClass} flex items-center gap-2`}>

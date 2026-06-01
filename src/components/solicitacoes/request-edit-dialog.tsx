@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { UserSelect } from "@/components/solicitacoes/user-select";
 import { DatePickerField } from "@/components/ui/date-picker-field";
-import { REQUEST_TYPES, STATUS_OPTIONS, WORKFLOW_STAGES } from "@/lib/constants";
+import { ALL_REQUEST_TYPES, STATUS_OPTIONS, WORKFLOW_STAGES } from "@/lib/constants";
 import type { User } from "@/lib/users";
 import type { MarketingRequest } from "@/lib/marketing-requests";
 import { updateMarketingRequest } from "@/lib/marketing-requests";
@@ -167,7 +167,7 @@ export function RequestEditDialog({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {REQUEST_TYPES.map((type) => (
+                      {ALL_REQUEST_TYPES.map((type) => (
                         <SelectItem key={type} value={type}>
                           {type}
                         </SelectItem>

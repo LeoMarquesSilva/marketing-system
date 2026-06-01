@@ -12,7 +12,7 @@ import { COMPLETION_TYPES } from "@/lib/constants";
 import type { CompletionTypeConfig, StageSlaDays } from "@/lib/app-settings";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Calendar, Clock, MessageSquare, AlertCircle, CheckCircle2, X, Flag, CalendarX2, CheckCircle } from "lucide-react";
+import { Calendar, Clock, MessageSquare, AlertCircle, CheckCircle2, X, Flag, CalendarX2, CheckCircle, ListChecks } from "lucide-react";
 import type { MarketingRequest, RequestPriority } from "@/lib/marketing-requests";
 import { fetchCommentsForRequest, type RequestComment } from "@/lib/request-comments";
 import { differenceInDays, isPast, parseISO } from "date-fns";
@@ -62,6 +62,8 @@ interface KanbanCardProps {
   timeTotal?: string;
   commentsCount?: number;
   pendingAlterationsCount?: number;
+  checklistTotal?: number;
+  checklistCompleted?: number;
   completionTypes?: CompletionTypeConfig[];
   stageSlaDays?: StageSlaDays;
 }
@@ -82,6 +84,8 @@ export function KanbanCard({
   timeTotal,
   commentsCount = 0,
   pendingAlterationsCount = 0,
+  checklistTotal = 0,
+  checklistCompleted = 0,
   completionTypes,
   stageSlaDays = {},
 }: KanbanCardProps) {
@@ -294,6 +298,19 @@ export function KanbanCard({
         {/* Footer: comentários + alterações + Concluir + avatares */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
+            {checklistTotal > 0 && (
+              <span
+                className={`flex items-center gap-1 text-xs rounded-full px-2 py-1 ${
+                  checklistCompleted >= checklistTotal
+                    ? "text-emerald-700 dark:text-emerald-400 bg-emerald-100/80 dark:bg-emerald-950/40"
+                    : "text-muted-foreground bg-muted/60"
+                }`}
+                title="Progresso do checklist"
+              >
+                <ListChecks className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                {checklistCompleted}/{checklistTotal}
+              </span>
+            )}
             {/* Concluir (popover com tipo de conclusão) */}
             {onMarkComplete && request.workflow_stage !== "concluido" && (
               <PopoverPrimitive.Root open={completeOpen} onOpenChange={setCompleteOpen}>

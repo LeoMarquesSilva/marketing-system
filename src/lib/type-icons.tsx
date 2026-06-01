@@ -14,6 +14,7 @@ import {
   FileBarChart,
   Monitor,
   FileText,
+  UserPlus,
   type LucideIcon,
 } from "lucide-react";
 
@@ -29,6 +30,7 @@ export const TYPE_ICONS: Record<string, LucideIcon> = {
   "Material Impresso": Printer,
   Relatório: FileBarChart,
   Apresentação: Monitor,
+  Onboarding: UserPlus,
 };
 
 export function getTypeIcon(type: string): LucideIcon {
@@ -51,6 +53,7 @@ export const TYPE_COLORS: Record<string, string> = {
   "Material Impresso": "bg-orange-100/90 text-orange-700 dark:bg-orange-950/50 dark:text-orange-300",
   Relatório: "bg-slate-100/90 text-slate-700 dark:bg-slate-950/50 dark:text-slate-300",
   Apresentação: "bg-teal-100/90 text-teal-700 dark:bg-teal-950/50 dark:text-teal-300",
+  Onboarding: "bg-sky-100/90 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300",
 };
 
 export function getTypeColor(type: string): string {

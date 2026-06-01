@@ -77,6 +77,8 @@ interface KanbanBoardProps {
   timeTotals?: Record<string, string>;
   commentsCounts?: Record<string, number>;
   pendingAlterationsCounts?: Record<string, number>;
+  checklistTotals?: Record<string, number>;
+  checklistCompleted?: Record<string, number>;
   workflowColumns?: WorkflowColumnConfig[];
   completionTypes?: CompletionTypeConfig[];
   stageMoveRules?: StageMoveRules;
@@ -118,6 +120,8 @@ export function KanbanBoard({
   timeTotals,
   commentsCounts,
   pendingAlterationsCounts,
+  checklistTotals,
+  checklistCompleted,
   workflowColumns: workflowColumnsProp,
   completionTypes = [],
   stageMoveRules = {},
@@ -340,6 +344,8 @@ export function KanbanBoard({
               timeTotals={timeTotals}
               commentsCounts={commentsCounts}
               pendingAlterationsCounts={pendingAlterationsCounts}
+              checklistTotals={checklistTotals}
+              checklistCompleted={checklistCompleted}
               completionTypes={completionTypes}
               stageSlaDays={stageSlaDays}
               columnWidth={displayOpts.columnWidth}

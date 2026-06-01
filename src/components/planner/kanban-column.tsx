@@ -30,6 +30,8 @@ interface KanbanColumnProps {
   timeTotals?: Record<string, string>;
   commentsCounts?: Record<string, number>;
   pendingAlterationsCounts?: Record<string, number>;
+  checklistTotals?: Record<string, number>;
+  checklistCompleted?: Record<string, number>;
   completionTypes?: CompletionTypeConfig[];
   stageSlaDays?: StageSlaDays;
   columnWidth?: KanbanColumnWidth;
@@ -48,6 +50,8 @@ export function KanbanColumn({
   timeTotals,
   commentsCounts,
   pendingAlterationsCounts,
+  checklistTotals,
+  checklistCompleted,
   completionTypes = [],
   stageSlaDays,
   columnWidth = "fixed",
@@ -97,6 +101,8 @@ export function KanbanColumn({
             timeTotal={showTimeOnCards ? timeTotals?.[request.id] : undefined}
             commentsCount={commentsCounts?.[request.id] ?? 0}
             pendingAlterationsCount={pendingAlterationsCounts?.[request.id] ?? 0}
+            checklistTotal={checklistTotals?.[request.id] ?? 0}
+            checklistCompleted={checklistCompleted?.[request.id] ?? 0}
             completionTypes={completionTypes}
             stageSlaDays={stageSlaDays}
           />

@@ -37,7 +37,7 @@ import {
   type MarketingRequestStatus,
   deleteMarketingRequest,
 } from "@/lib/marketing-requests";
-import { AREAS, REQUEST_TYPES, STATUS_OPTIONS } from "@/lib/constants";
+import { AREAS, ALL_REQUEST_TYPES, STATUS_OPTIONS } from "@/lib/constants";
 import { getAreaIcon } from "@/lib/area-icons";
 import { getTypeColor } from "@/lib/type-icons";
 import { AreaWithIcon } from "./area-with-icon";
@@ -454,7 +454,7 @@ export function RequestsTableWithFilters({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos os tipos</SelectItem>
-              {REQUEST_TYPES.map((type) => (
+              {ALL_REQUEST_TYPES.map((type) => (
                 <SelectItem key={type} value={type}>{type}</SelectItem>
               ))}
             </SelectContent>
