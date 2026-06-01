@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
-import { SYNC_SINCE_DEFAULT, syncMediaPage } from "@/lib/instagram-meta";
+import {
+  SYNC_SINCE_DEFAULT,
+  syncMediaPage,
+  syncAccountExtras,
+} from "@/lib/instagram-meta";
 import { upsertAccountStats, upsertInstagramPosts } from "@/lib/instagram-posts";
+import { upsertAccountInsights } from "@/lib/instagram-account-insights";
+import { replaceAudienceDemographics } from "@/lib/instagram-demographics";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -20,8 +26,21 @@ export async function POST(request: Request) {
 
     const result = await syncMediaPage(since, after);
 
+    let accountExtras: { insights: number; demographics: number } | null = null;
     if (!after) {
       await upsertAccountStats(result.account);
+      // Insights de conta + demografia só na primeira página do sync.
+      try {
+        const extras = await syncAccountExtras();
+        await upsertAccountStats(extras.account);
+        const [insights, demographics] = await Promise.all([
+          upsertAccountInsights(extras.insights),
+          replaceAudienceDemographics(extras.demographics),
+        ]);
+        accountExtras = { insights, demographics };
+      } catch {
+        // coleta de extras é best-effort; não derruba o sync de posts
+      }
     }
 
     const synced = await upsertInstagramPosts(
@@ -29,6 +48,7 @@ export async function POST(request: Request) {
         id: p.id,
         caption: p.caption,
         media_type: p.media_type,
+        media_product_type: p.media_product_type,
         media_url: p.media_url,
         thumbnail_url: p.thumbnail_url,
         permalink: p.permalink,
@@ -40,12 +60,20 @@ export async function POST(request: Request) {
         saves: p.saves,
         shares: p.shares,
         total_interactions: p.total_interactions,
+        follows: p.follows,
+        profile_visits: p.profile_visits,
+        reposts: p.reposts,
+        profile_activity: p.profile_activity,
+        link_clicks: p.link_clicks,
+        reels_avg_watch_time: p.reels_avg_watch_time,
+        reels_total_watch_time: p.reels_total_watch_time,
       }))
     );
 
     return NextResponse.json({
       success: true,
       synced,
+      accountExtras,
       since,
       nextAfter: result.nextAfter ?? null,
       hasMore: result.hasMore,

@@ -27,6 +27,7 @@ import {
   Camera,
   Sparkles,
   Rows2,
+  Info,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,8 @@ import {
 import type { Area } from "@/lib/areas";
 import type { User } from "@/lib/users";
 import type { InstagramAccountStats, InstagramPost } from "@/lib/instagram-posts";
+import type { InstagramAccountInsightDay } from "@/lib/instagram-account-insights";
+import type { InstagramDemographicRow } from "@/lib/instagram-demographics";
 import {
   computeCaptionThemePerformance,
   computeBestPostingHours,
@@ -75,6 +78,7 @@ import {
 } from "@/lib/instagram-period";
 import { InstagramBarChart } from "@/components/instagram/instagram-bar-chart";
 import { InstagramTrendChart } from "@/components/instagram/instagram-trend-chart";
+import { InstagramAccountTrendChart } from "@/components/instagram/instagram-account-trend-chart";
 import { InstagramPostThumbnail } from "@/components/instagram/instagram-post-thumbnail";
 import { InstagramPagination } from "@/components/instagram/instagram-pagination";
 import { InstagramReportExport } from "@/components/instagram/instagram-report-export";
@@ -105,9 +109,31 @@ import { cn } from "@/lib/utils";
 const SYNC_SINCE = "2025-01-01T00:00:00.000Z";
 const DEFAULT_PAGE_SIZE = 10;
 
-type MainTab = "overview" | "areas" | "posts";
+type MainTab = "overview" | "audience" | "areas" | "posts";
 type LinkFilter = "all" | "pendentes" | "vinculados";
 type TrendRange = 30 | 90 | 180;
+type PostSortOption =
+  | "date_desc"
+  | "engagement_rate"
+  | "follows"
+  | "profile_visits"
+  | "link_clicks"
+  | "reposts"
+  | "reach"
+  | "views"
+  | "reels_watch_time";
+
+const POST_SORT_OPTIONS: { value: PostSortOption; label: string }[] = [
+  { value: "date_desc", label: "Mais recentes" },
+  { value: "engagement_rate", label: "Maior taxa de engajamento" },
+  { value: "follows", label: "Mais seguidores ganhos" },
+  { value: "profile_visits", label: "Mais visitas ao perfil" },
+  { value: "link_clicks", label: "Mais cliques no link" },
+  { value: "reposts", label: "Mais reposts" },
+  { value: "reach", label: "Maior alcance" },
+  { value: "views", label: "Mais visualizações" },
+  { value: "reels_watch_time", label: "Maior tempo médio (Reels)" },
+];
 
 interface InstagramInsightsClientProps {
   initialPosts: InstagramPost[];
@@ -117,6 +143,8 @@ interface InstagramInsightsClientProps {
   initialUsers: User[];
   initialStories?: StoryInsight[];
   initialMonthlyGoal?: number;
+  initialAccountInsights?: InstagramAccountInsightDay[];
+  initialDemographics?: InstagramDemographicRow[];
 }
 
 interface StoryInsight {
@@ -130,6 +158,14 @@ interface StoryInsight {
   reach: number;
   views: number;
   replies: number;
+  shares?: number;
+  total_interactions?: number;
+  follows?: number;
+  profile_visits?: number;
+  nav_taps_forward?: number;
+  nav_taps_back?: number;
+  nav_exits?: number;
+  nav_swipe_forward?: number;
 }
 
 const MAIN_TABS: { id: MainTab; label: string; icon: React.ReactNode; description: string }[] = [
@@ -138,6 +174,12 @@ const MAIN_TABS: { id: MainTab; label: string; icon: React.ReactNode; descriptio
     label: "Visão geral",
     icon: <LayoutDashboard className="h-4 w-4" />,
     description: "KPIs e gráficos consolidados",
+  },
+  {
+    id: "audience",
+    label: "Conta & audiência",
+    icon: <Users className="h-4 w-4" />,
+    description: "Métricas diárias da conta (~90 dias na API) e demografia",
   },
   {
     id: "areas",
@@ -157,6 +199,120 @@ function formatNumber(n: number) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return n.toLocaleString("pt-BR");
+}
+
+const COUNTRY_NAMES: Record<string, string> = {
+  BR: "Brasil",
+  US: "Estados Unidos",
+  PT: "Portugal",
+  AR: "Argentina",
+  ES: "Espanha",
+  FR: "França",
+  IT: "Itália",
+  DE: "Alemanha",
+  GB: "Reino Unido",
+  MX: "México",
+  CL: "Chile",
+  CO: "Colômbia",
+  UY: "Uruguai",
+  PY: "Paraguai",
+  CA: "Canadá",
+  JP: "Japão",
+};
+
+function countryLabel(code: string) {
+  return COUNTRY_NAMES[code.toUpperCase()] ?? code;
+}
+
+/** Tempo assistido (ms) para um rótulo curto: "1,2s" ou "1m 05s". */
+function formatWatchTime(ms: number) {
+  const totalSeconds = ms / 1000;
+  if (totalSeconds < 60) {
+    return `${totalSeconds.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}s`;
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = Math.round(totalSeconds % 60);
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+function genderLabel(code: string) {
+  const c = code.toUpperCase();
+  if (c === "M") return "Masculino";
+  if (c === "F") return "Feminino";
+  if (c === "U") return "Não informado";
+  return code;
+}
+
+function sortPosts(list: InstagramPost[], sort: PostSortOption): InstagramPost[] {
+  const sorted = [...list];
+  const byDate = (a: InstagramPost, b: InstagramPost) =>
+    (b.published_at ?? "").localeCompare(a.published_at ?? "");
+
+  switch (sort) {
+    case "engagement_rate":
+      return sorted.sort(
+        (a, b) => computePostEngagementRate(b) - computePostEngagementRate(a) || byDate(a, b)
+      );
+    case "follows":
+      return sorted.sort((a, b) => b.follows - a.follows || byDate(a, b));
+    case "profile_visits":
+      return sorted.sort((a, b) => b.profile_visits - a.profile_visits || byDate(a, b));
+    case "link_clicks":
+      return sorted.sort((a, b) => b.link_clicks - a.link_clicks || byDate(a, b));
+    case "reposts":
+      return sorted.sort((a, b) => b.reposts - a.reposts || byDate(a, b));
+    case "reach":
+      return sorted.sort((a, b) => b.reach - a.reach || byDate(a, b));
+    case "views":
+      return sorted.sort((a, b) => b.views - a.views || byDate(a, b));
+    case "reels_watch_time":
+      return sorted.sort(
+        (a, b) => b.reels_avg_watch_time - a.reels_avg_watch_time || byDate(a, b)
+      );
+    default:
+      return sorted.sort(byDate);
+  }
+}
+
+function DemographicBars({
+  data,
+  format,
+  emptyLabel,
+  color = "bg-[#101f2e]",
+}: {
+  data: { label: string; value: number }[];
+  format?: (label: string) => string;
+  emptyLabel: string;
+  color?: string;
+}) {
+  if (data.length === 0) {
+    return <p className="text-xs text-muted-foreground">{emptyLabel}</p>;
+  }
+  const total = data.reduce((s, d) => s + d.value, 0) || 1;
+  const max = Math.max(...data.map((d) => d.value), 1);
+  return (
+    <div className="space-y-2">
+      {data.map((d) => {
+        const pct = (d.value / total) * 100;
+        return (
+          <div key={d.label} className="space-y-1">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="text-foreground">{format ? format(d.label) : d.label}</span>
+              <span className="tabular-nums text-muted-foreground">
+                {pct.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%
+              </span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn("h-full rounded-full", color)}
+                style={{ width: `${(d.value / max) * 100}%` }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function formatDate(iso: string | null) {
@@ -420,6 +576,30 @@ function PostCard({
             />
           </div>
 
+          {(post.profile_visits > 0 ||
+            post.follows > 0 ||
+            post.link_clicks > 0 ||
+            post.reposts > 0 ||
+            post.reels_avg_watch_time > 0) && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+              {post.profile_visits > 0 && (
+                <span>Visitas ao perfil <span className="font-semibold text-foreground tabular-nums">{formatNumber(post.profile_visits)}</span></span>
+              )}
+              {post.follows > 0 && (
+                <span>Seguidores <span className="font-semibold text-emerald-700 tabular-nums">+{formatNumber(post.follows)}</span></span>
+              )}
+              {post.link_clicks > 0 && (
+                <span>Cliques no link <span className="font-semibold text-foreground tabular-nums">{formatNumber(post.link_clicks)}</span></span>
+              )}
+              {post.reposts > 0 && (
+                <span>Reposts <span className="font-semibold text-foreground tabular-nums">{formatNumber(post.reposts)}</span></span>
+              )}
+              {post.reels_avg_watch_time > 0 && (
+                <span>Tempo médio (reel) <span className="font-semibold text-foreground tabular-nums">{formatWatchTime(post.reels_avg_watch_time)}</span></span>
+              )}
+            </div>
+          )}
+
           <div className="border-t border-border/30 pt-2">
             <button
               type="button"
@@ -466,10 +646,16 @@ export function InstagramInsightsClient({
   initialUsers,
   initialStories = [],
   initialMonthlyGoal = 12,
+  initialAccountInsights = [],
+  initialDemographics = [],
 }: InstagramInsightsClientProps) {
   const [posts, setPosts] = useState(initialPosts);
   const [accountStats, setAccountStats] = useState(initialAccountStats);
   const [accountStatsHistory] = useState(initialAccountStatsHistory);
+  const [accountInsights, setAccountInsights] = useState(initialAccountInsights);
+  const [demographics, setDemographics] = useState(initialDemographics);
+  const [audienceLoading, setAudienceLoading] = useState(false);
+  const [audienceError, setAudienceError] = useState<string | null>(null);
   const [areas, setAreas] = useState(initialAreas);
   const [users] = useState(initialUsers);
   const sortedUsers = useMemo(() => sortUsersActiveFirst(users), [users]);
@@ -481,6 +667,7 @@ export function InstagramInsightsClient({
   const [tagFilter, setTagFilter] = useState<string>("all");
   const [solicitanteFilter, setSolicitanteFilter] = useState<string>("all");
   const [linkFilter, setLinkFilter] = useState<LinkFilter>("pendentes");
+  const [postSort, setPostSort] = useState<PostSortOption>("date_desc");
   const [trendGranularity, setTrendGranularity] = useState<TrendGranularity>("week");
   const [trendRange, setTrendRange] = useState<TrendRange>(90);
   const [stories, setStories] = useState<StoryInsight[]>(initialStories);
@@ -535,7 +722,8 @@ export function InstagramInsightsClient({
     areaFilter !== "all" ||
     mediaTypeFilter !== "all" ||
     tagFilter !== "all" ||
-    solicitanteFilter !== "all";
+    solicitanteFilter !== "all" ||
+    postSort !== "date_desc";
 
   const filteredPosts = useMemo(() => {
     return scopedPosts.filter((p) => {
@@ -563,6 +751,11 @@ export function InstagramInsightsClient({
       return true;
     });
   }, [scopedPosts, areaFilter, mediaTypeFilter, tagFilter, solicitanteFilter, linkFilter]);
+
+  const sortedPosts = useMemo(
+    () => sortPosts(filteredPosts, postSort),
+    [filteredPosts, postSort]
+  );
 
   const overviewKpis = useMemo(() => {
     const totalReach = scopedPosts.reduce((s, p) => s + p.reach, 0);
@@ -649,13 +842,152 @@ export function InstagramInsightsClient({
   const captionThemes = useMemo(() => computeCaptionThemePerformance(scopedPosts, 8), [scopedPosts]);
   const contentSuggestions = useMemo(() => computeContentSuggestions(scopedPosts), [scopedPosts]);
   const storiesSummary = useMemo(() => {
+    const sum = (fn: (s: StoryInsight) => number) =>
+      scopedStories.reduce((acc, s) => acc + fn(s), 0);
+    const totalReach = sum((s) => s.reach);
+    const totalExits = sum((s) => s.nav_exits ?? 0);
+    const totalReplies = sum((s) => s.replies);
+    const totalShares = sum((s) => s.shares ?? 0);
+    const totalFollows = sum((s) => s.follows ?? 0);
+    const totalProfileVisits = sum((s) => s.profile_visits ?? 0);
+    const totalInteractions = sum((s) => s.total_interactions ?? 0);
+    const totalTapsForward = sum((s) => s.nav_taps_forward ?? 0);
+    const totalTapsBack = sum((s) => s.nav_taps_back ?? 0);
+    const totalSwipeForward = sum((s) => s.nav_swipe_forward ?? 0);
+    // Retenção = parcela de visualizações que NÃO saíram (exit) do story.
+    const retentionRate = totalReach > 0 ? Math.max(0, 1 - totalExits / totalReach) * 100 : null;
     return {
       total: scopedStories.length,
-      totalReach: scopedStories.reduce((sum, s) => sum + s.reach, 0),
-      totalViews: scopedStories.reduce((sum, s) => sum + s.views, 0),
-      totalReplies: scopedStories.reduce((sum, s) => sum + s.replies, 0),
+      totalReach,
+      totalViews: sum((s) => s.views),
+      totalReplies,
+      totalShares,
+      totalFollows,
+      totalProfileVisits,
+      totalInteractions,
+      totalExits,
+      totalTapsForward,
+      totalTapsBack,
+      totalSwipeForward,
+      retentionRate,
     };
   }, [scopedStories]);
+  const accountInsightsScoped = accountInsights;
+
+  const accountInsightsRangeLabel = useMemo(() => {
+    if (accountInsightsScoped.length === 0) return "aguardando primeira coleta";
+    const first = accountInsightsScoped[0].date;
+    const last = accountInsightsScoped[accountInsightsScoped.length - 1].date;
+    const fmt = (iso: string) =>
+      new Date(`${iso}T12:00:00`).toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+    const days = accountInsightsScoped.length;
+    if (days <= 90) {
+      return `${fmt(first)} – ${fmt(last)} · ${days} dias (recorte recente da API Meta)`;
+    }
+    return `${fmt(first)} – ${fmt(last)} · ${days} dias no banco (acumulado pela sincronização)`;
+  }, [accountInsightsScoped]);
+
+  const accountTrendData = useMemo(() => {
+    const rows = accountInsightsScoped;
+    if (rows.length === 0) return [];
+
+    const toPoint = (
+      key: string,
+      label: string,
+      reach: number,
+      views: number,
+      accountsEngaged: number,
+      interactions: number
+    ) => ({ date: key, label, reach, views, accountsEngaged, interactions });
+
+    // Gráfico diário até ~3 meses; acima disso agrupa por mês (legível desde 2025).
+    if (rows.length <= 90) {
+      return rows.map((d) =>
+        toPoint(
+          d.date,
+          new Date(`${d.date}T12:00:00`).toLocaleDateString("pt-BR", {
+            day: "2-digit",
+            month: "short",
+          }),
+          d.reach,
+          d.views,
+          d.accounts_engaged,
+          d.total_interactions
+        )
+      );
+    }
+
+    const byMonth = new Map<
+      string,
+      { reach: number; views: number; accountsEngaged: number; interactions: number }
+    >();
+    for (const d of rows) {
+      const key = d.date.slice(0, 7);
+      const cur = byMonth.get(key) ?? {
+        reach: 0,
+        views: 0,
+        accountsEngaged: 0,
+        interactions: 0,
+      };
+      cur.reach += d.reach;
+      cur.views += d.views;
+      cur.accountsEngaged += d.accounts_engaged;
+      cur.interactions += d.total_interactions;
+      byMonth.set(key, cur);
+    }
+
+    return Array.from(byMonth.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, v]) => {
+        const [y, m] = key.split("-");
+        const label = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("pt-BR", {
+          month: "short",
+          year: "2-digit",
+        });
+        return toPoint(key, label, v.reach, v.views, v.accountsEngaged, v.interactions);
+      });
+  }, [accountInsightsScoped]);
+
+  const accountInsightsSummary = useMemo(() => {
+    const rows = accountInsightsScoped;
+    const sum = (fn: (r: InstagramAccountInsightDay) => number) =>
+      rows.reduce((acc, r) => acc + fn(r), 0);
+    const days = rows.length;
+    const avg = (total: number) => (days > 0 ? Math.round(total / days) : 0);
+    const reachSum = sum((r) => r.reach);
+    const viewsSum = sum((r) => r.views);
+    const accountsEngagedSum = sum((r) => r.accounts_engaged);
+    const interactionsSum = sum((r) => r.total_interactions);
+    return {
+      days,
+      avgReach: avg(reachSum),
+      avgViews: avg(viewsSum),
+      avgAccountsEngaged: avg(accountsEngagedSum),
+      avgInteractions: avg(interactionsSum),
+      profileLinksTaps: sum((r) => r.profile_links_taps),
+      peakReach: rows.reduce((m, r) => Math.max(m, r.reach), 0),
+      peakViews: rows.reduce((m, r) => Math.max(m, r.views), 0),
+    };
+  }, [accountInsightsScoped]);
+
+  const demographicsGrouped = useMemo(() => {
+    const pick = (kind: string, breakdown: string) =>
+      demographics
+        .filter((d) => d.kind === kind && d.breakdown === breakdown)
+        .sort((a, b) => b.value - a.value);
+    return {
+      gender: pick("followers", "gender"),
+      age: pick("followers", "age").sort((a, b) => a.label.localeCompare(b.label)),
+      country: pick("followers", "country").slice(0, 8),
+      city: pick("followers", "city").slice(0, 8),
+      hasAny: demographics.length > 0,
+    };
+  }, [demographics]);
+
   const followersTrend = useMemo(() => {
     const history = accountStatsHistory;
     if (history.length < 2) {
@@ -693,17 +1025,21 @@ export function InstagramInsightsClient({
       const user = users.find((u) => u.id === solicitanteFilter);
       parts.push(`Solicitante: ${user?.name ?? solicitanteFilter}`);
     }
+    if (postSort !== "date_desc") {
+      const sortLabel = POST_SORT_OPTIONS.find((o) => o.value === postSort)?.label;
+      if (sortLabel) parts.push(`Ordem: ${sortLabel}`);
+    }
     return parts.length ? parts.join(" · ") : "Todos os posts";
-  }, [linkFilter, areaFilter, mediaTypeFilter, tagFilter, solicitanteFilter, users]);
+  }, [linkFilter, areaFilter, mediaTypeFilter, tagFilter, solicitanteFilter, postSort, users]);
 
   const pagination = useMemo(
-    () => paginateItems(filteredPosts, page, pageSize),
-    [filteredPosts, page, pageSize]
+    () => paginateItems(sortedPosts, page, pageSize),
+    [sortedPosts, page, pageSize]
   );
 
   useEffect(() => {
     setPage(1);
-  }, [areaFilter, mediaTypeFilter, tagFilter, solicitanteFilter, linkFilter, periodFilter]);
+  }, [areaFilter, mediaTypeFilter, tagFilter, solicitanteFilter, linkFilter, periodFilter, postSort]);
 
   const clearFilters = useCallback(() => {
     setLinkFilter("all");
@@ -711,6 +1047,26 @@ export function InstagramInsightsClient({
     setMediaTypeFilter("all");
     setTagFilter("all");
     setSolicitanteFilter("all");
+    setPostSort("date_desc");
+  }, []);
+
+  const loadAccountAudience = useCallback(async (refresh = false) => {
+    setAudienceLoading(true);
+    setAudienceError(null);
+    try {
+      const url = refresh ? "/api/instagram/account-audience?refresh=1" : "/api/instagram/account-audience";
+      const res = await fetch(url);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Erro ao carregar audiência");
+      setAccountInsights(json.insights ?? []);
+      setDemographics(json.demographics ?? []);
+      if (json.accountStats) setAccountStats(json.accountStats);
+      if (json.syncWarning) setAudienceError(json.syncWarning);
+    } catch (err) {
+      setAudienceError(err instanceof Error ? err.message : "Erro ao carregar audiência");
+    } finally {
+      setAudienceLoading(false);
+    }
   }, []);
 
   const reloadPosts = useCallback(async () => {
@@ -740,7 +1096,14 @@ export function InstagramInsightsClient({
 
   useEffect(() => {
     void loadStories();
-  }, [loadStories]);
+    void loadAccountAudience();
+  }, [loadStories, loadAccountAudience]);
+
+  useEffect(() => {
+    if (activeTab === "audience" && accountInsights.length === 0 && !audienceLoading) {
+      void loadAccountAudience();
+    }
+  }, [activeTab, accountInsights.length, audienceLoading, loadAccountAudience]);
 
   const handleSync = useCallback(async () => {
     setSyncing(true);
@@ -771,13 +1134,14 @@ export function InstagramInsightsClient({
 
       await reloadPosts();
       await loadStories();
+      await loadAccountAudience(true);
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : "Erro ao sincronizar");
     } finally {
       setSyncing(false);
       setSyncProgress(null);
     }
-  }, [reloadPosts, loadStories]);
+  }, [reloadPosts, loadStories, loadAccountAudience]);
 
   const handleAssignmentChange = useCallback(async (postId: string, patch: PostLinkPatch) => {
     setSavingPostId(postId);
@@ -843,13 +1207,32 @@ export function InstagramInsightsClient({
             </Button>
 
             {accountStats && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground min-w-0">
-                <Instagram className="h-4 w-4 shrink-0" />
-                <span className="font-medium text-foreground">@{accountUsername}</span>
-                <span className="text-muted-foreground/40 hidden sm:inline">·</span>
-                <span className="hidden sm:inline truncate">
-                  Atualizado {formatDate(accountStats.fetched_at)}
-                </span>
+              <div className="flex items-center gap-2.5 text-sm text-muted-foreground min-w-0">
+                {accountStats.profile_picture_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={accountStats.profile_picture_url}
+                    alt={`@${accountUsername}`}
+                    className="h-8 w-8 shrink-0 rounded-full object-cover ring-2 ring-[#101f2e]/10"
+                  />
+                ) : (
+                  <Instagram className="h-4 w-4 shrink-0" />
+                )}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium text-foreground">@{accountUsername}</span>
+                    {accountStats.follows_count != null && (
+                      <span className="hidden md:inline text-xs text-muted-foreground">
+                        · segue {formatNumber(accountStats.follows_count)}
+                      </span>
+                    )}
+                  </div>
+                  <span className="hidden sm:block truncate text-xs text-muted-foreground/80 max-w-[280px]">
+                    {accountStats.biography
+                      ? accountStats.biography
+                      : `Atualizado ${formatDate(accountStats.fetched_at)}`}
+                  </span>
+                </div>
               </div>
             )}
           </div>
@@ -1459,7 +1842,7 @@ export function InstagramInsightsClient({
                   {storiesError}
                 </div>
               )}
-              <div className="grid gap-3 sm:grid-cols-4 mb-3">
+              <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 mb-3">
                 <div className="rounded-xl border border-border/40 bg-muted/20 p-3">
                   <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Stories</p>
                   <p className="text-lg font-bold tabular-nums">{storiesSummary.total}</p>
@@ -1473,10 +1856,42 @@ export function InstagramInsightsClient({
                   <p className="text-lg font-bold tabular-nums">{formatNumber(storiesSummary.totalViews)}</p>
                 </div>
                 <div className="rounded-xl border border-border/40 bg-muted/20 p-3">
+                  <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Retenção</p>
+                  <p className="text-lg font-bold tabular-nums">
+                    {storiesSummary.retentionRate != null
+                      ? `${storiesSummary.retentionRate.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`
+                      : "—"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-border/40 bg-muted/20 p-3">
                   <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Respostas</p>
                   <p className="text-lg font-bold tabular-nums">{formatNumber(storiesSummary.totalReplies)}</p>
                 </div>
+                <div className="rounded-xl border border-border/40 bg-muted/20 p-3">
+                  <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Compart.</p>
+                  <p className="text-lg font-bold tabular-nums">{formatNumber(storiesSummary.totalShares)}</p>
+                </div>
+                <div className="rounded-xl border border-border/40 bg-muted/20 p-3">
+                  <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Visitas ao perfil</p>
+                  <p className="text-lg font-bold tabular-nums">{formatNumber(storiesSummary.totalProfileVisits)}</p>
+                </div>
+                <div className="rounded-xl border border-border/40 bg-muted/20 p-3">
+                  <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Seguidores ganhos</p>
+                  <p className="text-lg font-bold tabular-nums">{formatNumber(storiesSummary.totalFollows)}</p>
+                </div>
               </div>
+              {(storiesSummary.totalExits > 0 ||
+                storiesSummary.totalTapsForward > 0 ||
+                storiesSummary.totalTapsBack > 0 ||
+                storiesSummary.totalSwipeForward > 0) && (
+                <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-border/40 bg-muted/10 px-3 py-2 text-[11px] text-muted-foreground">
+                  <span className="font-semibold uppercase tracking-wider">Navegação</span>
+                  <span>Avançar (toque): <span className="font-semibold text-foreground tabular-nums">{formatNumber(storiesSummary.totalTapsForward)}</span></span>
+                  <span>Voltar: <span className="font-semibold text-foreground tabular-nums">{formatNumber(storiesSummary.totalTapsBack)}</span></span>
+                  <span>Próximo story: <span className="font-semibold text-foreground tabular-nums">{formatNumber(storiesSummary.totalSwipeForward)}</span></span>
+                  <span>Saídas: <span className="font-semibold text-foreground tabular-nums">{formatNumber(storiesSummary.totalExits)}</span></span>
+                </div>
+              )}
               {storiesLoading && stories.length === 0 && (
                 <div className="space-y-2">
                   {[0, 1, 2].map((i) => (
@@ -1525,6 +1940,14 @@ export function InstagramInsightsClient({
                           saves: 0,
                           shares: 0,
                           total_interactions: 0,
+                          media_product_type: "STORY",
+                          follows: 0,
+                          profile_visits: 0,
+                          reposts: 0,
+                          profile_activity: 0,
+                          link_clicks: 0,
+                          reels_avg_watch_time: 0,
+                          reels_total_watch_time: 0,
                           synced_at: new Date().toISOString(),
                           created_at: new Date().toISOString(),
                         }}
@@ -1536,6 +1959,13 @@ export function InstagramInsightsClient({
                           {formatDate(story.published_at)}
                         </p>
                         <p>Alcance {formatNumber(story.reach)} · Visualizações {formatNumber(story.views)} · Respostas {formatNumber(story.replies)}</p>
+                        <p className="mt-0.5 flex flex-wrap gap-x-2.5 gap-y-0.5">
+                          {(story.shares ?? 0) > 0 && <span>Compart. {formatNumber(story.shares ?? 0)}</span>}
+                          {(story.profile_visits ?? 0) > 0 && <span>Visitas perfil {formatNumber(story.profile_visits ?? 0)}</span>}
+                          {(story.follows ?? 0) > 0 && <span>+{formatNumber(story.follows ?? 0)} seguidores</span>}
+                          {(story.nav_exits ?? 0) > 0 && <span>Saídas {formatNumber(story.nav_exits ?? 0)}</span>}
+                          {(story.nav_taps_forward ?? 0) > 0 && <span>Avançar {formatNumber(story.nav_taps_forward ?? 0)}</span>}
+                        </p>
                       </div>
                     </div>
                   ))}
@@ -1683,6 +2113,160 @@ export function InstagramInsightsClient({
           </div>
         )}
 
+        {/* Tab: Conta & audiência */}
+        {activeTab === "audience" && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-sky-200/80 bg-sky-50/70 px-4 py-3 text-sm text-sky-950">
+              <div className="flex gap-2.5">
+                <Info className="h-4 w-4 shrink-0 mt-0.5 text-sky-700" aria-hidden />
+                <div className="space-y-1.5 text-xs leading-relaxed text-sky-900/90">
+                  <p className="font-semibold text-sky-950">Limites do Meta vs. postagens</p>
+                  <p>
+                    As postagens podem ser sincronizadas desde jan/2025. Já as métricas diárias da
+                    conta (alcance, visualizações, engajamento) só ficam disponíveis na API por cerca
+                    de 90 dias — não há histórico completo retroativo como nas mídias.
+                  </p>
+                  <p>
+                    O gráfico abaixo mostra o que guardamos no banco: na primeira coleta entra o
+                    recorte que o Meta ainda expõe; com sincronizações regulares, o histórico vai
+                    crescendo mês a mês.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
+              <SectionCard
+                title="Tendência da conta"
+                description={`Métricas diárias da conta · ${accountInsightsRangeLabel}. Atualizar da API puxa o recorte disponível no Meta (~90 dias).`}
+                action={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-lg h-8"
+                    onClick={() => loadAccountAudience(true)}
+                    disabled={audienceLoading}
+                  >
+                    {audienceLoading ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    )}
+                    <span className="ml-1.5">Atualizar da API</span>
+                  </Button>
+                }
+              >
+                {audienceError && (
+                  <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    {audienceError}
+                  </div>
+                )}
+                <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 mb-4">
+                  <KpiCard
+                    label="Alcance médio/dia"
+                    value={formatNumber(accountInsightsSummary.avgReach)}
+                    icon={<Eye className="h-3.5 w-3.5" />}
+                    sub="alcance único por dia · somar dias ≠ total"
+                  />
+                  <KpiCard
+                    label="Visualizações médias/dia"
+                    value={formatNumber(accountInsightsSummary.avgViews)}
+                    icon={<Eye className="h-3.5 w-3.5" />}
+                    sub="média no período guardado"
+                  />
+                  <KpiCard
+                    label="Contas engajadas/dia"
+                    value={formatNumber(accountInsightsSummary.avgAccountsEngaged)}
+                    icon={<Users className="h-3.5 w-3.5" />}
+                    sub="média diária"
+                  />
+                  <KpiCard
+                    label="Interações/dia"
+                    value={formatNumber(accountInsightsSummary.avgInteractions)}
+                    icon={<Heart className="h-3.5 w-3.5" />}
+                    sub="média diária"
+                  />
+                  <KpiCard
+                    label="Cliques no link"
+                    value={formatNumber(accountInsightsSummary.profileLinksTaps)}
+                    icon={<Link2 className="h-3.5 w-3.5" />}
+                    sub="soma no período guardado"
+                  />
+                  <KpiCard
+                    label="Pico de alcance/dia"
+                    value={formatNumber(accountInsightsSummary.peakReach)}
+                    icon={<TrendingUp className="h-3.5 w-3.5" />}
+                    sub={
+                      accountInsightsSummary.peakViews > 0
+                        ? `melhor dia · pico views ${formatNumber(accountInsightsSummary.peakViews)}`
+                        : "melhor dia no período"
+                    }
+                  />
+                </div>
+                <InstagramAccountTrendChart data={accountTrendData} />
+                <p className="mt-2 text-[11px] text-muted-foreground leading-relaxed">
+                  Cada ponto do gráfico é o valor daquele dia. Somar vários dias não equivale ao
+                  alcance único do período.
+                  {accountInsightsScoped.length > 90 &&
+                    " Com mais de 90 dias no banco, o gráfico agrupa por mês para facilitar a leitura."}
+                </p>
+              </SectionCard>
+            </motion.div>
+
+            <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, delay: 0.05 }}>
+              <SectionCard
+                title="Demografia dos seguidores"
+                description="Retrato atual na API Meta (this_month/this_week) — não é série histórica"
+                action={<Users className="h-4 w-4 text-muted-foreground" />}
+              >
+                {!demographicsGrouped.hasAny ? (
+                  <p className="text-sm text-muted-foreground">
+                    Demografia ainda não coletada. Sincronize para coletar (requer 100+ seguidores na
+                    conta; o Meta só libera demografia acima desse limite).
+                  </p>
+                ) : (
+                  <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2.5">Gênero</p>
+                      <DemographicBars
+                        data={demographicsGrouped.gender}
+                        format={genderLabel}
+                        emptyLabel="Sem dados de gênero"
+                        color="bg-violet-500"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2.5">Faixa etária</p>
+                      <DemographicBars
+                        data={demographicsGrouped.age}
+                        emptyLabel="Sem dados de idade"
+                        color="bg-sky-500"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2.5">Países</p>
+                      <DemographicBars
+                        data={demographicsGrouped.country}
+                        format={countryLabel}
+                        emptyLabel="Sem dados de país"
+                        color="bg-emerald-500"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2.5">Cidades</p>
+                      <DemographicBars
+                        data={demographicsGrouped.city}
+                        emptyLabel="Sem dados de cidade"
+                        color="bg-amber-500"
+                      />
+                    </div>
+                  </div>
+                )}
+              </SectionCard>
+            </motion.div>
+          </div>
+        )}
+
         {/* Tab: Por área */}
         {activeTab === "areas" && (
           <InstagramAreaDashboard
@@ -1813,6 +2397,24 @@ export function InstagramInsightsClient({
                         <SelectItem value="all">Todas as tags</SelectItem>
                         <SelectItem value="Newsletter">Newsletter</SelectItem>
                         <SelectItem value="sem_tag">Sem tags</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5 sm:col-span-2 xl:col-span-1">
+                    <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Ordenar por
+                    </label>
+                    <Select value={postSort} onValueChange={(v) => setPostSort(v as PostSortOption)}>
+                      <SelectTrigger className="w-full rounded-xl">
+                        <SelectValue placeholder="Ordenar por" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {POST_SORT_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>

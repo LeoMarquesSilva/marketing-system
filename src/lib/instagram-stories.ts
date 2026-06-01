@@ -23,6 +23,14 @@ export interface InstagramStory {
   reach: number;
   views: number;
   replies: number;
+  shares: number;
+  total_interactions: number;
+  follows: number;
+  profile_visits: number;
+  nav_taps_forward: number;
+  nav_taps_back: number;
+  nav_exits: number;
+  nav_swipe_forward: number;
   first_synced_at: string;
   last_synced_at: string;
   created_at: string;
@@ -54,7 +62,9 @@ export async function upsertInstagramStories(
 
   const { data: existingRows } = await supabase
     .from("instagram_stories")
-    .select("ig_story_id, reach, views, replies, first_synced_at, thumbnail_url, media_url, permalink")
+    .select(
+      "ig_story_id, reach, views, replies, shares, total_interactions, follows, profile_visits, nav_taps_forward, nav_taps_back, nav_exits, nav_swipe_forward, first_synced_at, thumbnail_url, media_url, permalink"
+    )
     .in("ig_story_id", storyIds);
 
   const existingMap = new Map(
@@ -62,6 +72,8 @@ export async function upsertInstagramStories(
   );
 
   const now = new Date().toISOString();
+  const keepMax = (next: number | undefined, prev: unknown) =>
+    Math.max(next ?? 0, (prev as number) ?? 0);
 
   const rows = stories.map((story) => {
     const existing = existingMap.get(story.id);
@@ -73,9 +85,17 @@ export async function upsertInstagramStories(
       thumbnail_url: story.thumbnail_url ?? existing?.thumbnail_url ?? null,
       permalink: story.permalink ?? existing?.permalink ?? null,
       published_at: story.published_at,
-      reach: Math.max(story.reach ?? 0, (existing?.reach as number) ?? 0),
-      views: Math.max(story.views ?? 0, (existing?.views as number) ?? 0),
-      replies: Math.max(story.replies ?? 0, (existing?.replies as number) ?? 0),
+      reach: keepMax(story.reach, existing?.reach),
+      views: keepMax(story.views, existing?.views),
+      replies: keepMax(story.replies, existing?.replies),
+      shares: keepMax(story.shares, existing?.shares),
+      total_interactions: keepMax(story.total_interactions, existing?.total_interactions),
+      follows: keepMax(story.follows, existing?.follows),
+      profile_visits: keepMax(story.profile_visits, existing?.profile_visits),
+      nav_taps_forward: keepMax(story.nav_taps_forward, existing?.nav_taps_forward),
+      nav_taps_back: keepMax(story.nav_taps_back, existing?.nav_taps_back),
+      nav_exits: keepMax(story.nav_exits, existing?.nav_exits),
+      nav_swipe_forward: keepMax(story.nav_swipe_forward, existing?.nav_swipe_forward),
       first_synced_at: (existing?.first_synced_at as string) ?? now,
       last_synced_at: now,
     };

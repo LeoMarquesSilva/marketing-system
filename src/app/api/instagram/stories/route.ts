@@ -49,6 +49,14 @@ export async function GET() {
         reach: s.reach,
         views: s.views,
         replies: s.replies,
+        shares: s.shares,
+        total_interactions: s.total_interactions,
+        follows: s.follows,
+        profile_visits: s.profile_visits,
+        nav_taps_forward: s.nav_taps_forward,
+        nav_taps_back: s.nav_taps_back,
+        nav_exits: s.nav_exits,
+        nav_swipe_forward: s.nav_swipe_forward,
       })),
     });
   } catch (err) {

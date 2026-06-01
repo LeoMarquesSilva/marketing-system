@@ -43,6 +43,14 @@ export interface InstagramPost {
   saves: number;
   shares: number;
   total_interactions: number;
+  media_product_type: string | null;
+  follows: number;
+  profile_visits: number;
+  reposts: number;
+  profile_activity: number;
+  link_clicks: number;
+  reels_avg_watch_time: number;
+  reels_total_watch_time: number;
   synced_at: string;
   created_at: string;
 }
@@ -52,6 +60,11 @@ export interface InstagramAccountStats {
   username: string;
   followers_count: number;
   media_count: number;
+  profile_picture_url: string | null;
+  biography: string | null;
+  website: string | null;
+  follows_count: number | null;
+  name: string | null;
   fetched_at: string;
 }
 
@@ -100,6 +113,14 @@ export function mapInstagramPostRow(row: Record<string, unknown>): InstagramPost
     solicitantes: parseSolicitantes(post.solicitantes),
     skip_participants: Boolean(post.skip_participants),
     tags: (post.tags ?? []) as string[],
+    follows: post.follows ?? 0,
+    profile_visits: post.profile_visits ?? 0,
+    reposts: post.reposts ?? 0,
+    profile_activity: post.profile_activity ?? 0,
+    link_clicks: post.link_clicks ?? 0,
+    reels_avg_watch_time: post.reels_avg_watch_time ?? 0,
+    reels_total_watch_time: post.reels_total_watch_time ?? 0,
+    media_product_type: post.media_product_type ?? null,
   };
 }
 
@@ -136,6 +157,11 @@ export async function upsertAccountStats(account: MetaAccountStats): Promise<voi
     username: account.username,
     followers_count: account.followers_count,
     media_count: account.media_count,
+    profile_picture_url: account.profile_picture_url ?? null,
+    biography: account.biography ?? null,
+    website: account.website ?? null,
+    follows_count: account.follows_count ?? null,
+    name: account.name ?? null,
   });
   if (error) throw new Error(error.message);
 }
@@ -144,6 +170,7 @@ type SyncPost = {
   id: string;
   caption?: string;
   media_type?: string;
+  media_product_type?: string;
   media_url?: string;
   thumbnail_url?: string;
   permalink?: string;
@@ -155,6 +182,13 @@ type SyncPost = {
   saves: number;
   shares: number;
   total_interactions: number;
+  follows?: number;
+  profile_visits?: number;
+  reposts?: number;
+  profile_activity?: number;
+  link_clicks?: number;
+  reels_avg_watch_time?: number;
+  reels_total_watch_time?: number;
 };
 
 export async function upsertInstagramPosts(posts: SyncPost[]): Promise<number> {
@@ -216,6 +250,14 @@ export async function upsertInstagramPosts(posts: SyncPost[]): Promise<number> {
       saves: post.saves,
       shares: post.shares,
       total_interactions: post.total_interactions,
+      media_product_type: post.media_product_type ?? null,
+      follows: post.follows ?? 0,
+      profile_visits: post.profile_visits ?? 0,
+      reposts: post.reposts ?? 0,
+      profile_activity: post.profile_activity ?? 0,
+      link_clicks: post.link_clicks ?? 0,
+      reels_avg_watch_time: post.reels_avg_watch_time ?? 0,
+      reels_total_watch_time: post.reels_total_watch_time ?? 0,
       synced_at: new Date().toISOString(),
     };
   });
