@@ -7,6 +7,7 @@ import {
   updateContentTopic,
   deleteContentTopic,
 } from "@/lib/content-topics";
+import { fetchRssItems, filterItems } from "@/lib/content-roteiros";
 
 export const dynamic = "force-dynamic";
 
@@ -87,6 +88,28 @@ export async function POST(request: Request) {
       const includeInactive = body.includeInactive === true;
       const topics = await fetchContentTopics(includeInactive);
       return NextResponse.json(topics);
+    }
+
+    if (action === "preview") {
+      if (!rss_query) {
+        return NextResponse.json(
+          { error: "rss_query é obrigatório para pré-visualizar." },
+          { status: 400 }
+        );
+      }
+      const previewMonths = typeof months_back === "number" ? months_back : 4;
+      const items = await fetchRssItems(rss_query, previewMonths);
+      const filtered = filterItems(items, previewMonths);
+      return NextResponse.json({
+        total: items.length,
+        matched: filtered.length,
+        items: filtered.slice(0, 15).map((item) => ({
+          title: item.title,
+          link: item.link ?? null,
+          contentSnippet: item.contentSnippet ?? null,
+          date: item.isoDate ?? item.pubDate ?? null,
+        })),
+      });
     }
 
     if (!name || !rss_query || !legal_area) {

@@ -15,6 +15,11 @@ const PAGE_LABELS: Record<string, string> = {
   "/usuarios": "Usuários",
   "/perfil": "Meu Perfil",
   "/instagram-insights": "Instagram Insights",
+  "/conteudo/roteiros": "Conteúdo para Posts",
+  "/vibe-marketing": "Vibe Marketing",
+  "/clima": "Clima",
+  "/trafego-pago": "Tráfego Pago",
+  "/vios-tarefas": "Tarefas VIOS",
 };
 
 function getPageLabel(pathname: string): string {

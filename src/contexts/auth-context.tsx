@@ -19,6 +19,8 @@ export interface AuthProfile {
   role: string | null;
   auth_id: string;
   avatar_url?: string | null;
+  permissions?: string[] | null;
+  must_change_password?: boolean | null;
 }
 
 interface AuthContextValue {
@@ -41,7 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchProfile = useCallback(async (authId: string) => {
     const { data } = await supabase
       .from("users")
-      .select("id, name, email, department, role, auth_id, avatar_url")
+      .select("id, name, email, department, role, auth_id, avatar_url, permissions, must_change_password")
       .eq("auth_id", authId)
       .single();
     if (data) {

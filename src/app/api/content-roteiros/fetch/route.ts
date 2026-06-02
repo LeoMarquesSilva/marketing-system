@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/utils/supabase/server";
+import { getAuthenticatedContentUser, isContentManager } from "@/lib/content-access";
 import { runFetchPipeline } from "@/lib/content-roteiros";
 
 export const dynamic = "force-dynamic";
@@ -36,6 +37,14 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
     const auth = await ensureAuth(body);
     if (auth.error) return auth.error;
+
+    const contentUser = await getAuthenticatedContentUser();
+    if (!contentUser || !isContentManager(contentUser.profile)) {
+      return NextResponse.json(
+        { error: "Apenas a equipe de marketing pode buscar notícias." },
+        { status: 403 }
+      );
+    }
 
     const topicIds = body.topicIds as string[] | undefined;
     const monthsBack = typeof body.monthsBack === "number" ? body.monthsBack : undefined;

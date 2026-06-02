@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/utils/supabase/client";
+import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -12,7 +13,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   Loader2,
   Newspaper,
@@ -23,20 +23,37 @@ import {
   RefreshCw,
   AlertCircle,
   Search,
+  Clock,
   LayoutGrid,
+  List,
+  ChevronDown,
+  FileCheck,
   FileText,
+  Pencil,
+  Send,
+  Download,
+  Link2,
 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ApprovalRoteiroModal } from "@/components/conteudo/approval-roteiro-modal";
-import type { User } from "@/lib/users";
+import { RoteiroCard, PerformanceHint, RoteiroCover, type RoteiroItem } from "@/components/conteudo/roteiro-card";
+import { parseCarousel, buildRoteiroWordHtml, roteiroWordSlug } from "@/lib/content-word";
+import { RoteiroListRow } from "@/components/conteudo/roteiro-list-row";
+import {
+  getAreaDotColor,
+  getLegalAreasForDepartment,
+  isContentCollaborator,
+  isContentManager,
+  LEGAL_AREAS,
+  STATUS_LABELS,
+} from "@/lib/content-areas";
+import { getRoteiroDate, isRecentRoteiro, isWithinContentWindow, sortByDateDesc, CONTENT_MAX_AGE_DAYS, CONTENT_HIGHLIGHT_DAYS } from "@/lib/content-utils";
 
 interface ContentTopic {
   id: string;
@@ -47,86 +64,134 @@ interface ContentTopic {
   created_at: string;
 }
 
-interface ContentRoteiro {
+type ViewTab = "recentes" | "aguardando" | "todos";
+type ViewMode = "list" | "grid";
+
+interface ViosTaskOption {
   id: string;
-  topic_id: string;
-  title: string;
-  link: string | null;
-  content_snippet: string | null;
-  area: string;
-  post: string;
+  vios_id: string;
+  tarefa: string;
+  area_processo: string | null;
+  data_limite: string | null;
   status: string;
-  published_at: string | null;
-  created_at: string;
+  already_linked: boolean;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  aguardando_aprovacao: "Aguardando",
-  aprovado: "Aprovado",
-  rejeitado: "Rejeitado",
-};
+export function RoteirosClient() {
+  const { profile, loading: authLoading } = useAuth();
+  const isManager = isContentManager(profile);
+  const isCollaborator = isContentCollaborator(profile);
+  const userAreas = useMemo(
+    () => (profile?.department ? getLegalAreasForDepartment(profile.department) : []),
+    [profile?.department]
+  );
 
-const AREA_COLORS: Record<string, string> = {
-  Cível: "bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-300 border-violet-200/60",
-  Trabalhista: "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200/60",
-  "Reestruturação (Insolvência)": "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-200/60",
-  "Societário e Contrato": "bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 border-sky-200/60",
-  "Operações Legais (Legal Ops)": "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200/60",
-  "Distressed Deals": "bg-orange-100 text-orange-800 dark:bg-orange-950/60 dark:text-orange-300 border-orange-200/60",
-};
-
-const DEFAULT_AREA_STYLE = "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200/60";
-
-const LEGAL_AREAS = [
-  "Cível",
-  "Trabalhista",
-  "Reestruturação (Insolvência)",
-  "Societário e Contrato",
-  "Operações Legais (Legal Ops)",
-  "Distressed Deals",
-] as const;
-
-function getAreaStyle(area: string) {
-  return AREA_COLORS[area] ?? DEFAULT_AREA_STYLE;
-}
-
-interface RoteirosClientProps {
-  users: User[];
-}
-
-export function RoteirosClient({ users }: RoteirosClientProps) {
   const [topics, setTopics] = useState<ContentTopic[]>([]);
-  const [roteiros, setRoteiros] = useState<ContentRoteiro[]>([]);
+  const [roteiros, setRoteiros] = useState<RoteiroItem[]>([]);
   const [selectedTopicIds, setSelectedTopicIds] = useState<string[]>([]);
-  const [loadingTopics, setLoadingTopics] = useState(true);
+  const [loadingTopics, setLoadingTopics] = useState(false);
   const [loadingRoteiros, setLoadingRoteiros] = useState(true);
   const [fetching, setFetching] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [areaFilter, setAreaFilter] = useState<string>("");
   const [topicFilter, setTopicFilter] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedRoteiro, setSelectedRoteiro] = useState<ContentRoteiro | null>(null);
-  const [roteiroToApprove, setRoteiroToApprove] = useState<ContentRoteiro | null>(null);
+  const [activeTab, setActiveTab] = useState<ViewTab>("todos");
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [rssOpen, setRssOpen] = useState(false);
+  const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
+  const [selectedRoteiro, setSelectedRoteiro] = useState<RoteiroItem | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (localStorage.getItem("conteudo-onboarding-dismissed") !== "1") {
+      setShowOnboarding(true);
+    }
+  }, []);
+
+  const dismissOnboarding = () => {
+    setShowOnboarding(false);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("conteudo-onboarding-dismissed", "1");
+    }
+  };
+
+  const [isEditingPost, setIsEditingPost] = useState(false);
+  const [draftPost, setDraftPost] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  useEffect(() => {
+    setIsEditingPost(false);
+    setDraftPost(selectedRoteiro?.post ?? "");
+  }, [selectedRoteiro?.id, selectedRoteiro?.post]);
+
+  const saveEdit = async () => {
+    if (!selectedRoteiro) return;
+    setSavingEdit(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/content-roteiros", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: selectedRoteiro.id,
+          action: "edit",
+          post: draftPost,
+          edited_by_id: profile?.id,
+          edited_by_name: profile?.name,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error ?? "Erro ao salvar alterações");
+      }
+      const altered = Boolean(data.has_alterations);
+      const editedAt = new Date().toISOString();
+      const patch = {
+        post: draftPost,
+        has_alterations: altered,
+        edited_by_name: profile?.name ?? null,
+        edited_at: editedAt,
+      };
+      setRoteiros((prev) =>
+        prev.map((r) => (r.id === selectedRoteiro.id ? { ...r, ...patch } : r))
+      );
+      setSelectedRoteiro((prev) => (prev ? { ...prev, ...patch } : null));
+      setIsEditingPost(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao salvar alterações");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isCollaborator) {
+      setActiveTab("recentes");
+      setViewMode("list");
+    }
+  }, [isCollaborator]);
 
   const loadTopics = useCallback(async () => {
+    if (!isManager) return;
     setLoadingTopics(true);
-    setError(null);
     try {
       const res = await fetch("/api/content-topics", { credentials: "include" });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Erro ao carregar temas");
       }
-      const data = await res.json();
-      setTopics(data);
+      setTopics(await res.json());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro desconhecido");
     } finally {
       setLoadingTopics(false);
     }
-  }, []);
+  }, [isManager]);
 
   const loadRoteiros = useCallback(async () => {
     setLoadingRoteiros(true);
@@ -137,49 +202,88 @@ export function RoteirosClient({ users }: RoteirosClientProps) {
       if (areaFilter) params.set("area", areaFilter);
       if (topicFilter) params.set("topic_id", topicFilter);
       const res = await fetch(`/api/content-roteiros?${params}`, { credentials: "include" });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Erro ao carregar conteúdos de post");
-      }
-      const data = await res.json();
-      setRoteiros(data);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Erro ao carregar conteúdos de post");
+      setRoteiros(Array.isArray(data) ? data : []);
+      setLastLoadedAt(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro desconhecido");
+      setRoteiros([]);
     } finally {
       setLoadingRoteiros(false);
     }
   }, [statusFilter, areaFilter, topicFilter]);
 
   useEffect(() => {
-    loadTopics();
-  }, [loadTopics]);
+    if (!authLoading) loadTopics();
+  }, [loadTopics, authLoading]);
 
   useEffect(() => {
-    loadRoteiros();
-  }, [loadRoteiros]);
+    if (!authLoading) loadRoteiros();
+  }, [loadRoteiros, authLoading]);
+
+  const sortedRoteiros = useMemo(
+    () => sortByDateDesc(roteiros.filter((r) => isWithinContentWindow(r))),
+    [roteiros]
+  );
 
   const filteredRoteiros = useMemo(() => {
-    if (!searchQuery.trim()) return roteiros;
+    let list = sortedRoteiros;
+
+    if (activeTab === "recentes") {
+      list = list.filter((r) => isRecentRoteiro(r, CONTENT_HIGHLIGHT_DAYS));
+    } else if (activeTab === "aguardando") {
+      list = list.filter((r) => r.status === "aguardando_aprovacao");
+    }
+
+    if (!searchQuery.trim()) return list;
     const q = searchQuery.toLowerCase().trim();
-    return roteiros.filter(
+    return list.filter(
       (r) =>
         r.title.toLowerCase().includes(q) ||
         r.area.toLowerCase().includes(q) ||
         (r.content_snippet ?? "").toLowerCase().includes(q)
     );
-  }, [roteiros, searchQuery]);
+  }, [sortedRoteiros, searchQuery, activeTab]);
+
+  const featuredRoteiro = filteredRoteiros[0] ?? null;
+  const listWithoutFeatured = featuredRoteiro
+    ? filteredRoteiros.filter((r) => r.id !== featuredRoteiro.id)
+    : filteredRoteiros;
+
+  const recentHighlights = useMemo(
+    () => sortedRoteiros.filter((r) => isRecentRoteiro(r, CONTENT_HIGHLIGHT_DAYS)).slice(0, 6),
+    [sortedRoteiros]
+  );
+
+  const stats = useMemo(
+    () => ({
+      total: roteiros.length,
+      pending: roteiros.filter((r) => r.status === "aguardando_aprovacao").length,
+      inReview: roteiros.filter(
+        (r) => r.status === "em_revisao" || r.status === "aprovado_revisor"
+      ).length,
+      sent: roteiros.filter((r) => r.status === "enviado_mkt").length,
+      recent: roteiros.filter((r) => isRecentRoteiro(r, CONTENT_HIGHLIGHT_DAYS)).length,
+    }),
+    [roteiros]
+  );
 
   const uniqueAreas = useMemo(() => {
     const fromData = Array.from(new Set(roteiros.map((r) => r.area)));
-    const combined = [...LEGAL_AREAS, ...fromData.filter((a) => !(LEGAL_AREAS as readonly string[]).includes(a))];
-    return combined.sort();
+    return [
+      ...LEGAL_AREAS,
+      ...fromData.filter((a) => !(LEGAL_AREAS as readonly string[]).includes(a)),
+    ].sort();
   }, [roteiros]);
 
   const handleFetch = async () => {
     setFetching(true);
     setError(null);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session?.access_token) {
         setError("Sessão expirada. Faça login novamente.");
         return;
@@ -189,8 +293,7 @@ export function RoteirosClient({ users }: RoteirosClientProps) {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          topicIds:
-            selectedTopicIds.length > 0 ? selectedTopicIds : undefined,
+          topicIds: selectedTopicIds.length > 0 ? selectedTopicIds : undefined,
           accessToken: session.access_token,
           refreshToken: session.refresh_token ?? undefined,
         }),
@@ -208,60 +311,143 @@ export function RoteirosClient({ users }: RoteirosClientProps) {
     }
   };
 
-  const handleStatusChange = async (
-    id: string,
-    status: "aprovado" | "rejeitado",
-    approvalData?: {
-      approved_by_id: string;
-      approved_by_name: string;
-      has_alterations: boolean;
-      alterations_notes: string | null;
-      sent_for_manager_review: boolean;
-      post?: string;
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const patchStatus = async (id: string, status: string, extra?: Record<string, unknown>) => {
+    const body: Record<string, unknown> = {
+      id,
+      status,
+      approved_by_id: profile?.id,
+      approved_by_name: profile?.name,
+      ...extra,
+    };
+    const res = await fetch("/api/content-roteiros", {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error ?? "Erro ao atualizar");
     }
-  ) => {
+    const patch: Partial<RoteiroItem> = { status };
+    setRoteiros((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+    if (selectedRoteiro?.id === id) {
+      setSelectedRoteiro((prev) => (prev ? { ...prev, ...patch } : null));
+    }
+  };
+
+  const handleTransition = async (status: string) => {
+    if (!selectedRoteiro) return;
+    setActionLoading(true);
+    setError(null);
     try {
-      const body: Record<string, unknown> = { id, status };
-      if (status === "aprovado" && approvalData) {
-        body.approved_by_id = approvalData.approved_by_id;
-        body.approved_by_name = approvalData.approved_by_name;
-        body.has_alterations = approvalData.has_alterations;
-        body.alterations_notes = approvalData.alterations_notes;
-        body.sent_for_manager_review = approvalData.sent_for_manager_review;
-        if (approvalData.post !== undefined) body.post = approvalData.post;
-      }
+      await patchStatus(selectedRoteiro.id, status);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao atualizar");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const sendToMkt = async () => {
+    if (!selectedRoteiro) return;
+    setActionLoading(true);
+    setError(null);
+    try {
       const res = await fetch("/api/content-roteiros", {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ id: selectedRoteiro.id, action: "send_mkt" }),
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Erro ao atualizar");
-      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Erro ao enviar ao marketing");
+      const patch: Partial<RoteiroItem> = {
+        status: "enviado_mkt",
+        sent_to_mkt_at: new Date().toISOString(),
+        sent_to_mkt_by_name: profile?.name ?? null,
+        marketing_request_id: data.marketing_request_id ?? null,
+      };
       setRoteiros((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, status } : r))
+        prev.map((r) => (r.id === selectedRoteiro.id ? { ...r, ...patch } : r))
       );
-      if (selectedRoteiro?.id === id) {
-        setSelectedRoteiro((prev) => (prev ? { ...prev, status } : null));
-      }
-      setRoteiroToApprove(null);
-    } catch (err) {
-      throw err;
+      setSelectedRoteiro((prev) => (prev ? { ...prev, ...patch } : null));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao enviar ao marketing");
+    } finally {
+      setActionLoading(false);
     }
   };
 
-  const handleApproveWithModal = async (data: {
-    approved_by_id: string;
-    approved_by_name: string;
-    has_alterations: boolean;
-    alterations_notes: string | null;
-    sent_for_manager_review: boolean;
-    post?: string;
-  }) => {
-    if (!roteiroToApprove) return;
-    await handleStatusChange(roteiroToApprove.id, "aprovado", data);
+  const [viosTasks, setViosTasks] = useState<ViosTaskOption[]>([]);
+  const [linkingVios, setLinkingVios] = useState(false);
+
+  useEffect(() => {
+    if (authLoading || !profile?.id) return;
+    fetch("/api/content-roteiros/vios-tasks", { credentials: "include" })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => setViosTasks(Array.isArray(data) ? data : []))
+      .catch(() => setViosTasks([]));
+  }, [authLoading, profile?.id]);
+
+  const linkVios = async (viosTaskId: string | null) => {
+    if (!selectedRoteiro) return;
+    setLinkingVios(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/content-roteiros", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: selectedRoteiro.id,
+          action: "link_vios",
+          vios_task_id: viosTaskId,
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? "Erro ao vincular tarefa");
+      }
+      const patch: Partial<RoteiroItem> = { vios_task_id: viosTaskId };
+      setRoteiros((prev) =>
+        prev.map((r) => (r.id === selectedRoteiro.id ? { ...r, ...patch } : r))
+      );
+      setSelectedRoteiro((prev) => (prev ? { ...prev, ...patch } : null));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao vincular tarefa");
+    } finally {
+      setLinkingVios(false);
+    }
+  };
+
+  const downloadWord = () => {
+    if (!selectedRoteiro) return;
+    const r = selectedRoteiro;
+    const html = buildRoteiroWordHtml({
+      title: r.title,
+      area: r.area,
+      link: r.link,
+      contentSnippet: r.content_snippet,
+      post: r.post,
+      hasAlterations: r.has_alterations,
+      editedByName: r.edited_by_name,
+      editedAt: r.edited_at,
+      originalPost: r.original_post,
+      authorName: profile?.name,
+      authorRole: profile?.department,
+    });
+    const blob = new Blob(["﻿", html], { type: "application/msword" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `post-${roteiroWordSlug(r.title)}.doc`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const copyPost = (post: string) => {
@@ -270,363 +456,794 @@ export function RoteirosClient({ users }: RoteirosClientProps) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  if (loadingTopics) {
-    return (
-      <Card className="border-dashed">
-        <CardContent className="flex items-center justify-center py-16">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </CardContent>
-      </Card>
+  const areaLabel =
+    isCollaborator && userAreas.length === 1 ? userAreas[0] : profile?.department ?? "sua área";
+
+  const rejectHandler = (id: string) => {
+    patchStatus(id, "rejeitado").catch((e) =>
+      setError(e instanceof Error ? e.message : "Erro ao rejeitar")
     );
-  }
+  };
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Newspaper className="h-4 w-4" />
-            Buscar notícias e gerar conteúdo para posts
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Selecione os temas RSS (ou deixe vazio para todos) e clique em Executar.
+    <div className="mx-auto max-w-6xl space-y-6 pb-8">
+      {/* Cabeçalho */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-1">
+            Portal de conteúdo
           </p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {error && (
-            <div className="flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              {error}
-            </div>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">
+            {profile?.name ? `Olá, ${profile.name.split(" ")[0]}` : "Conteúdo para Posts"}
+          </h1>
+          <p className="text-muted-foreground mt-1.5 text-sm max-w-xl">
+            {isCollaborator
+              ? `Notícias e posts da área ${areaLabel} para revisar e aprovar.`
+              : "Notícias jurídicas convertidas em posts para redes sociais."}{" "}
+            <span className="text-muted-foreground/80">
+              (últimos {CONTENT_MAX_AGE_DAYS} dias)
+            </span>
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={() => loadRoteiros()}
+            disabled={loadingRoteiros}
+          >
+            <RefreshCw className={cn("h-4 w-4", loadingRoteiros && "animate-spin")} />
+            Atualizar
+          </Button>
+          {lastLoadedAt && !loadingRoteiros && (
+            <span className="text-xs text-muted-foreground hidden sm:inline">
+              {stats.total} notícia{stats.total !== 1 ? "s" : ""} ·{" "}
+              {format(lastLoadedAt, "HH:mm", { locale: ptBR })}
+            </span>
           )}
-          <div className="flex flex-wrap gap-4 items-end">
-            <div className="space-y-2 min-w-[200px]">
-              <label className="text-sm font-medium">Temas</label>
-              <Select
-                value={
-                  selectedTopicIds.length === 0
-                    ? "all"
-                    : selectedTopicIds.length === 1
-                      ? selectedTopicIds[0]
-                      : "multiple"
-                }
-                onValueChange={(v) => {
-                  if (v === "all") setSelectedTopicIds([]);
-                  else setSelectedTopicIds([v]);
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Todos os temas" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os temas</SelectItem>
-                  {topics.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button
-              onClick={handleFetch}
-              disabled={fetching || topics.length === 0}
-              className="gap-2"
-            >
-              {fetching ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Buscando…
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="h-4 w-4" />
-                  Executar
-                </>
-              )}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <Card>
-        <CardHeader className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <LayoutGrid className="h-4 w-4" />
-              Posts gerados
-              {filteredRoteiros.length > 0 && (
-                <Badge variant="secondary" className="font-normal">
-                  {filteredRoteiros.length}
-                </Badge>
-              )}
-            </CardTitle>
-          </div>
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatCard label="A validar" value={stats.pending} warn={stats.pending > 0} />
+        <StatCard label="Em revisão" value={stats.inReview} accent />
+        <StatCard label="Enviados ao MKT" value={stats.sent} />
+        <StatCard label="Total" value={stats.total} />
+      </div>
 
-          <div className="flex flex-wrap gap-3">
-            <div className="relative flex-1 min-w-[200px] max-w-xs">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar por título ou área..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-            <Select value={statusFilter || "all"} onValueChange={(v) => setStatusFilter(v === "all" ? "" : v)}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os status</SelectItem>
-                {Object.entries(STATUS_LABELS).map(([k, v]) => (
-                  <SelectItem key={k} value={k}>{v}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={areaFilter || "all"} onValueChange={(v) => setAreaFilter(v === "all" ? "" : v)}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Área" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas as áreas</SelectItem>
-                {uniqueAreas.map((a) => (
-                  <SelectItem key={a} value={a}>{a}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={topicFilter || "all"} onValueChange={(v) => setTopicFilter(v === "all" ? "" : v)}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Tema" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os temas</SelectItem>
-                {topics.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {loadingRoteiros ? (
-            <div className="flex items-center justify-center py-16">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : filteredRoteiros.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-16 text-center text-muted-foreground">
-              <div className="rounded-full bg-muted/50 p-4">
-                <Newspaper className="h-10 w-10 opacity-50" />
-              </div>
-              <p className="text-sm font-medium">
-                {roteiros.length === 0
-                  ? "Nenhum conteúdo de post ainda. Execute a busca acima."
-                  : "Nenhum resultado para os filtros selecionados."}
-              </p>
-            </div>
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredRoteiros.map((r) => (
-                <article
-                  key={r.id}
-                  className={cn(
-                    "group flex flex-col rounded-xl border bg-card text-card-foreground",
-                    "shadow-sm transition-all duration-200",
-                    "hover:shadow-md hover:border-primary/20",
-                    "overflow-hidden"
-                  )}
-                >
-                  <div className="flex flex-1 flex-col p-4 gap-3">
-                    <div className="flex flex-wrap gap-2">
-                      <Badge
-                        variant="outline"
-                        className={cn("text-xs font-medium border", getAreaStyle(r.area))}
-                      >
-                        {r.area}
-                      </Badge>
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "text-xs font-medium",
-                          r.status === "aprovado" && "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-400 dark:border-emerald-800",
-                          r.status === "rejeitado" && "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/50 dark:text-red-400 dark:border-red-800",
-                          r.status === "aguardando_aprovacao" && "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-400 dark:border-amber-800"
-                        )}
-                      >
-                        {STATUS_LABELS[r.status] ?? r.status}
-                      </Badge>
-                    </div>
-                    <h3 className="font-semibold text-sm line-clamp-2 leading-snug group-hover:text-primary transition-colors">
-                      {r.title}
-                    </h3>
-                    <p className="text-xs text-muted-foreground mt-auto">
-                      {r.published_at
-                        ? format(new Date(r.published_at), "dd MMM yyyy", { locale: ptBR })
-                        : "—"}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1 p-3 border-t bg-muted/30">
-                    {r.link && (
-                      <a
-                        href={r.link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted transition-colors"
-                        title="Abrir notícia original"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
-                      </a>
-                    )}
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="flex-1 gap-2 text-xs"
-                      onClick={() => setSelectedRoteiro(r)}
-                    >
-                      <FileText className="h-3.5 w-3.5" />
-                      Ver post
-                    </Button>
-                    {r.status === "aguardando_aprovacao" && (
-                      <>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/50"
-                          onClick={() => setRoteiroToApprove(r)}
-                          title="Aprovar"
-                        >
-                          <Check className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/50"
-                          onClick={() => handleStatusChange(r.id, "rejeitado")}
-                          title="Rejeitar"
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {error && (
+        <div className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>{error}</span>
+        </div>
+      )}
 
-      <Dialog open={!!selectedRoteiro} onOpenChange={() => setSelectedRoteiro(null)}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
-          <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <DialogTitle className="text-lg leading-tight pr-8">
-                  {selectedRoteiro?.title}
-                </DialogTitle>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {selectedRoteiro && (
-                    <Badge
-                      variant="outline"
-                      className={cn("text-xs", getAreaStyle(selectedRoteiro.area))}
-                    >
-                      {selectedRoteiro.area}
-                    </Badge>
-                  )}
-                  {selectedRoteiro && (
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "text-xs",
-                        selectedRoteiro.status === "aprovado" && "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400",
-                        selectedRoteiro.status === "rejeitado" && "bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-400",
-                        selectedRoteiro.status === "aguardando_aprovacao" && "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400"
-                      )}
-                    >
-                      {STATUS_LABELS[selectedRoteiro.status] ?? selectedRoteiro.status}
-                    </Badge>
-                  )}
+      {/* Onboarding do colaborador */}
+      {isCollaborator && showOnboarding && (
+        <div className="relative rounded-xl border border-primary/20 bg-primary/[0.03] p-4 sm:p-5">
+          <button
+            type="button"
+            onClick={dismissOnboarding}
+            className="absolute right-3 top-3 text-muted-foreground/70 hover:text-foreground transition-colors"
+            title="Dispensar"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <p className="text-sm font-semibold mb-3">Como funciona</p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              {
+                icon: Newspaper,
+                title: "1. Escolha uma notícia",
+                desc: "Veja as notícias da sua área e abra a que quiser comentar. Confira no link se a notícia é real e atual.",
+              },
+              {
+                icon: FileCheck,
+                title: "2. Confira o post",
+                desc: "A IA já montou um carrossel. Veja se o conteúdo bate com a notícia e faz sentido jurídico.",
+              },
+              {
+                icon: Send,
+                title: "3. Ajuste e envie",
+                desc: "Aprove com ajustes se precisar. O marketing cria a arte e faz as correções finais.",
+              },
+            ].map((step) => (
+              <div key={step.title} className="flex gap-2.5">
+                <step.icon className="h-4 w-4 shrink-0 mt-0.5 text-primary" />
+                <div>
+                  <p className="text-xs font-medium">{step.title}</p>
+                  <p className="text-xs text-muted-foreground leading-snug mt-0.5">{step.desc}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {selectedRoteiro?.link && (
-                  <a
-                    href={selectedRoteiro.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-muted transition-colors"
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Busca RSS — marketing */}
+      {isManager && (
+        <Card className="overflow-hidden">
+          <button
+            type="button"
+            className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-muted/30 transition-colors"
+            onClick={() => setRssOpen((v) => !v)}
+          >
+            <div className="flex items-center gap-2">
+              <Newspaper className="h-4 w-4 text-muted-foreground" />
+              <span className="font-medium text-sm">Buscar notícias RSS e gerar posts</span>
+              {loadingTopics && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+            </div>
+            <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", rssOpen && "rotate-180")} />
+          </button>
+          {rssOpen && (
+            <CardContent className="pt-0 pb-5 px-5 border-t">
+              <p className="text-sm text-muted-foreground mb-4">
+                Selecione os temas (ou deixe vazio para todos) e execute a busca.
+              </p>
+              <div className="flex flex-wrap gap-3 items-end">
+                <div className="space-y-1.5 min-w-[200px]">
+                  <label className="text-xs font-medium text-muted-foreground">Temas</label>
+                  <Select
+                    value={
+                      selectedTopicIds.length === 0
+                        ? "all"
+                        : selectedTopicIds.length === 1
+                          ? selectedTopicIds[0]
+                          : "multiple"
+                    }
+                    onValueChange={(v) => {
+                      if (v === "all") setSelectedTopicIds([]);
+                      else setSelectedTopicIds([v]);
+                    }}
                   >
-                    <ExternalLink className="h-4 w-4" />
-                    Notícia original
-                  </a>
-                )}
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="Todos os temas" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos os temas</SelectItem>
+                      {topics.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <Button
-                  size="sm"
-                  className="gap-2"
-                  onClick={() => selectedRoteiro && copyPost(selectedRoteiro.post)}
+                  onClick={handleFetch}
+                  disabled={fetching || topics.length === 0}
+                  className="gap-2 h-9"
                 >
-                  {copied ? (
+                  {fetching ? (
                     <>
-                      <Check className="h-4 w-4" />
-                      Copiado
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Buscando…
                     </>
                   ) : (
                     <>
-                      <Copy className="h-4 w-4" />
-                      Copiar conteúdo
+                      <RefreshCw className="h-4 w-4" />
+                      Executar busca
                     </>
                   )}
                 </Button>
-                {selectedRoteiro?.status === "aguardando_aprovacao" && (
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      )}
+
+      {/* Carrossel recentes — mobile/colaborador */}
+      {isCollaborator && recentHighlights.length > 1 && (
+        <section>
+          <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
+            <Clock className="h-4 w-4" />
+            Últimas da sua área
+          </h2>
+          <div className="flex gap-3 overflow-x-auto pb-1 snap-x snap-mandatory -mx-1 px-1">
+            {recentHighlights.map((r) => (
+              <RoteiroCard
+                key={`recent-${r.id}`}
+                roteiro={r}
+                compact
+                onView={setSelectedRoteiro}
+                onReject={rejectHandler}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Feed principal */}
+      <div className="space-y-4">
+        {/* Toolbar */}
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap gap-1 rounded-lg border bg-muted/30 p-1">
+            {(
+              [
+                { id: "recentes" as const, label: "Recentes", count: stats.recent },
+                { id: "aguardando" as const, label: "A validar", count: stats.pending },
+                { id: "todos" as const, label: "Todos", count: stats.total },
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                  activeTab === tab.id
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {tab.label}
+                <span className="tabular-nums opacity-60">{tab.count}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[180px] lg:w-56">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Buscar notícias..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 h-9 text-sm"
+              />
+            </div>
+            <Select value={statusFilter || "all"} onValueChange={(v) => setStatusFilter(v === "all" ? "" : v)}>
+              <SelectTrigger className="w-[130px] h-9 text-xs">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Status</SelectItem>
+                {Object.entries(STATUS_LABELS).map(([k, v]) => (
+                  <SelectItem key={k} value={k}>
+                    {v}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {isManager && (
+              <>
+                <Select value={areaFilter || "all"} onValueChange={(v) => setAreaFilter(v === "all" ? "" : v)}>
+                  <SelectTrigger className="w-[160px] h-9 text-xs hidden sm:flex">
+                    <SelectValue placeholder="Área" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas áreas</SelectItem>
+                    {uniqueAreas.map((a) => (
+                      <SelectItem key={a} value={a}>
+                        {a}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={topicFilter || "all"} onValueChange={(v) => setTopicFilter(v === "all" ? "" : v)}>
+                  <SelectTrigger className="w-[140px] h-9 text-xs hidden md:flex">
+                    <SelectValue placeholder="Tema" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos temas</SelectItem>
+                    {topics.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </>
+            )}
+            <div className="flex rounded-lg border p-0.5">
+              <button
+                type="button"
+                title="Lista"
+                onClick={() => setViewMode("list")}
+                className={cn(
+                  "p-1.5 rounded-md transition-colors",
+                  viewMode === "list" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <List className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                title="Grade"
+                onClick={() => setViewMode("grid")}
+                className={cn(
+                  "p-1.5 rounded-md transition-colors",
+                  viewMode === "grid" ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Conteúdo */}
+        {loadingRoteiros || authLoading ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-20 text-muted-foreground">
+            <Loader2 className="h-8 w-8 animate-spin" />
+            <p className="text-sm">Carregando notícias...</p>
+          </div>
+        ) : filteredRoteiros.length === 0 ? (
+          <EmptyState
+            isCollaborator={isCollaborator}
+            areaLabel={areaLabel}
+            hasData={roteiros.length > 0}
+            isManager={isManager}
+            onRefresh={loadRoteiros}
+          />
+        ) : (
+          <div className="space-y-4">
+            {featuredRoteiro && activeTab !== "aguardando" && (
+              <RoteiroCard
+                roteiro={featuredRoteiro}
+                featured
+                onView={setSelectedRoteiro}
+              />
+            )}
+
+            {viewMode === "list" ? (
+              <div className="space-y-2">
+                {listWithoutFeatured.map((r) => (
+                  <RoteiroListRow
+                    key={r.id}
+                    roteiro={r}
+                    onView={setSelectedRoteiro}
+                    onReject={rejectHandler}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {listWithoutFeatured.map((r) => (
+                  <RoteiroCard
+                    key={r.id}
+                    roteiro={r}
+                    onView={setSelectedRoteiro}
+                    onReject={rejectHandler}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Modal detalhe */}
+      <Dialog open={!!selectedRoteiro} onOpenChange={() => setSelectedRoteiro(null)}>
+        <DialogContent className="w-[96vw] max-w-5xl sm:max-w-5xl max-h-[92vh] overflow-hidden flex flex-col p-0 gap-0">
+          {/* Capa com manchete sobreposta */}
+          {selectedRoteiro && (
+            <RoteiroCover roteiro={selectedRoteiro} className="h-52 sm:h-64 shrink-0">
+              <div className="absolute inset-x-0 bottom-0 z-10 p-5 sm:p-6">
+                <span className="mb-2.5 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white backdrop-blur-sm">
+                  <span className={cn("h-1.5 w-1.5 rounded-full", getAreaDotColor(selectedRoteiro.area))} />
+                  {selectedRoteiro.area}
+                </span>
+                <DialogTitle className="max-w-2xl text-lg font-bold leading-snug text-white drop-shadow-sm sm:text-2xl line-clamp-3">
+                  {selectedRoteiro.title}
+                </DialogTitle>
+                <p className="mt-2 text-xs text-white/80">
+                  {format(getRoteiroDate(selectedRoteiro), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                  {" • "}
+                  {STATUS_LABELS[selectedRoteiro.status] ?? selectedRoteiro.status}
+                </p>
+              </div>
+            </RoteiroCover>
+          )}
+
+          {/* Barra de ações */}
+          <div className="flex flex-wrap items-center gap-2 border-b px-5 py-3 shrink-0">
+            {selectedRoteiro?.link && (
+              <a href={selectedRoteiro.link} target="_blank" rel="noopener noreferrer">
+                <Button size="sm" variant="outline" className="gap-2 h-9 text-xs">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Conferir notícia
+                </Button>
+              </a>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2 h-9 text-xs"
+              onClick={() => selectedRoteiro && copyPost(selectedRoteiro.post)}
+            >
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              {copied ? "Copiado" : "Copiar post"}
+            </Button>
+            <Button
+              size="sm"
+              variant={isEditingPost ? "secondary" : "outline"}
+              className="gap-2 h-9 text-xs"
+              onClick={() => {
+                setDraftPost(selectedRoteiro?.post ?? "");
+                setIsEditingPost((v) => !v);
+              }}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              {isEditingPost ? "Cancelar edição" : "Editar texto"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2 h-9 text-xs"
+              onClick={downloadWord}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Baixar Word
+            </Button>
+            {/* Ações por etapa do fluxo */}
+            {selectedRoteiro?.status === "aguardando_aprovacao" && (
+              <div className="ml-auto flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2 h-9 text-xs text-red-600 border-red-200 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950/40"
+                  onClick={() => selectedRoteiro && rejectHandler(selectedRoteiro.id)}
+                  disabled={actionLoading}
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Rejeitar
+                </Button>
+                <Button
+                  size="sm"
+                  className="gap-2 h-9 text-xs bg-emerald-600 hover:bg-emerald-700"
+                  onClick={() => handleTransition("em_revisao")}
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                  Aprovar e enviar p/ revisão
+                </Button>
+              </div>
+            )}
+            {selectedRoteiro?.status === "em_revisao" && (
+              <Button
+                size="sm"
+                className="ml-auto gap-2 h-9 text-xs bg-violet-600 hover:bg-violet-700"
+                onClick={() => handleTransition("aprovado_revisor")}
+                disabled={actionLoading}
+              >
+                {actionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                Revisor aprovou
+              </Button>
+            )}
+            {selectedRoteiro?.status === "aprovado_revisor" && (
+              <Button
+                size="sm"
+                className="ml-auto gap-2 h-9 text-xs bg-emerald-600 hover:bg-emerald-700"
+                onClick={sendToMkt}
+                disabled={actionLoading}
+              >
+                {actionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                Enviar ao marketing
+              </Button>
+            )}
+            {selectedRoteiro?.status === "enviado_mkt" && (
+              <span className="ml-auto inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600">
+                <Check className="h-4 w-4" />
+                Enviado ao marketing
+              </span>
+            )}
+          </div>
+
+          {/* Corpo */}
+          <div className="flex-1 overflow-auto bg-muted/20 px-5 py-5 space-y-5 sm:px-6">
+            {selectedRoteiro?.content_snippet && (
+              <div className="rounded-xl border bg-card p-4">
+                <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <Newspaper className="h-3.5 w-3.5" />
+                  Resumo da notícia
+                </p>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {selectedRoteiro.content_snippet}
+                </p>
+              </div>
+            )}
+            {selectedRoteiro?.performance_hint && (
+              <PerformanceHint hint={selectedRoteiro.performance_hint} className="text-xs" />
+            )}
+            {selectedRoteiro?.has_alterations && !isEditingPost && (
+              <div className="flex items-center gap-2 rounded-lg border border-amber-300/50 bg-amber-50/60 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+                <Pencil className="h-3.5 w-3.5 shrink-0" />
+                <span>
+                  Texto ajustado{selectedRoteiro.edited_by_name ? ` por ${selectedRoteiro.edited_by_name}` : ""}
+                  {selectedRoteiro.edited_at
+                    ? ` em ${format(new Date(selectedRoteiro.edited_at), "dd MMM yyyy 'às' HH:mm", { locale: ptBR })}`
+                    : ""}
+                  {" "}(diferente da versão original da IA).
+                </span>
+              </div>
+            )}
+            {selectedRoteiro && !isEditingPost && (
+              <div className="space-y-2 rounded-xl border bg-card p-4">
+                <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <Link2 className="h-3.5 w-3.5" />
+                  Tarefa do VIOS vinculada
+                </p>
+                {selectedRoteiro.status === "enviado_mkt" ? (
+                  <p className="text-sm">
+                    {(() => {
+                      const t = viosTasks.find((x) => x.id === selectedRoteiro.vios_task_id);
+                      if (t) return `${t.vios_id} · ${t.tarefa}`;
+                      return selectedRoteiro.vios_task_id ? "Tarefa vinculada" : "Nenhuma";
+                    })()}
+                  </p>
+                ) : viosTasks.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Você não tem tarefas do VIOS em aberto para vincular.
+                  </p>
+                ) : (
                   <>
-                    <Button
-                      size="sm"
-                      className="gap-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/50"
-                      variant="outline"
-                      onClick={() => {
-                        setRoteiroToApprove(selectedRoteiro);
-                        setSelectedRoteiro(null);
-                      }}
+                    <Select
+                      value={selectedRoteiro.vios_task_id ?? "none"}
+                      onValueChange={(v) => linkVios(v === "none" ? null : v)}
+                      disabled={linkingVios}
                     >
-                      <Check className="h-4 w-4" />
-                      Aprovar
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/50"
-                      onClick={() => handleStatusChange(selectedRoteiro.id, "rejeitado")}
-                    >
-                      <X className="h-4 w-4" />
-                      Rejeitar
-                    </Button>
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue placeholder="Selecione uma tarefa" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Nenhuma</SelectItem>
+                        {viosTasks.map((t) => (
+                          <SelectItem key={t.id} value={t.id}>
+                            {t.vios_id} · {t.tarefa.length > 48 ? `${t.tarefa.slice(0, 48)}…` : t.tarefa}
+                            {t.data_limite
+                              ? ` · ${format(new Date(t.data_limite), "dd/MM", { locale: ptBR })}`
+                              : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[11px] text-muted-foreground">
+                      Vincule antes de enviar ao marketing — a tarefa do VIOS ficará ligada ao card do Planner.
+                    </p>
                   </>
                 )}
               </div>
-            </div>
-          </DialogHeader>
-          <div className="flex-1 overflow-auto px-6 pb-6">
-            <div className="mt-4 rounded-xl border bg-muted/20 p-5">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-                Post em formato carrossel (slides)
-              </p>
-              <div className="prose prose-sm dark:prose-invert max-w-none">
-                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed bg-transparent p-0 border-0 overflow-visible">
-                  {selectedRoteiro?.post}
-                </pre>
+            )}
+            {selectedRoteiro && isEditingPost ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <Pencil className="h-3.5 w-3.5" />
+                    Editando o texto do post
+                  </p>
+                  <span className="text-[11px] text-muted-foreground">
+                    {draftPost.length} caracteres
+                  </span>
+                </div>
+                <textarea
+                  value={draftPost}
+                  onChange={(e) => setDraftPost(e.target.value)}
+                  rows={20}
+                  className="w-full resize-y rounded-xl border bg-card p-4 font-mono text-[13px] leading-relaxed outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/40"
+                />
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-[11px] text-muted-foreground">
+                    Ao confirmar, este passa a ser o texto do post e o marketing é avisado de que você ajustou.
+                  </p>
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setDraftPost(selectedRoteiro.post);
+                        setIsEditingPost(false);
+                      }}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button size="sm" className="gap-2" onClick={saveEdit} disabled={savingEdit}>
+                      {savingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                      Confirmar este texto
+                    </Button>
+                  </div>
+                </div>
               </div>
-            </div>
+            ) : (
+              selectedRoteiro && (
+                <CarouselPost
+                  text={selectedRoteiro.post}
+                  author={{
+                    name: profile?.name,
+                    role: profile?.department,
+                    avatarUrl: profile?.avatar_url,
+                  }}
+                />
+              )
+            )}
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
 
-      <ApprovalRoteiroModal
-        open={!!roteiroToApprove}
-        onOpenChange={(open) => !open && setRoteiroToApprove(null)}
-        roteiro={roteiroToApprove}
-        users={users}
-        onApprove={handleApproveWithModal}
-      />
+/** Renderiza texto com **negrito** inline. */
+function renderInline(text: string) {
+  return text.split(/\*\*(.+?)\*\*/g).map((part, i) =>
+    i % 2 === 1 ? (
+      <strong key={i} className="font-semibold text-foreground">
+        {part}
+      </strong>
+    ) : (
+      <span key={i}>{part}</span>
+    )
+  );
+}
+
+
+function initials(name?: string | null) {
+  if (!name) return "BP";
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join("");
+}
+
+interface CarouselAuthor {
+  name?: string | null;
+  role?: string | null;
+  avatarUrl?: string | null;
+}
+
+function CarouselPost({ text, author }: { text: string; author?: CarouselAuthor }) {
+  const slides = parseCarousel(text);
+
+  if (slides.length === 0) {
+    return (
+      <div className="rounded-xl border bg-card p-5">
+        <p className="whitespace-pre-wrap text-sm leading-relaxed">{text}</p>
+      </div>
+    );
+  }
+
+  const [cover, ...rest] = slides;
+  const coverSubtitle = cover.body.map((b) => b.content).join(" ");
+
+  return (
+    <div className="space-y-3">
+      <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <FileText className="h-3.5 w-3.5" />
+        Pré-visualização do carrossel · {slides.length} slides · arraste para o lado →
+      </p>
+      <div className="flex gap-3 overflow-x-auto pb-3 snap-x snap-mandatory">
+        {/* Slide 01 — capa no padrão da marca */}
+        <article className="relative flex aspect-[4/5] w-[230px] shrink-0 snap-start flex-col overflow-hidden rounded-2xl bg-gradient-to-br from-[#1a2f44] to-[#0a141c] p-5 text-white shadow-md sm:w-[260px]">
+          <span className="absolute right-3 top-3 text-[10px] font-bold tracking-widest text-white/40">
+            01
+          </span>
+          <div className="mb-3 h-16 w-16 overflow-hidden rounded-full border-2 border-white/30 bg-white/10">
+            {author?.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={author.avatarUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-lg font-bold text-white/70">
+                {initials(author?.name)}
+              </div>
+            )}
+          </div>
+          <h4 className="text-lg font-bold leading-tight line-clamp-4">{cover.title}</h4>
+          {coverSubtitle && (
+            <p className="mt-2 text-xs leading-snug text-white/75 line-clamp-4">{coverSubtitle}</p>
+          )}
+          <div className="mt-auto border-t border-white/15 pt-3">
+            <p className="text-sm font-semibold leading-tight">{author?.name ?? "Seu nome"}</p>
+            <p className="text-[11px] text-white/60">{author?.role ?? "Sua área"}</p>
+          </div>
+        </article>
+
+        {/* Slides de conteúdo */}
+        {rest.map((slide, idx) => (
+          <article
+            key={idx}
+            className="flex aspect-[4/5] w-[230px] shrink-0 snap-start flex-col overflow-hidden rounded-2xl border bg-card shadow-sm sm:w-[260px]"
+          >
+            {/* Cabeçalho: referência do slide */}
+            <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-4 py-2">
+              <span className="truncate text-[10px] font-semibold uppercase tracking-wide text-primary/70">
+                {slide.heading || "Slide"}
+              </span>
+              <span className="text-[10px] font-bold tracking-widest text-muted-foreground/50">
+                {String(idx + 2).padStart(2, "0")}
+              </span>
+            </div>
+            {/* Corpo: título + conteúdo unidos */}
+            <div className="flex-1 space-y-2 overflow-y-auto p-4">
+              <h4 className="text-sm font-bold leading-snug text-foreground">{slide.title}</h4>
+              <div className="space-y-1.5 text-xs leading-relaxed text-muted-foreground">
+                {slide.body.map((b, i) =>
+                  b.type === "bullet" ? (
+                    <p key={i} className="flex gap-1.5">
+                      <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary/50" />
+                      <span>{renderInline(b.content)}</span>
+                    </p>
+                  ) : (
+                    <p key={i}>{renderInline(b.content)}</p>
+                  )
+                )}
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        O Slide 01 é a capa (sua foto, nome e cargo) — os textos vêm do post; ajuste no botão{" "}
+        <span className="font-medium">Editar texto</span> se precisar.
+      </p>
+    </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  accent,
+  warn,
+}: {
+  label: string;
+  value: number;
+  accent?: boolean;
+  warn?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-xl border bg-card px-4 py-3",
+        accent && "border-primary/20 bg-primary/[0.03]",
+        warn && "border-amber-300/50 bg-amber-50/50 dark:bg-amber-950/20"
+      )}
+    >
+      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{label}</p>
+      <p className="text-2xl font-bold tabular-nums mt-0.5">{value}</p>
+    </div>
+  );
+}
+
+function EmptyState({
+  isCollaborator,
+  areaLabel,
+  hasData,
+  isManager,
+  onRefresh,
+}: {
+  isCollaborator: boolean;
+  areaLabel: string;
+  hasData: boolean;
+  isManager: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-4 py-20 text-center rounded-2xl border border-dashed bg-muted/10">
+      <div className="rounded-full bg-muted/60 p-5">
+        <Newspaper className="h-10 w-10 text-muted-foreground/50" />
+      </div>
+      <div className="space-y-1 max-w-sm px-4">
+        <p className="font-medium text-foreground">
+          {hasData ? "Nenhum resultado neste filtro" : "Nenhuma notícia encontrada"}
+        </p>
+        <p className="text-sm text-muted-foreground">
+          {hasData
+            ? "Tente outra aba ou limpe os filtros de busca."
+            : isCollaborator
+              ? `Ainda não há conteúdos para ${areaLabel}. A equipe de marketing publicará em breve.`
+              : isManager
+                ? "Execute a busca RSS acima para importar notícias e gerar posts."
+                : "Aguarde a publicação de novos conteúdos pela equipe de marketing."}
+        </p>
+      </div>
+      <Button variant="outline" size="sm" className="gap-2" onClick={onRefresh}>
+        <RefreshCw className="h-4 w-4" />
+        Atualizar lista
+      </Button>
     </div>
   );
 }

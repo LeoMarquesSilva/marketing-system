@@ -45,7 +45,8 @@ import {
   type RequestComment,
 } from "@/lib/request-comments";
 import { Play, Pause, Square, MessageSquare, Edit3, AlertCircle, CheckCircle2, Flag, CalendarX2, Clock, Calendar, CalendarCheck, Layers, Circle, ChevronDown, ChevronUp, Link2, Trash2, FileText, RotateCcw } from "lucide-react";
-import { fetchViosTaskByMarketingRequestId, filterLeonardoFromResponsaveis, type ViosTask } from "@/lib/vios-tasks";
+import { fetchViosTasksByMarketingRequestId, filterLeonardoFromResponsaveis, formatViosProrrogacaoLabel, isViosTaskProrrogada, type ViosTask } from "@/lib/vios-tasks";
+import { ViosProrrogacaoBadge } from "@/components/vios/vios-prorrogacao-badge";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import type { RequestPriority } from "@/lib/marketing-requests";
 import { RequestChecklistSection } from "@/components/planner/request-checklist-section";
@@ -99,7 +100,7 @@ export function KanbanCardDetail({
   const [isAlteration, setIsAlteration] = useState(false);
   const [submitCommentLoading, setSubmitCommentLoading] = useState(false);
   const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([]);
-  const [viosTask, setViosTask] = useState<ViosTask | null>(null);
+  const [viosTasks, setViosTasks] = useState<ViosTask[]>([]);
   const [isSavingPriority, setIsSavingPriority] = useState(false);
   const [isSavingDeadline, setIsSavingDeadline] = useState(false);
   const [isSavingDeadlineTime, setIsSavingDeadlineTime] = useState(false);
@@ -138,13 +139,13 @@ export function KanbanCardDetail({
         fetchTimeEntriesForRequest(request.id),
         fetchCommentsForRequest(request.id),
         fetchActivityLog(request.id),
-        fetchViosTaskByMarketingRequestId(request.id),
+        fetchViosTasksByMarketingRequestId(request.id),
         fetchChecklistForRequest(request.id),
       ]);
       setTimeEntries(entries);
       setComments(commentsList);
       setActivityLog(log);
-      setViosTask(linkedVios);
+      setViosTasks(linkedVios);
       setChecklistItems(checklist);
     };
     load();
@@ -1098,77 +1099,105 @@ export function KanbanCardDetail({
           )}
 
           {/* Origem VIOS — quando a solicitação veio de uma tarefa VIOS */}
-          {viosTask && (
+          {viosTasks.length > 0 && (
             <section aria-labelledby="vios-origin-heading" className={sectionClass}>
               <h4 id="vios-origin-heading" className={sectionTitleClass}>Origem VIOS</h4>
-              <div className="space-y-3 text-sm">
-                <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-muted-foreground">
-                  <div>
-                    <span className="font-medium text-foreground/80">CI</span>
-                    <span className="ml-1.5 font-mono">{viosTask.vios_id}</span>
-                  </div>
-                  {viosTask.etiquetas_tarefa && (
-                    <div>
-                      <span className="font-medium text-foreground/80">Etiqueta</span>
-                      <span className="ml-1.5">{viosTask.etiquetas_tarefa}</span>
+              <div className="space-y-4">
+                {viosTasks.map((viosTask, index) => (
+                  <div
+                    key={viosTask.vios_id}
+                    className={cn("space-y-3 text-sm", index > 0 && "pt-4 border-t border-border/60")}
+                  >
+                    {viosTasks.length > 1 && (
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {viosTask.etiquetas_tarefa ?? "Tarefa"} · CI {viosTask.vios_id}
+                      </p>
+                    )}
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-muted-foreground">
+                      <div>
+                        <span className="font-medium text-foreground/80">CI</span>
+                        <span className="ml-1.5 font-mono">{viosTask.vios_id}</span>
+                      </div>
+                      {viosTask.ci_processo && (
+                        <div>
+                          <span className="font-medium text-foreground/80">Processo</span>
+                          <span className="ml-1.5 font-mono">{viosTask.ci_processo}</span>
+                        </div>
+                      )}
+                      {viosTask.etiquetas_tarefa && (
+                        <div>
+                          <span className="font-medium text-foreground/80">Etiqueta</span>
+                          <span className="ml-1.5">{viosTask.etiquetas_tarefa}</span>
+                        </div>
+                      )}
+                      {viosTask.area_processo && (
+                        <div>
+                          <span className="font-medium text-foreground/80">Área</span>
+                          <span className="ml-1.5">{viosTask.area_processo}</span>
+                        </div>
+                      )}
+                      <div>
+                        <span className="font-medium text-foreground/80">Responsáveis</span>
+                        <span className="ml-1.5">{filterLeonardoFromResponsaveis(viosTask.responsaveis) || "—"}</span>
+                      </div>
+                      {viosTask.data_limite && (
+                        <div>
+                          <span className="font-medium text-foreground/80">Data limite</span>
+                          <span className="ml-1.5">{format(new Date(viosTask.data_limite + "T12:00:00"), "dd/MM/yyyy", { locale: ptBR })}</span>
+                          {isViosTaskProrrogada(viosTask) && (
+                            <span className="ml-2 inline-flex align-middle">
+                              <ViosProrrogacaoBadge task={viosTask} />
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {isViosTaskProrrogada(viosTask) && viosTask.data_limite_anterior && (
+                        <div className="col-span-2 text-xs text-amber-700">
+                          {formatViosProrrogacaoLabel(viosTask)}
+                        </div>
+                      )}
+                      {viosTask.data_conclusao && (
+                        <div>
+                          <span className="font-medium text-foreground/80">Data conclusão</span>
+                          <span className="ml-1.5">{format(new Date(viosTask.data_conclusao), "dd/MM/yyyy", { locale: ptBR })}</span>
+                        </div>
+                      )}
                     </div>
-                  )}
-                  {viosTask.area_processo && (
-                    <div>
-                      <span className="font-medium text-foreground/80">Área</span>
-                      <span className="ml-1.5">{viosTask.area_processo}</span>
-                    </div>
-                  )}
-                  <div>
-                    <span className="font-medium text-foreground/80">Responsáveis</span>
-                    <span className="ml-1.5">{filterLeonardoFromResponsaveis(viosTask.responsaveis) || "—"}</span>
-                  </div>
-                  {viosTask.data_limite && (
-                    <div>
-                      <span className="font-medium text-foreground/80">Data limite</span>
-                      <span className="ml-1.5">{format(new Date(viosTask.data_limite + "T12:00:00"), "dd/MM/yyyy", { locale: ptBR })}</span>
-                    </div>
-                  )}
-                  {viosTask.data_conclusao && (
-                    <div>
-                      <span className="font-medium text-foreground/80">Data conclusão</span>
-                      <span className="ml-1.5">{format(new Date(viosTask.data_conclusao), "dd/MM/yyyy", { locale: ptBR })}</span>
-                    </div>
-                  )}
-                </div>
-                {viosTask.tarefa && (
-                  <div>
-                    <span className="font-medium text-foreground/80 block mb-1">Link do texto (Word)</span>
-                    {/^https?:\/\//i.test(viosTask.tarefa.trim()) ? (
-                      <a
-                        href={viosTask.tarefa.trim()}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 text-primary hover:underline break-all"
-                      >
-                        <FileText className="h-3.5 w-3.5 shrink-0" />
-                        {viosTask.tarefa.trim()}
-                      </a>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 break-all">
-                        <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        {viosTask.tarefa}
-                      </span>
+                    {viosTask.tarefa && (
+                      <div>
+                        <span className="font-medium text-foreground/80 block mb-1">Link do texto (Word)</span>
+                        {/^https?:\/\//i.test(viosTask.tarefa.trim()) ? (
+                          <a
+                            href={viosTask.tarefa.trim()}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-primary hover:underline break-all"
+                          >
+                            <FileText className="h-3.5 w-3.5 shrink-0" />
+                            {viosTask.tarefa.trim()}
+                          </a>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 break-all">
+                            <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                            {viosTask.tarefa}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {viosTask.descricao && (
+                      <div>
+                        <span className="font-medium text-foreground/80 block mb-1">Descrição</span>
+                        <p className="text-muted-foreground whitespace-pre-wrap">{viosTask.descricao}</p>
+                      </div>
+                    )}
+                    {viosTask.historico && (
+                      <div>
+                        <span className="font-medium text-foreground/80 block mb-1">Histórico</span>
+                        <p className="text-muted-foreground whitespace-pre-wrap">{viosTask.historico}</p>
+                      </div>
                     )}
                   </div>
-                )}
-                {viosTask.descricao && (
-                  <div>
-                    <span className="font-medium text-foreground/80 block mb-1">Descrição</span>
-                    <p className="text-muted-foreground whitespace-pre-wrap">{viosTask.descricao}</p>
-                  </div>
-                )}
-                {viosTask.historico && (
-                  <div>
-                    <span className="font-medium text-foreground/80 block mb-1">Histórico</span>
-                    <p className="text-muted-foreground whitespace-pre-wrap">{viosTask.historico}</p>
-                  </div>
-                )}
+                ))}
               </div>
             </section>
           )}

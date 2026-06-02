@@ -1,14 +1,22 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/utils/supabase/server";
-import { fetchContentRoteiros, updateRoteiroStatus } from "@/lib/content-roteiros";
+import {
+  getAuthenticatedContentUser,
+  resolveAreaFilter,
+} from "@/lib/content-access";
+import {
+  fetchContentRoteiros,
+  updateRoteiroStatus,
+  saveRoteiroEdit,
+  sendRoteiroToMarketing,
+  linkRoteiroViosTask,
+} from "@/lib/content-roteiros";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    const auth = await getAuthenticatedContentUser();
+    if (!auth) {
       return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
     }
 
@@ -17,7 +25,17 @@ export async function GET(request: Request) {
     const topic_id = searchParams.get("topic_id") ?? undefined;
     const area = searchParams.get("area") ?? undefined;
 
-    const roteiros = await fetchContentRoteiros({ status, topic_id, area });
+    const access = resolveAreaFilter(auth.profile, area);
+    if (access.denied) {
+      return NextResponse.json({ error: "Sem permissão para esta área." }, { status: 403 });
+    }
+
+    const roteiros = await fetchContentRoteiros({
+      status,
+      topic_id,
+      area: access.area,
+      areas: access.areas ?? undefined,
+    });
     return NextResponse.json(roteiros);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro ao listar roteiros.";
@@ -27,15 +45,15 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
+    const auth = await getAuthenticatedContentUser();
+    if (!auth) {
       return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
     }
 
     const body = await request.json().catch(() => ({}));
     const {
       id,
+      action,
       status,
       approved_by_id,
       approved_by_name,
@@ -43,8 +61,11 @@ export async function PATCH(request: Request) {
       alterations_notes,
       sent_for_manager_review,
       post,
+      edited_by_id,
+      edited_by_name,
     } = body as {
       id?: string;
+      action?: string;
       status?: string;
       approved_by_id?: string;
       approved_by_name?: string;
@@ -52,17 +73,56 @@ export async function PATCH(request: Request) {
       alterations_notes?: string | null;
       sent_for_manager_review?: boolean;
       post?: string;
+      edited_by_id?: string;
+      edited_by_name?: string;
     };
 
     if (!id) {
       return NextResponse.json({ error: "id é obrigatório." }, { status: 400 });
     }
-    if (
-      !status ||
-      !["aguardando_aprovacao", "aprovado", "rejeitado"].includes(status)
-    ) {
+
+    // Confirmação de edição do colaborador ("ficar com este texto").
+    if (action === "edit") {
+      if (typeof post !== "string" || !post.trim()) {
+        return NextResponse.json({ error: "post é obrigatório." }, { status: 400 });
+      }
+      const { has_alterations: altered } = await saveRoteiroEdit(id, post, {
+        id: edited_by_id ?? auth.profile?.id ?? null,
+        name: edited_by_name ?? auth.profile?.name ?? null,
+      });
+      return NextResponse.json({ success: true, has_alterations: altered });
+    }
+
+    // Vincular/desvincular tarefa do VIOS.
+    if (action === "link_vios") {
+      const viosTaskId = (body as { vios_task_id?: string | null }).vios_task_id ?? null;
+      await linkRoteiroViosTask(id, viosTaskId);
+      return NextResponse.json({ success: true });
+    }
+
+    // Envio ao marketing: cria card no Planner.
+    if (action === "send_mkt") {
+      const origin =
+        request.headers.get("origin") ??
+        (request.headers.get("host") ? `https://${request.headers.get("host")}` : undefined);
+      const result = await sendRoteiroToMarketing(
+        id,
+        { id: auth.profile?.id ?? null, name: auth.profile?.name ?? null },
+        origin
+      );
+      return NextResponse.json({ success: true, ...result });
+    }
+
+    const allowedStatuses = [
+      "aguardando_aprovacao",
+      "em_revisao",
+      "aprovado_revisor",
+      "aprovado",
+      "rejeitado",
+    ];
+    if (!status || !allowedStatuses.includes(status)) {
       return NextResponse.json(
-        { error: "status deve ser aguardando_aprovacao, aprovado ou rejeitado." },
+        { error: `status inválido.` },
         { status: 400 }
       );
     }
@@ -74,11 +134,14 @@ export async function PATCH(request: Request) {
       );
     }
 
+    const approverId = approved_by_id ?? auth.profile?.id ?? "";
+    const approverName = approved_by_name ?? auth.profile?.name ?? "";
+
     const approvalData =
-      status === "aprovado"
+      status === "aprovado" || status === "em_revisao"
         ? {
-            approved_by_id: approved_by_id!,
-            approved_by_name: approved_by_name!,
+            approved_by_id: approverId,
+            approved_by_name: approverName,
             has_alterations: has_alterations ?? false,
             alterations_notes: alterations_notes ?? null,
             sent_for_manager_review: sent_for_manager_review ?? false,
@@ -86,10 +149,22 @@ export async function PATCH(request: Request) {
           }
         : undefined;
 
+    // Edição avulsa do texto: quando vier um novo post fora do fluxo de aprovação.
+    const postOverride =
+      status !== "aprovado" && status !== "em_revisao" && typeof post === "string"
+        ? post
+        : undefined;
+
     await updateRoteiroStatus(
       id,
-      status as "aguardando_aprovacao" | "aprovado" | "rejeitado",
-      approvalData
+      status as
+        | "aguardando_aprovacao"
+        | "em_revisao"
+        | "aprovado_revisor"
+        | "aprovado"
+        | "rejeitado",
+      approvalData,
+      postOverride
     );
     return NextResponse.json({ success: true });
   } catch (err) {

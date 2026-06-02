@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -16,6 +16,8 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { useAuth } from "@/contexts/auth-context";
+import { supabase } from "@/utils/supabase/client";
+import { isContentCollaborator, isContentManager } from "@/lib/content-areas";
 
 const loginSchema = z.object({
   email: z.string().email("E-mail inválido"),
@@ -29,9 +31,30 @@ const signUpSchema = loginSchema.extend({
 type LoginFormValues = z.infer<typeof loginSchema>;
 type SignUpFormValues = z.infer<typeof signUpSchema>;
 
+async function resolvePostLoginPath(next?: string | null): Promise<string> {
+  if (next && next.startsWith("/") && !next.startsWith("//")) return next;
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user?.id) return "/";
+
+  const { data: profile } = await supabase
+    .from("users")
+    .select("department, role")
+    .eq("auth_id", session.user.id)
+    .maybeSingle();
+
+  if (isContentCollaborator(profile)) return "/conteudo/roteiros";
+  if (isContentManager(profile)) return "/";
+  return "/conteudo/roteiros";
+}
+
 export function LoginForm() {
   const { signIn, signUp } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextPath = searchParams.get("next");
   const [isSignUp, setIsSignUp] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -52,7 +75,8 @@ export function LoginForm() {
       setSubmitError(error);
       return;
     }
-    router.push("/");
+    const destination = await resolvePostLoginPath(nextPath);
+    router.push(destination);
     router.refresh();
   };
 
@@ -63,7 +87,8 @@ export function LoginForm() {
       setSubmitError(error);
       return;
     }
-    router.push("/");
+    const destination = await resolvePostLoginPath(nextPath);
+    router.push(destination);
     router.refresh();
   };
 
@@ -73,9 +98,9 @@ export function LoginForm() {
         <h1 className="text-xl font-bold text-foreground">
           {isSignUp ? "Criar conta" : "Bem-vindo"}
         </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {isSignUp ? "Preencha os dados para criar sua conta." : "Entre com seu e-mail e senha para continuar."}
-        </p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {isSignUp ? "Preencha os dados para criar sua conta." : "Entre com e-mail e senha para ver notícias e posts da sua área."}
+          </p>
       </div>
 
       {isSignUp ? (

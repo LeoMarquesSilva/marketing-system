@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { format, parseISO, startOfDay } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Table,
@@ -23,20 +23,29 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DatePickerField } from "@/components/ui/date-picker-field";
-import { Loader2, Pencil, Check, X, Send, CalendarX2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2, Pencil, Check, X, Send, CalendarX2, CheckCircle2, AlertCircle, Search, List, CalendarDays } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { AreaWithIcon } from "@/components/solicitacoes/area-with-icon";
 import type { ViosTask } from "@/lib/vios-tasks";
 import type { User } from "@/lib/users";
+import Link from "next/link";
 import {
   fetchViosTasks,
+  fetchViosTaskStats,
   updateViosTaskAssignee,
   updateViosTaskResponsaveis,
-  isProtocolar,
+  canSendToPlanner,
+  getViosEntregaSituacao,
+  isEntregueNoPrazo,
   filterLeonardoFromResponsaveis,
+  type ViosTaskStats,
+  type ViosEntregaSituacao,
 } from "@/lib/vios-tasks";
 import { EnviarViosAoPlannerDialog } from "@/components/vios/enviar-vios-ao-planner-dialog";
+import { ViosTarefasCalendar } from "@/components/vios/vios-tarefas-calendar";
+import { ViosTaskPairInfo } from "@/components/vios/vios-task-pair-info";
+import { ViosProrrogacaoBadge } from "@/components/vios/vios-prorrogacao-badge";
 import { cn } from "@/lib/utils";
-import { isPast } from "date-fns";
 
 const PAGE_SIZE = 50;
 
@@ -46,18 +55,26 @@ const STATUS_LABEL: Record<string, string> = {
   concluido: "Concluído",
 };
 
+const ETIQUETA_HINT: Record<string, string> = {
+  "PROVIDÊNCIA": "Ciência do agendamento (fluxo antigo — advogado toma ciência da data)",
+  PROTOCOLO: "Prazo do colaborador entregar o material para revisão",
+  REVISAR: "Revisão do gestor após o envio do material",
+};
+
+const SITUACAO_LABEL: Record<ViosEntregaSituacao, string> = {
+  aguardando: "No prazo",
+  atrasada: "Atrasada",
+  no_prazo: "Entregue no prazo",
+  entregue_atrasada: "Entregue com atraso",
+  sem_prazo: "Sem prazo",
+};
+
 function isAtrasada(task: ViosTask): boolean {
-  if (task.status === "concluido" || !task.data_limite) return false;
-  const limit = startOfDay(new Date(task.data_limite + "T12:00:00"));
-  return isPast(limit);
+  return getViosEntregaSituacao(task) === "atrasada";
 }
 
-/** Retorna se a entrega foi no prazo (data_conclusao <= data_limite). */
-function entregueNoPrazo(task: ViosTask): boolean | null {
-  if (!task.data_conclusao || !task.data_limite) return null;
-  const conclusao = startOfDay(parseISO(task.data_conclusao));
-  const limite = startOfDay(new Date(task.data_limite + "T12:00:00"));
-  return conclusao <= limite;
+function needsAssigneeLink(task: ViosTask): boolean {
+  return !task.assignee_id;
 }
 
 interface ViosTarefasTableProps {
@@ -85,8 +102,31 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
   const [assigneeFilter, setAssigneeFilter] = useState<string>("__all__");
   const [jaNoPlannerFilter, setJaNoPlannerFilter] = useState<string>("__all__");
   const [orderBy, setOrderBy] = useState<string>("data_limite_asc");
+  const [situacaoFilter, setSituacaoFilter] = useState<string>("__all__");
+  const [ciInput, setCiInput] = useState("");
+  const [ciFilter, setCiFilter] = useState("");
+  const [stats, setStats] = useState<ViosTaskStats | null>(null);
   const [promoteError, setPromoteError] = useState<string | null>(null);
   const [enviarPlannerTask, setEnviarPlannerTask] = useState<ViosTask | null>(null);
+  const [viewMode, setViewMode] = useState<"table" | "calendar">("table");
+
+  const calendarFilters = {
+    status: statusFilter || undefined,
+    etiqueta: etiquetaFilter === "__all__" ? undefined : etiquetaFilter,
+    area: areaFilter === "__all__" ? undefined : areaFilter,
+    dataFrom: dataFrom || undefined,
+    dataTo: dataTo || undefined,
+    assigneeId: assigneeFilter === "__all__" ? undefined : assigneeFilter,
+    jaNoPlanner:
+      jaNoPlannerFilter === "__all__"
+        ? undefined
+        : jaNoPlannerFilter === "sim",
+    situacaoEntrega:
+      situacaoFilter === "__all__"
+        ? undefined
+        : (situacaoFilter as ViosEntregaSituacao),
+    ci: ciFilter || undefined,
+  };
 
   const loadTasks = useCallback(
     async (offset: number, append: boolean) => {
@@ -105,12 +145,18 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
           jaNoPlannerFilter === "__all__"
             ? undefined
             : jaNoPlannerFilter === "sim",
+        situacaoEntrega:
+          situacaoFilter === "__all__"
+            ? undefined
+            : (situacaoFilter as ViosEntregaSituacao),
+        ci: ciFilter || undefined,
         orderBy: orderBy as "data_limite_asc" | "data_limite_desc" | "data_conclusao_desc" | "area",
       });
       setTasks((prev) => (append ? [...prev, ...nextTasks] : nextTasks));
       setTotal(nextTotal);
       setLoading(false);
       setLoadingMore(false);
+      fetchViosTaskStats().then(setStats);
     },
     [
       statusFilter,
@@ -121,18 +167,33 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
       assigneeFilter,
       jaNoPlannerFilter,
       orderBy,
+      situacaoFilter,
+      ciFilter,
     ]
   );
 
+  function handleCiSearch() {
+    setCiFilter(ciInput.trim());
+  }
+
+  function handleCiClear() {
+    setCiInput("");
+    setCiFilter("");
+  }
+
   useEffect(() => {
-    loadTasks(0, false);
-  }, [loadTasks]);
+    if (viewMode === "table") {
+      loadTasks(0, false);
+    } else {
+      fetchViosTaskStats().then(setStats);
+    }
+  }, [loadTasks, viewMode]);
 
   const hasMore = tasks.length < total;
 
   async function handleLink(task: ViosTask) {
     const userId = selectedUser[task.vios_id];
-    if (userId === undefined) return;
+    if (!userId) return;
     setLinkingId(task.vios_id);
     const { error } = await updateViosTaskAssignee(
       task.vios_id,
@@ -199,12 +260,25 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
 
   function handleEnviarPlannerSuccess(requestId: string) {
     if (enviarPlannerTask) {
+      const pairedId = enviarPlannerTask.paired_task?.vios_id;
       setTasks((prev) =>
-        prev.map((t) =>
-          t.vios_id === enviarPlannerTask.vios_id
-            ? { ...t, marketing_request_id: requestId }
-            : t
-        )
+        prev.map((t) => {
+          if (t.vios_id === enviarPlannerTask.vios_id) {
+            return { ...t, marketing_request_id: requestId };
+          }
+          if (pairedId && t.vios_id === pairedId) {
+            return { ...t, marketing_request_id: requestId };
+          }
+          if (t.paired_task?.vios_id === enviarPlannerTask.vios_id) {
+            return {
+              ...t,
+              paired_task: t.paired_task
+                ? { ...t.paired_task, marketing_request_id: requestId }
+                : null,
+            };
+          }
+          return t;
+        })
       );
     }
     setEnviarPlannerTask(null);
@@ -218,7 +292,99 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
         </div>
       )}
 
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+          {[
+            {
+              label: "Aguardando advogado",
+              value: stats.aguardando,
+              filter: "aguardando",
+              className: "border-slate-200 bg-slate-50/80",
+            },
+            {
+              label: "Atrasadas",
+              value: stats.atrasadas,
+              filter: "atrasada",
+              className: "border-red-200 bg-red-50/80",
+            },
+            {
+              label: "Entregue no prazo",
+              value: stats.concluidasNoPrazo,
+              filter: "no_prazo",
+              className: "border-emerald-200 bg-emerald-50/80",
+            },
+            {
+              label: "Entregue com atraso",
+              value: stats.concluidasAtrasadas,
+              filter: "entregue_atrasada",
+              className: "border-amber-200 bg-amber-50/80",
+            },
+            {
+              label: "Prontas p/ Planner",
+              value: stats.prontasPlanner,
+              filter: "__planner__",
+              className: "border-blue-200 bg-blue-50/80",
+            },
+            {
+              label: "Total",
+              value: stats.total,
+              filter: "__all__",
+              className: "border-white/60 bg-white/70",
+            },
+          ].map((card) => (
+            <button
+              key={card.label}
+              type="button"
+              onClick={() => {
+                if (card.filter === "__planner__") {
+                  setSituacaoFilter("__all__");
+                  setStatusFilter("");
+                  setJaNoPlannerFilter("nao");
+                  return;
+                }
+                setSituacaoFilter(card.filter);
+                if (card.filter === "no_prazo" || card.filter === "entregue_atrasada") {
+                  setStatusFilter("concluido");
+                } else if (card.filter === "atrasada" || card.filter === "aguardando") {
+                  setStatusFilter("");
+                }
+              }}
+              className={cn(
+                "rounded-xl border p-3 text-left transition hover:shadow-sm",
+                card.className,
+                situacaoFilter === card.filter && "ring-2 ring-primary/40"
+              )}
+            >
+              <p className="text-xs text-muted-foreground">{card.label}</p>
+              <p className="text-2xl font-bold tabular-nums">{card.value}</p>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-muted-foreground">CI:</span>
+          <Input
+            value={ciInput}
+            onChange={(e) => setCiInput(e.target.value.replace(/\D/g, ""))}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleCiSearch();
+            }}
+            placeholder="Número do CI"
+            className="h-8 w-[140px] font-mono text-sm"
+            inputMode="numeric"
+          />
+          <Button size="sm" variant="secondary" className="h-8" onClick={handleCiSearch}>
+            <Search className="h-4 w-4 mr-1" />
+            Pesquisar
+          </Button>
+          {ciFilter ? (
+            <Button size="sm" variant="ghost" className="h-8" onClick={handleCiClear}>
+              Limpar
+            </Button>
+          ) : null}
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium text-muted-foreground">Status:</span>
           <div className="flex gap-2">
@@ -284,9 +450,24 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__all__">Todos</SelectItem>
-              {users.filter((u) => u.is_active !== false).map((u) => (
+              {users.map((u) => (
                 <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-muted-foreground">Situação:</span>
+          <Select value={situacaoFilter} onValueChange={setSituacaoFilter}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Todas" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">Todas</SelectItem>
+              <SelectItem value="aguardando">Aguardando (no prazo)</SelectItem>
+              <SelectItem value="atrasada">Atrasadas</SelectItem>
+              <SelectItem value="no_prazo">Entregue no prazo</SelectItem>
+              <SelectItem value="entregue_atrasada">Entregue com atraso</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -303,6 +484,29 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
             </SelectContent>
           </Select>
         </div>
+        <div className="flex items-center gap-1 rounded-lg border border-border/60 p-0.5 bg-muted/30">
+          <Button
+            type="button"
+            variant={viewMode === "table" ? "default" : "ghost"}
+            size="sm"
+            className="h-8"
+            onClick={() => setViewMode("table")}
+          >
+            <List className="h-4 w-4 mr-1" />
+            Lista
+          </Button>
+          <Button
+            type="button"
+            variant={viewMode === "calendar" ? "default" : "ghost"}
+            size="sm"
+            className="h-8"
+            onClick={() => setViewMode("calendar")}
+          >
+            <CalendarDays className="h-4 w-4 mr-1" />
+            Calendário
+          </Button>
+        </div>
+        {viewMode === "table" && (
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-muted-foreground">Ordenar:</span>
           <Select value={orderBy} onValueChange={setOrderBy}>
@@ -317,12 +521,20 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
             </SelectContent>
           </Select>
         </div>
+        )}
+        {viewMode === "table" && (
         <span className="text-sm text-muted-foreground">
           {tasks.length} de {total} tarefa(s)
         </span>
+        )}
       </div>
 
-      {loading ? (
+      {viewMode === "calendar" ? (
+        <ViosTarefasCalendar
+          filters={calendarFilters}
+          onEnviarPlanner={handleOpenEnviarPlanner}
+        />
+      ) : loading ? (
         <div className="rounded-2xl border border-white/60 bg-white/70 backdrop-blur-sm p-12 flex items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
@@ -338,14 +550,20 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
               <TableHead className="min-w-[180px]">Responsáveis (advogado)</TableHead>
               <TableHead>Data limite</TableHead>
               <TableHead>Entregue em</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="min-w-[220px]">Vincular a usuário</TableHead>
+              <TableHead>Concluiu</TableHead>
+              <TableHead>Situação</TableHead>
+              <TableHead>Status VIOS</TableHead>
+              <TableHead className="min-w-[200px]">Colaborador</TableHead>
               <TableHead className="w-[140px]">Planner</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {tasks.map((task) => {
               const atrasada = isAtrasada(task);
+              const situacao = getViosEntregaSituacao(task);
+              const etiquetaHint = task.etiquetas_tarefa
+                ? ETIQUETA_HINT[task.etiquetas_tarefa] ?? task.etiquetas_tarefa
+                : "";
               return (
               <TableRow
                 key={task.id}
@@ -354,11 +572,17 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
                   atrasada && "bg-red-50/50"
                 )}
               >
-                <TableCell className="font-mono text-sm">{task.vios_id}</TableCell>
+                <TableCell>
+                  <div className="font-mono text-sm">{task.vios_id}</div>
+                  {task.ci_processo && (
+                    <p className="text-[10px] text-muted-foreground">Proc. {task.ci_processo}</p>
+                  )}
+                  <ViosTaskPairInfo task={task} compact className="mt-0.5" />
+                </TableCell>
                 <TableCell>
                   <AreaWithIcon area={task.area_processo ?? "—"} />
                 </TableCell>
-                <TableCell className="max-w-[160px] truncate" title={task.etiquetas_tarefa ?? ""}>
+                <TableCell className="max-w-[160px] truncate" title={etiquetaHint}>
                   {task.etiquetas_tarefa ?? "—"}
                 </TableCell>
                 <TableCell className="max-w-[140px] truncate" title={task.comentarios ?? ""}>
@@ -418,12 +642,15 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
                 </TableCell>
                 <TableCell className={cn("whitespace-nowrap", atrasada && "text-red-600 font-medium")}>
                   {task.data_limite ? (
-                    <span className="flex items-center gap-1.5">
-                      {atrasada && <CalendarX2 className="h-4 w-4 shrink-0" />}
-                      {format(new Date(task.data_limite + "T12:00:00"), "dd/MM/yyyy", {
-                        locale: ptBR,
-                      })}
-                    </span>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="flex items-center gap-1.5">
+                        {atrasada && <CalendarX2 className="h-4 w-4 shrink-0" />}
+                        {format(new Date(task.data_limite + "T12:00:00"), "dd/MM/yyyy", {
+                          locale: ptBR,
+                        })}
+                      </span>
+                      <ViosProrrogacaoBadge task={task} compact />
+                    </div>
                   ) : (
                     "—"
                   )}
@@ -431,10 +658,10 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
                 <TableCell>
                   {task.data_conclusao ? (
                     <span className="flex items-center gap-1.5">
-                      {entregueNoPrazo(task) === true && (
+                      {isEntregueNoPrazo(task) === true && (
                         <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" aria-label="No prazo" />
                       )}
-                      {entregueNoPrazo(task) === false && (
+                      {isEntregueNoPrazo(task) === false && (
                         <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" aria-label="Atrasado" />
                       )}
                       {format(parseISO(task.data_conclusao), "dd/MM/yyyy", { locale: ptBR })}
@@ -443,6 +670,23 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
                   ) : (
                     "—"
                   )}
+                </TableCell>
+                <TableCell className="max-w-[160px] truncate" title={task.usuario_concluiu ?? ""}>
+                  {task.usuario_concluiu ?? "—"}
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant={
+                      situacao === "atrasada" || situacao === "entregue_atrasada"
+                        ? "destructive"
+                        : situacao === "no_prazo"
+                          ? "default"
+                          : "secondary"
+                    }
+                    className={cn(situacao === "no_prazo" && "bg-emerald-600 hover:bg-emerald-700")}
+                  >
+                    {SITUACAO_LABEL[situacao]}
+                  </Badge>
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -468,55 +712,83 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
                   </div>
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="min-w-[200px] max-w-[280px] shrink">
-                      <UserSelectSearch
-                        users={users}
-                        value={selectedUser[task.vios_id] ?? task.assignee_id ?? ""}
-                        onValueChange={(userId) =>
-                          setSelectedUser((prev) => ({
-                            ...prev,
-                            [task.vios_id]: userId,
-                          }))
-                        }
-                        placeholder="Pesquisar ou selecionar advogado..."
-                      />
+                  {needsAssigneeLink(task) ? (
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="min-w-[200px] max-w-[280px] shrink">
+                        <UserSelectSearch
+                          users={users}
+                          value={selectedUser[task.vios_id] ?? ""}
+                          onValueChange={(userId) =>
+                            setSelectedUser((prev) => ({
+                              ...prev,
+                              [task.vios_id]: userId,
+                            }))
+                          }
+                          placeholder={
+                            filterLeonardoFromResponsaveis(task.responsaveis)
+                              ? `Vincular: ${(filterLeonardoFromResponsaveis(task.responsaveis) ?? "").split(/\s*\|\s*/)[0]?.trim()}`
+                              : "Colaborador não encontrado — selecione"
+                          }
+                        />
+                      </div>
+                      {selectedUser[task.vios_id] ? (
+                        <Button
+                          size="sm"
+                          className="shrink-0"
+                          onClick={() => handleLink(task)}
+                          disabled={linkingId === task.vios_id}
+                        >
+                          {linkingId === task.vios_id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            "Salvar"
+                          )}
+                        </Button>
+                      ) : null}
                     </div>
-                    {(selectedUser[task.vios_id] !== undefined ||
-                      task.assignee_id) && (
-                      <Button
-                        size="sm"
-                        className="shrink-0"
-                        onClick={() => handleLink(task)}
-                        disabled={linkingId === task.vios_id}
-                      >
-                        {linkingId === task.vios_id ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          "Salvar"
-                        )}
-                      </Button>
-                    )}
-                  </div>
+                  ) : (
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Avatar className="h-7 w-7 shrink-0">
+                        <AvatarImage
+                          src={task.assignee_avatar_url || undefined}
+                          alt={task.assignee_name ?? ""}
+                        />
+                        <AvatarFallback className="text-[10px]">
+                          {(task.assignee_name ?? "?")
+                            .split(" ")
+                            .map((w) => w[0])
+                            .slice(0, 2)
+                            .join("")
+                            .toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="text-sm truncate" title={task.assignee_name ?? ""}>
+                        {task.assignee_name ?? "—"}
+                      </span>
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell>
                   {task.marketing_request_id ? (
-                    <span className="text-xs text-emerald-600 font-medium">
+                    <Link
+                      href="/planner"
+                      className="text-xs text-emerald-600 font-medium hover:underline"
+                    >
                       No Planner
-                    </span>
-                  ) : isProtocolar(task) ? (
+                    </Link>
+                  ) : canSendToPlanner(task) ? (
                     <Button
                       size="sm"
                       variant="outline"
                       onClick={() => handleOpenEnviarPlanner(task)}
-                      title="Enviar esta tarefa para o Planner do marketing"
+                      title="Criar solicitação no Planner com os dados do e-mail"
                     >
                       <Send className="h-3.5 w-3.5 mr-1" />
                       Enviar
                     </Button>
                   ) : (
-                    <span className="text-xs text-muted-foreground">
-                      Etiqueta deve ser PROTOCOLAR
+                    <span className="text-xs text-muted-foreground" title="Aguardando revisão do gestor (REVISAR concluída)">
+                      Aguardando revisão
                     </span>
                   )}
                 </TableCell>
@@ -533,7 +805,7 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
       </div>
       )}
 
-      {!loading && hasMore && (
+      {!loading && viewMode === "table" && hasMore && (
         <div className="flex justify-center pt-2">
           <Button
             variant="outline"

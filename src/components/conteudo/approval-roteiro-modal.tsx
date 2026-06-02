@@ -26,6 +26,8 @@ interface ApprovalRoteiroModalProps {
   onOpenChange: (open: boolean) => void;
   roteiro: ContentRoteiro | null;
   users: User[];
+  currentUserId?: string;
+  currentUserName?: string;
   onApprove: (data: {
     approved_by_id: string;
     approved_by_name: string;
@@ -41,6 +43,8 @@ export function ApprovalRoteiroModal({
   onOpenChange,
   roteiro,
   users,
+  currentUserId,
+  currentUserName,
   onApprove,
 }: ApprovalRoteiroModalProps) {
   const [approvedById, setApprovedById] = useState("");
@@ -54,11 +58,12 @@ export function ApprovalRoteiroModal({
   useEffect(() => {
     if (roteiro && open) {
       setEditedPost(roteiro.post);
+      if (currentUserId) setApprovedById(currentUserId);
     }
-  }, [roteiro, open]);
+  }, [roteiro, open, currentUserId]);
 
   const resetForm = () => {
-    setApprovedById("");
+    setApprovedById(currentUserId ?? "");
     setHasAlterations(false);
     setAlterationsNotes("");
     setSentForManagerReview(false);
@@ -73,8 +78,12 @@ export function ApprovalRoteiroModal({
 
   const handleApprove = async () => {
     if (!roteiro) return;
-    const selectedUser = users.find((u) => u.id === approvedById);
-    if (!selectedUser) {
+
+    const approverId = currentUserId ?? approvedById;
+    const approverFromList = users.find((u) => u.id === approverId);
+    const approverName = currentUserName ?? approverFromList?.name;
+
+    if (!approverId || !approverName) {
       setError("Selecione o advogado que está aprovando.");
       return;
     }
@@ -83,8 +92,8 @@ export function ApprovalRoteiroModal({
     setError(null);
     try {
       await onApprove({
-        approved_by_id: selectedUser.id,
-        approved_by_name: selectedUser.name,
+        approved_by_id: approverId,
+        approved_by_name: approverName,
         has_alterations: hasAlterations,
         alterations_notes: hasAlterations && alterationsNotes.trim() ? alterationsNotes.trim() : null,
         sent_for_manager_review: sentForManagerReview,
@@ -99,7 +108,7 @@ export function ApprovalRoteiroModal({
   };
 
   const selectedUser = users.find((u) => u.id === approvedById);
-  const canSubmit = !!selectedUser && !saving;
+  const canSubmit = !!(currentUserId || selectedUser) && !saving;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -120,13 +129,22 @@ export function ApprovalRoteiroModal({
             )}
 
             <div className="space-y-2">
-              <Label>Advogado que aprova (solicitante)</Label>
-              <UserSelectSearch
-                users={users}
-                value={approvedById}
-                onValueChange={setApprovedById}
-                placeholder="Selecione o advogado"
-              />
+              <Label>Advogado que aprova</Label>
+              {currentUserId && currentUserName ? (
+                <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">
+                  {currentUserName}
+                  <span className="text-muted-foreground text-xs block mt-0.5">
+                    Você está aprovando como colaborador logado
+                  </span>
+                </p>
+              ) : (
+                <UserSelectSearch
+                  users={users}
+                  value={approvedById}
+                  onValueChange={setApprovedById}
+                  placeholder="Selecione o advogado"
+                />
+              )}
             </div>
 
             <div className="flex items-center gap-2">

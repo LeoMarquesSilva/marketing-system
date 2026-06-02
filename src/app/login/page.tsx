@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { Suspense } from "react";
 import { LoginForm } from "@/components/auth/login-form";
 
 export default function LoginPage() {
@@ -22,7 +23,7 @@ export default function LoginPage() {
             priority
           />
           <p className="text-sm text-white/40 max-w-xs leading-relaxed">
-            Portal interno de gestão e acompanhamento de demandas de marketing.
+            Acesse notícias da sua área, revise posts em carrossel e aprove conteúdos para redes sociais.
           </p>
         </div>
       </div>
@@ -42,7 +43,9 @@ export default function LoginPage() {
         </div>
 
         <div className="w-full max-w-sm">
-          <LoginForm />
+          <Suspense fallback={<div className="text-sm text-muted-foreground animate-pulse">Carregando...</div>}>
+            <LoginForm />
+          </Suspense>
         </div>
 
         <p className="mt-8 text-xs text-muted-foreground/50">

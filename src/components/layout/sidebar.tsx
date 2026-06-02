@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
+import { isContentCollaborator } from "@/lib/content-areas";
+import { resolveAllowedSections } from "@/lib/access-control";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { fetchCommentStats } from "@/lib/request-comments";
 import { fetchMarketingRequests } from "@/lib/marketing-requests";
@@ -39,10 +41,30 @@ const baseNavItems = [
   { href: "/usuarios", icon: Users, label: "Usuários" },
 ];
 
+const collaboratorNavItems = [
+  { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteúdo para Post" },
+];
+
 const adminNavItems = [
   { href: "/admin", icon: Settings, label: "Configurações" },
   { href: "/admin/conteudo-temas", icon: Newspaper, label: "Temas RSS" },
 ];
+
+function getNavItems(
+  profile: { role?: string | null; department?: string | null; permissions?: string[] | null } | null
+) {
+  // Permissões explícitas (definidas pelo admin) têm prioridade.
+  const allowed = resolveAllowedSections(profile);
+  if (allowed) {
+    const catalog = [...baseNavItems, ...adminNavItems];
+    return catalog.filter((i) => allowed.includes(i.href));
+  }
+  // Comportamento legado.
+  if (isContentCollaborator(profile)) {
+    return collaboratorNavItems;
+  }
+  return [...baseNavItems, ...(profile?.role === "admin" ? adminNavItems : [])];
+}
 
 function getInitials(name: string) {
   return name
@@ -111,7 +133,7 @@ export function Sidebar() {
 
       {/* Nav items */}
       <nav className="flex flex-1 flex-col items-center gap-1 w-full px-3" aria-label="Navegação principal">
-        {[...baseNavItems, ...(profile?.role === "admin" ? adminNavItems : [])].map((item) => {
+        {getNavItems(profile).map((item) => {
           const isActive =
             pathname === item.href ||
             (item.href !== "/" && pathname.startsWith(item.href));
@@ -210,7 +232,7 @@ export function Sidebar() {
 
     {/* Mobile bottom navigation */}
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around bg-gradient-to-r from-[#101f2e] to-[#0a141c] border-t border-white/[0.06] h-16 px-2 shadow-[0_-4px_20px_rgba(0,0,0,0.2)]">
-      {[...baseNavItems, ...(profile?.role === "admin" ? adminNavItems : [])].slice(0, 5).map((item) => {
+      {getNavItems(profile).slice(0, 5).map((item) => {
         const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href + "/"));
         return (
           <Link

@@ -21,25 +21,19 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import Link from "next/link";
-import { Loader2, Plus, Pencil, Trash2, AlertCircle, Play, Newspaper } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, AlertCircle, Play, Newspaper, Search, ExternalLink } from "lucide-react";
 import { AREAS } from "@/lib/constants";
+import {
+  keywordsToRssQuery,
+  rssQueryToKeywords,
+  rssQueryToExcludeKeywords,
+} from "@/lib/content-rss";
 
-/** Converte palavras-chave (vírgula ou quebra de linha) em query RSS do Google News. */
-function keywordsToRssQuery(keywords: string): string {
-  const terms = keywords
-    .split(/[,;\n]+/)
-    .map((t) => t.trim())
-    .filter(Boolean);
-  if (terms.length === 0) return "";
-  return terms.map((t) => `"${t}"`).join(" OR ");
-}
-
-/** Extrai palavras-chave de uma query RSS salva para exibir no campo simples. */
-function rssQueryToKeywords(rssQuery: string): string {
-  if (!rssQuery.trim()) return "";
-  const matches = rssQuery.match(/"([^"]+)"/g);
-  if (!matches) return rssQuery;
-  return matches.map((m) => m.slice(1, -1)).join(", ");
+interface PreviewItem {
+  title: string;
+  link: string | null;
+  contentSnippet: string | null;
+  date: string | null;
 }
 
 interface ContentTopic {
@@ -61,10 +55,15 @@ export function ConteudoTemasClient() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [generatingTopicId, setGeneratingTopicId] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewResult, setPreviewResult] = useState<
+    { matched: number; total: number; items: PreviewItem[] } | null
+  >(null);
   const [form, setForm] = useState({
     name: "",
     rss_query: "",
     keywords: "",
+    exclude_keywords: "",
     legal_area: "",
     is_active: true,
     months_back: 4,
@@ -112,17 +111,60 @@ export function ConteudoTemasClient() {
       name: "",
       rss_query: "",
       keywords: "",
+      exclude_keywords: "",
       legal_area: "",
       is_active: true,
       months_back: 4,
       item_limit: 20,
     });
+    setPreviewResult(null);
     setEditingTopic(null);
     setIsCreateOpen(false);
   };
 
+  const buildQuery = () =>
+    form.keywords
+      ? keywordsToRssQuery(form.keywords, form.exclude_keywords)
+      : form.rss_query;
+
+  const handlePreview = async () => {
+    const rssQuery = buildQuery();
+    if (!rssQuery) {
+      setError("Informe palavras-chave para testar a busca.");
+      return;
+    }
+    setPreviewing(true);
+    setPreviewResult(null);
+    setError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setError("Sessão expirada. Faça login novamente.");
+        return;
+      }
+      const res = await fetch("/api/admin/content-topics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "preview",
+          rss_query: rssQuery,
+          months_back: form.months_back,
+          accessToken: session.access_token,
+          refreshToken: session.refresh_token ?? undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Erro ao testar busca");
+      setPreviewResult(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao testar busca");
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
   const handleCreate = async () => {
-    const rssQuery = form.keywords ? keywordsToRssQuery(form.keywords) : form.rss_query;
+    const rssQuery = buildQuery();
     if (!form.name || !rssQuery || !form.legal_area) {
       setError("Preencha nome, palavras-chave e área.");
       return;
@@ -161,7 +203,7 @@ export function ConteudoTemasClient() {
   };
 
   const handleUpdate = async () => {
-    const rssQuery = form.keywords ? keywordsToRssQuery(form.keywords) : form.rss_query;
+    const rssQuery = buildQuery();
     if (!editingTopic || !form.name || !rssQuery || !form.legal_area) {
       setError("Preencha todos os campos.");
       return;
@@ -268,11 +310,13 @@ export function ConteudoTemasClient() {
 
   const openEdit = (topic: ContentTopic) => {
     setEditingTopic(topic);
+    setPreviewResult(null);
     const keywords = rssQueryToKeywords(topic.rss_query);
     setForm({
       name: topic.name,
       rss_query: topic.rss_query,
       keywords: keywords || topic.rss_query,
+      exclude_keywords: rssQueryToExcludeKeywords(topic.rss_query),
       legal_area: topic.legal_area,
       is_active: topic.is_active,
       months_back: topic.months_back ?? 4,
@@ -405,6 +449,20 @@ export function ConteudoTemasClient() {
                 Cada termo será buscado no Google News. Separe por vírgula ou quebra de linha.
               </p>
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="exclude_keywords">Excluir termos (opcional)</Label>
+              <textarea
+                id="exclude_keywords"
+                value={form.exclude_keywords}
+                onChange={(e) => setForm((p) => ({ ...p, exclude_keywords: e.target.value }))}
+                placeholder="Ruídos a remover dos resultados. Ex: polícia, prisão, tráfico, futebol"
+                rows={2}
+                className="w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 resize-y"
+              />
+              <p className="text-xs text-muted-foreground">
+                Notícias contendo esses termos serão filtradas pelo Google News.
+              </p>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="months_back">Meses para trás</Label>
@@ -469,6 +527,66 @@ export function ConteudoTemasClient() {
                 <Label htmlFor="is_active">Ativo</Label>
               </div>
             )}
+            <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Teste a busca antes de salvar/gerar
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={handlePreview}
+                  disabled={previewing}
+                >
+                  {previewing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Search className="h-3.5 w-3.5" />
+                  )}
+                  Testar busca
+                </Button>
+              </div>
+              {previewResult && (
+                <div className="space-y-2">
+                  <p className="text-[11px] text-muted-foreground">
+                    {previewResult.matched} notícia(s) no período • {previewResult.total} retornadas pelo feed
+                  </p>
+                  {previewResult.items.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic">
+                      Nenhuma notícia no período. Ajuste os termos ou aumente os meses.
+                    </p>
+                  ) : (
+                    <ul className="max-h-48 space-y-1.5 overflow-auto">
+                      {previewResult.items.map((item, i) => (
+                        <li key={i} className="text-xs leading-snug">
+                          <div className="flex items-start gap-1.5">
+                            <span className="flex-1">{item.title}</span>
+                            {item.link && (
+                              <a
+                                href={item.link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="shrink-0 text-muted-foreground hover:text-foreground"
+                                title="Abrir notícia"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
+                          </div>
+                          {item.date && (
+                            <span className="text-[10px] text-muted-foreground">
+                              {new Date(item.date).toLocaleDateString("pt-BR")}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={resetForm}>

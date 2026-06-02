@@ -20,11 +20,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Loader2, Pencil, Trash2, UserX, UserCheck } from "lucide-react";
+import { Plus, Loader2, Pencil, Trash2, UserX, UserCheck, KeyRound } from "lucide-react";
 import type { User } from "@/lib/users";
 import { createUser, updateUser, deleteUser, toggleUserActive } from "@/lib/users";
 import type { Area } from "@/lib/areas";
 import { UserFormDialog, type UserFormValues } from "./user-form-dialog";
+import { UserAccessDialog } from "./user-access-dialog";
+import { cn } from "@/lib/utils";
 
 function getInitials(name: string) {
   return name
@@ -50,7 +52,13 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<User | null>(null);
+  const [accessUser, setAccessUser] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  function handleAccessUpdated(id: string, patch: Partial<User>) {
+    setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...patch } : u)));
+    setAccessUser((prev) => (prev && prev.id === id ? { ...prev, ...patch } : prev));
+  }
 
   async function handleCreate(values: UserFormValues) {
     setError(null);
@@ -157,6 +165,13 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
         onSubmit={handleCreate}
         submitLabel="Adicionar"
         error={error}
+      />
+
+      <UserAccessDialog
+        open={!!accessUser}
+        onOpenChange={(open) => !open && setAccessUser(null)}
+        user={accessUser}
+        onUpdated={handleAccessUpdated}
       />
 
       <UserFormDialog
@@ -267,6 +282,18 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          "h-8 w-8",
+                          user.auth_id ? "text-emerald-600" : "text-muted-foreground"
+                        )}
+                        onClick={() => { setError(null); setAccessUser(user); }}
+                        title="Gerenciar acesso e permissões"
+                      >
+                        <KeyRound className="h-4 w-4" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon"
