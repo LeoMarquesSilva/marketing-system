@@ -11,8 +11,12 @@ import {
   Bookmark,
   Eye,
   TrendingUp,
+  TrendingDown,
   Newspaper,
   ArrowRight,
+  Images,
+  Film,
+  Image as ImageIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
@@ -20,24 +24,49 @@ import { ptBR } from "date-fns/locale";
 import type { InstagramPost } from "@/lib/instagram-posts";
 import { computeEngagementActionsFromPost } from "@/lib/instagram-engagement";
 
+export interface OfficeStats {
+  posts: number;
+  avgReach: number;
+  avgActions: number;
+  rate: number;
+}
+
 interface MeuInstagramClientProps {
   userName: string;
   posts: InstagramPost[];
+  office: OfficeStats;
 }
 
 function nf(n: number) {
-  return n.toLocaleString("pt-BR");
+  return Math.round(n).toLocaleString("pt-BR");
 }
 
+function mediaInfo(post: InstagramPost): { label: string; icon: typeof Images } {
+  const pt = (post.media_product_type ?? "").toUpperCase();
+  const mt = (post.media_type ?? "").toUpperCase();
+  if (pt === "REELS" || mt === "VIDEO") return { label: "Reel", icon: Film };
+  if (mt === "CAROUSEL_ALBUM") return { label: "Carrossel", icon: Images };
+  return { label: "Imagem", icon: ImageIcon };
+}
+
+/** Card de métrica com comparação à média do escritório. */
 function StatCard({
   label,
   value,
+  officeValue,
+  userNum,
+  officeNum,
   accent,
 }: {
   label: string;
   value: string;
+  officeValue?: string;
+  userNum?: number;
+  officeNum?: number;
   accent?: boolean;
 }) {
+  const hasCompare = userNum !== undefined && officeNum !== undefined && officeNum > 0;
+  const above = hasCompare && (userNum as number) >= (officeNum as number);
   return (
     <div
       className={cn(
@@ -47,6 +76,20 @@ function StatCard({
     >
       <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="mt-1 text-2xl font-bold tabular-nums">{value}</p>
+      {officeValue !== undefined && (
+        <p className="mt-1 flex items-center gap-1 text-[11px]">
+          {hasCompare &&
+            (above ? (
+              <TrendingUp className="h-3 w-3 text-emerald-600" />
+            ) : (
+              <TrendingDown className="h-3 w-3 text-amber-600" />
+            ))}
+          <span className={cn(hasCompare ? (above ? "text-emerald-600" : "text-amber-600") : "text-muted-foreground")}>
+            {hasCompare ? (above ? "acima" : "abaixo") + " da média" : "média"}
+          </span>
+          <span className="text-muted-foreground">· escritório {officeValue}</span>
+        </p>
+      )}
     </div>
   );
 }
@@ -60,7 +103,7 @@ function Metric({ icon: Icon, value }: { icon: typeof Heart; value: number }) {
   );
 }
 
-export function MeuInstagramClient({ userName, posts }: MeuInstagramClientProps) {
+export function MeuInstagramClient({ userName, posts, office }: MeuInstagramClientProps) {
   const [showAll, setShowAll] = useState(false);
 
   const sorted = useMemo(
@@ -72,11 +115,16 @@ export function MeuInstagramClient({ userName, posts }: MeuInstagramClientProps)
     [posts]
   );
 
-  const summary = useMemo(() => {
+  const my = useMemo(() => {
+    const count = posts.length;
     const reach = posts.reduce((s, p) => s + (p.reach ?? 0), 0);
     const actions = posts.reduce((s, p) => s + computeEngagementActionsFromPost(p), 0);
-    const rate = reach > 0 ? (actions / reach) * 100 : 0;
-    return { count: posts.length, reach, actions, rate };
+    return {
+      count,
+      avgReach: count > 0 ? reach / count : 0,
+      avgActions: count > 0 ? actions / count : 0,
+      rate: reach > 0 ? (actions / reach) * 100 : 0,
+    };
   }, [posts]);
 
   const best = useMemo(() => {
@@ -103,7 +151,7 @@ export function MeuInstagramClient({ userName, posts }: MeuInstagramClientProps)
           </p>
           <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Olá, {firstName}</h1>
           <p className="mt-1.5 max-w-xl text-sm text-muted-foreground">
-            Acompanhe como os seus posts performaram no Instagram do escritório.
+            Acompanhe como os seus posts performaram — comparado à média do escritório.
           </p>
         </div>
         <Link href="/conteudo/roteiros">
@@ -136,19 +184,42 @@ export function MeuInstagramClient({ userName, posts }: MeuInstagramClientProps)
         </div>
       ) : (
         <>
-          {/* Resumo */}
+          {/* Resumo com comparação ao escritório */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatCard label="Posts" value={nf(summary.count)} />
-            <StatCard label="Alcance total" value={nf(summary.reach)} accent />
-            <StatCard label="Interações" value={nf(summary.actions)} />
-            <StatCard label="Engajamento médio" value={`${summary.rate.toFixed(1)}%`} />
+            <StatCard
+              label="Seus posts"
+              value={nf(my.count)}
+              officeValue={`${nf(office.posts)} no total`}
+            />
+            <StatCard
+              label="Alcance médio"
+              value={nf(my.avgReach)}
+              officeValue={nf(office.avgReach)}
+              userNum={my.avgReach}
+              officeNum={office.avgReach}
+              accent
+            />
+            <StatCard
+              label="Interações médias"
+              value={nf(my.avgActions)}
+              officeValue={nf(office.avgActions)}
+              userNum={my.avgActions}
+              officeNum={office.avgActions}
+            />
+            <StatCard
+              label="Engajamento médio"
+              value={`${my.rate.toFixed(1)}%`}
+              officeValue={`${office.rate.toFixed(1)}%`}
+              userNum={my.rate}
+              officeNum={office.rate}
+            />
           </div>
 
           {/* Destaque */}
           {best && (
             <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
               <div className="flex flex-col gap-4 p-4 sm:flex-row sm:p-5">
-                <PostThumb post={best.post} className="h-40 w-full sm:h-32 sm:w-32" />
+                <PostThumb post={best.post} className="aspect-square w-full sm:h-32 sm:w-32" />
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="mb-1 inline-flex w-fit items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
                     <TrendingUp className="h-3 w-3" />
@@ -187,7 +258,7 @@ export function MeuInstagramClient({ userName, posts }: MeuInstagramClientProps)
           {/* Lista de posts */}
           <div>
             <h2 className="mb-3 text-sm font-semibold">Seus posts</h2>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {visible.map((p) => {
                 const rate = p.reach ? (computeEngagementActionsFromPost(p) / p.reach) * 100 : 0;
                 return (
@@ -195,15 +266,13 @@ export function MeuInstagramClient({ userName, posts }: MeuInstagramClientProps)
                     key={p.id}
                     className="group flex flex-col overflow-hidden rounded-2xl border bg-card shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
                   >
-                    <PostThumb post={p} className="h-44 w-full" />
-                    <div className="flex flex-1 flex-col gap-2 p-4">
+                    <PostThumb post={p} className="aspect-square w-full" withBadge />
+                    <div className="flex flex-1 flex-col gap-2 p-3.5">
                       <p className="text-[11px] text-muted-foreground">
                         {p.published_at
                           ? format(new Date(p.published_at), "dd MMM yyyy", { locale: ptBR })
                           : "—"}
-                        {(p.areas?.[0] || p.area) && (
-                          <> · {p.areas?.[0] ?? p.area}</>
-                        )}
+                        {(p.areas?.[0] || p.area) && <> · {p.areas?.[0] ?? p.area}</>}
                       </p>
                       <p className="line-clamp-2 text-sm leading-snug">
                         {p.caption?.split("\n")[0] || "Post sem legenda"}
@@ -211,7 +280,6 @@ export function MeuInstagramClient({ userName, posts }: MeuInstagramClientProps)
                       <div className="mt-auto flex flex-wrap items-center gap-3 pt-2">
                         <Metric icon={Eye} value={p.reach} />
                         <Metric icon={Heart} value={p.likes} />
-                        <Metric icon={MessageCircle} value={p.comments} />
                         <span className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-primary">
                           <TrendingUp className="h-3.5 w-3.5" />
                           {rate.toFixed(1)}%
@@ -236,10 +304,19 @@ export function MeuInstagramClient({ userName, posts }: MeuInstagramClientProps)
   );
 }
 
-function PostThumb({ post, className }: { post: InstagramPost; className?: string }) {
+function PostThumb({
+  post,
+  className,
+  withBadge,
+}: {
+  post: InstagramPost;
+  className?: string;
+  withBadge?: boolean;
+}) {
   const src = post.thumbnail_url ?? post.media_url ?? null;
+  const { label, icon: Icon } = mediaInfo(post);
   return (
-    <div className={cn("relative shrink-0 overflow-hidden rounded-xl bg-primary", className)}>
+    <div className={cn("relative shrink-0 overflow-hidden bg-primary", className)}>
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -252,6 +329,12 @@ function PostThumb({ post, className }: { post: InstagramPost; className?: strin
         <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#1a2f44] to-[#0a141c]">
           <Instagram className="h-7 w-7 text-white/30" />
         </div>
+      )}
+      {withBadge && (
+        <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
+          <Icon className="h-3 w-3" />
+          {label}
+        </span>
       )}
     </div>
   );
