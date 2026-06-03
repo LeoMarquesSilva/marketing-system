@@ -333,10 +333,31 @@ function PostDetailModal({ post, onClose }: { post: InstagramPost | null; onClos
       <DialogContent className="max-w-lg max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
         {post && (
           <>
-            <div className="relative">
-              <PostThumb post={post} className="h-56 w-full" />
+            <div className="relative h-72 w-full overflow-hidden bg-[#0a141c]">
+              {post.thumbnail_url ?? post.media_url ? (
+                <>
+                  {/* Fundo desfocado preenche as bordas sem cortar a imagem */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={(post.thumbnail_url ?? post.media_url) as string}
+                    alt=""
+                    aria-hidden
+                    className="absolute inset-0 h-full w-full scale-110 object-cover opacity-40 blur-2xl"
+                  />
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={(post.thumbnail_url ?? post.media_url) as string}
+                    alt=""
+                    className="relative h-full w-full object-contain"
+                  />
+                </>
+              ) : (
+                <div className="flex h-full w-full items-center justify-center">
+                  <Instagram className="h-10 w-10 text-white/30" />
+                </div>
+              )}
               {info && (
-                <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
+                <span className="absolute left-3 top-3 z-10 inline-flex items-center gap-1 rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
                   <info.icon className="h-3.5 w-3.5" />
                   {info.label}
                 </span>
