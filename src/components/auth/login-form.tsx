@@ -41,13 +41,14 @@ async function resolvePostLoginPath(next?: string | null): Promise<string> {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("department, role")
+    .select("department, role, must_change_password")
     .eq("auth_id", session.user.id)
     .maybeSingle();
 
-  if (isContentCollaborator(profile)) return "/conteudo/roteiros";
+  if (profile?.must_change_password) return "/alterar-senha";
+  if (isContentCollaborator(profile)) return "/conteudo/inicio";
   if (isContentManager(profile)) return "/";
-  return "/conteudo/roteiros";
+  return "/conteudo/inicio";
 }
 
 export function LoginForm() {

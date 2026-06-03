@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { isContentCollaborator } from "@/lib/content-areas";
@@ -66,6 +66,17 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [redirectTo, pathname, router]);
 
+  // Fallback: se o perfil demorar demais, não trava a tela para sempre.
+  const [profileTimedOut, setProfileTimedOut] = useState(false);
+  useEffect(() => {
+    if (!(user && !profile && !loading)) return;
+    const t = setTimeout(() => setProfileTimedOut(true), 4000);
+    return () => {
+      clearTimeout(t);
+      setProfileTimedOut(false);
+    };
+  }, [user, profile, loading]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -74,8 +85,15 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // Aguardando o perfil carregar para decidir permissões (evita exibir conteúdo indevido).
-  const waitingProfile = !!user && !profile && !isPublic && !isServerProtected;
+  // Aguarda o perfil carregar para decidir permissões (evita exibir conteúdo
+  // indevido) — exceto na tela de troca de senha, que deve sempre renderizar.
+  const waitingProfile =
+    !!user &&
+    !profile &&
+    !isPublic &&
+    !isServerProtected &&
+    pathname !== "/alterar-senha" &&
+    !profileTimedOut;
 
   if ((redirectTo && redirectTo !== pathname) || waitingProfile || (!user && !isPublic && !isServerProtected)) {
     return (

@@ -41,15 +41,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = useCallback(async (authId: string) => {
-    const { data } = await supabase
-      .from("users")
-      .select("id, name, email, department, role, auth_id, avatar_url, permissions, must_change_password")
-      .eq("auth_id", authId)
-      .single();
-    if (data) {
-      setProfile(data as AuthProfile);
-    } else {
-      setProfile(null);
+    // Tenta algumas vezes: logo após o login a sessão pode não estar pronta
+    // para o cliente (RLS), o que retornaria erro transitório.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { data, error } = await supabase
+        .from("users")
+        .select("id, name, email, department, role, auth_id, avatar_url, permissions, must_change_password")
+        .eq("auth_id", authId)
+        .maybeSingle();
+      if (data) {
+        setProfile(data as AuthProfile);
+        return;
+      }
+      if (!error) {
+        // Consulta ok, porém sem linha: usuário sem cadastro em users.
+        setProfile(null);
+        return;
+      }
+      // Erro transitório: aguarda e tenta de novo (não zera o perfil atual).
+      await new Promise((r) => setTimeout(r, 600));
     }
   }, []);
 
