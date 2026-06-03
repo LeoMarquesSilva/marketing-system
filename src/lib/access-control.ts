@@ -42,6 +42,15 @@ export const ACCESS_PRESETS: Record<string, string[]> = {
 /** Rotas sempre acessíveis para qualquer usuário autenticado. */
 export const ALWAYS_ALLOWED_PATHS = ["/perfil", "/alterar-senha"];
 
+/** Página inicial do colaborador de conteúdo (desempenho no Instagram). */
+export const CONTENT_HOME_PATH = "/conteudo/inicio";
+const CONTENT_KEY = "/conteudo/roteiros";
+
+/** Quem tem acesso ao conteúdo enxerga toda a subárvore /conteudo. */
+function hasContentAccess(allowed: string[]): boolean {
+  return allowed.some((k) => k === CONTENT_KEY || k.startsWith("/conteudo"));
+}
+
 export interface AccessProfile {
   role?: string | null;
   permissions?: string[] | null;
@@ -73,6 +82,10 @@ export function canAccessPath(
   if (ALWAYS_ALLOWED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return true;
   }
+  // Acesso ao conteúdo cobre toda a subárvore /conteudo (home, posts, etc.).
+  if (pathname.startsWith("/conteudo") && hasContentAccess(allowed)) {
+    return true;
+  }
   // Match por rota base (mais específico primeiro para evitar "/" pegar tudo).
   const match = (key: string) =>
     key === "/" ? pathname === "/" : pathname === key || pathname.startsWith(key + "/");
@@ -83,5 +96,7 @@ export function canAccessPath(
 export function firstAllowedPath(profile: AccessProfile | null | undefined): string {
   const allowed = resolveAllowedSections(profile);
   if (!allowed || allowed.length === 0) return "/";
+  // Colaborador de conteúdo cai na home de desempenho.
+  if (hasContentAccess(allowed) && !allowed.includes("/")) return CONTENT_HOME_PATH;
   return allowed.includes("/") ? "/" : allowed[0];
 }

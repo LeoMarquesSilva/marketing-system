@@ -42,6 +42,7 @@ const baseNavItems = [
 ];
 
 const collaboratorNavItems = [
+  { href: "/conteudo/inicio", icon: Instagram, label: "Início" },
   { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteúdo para Post" },
 ];
 
@@ -57,7 +58,15 @@ function getNavItems(
   const allowed = resolveAllowedSections(profile);
   if (allowed) {
     const catalog = [...baseNavItems, ...adminNavItems];
-    return catalog.filter((i) => allowed.includes(i.href));
+    let items = catalog.filter((i) => allowed.includes(i.href));
+    // Quem tem acesso ao conteúdo enxerga a home de desempenho (Início).
+    if (allowed.some((k) => k.startsWith("/conteudo"))) {
+      items = [
+        { href: "/conteudo/inicio", icon: Instagram, label: "Início" },
+        ...items.filter((i) => i.href !== "/conteudo/inicio"),
+      ];
+    }
+    return items;
   }
   // Comportamento legado.
   if (isContentCollaborator(profile)) {

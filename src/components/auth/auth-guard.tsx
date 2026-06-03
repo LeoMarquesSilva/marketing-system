@@ -55,7 +55,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
     // Comportamento legado (colaborador de conteúdo).
     if (profile && isContentCollaborator(profile) && !isPublic && !isCollaboratorRoute) {
-      return "/conteudo/roteiros";
+      return "/conteudo/inicio";
     }
     return null;
   })();
