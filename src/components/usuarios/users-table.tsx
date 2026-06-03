@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Table,
   TableBody,
@@ -20,7 +20,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Loader2, Pencil, Trash2, UserX, UserCheck, KeyRound } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Plus, Loader2, Pencil, Trash2, UserX, UserCheck, KeyRound, Search, X } from "lucide-react";
 import type { User } from "@/lib/users";
 import { createUser, updateUser, deleteUser, toggleUserActive } from "@/lib/users";
 import type { Area } from "@/lib/areas";
@@ -45,6 +53,10 @@ interface UsersTableProps {
 export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
   const [users, setUsers] = useState(initialUsers);
   const [areas, setAreas] = useState(initialAreas);
+  const [search, setSearch] = useState("");
+  const [deptFilter, setDeptFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [accessFilter, setAccessFilter] = useState("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -54,6 +66,41 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
   const [deactivateTarget, setDeactivateTarget] = useState<User | null>(null);
   const [accessUser, setAccessUser] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const departments = useMemo(() => {
+    const set = new Set<string>();
+    areas.forEach((a) => a.name && set.add(a.name));
+    users.forEach((u) => u.department && set.add(u.department));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [areas, users]);
+
+  const filteredUsers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return users.filter((u) => {
+      if (q) {
+        const hay = `${u.name} ${u.email ?? ""} ${u.department ?? ""}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (deptFilter !== "all" && u.department !== deptFilter) return false;
+      const isActive = u.is_active !== false;
+      if (statusFilter === "ativo" && !isActive) return false;
+      if (statusFilter === "inativo" && isActive) return false;
+      const hasLogin = Boolean(u.auth_id);
+      if (accessFilter === "com" && !hasLogin) return false;
+      if (accessFilter === "sem" && hasLogin) return false;
+      return true;
+    });
+  }, [users, search, deptFilter, statusFilter, accessFilter]);
+
+  const hasActiveFilters =
+    search.trim() !== "" || deptFilter !== "all" || statusFilter !== "all" || accessFilter !== "all";
+
+  function clearFilters() {
+    setSearch("");
+    setDeptFilter("all");
+    setStatusFilter("all");
+    setAccessFilter("all");
+  }
 
   function handleAccessUpdated(id: string, patch: Partial<User>) {
     setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...patch } : u)));
@@ -149,12 +196,67 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
         </div>
       )}
 
-      <div className="flex justify-end">
-        <Button onClick={() => { setError(null); setCreateOpen(true); }}>
+      {/* Filtros */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-1 flex-wrap items-center gap-2">
+          <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nome, e-mail…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="h-9 pl-9 text-sm"
+            />
+          </div>
+          <Select value={deptFilter} onValueChange={setDeptFilter}>
+            <SelectTrigger className="h-9 w-[160px] text-xs">
+              <SelectValue placeholder="Área" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as áreas</SelectItem>
+              {departments.map((d) => (
+                <SelectItem key={d} value={d}>
+                  {d}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="h-9 w-[140px] text-xs">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Status: todos</SelectItem>
+              <SelectItem value="ativo">Ativos</SelectItem>
+              <SelectItem value="inativo">Ex-colaboradores</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={accessFilter} onValueChange={setAccessFilter}>
+            <SelectTrigger className="h-9 w-[150px] text-xs">
+              <SelectValue placeholder="Acesso" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Acesso: todos</SelectItem>
+              <SelectItem value="com">Com login</SelectItem>
+              <SelectItem value="sem">Sem login</SelectItem>
+            </SelectContent>
+          </Select>
+          {hasActiveFilters && (
+            <Button variant="ghost" size="sm" className="h-9 gap-1.5 text-xs" onClick={clearFilters}>
+              <X className="h-3.5 w-3.5" />
+              Limpar
+            </Button>
+          )}
+        </div>
+        <Button onClick={() => { setError(null); setCreateOpen(true); }} className="shrink-0">
           <Plus className="mr-2 h-4 w-4" />
           Novo usuário
         </Button>
       </div>
+
+      <p className="text-xs text-muted-foreground">
+        {filteredUsers.length} de {users.length} usuário{users.length !== 1 ? "s" : ""}
+      </p>
 
       <UserFormDialog
         open={createOpen}
@@ -247,7 +349,14 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {users.map((user) => {
+            {filteredUsers.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+                  Nenhum usuário encontrado com esses filtros.
+                </TableCell>
+              </TableRow>
+            )}
+            {filteredUsers.map((user) => {
               const isActive = user.is_active !== false;
               return (
                 <TableRow
