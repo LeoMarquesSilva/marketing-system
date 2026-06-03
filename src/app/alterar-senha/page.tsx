@@ -11,7 +11,7 @@ import { Loader2, Lock, ShieldCheck } from "lucide-react";
 import { firstAllowedPath } from "@/lib/access-control";
 
 export default function AlterarSenhaPage() {
-  const { user, profile, loading, refreshProfile } = useAuth();
+  const { user, profile, loading } = useAuth();
   const router = useRouter();
   const [newPassword, setNewPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -58,8 +58,9 @@ export default function AlterarSenhaPage() {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error ?? "Erro ao concluir a troca de senha.");
       }
-      await refreshProfile();
-      router.replace(profile ? firstAllowedPath(profile) : "/");
+      // Reload completo: garante perfil fresco (flag limpa) e evita corrida de redirect.
+      const target = profile ? firstAllowedPath(profile) : "/";
+      window.location.assign(target);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao alterar a senha.");
     } finally {

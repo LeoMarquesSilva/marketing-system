@@ -27,48 +27,44 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     (p) => pathname === p || pathname.startsWith(p + "/")
   );
 
-  useEffect(() => {
-    if (loading) return;
+  // Decide de forma síncrona para onde (se for o caso) o usuário deve ir.
+  const redirectTo = (() => {
+    if (loading) return null;
+    if (!user && !isPublic) return "/login";
+    if (!user) return null;
 
-    if (!user && !isPublic) {
-      router.replace("/login");
-      return;
-    }
+    // Rotas protegidas pelo servidor (admin): não interferir aqui.
+    if (pathname === "/admin" || pathname.startsWith("/admin/")) return null;
 
     // Troca de senha obrigatória (primeiro acesso).
-    if (
-      user &&
-      profile?.must_change_password &&
-      pathname !== "/alterar-senha" &&
-      !isPublic
-    ) {
-      router.replace("/alterar-senha");
-      return;
+    if (profile?.must_change_password && pathname !== "/alterar-senha" && !isPublic) {
+      return "/alterar-senha";
     }
 
-    if (pathname === "/admin" || pathname.startsWith("/admin/")) return;
-
-    if (user && pathname === "/login") {
-      router.replace(
-        profile ? firstAllowedPath(profile) : isContentCollaborator(profile) ? "/conteudo/roteiros" : "/"
-      );
-      return;
+    if (pathname === "/login") {
+      return profile ? firstAllowedPath(profile) : "/";
     }
+
+    if (pathname === "/alterar-senha") return null;
 
     // Permissões explícitas definidas pelo admin.
     const allowed = resolveAllowedSections(profile);
-    if (user && profile && allowed && !isPublic && pathname !== "/alterar-senha") {
-      if (!canAccessPath(profile, pathname)) {
-        router.replace(firstAllowedPath(profile));
-      }
-      return;
+    if (profile && allowed && !isPublic) {
+      return canAccessPath(profile, pathname) ? null : firstAllowedPath(profile);
     }
 
     // Comportamento legado (colaborador de conteúdo).
-    if (user && profile && isContentCollaborator(profile) && !isPublic && !isCollaboratorRoute) {
-      router.replace("/conteudo/roteiros");
+    if (profile && isContentCollaborator(profile) && !isPublic && !isCollaboratorRoute) {
+      return "/conteudo/roteiros";
     }
-  }, [user, profile, loading, pathname, router, isPublic, isCollaboratorRoute]);
+    return null;
+  })();
+
+  useEffect(() => {
+    if (redirectTo && redirectTo !== pathname) {
+      router.replace(redirectTo);
+    }
+  }, [redirectTo, pathname, router]);
 
   if (loading) {
     return (
@@ -78,7 +74,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!user && !isPublic && !isServerProtected) {
+  // Aguardando o perfil carregar para decidir permissões (evita exibir conteúdo indevido).
+  const waitingProfile = !!user && !profile && !isPublic && !isServerProtected;
+
+  if ((redirectTo && redirectTo !== pathname) || waitingProfile || (!user && !isPublic && !isServerProtected)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-pulse text-muted-foreground">Redirecionando...</div>
