@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     const monthsBack = typeof body.monthsBack === "number" ? body.monthsBack : undefined;
     const limit = typeof body.limit === "number" ? body.limit : undefined;
 
-    const { created, errors } = await runFetchPipeline(topicIds, undefined, {
+    const { created, errors, skipped } = await runFetchPipeline(topicIds, undefined, {
       monthsBack,
       limit,
     });
@@ -58,6 +58,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       created,
+      skipped,
       errors: errors.length > 0 ? errors : undefined,
     });
   } catch (err) {

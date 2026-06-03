@@ -656,11 +656,26 @@ export interface FetchPipelineOptions {
   limit?: number;
 }
 
+/** Chave normalizada de título para detectar notícias repetidas (ignora veículo, acentos, pontuação). */
+function normalizeTitleKey(title: string): string {
+  return (title || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\s+[-–|]\s+[^-–|]+$/, "") // remove sufixo " - Veículo"
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 12)
+    .join(" ");
+}
+
 export async function runFetchPipeline(
   topicIds?: string[],
   topics?: ContentTopic[],
   options?: FetchPipelineOptions
-): Promise<{ created: number; errors: string[] }> {
+): Promise<{ created: number; errors: string[]; skipped: number }> {
   const apiKey = process.env.NEXT_OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("NEXT_OPENAI_API_KEY não configurada.");
@@ -691,7 +706,21 @@ export async function runFetchPipeline(
   }
 
   let created = 0;
+  let skipped = 0;
   const errors: string[] = [];
+
+  // Dedupe: carrega links/títulos já existentes (janela recente) para não repetir.
+  const dedupeSince = getContentCutoffDate(120);
+  const { data: existing } = await supabase
+    .from("content_roteiros")
+    .select("link, title")
+    .gte("created_at", dedupeSince.toISOString());
+  const seenLinks = new Set<string>(
+    (existing ?? []).map((r) => (r.link as string | null) ?? "").filter(Boolean)
+  );
+  const seenTitles = new Set<string>(
+    (existing ?? []).map((r) => normalizeTitleKey((r.title as string) ?? "")).filter(Boolean)
+  );
 
   // Carrega o histórico de performance do Instagram uma vez e memoiza por área.
   let performancePosts: InstagramPost[] = [];
@@ -721,6 +750,14 @@ export async function runFetchPipeline(
         try {
           const title = item.title;
           const snippet = item.contentSnippet ?? "";
+
+          // Dedupe: pula notícia já transformada em post (mesmo link ou título).
+          const titleKey = normalizeTitleKey(title);
+          const linkKey = item.link ?? "";
+          if ((linkKey && seenLinks.has(linkKey)) || (titleKey && seenTitles.has(titleKey))) {
+            skipped++;
+            continue;
+          }
 
           const rawArea = await resolveNewsArea(
             openai,
@@ -761,6 +798,9 @@ export async function runFetchPipeline(
             errors.push(`${item.title}: ${insertErr.message}`);
           } else {
             created++;
+            // Registra para não repetir dentro da mesma execução.
+            if (linkKey) seenLinks.add(linkKey);
+            if (titleKey) seenTitles.add(titleKey);
           }
         } catch (err) {
           errors.push(
@@ -775,5 +815,5 @@ export async function runFetchPipeline(
     }
   }
 
-  return { created, errors };
+  return { created, errors, skipped };
 }

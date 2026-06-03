@@ -296,9 +296,10 @@ export function ConteudoTemasClient() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Erro ao gerar");
+      const skippedTxt = data.skipped ? ` ${data.skipped} repetida(s) ignorada(s).` : "";
       const msg = data.errors?.length
-        ? `Criados: ${data.created}. Alguns erros: ${data.errors.slice(0, 2).join("; ")}`
-        : `Pronto! ${data.created} conteúdo(s) de post criado(s). Veja em Conteúdo para Post.`;
+        ? `Criados: ${data.created}.${skippedTxt} Alguns erros: ${data.errors.slice(0, 2).join("; ")}`
+        : `Pronto! ${data.created} conteúdo(s) de post criado(s).${skippedTxt} Veja em Conteúdo para Post.`;
       setError(null);
       alert(msg);
     } catch (err) {

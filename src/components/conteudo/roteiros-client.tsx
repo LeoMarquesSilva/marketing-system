@@ -301,7 +301,8 @@ export function RoteirosClient() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Erro ao buscar notícias");
       if (data.errors?.length) {
-        setError(`Criados: ${data.created}. Erros: ${data.errors.slice(0, 3).join("; ")}`);
+        const skippedTxt = data.skipped ? ` ${data.skipped} repetida(s) ignorada(s).` : "";
+        setError(`Criados: ${data.created}.${skippedTxt} Erros: ${data.errors.slice(0, 3).join("; ")}`);
       }
       await loadRoteiros();
     } catch (err) {
