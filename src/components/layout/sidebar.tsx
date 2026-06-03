@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   LayoutDashboard,
   List,
@@ -17,6 +17,7 @@ import {
   Heart,
   Instagram,
   Megaphone,
+  User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -95,6 +96,19 @@ export function Sidebar() {
   };
   const [pendingAlterations, setPendingAlterations] = useState(0);
   const whatsappUnread = useWhatsappUnreadCount();
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setProfileMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [profileMenuOpen]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -201,41 +215,62 @@ export function Sidebar() {
       {/* Divider */}
       <div className="w-8 border-t border-white/10 my-3 shrink-0" />
 
-      {/* Bottom: avatar + sign out */}
-      <div className="flex flex-col items-center gap-2 shrink-0">
+      {/* Bottom: avatar com menu (perfil + sair) */}
+      <div ref={profileMenuRef} className="relative flex flex-col items-center shrink-0">
         {profile && (
-          <Link
-            href="/perfil"
+          <button
+            type="button"
+            onClick={() => setProfileMenuOpen((v) => !v)}
             title={profile.name}
-            aria-label={`Meu perfil — ${profile.name}`}
-            className="group relative"
+            aria-label={`Conta — ${profile.name}`}
+            aria-haspopup="menu"
+            aria-expanded={profileMenuOpen}
+            className="group relative rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
           >
-            <Avatar className="h-8 w-8 border-2 border-white/20 hover:border-white/40 transition-colors shadow-sm">
+            <Avatar className="h-9 w-9 border-2 border-white/20 hover:border-white/50 transition-colors shadow-sm">
               <AvatarImage src={profile.avatar_url || undefined} />
               <AvatarFallback className="text-[10px] font-semibold bg-white/10 text-white">
                 {getInitials(profile.name)}
               </AvatarFallback>
             </Avatar>
-            {/* Online indicator */}
             <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-400 border-2 border-[#0a141c]" aria-hidden />
-            {/* Tooltip */}
-            <span
-              className="pointer-events-none absolute left-full ml-3 whitespace-nowrap rounded-lg border border-white/10 bg-[#101f2e]/95 backdrop-blur-xl px-3 py-1.5 text-xs font-medium text-white shadow-xl opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-150 z-50"
-              aria-hidden
-            >
-              {profile.name}
-            </span>
-          </Link>
+          </button>
         )}
 
-        <button
-          onClick={handleSignOut}
-          title="Sair"
-          aria-label="Sair da conta"
-          className="flex h-8 w-8 items-center justify-center rounded-xl text-white/30 hover:bg-white/10 hover:text-white/70 transition-all duration-200"
-        >
-          <LogOut className="h-4 w-4" />
-        </button>
+        {profile && profileMenuOpen && (
+          <div
+            role="menu"
+            className="absolute bottom-0 left-full ml-3 w-52 overflow-hidden rounded-xl border border-white/10 bg-[#101f2e]/95 p-1 shadow-2xl backdrop-blur-xl z-50"
+          >
+            <div className="border-b border-white/10 px-3 py-2.5">
+              <p className="truncate text-sm font-semibold text-white">{profile.name}</p>
+              {profile.email && (
+                <p className="truncate text-[11px] text-white/50">{profile.email}</p>
+              )}
+            </div>
+            <Link
+              href="/perfil"
+              role="menuitem"
+              onClick={() => setProfileMenuOpen(false)}
+              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors"
+            >
+              <User className="h-4 w-4" />
+              Meu perfil
+            </Link>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setProfileMenuOpen(false);
+                handleSignOut();
+              }}
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-red-300 hover:bg-red-500/15 hover:text-red-200 transition-colors"
+            >
+              <LogOut className="h-4 w-4" />
+              Sair
+            </button>
+          </div>
+        )}
       </div>
     </aside>
 
