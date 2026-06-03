@@ -330,13 +330,13 @@ function PostDetailModal({ post, onClose }: { post: InstagramPost | null; onClos
   const info = post ? mediaInfo(post) : null;
   return (
     <Dialog open={!!post} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0 sm:flex-row">
         {post && (
           <>
-            <div className="relative h-72 w-full overflow-hidden bg-[#0a141c]">
+            {/* Imagem — grande, à esquerda no desktop */}
+            <div className="relative h-64 w-full shrink-0 overflow-hidden bg-[#0a141c] sm:h-auto sm:w-[48%] sm:min-h-[460px]">
               {post.thumbnail_url ?? post.media_url ? (
                 <>
-                  {/* Fundo desfocado preenche as bordas sem cortar a imagem */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={(post.thumbnail_url ?? post.media_url) as string}
@@ -363,19 +363,19 @@ function PostDetailModal({ post, onClose }: { post: InstagramPost | null; onClos
                 </span>
               )}
             </div>
-            <div className="flex-1 overflow-auto p-5 space-y-4">
-              <div>
-                <DialogTitle className="text-sm font-semibold">
-                  {post.published_at
-                    ? format(new Date(post.published_at), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
-                    : "Post"}
-                  {(post.areas?.[0] || post.area) && (
-                    <span className="ml-2 font-normal text-muted-foreground">
-                      · {post.areas?.[0] ?? post.area}
-                    </span>
-                  )}
-                </DialogTitle>
-              </div>
+
+            {/* Conteúdo — à direita, rolável */}
+            <div className="flex min-h-0 flex-1 flex-col overflow-auto p-5 space-y-4">
+              <DialogTitle className="text-sm font-semibold">
+                {post.published_at
+                  ? format(new Date(post.published_at), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
+                  : "Post"}
+                {(post.areas?.[0] || post.area) && (
+                  <span className="ml-2 font-normal text-muted-foreground">
+                    · {post.areas?.[0] ?? post.area}
+                  </span>
+                )}
+              </DialogTitle>
 
               {post.caption ? (
                 <div className="rounded-xl border bg-muted/20 p-3">
@@ -398,7 +398,12 @@ function PostDetailModal({ post, onClose }: { post: InstagramPost | null; onClos
               </div>
 
               {post.permalink && (
-                <a href={post.permalink} target="_blank" rel="noopener noreferrer" className="block">
+                <a
+                  href={post.permalink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-auto block pt-1"
+                >
                   <Button className="w-full gap-2">
                     <Instagram className="h-4 w-4" />
                     Ver no Instagram
