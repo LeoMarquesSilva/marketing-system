@@ -18,11 +18,17 @@ import {
   Film,
   Image as ImageIcon,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { InstagramPost } from "@/lib/instagram-posts";
 import { computeEngagementActionsFromPost } from "@/lib/instagram-engagement";
+import { Share2 } from "lucide-react";
 
 export interface OfficeStats {
   posts: number;
@@ -105,6 +111,7 @@ function Metric({ icon: Icon, value }: { icon: typeof Heart; value: number }) {
 
 export function MeuInstagramClient({ userName, posts, office }: MeuInstagramClientProps) {
   const [showAll, setShowAll] = useState(false);
+  const [selected, setSelected] = useState<InstagramPost | null>(null);
 
   const sorted = useMemo(
     () =>
@@ -217,7 +224,13 @@ export function MeuInstagramClient({ userName, posts, office }: MeuInstagramClie
 
           {/* Destaque */}
           {best && (
-            <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+            <div
+              className="group cursor-pointer overflow-hidden rounded-2xl border bg-card shadow-sm transition-shadow hover:shadow-md"
+              onClick={() => setSelected(best.post)}
+              onKeyDown={(e) => e.key === "Enter" && setSelected(best.post)}
+              role="button"
+              tabIndex={0}
+            >
               <div className="flex flex-col gap-4 p-4 sm:flex-row sm:p-5">
                 <PostThumb post={best.post} className="aspect-square w-full sm:h-32 sm:w-32" />
                 <div className="flex min-w-0 flex-1 flex-col">
@@ -244,6 +257,7 @@ export function MeuInstagramClient({ userName, posts, office }: MeuInstagramClie
                         href={best.post.permalink}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
                         className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
                       >
                         Ver no Instagram <ExternalLink className="h-3 w-3" />
@@ -264,7 +278,11 @@ export function MeuInstagramClient({ userName, posts, office }: MeuInstagramClie
                 return (
                   <article
                     key={p.id}
-                    className="group flex flex-col overflow-hidden rounded-2xl border bg-card shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+                    className="group flex cursor-pointer flex-col overflow-hidden rounded-2xl border bg-card shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+                    onClick={() => setSelected(p)}
+                    onKeyDown={(e) => e.key === "Enter" && setSelected(p)}
+                    role="button"
+                    tabIndex={0}
                   >
                     <PostThumb post={p} className="aspect-square w-full" withBadge />
                     <div className="flex flex-1 flex-col gap-2 p-3.5">
@@ -300,6 +318,97 @@ export function MeuInstagramClient({ userName, posts, office }: MeuInstagramClie
           </div>
         </>
       )}
+
+      <PostDetailModal post={selected} onClose={() => setSelected(null)} />
+    </div>
+  );
+}
+
+function PostDetailModal({ post, onClose }: { post: InstagramPost | null; onClose: () => void }) {
+  const rate =
+    post && post.reach ? (computeEngagementActionsFromPost(post) / post.reach) * 100 : 0;
+  const info = post ? mediaInfo(post) : null;
+  return (
+    <Dialog open={!!post} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
+        {post && (
+          <>
+            <div className="relative">
+              <PostThumb post={post} className="h-56 w-full" />
+              {info && (
+                <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
+                  <info.icon className="h-3.5 w-3.5" />
+                  {info.label}
+                </span>
+              )}
+            </div>
+            <div className="flex-1 overflow-auto p-5 space-y-4">
+              <div>
+                <DialogTitle className="text-sm font-semibold">
+                  {post.published_at
+                    ? format(new Date(post.published_at), "dd 'de' MMMM 'de' yyyy", { locale: ptBR })
+                    : "Post"}
+                  {(post.areas?.[0] || post.area) && (
+                    <span className="ml-2 font-normal text-muted-foreground">
+                      · {post.areas?.[0] ?? post.area}
+                    </span>
+                  )}
+                </DialogTitle>
+              </div>
+
+              {post.caption ? (
+                <div className="rounded-xl border bg-muted/20 p-3">
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Legenda
+                  </p>
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed">{post.caption}</p>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Sem legenda.</p>
+              )}
+
+              <div className="grid grid-cols-3 gap-2">
+                <MiniStat icon={Eye} label="Alcance" value={post.reach} />
+                <MiniStat icon={Heart} label="Curtidas" value={post.likes} />
+                <MiniStat icon={MessageCircle} label="Comentários" value={post.comments} />
+                <MiniStat icon={Bookmark} label="Salvos" value={post.saves} />
+                <MiniStat icon={Share2} label="Compart." value={post.shares} />
+                <MiniStat icon={TrendingUp} label="Engajamento" value={`${rate.toFixed(1)}%`} />
+              </div>
+
+              {post.permalink && (
+                <a href={post.permalink} target="_blank" rel="noopener noreferrer" className="block">
+                  <Button className="w-full gap-2">
+                    <Instagram className="h-4 w-4" />
+                    Ver no Instagram
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Button>
+                </a>
+              )}
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MiniStat({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Heart;
+  label: string;
+  value: number | string;
+}) {
+  return (
+    <div className="rounded-lg border bg-card px-2.5 py-2 text-center">
+      <Icon className="mx-auto h-4 w-4 text-muted-foreground" />
+      <p className="mt-1 text-sm font-bold tabular-nums">
+        {typeof value === "number" ? nf(value) : value}
+      </p>
+      <p className="text-[10px] text-muted-foreground">{label}</p>
     </div>
   );
 }
