@@ -330,7 +330,7 @@ function PostDetailModal({ post, onClose }: { post: InstagramPost | null; onClos
   const info = post ? mediaInfo(post) : null;
   return (
     <Dialog open={!!post} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="w-[95vw] max-w-4xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0 sm:flex-row">
+      <DialogContent className="w-[97vw] max-w-6xl sm:max-w-6xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0 sm:flex-row">
         {post && (
           <>
             {/* Imagem — grande, à esquerda no desktop */}
