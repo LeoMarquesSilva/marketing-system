@@ -12,7 +12,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    const { created, skipped, errors } = await runFetchPipeline();
+    const { created, skipped, errors } = await runFetchPipeline(undefined, undefined, {
+      skipOgImage: true,
+      maxCreated: 30,
+    });
     return NextResponse.json({
       success: true,
       created,

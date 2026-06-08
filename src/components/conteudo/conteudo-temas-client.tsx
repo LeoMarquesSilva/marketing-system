@@ -295,6 +295,13 @@ export function ConteudoTemasClient() {
         }),
       });
       const data = await res.json();
+      if (res.status === 202) {
+        alert(
+          data.message ??
+            "Geração iniciada em segundo plano. Veja os conteúdos em Conteúdo para Post em alguns minutos."
+        );
+        return;
+      }
       if (!res.ok) throw new Error(data.error ?? "Erro ao gerar");
       const skippedTxt = data.skipped ? ` ${data.skipped} repetida(s) ignorada(s).` : "";
       const msg = data.errors?.length

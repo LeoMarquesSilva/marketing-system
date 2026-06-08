@@ -299,6 +299,16 @@ export function RoteirosClient() {
         }),
       });
       const data = await res.json();
+      if (res.status === 202) {
+        setError(null);
+        alert(
+          data.message ??
+            "Busca iniciada em segundo plano. Atualize a lista em alguns minutos."
+        );
+        window.setTimeout(() => void loadRoteiros(), 30_000);
+        window.setTimeout(() => void loadRoteiros(), 90_000);
+        return;
+      }
       if (!res.ok) throw new Error(data.error ?? "Erro ao buscar notícias");
       if (data.errors?.length) {
         const skippedTxt = data.skipped ? ` ${data.skipped} repetida(s) ignorada(s).` : "";

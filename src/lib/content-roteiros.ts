@@ -654,6 +654,10 @@ export async function saveRoteiroEdit(
 export interface FetchPipelineOptions {
   monthsBack?: number;
   limit?: number;
+  /** Pula fetch de og:image (lento) — capa pode ser adicionada depois. */
+  skipOgImage?: boolean;
+  /** Para após criar N roteiros (evita execuções longas demais). */
+  maxCreated?: number;
 }
 
 /** Chave normalizada de título para detectar notícias repetidas (ignora veículo, acentos, pontuação). */
@@ -686,6 +690,8 @@ export async function runFetchPipeline(
 
   const monthsBack = options?.monthsBack ?? 4;
   const limit = options?.limit ?? 20;
+  const skipOgImage = options?.skipOgImage ?? false;
+  const maxCreated = options?.maxCreated;
 
   let topicsToProcess: ContentTopic[];
   if (topics && topics.length > 0) {
@@ -738,7 +744,7 @@ export async function runFetchPipeline(
     return performanceCache.get(area) ?? null;
   };
 
-  for (const topic of topicsToProcess) {
+  topicLoop: for (const topic of topicsToProcess) {
     try {
       const topicMonths = "months_back" in topic ? topic.months_back : monthsBack;
       const topicLimit = "item_limit" in topic ? topic.item_limit : limit;
@@ -747,6 +753,8 @@ export async function runFetchPipeline(
       const limited = filtered.slice(0, topicLimit);
 
       for (const item of limited) {
+        if (maxCreated != null && created >= maxCreated) break topicLoop;
+
         try {
           const title = item.title;
           const snippet = item.contentSnippet ?? "";
@@ -769,7 +777,7 @@ export async function runFetchPipeline(
           const area = rawArea.area;
 
           const performance = getPerformance(area);
-          const imageUrl = await fetchOgImage(item.link);
+          const imageUrl = skipOgImage ? null : await fetchOgImage(item.link);
 
           const post = await generateCarousel(
             openai,
