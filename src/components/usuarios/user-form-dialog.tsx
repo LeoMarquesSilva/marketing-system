@@ -154,12 +154,12 @@ export function UserFormDialog({
               name="avatar_url"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>URL da foto (opcional)</FormLabel>
+                  <FormLabel>Foto preferida (comunicados e posts)</FormLabel>
                   <FormControl>
                     <div className="flex gap-3 items-start">
                       <Input
                         type="url"
-                        placeholder="https://exemplo.com/foto.jpg"
+                        placeholder="https://drive.google.com/... ou link da imagem"
                         {...field}
                       />
                       {field.value && (
@@ -173,7 +173,8 @@ export function UserFormDialog({
                     </div>
                   </FormControl>
                   <p className="text-xs text-muted-foreground">
-                    Cole a URL de uma imagem para usar como avatar
+                    Link da foto para preview e materiais. Gerencie OneDrive + foto em Fotos
+                    Colaboradores.
                   </p>
                   <FormMessage />
                 </FormItem>

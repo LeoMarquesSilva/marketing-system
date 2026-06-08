@@ -18,11 +18,12 @@ import {
   Instagram,
   Megaphone,
   User,
+  Camera,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { isContentCollaborator } from "@/lib/content-areas";
-import { resolveAllowedSections } from "@/lib/access-control";
+import { resolveAllowedSections, hasCollaboratorPhotosAccess } from "@/lib/access-control";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { fetchCommentStats } from "@/lib/request-comments";
 import { fetchMarketingRequests } from "@/lib/marketing-requests";
@@ -39,6 +40,7 @@ const baseNavItems = [
   { href: "/trafego-pago", icon: Megaphone, label: "Tráfego Pago" },
   { href: "/vios-tarefas", icon: ClipboardList, label: "Tarefas VIOS" },
   { href: "/vincular-solicitantes", icon: Link2, label: "Vincular Solicitantes" },
+  { href: "/fotos-colaboradores", icon: Camera, label: "Fotos Colaboradores" },
   { href: "/usuarios", icon: Users, label: "Usuários" },
 ];
 
@@ -59,7 +61,12 @@ function getNavItems(
   const allowed = resolveAllowedSections(profile);
   if (allowed) {
     const catalog = [...baseNavItems, ...adminNavItems];
-    let items = catalog.filter((i) => allowed.includes(i.href));
+    let items = catalog.filter((i) => {
+      if (i.href === "/fotos-colaboradores") {
+        return hasCollaboratorPhotosAccess(profile) || allowed.includes("/fotos-colaboradores") || allowed.includes("/usuarios");
+      }
+      return allowed.includes(i.href);
+    });
     // Quem tem acesso ao conteúdo enxerga a home de desempenho (Início).
     if (allowed.some((k) => k.startsWith("/conteudo"))) {
       items = [
@@ -73,7 +80,12 @@ function getNavItems(
   if (isContentCollaborator(profile)) {
     return collaboratorNavItems;
   }
-  return [...baseNavItems, ...(profile?.role === "admin" ? adminNavItems : [])];
+  return [
+    ...baseNavItems.filter(
+      (i) => i.href !== "/fotos-colaboradores" || hasCollaboratorPhotosAccess(profile)
+    ),
+    ...(profile?.role === "admin" ? adminNavItems : []),
+  ];
 }
 
 function getInitials(name: string) {

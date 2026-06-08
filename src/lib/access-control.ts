@@ -24,6 +24,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/trafego-pago", label: "Tráfego Pago" },
   { key: "/vios-tarefas", label: "Tarefas VIOS" },
   { key: "/vincular-solicitantes", label: "Vincular Solicitantes" },
+  { key: "/fotos-colaboradores", label: "Fotos Colaboradores" },
   { key: "/usuarios", label: "Usuários" },
   { key: "/admin", label: "Configurações", admin: true },
   { key: "/admin/conteudo-temas", label: "Temas RSS", admin: true },
@@ -54,6 +55,20 @@ function hasContentAccess(allowed: string[]): boolean {
 export interface AccessProfile {
   role?: string | null;
   permissions?: string[] | null;
+  id?: string;
+}
+
+/** Usuários com acesso à página Fotos Colaboradores (além do catálogo de permissões). */
+const COLLABORATOR_PHOTOS_USER_IDS = new Set([
+  "2f08c695-770e-47ce-b4e4-ce27fa414df8", // Leonardo Marques
+  "73b4ed1a-6adf-4f61-9f5d-3fcce646d6b7", // Valentina Iacovacci
+]);
+
+export function hasCollaboratorPhotosAccess(
+  profile: AccessProfile | null | undefined
+): boolean {
+  if (!profile?.id) return false;
+  return COLLABORATOR_PHOTOS_USER_IDS.has(profile.id);
 }
 
 /**
@@ -72,21 +87,30 @@ export function resolveAllowedSections(
   return null;
 }
 
-/** O usuário pode acessar a rota informada? (apenas quando há permissões). */
+/** O usuário pode acessar a rota informada? */
 export function canAccessPath(
   profile: AccessProfile | null | undefined,
   pathname: string
 ): boolean {
+  const isFotosRoute =
+    pathname === "/fotos-colaboradores" || pathname.startsWith("/fotos-colaboradores/");
+
+  if (isFotosRoute) {
+    if (hasCollaboratorPhotosAccess(profile)) return true;
+    const allowed = resolveAllowedSections(profile);
+    if (allowed?.some((k) => k === "/usuarios" || k === "/fotos-colaboradores")) return true;
+    return false;
+  }
+
   const allowed = resolveAllowedSections(profile);
   if (!allowed) return true; // sem permissões explícitas → regra legada decide
   if (ALWAYS_ALLOWED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return true;
   }
-  // Acesso ao conteúdo cobre toda a subárvore /conteudo (home, posts, etc.).
   if (pathname.startsWith("/conteudo") && hasContentAccess(allowed)) {
     return true;
   }
-  // Match por rota base (mais específico primeiro para evitar "/" pegar tudo).
+
   const match = (key: string) =>
     key === "/" ? pathname === "/" : pathname === key || pathname.startsWith(key + "/");
   return allowed.some(match);

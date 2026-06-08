@@ -6,6 +6,7 @@ export interface User {
   email: string | null;
   department: string;
   avatar_url: string | null;
+  photo_onedrive_url?: string | null;
   is_active: boolean;
   role?: string | null;
   auth_id?: string | null;
@@ -16,7 +17,7 @@ export interface User {
 export async function fetchUsers(): Promise<User[]> {
   const { data, error } = await supabase
     .from("users")
-    .select("id, name, email, department, avatar_url, is_active, role, auth_id, permissions, must_change_password")
+    .select("id, name, email, department, avatar_url, photo_onedrive_url, is_active, role, auth_id, permissions, must_change_password")
     .order("name");
 
   if (error) {
@@ -104,6 +105,7 @@ export interface UpdateUserInput {
   email?: string | null;
   department?: string;
   avatar_url?: string | null;
+  photo_onedrive_url?: string | null;
   is_active?: boolean;
 }
 
@@ -116,13 +118,14 @@ export async function updateUser(
   if (input.email !== undefined) updates.email = input.email?.trim() || null;
   if (input.department !== undefined) updates.department = input.department.trim();
   if (input.avatar_url !== undefined) updates.avatar_url = input.avatar_url || null;
+  if (input.photo_onedrive_url !== undefined) updates.photo_onedrive_url = input.photo_onedrive_url || null;
   if (input.is_active !== undefined) updates.is_active = input.is_active;
 
   const { data, error } = await supabase
     .from("users")
     .update(updates)
     .eq("id", id)
-    .select("id, name, email, department, avatar_url, is_active")
+    .select("id, name, email, department, avatar_url, photo_onedrive_url, is_active")
     .single();
 
   if (error) return { data: null, error: error.message };

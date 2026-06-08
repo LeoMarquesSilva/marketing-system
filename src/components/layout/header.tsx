@@ -12,6 +12,7 @@ const PAGE_LABELS: Record<string, string> = {
   "/nova-solicitacao": "Nova Solicitação",
   "/solicitacoes": "Solicitações",
   "/vincular-solicitantes": "Vincular Solicitantes",
+  "/fotos-colaboradores": "Fotos dos Colaboradores",
   "/usuarios": "Usuários",
   "/perfil": "Meu Perfil",
   "/instagram-insights": "Instagram Insights",

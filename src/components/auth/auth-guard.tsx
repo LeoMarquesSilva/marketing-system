@@ -57,6 +57,17 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     if (profile && isContentCollaborator(profile) && !isPublic && !isCollaboratorRoute) {
       return "/conteudo/inicio";
     }
+
+    // Fotos colaboradores: só usuários autorizados (mesmo no modo legado).
+    if (
+      profile &&
+      !isPublic &&
+      (pathname === "/fotos-colaboradores" || pathname.startsWith("/fotos-colaboradores/")) &&
+      !canAccessPath(profile, pathname)
+    ) {
+      return firstAllowedPath(profile);
+    }
+
     return null;
   })();
 
@@ -69,12 +80,13 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   // Fallback: se o perfil demorar demais, não trava a tela para sempre.
   const [profileTimedOut, setProfileTimedOut] = useState(false);
   useEffect(() => {
+    if (profile) setProfileTimedOut(false);
+  }, [profile]);
+
+  useEffect(() => {
     if (!(user && !profile && !loading)) return;
     const t = setTimeout(() => setProfileTimedOut(true), 4000);
-    return () => {
-      clearTimeout(t);
-      setProfileTimedOut(false);
-    };
+    return () => clearTimeout(t);
   }, [user, profile, loading]);
 
   if (loading) {

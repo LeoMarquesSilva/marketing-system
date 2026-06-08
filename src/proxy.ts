@@ -23,9 +23,8 @@ export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isAuthenticated = hasSupabaseSessionCookie(request);
 
-  if (isAuthenticated && pathname === "/login") {
-    return NextResponse.redirect(new URL("/", request.url));
-  }
+  // Não redirecionar /login → / só pelo cookie: sessão expirada deixa cookie
+  // órfão e gera loop infinito (cliente manda p/ login, proxy devolve p/ /).
 
   if (!isAuthenticated && !isPublicPath(pathname) && !pathname.startsWith("/api/")) {
     return NextResponse.redirect(new URL("/login", request.url));

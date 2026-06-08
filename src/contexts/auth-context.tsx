@@ -89,8 +89,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const {
           data: { session },
+          error,
         } = await supabase.auth.getSession();
         if (cancelled) return;
+        if (error) {
+          await supabase.auth.signOut();
+          setUser(null);
+          setProfile(null);
+          stopLoading();
+          return;
+        }
         setUser(session?.user ?? null);
         stopLoading();
         if (session?.user?.id) {
@@ -99,7 +107,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setProfile(null);
         }
       } catch {
-        if (!cancelled) stopLoading();
+        if (!cancelled) {
+          await supabase.auth.signOut().catch(() => {});
+          setUser(null);
+          setProfile(null);
+          stopLoading();
+        }
       }
     };
 
