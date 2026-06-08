@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { fetchInstagramPosts, fetchLatestAccountStats } from "@/lib/instagram-posts";
+import { sanitizeInstagramPostsForClient } from "@/lib/instagram-thumbnail-client";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,10 @@ export async function GET(request: Request) {
       fetchLatestAccountStats(),
     ]);
 
-    return NextResponse.json({ posts, accountStats });
+    return NextResponse.json({
+      posts: sanitizeInstagramPostsForClient(posts),
+      accountStats,
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro ao listar posts.";
     return NextResponse.json({ error: msg }, { status: 500 });

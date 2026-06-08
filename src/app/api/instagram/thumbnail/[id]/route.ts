@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
-import { fetchInstagramThumbnailResponse } from "@/lib/instagram-thumbnail";
+import { fetchInstagramThumbnailResponse } from "@/lib/instagram-thumbnail-server";
 
 export const dynamic = "force-dynamic";
 

@@ -5,10 +5,7 @@ import { ImageIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { InstagramPost } from "@/lib/instagram-posts";
 import { getInstagramMediaLabel } from "@/lib/instagram-media-type";
-import {
-  getInstagramThumbnailProxyUrl,
-  hasInstagramThumbnail,
-} from "@/lib/instagram-thumbnail";
+import { resolveInstagramThumbnailSrc } from "@/lib/instagram-thumbnail-client";
 import { cn } from "@/lib/utils";
 
 type ThumbnailSize = "list" | "card";
@@ -31,10 +28,8 @@ export function InstagramPostThumbnail({
   className,
 }: InstagramPostThumbnailProps) {
   const [failed, setFailed] = useState(false);
-  const hasMedia = hasInstagramThumbnail(post);
-  const src = hasMedia && !failed
-    ? getInstagramThumbnailProxyUrl(post.ig_media_id)
-    : null;
+  const src =
+    !failed ? resolveInstagramThumbnailSrc(post.ig_media_id, post) : null;
   const reel = isReelMedia(post.media_type);
 
   return (

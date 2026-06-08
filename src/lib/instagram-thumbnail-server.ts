@@ -20,15 +20,16 @@ type MediaRecord = {
   thumbnail_url: string | null;
 };
 
-export function hasInstagramThumbnail(
-  post: { thumbnail_url?: string | null; media_url?: string | null }
-): boolean {
-  return Boolean(post.thumbnail_url || post.media_url);
+function getMetaToken(): string {
+  const raw =
+    process.env.TOKEN_META_BP?.trim() ||
+    process.env.TOKEN_META_ADS?.trim() ||
+    "";
+  return raw.replace(/^Bearer\s+/i, "").trim();
 }
 
-/** URL do proxy — evita 403 do CDN do Instagram no navegador. */
-export function getInstagramThumbnailProxyUrl(igMediaId: string): string {
-  return `/api/instagram/thumbnail/${encodeURIComponent(igMediaId)}`;
+function isCdnUrl(url: string): boolean {
+  return /cdninstagram\.com|fbcdn\.net/i.test(url);
 }
 
 function pickDisplayUrl(record: MediaRecord): string | null {
@@ -37,17 +38,37 @@ function pickDisplayUrl(record: MediaRecord): string | null {
   return record.media_url || record.thumbnail_url;
 }
 
+function withAccessToken(url: string, token: string): string {
+  if (!token || url.includes("access_token=")) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}access_token=${encodeURIComponent(token)}`;
+}
+
 async function fetchCdnImage(url: string): Promise<Response | null> {
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent": BROWSER_UA,
-      Referer: INSTAGRAM_REFERER,
-      Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-    },
-    cache: "no-store",
-  });
-  if (!res.ok) return null;
-  return res;
+  if (!isCdnUrl(url)) {
+    const res = await fetch(url, { cache: "no-store" });
+    return res.ok ? res : null;
+  }
+
+  const token = getMetaToken();
+  const candidates = [
+    url,
+    token ? withAccessToken(url, token) : null,
+  ].filter((u): u is string => Boolean(u));
+
+  for (const candidate of candidates) {
+    const res = await fetch(candidate, {
+      headers: {
+        "User-Agent": BROWSER_UA,
+        Referer: INSTAGRAM_REFERER,
+        Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+      },
+      cache: "no-store",
+    });
+    if (res.ok) return res;
+  }
+
+  return null;
 }
 
 async function lookupMediaRecord(igMediaId: string): Promise<MediaRecord | null> {

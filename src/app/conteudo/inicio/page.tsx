@@ -3,6 +3,7 @@ import { fetchInstagramPosts } from "@/lib/instagram-posts";
 import { getPostSolicitantes } from "@/lib/instagram-link-rules";
 import { computeEngagementActionsFromPost } from "@/lib/instagram-engagement";
 import { MeuInstagramClient, type OfficeStats } from "@/components/conteudo/meu-instagram-client";
+import { sanitizeInstagramPostsForClient } from "@/lib/instagram-thumbnail-client";
 
 export const dynamic = "force-dynamic";
 
@@ -33,5 +34,11 @@ export default async function ConteudoInicioPage() {
     }
   }
 
-  return <MeuInstagramClient userName={userName} posts={myPosts} office={office} />;
+  return (
+    <MeuInstagramClient
+      userName={userName}
+      posts={sanitizeInstagramPostsForClient(myPosts)}
+      office={office}
+    />
+  );
 }

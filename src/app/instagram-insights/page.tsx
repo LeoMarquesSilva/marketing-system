@@ -11,6 +11,10 @@ import { fetchAudienceDemographics } from "@/lib/instagram-demographics";
 import { fetchAreas } from "@/lib/areas";
 import { fetchUsers } from "@/lib/users";
 import { InstagramInsightsClient } from "@/components/instagram/instagram-insights-client";
+import {
+  sanitizeInstagramPostsForClient,
+  sanitizeInstagramStoryForClient,
+} from "@/lib/instagram-thumbnail-client";
 
 export const dynamic = "force-dynamic";
 
@@ -62,30 +66,33 @@ export default async function InstagramInsightsPage() {
         </p>
       </header>
       <InstagramInsightsClient
-        initialPosts={posts}
+        initialPosts={sanitizeInstagramPostsForClient(posts)}
         initialAccountStats={accountStats}
         initialAccountStatsHistory={accountStatsHistory}
         initialAreas={areas}
         initialUsers={users}
-        initialStories={stories.map((s) => ({
-          id: s.ig_story_id,
-          media_type: s.media_type ?? undefined,
-          media_url: s.media_url ?? undefined,
-          thumbnail_url: s.thumbnail_url ?? undefined,
-          permalink: s.permalink ?? undefined,
-          published_at: s.published_at,
-          reach: s.reach,
-          views: s.views,
-          replies: s.replies,
-          shares: s.shares,
-          total_interactions: s.total_interactions,
-          follows: s.follows,
-          profile_visits: s.profile_visits,
-          nav_taps_forward: s.nav_taps_forward,
-          nav_taps_back: s.nav_taps_back,
-          nav_exits: s.nav_exits,
-          nav_swipe_forward: s.nav_swipe_forward,
-        }))}
+        initialStories={stories.map((s) =>
+          sanitizeInstagramStoryForClient({
+            id: s.ig_story_id,
+            ig_story_id: s.ig_story_id,
+            media_type: s.media_type ?? undefined,
+            media_url: s.media_url ?? undefined,
+            thumbnail_url: s.thumbnail_url ?? undefined,
+            permalink: s.permalink ?? undefined,
+            published_at: s.published_at,
+            reach: s.reach,
+            views: s.views,
+            replies: s.replies,
+            shares: s.shares,
+            total_interactions: s.total_interactions,
+            follows: s.follows,
+            profile_visits: s.profile_visits,
+            nav_taps_forward: s.nav_taps_forward,
+            nav_taps_back: s.nav_taps_back,
+            nav_exits: s.nav_exits,
+            nav_swipe_forward: s.nav_swipe_forward,
+          })
+        )}
         initialMonthlyGoal={monthlyGoal}
         initialAccountInsights={accountInsights}
         initialDemographics={demographics}

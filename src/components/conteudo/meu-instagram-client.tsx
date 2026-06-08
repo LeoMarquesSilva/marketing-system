@@ -28,10 +28,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { InstagramPost } from "@/lib/instagram-posts";
 import { computeEngagementActionsFromPost } from "@/lib/instagram-engagement";
-import {
-  getInstagramThumbnailProxyUrl,
-  hasInstagramThumbnail,
-} from "@/lib/instagram-thumbnail";
+import { resolveInstagramThumbnailSrc } from "@/lib/instagram-thumbnail-client";
 import { Share2 } from "lucide-react";
 
 export interface OfficeStats {
@@ -332,10 +329,7 @@ function PostDetailModal({ post, onClose }: { post: InstagramPost | null; onClos
   const rate =
     post && post.reach ? (computeEngagementActionsFromPost(post) / post.reach) * 100 : 0;
   const info = post ? mediaInfo(post) : null;
-  const imageSrc =
-    post && hasInstagramThumbnail(post)
-      ? getInstagramThumbnailProxyUrl(post.ig_media_id)
-      : null;
+  const imageSrc = post ? resolveInstagramThumbnailSrc(post.ig_media_id, post) : null;
   return (
     <Dialog open={!!post} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="w-[97vw] max-w-6xl sm:max-w-6xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0 sm:flex-row">
@@ -456,9 +450,7 @@ function PostThumb({
   className?: string;
   withBadge?: boolean;
 }) {
-  const src = hasInstagramThumbnail(post)
-    ? getInstagramThumbnailProxyUrl(post.ig_media_id)
-    : null;
+  const src = resolveInstagramThumbnailSrc(post.ig_media_id, post);
   const { label, icon: Icon } = mediaInfo(post);
   return (
     <div className={cn("relative shrink-0 overflow-hidden bg-primary", className)}>
