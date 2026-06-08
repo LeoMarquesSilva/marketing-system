@@ -1,7 +1,14 @@
+"use client";
+
+import { useState } from "react";
 import { ImageIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { InstagramPost } from "@/lib/instagram-posts";
 import { getInstagramMediaLabel } from "@/lib/instagram-media-type";
+import {
+  getInstagramThumbnailProxyUrl,
+  hasInstagramThumbnail,
+} from "@/lib/instagram-thumbnail";
 import { cn } from "@/lib/utils";
 
 type ThumbnailSize = "list" | "card";
@@ -23,7 +30,11 @@ export function InstagramPostThumbnail({
   showBadge = true,
   className,
 }: InstagramPostThumbnailProps) {
-  const src = post.thumbnail_url || post.media_url;
+  const [failed, setFailed] = useState(false);
+  const hasMedia = hasInstagramThumbnail(post);
+  const src = hasMedia && !failed
+    ? getInstagramThumbnailProxyUrl(post.ig_media_id)
+    : null;
   const reel = isReelMedia(post.media_type);
 
   return (
@@ -42,7 +53,12 @@ export function InstagramPostThumbnail({
     >
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt="" className="h-full w-full object-cover" />
+        <img
+          src={src}
+          alt=""
+          className="h-full w-full object-cover"
+          onError={() => setFailed(true)}
+        />
       ) : (
         <div className="flex h-full w-full items-center justify-center">
           <ImageIcon

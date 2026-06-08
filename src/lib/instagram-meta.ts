@@ -248,6 +248,16 @@ export async function fetchMediaPage(
   };
 }
 
+export async function fetchMediaItemById(mediaId: string): Promise<MetaMediaItem | null> {
+  try {
+    return await graphFetch<MetaMediaItem>(
+      `/${mediaId}?fields=id,media_type,media_url,thumbnail_url`
+    );
+  } catch {
+    return null;
+  }
+}
+
 /** Métricas suportadas por surface (Instagram Media Insights). */
 function mediaMetricsFor(productType: string | undefined): string[] {
   const base = ["reach", "views", "likes", "comments", "saved", "shares", "total_interactions"];

@@ -377,3 +377,39 @@ export async function updatePostArea(
 ): Promise<void> {
   return updatePostAssignments(postId, { area });
 }
+
+export async function lookupPostMediaUrls(igMediaId: string): Promise<{
+  media_type: string | null;
+  media_url: string | null;
+  thumbnail_url: string | null;
+} | null> {
+  const supabase = getServiceClient();
+  const { data } = await supabase
+    .from("instagram_posts")
+    .select("media_type, media_url, thumbnail_url")
+    .eq("ig_media_id", igMediaId)
+    .maybeSingle();
+
+  if (!data) return null;
+  return {
+    media_type: (data.media_type as string | null) ?? null,
+    media_url: (data.media_url as string | null) ?? null,
+    thumbnail_url: (data.thumbnail_url as string | null) ?? null,
+  };
+}
+
+export async function updateInstagramPostMediaUrls(
+  igMediaId: string,
+  urls: { media_url: string | null; thumbnail_url: string | null }
+): Promise<void> {
+  const supabase = getServiceClient();
+  const { error } = await supabase
+    .from("instagram_posts")
+    .update({
+      media_url: urls.media_url,
+      thumbnail_url: urls.thumbnail_url,
+    })
+    .eq("ig_media_id", igMediaId);
+
+  if (error) throw new Error(error.message);
+}

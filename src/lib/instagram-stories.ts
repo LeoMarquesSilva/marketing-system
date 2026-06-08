@@ -108,3 +108,39 @@ export async function upsertInstagramStories(
   if (error) throw new Error(error.message);
   return rows.length;
 }
+
+export async function lookupStoryMediaUrls(igStoryId: string): Promise<{
+  media_type: string | null;
+  media_url: string | null;
+  thumbnail_url: string | null;
+} | null> {
+  const supabase = getServiceClient();
+  const { data } = await supabase
+    .from("instagram_stories")
+    .select("media_type, media_url, thumbnail_url")
+    .eq("ig_story_id", igStoryId)
+    .maybeSingle();
+
+  if (!data) return null;
+  return {
+    media_type: (data.media_type as string | null) ?? null,
+    media_url: (data.media_url as string | null) ?? null,
+    thumbnail_url: (data.thumbnail_url as string | null) ?? null,
+  };
+}
+
+export async function updateInstagramStoryMediaUrls(
+  igStoryId: string,
+  urls: { media_url: string | null; thumbnail_url: string | null }
+): Promise<void> {
+  const supabase = getServiceClient();
+  const { error } = await supabase
+    .from("instagram_stories")
+    .update({
+      media_url: urls.media_url,
+      thumbnail_url: urls.thumbnail_url,
+    })
+    .eq("ig_story_id", igStoryId);
+
+  if (error) throw new Error(error.message);
+}

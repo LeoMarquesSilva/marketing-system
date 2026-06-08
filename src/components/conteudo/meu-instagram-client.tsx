@@ -28,6 +28,10 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { InstagramPost } from "@/lib/instagram-posts";
 import { computeEngagementActionsFromPost } from "@/lib/instagram-engagement";
+import {
+  getInstagramThumbnailProxyUrl,
+  hasInstagramThumbnail,
+} from "@/lib/instagram-thumbnail";
 import { Share2 } from "lucide-react";
 
 export interface OfficeStats {
@@ -328,6 +332,10 @@ function PostDetailModal({ post, onClose }: { post: InstagramPost | null; onClos
   const rate =
     post && post.reach ? (computeEngagementActionsFromPost(post) / post.reach) * 100 : 0;
   const info = post ? mediaInfo(post) : null;
+  const imageSrc =
+    post && hasInstagramThumbnail(post)
+      ? getInstagramThumbnailProxyUrl(post.ig_media_id)
+      : null;
   return (
     <Dialog open={!!post} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="w-[97vw] max-w-6xl sm:max-w-6xl max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0 sm:flex-row">
@@ -335,18 +343,18 @@ function PostDetailModal({ post, onClose }: { post: InstagramPost | null; onClos
           <>
             {/* Imagem — grande, à esquerda no desktop */}
             <div className="relative h-64 w-full shrink-0 overflow-hidden bg-[#0a141c] sm:h-auto sm:w-[48%] sm:min-h-[460px]">
-              {post.thumbnail_url ?? post.media_url ? (
+              {imageSrc ? (
                 <>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={(post.thumbnail_url ?? post.media_url) as string}
+                    src={imageSrc}
                     alt=""
                     aria-hidden
                     className="absolute inset-0 h-full w-full scale-110 object-cover opacity-40 blur-2xl"
                   />
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={(post.thumbnail_url ?? post.media_url) as string}
+                    src={imageSrc}
                     alt=""
                     className="relative h-full w-full object-contain"
                   />
@@ -448,7 +456,9 @@ function PostThumb({
   className?: string;
   withBadge?: boolean;
 }) {
-  const src = post.thumbnail_url ?? post.media_url ?? null;
+  const src = hasInstagramThumbnail(post)
+    ? getInstagramThumbnailProxyUrl(post.ig_media_id)
+    : null;
   const { label, icon: Icon } = mediaInfo(post);
   return (
     <div className={cn("relative shrink-0 overflow-hidden bg-primary", className)}>
