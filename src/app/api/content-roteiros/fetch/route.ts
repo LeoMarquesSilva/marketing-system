@@ -1,11 +1,10 @@
-import { after, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/utils/supabase/server";
 import { getAuthenticatedContentUser, isContentManager } from "@/lib/content-access";
-import { runFetchPipeline } from "@/lib/content-roteiros";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+export const maxDuration = 30;
 
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
@@ -32,6 +31,36 @@ async function ensureAuth(body: Record<string, unknown>): Promise<{ error?: Resp
   return {};
 }
 
+function resolveWorkerBaseUrl(request: Request): string {
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  return new URL(request.url).origin;
+}
+
+function triggerFetchWorker(
+  request: Request,
+  payload: Record<string, unknown>
+): void {
+  const secret = process.env.CRON_SECRET?.trim();
+  if (!secret) {
+    console.error("[content-roteiros/fetch] CRON_SECRET não configurado");
+    return;
+  }
+
+  const url = `${resolveWorkerBaseUrl(request)}/api/content-roteiros/fetch-worker`;
+  void fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${secret}`,
+    },
+    body: JSON.stringify(payload),
+  }).catch((err) => {
+    console.error("[content-roteiros/fetch] falha ao disparar worker", err);
+  });
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
@@ -46,44 +75,18 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!process.env.CRON_SECRET?.trim()) {
+      return NextResponse.json(
+        { error: "CRON_SECRET não configurado no servidor." },
+        { status: 503 }
+      );
+    }
+
     const topicIds = body.topicIds as string[] | undefined;
     const monthsBack = typeof body.monthsBack === "number" ? body.monthsBack : undefined;
     const limit = typeof body.limit === "number" ? body.limit : undefined;
-    const sync = body.sync === true;
 
-    const pipelineOptions = {
-      monthsBack,
-      limit,
-      skipOgImage: true,
-      maxCreated: sync ? undefined : (topicIds?.length === 1 ? 10 : 8),
-    };
-
-    if (sync) {
-      const { created, errors, skipped } = await runFetchPipeline(
-        topicIds,
-        undefined,
-        pipelineOptions
-      );
-      return NextResponse.json({
-        success: true,
-        created,
-        skipped,
-        errors: errors.length > 0 ? errors : undefined,
-      });
-    }
-
-    after(async () => {
-      try {
-        const result = await runFetchPipeline(topicIds, undefined, pipelineOptions);
-        console.info("[content-roteiros/fetch] pipeline concluído", {
-          created: result.created,
-          skipped: result.skipped,
-          errors: result.errors.length,
-        });
-      } catch (err) {
-        console.error("[content-roteiros/fetch] pipeline falhou", err);
-      }
-    });
+    triggerFetchWorker(request, { topicIds, monthsBack, limit });
 
     return NextResponse.json(
       {

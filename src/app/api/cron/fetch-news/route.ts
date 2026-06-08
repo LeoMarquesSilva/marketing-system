@@ -1,31 +1,38 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedCronRequest } from "@/lib/cron-auth";
-import { runFetchPipeline } from "@/lib/content-roteiros";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+export const maxDuration = 30;
 
-/** Cron diário — busca notícias de todos os temas ativos e gera os posts. */
+/** Cron diário — dispara worker de busca de notícias (execução longa em função separada). */
 export async function GET(request: Request) {
   if (!isAuthorizedCronRequest(request)) {
     return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   }
 
-  try {
-    const { created, skipped, errors } = await runFetchPipeline(undefined, undefined, {
-      skipOgImage: true,
-      maxCreated: 30,
-    });
-    return NextResponse.json({
-      success: true,
-      created,
-      skipped,
-      errors: errors.length > 0 ? errors.slice(0, 10) : undefined,
-      finishedAt: new Date().toISOString(),
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Erro ao buscar notícias.";
-    console.error("[cron/fetch-news]", msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+  const secret = process.env.CRON_SECRET?.trim();
+  if (!secret) {
+    return NextResponse.json({ error: "CRON_SECRET não configurado." }, { status: 503 });
   }
+
+  const baseUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : new URL(request.url).origin;
+
+  void fetch(`${baseUrl}/api/content-roteiros/fetch-worker`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${secret}`,
+    },
+    body: JSON.stringify({ maxCreated: 30 }),
+  }).catch((err) => {
+    console.error("[cron/fetch-news] falha ao disparar worker", err);
+  });
+
+  return NextResponse.json({
+    started: true,
+    message: "Busca de notícias disparada em segundo plano.",
+    finishedAt: new Date().toISOString(),
+  });
 }
