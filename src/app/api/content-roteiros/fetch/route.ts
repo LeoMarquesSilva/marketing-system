@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/utils/supabase/server";
 import { getAuthenticatedContentUser, isContentManager } from "@/lib/content-access";
+import { getInternalJobSecret } from "@/lib/cron-auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -42,9 +43,9 @@ function triggerFetchWorker(
   request: Request,
   payload: Record<string, unknown>
 ): void {
-  const secret = process.env.CRON_SECRET?.trim();
+  const secret = getInternalJobSecret();
   if (!secret) {
-    console.error("[content-roteiros/fetch] CRON_SECRET não configurado");
+    console.error("[content-roteiros/fetch] nenhum segredo interno disponível");
     return;
   }
 
@@ -75,9 +76,10 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!process.env.CRON_SECRET?.trim()) {
+    const secret = getInternalJobSecret();
+    if (!secret) {
       return NextResponse.json(
-        { error: "CRON_SECRET não configurado no servidor." },
+        { error: "Segredo interno do servidor não configurado." },
         { status: 503 }
       );
     }

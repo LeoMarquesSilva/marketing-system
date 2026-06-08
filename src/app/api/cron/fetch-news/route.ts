@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAuthorizedCronRequest } from "@/lib/cron-auth";
+import { getInternalJobSecret, isAuthorizedCronRequest } from "@/lib/cron-auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -10,9 +10,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   }
 
-  const secret = process.env.CRON_SECRET?.trim();
+  const secret = getInternalJobSecret();
   if (!secret) {
-    return NextResponse.json({ error: "CRON_SECRET não configurado." }, { status: 503 });
+    return NextResponse.json({ error: "Segredo interno do servidor não configurado." }, { status: 503 });
   }
 
   const baseUrl = process.env.VERCEL_URL

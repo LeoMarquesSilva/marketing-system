@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAuthorizedCronRequest } from "@/lib/cron-auth";
+import { getInternalJobSecret, isAuthorizedInternalJobRequest } from "@/lib/cron-auth";
 import { runFetchPipeline } from "@/lib/content-roteiros";
 
 export const dynamic = "force-dynamic";
@@ -7,7 +7,7 @@ export const maxDuration = 300;
 
 /** Worker interno — invocado pela rota pública ou cron; não expor ao browser. */
 export async function POST(request: Request) {
-  if (!isAuthorizedCronRequest(request)) {
+  if (!isAuthorizedInternalJobRequest(request)) {
     return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   }
 
