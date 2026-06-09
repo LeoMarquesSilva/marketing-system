@@ -21,10 +21,13 @@ import {
   Check,
   UserRound,
   Cloud,
+  LayoutGrid,
+  ListChecks,
 } from "lucide-react";
 import type { User } from "@/lib/users";
 import { updateUser } from "@/lib/users";
 import { CollaboratorPhotoEditDialog, type CollaboratorPhotoFormValues } from "./collaborator-photo-edit-dialog";
+import { CollaboratorPhotosChecklist } from "./collaborator-photos-checklist";
 import { cn } from "@/lib/utils";
 
 interface CollaboratorPhotosGridProps {
@@ -33,9 +36,10 @@ interface CollaboratorPhotosGridProps {
 
 export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridProps) {
   const [users, setUsers] = useState(initialUsers);
+  const [viewMode, setViewMode] = useState<"checklist" | "grid">("checklist");
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
-  const [photoFilter, setPhotoFilter] = useState<"all" | "com" | "sem">("all");
+  const [collectFilter, setCollectFilter] = useState<"all" | "obtidas" | "pendentes">("all");
   const [statusFilter, setStatusFilter] = useState<"ativos" | "todos">("ativos");
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -54,15 +58,15 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
 
   const stats = useMemo(() => {
     const pool = statusFilter === "ativos" ? activeUsers : users;
-    const withPhoto = pool.filter(
-      (u) => Boolean(u.avatar_url?.trim()) || Boolean(u.photo_onedrive_url?.trim())
-    ).length;
+    const obtained = pool.filter((u) => u.photo_collected === true).length;
     return {
       total: pool.length,
-      withPhoto,
-      withoutPhoto: pool.length - withPhoto,
+      obtained,
+      pending: pool.length - obtained,
     };
   }, [users, activeUsers, statusFilter]);
+
+  const progressPct = stats.total > 0 ? Math.round((stats.obtained / stats.total) * 100) : 0;
 
   const filteredUsers = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -71,44 +75,51 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
         if (statusFilter === "ativos" && u.is_active === false) return false;
         if (q && !u.name.toLowerCase().includes(q)) return false;
         if (deptFilter !== "all" && u.department !== deptFilter) return false;
-        const hasPhoto = Boolean(u.avatar_url?.trim()) || Boolean(u.photo_onedrive_url?.trim());
-        if (photoFilter === "com" && !hasPhoto) return false;
-        if (photoFilter === "sem" && hasPhoto) return false;
+        const collected = u.photo_collected === true;
+        if (collectFilter === "obtidas" && !collected) return false;
+        if (collectFilter === "pendentes" && collected) return false;
         return true;
       })
       .sort((a, b) => {
-        const aPhoto = Boolean(a.avatar_url?.trim()) || Boolean(a.photo_onedrive_url?.trim());
-        const bPhoto = Boolean(b.avatar_url?.trim()) || Boolean(b.photo_onedrive_url?.trim());
-        if (aPhoto !== bPhoto) return aPhoto ? -1 : 1;
+        const aDone = a.photo_collected === true;
+        const bDone = b.photo_collected === true;
+        if (aDone !== bDone) return aDone ? 1 : -1;
         return a.name.localeCompare(b.name);
       });
-  }, [users, search, deptFilter, photoFilter, statusFilter]);
+  }, [users, search, deptFilter, collectFilter, statusFilter]);
 
   const hasActiveFilters =
     search.trim() !== "" ||
     deptFilter !== "all" ||
-    photoFilter !== "all" ||
+    collectFilter !== "all" ||
     statusFilter !== "ativos";
 
   function clearFilters() {
     setSearch("");
     setDeptFilter("all");
-    setPhotoFilter("all");
+    setCollectFilter("all");
     setStatusFilter("ativos");
+  }
+
+  function handleUserUpdated(data: User) {
+    setUsers((prev) => prev.map((u) => (u.id === data.id ? { ...u, ...data } : u)));
   }
 
   async function handleSavePhoto(userId: string, values: CollaboratorPhotoFormValues) {
     setError(null);
+    const collected = values.photo_collected === true;
     const { data, error: err } = await updateUser(userId, {
       avatar_url: values.avatar_url?.trim() || null,
       photo_onedrive_url: values.photo_onedrive_url?.trim() || null,
+      photo_collected: collected,
+      photo_collected_at: collected ? new Date().toISOString() : null,
     });
     if (err) {
       setError(err);
       return;
     }
     if (data) {
-      setUsers((prev) => prev.map((u) => (u.id === data.id ? { ...u, ...data } : u)));
+      handleUserUpdated(data);
       setEditingUser(null);
     }
   }
@@ -127,21 +138,42 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
         </div>
       )}
 
+      <div className="rounded-xl border bg-gradient-to-r from-emerald-50/80 to-sky-50/50 px-4 py-3 dark:from-emerald-950/20 dark:to-sky-950/20">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-medium">Figurinha Copa — coleta de fotos</p>
+            <p className="text-xs text-muted-foreground">
+              Marque ✓ quando a Valentina já pegou a foto e cole o link do OneDrive na linha.
+            </p>
+          </div>
+          <p className="text-2xl font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+            {stats.obtained}/{stats.total}
+            <span className="ml-1 text-sm font-normal text-muted-foreground">({progressPct}%)</span>
+          </p>
+        </div>
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
+      </div>
+
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl border bg-card px-4 py-3 shadow-sm">
           <p className="text-xs text-muted-foreground">Colaboradores</p>
           <p className="text-2xl font-semibold tabular-nums">{stats.total}</p>
         </div>
         <div className="rounded-xl border border-emerald-200/60 bg-emerald-50/50 px-4 py-3 shadow-sm dark:border-emerald-900/40 dark:bg-emerald-950/20">
-          <p className="text-xs text-emerald-700 dark:text-emerald-400">Com foto cadastrada</p>
+          <p className="text-xs text-emerald-700 dark:text-emerald-400">Foto obtida</p>
           <p className="text-2xl font-semibold tabular-nums text-emerald-800 dark:text-emerald-300">
-            {stats.withPhoto}
+            {stats.obtained}
           </p>
         </div>
         <div className="rounded-xl border border-amber-200/60 bg-amber-50/50 px-4 py-3 shadow-sm dark:border-amber-900/40 dark:bg-amber-950/20">
-          <p className="text-xs text-amber-700 dark:text-amber-400">Sem foto</p>
+          <p className="text-xs text-amber-700 dark:text-amber-400">Pendentes</p>
           <p className="text-2xl font-semibold tabular-nums text-amber-800 dark:text-amber-300">
-            {stats.withoutPhoto}
+            {stats.pending}
           </p>
         </div>
       </div>
@@ -170,14 +202,17 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
               ))}
             </SelectContent>
           </Select>
-          <Select value={photoFilter} onValueChange={(v) => setPhotoFilter(v as typeof photoFilter)}>
+          <Select
+            value={collectFilter}
+            onValueChange={(v) => setCollectFilter(v as typeof collectFilter)}
+          >
             <SelectTrigger className="h-9 w-[150px] text-xs">
-              <SelectValue placeholder="Foto" />
+              <SelectValue placeholder="Coleta" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Foto: todas</SelectItem>
-              <SelectItem value="com">Com foto</SelectItem>
-              <SelectItem value="sem">Sem foto</SelectItem>
+              <SelectItem value="all">Coleta: todas</SelectItem>
+              <SelectItem value="obtidas">Foto obtida</SelectItem>
+              <SelectItem value="pendentes">Pendentes</SelectItem>
             </SelectContent>
           </Select>
           <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
@@ -196,16 +231,38 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
             </Button>
           )}
         </div>
-        {stats.withoutPhoto > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 shrink-0"
-            onClick={() => setPhotoFilter("sem")}
-          >
-            Ver {stats.withoutPhoto} sem foto
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {stats.pending > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 shrink-0"
+              onClick={() => setCollectFilter("pendentes")}
+            >
+              Ver {stats.pending} pendentes
+            </Button>
+          )}
+          <div className="flex rounded-lg border p-0.5">
+            <Button
+              variant={viewMode === "checklist" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-8 gap-1.5 px-2.5 text-xs"
+              onClick={() => setViewMode("checklist")}
+            >
+              <ListChecks className="h-3.5 w-3.5" />
+              Checklist
+            </Button>
+            <Button
+              variant={viewMode === "grid" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-8 gap-1.5 px-2.5 text-xs"
+              onClick={() => setViewMode("grid")}
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              Galeria
+            </Button>
+          </div>
+        </div>
       </div>
 
       <p className="text-xs text-muted-foreground">
@@ -226,12 +283,22 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
           <UserRound className="mx-auto h-10 w-10 text-muted-foreground/50" />
           <p className="mt-3 text-sm text-muted-foreground">Nenhum colaborador encontrado.</p>
         </div>
+      ) : viewMode === "checklist" ? (
+        <CollaboratorPhotosChecklist
+          users={filteredUsers}
+          onUserUpdated={handleUserUpdated}
+          onEdit={(user) => {
+            setError(null);
+            setEditingUser(user);
+          }}
+          onError={setError}
+        />
       ) : (
         <div className="grid gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
           {filteredUsers.map((user) => {
             const hasPhotoLink = Boolean(user.avatar_url?.trim());
             const hasOnedrive = Boolean(user.photo_onedrive_url?.trim());
-            const hasPhoto = hasPhotoLink || hasOnedrive;
+            const collected = user.photo_collected === true;
             const isActive = user.is_active !== false;
 
             return (
@@ -239,6 +306,7 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
                 key={user.id}
                 className={cn(
                   "group overflow-hidden rounded-lg border bg-card shadow-sm transition-shadow hover:shadow-md",
+                  collected && "ring-1 ring-emerald-400/50",
                   !isActive && "opacity-70"
                 )}
               >
@@ -253,37 +321,34 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
                   ) : hasOnedrive ? (
                     <div className="flex h-full flex-col items-center justify-center gap-1.5 bg-sky-50/80 text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
                       <Cloud className="h-8 w-8 opacity-60" />
-                      <span className="text-[10px] px-2 text-center leading-tight">Só OneDrive</span>
+                      <span className="px-2 text-center text-[10px] leading-tight">Só OneDrive</span>
                     </div>
                   ) : (
                     <div className="flex h-full flex-col items-center justify-center gap-1.5 text-muted-foreground">
                       <ImageOff className="h-7 w-7 opacity-40" />
-                      <span className="text-[10px] px-2 text-center leading-tight">Sem foto</span>
+                      <span className="px-2 text-center text-[10px] leading-tight">Sem foto</span>
+                    </div>
+                  )}
+                  {collected && (
+                    <div className="absolute left-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500 text-white shadow">
+                      <Check className="h-3.5 w-3.5" />
                     </div>
                   )}
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent px-2 pb-2 pt-8">
                     <p className="truncate text-xs font-medium text-white">{user.name}</p>
                     <p className="truncate text-[10px] text-white/75">{user.department}</p>
                   </div>
-                  {!isActive && (
-                    <Badge
-                      variant="outline"
-                      className="absolute left-1.5 top-1.5 border-amber-200 bg-amber-50/90 px-1.5 py-0 text-[10px] text-amber-800"
-                    >
-                      Ex
-                    </Badge>
-                  )}
                 </div>
 
                 <div className="flex items-center justify-between gap-1 border-t px-2 py-1.5">
                   <Badge
-                    variant={hasPhoto ? "secondary" : "outline"}
+                    variant={collected ? "secondary" : "outline"}
                     className={cn(
                       "px-1.5 py-0 text-[10px] font-normal",
-                      !hasPhoto && "border-amber-200 text-amber-700"
+                      !collected && "border-amber-200 text-amber-700"
                     )}
                   >
-                    {hasPhoto ? "OK" : "Pendente"}
+                    {collected ? "Obtida" : "Pendente"}
                   </Badge>
                   <div className="flex gap-0.5">
                     {hasOnedrive && (
@@ -304,38 +369,25 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
                       </Button>
                     )}
                     {hasPhotoLink && (
-                      <>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          title="Copiar link da foto"
-                          onClick={() => copyUrl(user.avatar_url!, user.id)}
-                        >
-                          {copiedId === user.id ? (
-                            <Check className="h-3.5 w-3.5 text-emerald-600" />
-                          ) : (
-                            <Copy className="h-3.5 w-3.5" />
-                          )}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          title="Abrir foto"
-                          asChild
-                        >
-                          <a href={user.avatar_url!} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="h-3.5 w-3.5" />
-                          </a>
-                        </Button>
-                      </>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        title="Copiar link da foto"
+                        onClick={() => copyUrl(user.avatar_url!, user.id)}
+                      >
+                        {copiedId === user.id ? (
+                          <Check className="h-3.5 w-3.5 text-emerald-600" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
                     )}
                     <Button
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7"
-                      title={hasPhoto ? "Editar foto" : "Cadastrar foto"}
+                      title="Editar links"
                       onClick={() => {
                         setError(null);
                         setEditingUser(user);

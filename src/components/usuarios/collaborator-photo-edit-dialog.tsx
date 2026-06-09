@@ -33,6 +33,7 @@ const urlOptional = z
 const formSchema = z.object({
   avatar_url: urlOptional,
   photo_onedrive_url: urlOptional,
+  photo_collected: z.boolean().optional(),
 });
 
 export type CollaboratorPhotoFormValues = z.infer<typeof formSchema>;
@@ -54,7 +55,7 @@ export function CollaboratorPhotoEditDialog({
 }: CollaboratorPhotoEditDialogProps) {
   const form = useForm<CollaboratorPhotoFormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { avatar_url: "", photo_onedrive_url: "" },
+    defaultValues: { avatar_url: "", photo_onedrive_url: "", photo_collected: false },
   });
 
   useEffect(() => {
@@ -62,6 +63,7 @@ export function CollaboratorPhotoEditDialog({
       form.reset({
         avatar_url: user.avatar_url || "",
         photo_onedrive_url: user.photo_onedrive_url || "",
+        photo_collected: user.photo_collected === true,
       });
     }
   }, [user, open, form]);
@@ -148,6 +150,29 @@ export function CollaboratorPhotoEditDialog({
               )}
             />
 
+            <FormField
+              control={form.control}
+              name="photo_collected"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center gap-3 rounded-lg border px-3 py-3">
+                  <FormControl>
+                    <input
+                      type="checkbox"
+                      checked={field.value === true}
+                      onChange={(e) => field.onChange(e.target.checked)}
+                      className="h-4 w-4 rounded border-muted-foreground/40"
+                    />
+                  </FormControl>
+                  <div>
+                    <FormLabel className="font-normal">Foto obtida</FormLabel>
+                    <p className="text-xs text-muted-foreground">
+                      Marque quando a foto deste colaborador já foi coletada para a figurinha.
+                    </p>
+                  </div>
+                </FormItem>
+              )}
+            />
+
             {error && <p className="text-sm text-destructive">{error}</p>}
 
             <DialogFooter className="gap-2 sm:gap-0">
@@ -156,7 +181,9 @@ export function CollaboratorPhotoEditDialog({
                   type="button"
                   variant="ghost"
                   className="mr-auto text-muted-foreground"
-                  onClick={() => form.reset({ avatar_url: "", photo_onedrive_url: "" })}
+                  onClick={() =>
+                    form.reset({ avatar_url: "", photo_onedrive_url: "", photo_collected: false })
+                  }
                 >
                   Limpar links
                 </Button>
