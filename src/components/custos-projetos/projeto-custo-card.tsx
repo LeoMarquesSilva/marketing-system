@@ -38,9 +38,10 @@ function ProjectLogo({ project }: { project: SupabaseProjectBilling }) {
 interface ProjetoCustoCardProps {
   project: SupabaseProjectBilling;
   onEdit: (project: SupabaseProjectBilling) => void;
+  usdBrlRate: number;
 }
 
-export function ProjetoCustoCard({ project, onEdit }: ProjetoCustoCardProps) {
+export function ProjetoCustoCard({ project, onEdit, usdBrlRate }: ProjetoCustoCardProps) {
   const [expanded, setExpanded] = useState(false);
   const dashboardUrl = `https://supabase.com/dashboard/project/${project.ref}`;
   const history = [...project.paymentHistory].sort((a, b) =>
@@ -61,8 +62,17 @@ export function ProjetoCustoCard({ project, onEdit }: ProjetoCustoCardProps) {
                 </Badge>
               )}
             </div>
-            <p className="text-sm font-semibold tabular-nums text-emerald-700 dark:text-emerald-400 mt-0.5">
-              {formatUsd(project.estimatedMonthlyUsd)}/mês
+            <p className="mt-0.5 flex items-baseline gap-1.5">
+              <span className="text-sm font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+                {project.estimatedMonthlyUsd > 0
+                  ? `${formatBrl(project.estimatedMonthlyUsd * usdBrlRate)}/mês`
+                  : "Plano incluso"}
+              </span>
+              {project.estimatedMonthlyUsd > 0 && (
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  ≈ {formatUsd(project.estimatedMonthlyUsd)}
+                </span>
+              )}
             </p>
           </div>
           <div className="flex gap-1.5 shrink-0">

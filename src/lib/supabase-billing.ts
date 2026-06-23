@@ -75,6 +75,10 @@ export interface SupabaseOrgBilling {
   currency: string;
   invoiceLines: SupabaseInvoiceLine[];
   projects: SupabaseProjectBilling[];
+  /** Faturas a nível de organização (plano base), sem rateio entre projetos. */
+  orgPaymentHistory: ProjectPaymentHistoryItem[];
+  orgTotalPaidUsd: number;
+  orgTotalPaidBrl: number;
 }
 
 export interface SupabaseBillingDashboard {
@@ -370,16 +374,26 @@ export async function fetchSupabaseBillingDashboard(): Promise<SupabaseBillingDa
       currency: "USD",
       invoiceLines,
       projects,
+      orgPaymentHistory: [],
+      orgTotalPaidUsd: 0,
+      orgTotalPaidBrl: 0,
     });
   }
 
   const profiles = await loadInfraProjectProfiles(allProjectRefs);
 
   for (const org of organizations) {
-    const historyByProject = await loadPaymentHistoryForProjects(
-      org.slug,
-      org.projects.map((p) => p.ref)
-    );
+    const { byProject: historyByProject, orgLevel } =
+      await loadPaymentHistoryForProjects(
+        org.slug,
+        org.projects.map((p) => p.ref)
+      );
+
+    org.orgPaymentHistory = orgLevel;
+    org.orgTotalPaidUsd = orgLevel.reduce((s, h) => s + h.amountUsd, 0);
+    org.orgTotalPaidBrl = orgLevel.reduce((s, h) => s + (h.amountBrl ?? 0), 0);
+    totalPaidUsd += org.orgTotalPaidUsd;
+    totalPaidBrl += org.orgTotalPaidBrl;
 
     org.projects = org.projects
       .map((project) => {

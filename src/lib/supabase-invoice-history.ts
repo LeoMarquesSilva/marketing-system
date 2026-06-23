@@ -19,10 +19,21 @@ function getAdminClient() {
   return createClient(supabaseUrl, supabaseServiceKey);
 }
 
+export interface OrgPaymentHistory {
+  /** Faturas atribuídas a cada projeto (project_ref preenchido). */
+  byProject: Map<string, ProjectPaymentHistoryItem[]>;
+  /**
+   * Faturas a nível de organização (project_ref vazio) — ex.: plano Pro base
+   * que já inclui projetos. NÃO são rateadas entre projetos; ficam à parte
+   * para refletir o que cada fatura realmente cobra.
+   */
+  orgLevel: ProjectPaymentHistoryItem[];
+}
+
 export async function loadPaymentHistoryForProjects(
   orgSlug: string,
   projectRefs: string[]
-): Promise<Map<string, ProjectPaymentHistoryItem[]>> {
+): Promise<OrgPaymentHistory> {
   const supabase = getAdminClient();
   const { data, error } = await supabase
     .from("supabase_billing_history")
@@ -31,7 +42,7 @@ export async function loadPaymentHistoryForProjects(
     .in("status", ["paid"])
     .order("period_end", { ascending: false });
 
-  if (error || !data) return new Map();
+  if (error || !data) return { byProject: new Map(), orgLevel: [] };
 
   const refs = new Set(projectRefs);
   const byProject = new Map<string, ProjectPaymentHistoryItem[]>();
@@ -60,29 +71,11 @@ export async function loadPaymentHistoryForProjects(
     byProject.set(row.project_ref, list);
   }
 
-  if (orgLevel.length > 0 && refs.size > 0) {
-    for (const orgItem of orgLevel) {
-      const share = orgItem.amountUsd / refs.size;
-      for (const ref of refs) {
-        const list = byProject.get(ref) ?? [];
-        list.push({
-          ...orgItem,
-          description: `${orgItem.description} (rateio org.)`,
-          amountUsd: share,
-          amountBrl:
-            orgItem.usdBrlRate != null
-              ? Math.round(share * orgItem.usdBrlRate * 100) / 100
-              : null,
-        });
-        byProject.set(ref, list);
-      }
-    }
-  }
-
   for (const [ref, list] of byProject) {
     list.sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
     byProject.set(ref, list);
   }
+  orgLevel.sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
 
-  return byProject;
+  return { byProject, orgLevel };
 }

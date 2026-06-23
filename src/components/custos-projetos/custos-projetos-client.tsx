@@ -11,6 +11,7 @@ import {
 } from "@/lib/supabase-billing";
 import { formatBrl } from "@/lib/usd-brl-ptax";
 import { ProjetoCustoCard } from "@/components/custos-projetos/projeto-custo-card";
+import { OrgCustoCard } from "@/components/custos-projetos/org-custo-card";
 import {
   ProjetoCustoEditDialog,
   type ProjetoCustoFormValues,
@@ -34,6 +35,8 @@ import {
   matchesPeriodFilter,
   type CustosPeriodFilter,
 } from "@/lib/custos-period-filter";
+import { computeOverview } from "@/lib/custos-overview";
+import { CustosOverviewPanel } from "@/components/custos-projetos/custos-overview-panel";
 
 function formatDueDate(iso: string | null | undefined): string | null {
   if (!iso) return null;
@@ -47,6 +50,11 @@ function sumSupabasePaid(
   let usd = 0;
   let brl = 0;
   for (const org of data?.organizations ?? []) {
+    for (const h of org.orgPaymentHistory ?? []) {
+      if (!matchesPeriodFilter(h.periodEnd, filter)) continue;
+      usd += h.amountUsd;
+      brl += h.amountBrl ?? 0;
+    }
     for (const project of org.projects) {
       for (const h of project.paymentHistory) {
         if (!matchesPeriodFilter(h.periodEnd, filter)) continue;
@@ -257,6 +265,11 @@ export function CustosProjetosClient() {
     hostingerData,
   ]);
 
+  const overview = useMemo(
+    () => computeOverview(data, servicesData, hostingerData, periodFilter),
+    [data, servicesData, hostingerData, periodFilter]
+  );
+
   const refreshServices = useCallback(async () => {
     const res = await authFetch("/api/custos/servicos");
     if (res.ok) {
@@ -359,13 +372,19 @@ export function CustosProjetosClient() {
 
       {(data?.configured || servicesData) && (
         <>
-          <CustosProjetosTabs active={activeTab} onChange={setActiveTab} />
-
           <CustosPeriodFilterBar
             filter={periodFilter}
             years={availableYears}
             onChange={setPeriodFilter}
           />
+
+          <CustosOverviewPanel
+            overview={overview}
+            periodFilter={periodFilter}
+            onSelectCategory={setActiveTab}
+          />
+
+          <CustosProjetosTabs active={activeTab} onChange={setActiveTab} />
 
           <CustosTabSummary
             activeTab={activeTab}
@@ -391,15 +410,19 @@ export function CustosProjetosClient() {
               ) : data.organizations.every((o) => o.projects.length === 0) ? (
                 <p className="text-muted-foreground text-sm">Nenhum projeto encontrado.</p>
               ) : (
-                data.organizations.flatMap((org) =>
-                  org.projects.map((project) => (
-                    <ProjetoCustoCard
-                      key={project.ref}
-                      project={project}
-                      onEdit={setEditingProject}
-                    />
-                  ))
-                )
+                data.organizations.map((org) => (
+                  <div key={org.slug} className="space-y-4">
+                    <OrgCustoCard org={org} usdBrlRate={overview.rate} />
+                    {org.projects.map((project) => (
+                      <ProjetoCustoCard
+                        key={project.ref}
+                        project={project}
+                        onEdit={setEditingProject}
+                        usdBrlRate={overview.rate}
+                      />
+                    ))}
+                  </div>
+                ))
               )}
             </section>
           )}
@@ -411,7 +434,11 @@ export function CustosProjetosClient() {
               aria-labelledby="custos-tab-cursor"
             >
               {cursorService ? (
-                <ServicoCustoCard service={cursorService} onEdit={setEditingService} />
+                <ServicoCustoCard
+                  service={cursorService}
+                  onEdit={setEditingService}
+                  usdBrlRate={overview.rate}
+                />
               ) : (
                 <p className="text-sm text-muted-foreground rounded-xl border border-dashed px-4 py-8 text-center">
                   Serviço Cursor não cadastrado.
@@ -430,6 +457,7 @@ export function CustosProjetosClient() {
                 <ServicoCustoCard
                   service={n8nService}
                   onEdit={setEditingService}
+                  usdBrlRate={overview.rate}
                   hostingerLive={hostingerData}
                   hostingerError={
                     hostingerData?.configured === false

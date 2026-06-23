@@ -31,21 +31,28 @@ export function CustosTabSummary({
 
   const paidLabel =
     paidBrl > 0 ? formatBrl(paidBrl) : paidUsd > 0 ? formatUsd(paidUsd) : formatBrl(0);
+  const paidSub =
+    paidBrl > 0 && paidUsd > 0 ? `≈ ${formatUsd(paidUsd)}` : undefined;
+
+  // Mostra a coluna de vencimento só quando há data — evita célula vazia.
+  const cols = nextDue ? "sm:grid-cols-3" : "sm:grid-cols-2";
 
   return (
-    <div className="grid gap-3 sm:grid-cols-3">
+    <div className={cn("grid gap-3", cols)}>
       <SummaryCell
         label={`Custo mensal · ${tabLabel}`}
         value={monthlyLabel}
         sub={monthlyHint}
         accent
       />
-      <SummaryCell label={`Pago em ${periodLabel}`} value={paidLabel} />
-      <SummaryCell
-        label="Próximo vencimento"
-        value={nextDue ?? "—"}
-        sub={nextDue ? "Renovação prevista" : undefined}
-      />
+      <SummaryCell label={`Pago em ${periodLabel}`} value={paidLabel} sub={paidSub} />
+      {nextDue && (
+        <SummaryCell
+          label="Próximo vencimento"
+          value={nextDue}
+          sub="Renovação prevista"
+        />
+      )}
     </div>
   );
 }

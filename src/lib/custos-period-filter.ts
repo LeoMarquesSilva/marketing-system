@@ -56,6 +56,9 @@ export function collectAvailableYears(
   const years = new Set<number>([new Date().getFullYear()]);
 
   for (const org of data?.organizations ?? []) {
+    for (const h of org.orgPaymentHistory ?? []) {
+      years.add(parsePeriodDate(h.periodEnd).year);
+    }
     for (const project of org.projects) {
       for (const h of project.paymentHistory) {
         years.add(parsePeriodDate(h.periodEnd).year);
@@ -81,6 +84,11 @@ export function sumFilteredPayments(
   let brl = 0;
 
   for (const org of data?.organizations ?? []) {
+    for (const h of org.orgPaymentHistory ?? []) {
+      if (!matchesPeriodFilter(h.periodEnd, filter)) continue;
+      usd += h.amountUsd;
+      brl += h.amountBrl ?? 0;
+    }
     for (const project of org.projects) {
       for (const h of project.paymentHistory) {
         if (!matchesPeriodFilter(h.periodEnd, filter)) continue;

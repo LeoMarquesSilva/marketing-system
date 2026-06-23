@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import type { InfraServiceWithPayments } from "@/lib/infra-services";
 import type { HostingerBillingDashboard } from "@/lib/hostinger-billing";
 import { cn } from "@/lib/utils";
+import { formatUsd } from "@/lib/supabase-billing";
+import { formatBrl } from "@/lib/usd-brl-ptax";
 import { ServicoExecutivePanel } from "@/components/custos-projetos/servico-executive-panel";
 
 function ServiceLogo({ service }: { service: InfraServiceWithPayments }) {
@@ -39,6 +41,7 @@ function ServiceLogo({ service }: { service: InfraServiceWithPayments }) {
 interface ServicoCustoCardProps {
   service: InfraServiceWithPayments;
   onEdit: (service: InfraServiceWithPayments) => void;
+  usdBrlRate: number;
   hostingerLive?: HostingerBillingDashboard | null;
   hostingerError?: string | null;
 }
@@ -46,11 +49,22 @@ interface ServicoCustoCardProps {
 export function ServicoCustoCard({
   service,
   onEdit,
+  usdBrlRate,
   hostingerLive,
   hostingerError,
 }: ServicoCustoCardProps) {
   const isCursor = service.slug === "cursor";
   const isN8n = service.slug === "n8n-vps";
+
+  // Custo mensal em destaque: Cursor é cobrado em USD (converte p/ BRL);
+  // N8N/VPS já vem em BRL (prioriza o preço de renovação ao vivo da Hostinger).
+  const monthlyUsd = service.estimatedMonthlyUsd || Number(service.monthly_amount_usd) || 0;
+  const monthlyBrl = isN8n
+    ? hostingerLive?.subscription?.renewalPrice ||
+      service.estimatedMonthlyBrl ||
+      Number(service.monthly_amount_brl) ||
+      0
+    : monthlyUsd * usdBrlRate;
 
   return (
     <Card className="border-border/60 shadow-sm">
@@ -69,6 +83,18 @@ export function ServicoCustoCard({
                 </Badge>
               )}
             </div>
+            {monthlyBrl > 0 && (
+              <p className="mt-0.5 flex items-baseline gap-1.5">
+                <span className="text-sm font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+                  {formatBrl(monthlyBrl)}/mês
+                </span>
+                {!isN8n && monthlyUsd > 0 && (
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    ≈ {formatUsd(monthlyUsd)}
+                  </span>
+                )}
+              </p>
+            )}
           </div>
           <div className="flex gap-1.5 shrink-0">
             <Button variant="outline" size="sm" className="h-8 gap-1" onClick={() => onEdit(service)}>
