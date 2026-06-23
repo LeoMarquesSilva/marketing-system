@@ -26,6 +26,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/vincular-solicitantes", label: "Vincular Solicitantes" },
   { key: "/fotos-colaboradores", label: "Fotos Colaboradores" },
   { key: "/usuarios", label: "Usuários" },
+  { key: "/custos-projetos", label: "Custos de Projetos" },
   { key: "/admin", label: "Configurações", admin: true },
   { key: "/admin/conteudo-temas", label: "Temas RSS", admin: true },
 ];

@@ -65,6 +65,7 @@ export type WorkflowStage = (typeof WORKFLOW_STAGES)[number]["value"];
 export const COMPLETION_TYPES = [
   { value: "design_concluido", label: "Design concluído" },
   { value: "postagem_feita", label: "Postagem feita" },
+  { value: "postagem_externa", label: "Postagem em outro canal" },
   { value: "conteudo_entregue", label: "Conteúdo entregue" },
 ] as const;
 

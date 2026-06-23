@@ -21,6 +21,7 @@ const PAGE_LABELS: Record<string, string> = {
   "/clima": "Clima",
   "/trafego-pago": "Tráfego Pago",
   "/vios-tarefas": "Tarefas VIOS",
+  "/custos-projetos": "Custos de Projetos",
 };
 
 function getPageLabel(pathname: string): string {

@@ -57,6 +57,7 @@ export interface MarketingRequest {
   stage_changed_at: string | null;
   art_link: string | null;
   posted_at: string | null;
+  ig_media_id: string | null;
   created_by_id: string | null;
   created_by: string | null;
   solicitante_user?: { name: string; department: string; avatar_url: string | null } | null;
@@ -74,13 +75,13 @@ export interface FetchMarketingRequestsOptions {
 const KANBAN_SELECT =
   "id, title, description, requesting_area, status, requested_at, delivered_at, " +
   "assignee, assignee_id, solicitante, solicitante_id, request_type, " +
-  "link, referencias, nome_advogado, art_link, posted_at, created_by_id, created_by, " +
+  "link, referencias, nome_advogado, art_link, posted_at, ig_media_id, created_by_id, created_by, " +
   "workflow_stage, completion_type, priority, deadline, deadline_time, stage_changed_at";
 
 const KANBAN_SELECT_WITHOUT_ART_LINK =
   "id, title, description, requesting_area, status, requested_at, delivered_at, " +
   "assignee, assignee_id, solicitante, solicitante_id, request_type, " +
-  "link, referencias, nome_advogado, posted_at, created_by_id, created_by, " +
+  "link, referencias, nome_advogado, posted_at, ig_media_id, created_by_id, created_by, " +
   "workflow_stage, completion_type, priority, deadline, deadline_time, stage_changed_at";
 
 function logSupabaseError(context: string, err: unknown) {
@@ -129,8 +130,30 @@ export async function fetchMarketingRequests(
     const rows: unknown[] = [];
     let page = 0;
     while (true) {
-      const { data, error } = await buildBase(selectStr).range(page * PAGE, (page + 1) * PAGE - 1);
-      if (error) return { rows: null as unknown[] | null, error };
+      let data: unknown[] | null = null;
+      let lastError: unknown = null;
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const result = await buildBase(selectStr).range(
+            page * PAGE,
+            (page + 1) * PAGE - 1
+          );
+          if (result.error) {
+            lastError = result.error;
+            if (attempt < 2) await new Promise((r) => setTimeout(r, 400));
+            continue;
+          }
+          data = result.data;
+          lastError = null;
+          break;
+        } catch (err) {
+          lastError = err;
+          if (attempt < 2) await new Promise((r) => setTimeout(r, 400));
+        }
+      }
+
+      if (lastError) return { rows: null as unknown[] | null, error: lastError };
       if (!data || data.length === 0) break;
       rows.push(...data);
       if (data.length < PAGE) break;
@@ -285,6 +308,7 @@ export interface UpdateRequestInput {
   deadline_time?: string | null;
   art_link?: string | null;
   posted_at?: string | null;
+  ig_media_id?: string | null;
 }
 
 export async function updateMarketingRequest(
@@ -313,6 +337,7 @@ export async function updateMarketingRequest(
   if (input.deadline_time !== undefined) updates.deadline_time = input.deadline_time;
   if (input.art_link !== undefined) updates.art_link = input.art_link;
   if (input.posted_at !== undefined) updates.posted_at = input.posted_at;
+  if (input.ig_media_id !== undefined) updates.ig_media_id = input.ig_media_id;
 
   const { data, error } = await supabase
     .from("marketing_requests")

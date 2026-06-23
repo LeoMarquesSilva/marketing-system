@@ -19,6 +19,7 @@ import {
   Megaphone,
   User,
   Camera,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -42,6 +43,7 @@ const baseNavItems = [
   { href: "/vincular-solicitantes", icon: Link2, label: "Vincular Solicitantes" },
   { href: "/fotos-colaboradores", icon: Camera, label: "Fotos Colaboradores" },
   { href: "/usuarios", icon: Users, label: "Usuários" },
+  { href: "/custos-projetos", icon: Wallet, label: "Custos de Projetos" },
 ];
 
 const collaboratorNavItems = [
@@ -125,12 +127,19 @@ export function Sidebar() {
   useEffect(() => {
     if (!profile?.id) return;
     const load = async () => {
-      const requests = await fetchMarketingRequests({ userId: profile.id, role: profile.role as "designer" | "admin" | "solicitante" });
-      if (requests.length === 0) return;
-      const ids = requests.map((r) => r.id);
-      const { pendingAlterationsCounts } = await fetchCommentStats(ids);
-      const total = Object.values(pendingAlterationsCounts).reduce((sum, n) => sum + n, 0);
-      setPendingAlterations(total);
+      try {
+        const requests = await fetchMarketingRequests({
+          userId: profile.id,
+          role: profile.role as "designer" | "admin" | "solicitante",
+        });
+        if (requests.length === 0) return;
+        const ids = requests.map((r) => r.id);
+        const { pendingAlterationsCounts } = await fetchCommentStats(ids);
+        const total = Object.values(pendingAlterationsCounts).reduce((sum, n) => sum + n, 0);
+        setPendingAlterations(total);
+      } catch {
+        // Badge opcional — não derrubar a navegação por falha transitória do Supabase.
+      }
     };
     load();
     const interval = setInterval(load, 60_000);

@@ -165,7 +165,20 @@ export async function fetchTimesheetForDashboard(
   const allRows: unknown[] = [];
   let page = 0;
   while (true) {
-    const { data } = await buildBase().range(page * PAGE, (page + 1) * PAGE - 1);
+    let data: unknown[] | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const result = await buildBase().range(page * PAGE, (page + 1) * PAGE - 1);
+        if (result.error) {
+          if (attempt < 2) await new Promise((r) => setTimeout(r, 400));
+          continue;
+        }
+        data = result.data;
+        break;
+      } catch {
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 400));
+      }
+    }
     if (!data || data.length === 0) break;
     allRows.push(...data);
     if (data.length < PAGE) break;

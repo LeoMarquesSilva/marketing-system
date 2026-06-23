@@ -21,9 +21,13 @@ import {
   CalendarDays,
   LayoutGrid,
   Inbox,
+  Download,
 } from "lucide-react";
 import { getAreaIcon } from "@/lib/area-icons";
 import { cn } from "@/lib/utils";
+import { isInContentBank, isPostedOnCalendar } from "@/lib/planner-posts";
+import { ImportInstagramPostsDialog } from "./import-instagram-posts-dialog";
+import { Button } from "@/components/ui/button";
 
 const POST_TYPE = "Post Redes Sociais";
 
@@ -232,6 +236,7 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
     return startOfDay(start);
   });
   const [activeDragRequest, setActiveDragRequest] = useState<MarketingRequest | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const SCHEDULE_DAYS = 7;
   const scheduleRangeEnd = addDays(scheduleRangeStart, SCHEDULE_DAYS - 1);
 
@@ -261,7 +266,7 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
   const disponivel = useMemo(
     () =>
       filtered
-        .filter((r) => r.completion_type !== "postagem_feita")
+        .filter((r) => isInContentBank(r))
         .sort((a, b) => {
           const da = a.stage_changed_at ?? a.delivered_at ?? a.requested_at;
           const db = b.stage_changed_at ?? b.delivered_at ?? b.requested_at;
@@ -273,10 +278,10 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
   const postado = useMemo(
     () =>
       filtered
-        .filter((r) => r.completion_type === "postagem_feita")
+        .filter((r) => isPostedOnCalendar(r))
         .sort((a, b) => {
-          const da = a.delivered_at ?? a.requested_at;
-          const db = b.delivered_at ?? b.requested_at;
+          const da = a.posted_at ?? a.delivered_at ?? a.requested_at;
+          const db = b.posted_at ?? b.delivered_at ?? b.requested_at;
           return new Date(db).getTime() - new Date(da).getTime();
         }),
     [filtered]
@@ -367,6 +372,16 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
             Calendário
           </button>
         </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setImportOpen(true)}
+          className="inline-flex items-center gap-1.5 h-9"
+        >
+          <Download className="h-4 w-4" aria-hidden />
+          Importar do Instagram
+        </Button>
         <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/40 rounded-full px-3 py-1.5">
           <Share2 className="h-3.5 w-3.5 text-emerald-500" aria-hidden />
           {filtered.length} post{filtered.length !== 1 ? "s" : ""}
@@ -465,6 +480,12 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
           </DragOverlay>
         </DndContext>
       )}
+
+      <ImportInstagramPostsDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onSuccess={onRefresh}
+      />
     </div>
   );
 }

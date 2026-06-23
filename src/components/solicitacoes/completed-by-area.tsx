@@ -22,6 +22,7 @@ function getInitials(name: string) {
 const COMPLETION_CONFIG: Record<string, { label: string; className: string; dotClass: string }> = {
   design_concluido:  { label: "Design",   className: "bg-[#101f2e]/8 text-[#101f2e] dark:bg-white/10 dark:text-white/80",     dotClass: "bg-[#101f2e]" },
   postagem_feita:    { label: "Postagem", className: "bg-emerald-100/80 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400", dotClass: "bg-emerald-500" },
+  postagem_externa:  { label: "Outro canal", className: "bg-slate-100/80 text-slate-700 dark:bg-slate-950/40 dark:text-slate-400", dotClass: "bg-slate-500" },
   conteudo_entregue: { label: "Conteúdo", className: "bg-violet-100/80 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400",    dotClass: "bg-violet-500" },
 };
 

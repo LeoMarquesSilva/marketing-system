@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { DatePickerField } from "@/components/ui/date-picker-field";
-import { Link2, Copy, CheckCircle2, User, Building2 } from "lucide-react";
+import { Link2, Copy, CheckCircle2, User, Building2, Archive } from "lucide-react";
 import type { MarketingRequest } from "@/lib/marketing-requests";
 import { updateMarketingRequest } from "@/lib/marketing-requests";
 import { format } from "date-fns";
@@ -32,6 +32,7 @@ export function PostAvailableDetailDialog({
 }: PostAvailableDetailDialogProps) {
   const [postedAt, setPostedAt] = useState("");
   const [isMarking, setIsMarking] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -52,6 +53,20 @@ export function PostAvailableDetailDialog({
       posted_at: postedAtIso,
     });
     setIsMarking(false);
+    if (!error) {
+      onOpenChange(false);
+      onSuccess?.();
+    }
+  };
+
+  const handleCompleteWithoutDate = async () => {
+    if (!request) return;
+    setIsArchiving(true);
+    const { error } = await updateMarketingRequest(request.id, {
+      completion_type: "postagem_externa",
+      posted_at: null,
+    });
+    setIsArchiving(false);
     if (!error) {
       onOpenChange(false);
       onSuccess?.();
@@ -178,20 +193,34 @@ export function PostAvailableDetailDialog({
               placeholder="Selecione a data"
               className="w-full min-w-0 max-w-full"
             />
+            <p className="text-[11px] text-muted-foreground mt-2">
+              Se o post foi publicado em outro perfil ou canal, conclua sem data para retirá-lo do banco.
+            </p>
           </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
+        <DialogFooter className="flex-col gap-2 sm:flex-row sm:gap-0">
           <Button
-            onClick={handleMarkAsPosted}
-            disabled={isMarking || !postedAt.trim()}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            variant="outline"
+            onClick={handleCompleteWithoutDate}
+            disabled={isArchiving || isMarking}
+            className="inline-flex items-center gap-1.5 sm:mr-auto"
           >
-            {isMarking ? "Salvando…" : "Marcar como postado"}
+            <Archive className="h-3.5 w-3.5" aria-hidden />
+            {isArchiving ? "Salvando…" : "Concluir sem data"}
           </Button>
+          <div className="flex gap-2 w-full sm:w-auto">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleMarkAsPosted}
+              disabled={isMarking || isArchiving || !postedAt.trim()}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {isMarking ? "Salvando…" : "Marcar como postado"}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

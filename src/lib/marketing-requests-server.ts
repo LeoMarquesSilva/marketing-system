@@ -14,7 +14,7 @@ export async function fetchMarketingRequestsForAuth() {
     } = await supabase.auth.getUser();
 
     if (!authUser) {
-      return fetchMarketingRequests();
+      return fetchMarketingRequests({ supabaseClient: supabase });
     }
 
     const { data: profile } = await supabase
@@ -46,6 +46,11 @@ export async function fetchMarketingRequestsForAuth() {
       supabaseClient: supabase,
     });
   } catch {
-    return fetchMarketingRequests();
+    try {
+      const supabase = await createClient();
+      return fetchMarketingRequests({ supabaseClient: supabase });
+    } catch {
+      return [];
+    }
   }
 }
