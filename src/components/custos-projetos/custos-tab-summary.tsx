@@ -1,0 +1,87 @@
+"use client";
+
+import { formatUsd } from "@/lib/supabase-billing";
+import { formatBrl } from "@/lib/usd-brl-ptax";
+import { formatPeriodFilterLabel, type CustosPeriodFilter } from "@/lib/custos-period-filter";
+import type { CustosTabId } from "@/components/custos-projetos/custos-projetos-tabs";
+import { cn } from "@/lib/utils";
+
+interface CustosTabSummaryProps {
+  activeTab: CustosTabId;
+  periodFilter: CustosPeriodFilter;
+  monthlyLabel: string;
+  monthlyHint?: string;
+  paidBrl: number;
+  paidUsd: number;
+  nextDue?: string | null;
+}
+
+export function CustosTabSummary({
+  activeTab,
+  periodFilter,
+  monthlyLabel,
+  monthlyHint,
+  paidBrl,
+  paidUsd,
+  nextDue,
+}: CustosTabSummaryProps) {
+  const periodLabel = formatPeriodFilterLabel(periodFilter);
+  const tabLabel =
+    activeTab === "supabase" ? "Supabase" : activeTab === "cursor" ? "Cursor" : "N8N / VPS";
+
+  const paidLabel =
+    paidBrl > 0 ? formatBrl(paidBrl) : paidUsd > 0 ? formatUsd(paidUsd) : formatBrl(0);
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-3">
+      <SummaryCell
+        label={`Custo mensal · ${tabLabel}`}
+        value={monthlyLabel}
+        sub={monthlyHint}
+        accent
+      />
+      <SummaryCell label={`Pago em ${periodLabel}`} value={paidLabel} />
+      <SummaryCell
+        label="Próximo vencimento"
+        value={nextDue ?? "—"}
+        sub={nextDue ? "Renovação prevista" : undefined}
+      />
+    </div>
+  );
+}
+
+function SummaryCell({
+  label,
+  value,
+  sub,
+  accent,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  accent?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border px-4 py-3.5",
+        accent
+          ? "border-emerald-200/50 bg-emerald-50/40 dark:bg-emerald-950/20"
+          : "border-border/50 bg-muted/20"
+      )}
+    >
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </p>
+      <p
+        className={cn(
+          "text-xl font-bold tabular-nums mt-1",
+          accent && "text-emerald-700 dark:text-emerald-400"
+        )}
+      >
+        {value}
+      </p>
+      {sub && <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>}
+    </div>
+  );
+}

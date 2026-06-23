@@ -18,17 +18,14 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/planner", label: "Planner" },
   { key: "/solicitacoes", label: "Solicitações" },
   { key: "/conteudo/roteiros", label: "Conteúdo para Post" },
-  { key: "/vibe-marketing", label: "Vibe Marketing" },
   { key: "/clima", label: "Clima" },
   { key: "/instagram-insights", label: "Instagram Insights" },
   { key: "/trafego-pago", label: "Tráfego Pago" },
   { key: "/vios-tarefas", label: "Tarefas VIOS" },
-  { key: "/vincular-solicitantes", label: "Vincular Solicitantes" },
   { key: "/fotos-colaboradores", label: "Fotos Colaboradores" },
   { key: "/usuarios", label: "Usuários" },
   { key: "/custos-projetos", label: "Custos de Projetos" },
   { key: "/admin", label: "Configurações", admin: true },
-  { key: "/admin/conteudo-temas", label: "Temas RSS", admin: true },
 ];
 
 const ALL_KEYS = ACCESS_SECTIONS.map((s) => s.key);

@@ -13,8 +13,8 @@ export default function CustosProjetosPage() {
           </div>
           <h2 className="text-3xl font-bold tracking-tight">Custos de Projetos</h2>
         </div>
-        <p className="text-muted-foreground text-lg max-w-2xl">
-          Gastos de infraestrutura por categoria — Supabase, Cursor e N8N — com estimativas e histórico de pagamentos.
+        <p className="text-muted-foreground max-w-xl">
+          Custos mensais e pagamentos por categoria.
         </p>
       </div>
       <CustosProjetosClient />

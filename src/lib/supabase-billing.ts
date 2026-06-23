@@ -1,10 +1,8 @@
 import { getTrackedSupabaseOrgs, type TrackedSupabaseOrg } from "@/lib/custos-projetos-config";
 import {
   loadPaymentHistoryForProjects,
-  syncMarxProjetosInvoices,
   type ProjectPaymentHistoryItem,
 } from "@/lib/supabase-invoice-history";
-import { hasDedicatedBillingSessionToken } from "@/lib/supabase-platform-api";
 import {
   loadInfraProjectProfiles,
   resolveProjectDisplayName,
@@ -88,13 +86,6 @@ export interface SupabaseBillingDashboard {
   totalPaidBrl: number;
   organizations: SupabaseOrgBilling[];
   error?: string;
-  note?: string;
-  invoiceSync?: {
-    synced: boolean;
-    inserted: number;
-    error?: string;
-    needsSessionToken?: boolean;
-  };
 }
 
 interface MgmtError {
@@ -382,20 +373,6 @@ export async function fetchSupabaseBillingDashboard(): Promise<SupabaseBillingDa
     });
   }
 
-  const invoiceSync = hasDedicatedBillingSessionToken()
-    ? await syncMarxProjetosInvoices(allProjectRefs).catch((err) => ({
-        synced: false,
-        inserted: 0,
-        error: err instanceof Error ? err.message : "Erro ao sincronizar faturas.",
-        needsSessionToken: false,
-      }))
-    : {
-        synced: false,
-        inserted: 0,
-        needsSessionToken: true,
-        error: "Configure SUPABASE_BILLING_SESSION_TOKEN para sincronizar faturas pagas.",
-      };
-
   const profiles = await loadInfraProjectProfiles(allProjectRefs);
 
   for (const org of organizations) {
@@ -446,9 +423,6 @@ export async function fetchSupabaseBillingDashboard(): Promise<SupabaseBillingDa
     totalPaidUsd,
     totalPaidBrl,
     organizations,
-    invoiceSync,
-    note:
-      "Estimativa mensal = plano + compute/addons. Histórico pago vem das faturas sincronizadas; valores em R$ usam PTAX (venda) do dia da fatura.",
   };
 }
 

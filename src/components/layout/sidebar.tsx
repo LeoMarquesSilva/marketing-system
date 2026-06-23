@@ -6,13 +6,11 @@ import { useEffect, useRef, useState } from "react";
 import {
   LayoutDashboard,
   List,
-  Link2,
   Users,
   Columns3,
   ClipboardList,
   LogOut,
   Settings,
-  Sparkles,
   Newspaper,
   Heart,
   Instagram,
@@ -35,12 +33,10 @@ const baseNavItems = [
   { href: "/planner", icon: Columns3, label: "Planner" },
   { href: "/solicitacoes", icon: List, label: "Solicitações" },
   { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteúdo para Post" },
-  { href: "/vibe-marketing", icon: Sparkles, label: "Vibe Marketing" },
   { href: "/clima", icon: Heart, label: "Clima" },
   { href: "/instagram-insights", icon: Instagram, label: "Instagram Insights" },
   { href: "/trafego-pago", icon: Megaphone, label: "Tráfego Pago" },
   { href: "/vios-tarefas", icon: ClipboardList, label: "Tarefas VIOS" },
-  { href: "/vincular-solicitantes", icon: Link2, label: "Vincular Solicitantes" },
   { href: "/fotos-colaboradores", icon: Camera, label: "Fotos Colaboradores" },
   { href: "/usuarios", icon: Users, label: "Usuários" },
   { href: "/custos-projetos", icon: Wallet, label: "Custos de Projetos" },
@@ -53,7 +49,6 @@ const collaboratorNavItems = [
 
 const adminNavItems = [
   { href: "/admin", icon: Settings, label: "Configurações" },
-  { href: "/admin/conteudo-temas", icon: Newspaper, label: "Temas RSS" },
 ];
 
 function getNavItems(

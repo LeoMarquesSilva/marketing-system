@@ -23,11 +23,17 @@ export async function POST(request: Request, context: RouteContext) {
       description?: string;
     };
 
-    if (!body.period_month || body.amount_brl == null) {
-      return NextResponse.json({ error: "Mês e valor em BRL são obrigatórios." }, { status: 400 });
+    if (!body.period_month || (body.amount_brl == null && body.amount_usd == null)) {
+      return NextResponse.json(
+        { error: "Mês e valor (BRL ou USD) são obrigatórios." },
+        { status: 400 }
+      );
     }
 
-    const payment = await addInfraServicePayment(slug, body);
+    const payment = await addInfraServicePayment(slug, {
+      ...body,
+      amount_brl: body.amount_brl ?? 0,
+    });
     return NextResponse.json(payment);
   } catch (err) {
     if (err instanceof Error && err.message === "Não autenticado.") {

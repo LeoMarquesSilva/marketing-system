@@ -145,21 +145,24 @@ export async function upsertInfraService(
   updatedBy?: string
 ): Promise<InfraService> {
   const supabase = getAdminClient();
+  const patch: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+    updated_by: updatedBy ?? null,
+  };
+
+  if (input.display_name !== undefined) patch.display_name = input.display_name.trim();
+  if (input.provider !== undefined) patch.provider = input.provider?.trim() || null;
+  if (input.logo_url !== undefined) patch.logo_url = input.logo_url?.trim() || null;
+  if (input.category !== undefined) patch.category = input.category?.trim() || null;
+  if (input.description !== undefined) patch.description = input.description?.trim() || null;
+  if (input.billing_url !== undefined) patch.billing_url = input.billing_url?.trim() || null;
+  if (input.monthly_amount_usd !== undefined) patch.monthly_amount_usd = input.monthly_amount_usd;
+  if (input.monthly_amount_brl !== undefined) patch.monthly_amount_brl = input.monthly_amount_brl;
+  if (input.sort_order !== undefined) patch.sort_order = input.sort_order;
+
   const { data, error } = await supabase
     .from("infra_services")
-    .update({
-      display_name: input.display_name?.trim(),
-      provider: input.provider?.trim() || null,
-      logo_url: input.logo_url?.trim() || null,
-      category: input.category?.trim() || null,
-      description: input.description?.trim() || null,
-      billing_url: input.billing_url?.trim() || null,
-      monthly_amount_usd: input.monthly_amount_usd ?? null,
-      monthly_amount_brl: input.monthly_amount_brl ?? null,
-      sort_order: input.sort_order ?? 0,
-      updated_at: new Date().toISOString(),
-      updated_by: updatedBy ?? null,
-    })
+    .update(patch)
     .eq("slug", slug)
     .select("*")
     .single();
@@ -173,17 +176,23 @@ export async function addInfraServicePayment(
   input: InfraServicePaymentInput
 ): Promise<InfraServicePayment> {
   const paidAt = input.paid_at ?? input.period_month;
-  let rate = input.amount_usd && input.amount_brl
-    ? input.amount_brl / input.amount_usd
-    : null;
+  let rate =
+    input.amount_usd && input.amount_brl
+      ? input.amount_brl / input.amount_usd
+      : null;
 
-  if (rate == null && input.amount_brl > 0) {
+  if (rate == null && (input.amount_brl > 0 || input.amount_usd)) {
     rate = await getUsdBrlRate(paidAt);
   }
 
   let amountUsd = input.amount_usd ?? null;
   if (amountUsd == null && input.amount_brl > 0 && rate) {
     amountUsd = Math.round((input.amount_brl / rate) * 100) / 100;
+  }
+
+  let amountBrl = input.amount_brl;
+  if (amountBrl <= 0 && amountUsd != null && amountUsd > 0 && rate) {
+    amountBrl = Math.round(amountUsd * rate * 100) / 100;
   }
 
   const supabase = getAdminClient();
@@ -195,7 +204,7 @@ export async function addInfraServicePayment(
         period_month: input.period_month.slice(0, 10),
         paid_at: paidAt.slice(0, 10),
         amount_usd: amountUsd,
-        amount_brl: input.amount_brl,
+        amount_brl: amountBrl,
         usd_brl_rate: rate,
         description: input.description?.trim() || `Pagamento ${input.period_month.slice(0, 7)}`,
       },

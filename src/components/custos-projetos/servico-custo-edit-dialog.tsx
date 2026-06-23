@@ -81,7 +81,9 @@ export function ServicoCustoEditDialog({
   const [error, setError] = useState<string | null>(null);
 
   const [payMonth, setPayMonth] = useState("");
+  const [payDate, setPayDate] = useState("");
   const [payBrl, setPayBrl] = useState("");
+  const [payUsd, setPayUsd] = useState("");
   const [payDesc, setPayDesc] = useState("");
   const [addingPay, setAddingPay] = useState(false);
 
@@ -116,7 +118,9 @@ export function ServicoCustoEditDialog({
       sort_order: service.sort_order,
     });
     setPayMonth(new Date().toISOString().slice(0, 7));
+    setPayDate(new Date().toISOString().slice(0, 10));
     setPayBrl("");
+    setPayUsd("");
     setPayDesc("");
     setError(null);
   }, [service, open, form]);
@@ -176,7 +180,7 @@ export function ServicoCustoEditDialog({
   }
 
   async function addPayment() {
-    if (!service || !payMonth || !payBrl) return;
+    if (!service || !payMonth || (!payBrl && !payUsd)) return;
     setAddingPay(true);
     setError(null);
     try {
@@ -185,8 +189,9 @@ export function ServicoCustoEditDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           period_month: `${payMonth}-01`,
-          paid_at: `${payMonth}-01`,
+          paid_at: payDate || `${payMonth}-01`,
           amount_brl: parseMoney(payBrl) ?? 0,
+          amount_usd: parseMoney(payUsd),
           description: payDesc.trim() || undefined,
         }),
       });
@@ -194,6 +199,7 @@ export function ServicoCustoEditDialog({
       if (!res.ok) throw new Error(body.error ?? "Erro ao registrar pagamento.");
       onSaved();
       setPayBrl("");
+      setPayUsd("");
       setPayDesc("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao registrar pagamento.");
@@ -395,31 +401,54 @@ export function ServicoCustoEditDialog({
             )}
 
             <div className="rounded-xl border border-dashed p-3 space-y-3">
-              <p className="text-sm font-medium">Adicionar pagamento</p>
-              <div className="grid gap-2 sm:grid-cols-3">
-                <Input
-                  type="month"
-                  value={payMonth}
-                  onChange={(e) => setPayMonth(e.target.value)}
-                />
-                <Input
-                  placeholder="Valor R$"
-                  inputMode="decimal"
-                  value={payBrl}
-                  onChange={(e) => setPayBrl(e.target.value)}
-                />
-                <Input
-                  placeholder="Descrição (opc.)"
-                  value={payDesc}
-                  onChange={(e) => setPayDesc(e.target.value)}
-                />
+              <p className="text-sm font-medium">Adicionar fatura / pagamento</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Mês de referência</label>
+                  <Input
+                    type="month"
+                    value={payMonth}
+                    onChange={(e) => setPayMonth(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Data do pagamento</label>
+                  <Input
+                    type="date"
+                    value={payDate}
+                    onChange={(e) => setPayDate(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Valor USD</label>
+                  <Input
+                    placeholder="60.00"
+                    inputMode="decimal"
+                    value={payUsd}
+                    onChange={(e) => setPayUsd(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Valor BRL</label>
+                  <Input
+                    placeholder="326.17"
+                    inputMode="decimal"
+                    value={payBrl}
+                    onChange={(e) => setPayBrl(e.target.value)}
+                  />
+                </div>
               </div>
+              <Input
+                placeholder="Ex.: Fatura YKXMNZ8V-0001 — Cursor Pro Plus"
+                value={payDesc}
+                onChange={(e) => setPayDesc(e.target.value)}
+              />
               <Button
                 type="button"
                 variant="secondary"
                 size="sm"
                 className="gap-1.5"
-                disabled={addingPay || !payMonth || !payBrl}
+                disabled={addingPay || !payMonth || (!payBrl && !payUsd)}
                 onClick={() => void addPayment()}
               >
                 {addingPay ? (
@@ -427,10 +456,11 @@ export function ServicoCustoEditDialog({
                 ) : (
                   <Plus className="h-4 w-4" />
                 )}
-                Registrar mês
+                Registrar fatura
               </Button>
               <p className="text-xs text-muted-foreground">
-                O câmbio PTAX do dia é aplicado automaticamente para calcular o USD.
+                Informe USD e BRL da fatura. Se só informar BRL, o PTAX do dia calcula o USD
+                automaticamente.
               </p>
             </div>
 
