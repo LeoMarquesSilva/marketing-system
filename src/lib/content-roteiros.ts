@@ -606,6 +606,16 @@ function normalizeTitleKey(title: string): string {
     .join(" ");
 }
 
+/** Embaralha (Fisher–Yates) — distribui a cota entre as fontes a cada execução. */
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 export async function runFetchPipeline(
   topicIds?: string[],
   topics?: ContentTopic[],
@@ -677,7 +687,16 @@ export async function runFetchPipeline(
     return performanceCache.get(area) ?? null;
   };
 
-  topicLoop: for (const topic of topicsToProcess) {
+  // Distribui a cota entre as fontes: embaralha a ordem e limita quantos posts
+  // cada tema pode criar por execução, para um único feed não esgotar o maxCreated
+  // e as fontes novas sempre serem amostradas.
+  const orderedTopics = shuffle(topicsToProcess);
+  const perTopicMax =
+    maxCreated != null
+      ? Math.max(2, Math.ceil(maxCreated / orderedTopics.length))
+      : Infinity;
+
+  topicLoop: for (const topic of orderedTopics) {
     try {
       const topicMonths = "months_back" in topic ? topic.months_back : monthsBack;
       const topicLimit = "item_limit" in topic ? topic.item_limit : limit;
@@ -685,8 +704,10 @@ export async function runFetchPipeline(
       const filtered = filterItems(items, topicMonths);
       const limited = filtered.slice(0, topicLimit);
 
+      let createdThisTopic = 0;
       for (const item of limited) {
         if (maxCreated != null && created >= maxCreated) break topicLoop;
+        if (createdThisTopic >= perTopicMax) break; // próxima fonte
 
         try {
           const title = item.title;
@@ -753,6 +774,7 @@ export async function runFetchPipeline(
             errors.push(`${item.title}: ${insertErr.message}`);
           } else {
             created++;
+            createdThisTopic++;
             // Registra para não repetir dentro da mesma execução.
             if (linkKey) seenLinks.add(linkKey);
             if (titleKey) seenTitles.add(titleKey);
