@@ -13,9 +13,11 @@ import {
   isIrrelevantResponse,
   mapTopicAreaToLegalArea,
   parseClassifiedArea,
+  shouldSkipAsIrrelevant,
   validateClassifiedArea,
 } from "./content-classification";
 import { buildRssQueryWithRecency } from "./content-rss";
+import { BROWSER_UA, fetchArticleContent } from "./content-extraction";
 import { getDepartmentsForLegalArea } from "./content-areas";
 import {
   buildAreaPerformanceContext,
@@ -72,11 +74,12 @@ Conteúdo: Resumo final + Call to Action (ex: "Procure um advogado especializado
 **Notícia**
 Título: {{TITLE}}
 Resumo: {{SNIPPET}}
+Conteúdo da matéria: {{ARTICLE}}
 Link: {{LINK}}
 Área do Direito: {{AREA}}
 {{PERFORMANCE}}
 
-Use linguagem acessível, objetiva, com tom profissional. Não cite diretamente o veículo de imprensa.`;
+Baseie-se no conteúdo da matéria quando disponível (é mais completo que o resumo). Use linguagem acessível, objetiva, com tom profissional. Não invente fatos que não estejam na notícia e não cite diretamente o veículo de imprensa.`;
 
 const RSS_BASE =
   "https://news.google.com/rss/search?hl=pt-BR&gl=BR&ceid=BR:pt-419&q=";
@@ -100,114 +103,30 @@ function buildRssUrl(rssQuery: string): string {
   return `${RSS_BASE}${encodeURIComponent(rssQuery)}`;
 }
 
-const BROWSER_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
-
-async function fetchWithTimeout(
-  url: string,
-  init: RequestInit & { timeoutMs?: number } = {}
-): Promise<Response> {
-  const { timeoutMs = 6000, ...rest } = init;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, {
-      ...rest,
-      signal: controller.signal,
-      headers: { "User-Agent": BROWSER_UA, ...(rest.headers ?? {}) },
-    });
-  } finally {
-    clearTimeout(timer);
-  }
+/** Um `rss_query` que já é uma URL http(s) é tratado como feed direto do veículo. */
+export function isDirectFeedUrl(rssQuery: string): boolean {
+  return /^https?:\/\//i.test(rssQuery.trim());
 }
 
 /**
- * Resolve o link "casca" do Google News para a URL real do veículo, usando o
- * endpoint batchexecute (assinatura data-n-a-ts / data-n-a-sg). Best-effort.
+ * Busca itens de um feed. Se `rssQuery` for uma URL, usa o feed direto do
+ * veículo (ex.: Conjur, JOTA); caso contrário monta uma busca no Google News a
+ * partir das palavras-chave. Feeds diretos ignoram o operador de recência
+ * (não suportado fora do Google News).
  */
-async function resolveGoogleNewsUrl(link: string): Promise<string | null> {
-  const match = link.match(/\/articles\/([^?]+)/);
-  if (!match) return /news\.google\./.test(link) ? null : link;
-  const id = match[1];
-
-  try {
-    const artResp = await fetchWithTimeout(`https://news.google.com/rss/articles/${id}`);
-    if (!artResp.ok) return null;
-    const html = await artResp.text();
-    const ts = html.match(/data-n-a-ts="([^"]+)"/)?.[1];
-    const sg = html.match(/data-n-a-sg="([^"]+)"/)?.[1];
-    if (!ts || !sg) return null;
-
-    const inner = JSON.stringify([
-      "garturlreq",
-      [["X", "X", ["X", "X"], null, null, 1, 1, "US:en", null, 1, null, null, null, null, null, 0, 1],
-        "X", "X", 1, [1, 1, 1], 1, 1, null, 0, 0, null, 0],
-      id,
-      Number(ts),
-      sg,
-    ]);
-    const body = "f.req=" + encodeURIComponent(JSON.stringify([[["Fbv4je", inner, null, "generic"]]]));
-
-    const resp = await fetchWithTimeout(
-      "https://news.google.com/_/DotsSplashUi/data/batchexecute",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body,
-        timeoutMs: 6000,
-      }
-    );
-    if (!resp.ok) return null;
-    const txt = await resp.text();
-    const real = txt.match(/https?:\/\/(?!news\.google|www\.google)[^"\\\s]+/)?.[0];
-    return real ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function extractOgImage(html: string): string | null {
-  const head = html.slice(0, 200_000);
-  const patterns = [
-    /<meta[^>]+property=["']og:image(?::secure_url)?["'][^>]+content=["']([^"']+)["']/i,
-    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i,
-    /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i,
-  ];
-  for (const re of patterns) {
-    const m = head.match(re);
-    if (m?.[1]) {
-      const url = m[1].trim();
-      if (/^https?:\/\//i.test(url)) return url;
-    }
-  }
-  return null;
-}
-
-/**
- * Capa da notícia: decodifica o link do Google News para a URL real do veículo
- * e extrai a og:image dele. Devolve null em qualquer falha — capa é opcional
- * (o card tem fallback editorial).
- */
-export async function fetchOgImage(link: string | undefined): Promise<string | null> {
-  if (!link) return null;
-  try {
-    const realUrl = (await resolveGoogleNewsUrl(link)) ?? (/news\.google\./.test(link) ? null : link);
-    if (!realUrl) return null;
-    const resp = await fetchWithTimeout(realUrl, { redirect: "follow", timeoutMs: 7000 });
-    if (!resp.ok) return null;
-    return extractOgImage(await resp.text());
-  } catch {
-    return null;
-  }
-}
-
 export async function fetchRssItems(
   rssQuery: string,
   monthsBack?: number
 ): Promise<RssItem[]> {
-  const query = buildRssQueryWithRecency(rssQuery, monthsBack);
-  const url = buildRssUrl(query);
-  const parser = new Parser();
+  const direct = isDirectFeedUrl(rssQuery);
+  const url = direct
+    ? rssQuery.trim()
+    : buildRssUrl(buildRssQueryWithRecency(rssQuery, monthsBack));
+
+  const parser = new Parser({
+    headers: { "User-Agent": BROWSER_UA },
+    timeout: 10000,
+  });
   const feed = await parser.parseURL(url);
   return (feed.items ?? []).map((item) => ({
     title: item.title ?? "",
@@ -291,10 +210,17 @@ async function generateCarousel(
   snippet: string,
   link: string,
   area: string,
-  performanceBlock?: string
+  performanceBlock?: string,
+  articleText?: string
 ): Promise<string> {
   const prompt = CAROUSEL_PROMPT.replace("{{TITLE}}", title)
     .replace("{{SNIPPET}}", snippet)
+    .replace(
+      "{{ARTICLE}}",
+      articleText && articleText.length > 0
+        ? articleText
+        : "(não disponível — use o resumo acima)"
+    )
     .replace("{{LINK}}", link)
     .replace("{{AREA}}", area)
     .replace("{{PERFORMANCE}}", performanceBlock ? `\n${performanceBlock}` : "");
@@ -654,10 +580,15 @@ export async function saveRoteiroEdit(
 export interface FetchPipelineOptions {
   monthsBack?: number;
   limit?: number;
-  /** Pula fetch de og:image (lento) — capa pode ser adicionada depois. */
-  skipOgImage?: boolean;
+  /**
+   * Busca o conteúdo real da matéria (texto + capa) para cada post gerado.
+   * Padrão true. Desligue para execuções mais rápidas (só título+snippet).
+   */
+  fetchArticle?: boolean;
   /** Para após criar N roteiros (evita execuções longas demais). */
   maxCreated?: number;
+  /** Origem da execução, para o log (`cron`, `manual`, etc.). */
+  trigger?: string;
 }
 
 /** Chave normalizada de título para detectar notícias repetidas (ignora veículo, acentos, pontuação). */
@@ -690,8 +621,10 @@ export async function runFetchPipeline(
 
   const monthsBack = options?.monthsBack ?? 4;
   const limit = options?.limit ?? 20;
-  const skipOgImage = options?.skipOgImage ?? false;
+  const fetchArticle = options?.fetchArticle ?? true;
   const maxCreated = options?.maxCreated;
+  const trigger = options?.trigger ?? "manual";
+  const startedAt = new Date();
 
   let topicsToProcess: ContentTopic[];
   if (topics && topics.length > 0) {
@@ -767,6 +700,13 @@ export async function runFetchPipeline(
             continue;
           }
 
+          // Pré-filtro barato: descarta lixo óbvio (polícia/crime/etc.) ANTES de
+          // gastar chamadas de IA. Importante para feeds diretos mais amplos.
+          if (shouldSkipAsIrrelevant(title, snippet)) {
+            skipped++;
+            continue;
+          }
+
           const rawArea = await resolveNewsArea(
             openai,
             title,
@@ -776,8 +716,14 @@ export async function runFetchPipeline(
           if (rawArea.skip) continue;
           const area = rawArea.area;
 
+          // Só agora (item aprovado) buscamos o conteúdo real — texto + capa numa
+          // única requisição. Limita as buscas HTTP aos itens que viram post.
+          const article = fetchArticle
+            ? await fetchArticleContent(item.link)
+            : { text: "", imageUrl: null };
+
           const performance = getPerformance(area);
-          const imageUrl = skipOgImage ? null : await fetchOgImage(item.link);
+          const imageUrl = article.imageUrl;
 
           const post = await generateCarousel(
             openai,
@@ -785,7 +731,8 @@ export async function runFetchPipeline(
             snippet,
             item.link ?? "",
             area,
-            performance?.promptBlock
+            performance?.promptBlock,
+            article.text
           );
 
           const publishedAt = item.isoDate ?? item.pubDate;
@@ -823,5 +770,66 @@ export async function runFetchPipeline(
     }
   }
 
+  await logFetchRun(supabase, {
+    trigger,
+    startedAt,
+    topicsProcessed: topicsToProcess.length,
+    created,
+    skipped,
+    errors,
+  });
+
   return { created, errors, skipped };
+}
+
+/** Registra o resultado de uma execução do pipeline (observabilidade). Best-effort. */
+async function logFetchRun(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  run: {
+    trigger: string;
+    startedAt: Date;
+    topicsProcessed: number;
+    created: number;
+    skipped: number;
+    errors: string[];
+  }
+): Promise<void> {
+  try {
+    await supabase.from("content_fetch_runs").insert({
+      trigger: run.trigger,
+      started_at: run.startedAt.toISOString(),
+      finished_at: new Date().toISOString(),
+      topics_processed: run.topicsProcessed,
+      created: run.created,
+      skipped: run.skipped,
+      error_count: run.errors.length,
+      errors: run.errors.slice(0, 20),
+    });
+  } catch {
+    // Tabela de log é opcional — nunca derruba o pipeline.
+  }
+}
+
+export interface ContentFetchRun {
+  id: string;
+  trigger: string;
+  started_at: string;
+  finished_at: string | null;
+  topics_processed: number;
+  created: number;
+  skipped: number;
+  error_count: number;
+  errors: string[] | null;
+}
+
+/** Últimas execuções do pipeline, para a tela de admin/diagnóstico. */
+export async function fetchRecentFetchRuns(limit = 10): Promise<ContentFetchRun[]> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("content_fetch_runs")
+    .select("id, trigger, started_at, finished_at, topics_processed, created, skipped, error_count, errors")
+    .order("started_at", { ascending: false })
+    .limit(limit);
+  if (error) return [];
+  return (data ?? []) as ContentFetchRun[];
 }

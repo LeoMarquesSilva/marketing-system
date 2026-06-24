@@ -16,6 +16,9 @@ export async function POST(request: Request) {
     const topicIds = body.topicIds as string[] | undefined;
     const monthsBack = typeof body.monthsBack === "number" ? body.monthsBack : undefined;
     const limit = typeof body.limit === "number" ? body.limit : undefined;
+    const trigger = typeof body.trigger === "string" ? body.trigger : "manual";
+    // Permite desligar a busca do artigo (texto/capa) em runs que precisam ser rápidos.
+    const fetchArticle = body.fetchArticle === false ? false : true;
     const maxCreated =
       typeof body.maxCreated === "number"
         ? body.maxCreated
@@ -26,8 +29,9 @@ export async function POST(request: Request) {
     const result = await runFetchPipeline(topicIds, undefined, {
       monthsBack,
       limit,
-      skipOgImage: true,
+      fetchArticle,
       maxCreated,
+      trigger,
     });
 
     console.info("[content-roteiros/fetch-worker] concluído", {

@@ -25,7 +25,7 @@ export async function GET(request: Request) {
       "Content-Type": "application/json",
       Authorization: `Bearer ${secret}`,
     },
-    body: JSON.stringify({ maxCreated: 30 }),
+    body: JSON.stringify({ maxCreated: 30, trigger: "cron" }),
   }).catch((err) => {
     console.error("[cron/fetch-news] falha ao disparar worker", err);
   });

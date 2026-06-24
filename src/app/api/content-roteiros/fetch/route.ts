@@ -88,7 +88,7 @@ export async function POST(request: Request) {
     const monthsBack = typeof body.monthsBack === "number" ? body.monthsBack : undefined;
     const limit = typeof body.limit === "number" ? body.limit : undefined;
 
-    triggerFetchWorker(request, { topicIds, monthsBack, limit });
+    triggerFetchWorker(request, { topicIds, monthsBack, limit, trigger: "manual" });
 
     return NextResponse.json(
       {
