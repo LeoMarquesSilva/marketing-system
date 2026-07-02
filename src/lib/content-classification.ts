@@ -83,6 +83,37 @@ export function isLegalOpsRelevant(title: string, snippet: string): boolean {
   return LEGAL_OPS_POSITIVE.some((p) => p.test(text));
 }
 
+/**
+ * "Ruído de release corporativo": notícia batizada com termos de Legal Ops
+ * (legaltech, departamento jurídico) mas que na prática é assessoria de
+ * imprensa — captação de investimento, troca de sede, nomeação de executivo,
+ * prêmio — sem conteúdo educativo aproveitável para um post. O Google News
+ * ignora com frequência exclusões (`-"termo"`) na query quando há várias, então
+ * este filtro roda em código, depois da busca, e é confiável.
+ */
+const PRESS_RELEASE_NOISE_PATTERNS: RegExp[] = [
+  /capta\s+(r\$|us\$|recursos|investimento|com\s)/i,
+  /rodada de investimento/i,
+  /aporte de (r\$|us\$)/i,
+  /levanta\s+(r\$|us\$)/i,
+  /nova sede|inaugura (sua |a )?sede|instala.*sede/i,
+  /tem nov[oa]\s+(diretor|diretora|ceo|presidente|s[oó]cio|s[oó]cia)/i,
+  /assume\s+(a diretoria|o cargo|a presid[êe]ncia|a lideran[çc]a)/i,
+  /[ée]\s+nomead[oa]/i,
+  /vence\s+[^.]{0,40}(pr[êe]mio|awards?|summit)/i,
+  /ganha\s+[^.]{0,40}pr[êe]mio/i,
+  /reconhecid[oa]\s+[^.]{0,40}pr[êe]mio/i,
+  /conquista\s+[^.]{0,40}(reconhecimento|pr[êe]mio)/i,
+  /recebe\s+[^.]{0,40}pr[êe]mio/i,
+  /eleit[oa]\s+[^.]{0,40}(melhor|top\s)/i,
+  /precat[oó]rios?/i,
+];
+
+export function isPressReleaseNoise(title: string, snippet: string): boolean {
+  const text = `${title} ${snippet}`;
+  return PRESS_RELEASE_NOISE_PATTERNS.some((p) => p.test(text));
+}
+
 export function validateClassifiedArea(
   area: string,
   title: string,
@@ -92,8 +123,13 @@ export function validateClassifiedArea(
     return { area: area as LegalArea, skip: true };
   }
 
-  if (area === LEGAL_OPS_AREA && !isLegalOpsRelevant(title, snippet)) {
-    return { area: area as LegalArea, skip: true };
+  if (area === LEGAL_OPS_AREA) {
+    if (!isLegalOpsRelevant(title, snippet)) {
+      return { area: area as LegalArea, skip: true };
+    }
+    if (isPressReleaseNoise(title, snippet)) {
+      return { area: area as LegalArea, skip: true };
+    }
   }
 
   if (!LEGAL_AREAS.includes(area as LegalArea)) {

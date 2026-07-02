@@ -11,6 +11,7 @@ import {
 import {
   buildClassifyPrompt,
   isIrrelevantResponse,
+  isPressReleaseNoise,
   mapTopicAreaToLegalArea,
   parseClassifiedArea,
   shouldSkipAsIrrelevant,
@@ -724,6 +725,18 @@ export async function runFetchPipeline(
           // Pré-filtro barato: descarta lixo óbvio (polícia/crime/etc.) ANTES de
           // gastar chamadas de IA. Importante para feeds diretos mais amplos.
           if (shouldSkipAsIrrelevant(title, snippet)) {
+            skipped++;
+            continue;
+          }
+
+          // Tema de Legal Ops: descarta ruído de release corporativo (captação de
+          // investimento, troca de sede, nomeação de executivo, prêmio) ANTES da
+          // IA — são notícias que citam "legaltech"/"departamento jurídico" sem
+          // conteúdo educativo aproveitável para o carrossel.
+          if (
+            mapTopicAreaToLegalArea(topic.legal_area) === "Operações Legais (Legal Ops)" &&
+            isPressReleaseNoise(title, snippet)
+          ) {
             skipped++;
             continue;
           }
