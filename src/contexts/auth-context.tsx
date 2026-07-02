@@ -35,6 +35,10 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function recordLastSeen() {
+  fetch("/api/account/last-seen", { method: "POST", credentials: "include" }).catch(() => {});
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<AuthProfile | null>(null);
@@ -102,6 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
         stopLoading();
         if (session?.user?.id) {
+          recordLastSeen();
           fetchProfile(session.user.id).then(() => {});
         } else {
           setProfile(null);
@@ -121,10 +126,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (cancelled) return;
       setUser(session?.user ?? null);
       if (session?.user?.id) {
+        if (event === "SIGNED_IN" || event === "INITIAL_SESSION") {
+          recordLastSeen();
+        }
         fetchProfile(session.user.id).then(() => {});
       } else {
         setProfile(null);

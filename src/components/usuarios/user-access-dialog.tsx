@@ -18,10 +18,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, KeyRound, ShieldCheck, Check } from "lucide-react";
+import { Loader2, KeyRound, ShieldCheck, Check, Clock3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { User } from "@/lib/users";
 import { ACCESS_SECTIONS, ACCESS_PRESETS } from "@/lib/access-control";
+import { formatAuthDateTime, formatAuthRelative } from "@/lib/users-auth-activity";
 
 interface UserAccessDialogProps {
   open: boolean;
@@ -35,6 +36,8 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
   const [permissions, setPermissions] = useState<string[]>([]);
   const [activating, setActivating] = useState(false);
   const [savingPerms, setSavingPerms] = useState(false);
+  const [loadingActivity, setLoadingActivity] = useState(false);
+  const [authActivity, setAuthActivity] = useState(user?.auth_activity ?? null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -42,10 +45,33 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
     if (user) {
       setEmail(user.email ?? "");
       setPermissions(user.permissions ?? []);
+      setAuthActivity(user.auth_activity ?? null);
       setError(null);
       setNotice(null);
     }
   }, [user, open]);
+
+  useEffect(() => {
+    if (!open || !user?.auth_id) return;
+
+    let cancelled = false;
+    setLoadingActivity(true);
+    fetch(`/api/admin/users?userId=${encodeURIComponent(user.id)}`, { credentials: "include" })
+      .then((res) => res.json().catch(() => ({})))
+      .then((data) => {
+        if (cancelled || !data.auth_activity) return;
+        setAuthActivity(data.auth_activity);
+        onUpdated(user.id, { auth_activity: data.auth_activity });
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoadingActivity(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, user?.id, user?.auth_id]);
 
   if (!user) return null;
   const isActive = Boolean(user.auth_id);
@@ -81,7 +107,9 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
         is_active: true,
         auth_id: data.auth_id ?? user!.auth_id ?? null,
         must_change_password: true,
+        auth_activity: data.auth_activity ?? user!.auth_activity ?? null,
       });
+      if (data.auth_activity) setAuthActivity(data.auth_activity);
       setNotice(
         `Acesso pronto! Senha padrão: 123456. ${user!.name.split(" ")[0]} será obrigado a trocá-la no primeiro login.`
       );
@@ -169,6 +197,59 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
             <p className="text-[11px] text-muted-foreground">
               A senha padrão é <strong>123456</strong> e o usuário é obrigado a trocá-la no primeiro acesso.
             </p>
+            {isActive && (
+              <div className="space-y-2 rounded-lg border border-dashed bg-background/80 p-3">
+                <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <Clock3 className="h-3.5 w-3.5" />
+                  Histórico de acesso
+                  {loadingActivity && <Loader2 className="h-3 w-3 animate-spin" />}
+                </p>
+                {authActivity || user.last_seen_at ? (
+                  <dl className="grid gap-2 text-xs sm:grid-cols-2">
+                    <div className="sm:col-span-2">
+                      <dt className="text-muted-foreground">Último acesso ao sistema</dt>
+                      <dd className="font-medium text-foreground">
+                        {user.last_seen_at
+                          ? formatAuthDateTime(user.last_seen_at)
+                          : "Ainda sem registro de acesso"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Conta criada</dt>
+                      <dd className="font-medium text-foreground">
+                        {formatAuthDateTime(authActivity?.account_created_at)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">E-mail confirmado</dt>
+                      <dd className="font-medium text-foreground">
+                        {formatAuthDateTime(authActivity?.email_confirmed_at)}
+                      </dd>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <dt className="text-muted-foreground">Último login com senha</dt>
+                      <dd className="font-medium text-foreground">
+                        {authActivity?.last_sign_in_at
+                          ? formatAuthDateTime(authActivity.last_sign_in_at)
+                          : "Ainda não fez login"}
+                      </dd>
+                      {user.last_seen_at &&
+                        authActivity?.last_sign_in_at &&
+                        user.last_seen_at !== authActivity.last_sign_in_at && (
+                          <p className="mt-1 text-[11px] text-muted-foreground">
+                            O acesso diário usa sessão salva no navegador — por isso pode ser mais
+                            recente que o login com senha.
+                          </p>
+                        )}
+                    </div>
+                  </dl>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {loadingActivity ? "Carregando dados de acesso…" : "Dados de acesso indisponíveis."}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Permissões */}

@@ -1,13 +1,21 @@
-import { fetchUsers } from "@/lib/users";
 import { fetchAreas } from "@/lib/areas";
+import { fetchUsersAuthActivity, fetchUsersServer } from "@/lib/users-server";
 import { UsersTable } from "@/components/usuarios/users-table";
 import Link from "next/link";
 
+export const dynamic = "force-dynamic";
+
 export default async function UsuariosPage() {
-  const [users, areas] = await Promise.all([
-    fetchUsers(),
+  const [users, areas, authActivity] = await Promise.all([
+    fetchUsersServer(),
     fetchAreas(),
+    fetchUsersAuthActivity(),
   ]);
+
+  const usersWithAuthActivity = users.map((user) => ({
+    ...user,
+    auth_activity: user.auth_id ? authActivity[user.id] ?? null : null,
+  }));
 
   return (
     <div className="space-y-6">
@@ -22,7 +30,7 @@ export default async function UsuariosPage() {
         </p>
       </div>
 
-      <UsersTable initialUsers={users} initialAreas={areas} />
+      <UsersTable initialUsers={usersWithAuthActivity} initialAreas={areas} />
     </div>
   );
 }

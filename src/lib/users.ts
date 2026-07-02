@@ -1,4 +1,5 @@
 import { supabase } from "@/utils/supabase/client";
+import type { UserAuthActivity } from "@/lib/users-auth-activity";
 
 export interface User {
   id: string;
@@ -14,12 +15,14 @@ export interface User {
   auth_id?: string | null;
   permissions?: string[] | null;
   must_change_password?: boolean | null;
+  last_seen_at?: string | null;
+  auth_activity?: UserAuthActivity | null;
 }
 
 export async function fetchUsers(): Promise<User[]> {
   const { data, error } = await supabase
     .from("users")
-    .select("id, name, email, department, avatar_url, photo_onedrive_url, photo_collected, photo_collected_at, is_active, role, auth_id, permissions, must_change_password")
+    .select("id, name, email, department, avatar_url, photo_onedrive_url, photo_collected, photo_collected_at, is_active, role, auth_id, permissions, must_change_password, last_seen_at")
     .order("name");
 
   if (error) {

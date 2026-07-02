@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/utils/supabase/server";
+import type { UserAuthActivity } from "@/lib/users-auth-activity";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,50 @@ async function ensureAdmin(): Promise<{ error?: Response }> {
     return { error: NextResponse.json({ error: "Acesso negado." }, { status: 403 }) };
   }
   return {};
+}
+
+function mapAuthActivity(authUser: {
+  created_at?: string;
+  last_sign_in_at?: string | null;
+  email_confirmed_at?: string | null;
+}): UserAuthActivity {
+  return {
+    account_created_at: authUser.created_at ?? null,
+    last_sign_in_at: authUser.last_sign_in_at ?? null,
+    email_confirmed_at: authUser.email_confirmed_at ?? null,
+  };
+}
+
+async function getAuthActivityForUser(userId: string): Promise<UserAuthActivity | null> {
+  const db = admin();
+  const { data: u, error } = await db
+    .from("users")
+    .select("auth_id")
+    .eq("id", userId)
+    .single();
+  if (error || !u?.auth_id) return null;
+
+  const { data: authUser, error: authError } = await db.auth.admin.getUserById(u.auth_id);
+  if (authError || !authUser.user) return null;
+  return mapAuthActivity(authUser.user);
+}
+
+export async function GET(request: Request) {
+  try {
+    const auth = await ensureAdmin();
+    if (auth.error) return auth.error;
+
+    const userId = new URL(request.url).searchParams.get("userId");
+    if (!userId) {
+      return NextResponse.json({ error: "userId é obrigatório." }, { status: 400 });
+    }
+
+    const authActivity = await getAuthActivityForUser(userId);
+    return NextResponse.json({ auth_activity: authActivity });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Erro ao buscar atividade.";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {
@@ -74,7 +119,8 @@ export async function POST(request: Request) {
           .from("users")
           .update({ email, is_active: true, must_change_password: true })
           .eq("id", userId);
-        return NextResponse.json({ success: true, reset: true, auth_id: u.auth_id });
+        const auth_activity = await getAuthActivityForUser(userId);
+        return NextResponse.json({ success: true, reset: true, auth_id: u.auth_id, auth_activity });
       }
 
       // Cria o login no Supabase Auth.
@@ -96,7 +142,13 @@ export async function POST(request: Request) {
         })
         .eq("id", userId);
       if (linkErr) throw new Error(linkErr.message);
-      return NextResponse.json({ success: true, created: true, auth_id: created.user.id });
+      const auth_activity = mapAuthActivity(created.user);
+      return NextResponse.json({
+        success: true,
+        created: true,
+        auth_id: created.user.id,
+        auth_activity,
+      });
     }
 
     if (action === "set_access") {

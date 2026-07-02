@@ -9,6 +9,7 @@
     "lint": "eslint",
     "import-excel": "node scripts/import-excel.js",
     "import-users": "node scripts/import-users.js",
+    "sync-users-responsum": "node scripts/sync-users-from-responsum.js",
     "link-solicitantes": "node scripts/link-solicitantes.js",
     "update-assignee": "node scripts/update-assignee.js",
     "create-auth-users": "node scripts/create-auth-users.js",

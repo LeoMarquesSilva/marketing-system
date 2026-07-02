@@ -31,10 +31,12 @@ import {
 import { Plus, Loader2, Pencil, Trash2, UserX, UserCheck, KeyRound, Search, X } from "lucide-react";
 import type { User } from "@/lib/users";
 import { createUser, updateUser, deleteUser, toggleUserActive } from "@/lib/users";
+import { formatAuthDateTime, formatAuthRelative, formatLastAccess } from "@/lib/users-auth-activity";
 import type { Area } from "@/lib/areas";
 import { UserFormDialog, type UserFormValues } from "./user-form-dialog";
 import { UserAccessDialog } from "./user-access-dialog";
 import { cn } from "@/lib/utils";
+import { userMatchesSearch } from "@/lib/user-search";
 
 function getInitials(name: string) {
   return name
@@ -75,11 +77,11 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
   }, [areas, users]);
 
   const filteredUsers = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     return users.filter((u) => {
       if (q) {
-        const hay = `${u.name} ${u.email ?? ""} ${u.department ?? ""}`.toLowerCase();
-        if (!hay.includes(q)) return false;
+        const hay = `${u.name} ${u.email ?? ""} ${u.department ?? ""}`;
+        if (!userMatchesSearch(hay, q)) return false;
       }
       if (deptFilter !== "all" && u.department !== deptFilter) return false;
       const isActive = u.is_active !== false;
@@ -345,13 +347,14 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
               <TableHead>E-mail</TableHead>
               <TableHead>Departamento</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Último acesso</TableHead>
               <TableHead className="w-[160px] text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredUsers.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
                   Nenhum usuário encontrado com esses filtros.
                 </TableCell>
               </TableRow>
@@ -387,6 +390,38 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
                       <Badge variant="outline" className="font-normal text-muted-foreground border-amber-200 bg-amber-50">
                         Ex-colaborador
                       </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {user.auth_id ? (
+                      <div className="space-y-0.5">
+                        <span
+                          className="text-sm text-foreground"
+                          title={
+                            user.last_seen_at
+                              ? `Último acesso: ${formatAuthDateTime(user.last_seen_at)}`
+                              : user.auth_activity?.last_sign_in_at
+                                ? `Último login: ${formatAuthDateTime(user.auth_activity.last_sign_in_at)}`
+                                : "Conta criada, mas ainda sem acesso registrado"
+                          }
+                        >
+                          {formatLastAccess(user.last_seen_at, user.auth_activity, Boolean(user.auth_id))}
+                        </span>
+                        {user.auth_activity?.last_sign_in_at &&
+                          user.last_seen_at &&
+                          user.auth_activity.last_sign_in_at !== user.last_seen_at && (
+                          <p className="text-[11px] text-muted-foreground">
+                            Login com senha {formatAuthRelative(user.auth_activity.last_sign_in_at)}
+                          </p>
+                        )}
+                        {user.auth_activity?.account_created_at && !user.last_seen_at && (
+                          <p className="text-[11px] text-muted-foreground">
+                            Conta criada {formatAuthRelative(user.auth_activity.account_created_at)}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">Sem login</span>
                     )}
                   </TableCell>
                   <TableCell className="text-right">

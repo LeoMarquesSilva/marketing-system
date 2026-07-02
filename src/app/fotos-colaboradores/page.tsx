@@ -1,8 +1,10 @@
-import { fetchUsers } from "@/lib/users";
+import { fetchUsersServer } from "@/lib/users-server";
 import { CollaboratorPhotosGrid } from "@/components/usuarios/collaborator-photos-grid";
 
+export const dynamic = "force-dynamic";
+
 export default async function FotosColaboradoresPage() {
-  const users = await fetchUsers();
+  const users = await fetchUsersServer();
 
   return (
     <div className="space-y-6">
