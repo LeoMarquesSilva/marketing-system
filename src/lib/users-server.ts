@@ -1,4 +1,5 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { createClient as createServerClient } from "@/utils/supabase/server";
 import type { UserAuthActivity } from "@/lib/users-auth-activity";
 import type { User } from "@/lib/users";
 
@@ -6,27 +7,27 @@ const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
+const USER_SELECT =
+  "id, name, email, department, avatar_url, photo_onedrive_url, photo_collected, photo_collected_at, is_active, role, auth_id, permissions, must_change_password, last_seen_at";
+
 function getAdminClient() {
   if (!supabaseServiceKey) {
     throw new Error("SUPABASE_SERVICE_ROLE_KEY não configurada.");
   }
-  return createClient(supabaseUrl, supabaseServiceKey);
+  return createAdminClient(supabaseUrl, supabaseServiceKey);
 }
 
 /** Lista usuários no servidor (sem cache estático do Next). */
 export async function fetchUsersServer(): Promise<User[]> {
+  const db = supabaseServiceKey
+    ? getAdminClient()
+    : await createServerClient();
+
   if (!supabaseServiceKey) {
-    console.warn("SUPABASE_SERVICE_ROLE_KEY ausente — usando lista vazia em fetchUsersServer.");
-    return [];
+    console.warn("SUPABASE_SERVICE_ROLE_KEY ausente — fetchUsersServer usando cliente anon.");
   }
 
-  const db = getAdminClient();
-  const { data, error } = await db
-    .from("users")
-    .select(
-      "id, name, email, department, avatar_url, photo_onedrive_url, photo_collected, photo_collected_at, is_active, role, auth_id, permissions, must_change_password, last_seen_at"
-    )
-    .order("name");
+  const { data, error } = await db.from("users").select(USER_SELECT).order("name");
 
   if (error) {
     console.error("Erro ao buscar usuários (server):", error);
