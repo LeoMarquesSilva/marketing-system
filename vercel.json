@@ -12,14 +12,14 @@
     },
     {
       "path": "/api/cron/email-campaigns",
-      "schedule": "*/10 * * * *"
+      "schedule": "0 8 * * *"
     },
     {
-      "path": "/api/cron/sioe-sync?mode=responsibles",
+      "path": "/api/cron/sioe-sync-responsibles",
       "schedule": "0 3 * * *"
     },
     {
-      "path": "/api/cron/sioe-sync?mode=full",
+      "path": "/api/cron/sioe-sync-full",
       "schedule": "0 4 * * 0"
     }
   ]
