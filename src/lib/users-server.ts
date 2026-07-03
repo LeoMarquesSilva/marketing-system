@@ -17,11 +17,15 @@ function getAdminClient() {
   return createAdminClient(supabaseUrl, supabaseServiceKey);
 }
 
+/** Cliente Supabase no servidor: service role quando disponível, senão sessão via cookies. */
+export async function getServerDb() {
+  if (supabaseServiceKey) return getAdminClient();
+  return createServerClient();
+}
+
 /** Lista usuários no servidor (sem cache estático do Next). */
 export async function fetchUsersServer(): Promise<User[]> {
-  const db = supabaseServiceKey
-    ? getAdminClient()
-    : await createServerClient();
+  const db = await getServerDb();
 
   if (!supabaseServiceKey) {
     console.warn("SUPABASE_SERVICE_ROLE_KEY ausente — fetchUsersServer usando cliente anon.");

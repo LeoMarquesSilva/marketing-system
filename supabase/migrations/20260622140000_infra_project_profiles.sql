@@ -40,7 +40,7 @@ values (
   'MARKETING-SYSTEM-PROJETOS',
   'MARKETING-SYSTEM-PROJETOS',
   true,
-  2097152,
+  1073741824,
   array['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/svg+xml']::text[]
 )
 on conflict (id) do update set

@@ -11,8 +11,8 @@ export default async function FotosColaboradoresPage() {
       <div>
         <h2 className="text-xl font-bold tracking-tight text-foreground">Fotos dos Colaboradores</h2>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Checklist para a figurinha da Copa: marque quem já teve foto coletada e cadastre o link do
-          OneDrive de cada colaborador.
+          Checklist para a figurinha da Copa: envie a foto para o storage do sistema (bucket Pro)
+          ou cadastre link do OneDrive como referência externa.
         </p>
       </div>
 

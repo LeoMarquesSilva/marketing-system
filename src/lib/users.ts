@@ -1,4 +1,4 @@
-import { supabase } from "@/utils/supabase/client";
+import { supabase as browserSupabase } from "@/utils/supabase/client";
 import type { UserAuthActivity } from "@/lib/users-auth-activity";
 
 export interface User {
@@ -19,28 +19,51 @@ export interface User {
   auth_activity?: UserAuthActivity | null;
 }
 
+const USER_LIST_SELECT =
+  "id, name, email, department, avatar_url, photo_onedrive_url, photo_collected, photo_collected_at, is_active, role, auth_id, permissions, must_change_password, last_seen_at";
+
+const ACTIVE_USER_SELECT = "id, name, email, department, avatar_url, is_active";
+
+const DESIGNER_SELECT = "id, name, email, department, avatar_url, is_active, role";
+
+/** Browser: cliente com sessão. Servidor: service role (sem importar next/headers). */
+async function getUsersDb() {
+  if (typeof window !== "undefined") return browserSupabase;
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (serviceKey) {
+    const { createClient } = await import("@supabase/supabase-js");
+    return createClient(url, serviceKey);
+  }
+
+  console.warn("SUPABASE_SERVICE_ROLE_KEY ausente — fetchUsers no servidor usando chave anon.");
+  const { createClient } = await import("@supabase/supabase-js");
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "placeholder-anon-key";
+  return createClient(url, anonKey);
+}
+
 export async function fetchUsers(): Promise<User[]> {
-  const { data, error } = await supabase
-    .from("users")
-    .select("id, name, email, department, avatar_url, photo_onedrive_url, photo_collected, photo_collected_at, is_active, role, auth_id, permissions, must_change_password, last_seen_at")
-    .order("name");
+  const db = await getUsersDb();
+  const { data, error } = await db.from("users").select(USER_LIST_SELECT).order("name");
 
   if (error) {
-    console.error("Erro ao buscar usuários:", error);
+    console.error("Erro ao buscar usuários:", error.message, error.code, error.details);
     return [];
   }
   return (data ?? []).map((u) => ({ ...u, is_active: u.is_active ?? true })) as User[];
 }
 
 export async function fetchActiveUsers(): Promise<User[]> {
-  const { data, error } = await supabase
+  const db = await getUsersDb();
+  const { data, error } = await db
     .from("users")
-    .select("id, name, email, department, avatar_url, is_active")
+    .select(ACTIVE_USER_SELECT)
     .or("is_active.eq.true,is_active.is.null")
     .order("name");
 
   if (error) {
-    console.error("Erro ao buscar usuários ativos:", error);
+    console.error("Erro ao buscar usuários ativos:", error.message, error.code, error.details);
     return [];
   }
   return (data ?? []) as User[];
@@ -51,10 +74,10 @@ export async function fetchActiveUsers(): Promise<User[]> {
  * Filtra no banco por role = 'designer' OU department = 'Marketing'.
  */
 export async function fetchDesigners(): Promise<User[]> {
-  // Primeiro tenta filtrar por role (requer coluna role na tabela)
-  const { data: byRole, error: roleError } = await supabase
+  const db = await getUsersDb();
+  const { data: byRole, error: roleError } = await db
     .from("users")
-    .select("id, name, email, department, avatar_url, is_active, role")
+    .select(DESIGNER_SELECT)
     .eq("role", "designer")
     .or("is_active.eq.true,is_active.is.null")
     .order("name");
@@ -63,16 +86,15 @@ export async function fetchDesigners(): Promise<User[]> {
     return byRole as User[];
   }
 
-  // Fallback: filtra por department = 'Marketing'
-  const { data: byDept, error: deptError } = await supabase
+  const { data: byDept, error: deptError } = await db
     .from("users")
-    .select("id, name, email, department, avatar_url, is_active, role")
+    .select(DESIGNER_SELECT)
     .eq("department", "Marketing")
     .or("is_active.eq.true,is_active.is.null")
     .order("name");
 
   if (deptError) {
-    console.error("Erro ao buscar designers:", deptError);
+    console.error("Erro ao buscar designers:", deptError.message, deptError.code, deptError.details);
     return [];
   }
   return (byDept ?? []) as User[];
@@ -88,7 +110,7 @@ export interface CreateUserInput {
 export async function createUser(
   input: CreateUserInput
 ): Promise<{ data: User | null; error: string | null }> {
-  const { data, error } = await supabase
+  const { data, error } = await browserSupabase
     .from("users")
     .insert({
       id: crypto.randomUUID(),
@@ -130,7 +152,7 @@ export async function updateUser(
   if (input.photo_collected_at !== undefined) updates.photo_collected_at = input.photo_collected_at || null;
   if (input.is_active !== undefined) updates.is_active = input.is_active;
 
-  const { data, error } = await supabase
+  const { data, error } = await browserSupabase
     .from("users")
     .update(updates)
     .eq("id", id)
@@ -144,7 +166,7 @@ export async function updateUser(
 export async function toggleUserActive(
   id: string
 ): Promise<{ data: User | null; error: string | null }> {
-  const { data: current } = await supabase
+  const { data: current } = await browserSupabase
     .from("users")
     .select("is_active")
     .eq("id", id)
@@ -159,7 +181,7 @@ export async function toggleUserActive(
 export async function deleteUser(
   id: string
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase.from("users").delete().eq("id", id);
+  const { error } = await browserSupabase.from("users").delete().eq("id", id);
   if (error) return { error: error.message };
   return { error: null };
 }

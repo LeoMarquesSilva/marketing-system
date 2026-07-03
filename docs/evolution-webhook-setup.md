@@ -20,7 +20,7 @@ Sem Next.js, n8n ou outros sistemas no meio. O app só **lê** do Supabase (Real
 ## URL do webhook
 
 ```
-https://fyspsaunnknkppkvbfyx.supabase.co/functions/v1/evolution-webhook
+https://qwihfvagemzlyypeohpc.supabase.co/functions/v1/evolution-webhook
 ```
 
 (Gerada automaticamente a partir de `NEXT_PUBLIC_SUPABASE_URL`.)
@@ -38,7 +38,7 @@ apikey: {EVOLUTION_API_KEY}
 {
   "webhook": {
     "enabled": true,
-    "url": "https://fyspsaunnknkppkvbfyx.supabase.co/functions/v1/evolution-webhook",
+    "url": "https://qwihfvagemzlyypeohpc.supabase.co/functions/v1/evolution-webhook",
     "webhookByEvents": false,
     "webhookBase64": false,
     "events": ["MESSAGES_UPSERT", "SEND_MESSAGE", "MESSAGES_UPDATE"]

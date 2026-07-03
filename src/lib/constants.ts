@@ -31,6 +31,7 @@ export const REQUEST_TYPES = [
   "Identidade Visual",
   "Newsletter",
   "Material Impresso",
+  "Evento",
   "Relatório",
   "Apresentação",
 ] as const;

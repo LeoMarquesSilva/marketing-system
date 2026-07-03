@@ -23,12 +23,12 @@ export async function requireAuthenticatedUser() {
   return user;
 }
 
-export async function requireAdminUser(userId: string) {
+export async function requireAdminUser(authUserId: string) {
   const supabase = getAdminClient();
   const { data, error } = await supabase
     .from("users")
     .select("role")
-    .eq("id", userId)
+    .eq("auth_id", authUserId)
     .maybeSingle();
   if (error) throw new Error(error.message);
   const role = (data?.role as string | undefined)?.toLowerCase();

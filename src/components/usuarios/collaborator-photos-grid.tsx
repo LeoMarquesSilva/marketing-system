@@ -27,6 +27,7 @@ import {
 import type { User } from "@/lib/users";
 import { updateUser } from "@/lib/users";
 import { CollaboratorPhotoEditDialog, type CollaboratorPhotoFormValues } from "./collaborator-photo-edit-dialog";
+import { CollaboratorPhotoUploadButton } from "./collaborator-photo-upload-button";
 import { CollaboratorPhotosChecklist } from "./collaborator-photos-checklist";
 import { cn } from "@/lib/utils";
 
@@ -124,6 +125,20 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
     }
   }
 
+  async function handleQuickUpload(userId: string, publicUrl: string) {
+    setError(null);
+    const { data, error: err } = await updateUser(userId, {
+      avatar_url: publicUrl,
+      photo_collected: true,
+      photo_collected_at: new Date().toISOString(),
+    });
+    if (err) {
+      setError(err);
+      return;
+    }
+    if (data) handleUserUpdated(data);
+  }
+
   async function copyUrl(text: string, userId: string) {
     await navigator.clipboard.writeText(text);
     setCopiedId(userId);
@@ -143,7 +158,7 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
           <div>
             <p className="text-sm font-medium">Figurinha Copa — coleta de fotos</p>
             <p className="text-xs text-muted-foreground">
-              Marque ✓ quando a Valentina já pegou a foto e cole o link do OneDrive na linha.
+              Envie a foto para o storage (botão de upload) ou marque ✓ quando coletada. OneDrive é opcional.
             </p>
           </div>
           <p className="text-2xl font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
@@ -351,6 +366,12 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
                     {collected ? "Obtida" : "Pendente"}
                   </Badge>
                   <div className="flex gap-0.5">
+                    <CollaboratorPhotoUploadButton
+                      userId={user.id}
+                      onError={setError}
+                      onUploaded={(url) => handleQuickUpload(user.id, url)}
+                      className="h-7 px-2"
+                    />
                     {hasOnedrive && (
                       <Button
                         variant="ghost"

@@ -12,9 +12,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Check, Cloud, ExternalLink, Loader2, Pencil } from "lucide-react";
+import { Check, Cloud, ExternalLink, ImageOff, Loader2, Pencil } from "lucide-react";
 import type { User } from "@/lib/users";
 import { updateUser } from "@/lib/users";
+import { COLLABORATOR_PHOTOS_BUCKET, isSupabaseStorageUrl } from "@/lib/storage-buckets";
+import { CollaboratorPhotoUploadButton } from "@/components/usuarios/collaborator-photo-upload-button";
 import { cn } from "@/lib/utils";
 
 interface CollaboratorPhotosChecklistProps {
@@ -76,6 +78,14 @@ export function CollaboratorPhotosChecklist({
     }
   }
 
+  async function savePhotoFromUpload(user: User, publicUrl: string) {
+    await patchUser(user.id, {
+      avatar_url: publicUrl,
+      photo_collected: true,
+      photo_collected_at: new Date().toISOString(),
+    });
+  }
+
   return (
     <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
       <Table>
@@ -84,8 +94,8 @@ export function CollaboratorPhotosChecklist({
             <TableHead className="w-12 text-center">OK</TableHead>
             <TableHead>Colaborador</TableHead>
             <TableHead className="hidden md:table-cell w-[140px]">Área</TableHead>
-            <TableHead>Link OneDrive</TableHead>
-            <TableHead className="hidden lg:table-cell w-[100px]">Foto</TableHead>
+            <TableHead className="w-[180px]">Foto</TableHead>
+            <TableHead>OneDrive (opcional)</TableHead>
             <TableHead className="w-[80px] text-right">Ações</TableHead>
           </TableRow>
         </TableHeader>
@@ -94,6 +104,8 @@ export function CollaboratorPhotosChecklist({
             const collected = user.photo_collected === true;
             const hasOnedrive = Boolean(user.photo_onedrive_url?.trim());
             const hasPhotoLink = Boolean(user.avatar_url?.trim());
+            const isHostedPhoto =
+              hasPhotoLink && isSupabaseStorageUrl(user.avatar_url!, COLLABORATOR_PHOTOS_BUCKET);
             const isSaving = savingId === user.id;
             const isActive = user.is_active !== false;
 
@@ -140,6 +152,46 @@ export function CollaboratorPhotosChecklist({
                   {user.department}
                 </TableCell>
                 <TableCell className="align-middle">
+                  <div className="flex items-center gap-2">
+                    {hasPhotoLink ? (
+                      <a
+                        href={user.avatar_url!}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block h-12 w-10 shrink-0 overflow-hidden rounded border bg-muted"
+                        title="Abrir foto"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={user.avatar_url!}
+                          alt={`Foto de ${user.name}`}
+                          className="h-full w-full object-cover object-top"
+                        />
+                      </a>
+                    ) : (
+                      <div className="flex h-12 w-10 shrink-0 items-center justify-center rounded border border-dashed bg-muted/40 text-muted-foreground">
+                        <ImageOff className="h-4 w-4" />
+                      </div>
+                    )}
+                    <div className="min-w-0 space-y-1">
+                      <CollaboratorPhotoUploadButton
+                        userId={user.id}
+                        disabled={isSaving}
+                        onError={onError}
+                        onUploaded={(url) => savePhotoFromUpload(user, url)}
+                      />
+                      {hasPhotoLink && (
+                        <Badge
+                          variant={isHostedPhoto ? "secondary" : "outline"}
+                          className="text-[10px] font-normal"
+                        >
+                          {isHostedPhoto ? "Storage" : "Link externo"}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell className="align-middle">
                   <Input
                     value={getOnedriveDraft(user)}
                     onChange={(e) =>
@@ -151,19 +203,10 @@ export function CollaboratorPhotosChecklist({
                         e.currentTarget.blur();
                       }
                     }}
-                    placeholder="Cole o link do OneDrive…"
+                    placeholder="Link externo (opcional)…"
                     className="h-8 text-xs"
                     disabled={isSaving}
                   />
-                </TableCell>
-                <TableCell className="hidden lg:table-cell align-middle">
-                  {hasPhotoLink ? (
-                    <Badge variant="secondary" className="font-normal text-[10px]">
-                      Link OK
-                    </Badge>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">—</span>
-                  )}
                 </TableCell>
                 <TableCell className="align-middle text-right">
                   <div className="flex justify-end gap-0.5">

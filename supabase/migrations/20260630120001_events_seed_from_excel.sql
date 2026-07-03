@@ -1,0 +1,35 @@
+-- Seed de eventos a partir do Excel "Cronograma de Eventos - Bismarchi Pires"
+
+INSERT INTO events (year, name, month_label, commemorative_date, event_date, gifts_notes, organization_team, status, objectives)
+VALUES
+  (2025, 'Dia internacinal  da Mulher', 'Março', '2025-03-08', NULL, 'a definir', NULL, 'concluida', 'Objetivo: Celebrar e valorizar as mulheres no ambiente de trabalho.'),
+  (2025, 'Aniversário Escritório 09 anos', 'Março', '2025-03-15', NULL, 'a definir', 'Clique aqui', 'concluida', 'Objetivo: Comemorar os anos de sucesso do escritório.'),
+  (2025, 'Páscoa', 'Abril', '2025-04-20', NULL, 'a definir', NULL, 'concluida', 'Objetivo: Promover celebração e integração entre colaboradores.'),
+  (2025, 'Dia do Trabalho', 'Maio', '2025-05-01', NULL, 'a definir', NULL, 'concluida', 'Objetivo: Reconhecer e valorizar a dedicação dos colaboradores.'),
+  (2025, 'Dia das mães', 'Maio', '2025-05-11', NULL, 'a definir', NULL, 'concluida', 'Objetivo: Homenagear as mães do escritório.'),
+  (2025, 'Corrida BP', 'Definir', '2025-08-24', '2025-08-24', 'a definir', 'Realizado pela Equipe de Clima + Squad de Eventos', 'concluida', 'Objetivo: Incentivar atividades físicas e bem-estar.'),
+  (2025, 'Festa Junina BP', 'Junho', NULL, NULL, 'a definir', NULL, 'concluida', 'Objetivo: Celebração das tradições culturais brasileiras.'),
+  (2025, 'Dia dos pais', 'Agosto', '2025-08-10', '2025-08-08', 'a definir', NULL, 'concluida', 'Objetivo: Homenagear os pais do escritório.'),
+  (2025, 'Dia do Advogado', 'Agosto', '2025-08-11', '2025-08-11', 'a definir', NULL, 'concluida', 'Objetivo: Celebrar a profissão e reconhecer advogados.'),
+  (2025, 'Setembro Amarelo', 'Setembro', '2025-09-01', '2025-09-26', 'a definir', 'Café com Cultura', 'concluida', 'Objetivo: Conscientização sobre saúde mental.'),
+  (2025, 'Innovation Day 2° Edição', 'Setembro', '2025-09-05', NULL, 'a definir', 'Escritório optou por não realizar', 'cancelada', 'Objetivo: Apresentar inovações no mercado jurídico.'),
+  (2025, 'Outubro Rosa', 'Outubro', '2025-10-01', '2025-10-31', 'a definir', 'Café com Cultura', 'concluida', 'Objetivo: Prevenção ao câncer de mama.'),
+  (2025, 'Novembro Azul', 'Novembro', '2025-11-01', '2025-10-31', 'a definir', 'Café com Cultura', 'concluida', 'Objetivo: Prevenção ao câncer de próstata.'),
+  (2025, 'Confraternização', 'Dezembro', NULL, '2025-12-19', 'a definir', 'Consagrados', 'concluida', 'Objetivo: Encerrar o ano com celebração e integração.'),
+  (2026, 'BPM', 'Janeiro', NULL, NULL, NULL, NULL, 'nao_iniciada', NULL),
+  (2026, 'Campanha Mês Empatia', 'Fevereiro', NULL, '2026-02-02', NULL, NULL, 'nao_iniciada', NULL),
+  (2026, 'Dia internacinal  da Mulher', 'Março', '2026-03-08', '2026-03-06', 'Necessaire', NULL, 'concluida', NULL),
+  (2026, 'Aniversário Escritório 10 anos', 'Março', '2026-03-15', NULL, 'a definir', 'Iniciar em Janeiro', 'em_andamento', NULL),
+  (2026, 'Páscoa', 'Abril', '2026-04-05', '2026-04-05', 'Mini Ovo Kopenhagen', NULL, 'nao_iniciada', NULL),
+  (2026, 'Dia do Trabalho', 'Maio', '2026-05-01', '2026-05-01', 'a definir', NULL, 'nao_iniciada', NULL),
+  (2026, 'Dia das mães', 'Maio', '2026-05-10', '2026-05-08', 'Massagem viagem ao Kalmma e Day off', NULL, 'concluida', NULL),
+  (2026, 'Festa Junina BP', 'Junho', NULL, '2026-06-19', 'a definir', NULL, 'concluida', NULL),
+  (2026, 'Dia dos pais', 'Agosto', '2026-08-09', '2026-08-07', 'a definir', NULL, 'em_andamento', NULL),
+  (2026, 'Dia do Advogado', 'Agosto', '2026-08-11', '2026-08-11', 'a definir', NULL, 'em_andamento', NULL),
+  (2026, 'Setembro Amarelo', 'Setembro', '2026-09-01', '2026-09-25', 'a definir', NULL, 'nao_iniciada', NULL),
+  (2026, 'Innovation Day 2° Edição', 'Setembro', '2026-09-05', NULL, 'a definir', NULL, 'nao_iniciada', NULL),
+  (2026, 'Outubro Rosa', 'Outubro', '2026-10-01', '2026-10-30', 'a definir', NULL, 'nao_iniciada', NULL),
+  (2026, 'Novembro Azul', 'Novembro', '2026-11-01', '2026-10-30', 'a definir', NULL, 'nao_iniciada', NULL),
+  (2026, 'Confraternização', 'Dezembro', NULL, '2026-12-18', 'a definir', NULL, 'nao_iniciada', NULL),
+  (2026, 'Corrida BP', NULL, NULL, NULL, 'a definir', NULL, 'nao_iniciada', NULL)
+ON CONFLICT (year, name) DO NOTHING;

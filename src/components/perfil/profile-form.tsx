@@ -28,7 +28,11 @@ import { fetchAreas } from "@/lib/areas";
 import { AREAS } from "@/lib/constants";
 import type { AuthProfile } from "@/contexts/auth-context";
 import type { Area } from "@/lib/areas";
-import { Loader2 } from "lucide-react";
+import { Loader2, Upload } from "lucide-react";
+import { useRef } from "react";
+import {
+  uploadCollaboratorPhoto,
+} from "@/lib/storage-buckets";
 
 const formSchema = z.object({
   name: z.string().min(1, "Nome é obrigatório"),
@@ -65,6 +69,8 @@ export function ProfileForm({ profile }: ProfileFormProps) {
   const { refreshProfile } = useAuth();
   const [areas, setAreas] = useState<Area[]>([]);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(formSchema),
@@ -115,6 +121,19 @@ export function ProfileForm({ profile }: ProfileFormProps) {
 
   const avatarUrl = form.watch("avatar_url");
 
+  async function uploadAvatar(file: File) {
+    setUploading(true);
+    setSubmitError(null);
+    try {
+      const { publicUrl } = await uploadCollaboratorPhoto(profile.id, file);
+      form.setValue("avatar_url", publicUrl, { shouldValidate: true, shouldDirty: true });
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Erro ao enviar foto.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -128,10 +147,36 @@ export function ProfileForm({ profile }: ProfileFormProps) {
               {getInitials(form.watch("name") || profile.name)}
             </AvatarFallback>
           </Avatar>
-          <div className="flex-1">
+          <div className="flex-1 space-y-2">
             <p className="text-sm text-muted-foreground">
-              Sua foto aparece no sistema. Use uma URL de imagem.
+              Sua foto aparece no sistema. Envie uma imagem ou informe a URL abaixo.
             </p>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void uploadAvatar(file);
+                e.target.value = "";
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              disabled={uploading}
+              onClick={() => fileRef.current?.click()}
+            >
+              {uploading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4" />
+              )}
+              {uploading ? "Enviando…" : "Enviar foto"}
+            </Button>
           </div>
         </div>
 

@@ -4,7 +4,7 @@ VALUES (
   'MARKETING-SYSTEM-FOTOS',
   'MARKETING-SYSTEM-FOTOS',
   true,
-  5242880,
+  1073741824,
   ARRAY['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif']::text[]
 )
 ON CONFLICT (id) DO UPDATE SET

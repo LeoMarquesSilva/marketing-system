@@ -9,6 +9,18 @@
     {
       "path": "/api/cron/fetch-news",
       "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/cron/email-campaigns",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/sioe-sync?mode=responsibles",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/sioe-sync?mode=full",
+      "schedule": "0 4 * * 0"
     }
   ]
 }

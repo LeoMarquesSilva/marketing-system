@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -22,8 +22,11 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
-import { ImagePlus, Loader2 } from "lucide-react";
+import { ImagePlus, Loader2, Upload } from "lucide-react";
 import type { User } from "@/lib/users";
+import {
+  uploadCollaboratorPhoto,
+} from "@/lib/storage-buckets";
 
 const urlOptional = z
   .string()
@@ -57,6 +60,9 @@ export function CollaboratorPhotoEditDialog({
     resolver: zodResolver(formSchema),
     defaultValues: { avatar_url: "", photo_onedrive_url: "", photo_collected: false },
   });
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -65,8 +71,24 @@ export function CollaboratorPhotoEditDialog({
         photo_onedrive_url: user.photo_onedrive_url || "",
         photo_collected: user.photo_collected === true,
       });
+      setUploadError(null);
     }
   }, [user, open, form]);
+
+  async function uploadPhoto(file: File) {
+    if (!user) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const { publicUrl } = await uploadCollaboratorPhoto(user.id, file);
+      form.setValue("avatar_url", publicUrl, { shouldValidate: true, shouldDirty: true });
+      form.setValue("photo_collected", true, { shouldDirty: true });
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Erro ao enviar foto.");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   const previewUrl = form.watch("avatar_url")?.trim();
 
@@ -76,7 +98,7 @@ export function CollaboratorPhotoEditDialog({
         <DialogHeader>
           <DialogTitle>Foto preferida</DialogTitle>
           <DialogDescription>
-            {user?.name} — cadastre o link do OneDrive e/ou a URL da foto para comunicados e posts.
+            {user?.name} — envie a foto para o storage do sistema ou informe links externos (OneDrive/URL).
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -108,6 +130,33 @@ export function CollaboratorPhotoEditDialog({
               </div>
             )}
 
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void uploadPhoto(file);
+                e.target.value = "";
+              }}
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full gap-2"
+              disabled={uploading || !user}
+              onClick={() => fileRef.current?.click()}
+            >
+              {uploading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4" />
+              )}
+              {uploading ? "Enviando foto…" : "Enviar foto do computador"}
+            </Button>
+            {uploadError && <p className="text-sm text-destructive">{uploadError}</p>}
+
             <FormField
               control={form.control}
               name="photo_onedrive_url"
@@ -134,16 +183,16 @@ export function CollaboratorPhotoEditDialog({
               name="avatar_url"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Link da foto</FormLabel>
+                  <FormLabel>Foto hospedada (URL)</FormLabel>
                   <FormControl>
                     <Input
                       type="url"
-                      placeholder="https://... (URL direta .jpg, .png)"
+                      placeholder="Preenchido automaticamente após upload"
                       {...field}
                     />
                   </FormControl>
                   <p className="text-xs text-muted-foreground">
-                    URL usada para preview e download nos materiais de marketing.
+                    URL pública no storage Pro — usada para preview e materiais de marketing.
                   </p>
                   <FormMessage />
                 </FormItem>

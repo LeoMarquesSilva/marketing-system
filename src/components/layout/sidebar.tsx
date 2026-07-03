@@ -9,6 +9,7 @@ import {
   Users,
   Columns3,
   ClipboardList,
+  CalendarDays,
   LogOut,
   Settings,
   Newspaper,
@@ -18,6 +19,8 @@ import {
   User,
   Camera,
   Wallet,
+  Mail,
+  Contact,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -37,6 +40,8 @@ const baseNavItems = [
   { href: "/instagram-insights", icon: Instagram, label: "Instagram Insights" },
   { href: "/trafego-pago", icon: Megaphone, label: "Tráfego Pago" },
   { href: "/vios-tarefas", icon: ClipboardList, label: "Tarefas VIOS" },
+  { href: "/eventos", icon: CalendarDays, label: "Eventos" },
+  { href: "/email-marketing", icon: Mail, label: "E-mail Marketing" },
   { href: "/fotos-colaboradores", icon: Camera, label: "Fotos Colaboradores" },
   { href: "/usuarios", icon: Users, label: "Usuários" },
   { href: "/custos-projetos", icon: Wallet, label: "Custos de Projetos" },
@@ -45,6 +50,11 @@ const baseNavItems = [
 const collaboratorNavItems = [
   { href: "/conteudo/inicio", icon: Instagram, label: "Início" },
   { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteúdo para Post" },
+];
+
+/** Liberado apenas manualmente por usuário (checkbox no admin) — nunca no fallback legado. */
+const manualOnlyNavItems = [
+  { href: "/meus-clientes", icon: Contact, label: "Meus Clientes" },
 ];
 
 const adminNavItems = [
@@ -57,7 +67,7 @@ function getNavItems(
   // Permissões explícitas (definidas pelo admin) têm prioridade.
   const allowed = resolveAllowedSections(profile);
   if (allowed) {
-    const catalog = [...baseNavItems, ...adminNavItems];
+    const catalog = [...baseNavItems, ...manualOnlyNavItems, ...adminNavItems];
     let items = catalog.filter((i) => {
       if (i.href === "/fotos-colaboradores") {
         return hasCollaboratorPhotosAccess(profile) || allowed.includes("/fotos-colaboradores") || allowed.includes("/usuarios");
@@ -77,11 +87,14 @@ function getNavItems(
   if (isContentCollaborator(profile)) {
     return collaboratorNavItems;
   }
+  const isAdmin = profile?.role === "admin";
   return [
     ...baseNavItems.filter(
       (i) => i.href !== "/fotos-colaboradores" || hasCollaboratorPhotosAccess(profile)
     ),
-    ...(profile?.role === "admin" ? adminNavItems : []),
+    // Admin sempre vê as rotas de liberação manual (ex.: Meus Clientes), mesmo sem
+    // depender do catálogo de permissões — ele nunca é limitado por ele.
+    ...(isAdmin ? [...manualOnlyNavItems, ...adminNavItems] : []),
   ];
 }
 
