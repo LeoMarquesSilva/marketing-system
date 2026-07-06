@@ -11,7 +11,7 @@
  */
 
 import type { EmailCompany, EmailContact, EmailGroupResponsible, EmailPerson } from "./email-marketing";
-import { clientProfileIsIncomplete, contactToEnrichable, listClientMissingFieldLabels, personToEnrichable } from "./email-marketing-enrichment";
+import { clientProfileIsIncomplete, contactToClientProfile, listClientMissingFieldLabels, personToClientProfile } from "./email-marketing-enrichment";
 import { companyNameKey } from "./email-marketing-normalize";
 
 /** Grupos do próprio escritório — não aparecem em Meus Clientes. */
@@ -215,7 +215,7 @@ export function buildManagerSummary(
         continue;
       }
       for (const contact of companyContacts) {
-        if (listClientMissingFieldLabels(contactToEnrichable(contact)).length > 0) contactsPending++;
+        if (listClientMissingFieldLabels(contactToClientProfile(contact)).length > 0) contactsPending++;
         else contactsComplete++;
       }
     }
@@ -225,7 +225,7 @@ export function buildManagerSummary(
     for (const personId of scope.personIds) {
       const person = peopleById.get(personId);
       if (!person) continue;
-      if (listClientMissingFieldLabels(personToEnrichable(person)).length > 0) peoplePending++;
+      if (listClientMissingFieldLabels(personToClientProfile(person)).length > 0) peoplePending++;
       else peopleComplete++;
     }
 
@@ -316,14 +316,14 @@ export function buildAreaManagerSummary(
         if (countedContacts.has(contact.id)) continue;
         countedContacts.add(contact.id);
         contactEmailsInSlice.add(contact.email.toLowerCase());
-        if (listClientMissingFieldLabels(contactToEnrichable(contact)).length > 0) profilesPending++;
+        if (listClientMissingFieldLabels(contactToClientProfile(contact)).length > 0) profilesPending++;
         else profilesComplete++;
       }
     }
     for (const person of peopleInSlice) {
       const email = person.email?.trim().toLowerCase();
       if (email && contactEmailsInSlice.has(email)) continue;
-      if (listClientMissingFieldLabels(personToEnrichable(person)).length > 0) profilesPending++;
+      if (listClientMissingFieldLabels(personToClientProfile(person)).length > 0) profilesPending++;
       else profilesComplete++;
     }
     return { profilesComplete, profilesPending };
@@ -349,13 +349,13 @@ export function buildAreaManagerSummary(
     for (const contact of contacts) {
       if (contact.enrichedByUserId !== userId || !contactInArea(contact, companiesInSlice)) continue;
       adjustedCount++;
-      if (listClientMissingFieldLabels(contactToEnrichable(contact)).length === 0) adjustedComplete++;
+      if (listClientMissingFieldLabels(contactToClientProfile(contact)).length === 0) adjustedComplete++;
     }
 
     for (const person of people) {
       if (person.enrichedByUserId !== userId || !personHasAnyArea(person.id, areaLabels, personAreas)) continue;
       adjustedCount++;
-      if (listClientMissingFieldLabels(personToEnrichable(person)).length === 0) adjustedComplete++;
+      if (listClientMissingFieldLabels(personToClientProfile(person)).length === 0) adjustedComplete++;
     }
 
     return { adjustedCount, adjustedComplete };
@@ -369,12 +369,16 @@ export function buildAreaManagerSummary(
     const areaLabels = expandRootArea(rootArea);
     const { companiesInSlice, peopleInSlice } = sliceForAreas(areaLabels);
 
-    const { profilesComplete, profilesPending } = countProfilesInSlice(companiesInSlice, peopleInSlice);
+    const { profilesComplete, profilesPending: profilePendingOnly } = countProfilesInSlice(
+      companiesInSlice,
+      peopleInSlice
+    );
     const { groupsCount, groupsWithoutContact } = countClientGroups(
       companiesInSlice,
       peopleInSlice,
       contacts
     );
+    const profilesPending = profilePendingOnly + groupsWithoutContact;
 
     const subAreas: AreaSubSummary[] = (AREA_SUBAREAS[rootArea] ?? []).map((subArea) => {
       const { companiesInSlice: co, peopleInSlice: pe } = sliceForAreas([subArea]);
@@ -385,7 +389,7 @@ export function buildAreaManagerSummary(
         groupsCount: groups.groupsCount,
         groupsWithoutContact: groups.groupsWithoutContact,
         profilesComplete: stats.profilesComplete,
-        profilesPending: stats.profilesPending,
+        profilesPending: stats.profilesPending + groups.groupsWithoutContact,
       };
     });
 
@@ -521,14 +525,14 @@ export function computeEnrichmentTotals(
     if (!scopedGroupKeys.has(key) || countedContacts.has(contact.id)) continue;
     countedContacts.add(contact.id);
     contactEmailsInScope.add(contact.email.toLowerCase());
-    if (listClientMissingFieldLabels(contactToEnrichable(contact)).length > 0) profilesPending++;
+    if (listClientMissingFieldLabels(contactToClientProfile(contact)).length > 0) profilesPending++;
     else profilesComplete++;
   }
   for (const person of peopleList) {
     const email = person.email?.trim().toLowerCase();
     if (email && contactEmailsInScope.has(email)) continue;
     if (!scopedGroupKeys.has(resolveClientGroupKey(person))) continue;
-    if (listClientMissingFieldLabels(personToEnrichable(person)).length > 0) profilesPending++;
+    if (listClientMissingFieldLabels(personToClientProfile(person)).length > 0) profilesPending++;
     else profilesComplete++;
   }
 
@@ -541,19 +545,19 @@ export function computeEnrichmentTotals(
     const key = resolveContactGroupKey(contact, companiesById);
     if (!scopedGroupKeys.has(key)) continue;
     adjustedCount++;
-    if (listClientMissingFieldLabels(contactToEnrichable(contact)).length === 0) adjustedComplete++;
+    if (listClientMissingFieldLabels(contactToClientProfile(contact)).length === 0) adjustedComplete++;
   }
   for (const person of peopleList) {
     if (!person.enrichedByUserId) continue;
     adjustedCount++;
-    if (listClientMissingFieldLabels(personToEnrichable(person)).length === 0) adjustedComplete++;
+    if (listClientMissingFieldLabels(personToClientProfile(person)).length === 0) adjustedComplete++;
   }
 
   return {
     groupsCount,
     groupsWithoutContact,
     profilesComplete,
-    profilesPending,
+    profilesPending: profilesPending + groupsWithoutContact,
     adjustedCount,
     adjustedComplete,
   };
@@ -572,15 +576,47 @@ export function totalsFromAreaGroup(group: AreaSummaryGroup): EnrichmentTotals {
   };
 }
 
-export function countGroupPendingMembers(
+export function countGroupMembers(
   groupPeople: EmailPerson[],
   groupContacts: EmailContact[]
 ): number {
   const contactEmails = new Set(groupContacts.map((c) => c.email.toLowerCase()));
   const people = groupPeople.filter((p) => !p.email || !contactEmails.has(p.email.toLowerCase()));
-  const pendingPeople = people.filter((p) => clientProfileIsIncomplete(personToEnrichable(p))).length;
-  const pendingContacts = groupContacts.filter((c) => clientProfileIsIncomplete(contactToEnrichable(c))).length;
+  return people.length + groupContacts.length;
+}
+
+export function groupHasNoContacts(
+  groupPeople: EmailPerson[],
+  groupContacts: EmailContact[]
+): boolean {
+  return countGroupMembers(groupPeople, groupContacts) === 0;
+}
+
+export function groupIsPending(
+  groupPeople: EmailPerson[],
+  groupContacts: EmailContact[]
+): boolean {
+  if (groupHasNoContacts(groupPeople, groupContacts)) return true;
+  return countGroupIncompleteProfiles(groupPeople, groupContacts) > 0;
+}
+
+export function countGroupIncompleteProfiles(
+  groupPeople: EmailPerson[],
+  groupContacts: EmailContact[]
+): number {
+  const contactEmails = new Set(groupContacts.map((c) => c.email.toLowerCase()));
+  const people = groupPeople.filter((p) => !p.email || !contactEmails.has(p.email.toLowerCase()));
+  const pendingPeople = people.filter((p) => clientProfileIsIncomplete(personToClientProfile(p))).length;
+  const pendingContacts = groupContacts.filter((c) => clientProfileIsIncomplete(contactToClientProfile(c))).length;
   return pendingPeople + pendingContacts;
+}
+
+export function countGroupPendingMembers(
+  groupPeople: EmailPerson[],
+  groupContacts: EmailContact[]
+): number {
+  if (groupHasNoContacts(groupPeople, groupContacts)) return 1;
+  return countGroupIncompleteProfiles(groupPeople, groupContacts);
 }
 
 export function compareGroupsByPendingFirst<

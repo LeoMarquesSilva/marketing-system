@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { requireAuthenticatedUser } from "@/lib/api-auth";
 import { fetchMeusClientesPayload } from "@/lib/meus-clientes-server";
 import {
-  contactToEnrichable,
+  clientProfileIsIncomplete,
+  contactToClientProfile,
   listClientMissingFieldLabels,
-  personToEnrichable,
+  personToClientProfile,
 } from "@/lib/email-marketing-enrichment";
 import { resolveClientGroupKey, resolveContactGroupKey } from "@/lib/meus-clientes";
 
@@ -19,13 +20,16 @@ function csvRow(cols: string[]): string {
   return cols.map(csvEscape).join(",");
 }
 
-/** Exporta CSV do escopo visível (mesmos filtros de escopo da listagem). */
+/** Exporta CSV respeitando escopo e filtros da listagem. */
 export async function GET(request: Request) {
   try {
     const user = await requireAuthenticatedUser();
     const url = new URL(request.url);
     const viewAll = url.searchParams.get("viewAll") === "1";
     const filterGestorId = url.searchParams.get("gestorId") || null;
+    const filterArea = url.searchParams.get("area") || null;
+    const filterStatus = url.searchParams.get("status") || "all";
+    const excludeSemGrupo = url.searchParams.get("excludeSemGrupo") === "1";
 
     const { companies, contacts, people } = await fetchMeusClientesPayload({
       authUserId: user.id,
@@ -34,6 +38,42 @@ export async function GET(request: Request) {
     });
 
     const companiesById = new Map(companies.map((c) => [c.id, c]));
+
+    const filteredContacts = contacts.filter((contact) => {
+      const groupKey = resolveContactGroupKey(contact, companiesById);
+      if (excludeSemGrupo && !contact.clientGroupId) return false;
+      if (filterArea === "__sem_area__") {
+        const company = contact.companyId ? companiesById.get(contact.companyId) : null;
+        if ((company?.legalAreas ?? []).length > 0) return false;
+      } else if (filterArea) {
+        const company = contact.companyId ? companiesById.get(contact.companyId) : null;
+        if (!(company?.legalAreas ?? []).some((a) => a === filterArea || a.startsWith(filterArea))) {
+          return false;
+        }
+      }
+      if (filterStatus === "pending" && !clientProfileIsIncomplete(contactToClientProfile(contact))) {
+        return false;
+      }
+      if (filterStatus === "complete" && clientProfileIsIncomplete(contactToClientProfile(contact))) {
+        return false;
+      }
+      return true;
+    });
+
+    const contactEmails = new Set(filteredContacts.map((c) => c.email.toLowerCase()));
+    const filteredPeople = people.filter((person) => {
+      if (person.email && contactEmails.has(person.email.toLowerCase())) return false;
+      const groupKey = resolveClientGroupKey(person);
+      if (excludeSemGrupo && !person.clientGroupId) return false;
+      if (filterStatus === "pending" && !clientProfileIsIncomplete(personToClientProfile(person))) {
+        return false;
+      }
+      if (filterStatus === "complete" && clientProfileIsIncomplete(personToClientProfile(person))) {
+        return false;
+      }
+      return true;
+    });
+
     const lines = [
       csvRow([
         "Grupo",
@@ -49,11 +89,10 @@ export async function GET(request: Request) {
       ]),
     ];
 
-    for (const contact of contacts) {
-      const groupKey = resolveContactGroupKey(contact, companiesById);
+    for (const contact of filteredContacts) {
       const company = contact.companyId ? companiesById.get(contact.companyId) : null;
-      const groupName = contact.clientGroupName ?? company?.clientGroupName ?? groupKey;
-      const missing = listClientMissingFieldLabels(contactToEnrichable(contact));
+      const groupName = contact.clientGroupName ?? company?.clientGroupName ?? "Sem grupo";
+      const missing = listClientMissingFieldLabels(contactToClientProfile(contact));
       lines.push(
         csvRow([
           groupName,
@@ -70,11 +109,9 @@ export async function GET(request: Request) {
       );
     }
 
-    const contactEmails = new Set(contacts.map((c) => c.email.toLowerCase()));
-    for (const person of people) {
-      if (person.email && contactEmails.has(person.email.toLowerCase())) continue;
+    for (const person of filteredPeople) {
       const groupName = person.clientGroupName ?? resolveClientGroupKey(person);
-      const missing = listClientMissingFieldLabels(personToEnrichable(person));
+      const missing = listClientMissingFieldLabels(personToClientProfile(person));
       lines.push(
         csvRow([
           groupName,

@@ -51,3 +51,5 @@ skills-lock.json
 
 # dados locais / import
 *.csv
+
+.vercel

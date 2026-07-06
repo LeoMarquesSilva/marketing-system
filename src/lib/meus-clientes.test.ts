@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   compareGroupsByPendingFirst,
   countGroupPendingMembers,
+  groupHasNoContacts,
+  groupIsPending,
   expandRootArea,
   filterOutInternalClientGroups,
   getAreaParent,
@@ -83,5 +85,35 @@ describe("group sorting", () => {
     const sorted = [...groups].sort((a, b) => compareGroupsByPendingFirst(a, b, contactsByGroup, (g) => g.key));
     expect(sorted[0].key).toBe("g1");
     expect(countGroupPendingMembers([], contactsByGroup.get("g1") ?? [])).toBeGreaterThan(0);
+  });
+
+  it("grupo sem contatos conta como pendente, não completo", () => {
+    expect(groupHasNoContacts([], [])).toBe(true);
+    expect(groupIsPending([], [])).toBe(true);
+    expect(countGroupPendingMembers([], [])).toBe(1);
+  });
+
+  it("ordena grupos vazios antes dos completos", () => {
+    const contactsByGroup = new Map<string, EmailContact[]>([
+      [
+        "g2",
+        [
+          {
+            id: "2",
+            email: "b@test.com",
+            name: "Completo",
+            phone: "11999999999",
+            cargo: "CEO",
+            invitesClassifiedByUserId: "u1",
+          } as EmailContact,
+        ],
+      ],
+    ]);
+    const groups = [
+      { key: "g-empty", name: "Vazio", groupPeople: [] as EmailPerson[] },
+      { key: "g2", name: "Beta", groupPeople: [] as EmailPerson[] },
+    ];
+    const sorted = [...groups].sort((a, b) => compareGroupsByPendingFirst(a, b, contactsByGroup, (g) => g.key));
+    expect(sorted[0].key).toBe("g-empty");
   });
 });

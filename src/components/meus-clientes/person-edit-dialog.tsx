@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Briefcase, Loader2, Mail, Sparkles, UserRound } from "lucide-react";
+import { Briefcase, CheckCircle2, Circle, Loader2, Mail, Sparkles, UserRound } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -29,6 +29,7 @@ import {
   type EmailPerson,
 } from "@/lib/email-marketing";
 import { CARGO_OPTIONS, CARGO_OUTRO, resolveCargoOption } from "@/lib/cargo-options";
+import { getProfileCargo } from "@/lib/email-marketing-enrichment";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 
@@ -67,6 +68,7 @@ export function PersonEditDialog({
   const [cargoOutro, setCargoOutro] = useState("");
   const [npsEligible, setNpsEligible] = useState(false);
   const [partyInvite, setPartyInvite] = useState(false);
+  const [invitesReviewed, setInvitesReviewed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,10 +79,12 @@ export function PersonEditDialog({
     setName(source.name ?? "");
     setEmail(person?.email ?? contact?.email ?? "");
     setPhone(maskPhoneBR(source.phone ?? ""));
-    setCargoOption(resolveCargoOption(source.cargo));
-    setCargoOutro(resolveCargoOption(source.cargo) === CARGO_OUTRO ? source.cargo ?? "" : "");
+    const cargoValue = source.cargo ?? getProfileCargo({ cargo: source.cargo, customFields: source.customFields }) ?? "";
+    setCargoOption(resolveCargoOption(cargoValue));
+    setCargoOutro(resolveCargoOption(cargoValue) === CARGO_OUTRO ? cargoValue : "");
     setNpsEligible(source.npsEligible);
     setPartyInvite(source.partyInvite);
+    setInvitesReviewed(Boolean(source.invitesClassifiedByUserId));
     setError(null);
   }, [open, person, contact]);
 
@@ -88,6 +92,15 @@ export function PersonEditDialog({
 
   const resolvedCargo = cargoOption === CARGO_OUTRO ? cargoOutro.trim() : cargoOption;
   const displayName = name.trim() || target.name || "Contato";
+
+  const checklist = [
+    { label: "Nome", ok: Boolean(name.trim()) },
+    { label: "E-mail", ok: Boolean(email.trim()) },
+    { label: "Telefone", ok: Boolean(phone.trim()) },
+    { label: "Cargo", ok: Boolean(resolvedCargo) },
+    { label: "NPS e Festa", ok: invitesReviewed },
+  ];
+  const completeCount = checklist.filter((c) => c.ok).length;
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -103,25 +116,26 @@ export function PersonEditDialog({
     try {
       const enrichedByUserId = profile?.id;
       const phoneValue = phone.trim() || null;
+      const patch = {
+        name: name.trim(),
+        phone: phoneValue,
+        cargo: resolvedCargo || null,
+        npsEligible,
+        partyInvite,
+        enrichedByUserId,
+        ...(invitesReviewed && enrichedByUserId
+          ? { invitesClassifiedByUserId: enrichedByUserId }
+          : {}),
+      };
       if (isPerson && person) {
         await updateEmailPerson(person.id, {
-          name: name.trim(),
+          ...patch,
           email: email.trim() || null,
-          phone: phoneValue,
-          cargo: resolvedCargo || null,
-          npsEligible,
-          partyInvite,
-          enrichedByUserId,
         });
       } else if (contact) {
         await updateEmailContact(contact.id, {
-          name: name.trim(),
+          ...patch,
           email: email.trim() || contact.email,
-          phone: phoneValue,
-          cargo: resolvedCargo || null,
-          npsEligible,
-          partyInvite,
-          enrichedByUserId,
         });
       }
       onSaved();
@@ -160,6 +174,33 @@ export function PersonEditDialog({
               {error}
             </p>
           )}
+
+          <div className="rounded-xl border bg-muted/20 px-4 py-3">
+            <div className="mb-2 flex items-center justify-between text-xs">
+              <span className="font-medium text-muted-foreground">Progresso do cadastro</span>
+              <span className="text-muted-foreground">
+                {completeCount}/{checklist.length}
+              </span>
+            </div>
+            <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-emerald-500 transition-all"
+                style={{ width: `${(completeCount / checklist.length) * 100}%` }}
+              />
+            </div>
+            <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+              {checklist.map((item) => (
+                <li key={item.label} className="flex items-center gap-1">
+                  {item.ok ? (
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                  ) : (
+                    <Circle className="h-3.5 w-3.5 text-amber-500" />
+                  )}
+                  <span className={item.ok ? "text-muted-foreground" : "text-foreground"}>{item.label}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
 
           <section className="space-y-3">
             <DialogSectionHeading icon={UserRound}>Identificação</DialogSectionHeading>
@@ -231,6 +272,11 @@ export function PersonEditDialog({
 
           <section className="space-y-3">
             <DialogSectionHeading icon={Sparkles}>Classificação</DialogSectionHeading>
+            {!invitesReviewed && (
+              <p className="text-xs text-amber-700 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2">
+                Marque NPS e/ou Festa, ou confirme abaixo que nenhum convite se aplica.
+              </p>
+            )}
             <div className="grid gap-2 sm:grid-cols-2">
               <label
                 className={cn(
@@ -241,7 +287,10 @@ export function PersonEditDialog({
                 <input
                   type="checkbox"
                   checked={npsEligible}
-                  onChange={(e) => setNpsEligible(e.target.checked)}
+                  onChange={(e) => {
+                    setNpsEligible(e.target.checked);
+                    setInvitesReviewed(true);
+                  }}
                   className="mt-0.5 rounded border-border"
                 />
                 <span>
@@ -258,7 +307,10 @@ export function PersonEditDialog({
                 <input
                   type="checkbox"
                   checked={partyInvite}
-                  onChange={(e) => setPartyInvite(e.target.checked)}
+                  onChange={(e) => {
+                    setPartyInvite(e.target.checked);
+                    setInvitesReviewed(true);
+                  }}
                   className="mt-0.5 rounded border-border"
                 />
                 <span>
@@ -267,6 +319,21 @@ export function PersonEditDialog({
                 </span>
               </label>
             </div>
+            {!invitesReviewed && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="text-xs"
+                onClick={() => {
+                  setNpsEligible(false);
+                  setPartyInvite(false);
+                  setInvitesReviewed(true);
+                }}
+              >
+                Confirmar sem convites
+              </Button>
+            )}
           </section>
         </div>
 

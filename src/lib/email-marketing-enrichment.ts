@@ -128,6 +128,38 @@ export function personToEnrichable(person: EmailPerson): EnrichableFields {
   };
 }
 
+export interface ClientProfileFields extends EnrichableFields {
+  /** Gestor revisou e salvou dados cadastrais. */
+  enrichedByUserId?: string | null;
+  /** Gestor confirmou classificação NPS/Festa. */
+  invitesClassifiedByUserId?: string | null;
+}
+
+export function contactToClientProfile(contact: EmailContact): ClientProfileFields {
+  return {
+    name: contact.name,
+    email: contact.email,
+    phone: contact.phone,
+    cargo: contact.cargo,
+    customFields: contact.customFields,
+    enrichedByUserId: contact.enrichedByUserId,
+    invitesClassifiedByUserId: contact.invitesClassifiedByUserId,
+  };
+}
+
+export function personToClientProfile(person: EmailPerson): ClientProfileFields {
+  return {
+    name: person.name,
+    email: person.email,
+    phone: person.phone,
+    cargo: person.cargo,
+    area: person.area,
+    customFields: person.customFields,
+    enrichedByUserId: person.enrichedByUserId,
+    invitesClassifiedByUserId: person.invitesClassifiedByUserId,
+  };
+}
+
 export function contactToEnrichable(contact: EmailContact): EnrichableFields {
   return {
     name: contact.name,
@@ -178,20 +210,21 @@ export function listMissingFieldLabels(profile: EnrichableFields): string[] {
   return missing;
 }
 
-/** Campos que o gestor preenche em Meus Clientes (área jurídica vem do SIOE, não entra aqui). */
-export function listClientMissingFieldLabels(profile: EnrichableFields): string[] {
+/** Campos que o gestor confirma em Meus Clientes (ignora cargo só no custom_fields do RD). */
+export function listClientMissingFieldLabels(profile: ClientProfileFields): string[] {
   const missing: string[] = [];
   if (profileMissingName(profile)) missing.push("nome");
   if (profileMissingEmail(profile)) missing.push("e-mail");
-  if (profileMissingCargo(profile)) missing.push("cargo");
+  if (!pickString(profile.cargo)) missing.push("cargo");
   if (profileMissingPhone(profile)) missing.push("telefone");
+  if (!profile.invitesClassifiedByUserId) missing.push("NPS e Festa");
   return missing;
 }
 
-export function clientProfileIsComplete(profile: EnrichableFields): boolean {
+export function clientProfileIsComplete(profile: ClientProfileFields): boolean {
   return listClientMissingFieldLabels(profile).length === 0;
 }
 
-export function clientProfileIsIncomplete(profile: EnrichableFields): boolean {
+export function clientProfileIsIncomplete(profile: ClientProfileFields): boolean {
   return !clientProfileIsComplete(profile);
 }

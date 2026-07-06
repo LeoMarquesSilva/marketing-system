@@ -44,6 +44,7 @@ export interface EmailPerson {
   npsEligible: boolean;
   partyInvite: boolean;
   enrichedByUserId: string | null;
+  invitesClassifiedByUserId: string | null;
   clientGroupId: string | null;
   clientGroupName?: string | null;
   companyId: string | null;
@@ -108,6 +109,7 @@ export interface EmailContact {
   npsEligible: boolean;
   partyInvite: boolean;
   enrichedByUserId: string | null;
+  invitesClassifiedByUserId: string | null;
   tags: string[];
   status: EmailContactStatus;
   source: string | null;
@@ -238,6 +240,7 @@ export function mapPerson(row: Record<string, unknown>): EmailPerson {
     npsEligible: Boolean(row.nps_eligible),
     partyInvite: Boolean(row.party_invite),
     enrichedByUserId: (row.enriched_by_user_id as string | null) ?? null,
+    invitesClassifiedByUserId: (row.invites_classified_by_user_id as string | null) ?? null,
     clientGroupId: (row.client_group_id as string | null) ?? joined?.id ?? null,
     clientGroupName: groupFromJoin ?? groupFromCustom,
     companyId: (row.company_id as string | null) ?? null,
@@ -316,6 +319,7 @@ export function mapContact(row: Record<string, unknown>): EmailContact {
     npsEligible: Boolean(row.nps_eligible),
     partyInvite: Boolean(row.party_invite),
     enrichedByUserId: (row.enriched_by_user_id as string | null) ?? null,
+    invitesClassifiedByUserId: (row.invites_classified_by_user_id as string | null) ?? null,
     tags: normalizeTags(row.tags as string[] | null),
     status: row.status as EmailContactStatus,
     source: (row.source as string | null) ?? null,
@@ -459,6 +463,7 @@ export interface UpdateEmailPersonInput {
   npsEligible?: boolean;
   partyInvite?: boolean;
   enrichedByUserId?: string;
+  invitesClassifiedByUserId?: string;
 }
 
 /**
@@ -475,6 +480,7 @@ export async function updateEmailPerson(id: string, patch: UpdateEmailPersonInpu
   if (patch.npsEligible !== undefined) payload.nps_eligible = patch.npsEligible;
   if (patch.partyInvite !== undefined) payload.party_invite = patch.partyInvite;
   if (patch.enrichedByUserId) payload.enriched_by_user_id = patch.enrichedByUserId;
+  if (patch.invitesClassifiedByUserId) payload.invites_classified_by_user_id = patch.invitesClassifiedByUserId;
 
   const { data, error } = await supabase
     .from("email_people")
@@ -502,6 +508,7 @@ async function promotePersonToContact(person: EmailPerson): Promise<void> {
       nps_eligible: person.npsEligible,
       party_invite: person.partyInvite,
       enriched_by_user_id: person.enrichedByUserId,
+      invites_classified_by_user_id: person.invitesClassifiedByUserId,
       company_id: null,
       client_group_id: person.clientGroupId,
       source: person.source ?? "sioe",
@@ -631,6 +638,7 @@ export interface CreateEmailContactInput {
   npsEligible?: boolean;
   partyInvite?: boolean;
   enrichedByUserId?: string;
+  invitesClassifiedByUserId?: string;
 }
 
 export async function createEmailContact(input: CreateEmailContactInput): Promise<EmailContact> {
@@ -653,6 +661,7 @@ export async function createEmailContact(input: CreateEmailContactInput): Promis
       nps_eligible: input.npsEligible ?? false,
       party_invite: input.partyInvite ?? false,
       enriched_by_user_id: input.enrichedByUserId ?? null,
+      invites_classified_by_user_id: input.invitesClassifiedByUserId ?? null,
     })
     .select("*, email_companies(id, name)")
     .single();
@@ -673,6 +682,7 @@ export async function updateEmailContact(
   if (patch.npsEligible !== undefined) payload.nps_eligible = patch.npsEligible;
   if (patch.partyInvite !== undefined) payload.party_invite = patch.partyInvite;
   if (patch.enrichedByUserId) payload.enriched_by_user_id = patch.enrichedByUserId;
+  if (patch.invitesClassifiedByUserId) payload.invites_classified_by_user_id = patch.invitesClassifiedByUserId;
   if (patch.clientGroupId !== undefined) payload.client_group_id = patch.clientGroupId;
   if (patch.company !== undefined || patch.companyId !== undefined) {
     const { companyId, companyName } = await resolveCompanyId(patch.companyId, patch.company);

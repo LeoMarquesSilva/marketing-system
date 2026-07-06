@@ -129,6 +129,13 @@ export function normalizeTag(value: string | null | undefined): string | null {
   return collapseWhitespace(fixed);
 }
 
+/** Apenas dígitos — CNPJ/CPF para comparação. */
+export function normalizeDocumentDigits(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const digits = String(value).replace(/\D/g, "");
+  return digits.length >= 11 ? digits : null;
+}
+
 export function normalizeTags(tags: string[] | null | undefined): string[] {
   if (!tags?.length) return [];
   const seen = new Set<string>();
