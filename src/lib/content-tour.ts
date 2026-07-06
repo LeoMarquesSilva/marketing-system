@@ -42,8 +42,8 @@ export const CONTENT_TOUR_STEPS: ContentTourStep[] = [
     id: "welcome",
     route: "/conteudo/inicio",
     target: null,
-    title: "Bem-vindo ao sistema",
-    body: "Este tour mostra como validar posts da sua área e enviar ao marketing. A revisão do gestor continua pelo VIOS ou e-mail — aqui você só registra o andamento e substitui o e-mail ao marketing.",
+    title: "Bem-vindo",
+    body: "Em poucos passos você vai conhecer as telas principais: seu desempenho no Instagram, as notícias da sua área e como validar um post até enviá-lo ao marketing.",
   },
   {
     id: "inicio-header",
