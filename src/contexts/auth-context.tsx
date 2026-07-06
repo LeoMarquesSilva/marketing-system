@@ -21,6 +21,7 @@ export interface AuthProfile {
   avatar_url?: string | null;
   permissions?: string[] | null;
   must_change_password?: boolean | null;
+  content_tutorial_completed_at?: string | null;
 }
 
 interface AuthContextValue {
@@ -50,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     for (let attempt = 0; attempt < 3; attempt++) {
       const { data, error } = await supabase
         .from("users")
-        .select("id, name, email, department, role, auth_id, avatar_url, permissions, must_change_password")
+        .select("id, name, email, department, role, auth_id, avatar_url, permissions, must_change_password, content_tutorial_completed_at")
         .eq("auth_id", authId)
         .maybeSingle();
       if (data) {

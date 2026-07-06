@@ -1,9 +1,11 @@
 "use client";
 
+import { Suspense } from "react";
 import { usePathname } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { AuthGuard } from "@/components/auth/auth-guard";
+import { ContentCollaboratorTour } from "@/components/conteudo/content-collaborator-tour";
 import { TimerProvider } from "@/contexts/timer-context";
 import { FloatingTimer } from "@/components/timer/floating-timer";
 
@@ -15,6 +17,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthGuard>
+      <Suspense fallback={null}>
+        <ContentCollaboratorTour />
+      </Suspense>
       {isLogin ? (
         children
       ) : (

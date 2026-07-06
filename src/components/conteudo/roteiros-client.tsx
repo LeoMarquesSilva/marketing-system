@@ -103,21 +103,9 @@ export function RoteirosClient() {
   const [selectedRoteiro, setSelectedRoteiro] = useState<RoteiroItem | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(true);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (localStorage.getItem("conteudo-onboarding-dismissed") !== "1") {
-      setShowOnboarding(true);
-    }
-  }, []);
-
-  const dismissOnboarding = () => {
-    setShowOnboarding(false);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("conteudo-onboarding-dismissed", "1");
-    }
-  };
+  const dismissOnboarding = () => setShowOnboarding(false);
 
   const [isEditingPost, setIsEditingPost] = useState(false);
   const [draftPost, setDraftPost] = useState("");
@@ -479,7 +467,7 @@ export function RoteirosClient() {
   return (
     <div className="mx-auto max-w-6xl space-y-6 pb-8">
       {/* Cabeçalho */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between" data-tour="roteiros-header">
         <div>
           <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-1">
             Portal de conteúdo
@@ -533,7 +521,10 @@ export function RoteirosClient() {
 
       {/* Onboarding do colaborador */}
       {isCollaborator && showOnboarding && (
-        <div className="relative rounded-xl border border-primary/20 bg-primary/[0.03] p-4 sm:p-5">
+        <div
+          className="relative rounded-xl border border-primary/20 bg-primary/[0.03] p-4 sm:p-5"
+          data-tour="roteiros-workflow"
+        >
           <button
             type="button"
             onClick={dismissOnboarding}
@@ -670,7 +661,7 @@ export function RoteirosClient() {
       <div className="space-y-4">
         {/* Toolbar */}
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex flex-wrap gap-1 rounded-lg border bg-muted/30 p-1">
+          <div className="flex flex-wrap gap-1 rounded-lg border bg-muted/30 p-1" data-tour="roteiros-tabs">
             {(
               [
                 { id: "recentes" as const, label: "Recentes", count: stats.recent },

@@ -20,15 +20,18 @@ export async function POST() {
     if (!serviceKey) {
       return NextResponse.json({ error: "Service role não configurada." }, { status: 500 });
     }
+
     const admin = createClient(supabaseUrl, serviceKey);
+    const now = new Date().toISOString();
     const { error } = await admin
       .from("users")
-      .update({ must_change_password: false, content_tutorial_completed_at: null })
+      .update({ content_tutorial_completed_at: now })
       .eq("auth_id", user.id);
+
     if (error) throw new Error(error.message);
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, content_tutorial_completed_at: now });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Erro ao concluir troca de senha.";
+    const msg = err instanceof Error ? err.message : "Erro ao concluir tutorial.";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

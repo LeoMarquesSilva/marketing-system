@@ -8,7 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Lock, ShieldCheck } from "lucide-react";
-import { firstAllowedPath } from "@/lib/access-control";
+import { resolvePostLoginPathFromProfile } from "@/lib/post-login-path";
+import {
+  CONTENT_TUTORIAL_SESSION_KEY,
+  isContentCollaboratorForTour,
+} from "@/lib/content-tour";
 
 export default function AlterarSenhaPage() {
   const { user, profile, loading } = useAuth();
@@ -26,7 +30,7 @@ export default function AlterarSenhaPage() {
     }
     // Já trocou: sai da tela.
     if (profile && !profile.must_change_password) {
-      router.replace(firstAllowedPath(profile));
+      router.replace(resolvePostLoginPathFromProfile(profile));
     }
   }, [user, profile, loading, router]);
 
@@ -59,8 +63,14 @@ export default function AlterarSenhaPage() {
         throw new Error(d.error ?? "Erro ao concluir a troca de senha.");
       }
       // Reload completo: garante perfil fresco (flag limpa) e evita corrida de redirect.
-      const target = profile ? firstAllowedPath(profile) : "/";
-      window.location.assign(target);
+      const target = profile ? resolvePostLoginPathFromProfile(profile) : "/";
+      if (profile && isContentCollaboratorForTour(profile)) {
+        sessionStorage.setItem(CONTENT_TUTORIAL_SESSION_KEY, "1");
+        const url = `${target}?tutorial=1`;
+        window.location.assign(url);
+      } else {
+        window.location.assign(target);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao alterar a senha.");
     } finally {

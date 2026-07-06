@@ -151,7 +151,7 @@ export function MeuInstagramClient({ userName, posts, office }: MeuInstagramClie
   return (
     <div className="mx-auto max-w-6xl space-y-6 pb-8">
       {/* Cabeçalho */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between" data-tour="inicio-header">
         <div>
           <p className="mb-1 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
             <Instagram className="h-3.5 w-3.5" />
@@ -172,7 +172,10 @@ export function MeuInstagramClient({ userName, posts, office }: MeuInstagramClie
       </div>
 
       {posts.length === 0 ? (
-        <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed bg-muted/10 py-20 text-center">
+        <div
+          className="flex flex-col items-center gap-4 rounded-2xl border border-dashed bg-muted/10 py-20 text-center"
+          data-tour="inicio-stats"
+        >
           <div className="rounded-full bg-muted/60 p-5">
             <Instagram className="h-10 w-10 text-muted-foreground/50" />
           </div>
@@ -193,7 +196,7 @@ export function MeuInstagramClient({ userName, posts, office }: MeuInstagramClie
       ) : (
         <>
           {/* Resumo com comparação ao escritório */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4" data-tour="inicio-stats">
             <StatCard
               label="Seus posts"
               value={nf(my.count)}

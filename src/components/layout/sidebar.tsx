@@ -184,7 +184,7 @@ export function Sidebar() {
       </Link>
 
       {/* Nav items */}
-      <nav className="flex flex-1 flex-col items-center gap-1 w-full px-3" aria-label="Navegação principal">
+      <nav className="flex flex-1 flex-col items-center gap-1 w-full px-3" aria-label="Navegação principal" data-tour="sidebar-nav">
         {getNavItems(profile).map((item) => {
           const isActive =
             pathname === item.href ||
@@ -245,7 +245,7 @@ export function Sidebar() {
       <div className="w-8 border-t border-white/10 my-3 shrink-0" />
 
       {/* Bottom: avatar com menu (perfil + sair) */}
-      <div ref={profileMenuRef} className="relative flex flex-col items-center shrink-0">
+      <div ref={profileMenuRef} className="relative flex flex-col items-center shrink-0" data-tour="profile-menu">
         {profile && (
           <button
             type="button"
@@ -304,7 +304,7 @@ export function Sidebar() {
     </aside>
 
     {/* Mobile bottom navigation */}
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around bg-gradient-to-r from-[#101f2e] to-[#0a141c] border-t border-white/[0.06] h-16 px-2 shadow-[0_-4px_20px_rgba(0,0,0,0.2)]">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around bg-gradient-to-r from-[#101f2e] to-[#0a141c] border-t border-white/[0.06] h-16 px-2 shadow-[0_-4px_20px_rgba(0,0,0,0.2)]" data-tour="sidebar-nav-mobile">
       {getNavItems(profile).slice(0, 5).map((item) => {
         const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href + "/"));
         return (

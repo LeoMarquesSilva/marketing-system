@@ -117,7 +117,12 @@ export async function POST(request: Request) {
         if (updErr) throw new Error(updErr.message);
         await db
           .from("users")
-          .update({ email, is_active: true, must_change_password: true })
+          .update({
+            email,
+            is_active: true,
+            must_change_password: true,
+            content_tutorial_completed_at: null,
+          })
           .eq("id", userId);
         const auth_activity = await getAuthActivityForUser(userId);
         return NextResponse.json({ success: true, reset: true, auth_id: u.auth_id, auth_activity });
@@ -139,6 +144,7 @@ export async function POST(request: Request) {
           email,
           is_active: true,
           must_change_password: true,
+          content_tutorial_completed_at: null,
         })
         .eq("id", userId);
       if (linkErr) throw new Error(linkErr.message);
