@@ -280,18 +280,6 @@ export function RequestChecklistSection({
                           </p>
                         )}
                       </div>
-                    ) : fieldConfig.contentType === "url" ? (
-                      <Input
-                        type="url"
-                        value={draft}
-                        placeholder={fieldConfig.placeholder}
-                        onChange={(e) => {
-                          setDrafts((prev) => ({ ...prev, [item.id]: e.target.value }));
-                          if (contentErrorId === item.id) setContentErrorId(null);
-                        }}
-                        onBlur={() => void handleSaveContent(item)}
-                        className="text-sm h-9"
-                      />
                     ) : (
                       <textarea
                         value={draft}

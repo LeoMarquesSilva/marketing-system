@@ -42,7 +42,7 @@ export function isReelRequest(request: MarketingRequest): boolean {
 export function getReelDisplayTitle(request: MarketingRequest): string {
   const fromTitle = request.title.replace(/^Reel\s*[—–-]\s*/i, "").trim();
   if (fromTitle) return fromTitle;
-  const fromDesc = request.description?.match(/^Reel gravado:\s*(.+?)\./s)?.[1]?.trim();
+  const fromDesc = request.description?.match(/^Reel gravado:\s*([\s\S]+?)\./)?.[1]?.trim();
   return fromDesc || request.title;
 }
 
