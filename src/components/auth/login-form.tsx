@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -16,8 +16,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { useAuth } from "@/contexts/auth-context";
-import { supabase } from "@/utils/supabase/client";
-import { isContentCollaborator, isContentManager } from "@/lib/content-areas";
+import { resolvePostLoginPath } from "@/lib/post-login-path";
 
 const loginSchema = z.object({
   email: z.string().email("E-mail inválido"),
@@ -31,29 +30,8 @@ const signUpSchema = loginSchema.extend({
 type LoginFormValues = z.infer<typeof loginSchema>;
 type SignUpFormValues = z.infer<typeof signUpSchema>;
 
-async function resolvePostLoginPath(next?: string | null): Promise<string> {
-  if (next && next.startsWith("/") && !next.startsWith("//")) return next;
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.user?.id) return "/";
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("department, role, must_change_password")
-    .eq("auth_id", session.user.id)
-    .maybeSingle();
-
-  if (profile?.must_change_password) return "/alterar-senha";
-  if (isContentCollaborator(profile)) return "/conteudo/inicio";
-  if (isContentManager(profile)) return "/";
-  return "/conteudo/inicio";
-}
-
 export function LoginForm() {
   const { signIn, signUp } = useAuth();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = searchParams.get("next");
   const [isSignUp, setIsSignUp] = useState(false);
@@ -77,8 +55,8 @@ export function LoginForm() {
       return;
     }
     const destination = await resolvePostLoginPath(nextPath);
-    router.push(destination);
-    router.refresh();
+    // Reload completo evita corrida com AuthGuard (router.push ficava em "Redirecionando...").
+    window.location.assign(destination);
   };
 
   const onSignUp = async (values: SignUpFormValues) => {
@@ -89,8 +67,7 @@ export function LoginForm() {
       return;
     }
     const destination = await resolvePostLoginPath(nextPath);
-    router.push(destination);
-    router.refresh();
+    window.location.assign(destination);
   };
 
   return (

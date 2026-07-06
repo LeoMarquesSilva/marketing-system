@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { isContentCollaborator } from "@/lib/content-areas";
-import { resolveAllowedSections, canAccessPath, firstAllowedPath } from "@/lib/access-control";
+import { resolveAllowedSections, canAccessPath } from "@/lib/access-control";
+import { resolvePostLoginPathFromProfile } from "@/lib/post-login-path";
 
 const PUBLIC_PATHS = ["/login"];
 
@@ -36,13 +37,13 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     // Rotas protegidas pelo servidor (admin): não interferir aqui.
     if (pathname === "/admin" || pathname.startsWith("/admin/")) return null;
 
-    // Troca de senha obrigatória (primeiro acesso).
-    if (profile?.must_change_password && pathname !== "/alterar-senha" && !isPublic) {
+    // Troca de senha obrigatória (primeiro acesso) — inclusive saindo de /login.
+    if (profile?.must_change_password && pathname !== "/alterar-senha") {
       return "/alterar-senha";
     }
 
     if (pathname === "/login") {
-      return profile ? firstAllowedPath(profile) : "/";
+      return profile ? resolvePostLoginPathFromProfile(profile) : null;
     }
 
     if (pathname === "/alterar-senha") return null;
@@ -50,7 +51,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     // Permissões explícitas definidas pelo admin.
     const allowed = resolveAllowedSections(profile);
     if (profile && allowed && !isPublic) {
-      return canAccessPath(profile, pathname) ? null : firstAllowedPath(profile);
+      return canAccessPath(profile, pathname) ? null : resolvePostLoginPathFromProfile(profile);
     }
 
     // Comportamento legado (colaborador de conteúdo).
@@ -65,16 +66,22 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       (pathname === "/fotos-colaboradores" || pathname.startsWith("/fotos-colaboradores/")) &&
       !canAccessPath(profile, pathname)
     ) {
-      return firstAllowedPath(profile);
+      return resolvePostLoginPathFromProfile(profile);
     }
 
     return null;
   })();
 
   useEffect(() => {
-    if (redirectTo && redirectTo !== pathname) {
-      router.replace(redirectTo);
-    }
+    if (!redirectTo || redirectTo === pathname) return;
+    router.replace(redirectTo);
+    // Fallback: router.replace pode falhar após login (App Router); reload resolve.
+    const fallback = window.setTimeout(() => {
+      if (window.location.pathname === pathname) {
+        window.location.assign(redirectTo);
+      }
+    }, 1500);
+    return () => window.clearTimeout(fallback);
   }, [redirectTo, pathname, router]);
 
   // Fallback: se o perfil demorar demais, não trava a tela para sempre.
@@ -99,6 +106,9 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   // Aguarda o perfil carregar para decidir permissões (evita exibir conteúdo
   // indevido) — exceto na tela de troca de senha, que deve sempre renderizar.
+  const waitingLoginProfile =
+    pathname === "/login" && !!user && !profile && !profileTimedOut;
+
   const waitingProfile =
     !!user &&
     !profile &&
@@ -107,7 +117,12 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     pathname !== "/alterar-senha" &&
     !profileTimedOut;
 
-  if ((redirectTo && redirectTo !== pathname) || waitingProfile || (!user && !isPublic && !isServerProtected)) {
+  if (
+    (redirectTo && redirectTo !== pathname) ||
+    waitingProfile ||
+    waitingLoginProfile ||
+    (!user && !isPublic && !isServerProtected)
+  ) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-pulse text-muted-foreground">Redirecionando...</div>
