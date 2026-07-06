@@ -127,7 +127,7 @@ export function getAreaDotColor(area: string) {
 export const STATUS_LABELS: Record<string, string> = {
   aguardando_aprovacao: "A validar",
   em_revisao: "Em revisão",
-  aprovado_revisor: "Revisor aprovou",
+  aprovado_revisor: "Gestor aprovou",
   enviado_mkt: "Enviado ao MKT",
   aprovado: "Aprovado",
   rejeitado: "Rejeitado",

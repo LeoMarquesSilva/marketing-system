@@ -80,7 +80,7 @@ export function ContentTourRoteiroDemo() {
               VIOS-1234 · Post LinkedIn — março
             </div>
             <p className="text-[11px] text-muted-foreground">
-              Vincule sua tarefa do VIOS antes de enviar ao marketing — ela aparece no Planner.
+              Vincule a tarefa do VIOS se a sua área envia o material ao gestor por lá. Ajuda a conectar este post ao Planner depois.
             </p>
           </div>
 
@@ -89,15 +89,15 @@ export function ContentTourRoteiroDemo() {
             data-tour="demo-after-review"
           >
             <div className="flex-1 text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">Após o gestor revisar:</span> ele clica em
-              &quot;Revisor aprovou&quot; e o post fica pronto para o marketing.
+              <span className="font-medium text-foreground">Gestor aprovou fora do sistema:</span> após
+              ok pelo VIOS ou e-mail, você clica em Gestor aprovou para registrar aqui.
             </div>
             <Button
               size="sm"
               className="gap-2 h-8 text-xs bg-violet-600 shrink-0 pointer-events-none"
             >
               <Check className="h-3.5 w-3.5" />
-              Revisor aprovou
+              Gestor aprovou
             </Button>
           </div>
 
@@ -106,8 +106,8 @@ export function ContentTourRoteiroDemo() {
             data-tour="demo-send-mkt"
           >
             <div className="flex-1 text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">Envio ao marketing:</span> um clique substitui
-              o e-mail — a solicitação entra direto no Planner do time.
+              <span className="font-medium text-foreground">Envio ao marketing:</span> no lugar do e-mail
+              ao marketing, um clique e a solicitação entra no Planner.
             </div>
             <Button
               size="sm"

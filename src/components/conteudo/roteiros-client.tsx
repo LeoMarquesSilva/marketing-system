@@ -549,18 +549,18 @@ export function RoteirosClient() {
               },
               {
                 icon: Check,
-                title: "3. Aprovar p/ revisão",
-                desc: "Envie ao gestor e vincule sua tarefa do VIOS — sem e-mail.",
+                title: "3. Enviar ao gestor",
+                desc: "Registre em revisão aqui e mande o material ao gestor pelo VIOS ou e-mail da sua área.",
               },
               {
                 icon: FileCheck,
-                title: "4. Gestor revisa",
-                desc: "Após a revisão, o gestor marca Revisor aprovou.",
+                title: "4. Gestor aprovou",
+                desc: "Quando o gestor der ok (fora do sistema), você clica em Gestor aprovou neste post.",
               },
               {
                 icon: Send,
                 title: "5. Enviar ao MKT",
-                desc: "Um clique e o marketing recebe no Planner para criar a arte.",
+                desc: "No lugar de e-mail ao marketing, um clique e entra no Planner.",
               },
             ].map((step) => (
               <div key={step.title} className="flex gap-2.5">
@@ -925,7 +925,7 @@ export function RoteirosClient() {
                 disabled={actionLoading}
               >
                 {actionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-                Revisor aprovou
+                Gestor aprovou
               </Button>
             )}
             {selectedRoteiro?.status === "aprovado_revisor" && (
@@ -1016,7 +1016,8 @@ export function RoteirosClient() {
                       </SelectContent>
                     </Select>
                     <p className="text-[11px] text-muted-foreground">
-                      Vincule antes de enviar ao marketing — a tarefa do VIOS ficará ligada ao card do Planner.
+                      Vincule se a sua área envia conteúdo ao gestor pelo VIOS. Ao enviar ao marketing, a
+                      tarefa fica ligada ao card no Planner.
                     </p>
                   </>
                 )}
