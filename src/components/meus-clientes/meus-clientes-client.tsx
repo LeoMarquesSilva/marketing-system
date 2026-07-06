@@ -45,7 +45,6 @@ import {
   resolveContactGroupKey,
   isSubArea,
   totalsFromAreaGroup,
-  type MyClientScope,
 } from "@/lib/meus-clientes";
 import { PersonEditDialog } from "./person-edit-dialog";
 import { ContactCreateDialog } from "./contact-create-dialog";
@@ -111,7 +110,6 @@ export function MeusClientesClient() {
 
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [serverScope, setServerScope] = useState<MyClientScope | null>(null);
   const [companies, setCompanies] = useState<EmailCompany[]>([]);
   const [contacts, setContacts] = useState<EmailContact[]>([]);
   const [people, setPeople] = useState<EmailPerson[]>([]);
@@ -153,7 +151,6 @@ export function MeusClientesClient() {
       setResponsibles(data.responsibles ?? []);
       setAreaManagers(data.areaManagers ?? []);
       setSystemUsers(data.systemUsers ?? []);
-      setServerScope(data.scope ?? null);
       setIsAdmin(Boolean(data.isAdmin));
       setSyncMeta(data.syncMeta ?? null);
     } catch (err) {
@@ -314,7 +311,6 @@ export function MeusClientesClient() {
     [systemUsers]
   );
 
-  const scope = serverScope;
   const showAll = isAdmin && viewAll;
   const companiesById = useMemo(() => new Map(companies.map((c) => [c.id, c])), [companies]);
 
@@ -482,7 +478,7 @@ export function MeusClientesClient() {
       if (groupContacts.some((c) => contactSearchHaystack(c).includes(q))) return true;
       return group.groupPeople.some(
         (p) =>
-          p.name.toLowerCase().includes(q) ||
+          (p.name ?? "").toLowerCase().includes(q) ||
           (p.email ?? "").toLowerCase().includes(q) ||
           (p.cargo ?? "").toLowerCase().includes(q)
       );
@@ -514,16 +510,10 @@ export function MeusClientesClient() {
   }, [contactsByGroup, filterStatus]);
 
   const summaryTotals = useMemo(() => {
-    if (showAll || !scope) {
-      const totals = computeEnrichmentTotals(companies, contacts, people);
-      return { title: showAll ? "Total geral" : "Meus clientes", totals };
-    }
-    const totals = computeEnrichmentTotals(companies, contacts, people, {
-      companyIds: scope.companyIds,
-      personIds: scope.personIds,
-    });
-    return { title: "Meus clientes", totals };
-  }, [showAll, scope, companies, contacts, people]);
+    // companies/contacts/people já vêm filtrados pelo escopo do usuário na API.
+    const totals = computeEnrichmentTotals(companies, contacts, people);
+    return { title: showAll ? "Total geral" : "Meus clientes", totals };
+  }, [showAll, companies, contacts, people]);
 
   const stats = useMemo(() => {
     const scopedGroupKeys = new Set(groups.map((g) => g.key));

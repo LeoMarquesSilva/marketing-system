@@ -337,7 +337,7 @@ export function GroupSection({
     [mergedContacts]
   );
   const sortedPeople = useMemo(
-    () => mergedPeople.slice().sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
+    () => mergedPeople.slice().sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "pt-BR")),
     [mergedPeople]
   );
 
