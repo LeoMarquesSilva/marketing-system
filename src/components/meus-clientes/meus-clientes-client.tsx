@@ -9,6 +9,8 @@ import {
   RefreshCw,
   Search,
   Trash2,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -48,6 +50,8 @@ import {
 } from "@/lib/meus-clientes";
 import { PersonEditDialog } from "./person-edit-dialog";
 import { ContactCreateDialog } from "./contact-create-dialog";
+import { useAuth } from "@/contexts/auth-context";
+import { useMeusClientesRealtime } from "@/hooks/use-meus-clientes-realtime";
 import {
   type ClientGroupBucket,
   type SelectKey,
@@ -105,6 +109,7 @@ function resolveGroupAreas(
 }
 
 export function MeusClientesClient() {
+  const { user } = useAuth();
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -162,6 +167,18 @@ export function MeusClientesClient() {
       if (!options?.silent) setLoading(false);
     }
   }, [viewAll, filterGestor]);
+
+  const reloadRef = useRef(reload);
+  reloadRef.current = reload;
+
+  const realtimePaused = dialogOpen || createDialogOpen || deleteConfirmOpen;
+  const { status: realtimeStatus } = useMeusClientesRealtime({
+    enabled: Boolean(user) && !loading,
+    paused: realtimePaused,
+    onRefresh: () => {
+      void reloadRef.current({ silent: true });
+    },
+  });
 
   useEffect(() => {
     reload();
@@ -588,6 +605,26 @@ export function MeusClientesClient() {
               Dados atualizados em {formatSyncDate(syncMeta.lastSyncedAt)}
             </p>
           )}
+          <div
+            className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
+              realtimeStatus === "connected"
+                ? "bg-emerald-100 text-emerald-700"
+                : realtimeStatus === "connecting"
+                  ? "bg-muted text-muted-foreground"
+                  : "bg-amber-100 text-amber-700"
+            }`}
+          >
+            {realtimeStatus === "connected" ? (
+              <Wifi className="h-3 w-3" aria-hidden />
+            ) : (
+              <WifiOff className="h-3 w-3" aria-hidden />
+            )}
+            {realtimeStatus === "connected"
+              ? "Tempo real ativo"
+              : realtimeStatus === "connecting"
+                ? "Conectando…"
+                : "Tempo real indisponível"}
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" className="gap-2" onClick={handleExport} title="Exportar (E)">
