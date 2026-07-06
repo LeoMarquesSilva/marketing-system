@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/auth-context";
+import { ContentTourProvider } from "@/contexts/content-tour-context";
 import { AppLayout } from "@/components/layout/app-layout";
 
 const geistSans = Geist({
@@ -31,7 +32,9 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <AuthProvider>
-          <AppLayout>{children}</AppLayout>
+          <ContentTourProvider>
+            <AppLayout>{children}</AppLayout>
+          </ContentTourProvider>
         </AuthProvider>
       </body>
     </html>

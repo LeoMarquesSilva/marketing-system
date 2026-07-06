@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/utils/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
+import { isTourDemoStep, useContentTour } from "@/contexts/content-tour-context";
+import { ContentTourRoteiroDemo } from "@/components/conteudo/content-tour-roteiro-demo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -79,6 +81,8 @@ interface ViosTaskOption {
 
 export function RoteirosClient() {
   const { profile, loading: authLoading } = useAuth();
+  const tour = useContentTour();
+  const showTourDemo = tour.active && isTourDemoStep(tour.stepId);
   const isManager = isContentManager(profile);
   const isCollaborator = isContentCollaborator(profile);
   const userAreas = useMemo(
@@ -519,12 +523,9 @@ export function RoteirosClient() {
         </div>
       )}
 
-      {/* Onboarding do colaborador */}
-      {isCollaborator && showOnboarding && (
-        <div
-          className="relative rounded-xl border border-primary/20 bg-primary/[0.03] p-4 sm:p-5"
-          data-tour="roteiros-workflow"
-        >
+      {/* Onboarding do colaborador (oculto durante o tour interativo) */}
+      {isCollaborator && showOnboarding && !tour.active && (
+        <div className="relative rounded-xl border border-primary/20 bg-primary/[0.03] p-4 sm:p-5">
           <button
             type="button"
             onClick={dismissOnboarding}
@@ -533,23 +534,33 @@ export function RoteirosClient() {
           >
             <X className="h-4 w-4" />
           </button>
-          <p className="text-sm font-semibold mb-3">Como funciona</p>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <p className="text-sm font-semibold mb-3">Fluxo resumido</p>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {[
               {
                 icon: Newspaper,
-                title: "1. Escolha uma notícia",
-                desc: "Veja as notícias da sua área e abra a que quiser comentar. Confira no link se a notícia é real e atual.",
+                title: "1. Escolha e confira",
+                desc: "Abra a notícia, valide a fonte e veja o insight de performance da sua área.",
+              },
+              {
+                icon: Pencil,
+                title: "2. Ajuste o texto",
+                desc: "Edite o carrossel se precisar ou baixe Word para revisar offline.",
+              },
+              {
+                icon: Check,
+                title: "3. Aprovar p/ revisão",
+                desc: "Envie ao gestor e vincule sua tarefa do VIOS — sem e-mail.",
               },
               {
                 icon: FileCheck,
-                title: "2. Confira o post",
-                desc: "A IA já montou um carrossel. Veja se o conteúdo bate com a notícia e faz sentido jurídico.",
+                title: "4. Gestor revisa",
+                desc: "Após a revisão, o gestor marca Revisor aprovou.",
               },
               {
                 icon: Send,
-                title: "3. Ajuste e envie",
-                desc: "Aprove com ajustes se precisar. O marketing cria a arte e faz as correções finais.",
+                title: "5. Enviar ao MKT",
+                desc: "Um clique e o marketing recebe no Planner para criar a arte.",
               },
             ].map((step) => (
               <div key={step.title} className="flex gap-2.5">
@@ -563,6 +574,8 @@ export function RoteirosClient() {
           </div>
         </div>
       )}
+
+      {showTourDemo && <ContentTourRoteiroDemo />}
 
       {/* Busca RSS — marketing */}
       {isManager && (
@@ -658,7 +671,7 @@ export function RoteirosClient() {
       )}
 
       {/* Feed principal */}
-      <div className="space-y-4">
+      <div className="space-y-4" data-tour="roteiros-list">
         {/* Toolbar */}
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap gap-1 rounded-lg border bg-muted/30 p-1" data-tour="roteiros-tabs">
@@ -841,7 +854,7 @@ export function RoteirosClient() {
           )}
 
           {/* Barra de ações */}
-          <div className="flex flex-wrap items-center gap-2 border-b px-5 py-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 border-b px-5 py-3 shrink-0" data-tour="roteiro-detail-actions">
             {selectedRoteiro?.link && (
               <a href={selectedRoteiro.link} target="_blank" rel="noopener noreferrer">
                 <Button size="sm" variant="outline" className="gap-2 h-9 text-xs">

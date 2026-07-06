@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
+import { useContentTour } from "@/contexts/content-tour-context";
 import {
   CONTENT_TOUR_STEPS,
   CONTENT_TUTORIAL_SESSION_KEY,
@@ -221,6 +222,7 @@ function TooltipCard({
 
 export function ContentCollaboratorTour() {
   const { profile, refreshProfile } = useAuth();
+  const { setTourState } = useContentTour();
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -230,6 +232,14 @@ export function ContentCollaboratorTour() {
 
   const step = CONTENT_TOUR_STEPS[stepIndex];
   const rect = useTargetRect(step?.target ?? null, active && !navigating);
+
+  useEffect(() => {
+    setTourState({
+      active,
+      stepIndex,
+      stepId: step?.id ?? null,
+    });
+  }, [active, stepIndex, step?.id, setTourState]);
 
   useEffect(() => {
     if (!profile) return;
