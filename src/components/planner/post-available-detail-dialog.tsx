@@ -14,8 +14,11 @@ import { DatePickerField } from "@/components/ui/date-picker-field";
 import { Link2, Copy, CheckCircle2, User, Building2, Archive } from "lucide-react";
 import type { MarketingRequest } from "@/lib/marketing-requests";
 import { updateMarketingRequest } from "@/lib/marketing-requests";
+import { getContentBankDisplayTitle, isReelRequest } from "@/lib/planner-posts";
+import { fetchChecklistForRequest, type ChecklistItem } from "@/lib/request-checklist";
+import { ReelPublicationPanel } from "@/components/planner/reel-publication-panel";
 import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { cn } from "@/lib/utils";
 
 interface PostAvailableDetailDialogProps {
   request: MarketingRequest | null;
@@ -34,13 +37,54 @@ export function PostAvailableDetailDialog({
   const [isMarking, setIsMarking] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
 
   useEffect(() => {
-    if (open) {
-      const today = format(new Date(), "yyyy-MM-dd");
-      setPostedAt(today);
+    if (!open) return;
+    if (request?.posted_at && request.completion_type === "postagem_feita") {
+      setPostedAt(format(new Date(request.posted_at), "yyyy-MM-dd"));
+      return;
     }
-  }, [open]);
+    setPostedAt(format(new Date(), "yyyy-MM-dd"));
+  }, [open, request?.id, request?.posted_at, request?.completion_type]);
+
+  useEffect(() => {
+    if (!open || !request || !isReelRequest(request)) {
+      setChecklistItems([]);
+      return;
+    }
+    void fetchChecklistForRequest(request.id).then(setChecklistItems);
+  }, [open, request?.id, request]);
+
+  const handleSavePostedDate = async () => {
+    if (!request) return;
+    const dateStr = postedAt.trim();
+    if (!dateStr) return;
+    setIsMarking(true);
+    const postedAtIso = dateStr.includes("T") ? dateStr : `${dateStr}T12:00:00.000Z`;
+    const { error } = await updateMarketingRequest(request.id, {
+      posted_at: postedAtIso,
+    });
+    setIsMarking(false);
+    if (!error) {
+      onOpenChange(false);
+      onSuccess?.();
+    }
+  };
+
+  const handleRevertToBank = async () => {
+    if (!request) return;
+    setIsArchiving(true);
+    const { error } = await updateMarketingRequest(request.id, {
+      completion_type: "design_concluido",
+      posted_at: null,
+    });
+    setIsArchiving(false);
+    if (!error) {
+      onOpenChange(false);
+      onSuccess?.();
+    }
+  };
 
   const handleMarkAsPosted = async () => {
     if (!request) return;
@@ -82,32 +126,47 @@ export function PostAvailableDetailDialog({
 
   if (!request) return null;
 
+  const isReel = isReelRequest(request);
+  const isAlreadyPosted =
+    request.completion_type === "postagem_feita" && Boolean(request.posted_at);
+  const displayTitle = getContentBankDisplayTitle(request);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-md w-[calc(100vw-2rem)] overflow-hidden"
+        className={cn(
+          "w-[calc(100vw-2rem)] overflow-hidden max-h-[90vh] flex flex-col",
+          isReel ? "max-w-lg" : "max-w-md"
+        )}
         aria-describedby="post-available-dialog-description"
       >
-        <DialogHeader className="min-w-0">
+        <DialogHeader className="min-w-0 shrink-0">
           <DialogTitle className="text-base font-semibold break-words">
-            Post disponível — marcar como postado
+            {isAlreadyPosted
+              ? isReel
+                ? "Reel postado — alterar data"
+                : "Post postado — alterar data"
+              : isReel
+                ? "Reel disponível — marcar como postado"
+                : "Post disponível — marcar como postado"}
           </DialogTitle>
           <DialogDescription id="post-available-dialog-description" className="break-words">
-            Use o link da arte para baixar e depois registre a postagem.
+            {isAlreadyPosted
+              ? "Corrija o dia da postagem no calendário ou devolva o item ao banco."
+              : isReel
+                ? "Baixe os arquivos, copie legenda e mensagem e registre a publicação."
+                : "Use o link da arte para baixar e depois registre a postagem."}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-2 min-w-0 overflow-hidden">
+        <div className="space-y-4 py-2 min-w-0 overflow-y-auto flex-1">
           <div className="min-w-0">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">
-              Post
+              {isReel ? "Reel" : "Post"}
             </p>
-            <p className="text-sm font-medium text-foreground break-words">
-              {request.description || request.title}
+            <p className="text-sm font-medium text-foreground break-words line-clamp-3">
+              {displayTitle}
             </p>
-            {request.description && request.title && request.title !== request.description && (
-              <p className="text-xs text-muted-foreground mt-0.5 break-words">{request.title}</p>
-            )}
           </div>
 
           <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
@@ -125,65 +184,72 @@ export function PostAvailableDetailDialog({
             )}
           </div>
 
-          <div className="min-w-0">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
-              Link da arte
-            </p>
-            {request.art_link ? (
-              <div className="flex flex-col gap-2 min-w-0">
-                <div className="flex items-center gap-2 rounded-lg border bg-muted/30 p-2 min-w-0 overflow-hidden">
-                  <Link2 className="h-4 w-4 shrink-0 text-muted-foreground flex-shrink-0" aria-hidden />
-                  <a
-                    href={request.art_link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-primary hover:underline truncate min-w-0 flex-1 overflow-hidden text-ellipsis block"
-                    title={request.art_link}
-                  >
-                    {request.art_link}
-                  </a>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm" asChild>
+          {isReel ? (
+            <ReelPublicationPanel request={request} checklistItems={checklistItems} />
+          ) : (
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
+                Link da arte
+              </p>
+              {request.art_link ? (
+                <div className="flex flex-col gap-2 min-w-0">
+                  <div className="flex items-center gap-2 rounded-lg border bg-muted/30 p-2 min-w-0 overflow-hidden">
+                    <Link2 className="h-4 w-4 shrink-0 text-muted-foreground flex-shrink-0" aria-hidden />
                     <a
                       href={request.art_link}
                       target="_blank"
                       rel="noopener noreferrer"
+                      className="text-sm text-primary hover:underline truncate min-w-0 flex-1 overflow-hidden text-ellipsis block"
+                      title={request.art_link}
+                    >
+                      {request.art_link}
+                    </a>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" size="sm" asChild>
+                      <a
+                        href={request.art_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5"
+                      >
+                        <Link2 className="h-3.5 w-3.5" aria-hidden />
+                        Abrir arte
+                      </a>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleCopyLink}
                       className="inline-flex items-center gap-1.5"
                     >
-                      <Link2 className="h-3.5 w-3.5" aria-hidden />
-                      Abrir arte
-                    </a>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleCopyLink}
-                    className="inline-flex items-center gap-1.5"
-                  >
-                    {copied ? (
-                      <>
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
-                        Copiado
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-3.5 w-3.5" aria-hidden />
-                        Copiar link
-                      </>
-                    )}
-                  </Button>
+                      {copied ? (
+                        <>
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
+                          Copiado
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3.5 w-3.5" aria-hidden />
+                          Copiar link
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground italic">
-                Link da arte ainda não informado.
-              </p>
-            )}
-          </div>
+              ) : (
+                <p className="text-sm text-muted-foreground italic">
+                  Link da arte ainda não informado.
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="min-w-0 w-full">
-            <label htmlFor="posted-at" className="text-xs font-medium text-muted-foreground uppercase tracking-wider block mb-2">
+            <label
+              htmlFor="posted-at"
+              className="text-xs font-medium text-muted-foreground uppercase tracking-wider block mb-2"
+            >
               Dia da postagem
             </label>
             <DatePickerField
@@ -194,31 +260,37 @@ export function PostAvailableDetailDialog({
               className="w-full min-w-0 max-w-full"
             />
             <p className="text-[11px] text-muted-foreground mt-2">
-              Se o post foi publicado em outro perfil ou canal, conclua sem data para retirá-lo do banco.
+              {isAlreadyPosted
+                ? "O item permanece na agenda; só muda o dia exibido no calendário."
+                : "Se o post foi publicado em outro perfil ou canal, conclua sem data para retirá-lo do banco."}
             </p>
           </div>
         </div>
 
-        <DialogFooter className="flex-col gap-2 sm:flex-row sm:gap-0">
+        <DialogFooter className="flex-col gap-2 sm:flex-row sm:gap-0 shrink-0">
           <Button
             variant="outline"
-            onClick={handleCompleteWithoutDate}
+            onClick={isAlreadyPosted ? handleRevertToBank : handleCompleteWithoutDate}
             disabled={isArchiving || isMarking}
             className="inline-flex items-center gap-1.5 sm:mr-auto"
           >
             <Archive className="h-3.5 w-3.5" aria-hidden />
-            {isArchiving ? "Salvando…" : "Concluir sem data"}
+            {isArchiving
+              ? "Salvando…"
+              : isAlreadyPosted
+                ? "Voltar para disponível no banco"
+                : "Concluir sem data"}
           </Button>
           <div className="flex gap-2 w-full sm:w-auto">
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
             <Button
-              onClick={handleMarkAsPosted}
+              onClick={isAlreadyPosted ? handleSavePostedDate : handleMarkAsPosted}
               disabled={isMarking || isArchiving || !postedAt.trim()}
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
             >
-              {isMarking ? "Salvando…" : "Marcar como postado"}
+              {isMarking ? "Salvando…" : isAlreadyPosted ? "Salvar data" : "Marcar como postado"}
             </Button>
           </div>
         </DialogFooter>

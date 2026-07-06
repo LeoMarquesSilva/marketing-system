@@ -4,6 +4,7 @@ import { format, startOfDay } from "date-fns";
 import { useDroppable } from "@dnd-kit/core";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { MarketingRequest } from "@/lib/marketing-requests";
+import { getContentBankDisplayTitle } from "@/lib/planner-posts";
 import { PostPill } from "./post-pill";
 import { getAreaIcon } from "@/lib/area-icons";
 import { GripVertical } from "lucide-react";
@@ -87,7 +88,7 @@ export function DayCell({ request, day, rowIndex = 0, onCardClick }: DayCellProp
 
   const showAsPostado = showPostadoHere;
   const label = showAsPostado ? "Postado" : "Disponível";
-  const title = request.description || request.title;
+  const title = getContentBankDisplayTitle(request);
   const area = request.requesting_area;
   const AreaIcon = getAreaIcon(area);
   const solicitanteName =

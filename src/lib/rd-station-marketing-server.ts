@@ -7,11 +7,13 @@ import { getAdminClient } from "@/lib/email-marketing-server";
 import {
   companyNameKey,
   fixMojibake,
+  formatPersonDisplayName,
   normalizeCompanyName,
   normalizePersonName,
   normalizeTags,
   resolveCanonicalCompanyName,
 } from "@/lib/email-marketing-normalize";
+import { resolveCargoStoredValue } from "@/lib/cargo-options";
 
 const RD_AUTH_URL = "https://api.rd.services/auth/token";
 const RD_API_BASE = "https://api.rd.services/platform";
@@ -310,6 +312,12 @@ async function upsertContactFromRd(
   const existingCustom = (existing?.custom_fields as Record<string, unknown> | undefined) ?? {};
   const custom_fields = { ...existingCustom, ...rdCustom };
 
+  const existingCargo = (existing?.cargo as string | null | undefined)?.trim() || null;
+  const rdCargoRaw =
+    (typeof rdCustom.rd_cargo_e_book === "string" ? rdCustom.rd_cargo_e_book : null) ??
+    (typeof existingCustom.rd_cargo_e_book === "string" ? existingCustom.rd_cargo_e_book : null);
+  const mappedCargo = existingCargo ?? resolveCargoStoredValue(rdCargoRaw);
+
   const rdStatus = mapRdCommunicationsStatus(detail.legal_bases);
   const phone =
     fixMojibake(detail.mobile_phone) ??
@@ -319,7 +327,7 @@ async function upsertContactFromRd(
 
   const payload = {
     email,
-    name: normalizePersonName(detail.name) ?? normalizePersonName(existing?.name as string | null),
+    name: formatPersonDisplayName(detail.name) ?? formatPersonDisplayName(existing?.name as string | null),
     phone,
     company: companyName ?? (existing?.company as string | null) ?? null,
     company_id: companyId ?? (existing?.company_id as string | null) ?? null,
@@ -327,6 +335,7 @@ async function upsertContactFromRd(
     status: rdStatus ?? (existing?.status as string | undefined) ?? "subscribed",
     source: (existing?.source as string | undefined) ?? "rd-station",
     custom_fields,
+    cargo: mappedCargo,
     rd_uuid: detail.uuid,
     rd_synced_at: new Date().toISOString(),
     unsubscribed_at:

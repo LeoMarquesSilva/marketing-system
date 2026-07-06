@@ -16,6 +16,10 @@ import { LayoutGrid, CheckCircle2, PlusCircle, Share2, Wifi, WifiOff, UserPlus }
 import { PostsTab } from "@/components/planner/posts-tab";
 import { PostAvailableDetailDialog } from "@/components/planner/post-available-detail-dialog";
 import { useAuth } from "@/contexts/auth-context";
+import {
+  filterRequestsByStageVisibility,
+  filterWorkflowStagesForUser,
+} from "@/lib/planner-visibility";
 import { fetchTimeTotalsByRequest } from "@/lib/time-entries";
 import { fetchCommentStats } from "@/lib/request-comments";
 import { fetchChecklistStats } from "@/lib/request-checklist";
@@ -49,15 +53,22 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
     }
   }, [enabledTabs, activeTab, firstTab]);
 
+  const isAdmin = (profile?.role ?? "").toLowerCase() === "admin";
+
+  const visibleWorkflowStages = useMemo(
+    () => filterWorkflowStagesForUser(appSettings.workflowStages, profile?.id, isAdmin),
+    [appSettings.workflowStages, profile?.id, isAdmin]
+  );
+
   const workflowColumns = useMemo(() => {
-    return appSettings.workflowStages
+    return visibleWorkflowStages
       .filter((s) => s.showInKanban)
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((s) => ({
         id: s.value,
         title: s.label,
       }));
-  }, [appSettings.workflowStages]);
+  }, [visibleWorkflowStages]);
 
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -75,16 +86,23 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
   const requestsRef = useRef<MarketingRequest[]>([]);
 
   const requests = useMemo(() => {
+    let list = initialRequests;
+    list = filterRequestsByStageVisibility(
+      list,
+      appSettings.workflowStages,
+      profile?.id,
+      isAdmin
+    );
     if (appSettings.kanbanVisibility === "everyone_all") {
-      return initialRequests;
+      return list;
     }
     const r = (profile?.role ?? "").toLowerCase();
     const isDesigner = r === "designer" || profile?.department === "Marketing";
     if (isDesigner && profile?.id) {
-      return initialRequests.filter((req) => req.assignee_id === profile.id);
+      return list.filter((req) => req.assignee_id === profile.id);
     }
-    return initialRequests;
-  }, [initialRequests, profile, appSettings.kanbanVisibility]);
+    return list;
+  }, [initialRequests, profile, appSettings.kanbanVisibility, appSettings.workflowStages, isAdmin]);
 
   useEffect(() => {
     requestsRef.current = requests;
@@ -204,14 +222,9 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
     setDetailOpen(true);
   };
 
-  const handlePostsCardClick = (request: MarketingRequest, options: { isPostado: boolean }) => {
-    if (options.isPostado) {
-      setSelectedRequestId(request.id);
-      setDetailOpen(true);
-    } else {
-      setPostAvailableRequestId(request.id);
-      setPostAvailableOpen(true);
-    }
+  const handlePostsCardClick = (request: MarketingRequest, _options?: { isPostado: boolean }) => {
+    setPostAvailableRequestId(request.id);
+    setPostAvailableOpen(true);
   };
 
   const handleMarkComplete = async (requestId: string, completionType: string) => {

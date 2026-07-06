@@ -58,6 +58,8 @@ export interface MarketingRequest {
   art_link: string | null;
   posted_at: string | null;
   ig_media_id: string | null;
+  parent_request_id: string | null;
+  reels_metadata: Record<string, unknown> | null;
   created_by_id: string | null;
   created_by: string | null;
   solicitante_user?: { name: string; department: string; avatar_url: string | null } | null;
@@ -75,13 +77,13 @@ export interface FetchMarketingRequestsOptions {
 const KANBAN_SELECT =
   "id, title, description, requesting_area, status, requested_at, delivered_at, " +
   "assignee, assignee_id, solicitante, solicitante_id, request_type, " +
-  "link, referencias, nome_advogado, art_link, posted_at, ig_media_id, created_by_id, created_by, " +
+  "link, referencias, nome_advogado, art_link, posted_at, ig_media_id, parent_request_id, reels_metadata, created_by_id, created_by, " +
   "workflow_stage, completion_type, priority, deadline, deadline_time, stage_changed_at";
 
 const KANBAN_SELECT_WITHOUT_ART_LINK =
   "id, title, description, requesting_area, status, requested_at, delivered_at, " +
   "assignee, assignee_id, solicitante, solicitante_id, request_type, " +
-  "link, referencias, nome_advogado, posted_at, ig_media_id, created_by_id, created_by, " +
+  "link, referencias, nome_advogado, posted_at, ig_media_id, parent_request_id, reels_metadata, created_by_id, created_by, " +
   "workflow_stage, completion_type, priority, deadline, deadline_time, stage_changed_at";
 
 function logSupabaseError(context: string, err: unknown) {
@@ -309,6 +311,8 @@ export interface UpdateRequestInput {
   art_link?: string | null;
   posted_at?: string | null;
   ig_media_id?: string | null;
+  parent_request_id?: string | null;
+  reels_metadata?: Record<string, unknown> | null;
 }
 
 export async function updateMarketingRequest(
@@ -338,6 +342,8 @@ export async function updateMarketingRequest(
   if (input.art_link !== undefined) updates.art_link = input.art_link;
   if (input.posted_at !== undefined) updates.posted_at = input.posted_at;
   if (input.ig_media_id !== undefined) updates.ig_media_id = input.ig_media_id;
+  if (input.parent_request_id !== undefined) updates.parent_request_id = input.parent_request_id;
+  if (input.reels_metadata !== undefined) updates.reels_metadata = input.reels_metadata;
 
   const { data, error } = await supabase
     .from("marketing_requests")

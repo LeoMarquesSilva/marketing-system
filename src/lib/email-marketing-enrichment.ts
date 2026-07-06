@@ -69,7 +69,19 @@ export function profileMissingName(profile: EnrichableFields): boolean {
 }
 
 export function profileMissingCargo(profile: EnrichableFields): boolean {
-  return !getProfileCargo(profile);
+  return !clientHasRecognizedCargo(profile);
+}
+
+/** Cargo considerado preenchido: campo principal ou valor vindo do RD (inclui Outro). */
+export function clientHasRecognizedCargo(profile: EnrichableFields): boolean {
+  if (pickString(profile.cargo)) {
+    const normalized = profile.cargo!.trim().toLowerCase();
+    if (normalized !== "n/a" && normalized !== "na") return true;
+  }
+  const fromRd = getProfileCargo(profile);
+  if (!fromRd) return false;
+  const normalized = fromRd.trim().toLowerCase();
+  return normalized !== "n/a" && normalized !== "na";
 }
 
 export function profileMissingPhone(profile: EnrichableFields): boolean {
@@ -210,12 +222,12 @@ export function listMissingFieldLabels(profile: EnrichableFields): string[] {
   return missing;
 }
 
-/** Campos que o gestor confirma em Meus Clientes (ignora cargo só no custom_fields do RD). */
+/** Campos que o gestor confirma em Meus Clientes. Cargo do RD (incl. Outro) conta como preenchido. */
 export function listClientMissingFieldLabels(profile: ClientProfileFields): string[] {
   const missing: string[] = [];
   if (profileMissingName(profile)) missing.push("nome");
   if (profileMissingEmail(profile)) missing.push("e-mail");
-  if (!pickString(profile.cargo)) missing.push("cargo");
+  if (!clientHasRecognizedCargo(profile)) missing.push("cargo");
   if (profileMissingPhone(profile)) missing.push("telefone");
   if (!profile.invitesClassifiedByUserId) missing.push("NPS e Festa");
   return missing;

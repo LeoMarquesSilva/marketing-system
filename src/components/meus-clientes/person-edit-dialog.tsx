@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Briefcase, CheckCircle2, Circle, Loader2, Mail, Sparkles, UserRound } from "lucide-react";
+import { Briefcase, CheckCircle2, Circle, Loader2, Mail, UserRound } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -30,7 +30,12 @@ import {
 } from "@/lib/email-marketing";
 import { CARGO_OPTIONS, CARGO_OUTRO, resolveCargoOption } from "@/lib/cargo-options";
 import { getProfileCargo } from "@/lib/email-marketing-enrichment";
-import { cn } from "@/lib/utils";
+import {
+  deriveInviteClassification,
+  InviteClassificationSection,
+  isInviteClassificationComplete,
+  type InviteClassification,
+} from "@/components/meus-clientes/invite-classification-section";
 import { useAuth } from "@/contexts/auth-context";
 
 interface PersonEditDialogProps {
@@ -68,7 +73,7 @@ export function PersonEditDialog({
   const [cargoOutro, setCargoOutro] = useState("");
   const [npsEligible, setNpsEligible] = useState(false);
   const [partyInvite, setPartyInvite] = useState(false);
-  const [invitesReviewed, setInvitesReviewed] = useState(false);
+  const [inviteClassification, setInviteClassification] = useState<InviteClassification>("pending");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -84,7 +89,7 @@ export function PersonEditDialog({
     setCargoOutro(resolveCargoOption(cargoValue) === CARGO_OUTRO ? cargoValue : "");
     setNpsEligible(source.npsEligible);
     setPartyInvite(source.partyInvite);
-    setInvitesReviewed(Boolean(source.invitesClassifiedByUserId));
+    setInviteClassification(deriveInviteClassification(source));
     setError(null);
   }, [open, person, contact]);
 
@@ -98,7 +103,7 @@ export function PersonEditDialog({
     { label: "E-mail", ok: Boolean(email.trim()) },
     { label: "Telefone", ok: Boolean(phone.trim()) },
     { label: "Cargo", ok: Boolean(resolvedCargo) },
-    { label: "NPS e Festa", ok: invitesReviewed },
+    { label: "NPS e Festa", ok: isInviteClassificationComplete(inviteClassification) },
   ];
   const completeCount = checklist.filter((c) => c.ok).length;
 
@@ -116,6 +121,7 @@ export function PersonEditDialog({
     try {
       const enrichedByUserId = profile?.id;
       const phoneValue = phone.trim() || null;
+      const classificationComplete = isInviteClassificationComplete(inviteClassification);
       const patch = {
         name: name.trim(),
         phone: phoneValue,
@@ -123,7 +129,7 @@ export function PersonEditDialog({
         npsEligible,
         partyInvite,
         enrichedByUserId,
-        ...(invitesReviewed && enrichedByUserId
+        ...(classificationComplete && enrichedByUserId
           ? { invitesClassifiedByUserId: enrichedByUserId }
           : {}),
       };
@@ -149,26 +155,26 @@ export function PersonEditDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
-        <div className="border-b bg-gradient-to-br from-violet-500/10 via-background to-background px-6 pt-6 pb-5">
-          <DialogHeader className="space-y-3 text-left">
+      <DialogContent className="flex max-h-[min(90dvh,640px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+        <div className="shrink-0 border-b bg-gradient-to-br from-violet-500/10 via-background to-background px-4 pt-5 pb-4 sm:px-6 sm:pt-6 sm:pb-5">
+          <DialogHeader className="space-y-2 text-left sm:space-y-3">
             <div className="flex items-start gap-3">
               <DialogHeaderIcon icon={UserRound} />
               <div className="min-w-0 flex-1 space-y-1">
-                <DialogTitle className="text-lg">Editar contato</DialogTitle>
-                <DialogDescription>
+                <DialogTitle className="text-base sm:text-lg">Editar contato</DialogTitle>
+                <DialogDescription className="text-xs sm:text-sm">
                   Confirme ou complete os dados de{" "}
                   <span className="font-medium text-foreground">{displayName}</span>.
                 </DialogDescription>
               </div>
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-100 text-sm font-semibold text-violet-700 ring-2 ring-violet-200/60">
+              <span className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-semibold text-violet-700 ring-2 ring-violet-200/60 sm:flex sm:h-10 sm:w-10 sm:text-sm">
                 {personInitials(displayName)}
               </span>
             </div>
           </DialogHeader>
         </div>
 
-        <div className="space-y-5 px-6 py-5">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:space-y-5 sm:px-6 sm:py-5">
           {error && (
             <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
               {error}
@@ -270,74 +276,19 @@ export function PersonEditDialog({
             </div>
           </section>
 
-          <section className="space-y-3">
-            <DialogSectionHeading icon={Sparkles}>Classificação</DialogSectionHeading>
-            {!invitesReviewed && (
-              <p className="text-xs text-amber-700 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2">
-                Marque NPS e/ou Festa, ou confirme abaixo que nenhum convite se aplica.
-              </p>
-            )}
-            <div className="grid gap-2 sm:grid-cols-2">
-              <label
-                className={cn(
-                  "flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors hover:bg-muted/30",
-                  npsEligible && "border-blue-200 bg-blue-50/80"
-                )}
-              >
-                <input
-                  type="checkbox"
-                  checked={npsEligible}
-                  onChange={(e) => {
-                    setNpsEligible(e.target.checked);
-                    setInvitesReviewed(true);
-                  }}
-                  className="mt-0.5 rounded border-border"
-                />
-                <span>
-                  <span className="block text-sm font-medium">Elegível ao NPS</span>
-                  <span className="block text-xs text-muted-foreground">Pesquisa de satisfação</span>
-                </span>
-              </label>
-              <label
-                className={cn(
-                  "flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors hover:bg-muted/30",
-                  partyInvite && "border-violet-200 bg-violet-50/80"
-                )}
-              >
-                <input
-                  type="checkbox"
-                  checked={partyInvite}
-                  onChange={(e) => {
-                    setPartyInvite(e.target.checked);
-                    setInvitesReviewed(true);
-                  }}
-                  className="mt-0.5 rounded border-border"
-                />
-                <span>
-                  <span className="block text-sm font-medium">Festa de 10 anos</span>
-                  <span className="block text-xs text-muted-foreground">Convite para o evento</span>
-                </span>
-              </label>
-            </div>
-            {!invitesReviewed && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="text-xs"
-                onClick={() => {
-                  setNpsEligible(false);
-                  setPartyInvite(false);
-                  setInvitesReviewed(true);
-                }}
-              >
-                Confirmar sem convites
-              </Button>
-            )}
-          </section>
+          <InviteClassificationSection
+            classification={inviteClassification}
+            npsEligible={npsEligible}
+            partyInvite={partyInvite}
+            onClassificationChange={({ classification, npsEligible: nps, partyInvite: party }) => {
+              setInviteClassification(classification);
+              setNpsEligible(nps);
+              setPartyInvite(party);
+            }}
+          />
         </div>
 
-        <DialogFooter className="border-t bg-muted/20 px-6 py-4">
+        <DialogFooter className="shrink-0 border-t bg-muted/20 px-4 py-3 sm:px-6 sm:py-4">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancelar
           </Button>

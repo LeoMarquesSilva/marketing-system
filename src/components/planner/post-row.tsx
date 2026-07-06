@@ -2,6 +2,7 @@
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { MarketingRequest } from "@/lib/marketing-requests";
+import { getContentBankDisplayTitle } from "@/lib/planner-posts";
 import { getAreaIcon } from "@/lib/area-icons";
 
 function getInitials(name: string) {
@@ -22,7 +23,7 @@ export function PostRow({ request, className }: PostRowProps) {
   const AreaIcon = getAreaIcon(request.requesting_area);
   const displayName =
     request.nome_advogado || request.solicitante_user?.name || request.solicitante || "—";
-  const title = request.description || request.title;
+  const title = getContentBankDisplayTitle(request);
 
   return (
     <div

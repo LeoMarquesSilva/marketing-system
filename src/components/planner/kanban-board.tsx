@@ -18,6 +18,7 @@ import {
   UserCheck,
   LayoutGrid,
   PlayCircle,
+  User,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -60,6 +61,7 @@ const STAGE_ICONS: Record<string, LucideIcon> = {
   revisado: CheckCircle,
   pronto_envio: Send,
   revisao_autor: UserCheck,
+  tarefas_leonardo: User,
 };
 
 interface WorkflowColumnConfig {

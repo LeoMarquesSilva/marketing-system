@@ -5,6 +5,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getAreaIcon } from "@/lib/area-icons";
 import type { MarketingRequest } from "@/lib/marketing-requests";
+import { getContentBankDisplayTitle } from "@/lib/planner-posts";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { GripVertical, CalendarCheck, Calendar } from "lucide-react";
@@ -48,7 +49,7 @@ export function ScheduleDisponivelCard({ request, ageTier = "new", onClick }: Sc
   });
 
   const style = transform ? { transform: CSS.Translate.toString(transform) } : undefined;
-  const title = request.description || request.title;
+  const title = getContentBankDisplayTitle(request);
   const area = request.requesting_area;
   const AreaIcon = getAreaIcon(area);
   const solicitanteName =
@@ -121,7 +122,7 @@ export function ScheduleDisponivelCard({ request, ageTier = "new", onClick }: Sc
 
 /** Versão só visual para usar dentro de DragOverlay (sem useDraggable). */
 export function ScheduleDisponivelCardOverlay({ request }: { request: MarketingRequest }) {
-  const title = request.description || request.title;
+  const title = getContentBankDisplayTitle(request);
   const area = request.requesting_area;
   const AreaIcon = getAreaIcon(area);
   const solicitanteName =

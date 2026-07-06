@@ -9,6 +9,7 @@ import {
   companyNameKey,
   fixMojibake,
   normalizeCompanyName,
+  formatPersonDisplayName,
   normalizePersonName,
   resolveCanonicalCompanyName,
 } from "@/lib/email-marketing-normalize";
@@ -297,9 +298,9 @@ async function upsertContactFromSioe(
 
   const existing = existingByEmail.get(email!);
   const contactName =
-    normalizePersonName(pessoa.contato_1) ??
-    (isLegalEntity(pessoa.tipo) ? null : normalizePersonName(pessoa.nome)) ??
-    normalizePersonName(existing?.name as string | null);
+    formatPersonDisplayName(pessoa.contato_1) ??
+    (isLegalEntity(pessoa.tipo) ? null : formatPersonDisplayName(pessoa.nome)) ??
+    formatPersonDisplayName(existing?.name as string | null);
 
   const payload = {
     email: email!,
@@ -335,7 +336,7 @@ async function upsertPersonFromSioe(
 ): Promise<string | null> {
   if (!isNaturalPerson(pessoa.tipo)) return null;
 
-  const name = normalizePersonName(pessoa.contato_1) ?? normalizePersonName(pessoa.nome);
+  const name = formatPersonDisplayName(pessoa.contato_1) ?? formatPersonDisplayName(pessoa.nome);
   if (!name) return null;
 
   const payload = {
@@ -451,7 +452,7 @@ function aggregateResponsibles(rows: SioeProcesso[]): ResponsibleAggregate[] {
   const map = new Map<string, ResponsibleAggregate>();
   for (const row of rows) {
     const area = normalizeCompanyName(row.area);
-    const advogadoName = normalizePersonName(row.advogado_responsavel);
+    const advogadoName = formatPersonDisplayName(row.advogado_responsavel);
     const advogadoNormalized = nameKey(advogadoName);
     const key = `${row.pessoa_id}::${area ?? ""}::${advogadoNormalized ?? ""}`;
     const existing = map.get(key);

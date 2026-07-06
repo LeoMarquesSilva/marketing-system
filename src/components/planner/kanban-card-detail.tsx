@@ -44,13 +44,16 @@ import {
   deleteComment,
   type RequestComment,
 } from "@/lib/request-comments";
-import { Play, Pause, Square, MessageSquare, Edit3, AlertCircle, CheckCircle2, Flag, CalendarX2, Clock, Calendar, CalendarCheck, Layers, Circle, ChevronDown, ChevronUp, Link2, Trash2, FileText, RotateCcw } from "lucide-react";
+import { Play, Pause, Square, MessageSquare, Edit3, AlertCircle, CheckCircle2, Flag, CalendarX2, Clock, Calendar, CalendarCheck, Layers, Circle, ChevronDown, ChevronUp, Link2, Trash2, FileText, RotateCcw, Video } from "lucide-react";
 import { fetchViosTasksByMarketingRequestId, filterLeonardoFromResponsaveis, formatViosProrrogacaoLabel, isViosTaskProrrogada, type ViosTask } from "@/lib/vios-tasks";
 import { ViosProrrogacaoBadge } from "@/components/vios/vios-prorrogacao-badge";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import type { RequestPriority } from "@/lib/marketing-requests";
 import { RequestChecklistSection } from "@/components/planner/request-checklist-section";
-import { fetchChecklistForRequest, type ChecklistItem } from "@/lib/request-checklist";
+import { ReelVideoPreview } from "@/components/planner/reel-video-preview";
+import { fetchChecklistForRequest, REEL_LEONARDO_NAME, REEL_LEONARDO_STAGE, completeReelToContentBank, getReelChecklistProgress, type ChecklistItem } from "@/lib/request-checklist";
+import { isReelRequest } from "@/lib/planner-posts";
+import { LEONARDO_USER_ID } from "@/lib/planner-visibility";
 
 const PRIORITY_OPTIONS: { value: RequestPriority; label: string; className: string }[] = [
   { value: "urgente", label: "Urgente", className: "text-red-600 dark:text-red-400" },
@@ -117,6 +120,8 @@ export function KanbanCardDetail({
   const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
   const [isRevertingToDisponivel, setIsRevertingToDisponivel] = useState(false);
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
+  const [isCompletingReel, setIsCompletingReel] = useState(false);
+  const [reelCompleteError, setReelCompleteError] = useState<string | null>(null);
 
   const canUseTimesheet = profile && request && (isAdmin || profile.id === request.assignee_id);
   const canStartTimer = profile && request && (isAdmin || profile.id === request.assignee_id);
@@ -193,6 +198,8 @@ export function KanbanCardDetail({
 
   if (!request) return null;
 
+  const isReel = isReelRequest(request);
+  const reelChecklistProgress = isReel ? getReelChecklistProgress(checklistItems) : null;
   const AreaIcon = getAreaIcon(request.requesting_area);
   const workflowLabel =
     WORKFLOW_STAGES.find((s) => s.value === request.workflow_stage)?.label ??
@@ -211,6 +218,20 @@ export function KanbanCardDetail({
       onRefresh?.();
       onOpenChange(false);
     }
+  };
+
+  const handleCompleteReel = async () => {
+    if (!request) return;
+    setReelCompleteError(null);
+    setIsCompletingReel(true);
+    const { error } = await completeReelToContentBank(request.id, checklistItems);
+    setIsCompletingReel(false);
+    if (error) {
+      setReelCompleteError(error);
+      return;
+    }
+    onRefresh?.();
+    onOpenChange(false);
   };
 
   const handleRevertToDisponivel = async () => {
@@ -437,21 +458,41 @@ export function KanbanCardDetail({
                     Criado por {request.created_by_user?.name ?? request.created_by}
                   </span>
                 )}
-                {(request.assignee_user || request.assignee) && (
+                {(request.assignee_user || request.assignee || isReel) && (
                   <>
                     {(request.created_by_user?.name || request.created_by) && (
                       <span className="text-muted-foreground/40 select-none">·</span>
                     )}
                     <span className="flex items-center gap-1.5">
-                      {request.assignee_user ? (
-                        <Avatar className="h-4 w-4 shrink-0 border border-white/50 dark:border-white/20">
-                          <AvatarImage src={request.assignee_user.avatar_url || undefined} />
-                          <AvatarFallback className="text-[8px] bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10 dark:text-white">
-                            {getInitials(request.assignee_user.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                      ) : null}
-                      Atribuído a {request.assignee_user?.name ?? request.assignee}
+                      {isReel ? (
+                        <>
+                          <Avatar className="h-4 w-4 shrink-0 border border-white/50 dark:border-white/20">
+                            <AvatarImage
+                              src={
+                                request.assignee_user?.avatar_url ||
+                                designers.find((d) => d.id === LEONARDO_USER_ID)?.avatar_url ||
+                                undefined
+                              }
+                            />
+                            <AvatarFallback className="text-[8px] bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10 dark:text-white">
+                              {getInitials(REEL_LEONARDO_NAME)}
+                            </AvatarFallback>
+                          </Avatar>
+                          Atribuído a {REEL_LEONARDO_NAME}
+                        </>
+                      ) : (
+                        <>
+                          {request.assignee_user ? (
+                            <Avatar className="h-4 w-4 shrink-0 border border-white/50 dark:border-white/20">
+                              <AvatarImage src={request.assignee_user.avatar_url || undefined} />
+                              <AvatarFallback className="text-[8px] bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10 dark:text-white">
+                                {getInitials(request.assignee_user.name)}
+                              </AvatarFallback>
+                            </Avatar>
+                          ) : null}
+                          Atribuído a {request.assignee_user?.name ?? request.assignee}
+                        </>
+                      )}
                     </span>
                   </>
                 )}
@@ -495,8 +536,23 @@ export function KanbanCardDetail({
 
         {/* Área rolável */}
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-6 space-y-5">
-          {/* Link da arte — designer/revisor preenche ao enviar para revisão */}
-          {(request.workflow_stage === "revisao" || request.workflow_stage === "revisado" || request.workflow_stage === "revisao_autor" || request.workflow_stage === "concluido" || request.art_link || canUseTimesheet || isAdmin) && (
+          {/* Vídeo do reel ou link da arte */}
+          {isReel && request.art_link ? (
+            <section aria-labelledby="reel-video-heading" className={sectionClass}>
+              <h4 id="reel-video-heading" className={`${sectionTitleClass} flex items-center gap-2`}>
+                <Video className="h-4 w-4 shrink-0" aria-hidden />
+                Vídeo do reel
+              </h4>
+              <ReelVideoPreview src={request.art_link} />
+            </section>
+          ) : !isReel &&
+            (request.workflow_stage === "revisao" ||
+              request.workflow_stage === "revisado" ||
+              request.workflow_stage === "revisao_autor" ||
+              request.workflow_stage === "concluido" ||
+              request.art_link ||
+              canUseTimesheet ||
+              isAdmin) ? (
             <section aria-labelledby="art-link-heading" className={sectionClass}>
               <h4 id="art-link-heading" className={sectionTitleClass}>
                 <Link2 className="h-4 w-4 shrink-0" aria-hidden /> Link da arte
@@ -538,10 +594,10 @@ export function KanbanCardDetail({
                 <p className="text-sm text-muted-foreground italic">Ainda não informado.</p>
               )}
             </section>
-          )}
+          ) : null}
 
-          {/* Link e referências — primeiro na área rolável */}
-          {(request.link || request.referencias) && (
+          {/* Link e referências — não se aplica a reels */}
+          {!isReel && (request.link || request.referencias) && (
             <section aria-labelledby="links-heading" className={sectionClass}>
               <h4 id="links-heading" className={sectionTitleClass}>
                 <Link2 className="h-4 w-4 shrink-0" aria-hidden /> Link e referências
@@ -723,7 +779,23 @@ export function KanbanCardDetail({
               Atribuído a
             </h4>
             <div className="flex items-center gap-3 min-w-0">
-              {isAdmin && designers.length > 0 ? (
+              {isReel ? (
+                <>
+                  <Avatar className="h-10 w-10 shrink-0 border-2 border-white/50 dark:border-[#101f2e]/50">
+                    <AvatarImage
+                      src={
+                        request.assignee_user?.avatar_url ||
+                        designers.find((d) => d.id === LEONARDO_USER_ID)?.avatar_url ||
+                        undefined
+                      }
+                    />
+                    <AvatarFallback className="text-xs bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10 dark:text-primary-foreground">
+                      {getInitials(REEL_LEONARDO_NAME)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <p className="font-medium text-sm truncate">{REEL_LEONARDO_NAME}</p>
+                </>
+              ) : isAdmin && designers.length > 0 ? (
                 <Select
                   value={request.assignee_id || "__none__"}
                   onValueChange={handleAssignDesigner}
@@ -775,12 +847,44 @@ export function KanbanCardDetail({
           )}
 
           <RequestChecklistSection
+            requestId={request.id}
             items={checklistItems}
             onItemsChange={setChecklistItems}
             userId={profile?.id ?? null}
             sectionClass={sectionClass}
             sectionTitleClass={sectionTitleClass}
+            onRefresh={onRefresh}
           />
+
+          {isReel && !isConcluido && request.workflow_stage === REEL_LEONARDO_STAGE && (
+            <section aria-labelledby="reel-complete-heading" className={sectionClass}>
+              <h4 id="reel-complete-heading" className={`${sectionTitleClass} flex items-center gap-2`}>
+                <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden />
+                Banco de conteúdo
+              </h4>
+              <p className="text-sm text-muted-foreground">
+                Quando o checklist estiver completo, envie o reel para a aba Posts — coluna
+                &quot;Disponível no banco&quot;.
+              </p>
+              {!reelChecklistProgress?.ready && reelChecklistProgress?.missing.length ? (
+                <p className="text-xs text-muted-foreground">
+                  Pendente: {reelChecklistProgress.missing.join(" · ")}
+                </p>
+              ) : null}
+              {reelCompleteError && (
+                <p className="text-sm text-destructive" role="alert">
+                  {reelCompleteError}
+                </p>
+              )}
+              <Button
+                onClick={handleCompleteReel}
+                disabled={isCompletingReel || !reelChecklistProgress?.ready}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                {isCompletingReel ? "Enviando…" : "Enviar para banco de conteúdo"}
+              </Button>
+            </section>
+          )}
 
           <section aria-labelledby="comments-heading" className={sectionClass}>
             <h4 id="comments-heading" className={`${sectionTitleClass} flex items-center gap-2`}>
@@ -1029,8 +1133,8 @@ export function KanbanCardDetail({
             </section>
           )}
 
-          {/* Marcar como concluído — full width, below timesheet */}
-          {!isConcluido && (
+          {/* Marcar como concluído — não se aplica a reels (fluxo próprio acima) */}
+          {!isConcluido && !isReel && (
             <section aria-labelledby="complete-heading" className={sectionClass}>
               <h4 id="complete-heading" className={sectionTitleClass}>Marcar como concluído</h4>
               <div className="flex gap-2">

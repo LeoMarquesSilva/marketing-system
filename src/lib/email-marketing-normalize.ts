@@ -79,10 +79,47 @@ export function collapseWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+/** Partículas de nome que permanecem em minúsculas (exceto no início). */
+const NAME_PARTICLES = new Set(["de", "da", "do", "dos", "das", "e"]);
+
+function titleCaseToken(token: string, capitalize: boolean): string {
+  if (!token) return token;
+  const lower = token.toLocaleLowerCase("pt-BR");
+  if (!capitalize && NAME_PARTICLES.has(lower)) return lower;
+  return lower.charAt(0).toLocaleUpperCase("pt-BR") + lower.slice(1);
+}
+
+function titleCaseWord(word: string, isFirstWord: boolean): string {
+  return word
+    .split("-")
+    .map((part, i) => titleCaseToken(part, isFirstWord && i === 0))
+    .join("-");
+}
+
+/** Primeira letra de cada palavra em maiúscula (ex.: ANDRE → Andre). */
+export function formatPersonDisplayName(value: string | null | undefined): string | null {
+  const base = normalizePersonName(value);
+  if (!base) return null;
+  return base
+    .split(" ")
+    .map((word, i) => titleCaseWord(word, i === 0))
+    .join(" ");
+}
+
 export function normalizePersonName(value: string | null | undefined): string | null {
   const fixed = fixMojibake(value);
   if (!fixed) return null;
   return collapseWhitespace(fixed);
+}
+
+/** Chave para deduplicar pessoas RD × SIOE (ignora maiúsculas e acentos). */
+export function personNameKey(value: string | null | undefined): string {
+  const normalized = normalizePersonName(value);
+  if (!normalized) return "";
+  return normalized
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 }
 
 export function normalizeCompanyName(value: string | null | undefined): string | null {

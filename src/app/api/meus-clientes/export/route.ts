@@ -7,7 +7,7 @@ import {
   listClientMissingFieldLabels,
   personToClientProfile,
 } from "@/lib/email-marketing-enrichment";
-import { resolveClientGroupKey, resolveContactGroupKey } from "@/lib/meus-clientes";
+import { resolveClientGroupKey, resolveContactGroupKey, filterPeopleNotInContacts } from "@/lib/meus-clientes";
 
 export const dynamic = "force-dynamic";
 
@@ -60,9 +60,7 @@ export async function GET(request: Request) {
       return true;
     });
 
-    const contactEmails = new Set(filteredContacts.map((c) => c.email.toLowerCase()));
-    const filteredPeople = people.filter((person) => {
-      if (person.email && contactEmails.has(person.email.toLowerCase())) return false;
+    const filteredPeopleRaw = people.filter((person) => {
       const groupKey = resolveClientGroupKey(person);
       if (excludeSemGrupo && !person.clientGroupId) return false;
       if (filterStatus === "pending" && !clientProfileIsIncomplete(personToClientProfile(person))) {
@@ -73,6 +71,7 @@ export async function GET(request: Request) {
       }
       return true;
     });
+    const filteredPeople = filterPeopleNotInContacts(filteredPeopleRaw, filteredContacts);
 
     const lines = [
       csvRow([

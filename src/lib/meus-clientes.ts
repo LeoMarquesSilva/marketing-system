@@ -11,6 +11,7 @@
  */
 
 import type { EmailCompany, EmailContact, EmailGroupResponsible, EmailPerson } from "./email-marketing";
+import { personNameKey } from "./email-marketing-normalize";
 import { clientProfileIsIncomplete, contactToClientProfile, listClientMissingFieldLabels, personToClientProfile } from "./email-marketing-enrichment";
 import { companyNameKey } from "./email-marketing-normalize";
 
@@ -311,11 +312,14 @@ export function buildAreaManagerSummary(
     let profilesPending = 0;
     const countedContacts = new Set<string>();
     const contactEmailsInSlice = new Set<string>();
+    const contactNameKeysInSlice = new Set<string>();
     for (const key of groupKeysInSlice) {
       for (const contact of contactsByGroup.get(key) ?? []) {
         if (countedContacts.has(contact.id)) continue;
         countedContacts.add(contact.id);
         contactEmailsInSlice.add(contact.email.toLowerCase());
+        const nameKey = personNameKey(contact.name);
+        if (nameKey) contactNameKeysInSlice.add(nameKey);
         if (listClientMissingFieldLabels(contactToClientProfile(contact)).length > 0) profilesPending++;
         else profilesComplete++;
       }
@@ -323,6 +327,8 @@ export function buildAreaManagerSummary(
     for (const person of peopleInSlice) {
       const email = person.email?.trim().toLowerCase();
       if (email && contactEmailsInSlice.has(email)) continue;
+      const nameKey = personNameKey(person.name);
+      if (nameKey && contactNameKeysInSlice.has(nameKey)) continue;
       if (listClientMissingFieldLabels(personToClientProfile(person)).length > 0) profilesPending++;
       else profilesComplete++;
     }
@@ -452,6 +458,45 @@ export function resolveContactGroupKey(
   return "__sem_grupo__";
 }
 
+function contactDedupKeys(contacts: EmailContact[]): {
+  emails: Set<string>;
+  nameKeys: Set<string>;
+} {
+  const emails = new Set<string>();
+  const nameKeys = new Set<string>();
+  for (const contact of contacts) {
+    if (contact.email) emails.add(contact.email.trim().toLowerCase());
+    const key = personNameKey(contact.name);
+    if (key) nameKeys.add(key);
+  }
+  return { emails, nameKeys };
+}
+
+/** Remove pessoas SIOE que já existem como contato RD/SIOE (e-mail ou nome). */
+export function filterPeopleNotInContacts(
+  groupPeople: EmailPerson[],
+  groupContacts: EmailContact[]
+): EmailPerson[] {
+  const { emails, nameKeys } = contactDedupKeys(groupContacts);
+  return groupPeople.filter((person) => {
+    const email = person.email?.trim().toLowerCase();
+    if (email && emails.has(email)) return false;
+    const nameKey = personNameKey(person.name);
+    if (nameKey && nameKeys.has(nameKey)) return false;
+    return true;
+  });
+}
+
+export function mergeGroupMembers(
+  groupContacts: EmailContact[],
+  groupPeople: EmailPerson[]
+): { contacts: EmailContact[]; people: EmailPerson[] } {
+  return {
+    contacts: groupContacts,
+    people: filterPeopleNotInContacts(groupPeople, groupContacts),
+  };
+}
+
 function buildContactsByGroup(
   contacts: EmailContact[],
   companies: EmailCompany[]
@@ -489,9 +534,9 @@ function countClientGroups(
   }
 
   for (const key of groupKeys) {
-    const hasContact =
-      (contactsByGroup.get(key) ?? []).length > 0 || (peopleByGroupKey.get(key) ?? []).length > 0;
-    if (!hasContact) groupsWithoutContact++;
+    const groupContacts = contactsByGroup.get(key) ?? [];
+    const groupPeople = peopleByGroupKey.get(key) ?? [];
+    if (countGroupMembers(groupPeople, groupContacts) === 0) groupsWithoutContact++;
   }
 
   return { groupsCount: groupKeys.size, groupsWithoutContact };
@@ -520,17 +565,22 @@ export function computeEnrichmentTotals(
   let profilesPending = 0;
   const countedContacts = new Set<string>();
   const contactEmailsInScope = new Set<string>();
+  const contactNameKeysInScope = new Set<string>();
   for (const contact of contacts) {
     const key = resolveContactGroupKey(contact, companiesById);
     if (!scopedGroupKeys.has(key) || countedContacts.has(contact.id)) continue;
     countedContacts.add(contact.id);
     contactEmailsInScope.add(contact.email.toLowerCase());
+    const nameKey = personNameKey(contact.name);
+    if (nameKey) contactNameKeysInScope.add(nameKey);
     if (listClientMissingFieldLabels(contactToClientProfile(contact)).length > 0) profilesPending++;
     else profilesComplete++;
   }
   for (const person of peopleList) {
     const email = person.email?.trim().toLowerCase();
     if (email && contactEmailsInScope.has(email)) continue;
+    const nameKey = personNameKey(person.name);
+    if (nameKey && contactNameKeysInScope.has(nameKey)) continue;
     if (!scopedGroupKeys.has(resolveClientGroupKey(person))) continue;
     if (listClientMissingFieldLabels(personToClientProfile(person)).length > 0) profilesPending++;
     else profilesComplete++;
@@ -548,6 +598,11 @@ export function computeEnrichmentTotals(
     if (listClientMissingFieldLabels(contactToClientProfile(contact)).length === 0) adjustedComplete++;
   }
   for (const person of peopleList) {
+    const email = person.email?.trim().toLowerCase();
+    if (email && contactEmailsInScope.has(email)) continue;
+    const nameKey = personNameKey(person.name);
+    if (nameKey && contactNameKeysInScope.has(nameKey)) continue;
+    if (!scopedGroupKeys.has(resolveClientGroupKey(person))) continue;
     if (!person.enrichedByUserId) continue;
     adjustedCount++;
     if (listClientMissingFieldLabels(personToClientProfile(person)).length === 0) adjustedComplete++;
@@ -580,9 +635,8 @@ export function countGroupMembers(
   groupPeople: EmailPerson[],
   groupContacts: EmailContact[]
 ): number {
-  const contactEmails = new Set(groupContacts.map((c) => c.email.toLowerCase()));
-  const people = groupPeople.filter((p) => !p.email || !contactEmails.has(p.email.toLowerCase()));
-  return people.length + groupContacts.length;
+  const { contacts, people } = mergeGroupMembers(groupContacts, groupPeople);
+  return contacts.length + people.length;
 }
 
 export function groupHasNoContacts(
@@ -604,8 +658,7 @@ export function countGroupIncompleteProfiles(
   groupPeople: EmailPerson[],
   groupContacts: EmailContact[]
 ): number {
-  const contactEmails = new Set(groupContacts.map((c) => c.email.toLowerCase()));
-  const people = groupPeople.filter((p) => !p.email || !contactEmails.has(p.email.toLowerCase()));
+  const { people } = mergeGroupMembers(groupContacts, groupPeople);
   const pendingPeople = people.filter((p) => clientProfileIsIncomplete(personToClientProfile(p))).length;
   const pendingContacts = groupContacts.filter((c) => clientProfileIsIncomplete(contactToClientProfile(c))).length;
   return pendingPeople + pendingContacts;

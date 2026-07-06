@@ -9,8 +9,6 @@ import {
   RefreshCw,
   Search,
   Trash2,
-  Wifi,
-  WifiOff,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -41,6 +39,7 @@ import {
   compareGroupsByPendingFirst,
   computeEnrichmentTotals,
   expandRootArea,
+  filterPeopleNotInContacts,
   getAreaParent,
   groupHasNoContacts,
   groupIsPending,
@@ -172,7 +171,7 @@ export function MeusClientesClient() {
   reloadRef.current = reload;
 
   const realtimePaused = dialogOpen || createDialogOpen || deleteConfirmOpen;
-  const { status: realtimeStatus } = useMeusClientesRealtime({
+  useMeusClientesRealtime({
     enabled: Boolean(user) && !loading,
     paused: realtimePaused,
     onRefresh: () => {
@@ -534,16 +533,12 @@ export function MeusClientesClient() {
 
   const stats = useMemo(() => {
     const scopedGroupKeys = new Set(groups.map((g) => g.key));
-    const contactEmails = new Set<string>();
-    const scopedContacts = contacts.filter((c) => {
-      if (!scopedGroupKeys.has(resolveContactGroupKey(c, companiesById))) return false;
-      contactEmails.add(c.email.toLowerCase());
-      return true;
-    });
-    const scopedPeopleDeduped = people.filter(
-      (p) =>
-        scopedGroupKeys.has(resolveGroupKey(p)) &&
-        (!p.email || !contactEmails.has(p.email.toLowerCase()))
+    const scopedContacts = contacts.filter((c) =>
+      scopedGroupKeys.has(resolveContactGroupKey(c, companiesById))
+    );
+    const scopedPeopleDeduped = filterPeopleNotInContacts(
+      people.filter((p) => scopedGroupKeys.has(resolveGroupKey(p))),
+      scopedContacts
     );
     const profiles = [
       ...scopedPeopleDeduped.map(personToClientProfile),
@@ -605,26 +600,6 @@ export function MeusClientesClient() {
               Dados atualizados em {formatSyncDate(syncMeta.lastSyncedAt)}
             </p>
           )}
-          <div
-            className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
-              realtimeStatus === "connected"
-                ? "bg-emerald-100 text-emerald-700"
-                : realtimeStatus === "connecting"
-                  ? "bg-muted text-muted-foreground"
-                  : "bg-amber-100 text-amber-700"
-            }`}
-          >
-            {realtimeStatus === "connected" ? (
-              <Wifi className="h-3 w-3" aria-hidden />
-            ) : (
-              <WifiOff className="h-3 w-3" aria-hidden />
-            )}
-            {realtimeStatus === "connected"
-              ? "Tempo real ativo"
-              : realtimeStatus === "connecting"
-                ? "Conectando…"
-                : "Tempo real indisponível"}
-          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" className="gap-2" onClick={handleExport} title="Exportar (E)">

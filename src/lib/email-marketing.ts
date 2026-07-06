@@ -8,6 +8,7 @@ import { supabase } from "@/utils/supabase/client";
 import {
   normalizeCompanyName,
   normalizeCustomFields,
+  formatPersonDisplayName,
   normalizePersonName,
   normalizeTags,
   companyNameKey,
@@ -231,7 +232,7 @@ export function mapPerson(row: Record<string, unknown>): EmailPerson {
   );
   return {
     id: row.id as string,
-    name: normalizePersonName(row.name as string) ?? (row.name as string),
+    name: formatPersonDisplayName(row.name as string) ?? (row.name as string),
     email: (row.email as string | null) ?? null,
     phone: (row.phone as string | null) ?? null,
     cpfCnpj: normalizeCompanyName(row.cpf_cnpj as string | null),
@@ -308,7 +309,7 @@ export function mapContact(row: Record<string, unknown>): EmailContact {
   return {
     id: row.id as string,
     email: row.email as string,
-    name: normalizePersonName(row.name as string | null),
+    name: formatPersonDisplayName(row.name as string | null),
     phone: (row.phone as string | null) ?? null,
     company: companyFromField,
     companyId: (row.company_id as string | null) ?? joined?.id ?? null,
@@ -410,7 +411,7 @@ export function mapGroupResponsible(row: Record<string, unknown>): EmailGroupRes
     companyId: (row.company_id as string | null) ?? null,
     personId: (row.person_id as string | null) ?? null,
     area: normalizeLegalArea(row.area as string | null),
-    advogadoResponsavelName: normalizePersonName(row.advogado_responsavel_name as string | null),
+    advogadoResponsavelName: formatPersonDisplayName(row.advogado_responsavel_name as string | null),
     responsibleUserId: (row.responsible_user_id as string | null) ?? null,
     openProcessesCount: (row.open_processes_count as number) ?? 0,
   };
@@ -472,7 +473,7 @@ export interface UpdateEmailPersonInput {
  */
 export async function updateEmailPerson(id: string, patch: UpdateEmailPersonInput): Promise<void> {
   const payload: Record<string, unknown> = {};
-  if (patch.name !== undefined) payload.name = normalizePersonName(patch.name) ?? patch.name;
+  if (patch.name !== undefined) payload.name = formatPersonDisplayName(patch.name) ?? patch.name;
   if (patch.email !== undefined) payload.email = patch.email?.trim().toLowerCase() || null;
   if (patch.phone !== undefined) payload.phone = patch.phone?.trim() || null;
   if (patch.cargo !== undefined) payload.cargo = patch.cargo?.trim() || null;
@@ -650,7 +651,7 @@ export async function createEmailContact(input: CreateEmailContactInput): Promis
     .from("email_contacts")
     .insert({
       email: input.email.trim().toLowerCase(),
-      name: normalizePersonName(input.name),
+      name: formatPersonDisplayName(input.name),
       phone: input.phone?.trim() || null,
       company: companyName,
       company_id: companyId,
@@ -675,7 +676,7 @@ export async function updateEmailContact(
 ): Promise<void> {
   const payload: Record<string, unknown> = {};
   if (patch.email !== undefined) payload.email = patch.email.trim().toLowerCase();
-  if (patch.name !== undefined) payload.name = normalizePersonName(patch.name);
+  if (patch.name !== undefined) payload.name = formatPersonDisplayName(patch.name);
   if (patch.phone !== undefined) payload.phone = patch.phone?.trim() || null;
   if (patch.tags !== undefined) payload.tags = normalizeTags(patch.tags);
   if (patch.cargo !== undefined) payload.cargo = patch.cargo?.trim() || null;

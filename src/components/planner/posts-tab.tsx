@@ -22,14 +22,23 @@ import {
   LayoutGrid,
   Inbox,
   Download,
+  Video,
 } from "lucide-react";
 import { getAreaIcon } from "@/lib/area-icons";
 import { cn } from "@/lib/utils";
-import { isInContentBank, isPostedOnCalendar } from "@/lib/planner-posts";
+import {
+  isInContentBank,
+  isPostedOnCalendar,
+  isReelRequest,
+  getContentBankDisplayTitle,
+  CONTENT_BANK_REQUEST_TYPES,
+  POST_REQUEST_TYPE,
+  REEL_REQUEST_TYPE,
+} from "@/lib/planner-posts";
 import { ImportInstagramPostsDialog } from "./import-instagram-posts-dialog";
 import { Button } from "@/components/ui/button";
 
-const POST_TYPE = "Post Redes Sociais";
+type ContentFilter = "all" | "posts" | "reels";
 
 /** Idade para cor do card: novo (até 14 dias), médio (15–45 dias, amarelo), antigo (>45 dias). */
 function getDisponivelAgeTier(request: MarketingRequest): DisponivelAgeTier {
@@ -59,6 +68,8 @@ interface PostCardProps {
 }
 
 function PostCard({ req, isPostado, onClick }: PostCardProps) {
+  const isReel = isReelRequest(req);
+  const displayTitle = getContentBankDisplayTitle(req);
   return (
     <article
       role="button"
@@ -69,8 +80,8 @@ function PostCard({ req, isPostado, onClick }: PostCardProps) {
       }}
       aria-label={
         isPostado
-          ? `Post já postado: ${req.description || req.title}`
-          : `Post disponível no banco: ${req.description || req.title}`
+          ? `${isReel ? "Reel" : "Post"} já postado: ${displayTitle}`
+          : `${isReel ? "Reel" : "Post"} disponível no banco: ${displayTitle}`
       }
       className="group flex flex-col gap-3 rounded-2xl p-4 cursor-pointer
         bg-gradient-to-br from-white/90 via-white/70 to-white/50
@@ -83,6 +94,26 @@ function PostCard({ req, isPostado, onClick }: PostCardProps) {
         transition-all duration-200 ease-out"
     >
       <div className="flex items-center justify-between gap-2 flex-wrap">
+        <span
+          className={cn(
+            "inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-0.5",
+            isReel
+              ? "bg-violet-100/80 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400"
+              : "bg-sky-100/80 text-sky-700 dark:bg-sky-950/40 dark:text-sky-400"
+          )}
+        >
+          {isReel ? (
+            <>
+              <Video className="h-3 w-3" aria-hidden />
+              Reel
+            </>
+          ) : (
+            <>
+              <Share2 className="h-3 w-3" aria-hidden />
+              Post
+            </>
+          )}
+        </span>
         {isPostado && (
           <span
             className={`inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-0.5 ${POSTADO_TAG_CLASS}`}
@@ -102,9 +133,9 @@ function PostCard({ req, isPostado, onClick }: PostCardProps) {
 
       <div className="space-y-1 min-w-0">
         <h3 className="text-sm font-semibold tracking-tight text-foreground line-clamp-2 leading-snug">
-          {req.description || req.title}
+          {displayTitle}
         </h3>
-        {req.description && req.title && req.title !== req.description && (
+        {!isReel && req.description && req.title && req.title !== req.description && (
           <p className="text-[11px] text-muted-foreground/70 line-clamp-2 leading-relaxed">
             {req.title}
           </p>
@@ -119,8 +150,17 @@ function PostCard({ req, isPostado, onClick }: PostCardProps) {
           onClick={(e) => e.stopPropagation()}
           className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
         >
-          <ImageIcon className="h-3.5 w-3.5 shrink-0" aria-hidden />
-          Ver arte
+          {isReel ? (
+            <>
+              <Video className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              Ver vídeo
+            </>
+          ) : (
+            <>
+              <ImageIcon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              Ver arte
+            </>
+          )}
         </a>
       )}
 
@@ -237,21 +277,28 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
   });
   const [activeDragRequest, setActiveDragRequest] = useState<MarketingRequest | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [contentFilter, setContentFilter] = useState<ContentFilter>("all");
   const SCHEDULE_DAYS = 7;
   const scheduleRangeEnd = addDays(scheduleRangeStart, SCHEDULE_DAYS - 1);
 
-  const posts = useMemo(
+  const contentItems = useMemo(
     () =>
       requests.filter(
         (r) =>
-          r.request_type === POST_TYPE && r.workflow_stage === "concluido"
+          CONTENT_BANK_REQUEST_TYPES.includes(
+            r.request_type as (typeof CONTENT_BANK_REQUEST_TYPES)[number]
+          ) && r.workflow_stage === "concluido"
       ),
     [requests]
   );
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return posts.filter((r) => {
+    return contentItems.filter((r) => {
+      const matchType =
+        contentFilter === "all" ||
+        (contentFilter === "posts" && r.request_type === POST_REQUEST_TYPE) ||
+        (contentFilter === "reels" && r.request_type === REEL_REQUEST_TYPE);
       const reqDate = new Date(r.delivered_at || r.requested_at);
       const matchFrom = !dateFrom || reqDate >= new Date(dateFrom);
       const matchTo = !dateTo || reqDate <= new Date(dateTo + "T23:59:59");
@@ -259,9 +306,9 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
         !q ||
         r.title.toLowerCase().includes(q) ||
         (r.description ?? "").toLowerCase().includes(q);
-      return matchFrom && matchTo && matchSearch;
+      return matchType && matchFrom && matchTo && matchSearch;
     });
-  }, [posts, dateFrom, dateTo, search]);
+  }, [contentItems, dateFrom, dateTo, search, contentFilter]);
 
   const disponivel = useMemo(
     () =>
@@ -343,6 +390,30 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
           className="w-[130px] h-9 rounded-xl border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] text-sm"
         />
         <div className="flex gap-1 border rounded-lg p-0.5 bg-muted/30 border-border">
+          {(
+            [
+              { id: "all" as ContentFilter, label: "Todos" },
+              { id: "posts" as ContentFilter, label: "Posts" },
+              { id: "reels" as ContentFilter, label: "Reels" },
+            ] as const
+          ).map(({ id, label }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setContentFilter(id)}
+              className={cn(
+                "px-3 py-1.5 text-sm font-medium rounded-md transition-colors",
+                contentFilter === id
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              aria-pressed={contentFilter === id}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1 border rounded-lg p-0.5 bg-muted/30 border-border">
           <button
             type="button"
             onClick={() => setViewMode("colunas")}
@@ -384,7 +455,7 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
         </Button>
         <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/40 rounded-full px-3 py-1.5">
           <Share2 className="h-3.5 w-3.5 text-emerald-500" aria-hidden />
-          {filtered.length} post{filtered.length !== 1 ? "s" : ""}
+          {filtered.length} item{filtered.length !== 1 ? "s" : ""}
         </span>
       </div>
 
@@ -392,9 +463,9 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <Share2 className="h-10 w-10 text-muted-foreground/20 mb-3" />
           <p className="text-sm font-medium text-muted-foreground">
-            {posts.length === 0
-              ? "Nenhum Post Redes Sociais concluído ainda."
-              : "Nenhum post encontrado para os filtros selecionados."}
+            {contentItems.length === 0
+              ? "Nenhum post ou reel concluído ainda."
+              : "Nenhum item encontrado para os filtros selecionados."}
           </p>
         </div>
       )}

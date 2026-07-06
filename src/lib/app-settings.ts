@@ -11,6 +11,8 @@ export interface WorkflowStageConfig {
   label: string;
   sortOrder: number;
   showInKanban: boolean;
+  /** Quando definido, só estes usuários (e admin) veem a coluna e as tarefas nesta etapa. */
+  visibleToUserIds?: string[];
 }
 
 export type PlannerTabId = "kanban" | "concluidos" | "posts";
@@ -125,12 +127,20 @@ function parseWorkflowStages(value: unknown): WorkflowStageConfig[] {
       (item): item is Record<string, unknown> =>
         item != null && typeof item === "object"
     )
-    .map((item) => ({
-      value: String(item.value ?? ""),
-      label: String(item.label ?? ""),
-      sortOrder: Number(item.sortOrder ?? 0),
-      showInKanban: Boolean(item.showInKanban ?? true),
-    }))
+    .map((item) => {
+      const visibleRaw = item.visibleToUserIds;
+      const visibleToUserIds = Array.isArray(visibleRaw)
+        ? visibleRaw.map((id) => String(id)).filter(Boolean)
+        : undefined;
+      return {
+        value: String(item.value ?? ""),
+        label: String(item.label ?? ""),
+        sortOrder: Number(item.sortOrder ?? 0),
+        showInKanban: Boolean(item.showInKanban ?? true),
+        visibleToUserIds:
+          visibleToUserIds && visibleToUserIds.length > 0 ? visibleToUserIds : undefined,
+      };
+    })
     .filter((s) => s.value && s.label);
   if (parsedRaw.length === 0) return DEFAULT_WORKFLOW_STAGES;
   const parsed = ensureProntoEnvioStage(parsedRaw);

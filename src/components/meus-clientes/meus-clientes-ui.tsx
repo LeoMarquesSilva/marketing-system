@@ -31,9 +31,11 @@ import {
   type EmailPerson,
 } from "@/lib/email-marketing";
 import type { MeusClientesSyncMeta } from "@/lib/meus-clientes-server";
+import { formatCargoDisplay } from "@/lib/cargo-options";
 import {
   clientProfileIsIncomplete,
   contactToClientProfile,
+  getProfileCargo,
   listClientMissingFieldLabels,
   personToClientProfile,
 } from "@/lib/email-marketing-enrichment";
@@ -42,6 +44,7 @@ import {
   type EnrichmentTotals,
   countGroupPendingMembers,
   groupHasNoContacts,
+  mergeGroupMembers,
 } from "@/lib/meus-clientes";
 import { getAreaIcon, getAreaIconStyle } from "@/lib/area-icons";
 
@@ -97,6 +100,14 @@ export function isPersonPending(person: EmailPerson): boolean {
   return clientProfileIsIncomplete(personToClientProfile(person));
 }
 
+function profileCargoLabel(entity: {
+  cargo?: string | null;
+  customFields?: Record<string, unknown>;
+}): string | null {
+  const raw = entity.cargo ?? getProfileCargo(entity);
+  return formatCargoDisplay(raw);
+}
+
 export function contactSearchHaystack(contact: EmailContact): string {
   const cf = contact.customFields ?? {};
   return [
@@ -104,6 +115,7 @@ export function contactSearchHaystack(contact: EmailContact): string {
     contact.email,
     contact.phone,
     contact.cargo,
+    contact.customFields?.rd_cargo_e_book,
     contact.company,
     cf.rd_grupo_empresa,
     cf.rd_cnpj,
@@ -271,12 +283,6 @@ export function EditableRow({
       </Button>
     </div>
   );
-}
-
-function mergeGroupMembers(groupContacts: EmailContact[], groupPeople: EmailPerson[]) {
-  const contactEmails = new Set(groupContacts.map((c) => c.email.toLowerCase()));
-  const people = groupPeople.filter((p) => !p.email || !contactEmails.has(p.email.toLowerCase()));
-  return { contacts: groupContacts, people };
 }
 
 export function GroupSection({
@@ -449,7 +455,7 @@ export function GroupSection({
                       <EditableRow
                         key={`c-${contact.id}`}
                         title={contact.name ?? contact.email}
-                        subtitle={[contact.cargo, contact.email].filter(Boolean).join(" · ")}
+                        subtitle={[profileCargoLabel(contact), contact.email].filter(Boolean).join(" · ")}
                         line2={contact.phone ?? undefined}
                         source={contact.source}
                         npsEligible={contact.npsEligible}
@@ -474,7 +480,7 @@ export function GroupSection({
                     <EditableRow
                       key={`p-${person.id}`}
                       title={person.name}
-                      subtitle={[person.cargo, person.email].filter(Boolean).join(" · ")}
+                      subtitle={[profileCargoLabel(person), person.email].filter(Boolean).join(" · ")}
                       line2={person.phone ?? undefined}
                       source={person.source ?? "sioe"}
                       npsEligible={person.npsEligible}

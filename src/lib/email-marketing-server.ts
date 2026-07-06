@@ -16,6 +16,7 @@ import {
 import {
   companyNameKey,
   normalizeCompanyName,
+  formatPersonDisplayName,
   normalizePersonName,
   normalizeTags,
   resolveCanonicalCompanyName,
@@ -538,7 +539,7 @@ export async function importEmailContacts(
   const clean = rows
     .map((r) => ({
       email: r.email?.trim().toLowerCase(),
-      name: normalizePersonName(r.name),
+      name: formatPersonDisplayName(r.name),
       phone: r.phone?.trim() || null,
       company: resolveCanonicalCompanyName(r.company) ?? normalizeCompanyName(r.company),
       tags: normalizeTags(r.tags ?? []),
