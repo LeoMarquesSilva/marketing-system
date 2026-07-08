@@ -20,22 +20,25 @@ export default function AlterarSenhaPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [saving, setSaving] = useState(false);
+  /** Sucesso: bloqueia o formulário e evita reenvio enquanto o navegador redireciona. */
+  const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || saving || done) return;
     if (!user) {
       router.replace("/login");
       return;
     }
-    // Já trocou: sai da tela.
+    // Já trocou (ex.: voltou para esta rota com perfil atualizado).
     if (profile && !profile.must_change_password) {
       router.replace(resolvePostLoginPathFromProfile(profile));
     }
-  }, [user, profile, loading, router]);
+  }, [user, profile, loading, router, saving, done]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (saving || done) return;
     setError(null);
     if (newPassword.length < 6) {
       setError("A senha deve ter ao menos 6 caracteres.");
@@ -62,20 +65,43 @@ export default function AlterarSenhaPage() {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error ?? "Erro ao concluir a troca de senha.");
       }
-      // Reload completo: garante perfil fresco (flag limpa) e evita corrida de redirect.
-      const target = profile ? resolvePostLoginPathFromProfile(profile) : "/";
-      if (profile && isContentCollaboratorForTour(profile)) {
+
+      // Perfil em memória ainda tem must_change_password=true — forçamos false
+      // para não resolver de volta para /alterar-senha e cair em loop.
+      const profileForRedirect = profile
+        ? { ...profile, must_change_password: false }
+        : null;
+      const target = profileForRedirect
+        ? resolvePostLoginPathFromProfile(profileForRedirect)
+        : "/";
+
+      setDone(true);
+
+      if (profileForRedirect && isContentCollaboratorForTour(profileForRedirect)) {
         sessionStorage.setItem(CONTENT_TUTORIAL_SESSION_KEY, "1");
-        const url = `${target}?tutorial=1`;
-        window.location.assign(url);
+        window.location.assign(`${target}?tutorial=1`);
       } else {
         window.location.assign(target);
       }
+      // Mantém saving/done até a navegação; não reabilita o formulário.
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao alterar a senha.");
-    } finally {
       setSaving(false);
+      setDone(false);
     }
+  }
+
+  const busy = saving || done;
+
+  if (busy) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-[#101f2e] to-[#0a141c] p-4">
+        <Loader2 className="h-8 w-8 animate-spin text-white" />
+        <p className="text-sm text-white/80">
+          {done ? "Senha atualizada. Entrando..." : "Salvando nova senha..."}
+        </p>
+      </div>
+    );
   }
 
   return (
@@ -106,6 +132,7 @@ export default function AlterarSenhaPage() {
                 placeholder="••••••••"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
+                disabled={busy}
               />
             </div>
           </div>
@@ -121,12 +148,12 @@ export default function AlterarSenhaPage() {
                 placeholder="••••••••"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
+                disabled={busy}
               />
             </div>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button type="submit" className="w-full gap-2" disabled={saving}>
-            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+          <Button type="submit" className="w-full gap-2" disabled={busy}>
             Salvar e entrar
           </Button>
         </form>

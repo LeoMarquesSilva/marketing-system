@@ -46,7 +46,13 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       return profile ? resolvePostLoginPathFromProfile(profile) : null;
     }
 
-    if (pathname === "/alterar-senha") return null;
+    // Já trocou a senha: não deixa ficar em /alterar-senha (evita loop / reenvio).
+    if (pathname === "/alterar-senha") {
+      if (profile && !profile.must_change_password) {
+        return resolvePostLoginPathFromProfile(profile);
+      }
+      return null;
+    }
 
     // Permissões explícitas definidas pelo admin.
     const allowed = resolveAllowedSections(profile);
