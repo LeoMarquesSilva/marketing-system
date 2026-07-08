@@ -18,6 +18,22 @@ describe("content-tour", () => {
     ).toBe(false);
   });
 
+  it("não trata gestor só de Meus Clientes como colaborador de conteúdo", () => {
+    // Departamento jurídico faria isContentCollaborator=true no modo legado;
+    // com permissions explícitas sem /conteudo, o tour de conteúdo não deve ativar.
+    expect(
+      isContentCollaboratorForTour({
+        department: "Cível",
+        permissions: ["/meus-clientes"],
+      })
+    ).toBe(false);
+    expect(
+      isContentCollaboratorForTour({
+        department: "Cível",
+      })
+    ).toBe(true);
+  });
+
   it("mostra tutorial na primeira visita", () => {
     expect(
       shouldShowContentTutorial({

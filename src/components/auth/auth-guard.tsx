@@ -82,9 +82,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     if (!redirectTo || redirectTo === pathname) return;
     router.replace(redirectTo);
     // Fallback: router.replace pode falhar após login (App Router); reload resolve.
+    // Não usa assign se pathname já mudou (evita reload em ping-pong de tours/guards).
     const fallback = window.setTimeout(() => {
       if (window.location.pathname === pathname) {
-        window.location.assign(redirectTo);
+        window.location.replace(redirectTo);
       }
     }, 1500);
     return () => window.clearTimeout(fallback);

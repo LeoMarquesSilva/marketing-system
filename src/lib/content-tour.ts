@@ -15,7 +15,12 @@ export function isContentCollaboratorForTour(
 ): boolean {
   if (!profile) return false;
   const allowed = resolveAllowedSections(profile);
-  if (allowed?.some((k) => k.startsWith("/conteudo"))) return true;
+  // Com permissões explícitas, o tour de conteúdo só vale se tiver seção de conteúdo.
+  // Sem isso, gestores de área jurídica (departamento) com acesso só a Meus Clientes
+  // eram tratados como colaboradores e o tour redirecionava para /conteudo em loop.
+  if (allowed) {
+    return allowed.some((k) => k === "/conteudo/roteiros" || k.startsWith("/conteudo"));
+  }
   return isContentCollaborator(profile);
 }
 

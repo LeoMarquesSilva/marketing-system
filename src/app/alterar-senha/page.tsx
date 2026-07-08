@@ -13,6 +13,10 @@ import {
   CONTENT_TUTORIAL_SESSION_KEY,
   isContentCollaboratorForTour,
 } from "@/lib/content-tour";
+import {
+  MEUS_CLIENTES_TUTORIAL_SESSION_KEY,
+  isMeusClientesUserForTour,
+} from "@/lib/meus-clientes-tour";
 
 export default function AlterarSenhaPage() {
   const { user, profile, loading } = useAuth();
@@ -80,6 +84,14 @@ export default function AlterarSenhaPage() {
       if (profileForRedirect && isContentCollaboratorForTour(profileForRedirect)) {
         sessionStorage.setItem(CONTENT_TUTORIAL_SESSION_KEY, "1");
         window.location.assign(`${target}?tutorial=1`);
+      } else if (profileForRedirect && isMeusClientesUserForTour(profileForRedirect)) {
+        sessionStorage.setItem(MEUS_CLIENTES_TUTORIAL_SESSION_KEY, "1");
+        // Só adiciona ?tutorial=1 se o destino for Meus Clientes (evita query órfã).
+        const url =
+          target === "/meus-clientes" || target.startsWith("/meus-clientes?")
+            ? `${target}${target.includes("?") ? "&" : "?"}tutorial=1`
+            : target;
+        window.location.assign(url);
       } else {
         window.location.assign(target);
       }
