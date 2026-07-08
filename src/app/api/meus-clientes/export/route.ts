@@ -7,7 +7,13 @@ import {
   listClientMissingFieldLabels,
   personToClientProfile,
 } from "@/lib/email-marketing-enrichment";
-import { resolveClientGroupKey, resolveContactGroupKey, filterPeopleNotInContacts } from "@/lib/meus-clientes";
+import {
+  buildClientGroupKeysForAreaFilter,
+  resolveClientGroupKey,
+  resolveContactGroupKey,
+  filterPeopleNotInContacts,
+} from "@/lib/meus-clientes";
+import { getPartyInviteTipoLabel } from "@/lib/party-invite-types";
 
 export const dynamic = "force-dynamic";
 
@@ -31,26 +37,34 @@ export async function GET(request: Request) {
     const filterStatus = url.searchParams.get("status") || "all";
     const excludeSemGrupo = url.searchParams.get("excludeSemGrupo") === "1";
 
-    const { companies, contacts, people } = await fetchMeusClientesPayload({
+    const { companies, contacts, people, responsibles } = await fetchMeusClientesPayload({
       authUserId: user.id,
       viewAll,
       filterGestorId,
     });
 
     const companiesById = new Map(companies.map((c) => [c.id, c]));
+    const personAreas = new Map<string, string[]>();
+    for (const responsible of responsibles) {
+      if (!responsible.personId || !responsible.area) continue;
+      const areas = personAreas.get(responsible.personId) ?? [];
+      areas.push(responsible.area);
+      personAreas.set(responsible.personId, areas);
+    }
+    const groupKeysForAreaFilter = filterArea
+      ? buildClientGroupKeysForAreaFilter(
+          filterArea,
+          companies,
+          people,
+          personAreas,
+          responsibles
+        )
+      : null;
 
     const filteredContacts = contacts.filter((contact) => {
       const groupKey = resolveContactGroupKey(contact, companiesById);
       if (excludeSemGrupo && !contact.clientGroupId) return false;
-      if (filterArea === "__sem_area__") {
-        const company = contact.companyId ? companiesById.get(contact.companyId) : null;
-        if ((company?.legalAreas ?? []).length > 0) return false;
-      } else if (filterArea) {
-        const company = contact.companyId ? companiesById.get(contact.companyId) : null;
-        if (!(company?.legalAreas ?? []).some((a) => a === filterArea || a.startsWith(filterArea))) {
-          return false;
-        }
-      }
+      if (groupKeysForAreaFilter && !groupKeysForAreaFilter.has(groupKey)) return false;
       if (filterStatus === "pending" && !clientProfileIsIncomplete(contactToClientProfile(contact))) {
         return false;
       }
@@ -61,8 +75,13 @@ export async function GET(request: Request) {
     });
 
     const filteredPeopleRaw = people.filter((person) => {
-      const groupKey = resolveClientGroupKey(person);
       if (excludeSemGrupo && !person.clientGroupId) return false;
+      if (
+        groupKeysForAreaFilter &&
+        !groupKeysForAreaFilter.has(resolveClientGroupKey(person))
+      ) {
+        return false;
+      }
       if (filterStatus === "pending" && !clientProfileIsIncomplete(personToClientProfile(person))) {
         return false;
       }
@@ -85,6 +104,7 @@ export async function GET(request: Request) {
         "Pendências",
         "NPS",
         "Festa 10 anos",
+        "Critério festa",
       ]),
     ];
 
@@ -104,6 +124,7 @@ export async function GET(request: Request) {
           missing.join("; "),
           contact.npsEligible ? "Sim" : "Não",
           contact.partyInvite ? "Sim" : "Não",
+          getPartyInviteTipoLabel(contact.partyInviteTipo) ?? "",
         ])
       );
     }
@@ -123,6 +144,7 @@ export async function GET(request: Request) {
           missing.join("; "),
           person.npsEligible ? "Sim" : "Não",
           person.partyInvite ? "Sim" : "Não",
+          getPartyInviteTipoLabel(person.partyInviteTipo) ?? "",
         ])
       );
     }

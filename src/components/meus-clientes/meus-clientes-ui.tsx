@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -47,11 +48,24 @@ import {
   mergeGroupMembers,
 } from "@/lib/meus-clientes";
 import { getAreaIcon, getAreaIconStyle } from "@/lib/area-icons";
+import { getPartyInviteTipoDescription, getPartyInviteTipoLabel } from "@/lib/party-invite-types";
+import type { PartyInviteTipo } from "@/lib/party-invite-types";
+import {
+  groupAtividadeTooltip,
+  isGestorStatusPending,
+  resolveGroupAtividade,
+  type ClientGroupGestorStatus,
+} from "@/lib/client-group-gestor-status";
+import {
+  type SioeClienteAtividade,
+  type SioeClienteAtividadeIndex,
+} from "@/lib/sioe-cliente-atividade";
 
 export const SEM_GRUPO_KEY = "__sem_grupo__";
 export const FILTER_SEM_AREA = "__sem_area__";
 
 export type StatusFilter = "all" | "pending" | "complete";
+export type AtividadeFilter = "all" | "ativo" | "inativo";
 export type SelectKey = `c:${string}` | `p:${string}`;
 
 export interface ClientGroupBucket {
@@ -160,6 +174,73 @@ function AreaBadges({ areas, compact }: { areas: string[]; compact?: boolean }) 
   );
 }
 
+function PartyInviteBadge({ partyInviteTipo }: { partyInviteTipo?: PartyInviteTipo | null }) {
+  const label = getPartyInviteTipoLabel(partyInviteTipo);
+  const description = getPartyInviteTipoDescription(partyInviteTipo);
+  const badge = (
+    <Badge
+      variant="outline"
+      className="text-[10px] text-violet-700 border-violet-200 bg-violet-50"
+    >
+      Festa
+      {label ? `: ${label}` : ""}
+    </Badge>
+  );
+
+  if (!label || !description) return badge;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex">{badge}</span>
+      </TooltipTrigger>
+      <TooltipContent side="top">
+        <p className="text-sm font-semibold leading-snug text-violet-100">{label}</p>
+        <p className="mt-1.5 text-xs leading-relaxed text-white/75">{description}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function ClienteAtividadeBadge({
+  status,
+  tooltip,
+  compact,
+  pending,
+}: {
+  status?: SioeClienteAtividade | null;
+  tooltip?: string;
+  compact?: boolean;
+  pending?: boolean;
+}) {
+  if (pending) {
+    return (
+      <Badge
+        variant="outline"
+        className={`text-[10px] text-amber-700 border-amber-200 bg-amber-50 ${compact ? "px-1.5 py-0" : ""}`}
+        title="Confirme se o grupo está ativo ou inativo"
+      >
+        Status pendente
+      </Badge>
+    );
+  }
+  if (!status) return null;
+  const isAtivo = status === "ativo";
+  return (
+    <Badge
+      variant="outline"
+      className={`text-[10px] ${
+        isAtivo
+          ? "text-emerald-700 border-emerald-200 bg-emerald-50"
+          : "text-slate-600 border-slate-200 bg-slate-50"
+      } ${compact ? "px-1.5 py-0" : ""}`}
+      title={tooltip}
+    >
+      {isAtivo ? "Ativo" : "Inativo"}
+    </Badge>
+  );
+}
+
 export function EditableRow({
   title,
   subtitle,
@@ -167,6 +248,7 @@ export function EditableRow({
   source,
   npsEligible,
   partyInvite,
+  partyInviteTipo,
   areas,
   missing,
   pending,
@@ -176,6 +258,7 @@ export function EditableRow({
   onSelectedChange,
   compact,
   searchQuery,
+  tourContactEdit,
 }: {
   title: string;
   subtitle: string;
@@ -183,6 +266,7 @@ export function EditableRow({
   source?: string | null;
   npsEligible: boolean;
   partyInvite: boolean;
+  partyInviteTipo?: PartyInviteTipo | null;
   areas?: string[];
   missing: string[];
   pending?: boolean;
@@ -192,6 +276,7 @@ export function EditableRow({
   onSelectedChange?: (checked: boolean) => void;
   compact?: boolean;
   searchQuery?: string;
+  tourContactEdit?: boolean;
 }) {
   const q = searchQuery ?? "";
   return (
@@ -244,9 +329,7 @@ export function EditableRow({
             </Badge>
           )}
           {!compact && partyInvite && (
-            <Badge variant="outline" className="text-[10px] text-violet-700 border-violet-200 bg-violet-50">
-              Festa
-            </Badge>
+            <PartyInviteBadge partyInviteTipo={partyInviteTipo} />
           )}
           <AreaBadges areas={areas ?? []} compact={compact} />
         </p>
@@ -278,6 +361,7 @@ export function EditableRow({
           onEdit();
         }}
         className="shrink-0"
+        {...(tourContactEdit ? { "data-tour": "mc-contact-edit" } : {})}
       >
         <Pencil className="h-3.5 w-3.5" />
       </Button>
@@ -298,8 +382,13 @@ export function GroupSection({
   onEditContact,
   onEditPerson,
   onAddContact,
+  clienteAtividadeIndex,
+  gestorStatus,
+  onEditGroupStatus,
   compact,
   searchQuery,
+  tourGroupSample,
+  tourContactEdit,
 }: {
   group: ClientGroupBucket;
   groupContacts: EmailContact[];
@@ -313,8 +402,13 @@ export function GroupSection({
   onEditContact: (contact: EmailContact) => void;
   onEditPerson: (person: EmailPerson) => void;
   onAddContact: (group: ClientGroupBucket) => void;
+  clienteAtividadeIndex?: SioeClienteAtividadeIndex | null;
+  gestorStatus?: ClientGroupGestorStatus | null;
+  onEditGroupStatus?: (group: ClientGroupBucket) => void;
   compact?: boolean;
   searchQuery?: string;
+  tourGroupSample?: boolean;
+  tourContactEdit?: boolean;
 }) {
   const { contacts: mergedContacts, people: mergedPeople } = mergeGroupMembers(
     groupContacts,
@@ -366,50 +460,87 @@ export function GroupSection({
   const allSelectedInGroup =
     groupSelectKeys.length > 0 && selectedInGroup === groupSelectKeys.length;
 
+  const groupAtividade = resolveGroupAtividade(
+    { name: group.name, clientGroupId: group.clientGroupId },
+    gestorStatus,
+    clienteAtividadeIndex
+  );
+  const statusPending = Boolean(group.clientGroupId && isGestorStatusPending(gestorStatus));
+  const atividadeTooltip = groupAtividadeTooltip(
+    groupAtividade,
+    gestorStatus,
+    clienteAtividadeIndex?.mesReferencia
+  );
+
   return (
     <section
       className={`rounded-2xl border bg-card shadow-sm overflow-hidden ${
         pendingCount > 0 ? "border-amber-200/70" : "border-border/80"
       }`}
+      {...(tourGroupSample ? { "data-tour": "mc-group-sample" } : {})}
     >
-      <button
-        type="button"
-        onClick={() => onOpenChange(!open)}
-        className="flex w-full items-center gap-3 px-4 py-4 text-left hover:bg-muted/20 transition-colors"
-      >
-        <span
-          className={`flex shrink-0 items-center justify-center rounded-xl ${
-            pendingCount > 0
-              ? "bg-amber-500/10 text-amber-700"
-              : "bg-violet-500/10 text-violet-700"
-          } ${compact ? "h-9 w-9" : "h-11 w-11"}`}
+      <div className="flex items-stretch gap-2 px-2 py-2 sm:px-3 sm:py-3">
+        <button
+          type="button"
+          onClick={() => onOpenChange(!open)}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-muted/20 transition-colors sm:px-3"
         >
-          <Layers className={compact ? "h-4 w-4" : "h-5 w-5"} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-center gap-1.5">
-            <span className={`block font-semibold leading-snug ${compact ? "text-sm" : "text-base"}`}>
-              {searchQuery ? highlightMatch(group.name, searchQuery) : group.name}
+          <span
+            className={`flex shrink-0 items-center justify-center rounded-xl ${
+              pendingCount > 0
+                ? "bg-amber-500/10 text-amber-700"
+                : "bg-violet-500/10 text-violet-700"
+            } ${compact ? "h-9 w-9" : "h-11 w-11"}`}
+          >
+            <Layers className={compact ? "h-4 w-4" : "h-5 w-5"} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-center gap-1.5">
+              <span className={`block font-semibold leading-snug ${compact ? "text-sm" : "text-base"}`}>
+                {searchQuery ? highlightMatch(group.name, searchQuery) : group.name}
+              </span>
+              {pendingCount > 0 && (
+                <Badge variant="outline" className="text-[10px] text-amber-700 border-amber-200 bg-amber-50">
+                  {noContacts
+                    ? "Sem contatos"
+                    : `${pendingCount} pendência${pendingCount === 1 ? "" : "s"}`}
+                </Badge>
+              )}
+              <ClienteAtividadeBadge
+                status={groupAtividade}
+                tooltip={atividadeTooltip}
+                pending={statusPending}
+              />
+              <AreaBadges areas={groupAreas} />
             </span>
-            {pendingCount > 0 && (
-              <Badge variant="outline" className="text-[10px] text-amber-700 border-amber-200 bg-amber-50">
-                {noContacts
-                  ? "Sem contatos"
-                  : `${pendingCount} pendência${pendingCount === 1 ? "" : "s"}`}
-              </Badge>
-            )}
-            <AreaBadges areas={groupAreas} />
+            <span className="mt-1 block text-xs text-muted-foreground">
+              {memberCount} contato{memberCount === 1 ? "" : "s"}
+            </span>
           </span>
-          <span className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-            <span>{memberCount} contato{memberCount === 1 ? "" : "s"}</span>
-          </span>
-        </span>
-        {open ? (
-          <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+          {open ? (
+            <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+          )}
+        </button>
+
+        {group.clientGroupId && onEditGroupStatus && (
+          <Button
+            type="button"
+            variant={statusPending ? "default" : "outline"}
+            size="sm"
+            className={`my-1 shrink-0 self-center ${
+              statusPending
+                ? "bg-amber-600 text-white hover:bg-amber-700 border-amber-600"
+                : ""
+            }`}
+            onClick={() => onEditGroupStatus(group)}
+            {...(tourGroupSample ? { "data-tour": "mc-group-status" } : {})}
+          >
+            {statusPending ? "Confirmar status" : "Editar status"}
+          </Button>
         )}
-      </button>
+      </div>
 
       {open && (
         <div className="border-t px-4 py-4 space-y-4 bg-muted/5">
@@ -446,7 +577,8 @@ export function GroupSection({
               </p>
             ) : (
               <div className={`space-y-1.5 ${compact ? "space-y-1" : ""}`}>
-                {allMembers.map((item) => {
+                {allMembers.map((item, memberIndex) => {
+                  const showTourEdit = Boolean(tourContactEdit && memberIndex === 0);
                   if (item.type === "contact") {
                     const contact = item.data;
                     const missing = listClientMissingFieldLabels(contactToClientProfile(contact));
@@ -460,6 +592,7 @@ export function GroupSection({
                         source={contact.source}
                         npsEligible={contact.npsEligible}
                         partyInvite={contact.partyInvite}
+                        partyInviteTipo={contact.partyInviteTipo}
                         missing={missing}
                         pending={pending}
                         onEdit={() => onEditContact(contact)}
@@ -470,6 +603,7 @@ export function GroupSection({
                         }
                         compact={compact}
                         searchQuery={searchQuery}
+                        tourContactEdit={showTourEdit}
                       />
                     );
                   }
@@ -485,6 +619,7 @@ export function GroupSection({
                       source={person.source ?? "sioe"}
                       npsEligible={person.npsEligible}
                       partyInvite={person.partyInvite}
+                      partyInviteTipo={person.partyInviteTipo}
                       areas={personAreas.get(person.id) ?? []}
                       missing={missing}
                       pending={pending}
@@ -496,6 +631,7 @@ export function GroupSection({
                       }
                       compact={compact}
                       searchQuery={searchQuery}
+                      tourContactEdit={showTourEdit}
                     />
                   );
                 })}
@@ -623,12 +759,37 @@ export function ProgressBarCard({
   );
 }
 
-export function HealthPanel({ syncMeta }: { syncMeta: MeusClientesSyncMeta }) {
+export function HealthPanel({
+  syncMeta,
+  clienteAtividade,
+}: {
+  syncMeta: MeusClientesSyncMeta;
+  clienteAtividade?: SioeClienteAtividadeIndex | null;
+}) {
+  const ativos = clienteAtividade
+    ? Object.values(clienteAtividade.byGrupoKey).filter((s) => s === "ativo").length
+    : 0;
+  const inativos = clienteAtividade
+    ? Object.values(clienteAtividade.byGrupoKey).filter((s) => s === "inativo").length
+    : 0;
+
   return (
     <div className="rounded-xl border border-border/80 bg-muted/20 px-4 py-3 text-xs">
       <p className="mb-2 font-medium uppercase tracking-wide text-muted-foreground">Saúde dos dados</p>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
-        <span>SIOE: {formatSyncDate(syncMeta.lastSyncedAt)}</span>
+        <span>Última sync: {formatSyncDate(syncMeta.lastSyncedAt)}</span>
+        {clienteAtividade && (ativos > 0 || inativos > 0) && (
+          <span>
+            Status comercial:{" "}
+            <span className="text-emerald-700">{ativos} ativo(s)</span>
+            {inativos > 0 && (
+              <>
+                {" · "}
+                <span className="text-slate-600">{inativos} inativo(s)</span>
+              </>
+            )}
+          </span>
+        )}
         {syncMeta.groupsWithoutArea > 0 && (
           <span className="text-amber-700">{syncMeta.groupsWithoutArea} grupo(s) sem área</span>
         )}
@@ -641,18 +802,24 @@ export function FilterChips({
   filterArea,
   filterGestor,
   filterStatus,
+  filterAtividade,
   gestorName,
+  filterResultCount,
   onClearArea,
   onClearGestor,
   onClearStatus,
+  onClearAtividade,
 }: {
   filterArea: string;
   filterGestor: string;
   filterStatus: StatusFilter;
+  filterAtividade?: AtividadeFilter;
   gestorName?: string;
+  filterResultCount?: number;
   onClearArea: () => void;
   onClearGestor: () => void;
   onClearStatus: () => void;
+  onClearAtividade?: () => void;
 }) {
   const chips: { label: string; onClear: () => void }[] = [];
   if (filterArea) {
@@ -662,7 +829,10 @@ export function FilterChips({
     });
   }
   if (filterGestor) {
-    chips.push({ label: `Gestor: ${gestorName ?? filterGestor}`, onClear: onClearGestor });
+    chips.push({
+      label: `Gestor: ${gestorName ?? filterGestor}`,
+      onClear: onClearGestor,
+    });
   }
   if (filterStatus !== "all") {
     chips.push({
@@ -670,9 +840,20 @@ export function FilterChips({
       onClear: onClearStatus,
     });
   }
-  if (chips.length === 0) return null;
+  if (filterAtividade && filterAtividade !== "all") {
+    chips.push({
+      label: filterAtividade === "ativo" ? "Ativos" : "Inativos",
+      onClear: onClearAtividade ?? (() => {}),
+    });
+  }
+  if (chips.length === 0 && filterResultCount === undefined) return null;
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap items-center gap-1.5">
+      {filterResultCount !== undefined && (
+        <Badge variant="outline" className="text-xs tabular-nums font-normal">
+          {filterResultCount} grupo{filterResultCount === 1 ? "" : "s"}
+        </Badge>
+      )}
       {chips.map((chip) => (
         <Badge key={chip.label} variant="secondary" className="gap-1 pr-1 text-xs">
           {chip.label}
@@ -688,9 +869,11 @@ export function FilterChips({
 export function StatusToggle({
   value,
   onChange,
+  counts,
 }: {
   value: StatusFilter;
   onChange: (v: StatusFilter) => void;
+  counts?: { all: number; pending: number; complete: number };
 }) {
   const options: { id: StatusFilter; label: string }[] = [
     { id: "all", label: "Todos" },
@@ -699,18 +882,26 @@ export function StatusToggle({
   ];
   return (
     <div className="inline-flex rounded-lg border bg-muted/30 p-0.5">
-      {options.map((opt) => (
-        <button
-          key={opt.id}
-          type="button"
-          onClick={() => onChange(opt.id)}
-          className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-            value === opt.id ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
+      {options.map((opt) => {
+        const count = counts?.[opt.id];
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => onChange(opt.id)}
+            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+              value === opt.id
+                ? "bg-background shadow-sm text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {opt.label}
+            {count !== undefined && (
+              <span className="ml-1 tabular-nums text-muted-foreground">({count})</span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -773,7 +964,7 @@ export function EmptyState({
   );
 }
 
-function UserAvatar({
+export function FilterUserAvatar({
   name,
   avatarUrl,
   size = "sm",
@@ -790,7 +981,7 @@ function UserAvatar({
   );
 }
 
-function AreaIconBadge({ area, size = "md" }: { area: string; size?: "sm" | "md" }) {
+export function FilterAreaIcon({ area, size = "md" }: { area: string; size?: "sm" | "md" }) {
   const Icon = getAreaIcon(area);
   const box = size === "sm" ? "h-7 w-7" : "h-9 w-9";
   const icon = size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4";
@@ -832,7 +1023,7 @@ function AreaGroupCard({
         ) : (
           <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
         )}
-        <AreaIconBadge area={group.area} />
+        <FilterAreaIcon area={group.area} />
         <span className="text-sm font-semibold">{group.area}</span>
         <Badge variant="outline" className="text-[11px]">
           {group.groupsCount} grupo{group.groupsCount === 1 ? "" : "s"}
@@ -846,7 +1037,7 @@ function AreaGroupCard({
           <span className="ml-auto hidden sm:inline-flex items-center -space-x-2">
             {group.managers.slice(0, 4).map((m) => (
               <span key={m.userId} title={`${m.userName} · ${m.adjustedCount} ajustados`}>
-                <UserAvatar
+                <FilterUserAvatar
                   name={m.userName}
                   avatarUrl={userAvatarById.get(m.userId)}
                   size="sm"
@@ -875,7 +1066,11 @@ function AreaGroupCard({
                 >
                   <td className="px-3 py-2 whitespace-nowrap">
                     <div className="flex items-center gap-2.5">
-                      <UserAvatar name={m.userName} avatarUrl={userAvatarById.get(m.userId)} size="sm" />
+                      <FilterUserAvatar
+                        name={m.userName}
+                        avatarUrl={userAvatarById.get(m.userId)}
+                        size="sm"
+                      />
                       <span className="font-medium">{m.userName}</span>
                     </div>
                   </td>

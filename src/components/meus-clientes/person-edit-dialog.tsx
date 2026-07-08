@@ -36,6 +36,7 @@ import {
   isInviteClassificationComplete,
   type InviteClassification,
 } from "@/components/meus-clientes/invite-classification-section";
+import type { PartyInviteTipo } from "@/lib/party-invite-types";
 import { useAuth } from "@/contexts/auth-context";
 
 interface PersonEditDialogProps {
@@ -73,6 +74,7 @@ export function PersonEditDialog({
   const [cargoOutro, setCargoOutro] = useState("");
   const [npsEligible, setNpsEligible] = useState(false);
   const [partyInvite, setPartyInvite] = useState(false);
+  const [partyInviteTipo, setPartyInviteTipo] = useState<PartyInviteTipo | null>(null);
   const [inviteClassification, setInviteClassification] = useState<InviteClassification>("pending");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +91,7 @@ export function PersonEditDialog({
     setCargoOutro(resolveCargoOption(cargoValue) === CARGO_OUTRO ? cargoValue : "");
     setNpsEligible(source.npsEligible);
     setPartyInvite(source.partyInvite);
+    setPartyInviteTipo(source.partyInviteTipo);
     setInviteClassification(deriveInviteClassification(source));
     setError(null);
   }, [open, person, contact]);
@@ -103,7 +106,7 @@ export function PersonEditDialog({
     { label: "E-mail", ok: Boolean(email.trim()) },
     { label: "Telefone", ok: Boolean(phone.trim()) },
     { label: "Cargo", ok: Boolean(resolvedCargo) },
-    { label: "NPS e Festa", ok: isInviteClassificationComplete(inviteClassification) },
+    { label: "NPS e Festa", ok: isInviteClassificationComplete({ classification: inviteClassification, partyInvite, partyInviteTipo }) },
   ];
   const completeCount = checklist.filter((c) => c.ok).length;
 
@@ -121,13 +124,18 @@ export function PersonEditDialog({
     try {
       const enrichedByUserId = profile?.id;
       const phoneValue = phone.trim() || null;
-      const classificationComplete = isInviteClassificationComplete(inviteClassification);
+      const classificationComplete = isInviteClassificationComplete({
+        classification: inviteClassification,
+        partyInvite,
+        partyInviteTipo,
+      });
       const patch = {
         name: name.trim(),
         phone: phoneValue,
         cargo: resolvedCargo || null,
         npsEligible,
         partyInvite,
+        partyInviteTipo: partyInvite ? partyInviteTipo : null,
         enrichedByUserId,
         ...(classificationComplete && enrichedByUserId
           ? { invitesClassifiedByUserId: enrichedByUserId }
@@ -280,10 +288,17 @@ export function PersonEditDialog({
             classification={inviteClassification}
             npsEligible={npsEligible}
             partyInvite={partyInvite}
-            onClassificationChange={({ classification, npsEligible: nps, partyInvite: party }) => {
+            partyInviteTipo={partyInviteTipo}
+            onClassificationChange={({
+              classification,
+              npsEligible: nps,
+              partyInvite: party,
+              partyInviteTipo: tipo,
+            }) => {
               setInviteClassification(classification);
               setNpsEligible(nps);
               setPartyInvite(party);
+              setPartyInviteTipo(tipo);
             }}
           />
         </div>

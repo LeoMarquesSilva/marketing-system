@@ -104,7 +104,7 @@ export function isSioeSyncConfigured(): boolean {
   }
 }
 
-function getSioeClient(): SupabaseClient {
+export function getSioeClient(): SupabaseClient {
   const { url, serviceKey } = getSioeConfig();
   return createClient(url, serviceKey);
 }

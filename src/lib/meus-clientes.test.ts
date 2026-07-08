@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildClientGroupKeysForAreaFilter,
+  buildClientGroupKeysWithoutArea,
   compareGroupsByPendingFirst,
   countGroupMembers,
   countGroupPendingMembers,
@@ -159,5 +161,102 @@ describe("RD × SIOE deduplication", () => {
     const { contacts, people } = mergeGroupMembers(metalcastyContacts, metalcastyPeople);
     expect(contacts).toHaveLength(2);
     expect(people).toHaveLength(1);
+  });
+});
+
+describe("buildClientGroupKeysWithoutArea", () => {
+  it("exclui grupo quando alguma empresa do grupo tem área", () => {
+    const companies = [
+      {
+        id: "c1",
+        clientGroupId: "g1",
+        clientGroupName: "Grupo Misto",
+        legalAreas: ["Trabalhista"],
+      },
+      {
+        id: "c2",
+        clientGroupId: "g1",
+        clientGroupName: "Grupo Misto",
+        legalAreas: [],
+      },
+    ] as EmailCompany[];
+
+    const withoutArea = buildClientGroupKeysWithoutArea(companies, [], new Map(), []);
+    expect(withoutArea.has("g1")).toBe(false);
+  });
+
+  it("inclui grupo apenas quando nenhuma entidade tem área", () => {
+    const companies = [
+      {
+        id: "c1",
+        clientGroupId: "g2",
+        clientGroupName: "Grupo Limpo",
+        legalAreas: [],
+      },
+    ] as EmailCompany[];
+    const people = [
+      {
+        id: "p1",
+        clientGroupId: "g2",
+        clientGroupName: "Grupo Limpo",
+      },
+    ] as EmailPerson[];
+
+    const withoutArea = buildClientGroupKeysWithoutArea(companies, people, new Map(), []);
+    expect(withoutArea.has("g2")).toBe(true);
+  });
+});
+
+describe("buildClientGroupKeysForAreaFilter", () => {
+  it("inclui o grupo inteiro quando só uma empresa tem a área", () => {
+    const companies = [
+      {
+        id: "c1",
+        clientGroupId: "gy",
+        clientGroupName: "Grupo Y",
+        legalAreas: ["Trabalhista"],
+      },
+      {
+        id: "c2",
+        clientGroupId: "gy",
+        clientGroupName: "Grupo Y",
+        legalAreas: [],
+      },
+    ] as EmailCompany[];
+
+    const matching = buildClientGroupKeysForAreaFilter(
+      "Trabalhista",
+      companies,
+      [],
+      new Map(),
+      []
+    );
+    expect(matching.has("gy")).toBe(true);
+  });
+
+  it("sem área só quando nenhuma entidade do grupo tem área", () => {
+    const companies = [
+      {
+        id: "c1",
+        clientGroupId: "gy",
+        clientGroupName: "Grupo Y",
+        legalAreas: ["Trabalhista"],
+      },
+      {
+        id: "c2",
+        clientGroupId: "gy",
+        clientGroupName: "Grupo Y",
+        legalAreas: [],
+      },
+    ] as EmailCompany[];
+
+    const semArea = buildClientGroupKeysForAreaFilter(
+      "__sem_area__",
+      companies,
+      [],
+      new Map(),
+      []
+    );
+    expect(semArea.has("gy")).toBe(false);
   });
 });

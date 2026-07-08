@@ -145,6 +145,8 @@ export interface ClientProfileFields extends EnrichableFields {
   enrichedByUserId?: string | null;
   /** Gestor confirmou classificação NPS/Festa. */
   invitesClassifiedByUserId?: string | null;
+  partyInvite?: boolean;
+  partyInviteTipo?: import("@/lib/party-invite-types").PartyInviteTipo | null;
 }
 
 export function contactToClientProfile(contact: EmailContact): ClientProfileFields {
@@ -156,6 +158,8 @@ export function contactToClientProfile(contact: EmailContact): ClientProfileFiel
     customFields: contact.customFields,
     enrichedByUserId: contact.enrichedByUserId,
     invitesClassifiedByUserId: contact.invitesClassifiedByUserId,
+    partyInvite: contact.partyInvite,
+    partyInviteTipo: contact.partyInviteTipo,
   };
 }
 
@@ -169,6 +173,8 @@ export function personToClientProfile(person: EmailPerson): ClientProfileFields 
     customFields: person.customFields,
     enrichedByUserId: person.enrichedByUserId,
     invitesClassifiedByUserId: person.invitesClassifiedByUserId,
+    partyInvite: person.partyInvite,
+    partyInviteTipo: person.partyInviteTipo,
   };
 }
 
@@ -230,6 +236,7 @@ export function listClientMissingFieldLabels(profile: ClientProfileFields): stri
   if (!clientHasRecognizedCargo(profile)) missing.push("cargo");
   if (profileMissingPhone(profile)) missing.push("telefone");
   if (!profile.invitesClassifiedByUserId) missing.push("NPS e Festa");
+  else if (profile.partyInvite && !profile.partyInviteTipo) missing.push("critério da festa");
   return missing;
 }
 

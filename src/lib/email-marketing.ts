@@ -15,6 +15,7 @@ import {
   resolveCanonicalCompanyName,
 } from "@/lib/email-marketing-normalize";
 import { normalizeLegalArea, normalizeLegalAreas, isSubareaOnlyManagerArea } from "@/lib/legal-areas";
+import { parsePartyInviteTipo, type PartyInviteTipo } from "@/lib/party-invite-types";
 
 export type EmailContactStatus = "subscribed" | "unsubscribed" | "bounced" | "complained";
 export type EmailCampaignStatus =
@@ -44,6 +45,7 @@ export interface EmailPerson {
   area: string | null;
   npsEligible: boolean;
   partyInvite: boolean;
+  partyInviteTipo: PartyInviteTipo | null;
   enrichedByUserId: string | null;
   invitesClassifiedByUserId: string | null;
   clientGroupId: string | null;
@@ -109,6 +111,7 @@ export interface EmailContact {
   cargo: string | null;
   npsEligible: boolean;
   partyInvite: boolean;
+  partyInviteTipo: PartyInviteTipo | null;
   enrichedByUserId: string | null;
   invitesClassifiedByUserId: string | null;
   tags: string[];
@@ -240,6 +243,7 @@ export function mapPerson(row: Record<string, unknown>): EmailPerson {
     area: normalizeLegalArea(row.area as string | null),
     npsEligible: Boolean(row.nps_eligible),
     partyInvite: Boolean(row.party_invite),
+    partyInviteTipo: parsePartyInviteTipo(row.party_invite_tipo),
     enrichedByUserId: (row.enriched_by_user_id as string | null) ?? null,
     invitesClassifiedByUserId: (row.invites_classified_by_user_id as string | null) ?? null,
     clientGroupId: (row.client_group_id as string | null) ?? joined?.id ?? null,
@@ -319,6 +323,7 @@ export function mapContact(row: Record<string, unknown>): EmailContact {
     cargo: normalizePersonName(row.cargo as string | null),
     npsEligible: Boolean(row.nps_eligible),
     partyInvite: Boolean(row.party_invite),
+    partyInviteTipo: parsePartyInviteTipo(row.party_invite_tipo),
     enrichedByUserId: (row.enriched_by_user_id as string | null) ?? null,
     invitesClassifiedByUserId: (row.invites_classified_by_user_id as string | null) ?? null,
     tags: normalizeTags(row.tags as string[] | null),
@@ -463,6 +468,7 @@ export interface UpdateEmailPersonInput {
   area?: string | null;
   npsEligible?: boolean;
   partyInvite?: boolean;
+  partyInviteTipo?: PartyInviteTipo | null;
   enrichedByUserId?: string;
   invitesClassifiedByUserId?: string;
 }
@@ -479,7 +485,11 @@ export async function updateEmailPerson(id: string, patch: UpdateEmailPersonInpu
   if (patch.cargo !== undefined) payload.cargo = patch.cargo?.trim() || null;
   if (patch.area !== undefined) payload.area = patch.area?.trim() || null;
   if (patch.npsEligible !== undefined) payload.nps_eligible = patch.npsEligible;
-  if (patch.partyInvite !== undefined) payload.party_invite = patch.partyInvite;
+  if (patch.partyInvite !== undefined) {
+    payload.party_invite = patch.partyInvite;
+    if (!patch.partyInvite) payload.party_invite_tipo = null;
+  }
+  if (patch.partyInviteTipo !== undefined) payload.party_invite_tipo = patch.partyInviteTipo;
   if (patch.enrichedByUserId) payload.enriched_by_user_id = patch.enrichedByUserId;
   if (patch.invitesClassifiedByUserId) payload.invites_classified_by_user_id = patch.invitesClassifiedByUserId;
 
@@ -508,6 +518,7 @@ async function promotePersonToContact(person: EmailPerson): Promise<void> {
       cargo: person.cargo,
       nps_eligible: person.npsEligible,
       party_invite: person.partyInvite,
+      party_invite_tipo: person.partyInviteTipo,
       enriched_by_user_id: person.enrichedByUserId,
       invites_classified_by_user_id: person.invitesClassifiedByUserId,
       company_id: null,
@@ -638,6 +649,7 @@ export interface CreateEmailContactInput {
   cargo?: string | null;
   npsEligible?: boolean;
   partyInvite?: boolean;
+  partyInviteTipo?: PartyInviteTipo | null;
   enrichedByUserId?: string;
   invitesClassifiedByUserId?: string;
 }
@@ -661,6 +673,7 @@ export async function createEmailContact(input: CreateEmailContactInput): Promis
       cargo: input.cargo?.trim() || null,
       nps_eligible: input.npsEligible ?? false,
       party_invite: input.partyInvite ?? false,
+      party_invite_tipo: input.partyInvite ? (input.partyInviteTipo ?? null) : null,
       enriched_by_user_id: input.enrichedByUserId ?? null,
       invites_classified_by_user_id: input.invitesClassifiedByUserId ?? null,
     })
@@ -681,7 +694,11 @@ export async function updateEmailContact(
   if (patch.tags !== undefined) payload.tags = normalizeTags(patch.tags);
   if (patch.cargo !== undefined) payload.cargo = patch.cargo?.trim() || null;
   if (patch.npsEligible !== undefined) payload.nps_eligible = patch.npsEligible;
-  if (patch.partyInvite !== undefined) payload.party_invite = patch.partyInvite;
+  if (patch.partyInvite !== undefined) {
+    payload.party_invite = patch.partyInvite;
+    if (!patch.partyInvite) payload.party_invite_tipo = null;
+  }
+  if (patch.partyInviteTipo !== undefined) payload.party_invite_tipo = patch.partyInviteTipo;
   if (patch.enrichedByUserId) payload.enriched_by_user_id = patch.enrichedByUserId;
   if (patch.invitesClassifiedByUserId) payload.invites_classified_by_user_id = patch.invitesClassifiedByUserId;
   if (patch.clientGroupId !== undefined) payload.client_group_id = patch.clientGroupId;

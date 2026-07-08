@@ -29,6 +29,7 @@ import {
   isInviteClassificationComplete,
   type InviteClassification,
 } from "@/components/meus-clientes/invite-classification-section";
+import type { PartyInviteTipo } from "@/lib/party-invite-types";
 import { useAuth } from "@/contexts/auth-context";
 
 interface ContactGroupTarget {
@@ -52,6 +53,7 @@ export function ContactCreateDialog({ open, onOpenChange, group, onCreated }: Co
   const [cargoOutro, setCargoOutro] = useState("");
   const [npsEligible, setNpsEligible] = useState(false);
   const [partyInvite, setPartyInvite] = useState(false);
+  const [partyInviteTipo, setPartyInviteTipo] = useState<PartyInviteTipo | null>(null);
   const [inviteClassification, setInviteClassification] = useState<InviteClassification>("pending");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +67,7 @@ export function ContactCreateDialog({ open, onOpenChange, group, onCreated }: Co
     setCargoOutro("");
     setNpsEligible(false);
     setPartyInvite(false);
+    setPartyInviteTipo(null);
     setInviteClassification("pending");
     setError(null);
   }, [open]);
@@ -92,10 +95,15 @@ export function ContactCreateDialog({ open, onOpenChange, group, onCreated }: Co
         cargo: resolvedCargo || null,
         npsEligible,
         partyInvite,
+        partyInviteTipo: partyInvite ? partyInviteTipo : null,
         clientGroupId: group.clientGroupId,
         company: group.name,
         enrichedByUserId: profile?.id,
-        ...(isInviteClassificationComplete(inviteClassification) && profile?.id
+        ...(isInviteClassificationComplete({
+          classification: inviteClassification,
+          partyInvite,
+          partyInviteTipo,
+        }) && profile?.id
           ? { invitesClassifiedByUserId: profile.id }
           : {}),
       });
@@ -205,10 +213,17 @@ export function ContactCreateDialog({ open, onOpenChange, group, onCreated }: Co
             classification={inviteClassification}
             npsEligible={npsEligible}
             partyInvite={partyInvite}
-            onClassificationChange={({ classification, npsEligible: nps, partyInvite: party }) => {
+            partyInviteTipo={partyInviteTipo}
+            onClassificationChange={({
+              classification,
+              npsEligible: nps,
+              partyInvite: party,
+              partyInviteTipo: tipo,
+            }) => {
               setInviteClassification(classification);
               setNpsEligible(nps);
               setPartyInvite(party);
+              setPartyInviteTipo(tipo);
             }}
           />
         </div>

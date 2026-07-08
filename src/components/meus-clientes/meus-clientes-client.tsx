@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   Download,
@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -28,6 +29,16 @@ import {
 } from "@/lib/email-marketing";
 import type { MeusClientesSyncMeta } from "@/lib/meus-clientes-server";
 import {
+  emptySioeClienteAtividadeIndex,
+  grupoClienteKey,
+  listSioeOnlyInactiveGroups,
+  type SioeClienteAtividadeIndex,
+} from "@/lib/sioe-cliente-atividade";
+import {
+  resolveGroupAtividade,
+  type ClientGroupGestorStatus,
+} from "@/lib/client-group-gestor-status";
+import {
   clientProfileIsIncomplete,
   contactToClientProfile,
   listClientMissingFieldLabels,
@@ -35,10 +46,12 @@ import {
 } from "@/lib/email-marketing-enrichment";
 import {
   buildAreaManagerSummary,
+  buildClientGroupKeysForAreaFilter,
   buildManagerSummary,
   compareGroupsByPendingFirst,
   computeEnrichmentTotals,
-  expandRootArea,
+  computeMyClientScope,
+  resolveClientGroupAreas,
   filterPeopleNotInContacts,
   getAreaParent,
   groupHasNoContacts,
@@ -49,17 +62,27 @@ import {
 } from "@/lib/meus-clientes";
 import { PersonEditDialog } from "./person-edit-dialog";
 import { ContactCreateDialog } from "./contact-create-dialog";
+import { GroupStatusDialog } from "./group-status-dialog";
+import { MeusClientesTour } from "./meus-clientes-tour";
 import { useAuth } from "@/contexts/auth-context";
+import {
+  MeusClientesTourProvider,
+  useMeusClientesTour,
+} from "@/contexts/meus-clientes-tour-context";
+import { MEUS_CLIENTES_TOUR_EXPAND_STEPS } from "@/lib/meus-clientes-tour";
 import { useMeusClientesRealtime } from "@/hooks/use-meus-clientes-realtime";
 import {
   type ClientGroupBucket,
   type SelectKey,
   type StatusFilter,
+  type AtividadeFilter,
   ClickableStatCard,
   DeleteConfirmDialog,
   EmptyState,
   FILTER_SEM_AREA,
   FilterChips,
+  FilterAreaIcon,
+  FilterUserAvatar,
   FixedToast,
   GroupSection,
   HealthPanel,
@@ -84,31 +107,68 @@ function resolveGroupKey(entity: {
   return entity.clientGroupId ?? entity.clientGroupName ?? SEM_GRUPO_KEY;
 }
 
-function resolveGroupAreas(
-  groupKey: string,
+function buildGroupBuckets(
   companies: EmailCompany[],
-  people: EmailPerson[],
-  personAreas: Map<string, string[]>,
-  responsibles: EmailGroupResponsible[] = []
-): string[] {
-  const set = new Set<string>();
+  people: EmailPerson[]
+): ClientGroupBucket[] {
+  const buckets = new Map<string, ClientGroupBucket>();
   for (const company of companies) {
-    if (resolveGroupKey(company) !== groupKey) continue;
-    for (const area of company.legalAreas) set.add(area);
+    const key = resolveGroupKey(company);
+    const existing = buckets.get(key);
+    if (existing) {
+      existing.companies.push(company);
+      if (!existing.clientGroupId && company.clientGroupId) existing.clientGroupId = company.clientGroupId;
+    } else {
+      buckets.set(key, {
+        key,
+        name: company.clientGroupName ?? "Sem grupo",
+        clientGroupId: company.clientGroupId,
+        companies: [company],
+        groupPeople: [],
+      });
+    }
   }
   for (const person of people) {
-    if (resolveGroupKey(person) !== groupKey) continue;
-    for (const area of personAreas.get(person.id) ?? []) set.add(area);
+    const key = resolveGroupKey(person);
+    const existing = buckets.get(key);
+    if (existing) {
+      existing.groupPeople.push(person);
+      if (!existing.clientGroupId && person.clientGroupId) existing.clientGroupId = person.clientGroupId;
+    } else {
+      buckets.set(key, {
+        key,
+        name: person.clientGroupName ?? "Sem grupo",
+        clientGroupId: person.clientGroupId,
+        companies: [],
+        groupPeople: [person],
+      });
+    }
   }
-  for (const r of responsibles) {
-    if (!r.area || r.clientGroupId !== groupKey) continue;
-    set.add(r.area);
-  }
-  return Array.from(set);
+  return Array.from(buckets.values());
 }
 
-export function MeusClientesClient() {
+function groupMatchesSearch(
+  group: ClientGroupBucket,
+  query: string,
+  contactsByGroup: Map<string, EmailContact[]>
+): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  if (group.name.toLowerCase().includes(q)) return true;
+  if (group.companies.some((c) => c.name.toLowerCase().includes(q))) return true;
+  const groupContacts = contactsByGroup.get(group.key) ?? [];
+  if (groupContacts.some((c) => contactSearchHaystack(c).includes(q))) return true;
+  return group.groupPeople.some(
+    (p) =>
+      (p.name ?? "").toLowerCase().includes(q) ||
+      (p.email ?? "").toLowerCase().includes(q) ||
+      (p.cargo ?? "").toLowerCase().includes(q)
+  );
+}
+
+function MeusClientesClientContent() {
   const { user } = useAuth();
+  const { active: tourActive, stepId: tourStepId, setTourState } = useMeusClientesTour();
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -121,6 +181,12 @@ export function MeusClientesClient() {
   const [areaManagers, setAreaManagers] = useState<EmailAreaManagerRow[]>([]);
   const [systemUsers, setSystemUsers] = useState<{ id: string; name: string; avatar_url: string | null }[]>([]);
   const [syncMeta, setSyncMeta] = useState<MeusClientesSyncMeta | null>(null);
+  const [clienteAtividade, setClienteAtividade] = useState<SioeClienteAtividadeIndex>(
+    () => emptySioeClienteAtividadeIndex("")
+  );
+  const [clientGroupStatusById, setClientGroupStatusById] = useState<
+    Record<string, ClientGroupGestorStatus>
+  >({});
   const [syncing, setSyncing] = useState(false);
   const [syncMenuOpen, setSyncMenuOpen] = useState(false);
   const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -129,6 +195,7 @@ export function MeusClientesClient() {
   const [filterArea, setFilterArea] = useState("");
   const [filterGestor, setFilterGestor] = useState("");
   const [filterStatus, setFilterStatus] = useState<StatusFilter>("all");
+  const [filterAtividade, setFilterAtividade] = useState<AtividadeFilter>("all");
   const [compactMode, setCompactMode] = useState(false);
   const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>({});
   const [editingPerson, setEditingPerson] = useState<EmailPerson | null>(null);
@@ -139,6 +206,18 @@ export function MeusClientesClient() {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [groupStatusDialogOpen, setGroupStatusDialogOpen] = useState(false);
+  const [editingGroupStatus, setEditingGroupStatus] = useState<ClientGroupBucket | null>(null);
+
+  const resolveGroupAtividadeForBucket = useCallback(
+    (group: ClientGroupBucket) =>
+      resolveGroupAtividade(
+        { name: group.name, clientGroupId: group.clientGroupId },
+        group.clientGroupId ? clientGroupStatusById[group.clientGroupId] : null,
+        clienteAtividade
+      ),
+    [clientGroupStatusById, clienteAtividade]
+  );
 
   const reload = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) setLoading(true);
@@ -157,6 +236,8 @@ export function MeusClientesClient() {
       setSystemUsers(data.systemUsers ?? []);
       setIsAdmin(Boolean(data.isAdmin));
       setSyncMeta(data.syncMeta ?? null);
+      setClienteAtividade(data.clienteAtividade ?? emptySioeClienteAtividadeIndex(""));
+      setClientGroupStatusById(data.clientGroupStatusById ?? {});
     } catch (err) {
       setToast({
         type: "error",
@@ -170,7 +251,7 @@ export function MeusClientesClient() {
   const reloadRef = useRef(reload);
   reloadRef.current = reload;
 
-  const realtimePaused = dialogOpen || createDialogOpen || deleteConfirmOpen;
+  const realtimePaused = dialogOpen || createDialogOpen || deleteConfirmOpen || groupStatusDialogOpen;
   useMeusClientesRealtime({
     enabled: Boolean(user) && !loading,
     paused: realtimePaused,
@@ -184,8 +265,12 @@ export function MeusClientesClient() {
   }, [reload]);
 
   useEffect(() => {
+    setTourState({ dataLoaded: !loading });
+  }, [loading, setTourState]);
+
+  useEffect(() => {
     setSelectedKeys(new Set());
-  }, [viewAll, filterGestor, filterArea, filterStatus, search]);
+  }, [viewAll, filterGestor, filterArea, filterStatus, filterAtividade, search]);
 
   useEffect(() => {
     if (!toast) return;
@@ -389,43 +474,26 @@ export function MeusClientesClient() {
     return groups;
   }, [areaManagerSummary, filterArea, filterGestor]);
 
-  const groupKeysWithoutArea = useMemo(() => {
-    const keys = new Set<string>();
-    for (const c of companies) {
-      if (c.legalAreas.length === 0) keys.add(resolveGroupKey(c));
-    }
-    return keys;
-  }, [companies]);
+  const groupKeysForAreaFilter = useMemo(() => {
+    if (!filterArea) return null;
+    return buildClientGroupKeysForAreaFilter(
+      filterArea,
+      companies,
+      people,
+      personAreas,
+      responsibles
+    );
+  }, [filterArea, companies, people, personAreas, responsibles]);
 
   const scopedCompanies = useMemo(() => {
-    let list = companies;
-    if (filterArea === FILTER_SEM_AREA) {
-      list = list.filter((c) => groupKeysWithoutArea.has(resolveGroupKey(c)));
-    } else if (filterArea) {
-      const root = getAreaParent(filterArea);
-      list = list.filter((c) =>
-        c.legalAreas.some((a) => getAreaParent(a) === root || expandRootArea(root).includes(a))
-      );
-    }
-    return list;
-  }, [companies, filterArea, groupKeysWithoutArea]);
+    if (!groupKeysForAreaFilter) return companies;
+    return companies.filter((c) => groupKeysForAreaFilter.has(resolveGroupKey(c)));
+  }, [companies, groupKeysForAreaFilter]);
 
   const scopedPeople = useMemo(() => {
-    let list = people;
-    if (filterArea === FILTER_SEM_AREA) {
-      list = list.filter((p) => {
-        const areas = personAreas.get(p.id) ?? [];
-        return areas.length === 0 && groupKeysWithoutArea.has(resolveGroupKey(p));
-      });
-    } else if (filterArea) {
-      const root = getAreaParent(filterArea);
-      list = list.filter((p) => {
-        const areas = personAreas.get(p.id) ?? [];
-        return areas.some((a) => getAreaParent(a) === root || expandRootArea(root).includes(a));
-      });
-    }
-    return list;
-  }, [people, filterArea, personAreas, groupKeysWithoutArea]);
+    if (!groupKeysForAreaFilter) return people;
+    return people.filter((p) => groupKeysForAreaFilter.has(resolveGroupKey(p)));
+  }, [people, groupKeysForAreaFilter]);
 
   const groupPassesStatus = useCallback(
     (groupKey: string, groupPeople: EmailPerson[]) => {
@@ -444,68 +512,184 @@ export function MeusClientesClient() {
     [filterStatus, contactsByGroup]
   );
 
-  const groups = useMemo(() => {
-    const buckets = new Map<string, ClientGroupBucket>();
-    for (const company of scopedCompanies) {
-      const key = resolveGroupKey(company);
-      const existing = buckets.get(key);
-      if (existing) {
-        existing.companies.push(company);
-        if (!existing.clientGroupId && company.clientGroupId) existing.clientGroupId = company.clientGroupId;
-      } else {
-        buckets.set(key, {
+  const groupsBeforeStatus = useMemo(
+    () =>
+      buildGroupBuckets(scopedCompanies, scopedPeople).sort((a, b) =>
+        compareGroupsByPendingFirst(a, b, contactsByGroup, (g) => g.key)
+      ),
+    [scopedCompanies, scopedPeople, contactsByGroup]
+  );
+
+  const groups = useMemo(
+    () =>
+      groupsBeforeStatus.filter(
+        (g) => filterStatus === "all" || groupPassesStatus(g.key, g.groupPeople)
+      ),
+    [groupsBeforeStatus, filterStatus, groupPassesStatus]
+  );
+
+  const groupsWithSioeInactive = useMemo(() => {
+    if (!isAdmin || filterAtividade !== "inativo") return groups;
+    const existingKeys = new Set(groups.map((g) => grupoClienteKey(g.name)));
+    const extras = listSioeOnlyInactiveGroups(clienteAtividade, existingKeys).map(
+      ({ key, name }) =>
+        ({
           key,
-          name: company.clientGroupName ?? "Sem grupo",
-          clientGroupId: company.clientGroupId,
-          companies: [company],
-          groupPeople: [],
-        });
-      }
-    }
-    for (const person of scopedPeople) {
-      const key = resolveGroupKey(person);
-      const existing = buckets.get(key);
-      if (existing) {
-        existing.groupPeople.push(person);
-        if (!existing.clientGroupId && person.clientGroupId) existing.clientGroupId = person.clientGroupId;
-      } else {
-        buckets.set(key, {
-          key,
-          name: person.clientGroupName ?? "Sem grupo",
-          clientGroupId: person.clientGroupId,
+          name,
+          clientGroupId: null,
           companies: [],
-          groupPeople: [person],
-        });
-      }
-    }
-    return Array.from(buckets.values())
-      .filter((g) => filterStatus === "all" || groupPassesStatus(g.key, g.groupPeople))
-      .sort((a, b) => compareGroupsByPendingFirst(a, b, contactsByGroup, (g) => g.key));
-  }, [scopedCompanies, scopedPeople, filterStatus, groupPassesStatus, contactsByGroup]);
+          groupPeople: [],
+        }) satisfies ClientGroupBucket
+    );
+    if (extras.length === 0) return groups;
+    return [...groups, ...extras].sort((a, b) =>
+      a.name.localeCompare(b.name, "pt-BR")
+    );
+  }, [groups, isAdmin, clienteAtividade, filterAtividade]);
 
   const filteredGroups = useMemo(() => {
-    let list = groups;
+    let list = groupsWithSioeInactive;
     if (!search.trim()) return list;
-    const q = search.trim().toLowerCase();
-    return list.filter((group) => {
-      if (group.name.toLowerCase().includes(q)) return true;
-      if (group.companies.some((c) => c.name.toLowerCase().includes(q))) return true;
-      const groupContacts = contactsByGroup.get(group.key) ?? [];
-      if (groupContacts.some((c) => contactSearchHaystack(c).includes(q))) return true;
-      return group.groupPeople.some(
-        (p) =>
-          (p.name ?? "").toLowerCase().includes(q) ||
-          (p.email ?? "").toLowerCase().includes(q) ||
-          (p.cargo ?? "").toLowerCase().includes(q)
-      );
-    });
-  }, [groups, search, contactsByGroup]);
+    return list.filter((group) => groupMatchesSearch(group, search, contactsByGroup));
+  }, [groupsWithSioeInactive, search, contactsByGroup]);
 
   const clientGroups = useMemo(
     () => filteredGroups.filter((g) => g.key !== SEM_GRUPO_KEY),
     [filteredGroups]
   );
-  const displayGroups = clientGroups;
+
+  const displayGroups = useMemo(() => {
+    if (!isAdmin || filterAtividade === "all") return clientGroups;
+    return clientGroups.filter((group) => {
+      const status = resolveGroupAtividadeForBucket(group);
+      return status === filterAtividade;
+    });
+  }, [clientGroups, filterAtividade, isAdmin, resolveGroupAtividadeForBucket]);
+
+  const tourSampleGroupKey = displayGroups[0]?.key ?? null;
+
+  useEffect(() => {
+    if (!tourActive || !tourStepId || !tourSampleGroupKey) return;
+    if (!MEUS_CLIENTES_TOUR_EXPAND_STEPS.has(tourStepId)) return;
+    setGroupOpen((prev) => ({ ...prev, [tourSampleGroupKey]: true }));
+  }, [tourActive, tourStepId, tourSampleGroupKey]);
+
+  useEffect(() => {
+    setTourState({ hasSampleGroup: Boolean(tourSampleGroupKey) });
+  }, [tourSampleGroupKey, setTourState]);
+
+  const groupsForAtividadeCounts = useMemo(() => {
+    let list = groups.filter((g) => g.key !== SEM_GRUPO_KEY);
+    if (search.trim()) {
+      list = list.filter((g) => groupMatchesSearch(g, search, contactsByGroup));
+    }
+    return list;
+  }, [groups, search, contactsByGroup]);
+
+  const atividadeFilterCounts = useMemo(() => {
+    let ativo = 0;
+    let inativo = 0;
+    for (const group of groupsForAtividadeCounts) {
+      const status = resolveGroupAtividadeForBucket(group);
+      if (status === "ativo") ativo++;
+      else if (status === "inativo") inativo++;
+    }
+    let sioeOnlyInactive = 0;
+    if (isAdmin) {
+      const existingKeys = new Set(groupsForAtividadeCounts.map((g) => grupoClienteKey(g.name)));
+      sioeOnlyInactive = listSioeOnlyInactiveGroups(clienteAtividade, existingKeys).length;
+      inativo += sioeOnlyInactive;
+    }
+    return {
+      all: groupsForAtividadeCounts.length + sioeOnlyInactive,
+      ativo,
+      inativo,
+    };
+  }, [groupsForAtividadeCounts, clienteAtividade, isAdmin, resolveGroupAtividadeForBucket]);
+
+  const groupsForStatusCounts = useMemo(() => {
+    let list = groupsBeforeStatus.filter((g) => g.key !== SEM_GRUPO_KEY);
+    if (isAdmin && filterAtividade !== "all") {
+      list = list.filter((group) => {
+        const status = resolveGroupAtividadeForBucket(group);
+        return status === filterAtividade;
+      });
+    }
+    if (search.trim()) {
+      list = list.filter((g) => groupMatchesSearch(g, search, contactsByGroup));
+    }
+    return list;
+  }, [groupsBeforeStatus, filterAtividade, isAdmin, search, contactsByGroup, resolveGroupAtividadeForBucket]);
+
+  const statusFilterCounts = useMemo(() => {
+    let pending = 0;
+    let complete = 0;
+    for (const group of groupsForStatusCounts) {
+      const groupContacts = contactsByGroup.get(group.key) ?? [];
+      if (groupHasNoContacts(group.groupPeople, groupContacts)) {
+        pending++;
+        continue;
+      }
+      const profiles = [
+        ...group.groupPeople.map(personToClientProfile),
+        ...groupContacts.map(contactToClientProfile),
+      ];
+      const hasPending = profiles.some((p) => listClientMissingFieldLabels(p).length > 0);
+      if (hasPending) pending++;
+      else complete++;
+    }
+    return {
+      all: groupsForStatusCounts.length,
+      pending,
+      complete,
+    };
+  }, [groupsForStatusCounts, contactsByGroup]);
+
+  const areaFilterCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    const baseGroups = buildGroupBuckets(companies, people).filter((g) => g.key !== SEM_GRUPO_KEY);
+    counts.set("__all__", baseGroups.length);
+    counts.set(FILTER_SEM_AREA, 0);
+    for (const area of allAreasList) counts.set(area, 0);
+
+    for (const group of baseGroups) {
+      const areas = resolveClientGroupAreas(
+        group.key,
+        companies,
+        people,
+        personAreas,
+        responsibles
+      );
+      if (areas.length === 0) {
+        counts.set(FILTER_SEM_AREA, (counts.get(FILTER_SEM_AREA) ?? 0) + 1);
+        continue;
+      }
+      const roots = new Set(
+        areas.map(getAreaParent).filter((area) => area && !isSubArea(area))
+      );
+      for (const root of roots) {
+        counts.set(root, (counts.get(root) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [companies, people, allAreasList, personAreas, responsibles]);
+
+  const gestorFilterCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of managerSummary) {
+      const scope = computeMyClientScope(companies, responsibles, row.userId, areaManagers);
+      const groupKeys = new Set<string>();
+      for (const company of companies) {
+        if (scope.companyIds.has(company.id)) groupKeys.add(resolveGroupKey(company));
+      }
+      for (const person of people) {
+        if (scope.personIds.has(person.id)) groupKeys.add(resolveGroupKey(person));
+      }
+      groupKeys.delete(SEM_GRUPO_KEY);
+      counts.set(row.userId, groupKeys.size);
+    }
+    return counts;
+  }, [managerSummary, companies, people, responsibles, areaManagers]);
 
   const displayContactsByGroup = useMemo(() => {
     const map = new Map<string, EmailContact[]>();
@@ -553,7 +737,13 @@ export function MeusClientesClient() {
     return { total, incompleto, completo: total - incompleto };
   }, [people, contacts, groups, companiesById, contactsByGroup]);
 
-  const hasActiveFilters = Boolean(filterArea || filterGestor || filterStatus !== "all");
+  const hasActiveFilters = Boolean(
+    filterArea ||
+      filterGestor ||
+      filterStatus !== "all" ||
+      (isAdmin && filterAtividade !== "all") ||
+      search.trim()
+  );
 
   const expandAllPending = () => {
     const next: Record<string, boolean> = { ...groupOpen };
@@ -569,6 +759,7 @@ export function MeusClientesClient() {
     setFilterArea("");
     setFilterGestor("");
     setFilterStatus("all");
+    setFilterAtividade("all");
     setSearch("");
   };
 
@@ -586,10 +777,11 @@ export function MeusClientesClient() {
         : "no-search";
 
   return (
+    <TooltipProvider delayDuration={200}>
     <div className="space-y-6 pb-24">
       <FixedToast toast={toast} onDismiss={() => setToast(null)} />
 
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3" data-tour="mc-header">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Meus Clientes</h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -602,7 +794,14 @@ export function MeusClientesClient() {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-2" onClick={handleExport} title="Exportar (E)">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={handleExport}
+            title="Exportar (E)"
+            data-tour="mc-export"
+          >
             <Download className="h-4 w-4" />
             Exportar
           </Button>
@@ -657,7 +856,9 @@ export function MeusClientesClient() {
         </div>
       </div>
 
-      {isAdmin && syncMeta && <HealthPanel syncMeta={syncMeta} />}
+      {isAdmin && syncMeta && (
+        <HealthPanel syncMeta={syncMeta} clienteAtividade={clienteAtividade} />
+      )}
 
       {isAdmin && (
         <ManagerSummaryTable
@@ -676,16 +877,18 @@ export function MeusClientesClient() {
         />
       )}
 
-      <ProgressBarCard
-        complete={stats.completo}
-        total={stats.total}
-        onShowPending={stats.incompleto > 0 ? () => setFilterStatus("pending") : undefined}
-      />
+      <div data-tour="mc-progress">
+        <ProgressBarCard
+          complete={stats.completo}
+          total={stats.total}
+          onShowPending={stats.incompleto > 0 ? () => setFilterStatus("pending") : undefined}
+        />
+      </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" data-tour="mc-stats">
         <ClickableStatCard
           label={hasActiveFilters ? "Grupos no filtro" : showAll ? "Total de grupos" : "Meus grupos"}
-          value={summaryTotals.totals.groupsCount}
+          value={hasActiveFilters ? displayGroups.length : summaryTotals.totals.groupsCount}
         />
         <ClickableStatCard
           label="Cadastros completos"
@@ -703,7 +906,10 @@ export function MeusClientesClient() {
         />
       </div>
 
-      <div className="sticky top-0 z-30 -mx-1 space-y-2 rounded-xl border border-border/80 bg-background/95 px-3 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <div
+        className="sticky top-0 z-30 -mx-1 space-y-2 rounded-xl border border-border/80 bg-background/95 px-3 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/80"
+        data-tour="mc-filters"
+      >
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -716,37 +922,152 @@ export function MeusClientesClient() {
             />
           </div>
 
-          <StatusToggle value={filterStatus} onChange={setFilterStatus} />
+          <StatusToggle
+            value={filterStatus}
+            onChange={setFilterStatus}
+            counts={statusFilterCounts}
+          />
 
           <Select value={filterArea || "__all__"} onValueChange={(v) => setFilterArea(v === "__all__" ? "" : v)}>
-            <SelectTrigger size="sm" className="w-44">
-              <SelectValue placeholder="Área" />
+            <SelectTrigger size="sm" className="w-48">
+              {filterArea ? (
+                <span className="flex min-w-0 items-center gap-2">
+                  {filterArea !== FILTER_SEM_AREA && <FilterAreaIcon area={filterArea} size="sm" />}
+                  <span className="truncate">
+                    {filterArea === FILTER_SEM_AREA ? "Sem área" : filterArea}
+                  </span>
+                  <span className="shrink-0 tabular-nums text-muted-foreground">
+                    ({areaFilterCounts.get(filterArea) ?? 0})
+                  </span>
+                </span>
+              ) : (
+                <SelectValue placeholder="Área" />
+              )}
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__all__">Todas as áreas</SelectItem>
-              <SelectItem value={FILTER_SEM_AREA}>Sem área</SelectItem>
+              <SelectItem value="__all__">
+                <span className="flex w-full items-center gap-2">
+                  <span className="flex-1">Todas as áreas</span>
+                  <span className="tabular-nums text-xs text-muted-foreground">
+                    {areaFilterCounts.get("__all__") ?? 0}
+                  </span>
+                </span>
+              </SelectItem>
+              <SelectItem value={FILTER_SEM_AREA}>
+                <span className="flex w-full items-center gap-2">
+                  <span className="flex-1">Sem área</span>
+                  <span className="tabular-nums text-xs text-muted-foreground">
+                    {areaFilterCounts.get(FILTER_SEM_AREA) ?? 0}
+                  </span>
+                </span>
+              </SelectItem>
               {allAreasList.map((area) => (
                 <SelectItem key={area} value={area}>
-                  {area}
+                  <span className="flex w-full items-center gap-2">
+                    <FilterAreaIcon area={area} size="sm" />
+                    <span className="truncate flex-1">{area}</span>
+                    <span className="tabular-nums text-xs text-muted-foreground">
+                      {areaFilterCounts.get(area) ?? 0}
+                    </span>
+                  </span>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
 
           {isAdmin && (
-            <Select value={filterGestor || "__all__"} onValueChange={(v) => setFilterGestor(v === "__all__" ? "" : v)}>
-              <SelectTrigger size="sm" className="w-48">
-                <SelectValue placeholder="Gestor" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">Todos os gestores</SelectItem>
-                {managerSummary.map((m) => (
-                  <SelectItem key={m.userId} value={m.userId}>
-                    {m.userName}
+            <>
+              <Select
+                value={filterGestor || "__all__"}
+                onValueChange={(v) => setFilterGestor(v === "__all__" ? "" : v)}
+              >
+                <SelectTrigger size="sm" className="w-52">
+                  {filterGestor ? (
+                    <span className="flex min-w-0 items-center gap-2">
+                      <FilterUserAvatar
+                        name={gestorName ?? "Gestor"}
+                        avatarUrl={userAvatarById.get(filterGestor)}
+                        size="sm"
+                      />
+                      <span className="truncate">{gestorName ?? filterGestor}</span>
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
+                        ({gestorFilterCounts.get(filterGestor) ?? 0})
+                      </span>
+                    </span>
+                  ) : (
+                    <SelectValue placeholder="Gestor" />
+                  )}
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">
+                    <span className="flex w-full items-center gap-2">
+                      <span className="flex-1">Todos os gestores</span>
+                      <span className="tabular-nums text-xs text-muted-foreground">
+                        {areaFilterCounts.get("__all__") ?? 0}
+                      </span>
+                    </span>
                   </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                  {managerSummary.map((m) => (
+                    <SelectItem key={m.userId} value={m.userId}>
+                      <span className="flex w-full items-center gap-2">
+                        <FilterUserAvatar
+                          name={m.userName}
+                          avatarUrl={userAvatarById.get(m.userId)}
+                          size="sm"
+                        />
+                        <span className="truncate flex-1">{m.userName}</span>
+                        <span className="tabular-nums text-xs text-muted-foreground">
+                          {gestorFilterCounts.get(m.userId) ?? 0}
+                        </span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={filterAtividade}
+                onValueChange={(v) => setFilterAtividade(v as AtividadeFilter)}
+              >
+                <SelectTrigger size="sm" className="w-44">
+                  {filterAtividade !== "all" ? (
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span>{filterAtividade === "ativo" ? "Ativos" : "Inativos"}</span>
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
+                        ({atividadeFilterCounts[filterAtividade] ?? 0})
+                      </span>
+                    </span>
+                  ) : (
+                    <SelectValue placeholder="Status comercial" />
+                  )}
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">
+                    <span className="flex w-full items-center gap-2">
+                      <span className="flex-1">Todos</span>
+                      <span className="tabular-nums text-xs text-muted-foreground">
+                        {atividadeFilterCounts.all}
+                      </span>
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="ativo">
+                    <span className="flex w-full items-center gap-2">
+                      <span className="flex-1">Ativos</span>
+                      <span className="tabular-nums text-xs text-emerald-700">
+                        {atividadeFilterCounts.ativo}
+                      </span>
+                    </span>
+                  </SelectItem>
+                  <SelectItem value="inativo">
+                    <span className="flex w-full items-center gap-2">
+                      <span className="flex-1">Inativos</span>
+                      <span className="tabular-nums text-xs text-muted-foreground">
+                        {atividadeFilterCounts.inativo}
+                      </span>
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </>
           )}
 
           {displayGroups.some((g) => {
@@ -769,10 +1090,13 @@ export function MeusClientesClient() {
           filterArea={filterArea}
           filterGestor={filterGestor}
           filterStatus={filterStatus}
+          filterAtividade={isAdmin ? filterAtividade : "all"}
           gestorName={gestorName}
+          filterResultCount={hasActiveFilters ? displayGroups.length : undefined}
           onClearArea={() => setFilterArea("")}
           onClearGestor={() => setFilterGestor("")}
           onClearStatus={() => setFilterStatus("all")}
+          onClearAtividade={() => setFilterAtividade("all")}
         />
       </div>
 
@@ -786,12 +1110,13 @@ export function MeusClientesClient() {
           />
         ) : (
           <div className={`space-y-3 ${compactMode ? "space-y-2" : ""}`}>
-            {displayGroups.map((group) => (
+            {displayGroups.map((group, index) => (
               <GroupSection
                 key={group.key}
                 group={group}
                 groupContacts={displayContactsByGroup.get(group.key) ?? []}
                 personAreas={personAreas}
+                clienteAtividadeIndex={clienteAtividade}
                 open={groupOpen[group.key] ?? false}
                 onOpenChange={(v) => setGroupOpen((p) => ({ ...p, [group.key]: v }))}
                 isAdmin={isAdmin}
@@ -800,6 +1125,8 @@ export function MeusClientesClient() {
                 onToggleSelectAllInGroup={handleToggleSelectAllInGroup}
                 compact={compactMode}
                 searchQuery={search}
+                tourGroupSample={index === 0}
+                tourContactEdit={index === 0 && tourActive}
                 onEditContact={(contact) => {
                   setEditingContact(contact);
                   setEditingPerson(null);
@@ -813,6 +1140,13 @@ export function MeusClientesClient() {
                 onAddContact={(g) => {
                   setCreatingContactGroup(g);
                   setCreateDialogOpen(true);
+                }}
+                gestorStatus={
+                  group.clientGroupId ? clientGroupStatusById[group.clientGroupId] : null
+                }
+                onEditGroupStatus={(g) => {
+                  setEditingGroupStatus(g);
+                  setGroupStatusDialogOpen(true);
                 }}
               />
             ))}
@@ -838,6 +1172,21 @@ export function MeusClientesClient() {
         onCreated={() => {
           setToast({ type: "success", text: "Contato adicionado." });
           reload({ silent: true });
+        }}
+      />
+
+      <GroupStatusDialog
+        open={groupStatusDialogOpen}
+        onOpenChange={setGroupStatusDialogOpen}
+        group={editingGroupStatus}
+        gestorStatus={
+          editingGroupStatus?.clientGroupId
+            ? clientGroupStatusById[editingGroupStatus.clientGroupId]
+            : null
+        }
+        onSaved={(clientGroupId, status) => {
+          setClientGroupStatusById((prev) => ({ ...prev, [clientGroupId]: status }));
+          setToast({ type: "success", text: "Status do grupo salvo." });
         }}
       />
 
@@ -870,5 +1219,17 @@ export function MeusClientesClient() {
         </div>
       )}
     </div>
+    </TooltipProvider>
+  );
+}
+
+export function MeusClientesClient() {
+  return (
+    <MeusClientesTourProvider>
+      <Suspense fallback={null}>
+        <MeusClientesClientContent />
+        <MeusClientesTour />
+      </Suspense>
+    </MeusClientesTourProvider>
   );
 }

@@ -458,6 +458,91 @@ export function resolveContactGroupKey(
   return "__sem_grupo__";
 }
 
+/** Valor do filtro “Sem área” (UI e export CSV). */
+export const CLIENT_AREA_FILTER_SEM = "__sem_area__";
+
+function groupAreasMatchRootFilter(groupAreas: string[], filterArea: string): boolean {
+  const root = getAreaParent(filterArea);
+  const expanded = expandRootArea(root);
+  return groupAreas.some((area) => getAreaParent(area) === root || expanded.includes(area));
+}
+
+/** Áreas atribuídas a um grupo (empresas, pessoas e responsáveis por grupo). */
+export function resolveClientGroupAreas(
+  groupKey: string,
+  companies: EmailCompany[],
+  people: EmailPerson[],
+  personAreas: Map<string, string[]>,
+  responsibles: EmailGroupResponsible[] = []
+): string[] {
+  const set = new Set<string>();
+  for (const company of companies) {
+    if (resolveClientGroupKey(company) !== groupKey) continue;
+    for (const area of company.legalAreas) set.add(area);
+  }
+  for (const person of people) {
+    if (resolveClientGroupKey(person) !== groupKey) continue;
+    for (const area of personAreas.get(person.id) ?? []) set.add(area);
+  }
+  for (const responsible of responsibles) {
+    if (!responsible.area || responsible.clientGroupId !== groupKey) continue;
+    set.add(responsible.area);
+  }
+  return Array.from(set);
+}
+
+/** Grupos sem nenhuma área atribuída (considerando todas as entidades do grupo). */
+export function buildClientGroupKeysWithoutArea(
+  companies: EmailCompany[],
+  people: EmailPerson[],
+  personAreas: Map<string, string[]>,
+  responsibles: EmailGroupResponsible[] = []
+): Set<string> {
+  const groupKeys = new Set<string>();
+  for (const company of companies) groupKeys.add(resolveClientGroupKey(company));
+  for (const person of people) groupKeys.add(resolveClientGroupKey(person));
+
+  const withoutArea = new Set<string>();
+  for (const groupKey of groupKeys) {
+    if (
+      resolveClientGroupAreas(groupKey, companies, people, personAreas, responsibles).length === 0
+    ) {
+      withoutArea.add(groupKey);
+    }
+  }
+  return withoutArea;
+}
+
+/**
+ * Grupos que entram no filtro de área.
+ * Regra: se qualquer empresa/pessoa do grupo tem a área, o grupo inteiro conta
+ * (ex.: 1 de 30 empresas com Trabalhista → Grupo Y é Trabalhista).
+ */
+export function buildClientGroupKeysForAreaFilter(
+  filterArea: string,
+  companies: EmailCompany[],
+  people: EmailPerson[],
+  personAreas: Map<string, string[]>,
+  responsibles: EmailGroupResponsible[] = []
+): Set<string> {
+  if (filterArea === CLIENT_AREA_FILTER_SEM) {
+    return buildClientGroupKeysWithoutArea(companies, people, personAreas, responsibles);
+  }
+
+  const groupKeys = new Set<string>();
+  for (const company of companies) groupKeys.add(resolveClientGroupKey(company));
+  for (const person of people) groupKeys.add(resolveClientGroupKey(person));
+
+  const matching = new Set<string>();
+  for (const groupKey of groupKeys) {
+    const areas = resolveClientGroupAreas(groupKey, companies, people, personAreas, responsibles);
+    if (groupAreasMatchRootFilter(areas, filterArea)) {
+      matching.add(groupKey);
+    }
+  }
+  return matching;
+}
+
 function contactDedupKeys(contacts: EmailContact[]): {
   emails: Set<string>;
   nameKeys: Set<string>;
