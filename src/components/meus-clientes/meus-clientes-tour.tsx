@@ -265,6 +265,11 @@ export function MeusClientesTour() {
   useEffect(() => {
     if (!profile || !dataLoaded) return;
     if (dismissedRef.current) return;
+    // Defesa extra: nunca iniciar enquanto a troca de senha é obrigatória.
+    if (profile.must_change_password) {
+      setActive(false);
+      return;
+    }
     const fromQuery = searchParams.get("tutorial") === "1";
     const fromSession =
       typeof window !== "undefined" &&

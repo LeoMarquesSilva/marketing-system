@@ -4,6 +4,8 @@ export interface MeusClientesTourProfile {
   role?: string | null;
   permissions?: string[] | null;
   meus_clientes_tutorial_completed_at?: string | null;
+  /** Quando true, o tour não pode iniciar — primeiro acesso exige trocar a senha. */
+  must_change_password?: boolean | null;
 }
 
 export function isMeusClientesUserForTour(
@@ -18,6 +20,8 @@ export function shouldShowMeusClientesTutorial(
   options?: { forced?: boolean }
 ): boolean {
   if (!profile || !isMeusClientesUserForTour(profile)) return false;
+  // Nunca sobrepor a tela de troca de senha obrigatória.
+  if (profile.must_change_password) return false;
   if (options?.forced) return true;
   return !profile.meus_clientes_tutorial_completed_at;
 }

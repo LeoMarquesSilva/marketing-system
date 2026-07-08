@@ -44,4 +44,24 @@ describe("meus-clientes-tour", () => {
       )
     ).toBe(true);
   });
+
+  it("nunca mostra tutorial enquanto deve trocar a senha", () => {
+    expect(
+      shouldShowMeusClientesTutorial({
+        permissions: ["/meus-clientes"],
+        meus_clientes_tutorial_completed_at: null,
+        must_change_password: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldShowMeusClientesTutorial(
+        {
+          permissions: ["/meus-clientes"],
+          meus_clientes_tutorial_completed_at: null,
+          must_change_password: true,
+        },
+        { forced: true }
+      )
+    ).toBe(false);
+  });
 });

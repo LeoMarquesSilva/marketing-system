@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
@@ -241,8 +241,18 @@ export function ContentCollaboratorTour() {
     });
   }, [active, stepIndex, step?.id, setTourState]);
 
+  // Evita reabrir o tour após finish enquanto ?tutorial=1 ainda está na URL
+  // (mesmo padrão de MeusClientesTour).
+  const dismissedRef = useRef(false);
+
   useEffect(() => {
     if (!profile) return;
+    if (dismissedRef.current) return;
+    // Defesa extra: nunca iniciar na tela de troca de senha.
+    if (pathname === "/alterar-senha" || profile.must_change_password) {
+      setActive(false);
+      return;
+    }
     const fromQuery = searchParams.get("tutorial") === "1";
     const fromSession =
       typeof window !== "undefined" &&
@@ -251,7 +261,7 @@ export function ContentCollaboratorTour() {
     if (!shouldShowContentTutorial(profile, { forced })) return;
     if (forced) sessionStorage.setItem(CONTENT_TUTORIAL_SESSION_KEY, "1");
     setActive(true);
-  }, [profile, searchParams]);
+  }, [profile, searchParams, pathname]);
 
   useEffect(() => {
     if (!active || !step) return;
@@ -265,8 +275,12 @@ export function ContentCollaboratorTour() {
   }, [active, step, pathname, router]);
 
   const finish = useCallback(async () => {
+    dismissedRef.current = true;
     sessionStorage.removeItem(CONTENT_TUTORIAL_SESSION_KEY);
     setActive(false);
+    if (searchParams.get("tutorial") === "1") {
+      router.replace("/conteudo/inicio");
+    }
     try {
       await fetch("/api/account/content-tutorial-completed", {
         method: "POST",
@@ -275,9 +289,6 @@ export function ContentCollaboratorTour() {
       await refreshProfile();
     } catch {
       // Tour já foi exibido; falha ao persistir não bloqueia o uso.
-    }
-    if (searchParams.get("tutorial") === "1") {
-      router.replace("/conteudo/inicio");
     }
   }, [refreshProfile, router, searchParams]);
 

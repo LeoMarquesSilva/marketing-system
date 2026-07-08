@@ -6,6 +6,8 @@ export interface ContentTourProfile {
   role?: string | null;
   permissions?: string[] | null;
   content_tutorial_completed_at?: string | null;
+  /** Quando true, o tour não pode iniciar — primeiro acesso exige trocar a senha. */
+  must_change_password?: boolean | null;
 }
 
 export function isContentCollaboratorForTour(
@@ -22,6 +24,8 @@ export function shouldShowContentTutorial(
   options?: { forced?: boolean }
 ): boolean {
   if (!profile || !isContentCollaboratorForTour(profile)) return false;
+  // Nunca sobrepor a tela de troca de senha obrigatória.
+  if (profile.must_change_password) return false;
   if (options?.forced) return true;
   return !profile.content_tutorial_completed_at;
 }

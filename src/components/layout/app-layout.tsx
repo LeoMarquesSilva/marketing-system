@@ -9,18 +9,24 @@ import { ContentCollaboratorTour } from "@/components/conteudo/content-collabora
 import { TimerProvider } from "@/contexts/timer-context";
 import { FloatingTimer } from "@/components/timer/floating-timer";
 
-const PUBLIC_PATHS = ["/login"];
+/** Telas sem chrome (sidebar/header) nem tour. */
+const BARE_LAYOUT_PATHS = ["/login", "/alterar-senha"];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isLogin = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
+  const isBareLayout = BARE_LAYOUT_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/")
+  );
 
   return (
     <AuthGuard>
-      <Suspense fallback={null}>
-        <ContentCollaboratorTour />
-      </Suspense>
-      {isLogin ? (
+      {/* Tour só no app autenticado com senha já definida — nunca em /alterar-senha. */}
+      {!isBareLayout && (
+        <Suspense fallback={null}>
+          <ContentCollaboratorTour />
+        </Suspense>
+      )}
+      {isBareLayout ? (
         children
       ) : (
         <TimerProvider>
