@@ -61,6 +61,24 @@ function monthBounds(reference = new Date()): { mesReferencia: string; start: st
   };
 }
 
+/**
+ * Janela de vencimento usada para o sinal de "previsto": mês atual + os 2
+ * meses anteriores. Um único mês (sobretudo o corrente) fica incompleto
+ * porque o SIOE lança títulos futuros aos poucos — a janela de 3 meses
+ * evita marcar cliente como inativo só por atraso de lançamento.
+ */
+function activityWindowBounds(reference = new Date(), monthsBack = 2): { start: string; end: string } {
+  const ano = reference.getFullYear();
+  const mes = reference.getMonth() + 1;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const startDate = new Date(ano, mes - 1 - monthsBack, 1);
+  const lastDay = new Date(ano, mes, 0).getDate();
+  return {
+    start: `${startDate.getFullYear()}-${pad(startDate.getMonth() + 1)}-01`,
+    end: `${ano}-${pad(mes)}-${pad(lastDay)}`,
+  };
+}
+
 function markGrupoAtivo(
   byGrupoKey: Map<string, SioeClienteAtividade>,
   grupoCliente: string | null,
@@ -163,7 +181,7 @@ async function fetchAtivosPorPrevisto(
   byPessoaId: Map<string, SioeClienteAtividade>,
   grupoNames: Map<string, string>
 ): Promise<void> {
-  const { start, end } = monthBounds(reference);
+  const { start, end } = activityWindowBounds(reference);
   const sioe = getSioeClient();
   const seenItems = new Set<number>();
   let offset = 0;
