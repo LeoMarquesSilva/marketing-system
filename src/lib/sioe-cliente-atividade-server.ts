@@ -200,7 +200,9 @@ async function fetchAtivosPorPrevisto(
       break;
     }
 
-    const batch = (data ?? []) as RawPrevistoRow[];
+    // Inferência do client Supabase trata relações aninhadas de forma
+    // inconsistente (objeto vs array) — normalizamos depois em pickParcelaLink.
+    const batch = (data ?? []) as unknown as RawPrevistoRow[];
     for (const row of batch) {
       if (seenItems.has(row.ci_item)) continue;
       if (!isReceberTipo(row.tipo)) continue;
