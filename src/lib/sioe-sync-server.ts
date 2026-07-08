@@ -13,7 +13,12 @@ import {
   normalizePersonName,
   resolveCanonicalCompanyName,
 } from "@/lib/email-marketing-normalize";
-import { normalizeLegalArea, normalizeLegalAreas } from "@/lib/legal-areas";
+import {
+  departmentToSioeArea,
+  normalizeLegalArea,
+  normalizeLegalAreas,
+  SUBAREA_ONLY,
+} from "@/lib/legal-areas";
 import { isInternalClientGroupName } from "@/lib/meus-clientes";
 
 const DEFAULT_SIOE_URL = "https://pzfxmlidwdmsqfwrxdbd.supabase.co";
@@ -555,16 +560,18 @@ async function syncResponsibles(
 
   const [{ data: overrideRows }, { data: userRows }] = await Promise.all([
     admin.from("email_advogado_user_overrides").select("advogado_name_normalized, user_id"),
-    admin.from("users").select("id, name"),
+    admin.from("users").select("id, name, department"),
   ]);
 
   const overrideByName = new Map(
     (overrideRows ?? []).map((r) => [r.advogado_name_normalized as string, r.user_id as string])
   );
   const userIdByName = new Map<string, string>();
+  const departmentByUserId = new Map<string, string | null>();
   for (const row of userRows ?? []) {
     const key = nameKey(row.name as string);
     if (key && !userIdByName.has(key)) userIdByName.set(key, row.id as string);
+    departmentByUserId.set(row.id as string, (row.department as string | null) ?? null);
   }
 
   const touchedGroupIds = new Set<string>();
@@ -588,11 +595,25 @@ async function syncResponsibles(
 
     if (link.clientGroupId) touchedGroupIds.add(link.clientGroupId);
 
+    // Área do cliente: prioriza a área de prática do advogado casado (nosso
+    // cadastro, department → área SIOE) — vincula pelo usuário, não pelo
+    // processo. Exceção: quando o próprio processo já traz uma subárea
+    // específica (ex.: "Recuperação de Crédito", subárea de Cível), preserva
+    // essa etiqueta — não some só porque o advogado é do Cível em geral.
+    // Sem advogado casado (ou department sem área mapeada), cai no valor
+    // bruto do processo do SIOE como antes.
+    const rawArea = normalizeLegalArea(agg.area);
+    const departmentArea = responsibleUserId
+      ? departmentToSioeArea(departmentByUserId.get(responsibleUserId))
+      : null;
+    const resolvedArea =
+      rawArea && SUBAREA_ONLY.has(rawArea) ? rawArea : normalizeLegalArea(departmentArea ?? agg.area);
+
     rows.push({
       client_group_id: link.clientGroupId,
       company_id: link.companyId,
       person_id: link.personId,
-      area: normalizeLegalArea(agg.area),
+      area: resolvedArea,
       advogado_responsavel_name: agg.advogadoName,
       advogado_responsavel_name_normalized: agg.advogadoNormalized,
       responsible_user_id: responsibleUserId,
@@ -601,12 +622,9 @@ async function syncResponsibles(
     });
 
     if (link.clientGroupId) {
-      if (agg.area) {
-        const normalizedArea = normalizeLegalArea(agg.area);
-        if (normalizedArea) {
-          if (!areasByGroup.has(link.clientGroupId)) areasByGroup.set(link.clientGroupId, new Set());
-          areasByGroup.get(link.clientGroupId)!.add(normalizedArea);
-        }
+      if (resolvedArea) {
+        if (!areasByGroup.has(link.clientGroupId)) areasByGroup.set(link.clientGroupId, new Set());
+        areasByGroup.get(link.clientGroupId)!.add(resolvedArea);
       }
       if (responsibleUserId) {
         if (!usersByGroup.has(link.clientGroupId)) usersByGroup.set(link.clientGroupId, new Set());
@@ -614,12 +632,9 @@ async function syncResponsibles(
       }
     }
     if (link.companyId) {
-      if (agg.area) {
-        const normalizedArea = normalizeLegalArea(agg.area);
-        if (normalizedArea) {
-          if (!areasByCompany.has(link.companyId)) areasByCompany.set(link.companyId, new Set());
-          areasByCompany.get(link.companyId)!.add(normalizedArea);
-        }
+      if (resolvedArea) {
+        if (!areasByCompany.has(link.companyId)) areasByCompany.set(link.companyId, new Set());
+        areasByCompany.get(link.companyId)!.add(resolvedArea);
       }
       if (responsibleUserId) {
         if (!usersByCompany.has(link.companyId)) usersByCompany.set(link.companyId, new Set());
