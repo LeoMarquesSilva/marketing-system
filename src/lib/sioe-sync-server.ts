@@ -445,6 +445,51 @@ async function fetchOpenProcessosForPessoas(
   return result;
 }
 
+/**
+ * Último recurso: processos encerrados com advogado preenchido, só para
+ * pessoas sem NENHUM processo aberto — evita deixar o cliente totalmente
+ * sem área/gestor quando não há nada ativo no SIOE. Nunca sobrepõe um
+ * vínculo já encontrado via processo aberto (só roda para quem não tem).
+ */
+async function fetchClosedProcessosFallback(
+  sioe: SupabaseClient,
+  pessoaIdsWithoutOpen: string[]
+): Promise<SioeProcesso[]> {
+  if (pessoaIdsWithoutOpen.length === 0) return [];
+
+  const pessoaIdSet = new Set(pessoaIdsWithoutOpen);
+  const result: SioeProcesso[] = [];
+
+  for (let i = 0; i < pessoaIdsWithoutOpen.length; i += PROCESSOS_ID_BATCH) {
+    const idsBatch = pessoaIdsWithoutOpen.slice(i, i + PROCESSOS_ID_BATCH);
+    let from = 0;
+    while (true) {
+      const batch = await withRetry(`processos_completo fallback encerrados ${i}`, async () => {
+        const { data, error } = await sioe
+          .from("processos_completo")
+          .select("pessoa_id, area, advogado_responsavel, processo_encerrado")
+          .in("pessoa_id", idsBatch)
+          .range(from, from + PAGE_SIZE - 1);
+        if (error) {
+          throw new Error(`Erro ao ler processos_completo (fallback encerrados) no SIOE: ${error.message}`);
+        }
+        return (data ?? []) as SioeProcesso[];
+      });
+
+      for (const row of batch) {
+        if (!pessoaIdSet.has(row.pessoa_id)) continue;
+        if (isOpenProcesso(row.processo_encerrado)) continue; // já coberto pelos processos abertos
+        if (!row.advogado_responsavel) continue; // sem advogado não ajuda a resolver área/gestor
+        result.push(row);
+      }
+      if (batch.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+  }
+
+  return result;
+}
+
 interface ResponsibleAggregate {
   pessoaId: string;
   area: string | null;
@@ -555,7 +600,14 @@ async function syncResponsibles(
   if (pessoaIds.length === 0) return { responsiblesUpserted: 0, unmatchedAdvogados: [] };
 
   const processos = await fetchOpenProcessosForPessoas(sioe, pessoaIds);
-  const aggregates = aggregateResponsibles(processos);
+
+  // Último recurso: quem não tem NENHUM processo aberto pode ter um processo
+  // encerrado com advogado preenchido — melhor que ficar sem área/gestor algum.
+  const pessoasComAberto = new Set(processos.map((p) => p.pessoa_id));
+  const pessoasSemAberto = pessoaIds.filter((id) => !pessoasComAberto.has(id));
+  const fallbackEncerrados = await fetchClosedProcessosFallback(sioe, pessoasSemAberto);
+
+  const aggregates = aggregateResponsibles([...processos, ...fallbackEncerrados]);
   if (aggregates.length === 0) return { responsiblesUpserted: 0, unmatchedAdvogados: [] };
 
   const [{ data: overrideRows }, { data: userRows }] = await Promise.all([
