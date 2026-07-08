@@ -191,7 +191,7 @@ describe("buildClientGroupKeysWithoutArea", () => {
         id: "c1",
         clientGroupId: "g2",
         clientGroupName: "Grupo Limpo",
-        legalAreas: [],
+        legalAreas: [] as string[],
       },
     ] as EmailCompany[];
     const people = [

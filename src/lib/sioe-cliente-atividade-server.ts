@@ -15,22 +15,27 @@ import {
 
 const PAGE_SIZE = 1000;
 
+interface RawPessoaRow {
+  id: string;
+  grupo_cliente: string | null;
+  categoria: string | null;
+}
+
+interface RawParcelaRow {
+  pessoa_id: string | null;
+  // Sem schema gerado do Supabase, a inferência de tipo para relações
+  // aninhadas pode vir como objeto único ou array conforme o build —
+  // aceitamos os dois formatos e normalizamos em pickParcelaLink().
+  pessoas: RawPessoaRow | RawPessoaRow[] | null;
+}
+
 interface RawPrevistoRow {
   ci_item: number;
   plano_contas: string | null;
   data_vencimento: string | null;
   valor_item: number | string | null;
   tipo: string | null;
-  financeiro_parcelas:
-    | {
-        pessoa_id: string | null;
-        pessoas: { id: string; grupo_cliente: string | null; categoria: string | null } | null;
-      }
-    | {
-        pessoa_id: string | null;
-        pessoas: { id: string; grupo_cliente: string | null; categoria: string | null } | null;
-      }[]
-    | null;
+  financeiro_parcelas: RawParcelaRow | RawParcelaRow[] | null;
 }
 
 interface GrupoStats {
@@ -76,7 +81,7 @@ function pickParcelaLink(link: RawPrevistoRow["financeiro_parcelas"]): {
 } {
   const rows = Array.isArray(link) ? link : link ? [link] : [];
   for (const row of rows) {
-    const pessoa = row.pessoas;
+    const pessoa = Array.isArray(row.pessoas) ? (row.pessoas[0] ?? null) : row.pessoas;
     if (pessoa && isSioeCategoriaInativa(pessoa.categoria)) {
       return { pessoaId: row.pessoa_id, grupoCliente: pessoa.grupo_cliente, inativa: true };
     }
