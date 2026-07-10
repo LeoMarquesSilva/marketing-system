@@ -32,6 +32,11 @@ import {
   emptySioeClienteAtividadeIndex,
   grupoClienteKey,
   listSioeOnlyInactiveGroups,
+  resolveClienteCategoriaAtividade,
+  resolveClienteFaturamentoIndicios,
+  resolveClientePrevistoDate,
+  type SioeClienteFaturamentoIndicios,
+  type SioeClienteAtividade,
   type SioeClienteAtividadeIndex,
 } from "@/lib/sioe-cliente-atividade";
 import {
@@ -76,6 +81,7 @@ import {
   type SelectKey,
   type StatusFilter,
   type AtividadeFilter,
+  type FaturamentoPrevistoFilter,
   ClickableStatCard,
   DeleteConfirmDialog,
   EmptyState,
@@ -196,6 +202,10 @@ function MeusClientesClientContent() {
   const [filterGestor, setFilterGestor] = useState("");
   const [filterStatus, setFilterStatus] = useState<StatusFilter>("all");
   const [filterAtividade, setFilterAtividade] = useState<AtividadeFilter>("all");
+  const [filterFaturamentoPrevisto, setFilterFaturamentoPrevisto] =
+    useState<FaturamentoPrevistoFilter>("all");
+  const [atividadeMenuOpen, setAtividadeMenuOpen] = useState(false);
+  const [faturamentoMenuOpen, setFaturamentoMenuOpen] = useState(false);
   const [compactMode, setCompactMode] = useState(false);
   const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>({});
   const [editingPerson, setEditingPerson] = useState<EmailPerson | null>(null);
@@ -208,6 +218,13 @@ function MeusClientesClientContent() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [groupStatusDialogOpen, setGroupStatusDialogOpen] = useState(false);
   const [editingGroupStatus, setEditingGroupStatus] = useState<ClientGroupBucket | null>(null);
+  const [editingGroupAtividadeIndicio, setEditingGroupAtividadeIndicio] =
+    useState<SioeClienteAtividade | null>(null);
+  const [editingGroupCategoriaIndicio, setEditingGroupCategoriaIndicio] =
+    useState<SioeClienteAtividade | null>(null);
+  const [editingGroupFaturamentoIndicios, setEditingGroupFaturamentoIndicios] =
+    useState<SioeClienteFaturamentoIndicios | null>(null);
+  const [editingGroupPrevistoDate, setEditingGroupPrevistoDate] = useState<string | null>(null);
 
   const resolveGroupAtividadeForBucket = useCallback(
     (group: ClientGroupBucket) =>
@@ -217,6 +234,48 @@ function MeusClientesClientContent() {
         clienteAtividade
       ),
     [clientGroupStatusById, clienteAtividade]
+  );
+
+  const resolveClienteStatusForFilter = useCallback(
+    (group: ClientGroupBucket) => {
+      const gestorStatus = group.clientGroupId ? clientGroupStatusById[group.clientGroupId] : null;
+      if (gestorStatus?.gestorAtividade) return gestorStatus.gestorAtividade;
+      return resolveClienteCategoriaAtividade(clienteAtividade, { grupoName: group.name });
+    },
+    [clientGroupStatusById, clienteAtividade]
+  );
+
+  const resolveSioeAtividadeForBucket = useCallback(
+    (group: ClientGroupBucket) =>
+      resolveGroupAtividade(
+        { name: group.name, clientGroupId: group.clientGroupId },
+        null,
+        clienteAtividade
+      ),
+    [clienteAtividade]
+  );
+
+  const resolveSioePrevistoDateForBucket = useCallback(
+    (group: ClientGroupBucket) =>
+      resolveClientePrevistoDate(clienteAtividade, { grupoName: group.name }),
+    [clienteAtividade]
+  );
+
+  const resolveSioeFaturamentoIndiciosForBucket = useCallback(
+    (group: ClientGroupBucket) =>
+      resolveClienteFaturamentoIndicios(clienteAtividade, { grupoName: group.name }),
+    [clienteAtividade]
+  );
+
+  const groupHasFaturamentoPrevisto = useCallback(
+    (group: ClientGroupBucket) => Boolean(resolveSioePrevistoDateForBucket(group)),
+    [resolveSioePrevistoDateForBucket]
+  );
+
+  const resolveSioeCategoriaForBucket = useCallback(
+    (group: ClientGroupBucket) =>
+      resolveClienteCategoriaAtividade(clienteAtividade, { grupoName: group.name }),
+    [clienteAtividade]
   );
 
   const reload = useCallback(async (options?: { silent?: boolean }) => {
@@ -270,7 +329,15 @@ function MeusClientesClientContent() {
 
   useEffect(() => {
     setSelectedKeys(new Set());
-  }, [viewAll, filterGestor, filterArea, filterStatus, filterAtividade, search]);
+  }, [
+    viewAll,
+    filterGestor,
+    filterArea,
+    filterStatus,
+    filterAtividade,
+    filterFaturamentoPrevisto,
+    search,
+  ]);
 
   useEffect(() => {
     if (!toast) return;
@@ -290,6 +357,8 @@ function MeusClientesClientContent() {
         setSelectedKeys(new Set());
         setSearch("");
         setSyncMenuOpen(false);
+        setAtividadeMenuOpen(false);
+        setFaturamentoMenuOpen(false);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -411,6 +480,15 @@ function MeusClientesClientContent() {
     () => new Map(systemUsers.map((u) => [u.id, u.avatar_url])),
     [systemUsers]
   );
+  const managerFilterOptions = useMemo(() => {
+    const userIds = Array.from(new Set(areaManagers.map((m) => m.userId)));
+    return userIds
+      .map((userId) => ({
+        userId,
+        userName: userNameById.get(userId) ?? "Usuário removido",
+      }))
+      .sort((a, b) => a.userName.localeCompare(b.userName, "pt-BR"));
+  }, [areaManagers, userNameById]);
 
   const showAll = isAdmin && viewAll;
   const companiesById = useMemo(() => new Map(companies.map((c) => [c.id, c])), [companies]);
@@ -449,10 +527,13 @@ function MeusClientesClientContent() {
     for (const areas of personAreas.values()) {
       for (const a of areas) set.add(getAreaParent(a));
     }
+    for (const manager of areaManagers) {
+      set.add(getAreaParent(manager.area));
+    }
     return Array.from(set)
       .filter((a) => !isSubArea(a))
       .sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [companies, personAreas]);
+  }, [companies, personAreas, areaManagers]);
 
   const managerSummary = useMemo(
     () => buildManagerSummary(companies, contacts, people, responsibles, areaManagers, userNameById),
@@ -548,7 +629,7 @@ function MeusClientesClientContent() {
   }, [groups, isAdmin, clienteAtividade, filterAtividade]);
 
   const filteredGroups = useMemo(() => {
-    let list = groupsWithSioeInactive;
+    const list = groupsWithSioeInactive;
     if (!search.trim()) return list;
     return list.filter((group) => groupMatchesSearch(group, search, contactsByGroup));
   }, [groupsWithSioeInactive, search, contactsByGroup]);
@@ -559,12 +640,28 @@ function MeusClientesClientContent() {
   );
 
   const displayGroups = useMemo(() => {
-    if (!isAdmin || filterAtividade === "all") return clientGroups;
-    return clientGroups.filter((group) => {
-      const status = resolveGroupAtividadeForBucket(group);
-      return status === filterAtividade;
-    });
-  }, [clientGroups, filterAtividade, isAdmin, resolveGroupAtividadeForBucket]);
+    let list = clientGroups;
+    if (isAdmin && filterAtividade !== "all") {
+      list = list.filter((group) => {
+        const status = resolveClienteStatusForFilter(group);
+        return status === filterAtividade;
+      });
+    }
+    if (isAdmin && filterFaturamentoPrevisto !== "all") {
+      list = list.filter((group) => {
+        const hasPrevisto = groupHasFaturamentoPrevisto(group);
+        return filterFaturamentoPrevisto === "com" ? hasPrevisto : !hasPrevisto;
+      });
+    }
+    return list;
+  }, [
+    clientGroups,
+    filterAtividade,
+    filterFaturamentoPrevisto,
+    groupHasFaturamentoPrevisto,
+    isAdmin,
+    resolveClienteStatusForFilter,
+  ]);
 
   const tourSampleGroupKey = displayGroups[0]?.key ?? null;
 
@@ -580,17 +677,30 @@ function MeusClientesClientContent() {
 
   const groupsForAtividadeCounts = useMemo(() => {
     let list = groups.filter((g) => g.key !== SEM_GRUPO_KEY);
+    if (isAdmin && filterFaturamentoPrevisto !== "all") {
+      list = list.filter((group) => {
+        const hasPrevisto = groupHasFaturamentoPrevisto(group);
+        return filterFaturamentoPrevisto === "com" ? hasPrevisto : !hasPrevisto;
+      });
+    }
     if (search.trim()) {
       list = list.filter((g) => groupMatchesSearch(g, search, contactsByGroup));
     }
     return list;
-  }, [groups, search, contactsByGroup]);
+  }, [
+    groups,
+    filterFaturamentoPrevisto,
+    groupHasFaturamentoPrevisto,
+    isAdmin,
+    search,
+    contactsByGroup,
+  ]);
 
   const atividadeFilterCounts = useMemo(() => {
     let ativo = 0;
     let inativo = 0;
     for (const group of groupsForAtividadeCounts) {
-      const status = resolveGroupAtividadeForBucket(group);
+      const status = resolveClienteStatusForFilter(group);
       if (status === "ativo") ativo++;
       else if (status === "inativo") inativo++;
     }
@@ -605,21 +715,97 @@ function MeusClientesClientContent() {
       ativo,
       inativo,
     };
-  }, [groupsForAtividadeCounts, clienteAtividade, isAdmin, resolveGroupAtividadeForBucket]);
+  }, [groupsForAtividadeCounts, clienteAtividade, isAdmin, resolveClienteStatusForFilter]);
+
+  const atividadeFilterOptions = useMemo(
+    () =>
+      [
+        { value: "all" as const, label: "Todos", count: atividadeFilterCounts.all },
+        { value: "ativo" as const, label: "Status ativo", count: atividadeFilterCounts.ativo },
+        { value: "inativo" as const, label: "Status inativo", count: atividadeFilterCounts.inativo },
+      ] satisfies Array<{ value: AtividadeFilter; label: string; count: number }>,
+    [atividadeFilterCounts]
+  );
+
+  const selectedAtividadeOption =
+    atividadeFilterOptions.find((option) => option.value === filterAtividade) ??
+    atividadeFilterOptions[0];
+
+  const groupsForFaturamentoCounts = useMemo(() => {
+    let list = clientGroups;
+    if (isAdmin && filterAtividade !== "all") {
+      list = list.filter((group) => {
+        const status = resolveClienteStatusForFilter(group);
+        return status === filterAtividade;
+      });
+    }
+    return list;
+  }, [clientGroups, filterAtividade, isAdmin, resolveClienteStatusForFilter]);
+
+  const faturamentoFilterCounts = useMemo(() => {
+    let com = 0;
+    let sem = 0;
+    for (const group of groupsForFaturamentoCounts) {
+      if (groupHasFaturamentoPrevisto(group)) com++;
+      else sem++;
+    }
+    return {
+      all: groupsForFaturamentoCounts.length,
+      com,
+      sem,
+    };
+  }, [groupsForFaturamentoCounts, groupHasFaturamentoPrevisto]);
+
+  const faturamentoFilterOptions = useMemo(
+    () =>
+      [
+        { value: "all" as const, label: "Todos", count: faturamentoFilterCounts.all },
+        {
+          value: "com" as const,
+          label: "Com indício",
+          count: faturamentoFilterCounts.com,
+        },
+        {
+          value: "sem" as const,
+          label: "Sem indício",
+          count: faturamentoFilterCounts.sem,
+        },
+      ] satisfies Array<{ value: FaturamentoPrevistoFilter; label: string; count: number }>,
+    [faturamentoFilterCounts]
+  );
+
+  const selectedFaturamentoOption =
+    faturamentoFilterOptions.find((option) => option.value === filterFaturamentoPrevisto) ??
+    faturamentoFilterOptions[0];
 
   const groupsForStatusCounts = useMemo(() => {
     let list = groupsBeforeStatus.filter((g) => g.key !== SEM_GRUPO_KEY);
     if (isAdmin && filterAtividade !== "all") {
       list = list.filter((group) => {
-        const status = resolveGroupAtividadeForBucket(group);
+        const status = resolveClienteStatusForFilter(group);
         return status === filterAtividade;
+      });
+    }
+    if (isAdmin && filterFaturamentoPrevisto !== "all") {
+      list = list.filter((group) => {
+        const hasPrevisto = groupHasFaturamentoPrevisto(group);
+        return filterFaturamentoPrevisto === "com" ? hasPrevisto : !hasPrevisto;
       });
     }
     if (search.trim()) {
       list = list.filter((g) => groupMatchesSearch(g, search, contactsByGroup));
     }
     return list;
-  }, [groupsBeforeStatus, filterAtividade, isAdmin, search, contactsByGroup, resolveGroupAtividadeForBucket]);
+  }, [
+    groupsBeforeStatus,
+    filterAtividade,
+    filterFaturamentoPrevisto,
+    groupHasFaturamentoPrevisto,
+    isAdmin,
+    search,
+    contactsByGroup,
+    resolveClienteStatusForFilter,
+  ]);
 
   const statusFilterCounts = useMemo(() => {
     let pending = 0;
@@ -676,7 +862,7 @@ function MeusClientesClientContent() {
 
   const gestorFilterCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const row of managerSummary) {
+    for (const row of managerFilterOptions) {
       const scope = computeMyClientScope(companies, responsibles, row.userId, areaManagers);
       const groupKeys = new Set<string>();
       for (const company of companies) {
@@ -689,7 +875,7 @@ function MeusClientesClientContent() {
       counts.set(row.userId, groupKeys.size);
     }
     return counts;
-  }, [managerSummary, companies, people, responsibles, areaManagers]);
+  }, [managerFilterOptions, companies, people, responsibles, areaManagers]);
 
   const displayContactsByGroup = useMemo(() => {
     const map = new Map<string, EmailContact[]>();
@@ -742,6 +928,7 @@ function MeusClientesClientContent() {
       filterGestor ||
       filterStatus !== "all" ||
       (isAdmin && filterAtividade !== "all") ||
+      (isAdmin && filterFaturamentoPrevisto !== "all") ||
       search.trim()
   );
 
@@ -760,6 +947,7 @@ function MeusClientesClientContent() {
     setFilterGestor("");
     setFilterStatus("all");
     setFilterAtividade("all");
+    setFilterFaturamentoPrevisto("all");
     setSearch("");
   };
 
@@ -1007,7 +1195,7 @@ function MeusClientesClientContent() {
                       </span>
                     </span>
                   </SelectItem>
-                  {managerSummary.map((m) => (
+                  {managerFilterOptions.map((m) => (
                     <SelectItem key={m.userId} value={m.userId}>
                       <span className="flex w-full items-center gap-2">
                         <FilterUserAvatar
@@ -1024,49 +1212,148 @@ function MeusClientesClientContent() {
                   ))}
                 </SelectContent>
               </Select>
-              <Select
-                value={filterAtividade}
-                onValueChange={(v) => setFilterAtividade(v as AtividadeFilter)}
+              <div
+                className="relative"
+                onBlur={(e) => {
+                  const nextFocus = e.relatedTarget;
+                  if (!(nextFocus instanceof Node) || !e.currentTarget.contains(nextFocus)) {
+                    setAtividadeMenuOpen(false);
+                  }
+                }}
               >
-                <SelectTrigger size="sm" className="w-44">
-                  {filterAtividade !== "all" ? (
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span>{filterAtividade === "ativo" ? "Ativos" : "Inativos"}</span>
-                      <span className="shrink-0 tabular-nums text-muted-foreground">
-                        ({atividadeFilterCounts[filterAtividade] ?? 0})
-                      </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 w-44 justify-between gap-2 font-normal"
+                  aria-expanded={atividadeMenuOpen}
+                  aria-haspopup="menu"
+                  onClick={() => setAtividadeMenuOpen((open) => !open)}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate">
+                      {filterAtividade === "all"
+                        ? "Status do cliente"
+                        : selectedAtividadeOption.label}
                     </span>
-                  ) : (
-                    <SelectValue placeholder="Status comercial" />
-                  )}
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">
-                    <span className="flex w-full items-center gap-2">
-                      <span className="flex-1">Todos</span>
-                      <span className="tabular-nums text-xs text-muted-foreground">
-                        {atividadeFilterCounts.all}
-                      </span>
+                    <span className="shrink-0 tabular-nums text-muted-foreground">
+                      ({selectedAtividadeOption.count})
                     </span>
-                  </SelectItem>
-                  <SelectItem value="ativo">
-                    <span className="flex w-full items-center gap-2">
-                      <span className="flex-1">Ativos</span>
-                      <span className="tabular-nums text-xs text-emerald-700">
-                        {atividadeFilterCounts.ativo}
-                      </span>
+                  </span>
+                  <ChevronDown
+                    className={`h-3.5 w-3.5 shrink-0 opacity-60 transition-transform ${
+                      atividadeMenuOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </Button>
+                {atividadeMenuOpen && (
+                  <div
+                    role="menu"
+                    className="absolute right-0 top-full z-50 mt-1 w-44 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+                  >
+                    {atividadeFilterOptions.map((option) => {
+                      const selected = option.value === filterAtividade;
+                      const countClass =
+                        option.value === "ativo"
+                          ? "text-emerald-700"
+                          : option.value === "inativo"
+                            ? "text-red-700"
+                            : "text-muted-foreground";
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={selected}
+                          className={`flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground ${
+                            selected ? "bg-accent/70 text-accent-foreground" : ""
+                          }`}
+                          onClick={() => {
+                            setFilterAtividade(option.value);
+                            setAtividadeMenuOpen(false);
+                          }}
+                        >
+                          <span>{option.label}</span>
+                          <span className={`tabular-nums text-xs ${countClass}`}>
+                            {option.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <div
+                className="relative"
+                onBlur={(e) => {
+                  const nextFocus = e.relatedTarget;
+                  if (!(nextFocus instanceof Node) || !e.currentTarget.contains(nextFocus)) {
+                    setFaturamentoMenuOpen(false);
+                  }
+                }}
+              >
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 w-56 justify-between gap-2 font-normal"
+                  aria-expanded={faturamentoMenuOpen}
+                  aria-haspopup="menu"
+                  onClick={() => setFaturamentoMenuOpen((open) => !open)}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate">
+                      {filterFaturamentoPrevisto === "all"
+                        ? "Indício faturamento"
+                        : selectedFaturamentoOption.label}
                     </span>
-                  </SelectItem>
-                  <SelectItem value="inativo">
-                    <span className="flex w-full items-center gap-2">
-                      <span className="flex-1">Inativos</span>
-                      <span className="tabular-nums text-xs text-muted-foreground">
-                        {atividadeFilterCounts.inativo}
-                      </span>
+                    <span className="shrink-0 tabular-nums text-muted-foreground">
+                      ({selectedFaturamentoOption.count})
                     </span>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+                  </span>
+                  <ChevronDown
+                    className={`h-3.5 w-3.5 shrink-0 opacity-60 transition-transform ${
+                      faturamentoMenuOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </Button>
+                {faturamentoMenuOpen && (
+                  <div
+                    role="menu"
+                    className="absolute right-0 top-full z-50 mt-1 w-56 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+                  >
+                    {faturamentoFilterOptions.map((option) => {
+                      const selected = option.value === filterFaturamentoPrevisto;
+                      const countClass =
+                        option.value === "com"
+                          ? "text-emerald-700"
+                          : option.value === "sem"
+                            ? "text-red-700"
+                            : "text-muted-foreground";
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={selected}
+                          className={`flex w-full items-center justify-between gap-3 rounded-sm px-2 py-1.5 text-left text-sm outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground ${
+                            selected ? "bg-accent/70 text-accent-foreground" : ""
+                          }`}
+                          onClick={() => {
+                            setFilterFaturamentoPrevisto(option.value);
+                            setFaturamentoMenuOpen(false);
+                          }}
+                        >
+                          <span>{option.label}</span>
+                          <span className={`tabular-nums text-xs ${countClass}`}>
+                            {option.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </>
           )}
 
@@ -1091,12 +1378,14 @@ function MeusClientesClientContent() {
           filterGestor={filterGestor}
           filterStatus={filterStatus}
           filterAtividade={isAdmin ? filterAtividade : "all"}
+          filterFaturamentoPrevisto={isAdmin ? filterFaturamentoPrevisto : "all"}
           gestorName={gestorName}
           filterResultCount={hasActiveFilters ? displayGroups.length : undefined}
           onClearArea={() => setFilterArea("")}
           onClearGestor={() => setFilterGestor("")}
           onClearStatus={() => setFilterStatus("all")}
           onClearAtividade={() => setFilterAtividade("all")}
+          onClearFaturamentoPrevisto={() => setFilterFaturamentoPrevisto("all")}
         />
       </div>
 
@@ -1146,6 +1435,10 @@ function MeusClientesClientContent() {
                 }
                 onEditGroupStatus={(g) => {
                   setEditingGroupStatus(g);
+                  setEditingGroupAtividadeIndicio(resolveSioeAtividadeForBucket(g));
+                  setEditingGroupCategoriaIndicio(resolveSioeCategoriaForBucket(g));
+                  setEditingGroupFaturamentoIndicios(resolveSioeFaturamentoIndiciosForBucket(g));
+                  setEditingGroupPrevistoDate(resolveSioePrevistoDateForBucket(g));
                   setGroupStatusDialogOpen(true);
                 }}
               />
@@ -1177,13 +1470,26 @@ function MeusClientesClientContent() {
 
       <GroupStatusDialog
         open={groupStatusDialogOpen}
-        onOpenChange={setGroupStatusDialogOpen}
+        onOpenChange={(open) => {
+          setGroupStatusDialogOpen(open);
+          if (!open) {
+            setEditingGroupAtividadeIndicio(null);
+            setEditingGroupCategoriaIndicio(null);
+            setEditingGroupFaturamentoIndicios(null);
+            setEditingGroupPrevistoDate(null);
+          }
+        }}
         group={editingGroupStatus}
         gestorStatus={
           editingGroupStatus?.clientGroupId
             ? clientGroupStatusById[editingGroupStatus.clientGroupId]
             : null
         }
+        sioeAtividadeIndicio={editingGroupAtividadeIndicio}
+        categoriaAtividadeIndicio={editingGroupCategoriaIndicio}
+        ultimoFaturamentoDate={editingGroupFaturamentoIndicios?.ultimoFaturamentoDate ?? null}
+        proximoPrevistoDate={editingGroupFaturamentoIndicios?.proximoPrevistoDate ?? null}
+        previstoDate={editingGroupPrevistoDate}
         onSaved={(clientGroupId, status) => {
           setClientGroupStatusById((prev) => ({ ...prev, [clientGroupId]: status }));
           setToast({ type: "success", text: "Status do grupo salvo." });

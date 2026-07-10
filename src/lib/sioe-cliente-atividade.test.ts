@@ -7,6 +7,8 @@ import {
   listSioeOnlyInactiveGroups,
   planoContasNaCota,
   resolveClienteAtividade,
+  resolveClienteCategoriaAtividade,
+  resolveClientePrevistoDate,
 } from "@/lib/sioe-cliente-atividade";
 
 describe("planoContasNaCota", () => {
@@ -36,6 +38,14 @@ describe("resolveClienteAtividade", () => {
     grupoNames: { [grupoClienteKey("Grupo 3TM")]: "Grupo 3TM" },
     byGrupoKey: { [grupoClienteKey("Grupo 3TM")]: "ativo" as const },
     byPessoaId: { "pessoa-1": "inativo" as const },
+    byGrupoCategoriaAtividade: { [grupoClienteKey("Grupo 3TM")]: "ativo" as const },
+    byPessoaCategoriaAtividade: { "pessoa-1": "inativo" as const },
+    byGrupoPrevistoDate: { [grupoClienteKey("Grupo 3TM")]: "2026-07-15" },
+    byPessoaPrevistoDate: {},
+    byGrupoUltimoFaturamentoDate: { [grupoClienteKey("Grupo 3TM")]: "2026-07-15" },
+    byPessoaUltimoFaturamentoDate: {},
+    byGrupoProximoPrevistoDate: {},
+    byPessoaProximoPrevistoDate: {},
   };
 
   it("prioriza pessoa sobre grupo", () => {
@@ -50,6 +60,14 @@ describe("resolveClienteAtividade", () => {
   it("usa grupo quando não há pessoa", () => {
     expect(resolveClienteAtividade(index, { grupoName: "Grupo 3TM" })).toBe("ativo");
   });
+
+  it("resolve a data do faturamento previsto por grupo", () => {
+    expect(resolveClientePrevistoDate(index, { grupoName: "Grupo 3TM" })).toBe("2026-07-15");
+  });
+
+  it("resolve o indício cadastral separado do faturamento", () => {
+    expect(resolveClienteCategoriaAtividade(index, { grupoName: "Grupo 3TM" })).toBe("ativo");
+  });
 });
 
 describe("listSioeOnlyInactiveGroups", () => {
@@ -61,6 +79,14 @@ describe("listSioeOnlyInactiveGroups", () => {
         grupoNames: { [colomboKey]: "Grupo Colombo" },
         byGrupoKey: { [colomboKey]: "inativo" },
         byPessoaId: {},
+        byGrupoCategoriaAtividade: { [colomboKey]: "inativo" },
+        byPessoaCategoriaAtividade: {},
+        byGrupoPrevistoDate: {},
+        byPessoaPrevistoDate: {},
+        byGrupoUltimoFaturamentoDate: {},
+        byPessoaUltimoFaturamentoDate: {},
+        byGrupoProximoPrevistoDate: {},
+        byPessoaProximoPrevistoDate: {},
       },
       new Set([grupoClienteKey("Grupo Levva")])
     );

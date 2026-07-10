@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   Circle,
+  CircleHelp,
   Layers,
   Pencil,
   Trash2,
@@ -57,6 +58,9 @@ import {
   type ClientGroupGestorStatus,
 } from "@/lib/client-group-gestor-status";
 import {
+  resolveClienteCategoriaAtividade,
+  resolveClienteFaturamentoIndicios,
+  resolveClientePrevistoDate,
   type SioeClienteAtividade,
   type SioeClienteAtividadeIndex,
 } from "@/lib/sioe-cliente-atividade";
@@ -66,6 +70,7 @@ export const FILTER_SEM_AREA = "__sem_area__";
 
 export type StatusFilter = "all" | "pending" | "complete";
 export type AtividadeFilter = "all" | "ativo" | "inativo";
+export type FaturamentoPrevistoFilter = "all" | "com" | "sem";
 export type SelectKey = `c:${string}` | `p:${string}`;
 
 export interface ClientGroupBucket {
@@ -207,13 +212,19 @@ function ClienteAtividadeBadge({
   tooltip,
   compact,
   pending,
+  tone,
+  labelOverride,
+  tooltipTitle,
 }: {
   status?: SioeClienteAtividade | null;
   tooltip?: string;
   compact?: boolean;
   pending?: boolean;
+  tone?: "green" | "red" | "amber";
+  labelOverride?: string;
+  tooltipTitle?: string;
 }) {
-  if (pending) {
+  if (pending && !status) {
     return (
       <Badge
         variant="outline"
@@ -226,18 +237,44 @@ function ClienteAtividadeBadge({
   }
   if (!status) return null;
   const isAtivo = status === "ativo";
-  return (
+  const label =
+    labelOverride ??
+    (pending
+      ? `Indício: ${isAtivo ? "ativo" : "inativo"}`
+      : isAtivo
+        ? "Ativo"
+        : "Inativo");
+  const title = tooltip;
+  const badgeTone = tone ?? (isAtivo ? "green" : "red");
+  const toneClass =
+    badgeTone === "amber"
+      ? "text-amber-800 border-amber-300 bg-amber-50"
+      : badgeTone === "green"
+        ? "text-emerald-700 border-emerald-200 bg-emerald-50"
+        : "text-red-700 border-red-200 bg-red-50";
+  const badge = (
     <Badge
       variant="outline"
-      className={`text-[10px] ${
-        isAtivo
-          ? "text-emerald-700 border-emerald-200 bg-emerald-50"
-          : "text-slate-600 border-slate-200 bg-slate-50"
-      } ${compact ? "px-1.5 py-0" : ""}`}
-      title={tooltip}
+      className={`inline-flex items-center gap-1 text-[10px] ${toneClass} ${compact ? "px-1.5 py-0" : ""}`}
     >
-      {isAtivo ? "Ativo" : "Inativo"}
+      {label}
+      <CircleHelp className="h-3 w-3 opacity-70" aria-hidden />
+      {pending && <span className="hidden sm:inline opacity-70">ver critério</span>}
     </Badge>
+  );
+  if (!title) return badge;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex cursor-help">{badge}</span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs">
+        <p className="text-sm font-semibold leading-snug">
+          {tooltipTitle ?? (isAtivo ? "Indício de cliente ativo" : "Indício de cliente inativo")}
+        </p>
+        <p className="mt-1.5 text-xs leading-relaxed text-white/75">{title}</p>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -466,10 +503,54 @@ export function GroupSection({
     clienteAtividadeIndex
   );
   const statusPending = Boolean(group.clientGroupId && isGestorStatusPending(gestorStatus));
+  const statusBadgePending = group.clientGroupId
+    ? statusPending
+    : Boolean(groupAtividade && isGestorStatusPending(gestorStatus));
+  const canEditGroupStatus = Boolean(group.clientGroupId && onEditGroupStatus);
+  const showStatusArea = canEditGroupStatus || Boolean(groupAtividade);
+  const groupPrevistoDate = clienteAtividadeIndex
+    ? resolveClientePrevistoDate(clienteAtividadeIndex, { grupoName: group.name })
+    : null;
+  const groupFaturamentoIndicios = clienteAtividadeIndex
+    ? resolveClienteFaturamentoIndicios(clienteAtividadeIndex, { grupoName: group.name })
+    : { ultimoFaturamentoDate: null, proximoPrevistoDate: null, anyDate: null };
+  const groupCategoriaAtividade = clienteAtividadeIndex
+    ? resolveClienteCategoriaAtividade(clienteAtividadeIndex, { grupoName: group.name })
+    : null;
+  const hasConfirmedStatus = Boolean(gestorStatus?.gestorAtividade);
+  const activeWithoutBilling =
+    !hasConfirmedStatus &&
+    groupCategoriaAtividade === "ativo" &&
+    !groupFaturamentoIndicios.ultimoFaturamentoDate &&
+    !groupFaturamentoIndicios.proximoPrevistoDate;
+  const inactiveWithBilling =
+    !hasConfirmedStatus &&
+    groupCategoriaAtividade === "inativo" &&
+    Boolean(
+      groupFaturamentoIndicios.ultimoFaturamentoDate ||
+        groupFaturamentoIndicios.proximoPrevistoDate
+    );
+  const badgeTone = activeWithoutBilling
+    ? "amber"
+    : groupAtividade === "ativo"
+      ? "green"
+      : "red";
+  const badgeLabel = activeWithoutBilling
+    ? "Cliente sem faturamento no último mês"
+    : undefined;
+  const badgeTooltipTitle = activeWithoutBilling
+    ? "Cliente ativo sem faturamento"
+    : inactiveWithBilling
+      ? "Cadastro inativo com faturamento"
+      : undefined;
   const atividadeTooltip = groupAtividadeTooltip(
     groupAtividade,
     gestorStatus,
-    clienteAtividadeIndex?.mesReferencia
+    clienteAtividadeIndex?.mesReferencia,
+    groupPrevistoDate,
+    groupCategoriaAtividade,
+    groupFaturamentoIndicios.ultimoFaturamentoDate,
+    groupFaturamentoIndicios.proximoPrevistoDate
   );
 
   return (
@@ -506,11 +587,6 @@ export function GroupSection({
                     : `${pendingCount} pendência${pendingCount === 1 ? "" : "s"}`}
                 </Badge>
               )}
-              <ClienteAtividadeBadge
-                status={groupAtividade}
-                tooltip={atividadeTooltip}
-                pending={statusPending}
-              />
               <AreaBadges areas={groupAreas} />
             </span>
             <span className="mt-1 block text-xs text-muted-foreground">
@@ -524,21 +600,33 @@ export function GroupSection({
           )}
         </button>
 
-        {group.clientGroupId && onEditGroupStatus && (
-          <Button
-            type="button"
-            variant={statusPending ? "default" : "outline"}
-            size="sm"
-            className={`my-1 shrink-0 self-center ${
-              statusPending
-                ? "bg-amber-600 text-white hover:bg-amber-700 border-amber-600"
-                : ""
-            }`}
-            onClick={() => onEditGroupStatus(group)}
-            {...(tourGroupSample ? { "data-tour": "mc-group-status" } : {})}
-          >
-            {statusPending ? "Confirmar status" : "Editar status"}
-          </Button>
+        {showStatusArea && (
+          <div className="my-1 flex shrink-0 flex-col items-end justify-center gap-1.5">
+            <ClienteAtividadeBadge
+              status={groupAtividade}
+              tooltip={atividadeTooltip}
+              pending={statusBadgePending}
+              tone={badgeTone}
+              labelOverride={badgeLabel}
+              tooltipTitle={badgeTooltipTitle}
+            />
+            {canEditGroupStatus && (
+              <Button
+                type="button"
+                variant={statusPending ? "default" : "outline"}
+                size="sm"
+                className={`shrink-0 ${
+                  statusPending
+                    ? "bg-amber-600 text-white hover:bg-amber-700 border-amber-600"
+                    : ""
+                }`}
+                onClick={() => onEditGroupStatus?.(group)}
+                {...(tourGroupSample ? { "data-tour": "mc-group-status" } : {})}
+              >
+                {statusPending ? "Confirmar status" : "Editar status"}
+              </Button>
+            )}
+          </div>
         )}
       </div>
 
@@ -803,23 +891,27 @@ export function FilterChips({
   filterGestor,
   filterStatus,
   filterAtividade,
+  filterFaturamentoPrevisto,
   gestorName,
   filterResultCount,
   onClearArea,
   onClearGestor,
   onClearStatus,
   onClearAtividade,
+  onClearFaturamentoPrevisto,
 }: {
   filterArea: string;
   filterGestor: string;
   filterStatus: StatusFilter;
   filterAtividade?: AtividadeFilter;
+  filterFaturamentoPrevisto?: FaturamentoPrevistoFilter;
   gestorName?: string;
   filterResultCount?: number;
   onClearArea: () => void;
   onClearGestor: () => void;
   onClearStatus: () => void;
   onClearAtividade?: () => void;
+  onClearFaturamentoPrevisto?: () => void;
 }) {
   const chips: { label: string; onClear: () => void }[] = [];
   if (filterArea) {
@@ -842,8 +934,17 @@ export function FilterChips({
   }
   if (filterAtividade && filterAtividade !== "all") {
     chips.push({
-      label: filterAtividade === "ativo" ? "Ativos" : "Inativos",
+      label: filterAtividade === "ativo" ? "Status: ativo" : "Status: inativo",
       onClear: onClearAtividade ?? (() => {}),
+    });
+  }
+  if (filterFaturamentoPrevisto && filterFaturamentoPrevisto !== "all") {
+    chips.push({
+      label:
+        filterFaturamentoPrevisto === "com"
+          ? "Faturamento: com indício"
+          : "Faturamento: sem indício",
+      onClear: onClearFaturamentoPrevisto ?? (() => {}),
     });
   }
   if (chips.length === 0 && filterResultCount === undefined) return null;

@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import { DialogHeaderIcon, DialogSectionHeading } from "@/components/eventos/dialog-section-heading";
@@ -18,6 +19,8 @@ import type {
   ClientGroupGestorStatus,
   InativoEncerramentoTipo,
 } from "@/lib/client-group-gestor-status";
+import { formatFaturamentoIndicios } from "@/lib/client-group-gestor-status";
+import type { SioeClienteAtividade } from "@/lib/sioe-cliente-atividade";
 import type { ClientGroupBucket } from "./meus-clientes-ui";
 
 interface GroupStatusDialogProps {
@@ -25,6 +28,11 @@ interface GroupStatusDialogProps {
   onOpenChange: (open: boolean) => void;
   group: ClientGroupBucket | null;
   gestorStatus?: ClientGroupGestorStatus | null;
+  sioeAtividadeIndicio?: SioeClienteAtividade | null;
+  categoriaAtividadeIndicio?: SioeClienteAtividade | null;
+  ultimoFaturamentoDate?: string | null;
+  proximoPrevistoDate?: string | null;
+  previstoDate?: string | null;
   onSaved: (clientGroupId: string, status: ClientGroupGestorStatus) => void;
 }
 
@@ -33,6 +41,11 @@ export function GroupStatusDialog({
   onOpenChange,
   group,
   gestorStatus,
+  sioeAtividadeIndicio,
+  categoriaAtividadeIndicio,
+  ultimoFaturamentoDate,
+  proximoPrevistoDate,
+  previstoDate,
   onSaved,
 }: GroupStatusDialogProps) {
   const [isActive, setIsActive] = useState<boolean | null>(null);
@@ -64,6 +77,43 @@ export function GroupStatusDialog({
   }, [open, group, gestorStatus]);
 
   if (!group?.clientGroupId) return null;
+  const hasIndicio = Boolean(
+    sioeAtividadeIndicio ||
+      categoriaAtividadeIndicio ||
+      previstoDate ||
+      ultimoFaturamentoDate ||
+      proximoPrevistoDate
+  );
+  const categoriaAtivo = categoriaAtividadeIndicio === "ativo";
+  const categoriaInativo = categoriaAtividadeIndicio === "inativo";
+  const indicioAtivo =
+    sioeAtividadeIndicio === "ativo" ||
+    (!sioeAtividadeIndicio && (categoriaAtivo || Boolean(previstoDate)));
+  const hasFaturamentoIndicio = Boolean(ultimoFaturamentoDate || proximoPrevistoDate);
+  const activeWithoutBilling = categoriaAtivo && !hasFaturamentoIndicio;
+  const inactiveWithBilling = categoriaInativo && hasFaturamentoIndicio;
+  const faturamentoIndicioText = formatFaturamentoIndicios(
+    ultimoFaturamentoDate,
+    proximoPrevistoDate
+  );
+  const indicioPanelClass = activeWithoutBilling
+    ? "border-amber-200 bg-amber-50 text-amber-950"
+    : indicioAtivo
+      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+      : "border-red-200 bg-red-50 text-red-900";
+  const indicioBadgeClass = activeWithoutBilling
+    ? "border-amber-300 bg-white/60 text-amber-800"
+    : indicioAtivo
+      ? "border-emerald-300 bg-white/60 text-emerald-800"
+      : "border-red-300 bg-white/60 text-red-800";
+  const indicioBadgeLabel = activeWithoutBilling
+    ? "Cliente sem faturamento no último mês"
+    : `Indício geral: ${indicioAtivo ? "ativo" : "inativo"}`;
+  const indicioHelperText = activeWithoutBilling
+    ? "Cadastro ativo, mas não há faturamento localizado no mês anterior nem previsão para os próximos meses."
+    : inactiveWithBilling
+      ? "Cadastro inativo, mas existe indício de faturamento."
+      : "Use os sinais abaixo para definir o status final.";
 
   const handleSave = async () => {
     if (isActive === null) {
@@ -74,15 +124,6 @@ export function GroupStatusDialog({
       setError("Selecione término da vigência ou rescisão contratual.");
       return;
     }
-    if (!isActive && encerramentoTipo === "termino_vigencia" && !vigenciaTermino.trim()) {
-      setError("Informe a data do término da vigência (dd/mm/aaaa).");
-      return;
-    }
-    if (!isActive && encerramentoTipo === "rescisao_contratual" && !rescisaoData.trim()) {
-      setError("Informe a data da rescisão contratual (dd/mm/aaaa).");
-      return;
-    }
-
     setSaving(true);
     setError(null);
     try {
@@ -137,6 +178,53 @@ export function GroupStatusDialog({
 
           <div className="space-y-3">
             <DialogSectionHeading icon={Building2}>Situação comercial</DialogSectionHeading>
+            {hasIndicio && (
+              <div
+                className={`rounded-xl border px-3 py-2.5 text-sm ${indicioPanelClass}`}
+              >
+                <div className="space-y-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className={indicioBadgeClass}
+                    >
+                      {indicioBadgeLabel}
+                    </Badge>
+                    <span className="text-xs opacity-80">
+                      {indicioHelperText}
+                    </span>
+                  </div>
+                  <div className="grid gap-2 text-xs sm:grid-cols-2">
+                    <div className="rounded-lg border border-white/60 bg-white/50 px-2.5 py-2">
+                      <p className="font-medium">Cadastro</p>
+                      <p
+                        className={`mt-1 ${
+                          categoriaAtivo
+                            ? "text-emerald-800"
+                            : categoriaInativo
+                              ? "text-red-800"
+                              : "opacity-75"
+                        }`}
+                      >
+                        {categoriaAtividadeIndicio
+                          ? `Categoria indica cliente ${categoriaAtividadeIndicio}.`
+                          : "Sem status cadastral localizado."}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-white/60 bg-white/50 px-2.5 py-2">
+                      <p className="font-medium">Faturamento</p>
+                      <p
+                        className={`mt-1 ${
+                          hasFaturamentoIndicio ? "text-emerald-800" : "opacity-75"
+                        }`}
+                      >
+                        {faturamentoIndicioText}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
@@ -196,7 +284,7 @@ export function GroupStatusDialog({
             <div className="space-y-4 rounded-xl border border-border/80 bg-muted/20 p-4">
               <DialogSectionHeading icon={Scale}>Motivo do inativo</DialogSectionHeading>
               <p className="text-xs text-muted-foreground">
-                Escolha uma das opções abaixo e informe a data correspondente.
+                Escolha uma das opções abaixo. A data é opcional.
               </p>
 
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -248,7 +336,7 @@ export function GroupStatusDialog({
 
               {encerramentoTipo === "termino_vigencia" && (
                 <div className="space-y-2">
-                  <Label htmlFor="vigencia-termino">Data do término da vigência</Label>
+                  <Label htmlFor="vigencia-termino">Data do término da vigência (opcional)</Label>
                   <DatePickerField
                     id="vigencia-termino"
                     value={vigenciaTermino}
@@ -260,7 +348,7 @@ export function GroupStatusDialog({
 
               {encerramentoTipo === "rescisao_contratual" && (
                 <div className="space-y-2">
-                  <Label htmlFor="rescisao-data">Data da rescisão contratual</Label>
+                  <Label htmlFor="rescisao-data">Data da rescisão contratual (opcional)</Label>
                   <DatePickerField
                     id="rescisao-data"
                     value={rescisaoData}

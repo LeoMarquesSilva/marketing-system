@@ -35,20 +35,38 @@ describe("client-group-gestor-status", () => {
     ).toContain("Selecione");
   });
 
-  it("exige data distinta para cada tipo de encerramento", () => {
+  it("permite salvar inativo sem data de encerramento", () => {
     expect(
       validateClientGroupGestorStatusInput({
         gestorAtividade: "inativo",
         inativoEncerramentoTipo: "termino_vigencia",
       })
-    ).toContain("término da vigência");
+    ).toBeNull();
 
     expect(
       validateClientGroupGestorStatusInput({
         gestorAtividade: "inativo",
         inativoEncerramentoTipo: "rescisao_contratual",
       })
-    ).toContain("rescisão contratual");
+    ).toBeNull();
+  });
+
+  it("valida formato da data opcional quando preenchida", () => {
+    expect(
+      validateClientGroupGestorStatusInput({
+        gestorAtividade: "inativo",
+        inativoEncerramentoTipo: "termino_vigencia",
+        contratoVigenciaTermino: "31/12/2026",
+      })
+    ).toContain("inválida");
+
+    expect(
+      validateClientGroupGestorStatusInput({
+        gestorAtividade: "inativo",
+        inativoEncerramentoTipo: "rescisao_contratual",
+        rescisaoContratualData: "2026-12-31",
+      })
+    ).toBeNull();
   });
 
   it("mapeia colunas do banco", () => {

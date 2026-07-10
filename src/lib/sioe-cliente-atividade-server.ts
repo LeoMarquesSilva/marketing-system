@@ -49,9 +49,10 @@ function isReceberTipo(tipo: string | null): boolean {
   return tipo.trim().toUpperCase() === "RECEBER";
 }
 
-function monthBounds(reference = new Date()): { mesReferencia: string; start: string; end: string } {
-  const ano = reference.getFullYear();
-  const mes = reference.getMonth() + 1;
+function previousMonthBounds(reference = new Date()): { mesReferencia: string; start: string; end: string } {
+  const previousMonth = new Date(reference.getFullYear(), reference.getMonth() - 1, 1);
+  const ano = previousMonth.getFullYear();
+  const mes = previousMonth.getMonth() + 1;
   const lastDay = new Date(ano, mes, 0).getDate();
   const pad = (n: number) => String(n).padStart(2, "0");
   return {
@@ -62,21 +63,19 @@ function monthBounds(reference = new Date()): { mesReferencia: string; start: st
 }
 
 /**
- * Janela de vencimento usada para o sinal de "previsto": mês atual + os 2
- * meses anteriores. Um único mês (sobretudo o corrente) fica incompleto
- * porque o SIOE lança títulos futuros aos poucos — a janela de 3 meses
- * evita marcar cliente como inativo só por atraso de lançamento.
+ * Janela usada para o sinal de faturamento: mês anterior ao dia atual,
+ * mês atual e os próximos 2 meses previstos.
+ * Ex.: em 10/07/2026, considera vencimentos de 01/06/2026 a 30/09/2026.
  */
-function activityWindowBounds(reference = new Date(), monthsBack = 2): { start: string; end: string } {
-  const ano = reference.getFullYear();
-  const mes = reference.getMonth() + 1;
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const startDate = new Date(ano, mes - 1 - monthsBack, 1);
+function activityWindowBounds(reference = new Date()): { start: string; end: string } {
+  const { start } = previousMonthBounds(reference);
+  const endMonth = new Date(reference.getFullYear(), reference.getMonth() + 2, 1);
+  const ano = endMonth.getFullYear();
+  const mes = endMonth.getMonth() + 1;
   const lastDay = new Date(ano, mes, 0).getDate();
-  return {
-    start: `${startDate.getFullYear()}-${pad(startDate.getMonth() + 1)}-01`,
-    end: `${ano}-${pad(mes)}-${pad(lastDay)}`,
-  };
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const end = `${ano}-${pad(mes)}-${pad(lastDay)}`;
+  return { start, end };
 }
 
 function markGrupoAtivo(
@@ -90,6 +89,18 @@ function markGrupoAtivo(
   if (!key) return;
   if (!grupoNames.has(key)) grupoNames.set(key, trimmed);
   byGrupoKey.set(key, "ativo");
+}
+
+function rememberLatestDate(target: Map<string, string>, key: string | null, date: string | null): void {
+  if (!key || !date) return;
+  const current = target.get(key);
+  if (!current || date > current) target.set(key, date);
+}
+
+function rememberEarliestDate(target: Map<string, string>, key: string | null, date: string | null): void {
+  if (!key || !date) return;
+  const current = target.get(key);
+  if (!current || date < current) target.set(key, date);
 }
 
 function pickParcelaLink(link: RawPrevistoRow["financeiro_parcelas"]): {
@@ -116,6 +127,8 @@ function pickParcelaLink(link: RawPrevistoRow["financeiro_parcelas"]): {
 async function fetchGrupoAtividadeFromPessoas(
   byGrupoKey: Map<string, SioeClienteAtividade>,
   byPessoaId: Map<string, SioeClienteAtividade>,
+  byGrupoCategoriaAtividade: Map<string, SioeClienteAtividade>,
+  byPessoaCategoriaAtividade: Map<string, SioeClienteAtividade>,
   grupoNames: Map<string, string>
 ): Promise<void> {
   const stats = new Map<string, GrupoStats>();
@@ -153,8 +166,10 @@ async function fetchGrupoAtividadeFromPessoas(
       if (isSioeCategoriaAtiva(categoria)) {
         group.hasAtivo = true;
         byPessoaId.set(pessoaId, "ativo");
+        byPessoaCategoriaAtividade.set(pessoaId, "ativo");
       } else if (isSioeCategoriaInativa(categoria)) {
         group.hasInativo = true;
+        byPessoaCategoriaAtividade.set(pessoaId, "inativo");
         if (byPessoaId.get(pessoaId) !== "ativo") {
           byPessoaId.set(pessoaId, "inativo");
         }
@@ -169,8 +184,10 @@ async function fetchGrupoAtividadeFromPessoas(
     grupoNames.set(key, group.displayName);
     if (group.hasAtivo) {
       byGrupoKey.set(key, "ativo");
+      byGrupoCategoriaAtividade.set(key, "ativo");
     } else if (group.hasInativo) {
       byGrupoKey.set(key, "inativo");
+      byGrupoCategoriaAtividade.set(key, "inativo");
     }
   }
 }
@@ -179,9 +196,16 @@ async function fetchAtivosPorPrevisto(
   reference: Date,
   byGrupoKey: Map<string, SioeClienteAtividade>,
   byPessoaId: Map<string, SioeClienteAtividade>,
+  byGrupoPrevistoDate: Map<string, string>,
+  byPessoaPrevistoDate: Map<string, string>,
+  byGrupoUltimoFaturamentoDate: Map<string, string>,
+  byPessoaUltimoFaturamentoDate: Map<string, string>,
+  byGrupoProximoPrevistoDate: Map<string, string>,
+  byPessoaProximoPrevistoDate: Map<string, string>,
   grupoNames: Map<string, string>
 ): Promise<void> {
   const { start, end } = activityWindowBounds(reference);
+  const previousMonthEnd = previousMonthBounds(reference).end;
   const sioe = getSioeClient();
   const seenItems = new Set<number>();
   let offset = 0;
@@ -232,7 +256,22 @@ async function fetchAtivosPorPrevisto(
 
       seenItems.add(row.ci_item);
       markGrupoAtivo(byGrupoKey, link.grupoCliente, grupoNames);
-      if (link.pessoaId) byPessoaId.set(link.pessoaId, "ativo");
+      const grupoKey = grupoClienteKey(link.grupoCliente);
+      rememberLatestDate(byGrupoPrevistoDate, grupoKey, row.data_vencimento);
+      if (row.data_vencimento <= previousMonthEnd) {
+        rememberLatestDate(byGrupoUltimoFaturamentoDate, grupoKey, row.data_vencimento);
+      } else {
+        rememberEarliestDate(byGrupoProximoPrevistoDate, grupoKey, row.data_vencimento);
+      }
+      if (link.pessoaId) {
+        byPessoaId.set(link.pessoaId, "ativo");
+        rememberLatestDate(byPessoaPrevistoDate, link.pessoaId, row.data_vencimento);
+        if (row.data_vencimento <= previousMonthEnd) {
+          rememberLatestDate(byPessoaUltimoFaturamentoDate, link.pessoaId, row.data_vencimento);
+        } else {
+          rememberEarliestDate(byPessoaProximoPrevistoDate, link.pessoaId, row.data_vencimento);
+        }
+      }
     }
 
     if (batch.length < PAGE_SIZE) break;
@@ -244,21 +283,54 @@ async function fetchAtivosPorPrevisto(
 export async function fetchSioeClienteAtividadeIndex(
   reference = new Date()
 ): Promise<SioeClienteAtividadeIndex> {
-  const { mesReferencia } = monthBounds(reference);
+  const { mesReferencia } = previousMonthBounds(reference);
   if (!isSioeSyncConfigured()) {
     return emptySioeClienteAtividadeIndex(mesReferencia);
   }
 
   const byGrupoKey = new Map<string, SioeClienteAtividade>();
   const byPessoaId = new Map<string, SioeClienteAtividade>();
+  const byGrupoCategoriaAtividade = new Map<string, SioeClienteAtividade>();
+  const byPessoaCategoriaAtividade = new Map<string, SioeClienteAtividade>();
+  const byGrupoPrevistoDate = new Map<string, string>();
+  const byPessoaPrevistoDate = new Map<string, string>();
+  const byGrupoUltimoFaturamentoDate = new Map<string, string>();
+  const byPessoaUltimoFaturamentoDate = new Map<string, string>();
+  const byGrupoProximoPrevistoDate = new Map<string, string>();
+  const byPessoaProximoPrevistoDate = new Map<string, string>();
   const grupoNames = new Map<string, string>();
 
-  await fetchGrupoAtividadeFromPessoas(byGrupoKey, byPessoaId, grupoNames);
-  await fetchAtivosPorPrevisto(reference, byGrupoKey, byPessoaId, grupoNames);
+  await fetchGrupoAtividadeFromPessoas(
+    byGrupoKey,
+    byPessoaId,
+    byGrupoCategoriaAtividade,
+    byPessoaCategoriaAtividade,
+    grupoNames
+  );
+  await fetchAtivosPorPrevisto(
+    reference,
+    byGrupoKey,
+    byPessoaId,
+    byGrupoPrevistoDate,
+    byPessoaPrevistoDate,
+    byGrupoUltimoFaturamentoDate,
+    byPessoaUltimoFaturamentoDate,
+    byGrupoProximoPrevistoDate,
+    byPessoaProximoPrevistoDate,
+    grupoNames
+  );
 
   return {
     byGrupoKey: Object.fromEntries(byGrupoKey),
     byPessoaId: Object.fromEntries(byPessoaId),
+    byGrupoCategoriaAtividade: Object.fromEntries(byGrupoCategoriaAtividade),
+    byPessoaCategoriaAtividade: Object.fromEntries(byPessoaCategoriaAtividade),
+    byGrupoPrevistoDate: Object.fromEntries(byGrupoPrevistoDate),
+    byPessoaPrevistoDate: Object.fromEntries(byPessoaPrevistoDate),
+    byGrupoUltimoFaturamentoDate: Object.fromEntries(byGrupoUltimoFaturamentoDate),
+    byPessoaUltimoFaturamentoDate: Object.fromEntries(byPessoaUltimoFaturamentoDate),
+    byGrupoProximoPrevistoDate: Object.fromEntries(byGrupoProximoPrevistoDate),
+    byPessoaProximoPrevistoDate: Object.fromEntries(byPessoaProximoPrevistoDate),
     grupoNames: Object.fromEntries(grupoNames),
     mesReferencia,
   };

@@ -9,6 +9,22 @@ export type SioeClienteAtividade = "ativo" | "inativo";
 export interface SioeClienteAtividadeIndex {
   byGrupoKey: Record<string, SioeClienteAtividade>;
   byPessoaId: Record<string, SioeClienteAtividade>;
+  /** Status indicado pela categoria cadastral no SIOE, por grupo. */
+  byGrupoCategoriaAtividade: Record<string, SioeClienteAtividade>;
+  /** Status indicado pela categoria cadastral no SIOE, por pessoa. */
+  byPessoaCategoriaAtividade: Record<string, SioeClienteAtividade>;
+  /** Maior data de vencimento de faturamento previsto encontrada por grupo (YYYY-MM-DD). */
+  byGrupoPrevistoDate: Record<string, string>;
+  /** Maior data de vencimento de faturamento previsto encontrada por pessoa (YYYY-MM-DD). */
+  byPessoaPrevistoDate: Record<string, string>;
+  /** Maior data de faturamento localizada no mês anterior, por grupo (YYYY-MM-DD). */
+  byGrupoUltimoFaturamentoDate: Record<string, string>;
+  /** Maior data de faturamento localizada no mês anterior, por pessoa (YYYY-MM-DD). */
+  byPessoaUltimoFaturamentoDate: Record<string, string>;
+  /** Próxima data de faturamento previsto localizada após o mês anterior, por grupo (YYYY-MM-DD). */
+  byGrupoProximoPrevistoDate: Record<string, string>;
+  /** Próxima data de faturamento previsto localizada após o mês anterior, por pessoa (YYYY-MM-DD). */
+  byPessoaProximoPrevistoDate: Record<string, string>;
   /** Nome de exibição do grupo_cliente no SIOE (chave normalizada). */
   grupoNames: Record<string, string>;
   /** Mês usado para faturamento previsto (YYYY-MM). */
@@ -68,7 +84,20 @@ export function isSioeCategoriaAtiva(categoria: string | null | undefined): bool
 }
 
 export function emptySioeClienteAtividadeIndex(mesReferencia: string): SioeClienteAtividadeIndex {
-  return { byGrupoKey: {}, byPessoaId: {}, grupoNames: {}, mesReferencia };
+  return {
+    byGrupoKey: {},
+    byPessoaId: {},
+    byGrupoCategoriaAtividade: {},
+    byPessoaCategoriaAtividade: {},
+    byGrupoPrevistoDate: {},
+    byPessoaPrevistoDate: {},
+    byGrupoUltimoFaturamentoDate: {},
+    byPessoaUltimoFaturamentoDate: {},
+    byGrupoProximoPrevistoDate: {},
+    byPessoaProximoPrevistoDate: {},
+    grupoNames: {},
+    mesReferencia,
+  };
 }
 
 export const SIOE_INATIVO_GROUP_PREFIX = "sioe-inativo:";
@@ -79,7 +108,11 @@ export function listSioeOnlyInactiveGroups(
   existingGroupKeys: Set<string>
 ): { key: string; name: string }[] {
   const result: { key: string; name: string }[] = [];
-  for (const [grupoKey, status] of Object.entries(index.byGrupoKey)) {
+  const source =
+    Object.keys(index.byGrupoCategoriaAtividade).length > 0
+      ? index.byGrupoCategoriaAtividade
+      : index.byGrupoKey;
+  for (const [grupoKey, status] of Object.entries(source)) {
     if (status !== "inativo" || existingGroupKeys.has(grupoKey)) continue;
     result.push({
       key: `${SIOE_INATIVO_GROUP_PREFIX}${grupoKey}`,
@@ -87,6 +120,24 @@ export function listSioeOnlyInactiveGroups(
     });
   }
   return result.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+}
+
+export function resolveClienteCategoriaAtividade(
+  index: SioeClienteAtividadeIndex,
+  options: {
+    grupoName?: string | null;
+    sioePessoaId?: string | null;
+  }
+): SioeClienteAtividade | null {
+  const pessoaId = options.sioePessoaId?.trim();
+  if (pessoaId && index.byPessoaCategoriaAtividade[pessoaId]) {
+    return index.byPessoaCategoriaAtividade[pessoaId];
+  }
+  const grupoKey = grupoClienteKey(options.grupoName);
+  if (grupoKey && index.byGrupoCategoriaAtividade[grupoKey]) {
+    return index.byGrupoCategoriaAtividade[grupoKey];
+  }
+  return null;
 }
 
 export function resolveClienteAtividade(
@@ -105,6 +156,49 @@ export function resolveClienteAtividade(
     return index.byGrupoKey[grupoKey];
   }
   return null;
+}
+
+export interface SioeClienteFaturamentoIndicios {
+  ultimoFaturamentoDate: string | null;
+  proximoPrevistoDate: string | null;
+  anyDate: string | null;
+}
+
+export function resolveClientePrevistoDate(
+  index: SioeClienteAtividadeIndex,
+  options: {
+    grupoName?: string | null;
+    sioePessoaId?: string | null;
+  }
+): string | null {
+  const indicios = resolveClienteFaturamentoIndicios(index, options);
+  return indicios.anyDate;
+}
+
+export function resolveClienteFaturamentoIndicios(
+  index: SioeClienteAtividadeIndex,
+  options: {
+    grupoName?: string | null;
+    sioePessoaId?: string | null;
+  }
+): SioeClienteFaturamentoIndicios {
+  const pessoaId = options.sioePessoaId?.trim();
+  if (pessoaId) {
+    const ultimoFaturamentoDate = index.byPessoaUltimoFaturamentoDate[pessoaId] ?? null;
+    const proximoPrevistoDate = index.byPessoaProximoPrevistoDate[pessoaId] ?? null;
+    const anyDate =
+      ultimoFaturamentoDate ?? proximoPrevistoDate ?? index.byPessoaPrevistoDate[pessoaId] ?? null;
+    if (anyDate) return { ultimoFaturamentoDate, proximoPrevistoDate, anyDate };
+  }
+  const grupoKey = grupoClienteKey(options.grupoName);
+  if (grupoKey) {
+    const ultimoFaturamentoDate = index.byGrupoUltimoFaturamentoDate[grupoKey] ?? null;
+    const proximoPrevistoDate = index.byGrupoProximoPrevistoDate[grupoKey] ?? null;
+    const anyDate =
+      ultimoFaturamentoDate ?? proximoPrevistoDate ?? index.byGrupoPrevistoDate[grupoKey] ?? null;
+    return { ultimoFaturamentoDate, proximoPrevistoDate, anyDate };
+  }
+  return { ultimoFaturamentoDate: null, proximoPrevistoDate: null, anyDate: null };
 }
 
 export function clienteAtividadeTooltip(

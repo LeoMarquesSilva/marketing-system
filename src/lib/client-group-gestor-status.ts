@@ -74,7 +74,11 @@ export function resolveGroupAtividade(
 export function groupAtividadeTooltip(
   status: SioeClienteAtividade | null,
   gestorStatus: ClientGroupGestorStatus | null | undefined,
-  mesReferencia?: string
+  mesReferencia?: string,
+  previstoDate?: string | null,
+  categoriaStatus?: SioeClienteAtividade | null,
+  ultimoFaturamentoDate?: string | null,
+  proximoPrevistoDate?: string | null
 ): string | undefined {
   if (!status) return undefined;
   if (gestorStatus?.gestorAtividade) {
@@ -100,10 +104,42 @@ export function groupAtividadeTooltip(
   }
   const [year, month] = (mesReferencia ?? "").split("-");
   const mesLabel = month && year ? `${month}/${year}` : mesReferencia;
-  if (status === "ativo") {
-    return `Cliente ativo${mesLabel ? ` (ref. faturamento ${mesLabel})` : ""}.`;
+  const faturamentoText = formatFaturamentoIndicios(
+    ultimoFaturamentoDate,
+    proximoPrevistoDate,
+    mesLabel
+  );
+  const hasFaturamento = Boolean(ultimoFaturamentoDate || proximoPrevistoDate || previstoDate);
+  if (categoriaStatus === "ativo" && !hasFaturamento) {
+    return `Cadastro: ativo. ${faturamentoText} Use os indícios para confirmar o status final antes de salvar.`;
   }
-  return "Cliente inativo.";
+  if (categoriaStatus === "inativo" && hasFaturamento) {
+    return `Cadastro: inativo. ${faturamentoText} Verifique a divergência antes de salvar o status final.`;
+  }
+  const categoriaText = categoriaStatus
+    ? `Cadastro: ${categoriaStatus}.`
+    : "Cadastro: sem status localizado.";
+  return `${categoriaText} ${faturamentoText} Use os indícios para confirmar o status final antes de salvar.`;
+}
+
+export function formatFaturamentoIndicios(
+  ultimoFaturamentoDate?: string | null,
+  proximoPrevistoDate?: string | null,
+  mesLabel?: string | null
+): string {
+  const prefix = "Indícios faturamento:";
+  if (ultimoFaturamentoDate && proximoPrevistoDate) {
+    return `${prefix} faturamento localizado no mês anterior em ${formatDateBr(ultimoFaturamentoDate)} e faturamento previsto localizado para ${formatDateBr(proximoPrevistoDate)}.`;
+  }
+  if (ultimoFaturamentoDate) {
+    return `${prefix} faturamento localizado no mês anterior em ${formatDateBr(ultimoFaturamentoDate)}.`;
+  }
+  if (proximoPrevistoDate) {
+    return `${prefix} faturamento previsto localizado para ${formatDateBr(proximoPrevistoDate)}.`;
+  }
+  return `${prefix} nenhum faturamento localizado no mês anterior${
+    mesLabel ? ` (${mesLabel})` : ""
+  }, e nenhum faturamento previsto localizado para os próximos meses.`;
 }
 
 function formatDateBr(isoDate: string): string {
@@ -134,13 +170,11 @@ export function validateClientGroupGestorStatusInput(
 
   if (input.inativoEncerramentoTipo === "termino_vigencia") {
     const date = input.contratoVigenciaTermino?.trim();
-    if (!date) return "Informe a data do término da vigência.";
-    if (!isIsoDate(date)) return "Data do término da vigência inválida.";
+    if (date && !isIsoDate(date)) return "Data do término da vigência inválida.";
     return null;
   }
 
   const date = input.rescisaoContratualData?.trim();
-  if (!date) return "Informe a data da rescisão contratual.";
-  if (!isIsoDate(date)) return "Data da rescisão contratual inválida.";
+  if (date && !isIsoDate(date)) return "Data da rescisão contratual inválida.";
   return null;
 }
