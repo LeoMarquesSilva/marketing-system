@@ -1,38 +1,38 @@
 import { NextResponse } from "next/server";
-import { getInternalJobSecret, isAuthorizedCronRequest } from "@/lib/cron-auth";
+import { isAuthorizedCronRequest } from "@/lib/cron-auth";
+import { runFetchPipeline } from "@/lib/content-roteiros";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 300;
 
-/** Cron diário — dispara worker de busca de notícias (execução longa em função separada). */
+/** Cron diário — executa e aguarda a busca para a Vercel não encerrar o trabalho. */
 export async function GET(request: Request) {
   if (!isAuthorizedCronRequest(request)) {
     return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   }
 
-  const secret = getInternalJobSecret();
-  if (!secret) {
-    return NextResponse.json({ error: "Segredo interno do servidor não configurado." }, { status: 503 });
+  try {
+    const result = await runFetchPipeline(undefined, undefined, {
+      maxCreated: 10,
+      trigger: "cron",
+    });
+
+    console.info("[cron/fetch-news] concluído", {
+      created: result.created,
+      skipped: result.skipped,
+      errors: result.errors.length,
+    });
+
+    return NextResponse.json({
+      success: true,
+      created: result.created,
+      skipped: result.skipped,
+      errors: result.errors.length > 0 ? result.errors.slice(0, 10) : undefined,
+      finishedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Erro ao buscar notícias.";
+    console.error("[cron/fetch-news]", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  const baseUrl = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : new URL(request.url).origin;
-
-  void fetch(`${baseUrl}/api/content-roteiros/fetch-worker`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${secret}`,
-    },
-    body: JSON.stringify({ maxCreated: 30, trigger: "cron" }),
-  }).catch((err) => {
-    console.error("[cron/fetch-news] falha ao disparar worker", err);
-  });
-
-  return NextResponse.json({
-    started: true,
-    message: "Busca de notícias disparada em segundo plano.",
-    finishedAt: new Date().toISOString(),
-  });
 }

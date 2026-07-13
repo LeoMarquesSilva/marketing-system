@@ -16,11 +16,8 @@ export function isAuthorizedInternalJobRequest(request: Request): boolean {
 /** Valida chamadas de cron (Vercel envia Authorization: Bearer CRON_SECRET). */
 export function isAuthorizedCronRequest(request: Request): boolean {
   const secret = process.env.CRON_SECRET?.trim();
-  if (secret) {
-    const auth = request.headers.get("authorization")?.trim();
-    if (auth === `Bearer ${secret}`) return true;
-  }
+  if (!secret) return false;
 
-  // Vercel injeta este header em invocações de cron.
-  return request.headers.get("x-vercel-cron") === "1";
+  const auth = request.headers.get("authorization")?.trim();
+  return auth === `Bearer ${secret}`;
 }
