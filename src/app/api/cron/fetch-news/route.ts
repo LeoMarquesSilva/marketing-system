@@ -13,7 +13,7 @@ export async function GET(request: Request) {
 
   try {
     const result = await runFetchPipeline(undefined, undefined, {
-      maxCreated: 10,
+      maxCreated: 15,
       trigger: "cron",
     });
 

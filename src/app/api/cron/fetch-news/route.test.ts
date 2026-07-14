@@ -58,7 +58,7 @@ describe("GET /api/cron/fetch-news", () => {
       skipped: 7,
     });
     expect(runFetchPipeline).toHaveBeenCalledWith(undefined, undefined, {
-      maxCreated: 10,
+      maxCreated: 15,
       trigger: "cron",
     });
   });
