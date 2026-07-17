@@ -45,7 +45,7 @@ import {
   groupHasNoContacts,
   mergeGroupMembers,
 } from "@/lib/meus-clientes";
-import { AreaIcon, getAreaIconStyle } from "@/lib/area-icons";
+import { getAreaIcon, getAreaIconStyle } from "@/lib/area-icons";
 import { getPartyInviteTipoDescription, getPartyInviteTipoLabel } from "@/lib/party-invite-types";
 import type { PartyInviteTipo } from "@/lib/party-invite-types";
 import {
@@ -1133,6 +1133,7 @@ export function FilterUserAvatar({
 }
 
 export function FilterAreaIcon({ area, size = "md" }: { area: string; size?: "sm" | "md" }) {
+  const Icon = getAreaIcon(area);
   const box = size === "sm" ? "h-7 w-7" : "h-9 w-9";
   const icon = size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4";
   return (
@@ -1140,7 +1141,7 @@ export function FilterAreaIcon({ area, size = "md" }: { area: string; size?: "sm
       className={`inline-flex shrink-0 items-center justify-center rounded-lg ring-1 ${box} ${getAreaIconStyle(area)}`}
       aria-hidden
     >
-      <AreaIcon area={area} className={icon} />
+      <Icon className={icon} />
     </span>
   );
 }
