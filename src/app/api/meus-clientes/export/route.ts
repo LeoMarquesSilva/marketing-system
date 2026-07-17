@@ -13,7 +13,8 @@ import {
   resolveContactGroupKey,
   filterPeopleNotInContacts,
 } from "@/lib/meus-clientes";
-import { getPartyInviteTipoLabel } from "@/lib/party-invite-types";
+import { getPartyInviteTipoLabel, parsePartyInviteTipo } from "@/lib/party-invite-types";
+import type { PartyInviteTipo } from "@/lib/party-invite-types";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,36 @@ function csvRow(cols: string[]): string {
   return cols.map(csvEscape).join(",");
 }
 
+type InviteFilter = "all" | "party" | "nps" | "both" | "none";
+
+function parseInviteFilter(value: string | null): InviteFilter {
+  if (value === "party" || value === "nps" || value === "both" || value === "none") return value;
+  return "all";
+}
+
+function matchesInviteFilters(
+  entity: {
+    npsEligible: boolean;
+    partyInvite: boolean;
+    partyInviteTipo?: PartyInviteTipo | null;
+  },
+  inviteFilter: InviteFilter,
+  partyTipoFilter: PartyInviteTipo | null
+): boolean {
+  if (partyTipoFilter && entity.partyInviteTipo !== partyTipoFilter) return false;
+  if (inviteFilter === "party") return entity.partyInvite;
+  if (inviteFilter === "nps") return entity.npsEligible;
+  if (inviteFilter === "both") return entity.partyInvite && entity.npsEligible;
+  if (inviteFilter === "none") return !entity.partyInvite && !entity.npsEligible;
+  return true;
+}
+
+function rowMatchesSearch(values: Array<string | null | undefined>, query: string): boolean {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  return values.some((value) => (value ?? "").toLowerCase().includes(q));
+}
+
 /** Exporta CSV respeitando escopo e filtros da listagem. */
 export async function GET(request: Request) {
   try {
@@ -35,6 +66,9 @@ export async function GET(request: Request) {
     const filterGestorId = url.searchParams.get("gestorId") || null;
     const filterArea = url.searchParams.get("area") || null;
     const filterStatus = url.searchParams.get("status") || "all";
+    const inviteFilter = parseInviteFilter(url.searchParams.get("invite"));
+    const partyTipoFilter = parsePartyInviteTipo(url.searchParams.get("partyTipo"));
+    const search = (url.searchParams.get("search") ?? "").trim();
     const excludeSemGrupo = url.searchParams.get("excludeSemGrupo") === "1";
 
     const { companies, contacts, people, responsibles } = await fetchMeusClientesPayload({
@@ -71,6 +105,24 @@ export async function GET(request: Request) {
       if (filterStatus === "complete" && clientProfileIsIncomplete(contactToClientProfile(contact))) {
         return false;
       }
+      const company = contact.companyId ? companiesById.get(contact.companyId) : null;
+      if (
+        !rowMatchesSearch(
+          [
+            contact.clientGroupName,
+            company?.clientGroupName,
+            contact.name,
+            contact.email,
+            contact.phone,
+            contact.cargo,
+            contact.company,
+          ],
+          search
+        )
+      ) {
+        return false;
+      }
+      if (!matchesInviteFilters(contact, inviteFilter, partyTipoFilter)) return false;
       return true;
     });
 
@@ -88,6 +140,22 @@ export async function GET(request: Request) {
       if (filterStatus === "complete" && clientProfileIsIncomplete(personToClientProfile(person))) {
         return false;
       }
+      if (
+        !rowMatchesSearch(
+          [
+            person.clientGroupName,
+            person.name,
+            person.email,
+            person.phone,
+            person.cargo,
+            person.area,
+          ],
+          search
+        )
+      ) {
+        return false;
+      }
+      if (!matchesInviteFilters(person, inviteFilter, partyTipoFilter)) return false;
       return true;
     });
     const filteredPeople = filterPeopleNotInContacts(filteredPeopleRaw, filteredContacts);

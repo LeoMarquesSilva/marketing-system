@@ -44,15 +44,18 @@ import {
   type ClientGroupGestorStatus,
 } from "@/lib/client-group-gestor-status";
 import {
-  clientProfileIsIncomplete,
   contactToClientProfile,
   listClientMissingFieldLabels,
   personToClientProfile,
 } from "@/lib/email-marketing-enrichment";
 import {
+  PARTY_INVITE_TYPES,
+  getPartyInviteTipoLabel,
+  type PartyInviteTipo,
+} from "@/lib/party-invite-types";
+import {
   buildAreaManagerSummary,
   buildClientGroupKeysForAreaFilter,
-  buildManagerSummary,
   compareGroupsByPendingFirst,
   computeEnrichmentTotals,
   computeMyClientScope,
@@ -61,9 +64,9 @@ import {
   getAreaParent,
   groupHasNoContacts,
   groupIsPending,
+  mergeGroupMembers,
   resolveContactGroupKey,
   isSubArea,
-  totalsFromAreaGroup,
 } from "@/lib/meus-clientes";
 import { PersonEditDialog } from "./person-edit-dialog";
 import { ContactCreateDialog } from "./contact-create-dialog";
@@ -82,6 +85,7 @@ import {
   type StatusFilter,
   type AtividadeFilter,
   type FaturamentoPrevistoFilter,
+  type InviteFilter,
   ClickableStatCard,
   DeleteConfirmDialog,
   EmptyState,
@@ -98,13 +102,16 @@ import {
   SEM_GRUPO_KEY,
   StatusToggle,
   contactSearchHaystack,
-  contactSelectKey,
   formatSyncDate,
   isContactPending,
-  isPersonPending,
   parseSelectKey,
-  personSelectKey,
 } from "./meus-clientes-ui";
+
+type InviteMember = {
+  npsEligible: boolean;
+  partyInvite: boolean;
+  partyInviteTipo?: PartyInviteTipo | null;
+};
 
 function resolveGroupKey(entity: {
   clientGroupId: string | null;
@@ -172,6 +179,35 @@ function groupMatchesSearch(
   );
 }
 
+function memberMatchesInviteFilters(
+  member: InviteMember,
+  inviteFilter: InviteFilter,
+  partyTipoFilter: PartyInviteTipo | "all"
+): boolean {
+  if (partyTipoFilter !== "all" && member.partyInviteTipo !== partyTipoFilter) return false;
+  if (inviteFilter === "party") return member.partyInvite;
+  if (inviteFilter === "nps") return member.npsEligible;
+  if (inviteFilter === "both") return member.partyInvite && member.npsEligible;
+  if (inviteFilter === "none") return !member.partyInvite && !member.npsEligible;
+  return true;
+}
+
+function groupMatchesInviteFilters(
+  group: ClientGroupBucket,
+  contactsByGroup: Map<string, EmailContact[]>,
+  inviteFilter: InviteFilter,
+  partyTipoFilter: PartyInviteTipo | "all"
+): boolean {
+  if (inviteFilter === "all" && partyTipoFilter === "all") return true;
+  const { contacts, people } = mergeGroupMembers(
+    contactsByGroup.get(group.key) ?? [],
+    group.groupPeople
+  );
+  return [...contacts, ...people].some((member) =>
+    memberMatchesInviteFilters(member, inviteFilter, partyTipoFilter)
+  );
+}
+
 function MeusClientesClientContent() {
   const { user } = useAuth();
   const { active: tourActive, stepId: tourStepId, setTourState } = useMeusClientesTour();
@@ -204,6 +240,8 @@ function MeusClientesClientContent() {
   const [filterAtividade, setFilterAtividade] = useState<AtividadeFilter>("all");
   const [filterFaturamentoPrevisto, setFilterFaturamentoPrevisto] =
     useState<FaturamentoPrevistoFilter>("all");
+  const [filterInvite, setFilterInvite] = useState<InviteFilter>("all");
+  const [filterPartyTipo, setFilterPartyTipo] = useState<PartyInviteTipo | "all">("all");
   const [atividadeMenuOpen, setAtividadeMenuOpen] = useState(false);
   const [faturamentoMenuOpen, setFaturamentoMenuOpen] = useState(false);
   const [compactMode, setCompactMode] = useState(false);
@@ -225,16 +263,6 @@ function MeusClientesClientContent() {
   const [editingGroupFaturamentoIndicios, setEditingGroupFaturamentoIndicios] =
     useState<SioeClienteFaturamentoIndicios | null>(null);
   const [editingGroupPrevistoDate, setEditingGroupPrevistoDate] = useState<string | null>(null);
-
-  const resolveGroupAtividadeForBucket = useCallback(
-    (group: ClientGroupBucket) =>
-      resolveGroupAtividade(
-        { name: group.name, clientGroupId: group.clientGroupId },
-        group.clientGroupId ? clientGroupStatusById[group.clientGroupId] : null,
-        clienteAtividade
-      ),
-    [clientGroupStatusById, clienteAtividade]
-  );
 
   const resolveClienteStatusForFilter = useCallback(
     (group: ClientGroupBucket) => {
@@ -336,6 +364,8 @@ function MeusClientesClientContent() {
     filterStatus,
     filterAtividade,
     filterFaturamentoPrevisto,
+    filterInvite,
+    filterPartyTipo,
     search,
   ]);
 
@@ -470,6 +500,9 @@ function MeusClientesClientContent() {
     if (filterGestor) params.set("gestorId", filterGestor);
     if (filterArea) params.set("area", filterArea);
     if (filterStatus !== "all") params.set("status", filterStatus);
+    if (filterInvite !== "all") params.set("invite", filterInvite);
+    if (filterPartyTipo !== "all") params.set("partyTipo", filterPartyTipo);
+    if (search.trim()) params.set("search", search.trim());
     params.set("excludeSemGrupo", "1");
     setToast({ type: "success", text: "Exportando CSV com filtros atuais…" });
     window.open(`/api/meus-clientes/export?${params.toString()}`, "_blank");
@@ -534,11 +567,6 @@ function MeusClientesClientContent() {
       .filter((a) => !isSubArea(a))
       .sort((a, b) => a.localeCompare(b, "pt-BR"));
   }, [companies, personAreas, areaManagers]);
-
-  const managerSummary = useMemo(
-    () => buildManagerSummary(companies, contacts, people, responsibles, areaManagers, userNameById),
-    [companies, contacts, people, responsibles, areaManagers, userNameById]
-  );
 
   const areaManagerSummary = useMemo(
     () =>
@@ -639,7 +667,7 @@ function MeusClientesClientContent() {
     [filteredGroups]
   );
 
-  const displayGroups = useMemo(() => {
+  const displayGroupsBeforeInvite = useMemo(() => {
     let list = clientGroups;
     if (isAdmin && filterAtividade !== "all") {
       list = list.filter((group) => {
@@ -662,6 +690,14 @@ function MeusClientesClientContent() {
     isAdmin,
     resolveClienteStatusForFilter,
   ]);
+
+  const displayGroups = useMemo(
+    () =>
+      displayGroupsBeforeInvite.filter((group) =>
+        groupMatchesInviteFilters(group, contactsByGroup, filterInvite, filterPartyTipo)
+      ),
+    [displayGroupsBeforeInvite, contactsByGroup, filterInvite, filterPartyTipo]
+  );
 
   const tourSampleGroupKey = displayGroups[0]?.key ?? null;
 
@@ -777,6 +813,72 @@ function MeusClientesClientContent() {
   const selectedFaturamentoOption =
     faturamentoFilterOptions.find((option) => option.value === filterFaturamentoPrevisto) ??
     faturamentoFilterOptions[0];
+
+  const inviteFilterCounts = useMemo(() => {
+    const counts = {
+      all: 0,
+      party: 0,
+      nps: 0,
+      both: 0,
+      none: 0,
+      partyGroups: 0,
+      npsGroups: 0,
+    };
+    const partyTipoCounts = new Map<PartyInviteTipo, number>(
+      PARTY_INVITE_TYPES.map((tipo) => [tipo.id, 0])
+    );
+
+    for (const group of displayGroupsBeforeInvite) {
+      const { contacts: groupContacts, people: groupPeople } = mergeGroupMembers(
+        contactsByGroup.get(group.key) ?? [],
+        group.groupPeople
+      );
+      const members = [...groupContacts, ...groupPeople];
+      if (members.length === 0) continue;
+
+      let groupHasParty = false;
+      let groupHasNps = false;
+      for (const member of members) {
+        if (member.partyInvite && member.partyInviteTipo) {
+          partyTipoCounts.set(
+            member.partyInviteTipo,
+            (partyTipoCounts.get(member.partyInviteTipo) ?? 0) + 1
+          );
+        }
+        if (filterPartyTipo !== "all" && member.partyInviteTipo !== filterPartyTipo) continue;
+        counts.all++;
+        if (member.partyInvite) {
+          counts.party++;
+          groupHasParty = true;
+        }
+        if (member.npsEligible) {
+          counts.nps++;
+          groupHasNps = true;
+        }
+        if (member.partyInvite && member.npsEligible) counts.both++;
+        if (!member.partyInvite && !member.npsEligible) counts.none++;
+      }
+      if (groupHasParty) counts.partyGroups++;
+      if (groupHasNps) counts.npsGroups++;
+    }
+
+    return { ...counts, partyTipoCounts };
+  }, [displayGroupsBeforeInvite, contactsByGroup, filterPartyTipo]);
+
+  const inviteFilterOptions = useMemo(
+    () =>
+      [
+        { value: "all" as const, label: "NPS/Festa", count: inviteFilterCounts.all },
+        { value: "party" as const, label: "Festa: sim", count: inviteFilterCounts.party },
+        { value: "nps" as const, label: "NPS: sim", count: inviteFilterCounts.nps },
+        { value: "both" as const, label: "NPS + Festa", count: inviteFilterCounts.both },
+        { value: "none" as const, label: "Sem NPS/Festa", count: inviteFilterCounts.none },
+      ] satisfies Array<{ value: InviteFilter; label: string; count: number }>,
+    [inviteFilterCounts]
+  );
+
+  const selectedInviteOption =
+    inviteFilterOptions.find((option) => option.value === filterInvite) ?? inviteFilterOptions[0];
 
   const groupsForStatusCounts = useMemo(() => {
     let list = groupsBeforeStatus.filter((g) => g.key !== SEM_GRUPO_KEY);
@@ -929,6 +1031,8 @@ function MeusClientesClientContent() {
       filterStatus !== "all" ||
       (isAdmin && filterAtividade !== "all") ||
       (isAdmin && filterFaturamentoPrevisto !== "all") ||
+      filterInvite !== "all" ||
+      filterPartyTipo !== "all" ||
       search.trim()
   );
 
@@ -948,6 +1052,8 @@ function MeusClientesClientContent() {
     setFilterStatus("all");
     setFilterAtividade("all");
     setFilterFaturamentoPrevisto("all");
+    setFilterInvite("all");
+    setFilterPartyTipo("all");
     setSearch("");
   };
 
@@ -971,7 +1077,7 @@ function MeusClientesClientContent() {
 
       <div className="flex flex-wrap items-start justify-between gap-3" data-tour="mc-header">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Meus Clientes</h1>
+          <h2 className="text-2xl font-bold tracking-tight">Meus Clientes</h2>
           <p className="text-sm text-muted-foreground mt-1">
             Preencha e confirme e-mail, telefone, cargo e sócios dos clientes sob sua responsabilidade.
           </p>
@@ -1073,7 +1179,7 @@ function MeusClientesClientContent() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" data-tour="mc-stats">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-6" data-tour="mc-stats">
         <ClickableStatCard
           label={hasActiveFilters ? "Grupos no filtro" : showAll ? "Total de grupos" : "Meus grupos"}
           value={hasActiveFilters ? displayGroups.length : summaryTotals.totals.groupsCount}
@@ -1091,6 +1197,24 @@ function MeusClientesClientContent() {
           variant="warning"
           active={filterStatus === "pending"}
           onClick={() => setFilterStatus((s) => (s === "pending" ? "all" : "pending"))}
+        />
+        <ClickableStatCard
+          label="Pessoas para festa"
+          value={inviteFilterCounts.party}
+          active={filterInvite === "party"}
+          onClick={() => setFilterInvite((s) => (s === "party" ? "all" : "party"))}
+        />
+        <ClickableStatCard
+          label="Pessoas NPS"
+          value={inviteFilterCounts.nps}
+          active={filterInvite === "nps"}
+          onClick={() => setFilterInvite((s) => (s === "nps" ? "all" : "nps"))}
+        />
+        <ClickableStatCard
+          label="Grupos com festa"
+          value={inviteFilterCounts.partyGroups}
+          active={filterInvite === "party"}
+          onClick={() => setFilterInvite((s) => (s === "party" ? "all" : "party"))}
         />
       </div>
 
@@ -1115,6 +1239,76 @@ function MeusClientesClientContent() {
             onChange={setFilterStatus}
             counts={statusFilterCounts}
           />
+
+          <Select
+            value={filterInvite}
+            onValueChange={(v) => setFilterInvite(v as InviteFilter)}
+          >
+            <SelectTrigger size="sm" className="w-44">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="truncate">
+                  {filterInvite === "all" ? "NPS/Festa" : selectedInviteOption.label}
+                </span>
+                <span className="shrink-0 tabular-nums text-muted-foreground">
+                  ({selectedInviteOption.count})
+                </span>
+              </span>
+            </SelectTrigger>
+            <SelectContent>
+              {inviteFilterOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  <span className="flex w-full items-center gap-2">
+                    <span className="flex-1">{option.label}</span>
+                    <span className="tabular-nums text-xs text-muted-foreground">
+                      {option.count}
+                    </span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={filterPartyTipo}
+            onValueChange={(v) => setFilterPartyTipo(v as PartyInviteTipo | "all")}
+          >
+            <SelectTrigger size="sm" className="w-52">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="truncate">
+                  {filterPartyTipo === "all"
+                    ? "Critério festa"
+                    : getPartyInviteTipoLabel(filterPartyTipo)}
+                </span>
+                <span className="shrink-0 tabular-nums text-muted-foreground">
+                  (
+                  {filterPartyTipo === "all"
+                    ? inviteFilterCounts.party
+                    : inviteFilterCounts.partyTipoCounts.get(filterPartyTipo) ?? 0}
+                  )
+                </span>
+              </span>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">
+                <span className="flex w-full items-center gap-2">
+                  <span className="flex-1">Todos os critérios</span>
+                  <span className="tabular-nums text-xs text-muted-foreground">
+                    {inviteFilterCounts.party}
+                  </span>
+                </span>
+              </SelectItem>
+              {PARTY_INVITE_TYPES.map((tipo) => (
+                <SelectItem key={tipo.id} value={tipo.id}>
+                  <span className="flex w-full items-center gap-2">
+                    <span className="truncate flex-1">{tipo.label}</span>
+                    <span className="tabular-nums text-xs text-muted-foreground">
+                      {inviteFilterCounts.partyTipoCounts.get(tipo.id) ?? 0}
+                    </span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
           <Select value={filterArea || "__all__"} onValueChange={(v) => setFilterArea(v === "__all__" ? "" : v)}>
             <SelectTrigger size="sm" className="w-48">
@@ -1379,6 +1573,8 @@ function MeusClientesClientContent() {
           filterStatus={filterStatus}
           filterAtividade={isAdmin ? filterAtividade : "all"}
           filterFaturamentoPrevisto={isAdmin ? filterFaturamentoPrevisto : "all"}
+          filterInvite={filterInvite}
+          filterPartyTipo={filterPartyTipo}
           gestorName={gestorName}
           filterResultCount={hasActiveFilters ? displayGroups.length : undefined}
           onClearArea={() => setFilterArea("")}
@@ -1386,6 +1582,8 @@ function MeusClientesClientContent() {
           onClearStatus={() => setFilterStatus("all")}
           onClearAtividade={() => setFilterAtividade("all")}
           onClearFaturamentoPrevisto={() => setFilterFaturamentoPrevisto("all")}
+          onClearInvite={() => setFilterInvite("all")}
+          onClearPartyTipo={() => setFilterPartyTipo("all")}
         />
       </div>
 
@@ -1414,6 +1612,8 @@ function MeusClientesClientContent() {
                 onToggleSelectAllInGroup={handleToggleSelectAllInGroup}
                 compact={compactMode}
                 searchQuery={search}
+                inviteFilter={filterInvite}
+                partyTipoFilter={filterPartyTipo}
                 tourGroupSample={index === 0}
                 tourContactEdit={index === 0 && tourActive}
                 onEditContact={(contact) => {
@@ -1505,7 +1705,7 @@ function MeusClientesClientContent() {
       />
 
       {isAdmin && selectedKeys.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-lg">
+        <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-lg">
           <span className="text-sm font-medium whitespace-nowrap">
             {selectedKeys.size} selecionado{selectedKeys.size === 1 ? "" : "s"}
           </span>

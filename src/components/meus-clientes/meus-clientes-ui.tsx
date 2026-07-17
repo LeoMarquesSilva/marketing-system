@@ -2,15 +2,12 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import {
-  AlertCircle,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  Circle,
   CircleHelp,
   Layers,
   Pencil,
-  Trash2,
   UserPlus,
   Users,
   X,
@@ -48,7 +45,7 @@ import {
   groupHasNoContacts,
   mergeGroupMembers,
 } from "@/lib/meus-clientes";
-import { getAreaIcon, getAreaIconStyle } from "@/lib/area-icons";
+import { AreaIcon, getAreaIconStyle } from "@/lib/area-icons";
 import { getPartyInviteTipoDescription, getPartyInviteTipoLabel } from "@/lib/party-invite-types";
 import type { PartyInviteTipo } from "@/lib/party-invite-types";
 import {
@@ -71,6 +68,7 @@ export const FILTER_SEM_AREA = "__sem_area__";
 export type StatusFilter = "all" | "pending" | "complete";
 export type AtividadeFilter = "all" | "ativo" | "inativo";
 export type FaturamentoPrevistoFilter = "all" | "com" | "sem";
+export type InviteFilter = "all" | "party" | "nps" | "both" | "none";
 export type SelectKey = `c:${string}` | `p:${string}`;
 
 export interface ClientGroupBucket {
@@ -207,6 +205,23 @@ function PartyInviteBadge({ partyInviteTipo }: { partyInviteTipo?: PartyInviteTi
   );
 }
 
+function memberMatchesInviteFilter(
+  member: {
+    npsEligible: boolean;
+    partyInvite: boolean;
+    partyInviteTipo?: PartyInviteTipo | null;
+  },
+  inviteFilter: InviteFilter,
+  partyTipoFilter: PartyInviteTipo | "all"
+): boolean {
+  if (partyTipoFilter !== "all" && member.partyInviteTipo !== partyTipoFilter) return false;
+  if (inviteFilter === "party") return member.partyInvite;
+  if (inviteFilter === "nps") return member.npsEligible;
+  if (inviteFilter === "both") return member.partyInvite && member.npsEligible;
+  if (inviteFilter === "none") return !member.partyInvite && !member.npsEligible;
+  return true;
+}
+
 function ClienteAtividadeBadge({
   status,
   tooltip,
@@ -282,7 +297,6 @@ export function EditableRow({
   title,
   subtitle,
   line2,
-  source,
   npsEligible,
   partyInvite,
   partyInviteTipo,
@@ -424,6 +438,8 @@ export function GroupSection({
   onEditGroupStatus,
   compact,
   searchQuery,
+  inviteFilter = "all",
+  partyTipoFilter = "all",
   tourGroupSample,
   tourContactEdit,
 }: {
@@ -444,6 +460,8 @@ export function GroupSection({
   onEditGroupStatus?: (group: ClientGroupBucket) => void;
   compact?: boolean;
   searchQuery?: string;
+  inviteFilter?: InviteFilter;
+  partyTipoFilter?: PartyInviteTipo | "all";
   tourGroupSample?: boolean;
   tourContactEdit?: boolean;
 }) {
@@ -451,7 +469,6 @@ export function GroupSection({
     groupContacts,
     group.groupPeople
   );
-  const memberCount = mergedContacts.length + mergedPeople.length;
   const noContacts = groupHasNoContacts(mergedPeople, mergedContacts);
   const pendingCount = noContacts ? 1 : countGroupPendingMembers(mergedPeople, mergedContacts);
 
@@ -469,13 +486,18 @@ export function GroupSection({
   const sortedContacts = useMemo(
     () =>
       mergedContacts
+        .filter((contact) => memberMatchesInviteFilter(contact, inviteFilter, partyTipoFilter))
         .slice()
         .sort((a, b) => (a.name ?? a.email).localeCompare(b.name ?? b.email, "pt-BR")),
-    [mergedContacts]
+    [mergedContacts, inviteFilter, partyTipoFilter]
   );
   const sortedPeople = useMemo(
-    () => mergedPeople.slice().sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "pt-BR")),
-    [mergedPeople]
+    () =>
+      mergedPeople
+        .filter((person) => memberMatchesInviteFilter(person, inviteFilter, partyTipoFilter))
+        .slice()
+        .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "pt-BR")),
+    [mergedPeople, inviteFilter, partyTipoFilter]
   );
 
   const allMembers = useMemo(
@@ -485,13 +507,14 @@ export function GroupSection({
     ],
     [sortedContacts, sortedPeople]
   );
+  const displayedMemberCount = allMembers.length;
 
   const groupSelectKeys = useMemo(() => {
     const keys: SelectKey[] = [];
-    for (const contact of mergedContacts) keys.push(contactSelectKey(contact.id));
-    for (const person of mergedPeople) keys.push(personSelectKey(person.id));
+    for (const contact of sortedContacts) keys.push(contactSelectKey(contact.id));
+    for (const person of sortedPeople) keys.push(personSelectKey(person.id));
     return keys;
-  }, [mergedContacts, mergedPeople]);
+  }, [sortedContacts, sortedPeople]);
 
   const selectedInGroup = groupSelectKeys.filter((k) => selectedKeys.has(k)).length;
   const allSelectedInGroup =
@@ -555,7 +578,7 @@ export function GroupSection({
 
   return (
     <section
-      className={`rounded-2xl border bg-card shadow-sm overflow-hidden ${
+      className={`rounded-lg border bg-card shadow-sm overflow-hidden ${
         pendingCount > 0 ? "border-amber-200/70" : "border-border/80"
       }`}
       {...(tourGroupSample ? { "data-tour": "mc-group-sample" } : {})}
@@ -590,7 +613,7 @@ export function GroupSection({
               <AreaBadges areas={groupAreas} />
             </span>
             <span className="mt-1 block text-xs text-muted-foreground">
-              {memberCount} contato{memberCount === 1 ? "" : "s"}
+              {displayedMemberCount} contato{displayedMemberCount === 1 ? "" : "s"}
             </span>
           </span>
           {open ? (
@@ -639,7 +662,7 @@ export function GroupSection({
                   <Users className="h-3.5 w-3.5" />
                   Contatos
                 </p>
-                {isAdmin && memberCount > 0 && (
+                {isAdmin && displayedMemberCount > 0 && (
                   <button
                     type="button"
                     className="text-xs text-primary hover:underline"
@@ -659,7 +682,7 @@ export function GroupSection({
                 Adicionar
               </Button>
             </div>
-            {memberCount === 0 ? (
+            {displayedMemberCount === 0 ? (
               <p className="text-xs text-amber-800 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-4 text-center">
                 Nenhum contato cadastrado neste grupo. Adicione pelo botão acima.
               </p>
@@ -744,7 +767,7 @@ export function MeusClientesSkeleton() {
       </div>
       <div className="h-10 rounded-lg bg-muted" />
       {[1, 2, 3, 4].map((i) => (
-        <div key={i} className="h-16 rounded-2xl bg-muted" />
+        <div key={i} className="h-16 rounded-lg bg-muted" />
       ))}
     </div>
   );
@@ -892,6 +915,8 @@ export function FilterChips({
   filterStatus,
   filterAtividade,
   filterFaturamentoPrevisto,
+  filterInvite,
+  filterPartyTipo,
   gestorName,
   filterResultCount,
   onClearArea,
@@ -899,12 +924,16 @@ export function FilterChips({
   onClearStatus,
   onClearAtividade,
   onClearFaturamentoPrevisto,
+  onClearInvite,
+  onClearPartyTipo,
 }: {
   filterArea: string;
   filterGestor: string;
   filterStatus: StatusFilter;
   filterAtividade?: AtividadeFilter;
   filterFaturamentoPrevisto?: FaturamentoPrevistoFilter;
+  filterInvite?: InviteFilter;
+  filterPartyTipo?: PartyInviteTipo | "all";
   gestorName?: string;
   filterResultCount?: number;
   onClearArea: () => void;
@@ -912,6 +941,8 @@ export function FilterChips({
   onClearStatus: () => void;
   onClearAtividade?: () => void;
   onClearFaturamentoPrevisto?: () => void;
+  onClearInvite?: () => void;
+  onClearPartyTipo?: () => void;
 }) {
   const chips: { label: string; onClear: () => void }[] = [];
   if (filterArea) {
@@ -945,6 +976,25 @@ export function FilterChips({
           ? "Faturamento: com indício"
           : "Faturamento: sem indício",
       onClear: onClearFaturamentoPrevisto ?? (() => {}),
+    });
+  }
+  if (filterInvite && filterInvite !== "all") {
+    const inviteLabels: Record<InviteFilter, string> = {
+      all: "NPS/Festa: todos",
+      party: "Festa: sim",
+      nps: "NPS: sim",
+      both: "NPS + Festa",
+      none: "Sem NPS/Festa",
+    };
+    chips.push({
+      label: inviteLabels[filterInvite],
+      onClear: onClearInvite ?? (() => {}),
+    });
+  }
+  if (filterPartyTipo && filterPartyTipo !== "all") {
+    chips.push({
+      label: `Critério: ${getPartyInviteTipoLabel(filterPartyTipo) ?? filterPartyTipo}`,
+      onClear: onClearPartyTipo ?? (() => {}),
     });
   }
   if (chips.length === 0 && filterResultCount === undefined) return null;
@@ -1052,7 +1102,7 @@ export function EmptyState({
   }[variant];
 
   return (
-    <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed py-16 text-center text-muted-foreground">
+    <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed py-16 text-center text-muted-foreground">
       {variant === "all-complete" ? (
         <CheckCircle2 className="h-10 w-10 text-emerald-500/60" />
       ) : (
@@ -1083,7 +1133,6 @@ export function FilterUserAvatar({
 }
 
 export function FilterAreaIcon({ area, size = "md" }: { area: string; size?: "sm" | "md" }) {
-  const Icon = getAreaIcon(area);
   const box = size === "sm" ? "h-7 w-7" : "h-9 w-9";
   const icon = size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4";
   return (
@@ -1091,7 +1140,7 @@ export function FilterAreaIcon({ area, size = "md" }: { area: string; size?: "sm
       className={`inline-flex shrink-0 items-center justify-center rounded-lg ring-1 ${box} ${getAreaIconStyle(area)}`}
       aria-hidden
     >
-      <Icon className={icon} />
+      <AreaIcon area={area} className={icon} />
     </span>
   );
 }
@@ -1206,7 +1255,7 @@ export function ManagerSummaryTable({
   if (groups.length === 0) return null;
 
   return (
-    <section className="rounded-2xl border border-border/80 bg-card shadow-sm overflow-hidden">
+    <section className="rounded-lg border border-border/80 bg-card shadow-sm overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
