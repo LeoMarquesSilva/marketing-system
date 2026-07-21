@@ -7,6 +7,9 @@ export const dynamic = "force-dynamic";
 
 const EMPTY_DATA: LinkedinDashboardData = {
   dailyMetrics: [],
+  followerDailyMetrics: [],
+  visitorDailyMetrics: [],
+  demographics: [],
   posts: [],
   imports: [],
   instagramCandidates: [],

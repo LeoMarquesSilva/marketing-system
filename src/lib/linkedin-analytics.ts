@@ -1,4 +1,11 @@
-import type { LinkedinDailyMetric, LinkedinPost } from "@/lib/linkedin-types";
+import type {
+  LinkedinDailyMetric,
+  LinkedinFollowerDailyMetric,
+  LinkedinPost,
+  LinkedinVisitorDailyMetric,
+} from "@/lib/linkedin-types";
+
+export type LinkedinTrendGranularity = "day" | "month";
 
 export interface LinkedinSummary {
   impressions: number;
@@ -20,6 +27,26 @@ export interface LinkedinTrendPoint {
   clicks: number;
   engagementRate: number;
   ctr: number;
+}
+
+export interface LinkedinAudienceSummary {
+  newFollowers: number;
+  organicFollowers: number;
+  sponsoredFollowers: number;
+  autoInvitedFollowers: number;
+  pageViews: number;
+  uniqueVisitors: number;
+  desktopViews: number;
+  mobileViews: number;
+  viewsPerVisitor: number;
+}
+
+export interface LinkedinAudienceTrendPoint {
+  key: string;
+  label: string;
+  newFollowers: number;
+  pageViews: number;
+  uniqueVisitors: number;
 }
 
 export interface LinkedinGroupPerformance {
@@ -63,10 +90,24 @@ export function aggregateLinkedinDailyMetrics(
   };
 }
 
-export function buildLinkedinMonthlyTrend(rows: LinkedinDailyMetric[]): LinkedinTrendPoint[] {
+function trendKey(date: string, granularity: LinkedinTrendGranularity): string {
+  return granularity === "month" ? date.slice(0, 7) : date.slice(0, 10);
+}
+
+function trendLabel(key: string, granularity: LinkedinTrendGranularity): string {
+  const date = new Date(`${granularity === "month" ? `${key}-01` : key}T12:00:00.000Z`);
+  return date.toLocaleDateString("pt-BR", granularity === "month"
+    ? { month: "short", year: "2-digit", timeZone: "UTC" }
+    : { day: "2-digit", month: "short", timeZone: "UTC" });
+}
+
+export function buildLinkedinMonthlyTrend(
+  rows: LinkedinDailyMetric[],
+  granularity: LinkedinTrendGranularity = "month"
+): LinkedinTrendPoint[] {
   const grouped = new Map<string, LinkedinDailyMetric[]>();
   for (const row of rows) {
-    const key = row.metric_date.slice(0, 7);
+    const key = trendKey(row.metric_date, granularity);
     grouped.set(key, [...(grouped.get(key) ?? []), row]);
   }
 
@@ -74,14 +115,74 @@ export function buildLinkedinMonthlyTrend(rows: LinkedinDailyMetric[]): Linkedin
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([key, group]) => {
       const summary = aggregateLinkedinDailyMetrics(group);
-      const date = new Date(`${key}-01T12:00:00.000Z`);
       return {
         key,
-        label: date.toLocaleDateString("pt-BR", { month: "short", year: "2-digit", timeZone: "UTC" }),
+        label: trendLabel(key, granularity),
         impressions: summary.impressions,
         clicks: summary.clicks,
         engagementRate: summary.engagementRate * 100,
         ctr: summary.ctr * 100,
+      };
+    });
+}
+
+export function aggregateLinkedinAudienceMetrics(
+  followerRows: LinkedinFollowerDailyMetric[],
+  visitorRows: LinkedinVisitorDailyMetric[]
+): LinkedinAudienceSummary {
+  const followers = followerRows.reduce(
+    (total, row) => ({
+      newFollowers: total.newFollowers + row.total_followers,
+      organicFollowers: total.organicFollowers + row.organic_followers,
+      sponsoredFollowers: total.sponsoredFollowers + row.sponsored_followers,
+      autoInvitedFollowers: total.autoInvitedFollowers + row.auto_invited_followers,
+    }),
+    { newFollowers: 0, organicFollowers: 0, sponsoredFollowers: 0, autoInvitedFollowers: 0 }
+  );
+  const visitors = visitorRows.reduce(
+    (total, row) => ({
+      pageViews: total.pageViews + row.total_views_total,
+      uniqueVisitors: total.uniqueVisitors + row.total_unique_total,
+      desktopViews: total.desktopViews + row.total_views_desktop,
+      mobileViews: total.mobileViews + row.total_views_mobile,
+    }),
+    { pageViews: 0, uniqueVisitors: 0, desktopViews: 0, mobileViews: 0 }
+  );
+  return {
+    ...followers,
+    ...visitors,
+    viewsPerVisitor: visitors.uniqueVisitors > 0 ? visitors.pageViews / visitors.uniqueVisitors : 0,
+  };
+}
+
+export function buildLinkedinAudienceTrend(
+  followerRows: LinkedinFollowerDailyMetric[],
+  visitorRows: LinkedinVisitorDailyMetric[],
+  granularity: LinkedinTrendGranularity = "month"
+): LinkedinAudienceTrendPoint[] {
+  const grouped = new Map<string, { followers: LinkedinFollowerDailyMetric[]; visitors: LinkedinVisitorDailyMetric[] }>();
+  for (const row of followerRows) {
+    const key = trendKey(row.metric_date, granularity);
+    const group = grouped.get(key) ?? { followers: [], visitors: [] };
+    group.followers.push(row);
+    grouped.set(key, group);
+  }
+  for (const row of visitorRows) {
+    const key = trendKey(row.metric_date, granularity);
+    const group = grouped.get(key) ?? { followers: [], visitors: [] };
+    group.visitors.push(row);
+    grouped.set(key, group);
+  }
+  return Array.from(grouped.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, group]) => {
+      const summary = aggregateLinkedinAudienceMetrics(group.followers, group.visitors);
+      return {
+        key,
+        label: trendLabel(key, granularity),
+        newFollowers: summary.newFollowers,
+        pageViews: summary.pageViews,
+        uniqueVisitors: summary.uniqueVisitors,
       };
     });
 }

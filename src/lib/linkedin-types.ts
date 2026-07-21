@@ -26,6 +26,68 @@ export interface LinkedinDailyMetric {
   updated_at: string;
 }
 
+export type LinkedinReportType = "content" | "followers" | "visitors";
+
+export interface LinkedinFollowerDailyMetric {
+  id: string;
+  metric_date: string;
+  sponsored_followers: number;
+  organic_followers: number;
+  auto_invited_followers: number;
+  total_followers: number;
+  source_import_id: string | null;
+  updated_at: string;
+}
+
+export interface LinkedinVisitorDailyMetric {
+  id: string;
+  metric_date: string;
+  overview_views_desktop: number;
+  overview_views_mobile: number;
+  overview_views_total: number;
+  overview_unique_desktop: number;
+  overview_unique_mobile: number;
+  overview_unique_total: number;
+  life_views_desktop: number;
+  life_views_mobile: number;
+  life_views_total: number;
+  life_unique_desktop: number;
+  life_unique_mobile: number;
+  life_unique_total: number;
+  jobs_views_desktop: number;
+  jobs_views_mobile: number;
+  jobs_views_total: number;
+  jobs_unique_desktop: number;
+  jobs_unique_mobile: number;
+  jobs_unique_total: number;
+  total_views_desktop: number;
+  total_views_mobile: number;
+  total_views_total: number;
+  total_unique_desktop: number;
+  total_unique_mobile: number;
+  total_unique_total: number;
+  source_import_id: string | null;
+  updated_at: string;
+}
+
+export type LinkedinDemographicDimension =
+  | "location"
+  | "function"
+  | "seniority"
+  | "industry"
+  | "company_size";
+
+export interface LinkedinDemographicSnapshot {
+  id: string;
+  import_id: string;
+  report_type: "followers" | "visitors";
+  dimension: LinkedinDemographicDimension;
+  label: string;
+  metric_value: number;
+  captured_at: string;
+  created_at: string;
+}
+
 export interface LinkedinPost {
   id: string;
   linkedin_urn: string;
@@ -68,6 +130,8 @@ export interface LinkedinImportRecord {
   daily_rows: number;
   post_rows: number;
   matched_posts: number;
+  report_type: LinkedinReportType;
+  demographic_rows: number;
   date_from: string | null;
   date_to: string | null;
   warnings: string[];
@@ -77,6 +141,9 @@ export interface LinkedinImportRecord {
 
 export interface LinkedinDashboardData {
   dailyMetrics: LinkedinDailyMetric[];
+  followerDailyMetrics: LinkedinFollowerDailyMetric[];
+  visitorDailyMetrics: LinkedinVisitorDailyMetric[];
+  demographics: LinkedinDemographicSnapshot[];
   posts: LinkedinPost[];
   imports: LinkedinImportRecord[];
   instagramCandidates: InstagramPost[];
@@ -86,6 +153,21 @@ export interface LinkedinDashboardData {
 export type ParsedLinkedinDailyMetric = Omit<
   LinkedinDailyMetric,
   "id" | "source_import_id" | "updated_at"
+>;
+
+export type ParsedLinkedinFollowerDailyMetric = Omit<
+  LinkedinFollowerDailyMetric,
+  "id" | "source_import_id" | "updated_at"
+>;
+
+export type ParsedLinkedinVisitorDailyMetric = Omit<
+  LinkedinVisitorDailyMetric,
+  "id" | "source_import_id" | "updated_at"
+>;
+
+export type ParsedLinkedinDemographic = Omit<
+  LinkedinDemographicSnapshot,
+  "id" | "import_id" | "report_type" | "captured_at" | "created_at"
 >;
 
 export type ParsedLinkedinPost = Omit<
@@ -101,7 +183,11 @@ export type ParsedLinkedinPost = Omit<
   >;
 
 export interface LinkedinWorkbookData {
+  reportType: LinkedinReportType;
   dailyMetrics: ParsedLinkedinDailyMetric[];
+  followerDailyMetrics: ParsedLinkedinFollowerDailyMetric[];
+  visitorDailyMetrics: ParsedLinkedinVisitorDailyMetric[];
+  demographics: ParsedLinkedinDemographic[];
   posts: ParsedLinkedinPost[];
   warnings: string[];
   dateFrom: string | null;

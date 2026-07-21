@@ -43,4 +43,55 @@ describe("LinkedIn workbook parser", () => {
     expect(parsed.posts).toHaveLength(1);
     expect(parsed.posts[0]).toMatchObject({ linkedin_urn: "12345", byline: "Dra. Ana", content_type: "Vídeo" });
   });
+
+  it("recognizes followers and preserves negative daily movement", () => {
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        ["Data", "Seguidores patrocinados", "Seguidores orgânicos", "Seguidores convidados automaticamente", "Total de seguidores"],
+        ["07/20/2026", 0, -1, 0, -1],
+        ["07/21/2026", 0, 4, 1, 5],
+      ]),
+      "Novos seguidores"
+    );
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([["Localidade", "Total de seguidores"], ["Campinas, Brasil", 100]]),
+      "Localidade"
+    );
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "biff8" });
+
+    const parsed = parseLinkedinWorkbook(buffer);
+    expect(parsed.reportType).toBe("followers");
+    expect(parsed.followerDailyMetrics).toHaveLength(2);
+    expect(parsed.followerDailyMetrics[0].total_followers).toBe(-1);
+    expect(parsed.demographics[0]).toMatchObject({ dimension: "location", metric_value: 100 });
+  });
+
+  it("recognizes visitor totals and demographic dimensions", () => {
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        ["Data", "Total de visualizações da página (computadores)", "Total de visualizações da página (dispositivos móveis)", "Total de visualizações da página (total)", "Total de visitantes únicos (computadores)", "Total de visitantes únicos (dispositivos móveis)", "Total de visitantes únicos (total)"],
+        ["07/20/2026", 5, 10, 15, 3, 7, 10],
+      ]),
+      "Métricas de visitantes"
+    );
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([["Setor", "Total de visualizações"], ["Serviços advocatícios", 80]]),
+      "Setor"
+    );
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "biff8" });
+
+    const parsed = parseLinkedinWorkbook(buffer);
+    expect(parsed.reportType).toBe("visitors");
+    expect(parsed.visitorDailyMetrics[0]).toMatchObject({
+      total_views_total: 15,
+      total_unique_total: 10,
+    });
+    expect(parsed.demographics[0]).toMatchObject({ dimension: "industry", metric_value: 80 });
+  });
 });

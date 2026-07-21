@@ -6,6 +6,8 @@ import {
   Activity,
   AlertCircle,
   BarChart3,
+  BriefcaseBusiness,
+  Building2,
   CheckCircle2,
   Eye,
   FileClock,
@@ -13,6 +15,8 @@ import {
   Link2,
   Linkedin,
   MousePointerClick,
+  MapPin,
+  MonitorSmartphone,
   Search,
   Sparkles,
   TrendingUp,
@@ -24,17 +28,22 @@ import { Input } from "@/components/ui/input";
 import { SectionCard, KpiCard, ComparisonStat } from "@/components/instagram/instagram-section-card";
 import { InstagramPeriodPicker } from "@/components/instagram/instagram-period-picker";
 import { LinkedinImportButton, type LinkedinImportFeedback } from "@/components/linkedin/linkedin-import-button";
+import { LinkedinAudienceChart } from "@/components/linkedin/linkedin-audience-chart";
+import { LinkedinDemographicRanking } from "@/components/linkedin/linkedin-demographic-ranking";
 import { LinkedinPerformanceChart } from "@/components/linkedin/linkedin-performance-chart";
 import { LinkedinPostCard } from "@/components/linkedin/linkedin-post-card";
 import { LinkedinRankingList } from "@/components/linkedin/linkedin-ranking-list";
 import {
   aggregateLinkedinDailyMetrics,
+  aggregateLinkedinAudienceMetrics,
+  buildLinkedinAudienceTrend,
   buildLinkedinMonthlyTrend,
   computeLinkedinPerformanceByArea,
   computeLinkedinPerformanceByAuthor,
   computeLinkedinPerformanceByFormat,
   getLinkedinPostTitle,
   percentDelta,
+  type LinkedinTrendGranularity,
 } from "@/lib/linkedin-analytics";
 import {
   getPreviousRange,
@@ -42,17 +51,35 @@ import {
   resolvePeriodRange,
   type PeriodFilter,
 } from "@/lib/instagram-period";
-import type { LinkedinDashboardData, LinkedinPost } from "@/lib/linkedin-types";
+import type {
+  LinkedinDashboardData,
+  LinkedinDemographicDimension,
+  LinkedinPost,
+} from "@/lib/linkedin-types";
 import { cn } from "@/lib/utils";
 
-type LinkedinTab = "overview" | "people" | "posts" | "imports";
+type LinkedinTab = "overview" | "audience" | "people" | "posts" | "imports";
 type LinkFilter = "all" | "linked" | "pending";
+type AudienceSource = "followers" | "visitors";
 
 const TABS: Array<{ id: LinkedinTab; label: string; icon: typeof BarChart3 }> = [
   { id: "overview", label: "Visão geral", icon: BarChart3 },
+  { id: "audience", label: "Seguidores & visitantes", icon: Users },
   { id: "people", label: "Áreas & autores", icon: Users },
   { id: "posts", label: "Publicações", icon: Linkedin },
   { id: "imports", label: "Importações", icon: FileClock },
+];
+
+const DEMOGRAPHIC_TABS: Array<{
+  id: LinkedinDemographicDimension;
+  label: string;
+  icon: typeof MapPin;
+}> = [
+  { id: "location", label: "Localidade", icon: MapPin },
+  { id: "function", label: "Função", icon: BriefcaseBusiness },
+  { id: "seniority", label: "Experiência", icon: Users },
+  { id: "industry", label: "Setor", icon: Building2 },
+  { id: "company_size", label: "Empresa", icon: Building2 },
 ];
 
 function formatNumber(value: number): string {
@@ -70,6 +97,8 @@ function metricDateIso(date: string): string {
 function getYears(data: LinkedinDashboardData): number[] {
   const years = new Set<number>([new Date().getFullYear()]);
   for (const row of data.dailyMetrics) years.add(Number(row.metric_date.slice(0, 4)));
+  for (const row of data.followerDailyMetrics) years.add(Number(row.metric_date.slice(0, 4)));
+  for (const row of data.visitorDailyMetrics) years.add(Number(row.metric_date.slice(0, 4)));
   for (const post of data.posts) {
     if (post.published_at) years.add(new Date(post.published_at).getFullYear());
   }
@@ -91,6 +120,32 @@ function comparePostsByMetric(left: LinkedinPost, right: LinkedinPost): number {
   return right.engagement_rate - left.engagement_rate || right.impressions - left.impressions;
 }
 
+function GranularityToggle({
+  value,
+  onChange,
+}: {
+  value: LinkedinTrendGranularity;
+  onChange: (value: LinkedinTrendGranularity) => void;
+}) {
+  return (
+    <div className="flex rounded-lg border border-border/60 bg-slate-50 p-0.5">
+      {(["day", "month"] as const).map((option) => (
+        <button
+          key={option}
+          type="button"
+          onClick={() => onChange(option)}
+          className={cn(
+            "rounded-md px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide transition",
+            value === option ? "bg-white text-[#0A66C2] shadow-sm" : "text-slate-400"
+          )}
+        >
+          {option === "day" ? "Diário" : "Mensal"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function LinkedinInsightsClient({ initialData }: { initialData: LinkedinDashboardData }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<LinkedinTab>("overview");
@@ -100,6 +155,9 @@ export function LinkedinInsightsClient({ initialData }: { initialData: LinkedinD
   const [linkFilter, setLinkFilter] = useState<LinkFilter>("all");
   const [savingPostId, setSavingPostId] = useState<string | null>(null);
   const [visiblePosts, setVisiblePosts] = useState(20);
+  const [granularity, setGranularity] = useState<LinkedinTrendGranularity>("month");
+  const [audienceSource, setAudienceSource] = useState<AudienceSource>("followers");
+  const [demographicDimension, setDemographicDimension] = useState<LinkedinDemographicDimension>("location");
 
   const range = useMemo(() => resolvePeriodRange(period), [period]);
   const scopedDaily = useMemo(
@@ -110,8 +168,27 @@ export function LinkedinInsightsClient({ initialData }: { initialData: LinkedinD
     () => initialData.posts.filter((post) => isWithinRange(post.published_at, range)),
     [initialData.posts, range]
   );
+  const scopedFollowers = useMemo(
+    () => initialData.followerDailyMetrics.filter((row) => isWithinRange(metricDateIso(row.metric_date), range)),
+    [initialData.followerDailyMetrics, range]
+  );
+  const scopedVisitors = useMemo(
+    () => initialData.visitorDailyMetrics.filter((row) => isWithinRange(metricDateIso(row.metric_date), range)),
+    [initialData.visitorDailyMetrics, range]
+  );
   const summary = useMemo(() => aggregateLinkedinDailyMetrics(scopedDaily), [scopedDaily]);
-  const trend = useMemo(() => buildLinkedinMonthlyTrend(scopedDaily), [scopedDaily]);
+  const audienceSummary = useMemo(
+    () => aggregateLinkedinAudienceMetrics(scopedFollowers, scopedVisitors),
+    [scopedFollowers, scopedVisitors]
+  );
+  const trend = useMemo(
+    () => buildLinkedinMonthlyTrend(scopedDaily, granularity),
+    [granularity, scopedDaily]
+  );
+  const audienceTrend = useMemo(
+    () => buildLinkedinAudienceTrend(scopedFollowers, scopedVisitors, granularity),
+    [granularity, scopedFollowers, scopedVisitors]
+  );
   const formats = useMemo(() => computeLinkedinPerformanceByFormat(scopedPosts), [scopedPosts]);
   const areas = useMemo(() => computeLinkedinPerformanceByArea(scopedPosts), [scopedPosts]);
   const authors = useMemo(() => computeLinkedinPerformanceByAuthor(scopedPosts), [scopedPosts]);
@@ -152,6 +229,31 @@ export function LinkedinInsightsClient({ initialData }: { initialData: LinkedinD
   const topPosts = [...scopedPosts].sort(comparePostsByMetric).slice(0, 5);
   const sponsoredShare = summary.impressions > 0 ? summary.sponsoredImpressions / summary.impressions : 0;
   const organicShare = summary.impressions > 0 ? 1 - sponsoredShare : 0;
+  const mobileShare = audienceSummary.pageViews > 0
+    ? audienceSummary.mobileViews / audienceSummary.pageViews
+    : 0;
+  const desktopShare = audienceSummary.pageViews > 0
+    ? audienceSummary.desktopViews / audienceSummary.pageViews
+    : 0;
+  const demographicItems = initialData.demographics.filter(
+    (item) => item.report_type === audienceSource && item.dimension === demographicDimension
+  );
+  const visitorPageMix = useMemo(() => {
+    const totals = scopedVisitors.reduce(
+      (current, row) => ({
+        overview: current.overview + row.overview_views_total,
+        life: current.life + row.life_views_total,
+        jobs: current.jobs + row.jobs_views_total,
+      }),
+      { overview: 0, life: 0, jobs: 0 }
+    );
+    return [
+      { label: "Visão geral", value: totals.overview },
+      { label: "Dia a dia", value: totals.life },
+      { label: "Vagas", value: totals.jobs },
+    ];
+  }, [scopedVisitors]);
+  const demographicCapturedAt = demographicItems[0]?.captured_at ?? null;
 
   const handleLink = async (linkedinPostId: string, instagramPostId: string | null) => {
     setSavingPostId(linkedinPostId);
@@ -207,7 +309,11 @@ export function LinkedinInsightsClient({ initialData }: { initialData: LinkedinD
                   {feedback.duplicate ? "Esse arquivo já estava importado." : "Relatório importado com sucesso."}
                 </p>
                 <p className="mt-0.5 text-xs">
-                  {feedback.dailyRows} dias · {feedback.postRows} posts · {feedback.matchedPosts} previews vinculados
+                  {feedback.reportType === "content" ? "Conteúdo" : feedback.reportType === "followers" ? "Seguidores" : "Visitantes"}
+                  {" · "}{feedback.dailyRows} dias
+                  {feedback.postRows > 0 ? ` · ${feedback.postRows} posts` : ""}
+                  {feedback.demographicRows > 0 ? ` · ${feedback.demographicRows} recortes` : ""}
+                  {feedback.postRows > 0 ? ` · ${feedback.matchedPosts} previews vinculados` : ""}
                 </p>
                 {feedback.warnings.map((warning) => <p key={warning} className="mt-1 text-xs">{warning}</p>)}
               </>
@@ -229,7 +335,7 @@ export function LinkedinInsightsClient({ initialData }: { initialData: LinkedinD
               Uma leitura editorial do desempenho no LinkedIn.
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/55">
-              Cada publicação é reconciliada com o Instagram para trazer mídia, áreas e autores ao mesmo contexto de análise.
+              Conteúdo, audiência e demografia no mesmo contexto, com publicações reconciliadas ao Instagram.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -249,11 +355,13 @@ export function LinkedinInsightsClient({ initialData }: { initialData: LinkedinD
         </div>
       </section>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <KpiCard label="Impressões" value={formatNumber(summary.impressions)} sub={`${formatNumber(summary.uniqueImpressions)} únicas (orgânicas)`} icon={<Eye className="h-3.5 w-3.5" />} />
         <KpiCard label="Cliques" value={formatNumber(summary.clicks)} sub={`${formatPercent(summary.ctr)} CTR ponderado`} icon={<MousePointerClick className="h-3.5 w-3.5" />} />
         <KpiCard label="Taxa de engajamento" value={formatPercent(summary.engagementRate)} sub={`${formatNumber(summary.actions)} ações registradas`} icon={<TrendingUp className="h-3.5 w-3.5" />} />
         <KpiCard label="Publicações" value={scopedPosts.length} sub={`${matchedCount} com preview do Instagram`} icon={<Linkedin className="h-3.5 w-3.5" />} />
+        <KpiCard label="Novos seguidores" value={formatNumber(audienceSummary.newFollowers)} sub={`${formatNumber(audienceSummary.organicFollowers)} orgânicos`} icon={<Users className="h-3.5 w-3.5" />} />
+        <KpiCard label="Visitantes únicos" value={formatNumber(audienceSummary.uniqueVisitors)} sub={`${formatNumber(audienceSummary.pageViews)} visualizações`} icon={<MonitorSmartphone className="h-3.5 w-3.5" />} />
       </div>
 
       <nav className="flex gap-1 overflow-x-auto border-b border-border/60" aria-label="Seções do LinkedIn Insights">
@@ -284,7 +392,11 @@ export function LinkedinInsightsClient({ initialData }: { initialData: LinkedinD
             </div>
           </SectionCard>
 
-          <SectionCard title="Pulso mensal" description="Impressões em azul e taxa de engajamento em ciano">
+          <SectionCard
+            title={granularity === "month" ? "Pulso mensal" : "Pulso diário"}
+            description="Impressões em azul e taxa de engajamento em ciano"
+            action={<GranularityToggle value={granularity} onChange={setGranularity} />}
+          >
             <LinkedinPerformanceChart data={trend} />
           </SectionCard>
 
@@ -325,6 +437,97 @@ export function LinkedinInsightsClient({ initialData }: { initialData: LinkedinD
               {topPosts.length === 0 && <p className="py-10 text-center text-sm text-muted-foreground">Importe um relatório para ver o ranking.</p>}
             </div>
           </SectionCard>
+        </div>
+      )}
+
+      {activeTab === "audience" && (
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <KpiCard label="Crescimento líquido" value={formatNumber(audienceSummary.newFollowers)} sub={`${formatNumber(audienceSummary.organicFollowers)} orgânicos`} icon={<Users className="h-3.5 w-3.5" />} />
+            <KpiCard label="Visualizações da página" value={formatNumber(audienceSummary.pageViews)} sub={`${formatPercent(mobileShare)} em dispositivos móveis`} icon={<Eye className="h-3.5 w-3.5" />} />
+            <KpiCard label="Visitantes únicos" value={formatNumber(audienceSummary.uniqueVisitors)} sub="Soma dos únicos diários do período" icon={<Users className="h-3.5 w-3.5" />} />
+            <KpiCard label="Visitas por visitante" value={audienceSummary.viewsPerVisitor.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} sub="Frequência média observada" icon={<Activity className="h-3.5 w-3.5" />} />
+            <KpiCard label="Convites automáticos" value={formatNumber(audienceSummary.autoInvitedFollowers)} sub={`${formatNumber(audienceSummary.sponsoredFollowers)} patrocinados`} icon={<Sparkles className="h-3.5 w-3.5" />} />
+          </div>
+
+          <SectionCard
+            title={granularity === "month" ? "Audiência por mês" : "Audiência por dia"}
+            description="Visualizações, visitantes únicos e aquisição líquida de seguidores"
+            action={<GranularityToggle value={granularity} onChange={setGranularity} />}
+          >
+            <LinkedinAudienceChart data={audienceTrend} />
+          </SectionCard>
+
+          <div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]">
+            <SectionCard title="Origem das visitas" description="Distribuição por dispositivo e seção da página">
+              <div className="space-y-5">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl bg-slate-50 p-4">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Mobile</p>
+                    <p className="mt-2 font-mono text-2xl font-bold">{formatPercent(mobileShare)}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{formatNumber(audienceSummary.mobileViews)} views</p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 p-4">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Desktop</p>
+                    <p className="mt-2 font-mono text-2xl font-bold">{formatPercent(desktopShare)}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{formatNumber(audienceSummary.desktopViews)} views</p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  {visitorPageMix.map((item) => {
+                    const share = audienceSummary.pageViews > 0 ? item.value / audienceSummary.pageViews : 0;
+                    return (
+                      <div key={item.label}>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-medium text-slate-600">{item.label}</span>
+                          <span className="font-mono text-slate-500">{formatNumber(item.value)} · {formatPercent(share)}</span>
+                        </div>
+                        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                          <div className="h-full rounded-full bg-[#0A66C2]" style={{ width: `${share * 100}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </SectionCard>
+
+            <SectionCard
+              title="Perfil do público"
+              description={demographicCapturedAt
+                ? `Fotografia da importação de ${new Date(`${demographicCapturedAt}T12:00:00`).toLocaleDateString("pt-BR")}; não varia com o filtro de período`
+                : "Importe seguidores e visitantes para visualizar os recortes"}
+            >
+              <div className="mb-4 space-y-3">
+                <div className="flex w-fit rounded-xl border border-border/60 bg-slate-50 p-1">
+                  {(["followers", "visitors"] as const).map((source) => (
+                    <button
+                      key={source}
+                      type="button"
+                      onClick={() => setAudienceSource(source)}
+                      className={cn("rounded-lg px-3 py-1.5 text-xs font-medium transition", audienceSource === source ? "bg-white text-[#0A66C2] shadow-sm" : "text-muted-foreground")}
+                    >
+                      {source === "followers" ? "Seguidores" : "Visitantes"}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-1 overflow-x-auto pb-1">
+                  {DEMOGRAPHIC_TABS.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setDemographicDimension(item.id)}
+                      className={cn("flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium", demographicDimension === item.id ? "bg-[#0A66C2]/10 text-[#0A66C2]" : "text-muted-foreground hover:bg-slate-50")}
+                    >
+                      <item.icon className="h-3.5 w-3.5" />
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <LinkedinDemographicRanking items={demographicItems} emptyLabel="Sem dados demográficos para este recorte." />
+            </SectionCard>
+          </div>
         </div>
       )}
 
@@ -369,19 +572,20 @@ export function LinkedinInsightsClient({ initialData }: { initialData: LinkedinD
         <SectionCard title="Histórico de importações" description="Arquivos processados, cobertura e qualidade dos vínculos" action={<FileSpreadsheet className="h-4 w-4 text-[#0A66C2]" />} noPadding>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-sm">
-              <thead className="border-b border-border/50 bg-slate-50/80 text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="px-5 py-3 font-semibold">Arquivo</th><th className="px-4 py-3 font-semibold">Importado em</th><th className="px-4 py-3 font-semibold">Cobertura</th><th className="px-4 py-3 font-semibold">Linhas</th><th className="px-4 py-3 font-semibold">Vínculos</th><th className="px-5 py-3 font-semibold">Status</th></tr></thead>
+              <thead className="border-b border-border/50 bg-slate-50/80 text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="px-5 py-3 font-semibold">Arquivo</th><th className="px-4 py-3 font-semibold">Tipo</th><th className="px-4 py-3 font-semibold">Importado em</th><th className="px-4 py-3 font-semibold">Cobertura</th><th className="px-4 py-3 font-semibold">Linhas</th><th className="px-4 py-3 font-semibold">Vínculos</th><th className="px-5 py-3 font-semibold">Status</th></tr></thead>
               <tbody className="divide-y divide-border/40">
                 {initialData.imports.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50/60">
                     <td className="max-w-[240px] truncate px-5 py-3.5 font-medium">{item.filename}</td>
+                    <td className="px-4 py-3.5"><Badge variant="outline" className="bg-white">{item.report_type === "followers" ? "Seguidores" : item.report_type === "visitors" ? "Visitantes" : "Conteúdo"}</Badge></td>
                     <td className="px-4 py-3.5 text-xs text-muted-foreground">{new Date(item.imported_at).toLocaleString("pt-BR")}</td>
                     <td className="px-4 py-3.5 font-mono text-xs">{item.date_from ? new Date(`${item.date_from}T12:00:00`).toLocaleDateString("pt-BR") : "—"} – {item.date_to ? new Date(`${item.date_to}T12:00:00`).toLocaleDateString("pt-BR") : "—"}</td>
-                    <td className="px-4 py-3.5 font-mono text-xs">{item.daily_rows} dias · {item.post_rows} posts</td>
-                    <td className="px-4 py-3.5 font-mono text-xs">{item.matched_posts}/{item.post_rows}</td>
+                    <td className="px-4 py-3.5 font-mono text-xs">{item.daily_rows} dias{item.post_rows > 0 ? ` · ${item.post_rows} posts` : ""}{item.demographic_rows > 0 ? ` · ${item.demographic_rows} recortes` : ""}</td>
+                    <td className="px-4 py-3.5 font-mono text-xs">{item.post_rows > 0 ? `${item.matched_posts}/${item.post_rows}` : "—"}</td>
                     <td className="px-5 py-3.5"><Badge variant="outline" className={item.status === "completed" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : item.status === "failed" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-amber-200 bg-amber-50 text-amber-700"}>{item.status === "completed" ? "Concluído" : item.status === "failed" ? "Falhou" : "Processando"}</Badge></td>
                   </tr>
                 ))}
-                {initialData.imports.length === 0 && <tr><td colSpan={6} className="px-5 py-14 text-center text-sm text-muted-foreground">Nenhum relatório importado.</td></tr>}
+                {initialData.imports.length === 0 && <tr><td colSpan={7} className="px-5 py-14 text-center text-sm text-muted-foreground">Nenhum relatório importado.</td></tr>}
               </tbody>
             </table>
           </div>

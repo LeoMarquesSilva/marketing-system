@@ -4,11 +4,14 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileUp, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { LinkedinReportType } from "@/lib/linkedin-types";
 
 export interface LinkedinImportFeedback {
   duplicate: boolean;
+  reportType: LinkedinReportType;
   dailyRows: number;
   postRows: number;
+  demographicRows: number;
   matchedPosts: number;
   warnings: string[];
 }
@@ -36,8 +39,10 @@ export function LinkedinImportButton({ disabled, onFeedback }: LinkedinImportBut
       if (!response.ok) throw new Error(json.error ?? "Não foi possível importar o relatório.");
       onFeedback({
         duplicate: Boolean(json.duplicate),
+        reportType: json.reportType === "followers" || json.reportType === "visitors" ? json.reportType : "content",
         dailyRows: Number(json.dailyRows ?? 0),
         postRows: Number(json.postRows ?? 0),
+        demographicRows: Number(json.demographicRows ?? 0),
         matchedPosts: Number(json.matchedPosts ?? 0),
         warnings: Array.isArray(json.warnings) ? json.warnings : [],
       });

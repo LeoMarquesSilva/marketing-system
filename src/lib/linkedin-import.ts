@@ -1,8 +1,12 @@
 import * as XLSX from "xlsx";
 import type {
+  LinkedinDemographicDimension,
   LinkedinWorkbookData,
   ParsedLinkedinDailyMetric,
+  ParsedLinkedinDemographic,
+  ParsedLinkedinFollowerDailyMetric,
   ParsedLinkedinPost,
+  ParsedLinkedinVisitorDailyMetric,
 } from "@/lib/linkedin-types";
 
 type CellValue = string | number | boolean | Date | null | undefined;
@@ -30,6 +34,10 @@ function numberValue(value: CellValue): number {
 
 function integerValue(value: CellValue): number {
   return Math.max(0, Math.round(numberValue(value)));
+}
+
+function signedIntegerValue(value: CellValue): number {
+  return Math.round(numberValue(value));
 }
 
 function excelDateParts(value: CellValue): {
@@ -166,6 +174,95 @@ function parseDailySheet(rows: Matrix): ParsedLinkedinDailyMetric[] {
   });
 }
 
+function parseFollowerDailySheet(rows: Matrix): ParsedLinkedinFollowerDailyMetric[] {
+  const headerIndex = findHeaderRow(rows, ["Data", "Seguidores orgânicos", "Total de seguidores"]);
+  if (headerIndex < 0) {
+    throw new Error("A aba de novos seguidores não contém os cabeçalhos esperados.");
+  }
+  const columns = columnMap(rows[headerIndex]);
+
+  return rows.slice(headerIndex + 1).flatMap((row) => {
+    const metricDate = dateOnly(cell(row, columns, "Data"));
+    if (!metricDate) return [];
+    return [{
+      metric_date: metricDate,
+      sponsored_followers: signedIntegerValue(cell(row, columns, "Seguidores patrocinados")),
+      organic_followers: signedIntegerValue(cell(row, columns, "Seguidores orgânicos")),
+      auto_invited_followers: signedIntegerValue(
+        cell(row, columns, "Seguidores convidados automaticamente")
+      ),
+      total_followers: signedIntegerValue(cell(row, columns, "Total de seguidores")),
+    }];
+  });
+}
+
+function parseVisitorDailySheet(rows: Matrix): ParsedLinkedinVisitorDailyMetric[] {
+  const headerIndex = findHeaderRow(rows, [
+    "Data",
+    "Total de visualizações da página (total)",
+    "Total de visitantes únicos (total)",
+  ]);
+  if (headerIndex < 0) {
+    throw new Error("A aba de visitantes não contém os cabeçalhos esperados.");
+  }
+  const columns = columnMap(rows[headerIndex]);
+  const value = (row: CellValue[], header: string) => integerValue(cell(row, columns, header));
+
+  return rows.slice(headerIndex + 1).flatMap((row) => {
+    const metricDate = dateOnly(cell(row, columns, "Data"));
+    if (!metricDate) return [];
+    return [{
+      metric_date: metricDate,
+      overview_views_desktop: value(row, "Visualizações da página Visão geral (computadores)"),
+      overview_views_mobile: value(row, "Visualizações da página Visão geral (dispositivos móveis)"),
+      overview_views_total: value(row, "Visualizações da página Visão geral (total)"),
+      overview_unique_desktop: value(row, "Visitantes únicos da página Visão geral (computadores)"),
+      overview_unique_mobile: value(row, "Visitantes únicos da página Visão geral (dispositivos móveis)"),
+      overview_unique_total: value(row, "Visitantes únicos da página Visão geral (total)"),
+      life_views_desktop: value(row, "Visualizações da página Dia a dia (computadores)"),
+      life_views_mobile: value(row, "Visualizações da página Dia a dia (dispositivos móveis)"),
+      life_views_total: value(row, "Visualizações da página Dia a dia (total)"),
+      life_unique_desktop: value(row, "Visitantes únicos da página Dia a dia (computadores)"),
+      life_unique_mobile: value(row, "Visitantes únicos da página Dia a dia (dispositivos móveis)"),
+      life_unique_total: value(row, "Visitantes únicos da página Dia a dia (total)"),
+      jobs_views_desktop: value(row, "Visualizações da página Vagas (computadores)"),
+      jobs_views_mobile: value(row, "Visualizações da página Vagas (dispositivos móveis)"),
+      jobs_views_total: value(row, "Visualizações da página Vagas (total)"),
+      jobs_unique_desktop: value(row, "Visitantes únicos da página Vagas (computadores)"),
+      jobs_unique_mobile: value(row, "Visitantes únicos da página Vagas (dispositivos móveis)"),
+      jobs_unique_total: value(row, "Visitantes únicos da página Vagas (total)"),
+      total_views_desktop: value(row, "Total de visualizações da página (computadores)"),
+      total_views_mobile: value(row, "Total de visualizações da página (dispositivos móveis)"),
+      total_views_total: value(row, "Total de visualizações da página (total)"),
+      total_unique_desktop: value(row, "Total de visitantes únicos (computadores)"),
+      total_unique_mobile: value(row, "Total de visitantes únicos (dispositivos móveis)"),
+      total_unique_total: value(row, "Total de visitantes únicos (total)"),
+    }];
+  });
+}
+
+const DEMOGRAPHIC_DIMENSIONS: Record<string, LinkedinDemographicDimension> = {
+  localidade: "location",
+  funcao: "function",
+  "nivel de experiencia": "seniority",
+  setor: "industry",
+  "tamanho da empresa": "company_size",
+};
+
+function parseDemographicSheets(
+  sheets: Array<{ name: string; rows: Matrix }>
+): ParsedLinkedinDemographic[] {
+  return sheets.flatMap(({ name, rows }) => {
+    const dimension = DEMOGRAPHIC_DIMENSIONS[normalizeHeader(name)];
+    if (!dimension || rows.length < 2) return [];
+    return rows.slice(1).flatMap((row) => {
+      const label = textValue(row[0]);
+      if (!label) return [];
+      return [{ dimension, label, metric_value: integerValue(row[1]) }];
+    });
+  });
+}
+
 function parsePostsSheet(rows: Matrix): ParsedLinkedinPost[] {
   const headerIndex = findHeaderRow(rows, [
     "Título da publicação",
@@ -218,10 +315,6 @@ function sheetRows(workbook: XLSX.WorkBook, sheetName: string): Matrix {
 
 export function parseLinkedinWorkbook(buffer: Buffer | Uint8Array): LinkedinWorkbookData {
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: false });
-  if (workbook.SheetNames.length < 2) {
-    throw new Error("O relatório precisa conter as abas de métricas e publicações.");
-  }
-
   const sheets = workbook.SheetNames.map((name) => ({ name, rows: sheetRows(workbook, name) }));
   const dailySheet = sheets.find(({ rows }) =>
     findHeaderRow(rows, ["Data", "Impressões (total)", "Cliques (total)"]) >= 0
@@ -229,35 +322,82 @@ export function parseLinkedinWorkbook(buffer: Buffer | Uint8Array): LinkedinWork
   const postsSheet = sheets.find(({ rows }) =>
     findHeaderRow(rows, ["Título da publicação", "Link da publicação", "Criação"]) >= 0
   );
-  if (!dailySheet || !postsSheet) {
-    throw new Error("Não foi possível reconhecer as abas do relatório do LinkedIn.");
+  if (dailySheet && postsSheet) {
+    const dailyMetrics = parseDailySheet(dailySheet.rows);
+    const posts = parsePostsSheet(postsSheet.rows);
+    if (dailyMetrics.length === 0 || posts.length === 0) {
+      throw new Error("O relatório não contém métricas ou publicações válidas.");
+    }
+    const warnings: string[] = [];
+    if (dailyMetrics.every((row) => row.sponsored_impressions === 0)) {
+      warnings.push("O arquivo não contém atividade patrocinada no período.");
+    }
+    const postsWithoutContentType = posts.filter((post) => !post.content_type).length;
+    if (postsWithoutContentType > 0) {
+      warnings.push(`${postsWithoutContentType} publicações não informam o tipo de conteúdo.`);
+    }
+    const dates = [
+      ...dailyMetrics.map((row) => row.metric_date),
+      ...posts.map((post) => post.published_at?.slice(0, 10)).filter((date): date is string => Boolean(date)),
+    ].sort();
+    return {
+      reportType: "content",
+      dailyMetrics,
+      followerDailyMetrics: [],
+      visitorDailyMetrics: [],
+      demographics: [],
+      posts,
+      warnings,
+      dateFrom: dates[0] ?? null,
+      dateTo: dates.at(-1) ?? null,
+    };
   }
 
-  const dailyMetrics = parseDailySheet(dailySheet.rows);
-  const posts = parsePostsSheet(postsSheet.rows);
-  if (dailyMetrics.length === 0 || posts.length === 0) {
-    throw new Error("O relatório não contém métricas ou publicações válidas.");
+  const followerSheet = sheets.find(({ rows }) =>
+    findHeaderRow(rows, ["Data", "Seguidores orgânicos", "Total de seguidores"]) >= 0
+  );
+  if (followerSheet) {
+    const followerDailyMetrics = parseFollowerDailySheet(followerSheet.rows);
+    const demographics = parseDemographicSheets(sheets);
+    const dates = followerDailyMetrics.map((row) => row.metric_date).sort();
+    return {
+      reportType: "followers",
+      dailyMetrics: [],
+      followerDailyMetrics,
+      visitorDailyMetrics: [],
+      demographics,
+      posts: [],
+      warnings: demographics.length === 0 ? ["O arquivo não contém recortes demográficos."] : [],
+      dateFrom: dates[0] ?? null,
+      dateTo: dates.at(-1) ?? null,
+    };
   }
 
-  const warnings: string[] = [];
-  if (dailyMetrics.every((row) => row.sponsored_impressions === 0)) {
-    warnings.push("O arquivo não contém atividade patrocinada no período.");
-  }
-  const postsWithoutContentType = posts.filter((post) => !post.content_type).length;
-  if (postsWithoutContentType > 0) {
-    warnings.push(`${postsWithoutContentType} publicações não informam o tipo de conteúdo.`);
+  const visitorSheet = sheets.find(({ rows }) =>
+    findHeaderRow(rows, [
+      "Data",
+      "Total de visualizações da página (total)",
+      "Total de visitantes únicos (total)",
+    ]) >= 0
+  );
+  if (visitorSheet) {
+    const visitorDailyMetrics = parseVisitorDailySheet(visitorSheet.rows);
+    const demographics = parseDemographicSheets(sheets);
+    const dates = visitorDailyMetrics.map((row) => row.metric_date).sort();
+    return {
+      reportType: "visitors",
+      dailyMetrics: [],
+      followerDailyMetrics: [],
+      visitorDailyMetrics,
+      demographics,
+      posts: [],
+      warnings: demographics.length === 0 ? ["O arquivo não contém recortes demográficos."] : [],
+      dateFrom: dates[0] ?? null,
+      dateTo: dates.at(-1) ?? null,
+    };
   }
 
-  const dates = [
-    ...dailyMetrics.map((row) => row.metric_date),
-    ...posts.map((post) => post.published_at?.slice(0, 10)).filter((date): date is string => Boolean(date)),
-  ].sort();
-
-  return {
-    dailyMetrics,
-    posts,
-    warnings,
-    dateFrom: dates[0] ?? null,
-    dateTo: dates.at(-1) ?? null,
-  };
+  throw new Error(
+    "Não foi possível reconhecer o relatório. Envie o arquivo de conteúdo, seguidores ou visitantes do LinkedIn."
+  );
 }
