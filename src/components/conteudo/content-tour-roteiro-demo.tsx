@@ -16,7 +16,7 @@ import { PerformanceHint } from "@/components/conteudo/roteiro-card";
 export function ContentTourRoteiroDemo() {
   return (
     <section
-      className="rounded-2xl border-2 border-dashed border-primary/30 bg-primary/[0.02] p-4 sm:p-5 space-y-4"
+      className="rounded-lg border-2 border-dashed border-primary/30 bg-primary/[0.02] p-4 sm:p-5 space-y-4"
       aria-label="Demonstração do fluxo de validação"
     >
       <div className="flex items-center gap-2 text-xs font-medium text-primary">
@@ -25,7 +25,7 @@ export function ContentTourRoteiroDemo() {
       </div>
 
       <div className="rounded-xl border bg-card overflow-hidden shadow-sm">
-        <div className="bg-gradient-to-br from-[#101f2e] to-[#0a141c] px-4 py-5 text-white">
+        <div className="bg-gradient-to-br from-[#04202f] to-[#1c1c1c] px-4 py-5 text-white">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-white/60 mb-1">
             Trabalhista · A validar
           </p>

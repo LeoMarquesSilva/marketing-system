@@ -61,8 +61,8 @@ export function MessageBubble({
         className={cn(
           "relative max-w-[86%] px-4 py-2 text-[15px] leading-relaxed shadow-sm sm:max-w-[74%]",
           message.from_me
-            ? "rounded-2xl rounded-tr-md bg-[#d9fdd3] text-[#111b21] dark:bg-[#005c4b] dark:text-[#e9edef]"
-            : "rounded-2xl rounded-tl-md border border-black/5 bg-white text-[#111b21] dark:border-white/5 dark:bg-[#202c33] dark:text-[#e9edef]",
+            ? "rounded-lg rounded-tr-md bg-[#d9fdd3] text-[#111b21] dark:bg-[#005c4b] dark:text-[#e9edef]"
+            : "rounded-lg rounded-tl-md border border-black/5 bg-white text-[#111b21] dark:border-white/5 dark:bg-[#202c33] dark:text-[#e9edef]",
           hot && "ring-2 ring-amber-300/70",
           pinned && "ring-2 ring-emerald-300/70"
         )}

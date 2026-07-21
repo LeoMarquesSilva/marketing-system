@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { getAreaIcon } from "@/lib/area-icons";
+import { AreaIcon } from "@/lib/area-icons";
 import { WORKFLOW_STAGES, COMPLETION_TYPES } from "@/lib/constants";
 import type { CompletionTypeConfig } from "@/lib/app-settings";
 import { format } from "date-fns";
@@ -59,7 +59,7 @@ const PRIORITY_OPTIONS: { value: RequestPriority; label: string; className: stri
   { value: "urgente", label: "Urgente", className: "text-red-600 dark:text-red-400" },
   { value: "alta",    label: "Alta",    className: "text-orange-600 dark:text-orange-400" },
   { value: "normal",  label: "Normal",  className: "text-muted-foreground" },
-  { value: "baixa",   label: "Baixa",   className: "text-[#101f2e]/60 dark:text-white/40" },
+  { value: "baixa",   label: "Baixa",   className: "text-[#04202f]/60 dark:text-white/40" },
 ];
 
 function getInitials(name: string) {
@@ -135,6 +135,7 @@ export function KanbanCardDetail({
 
   useEffect(() => {
     if (!open || !request) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Fecha o estado expandido junto com o diálogo.
       setDescriptionExpanded(false);
       return;
     }
@@ -154,7 +155,7 @@ export function KanbanCardDetail({
       setChecklistItems(checklist);
     };
     load();
-  }, [open, request?.id, request?.art_link]);
+  }, [open, request]);
 
   const handleStart = async () => {
     if (!request) return;
@@ -200,7 +201,6 @@ export function KanbanCardDetail({
 
   const isReel = isReelRequest(request);
   const reelChecklistProgress = isReel ? getReelChecklistProgress(checklistItems) : null;
-  const AreaIcon = getAreaIcon(request.requesting_area);
   const workflowLabel =
     WORKFLOW_STAGES.find((s) => s.value === request.workflow_stage)?.label ??
     request.workflow_stage;
@@ -373,14 +373,14 @@ export function KanbanCardDetail({
   const modalDescription = `Detalhes da solicitação: ${request.requesting_area}, solicitado em ${format(new Date(request.requested_at), "dd/MM/yyyy", { locale: ptBR })}`;
 
   const sectionClass =
-    "rounded-2xl border border-white/40 dark:border-border/50 bg-white/70 dark:bg-card/80 backdrop-blur-sm p-5 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.08)] space-y-3";
+    "space-y-3 rounded-lg border border-[#dce9eb] bg-card p-5 shadow-[0_1px_2px_rgba(3,32,47,0.05)] dark:border-border/50";
   const sectionTitleClass =
     "text-xs font-semibold text-muted-foreground uppercase tracking-wider";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden p-0 gap-0 rounded-2xl border border-white/50 dark:border-white/10 bg-gradient-to-br from-white/95 via-white/90 to-white/85 dark:from-background dark:via-background dark:to-background/95 backdrop-blur-xl shadow-[0_24px_64px_-12px_rgba(0,0,0,0.2),0_0_0_1px_rgba(0,0,0,0.05)]"
+        className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden p-0 gap-0 rounded-lg border border-white/50 dark:border-white/10 bg-gradient-to-br from-white/95 via-white/90 to-white/85 dark:from-background dark:via-background dark:to-background/95 backdrop-blur-xl shadow-[0_24px_64px_-12px_rgba(0,0,0,0.2),0_0_0_1px_rgba(0,0,0,0.05)]"
         aria-describedby="kanban-detail-description"
       >
         {/* Header fixo — compacto */}
@@ -450,7 +450,7 @@ export function KanbanCardDetail({
                     {request.created_by_user ? (
                       <Avatar className="h-4 w-4 shrink-0 border border-white/50 dark:border-white/20">
                         <AvatarImage src={request.created_by_user.avatar_url || undefined} />
-                        <AvatarFallback className="text-[8px] bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10 dark:text-white">
+                        <AvatarFallback className="text-[8px] bg-[#04202f]/10 text-[#04202f] dark:bg-white/10 dark:text-white">
                           {getInitials(request.created_by_user.name)}
                         </AvatarFallback>
                       </Avatar>
@@ -474,7 +474,7 @@ export function KanbanCardDetail({
                                 undefined
                               }
                             />
-                            <AvatarFallback className="text-[8px] bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10 dark:text-white">
+                            <AvatarFallback className="text-[8px] bg-[#04202f]/10 text-[#04202f] dark:bg-white/10 dark:text-white">
                               {getInitials(REEL_LEONARDO_NAME)}
                             </AvatarFallback>
                           </Avatar>
@@ -485,7 +485,7 @@ export function KanbanCardDetail({
                           {request.assignee_user ? (
                             <Avatar className="h-4 w-4 shrink-0 border border-white/50 dark:border-white/20">
                               <AvatarImage src={request.assignee_user.avatar_url || undefined} />
-                              <AvatarFallback className="text-[8px] bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10 dark:text-white">
+                              <AvatarFallback className="text-[8px] bg-[#04202f]/10 text-[#04202f] dark:bg-white/10 dark:text-white">
                                 {getInitials(request.assignee_user.name)}
                               </AvatarFallback>
                             </Avatar>
@@ -504,7 +504,7 @@ export function KanbanCardDetail({
                   {request.solicitante_user ? (
                     <Avatar className="h-4 w-4 shrink-0 border border-white/50 dark:border-white/20">
                       <AvatarImage src={request.solicitante_user.avatar_url || undefined} />
-                      <AvatarFallback className="text-[8px] bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10 dark:text-white">
+                      <AvatarFallback className="text-[8px] bg-[#04202f]/10 text-[#04202f] dark:bg-white/10 dark:text-white">
                         {getInitials(request.solicitante_user.name)}
                       </AvatarFallback>
                     </Avatar>
@@ -516,7 +516,7 @@ export function KanbanCardDetail({
                 <>
                   <span className="text-muted-foreground/40 select-none">·</span>
                   <span className="flex items-center gap-1">
-                    <AreaIcon className="h-3 w-3 shrink-0" aria-hidden />
+                    <AreaIcon area={request.requesting_area} className="h-3 w-3 shrink-0" aria-hidden />
                     {request.requesting_area}
                   </span>
                 </>
@@ -667,8 +667,8 @@ export function KanbanCardDetail({
                 </div>
               </div>
               <div className="flex items-start gap-2.5">
-                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[#101f2e]/8 dark:bg-white/8">
-                  <Layers className="h-3.5 w-3.5 text-[#101f2e]/60 dark:text-white/40" aria-hidden />
+                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[#04202f]/8 dark:bg-white/8">
+                  <Layers className="h-3.5 w-3.5 text-[#04202f]/60 dark:text-white/40" aria-hidden />
                 </span>
                 <div className="min-w-0">
                   <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground leading-none mb-0.5">Etapa</p>
@@ -676,8 +676,8 @@ export function KanbanCardDetail({
                 </div>
               </div>
               <div className="flex items-start gap-2.5">
-                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[#101f2e]/8 dark:bg-white/8">
-                  <Calendar className="h-3.5 w-3.5 text-[#101f2e]/60 dark:text-white/40" aria-hidden />
+                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[#04202f]/8 dark:bg-white/8">
+                  <Calendar className="h-3.5 w-3.5 text-[#04202f]/60 dark:text-white/40" aria-hidden />
                 </span>
                 <div className="min-w-0">
                   <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground leading-none mb-0.5">Solicitado em</p>
@@ -781,7 +781,7 @@ export function KanbanCardDetail({
             <div className="flex items-center gap-3 min-w-0">
               {isReel ? (
                 <>
-                  <Avatar className="h-10 w-10 shrink-0 border-2 border-white/50 dark:border-[#101f2e]/50">
+                  <Avatar className="h-10 w-10 shrink-0 border-2 border-white/50 dark:border-[#04202f]/50">
                     <AvatarImage
                       src={
                         request.assignee_user?.avatar_url ||
@@ -789,7 +789,7 @@ export function KanbanCardDetail({
                         undefined
                       }
                     />
-                    <AvatarFallback className="text-xs bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10 dark:text-primary-foreground">
+                    <AvatarFallback className="text-xs bg-[#04202f]/10 text-[#04202f] dark:bg-white/10 dark:text-primary-foreground">
                       {getInitials(REEL_LEONARDO_NAME)}
                     </AvatarFallback>
                   </Avatar>
@@ -825,9 +825,9 @@ export function KanbanCardDetail({
                 </Select>
               ) : request.assignee_user ? (
                 <>
-                  <Avatar className="h-10 w-10 shrink-0 border-2 border-white/50 dark:border-[#101f2e]/50">
+                  <Avatar className="h-10 w-10 shrink-0 border-2 border-white/50 dark:border-[#04202f]/50">
                     <AvatarImage src={request.assignee_user.avatar_url || undefined} />
-                    <AvatarFallback className="text-xs bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10 dark:text-primary-foreground">
+                    <AvatarFallback className="text-xs bg-[#04202f]/10 text-[#04202f] dark:bg-white/10 dark:text-primary-foreground">
                       {getInitials(request.assignee_user.name)}
                     </AvatarFallback>
                   </Avatar>
@@ -949,7 +949,7 @@ export function KanbanCardDetail({
                       >
                         <Avatar className="h-8 w-8 shrink-0 border-2 border-white dark:border-background">
                           <AvatarImage src={c.user_avatar_url || undefined} />
-                          <AvatarFallback className="text-xs bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10">
+                          <AvatarFallback className="text-xs bg-[#04202f]/10 text-[#04202f] dark:bg-white/10">
                             {c.user_name ? getInitials(c.user_name) : "?"}
                           </AvatarFallback>
                         </Avatar>
@@ -1073,7 +1073,7 @@ export function KanbanCardDetail({
                       size="sm"
                       onClick={handleStart}
                       disabled={timer.isLoading}
-                      className="w-full rounded-xl border-[#101f2e]/20 hover:bg-[#101f2e]/5 text-[#101f2e] dark:border-white/20 dark:hover:bg-white/5 dark:text-primary-foreground"
+                      className="w-full rounded-xl border-[#04202f]/20 hover:bg-[#04202f]/5 text-[#04202f] dark:border-white/20 dark:hover:bg-white/5 dark:text-primary-foreground"
                     >
                       <Play className="h-3.5 w-3.5 mr-1.5 fill-current" />
                       Iniciar cronômetro
@@ -1093,7 +1093,7 @@ export function KanbanCardDetail({
                           {/* User avatar */}
                           <Avatar className="h-5 w-5 shrink-0 border border-white/50">
                             <AvatarImage src={e.user_avatar_url || undefined} />
-                            <AvatarFallback className="text-[9px] bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10">
+                            <AvatarFallback className="text-[9px] bg-[#04202f]/10 text-[#04202f] dark:bg-white/10">
                               {e.user_name ? getInitials(e.user_name) : "?"}
                             </AvatarFallback>
                           </Avatar>
@@ -1320,13 +1320,13 @@ export function KanbanCardDetail({
                   const to = stageLabels[entry.to_value ?? ""] ?? entry.to_value ?? "—";
                   return (
                     <li key={entry.id} className="flex items-start gap-2 text-xs">
-                      <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#101f2e]/30 dark:bg-white/30 mt-1" />
+                      <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#04202f]/30 dark:bg-white/30 mt-1" />
                       <div className="min-w-0">
                         <span className="font-medium text-foreground">{entry.user_name ?? "Sistema"}</span>
                         {" moveu de "}
-                        <span className="font-medium text-[#101f2e] dark:text-white/80">{from}</span>
+                        <span className="font-medium text-[#04202f] dark:text-white/80">{from}</span>
                         {" → "}
-                        <span className="font-medium text-[#101f2e] dark:text-white/80">{to}</span>
+                        <span className="font-medium text-[#04202f] dark:text-white/80">{to}</span>
                         <span className="text-muted-foreground ml-1.5">
                           · {format(new Date(entry.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                         </span>
@@ -1342,7 +1342,7 @@ export function KanbanCardDetail({
 
       {/* Confirmação de exclusão da solicitação */}
       <Dialog open={deleteRequestConfirmOpen} onOpenChange={(open) => { if (!open) setDeleteRequestError(null); setDeleteRequestConfirmOpen(open); }}>
-        <DialogContent className="max-w-sm rounded-2xl">
+        <DialogContent className="max-w-sm rounded-lg">
           <DialogHeader>
             <DialogTitle>Excluir solicitação</DialogTitle>
             <DialogDescription>

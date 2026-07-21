@@ -139,7 +139,11 @@ export async function PATCH(request: Request) {
     const body = await request.json().catch(() => ({}));
     const auth = await ensureAdminFromBody(body);
     if (auth.error) return auth.error;
-    const { id, accessToken, refreshToken, ...updates } = body;
+    const id = body.id;
+    const updates = { ...body };
+    delete updates.id;
+    delete updates.accessToken;
+    delete updates.refreshToken;
 
     if (!id) {
       return NextResponse.json({ error: "id é obrigatório." }, { status: 400 });

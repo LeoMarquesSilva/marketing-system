@@ -155,7 +155,7 @@ export function EnviarEventoAoPlannerDialog({
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-5 space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-5 space-y-4">
               <DialogSectionHeading icon={Send}>Solicitação</DialogSectionHeading>
               <div className="grid gap-4 sm:grid-cols-2">
                 <FormField
@@ -198,7 +198,7 @@ export function EnviarEventoAoPlannerDialog({
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-5 space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-5 space-y-4">
               <DialogSectionHeading icon={Users}>Solicitante e execução</DialogSectionHeading>
               <div className="grid gap-4 sm:grid-cols-3">
                 <FormField
@@ -265,7 +265,7 @@ export function EnviarEventoAoPlannerDialog({
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-5 space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-5 space-y-4">
               <DialogSectionHeading icon={StickyNote}>Detalhamento</DialogSectionHeading>
               <FormField
                 control={form.control}
@@ -285,7 +285,7 @@ export function EnviarEventoAoPlannerDialog({
               />
             </div>
 
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-5 space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-5 space-y-4">
               <DialogSectionHeading icon={CalendarClock}>Prazo e prioridade</DialogSectionHeading>
               <div className="grid gap-4 sm:grid-cols-2">
                 <FormField

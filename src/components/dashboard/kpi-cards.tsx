@@ -22,7 +22,7 @@ interface KpiCardProps {
 
 function KpiCard({ label, value, sub, icon, accent = "default" }: KpiCardProps) {
   const accentMap = {
-    default: "bg-[#101f2e]/8 text-[#101f2e]/60 dark:bg-white/10 dark:text-white/50",
+    default: "bg-[#47cdd0]/12 text-[#347796] dark:bg-white/10 dark:text-white/50",
     red: "bg-red-100/80 text-red-600 dark:bg-red-950/40 dark:text-red-400",
     amber: "bg-amber-100/80 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400",
     emerald: "bg-emerald-100/80 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400",
@@ -35,10 +35,10 @@ function KpiCard({ label, value, sub, icon, accent = "default" }: KpiCardProps) 
   };
 
   return (
-    <div className="rounded-2xl border border-white/40 dark:border-border/50 bg-white/70 dark:bg-card/80 backdrop-blur-sm p-5 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.07)] flex flex-col gap-3">
+    <div className="flex flex-col gap-3 rounded-lg border border-[#dce9eb] bg-white p-5 shadow-[0_1px_2px_rgba(3,32,47,0.04),0_10px_30px_-26px_rgba(62,132,168,0.55)] dark:border-border/50 dark:bg-card/80">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
-        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${accentMap[accent]}`}>
+        <span className="text-xs font-semibold uppercase text-muted-foreground">{label}</span>
+        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${accentMap[accent]}`}>
           {icon}
         </span>
       </div>

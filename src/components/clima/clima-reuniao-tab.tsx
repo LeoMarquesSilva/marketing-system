@@ -140,7 +140,7 @@ export function ClimaReuniaoTab({
                   onClick={() => toggleTopic(`ind-${ind.id}`)}
                   className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
                     selectedTopics.has(`ind-${ind.id}`)
-                      ? "border-[#101f2e] bg-[#101f2e] text-white"
+                      ? "border-[#04202f] bg-[#04202f] text-white"
                       : "border-muted hover:bg-muted/50"
                   }`}
                 >
@@ -159,7 +159,7 @@ export function ClimaReuniaoTab({
                   onClick={() => toggleTopic(`plan-${p.id}`)}
                   className={`rounded-lg border px-3 py-1.5 text-sm transition-colors line-clamp-1 max-w-[200px] ${
                     selectedTopics.has(`plan-${p.id}`)
-                      ? "border-[#101f2e] bg-[#101f2e] text-white"
+                      ? "border-[#04202f] bg-[#04202f] text-white"
                       : "border-muted hover:bg-muted/50"
                   }`}
                 >

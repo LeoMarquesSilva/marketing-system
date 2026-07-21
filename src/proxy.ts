@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login"];
+const PUBLIC_PATHS = ["/login", "/t"];
 const PUBLIC_API_PREFIXES = ["/api/evolution/webhook"];
 
 function isPublicPath(pathname: string): boolean {

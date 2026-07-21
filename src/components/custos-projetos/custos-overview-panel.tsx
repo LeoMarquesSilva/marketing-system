@@ -46,7 +46,7 @@ export function CustosOverviewPanel({
   return (
     <section
       aria-label="Visão geral de custos"
-      className="rounded-3xl border border-border/60 bg-gradient-to-br from-muted/40 to-muted/10 p-5 sm:p-6 space-y-5"
+      className="rounded-lg border border-border/60 bg-gradient-to-br from-muted/40 to-muted/10 p-5 sm:p-6 space-y-5"
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm font-semibold">
@@ -154,7 +154,7 @@ function HeroCell({
   return (
     <div
       className={cn(
-        "rounded-2xl border px-4 py-3.5",
+        "rounded-lg border px-4 py-3.5",
         accent
           ? "border-violet-300/40 bg-violet-500/5"
           : "border-border/50 bg-background/50"

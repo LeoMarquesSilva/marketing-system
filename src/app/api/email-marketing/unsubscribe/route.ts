@@ -13,7 +13,7 @@ function htmlPage(title: string, message: string) {
   </head>
   <body style="margin:0;padding:0;background-color:#f4f5f7;font-family:Arial, Helvetica, sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;">
     <div style="background:#ffffff;padding:40px;border-radius:12px;max-width:420px;text-align:center;box-shadow:0 2px 20px rgba(0,0,0,0.08);">
-      <h1 style="font-size:18px;color:#101f2e;margin:0 0 12px;">${title}</h1>
+      <h1 style="font-size:18px;color:#04202f;margin:0 0 12px;">${title}</h1>
       <p style="font-size:14px;color:#4b5563;line-height:1.5;margin:0;">${message}</p>
     </div>
   </body>

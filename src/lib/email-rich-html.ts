@@ -9,7 +9,7 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;");
 }
 
-export function buildEmailButtonHtml(label: string, url: string, color = "#101f2e"): string {
+export function buildEmailButtonHtml(label: string, url: string, color = "#04202f"): string {
   const safeLabel = escapeHtml(label);
   const safeUrl = (url ?? "").replace(/"/g, "&quot;");
   return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;background-color:${color};color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:10px 24px;border-radius:20px;margin:8px 4px 8px 0;">${safeLabel}</a>`;

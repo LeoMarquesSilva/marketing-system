@@ -1,6 +1,6 @@
 "use client";
 
-import { getAreaIcon } from "@/lib/area-icons";
+import { AreaIcon } from "@/lib/area-icons";
 import type { BarChartItem } from "@/lib/instagram-analytics";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { FormerEmployeeBadge } from "@/components/usuarios/former-employee-badge";
@@ -48,7 +48,7 @@ export function InstagramBarChart({
 
   if (data.length === 0) {
     return (
-      <div className="rounded-2xl border border-border/50 bg-background/50 p-5 self-start w-full">
+      <div className="rounded-lg border border-border/50 bg-background/50 p-5 self-start w-full">
         <h3 className="text-sm font-semibold mb-2">{title}</h3>
         <p className="text-sm text-muted-foreground">{emptyMessage}</p>
       </div>
@@ -56,7 +56,7 @@ export function InstagramBarChart({
   }
 
   return (
-    <div className="rounded-2xl border border-border/50 bg-background/50 p-5 self-start w-full">
+    <div className="rounded-lg border border-border/50 bg-background/50 p-5 self-start w-full">
       <div className="flex items-center justify-between gap-2 mb-3">
         <h3 className="text-sm font-semibold">{title}</h3>
         <span className="text-[11px] text-muted-foreground tabular-nums shrink-0">
@@ -72,7 +72,6 @@ export function InstagramBarChart({
         style={scrollable ? { maxHeight: maxScrollHeight } : undefined}
       >
         {data.map((item) => {
-          const Icon = useAreaIcons ? getAreaIcon(item.label) : null;
           const pct = (item.total / maxValue) * 100;
 
           return (
@@ -94,9 +93,9 @@ export function InstagramBarChart({
                     </AvatarFallback>
                   </Avatar>
                 )}
-                {!showAvatars && Icon && (
+                {!showAvatars && useAreaIcons && (
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                    <Icon className="h-3.5 w-3.5" />
+                    <AreaIcon area={item.label} className="h-3.5 w-3.5" />
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
@@ -124,7 +123,7 @@ export function InstagramBarChart({
 
               <div className="flex-1 h-7 bg-muted/40 rounded-md overflow-hidden min-w-0">
                 <div
-                  className="h-full rounded-md bg-[#101f2e]/85 relative flex items-center min-w-[32px]"
+                  className="h-full rounded-md bg-[#04202f]/85 relative flex items-center min-w-[32px]"
                   style={{ width: `${Math.max(pct, 6)}%` }}
                 >
                   <span className="absolute left-2 text-[11px] font-semibold text-white tabular-nums">

@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { MarketingRequest } from "@/lib/marketing-requests";
-import { computeDashboardMetrics, isRequestDone } from "@/lib/marketing-requests";
+import { computeDashboardMetrics } from "@/lib/marketing-requests";
 import { useAuth } from "@/contexts/auth-context";
 import { fetchTimesheetForDashboard, type TimesheetRawEntry } from "@/lib/time-entries";
 import { CalendarRange, Download, X } from "lucide-react";
@@ -381,7 +381,7 @@ export function DashboardClient({ requests }: DashboardClientProps) {
           </p>
         </div>
 
-        <div className="rounded-2xl border border-white/50 bg-white/70 p-3 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.07)] backdrop-blur-sm dark:border-border/50 dark:bg-card/80">
+        <div className="rounded-lg border border-[#dce9eb] bg-white p-3 shadow-[0_1px_2px_rgba(3,32,47,0.04),0_10px_30px_-26px_rgba(62,132,168,0.5)] dark:border-border/50 dark:bg-card/80">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
             <div className="space-y-1.5">
               <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">

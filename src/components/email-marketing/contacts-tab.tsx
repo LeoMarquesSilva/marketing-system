@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Building2, Eye, Plus, Search, Trash2, Upload, Pencil, Users } from "lucide-react";
+import { Eye, Plus, Search, Trash2, Upload, Pencil, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -200,7 +200,7 @@ export function ContactsTab({ contacts, companies, onChanged }: ContactsTabProps
         </div>
       </div>
 
-      <Card className="rounded-2xl border-border/70 shadow-sm overflow-hidden">
+      <Card className="rounded-lg border-border/70 shadow-sm overflow-hidden">
         <CardContent className="p-0">
           <Table>
             <TableHeader>

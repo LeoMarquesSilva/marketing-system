@@ -38,7 +38,7 @@ import {
   deleteMarketingRequest,
 } from "@/lib/marketing-requests";
 import { AREAS, ALL_REQUEST_TYPES, STATUS_OPTIONS } from "@/lib/constants";
-import { getAreaIcon } from "@/lib/area-icons";
+import { AreaIcon } from "@/lib/area-icons";
 import { getTypeColor } from "@/lib/type-icons";
 import { AreaWithIcon } from "./area-with-icon";
 import { RequestEditDialog } from "./request-edit-dialog";
@@ -60,7 +60,7 @@ const STATUS_VARIANTS: Record<MarketingRequestStatus, "secondary" | "default" | 
 };
 
 const COMPLETION_TYPE_MAP: Record<string, { label: string; className: string }> = {
-  design_concluido:    { label: "Design",    className: "bg-[#101f2e]/8 text-[#101f2e] dark:bg-white/10 dark:text-white/80" },
+  design_concluido:    { label: "Design",    className: "bg-[#04202f]/8 text-[#04202f] dark:bg-white/10 dark:text-white/80" },
   postagem_feita:      { label: "Postagem",  className: "bg-emerald-100/80 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" },
   postagem_externa:    { label: "Outro canal", className: "bg-slate-100/80 text-slate-700 dark:bg-slate-950/40 dark:text-slate-400" },
   conteudo_entregue:   { label: "Conteúdo",  className: "bg-violet-100/80 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400" },
@@ -133,7 +133,7 @@ export function RequestsTable({
   const hasActions = onEdit || onDelete;
 
   return (
-    <div className="rounded-2xl border border-white/50 dark:border-border/50 bg-white/70 dark:bg-card/80 backdrop-blur-sm shadow-[0_2px_12px_-4px_rgba(0,0,0,0.08)] overflow-hidden">
+    <div className="overflow-hidden rounded-lg border border-[#dce9eb] bg-card shadow-[0_1px_2px_rgba(3,32,47,0.05)] dark:border-border/50">
       <Table>
         <TableHeader>
           <TableRow className="border-b border-black/[0.06] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.02]">
@@ -171,7 +171,7 @@ export function RequestsTable({
               <TableRow
                 key={req.id}
                 onClick={() => onRowClick?.(req)}
-                className={`transition-colors ${onRowClick ? "cursor-pointer hover:bg-[#101f2e]/[0.03] dark:hover:bg-white/[0.03]" : ""} ${isCompleted ? "bg-emerald-50/30 dark:bg-emerald-950/10" : ""}`}
+                className={`transition-colors ${onRowClick ? "cursor-pointer hover:bg-[#04202f]/[0.03] dark:hover:bg-white/[0.03]" : ""} ${isCompleted ? "bg-emerald-50/30 dark:bg-emerald-950/10" : ""}`}
               >
                 <TableCell>
                   <Badge
@@ -237,7 +237,7 @@ export function RequestsTable({
                     {req.assignee_user && (
                       <Avatar className="h-5 w-5 shrink-0 border border-white/50">
                         <AvatarImage src={req.assignee_user.avatar_url || undefined} />
-                        <AvatarFallback className="text-[9px] bg-[#101f2e]/10 text-[#101f2e]">
+                        <AvatarFallback className="text-[9px] bg-[#04202f]/10 text-[#04202f]">
                           {getInitials(req.assignee_user.name)}
                         </AvatarFallback>
                       </Avatar>
@@ -292,6 +292,7 @@ export function RequestsTableWithFilters({
   const [searchQuery, setSearchQuery] = useState(searchParams.get("q") ?? "");
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Mantém o filtro local sincronizado com a busca global da URL.
     setSearchQuery(searchParams.get("q") ?? "");
   }, [searchParams]);
   const [dateFrom, setDateFrom] = useState("");
@@ -437,11 +438,10 @@ export function RequestsTableWithFilters({
             <SelectContent>
               <SelectItem value="all">Todas as áreas</SelectItem>
               {areaOptions.map((area) => {
-                const Icon = getAreaIcon(area);
                 return (
                   <SelectItem key={area} value={area}>
                     <span className="flex items-center gap-2">
-                      <Icon className="h-4 w-4 shrink-0" />
+                      <AreaIcon area={area} className="h-4 w-4 shrink-0" />
                       {area}
                     </span>
                   </SelectItem>

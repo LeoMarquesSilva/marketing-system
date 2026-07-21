@@ -117,9 +117,9 @@ export function ClimaClient({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+        <h2 className="text-2xl font-bold tracking-tight text-foreground">
           Clima Organizacional
-        </h1>
+        </h2>
         <p className="text-sm text-muted-foreground mt-1">
           Pesquisa de clima, indicadores, planos de ação e colaboração
         </p>

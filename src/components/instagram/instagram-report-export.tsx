@@ -90,7 +90,7 @@ export function InstagramReportExport({
       <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"
-          className="rounded-xl bg-[#101f2e] hover:bg-[#101f2e]/90"
+          className="rounded-xl bg-[#04202f] text-white hover:bg-[#04202f]/90 hover:text-white"
           disabled={disabled || exportingExcel}
           onClick={handleExcel}
         >

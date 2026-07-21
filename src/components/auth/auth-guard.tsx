@@ -7,7 +7,7 @@ import { isContentCollaborator } from "@/lib/content-areas";
 import { resolveAllowedSections, canAccessPath } from "@/lib/access-control";
 import { resolvePostLoginPathFromProfile } from "@/lib/post-login-path";
 
-const PUBLIC_PATHS = ["/login"];
+const PUBLIC_PATHS = ["/login", "/t"];
 
 /** Rotas acessíveis por colaboradores de conteúdo (advogados por área). */
 const COLLABORATOR_PATHS = ["/conteudo", "/perfil"];
@@ -92,14 +92,12 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }, [redirectTo, pathname, router]);
 
   // Fallback: se o perfil demorar demais, não trava a tela para sempre.
-  const [profileTimedOut, setProfileTimedOut] = useState(false);
-  useEffect(() => {
-    if (profile) setProfileTimedOut(false);
-  }, [profile]);
+  const [timedOutUserId, setTimedOutUserId] = useState<string | null>(null);
+  const profileTimedOut = Boolean(user && timedOutUserId === user.id);
 
   useEffect(() => {
     if (!(user && !profile && !loading)) return;
-    const t = setTimeout(() => setProfileTimedOut(true), 4000);
+    const t = setTimeout(() => setTimedOutUserId(user.id), 4000);
     return () => clearTimeout(t);
   }, [user, profile, loading]);
 

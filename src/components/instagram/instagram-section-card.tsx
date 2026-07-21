@@ -21,7 +21,7 @@ export function SectionCard({
   return (
     <section
       className={cn(
-        "rounded-2xl border border-border/50 bg-white/70 dark:bg-card/60 backdrop-blur-sm shadow-sm overflow-hidden",
+        "rounded-lg border border-border/50 bg-white/70 dark:bg-card/60 backdrop-blur-sm shadow-sm overflow-hidden",
         className
       )}
     >
@@ -56,7 +56,7 @@ export function KpiCard({
         <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           {label}
         </span>
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#101f2e]/8 text-[#101f2e]/60">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#04202f]/8 text-[#04202f]/60">
           {icon}
         </span>
       </div>

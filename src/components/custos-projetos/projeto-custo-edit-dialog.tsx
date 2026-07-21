@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Form,
   FormControl,
@@ -155,7 +154,7 @@ export function ProjetoCustoEditDialog({
             <div className="flex items-center gap-4">
               <div
                 className={cn(
-                  "flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border bg-muted/40 overflow-hidden",
+                  "flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border bg-muted/40 overflow-hidden",
                   previewLogo && "border-border/60"
                 )}
               >

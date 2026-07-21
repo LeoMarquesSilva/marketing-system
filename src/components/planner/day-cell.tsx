@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { MarketingRequest } from "@/lib/marketing-requests";
 import { getContentBankDisplayTitle } from "@/lib/planner-posts";
 import { PostPill } from "./post-pill";
-import { getAreaIcon } from "@/lib/area-icons";
+import { AreaIcon } from "@/lib/area-icons";
 import { GripVertical } from "lucide-react";
 
 function toDateKey(d: Date): string {
@@ -90,7 +90,6 @@ export function DayCell({ request, day, rowIndex = 0, onCardClick }: DayCellProp
   const label = showAsPostado ? "Postado" : "Disponível";
   const title = getContentBankDisplayTitle(request);
   const area = request.requesting_area;
-  const AreaIcon = getAreaIcon(area);
   const solicitanteName =
     request.nome_advogado || request.solicitante_user?.name || request.solicitante || "";
 
@@ -127,7 +126,7 @@ export function DayCell({ request, day, rowIndex = 0, onCardClick }: DayCellProp
         </div>
         {/* Área */}
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground shrink-0">
-          <AreaIcon className="h-3 w-3 shrink-0 opacity-80" aria-hidden />
+          <AreaIcon area={area} className="h-3 w-3 shrink-0 opacity-80" aria-hidden />
           <span className="truncate">{area}</span>
         </div>
       </button>

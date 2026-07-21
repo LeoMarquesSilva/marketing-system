@@ -6,7 +6,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Popover as PopoverPrimitive } from "radix-ui";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { getAreaIcon } from "@/lib/area-icons";
+import { AreaIcon } from "@/lib/area-icons";
 import { getTypeColor } from "@/lib/type-icons";
 import { COMPLETION_TYPES } from "@/lib/constants";
 import type { CompletionTypeConfig, StageSlaDays } from "@/lib/app-settings";
@@ -50,8 +50,8 @@ const PRIORITY_CONFIG: Record<
   },
   baixa: {
     label: "Baixa",
-    className: "bg-[#101f2e]/8 text-[#101f2e]/70 dark:bg-white/8 dark:text-white/50",
-    dotClass: "bg-[#101f2e]/40 dark:bg-white/30",
+    className: "bg-[#04202f]/8 text-[#04202f]/70 dark:bg-white/8 dark:text-white/50",
+    dotClass: "bg-[#04202f]/40 dark:bg-white/30",
   },
 };
 
@@ -109,7 +109,6 @@ export function KanbanCard({
 
   const style = transform ? { transform: CSS.Translate.toString(transform) } : undefined;
 
-  const AreaIcon = getAreaIcon(request.requesting_area);
   const typeColor = getTypeColor(request.request_type || "");
   const solicitanteName = request.solicitante_user?.name || request.solicitante;
 
@@ -182,7 +181,7 @@ export function KanbanCard({
         }
       }}
       className={`
-        group relative overflow-visible rounded-2xl p-4 cursor-grab active:cursor-grabbing touch-none
+        group relative overflow-visible rounded-lg p-4 cursor-grab active:cursor-grabbing touch-none
         bg-gradient-to-br from-white/90 via-white/70 to-white/50
         dark:from-white/10 dark:via-white/5 dark:to-white/[0.02]
         backdrop-blur-xl border border-white/60 dark:border-white/10
@@ -190,13 +189,13 @@ export function KanbanCard({
         hover:shadow-[0_16px_48px_-8px_rgba(16,31,46,0.16),0_0_0_1px_rgba(16,31,46,0.06)]
         transition-all duration-200 ease-out
         hover:-translate-y-1 hover:scale-[1.015] hover:border-white/80 dark:hover:border-white/20
-        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#101f2e]/40 focus-visible:ring-offset-2
-        ${isDragging ? "opacity-30 shadow-xl ring-2 ring-[#101f2e]/30 scale-[1.02] z-10" : ""}
+        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#04202f]/40 focus-visible:ring-offset-2
+        ${isDragging ? "opacity-30 shadow-xl ring-2 ring-[#04202f]/30 scale-[1.02] z-10" : ""}
       `}
     >
       {/* Gradiente sutil no hover */}
       <div
-        className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none"
+        className="absolute inset-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none"
         style={{
           background:
             "linear-gradient(135deg, rgba(16,31,46,0.02) 0%, rgba(16,31,46,0.0) 100%)",
@@ -231,7 +230,7 @@ export function KanbanCard({
         {/* Metadados compactos */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
-            <AreaIcon className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+            <AreaIcon area={request.requesting_area} className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
             {request.requesting_area}
           </span>
           <span className="flex items-center gap-1">
@@ -248,7 +247,7 @@ export function KanbanCard({
             </span>
           ) : (
             timeTotal && timeTotal !== "0min" && (
-              <span className="flex items-center gap-1 text-[#101f2e] dark:text-primary-foreground font-medium">
+              <span className="flex items-center gap-1 text-[#04202f] dark:text-primary-foreground font-medium">
                 <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden />
                 {timeTotal}
               </span>
@@ -368,7 +367,7 @@ export function KanbanCard({
                     flex items-center gap-1 text-xs rounded-full px-2 py-1
                     transition-all duration-150 cursor-pointer
                     ${commentsCount > 0
-                      ? "text-muted-foreground hover:text-[#101f2e] hover:bg-[#101f2e]/8 dark:hover:bg-white/8"
+                      ? "text-muted-foreground hover:text-[#04202f] hover:bg-[#04202f]/8 dark:hover:bg-white/8"
                       : "text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/60"}
                   `}
                 >
@@ -382,10 +381,10 @@ export function KanbanCard({
                   side="bottom"
                   align="start"
                   sideOffset={8}
-                  className="z-50 w-80 rounded-2xl border border-white/50 dark:border-border/50 bg-white/95 dark:bg-card/95 backdrop-blur-xl shadow-[0_16px_48px_-8px_rgba(0,0,0,0.2)] p-0 overflow-hidden data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
+                  className="z-50 w-80 rounded-lg border border-white/50 dark:border-border/50 bg-white/95 dark:bg-card/95 backdrop-blur-xl shadow-[0_16px_48px_-8px_rgba(0,0,0,0.2)] p-0 overflow-hidden data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
                   onInteractOutside={() => setCommentsOpen(false)}
                 >
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-border/30 bg-[#101f2e]/[0.03] dark:bg-white/[0.03]">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-border/30 bg-[#04202f]/[0.03] dark:bg-white/[0.03]">
                     <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                       <MessageSquare className="h-3.5 w-3.5" aria-hidden />
                       Comentários
@@ -416,7 +415,7 @@ export function KanbanCard({
                         >
                           <Avatar className="h-7 w-7 shrink-0 border border-white/50">
                             <AvatarImage src={c.user_avatar_url || undefined} />
-                            <AvatarFallback className="text-[10px] bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10">
+                            <AvatarFallback className="text-[10px] bg-[#04202f]/10 text-[#04202f] dark:bg-white/10">
                               {c.user_name ? getInitials(c.user_name) : "?"}
                             </AvatarFallback>
                           </Avatar>
@@ -448,7 +447,7 @@ export function KanbanCard({
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); setCommentsOpen(false); onClick?.(); }}
-                        className="text-xs text-[#101f2e] dark:text-primary-foreground font-medium hover:underline"
+                        className="text-xs text-[#04202f] dark:text-primary-foreground font-medium hover:underline"
                       >
                         Ver todos os {commentsCount} comentários →
                       </button>
@@ -476,7 +475,7 @@ export function KanbanCard({
               <>
                 <Avatar className="h-7 w-7 shrink-0 border-2 border-white dark:border-background ring-1 ring-background">
                   <AvatarImage src={request.assignee_user.avatar_url || undefined} />
-                  <AvatarFallback className="text-[10px] bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10">
+                  <AvatarFallback className="text-[10px] bg-[#04202f]/10 text-[#04202f] dark:bg-white/10">
                     {getInitials(request.assignee_user.name)}
                   </AvatarFallback>
                 </Avatar>

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { getAreaIcon } from "@/lib/area-icons";
+import { AreaIcon } from "@/lib/area-icons";
 import { ChartTooltip } from "./chart-tooltip";
 
 interface ChartByAreaProps {
@@ -42,7 +42,6 @@ export function ChartByArea({ data }: ChartByAreaProps) {
             style={{ width: LABELS_WIDTH }}
           >
             {data.map((item) => {
-              const Icon = getAreaIcon(item.area);
               return (
                 <div
                   key={item.area}
@@ -50,7 +49,7 @@ export function ChartByArea({ data }: ChartByAreaProps) {
                   style={{ height: ROW_HEIGHT }}
                 >
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                    <Icon className="h-4 w-4" />
+                    <AreaIcon area={item.area} className="h-4 w-4" />
                   </div>
                   <span
                     className="min-w-0 flex-1 break-words text-sm font-medium text-foreground"

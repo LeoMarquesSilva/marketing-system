@@ -119,7 +119,7 @@ export function ClimaAssistenteTab({
                 key={m.id}
                 className={`rounded-lg p-3 ${
                   m.role === "user"
-                    ? "ml-8 bg-[#101f2e] text-white"
+                    ? "ml-8 bg-[#04202f] text-white"
                     : "mr-8 bg-muted"
                 }`}
               >

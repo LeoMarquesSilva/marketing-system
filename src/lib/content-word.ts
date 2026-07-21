@@ -124,7 +124,7 @@ export function buildRoteiroWordHtml(r: RoteiroWordInput): string {
             `<p style="margin:2pt 0;">${b.type === "bullet" ? "• " : ""}${inlineHtml(b.content)}</p>`
         )
         .join("");
-      return `<h3 style="color:#101f2e;margin:14pt 0 4pt;font-size:11pt;">${ref}</h3>
+      return `<h3 style="color:#04202f;margin:14pt 0 4pt;font-size:11pt;">${ref}</h3>
         <p style="margin:2pt 0;font-weight:bold;font-size:12pt;">${inlineHtml(s.title)}</p>
         ${author}${body}`;
     })
@@ -133,14 +133,14 @@ export function buildRoteiroWordHtml(r: RoteiroWordInput): string {
   return `<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${esc(r.title)}</title></head>
     <body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#1a1a1a;">
       <p style="font-size:9pt;color:#888;letter-spacing:1px;text-transform:uppercase;margin:0;">Sistema de Marketing — Conteúdo para post</p>
-      <h1 style="color:#101f2e;font-size:16pt;margin:6pt 0 12pt;">${esc(r.title)}</h1>
+      <h1 style="color:#04202f;font-size:16pt;margin:6pt 0 12pt;">${esc(r.title)}</h1>
       <table cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:10pt;margin-bottom:16pt;width:100%;">
         <tr><td style="background:#f3f4f6;font-weight:bold;width:170px;">Área</td><td style="border-bottom:1px solid #eee;">${esc(r.area)}</td></tr>
         <tr><td style="background:#f3f4f6;font-weight:bold;">Link da notícia</td><td style="border-bottom:1px solid #eee;">${esc(r.link ?? "—")}</td></tr>
         <tr><td style="background:#f3f4f6;font-weight:bold;">Texto alterado?</td><td style="border-bottom:1px solid #eee;">${editedInfo}</td></tr>
         <tr><td style="background:#f3f4f6;font-weight:bold;">Responsável</td><td style="border-bottom:1px solid #eee;">${esc(r.authorName ?? "—")}${r.authorRole ? ` (${esc(r.authorRole)})` : ""}</td></tr>
       </table>
-      <h2 style="color:#101f2e;font-size:13pt;border-bottom:2px solid #101f2e;padding-bottom:4pt;">Post em carrossel</h2>
+      <h2 style="color:#04202f;font-size:13pt;border-bottom:2px solid #04202f;padding-bottom:4pt;">Post em carrossel</h2>
       ${slidesHtml}
       ${
         r.hasAlterations && r.originalPost

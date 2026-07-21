@@ -22,7 +22,6 @@ import {
 import { Plus, List, LayoutGrid, Trash2, Check } from "lucide-react";
 import type { ClimaTodo } from "@/lib/clima-types";
 import type { User } from "@/lib/users";
-import { useAuth } from "@/contexts/auth-context";
 
 const NONE_VALUE = "__none__";
 
@@ -44,7 +43,6 @@ export function ClimaTodosTab({
   onUpdateTodo,
   users = [],
 }: ClimaTodosTabProps) {
-  const { profile } = useAuth();
   const [viewMode, setViewMode] = useState<"lista" | "kanban">("lista");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");

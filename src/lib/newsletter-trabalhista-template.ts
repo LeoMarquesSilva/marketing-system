@@ -154,7 +154,7 @@ export const DEFAULT_NEWSLETTER_TRABALHISTA: NewsletterTrabalhistaData = {
     "Caso tenha dúvidas ou queira conversar sobre algum dos temas abordados, entre em contato conosco. Acompanhe nossas próximas edições e mantenha-se sempre atualizado sobre as novidades da área trabalhista.",
   closingTextStyle: defaultStyle({ color: "#555555", fontSize: "md" }),
   contactButtonLabel: "Entrar em contato",
-  contactButtonColor: "#101f2e",
+  contactButtonColor: "#04202f",
   whatsappUrl:
     "https://api.whatsapp.com/send/?phone=5519993596791&text&type=phone_number&app_absent=0",
 };
@@ -262,8 +262,8 @@ export function renderNewsletterTrabalhistaHtml(rawData: NewsletterTrabalhistaDa
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@100;400;700;900&display=swap" rel="stylesheet" />
 </head>
-<body style="margin:0;padding:0;background-color:#101f2e;font-family:'Montserrat','Trebuchet MS',sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#101f2e;">
+<body style="margin:0;padding:0;background-color:#04202f;font-family:'Montserrat','Trebuchet MS',sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#04202f;">
     <tr>
       <td align="center">
         <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background-color:#fcf9f5;">

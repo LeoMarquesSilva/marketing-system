@@ -107,7 +107,7 @@ export default function AlterarSenhaPage() {
 
   if (busy) {
     return (
-      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-[#101f2e] to-[#0a141c] p-4">
+      <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-gradient-to-br from-[#04202f] to-[#1c1c1c] p-4">
         <Loader2 className="h-8 w-8 animate-spin text-white" />
         <p className="text-sm text-white/80">
           {done ? "Senha atualizada. Entrando..." : "Salvando nova senha..."}
@@ -117,8 +117,8 @@ export default function AlterarSenhaPage() {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-[#101f2e] to-[#0a141c] p-4">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white p-6 shadow-2xl dark:bg-card sm:p-8">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-[#04202f] to-[#1c1c1c] p-4">
+      <div className="w-full max-w-md rounded-lg border border-white/10 bg-white p-6 shadow-2xl dark:bg-card sm:p-8">
         <div className="mb-5 flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
             <ShieldCheck className="h-5 w-5" />

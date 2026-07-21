@@ -44,7 +44,7 @@ export async function POST(request: Request, context: RouteContext) {
   }
 }
 
-export async function DELETE(request: Request, context: RouteContext) {
+export async function DELETE(request: Request) {
   try {
     await requireAuthenticatedUser();
     const { searchParams } = new URL(request.url);

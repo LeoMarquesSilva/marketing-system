@@ -76,6 +76,7 @@ export function ContactDetailDialog({
 
   useEffect(() => {
     if (!open || !rdUuid) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Limpa o histórico quando o contato deixa de ser o alvo do diálogo.
       setEvents([]);
       setEventsError(null);
       return;

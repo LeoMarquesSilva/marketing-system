@@ -76,7 +76,7 @@ function KpiCard({
   return (
     <div
       className={cn(
-        "rounded-2xl border backdrop-blur-sm p-5 flex flex-col gap-3 transition-shadow",
+        "rounded-lg border backdrop-blur-sm p-5 flex flex-col gap-3 transition-shadow",
         accent
           ? "border-emerald-200/60 bg-emerald-50/50 dark:bg-emerald-950/20 dark:border-emerald-900/40 hover:bg-emerald-50/80 dark:hover:bg-emerald-900/30"
           : "border-border/50 bg-background/50 dark:bg-card/50 shadow-sm hover:bg-muted/30"
@@ -89,7 +89,7 @@ function KpiCard({
         <span
           className={cn(
             "flex h-8 w-8 shrink-0 items-center justify-center rounded-xl",
-            accent ? "bg-emerald-500/10 text-emerald-700" : "bg-[#101f2e]/8 text-[#101f2e]/60"
+            accent ? "bg-emerald-500/10 text-emerald-700" : "bg-[#04202f]/8 text-[#04202f]/60"
           )}
         >
           {icon}
@@ -278,7 +278,7 @@ export function TrafegoPagoClient() {
   return (
     <div className="space-y-6">
       {/* Toolbar */}
-      <div className="rounded-2xl border bg-card/60 backdrop-blur-sm p-4 space-y-4">
+      <div className="rounded-lg border bg-card/60 backdrop-blur-sm p-4 space-y-4">
         <div className="flex flex-wrap items-center gap-3">
           <Select
             value={datePreset}
@@ -353,7 +353,7 @@ export function TrafegoPagoClient() {
               type="checkbox"
               checked={autoRefresh}
               onChange={(e) => setAutoRefresh(e.target.checked)}
-              className="h-4 w-4 rounded border-border accent-[#101f2e]"
+              className="h-4 w-4 rounded border-border accent-[#04202f]"
             />
             <span className="text-sm">Auto-atualizar (3 min)</span>
           </label>
@@ -507,7 +507,7 @@ export function TrafegoPagoClient() {
             </div>
 
             {campaignGroups.length === 0 ? (
-              <div className="rounded-2xl border border-dashed p-12 flex flex-col items-center justify-center text-center space-y-3 bg-muted/20">
+              <div className="rounded-lg border border-dashed p-12 flex flex-col items-center justify-center text-center space-y-3 bg-muted/20">
                 <Megaphone className="h-10 w-10 text-muted-foreground opacity-50" />
                 <div>
                   <p className="font-medium text-foreground">Nenhuma campanha encontrada</p>
@@ -560,7 +560,7 @@ function CampaignSection({
   return (
     <div
       className={cn(
-        "rounded-2xl border overflow-hidden shadow-sm transition-all",
+        "rounded-lg border overflow-hidden shadow-sm transition-all",
         isActive
           ? "bg-card border-emerald-200/60 dark:border-emerald-900/40 ring-1 ring-emerald-500/10"
           : "bg-muted/20 border-border/60",

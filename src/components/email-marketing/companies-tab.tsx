@@ -224,7 +224,7 @@ function ClientGroupSection({
   const [open, setOpen] = useState(defaultOpen ?? false);
 
   return (
-    <section className="rounded-2xl border border-border/80 bg-card shadow-sm overflow-hidden">
+    <section className="rounded-lg border border-border/80 bg-card shadow-sm overflow-hidden">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -460,7 +460,7 @@ export function CompaniesTab({ companies, contacts, people }: CompaniesTabProps)
       </div>
 
       {filteredGroups.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed py-16 text-center text-muted-foreground">
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-16 text-center text-muted-foreground">
           <Building2 className="h-9 w-9 opacity-40" />
           <p className="text-sm font-medium text-foreground">Nenhum resultado com estes filtros</p>
           <p className="text-xs max-w-sm">

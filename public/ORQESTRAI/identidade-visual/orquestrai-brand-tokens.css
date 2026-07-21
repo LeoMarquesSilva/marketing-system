@@ -1,0 +1,20 @@
+:root {
+  --orquestrai-cyan: #47cdd0;
+  --orquestrai-blue: #3e84a8;
+  --orquestrai-indigo: #48466e;
+  --orquestrai-action: #347796;
+  --orquestrai-action-strong: #285f7a;
+  --orquestrai-surface-from: #03070c;
+  --orquestrai-surface-to: #04202f;
+  --orquestrai-black: #1c1c1c;
+  --orquestrai-white: #f9f9f9;
+
+  --orquestrai-gradient: linear-gradient(
+    135deg,
+    #47cdd0 0%,
+    #45bdc7 28%,
+    #4095b1 56%,
+    #3e84a8 74%,
+    #48466e 100%
+  );
+}

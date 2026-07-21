@@ -37,6 +37,7 @@ const TAB_LABELS: Record<PlannerTabId, string> = {
   concluidos: "Concluídos",
   posts: "Posts",
 };
+const TAB_ORDER: PlannerTabId[] = ["kanban", "concluidos", "posts"];
 
 interface AdminClientProps {
   initialSettings: AppSettings;
@@ -101,7 +102,6 @@ export function AdminClient({ initialSettings }: AdminClientProps) {
     router.refresh();
   };
 
-  const TAB_ORDER: PlannerTabId[] = ["kanban", "concluidos", "posts"];
   const togglePlannerTab = useCallback((tab: PlannerTabId) => {
     setPlannerTabs((prev) => {
       const next = prev.includes(tab)

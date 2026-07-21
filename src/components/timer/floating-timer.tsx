@@ -29,11 +29,11 @@ export function FloatingTimer() {
       className={cn(
         "fixed bottom-5 right-5 z-50",
         "flex flex-col overflow-hidden",
-        "rounded-2xl border",
+        "rounded-lg border",
         isRunning
           ? "border-emerald-300/40 dark:border-emerald-700/30"
           : "border-amber-300/40 dark:border-amber-700/30",
-        "bg-white/95 dark:bg-[#101f2e]/95 backdrop-blur-xl",
+        "bg-white/95 dark:bg-[#04202f]/95 backdrop-blur-xl",
         "shadow-[0_8px_32px_-4px_rgba(16,31,46,0.22),0_0_0_1px_rgba(16,31,46,0.06)]",
         "transition-all duration-300 ease-out",
         "min-w-[230px]"

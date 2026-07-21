@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import {
   LayoutDashboard,
@@ -15,12 +16,16 @@ import {
   Newspaper,
   Heart,
   Instagram,
+  Linkedin,
   Megaphone,
   User,
   Camera,
   Wallet,
   Mail,
   Contact,
+  Clapperboard,
+  MoreHorizontal,
+  RadioTower,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -31,40 +36,52 @@ import { fetchCommentStats } from "@/lib/request-comments";
 import { fetchMarketingRequests } from "@/lib/marketing-requests";
 import { useWhatsappUnreadCount } from "@/hooks/use-whatsapp-unread";
 
+type SidebarProps = {
+  expanded: boolean;
+  onExpandedChange: (expanded: boolean) => void;
+};
+
+const SIDEBAR_WIDTH = {
+  collapsed: 72,
+  expanded: 260,
+};
+
 const baseNavItems = [
   { href: "/", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/planner", icon: Columns3, label: "Planner" },
-  { href: "/solicitacoes", icon: List, label: "Solicitações" },
-  { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteúdo para Post" },
+  { href: "/solicitacoes", icon: List, label: "Solicitacoes" },
+  { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteudo para Post" },
+  { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
   { href: "/clima", icon: Heart, label: "Clima" },
   { href: "/instagram-insights", icon: Instagram, label: "Instagram Insights" },
-  { href: "/trafego-pago", icon: Megaphone, label: "Tráfego Pago" },
+  { href: "/linkedin-insights", icon: Linkedin, label: "LinkedIn Insights" },
+  { href: "/trafego-pago", icon: Megaphone, label: "Trafego Pago" },
   { href: "/vios-tarefas", icon: ClipboardList, label: "Tarefas VIOS" },
   { href: "/eventos", icon: CalendarDays, label: "Eventos" },
   { href: "/email-marketing", icon: Mail, label: "E-mail Marketing" },
+  { href: "/nfc", icon: RadioTower, label: "NFC Hub" },
   { href: "/fotos-colaboradores", icon: Camera, label: "Fotos Colaboradores" },
-  { href: "/usuarios", icon: Users, label: "Usuários" },
+  { href: "/usuarios", icon: Users, label: "Usuarios" },
   { href: "/custos-projetos", icon: Wallet, label: "Custos de Projetos" },
 ];
 
 const collaboratorNavItems = [
-  { href: "/conteudo/inicio", icon: Instagram, label: "Início" },
-  { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteúdo para Post" },
+  { href: "/conteudo/inicio", icon: Instagram, label: "Inicio" },
+  { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteudo para Post" },
+  { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
 ];
 
-/** Liberado apenas manualmente por usuário (checkbox no admin) — nunca no fallback legado. */
 const manualOnlyNavItems = [
   { href: "/meus-clientes", icon: Contact, label: "Meus Clientes" },
 ];
 
 const adminNavItems = [
-  { href: "/admin", icon: Settings, label: "Configurações" },
+  { href: "/admin", icon: Settings, label: "Configuracoes" },
 ];
 
 function getNavItems(
   profile: { role?: string | null; department?: string | null; permissions?: string[] | null } | null
 ) {
-  // Permissões explícitas (definidas pelo admin) têm prioridade.
   const allowed = resolveAllowedSections(profile);
   if (allowed) {
     const catalog = [...baseNavItems, ...manualOnlyNavItems, ...adminNavItems];
@@ -74,26 +91,28 @@ function getNavItems(
       }
       return allowed.includes(i.href);
     });
-    // Quem tem acesso ao conteúdo enxerga a home de desempenho (Início).
+
     if (allowed.some((k) => k.startsWith("/conteudo"))) {
       items = [
-        { href: "/conteudo/inicio", icon: Instagram, label: "Início" },
-        ...items.filter((i) => i.href !== "/conteudo/inicio"),
+        { href: "/conteudo/inicio", icon: Instagram, label: "Inicio" },
+        { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteudo para Post" },
+        { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
+        ...items.filter((i) => !i.href.startsWith("/conteudo")),
       ];
     }
     return items;
   }
-  // Comportamento legado.
+
   if (isContentCollaborator(profile)) {
     return collaboratorNavItems;
   }
+
   const isAdmin = profile?.role === "admin";
   return [
-    ...baseNavItems.filter(
-      (i) => i.href !== "/fotos-colaboradores" || hasCollaboratorPhotosAccess(profile)
-    ),
-    // Admin sempre vê as rotas de liberação manual (ex.: Meus Clientes), mesmo sem
-    // depender do catálogo de permissões — ele nunca é limitado por ele.
+    ...baseNavItems.filter((i) => {
+      if (i.href === "/nfc") return isAdmin;
+      return i.href !== "/fotos-colaboradores" || hasCollaboratorPhotosAccess(profile);
+    }),
     ...(isAdmin ? [...manualOnlyNavItems, ...adminNavItems] : []),
   ];
 }
@@ -107,19 +126,75 @@ function getInitials(name: string) {
     .toUpperCase();
 }
 
-export function Sidebar() {
+function isRouteActive(pathname: string, href: string) {
+  return pathname === href || (href !== "/" && pathname.startsWith(href));
+}
+
+function NotificationBadge({
+  value,
+  tone = "cyan",
+  expanded,
+  active = false,
+}: {
+  value: number;
+  tone?: "cyan" | "amber";
+  expanded: boolean;
+  active?: boolean;
+}) {
+  if (value <= 0) return null;
+
+  const label = `${value} ${value === 1 ? "notificação pendente" : "notificações pendentes"}`;
+
+  if (!expanded) {
+    return (
+      <span
+        role="status"
+        aria-label={label}
+        className={cn(
+          "absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2",
+          active ? "border-[#47cdd0]" : "border-[#03070c]",
+          tone === "amber" ? "bg-[#f4c95d]" : active ? "bg-[#04202f]" : "bg-[#47cdd0]"
+        )}
+      />
+    );
+  }
+
+  return (
+    <span
+      role="status"
+      aria-label={label}
+      className={cn(
+        "relative z-10 ml-auto flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-xs font-semibold leading-none",
+        tone === "amber"
+          ? "bg-[#f4c95d] text-[#1c1c1c]"
+          : active
+            ? "bg-[#04202f] text-white"
+            : "bg-[#47cdd0] text-[#1c1c1c]"
+      )}
+    >
+      {value > 99 ? "99+" : value}
+    </span>
+  );
+}
+
+export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { profile, signOut } = useAuth();
 
-  const handleSignOut = async () => {
-    await signOut();
-    router.replace("/login");
-  };
   const [pendingAlterations, setPendingAlterations] = useState(0);
   const whatsappUnread = useWhatsappUnreadCount();
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const navItems = getNavItems(profile);
+  const mobileNavItems = navItems.slice(0, 4);
+
+  const handleSignOut = async () => {
+    setMobileMenuOpen(false);
+    await signOut();
+    router.replace("/login");
+  };
 
   useEffect(() => {
     if (!profileMenuOpen) return;
@@ -146,7 +221,7 @@ export function Sidebar() {
         const total = Object.values(pendingAlterationsCounts).reduce((sum, n) => sum + n, 0);
         setPendingAlterations(total);
       } catch {
-        // Badge opcional — não derrubar a navegação por falha transitória do Supabase.
+        // Badge opcional: falhas temporarias nao devem derrubar a navegacao.
       }
     };
     load();
@@ -156,187 +231,411 @@ export function Sidebar() {
 
   return (
     <>
-    <aside
-      className={cn(
-        // Hidden on mobile, visible md+
-        "hidden md:flex",
-        "fixed left-0 top-0 z-40 h-screen w-16 flex-col items-center",
-        "bg-gradient-to-b from-[#101f2e] to-[#0a141c]",
-        "border-r border-white/[0.06]",
-        "shadow-[1px_0_20px_rgba(0,0,0,0.15)]",
-        "py-4 gap-0"
-      )}
-    >
-      {/* Logo mark — fênix */}
-      <Link
-        href="/"
-        className="mb-6 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl hover:bg-white/10 transition-colors"
-        title="Início"
+      <motion.aside
+        animate={{ width: expanded ? SIDEBAR_WIDTH.expanded : SIDEBAR_WIDTH.collapsed }}
+        transition={{ type: "spring", stiffness: 360, damping: 34 }}
+        onMouseEnter={() => onExpandedChange(true)}
+        onMouseLeave={() => {
+          onExpandedChange(false);
+          setProfileMenuOpen(false);
+        }}
+        onFocusCapture={() => onExpandedChange(true)}
+        className={cn(
+          "fixed left-0 top-0 z-40 hidden h-screen flex-col overflow-hidden md:flex",
+          "border-r border-white/[0.08] bg-[#03070c] text-white",
+          "shadow-[1px_0_24px_rgba(3,7,12,0.25)]"
+        )}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/fenix.png"
-          alt="Bismarchi Pires"
-          width={28}
-          height={28}
-          className="object-contain drop-shadow-[0_1px_4px_rgba(0,0,0,0.4)]"
-        />
-      </Link>
+        <div className="pointer-events-none absolute inset-0 bg-[#03070c]" />
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-[#47cdd0]/40 to-transparent" />
 
-      {/* Nav items */}
-      <nav className="flex flex-1 flex-col items-center gap-1 w-full px-3" aria-label="Navegação principal" data-tour="sidebar-nav">
-        {getNavItems(profile).map((item) => {
-          const isActive =
-            pathname === item.href ||
-            (item.href !== "/" && pathname.startsWith(item.href));
+        <div className="relative flex h-full min-h-0 flex-col">
+          <div className={cn("flex h-[72px] items-center", expanded ? "px-4" : "justify-center px-3")}>
+            <Link
+              href="/"
+              className={cn(
+                "group flex min-w-0 items-center rounded-xl transition-colors hover:bg-white/8",
+                expanded ? "h-12 flex-1 px-2" : "h-11 w-11 justify-center"
+              )}
+              title="ORQESTRAI - Inicio"
+              aria-label="ORQESTRAI - Inicio"
+            >
+              <AnimatePresence initial={false} mode="wait">
+                {expanded ? (
+                  <motion.span
+                    key="wordmark"
+                    initial={{ opacity: 0, x: -6 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 6 }}
+                    transition={{ duration: 0.16 }}
+                    className="flex min-w-0 flex-1 items-center"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src="/ORQESTRAI/identidade-visual/logos/orquestrai-logo-horizontal-color.svg"
+                      alt="ORQESTRAI"
+                      className="h-8 w-auto max-w-[210px] object-contain"
+                    />
+                  </motion.span>
+                ) : (
+                  <motion.span
+                    key="symbol"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ duration: 0.14 }}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src="/ORQESTRAI/identidade-visual/logos/orquestrai-symbol-white.svg"
+                      alt=""
+                      width={24}
+                      height={24}
+                      className="object-contain drop-shadow-[0_1px_6px_rgba(71,205,208,0.4)]"
+                      aria-hidden
+                    />
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </Link>
+          </div>
 
+          <nav
+            className={cn(
+              "relative flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden px-3 pb-3",
+              "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            )}
+            aria-label="Navegacao principal"
+            data-tour="sidebar-nav"
+          >
+            {navItems.map((item) => {
+              const isActive = isRouteActive(pathname, item.href);
+              const badgeValue =
+                item.href === "/planner"
+                  ? pendingAlterations
+                  : item.href === "/trafego-pago"
+                    ? whatsappUnread
+                    : 0;
+
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  title={!expanded ? item.label : undefined}
+                  aria-label={item.label}
+                  aria-current={isActive ? "page" : undefined}
+                  className={cn(
+                    "group relative flex h-11 items-center rounded-xl text-sm font-medium outline-none transition-colors duration-200",
+                    expanded ? "gap-3 px-3" : "justify-center px-0",
+                    isActive
+                      ? "text-[#1c1c1c]"
+                      : "text-white/55 hover:bg-white/[0.08] hover:text-white focus-visible:bg-white/[0.08] focus-visible:text-white"
+                  )}
+                >
+                  {isActive && (
+                    <motion.span
+                      layoutId="sidebar-active-item"
+                      className="absolute inset-0 rounded-xl bg-[#47cdd0] shadow-[0_10px_28px_rgba(71,205,208,0.26)]"
+                      transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                    />
+                  )}
+
+                  <span
+                    className={cn(
+                      "relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-transform duration-200",
+                      !isActive && "group-hover:scale-105",
+                      isActive ? "text-[#1c1c1c]" : "text-white/65 group-hover:text-white"
+                    )}
+                  >
+                    <item.icon className="h-[18px] w-[18px]" />
+                    {!expanded && (
+                      <NotificationBadge
+                        value={badgeValue}
+                        tone={item.href === "/planner" ? "amber" : "cyan"}
+                        expanded={false}
+                        active={isActive}
+                      />
+                    )}
+                  </span>
+
+                  <AnimatePresence initial={false}>
+                    {expanded && (
+                      <motion.span
+                        initial={{ opacity: 0, x: -6 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -6 }}
+                        transition={{ duration: 0.14 }}
+                        className="relative z-10 min-w-0 flex-1 truncate"
+                      >
+                        {item.label}
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+
+                  {expanded && (
+                    <NotificationBadge
+                      value={badgeValue}
+                      tone={item.href === "/planner" ? "amber" : "cyan"}
+                      expanded
+                      active={isActive}
+                    />
+                  )}
+
+                  {!expanded && (
+                    <span
+                      className={cn(
+                        "pointer-events-none absolute left-full ml-3 whitespace-nowrap rounded-lg",
+                        "border border-white/10 bg-[#04202f]/95 px-3 py-1.5 text-xs font-medium text-white shadow-xl backdrop-blur-xl",
+                        "z-50 -translate-x-1 scale-95 opacity-0 transition-all duration-150",
+                        "group-hover:translate-x-0 group-hover:scale-100 group-hover:opacity-100"
+                      )}
+                      aria-hidden
+                    >
+                      {item.label}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+          </nav>
+
+          <div className="relative border-t border-white/[0.08] p-3">
+            <div ref={profileMenuRef} className="relative" data-tour="profile-menu">
+              {profile && (
+                <button
+                  type="button"
+                  onClick={() => setProfileMenuOpen((v) => !v)}
+                  title={profile.name}
+                  aria-label={`Conta - ${profile.name}`}
+                  aria-haspopup="menu"
+                  aria-expanded={profileMenuOpen}
+                  className={cn(
+                    "group flex h-12 w-full items-center rounded-xl transition-colors",
+                    "hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/60",
+                    expanded ? "gap-3 px-2" : "justify-center px-0"
+                  )}
+                >
+                  <span className="relative shrink-0">
+                    <Avatar className="h-9 w-9 border border-white/20 shadow-sm transition-colors group-hover:border-[#47cdd0]/70">
+                      <AvatarImage src={profile.avatar_url || undefined} />
+                      <AvatarFallback className="bg-white/10 text-[10px] font-semibold text-white">
+                        {getInitials(profile.name)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#03070c] bg-emerald-400" aria-hidden />
+                  </span>
+
+                  <AnimatePresence initial={false}>
+                    {expanded && (
+                      <motion.span
+                        initial={{ opacity: 0, x: -6 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -6 }}
+                        transition={{ duration: 0.14 }}
+                        className="min-w-0 text-left"
+                      >
+                        <span className="block truncate text-sm font-semibold text-white">{profile.name}</span>
+                        {profile.email && (
+                          <span className="block truncate text-[11px] text-white/45">{profile.email}</span>
+                        )}
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </button>
+              )}
+
+              <AnimatePresence>
+                {profile && profileMenuOpen && (
+                  <motion.div
+                    role="menu"
+                    initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                    transition={{ duration: 0.16 }}
+                    className={cn(
+                      "absolute bottom-0 z-50 w-56 overflow-hidden rounded-xl border border-white/10",
+                      "bg-[#04202f]/95 p-1 shadow-2xl backdrop-blur-xl",
+                      expanded ? "left-0" : "left-full ml-3"
+                    )}
+                  >
+                    <div className="border-b border-white/10 px-3 py-2.5">
+                      <p className="truncate text-sm font-semibold text-white">{profile.name}</p>
+                      {profile.email && (
+                        <p className="truncate text-[11px] text-white/50">{profile.email}</p>
+                      )}
+                    </div>
+                    <Link
+                      href="/perfil"
+                      role="menuitem"
+                      onClick={() => setProfileMenuOpen(false)}
+                      className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                    >
+                      <User className="h-4 w-4" />
+                      Meu perfil
+                    </Link>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setProfileMenuOpen(false);
+                        handleSignOut();
+                      }}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-red-300 transition-colors hover:bg-red-500/15 hover:text-red-200"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Sair
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </div>
+        </div>
+      </motion.aside>
+
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <>
+            <motion.button
+              type="button"
+              aria-label="Fechar menu"
+              className="fixed inset-0 z-40 bg-[#03070c]/35 backdrop-blur-[2px] md:hidden"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setMobileMenuOpen(false)}
+            />
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Todas as áreas"
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 18 }}
+              transition={{ duration: 0.18 }}
+              className="fixed bottom-[4.5rem] left-3 right-3 z-50 max-h-[min(70dvh,560px)] overflow-y-auto rounded-lg border border-[#47cdd0]/20 bg-[#04202f] p-3 text-white shadow-[0_24px_64px_rgba(3,7,12,0.38)] md:hidden"
+            >
+              <div className="mb-3 flex items-center justify-between border-b border-white/10 px-1 pb-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/ORQESTRAI/identidade-visual/logos/orquestrai-logo-horizontal-color.svg"
+                  alt="ORQESTRAI"
+                  className="h-7 w-auto max-w-[190px] object-contain"
+                />
+                <span className="text-xs font-medium text-white/55">Navegação</span>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {navItems.map((item) => {
+                  const isActive = isRouteActive(pathname, item.href);
+                  const badgeValue =
+                    item.href === "/planner"
+                      ? pendingAlterations
+                      : item.href === "/trafego-pago"
+                        ? whatsappUnread
+                        : 0;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      aria-current={isActive ? "page" : undefined}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={cn(
+                        "flex min-h-12 items-center gap-2.5 rounded-md px-3 py-2.5 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#47cdd0]",
+                        isActive
+                          ? "bg-[#47cdd0] text-[#1c1c1c]"
+                          : "bg-white/[0.04] text-white/75 hover:bg-white/[0.09] hover:text-white"
+                      )}
+                    >
+                      <item.icon className="h-[18px] w-[18px] shrink-0" aria-hidden />
+                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                      <NotificationBadge
+                        value={badgeValue}
+                        tone={item.href === "/planner" ? "amber" : "cyan"}
+                        expanded
+                        active={isActive}
+                      />
+                    </Link>
+                  );
+                })}
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-1.5 border-t border-white/10 pt-3">
+                <Link
+                  href="/perfil"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex min-h-12 items-center gap-2.5 rounded-md px-3 py-2.5 text-sm font-medium text-white/75 outline-none transition-colors hover:bg-white/[0.09] hover:text-white focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
+                >
+                  <User className="h-[18px] w-[18px]" aria-hidden />
+                  Meu perfil
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="flex min-h-12 items-center gap-2.5 rounded-md px-3 py-2.5 text-sm font-medium text-red-200 outline-none transition-colors hover:bg-red-500/15 hover:text-red-100 focus-visible:ring-2 focus-visible:ring-red-300"
+                >
+                  <LogOut className="h-[18px] w-[18px]" aria-hidden />
+                  Sair
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-50 flex h-16 items-center justify-around border-t border-white/[0.06] bg-gradient-to-r from-[#03070c] to-[#04202f] px-2 shadow-[0_-4px_20px_rgba(0,0,0,0.2)] md:hidden"
+        data-tour="sidebar-nav-mobile"
+        aria-label="Navegação principal móvel"
+      >
+        {mobileNavItems.map((item) => {
+          const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href + "/"));
+          const badgeValue =
+            item.href === "/planner"
+              ? pendingAlterations
+              : item.href === "/trafego-pago"
+                ? whatsappUnread
+                : 0;
           return (
             <Link
               key={item.href}
               href={item.href}
-              title={item.label}
               aria-label={item.label}
               aria-current={isActive ? "page" : undefined}
+              onClick={() => setMobileMenuOpen(false)}
               className={cn(
-                "group relative flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-200",
-                isActive
-                  ? "bg-white shadow-[0_2px_16px_rgba(0,0,0,0.25)] text-[#101f2e]"
-                  : "text-white/40 hover:bg-white/10 hover:text-white"
+                "relative flex min-h-12 min-w-12 flex-col items-center justify-center gap-1 rounded-md px-2 py-1.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#47cdd0]",
+                isActive ? "text-white" : "text-white/40 hover:text-white/70"
               )}
             >
-              <item.icon
-                className={cn(
-                  "h-[18px] w-[18px] transition-transform duration-200",
-                  "group-hover:scale-110",
-                  isActive ? "text-[#101f2e]" : ""
-                )}
-              />
-              {item.href === "/planner" && pendingAlterations > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-400 text-[9px] font-bold text-[#101f2e] px-1 leading-none shadow-sm">
-                  {pendingAlterations > 9 ? "9+" : pendingAlterations}
-                </span>
-              )}
-              {item.href === "/trafego-pago" && whatsappUnread > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-emerald-400 text-[9px] font-bold text-[#101f2e] px-1 leading-none shadow-sm">
-                  {whatsappUnread > 9 ? "9+" : whatsappUnread}
-                </span>
-              )}
-
-              {/* Tooltip */}
-              <span
-                className={cn(
-                  "pointer-events-none absolute left-full ml-3 whitespace-nowrap",
-                  "rounded-lg border border-white/10 bg-[#101f2e]/95 backdrop-blur-xl",
-                  "px-3 py-1.5 text-xs font-medium text-white shadow-xl",
-                  "opacity-0 -translate-x-1 scale-95",
-                  "group-hover:opacity-100 group-hover:translate-x-0 group-hover:scale-100",
-                  "transition-all duration-150 z-50"
-                )}
-                aria-hidden
-              >
-                {item.label}
+              <span className="relative flex h-6 w-6 items-center justify-center">
+                <item.icon className="h-5 w-5" />
+                <NotificationBadge
+                  value={badgeValue}
+                  tone={item.href === "/planner" ? "amber" : "cyan"}
+                  expanded={false}
+                  active={isActive}
+                />
               </span>
+              <span className="max-w-[64px] truncate text-xs font-medium leading-none">{item.label.split(" ")[0]}</span>
             </Link>
           );
         })}
+        <button
+          type="button"
+          onClick={() => setMobileMenuOpen((open) => !open)}
+          aria-label="Abrir todas as áreas"
+          aria-expanded={mobileMenuOpen}
+          className={cn(
+            "flex min-h-12 min-w-12 flex-col items-center justify-center gap-1 rounded-md px-2 py-1.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#47cdd0]",
+            mobileMenuOpen ? "text-[#47cdd0]" : "text-white/40 hover:text-white/70"
+          )}
+        >
+          <MoreHorizontal className="h-5 w-5" aria-hidden />
+          <span className="text-xs font-medium leading-none">Mais</span>
+        </button>
       </nav>
 
-      {/* Divider */}
-      <div className="w-8 border-t border-white/10 my-3 shrink-0" />
-
-      {/* Bottom: avatar com menu (perfil + sair) */}
-      <div ref={profileMenuRef} className="relative flex flex-col items-center shrink-0" data-tour="profile-menu">
-        {profile && (
-          <button
-            type="button"
-            onClick={() => setProfileMenuOpen((v) => !v)}
-            title={profile.name}
-            aria-label={`Conta — ${profile.name}`}
-            aria-haspopup="menu"
-            aria-expanded={profileMenuOpen}
-            className="group relative rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-          >
-            <Avatar className="h-9 w-9 border-2 border-white/20 hover:border-white/50 transition-colors shadow-sm">
-              <AvatarImage src={profile.avatar_url || undefined} />
-              <AvatarFallback className="text-[10px] font-semibold bg-white/10 text-white">
-                {getInitials(profile.name)}
-              </AvatarFallback>
-            </Avatar>
-            <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-400 border-2 border-[#0a141c]" aria-hidden />
-          </button>
-        )}
-
-        {profile && profileMenuOpen && (
-          <div
-            role="menu"
-            className="absolute bottom-0 left-full ml-3 w-52 overflow-hidden rounded-xl border border-white/10 bg-[#101f2e]/95 p-1 shadow-2xl backdrop-blur-xl z-50"
-          >
-            <div className="border-b border-white/10 px-3 py-2.5">
-              <p className="truncate text-sm font-semibold text-white">{profile.name}</p>
-              {profile.email && (
-                <p className="truncate text-[11px] text-white/50">{profile.email}</p>
-              )}
-            </div>
-            <Link
-              href="/perfil"
-              role="menuitem"
-              onClick={() => setProfileMenuOpen(false)}
-              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors"
-            >
-              <User className="h-4 w-4" />
-              Meu perfil
-            </Link>
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setProfileMenuOpen(false);
-                handleSignOut();
-              }}
-              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-red-300 hover:bg-red-500/15 hover:text-red-200 transition-colors"
-            >
-              <LogOut className="h-4 w-4" />
-              Sair
-            </button>
-          </div>
-        )}
-      </div>
-    </aside>
-
-    {/* Mobile bottom navigation */}
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around bg-gradient-to-r from-[#101f2e] to-[#0a141c] border-t border-white/[0.06] h-16 px-2 shadow-[0_-4px_20px_rgba(0,0,0,0.2)]" data-tour="sidebar-nav-mobile">
-      {getNavItems(profile).slice(0, 5).map((item) => {
-        const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href + "/"));
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={cn(
-              "relative flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all",
-              isActive ? "text-white" : "text-white/40 hover:text-white/70"
-            )}
-          >
-            <item.icon className="h-5 w-5" />
-            <span className="text-[9px] font-medium leading-none">{item.label.split(" ")[0]}</span>
-            {item.href === "/planner" && pendingAlterations > 0 && (
-              <span className="absolute top-1 right-1 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-amber-400 text-[8px] font-bold text-[#101f2e] px-0.5">
-                {pendingAlterations > 9 ? "9+" : pendingAlterations}
-              </span>
-            )}
-          </Link>
-        );
-      })}
-      <button
-        onClick={handleSignOut}
-        className="flex flex-col items-center gap-1 px-3 py-2 text-white/40 hover:text-red-400 transition-colors"
-      >
-        <LogOut className="h-5 w-5" />
-        <span className="text-[9px] font-medium leading-none">Sair</span>
-      </button>
-    </nav>
-
-    {/* Mobile bottom padding to avoid content hidden behind nav */}
-    <div className="md:hidden h-16" />
+      <div className="h-16 md:hidden" />
     </>
   );
 }

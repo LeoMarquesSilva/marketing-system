@@ -16,7 +16,9 @@ import {
   FileText,
   UserPlus,
   type LucideIcon,
+  type LucideProps,
 } from "lucide-react";
+import { createElement } from "react";
 
 export const TYPE_ICONS: Record<string, LucideIcon> = {
   Comunicado: Megaphone,
@@ -37,12 +39,16 @@ export function getTypeIcon(type: string): LucideIcon {
   return TYPE_ICONS[type] ?? FileText;
 }
 
+export function TypeIcon({ type, ...props }: LucideProps & { type: string }) {
+  return createElement(getTypeIcon(type), props);
+}
+
 /**
  * Cores por tipo de solicitação (badges elegantes, cores suaves)
  * Estilo premium: fundo com opacity baixa, texto não saturado
  */
 export const TYPE_COLORS: Record<string, string> = {
-  Comunicado: "bg-[#101f2e]/10 text-[#101f2e] dark:bg-[#101f2e]/30 dark:text-[#a8c5e0]",
+  Comunicado: "bg-[#04202f]/10 text-[#04202f] dark:bg-[#04202f]/30 dark:text-[#a8c5e0]",
   PPT: "bg-purple-100/90 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300",
   "Post Redes Sociais": "bg-emerald-100/90 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300",
   "Aplicação de Identidade": "bg-pink-100/90 text-pink-700 dark:bg-pink-950/50 dark:text-pink-300",

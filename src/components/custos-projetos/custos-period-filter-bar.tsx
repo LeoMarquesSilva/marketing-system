@@ -28,7 +28,7 @@ export function CustosPeriodFilterBar({
   const monthValue = filter.month == null ? "all" : String(filter.month);
 
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3">
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
       <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground shrink-0">
         <CalendarDays className="h-4 w-4" />
         Período

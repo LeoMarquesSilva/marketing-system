@@ -54,7 +54,7 @@ export function TrafegoPagoTabs() {
           className={cn(
             "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
             tab === "anuncios"
-              ? "bg-white dark:bg-card shadow-sm text-[#101f2e]"
+              ? "bg-white dark:bg-card shadow-sm text-[#04202f]"
               : "text-muted-foreground hover:text-foreground"
           )}
         >
@@ -71,7 +71,7 @@ export function TrafegoPagoTabs() {
           className={cn(
             "relative flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
             tab === "whatsapp"
-              ? "bg-white dark:bg-card shadow-sm text-[#101f2e]"
+              ? "bg-white dark:bg-card shadow-sm text-[#04202f]"
               : "text-muted-foreground hover:text-foreground"
           )}
         >

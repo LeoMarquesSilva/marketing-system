@@ -183,6 +183,7 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
 
   useEffect(() => {
     if (viewMode === "table") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Atualiza a consulta ao alternar para a visualização de tabela.
       loadTasks(0, false);
     } else {
       fetchViosTaskStats().then(setStats);
@@ -535,11 +536,11 @@ export function ViosTarefasTable({ etiquetas, areas, users, designers }: ViosTar
           onEnviarPlanner={handleOpenEnviarPlanner}
         />
       ) : loading ? (
-        <div className="rounded-2xl border border-white/60 bg-white/70 backdrop-blur-sm p-12 flex items-center justify-center">
+        <div className="rounded-lg border border-white/60 bg-white/70 backdrop-blur-sm p-12 flex items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       ) : (
-      <div className="rounded-2xl border border-white/60 bg-white/70 backdrop-blur-sm shadow-[0_2px_12px_-4px_rgba(0,0,0,0.07)] overflow-hidden">
+      <div className="rounded-lg border border-white/60 bg-white/70 backdrop-blur-sm shadow-[0_2px_12px_-4px_rgba(0,0,0,0.07)] overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="bg-slate-50/80">

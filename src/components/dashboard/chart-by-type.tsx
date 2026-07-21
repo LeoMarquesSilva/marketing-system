@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { getTypeIcon } from "@/lib/type-icons";
+import { TypeIcon } from "@/lib/type-icons";
 import { ChartTooltip } from "./chart-tooltip";
 
 interface ChartByTypeProps {
@@ -42,7 +42,6 @@ export function ChartByType({ data }: ChartByTypeProps) {
             style={{ width: LABELS_WIDTH }}
           >
             {data.map((item) => {
-              const Icon = getTypeIcon(item.name);
               return (
                 <div
                   key={item.name}
@@ -50,7 +49,7 @@ export function ChartByType({ data }: ChartByTypeProps) {
                   style={{ height: ROW_HEIGHT }}
                 >
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                    <Icon className="h-4 w-4" />
+                    <TypeIcon type={item.name} className="h-4 w-4" />
                   </div>
                   <span
                     className="min-w-0 flex-1 break-words text-sm font-medium text-foreground"

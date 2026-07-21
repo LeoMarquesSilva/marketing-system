@@ -9,7 +9,7 @@ export default function SolicitacoesLoading() {
         <div className="h-9 w-36 rounded-xl bg-muted/50" />
       </div>
       {/* Table skeleton */}
-      <div className="rounded-2xl border border-white/40 bg-white/70 backdrop-blur-sm overflow-hidden shadow-[0_2px_12px_-4px_rgba(0,0,0,0.07)]">
+      <div className="rounded-lg border border-white/40 bg-white/70 backdrop-blur-sm overflow-hidden shadow-[0_2px_12px_-4px_rgba(0,0,0,0.07)]">
         {/* header */}
         <div className="flex gap-4 px-4 py-3 border-b border-border/30">
           {[80, 120, 100, 160, 90, 90, 80, 90, 100].map((w, i) => (

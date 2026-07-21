@@ -145,7 +145,7 @@ export function ChatInput({
 
       <form
         className={cn(
-          "flex min-w-0 gap-1 rounded-2xl border bg-white p-2 shadow-sm dark:bg-background sm:gap-2",
+          "flex min-w-0 gap-1 rounded-lg border bg-white p-2 shadow-sm dark:bg-background sm:gap-2",
           inputExpanded ? "items-start" : "items-end"
         )}
         onSubmit={(event) => {

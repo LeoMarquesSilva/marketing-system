@@ -143,7 +143,7 @@ export function CompanyCard({ company, onClick }: CompanyCardProps) {
       type="button"
       onClick={onClick}
       className={cn(
-        "group relative flex w-full flex-col rounded-2xl border border-border/70 bg-card p-4 text-left shadow-sm",
+        "group relative flex w-full flex-col rounded-lg border border-border/70 bg-card p-4 text-left shadow-sm",
         "transition-all duration-150 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-md",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
       )}

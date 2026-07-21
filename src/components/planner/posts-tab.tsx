@@ -24,7 +24,7 @@ import {
   Download,
   Video,
 } from "lucide-react";
-import { getAreaIcon } from "@/lib/area-icons";
+import { AreaIcon } from "@/lib/area-icons";
 import { cn } from "@/lib/utils";
 import {
   isInContentBank,
@@ -83,14 +83,14 @@ function PostCard({ req, isPostado, onClick }: PostCardProps) {
           ? `${isReel ? "Reel" : "Post"} já postado: ${displayTitle}`
           : `${isReel ? "Reel" : "Post"} disponível no banco: ${displayTitle}`
       }
-      className="group flex flex-col gap-3 rounded-2xl p-4 cursor-pointer
+      className="group flex flex-col gap-3 rounded-lg p-4 cursor-pointer
         bg-gradient-to-br from-white/90 via-white/70 to-white/50
         dark:from-white/10 dark:via-white/5 dark:to-white/[0.02]
         backdrop-blur-xl border border-white/60 dark:border-white/10
         shadow-[0_2px_12px_-4px_rgba(0,0,0,0.07)]
         hover:shadow-[0_8px_28px_-6px_rgba(16,31,46,0.14),0_0_0_1px_rgba(16,31,46,0.06)]
         hover:-translate-y-0.5 hover:border-white/80
-        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#101f2e]/30 focus-visible:ring-offset-2
+        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#04202f]/30 focus-visible:ring-offset-2
         transition-all duration-200 ease-out"
     >
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -170,13 +170,13 @@ function PostCard({ req, isPostado, onClick }: PostCardProps) {
               {req.solicitante_user ? (
                 <Avatar className="h-4 w-4 shrink-0 border border-white/50">
                   <AvatarImage src={req.solicitante_user.avatar_url || undefined} />
-                  <AvatarFallback className="text-[8px] bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10 dark:text-white">
+                  <AvatarFallback className="text-[8px] bg-[#04202f]/10 text-[#04202f] dark:bg-white/10 dark:text-white">
                     {getInitials(req.solicitante_user.name)}
                   </AvatarFallback>
                 </Avatar>
               ) : (
                 <Avatar className="h-4 w-4 shrink-0 border border-white/50">
-                  <AvatarFallback className="text-[8px] bg-[#101f2e]/10 text-[#101f2e] dark:bg-white/10 dark:text-white">
+                  <AvatarFallback className="text-[8px] bg-[#04202f]/10 text-[#04202f] dark:bg-white/10 dark:text-white">
                     {getInitials(req.nome_advogado || req.solicitante || "")}
                   </AvatarFallback>
                 </Avatar>
@@ -187,19 +187,12 @@ function PostCard({ req, isPostado, onClick }: PostCardProps) {
           </div>
         )}
         <div className="flex items-center gap-2" title="Área">
-          {(() => {
-            const AreaIcon = getAreaIcon(req.requesting_area);
-            return (
-              <>
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#101f2e]/8 dark:bg-white/10">
-                  <AreaIcon className="h-3 w-3 text-[#101f2e]/60 dark:text-white/50" aria-hidden />
-                </span>
-                <span className="text-[11px] text-muted-foreground truncate">
-                  {req.requesting_area}
-                </span>
-              </>
-            );
-          })()}
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#04202f]/8 dark:bg-white/10">
+            <AreaIcon area={req.requesting_area} className="h-3 w-3 text-[#04202f]/60 dark:text-white/50" aria-hidden />
+          </span>
+          <span className="truncate text-[11px] text-muted-foreground">
+            {req.requesting_area}
+          </span>
         </div>
         <div className="flex flex-col gap-0.5" title="Solicitado e concluído">
           <span className="text-[11px] text-muted-foreground/90">

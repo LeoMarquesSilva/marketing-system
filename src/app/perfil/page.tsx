@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { ProfileForm } from "@/components/perfil/profile-form";
 import { ChangePasswordForm } from "@/components/perfil/change-password-form";
@@ -9,17 +9,11 @@ import { useRouter } from "next/navigation";
 export default function PerfilPage() {
   const { profile, loading } = useAuth();
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
-
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (mounted && !loading && !profile) {
+    if (!loading && !profile) {
       router.replace("/login");
     }
-  }, [mounted, loading, profile, router]);
+  }, [loading, profile, router]);
 
   if (loading || !profile) {
     return (
@@ -28,7 +22,7 @@ export default function PerfilPage() {
           <h2 className="text-xl font-bold tracking-tight text-foreground">Meu Perfil</h2>
           <p className="text-sm text-muted-foreground mt-1">Ajuste suas informações pessoais</p>
         </div>
-        <div className="rounded-2xl border border-white/40 bg-white/70 backdrop-blur-sm p-6 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.08)]">
+        <div className="rounded-lg border border-[#dce9eb] bg-card p-6 shadow-[0_1px_2px_rgba(3,32,47,0.05)]">
           <p className="text-center text-sm text-muted-foreground py-8">Carregando...</p>
         </div>
       </div>
@@ -42,7 +36,7 @@ export default function PerfilPage() {
         <p className="text-sm text-muted-foreground mt-1">Ajuste suas informações pessoais</p>
       </div>
 
-      <div className="rounded-2xl border border-white/40 bg-white/70 backdrop-blur-sm p-6 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.08)] space-y-1">
+      <div className="space-y-1 rounded-lg border border-[#dce9eb] bg-card p-6 shadow-[0_1px_2px_rgba(3,32,47,0.05)]">
         <p className="text-sm font-semibold text-foreground">Informações do usuário</p>
         <p className="text-xs text-muted-foreground mb-4">Atualize seu nome, e-mail, foto e departamento</p>
         <ProfileForm profile={profile} />

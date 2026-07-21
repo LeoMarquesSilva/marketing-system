@@ -2,7 +2,7 @@ export default function PerfilLoading() {
   return (
     <div className="space-y-6 max-w-xl animate-pulse">
       <div className="h-7 w-32 rounded-lg bg-muted/60" />
-      <div className="rounded-2xl border border-white/40 bg-white/70 backdrop-blur-sm p-6 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.08)] space-y-6">
+      <div className="rounded-lg border border-white/40 bg-white/70 backdrop-blur-sm p-6 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.08)] space-y-6">
         {/* Avatar + name */}
         <div className="flex items-center gap-6">
           <div className="h-20 w-20 rounded-full bg-muted/50 shrink-0" />

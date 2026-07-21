@@ -102,7 +102,7 @@ export function AdMediaPlayer({
       disabled={mediaType !== "video" || loading}
       className={cn(
         "relative w-[88px] h-[88px] md:w-[100px] md:h-[100px] rounded-xl overflow-hidden bg-muted shadow-sm shrink-0 group",
-        mediaType === "video" && "cursor-pointer hover:ring-2 hover:ring-[#101f2e]/20",
+        mediaType === "video" && "cursor-pointer hover:ring-2 hover:ring-[#04202f]/20",
         inactive && "opacity-60 grayscale"
       )}
       aria-label={mediaType === "video" ? `Reproduzir vídeo de ${adName}` : undefined}
@@ -122,7 +122,7 @@ export function AdMediaPlayer({
             <Loader2 className="h-8 w-8 text-white animate-spin" />
           ) : (
             <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/95 shadow-lg">
-              <Play className="h-5 w-5 text-[#101f2e] ml-0.5" fill="currentColor" />
+              <Play className="h-5 w-5 text-[#04202f] ml-0.5" fill="currentColor" />
             </span>
           )}
         </span>

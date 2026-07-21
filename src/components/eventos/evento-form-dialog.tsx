@@ -241,7 +241,7 @@ export function EventoFormDialog({
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-5 space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-5 space-y-4">
               <DialogSectionHeading icon={LayoutGrid}>Dados básicos</DialogSectionHeading>
               <div className="grid gap-4 sm:grid-cols-3">
                 <FormField
@@ -297,7 +297,7 @@ export function EventoFormDialog({
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-5 space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-5 space-y-4">
               <DialogSectionHeading icon={Tag}>Classificação</DialogSectionHeading>
               <div className="grid gap-4 sm:grid-cols-3">
                 <FormField control={form.control} name="event_type" render={({ field }) => (
@@ -334,7 +334,7 @@ export function EventoFormDialog({
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-5 space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-5 space-y-4">
               <DialogSectionHeading icon={Users}>Responsáveis e área</DialogSectionHeading>
               <div className="grid gap-4 sm:grid-cols-3">
                 <FormField control={form.control} name="requesting_area" render={({ field }) => (
@@ -371,7 +371,7 @@ export function EventoFormDialog({
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-5 space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-5 space-y-4">
               <DialogSectionHeading icon={Flag}>Prioridade e status</DialogSectionHeading>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <FormField control={form.control} name="priority" render={({ field }) => (
@@ -430,7 +430,7 @@ export function EventoFormDialog({
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-5 space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-5 space-y-4">
               <DialogSectionHeading icon={CalendarClock}>Agenda e local</DialogSectionHeading>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <FormField control={form.control} name="event_date" render={({ field }) => (
@@ -460,7 +460,7 @@ export function EventoFormDialog({
               )} />
             </div>
 
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-5 space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-5 space-y-4">
               <DialogSectionHeading icon={StickyNote}>Detalhes adicionais</DialogSectionHeading>
               <FormField control={form.control} name="gifts_notes" render={({ field }) => (
                 <FormItem>

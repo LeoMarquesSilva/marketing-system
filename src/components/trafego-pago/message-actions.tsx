@@ -122,7 +122,7 @@ export function MessageActions({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 6, scale: 0.98 }}
                 className={cn(
-                  "absolute top-9 hidden max-h-[min(420px,calc(100dvh-12rem))] w-64 overflow-y-auto rounded-2xl border bg-white p-1 text-sm shadow-2xl sm:block dark:bg-card",
+                  "absolute top-9 hidden max-h-[min(420px,calc(100dvh-12rem))] w-64 overflow-y-auto rounded-lg border bg-white p-1 text-sm shadow-2xl sm:block dark:bg-card",
                   fromMe ? "right-0" : "left-0"
                 )}
               >
@@ -195,7 +195,7 @@ function MobileMessageMenuSheet({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 28, scale: 0.98 }}
         transition={{ type: "spring", stiffness: 420, damping: 34 }}
-        className="fixed inset-x-3 bottom-3 z-50 max-h-[72dvh] overflow-hidden rounded-3xl border bg-white p-2 shadow-2xl sm:hidden dark:bg-card"
+        className="fixed inset-x-3 bottom-3 z-50 max-h-[72dvh] overflow-hidden rounded-lg border bg-white p-2 shadow-2xl sm:hidden dark:bg-card"
       >
         <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-muted-foreground/25" />
         <div className="mb-2 px-2">

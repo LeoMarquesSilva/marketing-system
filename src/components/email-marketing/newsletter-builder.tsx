@@ -49,8 +49,8 @@ interface NewsletterBuilderProps {
 const BRAND_COLORS = [
   { label: "Preto", value: "#000000" },
   { label: "Cinza", value: "#555555" },
-  { label: "Roxo BP", value: "#663ae0" },
-  { label: "Azul escuro", value: "#101f2e" },
+  { label: "Índigo ORQESTRAI", value: "#48466e" },
+  { label: "Azul escuro", value: "#04202f" },
   { label: "Vermelho", value: "#dc2626" },
 ];
 
@@ -113,12 +113,12 @@ function SelectableBlock({
       className={cn(
         "relative outline-none cursor-pointer transition-shadow rounded-[2px]",
         "hover:shadow-[0_0_0_2px_rgba(102,58,224,0.35)_inset]",
-        selected && "shadow-[0_0_0_2px_#663ae0_inset]",
+        selected && "shadow-[0_0_0_2px_#48466e_inset]",
         className
       )}
     >
       {selected && (
-        <span className="pointer-events-none absolute -top-2 left-2 z-10 rounded bg-[#663ae0] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white shadow">
+        <span className="pointer-events-none absolute -top-2 left-2 z-10 rounded bg-[#48466e] px-1.5 py-0.5 text-xs font-semibold uppercase text-white shadow">
           {label}
         </span>
       )}
@@ -676,7 +676,7 @@ export function NewsletterBuilder({
       >
         <div
           className="mx-auto font-['Montserrat','Trebuchet_MS',sans-serif] shadow-lg"
-          style={{ maxWidth, backgroundColor: "#101f2e" }}
+          style={{ maxWidth, backgroundColor: "#04202f" }}
           onClick={(e) => e.stopPropagation()}
         >
           <div style={{ backgroundColor: "#fcf9f5" }}>

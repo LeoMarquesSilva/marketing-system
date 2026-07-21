@@ -34,7 +34,7 @@ export function ClimaPlanosTab({ planosAcao }: ClimaPlanosTabProps) {
       <div>
         <h2 className="text-lg font-semibold text-foreground">Planos de Ação (5W2H)</h2>
         <p className="text-sm text-muted-foreground">
-          Board Kanban por prioridade. Clique em "Ver 5W2H completo" para expandir.
+          Board Kanban por prioridade. Clique em &quot;Ver 5W2H completo&quot; para expandir.
         </p>
       </div>
 

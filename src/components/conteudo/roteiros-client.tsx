@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/utils/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
@@ -35,6 +36,7 @@ import {
   Send,
   Download,
   Link2,
+  Clapperboard,
 } from "lucide-react";
 import {
   Dialog,
@@ -476,9 +478,9 @@ export function RoteirosClient() {
           <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-1">
             Portal de conteúdo
           </p>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">
+          <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">
             {profile?.name ? `Olá, ${profile.name.split(" ")[0]}` : "Conteúdo para Posts"}
-          </h1>
+          </h2>
           <p className="text-muted-foreground mt-1.5 text-sm max-w-xl">
             {isCollaborator
               ? `Notícias e posts da área ${areaLabel} para revisar e aprovar.`
@@ -489,6 +491,12 @@ export function RoteirosClient() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" size="sm" className="gap-2" asChild>
+            <Link href="/conteudo/reels">
+              <Clapperboard className="h-4 w-4" />
+              Roteiros de Reels
+            </Link>
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -1133,7 +1141,7 @@ function CarouselPost({ text, author }: { text: string; author?: CarouselAuthor 
       </p>
       <div className="flex gap-3 overflow-x-auto pb-3 snap-x snap-mandatory">
         {/* Slide 01 — capa no padrão da marca */}
-        <article className="relative flex aspect-[4/5] w-[230px] shrink-0 snap-start flex-col overflow-hidden rounded-2xl bg-gradient-to-br from-[#1a2f44] to-[#0a141c] p-5 text-white shadow-md sm:w-[260px]">
+        <article className="relative flex aspect-[4/5] w-[230px] shrink-0 snap-start flex-col overflow-hidden rounded-lg bg-gradient-to-br from-[#1a2f44] to-[#1c1c1c] p-5 text-white shadow-md sm:w-[260px]">
           <span className="absolute right-3 top-3 text-[10px] font-bold tracking-widest text-white/40">
             01
           </span>
@@ -1161,7 +1169,7 @@ function CarouselPost({ text, author }: { text: string; author?: CarouselAuthor 
         {rest.map((slide, idx) => (
           <article
             key={idx}
-            className="flex aspect-[4/5] w-[230px] shrink-0 snap-start flex-col overflow-hidden rounded-2xl border bg-card shadow-sm sm:w-[260px]"
+            className="flex aspect-[4/5] w-[230px] shrink-0 snap-start flex-col overflow-hidden rounded-lg border bg-card shadow-sm sm:w-[260px]"
           >
             {/* Cabeçalho: referência do slide */}
             <div className="flex items-center justify-between gap-2 border-b bg-muted/40 px-4 py-2">
@@ -1238,7 +1246,7 @@ function EmptyState({
   onRefresh: () => void;
 }) {
   return (
-    <div className="flex flex-col items-center gap-4 py-20 text-center rounded-2xl border border-dashed bg-muted/10">
+    <div className="flex flex-col items-center gap-4 py-20 text-center rounded-lg border border-dashed bg-muted/10">
       <div className="rounded-full bg-muted/60 p-5">
         <Newspaper className="h-10 w-10 text-muted-foreground/50" />
       </div>

@@ -77,7 +77,7 @@ function StatCard({
   return (
     <div
       className={cn(
-        "rounded-2xl border bg-card px-4 py-3.5",
+        "rounded-lg border bg-card px-4 py-3.5",
         accent && "border-primary/20 bg-primary/[0.03]"
       )}
     >
@@ -157,7 +157,7 @@ export function MeuInstagramClient({ userName, posts, office }: MeuInstagramClie
             <Instagram className="h-3.5 w-3.5" />
             Seu desempenho no @bismarchipires
           </p>
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Olá, {firstName}</h1>
+          <h2 className="text-2xl font-bold tracking-tight md:text-3xl">Olá, {firstName}</h2>
           <p className="mt-1.5 max-w-xl text-sm text-muted-foreground">
             Acompanhe como os seus posts performaram — comparado à média do escritório.
           </p>
@@ -173,7 +173,7 @@ export function MeuInstagramClient({ userName, posts, office }: MeuInstagramClie
 
       {posts.length === 0 ? (
         <div
-          className="flex flex-col items-center gap-4 rounded-2xl border border-dashed bg-muted/10 py-20 text-center"
+          className="flex flex-col items-center gap-4 rounded-lg border border-dashed bg-muted/10 py-20 text-center"
           data-tour="inicio-stats"
         >
           <div className="rounded-full bg-muted/60 p-5">
@@ -229,7 +229,7 @@ export function MeuInstagramClient({ userName, posts, office }: MeuInstagramClie
           {/* Destaque */}
           {best && (
             <div
-              className="group cursor-pointer overflow-hidden rounded-2xl border bg-card shadow-sm transition-shadow hover:shadow-md"
+              className="group cursor-pointer overflow-hidden rounded-lg border bg-card shadow-sm transition-shadow hover:shadow-md"
               onClick={() => setSelected(best.post)}
               onKeyDown={(e) => e.key === "Enter" && setSelected(best.post)}
               role="button"
@@ -282,7 +282,7 @@ export function MeuInstagramClient({ userName, posts, office }: MeuInstagramClie
                 return (
                   <article
                     key={p.id}
-                    className="group flex cursor-pointer flex-col overflow-hidden rounded-2xl border bg-card shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+                    className="group flex cursor-pointer flex-col overflow-hidden rounded-lg border bg-card shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
                     onClick={() => setSelected(p)}
                     onKeyDown={(e) => e.key === "Enter" && setSelected(p)}
                     role="button"
@@ -339,7 +339,7 @@ function PostDetailModal({ post, onClose }: { post: InstagramPost | null; onClos
         {post && (
           <>
             {/* Imagem — grande, à esquerda no desktop */}
-            <div className="relative h-64 w-full shrink-0 overflow-hidden bg-[#0a141c] sm:h-auto sm:w-[48%] sm:min-h-[460px]">
+            <div className="relative h-64 w-full shrink-0 overflow-hidden bg-[#1c1c1c] sm:h-auto sm:w-[48%] sm:min-h-[460px]">
               {imageSrc ? (
                 <>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -466,7 +466,7 @@ function PostThumb({
           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
         />
       ) : (
-        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#1a2f44] to-[#0a141c]">
+        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#1a2f44] to-[#1c1c1c]">
           <Instagram className="h-7 w-7 text-white/30" />
         </div>
       )}

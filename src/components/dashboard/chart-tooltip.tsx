@@ -1,8 +1,8 @@
 "use client";
 
 import { FileText } from "lucide-react";
-import { getAreaIcon } from "@/lib/area-icons";
-import { getTypeIcon } from "@/lib/type-icons";
+import { AreaIcon } from "@/lib/area-icons";
+import { TypeIcon } from "@/lib/type-icons";
 
 interface ChartTooltipProps {
   active?: boolean;
@@ -31,20 +31,25 @@ export function ChartTooltip({
   const displayLabel = label ?? item.payload?.area ?? item.payload?.name ?? item.name ?? "";
   const value = typeof item.value === "number" ? item.value : Number(item.value) || 0;
 
-  let Icon = FileText;
-  if (useAreaIcons && typeof displayLabel === "string") Icon = getAreaIcon(displayLabel);
-  else if (useTypeIcons && typeof displayLabel === "string") Icon = getTypeIcon(displayLabel);
+  const icon =
+    useAreaIcons && typeof displayLabel === "string" ? (
+      <AreaIcon area={displayLabel} className="h-5 w-5" />
+    ) : useTypeIcons && typeof displayLabel === "string" ? (
+      <TypeIcon type={displayLabel} className="h-5 w-5" />
+    ) : (
+      <FileText className="h-5 w-5" />
+    );
 
   return (
     <div
-      className="rounded-lg border-2 border-border bg-white px-4 py-3 dark:bg-slate-900"
+      className="rounded-md border border-[#47cdd0]/30 bg-white px-4 py-3 dark:bg-[#04202f]"
       style={{
-        boxShadow: "0 10px 40px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.08)",
+        boxShadow: "0 18px 48px -22px rgba(3,32,47,0.5)",
       }}
     >
       <div className="flex items-center gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-          <Icon className="h-5 w-5" />
+          {icon}
         </div>
         <div>
           <p className="font-semibold text-foreground">{displayLabel}</p>

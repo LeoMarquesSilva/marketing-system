@@ -6,7 +6,6 @@ import { IndicatorCard } from "./indicator-card";
 import type { Indicator, PracticeType, QuantitativeIndicator } from "@/lib/clima-types";
 import { BarChart3, Filter, Star } from "lucide-react";
 import { StatementChart } from "./statement-chart";
-import { PracticeBadge } from "./practice-badge";
 
 function AverageScoreDisplay({
   score,
@@ -103,7 +102,7 @@ export function ClimaDashboardTab({
             onClick={() => setFilterPractice(key)}
             className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
               filterPractice === key
-                ? "bg-[#101f2e] text-white"
+                ? "bg-[#04202f] text-white"
                 : "bg-muted text-muted-foreground hover:bg-muted/80"
             }`}
           >

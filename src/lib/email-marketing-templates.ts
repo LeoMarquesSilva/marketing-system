@@ -14,21 +14,21 @@ export interface EmailTemplate {
 }
 
 const BUTTON_STYLE =
-  "display:inline-block;background:#101f2e;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 28px;border-radius:8px;font-size:14px;";
+  "display:inline-block;background:#04202f;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 28px;border-radius:8px;font-size:14px;";
 
 export const EMAIL_TEMPLATES: EmailTemplate[] = [
   {
     id: "blank",
     name: "Em branco",
     description: "Comece do zero, sem conteúdo pré-definido.",
-    html: `<h2 style="margin:0 0 12px;color:#101f2e;">Título do e-mail</h2>
+    html: `<h2 style="margin:0 0 12px;color:#04202f;">Título do e-mail</h2>
 <p style="margin:0 0 16px;color:#374151;">Escreva aqui o conteúdo do seu e-mail.</p>`,
   },
   {
     id: "newsletter",
     name: "Newsletter simples",
     description: "Título, texto e um botão de destaque.",
-    html: `<h2 style="margin:0 0 12px;color:#101f2e;font-size:22px;">Título da newsletter</h2>
+    html: `<h2 style="margin:0 0 12px;color:#04202f;font-size:22px;">Título da newsletter</h2>
 <p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;">Olá! Aqui vai um resumo das novidades deste mês. Conte um pouco do contexto e do que é mais importante para quem está lendo.</p>
 <p style="margin:0 0 24px;color:#374151;font-size:15px;line-height:1.6;">Você pode adicionar quantos parágrafos quiser, além de listas e imagens.</p>
 <p style="margin:0 0 8px;"><a href="https://seusite.com.br" style="${BUTTON_STYLE}">Saiba mais</a></p>`,
@@ -39,11 +39,11 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
     description: "Banner de destaque para uma oferta ou lançamento.",
     html: `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
   <tr>
-    <td style="background:#101f2e;border-radius:10px;padding:32px 24px;text-align:center;">
+    <td style="background:#04202f;border-radius:10px;padding:32px 24px;text-align:center;">
       <p style="margin:0 0 8px;color:#93c5fd;font-size:12px;letter-spacing:1px;text-transform:uppercase;">Novidade</p>
       <h2 style="margin:0 0 12px;color:#ffffff;font-size:24px;">Nome da oferta ou lançamento</h2>
       <p style="margin:0 0 20px;color:#cbd5e1;font-size:14px;line-height:1.6;">Uma frase curta explicando o benefício principal para quem está recebendo este e-mail.</p>
-      <a href="https://seusite.com.br" style="display:inline-block;background:#ffffff;color:#101f2e;text-decoration:none;font-weight:700;padding:12px 28px;border-radius:8px;font-size:14px;">Aproveitar agora</a>
+      <a href="https://seusite.com.br" style="display:inline-block;background:#ffffff;color:#04202f;text-decoration:none;font-weight:700;padding:12px 28px;border-radius:8px;font-size:14px;">Aproveitar agora</a>
     </td>
   </tr>
 </table>
@@ -53,7 +53,7 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
     id: "comunicado",
     name: "Comunicado",
     description: "Aviso institucional, direto e formal.",
-    html: `<h2 style="margin:0 0 12px;color:#101f2e;font-size:20px;">Comunicado</h2>
+    html: `<h2 style="margin:0 0 12px;color:#04202f;font-size:20px;">Comunicado</h2>
 <p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;">Prezado(a),</p>
 <p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;">Escreva aqui o corpo do comunicado, com as informações relevantes de forma objetiva.</p>
 <p style="margin:0;color:#374151;font-size:15px;line-height:1.6;">Atenciosamente,<br />Equipe</p>`,
@@ -62,14 +62,14 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
     id: "evento",
     name: "Convite para evento",
     description: "Data, local e botão de confirmação.",
-    html: `<h2 style="margin:0 0 12px;color:#101f2e;font-size:22px;">Você está convidado(a)!</h2>
+    html: `<h2 style="margin:0 0 12px;color:#04202f;font-size:22px;">Você está convidado(a)!</h2>
 <p style="margin:0 0 20px;color:#374151;font-size:15px;line-height:1.6;">Escreva aqui uma breve descrição do evento e por que vale a pena participar.</p>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f5f7;border-radius:8px;margin-bottom:20px;">
   <tr>
     <td style="padding:16px 20px;">
-      <p style="margin:0 0 6px;color:#101f2e;font-size:14px;"><strong>Data:</strong> dd/mm/aaaa às hh:mm</p>
-      <p style="margin:0 0 6px;color:#101f2e;font-size:14px;"><strong>Local:</strong> endereço ou link do evento online</p>
-      <p style="margin:0;color:#101f2e;font-size:14px;"><strong>Duração:</strong> aproximadamente X horas</p>
+      <p style="margin:0 0 6px;color:#04202f;font-size:14px;"><strong>Data:</strong> dd/mm/aaaa às hh:mm</p>
+      <p style="margin:0 0 6px;color:#04202f;font-size:14px;"><strong>Local:</strong> endereço ou link do evento online</p>
+      <p style="margin:0;color:#04202f;font-size:14px;"><strong>Duração:</strong> aproximadamente X horas</p>
     </td>
   </tr>
 </table>
@@ -79,7 +79,7 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
     id: "boasvindas",
     name: "Boas-vindas",
     description: "Mensagem de boas-vindas para novos contatos.",
-    html: `<h2 style="margin:0 0 12px;color:#101f2e;font-size:22px;">Seja bem-vindo(a)!</h2>
+    html: `<h2 style="margin:0 0 12px;color:#04202f;font-size:22px;">Seja bem-vindo(a)!</h2>
 <p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;">Ficamos felizes em ter você por aqui. A partir de agora, você vai receber nossas novidades e conteúdos direto no seu e-mail.</p>
 <p style="margin:0 0 24px;color:#374151;font-size:15px;line-height:1.6;">Enquanto isso, que tal conhecer mais sobre o nosso trabalho?</p>
 <p style="margin:0;"><a href="https://seusite.com.br" style="${BUTTON_STYLE}">Conhecer agora</a></p>`,
@@ -141,7 +141,7 @@ export function wrapCampaignHtml(
         <td align="center">
           <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:8px;overflow:hidden;max-width:600px;">
             <tr>
-              <td style="padding:28px 32px;color:#101f2e;font-size:15px;line-height:1.6;">
+              <td style="padding:28px 32px;color:#04202f;font-size:15px;line-height:1.6;">
                 ${bodyHtml}
               </td>
             </tr>

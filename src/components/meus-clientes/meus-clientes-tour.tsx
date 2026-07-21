@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable react-hooks/set-state-in-effect -- O tour sincroniza geometria do DOM e a etapa visível em efeitos. */
+
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, Sparkles, X } from "lucide-react";
@@ -154,7 +156,7 @@ function TourCard({
 
   return (
     <div
-      className="fixed w-[min(380px,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-[#101f2e] p-5 text-white shadow-2xl"
+      className="fixed w-[min(380px,calc(100vw-2rem))] rounded-lg border border-white/10 bg-[#04202f] p-5 text-white shadow-2xl"
       style={{ zIndex: TOUR_Z + 1, ...pos }}
       role="dialog"
       aria-modal="true"

@@ -77,7 +77,7 @@ export function InstagramPagination({
               key={p}
               variant={p === page ? "default" : "outline"}
               size="sm"
-              className={`rounded-xl min-w-9 ${p === page ? "bg-[#101f2e] hover:bg-[#101f2e]/90" : ""}`}
+              className={`min-w-9 rounded-xl ${p === page ? "bg-[#04202f] text-white hover:bg-[#04202f]/90 hover:text-white" : ""}`}
               onClick={() => onPageChange(p)}
             >
               {p}

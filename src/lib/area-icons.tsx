@@ -16,7 +16,9 @@ import {
   CircleDollarSign,
   Receipt,
   type LucideIcon,
+  type LucideProps,
 } from "lucide-react";
+import { createElement } from "react";
 
 export const AREA_ICONS: Record<string, LucideIcon> = {
   Cível: Scale,
@@ -67,6 +69,10 @@ export function resolveAreaIconKey(area: string): string {
 export function getAreaIcon(area: string): LucideIcon {
   if (!area) return Folder;
   return AREA_ICONS[area] ?? AREA_ICONS[resolveAreaIconKey(area)] ?? Folder;
+}
+
+export function AreaIcon({ area, ...props }: LucideProps & { area: string }) {
+  return createElement(getAreaIcon(area), props);
 }
 
 export function getAreaIconStyle(area: string): string {

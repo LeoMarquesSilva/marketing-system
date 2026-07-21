@@ -45,17 +45,17 @@ interface KpiMiniCardProps {
   accent?: string;
 }
 
-function KpiMiniCard({ icon, label, value, sub, accent = "#101f2e" }: KpiMiniCardProps) {
+function KpiMiniCard({ icon, label, value, sub, accent = "#3e84a8" }: KpiMiniCardProps) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-white/50 dark:border-border/50 bg-white/70 dark:bg-card/80 backdrop-blur-sm p-4 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.08)]">
+    <div className="flex items-center gap-3 rounded-md border border-[#dce9eb] bg-white p-4 shadow-[0_1px_2px_rgba(3,32,47,0.04)] dark:border-border/50 dark:bg-card/80">
       <div
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md"
         style={{ background: `${accent}14` }}
       >
         <span style={{ color: accent }}>{icon}</span>
       </div>
       <div className="min-w-0">
-        <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground leading-none mb-1">
+        <p className="mb-1 text-[11px] font-medium uppercase leading-none text-muted-foreground">
           {label}
         </p>
         <p className="text-xl font-bold tabular-nums text-foreground leading-none">
@@ -70,14 +70,13 @@ function KpiMiniCard({ icon, label, value, sub, accent = "#101f2e" }: KpiMiniCar
 }
 
 const TOOLTIP_STYLE = {
-  borderRadius: "12px",
-  border: "1px solid rgba(16,31,46,0.08)",
-  background: "rgba(255,255,255,0.97)",
-  backdropFilter: "blur(12px)",
-  boxShadow: "0 8px 24px -4px rgba(0,0,0,0.12)",
+  borderRadius: "8px",
+  border: "1px solid rgba(71,205,208,0.3)",
+  background: "#ffffff",
+  boxShadow: "0 18px 48px -22px rgba(3,32,47,0.5)",
   padding: "10px 14px",
   fontSize: "12px",
-  color: "#101f2e",
+  color: "#285f7a",
 };
 
 function HoursTooltip({ active, payload, label }: { active?: boolean; payload?: { value: number; name?: string }[]; label?: string }) {
@@ -207,10 +206,10 @@ export function ChartTimesheet({ dateRange }: ChartTimesheetProps) {
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-white/50 dark:border-border/50 bg-white/70 dark:bg-card/80 backdrop-blur-sm p-6 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.08)] animate-pulse">
+      <div className="animate-pulse rounded-lg border border-[#dce9eb] bg-white p-6 shadow-[0_1px_2px_rgba(3,32,47,0.04)] dark:border-border/50 dark:bg-card/80">
         <div className="h-4 w-40 bg-muted/60 rounded mb-6" />
         <div className="grid grid-cols-3 gap-3 mb-6">
-          {[0, 1, 2].map((i) => <div key={i} className="h-20 bg-muted/40 rounded-2xl" />)}
+          {[0, 1, 2].map((i) => <div key={i} className="h-20 rounded-md bg-muted/40" />)}
         </div>
         <div className="h-48 bg-muted/30 rounded-xl" />
       </div>
@@ -219,7 +218,7 @@ export function ChartTimesheet({ dateRange }: ChartTimesheetProps) {
 
   if (filtered.length === 0) {
     return (
-      <div className="rounded-2xl border border-white/50 dark:border-border/50 bg-white/70 dark:bg-card/80 backdrop-blur-sm p-8 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.08)] text-center">
+      <div className="rounded-lg border border-[#dce9eb] bg-white p-8 text-center shadow-[0_1px_2px_rgba(3,32,47,0.04)] dark:border-border/50 dark:bg-card/80">
         <Timer className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
         <p className="text-sm font-medium text-muted-foreground">
           Nenhum registro de tempo {dateRange ? "no período selecionado" : "nos últimos 30 dias"}
@@ -230,17 +229,17 @@ export function ChartTimesheet({ dateRange }: ChartTimesheetProps) {
   }
 
   return (
-    <div className="rounded-2xl border border-white/50 dark:border-border/50 bg-white/70 dark:bg-card/80 backdrop-blur-sm p-6 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.08)] space-y-6">
+    <div className="space-y-6 rounded-lg border border-[#dce9eb] bg-white p-6 shadow-[0_1px_2px_rgba(3,32,47,0.04),0_12px_34px_-28px_rgba(62,132,168,0.5)] dark:border-border/50 dark:bg-card/80">
       {/* Header */}
       <div className="flex items-center gap-2">
-        <Timer className="h-4 w-4 text-[#101f2e]/60" aria-hidden />
+        <Timer className="h-4 w-4 text-[#3e84a8]" aria-hidden />
         <h3 className="text-base font-semibold text-foreground">Timesheet — Visão de Gestão</h3>
         <span className="ml-2 text-xs text-muted-foreground bg-muted/60 rounded-full px-2.5 py-0.5">
           {dateRange?.label ?? "últimos 30 dias"}
         </span>
         <button
           onClick={() => exportToCSV(filtered)}
-          className="ml-auto flex items-center gap-1.5 text-xs font-medium text-[#101f2e]/70 hover:text-[#101f2e] bg-[#101f2e]/5 hover:bg-[#101f2e]/10 rounded-full px-3 py-1.5 transition-colors"
+          className="ml-auto flex items-center gap-1.5 rounded-md border border-[#47cdd0]/25 bg-[#47cdd0]/10 px-3 py-1.5 text-xs font-semibold text-[#347796] transition-colors hover:border-[#47cdd0]/50 hover:bg-[#47cdd0]/18 hover:text-[#285f7a]"
           title="Exportar CSV"
         >
           <Download className="h-3.5 w-3.5" />
@@ -277,13 +276,13 @@ export function ChartTimesheet({ dateRange }: ChartTimesheetProps) {
         {byUser.length > 0 && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">
                 Horas por designer
               </p>
               {selectedDesigner && (
                 <button
                   onClick={() => setSelectedDesigner(null)}
-                  className="ml-auto text-[10px] font-medium text-[#101f2e]/70 bg-[#101f2e]/8 hover:bg-[#101f2e]/15 rounded-full px-2 py-0.5 transition-colors"
+                  className="ml-auto rounded-full bg-[#47cdd0]/10 px-2 py-0.5 text-[10px] font-medium text-[#347796] transition-colors hover:bg-[#47cdd0]/20"
                 >
                   {selectedDesigner} ✕
                 </button>
@@ -330,7 +329,7 @@ export function ChartTimesheet({ dateRange }: ChartTimesheetProps) {
                     {byUser.map((entry) => (
                       <Cell
                         key={entry.name}
-                        fill={selectedDesigner && selectedDesigner !== entry.name ? "rgba(16,31,46,0.2)" : "#101f2e"}
+                        fill={selectedDesigner && selectedDesigner !== entry.name ? "rgba(62,132,168,0.2)" : "#3e84a8"}
                       />
                     ))}
                   </Bar>
@@ -342,7 +341,7 @@ export function ChartTimesheet({ dateRange }: ChartTimesheetProps) {
 
         {/* Daily trend — area chart */}
         <div className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <p className="text-xs font-semibold uppercase text-muted-foreground">
             Tendência diária
           </p>
           <div className="h-[200px] min-h-[200px] w-full min-w-0">
@@ -353,8 +352,8 @@ export function ChartTimesheet({ dateRange }: ChartTimesheetProps) {
               >
                 <defs>
                   <linearGradient id="timesheetGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#101f2e" stopOpacity={0.15} />
-                    <stop offset="95%" stopColor="#101f2e" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#47cdd0" stopOpacity={0.22} />
+                    <stop offset="95%" stopColor="#47cdd0" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid vertical={false} stroke="rgba(0,0,0,0.04)" />
@@ -376,11 +375,11 @@ export function ChartTimesheet({ dateRange }: ChartTimesheetProps) {
                 <Area
                   type="monotone"
                   dataKey="hours"
-                  stroke="#101f2e"
+                  stroke="#3e84a8"
                   strokeWidth={2}
                   fill="url(#timesheetGradient)"
                   dot={false}
-                  activeDot={{ r: 4, fill: "#101f2e", strokeWidth: 0 }}
+                  activeDot={{ r: 4, fill: "#47cdd0", strokeWidth: 0 }}
                 />
               </AreaChart>
             </ResponsiveContainer>

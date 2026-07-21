@@ -6,7 +6,7 @@ export default function UsuariosLoading() {
         <div className="h-9 w-48 rounded-xl bg-muted/50" />
         <div className="h-9 w-32 rounded-xl bg-muted/50" />
       </div>
-      <div className="rounded-2xl border border-white/40 bg-white/70 backdrop-blur-sm overflow-hidden shadow-[0_2px_12px_-4px_rgba(0,0,0,0.07)]">
+      <div className="rounded-lg border border-white/40 bg-white/70 backdrop-blur-sm overflow-hidden shadow-[0_2px_12px_-4px_rgba(0,0,0,0.07)]">
         <div className="flex gap-4 px-4 py-3 border-b border-border/30">
           {[40, 160, 140, 100, 80, 80].map((w, i) => (
             <div key={i} className="h-3 rounded bg-muted/50" style={{ width: w }} />

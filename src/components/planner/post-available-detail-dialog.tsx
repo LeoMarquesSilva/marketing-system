@@ -42,6 +42,7 @@ export function PostAvailableDetailDialog({
   useEffect(() => {
     if (!open) return;
     if (request?.posted_at && request.completion_type === "postagem_feita") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Inicializa o rascunho com a data do item ao abrir o diálogo.
       setPostedAt(format(new Date(request.posted_at), "yyyy-MM-dd"));
       return;
     }
@@ -50,6 +51,7 @@ export function PostAvailableDetailDialog({
 
   useEffect(() => {
     if (!open || !request || !isReelRequest(request)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Remove dados do item anterior ao trocar o alvo do diálogo.
       setChecklistItems([]);
       return;
     }

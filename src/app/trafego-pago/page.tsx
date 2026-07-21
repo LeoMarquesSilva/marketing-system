@@ -17,7 +17,7 @@ export default function TrafegoPagoPage() {
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
             <Megaphone className="h-6 w-6" />
           </div>
           <h2 className="text-3xl font-bold tracking-tight">Tráfego Pago</h2>

@@ -3,7 +3,7 @@
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { getAreaIcon } from "@/lib/area-icons";
+import { AreaIcon } from "@/lib/area-icons";
 import type { MarketingRequest } from "@/lib/marketing-requests";
 import { getContentBankDisplayTitle } from "@/lib/planner-posts";
 import { format } from "date-fns";
@@ -51,7 +51,6 @@ export function ScheduleDisponivelCard({ request, ageTier = "new", onClick }: Sc
   const style = transform ? { transform: CSS.Translate.toString(transform) } : undefined;
   const title = getContentBankDisplayTitle(request);
   const area = request.requesting_area;
-  const AreaIcon = getAreaIcon(area);
   const solicitanteName =
     request.nome_advogado || request.solicitante_user?.name || request.solicitante || "";
 
@@ -101,7 +100,7 @@ export function ScheduleDisponivelCard({ request, ageTier = "new", onClick }: Sc
         <div className="min-w-0 flex-1 overflow-hidden">
           <p className="text-sm font-medium text-foreground line-clamp-2 leading-snug">{title}</p>
           <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground min-w-0">
-            <AreaIcon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <AreaIcon area={area} className="h-3.5 w-3.5 shrink-0" aria-hidden />
             <span className="truncate">{area}</span>
           </div>
           <div className="flex flex-col gap-0.5 mt-1 text-[11px] text-muted-foreground min-w-0" title={`Solicitado em ${solicitadoEm} · Concluído em ${concluidoEm}`}>
@@ -124,7 +123,6 @@ export function ScheduleDisponivelCard({ request, ageTier = "new", onClick }: Sc
 export function ScheduleDisponivelCardOverlay({ request }: { request: MarketingRequest }) {
   const title = getContentBankDisplayTitle(request);
   const area = request.requesting_area;
-  const AreaIcon = getAreaIcon(area);
   const solicitanteName =
     request.nome_advogado || request.solicitante_user?.name || request.solicitante || "";
   const solicitadoEm = format(new Date(request.requested_at), "dd/MM/yyyy", { locale: ptBR });
@@ -149,7 +147,7 @@ export function ScheduleDisponivelCardOverlay({ request }: { request: MarketingR
         <div className="min-w-0 flex-1 overflow-hidden">
           <p className="text-sm font-medium text-foreground line-clamp-2 leading-snug">{title}</p>
           <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground min-w-0">
-            <AreaIcon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <AreaIcon area={area} className="h-3.5 w-3.5 shrink-0" aria-hidden />
             <span className="truncate">{area}</span>
           </div>
           <div className="flex flex-col gap-0.5 mt-1 text-[11px] text-muted-foreground min-w-0">

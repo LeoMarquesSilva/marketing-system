@@ -161,12 +161,26 @@ export async function POST(request: Request) {
       const permissions = Array.isArray(body.permissions)
         ? (body.permissions as string[])
         : null;
-      const { error } = await db
-        .from("users")
-        .update({ permissions })
-        .eq("id", userId);
+
+      // A permissão "/admin" (checkbox "Configurações") é o que os admins usam pra
+      // tornar alguém admin — mas várias features (ex.: "Ver todos" em Meus Clientes)
+      // checam `role === "admin"` de verdade, não o catálogo de permissões. Mantemos
+      // os dois sincronizados aqui pra não repetir o problema do Felipe/Samuel/Wagner.
+      // Só mexe em `role` na transição pra/de admin — nunca sobrescreve outros valores
+      // de role (ex.: "designer", usado em Planner) que não têm relação com isso.
+      const grantsAdmin = permissions?.includes("/admin") ?? false;
+      const { data: current } = await db.from("users").select("role").eq("id", userId).single();
+      const currentRole = (current?.role as string | null) ?? null;
+      const update: Record<string, unknown> = { permissions };
+      if (grantsAdmin && currentRole?.toLowerCase() !== "admin") {
+        update.role = "admin";
+      } else if (!grantsAdmin && currentRole?.toLowerCase() === "admin") {
+        update.role = null;
+      }
+
+      const { error } = await db.from("users").update(update).eq("id", userId);
       if (error) throw new Error(error.message);
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ success: true, role: update.role ?? currentRole });
     }
 
     return NextResponse.json({ error: "Ação inválida." }, { status: 400 });

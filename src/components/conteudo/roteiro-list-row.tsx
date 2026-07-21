@@ -36,7 +36,7 @@ export function RoteiroListRow({ roteiro, onView, onApprove, onReject }: Roteiro
   return (
     <article
       className={cn(
-        "group flex cursor-pointer items-stretch gap-3 overflow-hidden rounded-2xl border bg-card p-2.5 transition-all sm:gap-4",
+        "group flex cursor-pointer items-stretch gap-3 overflow-hidden rounded-lg border bg-card p-2.5 transition-all sm:gap-4",
         "hover:border-primary/30 hover:shadow-md"
       )}
       onClick={() => onView(roteiro)}
@@ -58,7 +58,7 @@ export function RoteiroListRow({ roteiro, onView, onApprove, onReject }: Roteiro
             <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
           </>
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#1a2f44] to-[#0a141c]">
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#1a2f44] to-[#1c1c1c]">
             <Newspaper className="h-6 w-6 text-white/25" strokeWidth={1.5} />
           </div>
         )}

@@ -286,7 +286,7 @@ export function KanbanBoard({
         }
       }
     },
-    [requests, onRefresh, resolveTargetColumn, profile?.id, profile?.name, getStageRule]
+    [requests, onRefresh, resolveTargetColumn, profile?.id, profile?.name, getStageRule, setRevisaoArtLink]
   );
 
   const handleConfirmMoveToRevisao = useCallback(async () => {
@@ -313,13 +313,13 @@ export function KanbanBoard({
     } else {
       setMoveError("Não foi possível enviar para revisão. Confira o link e tente novamente.");
     }
-  }, [pendingMoveToRevisao, revisaoArtLink, revisaoRule.keepAssignee, profile?.id, profile?.name, onRefresh]);
+  }, [pendingMoveToRevisao, revisaoArtLink, revisaoRule.keepAssignee, profile?.id, profile?.name, onRefresh, setRevisaoArtLink]);
 
   const handleCancelMoveToRevisao = useCallback(() => {
     setPendingMoveToRevisao(null);
     setRevisaoArtLink("");
     setMoveError(null);
-  }, []);
+  }, [setRevisaoArtLink]);
 
   return (
     <>
@@ -374,7 +374,7 @@ export function KanbanBoard({
 
       {/* Dialog: Enviar para revisão (link da arte + responsável vira revisor) */}
       <Dialog open={!!pendingMoveToRevisao} onOpenChange={(open) => !open && handleCancelMoveToRevisao()}>
-        <DialogContent className="max-w-md rounded-2xl">
+        <DialogContent className="max-w-md rounded-lg">
           <DialogHeader>
             <DialogTitle>Enviar para revisão</DialogTitle>
             <DialogDescription>

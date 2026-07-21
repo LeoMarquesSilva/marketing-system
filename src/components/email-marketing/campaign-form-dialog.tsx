@@ -83,7 +83,7 @@ function resolveSenderFields(config: EmailSenderConfig | null) {
   };
 }
 
-const DEFAULT_HTML = `<h2 style="margin:0 0 12px;color:#101f2e;">Título do e-mail</h2>
+const DEFAULT_HTML = `<h2 style="margin:0 0 12px;color:#04202f;">Título do e-mail</h2>
 <p style="margin:0 0 16px;color:#374151;">Olá {{primeiro_nome}}, escreva aqui o conteúdo do seu e-mail.</p>`;
 
 function DeviceToggle({

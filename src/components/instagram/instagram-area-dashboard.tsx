@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import {
   ImageIcon,
   Users,
-  Share2,
   ExternalLink,
   Building2,
   Trophy,
@@ -27,7 +26,7 @@ import {
   KpiCard,
   ComparisonStat,
 } from "@/components/instagram/instagram-section-card";
-import { getAreaIcon } from "@/lib/area-icons";
+import { AreaIcon } from "@/lib/area-icons";
 import {
   computeAreaDashboards,
   computeEngagementRateByArea,
@@ -737,7 +736,7 @@ export function InstagramAreaDashboard({
 
   if (posts.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-border/60 bg-background/40 p-8 text-center">
+      <div className="rounded-lg border border-dashed border-border/60 bg-background/40 p-8 text-center">
         <p className="text-sm text-muted-foreground">
           Sincronize posts para ver o dashboard do escritório e por área.
         </p>
@@ -754,7 +753,7 @@ export function InstagramAreaDashboard({
             variant={isOfficeView ? "default" : "outline"}
             size="sm"
             onClick={() => setActiveTab(OFFICE_TAB_ID)}
-            className={cn("gap-2 rounded-xl shrink-0 h-9", isOfficeView && "bg-[#101f2e] hover:bg-[#101f2e]/90")}
+            className={cn("h-9 shrink-0 gap-2 rounded-xl", isOfficeView && "bg-[#04202f] text-white hover:bg-[#04202f]/90 hover:text-white")}
             aria-current={isOfficeView ? "page" : undefined}
           >
             <Building2 className="h-3.5 w-3.5" />
@@ -770,7 +769,6 @@ export function InstagramAreaDashboard({
           </Button>
 
           {areasWithPosts.map((area) => {
-            const Icon = getAreaIcon(area.area);
             const isActive = !isOfficeView && selected?.area === area.area;
             return (
               <Button
@@ -778,10 +776,10 @@ export function InstagramAreaDashboard({
                 variant={isActive ? "default" : "outline"}
                 size="sm"
                 onClick={() => setActiveTab(area.area)}
-                className={cn("gap-2 rounded-xl shrink-0 h-9", isActive && "bg-[#101f2e] hover:bg-[#101f2e]/90")}
+                className={cn("h-9 shrink-0 gap-2 rounded-xl", isActive && "bg-[#04202f] text-white hover:bg-[#04202f]/90 hover:text-white")}
                 aria-current={isActive ? "page" : undefined}
               >
-                <Icon className="h-3.5 w-3.5" />
+                <AreaIcon area={area.area} className="h-3.5 w-3.5" />
                 <span className="max-w-[140px] truncate">{area.area}</span>
                 <span
                   className={cn(
@@ -820,7 +818,7 @@ export function InstagramAreaDashboard({
           accountStats={accountStats}
         />
       ) : (
-        <div className="rounded-2xl border border-dashed border-border/60 bg-background/40 p-8 text-center">
+        <div className="rounded-lg border border-dashed border-border/60 bg-background/40 p-8 text-center">
           <p className="text-sm text-muted-foreground">
             Atribua áreas às postagens para ver dashboards por área.
           </p>

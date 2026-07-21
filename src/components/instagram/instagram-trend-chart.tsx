@@ -68,7 +68,7 @@ export function InstagramTrendChart({
 }: InstagramTrendChartProps) {
   if (loading) {
     return (
-      <div className="rounded-2xl border border-border/50 bg-background/50 p-5">
+      <div className="rounded-lg border border-border/50 bg-background/50 p-5">
         <div className="h-4 w-40 rounded bg-muted/50 mb-4 animate-pulse" />
         <div className="h-[280px] rounded-xl bg-muted/30 animate-pulse" />
       </div>
@@ -77,7 +77,7 @@ export function InstagramTrendChart({
 
   if (data.length === 0) {
     return (
-      <div className="rounded-2xl border border-border/50 bg-background/50 p-5">
+      <div className="rounded-lg border border-border/50 bg-background/50 p-5">
         <h3 className="text-sm font-semibold mb-2">{title}</h3>
         <p className="text-sm text-muted-foreground">
           Sem volume suficiente no período selecionado para exibir tendência.
@@ -87,7 +87,7 @@ export function InstagramTrendChart({
   }
 
   return (
-    <div className="rounded-2xl border border-border/50 bg-background/50 p-5">
+    <div className="rounded-lg border border-border/50 bg-background/50 p-5">
       <div className="flex items-center justify-between gap-2 mb-3">
         <h3 className="text-sm font-semibold">{title}</h3>
         <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
@@ -101,8 +101,8 @@ export function InstagramTrendChart({
           <AreaChart data={data} margin={{ left: 0, right: 8, top: 4, bottom: 4 }}>
             <defs>
               <linearGradient id="engagementTrendGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#101f2e" stopOpacity={0.22} />
-                <stop offset="95%" stopColor="#101f2e" stopOpacity={0} />
+                <stop offset="5%" stopColor="#04202f" stopOpacity={0.22} />
+                <stop offset="95%" stopColor="#04202f" stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid vertical={false} stroke="rgba(0,0,0,0.05)" />
@@ -140,11 +140,11 @@ export function InstagramTrendChart({
             <Area
               type="monotone"
               dataKey={valueKey}
-              stroke="#101f2e"
+              stroke="#04202f"
               strokeWidth={2}
               fill="url(#engagementTrendGradient)"
               dot={false}
-              activeDot={{ r: 4, fill: "#101f2e", strokeWidth: 0 }}
+              activeDot={{ r: 4, fill: "#04202f", strokeWidth: 0 }}
             />
           </AreaChart>
         </ResponsiveContainer>

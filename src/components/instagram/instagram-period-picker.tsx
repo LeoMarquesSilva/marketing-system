@@ -81,7 +81,7 @@ export function InstagramPeriodPicker({
         <PopoverPrimitive.Content
           align="end"
           sideOffset={6}
-          className="z-[100] w-[min(92vw,640px)] rounded-2xl border bg-popover p-0 shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
+          className="z-[100] w-[min(92vw,640px)] rounded-lg border bg-popover p-0 shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
         >
           <div className="grid gap-0 sm:grid-cols-[230px_1fr]">
             {/* Coluna esquerda: atalhos + mês + ano */}
@@ -130,7 +130,7 @@ export function InstagramPeriodPicker({
                       className={cn(
                         "rounded-lg border border-border/50 px-2.5 py-1 text-xs tabular-nums hover:bg-muted/60",
                         value.kind === "year" && value.year === year &&
-                          "border-[#101f2e] bg-[#101f2e] text-white"
+                          "border-[#04202f] bg-[#04202f] text-white"
                       )}
                     >
                       {year}
@@ -172,7 +172,7 @@ export function InstagramPeriodPicker({
                         onClick={() => apply({ kind: "month", year: monthYear, month: idx })}
                         className={cn(
                           "rounded-lg border border-border/50 py-1.5 text-xs capitalize hover:bg-muted/60",
-                          active && "border-[#101f2e] bg-[#101f2e] text-white"
+                          active && "border-[#04202f] bg-[#04202f] text-white"
                         )}
                       >
                         {label}

@@ -134,7 +134,7 @@ function RoteiroCover({
           <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-black/10" />
         </>
       ) : (
-        <div className="absolute inset-0 bg-gradient-to-br from-[#1a2f44] via-[#101f2e] to-[#0a141c]">
+        <div className="absolute inset-0 bg-gradient-to-br from-[#1a2f44] via-[#04202f] to-[#1c1c1c]">
           <Newspaper
             className="absolute -right-4 -bottom-4 h-32 w-32 text-white/[0.06]"
             strokeWidth={1.25}
@@ -174,7 +174,7 @@ export function RoteiroCard({
   if (featured) {
     return (
       <article
-        className="group relative cursor-pointer overflow-hidden rounded-3xl border bg-card shadow-sm transition-all duration-300 hover:shadow-xl"
+        className="group relative cursor-pointer overflow-hidden rounded-lg border bg-card shadow-sm transition-all duration-300 hover:shadow-xl"
         onClick={() => onView(roteiro)}
         onKeyDown={(e) => e.key === "Enter" && onView(roteiro)}
         role="button"
@@ -222,7 +222,7 @@ export function RoteiroCard({
   return (
     <article
       className={cn(
-        "group flex h-full cursor-pointer flex-col overflow-hidden rounded-2xl border bg-card text-card-foreground shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:border-primary/30",
+        "group flex h-full cursor-pointer flex-col overflow-hidden rounded-lg border bg-card text-card-foreground shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg hover:border-primary/30",
         compact && "min-w-[280px] max-w-[320px] shrink-0 snap-start"
       )}
       onClick={() => onView(roteiro)}

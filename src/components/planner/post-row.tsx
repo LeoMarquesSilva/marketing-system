@@ -3,7 +3,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import type { MarketingRequest } from "@/lib/marketing-requests";
 import { getContentBankDisplayTitle } from "@/lib/planner-posts";
-import { getAreaIcon } from "@/lib/area-icons";
+import { AreaIcon } from "@/lib/area-icons";
 
 function getInitials(name: string) {
   return name
@@ -20,7 +20,6 @@ interface PostRowProps {
 }
 
 export function PostRow({ request, className }: PostRowProps) {
-  const AreaIcon = getAreaIcon(request.requesting_area);
   const displayName =
     request.nome_advogado || request.solicitante_user?.name || request.solicitante || "—";
   const title = getContentBankDisplayTitle(request);
@@ -48,7 +47,7 @@ export function PostRow({ request, className }: PostRowProps) {
           {title}
         </p>
         <div className="flex items-center gap-1.5 mt-0.5">
-          <AreaIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" aria-hidden />
+          <AreaIcon area={request.requesting_area} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
           <span className="text-xs text-muted-foreground truncate">{displayName}</span>
         </div>
       </div>

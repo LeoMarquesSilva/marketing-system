@@ -25,6 +25,7 @@ export function EventoPosEventoTab({
   });
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- O formulário é reinicializado quando o pós-evento selecionado muda.
     setForm({
       eventId: postmortem?.eventId ?? "",
       whatWorked: postmortem?.whatWorked ?? "",

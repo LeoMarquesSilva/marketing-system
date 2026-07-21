@@ -35,7 +35,6 @@ interface IndicatorCardProps {
 }
 
 export function IndicatorCard({ indicator, onClick, compact }: IndicatorCardProps) {
-  const allScores = indicator.statements.flatMap((s) => s.scores);
   const avgPositive =
     indicator.statements.length > 0
       ? indicator.statements.reduce((acc, s) => acc + calcPositiveScore(s.scores), 0) /

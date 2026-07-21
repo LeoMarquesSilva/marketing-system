@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getInternalJobSecret, isAuthorizedInternalJobRequest } from "@/lib/cron-auth";
+import { isAuthorizedInternalJobRequest } from "@/lib/cron-auth";
 import { runFetchPipeline } from "@/lib/content-roteiros";
 
 export const dynamic = "force-dynamic";

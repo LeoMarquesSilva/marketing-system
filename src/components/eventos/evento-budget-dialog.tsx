@@ -191,7 +191,7 @@ export function EventoBudgetDialog({
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-5 space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-5 space-y-4">
               <DialogSectionHeading icon={Tag}>Classificação da despesa</DialogSectionHeading>
               <div className="grid gap-4 sm:grid-cols-2">
                 <FormField control={form.control} name="category" render={({ field }) => (
@@ -235,7 +235,7 @@ export function EventoBudgetDialog({
               )} />
             </div>
 
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-5 space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-5 space-y-4">
               <DialogSectionHeading icon={Wallet}>Valores e pagamento</DialogSectionHeading>
               <div className="grid gap-4 sm:grid-cols-3">
                 <FormField control={form.control} name="amount_planned" render={({ field }) => (
@@ -276,7 +276,7 @@ export function EventoBudgetDialog({
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-5 space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-5 space-y-4">
               <DialogSectionHeading icon={FileCheck2}>Comprovação e aprovação</DialogSectionHeading>
               <p className="text-xs text-muted-foreground -mt-2">
                 Envie NF e comprovantes para o storage do sistema ou cole um link externo.

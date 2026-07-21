@@ -38,6 +38,7 @@ export function CompanyDetailDialog({ open, onOpenChange, company }: CompanyDeta
 
   useEffect(() => {
     if (!open || !company) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- O estado de carregamento acompanha a abertura e a empresa selecionada.
     setLoading(true);
     fetchEmailCompanyContacts(company.id)
       .then(setContacts)

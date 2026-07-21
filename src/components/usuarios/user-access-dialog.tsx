@@ -22,7 +22,7 @@ import { Loader2, KeyRound, ShieldCheck, Check, Clock3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { User } from "@/lib/users";
 import { ACCESS_SECTIONS, ACCESS_PRESETS } from "@/lib/access-control";
-import { formatAuthDateTime, formatAuthRelative } from "@/lib/users-auth-activity";
+import { formatAuthDateTime } from "@/lib/users-auth-activity";
 
 interface UserAccessDialogProps {
   open: boolean;
@@ -71,7 +71,7 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
     return () => {
       cancelled = true;
     };
-  }, [open, user?.id, user?.auth_id]);
+  }, [open, user?.id, user?.auth_id, onUpdated]);
 
   if (!user) return null;
   const isActive = Boolean(user.auth_id);
@@ -133,7 +133,7 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Erro ao salvar permissões");
-      onUpdated(user!.id, { permissions });
+      onUpdated(user!.id, { permissions, role: data.role ?? user!.role });
       setNotice("Permissões salvas.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao salvar permissões");

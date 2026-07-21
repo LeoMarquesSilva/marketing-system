@@ -67,7 +67,7 @@ export function AdminPageGate() {
   if (settingsError) {
     return (
       <div className="space-y-8">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Configurações</h1>
+        <h2 className="text-2xl font-bold tracking-tight text-foreground">Configurações</h2>
         <p className="text-destructive">{settingsError}</p>
       </div>
     );
@@ -84,9 +84,9 @@ export function AdminPageGate() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+        <h2 className="text-2xl font-bold tracking-tight text-foreground">
           Configurações
-        </h1>
+        </h2>
         <p className="text-sm text-muted-foreground mt-1">
           Workflow do Kanban, abas do Planner e tipos de conclusão.
         </p>

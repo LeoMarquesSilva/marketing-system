@@ -5,7 +5,7 @@ import { format, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { getAreaIcon } from "@/lib/area-icons";
+import { AreaIcon } from "@/lib/area-icons";
 import { getTypeColor } from "@/lib/type-icons";
 import type { MarketingRequest } from "@/lib/marketing-requests";
 import { CheckCircle2, CalendarCheck, Timer, User } from "lucide-react";
@@ -20,7 +20,7 @@ function getInitials(name: string) {
 }
 
 const COMPLETION_CONFIG: Record<string, { label: string; className: string; dotClass: string }> = {
-  design_concluido:  { label: "Design",   className: "bg-[#101f2e]/8 text-[#101f2e] dark:bg-white/10 dark:text-white/80",     dotClass: "bg-[#101f2e]" },
+  design_concluido:  { label: "Design",   className: "bg-[#04202f]/8 text-[#04202f] dark:bg-white/10 dark:text-white/80",     dotClass: "bg-[#04202f]" },
   postagem_feita:    { label: "Postagem", className: "bg-emerald-100/80 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400", dotClass: "bg-emerald-500" },
   postagem_externa:  { label: "Outro canal", className: "bg-slate-100/80 text-slate-700 dark:bg-slate-950/40 dark:text-slate-400", dotClass: "bg-slate-500" },
   conteudo_entregue: { label: "Conteúdo", className: "bg-violet-100/80 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400",    dotClass: "bg-violet-500" },
@@ -36,7 +36,7 @@ function CompletedCard({ req }: { req: MarketingRequest }) {
       : null;
 
   return (
-    <article className="group flex flex-col gap-3 rounded-2xl p-4 cursor-default
+    <article className="group flex flex-col gap-3 rounded-lg p-4 cursor-default
       bg-gradient-to-br from-white/90 via-white/70 to-white/50
       dark:from-white/10 dark:via-white/5 dark:to-white/[0.02]
       backdrop-blur-xl border border-white/60 dark:border-white/10
@@ -77,14 +77,14 @@ function CompletedCard({ req }: { req: MarketingRequest }) {
         {/* Solicitante — who to deliver to */}
         {solicitante && (
           <div className="flex items-center gap-2">
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#101f2e]/8 dark:bg-white/10">
-              <User className="h-3 w-3 text-[#101f2e]/60 dark:text-white/50" aria-hidden />
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#04202f]/8 dark:bg-white/10">
+              <User className="h-3 w-3 text-[#04202f]/60 dark:text-white/50" aria-hidden />
             </span>
             <div className="flex items-center gap-1.5 min-w-0">
               {req.solicitante_user && (
                 <Avatar className="h-4 w-4 shrink-0 border border-white/50">
                   <AvatarImage src={req.solicitante_user.avatar_url || undefined} />
-                  <AvatarFallback className="text-[8px] bg-[#101f2e]/10 text-[#101f2e]">
+                  <AvatarFallback className="text-[8px] bg-[#04202f]/10 text-[#04202f]">
                     {getInitials(req.solicitante_user.name)}
                   </AvatarFallback>
                 </Avatar>
@@ -203,18 +203,17 @@ export function CompletedByArea({ requests, searchQuery = "" }: CompletedByAreaP
       </div>
 
       {grouped.map(([area, areaRequests]) => {
-        const AreaIcon = getAreaIcon(area);
         return (
           <section key={area} aria-labelledby={`area-${area}`}>
             {/* Area header */}
             <div className="flex items-center gap-3 mb-4">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#101f2e]/8 dark:bg-white/10">
-                <AreaIcon className="h-4 w-4 text-[#101f2e]/70 dark:text-white/60" aria-hidden />
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#04202f]/8 dark:bg-white/10">
+                <AreaIcon area={area} className="h-4 w-4 text-[#04202f]/70 dark:text-white/60" aria-hidden />
               </div>
               <h2 id={`area-${area}`} className="text-sm font-bold text-foreground tracking-tight">
                 {area}
               </h2>
-              <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#101f2e]/8 dark:bg-white/10 text-[10px] font-bold text-[#101f2e]/70 dark:text-white/60 px-1.5">
+              <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#04202f]/8 dark:bg-white/10 text-[10px] font-bold text-[#04202f]/70 dark:text-white/60 px-1.5">
                 {areaRequests.length}
               </span>
               <div className="flex-1 h-px bg-border/40" />

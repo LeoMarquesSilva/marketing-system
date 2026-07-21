@@ -42,7 +42,7 @@ export function CustosProjetosTabs({ active, onChange, counts }: CustosProjetosT
     <div
       role="tablist"
       aria-label="Categorias de custos"
-      className="flex flex-wrap gap-1 p-1 rounded-2xl bg-muted/50 border w-full sm:w-fit"
+      className="flex flex-wrap gap-1 p-1 rounded-lg bg-muted/50 border w-full sm:w-fit"
     >
       {TABS.map((tab) => {
         const count = counts?.[tab.id];

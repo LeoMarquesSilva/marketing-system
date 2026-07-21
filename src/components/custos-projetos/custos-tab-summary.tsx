@@ -71,7 +71,7 @@ function SummaryCell({
   return (
     <div
       className={cn(
-        "rounded-2xl border px-4 py-3.5",
+        "rounded-lg border px-4 py-3.5",
         accent
           ? "border-emerald-200/50 bg-emerald-50/40 dark:bg-emerald-950/20"
           : "border-border/50 bg-muted/20"

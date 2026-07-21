@@ -46,7 +46,7 @@ export function EventoCard({ event }: { event: EventWithStats }) {
     <Link
       href={`/eventos/${event.id}`}
       className={cn(
-        "group relative flex flex-col rounded-2xl border border-border/60 bg-card p-4",
+        "group relative flex flex-col rounded-lg border border-border/60 bg-card p-4",
         "shadow-sm transition-all duration-150 cursor-pointer",
         "hover:border-violet-300 hover:shadow-md hover:-translate-y-0.5",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"

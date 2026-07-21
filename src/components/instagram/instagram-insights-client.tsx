@@ -278,7 +278,7 @@ function DemographicBars({
   data,
   format,
   emptyLabel,
-  color = "bg-[#101f2e]",
+  color = "bg-[#04202f]",
 }: {
   data: { label: string; value: number }[];
   format?: (label: string) => string;
@@ -413,7 +413,7 @@ function PostCard({
   return (
     <article
       className={cn(
-        "rounded-2xl border border-border/50 bg-background/50 overflow-hidden",
+        "rounded-lg border border-border/50 bg-background/50 overflow-hidden",
         "transition-colors hover:border-border hover:bg-background/80"
       )}
     >
@@ -426,7 +426,7 @@ function PostCard({
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1 space-y-1.5">
               <div className="flex flex-wrap items-center gap-1">
-                <Badge variant="outline" className="rounded-full text-[10px] text-[#101f2e] border-[#101f2e]/20 bg-[#101f2e]/5">
+                <Badge variant="outline" className="rounded-full text-[10px] text-[#04202f] border-[#04202f]/20 bg-[#04202f]/5">
                   {getInstagramMediaLabel(post.media_type)}
                 </Badge>
                 {vsAverage && (
@@ -459,7 +459,7 @@ function PostCard({
                         ? "text-violet-700 border-violet-300 bg-violet-50"
                         : tag.startsWith("Edição #")
                           ? "text-indigo-700 border-indigo-300 bg-indigo-50"
-                          : "text-[#101f2e] border-[#101f2e]/20 bg-[#101f2e]/5"
+                          : "text-[#04202f] border-[#04202f]/20 bg-[#04202f]/5"
                     )}
                   >
                     {tag}
@@ -1184,7 +1184,7 @@ export function InstagramInsightsClient({
       <div
         className={cn(
           "sticky top-14 z-20 -mx-1 px-1",
-          "rounded-2xl border border-border/50 bg-background/90 backdrop-blur-xl shadow-sm"
+          "rounded-lg border border-border/50 bg-background/90 backdrop-blur-xl shadow-sm"
         )}
       >
         <div className="flex flex-wrap items-center justify-between gap-3 p-4">
@@ -1192,7 +1192,7 @@ export function InstagramInsightsClient({
             <Button
               onClick={handleSync}
               disabled={syncing}
-              className="rounded-xl bg-[#101f2e] hover:bg-[#101f2e]/90 shrink-0"
+              className="shrink-0 rounded-xl bg-[#04202f] text-white hover:bg-[#04202f]/90 hover:text-white"
             >
               {syncing ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -1213,7 +1213,7 @@ export function InstagramInsightsClient({
                   <img
                     src={accountStats.profile_picture_url}
                     alt={`@${accountUsername}`}
-                    className="h-8 w-8 shrink-0 rounded-full object-cover ring-2 ring-[#101f2e]/10"
+                    className="h-8 w-8 shrink-0 rounded-full object-cover ring-2 ring-[#04202f]/10"
                   />
                 ) : (
                   <Instagram className="h-4 w-4 shrink-0" />
@@ -1317,7 +1317,7 @@ export function InstagramInsightsClient({
                   className={cn(
                     "flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-xl border-b-2 -mb-px transition-colors shrink-0",
                     isActive
-                      ? "border-[#101f2e] text-foreground bg-muted/30"
+                      ? "border-[#04202f] text-foreground bg-muted/30"
                       : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/20"
                   )}
                 >
@@ -1488,7 +1488,7 @@ export function InstagramInsightsClient({
                       value={monthlyGoal}
                       onChange={(e) => setMonthlyGoal(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
                       onBlur={(e) => persistMonthlyGoal(Number(e.target.value))}
-                      className="h-8 w-16 rounded-lg border border-border/60 bg-background px-2 text-sm tabular-nums focus:border-[#101f2e] focus:outline-none"
+                      className="h-8 w-16 rounded-lg border border-border/60 bg-background px-2 text-sm tabular-nums focus:border-[#04202f] focus:outline-none"
                     />
                     {savingGoal && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
                   </div>
@@ -1543,7 +1543,7 @@ export function InstagramInsightsClient({
                                   style={{ height: PLOT_H }}
                                 >
                                   <div
-                                    className="pointer-events-none absolute inset-x-0 border-t border-dashed border-[#101f2e]/40"
+                                    className="pointer-events-none absolute inset-x-0 border-t border-dashed border-[#04202f]/40"
                                     style={{ bottom: `${goalPct}%` }}
                                   />
                                   <div

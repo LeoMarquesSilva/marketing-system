@@ -20,12 +20,12 @@ export function WhatsappLeadAvatar({
   const initial = (name?.trim()?.[0] ?? "?").toUpperCase();
 
   return (
-    <Avatar size={size} className={cn("bg-[#101f2e]/8", className)}>
+    <Avatar size={size} className={cn("bg-[#04202f]/8", className)}>
       {avatarUrl ? (
         <AvatarImage src={avatarUrl} alt={name ?? "Lead"} referrerPolicy="no-referrer" />
       ) : null}
-      <AvatarFallback className="bg-[#101f2e]/8 text-[#101f2e]/70 font-medium">
-        {avatarUrl ? initial : <User className="h-5 w-5 text-[#101f2e]/60" />}
+      <AvatarFallback className="bg-[#04202f]/8 text-[#04202f]/70 font-medium">
+        {avatarUrl ? initial : <User className="h-5 w-5 text-[#04202f]/60" />}
       </AvatarFallback>
     </Avatar>
   );

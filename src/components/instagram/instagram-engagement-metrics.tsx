@@ -3,7 +3,6 @@
 import { Eye, Heart, MessageCircle, Bookmark, TrendingUp } from "lucide-react";
 import {
   computeEngagementRate,
-  computePostEngagementRate,
   ENGAGEMENT_RATE_FORMULA_SHORT,
   formatEngagementRate,
 } from "@/lib/instagram-engagement";
@@ -54,7 +53,7 @@ export function InstagramEngagementMetrics({
     return (
       <div
         className={cn(
-          "rounded-xl border border-[#101f2e]/10 bg-[#101f2e]/[0.04] p-4",
+          "rounded-xl border border-[#04202f]/10 bg-[#04202f]/[0.04] p-4",
           className
         )}
       >
@@ -63,7 +62,7 @@ export function InstagramEngagementMetrics({
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
               Taxa de engajamento
             </p>
-            <p className="text-3xl font-bold tabular-nums text-[#101f2e]">
+            <p className="text-3xl font-bold tabular-nums text-[#04202f]">
               {formatEngagementRate(rate)}
             </p>
             <p className="text-[11px] text-muted-foreground mt-1.5 max-w-md">

@@ -2,7 +2,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { getAreaIcon } from "@/lib/area-icons";
+import { AreaIcon } from "@/lib/area-icons";
 import { getTypeColor } from "@/lib/type-icons";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -29,14 +29,13 @@ interface KanbanCardOverlayProps {
  * renderizado em portal para aparecer sempre na frente.
  */
 export function KanbanCardOverlay({ request, timeTotal, commentsCount = 0 }: KanbanCardOverlayProps) {
-  const AreaIcon = getAreaIcon(request.requesting_area);
   const typeColor = getTypeColor(request.request_type || "");
   const solicitanteName = request.solicitante_user?.name || request.solicitante;
 
   return (
     <div
       className="
-        w-72 rotate-2 cursor-grabbing overflow-hidden rounded-2xl p-5 opacity-95
+        w-72 rotate-2 cursor-grabbing overflow-hidden rounded-lg p-5 opacity-95
         bg-gradient-to-br from-white/80 via-white/50 to-white/30 dark:from-white/20 dark:via-white/10 dark:to-white/5
         backdrop-blur-xl border border-white/50 dark:border-white/20
         shadow-[0_12px_40px_-8px_rgba(0,0,0,0.15)] ring-2 ring-primary
@@ -57,7 +56,7 @@ export function KanbanCardOverlay({ request, timeTotal, commentsCount = 0 }: Kan
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
           <span className="flex items-center gap-1.5">
-            <AreaIcon className="h-4 w-4 shrink-0 opacity-80" />
+            <AreaIcon area={request.requesting_area} className="h-4 w-4 shrink-0 opacity-80" />
             {request.requesting_area}
           </span>
           <span className="flex items-center gap-1.5">

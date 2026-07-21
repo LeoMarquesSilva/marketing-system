@@ -45,13 +45,8 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
   const { profile } = useAuth();
   const enabledTabs = appSettings.plannerTabs;
   const firstTab = enabledTabs[0] ?? "kanban";
-  const [activeTab, setActiveTab] = useState<"kanban" | "concluidos" | "posts">(firstTab);
-
-  useEffect(() => {
-    if (!enabledTabs.includes(activeTab)) {
-      setActiveTab(firstTab);
-    }
-  }, [enabledTabs, activeTab, firstTab]);
+  const [selectedTab, setActiveTab] = useState<"kanban" | "concluidos" | "posts">(firstTab);
+  const activeTab = enabledTabs.includes(selectedTab) ? selectedTab : firstTab;
 
   const isAdmin = (profile?.role ?? "").toLowerCase() === "admin";
 
@@ -141,7 +136,7 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
         checklistCompleted: checklistStats.checklistCompleted,
       };
     },
-    [profile?.id]
+    [profile]
   );
 
   const applyPlannerMetadata = useCallback(
@@ -222,7 +217,7 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
     setDetailOpen(true);
   };
 
-  const handlePostsCardClick = (request: MarketingRequest, _options?: { isPostado: boolean }) => {
+  const handlePostsCardClick = (request: MarketingRequest) => {
     setPostAvailableRequestId(request.id);
     setPostAvailableOpen(true);
   };

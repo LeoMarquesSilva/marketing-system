@@ -167,7 +167,7 @@ export function EventoSupplierDialog({
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-5 space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-5 space-y-4">
               <DialogSectionHeading icon={IdCard}>Identificação</DialogSectionHeading>
               <div className="grid gap-4 sm:grid-cols-2">
                 <FormField control={form.control} name="name" render={({ field }) => (
@@ -193,7 +193,7 @@ export function EventoSupplierDialog({
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-5 space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-5 space-y-4">
               <DialogSectionHeading icon={Phone}>Contato</DialogSectionHeading>
               <div className="grid gap-4 sm:grid-cols-3">
                 <FormField control={form.control} name="contact_name" render={({ field }) => (
@@ -211,7 +211,7 @@ export function EventoSupplierDialog({
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-5 space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-5 space-y-4">
               <DialogSectionHeading icon={Globe}>Links</DialogSectionHeading>
               <div className="grid gap-4 sm:grid-cols-2">
                 <FormField control={form.control} name="website_link" render={({ field }) => (
@@ -241,7 +241,7 @@ export function EventoSupplierDialog({
               </div>
             </div>
 
-            <div className="rounded-2xl border border-border/60 bg-muted/20 p-5 space-y-4">
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-5 space-y-4">
               <DialogSectionHeading icon={Star}>Avaliação e observações</DialogSectionHeading>
               <div className="grid gap-4 sm:grid-cols-2">
                 <FormField control={form.control} name="rating" render={({ field }) => (

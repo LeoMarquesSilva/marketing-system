@@ -73,7 +73,7 @@ export function InstagramAccountTrendChart({ data }: { data: AccountTrendPoint[]
       <div className="flex flex-wrap items-center justify-end gap-3 mb-2 text-[11px] text-muted-foreground">
         {hasReach && (
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-[#101f2e]" /> Alcance
+            <span className="h-2 w-2 rounded-full bg-[#04202f]" /> Alcance
           </span>
         )}
         {hasViews && (
@@ -101,8 +101,8 @@ export function InstagramAccountTrendChart({ data }: { data: AccountTrendPoint[]
           <AreaChart data={data} margin={{ left: 0, right: 8, top: 4, bottom: 4 }}>
             <defs>
               <linearGradient id="acctReachGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#101f2e" stopOpacity={0.2} />
-                <stop offset="95%" stopColor="#101f2e" stopOpacity={0} />
+                <stop offset="5%" stopColor="#04202f" stopOpacity={0.2} />
+                <stop offset="95%" stopColor="#04202f" stopOpacity={0} />
               </linearGradient>
               <linearGradient id="acctViewsGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.18} />
@@ -138,11 +138,11 @@ export function InstagramAccountTrendChart({ data }: { data: AccountTrendPoint[]
               <Area
                 type="monotone"
                 dataKey="reach"
-                stroke="#101f2e"
+                stroke="#04202f"
                 strokeWidth={2}
                 fill="url(#acctReachGradient)"
                 dot={false}
-                activeDot={{ r: 4, fill: "#101f2e", strokeWidth: 0 }}
+                activeDot={{ r: 4, fill: "#04202f", strokeWidth: 0 }}
               />
             )}
             {hasViews && (

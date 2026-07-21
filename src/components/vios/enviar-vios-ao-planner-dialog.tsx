@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -101,6 +101,7 @@ export function EnviarViosAoPlannerDialog({
       deadline_time: "",
     },
   });
+  const selectedSolicitanteId = useWatch({ control: form.control, name: "solicitante_id" });
 
   useEffect(() => {
     if (open && task) {
@@ -166,7 +167,7 @@ export function EnviarViosAoPlannerDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden p-0 gap-0 rounded-2xl border border-white/50 dark:border-white/10 bg-gradient-to-br from-white/95 via-white/90 to-white/85 dark:from-background dark:via-background dark:to-background/95 backdrop-blur-xl shadow-[0_24px_64px_-12px_rgba(0,0,0,0.2),0_0_0_1px_rgba(0,0,0,0.05)]"
+        className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden p-0 gap-0 rounded-lg border border-white/50 dark:border-white/10 bg-gradient-to-br from-white/95 via-white/90 to-white/85 dark:from-background dark:via-background dark:to-background/95 backdrop-blur-xl shadow-[0_24px_64px_-12px_rgba(0,0,0,0.2),0_0_0_1px_rgba(0,0,0,0.05)]"
         aria-describedby="vios-planner-description"
       >
         <div className="shrink-0 border-b border-white/30 dark:border-border/50 px-6 py-4 pr-12 bg-white/80 dark:bg-[linear-gradient(135deg,var(--primary-dark-from)_0%,var(--primary-dark-to)_100%)] backdrop-blur-sm">
@@ -277,8 +278,8 @@ export function EnviarViosAoPlannerDialog({
                       <Input
                         {...field}
                         placeholder={users.length > 0 ? "Preenchido ao selecionar o solicitante" : "Ex: Trabalhista, Cível"}
-                        readOnly={!!form.watch("solicitante_id")}
-                        className={form.watch("solicitante_id") ? "bg-muted" : ""}
+                        readOnly={!!selectedSolicitanteId}
+                        className={selectedSolicitanteId ? "bg-muted" : ""}
                       />
                     </FormControl>
                     {users.length > 0 && (

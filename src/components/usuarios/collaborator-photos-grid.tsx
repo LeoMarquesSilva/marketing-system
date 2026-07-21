@@ -16,7 +16,6 @@ import {
   X,
   Pencil,
   Copy,
-  ExternalLink,
   ImageOff,
   Check,
   UserRound,

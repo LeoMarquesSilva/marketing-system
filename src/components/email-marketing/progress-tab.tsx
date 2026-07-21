@@ -93,7 +93,7 @@ export function ProgressTab({ contacts, people }: ProgressTabProps) {
       </div>
 
       {rows.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed py-16 text-center text-muted-foreground">
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-16 text-center text-muted-foreground">
           <TrendingUp className="h-9 w-9 opacity-40" />
           <p className="text-sm font-medium text-foreground">Nenhum dado de responsabilidade ainda</p>
           <p className="text-xs max-w-sm">
@@ -102,7 +102,7 @@ export function ProgressTab({ contacts, people }: ProgressTabProps) {
           </p>
         </div>
       ) : (
-        <Card className="rounded-2xl border-border/70 shadow-sm overflow-hidden">
+        <Card className="rounded-lg border-border/70 shadow-sm overflow-hidden">
           <CardContent className="p-0">
             <Table>
               <TableHeader>

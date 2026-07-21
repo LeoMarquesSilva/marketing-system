@@ -27,7 +27,7 @@ export function EventosOverviewPanel({ overview, year, loading }: EventosOvervie
   return (
     <section
       aria-label="Visão geral de eventos"
-      className="rounded-3xl border border-border/60 bg-gradient-to-br from-muted/40 to-muted/10 p-5 sm:p-6"
+      className="rounded-lg border border-border/60 bg-gradient-to-br from-muted/40 to-muted/10 p-5 sm:p-6"
     >
       <div className="flex items-center justify-between gap-3 mb-5">
         <div className="flex items-center gap-2 text-sm font-semibold">
@@ -108,7 +108,7 @@ function MetricCard({
 }) {
   return (
     <div
-      className={`rounded-2xl border p-4 ${
+      className={`rounded-lg border p-4 ${
         accent ? "border-red-200 bg-red-50/50" : "border-border/50 bg-background/60"
       }`}
     >

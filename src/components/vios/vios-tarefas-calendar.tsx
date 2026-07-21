@@ -163,6 +163,7 @@ export function ViosTarefasCalendar({ filters, onEnviarPlanner }: ViosTarefasCal
   }, [month, filters]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Carrega a fonte externa quando mês ou filtros mudam.
     loadCalendarTasks();
   }, [loadCalendarTasks]);
 
@@ -247,12 +248,12 @@ export function ViosTarefasCalendar({ filters, onEnviarPlanner }: ViosTarefasCal
       </div>
 
       {loading ? (
-        <div className="rounded-2xl border border-white/60 bg-white/70 backdrop-blur-sm p-12 flex items-center justify-center">
+        <div className="rounded-lg border border-white/60 bg-white/70 backdrop-blur-sm p-12 flex items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-4">
-          <div className="rounded-2xl border border-white/60 bg-white/70 backdrop-blur-sm shadow-[0_2px_12px_-4px_rgba(0,0,0,0.07)] overflow-hidden p-3 sm:p-4">
+          <div className="rounded-lg border border-white/60 bg-white/70 backdrop-blur-sm shadow-[0_2px_12px_-4px_rgba(0,0,0,0.07)] overflow-hidden p-3 sm:p-4">
             <div className="grid grid-cols-7 gap-px mb-1">
               {weekDays.map((d) => (
                 <div
@@ -312,7 +313,7 @@ export function ViosTarefasCalendar({ filters, onEnviarPlanner }: ViosTarefasCal
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/60 bg-white/70 backdrop-blur-sm shadow-[0_2px_12px_-4px_rgba(0,0,0,0.07)] p-4 min-h-[280px]">
+          <div className="rounded-lg border border-white/60 bg-white/70 backdrop-blur-sm shadow-[0_2px_12px_-4px_rgba(0,0,0,0.07)] p-4 min-h-[280px]">
             <h4 className="text-sm font-semibold mb-3">
               {selectedDay
                 ? format(selectedDay, "EEEE, d 'de' MMMM", { locale: ptBR })

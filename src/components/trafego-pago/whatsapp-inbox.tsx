@@ -677,7 +677,7 @@ export function WhatsappInbox() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border bg-card/60 backdrop-blur-sm p-4 flex flex-wrap items-center gap-3">
+      <div className="rounded-lg border bg-card/60 backdrop-blur-sm p-4 flex flex-wrap items-center gap-3">
         <div className="flex flex-wrap items-center gap-2 text-sm">
           {realtimeStatus === "connected" ? (
             <>
@@ -822,8 +822,8 @@ export function WhatsappInbox() {
       <div
         className={
           detailsOpen
-            ? "grid min-h-[560px] overflow-hidden rounded-2xl border bg-white shadow-sm lg:h-[calc(100dvh-9rem)] lg:grid-cols-[330px_minmax(0,1fr)] xl:grid-cols-[330px_minmax(0,1fr)_320px] dark:bg-card"
-            : "grid min-h-[560px] overflow-hidden rounded-2xl border bg-white shadow-sm lg:h-[calc(100dvh-9rem)] lg:grid-cols-[330px_minmax(0,1fr)] dark:bg-card"
+            ? "grid min-h-[560px] overflow-hidden rounded-lg border bg-white shadow-sm lg:h-[calc(100dvh-9rem)] lg:grid-cols-[330px_minmax(0,1fr)] xl:grid-cols-[330px_minmax(0,1fr)_320px] dark:bg-card"
+            : "grid min-h-[560px] overflow-hidden rounded-lg border bg-white shadow-sm lg:h-[calc(100dvh-9rem)] lg:grid-cols-[330px_minmax(0,1fr)] dark:bg-card"
         }
       >
         <LeadList
@@ -841,7 +841,7 @@ export function WhatsappInbox() {
         <main className="relative z-10 flex min-h-0 min-w-0 flex-col bg-background">
           {!selected ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-slate-50 p-8 text-center text-muted-foreground dark:bg-muted/5">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl border bg-white shadow-sm dark:bg-card">
+              <div className="flex h-16 w-16 items-center justify-center rounded-lg border bg-white shadow-sm dark:bg-card">
                 <MessageCircle className="h-8 w-8 opacity-40" />
               </div>
               <p className="text-sm font-medium">Selecione uma conversa para ver e responder.</p>

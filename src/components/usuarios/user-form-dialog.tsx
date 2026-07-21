@@ -18,7 +18,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -82,6 +82,7 @@ export function UserFormDialog({
       avatar_url: "",
     },
   });
+  const watchedName = useWatch({ control: form.control, name: "name" });
 
   useEffect(() => {
     if (editingUser) {
@@ -166,7 +167,7 @@ export function UserFormDialog({
                         <Avatar className="h-10 w-10 shrink-0">
                           <AvatarImage src={field.value} alt="Preview" />
                           <AvatarFallback className="text-xs">
-                            {getInitials(form.watch("name") || "?")}
+                            {getInitials(watchedName || "?")}
                           </AvatarFallback>
                         </Avatar>
                       )}
