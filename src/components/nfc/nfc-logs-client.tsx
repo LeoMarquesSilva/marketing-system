@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/table";
 import { NfcPageHeading } from "@/components/nfc/nfc-page-heading";
 import { NfcSubnav } from "@/components/nfc/nfc-subnav";
+import { getNfcActionLabel } from "@/lib/nfc/labels";
 
 type LogRow = {
   id: string;
@@ -138,7 +139,7 @@ export function NfcLogsClient({ initialLogs }: { initialLogs: Array<Record<strin
                   <TableCell><span className="font-medium">{tag?.name ?? "Etiqueta removida"}</span><p className="font-mono text-xs text-muted-foreground">{tag?.code}</p></TableCell>
                   <TableCell>{tag?.environment || "—"}<p className="text-xs text-muted-foreground">{tag?.location || "—"}</p></TableCell>
                   <TableCell>{log.authenticated_user_id ? "Autenticado" : "Anônimo"}<p className="text-xs text-muted-foreground">{log.platform || "Plataforma não informada"}</p></TableCell>
-                  <TableCell>{tag?.action_type ?? "—"}</TableCell>
+                  <TableCell>{tag ? getNfcActionLabel(tag.action_type) : "—"}</TableCell>
                   <TableCell>
                     <Badge variant={log.result_status === "completed" ? "default" : log.result_status === "error" ? "destructive" : "secondary"}>
                       {STATUS_LABELS[log.result_status] ?? log.result_status}
@@ -156,4 +157,3 @@ export function NfcLogsClient({ initialLogs }: { initialLogs: Array<Record<strin
     </div>
   );
 }
-

@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  CalendarCheck2,
   CircleHelp,
+  Coffee,
   FileText,
   FormInput,
   Globe2,
@@ -12,6 +14,7 @@ import {
   Plus,
   Save,
   Trash2,
+  Umbrella,
   Webhook,
   Workflow,
 } from "lucide-react";
@@ -49,6 +52,80 @@ const ACTIONS: Array<{ value: NfcActionType; label: string; description: string;
   { value: "whatsapp", label: "Fluxo de WhatsApp", description: "Aciona n8n e Evolution no servidor.", icon: MessageCircle },
   { value: "menu", label: "Menu de ações", description: "Apresenta vários atalhos.", icon: ListChecks },
   { value: "sequence", label: "Múltiplas ações", description: "Executa uma sequência segura.", icon: Workflow },
+  { value: "asset_loan", label: "Retirada e devolução", description: "Controla itens emprestados.", icon: Umbrella },
+];
+
+const CAFE_FORM_PRESETS: Array<{
+  name: string;
+  description: string;
+  icon: typeof Coffee;
+  config: NfcActionConfig;
+}> = [
+  {
+    name: "Confirmar presença",
+    description: "Confirmação, colaborador e restrições alimentares.",
+    icon: CalendarCheck2,
+    config: {
+      title: "Café com Cultura",
+      description: "Confirme sua participação no próximo encontro.",
+      fields: [
+        { id: "colaborador", label: "Colaborador", type: "user_select", required: true },
+        {
+          id: "confirmacao",
+          label: "Você participará?",
+          type: "select",
+          required: true,
+          options: ["Sim, confirmo minha presença", "Não poderei participar"],
+        },
+        {
+          id: "restricoes",
+          label: "Restrição alimentar ou observação",
+          type: "long_text",
+          required: false,
+        },
+      ],
+      successMessage: "Sua resposta para o Café com Cultura foi registrada. Obrigado!",
+    },
+  },
+  {
+    name: "Check-in do encontro",
+    description: "Registro rápido de chegada no Café com Cultura.",
+    icon: Coffee,
+    config: {
+      title: "Check-in — Café com Cultura",
+      description: "Que bom ter você por aqui. Selecione seu nome para confirmar a chegada.",
+      fields: [
+        { id: "colaborador", label: "Colaborador", type: "user_select", required: true },
+      ],
+      successMessage: "Check-in confirmado. Aproveite o Café com Cultura!",
+    },
+  },
+  {
+    name: "Feedback do encontro",
+    description: "Avaliação do conteúdo e sugestão para a próxima edição.",
+    icon: FormInput,
+    config: {
+      title: "Feedback — Café com Cultura",
+      description: "Sua opinião ajuda a deixar os próximos encontros ainda melhores.",
+      fields: [
+        { id: "colaborador", label: "Colaborador", type: "user_select", required: true },
+        {
+          id: "avaliacao",
+          label: "Como foi o encontro?",
+          type: "select",
+          required: true,
+          options: ["Excelente", "Muito bom", "Bom", "Pode melhorar"],
+        },
+        {
+          id: "proximo_tema",
+          label: "Que tema você gostaria de ver na próxima edição?",
+          type: "long_text",
+          required: false,
+        },
+      ],
+      successMessage: "Feedback recebido. Obrigado por construir esse encontro com a gente!",
+    },
+  },
 ];
 
 const ACCESS_MODES: Array<{ value: NfcAccessMode; label: string; help: string }> = [
@@ -98,11 +175,25 @@ function emptyConfig(type: NfcActionType): NfcActionConfig {
         sequence: [{ type: "webhook" }, { type: "update_scan" }, { type: "success_page" }],
         successMessage: "Sequência concluída.",
       };
+    case "asset_loan":
+      return {
+        title: "Guarda-chuvas compartilhados",
+        description: "Registre a retirada ou a devolução de um guarda-chuva.",
+        assetLabel: "Guarda-chuva",
+        assetNumberLabel: "Número do guarda-chuva",
+        checkoutMessage: "Retirada registrada. Cuide bem do nosso guarda-chuva!",
+        returnMessage: "Devolução registrada. Obrigado por trazer o guarda-chuva de volta!",
+        requireConfirmation: true,
+        sensitive: true,
+      };
   }
 }
 
 function initialValues(tag?: NfcTag | null, template?: NfcTemplate | null) {
   const actionType = tag?.action_type ?? template?.action_type ?? "url";
+  const templateRequiresAuth =
+    actionType === "asset_loan" ||
+    template?.action_config.fields?.some((field) => field.type === "user_select");
   return {
     name: tag?.name ?? "",
     code: tag?.code ?? "",
@@ -112,7 +203,9 @@ function initialValues(tag?: NfcTag | null, template?: NfcTemplate | null) {
     category: tag?.category ?? template?.category ?? "",
     responsibleUserId: tag?.responsible_user_id ?? "",
     status: tag?.status ?? ("active" as const),
-    accessMode: tag?.access_mode ?? ("public" as NfcAccessMode),
+    accessMode:
+      tag?.access_mode ??
+      (templateRequiresAuth ? ("authenticated" as NfcAccessMode) : ("public" as NfcAccessMode)),
     actionType,
     actionConfig: tag?.action_config ?? template?.action_config ?? emptyConfig(actionType),
     cooldownSeconds: tag?.cooldown_seconds ?? 0,
@@ -158,13 +251,46 @@ export function NfcTagForm({
   };
 
   const setActionType = (actionType: NfcActionType) => {
-    setValues((current) => ({ ...current, actionType, actionConfig: emptyConfig(actionType) }));
+    setValues((current) => ({
+      ...current,
+      actionType,
+      actionConfig: emptyConfig(actionType),
+      accessMode:
+        actionType === "asset_loan" &&
+        (current.accessMode === "public" || current.accessMode === "public_confirmation")
+          ? "authenticated"
+          : current.accessMode,
+    }));
   };
 
   const updateFormField = (index: number, patch: Partial<NfcFormField>) => {
-    const fields = [...(values.actionConfig.fields ?? [])];
-    fields[index] = { ...fields[index], ...patch };
-    setConfig({ fields });
+    setValues((current) => {
+      const fields = [...(current.actionConfig.fields ?? [])];
+      fields[index] = { ...fields[index], ...patch };
+      return {
+        ...current,
+        accessMode:
+          patch.type === "user_select" &&
+          (current.accessMode === "public" || current.accessMode === "public_confirmation")
+            ? "authenticated"
+            : current.accessMode,
+        actionConfig: { ...current.actionConfig, fields },
+      };
+    });
+  };
+
+  const applyFormPreset = (config: NfcActionConfig) => {
+    setValues((current) => ({
+      ...current,
+      actionType: "form",
+      accessMode:
+        current.accessMode === "public" || current.accessMode === "public_confirmation"
+          ? "authenticated"
+          : current.accessMode,
+      actionConfig: config,
+      category: current.category || "Café com Cultura",
+      environment: current.environment || "Escritório",
+    }));
   };
 
   const addFormField = () => {
@@ -350,7 +476,7 @@ export function NfcTagForm({
           <CardTitle className="text-base">Configuração da ação</CardTitle>
         </CardHeader>
         <CardContent className="space-y-5 px-5">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {ACTIONS.map((action) => (
               <button
                 key={action.value}
@@ -418,6 +544,33 @@ export function NfcTagForm({
 
           {values.actionType === "form" && (
             <div className="space-y-4">
+              <div className="rounded-xl border border-[#bfe8e8] bg-[#f2fbfb] p-4">
+                <div className="mb-3 flex items-start gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-[#347796] shadow-sm">
+                    <Coffee className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-sm font-semibold">Modelos Café com Cultura</p>
+                    <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                      Aplique um modelo e continue editando os campos normalmente.
+                    </p>
+                  </div>
+                </div>
+                <div className="grid gap-2 md:grid-cols-3">
+                  {CAFE_FORM_PRESETS.map((preset) => (
+                    <button
+                      key={preset.name}
+                      type="button"
+                      onClick={() => applyFormPreset(preset.config)}
+                      className="rounded-lg border border-[#dce9eb] bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-[#47cdd0] hover:shadow-sm"
+                    >
+                      <preset.icon className="h-4 w-4 text-[#347796]" />
+                      <p className="mt-2 text-sm font-semibold">{preset.name}</p>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">{preset.description}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <FieldShell label="Título"><Input value={values.actionConfig.title ?? ""} onChange={(event) => setConfig({ title: event.target.value })} /></FieldShell>
                 <FieldShell label="Workflow n8n opcional"><Input value={values.actionConfig.workflowKey ?? ""} onChange={(event) => setConfig({ workflowKey: event.target.value })} placeholder="capturar-feedback" /></FieldShell>
@@ -435,6 +588,7 @@ export function NfcTagForm({
                         <SelectItem value="number">Número</SelectItem>
                         <SelectItem value="select">Seleção</SelectItem>
                         <SelectItem value="multiple_choice">Múltipla escolha</SelectItem>
+                        <SelectItem value="user_select">Colaborador</SelectItem>
                         <SelectItem value="date">Data</SelectItem>
                         <SelectItem value="image">Imagem</SelectItem>
                         <SelectItem value="audio">Áudio</SelectItem>
@@ -469,6 +623,45 @@ export function NfcTagForm({
                   </div>
                 ))}
                 <Button type="button" variant="outline" onClick={addFormField}><Plus /> Adicionar campo</Button>
+              </div>
+            </div>
+          )}
+
+          {values.actionType === "asset_loan" && (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="md:col-span-2 flex gap-3 rounded-xl border border-[#bfe8e8] bg-[#f2fbfb] p-4">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-[#347796] shadow-sm">
+                  <Umbrella className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold">Controle de retirada e devolução</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    A pessoa informa o número, escolhe o colaborador na retirada e, na devolução,
+                    confirma o mesmo item. O histórico fica salvo no NFC Hub.
+                  </p>
+                </div>
+              </div>
+              <FieldShell label="Título da página">
+                <Input value={values.actionConfig.title ?? ""} onChange={(event) => setConfig({ title: event.target.value })} />
+              </FieldShell>
+              <FieldShell label="Nome do item">
+                <Input value={values.actionConfig.assetLabel ?? ""} onChange={(event) => setConfig({ assetLabel: event.target.value })} placeholder="Guarda-chuva" />
+              </FieldShell>
+              <div className="md:col-span-2">
+                <FieldShell label="Descrição">
+                  <Textarea value={values.actionConfig.description ?? ""} onChange={(event) => setConfig({ description: event.target.value })} />
+                </FieldShell>
+              </div>
+              <FieldShell label="Rótulo do número">
+                <Input value={values.actionConfig.assetNumberLabel ?? ""} onChange={(event) => setConfig({ assetNumberLabel: event.target.value })} placeholder="Número do guarda-chuva" />
+              </FieldShell>
+              <FieldShell label="Mensagem após retirada">
+                <Input value={values.actionConfig.checkoutMessage ?? ""} onChange={(event) => setConfig({ checkoutMessage: event.target.value })} />
+              </FieldShell>
+              <div className="md:col-span-2">
+                <FieldShell label="Mensagem após devolução">
+                  <Input value={values.actionConfig.returnMessage ?? ""} onChange={(event) => setConfig({ returnMessage: event.target.value })} />
+                </FieldShell>
               </div>
             </div>
           )}

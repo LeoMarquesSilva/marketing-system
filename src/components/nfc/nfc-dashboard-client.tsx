@@ -37,17 +37,8 @@ import {
 } from "@/components/ui/select";
 import { NfcPageHeading } from "@/components/nfc/nfc-page-heading";
 import { NfcSubnav } from "@/components/nfc/nfc-subnav";
+import { NFC_ACTION_LABELS } from "@/lib/nfc/labels";
 import type { NfcDashboardData } from "@/lib/nfc/types";
-
-const ACTION_LABELS: Record<string, string> = {
-  url: "Abrir URL",
-  custom_page: "Página",
-  form: "Formulário",
-  webhook: "Webhook n8n",
-  whatsapp: "WhatsApp",
-  menu: "Menu",
-  sequence: "Sequência",
-};
 
 const STATUS_LABELS: Record<string, string> = {
   success: "Sucesso",
@@ -161,7 +152,7 @@ export function NfcDashboardClient({ data: initialData }: { data: NfcDashboardDa
           </Select>
           <Select value={actionType} onValueChange={setActionType}>
             <SelectTrigger className="w-full"><SelectValue placeholder="Ação" /></SelectTrigger>
-            <SelectContent><SelectItem value="all">Todas as ações</SelectItem>{Object.entries(ACTION_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
+            <SelectContent><SelectItem value="all">Todas as ações</SelectItem>{Object.entries(NFC_ACTION_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
           </Select>
         </CardContent>
       </Card>
@@ -294,7 +285,7 @@ export function NfcDashboardClient({ data: initialData }: { data: NfcDashboardDa
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{item.tagName}</p>
                       <p className="text-xs text-muted-foreground">
-                        {ACTION_LABELS[item.actionType] ?? item.actionType} · {STATUS_LABELS[item.status] ?? item.status}
+                        {NFC_ACTION_LABELS[item.actionType as keyof typeof NFC_ACTION_LABELS] ?? item.actionType} · {STATUS_LABELS[item.status] ?? item.status}
                       </p>
                     </div>
                     <time className="shrink-0 font-mono text-xs text-muted-foreground">

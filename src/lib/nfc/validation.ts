@@ -12,6 +12,7 @@ const formFieldSchema = z.object({
     "number",
     "select",
     "multiple_choice",
+    "user_select",
     "date",
     "image",
     "audio",
@@ -66,6 +67,10 @@ export const nfcActionConfigSchema = z
       .optional(),
     timeoutMs: z.number().int().min(1000).max(30000).optional(),
     sensitive: z.boolean().optional(),
+    assetLabel: z.string().trim().min(1).max(80).optional(),
+    assetNumberLabel: z.string().trim().min(1).max(80).optional(),
+    checkoutMessage: z.string().trim().max(500).optional(),
+    returnMessage: z.string().trim().max(500).optional(),
   })
   .strict();
 
@@ -96,6 +101,19 @@ export const nfcTagInputSchema = z
     if (input.actionType === "form" && !input.actionConfig.fields?.length) {
       ctx.addIssue({ code: "custom", path: ["actionConfig", "fields"], message: "Adicione ao menos um campo." });
     }
+    const requiresDirectory =
+      input.actionType === "asset_loan" ||
+      input.actionConfig.fields?.some((field) => field.type === "user_select");
+    if (
+      requiresDirectory &&
+      (input.accessMode === "public" || input.accessMode === "public_confirmation")
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["accessMode"],
+        message: "A seleção de colaboradores exige acesso autenticado.",
+      });
+    }
     if (input.accessMode === "selected_users" && !input.allowedUserIds?.length) {
       ctx.addIssue({ code: "custom", path: ["allowedUserIds"], message: "Selecione ao menos um usuário." });
     }
@@ -106,8 +124,10 @@ export const nfcExecutionInputSchema = z.object({
   menuItemId: z.string().trim().max(80).optional(),
   formData: z.record(z.string(), z.unknown()).optional(),
   phone: z.string().trim().max(30).optional(),
+  loanOperation: z.enum(["checkout", "return"]).optional(),
+  assetNumber: z.string().trim().min(1).max(80).optional(),
+  borrowerUserId: z.string().uuid().optional(),
   confirmed: z.literal(true),
 });
 
 export type NfcTagInputParsed = z.infer<typeof nfcTagInputSchema>;
-

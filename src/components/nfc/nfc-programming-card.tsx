@@ -7,21 +7,34 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NfcToast, type NfcToastValue } from "@/components/nfc/nfc-toast";
 
+interface WebNdefRecord {
+  recordType: "url" | "text" | "smart-poster";
+  data: string | WebNdefRecord[];
+  lang?: string;
+}
+
 interface WebNdefReader {
-  write(message: {
-    records: Array<{ recordType: "url"; data: string }>;
-  }): Promise<void>;
+  write(message: { records: WebNdefRecord[] }): Promise<void>;
 }
 
 type NdefReaderConstructor = new () => WebNdefReader;
 
-export function NfcProgrammingCard({ permanentUrl }: { permanentUrl: string }) {
+export function NfcProgrammingCard({
+  permanentUrl,
+  tagName,
+}: {
+  permanentUrl: string;
+  tagName: string;
+}) {
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [webNfcSupported, setWebNfcSupported] = useState(false);
   const [writing, setWriting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [toast, setToast] = useState<NfcToastValue | null>(null);
-  const byteLength = new TextEncoder().encode(permanentUrl).length + 16;
+  const byteLength =
+    new TextEncoder().encode(permanentUrl).length +
+    new TextEncoder().encode(tagName).length +
+    28;
 
   useEffect(() => {
     setWebNfcSupported("NDEFReader" in window);
@@ -52,8 +65,21 @@ export function NfcProgrammingCard({ permanentUrl }: { permanentUrl: string }) {
     try {
       const writer = new constructor();
       setToast({ type: "success", message: "Aproxime e mantenha a etiqueta junto ao celular." });
-      await writer.write({ records: [{ recordType: "url", data: permanentUrl }] });
-      setToast({ type: "success", message: "URL gravada com sucesso. A etiqueta não foi bloqueada como somente leitura." });
+      await writer.write({
+        records: [
+          {
+            recordType: "smart-poster",
+            data: [
+              { recordType: "url", data: permanentUrl },
+              { recordType: "text", data: tagName, lang: "pt-BR" },
+            ],
+          },
+        ],
+      });
+      setToast({
+        type: "success",
+        message: `“${tagName}” foi gravada com nome e URL. A etiqueta continua regravável.`,
+      });
     } catch (error) {
       const name = error instanceof DOMException ? error.name : "";
       setToast({
@@ -96,6 +122,9 @@ export function NfcProgrammingCard({ permanentUrl }: { permanentUrl: string }) {
                   </a>
                 </Button>
               </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Nome exibido por leitores compatíveis: <strong className="text-foreground">{tagName}</strong>
+              </p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">

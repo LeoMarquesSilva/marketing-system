@@ -43,17 +43,8 @@ import {
 import { NfcPageHeading } from "@/components/nfc/nfc-page-heading";
 import { NfcSubnav } from "@/components/nfc/nfc-subnav";
 import { NfcToast, type NfcToastValue } from "@/components/nfc/nfc-toast";
+import { NFC_ACTION_LABELS } from "@/lib/nfc/labels";
 import type { NfcTag } from "@/lib/nfc/types";
-
-const ACTION_LABELS: Record<string, string> = {
-  url: "Abrir URL",
-  custom_page: "Página personalizada",
-  form: "Formulário",
-  webhook: "Webhook n8n",
-  whatsapp: "WhatsApp",
-  menu: "Menu de ações",
-  sequence: "Sequência",
-};
 
 function tagPayload(tag: NfcTag, overrides: Partial<{ status: "active" | "inactive" }> = {}) {
   return {
@@ -200,7 +191,11 @@ export function NfcTagsClient({ initialTags }: { initialTags: NfcTag[] }) {
           <Link href={`/nfc/tags/${tag.id}`} className="flex items-center gap-2 rounded px-3 py-2 text-sm hover:bg-[#e8f8f8]">
             <Eye className="h-4 w-4" /> Visualizar
           </Link>
-          <Link href={`/nfc/tags/${tag.id}#editar`} className="flex items-center gap-2 rounded px-3 py-2 text-sm hover:bg-[#e8f8f8]">
+          <Link
+            href={`/nfc/tags/${tag.id}/editar`}
+            onClick={() => setOpenMenuId(null)}
+            className="flex items-center gap-2 rounded px-3 py-2 text-sm hover:bg-[#e8f8f8]"
+          >
             <Pencil className="h-4 w-4" /> Editar
           </Link>
           <button type="button" onClick={() => testTag(tag)} className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm hover:bg-[#e8f8f8]">
@@ -276,7 +271,7 @@ export function NfcTagsClient({ initialTags }: { initialTags: NfcTag[] }) {
             <SelectTrigger className="w-full"><SelectValue placeholder="Tipo de ação" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todas as ações</SelectItem>
-              {Object.entries(ACTION_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+              {Object.entries(NFC_ACTION_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
             </SelectContent>
           </Select>
         </CardContent>
@@ -308,7 +303,7 @@ export function NfcTagsClient({ initialTags }: { initialTags: NfcTag[] }) {
                   <p className="text-xs text-muted-foreground">{tag.location || "Local não informado"}</p>
                 </TableCell>
                 <TableCell>{tag.category || "—"}</TableCell>
-                <TableCell>{ACTION_LABELS[tag.action_type]}</TableCell>
+                <TableCell>{NFC_ACTION_LABELS[tag.action_type]}</TableCell>
                 <TableCell>
                   <Badge variant={tag.status === "active" ? "default" : "secondary"}>
                     {tag.status === "active" ? "Ativa" : "Inativa"}
@@ -339,7 +334,7 @@ export function NfcTagsClient({ initialTags }: { initialTags: NfcTag[] }) {
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                 <div><p className="text-xs text-muted-foreground">Ambiente</p><p>{tag.environment || "—"}</p></div>
                 <div><p className="text-xs text-muted-foreground">Localização</p><p>{tag.location || "—"}</p></div>
-                <div><p className="text-xs text-muted-foreground">Ação</p><p>{ACTION_LABELS[tag.action_type]}</p></div>
+                <div><p className="text-xs text-muted-foreground">Ação</p><p>{NFC_ACTION_LABELS[tag.action_type]}</p></div>
                 <div><p className="text-xs text-muted-foreground">Leituras</p><p className="font-mono">{tag.total_scans}</p></div>
               </div>
             </CardContent>

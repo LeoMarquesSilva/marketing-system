@@ -6,6 +6,7 @@ export const NFC_ACTION_TYPES = [
   "whatsapp",
   "menu",
   "sequence",
+  "asset_loan",
 ] as const;
 
 export const NFC_ACCESS_MODES = [
@@ -26,6 +27,7 @@ export type NfcFormFieldType =
   | "number"
   | "select"
   | "multiple_choice"
+  | "user_select"
   | "date"
   | "image"
   | "audio";
@@ -69,6 +71,10 @@ export interface NfcActionConfig {
   sequence?: Array<{ type: "webhook" | "update_scan" | "success_page"; config?: Record<string, unknown> }>;
   timeoutMs?: number;
   sensitive?: boolean;
+  assetLabel?: string;
+  assetNumberLabel?: string;
+  checkoutMessage?: string;
+  returnMessage?: string;
 }
 
 export interface NfcTag {
@@ -154,7 +160,20 @@ export interface NfcPublicResolution {
     menuItems?: Array<{ id: string; label: string }>;
     loadingMessage?: string;
     successMessage?: string;
+    assetLabel?: string;
+    assetNumberLabel?: string;
   };
+  directoryUsers?: Array<{
+    id: string;
+    name: string;
+    department: string | null;
+  }>;
+  activeLoans?: Array<{
+    assetNumber: string;
+    borrowerUserId: string;
+    borrowerName: string;
+    checkedOutAt: string;
+  }>;
   message?: string;
   retryAfterSeconds?: number;
 }

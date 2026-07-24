@@ -34,6 +34,7 @@ describe("NFC security", () => {
 
   it("força confirmação para ações com impacto", () => {
     expect(isSensitiveAction("webhook", { workflowKey: "ticket" })).toBe(true);
+    expect(isSensitiveAction("asset_loan", {})).toBe(true);
     expect(isSensitiveAction("url", { destinationUrl: "https://example.com" })).toBe(false);
   });
 

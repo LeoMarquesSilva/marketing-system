@@ -6,6 +6,7 @@ import { NfcTagForm } from "@/components/nfc/nfc-tag-form";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getNfcPublicUrl, getNfcTag } from "@/lib/nfc/server";
+import { NFC_ACTION_LABELS } from "@/lib/nfc/labels";
 import { fetchActiveUsers } from "@/lib/users";
 
 export const dynamic = "force-dynamic";
@@ -58,11 +59,11 @@ export default async function NfcTagDetailPage({
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Card className="gap-3 py-4"><CardContent className="flex items-center gap-3 px-4"><span className="flex h-10 w-10 items-center justify-center rounded-md bg-[#e8f8f8] text-[#347796]"><RadioTower className="h-5 w-5" /></span><div><p className="text-xs text-muted-foreground">Status</p><Badge variant={tag.status === "active" ? "default" : "secondary"}>{tag.status === "active" ? "Ativa" : "Inativa"}</Badge></div></CardContent></Card>
         <Card className="gap-3 py-4"><CardContent className="flex items-center gap-3 px-4"><span className="flex h-10 w-10 items-center justify-center rounded-md bg-blue-50 text-[#3e84a8]"><ScanLine className="h-5 w-5" /></span><div><p className="font-mono text-xl font-semibold">{tag.total_scans}</p><p className="text-xs text-muted-foreground">Leituras</p></div></CardContent></Card>
-        <Card className="gap-3 py-4"><CardContent className="flex items-center gap-3 px-4"><span className="flex h-10 w-10 items-center justify-center rounded-md bg-violet-50 text-[#48466e]"><Settings2 className="h-5 w-5" /></span><div><p className="text-sm font-semibold">{tag.action_type}</p><p className="text-xs text-muted-foreground">Tipo de ação</p></div></CardContent></Card>
+        <Card className="gap-3 py-4"><CardContent className="flex items-center gap-3 px-4"><span className="flex h-10 w-10 items-center justify-center rounded-md bg-violet-50 text-[#48466e]"><Settings2 className="h-5 w-5" /></span><div><p className="text-sm font-semibold">{NFC_ACTION_LABELS[tag.action_type]}</p><p className="text-xs text-muted-foreground">Tipo de ação</p></div></CardContent></Card>
         <Card className="gap-3 py-4"><CardContent className="flex items-center gap-3 px-4"><span className="flex h-10 w-10 items-center justify-center rounded-md bg-slate-100 text-slate-600"><CalendarClock className="h-5 w-5" /></span><div><p className="font-mono text-xs font-semibold">{tag.last_scanned_at ? new Date(tag.last_scanned_at).toLocaleString("pt-BR") : "Nunca"}</p><p className="text-xs text-muted-foreground">Última leitura</p></div></CardContent></Card>
       </section>
 
-      <NfcProgrammingCard permanentUrl={permanentUrl} />
+      <NfcProgrammingCard permanentUrl={permanentUrl} tagName={tag.name} />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]">
         <NfcTagForm initialTag={tag} allowedUserIds={allowedUserIds} users={users} />
@@ -96,4 +97,3 @@ export default async function NfcTagDetailPage({
     </div>
   );
 }
-

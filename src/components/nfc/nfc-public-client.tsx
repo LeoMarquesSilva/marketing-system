@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
   CheckCircle2,
   Clock3,
   ExternalLink,
@@ -9,7 +11,10 @@ import {
   LockKeyhole,
   RadioTower,
   RefreshCw,
+  Sparkles,
   TriangleAlert,
+  Umbrella,
+  UserRound,
   WifiOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -22,9 +27,11 @@ type Screen = "loading" | "ready" | "executing" | "success" | "error";
 
 function PublicShell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-[#f4f8f9] p-4">
+    <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-[#f4f8f9] p-4 sm:p-6">
+      <div className="pointer-events-none absolute -left-24 top-1/4 h-72 w-72 rounded-full bg-[#47cdd0]/10 blur-3xl" />
+      <div className="pointer-events-none absolute -right-20 bottom-0 h-80 w-80 rounded-full bg-[#3e84a8]/10 blur-3xl" />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#47cdd0] via-[#3e84a8] to-[#48466e]" />
-      <div className="w-full max-w-lg rounded-lg border border-[#dce9eb] bg-white p-5 shadow-[0_28px_80px_-38px_rgba(3,32,47,0.42)] sm:p-7">
+      <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-[#dce9eb] bg-white/95 p-5 shadow-[0_28px_80px_-38px_rgba(3,32,47,0.42)] backdrop-blur sm:p-7">
         <div className="mb-6 flex items-center justify-between gap-4 border-b border-[#e5eef0] pb-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -33,12 +40,46 @@ function PublicShell({ children }: { children: React.ReactNode }) {
             className="h-7 w-auto"
           />
           <span className="flex items-center gap-1.5 text-xs font-medium text-[#347796]">
-            <RadioTower className="h-4 w-4" /> NFC Hub
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#47cdd0] opacity-50" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#347796]" />
+            </span>
+            NFC conectado
           </span>
         </div>
         {children}
       </div>
     </main>
+  );
+}
+
+function LoadingExperience() {
+  return (
+    <div className="py-7 text-center" aria-live="polite" aria-busy="true">
+      <div className="relative mx-auto flex h-24 w-24 items-center justify-center">
+        <span className="absolute h-24 w-24 animate-ping rounded-full border border-[#47cdd0]/30 [animation-duration:1.8s]" />
+        <span className="absolute h-16 w-16 animate-pulse rounded-full bg-[#e8f8f8]" />
+        <span className="relative flex h-12 w-12 items-center justify-center rounded-full bg-[#347796] text-white shadow-lg shadow-[#347796]/20">
+          <RadioTower className="h-6 w-6" />
+        </span>
+      </div>
+      <div className="mt-6 inline-flex items-center gap-1.5 rounded-full bg-[#e8f8f8] px-3 py-1 text-xs font-semibold text-[#285f7a]">
+        <Sparkles className="h-3.5 w-3.5" />
+        Leitura reconhecida
+      </div>
+      <h1 className="mt-3 text-2xl font-semibold tracking-tight">Só um instante…</h1>
+      <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+        Estamos identificando a etiqueta e preparando a experiência certa para você.
+      </p>
+      <div className="mx-auto mt-6 grid max-w-xs gap-2 text-left text-xs text-muted-foreground">
+        <p className="flex items-center gap-2 rounded-lg bg-[#f7fafb] px-3 py-2">
+          <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Etiqueta lida
+        </p>
+        <p className="flex items-center gap-2 rounded-lg bg-[#f7fafb] px-3 py-2">
+          <LoaderCircle className="h-4 w-4 animate-spin text-[#347796]" /> Preparando a ação
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -77,10 +118,12 @@ function FormField({
   field,
   value,
   onChange,
+  directoryUsers,
 }: {
   field: NfcFormField;
   value: unknown;
   onChange: (value: unknown) => void;
+  directoryUsers: NonNullable<NfcPublicResolution["directoryUsers"]>;
 }) {
   const stringValue = typeof value === "string" || typeof value === "number" ? String(value) : "";
   const label = (
@@ -104,6 +147,27 @@ function FormField({
         >
           <option value="">Selecione</option>
           {(field.options ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      </div>
+    );
+  }
+  if (field.type === "user_select") {
+    return (
+      <div className="space-y-1.5">
+        {label}
+        <select
+          id={`nfc-field-${field.id}`}
+          required={field.required}
+          value={stringValue}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-11 w-full rounded-md border border-input bg-white px-3 text-sm focus:border-[#47cdd0] focus:outline-none focus:ring-2 focus:ring-[#47cdd0]/20"
+        >
+          <option value="">Selecione o colaborador</option>
+          {directoryUsers.map((user) => (
+            <option key={user.id} value={user.id}>
+              {user.name}{user.department ? ` — ${user.department}` : ""}
+            </option>
+          ))}
         </select>
       </div>
     );
@@ -156,6 +220,9 @@ export function NfcPublicClient({ token }: { token: string }) {
   const [resolution, setResolution] = useState<NfcPublicResolution | null>(null);
   const [formData, setFormData] = useState<Record<string, unknown>>({});
   const [phone, setPhone] = useState("");
+  const [loanOperation, setLoanOperation] = useState<"checkout" | "return">("checkout");
+  const [assetNumber, setAssetNumber] = useState("");
+  const [borrowerUserId, setBorrowerUserId] = useState("");
   const [message, setMessage] = useState("");
   const autoExecuted = useRef(false);
 
@@ -173,6 +240,12 @@ export function NfcPublicClient({ token }: { token: string }) {
             menuItemId,
             formData,
             phone: phone || undefined,
+            loanOperation: resolution.action?.type === "asset_loan" ? loanOperation : undefined,
+            assetNumber: resolution.action?.type === "asset_loan" ? assetNumber : undefined,
+            borrowerUserId:
+              resolution.action?.type === "asset_loan" && loanOperation === "checkout"
+                ? borrowerUserId
+                : undefined,
           }),
         });
         const body = (await response.json()) as { error?: string; message?: string; redirectUrl?: string };
@@ -188,7 +261,7 @@ export function NfcPublicClient({ token }: { token: string }) {
         setScreen("error");
       }
     },
-    [resolution, token, formData, phone]
+    [resolution, token, formData, phone, loanOperation, assetNumber, borrowerUserId]
   );
 
   const load = useCallback(async () => {
@@ -226,14 +299,20 @@ export function NfcPublicClient({ token }: { token: string }) {
     }
   }, [screen, resolution, execute]);
 
+  useEffect(() => {
+    if (resolution?.tag?.name) {
+      document.title = `${resolution.tag.name} — ORQESTRAI`;
+    }
+  }, [resolution?.tag?.name]);
+
   if (screen === "loading") {
-    return <PublicShell><StateMessage icon={LoaderCircle} title="Carregando etiqueta" message="Identificando a etiqueta e preparando a ação com segurança."><LoaderCircle className="h-5 w-5 animate-spin text-[#347796]" /></StateMessage></PublicShell>;
+    return <PublicShell><LoadingExperience /></PublicShell>;
   }
   if (screen === "executing") {
-    return <PublicShell><StateMessage icon={LoaderCircle} title={resolution?.action?.loadingMessage || "Ação em andamento"} message="Mantenha esta página aberta por alguns instantes."><LoaderCircle className="h-5 w-5 animate-spin text-[#347796]" /></StateMessage></PublicShell>;
+    return <PublicShell><StateMessage icon={LoaderCircle} title={resolution?.action?.loadingMessage || "Estamos cuidando disso"} message="Pode deixar esta página aberta. Isso deve levar apenas alguns segundos."><LoaderCircle className="h-5 w-5 animate-spin text-[#347796]" /></StateMessage></PublicShell>;
   }
   if (screen === "success") {
-    return <PublicShell><StateMessage icon={CheckCircle2} title="Ação concluída" message={message} /></PublicShell>;
+    return <PublicShell><StateMessage icon={CheckCircle2} title="Tudo certo!" message={message} /></PublicShell>;
   }
   if (screen === "error") {
     return <PublicShell><StateMessage icon={TriangleAlert} title="Não foi possível concluir" message={message || "Tente novamente em alguns instantes."} tone="red"><Button onClick={load} variant="outline"><RefreshCw /> Tentar novamente</Button></StateMessage></PublicShell>;
@@ -285,6 +364,7 @@ export function NfcPublicClient({ token }: { token: string }) {
                 field={field}
                 value={formData[field.id]}
                 onChange={(value) => setFormData((current) => ({ ...current, [field.id]: value }))}
+                directoryUsers={resolution?.directoryUsers ?? []}
               />
             ))}
             <Button type="submit" className="w-full">Confirmar e enviar</Button>
@@ -301,6 +381,128 @@ export function NfcPublicClient({ token }: { token: string }) {
           >
             <div className="space-y-1.5"><Label htmlFor="nfc-phone">Número do WhatsApp</Label><Input id="nfc-phone" type="tel" required value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+55 11 99999-9999" /></div>
             <Button type="submit" className="w-full">Confirmar envio</Button>
+          </form>
+        )}
+
+        {action?.type === "asset_loan" && (
+          <form
+            className="mt-6 space-y-5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              execute();
+            }}
+          >
+            <div className="grid grid-cols-2 gap-2 rounded-xl bg-[#f1f7f8] p-1.5">
+              <button
+                type="button"
+                onClick={() => setLoanOperation("checkout")}
+                className={`flex min-h-12 items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold transition ${
+                  loanOperation === "checkout"
+                    ? "bg-white text-[#285f7a] shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <ArrowUpFromLine className="h-4 w-4" />
+                Retirar
+              </button>
+              <button
+                type="button"
+                onClick={() => setLoanOperation("return")}
+                className={`flex min-h-12 items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold transition ${
+                  loanOperation === "return"
+                    ? "bg-white text-[#285f7a] shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <ArrowDownToLine className="h-4 w-4" />
+                Devolver
+              </button>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="nfc-asset-number">
+                {action.assetNumberLabel || "Número do item"}
+              </Label>
+              <div className="relative">
+                <Umbrella className="pointer-events-none absolute left-3 top-3 h-5 w-5 text-[#347796]" />
+                <Input
+                  id="nfc-asset-number"
+                  required
+                  autoCapitalize="characters"
+                  value={assetNumber}
+                  onChange={(event) => setAssetNumber(event.target.value)}
+                  placeholder="Ex.: 12"
+                  className="h-11 pl-10 font-mono"
+                />
+              </div>
+            </div>
+
+            {loanOperation === "checkout" ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="nfc-borrower">Quem está retirando?</Label>
+                <div className="relative">
+                  <UserRound className="pointer-events-none absolute left-3 top-3 h-5 w-5 text-[#347796]" />
+                  <select
+                    id="nfc-borrower"
+                    required
+                    value={borrowerUserId}
+                    onChange={(event) => setBorrowerUserId(event.target.value)}
+                    className="h-11 w-full appearance-none rounded-md border border-input bg-white pl-10 pr-3 text-sm focus:border-[#47cdd0] focus:outline-none focus:ring-2 focus:ring-[#47cdd0]/20"
+                  >
+                    <option value="">Selecione o colaborador</option>
+                    {(resolution?.directoryUsers ?? []).map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}{user.department ? ` — ${user.department}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-[#dce9eb] bg-[#f7fafb] p-4">
+                {(() => {
+                  const normalized = assetNumber.trim().toLocaleUpperCase("pt-BR");
+                  const loan = resolution?.activeLoans?.find(
+                    (item) => item.assetNumber.toLocaleUpperCase("pt-BR") === normalized
+                  );
+                  if (!assetNumber.trim()) {
+                    return (
+                      <p className="text-sm text-muted-foreground">
+                        Digite o número para localizar a retirada em aberto.
+                      </p>
+                    );
+                  }
+                  if (!loan) {
+                    return (
+                      <p className="text-sm text-amber-800">
+                        Não encontramos uma retirada em aberto para esse número.
+                      </p>
+                    );
+                  }
+                  return (
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e8f8f8] text-[#347796]">
+                        <UserRound className="h-4 w-4" />
+                      </span>
+                      <div>
+                        <p className="text-sm font-semibold">{loan.borrowerName}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Retirado em {new Date(loan.checkedOutAt).toLocaleString("pt-BR")}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            <Button type="submit" className="h-11 w-full">
+              {loanOperation === "checkout" ? (
+                <><Umbrella /> Confirmar retirada</>
+              ) : (
+                <><CheckCircle2 /> Confirmar devolução</>
+              )}
+            </Button>
           </form>
         )}
 

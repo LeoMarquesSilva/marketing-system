@@ -44,6 +44,40 @@ describe("NFC tag validation", () => {
     expect(parsed.success).toBe(false);
   });
 
+  it("exige autenticação quando o formulário seleciona colaboradores", () => {
+    const parsed = nfcTagInputSchema.safeParse({
+      ...baseTag,
+      actionType: "form",
+      actionConfig: {
+        title: "Café com Cultura",
+        fields: [
+          {
+            id: "colaborador",
+            label: "Colaborador",
+            type: "user_select",
+            required: true,
+          },
+        ],
+      },
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("aceita o fluxo autenticado de retirada e devolução", () => {
+    const parsed = nfcTagInputSchema.safeParse({
+      ...baseTag,
+      accessMode: "authenticated",
+      actionType: "asset_loan",
+      actionConfig: {
+        title: "Guarda-chuvas",
+        assetLabel: "Guarda-chuva",
+        assetNumberLabel: "Número do guarda-chuva",
+        sensitive: true,
+      },
+    });
+    expect(parsed.success).toBe(true);
+  });
+
   it("uma execução pública só é válida com confirmação explícita", () => {
     expect(
       nfcExecutionInputSchema.safeParse({
@@ -51,5 +85,17 @@ describe("NFC tag validation", () => {
         confirmed: false,
       }).success
     ).toBe(false);
+  });
+
+  it("valida os dados de uma retirada de item", () => {
+    expect(
+      nfcExecutionInputSchema.safeParse({
+        scanId: "7e3bd4e6-156a-4bdf-bc0f-61a0f08a9134",
+        confirmed: true,
+        loanOperation: "checkout",
+        assetNumber: "12",
+        borrowerUserId: "a65da340-4c73-4291-bf20-3d2a60a1695d",
+      }).success
+    ).toBe(true);
   });
 });

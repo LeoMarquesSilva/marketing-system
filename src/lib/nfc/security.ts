@@ -51,6 +51,7 @@ export function isSensitiveAction(type: NfcActionType, config: NfcActionConfig):
     type === "whatsapp" ||
     type === "form" ||
     type === "sequence" ||
+    type === "asset_loan" ||
     (type === "menu" && (config.menuItems?.some((item) => item.actionType !== "url") ?? false))
   );
 }
@@ -76,4 +77,3 @@ export function sanitizeTechnicalError(error: unknown): { code: string; message:
   }
   return { code: "ACTION_FAILED", message: "Não foi possível concluir a ação. Tente novamente." };
 }
-

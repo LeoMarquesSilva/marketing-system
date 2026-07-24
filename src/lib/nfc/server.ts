@@ -53,6 +53,9 @@ interface ExecutePublicInput extends ResolvePublicInput {
   menuItemId?: string;
   formData?: Record<string, unknown>;
   phone?: string;
+  loanOperation?: "checkout" | "return";
+  assetNumber?: string;
+  borrowerUserId?: string;
 }
 
 export class NfcHttpError extends Error {
@@ -181,6 +184,14 @@ function assertSafeActionConfig(actionType: NfcActionType, config: NfcActionConf
       "SECRET_IN_CONFIG"
     );
   }
+}
+
+function actionRequiresDirectory(tag: NfcTag): boolean {
+  return (
+    tag.action_type === "asset_loan" ||
+    (tag.action_type === "form" &&
+      Boolean(tag.action_config.fields?.some((field) => field.type === "user_select")))
+  );
 }
 
 async function nextNfcCode(admin: SupabaseClient): Promise<string> {
@@ -608,6 +619,7 @@ async function checkAccess(
   tag: NfcTag,
   identity: PublicIdentity
 ): Promise<"ok" | "login_required" | "access_denied"> {
+  if (actionRequiresDirectory(tag) && !identity.profileId) return "login_required";
   if (tag.access_mode === "public" || tag.access_mode === "public_confirmation") return "ok";
   if (!identity.profileId) return "login_required";
   if (tag.access_mode === "authenticated") return "ok";
@@ -648,7 +660,70 @@ function toPublicAction(tag: NfcTag): NfcPublicResolution["action"] {
         : undefined,
     loadingMessage: config.loadingMessage,
     successMessage: config.successMessage,
+    assetLabel: config.assetLabel,
+    assetNumberLabel: config.assetNumberLabel,
   };
+}
+
+async function getPublicDirectory(admin: SupabaseClient): Promise<
+  NonNullable<NfcPublicResolution["directoryUsers"]>
+> {
+  const { data, error } = await admin
+    .from("users")
+    .select("id, name, department")
+    .eq("is_active", true)
+    .order("name");
+  if (error) {
+    throw new NfcHttpError(
+      "Não foi possível carregar os colaboradores.",
+      500,
+      "USER_DIRECTORY_FAILED"
+    );
+  }
+  return (data ?? []).map((user) => ({
+    id: String(user.id),
+    name: String(user.name),
+    department: user.department ? String(user.department) : null,
+  }));
+}
+
+async function getActiveAssetLoans(
+  admin: SupabaseClient,
+  tagId: string,
+  directoryUsers: NonNullable<NfcPublicResolution["directoryUsers"]>
+): Promise<NonNullable<NfcPublicResolution["activeLoans"]>> {
+  const { data, error } = await admin
+    .from("nfc_asset_loans")
+    .select("asset_number, borrower_user_id, checked_out_at")
+    .eq("tag_id", tagId)
+    .is("returned_at", null)
+    .order("checked_out_at", { ascending: false });
+  if (error) {
+    throw new NfcHttpError(
+      "Não foi possível carregar as retiradas em aberto.",
+      500,
+      "ASSET_LOANS_FAILED"
+    );
+  }
+  const names = new Map(directoryUsers.map((user) => [user.id, user.name]));
+  return (data ?? []).map((loan) => ({
+    assetNumber: String(loan.asset_number),
+    borrowerUserId: String(loan.borrower_user_id),
+    borrowerName: names.get(String(loan.borrower_user_id)) ?? "Colaborador",
+    checkedOutAt: String(loan.checked_out_at),
+  }));
+}
+
+export async function getNfcPublicTagLabel(token: string): Promise<string | null> {
+  if (!isValidPublicToken(token)) return null;
+  const admin = createNfcAdminClient();
+  const { data } = await admin
+    .from("nfc_tags")
+    .select("name")
+    .eq("public_token", token)
+    .is("deleted_at", null)
+    .maybeSingle();
+  return data?.name ? String(data.name) : null;
 }
 
 export async function resolvePublicNfcTag(input: ResolvePublicInput): Promise<NfcPublicResolution> {
@@ -695,6 +770,14 @@ export async function resolvePublicNfcTag(input: ResolvePublicInput): Promise<Nf
     action?.requiresConfirmation ? "confirmation_required" : "received"
   );
   if (!scanId) throw new NfcHttpError("Não foi possível registrar a leitura.", 500, "SCAN_CREATE_FAILED");
+  let directoryUsers: NfcPublicResolution["directoryUsers"];
+  let activeLoans: NfcPublicResolution["activeLoans"];
+  if (actionRequiresDirectory(tag)) {
+    directoryUsers = await getPublicDirectory(admin);
+    if (tag.action_type === "asset_loan") {
+      activeLoans = await getActiveAssetLoans(admin, tag.id, directoryUsers);
+    }
+  }
   return {
     state: action?.requiresConfirmation ? "confirmation_required" : "ready",
     scanId,
@@ -706,6 +789,8 @@ export async function resolvePublicNfcTag(input: ResolvePublicInput): Promise<Nf
       category: tag.category,
     },
     action,
+    directoryUsers,
+    activeLoans,
   };
 }
 
@@ -724,6 +809,148 @@ function validateFormData(config: NfcActionConfig, data: Record<string, unknown>
     result[field.id] = value;
   }
   return result;
+}
+
+async function validateDirectorySelections(
+  admin: SupabaseClient,
+  config: NfcActionConfig,
+  formData: Record<string, unknown>
+): Promise<void> {
+  const userIds = (config.fields ?? [])
+    .filter((field) => field.type === "user_select")
+    .map((field) => formData[field.id])
+    .filter((value): value is string => typeof value === "string");
+  if (!userIds.length) return;
+  const { data, error } = await admin
+    .from("users")
+    .select("id")
+    .in("id", [...new Set(userIds)])
+    .eq("is_active", true);
+  if (error || (data ?? []).length !== new Set(userIds).size) {
+    throw new NfcHttpError(
+      "Selecione um colaborador ativo.",
+      400,
+      "FORM_USER_INVALID"
+    );
+  }
+}
+
+function normalizeAssetNumber(value: string | undefined): string {
+  return value?.trim().toLocaleUpperCase("pt-BR") ?? "";
+}
+
+async function executeAssetLoan(
+  admin: SupabaseClient,
+  tag: NfcTag,
+  identity: PublicIdentity,
+  input: ExecutePublicInput,
+  config: NfcActionConfig
+): Promise<string> {
+  if (!identity.profileId) {
+    throw new NfcHttpError(
+      "Entre no ORQESTRAI para registrar a movimentação.",
+      401,
+      "LOGIN_REQUIRED"
+    );
+  }
+  const assetNumber = normalizeAssetNumber(input.assetNumber);
+  if (!assetNumber) {
+    throw new NfcHttpError(
+      `Informe ${config.assetNumberLabel?.toLocaleLowerCase("pt-BR") || "o número do item"}.`,
+      400,
+      "ASSET_NUMBER_REQUIRED"
+    );
+  }
+  if (input.loanOperation === "checkout") {
+    if (!input.borrowerUserId) {
+      throw new NfcHttpError(
+        "Selecione quem está retirando o item.",
+        400,
+        "BORROWER_REQUIRED"
+      );
+    }
+    const { data: borrower } = await admin
+      .from("users")
+      .select("id, name")
+      .eq("id", input.borrowerUserId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (!borrower) {
+      throw new NfcHttpError(
+        "O colaborador selecionado não está disponível.",
+        400,
+        "BORROWER_INVALID"
+      );
+    }
+    const { error } = await admin.from("nfc_asset_loans").insert({
+      tag_id: tag.id,
+      asset_number: assetNumber,
+      borrower_user_id: input.borrowerUserId,
+      checked_out_by: identity.profileId,
+      checkout_scan_id: input.scanId,
+    });
+    if (error?.code === "23505") {
+      throw new NfcHttpError(
+        `${config.assetLabel || "Este item"} já está com outra pessoa.`,
+        409,
+        "ASSET_ALREADY_CHECKED_OUT"
+      );
+    }
+    if (error) {
+      throw new NfcHttpError(
+        "Não foi possível registrar a retirada.",
+        500,
+        "ASSET_CHECKOUT_FAILED"
+      );
+    }
+    return (
+      config.checkoutMessage ||
+      `${config.assetLabel || "Item"} ${assetNumber} retirado por ${String(borrower.name)}.`
+    );
+  }
+  if (input.loanOperation === "return") {
+    const { data: openLoan } = await admin
+      .from("nfc_asset_loans")
+      .select("id")
+      .eq("tag_id", tag.id)
+      .eq("asset_number", assetNumber)
+      .is("returned_at", null)
+      .maybeSingle();
+    if (!openLoan) {
+      throw new NfcHttpError(
+        `${config.assetLabel || "Este item"} não possui retirada em aberto.`,
+        409,
+        "ASSET_NOT_CHECKED_OUT"
+      );
+    }
+    const { data: returned, error } = await admin
+      .from("nfc_asset_loans")
+      .update({
+        returned_at: new Date().toISOString(),
+        returned_by: identity.profileId,
+        return_scan_id: input.scanId,
+      })
+      .eq("id", openLoan.id)
+      .is("returned_at", null)
+      .select("id")
+      .maybeSingle();
+    if (error || !returned) {
+      throw new NfcHttpError(
+        "Não foi possível registrar a devolução.",
+        409,
+        "ASSET_RETURN_FAILED"
+      );
+    }
+    return (
+      config.returnMessage ||
+      `${config.assetLabel || "Item"} ${assetNumber} devolvido com sucesso.`
+    );
+  }
+  throw new NfcHttpError(
+    "Escolha retirar ou devolver.",
+    400,
+    "ASSET_OPERATION_REQUIRED"
+  );
 }
 
 async function callN8n(
@@ -857,12 +1084,14 @@ export async function executePublicNfcAction(input: ExecutePublicInput): Promise
     let redirectUrl: string | undefined;
     let responseStatus: number | null = null;
     let formData: Record<string, unknown> = {};
+    let successMessage = config.successMessage || "Ação concluída com sucesso.";
     if (actionType === "url") {
       const destination = sanitizePublicUrl(config.destinationUrl);
       if (!destination) throw new NfcHttpError("Destino inválido.", 400, "UNSAFE_URL");
       redirectUrl = appendSafeParams(destination, config.extraParams);
     } else if (actionType === "form") {
       formData = validateFormData(config, input.formData ?? {});
+      await validateDirectorySelections(admin, config, formData);
       const { error } = await admin.from("nfc_form_submissions").insert({
         tag_id: tag.id,
         scan_id: input.scanId,
@@ -881,6 +1110,8 @@ export async function executePublicNfcAction(input: ExecutePublicInput): Promise
           responseStatus = await callN8n(tag, input.scanId, identity, input.anonymousSessionId, stepConfig, input.formData ?? {}, idempotencyKey);
         }
       }
+    } else if (actionType === "asset_loan") {
+      successMessage = await executeAssetLoan(admin, tag, identity, input, config);
     }
 
     const duration = Date.now() - started;
@@ -896,7 +1127,7 @@ export async function executePublicNfcAction(input: ExecutePublicInput): Promise
     ]);
     return {
       status: "success",
-      message: config.successMessage || "Ação concluída com sucesso.",
+      message: successMessage,
       redirectUrl,
     };
   } catch (error) {

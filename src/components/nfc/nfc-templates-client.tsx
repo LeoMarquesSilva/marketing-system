@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, FileText, FormInput, Globe2, MessageCircle, Webhook, Workflow } from "lucide-react";
+import { ArrowRight, FileText, FormInput, Globe2, MessageCircle, Umbrella, Webhook, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NfcPageHeading } from "@/components/nfc/nfc-page-heading";
@@ -16,6 +16,7 @@ const ICONS = {
   whatsapp: MessageCircle,
   menu: FileText,
   sequence: Workflow,
+  asset_loan: Umbrella,
 };
 
 export function NfcTemplatesClient({ templates }: { templates: NfcTemplate[] }) {
