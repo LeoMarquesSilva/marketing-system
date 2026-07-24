@@ -10,6 +10,7 @@ const EMPTY_DATA: LinkedinDashboardData = {
   followerDailyMetrics: [],
   visitorDailyMetrics: [],
   demographics: [],
+  competitorSnapshots: [],
   posts: [],
   imports: [],
   instagramCandidates: [],
@@ -35,7 +36,7 @@ export default async function LinkedinInsightsPage() {
         </span>
         <div>
           <h2 className="text-2xl font-bold tracking-tight">LinkedIn Insights</h2>
-          <p className="text-sm text-muted-foreground">Desempenho editorial, rankings e associação automática com o Instagram.</p>
+          <p className="text-sm text-muted-foreground">Desempenho editorial, audiência, benchmark competitivo e associação com o Instagram.</p>
         </div>
       </header>
       <LinkedinInsightsClient initialData={data} />

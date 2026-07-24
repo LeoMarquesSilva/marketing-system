@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 
-function formatStopwatch(startedAt: string): string {
-  const elapsed = Math.max(0, Date.now() - new Date(startedAt).getTime());
+function formatStopwatch(startedAt: string, now: number): string {
+  const elapsed = Math.max(0, now - new Date(startedAt).getTime());
   const hours = Math.floor(elapsed / 3_600_000);
   const minutes = Math.floor((elapsed % 3_600_000) / 60_000);
   const seconds = Math.floor((elapsed % 60_000) / 1_000);
@@ -11,21 +11,13 @@ function formatStopwatch(startedAt: string): string {
 }
 
 export function useStopwatch(startedAt: string | null): string {
-  const [display, setDisplay] = useState(() =>
-    startedAt ? formatStopwatch(startedAt) : "00:00:00"
-  );
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    if (!startedAt) {
-      setDisplay("00:00:00");
-      return;
-    }
-    setDisplay(formatStopwatch(startedAt));
-    const interval = setInterval(() => {
-      setDisplay(formatStopwatch(startedAt));
-    }, 1000);
+    if (!startedAt) return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
   }, [startedAt]);
 
-  return display;
+  return startedAt ? formatStopwatch(startedAt, now) : "00:00:00";
 }

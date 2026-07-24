@@ -589,7 +589,7 @@ export async function fetchViosTasks(
     return { tasks: [], total: 0 };
   }
 
-  let rows = (data ?? []) as unknown as ViosTaskRow[];
+  const rows = (data ?? []) as unknown as ViosTaskRow[];
   let tasks = rows.map(mapTaskRow);
   tasks = filterActiveCollaboratorTasks(tasks, inactive);
 

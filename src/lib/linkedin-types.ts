@@ -26,7 +26,7 @@ export interface LinkedinDailyMetric {
   updated_at: string;
 }
 
-export type LinkedinReportType = "content" | "followers" | "visitors";
+export type LinkedinReportType = "content" | "followers" | "visitors" | "competitors";
 
 export interface LinkedinFollowerDailyMetric {
   id: string;
@@ -88,6 +88,21 @@ export interface LinkedinDemographicSnapshot {
   created_at: string;
 }
 
+export interface LinkedinCompetitorSnapshot {
+  id: string;
+  import_id: string;
+  page_name: string;
+  new_followers: number;
+  publications: number;
+  comments: number;
+  comments_per_day: number;
+  reactions: number;
+  period_from: string;
+  period_to: string;
+  captured_at: string;
+  created_at: string;
+}
+
 export interface LinkedinPost {
   id: string;
   linkedin_urn: string;
@@ -132,6 +147,7 @@ export interface LinkedinImportRecord {
   matched_posts: number;
   report_type: LinkedinReportType;
   demographic_rows: number;
+  competitor_rows: number;
   date_from: string | null;
   date_to: string | null;
   warnings: string[];
@@ -144,6 +160,7 @@ export interface LinkedinDashboardData {
   followerDailyMetrics: LinkedinFollowerDailyMetric[];
   visitorDailyMetrics: LinkedinVisitorDailyMetric[];
   demographics: LinkedinDemographicSnapshot[];
+  competitorSnapshots: LinkedinCompetitorSnapshot[];
   posts: LinkedinPost[];
   imports: LinkedinImportRecord[];
   instagramCandidates: InstagramPost[];
@@ -170,6 +187,11 @@ export type ParsedLinkedinDemographic = Omit<
   "id" | "import_id" | "report_type" | "captured_at" | "created_at"
 >;
 
+export type ParsedLinkedinCompetitorSnapshot = Omit<
+  LinkedinCompetitorSnapshot,
+  "id" | "import_id" | "period_from" | "period_to" | "captured_at" | "created_at"
+>;
+
 export type ParsedLinkedinPost = Omit<
     LinkedinPost,
     | "id"
@@ -188,6 +210,7 @@ export interface LinkedinWorkbookData {
   followerDailyMetrics: ParsedLinkedinFollowerDailyMetric[];
   visitorDailyMetrics: ParsedLinkedinVisitorDailyMetric[];
   demographics: ParsedLinkedinDemographic[];
+  competitors: ParsedLinkedinCompetitorSnapshot[];
   posts: ParsedLinkedinPost[];
   warnings: string[];
   dateFrom: string | null;

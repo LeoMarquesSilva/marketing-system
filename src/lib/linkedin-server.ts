@@ -68,15 +68,16 @@ async function fetchInstagramCandidates(
 
 export async function fetchLinkedinDashboardData(): Promise<LinkedinDashboardData> {
   const supabase = getServiceClient();
-  const [dailyResult, followerResult, visitorResult, postsResult, importsResult] = await Promise.all([
+  const [dailyResult, followerResult, visitorResult, competitorResult, postsResult, importsResult] = await Promise.all([
     supabase.from("linkedin_daily_metrics").select("*").order("metric_date", { ascending: true }),
     supabase.from("linkedin_follower_daily_metrics").select("*").order("metric_date", { ascending: true }),
     supabase.from("linkedin_visitor_daily_metrics").select("*").order("metric_date", { ascending: true }),
+    supabase.from("linkedin_competitor_snapshots").select("*").order("captured_at", { ascending: false }).limit(500),
     supabase.from("linkedin_posts").select("*").order("published_at", { ascending: false }),
     supabase.from("linkedin_imports").select("*").order("imported_at", { ascending: false }).limit(60),
   ]);
 
-  const firstError = dailyResult.error ?? followerResult.error ?? visitorResult.error ?? postsResult.error ?? importsResult.error;
+  const firstError = dailyResult.error ?? followerResult.error ?? visitorResult.error ?? competitorResult.error ?? postsResult.error ?? importsResult.error;
   if (firstError) {
     if (isMissingLinkedinSchema(firstError)) {
       return {
@@ -84,6 +85,7 @@ export async function fetchLinkedinDashboardData(): Promise<LinkedinDashboardDat
         followerDailyMetrics: [],
         visitorDailyMetrics: [],
         demographics: [],
+        competitorSnapshots: [],
         posts: [],
         imports: [],
         instagramCandidates: [],
@@ -129,6 +131,7 @@ export async function fetchLinkedinDashboardData(): Promise<LinkedinDashboardDat
     followerDailyMetrics: followerResult.data ?? [],
     visitorDailyMetrics: visitorResult.data ?? [],
     demographics: demographicsResult.data ?? [],
+    competitorSnapshots: competitorResult.data ?? [],
     posts: rawPosts.map((post) => ({
       ...post,
       instagram_post: post.instagram_post_id && candidateMap.has(post.instagram_post_id)
@@ -155,6 +158,7 @@ export interface PersistLinkedinImportResult {
   dailyRows: number;
   postRows: number;
   demographicRows: number;
+  competitorRows: number;
   matchedPosts: number;
   duplicate: boolean;
   warnings: string[];
@@ -186,6 +190,7 @@ export async function persistLinkedinImport({
       dailyRows: existingImport.daily_rows as number,
       postRows: existingImport.post_rows as number,
       demographicRows: (existingImport.demographic_rows as number | null) ?? 0,
+      competitorRows: (existingImport.competitor_rows as number | null) ?? 0,
       matchedPosts: existingImport.matched_posts as number,
       duplicate: true,
       warnings: (existingImport.warnings as string[] | null) ?? [],
@@ -205,6 +210,7 @@ export async function persistLinkedinImport({
         daily_rows: dailyRowCount,
         post_rows: workbook.posts.length,
         demographic_rows: workbook.demographics.length,
+        competitor_rows: workbook.competitors.length,
         warnings: workbook.warnings,
         imported_at: new Date().toISOString(),
       })
@@ -222,6 +228,7 @@ export async function persistLinkedinImport({
         daily_rows: dailyRowCount,
         post_rows: workbook.posts.length,
         demographic_rows: workbook.demographics.length,
+        competitor_rows: workbook.competitors.length,
         date_from: workbook.dateFrom,
         date_to: workbook.dateTo,
         warnings: workbook.warnings,
@@ -350,6 +357,23 @@ export async function persistLinkedinImport({
       if (error) throw new Error(error.message);
     }
 
+    if (workbook.reportType === "competitors") {
+      if (!workbook.dateFrom || !workbook.dateTo) {
+        throw new Error("O relatório de concorrência não informa um período válido.");
+      }
+      const rows = workbook.competitors.map((row) => ({
+        ...row,
+        import_id: resolvedImportId,
+        period_from: workbook.dateFrom,
+        period_to: workbook.dateTo,
+        captured_at: now.slice(0, 10),
+      }));
+      const { error } = await supabase
+        .from("linkedin_competitor_snapshots")
+        .upsert(rows, { onConflict: "import_id,page_name" });
+      if (error) throw new Error(error.message);
+    }
+
     if (workbook.reportType !== "content" && workbook.demographics.length > 0) {
       const demographicRows = workbook.demographics.map((row) => ({
         ...row,
@@ -371,6 +395,7 @@ export async function persistLinkedinImport({
         daily_rows: dailyRowCount,
         post_rows: workbook.posts.length,
         demographic_rows: workbook.demographics.length,
+        competitor_rows: workbook.competitors.length,
         matched_posts: matchedPosts,
         date_from: workbook.dateFrom,
         date_to: workbook.dateTo,
@@ -385,6 +410,7 @@ export async function persistLinkedinImport({
       dailyRows: dailyRowCount,
       postRows: workbook.posts.length,
       demographicRows: workbook.demographics.length,
+      competitorRows: workbook.competitors.length,
       matchedPosts,
       duplicate: false,
       warnings: workbook.warnings,

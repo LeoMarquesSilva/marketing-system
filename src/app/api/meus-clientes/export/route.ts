@@ -27,10 +27,19 @@ function csvRow(cols: string[]): string {
   return cols.map(csvEscape).join(",");
 }
 
-type InviteFilter = "all" | "party" | "nps" | "both" | "none";
+type InviteFilter = "all" | "party" | "nps" | "both" | "none" | "not_party" | "not_nps";
 
 function parseInviteFilter(value: string | null): InviteFilter {
-  if (value === "party" || value === "nps" || value === "both" || value === "none") return value;
+  if (
+    value === "party" ||
+    value === "nps" ||
+    value === "both" ||
+    value === "none" ||
+    value === "not_party" ||
+    value === "not_nps"
+  ) {
+    return value;
+  }
   return "all";
 }
 
@@ -48,6 +57,8 @@ function matchesInviteFilters(
   if (inviteFilter === "nps") return entity.npsEligible;
   if (inviteFilter === "both") return entity.partyInvite && entity.npsEligible;
   if (inviteFilter === "none") return !entity.partyInvite && !entity.npsEligible;
+  if (inviteFilter === "not_party") return !entity.partyInvite;
+  if (inviteFilter === "not_nps") return !entity.npsEligible;
   return true;
 }
 

@@ -189,6 +189,8 @@ function memberMatchesInviteFilters(
   if (inviteFilter === "nps") return member.npsEligible;
   if (inviteFilter === "both") return member.partyInvite && member.npsEligible;
   if (inviteFilter === "none") return !member.partyInvite && !member.npsEligible;
+  if (inviteFilter === "not_party") return !member.partyInvite;
+  if (inviteFilter === "not_nps") return !member.npsEligible;
   return true;
 }
 
@@ -821,6 +823,8 @@ function MeusClientesClientContent() {
       nps: 0,
       both: 0,
       none: 0,
+      notParty: 0,
+      notNps: 0,
       partyGroups: 0,
       npsGroups: 0,
     };
@@ -857,6 +861,8 @@ function MeusClientesClientContent() {
         }
         if (member.partyInvite && member.npsEligible) counts.both++;
         if (!member.partyInvite && !member.npsEligible) counts.none++;
+        if (!member.partyInvite) counts.notParty++;
+        if (!member.npsEligible) counts.notNps++;
       }
       if (groupHasParty) counts.partyGroups++;
       if (groupHasNps) counts.npsGroups++;
@@ -870,7 +876,9 @@ function MeusClientesClientContent() {
       [
         { value: "all" as const, label: "NPS/Festa", count: inviteFilterCounts.all },
         { value: "party" as const, label: "Festa: sim", count: inviteFilterCounts.party },
+        { value: "not_party" as const, label: "Festa: não", count: inviteFilterCounts.notParty },
         { value: "nps" as const, label: "NPS: sim", count: inviteFilterCounts.nps },
+        { value: "not_nps" as const, label: "NPS: não", count: inviteFilterCounts.notNps },
         { value: "both" as const, label: "NPS + Festa", count: inviteFilterCounts.both },
         { value: "none" as const, label: "Sem NPS/Festa", count: inviteFilterCounts.none },
       ] satisfies Array<{ value: InviteFilter; label: string; count: number }>,

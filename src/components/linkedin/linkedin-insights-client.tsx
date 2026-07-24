@@ -19,7 +19,9 @@ import {
   MonitorSmartphone,
   Search,
   Sparkles,
+  Target,
   TrendingUp,
+  Trophy,
   Users,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +31,7 @@ import { SectionCard, KpiCard, ComparisonStat } from "@/components/instagram/ins
 import { InstagramPeriodPicker } from "@/components/instagram/instagram-period-picker";
 import { LinkedinImportButton, type LinkedinImportFeedback } from "@/components/linkedin/linkedin-import-button";
 import { LinkedinAudienceChart } from "@/components/linkedin/linkedin-audience-chart";
+import { LinkedinCompetitorChart, type LinkedinCompetitorMetric } from "@/components/linkedin/linkedin-competitor-chart";
 import { LinkedinDemographicRanking } from "@/components/linkedin/linkedin-demographic-ranking";
 import { LinkedinPerformanceChart } from "@/components/linkedin/linkedin-performance-chart";
 import { LinkedinPostCard } from "@/components/linkedin/linkedin-post-card";
@@ -58,13 +61,14 @@ import type {
 } from "@/lib/linkedin-types";
 import { cn } from "@/lib/utils";
 
-type LinkedinTab = "overview" | "audience" | "people" | "posts" | "imports";
+type LinkedinTab = "overview" | "audience" | "competitors" | "people" | "posts" | "imports";
 type LinkFilter = "all" | "linked" | "pending";
 type AudienceSource = "followers" | "visitors";
 
 const TABS: Array<{ id: LinkedinTab; label: string; icon: typeof BarChart3 }> = [
   { id: "overview", label: "Visão geral", icon: BarChart3 },
   { id: "audience", label: "Seguidores & visitantes", icon: Users },
+  { id: "competitors", label: "Concorrência", icon: Trophy },
   { id: "people", label: "Áreas & autores", icon: Users },
   { id: "posts", label: "Publicações", icon: Linkedin },
   { id: "imports", label: "Importações", icon: FileClock },
@@ -80,6 +84,14 @@ const DEMOGRAPHIC_TABS: Array<{
   { id: "seniority", label: "Experiência", icon: Users },
   { id: "industry", label: "Setor", icon: Building2 },
   { id: "company_size", label: "Empresa", icon: Building2 },
+];
+
+const COMPETITOR_METRICS: Array<{ id: LinkedinCompetitorMetric; label: string }> = [
+  { id: "new_followers", label: "Seguidores" },
+  { id: "reactions", label: "Reações" },
+  { id: "publications", label: "Publicações" },
+  { id: "comments", label: "Comentários" },
+  { id: "reactions_per_post", label: "Reações/post" },
 ];
 
 function formatNumber(value: number): string {
@@ -120,6 +132,18 @@ function comparePostsByMetric(left: LinkedinPost, right: LinkedinPost): number {
   return right.engagement_rate - left.engagement_rate || right.impressions - left.impressions;
 }
 
+function isOwnCompetitor(pageName: string): boolean {
+  const normalized = pageName.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return normalized.includes("bismarchi") && normalized.includes("pires");
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+}
+
 function GranularityToggle({
   value,
   onChange,
@@ -134,6 +158,7 @@ function GranularityToggle({
           key={option}
           type="button"
           onClick={() => onChange(option)}
+          aria-pressed={value === option}
           className={cn(
             "rounded-md px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide transition",
             value === option ? "bg-white text-[#0A66C2] shadow-sm" : "text-slate-400"
@@ -158,6 +183,7 @@ export function LinkedinInsightsClient({ initialData }: { initialData: LinkedinD
   const [granularity, setGranularity] = useState<LinkedinTrendGranularity>("month");
   const [audienceSource, setAudienceSource] = useState<AudienceSource>("followers");
   const [demographicDimension, setDemographicDimension] = useState<LinkedinDemographicDimension>("location");
+  const [competitorMetric, setCompetitorMetric] = useState<LinkedinCompetitorMetric>("new_followers");
 
   const range = useMemo(() => resolvePeriodRange(period), [period]);
   const scopedDaily = useMemo(
@@ -254,6 +280,23 @@ export function LinkedinInsightsClient({ initialData }: { initialData: LinkedinD
     ];
   }, [scopedVisitors]);
   const demographicCapturedAt = demographicItems[0]?.captured_at ?? null;
+  const latestCompetitorImport = initialData.imports.find(
+    (item) => item.status === "completed" && item.report_type === "competitors"
+  );
+  const competitorRows = latestCompetitorImport
+    ? initialData.competitorSnapshots.filter((row) => row.import_id === latestCompetitorImport.id)
+    : [];
+  const ownCompetitor = competitorRows.find((row) => isOwnCompetitor(row.page_name)) ?? null;
+  const reactionsPerPost = ownCompetitor && ownCompetitor.publications > 0
+    ? ownCompetitor.reactions / ownCompetitor.publications
+    : 0;
+  const rankBy = (value: (row: (typeof competitorRows)[number]) => number) => ownCompetitor
+    ? [...competitorRows].sort((left, right) => value(right) - value(left)).findIndex((row) => row.id === ownCompetitor.id) + 1
+    : 0;
+  const ownFollowerRank = rankBy((row) => row.new_followers);
+  const ownReactionRank = rankBy((row) => row.reactions);
+  const ownPublicationRank = rankBy((row) => row.publications);
+  const medianFollowers = median(competitorRows.map((row) => row.new_followers));
 
   const handleLink = async (linkedinPostId: string, instagramPostId: string | null) => {
     setSavingPostId(linkedinPostId);
@@ -309,10 +352,11 @@ export function LinkedinInsightsClient({ initialData }: { initialData: LinkedinD
                   {feedback.duplicate ? "Esse arquivo já estava importado." : "Relatório importado com sucesso."}
                 </p>
                 <p className="mt-0.5 text-xs">
-                  {feedback.reportType === "content" ? "Conteúdo" : feedback.reportType === "followers" ? "Seguidores" : "Visitantes"}
+                  {feedback.reportType === "content" ? "Conteúdo" : feedback.reportType === "followers" ? "Seguidores" : feedback.reportType === "visitors" ? "Visitantes" : "Concorrência"}
                   {" · "}{feedback.dailyRows} dias
                   {feedback.postRows > 0 ? ` · ${feedback.postRows} posts` : ""}
                   {feedback.demographicRows > 0 ? ` · ${feedback.demographicRows} recortes` : ""}
+                  {feedback.competitorRows > 0 ? ` · ${feedback.competitorRows} páginas` : ""}
                   {feedback.postRows > 0 ? ` · ${feedback.matchedPosts} previews vinculados` : ""}
                 </p>
                 {feedback.warnings.map((warning) => <p key={warning} className="mt-1 text-xs">{warning}</p>)}
@@ -531,6 +575,86 @@ export function LinkedinInsightsClient({ initialData }: { initialData: LinkedinD
         </div>
       )}
 
+      {activeTab === "competitors" && (
+        <div className="space-y-4">
+          {latestCompetitorImport && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#0A66C2]/15 bg-[#0A66C2]/5 px-4 py-3 text-xs text-slate-600">
+              <span>Benchmark consolidado do LinkedIn; o filtro global de período não altera este relatório.</span>
+              <span className="font-mono font-semibold text-[#0A66C2]">
+                {latestCompetitorImport.date_from ? new Date(`${latestCompetitorImport.date_from}T12:00:00`).toLocaleDateString("pt-BR") : "—"}
+                {" — "}
+                {latestCompetitorImport.date_to ? new Date(`${latestCompetitorImport.date_to}T12:00:00`).toLocaleDateString("pt-BR") : "—"}
+              </span>
+            </div>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <KpiCard label="Posição em seguidores" value={ownFollowerRank ? `${ownFollowerRank}º` : "—"} sub={`entre ${competitorRows.length || 0} páginas`} icon={<Trophy className="h-3.5 w-3.5" />} />
+            <KpiCard label="Novos seguidores" value={formatNumber(ownCompetitor?.new_followers ?? 0)} sub={`mediana: ${formatNumber(medianFollowers)}`} icon={<Users className="h-3.5 w-3.5" />} />
+            <KpiCard label="Posição em reações" value={ownReactionRank ? `${ownReactionRank}º` : "—"} sub={`${formatNumber(ownCompetitor?.reactions ?? 0)} reações`} icon={<Sparkles className="h-3.5 w-3.5" />} />
+            <KpiCard label="Posição em publicações" value={ownPublicationRank ? `${ownPublicationRank}º` : "—"} sub={`${formatNumber(ownCompetitor?.publications ?? 0)} publicações`} icon={<Linkedin className="h-3.5 w-3.5" />} />
+            <KpiCard label="Eficiência de conteúdo" value={reactionsPerPost.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} sub="reações por publicação" icon={<Target className="h-3.5 w-3.5" />} />
+          </div>
+
+          <SectionCard
+            title="Benchmark competitivo"
+            description="A Bismarchi | Pires aparece em ciano; demais páginas em azul"
+            action={(
+              <div className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-border/60 bg-slate-50 p-1">
+                {COMPETITOR_METRICS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setCompetitorMetric(item.id)}
+                    aria-pressed={competitorMetric === item.id}
+                    className={cn("shrink-0 rounded-lg px-2.5 py-1.5 text-[10px] font-semibold transition", competitorMetric === item.id ? "bg-white text-[#0A66C2] shadow-sm" : "text-slate-400")}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          >
+            <LinkedinCompetitorChart rows={competitorRows} metric={competitorMetric} />
+          </SectionCard>
+
+          <SectionCard title="Ranking completo" description="Volume e eficiência no período informado pelo LinkedIn" noPadding>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[880px] text-left text-sm">
+                <thead className="border-b border-border/50 bg-slate-50/80 text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="px-5 py-3 font-semibold">#</th>
+                    <th className="px-4 py-3 font-semibold">Página</th>
+                    <th className="px-4 py-3 text-right font-semibold">Seguidores</th>
+                    <th className="px-4 py-3 text-right font-semibold">Publicações</th>
+                    <th className="px-4 py-3 text-right font-semibold">Reações</th>
+                    <th className="px-4 py-3 text-right font-semibold">Comentários</th>
+                    <th className="px-5 py-3 text-right font-semibold">Reações/post</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/40">
+                  {[...competitorRows].sort((left, right) => right.new_followers - left.new_followers).map((row, index) => {
+                    const own = isOwnCompetitor(row.page_name);
+                    return (
+                      <tr key={row.id} className={own ? "bg-cyan-50/70" : "hover:bg-slate-50/60"}>
+                        <td className="px-5 py-3.5 font-mono text-xs text-slate-400">{String(index + 1).padStart(2, "0")}</td>
+                        <td className="px-4 py-3.5 font-medium">{row.page_name}{own && <Badge className="ml-2 border-cyan-200 bg-cyan-50 text-cyan-700" variant="outline">Sua página</Badge>}</td>
+                        <td className="px-4 py-3.5 text-right font-mono">{row.new_followers.toLocaleString("pt-BR")}</td>
+                        <td className="px-4 py-3.5 text-right font-mono">{row.publications.toLocaleString("pt-BR")}</td>
+                        <td className="px-4 py-3.5 text-right font-mono">{row.reactions.toLocaleString("pt-BR")}</td>
+                        <td className="px-4 py-3.5 text-right font-mono">{row.comments.toLocaleString("pt-BR")}</td>
+                        <td className="px-5 py-3.5 text-right font-mono">{(row.publications > 0 ? row.reactions / row.publications : 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}</td>
+                      </tr>
+                    );
+                  })}
+                  {competitorRows.length === 0 && <tr><td colSpan={7} className="px-5 py-14 text-center text-sm text-muted-foreground">Importe o relatório de concorrência para montar o ranking.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </SectionCard>
+        </div>
+      )}
+
       {activeTab === "people" && (
         <div className="grid gap-4 xl:grid-cols-2">
           <SectionCard title="Áreas com melhor resposta" description="Áreas herdadas dos posts correspondentes no Instagram" action={<Activity className="h-4 w-4 text-[#0A66C2]" />}>
@@ -577,10 +701,10 @@ export function LinkedinInsightsClient({ initialData }: { initialData: LinkedinD
                 {initialData.imports.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50/60">
                     <td className="max-w-[240px] truncate px-5 py-3.5 font-medium">{item.filename}</td>
-                    <td className="px-4 py-3.5"><Badge variant="outline" className="bg-white">{item.report_type === "followers" ? "Seguidores" : item.report_type === "visitors" ? "Visitantes" : "Conteúdo"}</Badge></td>
+                    <td className="px-4 py-3.5"><Badge variant="outline" className="bg-white">{item.report_type === "followers" ? "Seguidores" : item.report_type === "visitors" ? "Visitantes" : item.report_type === "competitors" ? "Concorrência" : "Conteúdo"}</Badge></td>
                     <td className="px-4 py-3.5 text-xs text-muted-foreground">{new Date(item.imported_at).toLocaleString("pt-BR")}</td>
                     <td className="px-4 py-3.5 font-mono text-xs">{item.date_from ? new Date(`${item.date_from}T12:00:00`).toLocaleDateString("pt-BR") : "—"} – {item.date_to ? new Date(`${item.date_to}T12:00:00`).toLocaleDateString("pt-BR") : "—"}</td>
-                    <td className="px-4 py-3.5 font-mono text-xs">{item.daily_rows} dias{item.post_rows > 0 ? ` · ${item.post_rows} posts` : ""}{item.demographic_rows > 0 ? ` · ${item.demographic_rows} recortes` : ""}</td>
+                    <td className="px-4 py-3.5 font-mono text-xs">{item.daily_rows} dias{item.post_rows > 0 ? ` · ${item.post_rows} posts` : ""}{item.demographic_rows > 0 ? ` · ${item.demographic_rows} recortes` : ""}{item.competitor_rows > 0 ? ` · ${item.competitor_rows} páginas` : ""}</td>
                     <td className="px-4 py-3.5 font-mono text-xs">{item.post_rows > 0 ? `${item.matched_posts}/${item.post_rows}` : "—"}</td>
                     <td className="px-5 py-3.5"><Badge variant="outline" className={item.status === "completed" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : item.status === "failed" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-amber-200 bg-amber-50 text-amber-700"}>{item.status === "completed" ? "Concluído" : item.status === "failed" ? "Falhou" : "Processando"}</Badge></td>
                   </tr>

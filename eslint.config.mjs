@@ -12,6 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Metadados e worktrees locais de agentes não fazem parte da aplicação.
+    ".claude/**",
+    ".codex/**",
+    "supabase/.temp/**",
+    // Aplicação Node.js legada com configuração própria.
+    "vios-app/**",
     // Scripts Node.js usam require(); não fazem parte do bundle.
     "scripts/**",
   ]),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/utils/supabase/client";
 
 export type MeusClientesRealtimeStatus = "connecting" | "connected" | "unavailable";
@@ -28,38 +28,37 @@ export function useMeusClientesRealtime(options: {
   const onRefreshRef = useRef(onRefresh);
   const pausedRef = useRef(paused);
 
-  onRefreshRef.current = onRefresh;
-  pausedRef.current = paused;
-
-  const flushRefresh = () => {
+  const flushRefresh = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       onRefreshRef.current();
       pendingRef.current = false;
     }, DEBOUNCE_MS);
-  };
+  }, []);
 
-  const scheduleRefresh = () => {
+  const scheduleRefresh = useCallback(() => {
     if (pausedRef.current) {
       pendingRef.current = true;
       return;
     }
     flushRefresh();
-  };
+  }, [flushRefresh]);
 
   useEffect(() => {
+    onRefreshRef.current = onRefresh;
+  }, [onRefresh]);
+
+  useEffect(() => {
+    pausedRef.current = paused;
     if (!paused && pendingRef.current) {
       flushRefresh();
     }
-  }, [paused]);
+  }, [flushRefresh, paused]);
 
   useEffect(() => {
-    if (!enabled) {
-      setStatus("unavailable");
-      return;
-    }
+    if (!enabled) return;
 
-    setStatus("connecting");
+    const connectingTimer = setTimeout(() => setStatus("connecting"), 0);
     let channel = supabase.channel("meus-clientes-realtime");
     for (const table of REALTIME_TABLES) {
       channel = channel.on(
@@ -85,10 +84,11 @@ export function useMeusClientesRealtime(options: {
     });
 
     return () => {
+      clearTimeout(connectingTimer);
       if (timerRef.current) clearTimeout(timerRef.current);
       void supabase.removeChannel(channel);
     };
-  }, [enabled]);
+  }, [enabled, scheduleRefresh]);
 
-  return { status };
+  return { status: enabled ? status : "unavailable" };
 }

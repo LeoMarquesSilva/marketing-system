@@ -45,7 +45,7 @@ import {
   groupHasNoContacts,
   mergeGroupMembers,
 } from "@/lib/meus-clientes";
-import { getAreaIcon, getAreaIconStyle } from "@/lib/area-icons";
+import { AreaIcon, getAreaIconStyle } from "@/lib/area-icons";
 import { getPartyInviteTipoDescription, getPartyInviteTipoLabel } from "@/lib/party-invite-types";
 import type { PartyInviteTipo } from "@/lib/party-invite-types";
 import {
@@ -68,7 +68,7 @@ export const FILTER_SEM_AREA = "__sem_area__";
 export type StatusFilter = "all" | "pending" | "complete";
 export type AtividadeFilter = "all" | "ativo" | "inativo";
 export type FaturamentoPrevistoFilter = "all" | "com" | "sem";
-export type InviteFilter = "all" | "party" | "nps" | "both" | "none";
+export type InviteFilter = "all" | "party" | "nps" | "both" | "none" | "not_party" | "not_nps";
 export type SelectKey = `c:${string}` | `p:${string}`;
 
 export interface ClientGroupBucket {
@@ -219,6 +219,8 @@ function memberMatchesInviteFilter(
   if (inviteFilter === "nps") return member.npsEligible;
   if (inviteFilter === "both") return member.partyInvite && member.npsEligible;
   if (inviteFilter === "none") return !member.partyInvite && !member.npsEligible;
+  if (inviteFilter === "not_party") return !member.partyInvite;
+  if (inviteFilter === "not_nps") return !member.npsEligible;
   return true;
 }
 
@@ -985,6 +987,8 @@ export function FilterChips({
       nps: "NPS: sim",
       both: "NPS + Festa",
       none: "Sem NPS/Festa",
+      not_party: "Festa: não",
+      not_nps: "NPS: não",
     };
     chips.push({
       label: inviteLabels[filterInvite],
@@ -1133,7 +1137,6 @@ export function FilterUserAvatar({
 }
 
 export function FilterAreaIcon({ area, size = "md" }: { area: string; size?: "sm" | "md" }) {
-  const Icon = getAreaIcon(area);
   const box = size === "sm" ? "h-7 w-7" : "h-9 w-9";
   const icon = size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4";
   return (
@@ -1141,7 +1144,7 @@ export function FilterAreaIcon({ area, size = "md" }: { area: string; size?: "sm
       className={`inline-flex shrink-0 items-center justify-center rounded-lg ring-1 ${box} ${getAreaIconStyle(area)}`}
       aria-hidden
     >
-      <Icon className={icon} />
+      <AreaIcon area={area} className={icon} />
     </span>
   );
 }

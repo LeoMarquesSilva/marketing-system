@@ -12,6 +12,7 @@ export interface LinkedinImportFeedback {
   dailyRows: number;
   postRows: number;
   demographicRows: number;
+  competitorRows: number;
   matchedPosts: number;
   warnings: string[];
 }
@@ -39,10 +40,11 @@ export function LinkedinImportButton({ disabled, onFeedback }: LinkedinImportBut
       if (!response.ok) throw new Error(json.error ?? "Não foi possível importar o relatório.");
       onFeedback({
         duplicate: Boolean(json.duplicate),
-        reportType: json.reportType === "followers" || json.reportType === "visitors" ? json.reportType : "content",
+        reportType: json.reportType === "followers" || json.reportType === "visitors" || json.reportType === "competitors" ? json.reportType : "content",
         dailyRows: Number(json.dailyRows ?? 0),
         postRows: Number(json.postRows ?? 0),
         demographicRows: Number(json.demographicRows ?? 0),
+        competitorRows: Number(json.competitorRows ?? 0),
         matchedPosts: Number(json.matchedPosts ?? 0),
         warnings: Array.isArray(json.warnings) ? json.warnings : [],
       });

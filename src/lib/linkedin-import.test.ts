@@ -94,4 +94,33 @@ describe("LinkedIn workbook parser", () => {
     });
     expect(parsed.demographics[0]).toMatchObject({ dimension: "industry", metric_value: 80 });
   });
+
+  it("recognizes competitor benchmarks and their reporting period", () => {
+    const fromDate = (Date.UTC(2025, 6, 20) - Date.UTC(1899, 11, 30)) / 86_400_000;
+    const toDate = (Date.UTC(2026, 6, 19) - Date.UTC(1899, 11, 30)) / 86_400_000;
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        [fromDate, toDate],
+        ["Page", "Novos seguidores", "Publicações", "Comentários", "Comentários por dia", "Reações"],
+        ["Bismarchi | Pires Sociedade de Advogados", 765, 145, 115, 0, 2989],
+        ["Concorrente Exemplo", 1200, 80, 60, 0, 3500],
+      ]),
+      "COMPETITORS"
+    );
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+    const parsed = parseLinkedinWorkbook(buffer);
+    expect(parsed.reportType).toBe("competitors");
+    expect(parsed.dateFrom).toBe("2025-07-20");
+    expect(parsed.dateTo).toBe("2026-07-19");
+    expect(parsed.competitors).toHaveLength(2);
+    expect(parsed.competitors[0]).toMatchObject({
+      page_name: "Bismarchi | Pires Sociedade de Advogados",
+      new_followers: 765,
+      publications: 145,
+      reactions: 2989,
+    });
+  });
 });

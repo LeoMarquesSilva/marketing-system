@@ -4,6 +4,7 @@ import type {
   LinkedinWorkbookData,
   ParsedLinkedinDailyMetric,
   ParsedLinkedinDemographic,
+  ParsedLinkedinCompetitorSnapshot,
   ParsedLinkedinFollowerDailyMetric,
   ParsedLinkedinPost,
   ParsedLinkedinVisitorDailyMetric,
@@ -77,10 +78,13 @@ function excelDateParts(value: CellValue): {
     /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
   );
   if (match) {
+    const first = Number(match[1]);
+    const second = Number(match[2]);
+    const usesDayFirst = first > 12;
     return {
       year: Number(match[3]),
-      month: Number(match[1]),
-      day: Number(match[2]),
+      month: usesDayFirst ? second : first,
+      day: usesDayFirst ? first : second,
       hour: Number(match[4] ?? 0),
       minute: Number(match[5] ?? 0),
       second: Number(match[6] ?? 0),
@@ -97,6 +101,40 @@ function excelDateParts(value: CellValue): {
     minute: parsed.getUTCMinutes(),
     second: parsed.getUTCSeconds(),
   };
+}
+
+function parseCompetitorSheet(rows: Matrix): {
+  competitors: ParsedLinkedinCompetitorSnapshot[];
+  dateFrom: string | null;
+  dateTo: string | null;
+} {
+  const headerIndex = findHeaderRow(rows, [
+    "Page",
+    "Novos seguidores",
+    "Publicações",
+    "Comentários",
+    "Reações",
+  ]);
+  if (headerIndex < 0) {
+    throw new Error("A aba de concorrência não contém os cabeçalhos esperados.");
+  }
+  const columns = columnMap(rows[headerIndex]);
+  const periodRow = rows.slice(0, headerIndex).find((row) => dateOnly(row[0]) && dateOnly(row[1]));
+  const dateFrom = periodRow ? dateOnly(periodRow[0]) : null;
+  const dateTo = periodRow ? dateOnly(periodRow[1]) : null;
+  const competitors = rows.slice(headerIndex + 1).flatMap((row) => {
+    const pageName = textValue(cell(row, columns, "Page"));
+    if (!pageName) return [];
+    return [{
+      page_name: pageName,
+      new_followers: integerValue(cell(row, columns, "Novos seguidores")),
+      publications: integerValue(cell(row, columns, "Publicações")),
+      comments: integerValue(cell(row, columns, "Comentários")),
+      comments_per_day: numberValue(cell(row, columns, "Comentários por dia")),
+      reactions: integerValue(cell(row, columns, "Reações")),
+    }];
+  });
+  return { competitors, dateFrom, dateTo };
 }
 
 function isoDate(value: CellValue): string | null {
@@ -346,6 +384,7 @@ export function parseLinkedinWorkbook(buffer: Buffer | Uint8Array): LinkedinWork
       followerDailyMetrics: [],
       visitorDailyMetrics: [],
       demographics: [],
+      competitors: [],
       posts,
       warnings,
       dateFrom: dates[0] ?? null,
@@ -366,6 +405,7 @@ export function parseLinkedinWorkbook(buffer: Buffer | Uint8Array): LinkedinWork
       followerDailyMetrics,
       visitorDailyMetrics: [],
       demographics,
+      competitors: [],
       posts: [],
       warnings: demographics.length === 0 ? ["O arquivo não contém recortes demográficos."] : [],
       dateFrom: dates[0] ?? null,
@@ -390,6 +430,7 @@ export function parseLinkedinWorkbook(buffer: Buffer | Uint8Array): LinkedinWork
       followerDailyMetrics: [],
       visitorDailyMetrics,
       demographics,
+      competitors: [],
       posts: [],
       warnings: demographics.length === 0 ? ["O arquivo não contém recortes demográficos."] : [],
       dateFrom: dates[0] ?? null,
@@ -397,7 +438,29 @@ export function parseLinkedinWorkbook(buffer: Buffer | Uint8Array): LinkedinWork
     };
   }
 
+  const competitorSheet = sheets.find(({ rows }) =>
+    findHeaderRow(rows, ["Page", "Novos seguidores", "Publicações", "Reações"]) >= 0
+  );
+  if (competitorSheet) {
+    const { competitors, dateFrom, dateTo } = parseCompetitorSheet(competitorSheet.rows);
+    if (competitors.length === 0) {
+      throw new Error("O relatório de concorrência não contém páginas válidas.");
+    }
+    return {
+      reportType: "competitors",
+      dailyMetrics: [],
+      followerDailyMetrics: [],
+      visitorDailyMetrics: [],
+      demographics: [],
+      competitors,
+      posts: [],
+      warnings: dateFrom && dateTo ? [] : ["O período do benchmark não foi identificado."],
+      dateFrom,
+      dateTo,
+    };
+  }
+
   throw new Error(
-    "Não foi possível reconhecer o relatório. Envie o arquivo de conteúdo, seguidores ou visitantes do LinkedIn."
+    "Não foi possível reconhecer o relatório. Envie o arquivo de conteúdo, seguidores, visitantes ou concorrência do LinkedIn."
   );
 }

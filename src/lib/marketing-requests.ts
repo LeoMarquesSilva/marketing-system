@@ -164,7 +164,9 @@ export async function fetchMarketingRequests(
     return { rows, error: null };
   }
 
-  let { rows, error } = await fetchAllPages(KANBAN_SELECT);
+  const initialResult = await fetchAllPages(KANBAN_SELECT);
+  let rows = initialResult.rows;
+  const { error } = initialResult;
 
   if (error) {
     logSupabaseError("Erro ao buscar solicitações", error);

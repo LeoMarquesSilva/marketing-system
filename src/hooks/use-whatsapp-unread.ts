@@ -31,7 +31,9 @@ export function useWhatsappUnreadCount() {
   useEffect(() => {
     if (!user) return;
 
-    void refresh();
+    const initialRefreshId = setTimeout(() => {
+      void refresh();
+    }, 0);
     const pollId = setInterval(refresh, 30_000);
 
     const channel = supabase
@@ -49,6 +51,7 @@ export function useWhatsappUnreadCount() {
       .subscribe();
 
     return () => {
+      clearTimeout(initialRefreshId);
       if (debounceRef.current) clearTimeout(debounceRef.current);
       clearInterval(pollId);
       supabase.removeChannel(channel);
