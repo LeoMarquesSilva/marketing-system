@@ -5,6 +5,7 @@ import { createClient as createSsrClient } from "@/utils/supabase/server";
 import type {
   NfcActionConfig,
   NfcActionType,
+  NfcAssetAdminData,
   NfcDashboardData,
   NfcPublicResolution,
   NfcTag,
@@ -22,7 +23,12 @@ import {
   sanitizeTechnicalError,
   signN8nPayload,
 } from "@/lib/nfc/security";
-import { nfcTagInputSchema } from "@/lib/nfc/validation";
+import {
+  nfcAssetAdminReturnSchema,
+  nfcAssetCreateSchema,
+  nfcAssetUpdateSchema,
+  nfcTagInputSchema,
+} from "@/lib/nfc/validation";
 export { getNfcPublicUrl } from "@/lib/nfc/public-url";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
@@ -417,6 +423,310 @@ export async function listNfcTemplates(): Promise<NfcTemplate[]> {
     .order("name");
   if (error) throw new NfcHttpError("Não foi possível carregar os modelos.", 500, "TEMPLATES_LIST_FAILED");
   return (data ?? []) as NfcTemplate[];
+}
+
+function getAssetRpcCode(error: NfcQueryError | null): string | null {
+  if (!error) return null;
+  const message = [error.message, error.details, error.hint].filter(Boolean).join(" ");
+  return [
+    "ASSET_NOT_REGISTERED",
+    "ASSET_ALREADY_CHECKED_OUT",
+    "ASSET_IN_MAINTENANCE",
+    "ASSET_INACTIVE",
+    "ASSET_NOT_CHECKED_OUT",
+    "ASSET_HAS_OPEN_LOAN",
+    "ASSET_NOT_FOUND",
+    "ASSET_STATUS_INVALID",
+  ].find((code) => message.includes(code)) ?? null;
+}
+
+function assetRpcError(
+  error: NfcQueryError | null,
+  assetLabel = "Item"
+): NfcHttpError {
+  const code = getAssetRpcCode(error);
+  const messages: Record<string, string> = {
+    ASSET_NOT_REGISTERED: `${assetLabel} não cadastrado no inventário.`,
+    ASSET_ALREADY_CHECKED_OUT: `${assetLabel} já está com outra pessoa.`,
+    ASSET_IN_MAINTENANCE: `${assetLabel} está em manutenção.`,
+    ASSET_INACTIVE: `${assetLabel} está inativo.`,
+    ASSET_NOT_CHECKED_OUT: `${assetLabel} não possui retirada em aberto.`,
+    ASSET_HAS_OPEN_LOAN: "Registre a devolução antes de alterar a situação deste item.",
+    ASSET_NOT_FOUND: "Item não encontrado.",
+    ASSET_STATUS_INVALID: "Situação do item inválida.",
+  };
+  if (code) {
+    return new NfcHttpError(
+      messages[code],
+      code === "ASSET_NOT_FOUND" ? 404 : 409,
+      code
+    );
+  }
+  return new NfcHttpError(
+    "Não foi possível atualizar o inventário.",
+    500,
+    "ASSET_INVENTORY_FAILED"
+  );
+}
+
+export async function listNfcAssetInventory(): Promise<NfcAssetAdminData> {
+  await requireNfcManager();
+  const admin = createNfcAdminClient();
+  const [assetsResult, loansResult, tagsResult, usersResult] = await Promise.all([
+    admin
+      .from("nfc_assets")
+      .select("id, tag_id, asset_number, label, status, notes, created_at, updated_at")
+      .order("asset_number"),
+    admin
+      .from("nfc_asset_loans")
+      .select(
+        "id, asset_id, tag_id, asset_number, borrower_user_id, checked_out_by, checked_out_at, returned_at, returned_by, return_notes"
+      )
+      .order("checked_out_at", { ascending: false })
+      .limit(1000),
+    admin
+      .from("nfc_tags")
+      .select("id, code, name, action_config")
+      .eq("action_type", "asset_loan")
+      .is("deleted_at", null)
+      .order("name"),
+    admin.from("users").select("id, name, department, avatar_url"),
+  ]);
+  if (
+    assetsResult.error ||
+    loansResult.error ||
+    tagsResult.error ||
+    usersResult.error
+  ) {
+    throw new NfcHttpError(
+      "Não foi possível carregar o controle de itens.",
+      500,
+      "ASSET_INVENTORY_LIST_FAILED"
+    );
+  }
+
+  const tags = (tagsResult.data ?? []).map((tag) => {
+    const config = (tag.action_config ?? {}) as NfcActionConfig;
+    return {
+      id: String(tag.id),
+      code: String(tag.code),
+      name: String(tag.name),
+      assetLabel: config.assetLabel || "Item",
+    };
+  });
+  const tagById = new Map(tags.map((tag) => [tag.id, tag]));
+  const users = (usersResult.data ?? []).map((user) => ({
+    id: String(user.id),
+    name: String(user.name),
+    department: user.department ? String(user.department) : null,
+    avatarUrl: user.avatar_url ? String(user.avatar_url) : null,
+  }));
+  const userById = new Map(users.map((user) => [user.id, user]));
+  const assets = (assetsResult.data ?? []).map((asset) => {
+    const tag = tagById.get(String(asset.tag_id));
+    return {
+      id: String(asset.id),
+      tagId: String(asset.tag_id),
+      tagName: tag?.name ?? "Etiqueta removida",
+      tagCode: tag?.code ?? "NFC",
+      assetNumber: String(asset.asset_number),
+      label: String(asset.label),
+      status: asset.status as NfcAssetAdminData["assets"][number]["status"],
+      notes: asset.notes ? String(asset.notes) : null,
+      createdAt: String(asset.created_at),
+      updatedAt: String(asset.updated_at),
+    };
+  });
+  const assetById = new Map(assets.map((asset) => [asset.id, asset]));
+  const fallbackUser = {
+    id: "",
+    name: "Colaborador removido",
+    department: null,
+    avatarUrl: null,
+  };
+  const loans = (loansResult.data ?? []).map((loan) => {
+    const tag = tagById.get(String(loan.tag_id));
+    const asset = assetById.get(String(loan.asset_id));
+    return {
+      id: String(loan.id),
+      assetId: String(loan.asset_id),
+      tagId: String(loan.tag_id),
+      tagName: tag?.name ?? "Etiqueta removida",
+      tagCode: tag?.code ?? "NFC",
+      assetNumber: String(loan.asset_number),
+      assetLabel: asset?.label ?? tag?.assetLabel ?? "Item",
+      borrower: userById.get(String(loan.borrower_user_id)) ?? fallbackUser,
+      checkedOutByName:
+        userById.get(String(loan.checked_out_by))?.name ?? "Colaborador removido",
+      checkedOutAt: String(loan.checked_out_at),
+      returnedAt: loan.returned_at ? String(loan.returned_at) : null,
+      returnedByName: loan.returned_by
+        ? userById.get(String(loan.returned_by))?.name ?? "Colaborador removido"
+        : null,
+      returnNotes: loan.return_notes ? String(loan.return_notes) : null,
+    };
+  });
+
+  return {
+    assets,
+    openLoans: loans.filter((loan) => !loan.returnedAt),
+    history: loans.filter((loan) => Boolean(loan.returnedAt)),
+    tags,
+  };
+}
+
+export async function createNfcAssets(
+  rawInput: unknown
+): Promise<{ created: number }> {
+  const manager = await requireNfcManager();
+  const parsed = nfcAssetCreateSchema.safeParse(rawInput);
+  if (!parsed.success) {
+    throw new NfcHttpError(
+      parsed.error.issues[0]?.message ?? "Dados inválidos.",
+      400,
+      "VALIDATION_ERROR"
+    );
+  }
+  const admin = createNfcAdminClient();
+  const { data: tag } = await admin
+    .from("nfc_tags")
+    .select("id")
+    .eq("id", parsed.data.tagId)
+    .eq("action_type", "asset_loan")
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!tag) {
+    throw new NfcHttpError(
+      "Selecione uma etiqueta de empréstimo válida.",
+      400,
+      "ASSET_TAG_INVALID"
+    );
+  }
+  const { error } = await admin.from("nfc_assets").insert(
+    parsed.data.assetNumbers.map((assetNumber) => ({
+      tag_id: parsed.data.tagId,
+      asset_number: assetNumber,
+      label: parsed.data.label,
+      notes: normalizeNullable(parsed.data.notes),
+      created_by: manager.profileId,
+      updated_by: manager.profileId,
+    }))
+  );
+  if (error?.code === "23505") {
+    throw new NfcHttpError(
+      "Um ou mais números já estão cadastrados nesta etiqueta.",
+      409,
+      "ASSET_NUMBER_DUPLICATE"
+    );
+  }
+  if (error) {
+    throw new NfcHttpError(
+      "Não foi possível cadastrar os itens.",
+      500,
+      "ASSET_CREATE_FAILED"
+    );
+  }
+  await admin.from("nfc_tag_audit_logs").insert({
+    tag_id: parsed.data.tagId,
+    actor_user_id: manager.profileId,
+    event_type: "assets_created",
+    metadata: {
+      count: parsed.data.assetNumbers.length,
+      assetNumbers: parsed.data.assetNumbers,
+    },
+  });
+  return { created: parsed.data.assetNumbers.length };
+}
+
+export async function updateNfcAsset(
+  id: string,
+  rawInput: unknown
+): Promise<void> {
+  const manager = await requireNfcManager();
+  const parsed = nfcAssetUpdateSchema.safeParse(rawInput);
+  if (!parsed.success) {
+    throw new NfcHttpError(
+      parsed.error.issues[0]?.message ?? "Dados inválidos.",
+      400,
+      "VALIDATION_ERROR"
+    );
+  }
+  const admin = createNfcAdminClient();
+  const { data: asset } = await admin
+    .from("nfc_assets")
+    .select("id, tag_id, asset_number, status")
+    .eq("id", id)
+    .maybeSingle();
+  if (!asset) {
+    throw new NfcHttpError("Item não encontrado.", 404, "ASSET_NOT_FOUND");
+  }
+  const { error } = await admin.rpc("nfc_update_asset", {
+    p_asset_id: id,
+    p_label: parsed.data.label,
+    p_status: parsed.data.status ?? null,
+    p_notes: normalizeNullable(parsed.data.notes),
+    p_updated_by: manager.profileId,
+  });
+  if (error) throw assetRpcError(error);
+  await admin.from("nfc_tag_audit_logs").insert({
+    tag_id: asset.tag_id,
+    actor_user_id: manager.profileId,
+    event_type: "asset_updated",
+    metadata: {
+      assetId: id,
+      assetNumber: asset.asset_number,
+      status: parsed.data.status ?? asset.status,
+    },
+  });
+}
+
+export async function returnNfcAssetByAdmin(
+  loanId: string,
+  rawInput: unknown
+): Promise<void> {
+  const manager = await requireNfcManager();
+  const parsed = nfcAssetAdminReturnSchema.safeParse(rawInput);
+  if (!parsed.success) {
+    throw new NfcHttpError(
+      parsed.error.issues[0]?.message ?? "Dados inválidos.",
+      400,
+      "VALIDATION_ERROR"
+    );
+  }
+  const admin = createNfcAdminClient();
+  const { data: loan } = await admin
+    .from("nfc_asset_loans")
+    .select("id, tag_id, asset_number, returned_at")
+    .eq("id", loanId)
+    .maybeSingle();
+  if (!loan) {
+    throw new NfcHttpError("Empréstimo não encontrado.", 404, "LOAN_NOT_FOUND");
+  }
+  if (loan.returned_at) {
+    throw new NfcHttpError(
+      "Este item já foi devolvido.",
+      409,
+      "ASSET_NOT_CHECKED_OUT"
+    );
+  }
+  const { error } = await admin.rpc("nfc_return_asset", {
+    p_tag_id: loan.tag_id,
+    p_asset_number: loan.asset_number,
+    p_returned_by: manager.profileId,
+    p_return_scan_id: null,
+    p_return_notes: normalizeNullable(parsed.data.notes),
+  });
+  if (error) throw assetRpcError(error);
+  await admin.from("nfc_tag_audit_logs").insert({
+    tag_id: loan.tag_id,
+    actor_user_id: manager.profileId,
+    event_type: "asset_returned_by_admin",
+    metadata: {
+      loanId,
+      assetNumber: loan.asset_number,
+      notes: normalizeNullable(parsed.data.notes),
+    },
+  });
 }
 
 function startOfUtcDay(date = new Date()): string {
@@ -885,65 +1195,28 @@ async function executeAssetLoan(
         "BORROWER_INVALID"
       );
     }
-    const { error } = await admin.from("nfc_asset_loans").insert({
-      tag_id: tag.id,
-      asset_number: assetNumber,
-      borrower_user_id: input.borrowerUserId,
-      checked_out_by: identity.profileId,
-      checkout_scan_id: input.scanId,
+    const { error } = await admin.rpc("nfc_checkout_asset", {
+      p_tag_id: tag.id,
+      p_asset_number: assetNumber,
+      p_borrower_user_id: input.borrowerUserId,
+      p_checked_out_by: identity.profileId,
+      p_checkout_scan_id: input.scanId,
     });
-    if (error?.code === "23505") {
-      throw new NfcHttpError(
-        `${config.assetLabel || "Este item"} já está com outra pessoa.`,
-        409,
-        "ASSET_ALREADY_CHECKED_OUT"
-      );
-    }
-    if (error) {
-      throw new NfcHttpError(
-        "Não foi possível registrar a retirada.",
-        500,
-        "ASSET_CHECKOUT_FAILED"
-      );
-    }
+    if (error) throw assetRpcError(error, config.assetLabel || "Item");
     return (
       config.checkoutMessage ||
       `${config.assetLabel || "Item"} ${assetNumber} retirado por ${String(borrower.name)}.`
     );
   }
   if (input.loanOperation === "return") {
-    const { data: openLoan } = await admin
-      .from("nfc_asset_loans")
-      .select("id")
-      .eq("tag_id", tag.id)
-      .eq("asset_number", assetNumber)
-      .is("returned_at", null)
-      .maybeSingle();
-    if (!openLoan) {
-      throw new NfcHttpError(
-        `${config.assetLabel || "Este item"} não possui retirada em aberto.`,
-        409,
-        "ASSET_NOT_CHECKED_OUT"
-      );
-    }
-    const { data: returned, error } = await admin
-      .from("nfc_asset_loans")
-      .update({
-        returned_at: new Date().toISOString(),
-        returned_by: identity.profileId,
-        return_scan_id: input.scanId,
-      })
-      .eq("id", openLoan.id)
-      .is("returned_at", null)
-      .select("id")
-      .maybeSingle();
-    if (error || !returned) {
-      throw new NfcHttpError(
-        "Não foi possível registrar a devolução.",
-        409,
-        "ASSET_RETURN_FAILED"
-      );
-    }
+    const { error } = await admin.rpc("nfc_return_asset", {
+      p_tag_id: tag.id,
+      p_asset_number: assetNumber,
+      p_returned_by: identity.profileId,
+      p_return_scan_id: input.scanId,
+      p_return_notes: null,
+    });
+    if (error) throw assetRpcError(error, config.assetLabel || "Item");
     return (
       config.returnMessage ||
       `${config.assetLabel || "Item"} ${assetNumber} devolvido com sucesso.`

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { nfcExecutionInputSchema, nfcTagInputSchema } from "@/lib/nfc/validation";
+import {
+  nfcAssetAdminReturnSchema,
+  nfcAssetCreateSchema,
+  nfcAssetUpdateSchema,
+  nfcExecutionInputSchema,
+  nfcTagInputSchema,
+} from "@/lib/nfc/validation";
 
 const baseTag = {
   name: "Impressora da recepção",
@@ -97,5 +103,29 @@ describe("NFC tag validation", () => {
         borrowerUserId: "a65da340-4c73-4291-bf20-3d2a60a1695d",
       }).success
     ).toBe(true);
+  });
+
+  it("normaliza e remove números duplicados no cadastro de itens", () => {
+    const parsed = nfcAssetCreateSchema.parse({
+      tagId: "571bc86c-cc9f-4829-9bb8-88dde3be7041",
+      label: "Guarda-chuva",
+      assetNumbers: [" gc-01 ", "GC-01", "gc-02"],
+    });
+
+    expect(parsed.assetNumbers).toEqual(["GC-01", "GC-02"]);
+  });
+
+  it("aceita manutenção como status administrativo", () => {
+    expect(
+      nfcAssetUpdateSchema.safeParse({
+        label: "Guarda-chuva",
+        status: "maintenance",
+        notes: "Cabo danificado",
+      }).success
+    ).toBe(true);
+  });
+
+  it("aceita devolução administrativa sem observação", () => {
+    expect(nfcAssetAdminReturnSchema.safeParse({}).success).toBe(true);
   });
 });

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { ArrowLeft, Plus, RadioTower } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -7,11 +8,13 @@ export function NfcPageHeading({
   description,
   backHref,
   primaryAction = true,
+  action,
 }: {
   title: string;
   description: string;
   backHref?: string;
   primaryAction?: boolean;
+  action?: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -32,15 +35,14 @@ export function NfcPageHeading({
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{description}</p>
         </div>
       </div>
-      {primaryAction && (
+      {action ?? (primaryAction && (
         <Button asChild className="shrink-0">
           <Link href="/nfc/tags/nova">
             <Plus />
             Nova etiqueta
           </Link>
         </Button>
-      )}
+      ))}
     </div>
   );
 }
-

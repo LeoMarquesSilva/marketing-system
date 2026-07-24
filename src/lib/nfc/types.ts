@@ -20,6 +20,7 @@ export const NFC_ACCESS_MODES = [
 export type NfcActionType = (typeof NFC_ACTION_TYPES)[number];
 export type NfcAccessMode = (typeof NFC_ACCESS_MODES)[number];
 export type NfcTagStatus = "active" | "inactive";
+export type NfcAssetStatus = "available" | "loaned" | "maintenance" | "inactive";
 
 export type NfcFormFieldType =
   | "short_text"
@@ -180,6 +181,47 @@ export interface NfcDirectoryUser {
   name: string;
   department: string | null;
   avatarUrl: string | null;
+}
+
+export interface NfcAssetInventoryItem {
+  id: string;
+  tagId: string;
+  tagName: string;
+  tagCode: string;
+  assetNumber: string;
+  label: string;
+  status: NfcAssetStatus;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NfcAssetLoanAdminItem {
+  id: string;
+  assetId: string;
+  tagId: string;
+  tagName: string;
+  tagCode: string;
+  assetNumber: string;
+  assetLabel: string;
+  borrower: NfcDirectoryUser;
+  checkedOutByName: string;
+  checkedOutAt: string;
+  returnedAt: string | null;
+  returnedByName: string | null;
+  returnNotes: string | null;
+}
+
+export interface NfcAssetAdminData {
+  assets: NfcAssetInventoryItem[];
+  openLoans: NfcAssetLoanAdminItem[];
+  history: NfcAssetLoanAdminItem[];
+  tags: Array<{
+    id: string;
+    code: string;
+    name: string;
+    assetLabel: string;
+  }>;
 }
 
 export interface NfcDashboardData {

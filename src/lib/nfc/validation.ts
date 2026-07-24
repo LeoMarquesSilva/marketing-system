@@ -130,4 +130,25 @@ export const nfcExecutionInputSchema = z.object({
   confirmed: z.literal(true),
 });
 
+export const nfcAssetCreateSchema = z.object({
+  tagId: z.string().uuid(),
+  label: z.string().trim().min(1).max(80),
+  assetNumbers: z
+    .array(z.string().trim().min(1).max(80))
+    .min(1)
+    .max(200)
+    .transform((numbers) => [...new Set(numbers.map((number) => number.toLocaleUpperCase("pt-BR")))]),
+  notes: z.string().trim().max(1000).nullable().optional(),
+});
+
+export const nfcAssetUpdateSchema = z.object({
+  label: z.string().trim().min(1).max(80),
+  status: z.enum(["available", "maintenance", "inactive"]).optional(),
+  notes: z.string().trim().max(1000).nullable().optional(),
+});
+
+export const nfcAssetAdminReturnSchema = z.object({
+  notes: z.string().trim().max(1000).nullable().optional(),
+});
+
 export type NfcTagInputParsed = z.infer<typeof nfcTagInputSchema>;
