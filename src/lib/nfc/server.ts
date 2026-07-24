@@ -670,7 +670,7 @@ async function getPublicDirectory(admin: SupabaseClient): Promise<
 > {
   const { data, error } = await admin
     .from("users")
-    .select("id, name, department")
+    .select("id, name, department, avatar_url")
     .eq("is_active", true)
     .order("name");
   if (error) {
@@ -684,6 +684,7 @@ async function getPublicDirectory(admin: SupabaseClient): Promise<
     id: String(user.id),
     name: String(user.name),
     department: user.department ? String(user.department) : null,
+    avatarUrl: user.avatar_url ? String(user.avatar_url) : null,
   }));
 }
 
@@ -705,11 +706,13 @@ async function getActiveAssetLoans(
       "ASSET_LOANS_FAILED"
     );
   }
-  const names = new Map(directoryUsers.map((user) => [user.id, user.name]));
+  const usersById = new Map(directoryUsers.map((user) => [user.id, user]));
   return (data ?? []).map((loan) => ({
     assetNumber: String(loan.asset_number),
     borrowerUserId: String(loan.borrower_user_id),
-    borrowerName: names.get(String(loan.borrower_user_id)) ?? "Colaborador",
+    borrowerName: usersById.get(String(loan.borrower_user_id))?.name ?? "Colaborador",
+    borrowerAvatarUrl:
+      usersById.get(String(loan.borrower_user_id))?.avatarUrl ?? null,
     checkedOutAt: String(loan.checked_out_at),
   }));
 }

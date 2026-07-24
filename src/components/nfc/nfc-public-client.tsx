@@ -14,25 +14,26 @@ import {
   Sparkles,
   TriangleAlert,
   Umbrella,
-  UserRound,
   WifiOff,
 } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { NfcCollaboratorSelect } from "@/components/nfc/nfc-collaborator-select";
 import type { NfcFormField, NfcPublicResolution } from "@/lib/nfc/types";
 
 type Screen = "loading" | "ready" | "executing" | "success" | "error";
 
 function PublicShell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-[#f4f8f9] p-4 sm:p-6">
+    <main className="relative flex min-h-dvh items-start justify-center overflow-x-hidden bg-[#f4f8f9] px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 sm:items-center sm:p-6">
       <div className="pointer-events-none absolute -left-24 top-1/4 h-72 w-72 rounded-full bg-[#47cdd0]/10 blur-3xl" />
       <div className="pointer-events-none absolute -right-20 bottom-0 h-80 w-80 rounded-full bg-[#3e84a8]/10 blur-3xl" />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#47cdd0] via-[#3e84a8] to-[#48466e]" />
-      <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-[#dce9eb] bg-white/95 p-5 shadow-[0_28px_80px_-38px_rgba(3,32,47,0.42)] backdrop-blur sm:p-7">
-        <div className="mb-6 flex items-center justify-between gap-4 border-b border-[#e5eef0] pb-4">
+      <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-[#dce9eb] bg-white/95 p-4 shadow-[0_28px_80px_-38px_rgba(3,32,47,0.42)] backdrop-blur sm:p-7">
+        <div className="mb-5 flex items-center justify-between gap-3 border-b border-[#e5eef0] pb-4 sm:mb-6 sm:gap-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/ORQESTRAI/identidade-visual/logos/orquestrai-logo-horizontal-ai-color.svg"
@@ -155,20 +156,13 @@ function FormField({
     return (
       <div className="space-y-1.5">
         {label}
-        <select
+        <NfcCollaboratorSelect
           id={`nfc-field-${field.id}`}
           required={field.required}
+          users={directoryUsers}
           value={stringValue}
-          onChange={(event) => onChange(event.target.value)}
-          className="h-11 w-full rounded-md border border-input bg-white px-3 text-sm focus:border-[#47cdd0] focus:outline-none focus:ring-2 focus:ring-[#47cdd0]/20"
-        >
-          <option value="">Selecione o colaborador</option>
-          {directoryUsers.map((user) => (
-            <option key={user.id} value={user.id}>
-              {user.name}{user.department ? ` — ${user.department}` : ""}
-            </option>
-          ))}
-        </select>
+          onValueChange={onChange}
+        />
       </div>
     );
   }
@@ -440,23 +434,14 @@ export function NfcPublicClient({ token }: { token: string }) {
             {loanOperation === "checkout" ? (
               <div className="space-y-1.5">
                 <Label htmlFor="nfc-borrower">Quem está retirando?</Label>
-                <div className="relative">
-                  <UserRound className="pointer-events-none absolute left-3 top-3 h-5 w-5 text-[#347796]" />
-                  <select
-                    id="nfc-borrower"
-                    required
-                    value={borrowerUserId}
-                    onChange={(event) => setBorrowerUserId(event.target.value)}
-                    className="h-11 w-full appearance-none rounded-md border border-input bg-white pl-10 pr-3 text-sm focus:border-[#47cdd0] focus:outline-none focus:ring-2 focus:ring-[#47cdd0]/20"
-                  >
-                    <option value="">Selecione o colaborador</option>
-                    {(resolution?.directoryUsers ?? []).map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}{user.department ? ` — ${user.department}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <NfcCollaboratorSelect
+                  id="nfc-borrower"
+                  required
+                  users={resolution?.directoryUsers ?? []}
+                  value={borrowerUserId}
+                  onValueChange={setBorrowerUserId}
+                  placeholder="Selecione quem está retirando"
+                />
               </div>
             ) : (
               <div className="rounded-xl border border-[#dce9eb] bg-[#f7fafb] p-4">
@@ -481,9 +466,21 @@ export function NfcPublicClient({ token }: { token: string }) {
                   }
                   return (
                     <div className="flex items-start gap-3">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e8f8f8] text-[#347796]">
-                        <UserRound className="h-4 w-4" />
-                      </span>
+                      <Avatar className="size-10 border border-[#dce9eb] bg-[#e8f8f8]">
+                        <AvatarImage
+                          src={loan.borrowerAvatarUrl || undefined}
+                          alt={loan.borrowerName}
+                        />
+                        <AvatarFallback className="bg-[#e8f8f8] text-xs font-semibold text-[#285f7a]">
+                          {loan.borrowerName
+                            .trim()
+                            .split(/\s+/)
+                            .slice(0, 2)
+                            .map((part) => part[0])
+                            .join("")
+                            .toLocaleUpperCase("pt-BR")}
+                        </AvatarFallback>
+                      </Avatar>
                       <div>
                         <p className="text-sm font-semibold">{loan.borrowerName}</p>
                         <p className="mt-0.5 text-xs text-muted-foreground">

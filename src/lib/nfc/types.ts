@@ -163,19 +163,23 @@ export interface NfcPublicResolution {
     assetLabel?: string;
     assetNumberLabel?: string;
   };
-  directoryUsers?: Array<{
-    id: string;
-    name: string;
-    department: string | null;
-  }>;
+  directoryUsers?: NfcDirectoryUser[];
   activeLoans?: Array<{
     assetNumber: string;
     borrowerUserId: string;
     borrowerName: string;
+    borrowerAvatarUrl: string | null;
     checkedOutAt: string;
   }>;
   message?: string;
   retryAfterSeconds?: number;
+}
+
+export interface NfcDirectoryUser {
+  id: string;
+  name: string;
+  department: string | null;
+  avatarUrl: string | null;
 }
 
 export interface NfcDashboardData {
