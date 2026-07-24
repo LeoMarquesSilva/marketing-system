@@ -23,6 +23,7 @@ import {
   signN8nPayload,
 } from "@/lib/nfc/security";
 import { nfcTagInputSchema } from "@/lib/nfc/validation";
+export { getNfcPublicUrl } from "@/lib/nfc/public-url";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
@@ -922,15 +923,6 @@ export async function executePublicNfcAction(input: ExecutePublicInput): Promise
     if (error instanceof NfcHttpError) throw error;
     throw new NfcHttpError(sanitized.message, 502, sanitized.code);
   }
-}
-
-export function getNfcPublicUrl(token: string, origin?: string): string {
-  const base =
-    process.env.NFC_PUBLIC_BASE_URL ||
-    process.env.MARKETING_PUBLIC_URL ||
-    origin ||
-    "http://localhost:3000";
-  return `${base.replace(/\/$/, "")}/t/${token}`;
 }
 
 export function toApiError(error: unknown): { status: number; body: { error: string; code: string } } {
