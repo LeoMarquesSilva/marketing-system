@@ -322,8 +322,9 @@ describe("Task 13 — jornadas Perfis NFC (aceitação em módulo)", () => {
     expect(state.localizations.en.practiceArea).toBe("");
 
     const payload = buildProfileUpdatePayload(state);
-    const pt = payload.localizations.find((item) => item.locale === "pt-BR");
-    const en = payload.localizations.find((item) => item.locale === "en");
+    const localizations = payload.localizations ?? [];
+    const pt = localizations.find((item) => item.locale === "pt-BR");
+    const en = localizations.find((item) => item.locale === "en");
 
     expect(pt?.tagline).toBe("Nova frase em português.");
     expect(pt?.bio).toBe(ptLocalization.bio);
@@ -440,7 +441,7 @@ describe("Task 13 — jornadas Perfis NFC (aceitação em módulo)", () => {
     });
     expect(action.type).toBe("professional_profile");
     expect(action.loadingMessage).toBe("Abrindo o perfil de Letícia Rodrigues");
-    expect(action.profile.displayName).toBe("Letícia Rodrigues");
+    expect(action.profile?.displayName).toBe("Letícia Rodrigues");
     expect(JSON.stringify(action)).not.toContain("secreto@");
   });
 
