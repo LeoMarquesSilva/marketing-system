@@ -345,7 +345,20 @@ export function NfcPublicClient({
     return <PublicShell><StateMessage icon={WifiOff} title="Etiqueta não encontrada" message={resolution.message || "Confira se a URL foi gravada corretamente."} tone="red" /></PublicShell>;
   }
   if (resolution?.state === "inactive") {
-    return <PublicShell><StateMessage icon={WifiOff} title="Etiqueta inativa" message={resolution.message || "Esta etiqueta não está disponível no momento."} tone="amber" /></PublicShell>;
+    const unpublished = (resolution.message ?? "").toLowerCase().includes("não foi publicado");
+    return (
+      <PublicShell>
+        <StateMessage
+          icon={WifiOff}
+          title={unpublished ? "Perfil ainda não publicado" : "Etiqueta inativa"}
+          message={
+            resolution.message ||
+            "Esta etiqueta não está disponível no momento."
+          }
+          tone="amber"
+        />
+      </PublicShell>
+    );
   }
   if (resolution?.state === "rate_limited" || resolution?.state === "cooldown") {
     return <PublicShell><StateMessage icon={Clock3} title="Limite temporário atingido" message={`${resolution.message ?? "Aguarde para tentar novamente."}${resolution.retryAfterSeconds ? ` Tente em ${resolution.retryAfterSeconds} segundos.` : ""}`} tone="amber" /></PublicShell>;

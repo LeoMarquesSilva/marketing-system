@@ -1006,11 +1006,18 @@ async function toProfessionalProfilePublicAction(
   }
 
   const hint = await loadProfessionalProfilePublicHint(admin, profileId);
-  if (!hint || hint.status !== "published") {
+  if (!hint) {
     return {
       ok: false,
       state: "not_found",
-      message: "Perfil profissional indisponível.",
+      message: "Perfil vinculado não encontrado.",
+    };
+  }
+  if (hint.status !== "published") {
+    return {
+      ok: false,
+      state: "inactive",
+      message: "Este perfil ainda não foi publicado.",
     };
   }
 
