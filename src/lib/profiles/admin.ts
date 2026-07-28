@@ -47,6 +47,23 @@ export class ProfileHttpError extends Error {
   }
 }
 
+/**
+ * Traduz erro do domínio em resposta HTTP com código estável.
+ * Erro inesperado nunca vaza mensagem interna — nem valor de contato privado.
+ */
+export function toProfileApiError(error: unknown): {
+  status: number;
+  body: { error: string; code: string };
+} {
+  if (error instanceof ProfileHttpError) {
+    return { status: error.status, body: { error: error.message, code: error.code } };
+  }
+  return {
+    status: 500,
+    body: { error: "Ocorreu um erro inesperado.", code: "PROFILE_INTERNAL_ERROR" },
+  };
+}
+
 export function createProfileAdminClient(): SupabaseClient {
   if (!serviceKey) {
     throw new ProfileHttpError(
