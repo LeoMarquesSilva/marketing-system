@@ -769,7 +769,7 @@ git commit -m "feat: aggregate recent profile content"
 - Create: `src/app/perfil/[slug]/contato/route.ts`
 - Create: `src/app/perfil/not-found.tsx`
 
-- [ ] **Step 1: Write failing public projection tests**
+- [x] **Step 1: Write failing public projection tests**
 
 Verify:
 
@@ -782,7 +782,7 @@ Verify:
 - recent-content failure still returns the profile;
 - campaign failure returns `campaignMessage=null`.
 
-- [ ] **Step 2: Write failing vCard tests**
+- [x] **Step 2: Write failing vCard tests**
 
 Cover CRLF output, UTF-8 characters, escaping commas/semicolons/newlines, organization, role, visible email/phone only, LinkedIn/site URLs and deterministic filename.
 
@@ -793,7 +793,7 @@ buildVCard(contact: VCardContact): string
 makeVCardFilename(displayName: string): string
 ```
 
-- [ ] **Step 3: Implement the explicit public projection**
+- [x] **Step 3: Implement the explicit public projection**
 
 Expose:
 
@@ -810,7 +810,7 @@ getPublicProfessionalProfile(
 
 Use the server-only admin client with explicit column lists. Do not return admin flags, private values, audit columns or unpublished localizations.
 
-- [ ] **Step 4: Implement the route and robots metadata**
+- [x] **Step 4: Implement the route and robots metadata**
 
 `/perfil/[slug]?lang=en` renders the profile; unsupported locale falls back to PT. Old slugs issue a permanent redirect to the current slug. Add `src/app/perfil/not-found.tsx` with a friendly institutional not-found/inactive state. `generateMetadata` includes:
 
@@ -820,7 +820,7 @@ robots: { index: false, follow: false, googleBot: { index: false, follow: false 
 
 Also include Open Graph name, role, description and professional photo while retaining `noindex`. Draft/archived/not found uses `notFound()` and therefore renders the friendly institutional state rather than a generic framework page.
 
-- [ ] **Step 5: Implement the vCard route**
+- [x] **Step 5: Implement the vCard route**
 
 The route reuses the public projection and records `contact_download` on a best-effort basis. Return:
 
@@ -830,7 +830,7 @@ Content-Disposition: attachment; filename="<safe-name>.vcf"
 Cache-Control: private, no-store
 ```
 
-- [ ] **Step 6: Run focused tests**
+- [x] **Step 6: Run focused tests**
 
 ```powershell
 npm.cmd test -- src/lib/profiles/public.test.ts src/lib/profiles/vcard.test.ts
@@ -838,7 +838,7 @@ npm.cmd test -- src/lib/profiles/public.test.ts src/lib/profiles/vcard.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit the public domain**
+- [x] **Step 7: Commit the public domain**
 
 ```powershell
 git add src/lib/profiles/public.ts src/lib/profiles/public.test.ts src/lib/profiles/vcard.ts src/lib/profiles/vcard.test.ts src/app/perfil
