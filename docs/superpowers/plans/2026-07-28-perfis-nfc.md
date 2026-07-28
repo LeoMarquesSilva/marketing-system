@@ -1174,15 +1174,19 @@ Docs commit: `docs: mark Perfis NFC task 13 complete`.
 - Source data, read-only: `C:\Users\Leonardo Marques\Downloads\Colaboradores-MKT.xlsm`
 - No generated source file should be committed
 
-- [ ] **Step 1: Apply the reviewed migration**
+- [x] **Step 1: Apply the reviewed migration**
 
 Use the connected Supabase project and `SUPABASE_MANAGEMENT_ACCESS_TOKEN` through its existing environment/credential flow. Never print the token. Apply only the new professional-profile migration.
 
-- [ ] **Step 2: Run Supabase advisors**
+Applied via MCP `user-ORQESTRAI`: `professional_profiles` + `nfc_professional_profile_action_type`.
+
+- [x] **Step 2: Run Supabase advisors**
 
 Review security and performance findings. Fix any new RLS, function search-path, missing-index or policy issue before continuing.
 
-- [ ] **Step 3: Preview the real workbook**
+Security: nenhum aviso novo em `professional_profile*`. Performance: índices novos `unused_index` (esperado sem tráfego).
+
+- [x] **Step 3: Preview the real workbook**
 
 Upload `Colaboradores-MKT.xlsm` through the admin preview. Expected source baseline from prior inspection: 91 rows, 54 active and 37 inactive. Investigate rather than apply if counts differ materially.
 
@@ -1195,17 +1199,25 @@ Verify:
 - inactive rows unselected by default;
 - unmatched rows clearly listed.
 
-- [ ] **Step 4: Apply selected active rows as drafts**
+Preview real: 91 linhas (54 ativas / 37 inativas). Outcomes: 49 create, 18 inactiveSource, 24 unmatched. 5 ativos sem usuário correspondente ficaram em unmatched (investigar depois).
+
+- [x] **Step 4: Apply selected active rows as drafts**
 
 Apply only reviewed matches. Re-run the preview afterward; expected: selected matches move to unchanged/update as appropriate, with zero duplicate profile per user and zero published profile created by import.
+
+Apply: created=49, updated=0, skipped=0, unmatched=0. DB: 49 draft, 0 published, 49 user_ids distintos.
 
 - [ ] **Step 5: Prepare two pilot profiles without broad publication**
 
 Complete two representative profiles in PT and EN, link test cards and validate preview. Keep every other imported profile as draft. Publish pilot profiles only after the user approves their content; the implementation itself must not guess public professional copy.
 
-- [ ] **Step 6: Record the import verification**
+Pendente de conteúdo aprovado pelo usuário (não inventar copy pública).
+
+- [x] **Step 6: Record the import verification**
 
 Capture counts in the task handoff: created, updated, unchanged, unmatched, inactive skipped, and published. Do not commit the workbook or exported personal data.
+
+Handoff: created=49, updated=0, unchanged=0 (pré-import), unmatched=24, inactive skipped=18, published=0.
 
 ---
 
