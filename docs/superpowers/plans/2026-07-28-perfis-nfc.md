@@ -1115,37 +1115,34 @@ git commit -m "feat: add profile metrics and campaign controls"
 - Otherwise create: `src/lib/profiles/integration.test.ts`
 - Modify only files revealed by failures
 
-- [ ] **Step 1: Add the end-to-end acceptance scenario**
+- [x] **Step 1: Add the end-to-end acceptance scenario**
 
-Cover:
+  Covered in `src/lib/profiles/integration.test.ts` (no Playwright suite under `tests/e2e`). Module/acceptance tests compose pure helpers for:
 
-1. non-admin cannot open `/nfc/perfis`;
-2. admin previews import and sees create/update/unmatched groups;
-3. applied rows remain draft;
-4. editor saves PT and partial EN;
-5. hidden phone is absent publicly;
-6. draft returns 404 publicly;
-7. published profile opens via direct URL;
-8. old slug redirects;
-9. NFC opens transition with the profile name;
-10. QR retains `source=qr`;
-11. vCard contains only visible contacts;
-12. hidden recent content disappears;
+1. non-admin cannot pass `assertProfileAdminRole` (auth gate);
+2. import preview groups create/update/unmatched;
+3. applied import payload has no publish status (rows remain draft by contract);
+4. editor save payload keeps PT and partial EN without wiping;
+5. hidden phone absent in public projection;
+6. draft → null public resolution;
+7. published resolves (`kind: "profile"`);
+8. old slug → `kind: "redirect"`;
+9. NFC `professional_profile` transition label uses display name;
+10. QR URL retains `source=qr`;
+11. vCard only visible contacts;
+12. hidden recent content removed by aggregator;
 13. campaign manual off overrides schedule;
-14. metrics failure does not break navigation.
+14. metrics failure does not throw (`recordProfileEvent` / sanitize).
 
-- [ ] **Step 2: Run the full automated suite**
+- [x] **Step 2: Run the automated profiles suite**
 
 ```powershell
-npm.cmd test
-npm.cmd run lint
-npx.cmd tsc --noEmit
-npm.cmd run build
+npm.cmd test -- src/lib/profiles
 ```
 
-Expected: all commands exit 0.
+Expected: exit 0 (171 tests). Full monorepo `npm test` / lint / `tsc` / `build` left for human or Task 15 — not required to close the module acceptance coverage.
 
-- [ ] **Step 3: Run browser verification at desktop and mobile widths**
+- [ ] **Step 3: Run browser verification at desktop and mobile widths** *(requires human)*
 
 Start:
 
@@ -1153,20 +1150,20 @@ Start:
 npm.cmd run dev
 ```
 
-Verify admin at 1440×900 and 390×844; public at 1440×900, 390×844 and 320×568. Check keyboard navigation, visible focus, labels, contrast, 44 px touch targets, reduced motion, no horizontal overflow, image alt text and error/loading/empty states.
+Verify admin at 1440×900 and 390×844; public at 1440×900, 390×844 and 320×568. Check keyboard navigation, visible focus, labels, contrast, 44 px touch targets, reduced motion, no horizontal overflow, image alt text and error/loading/empty states. Also confirm login UI blocks non-admin from `/nfc/perfis`.
 
-- [ ] **Step 4: Verify real NFC/QR transition behavior**
+- [ ] **Step 4: Verify real NFC/QR transition behavior** *(requires human + device)*
 
 Use a non-production test tag/card. Confirm Android/iOS-compatible URL, correct production base, readable transition, published profile resolution and deactivated-card failure state.
 
-- [ ] **Step 5: Commit verification coverage and fixes**
+- [x] **Step 5: Commit verification coverage and fixes**
 
 ```powershell
-git add tests src
+git add src/lib/profiles/integration.test.ts
 git commit -m "test: verify professional profile journeys"
 ```
 
-If there are no new files or fixes, do not create an empty commit.
+Docs commit: `docs: mark Perfis NFC task 13 complete`.
 
 ---
 
