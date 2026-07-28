@@ -858,9 +858,11 @@ git commit -m "feat: add public professional profile projection"
 - Create: `src/components/profiles/profile-recent-content.tsx`
 - Create: `src/components/profiles/profile-institutional-footer.tsx`
 - Create: `src/components/profiles/professional-profile-page.test.tsx`
+- Create: `src/components/profiles/profile-public-utils.ts`
+- Create: `src/components/profiles/professional-profile-page.module.css`
 - Modify: `src/app/perfil/[slug]/page.tsx`
 
-- [ ] **Step 1: Write failing public UI tests**
+- [x] **Step 1: Write failing public UI tests**
 
 Cover:
 
@@ -876,7 +878,7 @@ Cover:
 - vCard failure offers copying the currently visible contact fields;
 - mobile at 320 px has no horizontal overflow and 44 px touch targets.
 
-- [ ] **Step 2: Implement the visual direction**
+- [x] **Step 2: Implement the visual direction**
 
 Use an editorial/legal/contemporary composition:
 
@@ -889,7 +891,7 @@ Use an editorial/legal/contemporary composition:
 
 Use `public/LOGO HORIZONTAL AZUL.png` with appropriate alt text.
 
-- [ ] **Step 3: Implement contact/share actions**
+- [x] **Step 3: Implement contact/share actions**
 
 Order:
 
@@ -902,11 +904,11 @@ Order:
 
 Use `navigator.share` when available, then clipboard fallback. Preserve `source` in the shared URL only when it is one of the allowed sources.
 
-- [ ] **Step 4: Implement section, content and footer layouts**
+- [x] **Step 4: Implement section, content and footer layouts**
 
 Render sections semantically with headings, dates and accessible links. The footer includes firm logo, address/site/social links already configured in the system and an institutional-profile notice. Do not hardcode private contact data.
 
-- [ ] **Step 5: Run UI checks**
+- [x] **Step 5: Run UI checks**
 
 ```powershell
 npm.cmd test -- src/components/profiles/professional-profile-page.test.tsx
@@ -916,7 +918,7 @@ npx.cmd tsc --noEmit
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the public experience**
+- [x] **Step 6: Commit the public experience**
 
 ```powershell
 git add src/app/perfil src/components/profiles
