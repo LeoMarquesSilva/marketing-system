@@ -451,18 +451,22 @@ export async function listProfessionalProfiles(
   }
 
   const userIds = Array.from(
-    new Set(((profileRows ?? []) as Row[]).map((row) => row.user_id as string).filter(Boolean))
+    new Set(
+      ((profileRows ?? []) as unknown as Row[])
+        .map((row) => row.user_id as string)
+        .filter(Boolean)
+    )
   );
   const avatarByUserId = new Map<string, string | null>();
   if (userIds.length > 0) {
     const { data: userRows } = await db.from("users").select("id, avatar_url").in("id", userIds);
-    for (const row of (userRows ?? []) as Row[]) {
+    for (const row of (userRows ?? []) as unknown as Row[]) {
       avatarByUserId.set(row.id as string, (row.avatar_url as string | null) ?? null);
     }
   }
 
   const localizationsByProfile = new Map<string, ProfessionalProfileLocalization[]>();
-  for (const row of (localizationRows ?? []) as Row[]) {
+  for (const row of (localizationRows ?? []) as unknown as Row[]) {
     const profileId = row.profile_id as string;
     const list = localizationsByProfile.get(profileId) ?? [];
     list.push(mapLocalization(row));
@@ -471,7 +475,7 @@ export async function listProfessionalProfiles(
 
   const cardsByProfile = new Map<string, { total: number; active: number }>();
   const cardStatusCounts = { pending: 0, active: 0, replaced: 0, inactive: 0 };
-  for (const row of (cardRows ?? []) as Row[]) {
+  for (const row of (cardRows ?? []) as unknown as Row[]) {
     const profileId = row.profile_id as string;
     const entry = cardsByProfile.get(profileId) ?? { total: 0, active: 0 };
     entry.total += 1;
