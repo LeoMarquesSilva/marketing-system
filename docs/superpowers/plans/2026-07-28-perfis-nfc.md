@@ -1023,7 +1023,7 @@ git commit -m "feat: connect profiles to NFC cards"
 - Create: `src/components/nfc/profiles/profile-analytics-panel.tsx`
 - Create: `src/components/nfc/profiles/profile-campaign-settings.tsx`
 
-- [ ] **Step 1: Write failing metric-sanitization tests**
+- [x] **Step 1: Write failing metric-sanitization tests**
 
 Accept only:
 
@@ -1038,7 +1038,7 @@ Accept only:
 
 Reject/strip arbitrary URL, message, phone, e-mail, IP, coordinates, user-agent and referrer fields. Unknown event types return 400. Database failure must not be surfaced to the public UI.
 
-- [ ] **Step 2: Implement best-effort metric recording**
+- [x] **Step 2: Implement best-effort metric recording**
 
 Expose:
 
@@ -1054,7 +1054,7 @@ recordProfileEvent(input: {
 
 The public API validates slug/profile publication and calls the rate-limited database function. It returns 204 even when the coarse limit is reached or the insert fails after validation. Log only a stable error code and profile ID.
 
-- [ ] **Step 3: Wire public events**
+- [x] **Step 3: Wire public events**
 
 - server-render visit: `profile_view`;
 - `/t` entry: `nfc_scan` or `qr_scan`;
@@ -1064,7 +1064,7 @@ The public API validates slug/profile publication and calls the rate-limited dat
 
 Use `navigator.sendBeacon` or `fetch(..., { keepalive: true })` for browser events.
 
-- [ ] **Step 4: Build analytics**
+- [x] **Step 4: Build analytics**
 
 The profile admin panel shows:
 
@@ -1077,7 +1077,7 @@ The profile admin panel shows:
 
 Default to the last 30 days. Aggregation is server-side; no raw event dump is needed in the UI.
 
-- [ ] **Step 5: Build global campaign controls**
+- [x] **Step 5: Build global campaign controls**
 
 Under `/nfc/perfis`, add:
 
@@ -1088,7 +1088,7 @@ Under `/nfc/perfis`, add:
 
 Manual off overrides an active date range. Invalid end-before-start is rejected.
 
-- [ ] **Step 6: Run focused and regression tests**
+- [x] **Step 6: Run focused and regression tests**
 
 ```powershell
 npm.cmd test -- src/lib/profiles/metrics.test.ts src/app/api/perfis/[slug]/events/events-api.test.ts src/lib/profiles/campaign.test.ts
@@ -1098,7 +1098,7 @@ npx.cmd tsc --noEmit
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit metrics and campaign**
+- [x] **Step 7: Commit metrics and campaign**
 
 ```powershell
 git add src/lib/profiles src/app/api/perfis src/components/profiles src/components/nfc/profiles
