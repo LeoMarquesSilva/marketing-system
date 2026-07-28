@@ -2,16 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, LayoutDashboard, PackageCheck, RadioTower, Shapes } from "lucide-react";
+import { Activity, IdCard, LayoutDashboard, PackageCheck, RadioTower, Shapes } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const items = [
+export const NFC_SUBNAV_ITEMS = [
   { href: "/nfc", label: "Visão geral", icon: LayoutDashboard, exact: true },
   { href: "/nfc/tags", label: "Etiquetas", icon: RadioTower },
+  { href: "/nfc/perfis", label: "Perfis", icon: IdCard },
   { href: "/nfc/itens", label: "Itens", icon: PackageCheck },
   { href: "/nfc/logs", label: "Logs", icon: Activity },
   { href: "/nfc/modelos", label: "Modelos", icon: Shapes },
 ];
+
+const items = NFC_SUBNAV_ITEMS;
 
 export function NfcSubnav() {
   const pathname = usePathname();
