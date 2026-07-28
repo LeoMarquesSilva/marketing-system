@@ -14,12 +14,18 @@ import { FloatingTimer } from "@/components/timer/floating-timer";
 /** Telas sem chrome (sidebar/header) nem tour. */
 const BARE_LAYOUT_PATHS = ["/login", "/alterar-senha", "/t"];
 
+function isBareLayoutPath(pathname: string): boolean {
+  if (BARE_LAYOUT_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+    return true;
+  }
+  // Perfil profissional público NFC — sem shell do ORQESTRAI.
+  return /^\/perfil\/[^/]+(?:\/contato)?\/?$/.test(pathname);
+}
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
-  const isBareLayout = BARE_LAYOUT_PATHS.some(
-    (p) => pathname === p || pathname.startsWith(p + "/")
-  );
+  const isBareLayout = isBareLayoutPath(pathname);
 
   const handleSidebarExpandedChange = (expanded: boolean) => {
     setSidebarExpanded(expanded);
