@@ -136,6 +136,19 @@ function hasText(value: string | null | undefined): boolean {
   return Boolean(value && value.trim());
 }
 
+/**
+ * Foto efetiva do perfil: override editorial, senão avatar do usuário do sistema.
+ * `users.avatar_url` é a fonte canônica; `photo_url` só substitui quando preenchido.
+ */
+export function resolveProfilePhotoUrl(
+  profilePhotoUrl: string | null | undefined,
+  userAvatarUrl: string | null | undefined
+): string | null {
+  if (hasText(profilePhotoUrl)) return profilePhotoUrl!.trim();
+  if (hasText(userAvatarUrl)) return userAvatarUrl!.trim();
+  return null;
+}
+
 function findLocalization(
   localizations: ProfessionalProfileLocalization[],
   locale: ProfileLocale
@@ -437,6 +450,17 @@ export async function listProfessionalProfiles(
     );
   }
 
+  const userIds = Array.from(
+    new Set(((profileRows ?? []) as Row[]).map((row) => row.user_id as string).filter(Boolean))
+  );
+  const avatarByUserId = new Map<string, string | null>();
+  if (userIds.length > 0) {
+    const { data: userRows } = await db.from("users").select("id, avatar_url").in("id", userIds);
+    for (const row of (userRows ?? []) as Row[]) {
+      avatarByUserId.set(row.id as string, (row.avatar_url as string | null) ?? null);
+    }
+  }
+
   const localizationsByProfile = new Map<string, ProfessionalProfileLocalization[]>();
   for (const row of (localizationRows ?? []) as Row[]) {
     const profileId = row.profile_id as string;
@@ -479,6 +503,7 @@ export async function listProfessionalProfiles(
 
     const detailForScore: ProfessionalProfileAdminDetail = {
       ...base,
+      photoUrl: resolveProfilePhotoUrl(base.photoUrl, avatarByUserId.get(base.userId)),
       userName: null,
       localizations,
       sections: [],
@@ -496,7 +521,7 @@ export async function listProfessionalProfiles(
       userId: base.userId,
       slug: base.slug,
       status: base.status,
-      photoUrl: base.photoUrl,
+      photoUrl: detailForScore.photoUrl,
       displayName: pt?.displayName ?? null,
       role: pt?.role ?? null,
       practiceArea: pt?.practiceArea ?? null,
@@ -565,7 +590,7 @@ export async function getProfessionalProfileAdmin(
       .from("professional_profile_content_overrides")
       .select("source_type, source_id, is_hidden")
       .eq("profile_id", id),
-    db.from("users").select("name").eq("id", base.userId).maybeSingle(),
+    db.from("users").select("name, avatar_url").eq("id", base.userId).maybeSingle(),
   ]);
 
   const sectionIds = ((sectionRows ?? []) as Row[]).map((row) => row.id as string);
@@ -632,6 +657,10 @@ export async function getProfessionalProfileAdmin(
 
   return {
     ...base,
+    photoUrl: resolveProfilePhotoUrl(
+      base.photoUrl,
+      ((userRow as Row | null)?.avatar_url as string | null) ?? null
+    ),
     userName: ((userRow as Row | null)?.name as string | null) ?? null,
     localizations: ((localizationRows ?? []) as Row[]).map(mapLocalization),
     sections,

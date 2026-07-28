@@ -7,6 +7,7 @@ import {
   listMissingPublishRequirements,
   matchesProfileListFilters,
   mergeLocalizationForSave,
+  resolveProfilePhotoUrl,
 } from "@/lib/profiles/admin";
 import type {
   ProfessionalProfileAdminDetail,
@@ -89,6 +90,18 @@ describe("listMissingPublishRequirements", () => {
   it("exige foto", () => {
     const missing = listMissingPublishRequirements({ ...completeDetail, photoUrl: null });
     expect(missing).toContain("photo");
+  });
+
+  it("usa a foto do usuário do sistema quando o perfil não tem override", () => {
+    expect(
+      resolveProfilePhotoUrl(null, "https://cdn.exemplo.com/avatar-sistema.jpg")
+    ).toBe("https://cdn.exemplo.com/avatar-sistema.jpg");
+    expect(
+      resolveProfilePhotoUrl(
+        "https://cdn.exemplo.com/override.jpg",
+        "https://cdn.exemplo.com/avatar-sistema.jpg"
+      )
+    ).toBe("https://cdn.exemplo.com/override.jpg");
   });
 
   it("exige nome, cargo, área, frase e mini-CV em português", () => {

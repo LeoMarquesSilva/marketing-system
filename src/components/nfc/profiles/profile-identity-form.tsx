@@ -120,6 +120,9 @@ export function ProfileIdentityForm({
             onChange={(event) => onChange({ photoUrl: event.target.value })}
             placeholder="https://…"
           />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Vazio usa a foto do cadastro do colaborador no ORQESTRAI. Preencha só para substituir.
+          </p>
         </div>
 
         <div>

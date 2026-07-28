@@ -6,7 +6,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createProfileAdminClient } from "@/lib/profiles/admin";
+import { createProfileAdminClient, resolveProfilePhotoUrl } from "@/lib/profiles/admin";
 import { resolveCampaignMessage } from "@/lib/profiles/campaign";
 import { listRecentProfessionalContent } from "@/lib/profiles/content";
 import {
@@ -361,7 +361,7 @@ async function assemblePublicProfile(
       .select("id, section_key, enabled, sort_order")
       .eq("profile_id", row.id)
       .order("sort_order", { ascending: true }),
-    db.from("users").select("name").eq("id", row.user_id).maybeSingle(),
+    db.from("users").select("name, avatar_url").eq("id", row.user_id).maybeSingle(),
   ]);
 
   const localizations = ((localizationRows ?? []) as Row[]).map(mapLocalizationRow);
@@ -431,7 +431,10 @@ async function assemblePublicProfile(
     pt,
     en,
     oab: row.oab,
-    photoUrl: row.photo_url,
+    photoUrl: resolveProfilePhotoUrl(
+      row.photo_url,
+      ((userRow as unknown as Row | null)?.avatar_url as string | null) ?? null
+    ),
     joinedOn: row.joined_on,
     showTenure: row.show_tenure,
   });
