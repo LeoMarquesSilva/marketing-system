@@ -36,7 +36,7 @@
 - Test/inspect: `supabase/migrations/20260720120000_nfc_hub.sql`
 - Test/inspect: `supabase/migrations/20260724184734_nfc_forms_cafe_cultura_asset_loans.sql`
 
-- [ ] **Step 1: Generate the migration filename with the official CLI**
+- [x] **Step 1: Generate the migration filename with the official CLI**
 
 Run:
 
@@ -46,7 +46,7 @@ npx.cmd --yes supabase@latest migration new professional_profiles
 
 Expected: the CLI prints one new path under `supabase/migrations/`. Use that exact path in all remaining steps.
 
-- [ ] **Step 2: Define enums/check constraints and the core profile tables**
+- [x] **Step 2: Define enums/check constraints and the core profile tables**
 
 Create these tables with UUID primary keys, UTC timestamps, `created_by`/`updated_by` where applicable, foreign keys and explicit check constraints:
 
@@ -90,7 +90,7 @@ create table public.professional_profile_localizations (
 );
 ```
 
-- [ ] **Step 3: Define ordered sections, localized entries and content overrides**
+- [x] **Step 3: Define ordered sections, localized entries and content overrides**
 
 Use:
 
@@ -138,7 +138,7 @@ create table public.professional_profile_content_overrides (
 );
 ```
 
-- [ ] **Step 4: Define card history, redirects, campaign and privacy-safe events**
+- [x] **Step 4: Define card history, redirects, campaign and privacy-safe events**
 
 Use:
 
@@ -199,7 +199,7 @@ Add indexes for status/slug, profile entry ordering, card status, event profile/
 
 Add `public.record_professional_profile_event(...)` as the only event-write function. It validates the closed event/source/locale lists and enforces a coarse per-profile/event minute cap of 300 accepted events without storing IP, user-agent, referrer or visitor identifiers.
 
-- [ ] **Step 5: Add an atomic import function**
+- [x] **Step 5: Add an atomic import function**
 
 Create `public.apply_professional_profile_import(p_rows jsonb, p_actor_id uuid)` that:
 
@@ -212,11 +212,11 @@ Create `public.apply_professional_profile_import(p_rows jsonb, p_actor_id uuid)`
 7. never accepts or stores a birth-date property;
 8. returns counts for `created`, `updated`, `skipped`, `unmatched`.
 
-- [ ] **Step 6: Enable RLS and deny direct anonymous reads**
+- [x] **Step 6: Enable RLS and deny direct anonymous reads**
 
 Enable RLS on every new table. Add authenticated admin policies following the repository’s role lookup pattern, but do not create public/anon SELECT policies. Public profile reads will use the server-only Supabase admin client and a field-limited projection. Every `security definer` function must set an explicit safe `search_path`, revoke public execution and grant only the server role required by the application.
 
-- [ ] **Step 7: Validate the migration locally or through the connected project**
+- [x] **Step 7: Validate the migration locally or through the connected project**
 
 Run the available local validation:
 
@@ -226,7 +226,7 @@ npx.cmd --yes supabase@latest db lint --local
 
 If no local stack exists, inspect/apply with the connected Supabase tooling, then run database advisors. Verify anon cannot select/insert, a non-admin authenticated user cannot mutate, and the server/admin path can perform the intended operations. Expected: no destructive-change warning, no missing RLS warning, unsafe-function warning or unindexed foreign-key warning for the new tables.
 
-- [ ] **Step 8: Commit the database domain**
+- [x] **Step 8: Commit the database domain**
 
 ```powershell
 $migration = Get-ChildItem supabase/migrations/*_professional_profiles.sql |
@@ -252,7 +252,7 @@ git commit -m "feat: add professional profile schema"
 - Create: `src/lib/profiles/campaign.ts`
 - Create: `src/lib/profiles/campaign.test.ts`
 
-- [ ] **Step 1: Write failing tests for validation, slugging, locale fallback and campaign precedence**
+- [x] **Step 1: Write failing tests for validation, slugging, locale fallback and campaign precedence**
 
 Cover:
 
@@ -275,7 +275,7 @@ npm.cmd test -- src/lib/profiles/validation.test.ts src/lib/profiles/slug.test.t
 
 Expected: FAIL because modules do not exist.
 
-- [ ] **Step 2: Define shared types**
+- [x] **Step 2: Define shared types**
 
 At minimum:
 
@@ -319,7 +319,7 @@ export interface PublicProfessionalProfile {
 
 Add admin detail/list/import/analytics contracts without exposing private contacts through the public type.
 
-- [ ] **Step 3: Implement Zod schemas and pure helpers**
+- [x] **Step 3: Implement Zod schemas and pure helpers**
 
 Implement:
 
@@ -335,7 +335,7 @@ Campaign rule: `enabled=false` always wins; when enabled, missing boundaries are
 
 Localization rule: an unapproved English record falls back completely to PT; an approved English record may still fall back field-by-field for optional blank values.
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 ```powershell
 npm.cmd test -- src/lib/profiles/validation.test.ts src/lib/profiles/slug.test.ts src/lib/profiles/localization.test.ts src/lib/profiles/campaign.test.ts
@@ -343,7 +343,7 @@ npm.cmd test -- src/lib/profiles/validation.test.ts src/lib/profiles/slug.test.t
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit contracts and helpers**
+- [x] **Step 5: Commit contracts and helpers**
 
 ```powershell
 git add src/lib/profiles
@@ -361,7 +361,7 @@ git commit -m "feat: add professional profile contracts"
 - Create: `src/lib/profiles/admin.test.ts`
 - Modify only if a reusable helper is missing: `src/lib/supabase-server.ts`
 
-- [ ] **Step 1: Write failing repository tests**
+- [x] **Step 1: Write failing repository tests**
 
 Mock the Supabase boundary and verify:
 
@@ -381,7 +381,7 @@ npm.cmd test -- src/lib/profiles/admin.test.ts
 
 Expected: FAIL.
 
-- [ ] **Step 2: Implement the strict authorization boundary**
+- [x] **Step 2: Implement the strict authorization boundary**
 
 Expose:
 
@@ -394,7 +394,7 @@ export async function requireProfessionalProfileAdmin(): Promise<{
 
 Reuse the current authenticated-user lookup, but do not call `requireNfcManager()` because that also accepts a section permission.
 
-- [ ] **Step 3: Implement admin repository operations**
+- [x] **Step 3: Implement admin repository operations**
 
 Expose:
 
@@ -409,7 +409,7 @@ getProfessionalProfileAnalytics(profileId: string, range): Promise<ProfessionalP
 
 Use explicit selects. Do not use `select("*")` in the public projection implemented in Task 9.
 
-- [ ] **Step 4: Run focused tests and typecheck through the build**
+- [x] **Step 4: Run focused tests and typecheck through the build**
 
 ```powershell
 npm.cmd test -- src/lib/profiles/admin.test.ts
@@ -418,7 +418,7 @@ npx.cmd tsc --noEmit
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the admin repository**
+- [x] **Step 5: Commit the admin repository**
 
 ```powershell
 git add src/lib/profiles
@@ -439,7 +439,7 @@ git commit -m "feat: add professional profile repository"
 - Create: `src/app/api/nfc/profiles/campaign/route.ts`
 - Create: `src/app/api/nfc/profiles/profile-api.test.ts`
 
-- [ ] **Step 1: Write failing route tests**
+- [x] **Step 1: Write failing route tests**
 
 Test 401 unauthenticated, 403 non-admin, 400 invalid payload, 404 missing profile and successful list/read/update/status/override/campaign responses.
 
@@ -451,7 +451,7 @@ The status payload is:
 
 The update payload includes base fields, two localizations, section visibility/order and entry CRUD in one transaction-shaped request.
 
-- [ ] **Step 2: Implement thin route handlers**
+- [x] **Step 2: Implement thin route handlers**
 
 Each handler must:
 
@@ -463,7 +463,7 @@ Each handler must:
 
 Use stable codes such as `PROFILE_FORBIDDEN`, `PROFILE_INVALID`, `PROFILE_NOT_FOUND`, `PROFILE_SAVE_FAILED`.
 
-- [ ] **Step 3: Run route and repository tests**
+- [x] **Step 3: Run route and repository tests**
 
 ```powershell
 npm.cmd test -- src/app/api/nfc/profiles/profile-api.test.ts src/lib/profiles/admin.test.ts
@@ -471,7 +471,7 @@ npm.cmd test -- src/app/api/nfc/profiles/profile-api.test.ts src/lib/profiles/ad
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit the admin API**
+- [x] **Step 4: Commit the admin API**
 
 ```powershell
 git add src/app/api/nfc/profiles
@@ -738,7 +738,7 @@ listRecentProfessionalContent(
 
 Normalize each source to id, type, title, image, URL and published date. Use `Promise.allSettled` so one source cannot blank the page.
 
-- [ ] **Step 3: Run focused tests**
+- [x] **Step 3: Run focused tests**
 
 Before testing, add the editor panel that previews the automatically associated items, labels their source/date and lets an admin hide or restore one item through the content-override API. The action changes only the override table, never the original publication.
 
