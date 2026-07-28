@@ -947,7 +947,7 @@ git commit -m "feat: add editorial public profiles"
 - Create: `src/app/api/nfc/profiles/cards/[cardId]/qr/route.ts`
 - Create: `src/components/nfc/profiles/profile-cards-panel.tsx`
 
-- [ ] **Step 1: Write failing NFC contract tests**
+- [x] **Step 1: Write failing NFC contract tests**
 
 Add `professional_profile` to `NFC_ACTION_TYPES` and `profileId?: string` to `NfcActionConfig`. Assert:
 
@@ -959,7 +959,7 @@ Add `professional_profile` to `NFC_ACTION_TYPES` and `profileId?: string` to `Nf
 - programmed NFC URL is `/t/<token>?source=nfc`;
 - base URL remains `https://marketing-system-xi.vercel.app` outside local development.
 
-- [ ] **Step 2: Implement card repository operations**
+- [x] **Step 2: Implement card repository operations**
 
 Expose:
 
@@ -972,7 +972,7 @@ getProfileCardQrPayload(cardId: string): Promise<{ url: string; png: Buffer }>
 
 Replacing a card must retire the former active card in the same transaction and preserve its history.
 
-- [ ] **Step 3: Extend NFC validation and execution**
+- [x] **Step 3: Extend NFC validation and execution**
 
 `resolvePublicNfcTag` returns a profile action containing only current slug/display name/locale hint. Execution for `professional_profile` records the scan best-effort and redirects to:
 
@@ -982,15 +982,15 @@ Replacing a card must retire the former active card in the same transaction and 
 
 The transition screen displays “Abrindo o perfil de <nome>” and never a generic action label.
 
-- [ ] **Step 4: Extend the NFC tag form**
+- [x] **Step 4: Extend the NFC tag form**
 
 Add “Perfil profissional” to action type. The profile selector shows photo, name, role and publication status, is searchable and responsive. Draft profiles may be linked as pending but cannot activate a card.
 
-- [ ] **Step 5: Build the editor card panel**
+- [x] **Step 5: Build the editor card panel**
 
 Show internal card code, label, NFC tag, status, creation/issue/activation/retirement dates, replaced-card history, permanent NFC URL, QR preview/download, activate, replace and deactivate actions.
 
-- [ ] **Step 6: Run NFC and card tests**
+- [x] **Step 6: Run NFC and card tests**
 
 ```powershell
 npm.cmd test -- src/lib/nfc/validation.test.ts src/lib/nfc/security.test.ts src/lib/profiles/cards.test.ts
@@ -1000,7 +1000,7 @@ npx.cmd tsc --noEmit
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit NFC integration**
+- [x] **Step 7: Commit NFC integration**
 
 ```powershell
 git add src/lib/nfc src/lib/profiles/cards.ts src/lib/profiles/cards.test.ts src/components/nfc src/app/api/nfc/profiles
