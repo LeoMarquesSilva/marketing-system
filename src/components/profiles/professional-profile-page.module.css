@@ -1,0 +1,369 @@
+.root {
+  --pp-bg: #f7f5f0;
+  --pp-paper: #fbfaf7;
+  --pp-ink: #0b1f3a;
+  --pp-ink-muted: #3d4f66;
+  --pp-gold: #a68743;
+  --pp-gold-soft: rgba(166, 135, 67, 0.18);
+  --pp-line: rgba(11, 31, 58, 0.12);
+  --pp-measure: 42rem;
+  --pp-radius: 2px;
+  --pp-touch: 2.75rem; /* 44px */
+
+  min-height: 100vh;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+  background:
+    radial-gradient(1200px 480px at 10% -10%, rgba(166, 135, 67, 0.08), transparent 55%),
+    linear-gradient(180deg, var(--pp-bg) 0%, #f3f0e8 100%);
+  color: var(--pp-ink);
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.root :global(.pp-shell) {
+  width: min(100%, calc(var(--pp-measure) + 3rem));
+  margin: 0 auto;
+  padding: 1.25rem 1.25rem 3.5rem;
+  box-sizing: border-box;
+}
+
+.root :global(.pp-topbar) {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1.5rem;
+}
+
+.root :global(.pp-lang) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 0.8125rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.root :global(.pp-lang__link) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--pp-touch);
+  min-width: var(--pp-touch);
+  padding: 0 0.55rem;
+  color: var(--pp-ink-muted);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.root :global(.pp-lang__link.is-active) {
+  color: var(--pp-ink);
+  border-bottom-color: var(--pp-gold);
+}
+
+.root :global(.pp-lang__sep) {
+  color: var(--pp-line);
+}
+
+.root :global(.pp-campaign) {
+  margin-bottom: 2rem;
+  padding: 1rem 1.1rem;
+  border-left: 3px solid var(--pp-gold);
+  background: var(--pp-paper);
+}
+
+.root :global(.pp-campaign__label) {
+  margin: 0 0 0.35rem;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pp-gold);
+}
+
+.root :global(.pp-campaign__message) {
+  margin: 0;
+  line-height: 1.55;
+  color: var(--pp-ink);
+}
+
+.root :global(.pp-hero) {
+  margin-bottom: 2.25rem;
+}
+
+.root :global(.pp-hero__brand) {
+  margin-bottom: 1.75rem;
+}
+
+.root :global(.pp-hero__logo),
+.root :global(.pp-footer__logo) {
+  display: block;
+  width: auto;
+  max-width: min(180px, 70vw);
+  height: auto;
+}
+
+.root :global(.pp-hero__layout) {
+  display: grid;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (min-width: 640px) {
+  .root :global(.pp-hero__layout) {
+    grid-template-columns: 10rem 1fr;
+    gap: 2rem;
+  }
+}
+
+.root :global(.pp-hero__photo-wrap) {
+  width: 8.5rem;
+  height: 8.5rem;
+}
+
+.root :global(.pp-hero__photo),
+.root :global(.pp-hero__avatar) {
+  width: 8.5rem;
+  height: 8.5rem;
+  object-fit: cover;
+  border-radius: var(--pp-radius);
+  background: #e8e4da;
+}
+
+.root :global(.pp-hero__avatar) {
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--pp-line);
+  color: var(--pp-ink);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.root :global(.pp-hero__name) {
+  margin: 0;
+  font-size: clamp(1.75rem, 4vw, 2.35rem);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.root :global(.pp-hero__role) {
+  margin: 0.65rem 0 0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pp-gold);
+}
+
+.root :global(.pp-hero__area),
+.root :global(.pp-hero__oab),
+.root :global(.pp-hero__tenure) {
+  margin: 0.4rem 0 0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 0.95rem;
+  color: var(--pp-ink-muted);
+}
+
+.root :global(.pp-hero__tagline) {
+  margin: 1rem 0 0;
+  max-width: 34rem;
+  font-size: 1.125rem;
+  line-height: 1.55;
+}
+
+.root :global(.pp-hero__bio) {
+  margin: 1.5rem 0 0;
+  max-width: var(--pp-measure);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 0.98rem;
+  line-height: 1.7;
+  color: var(--pp-ink-muted);
+}
+
+.root :global(.pp-actions) {
+  margin-bottom: 2.75rem;
+}
+
+.root :global(.pp-actions__row) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.root :global(.pp-action) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--pp-touch);
+  min-width: var(--pp-touch);
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--pp-ink);
+  border-radius: var(--pp-radius);
+  background: transparent;
+  color: var(--pp-ink);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 0.875rem;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.root :global(.pp-action--primary) {
+  background: var(--pp-ink);
+  color: var(--pp-paper);
+}
+
+.root :global(.pp-action--secondary) {
+  border-color: var(--pp-gold);
+  color: var(--pp-ink);
+  background: var(--pp-gold-soft);
+}
+
+.root :global(.pp-action:hover),
+.root :global(.pp-action:focus-visible) {
+  background: var(--pp-ink);
+  color: var(--pp-paper);
+  outline: none;
+}
+
+.root :global(.pp-action--primary:hover),
+.root :global(.pp-action--primary:focus-visible) {
+  background: #16325a;
+}
+
+.root :global(.pp-actions__fallback) {
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--pp-line);
+  background: var(--pp-paper);
+}
+
+.root :global(.pp-actions__fallback p) {
+  margin: 0 0 0.75rem;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 0.9rem;
+  color: var(--pp-ink-muted);
+}
+
+.root :global(.pp-actions__status) {
+  margin: 0.75rem 0 0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 0.85rem;
+  color: var(--pp-ink-muted);
+}
+
+.root :global(.pp-sections),
+.root :global(.pp-recent) {
+  margin-bottom: 2.5rem;
+}
+
+.root :global(.pp-section + .pp-section) {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--pp-line);
+}
+
+.root :global(.pp-section__title) {
+  margin: 0 0 1rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.root :global(.pp-section__list),
+.root :global(.pp-recent__list) {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.root :global(.pp-section__item + .pp-section__item),
+.root :global(.pp-recent__item + .pp-recent__item) {
+  margin-top: 1.1rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--pp-line);
+}
+
+.root :global(.pp-section__item-head),
+.root :global(.pp-recent__item) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.root :global(.pp-section__item-title),
+.root :global(.pp-section__link),
+.root :global(.pp-recent__link),
+.root :global(.pp-recent__title) {
+  color: var(--pp-ink);
+  font-size: 1rem;
+  line-height: 1.4;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+.root :global(.pp-section__subtitle),
+.root :global(.pp-section__description) {
+  margin: 0.35rem 0 0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: var(--pp-ink-muted);
+}
+
+.root :global(.pp-section__date),
+.root :global(.pp-recent__date) {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 0.8rem;
+  color: var(--pp-ink-muted);
+}
+
+.root :global(.pp-footer) {
+  margin-top: 3rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--pp-line);
+}
+
+.root :global(.pp-footer__notice) {
+  margin: 1rem 0 0;
+  max-width: 32rem;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: var(--pp-ink-muted);
+}
+
+.root :global(.pp-footer__site) {
+  margin: 0.85rem 0 0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 0.9rem;
+}
+
+.root :global(.pp-footer__site a) {
+  color: var(--pp-ink);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root :global(.pp-action) {
+    transition: none;
+  }
+}
+
+@media (max-width: 320px) {
+  .root :global(.pp-shell) {
+    padding-inline: 0.85rem;
+  }
+
+  .root :global(.pp-actions__row) {
+    gap: 0.5rem;
+  }
+}
