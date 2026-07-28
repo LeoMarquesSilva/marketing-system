@@ -27,8 +27,19 @@ export async function generateMetadata({
   const locale = resolveProfileLocale(query.lang);
   const result = await getPublicProfessionalProfile(slug, locale);
 
-  if (!result || result.kind !== "profile") {
+  if (!result) {
     notFound();
+  }
+
+  if (result.kind === "redirect") {
+    return {
+      title: "Perfil — Bismarchi | Pires",
+      robots: {
+        index: false,
+        follow: false,
+        googleBot: { index: false, follow: false },
+      },
+    };
   }
 
   const { identity } = result.profile;
