@@ -574,7 +574,7 @@ git commit -m "feat: add profile import preview"
 - Create: `src/components/nfc/profiles/profile-status-badge.tsx`
 - Create: `src/components/nfc/profiles/profiles-dashboard-client.test.tsx`
 
-- [ ] **Step 1: Write failing component tests**
+- [x] **Step 1: Write failing component tests**
 
 Cover:
 
@@ -584,15 +584,15 @@ Cover:
 - the import dialog shows preview groups and defaults to safe selections;
 - mobile list preserves all actions without horizontal overflow.
 
-- [ ] **Step 2: Add the Perfis tab and server page**
+- [x] **Step 2: Add the Perfis tab and server page**
 
 The server page authorizes with `requireProfessionalProfileAdmin`, loads initial list/summary and renders the client. The dashboard summary includes total, draft, published, incomplete, scans in period and card counts by pending/active/replaced/inactive status.
 
-- [ ] **Step 3: Implement the responsive dashboard**
+- [x] **Step 3: Implement the responsive dashboard**
 
 Desktop uses a compact table; mobile uses stacked cards. Add search, status filter, completeness filter, import button and “Editar” action. Do not expose private phone/e-mail in the list.
 
-- [ ] **Step 4: Implement the two-step import dialog**
+- [x] **Step 4: Implement the two-step import dialog**
 
 Flow:
 
@@ -604,7 +604,7 @@ Flow:
 
 Inactive spreadsheet rows are unselected by default. No row is auto-published.
 
-- [ ] **Step 5: Run UI tests, lint and typecheck**
+- [x] **Step 5: Run UI tests, lint and typecheck**
 
 ```powershell
 npm.cmd test -- src/components/nfc/profiles/profiles-dashboard-client.test.tsx
@@ -614,7 +614,7 @@ npx.cmd tsc --noEmit
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the dashboard**
+- [x] **Step 6: Commit the dashboard**
 
 ```powershell
 git add src/components/nfc/nfc-subnav.tsx src/app/nfc/perfis src/components/nfc/profiles
@@ -636,7 +636,7 @@ git commit -m "feat: add profile admin dashboard"
 - Create: `src/components/nfc/profiles/profile-publication-panel.tsx`
 - Create: `src/components/nfc/profiles/profile-editor-client.test.tsx`
 
-- [ ] **Step 1: Write failing editor tests**
+- [x] **Step 1: Write failing editor tests**
 
 Verify:
 
@@ -650,17 +650,17 @@ Verify:
 - slug edits show the final public URL;
 - mobile layout keeps save/publish controls reachable.
 
-- [ ] **Step 2: Implement editor data flow**
+- [x] **Step 2: Implement editor data flow**
 
 Load full admin detail on the server. Keep a single form state with dirty tracking. Save explicit arrays for localizations, sections and entries. Warn before navigation with unsaved changes.
 
-- [ ] **Step 3: Implement identity and contact sections**
+- [x] **Step 3: Implement identity and contact sections**
 
 Identity: photo URL/current user avatar, display name, role, practice area, OAB, tagline, bio, slug.
 
 Contacts: professional e-mail, phone/WhatsApp, LinkedIn, site and independent visibility switches. Never infer phone visibility from presence.
 
-- [ ] **Step 4: Implement ordered content sections**
+- [x] **Step 4: Implement ordered content sections**
 
 Allow add/edit/hide/reorder for:
 
@@ -672,11 +672,11 @@ Allow add/edit/hide/reorder for:
 
 Keep `###`-level details inside the same visual item; avoid a generic JSON editor.
 
-- [ ] **Step 5: Implement publication checklist and preview link**
+- [x] **Step 5: Implement publication checklist and preview link**
 
 Required for publish: photo, PT name, role, practice area, tagline, bio, institutional e-mail, at least one enabled contact action and unique slug. OAB remains optional. Preview in draft is admin-authenticated; the public route remains unavailable until published.
 
-- [ ] **Step 6: Run focused tests and quality gates**
+- [x] **Step 6: Run focused tests and quality gates**
 
 ```powershell
 npm.cmd test -- src/components/nfc/profiles/profile-editor-client.test.tsx
@@ -686,7 +686,7 @@ npx.cmd tsc --noEmit
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit the editor**
+- [x] **Step 7: Commit the editor**
 
 ```powershell
 git add src/app/nfc/perfis/[id] src/components/nfc/profiles
