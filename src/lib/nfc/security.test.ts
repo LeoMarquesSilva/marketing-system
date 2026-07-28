@@ -36,6 +36,11 @@ describe("NFC security", () => {
     expect(isSensitiveAction("webhook", { workflowKey: "ticket" })).toBe(true);
     expect(isSensitiveAction("asset_loan", {})).toBe(true);
     expect(isSensitiveAction("url", { destinationUrl: "https://example.com" })).toBe(false);
+    expect(
+      isSensitiveAction("professional_profile", {
+        profileId: "7e3bd4e6-156a-4bdf-bc0f-61a0f08a9134",
+      })
+    ).toBe(false);
   });
 
   it("mantém idempotência por leitura e ação", () => {

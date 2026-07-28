@@ -223,6 +223,12 @@ export interface ProfessionalProfileCard {
   createdAt: string;
 }
 
+/** Cartão enriquecido com dados da etiqueta NFC vinculada (painel admin). */
+export interface ProfessionalProfileCardView extends ProfessionalProfileCard {
+  nfcTagCode: string | null;
+  nfcPublicToken: string | null;
+}
+
 export interface ProfessionalProfileAdminDetail {
   id: string;
   userId: string;
@@ -245,7 +251,7 @@ export interface ProfessionalProfileAdminDetail {
   updatedAt: string;
   localizations: ProfessionalProfileLocalization[];
   sections: ProfessionalProfileAdminSection[];
-  cards: ProfessionalProfileCard[];
+  cards: ProfessionalProfileCardView[];
   hiddenContentKeys: string[];
 }
 

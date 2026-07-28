@@ -7,6 +7,7 @@ export const NFC_ACTION_TYPES = [
   "menu",
   "sequence",
   "asset_loan",
+  "professional_profile",
 ] as const;
 
 export const NFC_ACCESS_MODES = [
@@ -76,6 +77,7 @@ export interface NfcActionConfig {
   assetNumberLabel?: string;
   checkoutMessage?: string;
   returnMessage?: string;
+  profileId?: string;
 }
 
 export interface NfcTag {
@@ -163,6 +165,11 @@ export interface NfcPublicResolution {
     successMessage?: string;
     assetLabel?: string;
     assetNumberLabel?: string;
+    profile?: {
+      slug: string;
+      displayName: string;
+      locale: "pt-BR" | "en";
+    };
   };
   directoryUsers?: NfcDirectoryUser[];
   activeLoans?: Array<{

@@ -209,7 +209,13 @@ function FormField({
   );
 }
 
-export function NfcPublicClient({ token }: { token: string }) {
+export function NfcPublicClient({
+  token,
+  initialSource,
+}: {
+  token: string;
+  initialSource?: "nfc" | "qr";
+}) {
   const [screen, setScreen] = useState<Screen>("loading");
   const [resolution, setResolution] = useState<NfcPublicResolution | null>(null);
   const [formData, setFormData] = useState<Record<string, unknown>>({});
@@ -219,6 +225,13 @@ export function NfcPublicClient({ token }: { token: string }) {
   const [borrowerUserId, setBorrowerUserId] = useState("");
   const [message, setMessage] = useState("");
   const autoExecuted = useRef(false);
+  const source =
+    initialSource ??
+    (typeof window !== "undefined"
+      ? ((new URLSearchParams(window.location.search).get("source") === "qr" ? "qr" : "nfc") as
+          | "nfc"
+          | "qr")
+      : "nfc");
 
   const execute = useCallback(
     async (menuItemId?: string) => {
@@ -234,6 +247,7 @@ export function NfcPublicClient({ token }: { token: string }) {
             menuItemId,
             formData,
             phone: phone || undefined,
+            source,
             loanOperation: resolution.action?.type === "asset_loan" ? loanOperation : undefined,
             assetNumber: resolution.action?.type === "asset_loan" ? assetNumber : undefined,
             borrowerUserId:
@@ -255,7 +269,7 @@ export function NfcPublicClient({ token }: { token: string }) {
         setScreen("error");
       }
     },
-    [resolution, token, formData, phone, loanOperation, assetNumber, borrowerUserId]
+    [resolution, token, formData, phone, loanOperation, assetNumber, borrowerUserId, source]
   );
 
   const load = useCallback(async () => {
@@ -284,7 +298,7 @@ export function NfcPublicClient({ token }: { token: string }) {
     if (
       screen === "ready" &&
       resolution?.state === "ready" &&
-      resolution.action?.type === "url" &&
+      (resolution.action?.type === "url" || resolution.action?.type === "professional_profile") &&
       !resolution.action.requiresConfirmation &&
       !autoExecuted.current
     ) {
@@ -303,7 +317,22 @@ export function NfcPublicClient({ token }: { token: string }) {
     return <PublicShell><LoadingExperience /></PublicShell>;
   }
   if (screen === "executing") {
-    return <PublicShell><StateMessage icon={LoaderCircle} title={resolution?.action?.loadingMessage || "Estamos cuidando disso"} message="Pode deixar esta página aberta. Isso deve levar apenas alguns segundos."><LoaderCircle className="h-5 w-5 animate-spin text-[#347796]" /></StateMessage></PublicShell>;
+    const profileName = resolution?.action?.profile?.displayName;
+    const executingTitle =
+      resolution?.action?.type === "professional_profile" && profileName
+        ? `Abrindo o perfil de ${profileName}`
+        : resolution?.action?.loadingMessage || "Estamos cuidando disso";
+    return (
+      <PublicShell>
+        <StateMessage
+          icon={LoaderCircle}
+          title={executingTitle}
+          message="Pode deixar esta página aberta. Isso deve levar apenas alguns segundos."
+        >
+          <LoaderCircle className="h-5 w-5 animate-spin text-[#347796]" />
+        </StateMessage>
+      </PublicShell>
+    );
   }
   if (screen === "success") {
     return <PublicShell><StateMessage icon={CheckCircle2} title="Tudo certo!" message={message} /></PublicShell>;

@@ -23,9 +23,12 @@ export async function generateMetadata({
 
 export default async function PublicNfcTagPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ token: string }>;
+  searchParams: Promise<{ source?: string }>;
 }) {
-  const { token } = await params;
-  return <NfcPublicClient token={token} />;
+  const [{ token }, query] = await Promise.all([params, searchParams]);
+  const initialSource = query.source === "qr" ? "qr" : query.source === "nfc" ? "nfc" : undefined;
+  return <NfcPublicClient token={token} initialSource={initialSource} />;
 }

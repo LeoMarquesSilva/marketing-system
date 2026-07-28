@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   CalendarCheck2,
@@ -9,6 +9,7 @@ import {
   FileText,
   FormInput,
   Globe2,
+  IdCard,
   ListChecks,
   MessageCircle,
   Plus,
@@ -39,6 +40,7 @@ import type {
   NfcTag,
   NfcTemplate,
 } from "@/lib/nfc/types";
+import type { ProfessionalProfileListItem } from "@/lib/profiles/types";
 import type { User } from "@/lib/users";
 
 const ENVIRONMENTS = ["Escritório", "Casa", "Evento", "Equipamento", "Material comercial", "Estoque"];
@@ -53,6 +55,12 @@ const ACTIONS: Array<{ value: NfcActionType; label: string; description: string;
   { value: "menu", label: "Menu de ações", description: "Apresenta vários atalhos.", icon: ListChecks },
   { value: "sequence", label: "Múltiplas ações", description: "Executa uma sequência segura.", icon: Workflow },
   { value: "asset_loan", label: "Retirada e devolução", description: "Controla itens emprestados.", icon: Umbrella },
+  {
+    value: "professional_profile",
+    label: "Perfil profissional",
+    description: "Abre a página pública do colaborador.",
+    icon: IdCard,
+  },
 ];
 
 const CAFE_FORM_PRESETS: Array<{
@@ -186,6 +194,8 @@ function emptyConfig(type: NfcActionType): NfcActionConfig {
         requireConfirmation: true,
         sensitive: true,
       };
+    case "professional_profile":
+      return { profileId: undefined };
   }
 }
 
@@ -245,6 +255,45 @@ export function NfcTagForm({
   const [selectedUsers, setSelectedUsers] = useState(allowedUserIds);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<NfcToastValue | null>(null);
+  const [profileSearch, setProfileSearch] = useState("");
+  const [profileOptions, setProfileOptions] = useState<ProfessionalProfileListItem[]>([]);
+  const [profilesLoading, setProfilesLoading] = useState(false);
+  const [selectedProfile, setSelectedProfile] = useState<ProfessionalProfileListItem | null>(null);
+
+  useEffect(() => {
+    if (values.actionType !== "professional_profile") return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setProfilesLoading(true);
+      try {
+        const params = new URLSearchParams();
+        if (profileSearch.trim()) params.set("search", profileSearch.trim());
+        const response = await fetch(`/api/nfc/profiles?${params.toString()}`, {
+          credentials: "include",
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          setProfileOptions([]);
+          return;
+        }
+        const body = (await response.json()) as { items?: ProfessionalProfileListItem[] };
+        const items = body.items ?? [];
+        setProfileOptions(items);
+        if (values.actionConfig.profileId) {
+          const match = items.find((item) => item.id === values.actionConfig.profileId);
+          if (match) setSelectedProfile(match);
+        }
+      } catch {
+        if (!controller.signal.aborted) setProfileOptions([]);
+      } finally {
+        if (!controller.signal.aborted) setProfilesLoading(false);
+      }
+    }, 250);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [values.actionType, values.actionConfig.profileId, profileSearch]);
 
   const setConfig = (patch: Partial<NfcActionConfig>) => {
     setValues((current) => ({ ...current, actionConfig: { ...current.actionConfig, ...patch } }));
@@ -662,6 +711,117 @@ export function NfcTagForm({
                 <FieldShell label="Mensagem após devolução">
                   <Input value={values.actionConfig.returnMessage ?? ""} onChange={(event) => setConfig({ returnMessage: event.target.value })} />
                 </FieldShell>
+              </div>
+            </div>
+          )}
+
+          {values.actionType === "professional_profile" && (
+            <div className="space-y-3">
+              <FieldShell
+                label="Perfil profissional"
+                help="Rascunhos podem ser vinculados; a ativação do cartão só ocorre com perfil publicado."
+              >
+                <Input
+                  value={profileSearch}
+                  onChange={(event) => setProfileSearch(event.target.value)}
+                  placeholder="Buscar por nome, papel ou slug…"
+                  aria-label="Buscar perfil profissional"
+                />
+              </FieldShell>
+              {selectedProfile && (
+                <div className="flex items-center gap-3 rounded-xl border border-[#bfe8e8] bg-[#f2fbfb] p-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  {selectedProfile.photoUrl ? (
+                    <img
+                      src={selectedProfile.photoUrl}
+                      alt=""
+                      className="h-12 w-12 rounded-full object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#347796] text-sm font-semibold text-white">
+                      {(selectedProfile.displayName ?? "?").slice(0, 1)}
+                    </span>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">
+                      {selectedProfile.displayName ?? selectedProfile.slug}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {selectedProfile.role ?? "Sem papel"} ·{" "}
+                      {selectedProfile.status === "published"
+                        ? "Publicado"
+                        : selectedProfile.status === "draft"
+                          ? "Rascunho"
+                          : "Arquivado"}
+                    </p>
+                  </div>
+                </div>
+              )}
+              <div
+                className="max-h-64 space-y-1 overflow-y-auto rounded-xl border border-[#dce9eb] bg-white p-1"
+                role="listbox"
+                aria-label="Resultados de perfis"
+              >
+                {profilesLoading && (
+                  <p className="px-3 py-2 text-xs text-muted-foreground">Buscando perfis…</p>
+                )}
+                {!profilesLoading && profileOptions.length === 0 && (
+                  <p className="px-3 py-2 text-xs text-muted-foreground">
+                    Nenhum perfil encontrado. Confira se você tem acesso de administrador.
+                  </p>
+                )}
+                {profileOptions.map((profile) => {
+                  const selected = values.actionConfig.profileId === profile.id;
+                  return (
+                    <button
+                      key={profile.id}
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
+                      className={`flex min-h-14 w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition ${
+                        selected ? "bg-[#e8f8f8]" : "hover:bg-[#f7fafb]"
+                      }`}
+                      onClick={() => {
+                        setSelectedProfile(profile);
+                        setConfig({ profileId: profile.id });
+                        if (!values.name.trim()) {
+                          setValues((current) => ({
+                            ...current,
+                            name: profile.displayName ?? profile.slug,
+                            category: current.category || "Perfil profissional",
+                            environment: current.environment || "Material comercial",
+                          }));
+                        }
+                      }}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {profile.photoUrl ? (
+                        <img
+                          src={profile.photoUrl}
+                          alt=""
+                          className="h-10 w-10 shrink-0 rounded-full object-cover"
+                        />
+                      ) : (
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#dce9eb] text-xs font-semibold text-[#347796]">
+                          {(profile.displayName ?? "?").slice(0, 1)}
+                        </span>
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">
+                          {profile.displayName ?? profile.slug}
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {profile.role ?? "Sem papel"} ·{" "}
+                          {profile.status === "published"
+                            ? "Publicado"
+                            : profile.status === "draft"
+                              ? "Rascunho"
+                              : "Arquivado"}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

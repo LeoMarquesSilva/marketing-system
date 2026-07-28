@@ -29,6 +29,14 @@ import {
   nfcAssetUpdateSchema,
   nfcTagInputSchema,
 } from "@/lib/nfc/validation";
+import { parseNfcScanSource } from "@/lib/nfc/public-url";
+import {
+  buildProfessionalProfilePublicAction,
+  buildProfileRedirectPath,
+  canRedirectProfileCard,
+  findProfileCardByTagId,
+  loadProfessionalProfilePublicHint,
+} from "@/lib/profiles/cards";
 export { getNfcPublicUrl } from "@/lib/nfc/public-url";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
@@ -62,6 +70,7 @@ interface ExecutePublicInput extends ResolvePublicInput {
   loanOperation?: "checkout" | "return";
   assetNumber?: string;
   borrowerUserId?: string;
+  source?: "nfc" | "qr";
 }
 
 export class NfcHttpError extends Error {
@@ -975,6 +984,39 @@ function toPublicAction(tag: NfcTag): NfcPublicResolution["action"] {
   };
 }
 
+async function toProfessionalProfilePublicAction(
+  admin: SupabaseClient,
+  tag: NfcTag
+): Promise<
+  | { ok: true; action: NonNullable<NfcPublicResolution["action"]> }
+  | { ok: false; state: "inactive" | "not_found"; message: string }
+> {
+  const profileId = tag.action_config?.profileId;
+  if (!profileId) {
+    return { ok: false, state: "not_found", message: "Perfil vinculado não encontrado." };
+  }
+
+  const card = await findProfileCardByTagId(admin, tag.id);
+  if (card && !canRedirectProfileCard(card.status)) {
+    return {
+      ok: false,
+      state: "inactive",
+      message: "Este cartão não está mais ativo.",
+    };
+  }
+
+  const hint = await loadProfessionalProfilePublicHint(admin, profileId);
+  if (!hint || hint.status !== "published") {
+    return {
+      ok: false,
+      state: "not_found",
+      message: "Perfil profissional indisponível.",
+    };
+  }
+
+  return { ok: true, action: buildProfessionalProfilePublicAction(hint) };
+}
+
 async function getPublicDirectory(admin: SupabaseClient): Promise<
   NonNullable<NfcPublicResolution["directoryUsers"]>
 > {
@@ -1073,7 +1115,25 @@ export async function resolvePublicNfcTag(input: ResolvePublicInput): Promise<Nf
       message: access === "login_required" ? "Entre no ORQESTRAI para continuar." : "Você não tem permissão para esta etiqueta.",
     };
   }
-  const action = toPublicAction(tag);
+
+  let action = toPublicAction(tag);
+  if (tag.action_type === "professional_profile") {
+    const resolved = await toProfessionalProfilePublicAction(admin, tag);
+    if (!resolved.ok) {
+      await insertScan(
+        admin,
+        tag,
+        input.request,
+        identity,
+        input.anonymousSessionId,
+        resolved.state === "inactive" ? "inactive" : "access_denied",
+        resolved.state === "inactive" ? "CARD_INACTIVE" : "PROFILE_UNAVAILABLE"
+      );
+      return { state: resolved.state, message: resolved.message };
+    }
+    action = resolved.action;
+  }
+
   const scanId = await insertScan(
     admin,
     tag,
@@ -1365,6 +1425,20 @@ export async function executePublicNfcAction(input: ExecutePublicInput): Promise
       const destination = sanitizePublicUrl(config.destinationUrl);
       if (!destination) throw new NfcHttpError("Destino inválido.", 400, "UNSAFE_URL");
       redirectUrl = appendSafeParams(destination, config.extraParams);
+    } else if (actionType === "professional_profile") {
+      const resolved = await toProfessionalProfilePublicAction(admin, tag);
+      if (!resolved.ok) {
+        throw new NfcHttpError(
+          resolved.message,
+          resolved.state === "inactive" ? 409 : 404,
+          resolved.state === "inactive" ? "CARD_INACTIVE" : "PROFILE_UNAVAILABLE"
+        );
+      }
+      const source = parseNfcScanSource(
+        input.source ?? new URL(input.request.url).searchParams.get("source")
+      );
+      redirectUrl = buildProfileRedirectPath(resolved.action.profile!.slug, source);
+      successMessage = resolved.action.loadingMessage || successMessage;
     } else if (actionType === "form") {
       formData = validateFormData(config, input.formData ?? {});
       await validateDirectorySelections(admin, config, formData);

@@ -71,6 +71,7 @@ export const nfcActionConfigSchema = z
     assetNumberLabel: z.string().trim().min(1).max(80).optional(),
     checkoutMessage: z.string().trim().max(500).optional(),
     returnMessage: z.string().trim().max(500).optional(),
+    profileId: z.string().uuid().optional(),
   })
   .strict();
 
@@ -101,6 +102,13 @@ export const nfcTagInputSchema = z
     if (input.actionType === "form" && !input.actionConfig.fields?.length) {
       ctx.addIssue({ code: "custom", path: ["actionConfig", "fields"], message: "Adicione ao menos um campo." });
     }
+    if (input.actionType === "professional_profile" && !input.actionConfig.profileId) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["actionConfig", "profileId"],
+        message: "Selecione um perfil profissional.",
+      });
+    }
     const requiresDirectory =
       input.actionType === "asset_loan" ||
       input.actionConfig.fields?.some((field) => field.type === "user_select");
@@ -127,6 +135,7 @@ export const nfcExecutionInputSchema = z.object({
   loanOperation: z.enum(["checkout", "return"]).optional(),
   assetNumber: z.string().trim().min(1).max(80).optional(),
   borrowerUserId: z.string().uuid().optional(),
+  source: z.enum(["nfc", "qr"]).optional(),
   confirmed: z.literal(true),
 });
 

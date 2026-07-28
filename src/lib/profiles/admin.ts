@@ -14,6 +14,7 @@ import type {
   ProfessionalProfileAdminSection,
   ProfessionalProfileAnalytics,
   ProfessionalProfileCard,
+  ProfessionalProfileCardView,
   ProfessionalProfileListFilters,
   ProfessionalProfileListItem,
   ProfessionalProfileListResult,
@@ -376,6 +377,16 @@ function mapCard(row: Row): ProfessionalProfileCard {
   };
 }
 
+function mapCardView(row: Row): ProfessionalProfileCardView {
+  const tag = (row.nfc_tags as Row | Row[] | null | undefined) ?? null;
+  const tagRow = Array.isArray(tag) ? tag[0] : tag;
+  return {
+    ...mapCard(row),
+    nfcTagCode: tagRow?.code ? String(tagRow.code) : null,
+    nfcPublicToken: tagRow?.public_token ? String(tagRow.public_token) : null,
+  };
+}
+
 function mapProfileBase(row: Row): Omit<
   ProfessionalProfileAdminDetail,
   "userName" | "localizations" | "sections" | "cards" | "hiddenContentKeys"
@@ -546,7 +557,7 @@ export async function getProfessionalProfileAdmin(
     db
       .from("professional_profile_cards")
       .select(
-        "id, profile_id, nfc_tag_id, code, label, status, replaced_card_id, issued_at, activated_at, retired_at, created_at"
+        "id, profile_id, nfc_tag_id, code, label, status, replaced_card_id, issued_at, activated_at, retired_at, created_at, nfc_tags ( code, public_token )"
       )
       .eq("profile_id", id)
       .order("created_at", { ascending: false }),
@@ -624,7 +635,7 @@ export async function getProfessionalProfileAdmin(
     userName: ((userRow as Row | null)?.name as string | null) ?? null,
     localizations: ((localizationRows ?? []) as Row[]).map(mapLocalization),
     sections,
-    cards: ((cardRows ?? []) as Row[]).map(mapCard),
+    cards: ((cardRows ?? []) as Row[]).map(mapCardView),
     hiddenContentKeys,
   };
 }

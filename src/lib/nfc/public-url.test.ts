@@ -23,4 +23,13 @@ describe("getNfcPublicUrl", () => {
       })
     ).not.toContain("localhost");
   });
+
+  it("anexa source=nfc ou source=qr quando solicitado", () => {
+    expect(getNfcPublicUrl("token_123", {}, { source: "nfc" })).toBe(
+      "https://marketing-system-xi.vercel.app/t/token_123?source=nfc"
+    );
+    expect(getNfcPublicUrl("token_123", {}, { source: "qr" })).toBe(
+      "https://marketing-system-xi.vercel.app/t/token_123?source=qr"
+    );
+  });
 });

@@ -128,4 +128,27 @@ describe("NFC tag validation", () => {
   it("aceita devolução administrativa sem observação", () => {
     expect(nfcAssetAdminReturnSchema.safeParse({}).success).toBe(true);
   });
+
+  it("exige UUID de perfil válido para professional_profile", () => {
+    const missing = nfcTagInputSchema.safeParse({
+      ...baseTag,
+      actionType: "professional_profile",
+      actionConfig: {},
+    });
+    expect(missing.success).toBe(false);
+
+    const invalid = nfcTagInputSchema.safeParse({
+      ...baseTag,
+      actionType: "professional_profile",
+      actionConfig: { profileId: "nao-e-uuid" },
+    });
+    expect(invalid.success).toBe(false);
+
+    const valid = nfcTagInputSchema.safeParse({
+      ...baseTag,
+      actionType: "professional_profile",
+      actionConfig: { profileId: "7e3bd4e6-156a-4bdf-bc0f-61a0f08a9134" },
+    });
+    expect(valid.success).toBe(true);
+  });
 });

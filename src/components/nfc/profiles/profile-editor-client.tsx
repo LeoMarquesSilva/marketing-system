@@ -10,6 +10,7 @@ import { ProfileContactForm } from "./profile-contact-form";
 import { ProfileSectionsEditor } from "./profile-sections-editor";
 import { ProfilePublicationPanel } from "./profile-publication-panel";
 import { ProfileContentPanel } from "./profile-content-panel";
+import { ProfileCardsPanel } from "./profile-cards-panel";
 import {
   buildEditorState,
   buildProfileUpdatePayload,
@@ -261,6 +262,11 @@ export function ProfileEditorClient({
             onPublish={() => changeStatus("published")}
             onUnpublish={() => changeStatus("draft")}
             onArchive={() => changeStatus("archived")}
+          />
+          <ProfileCardsPanel
+            profileId={detail.id}
+            profileStatus={detail.status}
+            initialCards={detail.cards}
           />
         </div>
       </div>
