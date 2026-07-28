@@ -490,7 +490,7 @@ git commit -m "feat: add professional profile admin api"
 - Create: `src/app/api/nfc/profiles/import/apply/route.ts`
 - Create: `src/app/api/nfc/profiles/import/import-api.test.ts`
 
-- [ ] **Step 1: Add a minimal workbook fixture in the test**
+- [x] **Step 1: Add a minimal workbook fixture in the test**
 
 Generate the in-memory fixture with the existing `xlsx` package. Include:
 
@@ -501,7 +501,7 @@ Generate the in-memory fixture with the existing `xlsx` package. Include:
 - date of birth, which must never appear in parsed output;
 - hire date, which can become a timeline proposal but not be persisted until selected.
 
-- [ ] **Step 2: Write failing parser and reconciliation tests**
+- [x] **Step 2: Write failing parser and reconciliation tests**
 
 Expose and test:
 
@@ -526,7 +526,7 @@ npm.cmd test -- src/lib/profiles/import.test.ts
 
 Expected: FAIL.
 
-- [ ] **Step 3: Implement parser and preview**
+- [x] **Step 3: Implement parser and preview**
 
 Parse the known sheet shape without relying on workbook macros. Normalize strings as UTF-8 JavaScript strings. Map only:
 
@@ -540,13 +540,13 @@ Parse the known sheet shape without relying on workbook macros. Normalize string
 
 Do not return birth date from the parser.
 
-- [ ] **Step 4: Implement preview and apply endpoints**
+- [x] **Step 4: Implement preview and apply endpoints**
 
 Both receive `multipart/form-data` with an `.xlsm`/`.xlsx` file. Apply additionally receives selected normalized emails and `overwrite=false` by default. Apply reparses and reconciles the file server-side before calling `apply_professional_profile_import`; it must not trust preview JSON sent by the browser.
 
 Set a reasonable upload limit and reject other file types.
 
-- [ ] **Step 5: Run parser and API tests**
+- [x] **Step 5: Run parser and API tests**
 
 ```powershell
 npm.cmd test -- src/lib/profiles/import.test.ts src/app/api/nfc/profiles/import/import-api.test.ts
@@ -554,7 +554,7 @@ npm.cmd test -- src/lib/profiles/import.test.ts src/app/api/nfc/profiles/import/
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the import flow**
+- [x] **Step 6: Commit the import flow**
 
 ```powershell
 git add src/lib/profiles/import.ts src/lib/profiles/import.test.ts src/app/api/nfc/profiles/import
