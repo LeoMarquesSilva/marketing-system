@@ -1,3 +1,4 @@
+import { isAllowedProfileSource } from "@/components/profiles/profile-public-utils";
 import { resolveProfileLocale } from "@/lib/profiles/localization";
 import {
   getPublicProfessionalProfile,
@@ -15,6 +16,8 @@ export async function GET(request: Request, context: RouteContext) {
   const { slug } = await context.params;
   const url = new URL(request.url);
   const locale = resolveProfileLocale(url.searchParams.get("lang"));
+  const sourceParam = url.searchParams.get("source");
+  const source = isAllowedProfileSource(sourceParam) ? sourceParam : "direct";
 
   const result = await getPublicProfessionalProfile(slug, locale);
 
@@ -33,7 +36,7 @@ export async function GET(request: Request, context: RouteContext) {
     websiteUrl: profile.contacts.websiteUrl,
   });
 
-  void recordContactDownloadEvent(profile.id, locale);
+  void recordContactDownloadEvent(profile.id, locale, { source });
 
   return new Response(vcard, {
     status: 200,

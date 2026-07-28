@@ -1439,6 +1439,19 @@ export async function executePublicNfcAction(input: ExecutePublicInput): Promise
       );
       redirectUrl = buildProfileRedirectPath(resolved.action.profile!.slug, source);
       successMessage = resolved.action.loadingMessage || successMessage;
+
+      const profileId = tag.action_config?.profileId ?? config.profileId;
+      if (profileId) {
+        const card = await findProfileCardByTagId(admin, tag.id);
+        const { recordProfileEvent } = await import("@/lib/profiles/metrics-record");
+        void recordProfileEvent({
+          profileId,
+          cardId: card?.id ?? null,
+          eventType: source === "qr" ? "qr_scan" : "nfc_scan",
+          source,
+          locale: resolved.action.profile?.locale ?? "pt-BR",
+        });
+      }
     } else if (actionType === "form") {
       formData = validateFormData(config, input.formData ?? {});
       await validateDirectorySelections(admin, config, formData);

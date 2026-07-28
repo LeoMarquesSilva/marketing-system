@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
 import { ProfessionalProfilePage } from "@/components/profiles/professional-profile-page";
 import { resolveProfileLocale } from "@/lib/profiles/localization";
+import { recordProfileEvent } from "@/lib/profiles/metrics-record";
 import { getPublicProfessionalProfile } from "@/lib/profiles/public";
 import { isAllowedProfileSource } from "@/components/profiles/profile-public-utils";
 
@@ -80,6 +81,14 @@ export default async function PublicProfessionalProfilePage({
   }
 
   const source = isAllowedProfileSource(query.source) ? query.source : null;
+
+  // Uma vez por render do servidor — falha de métrica não derruba a página.
+  void recordProfileEvent({
+    profileId: result.profile.id,
+    eventType: "profile_view",
+    source: source ?? "direct",
+    locale: result.profile.locale,
+  });
 
   return <ProfessionalProfilePage profile={result.profile} source={source} />;
 }

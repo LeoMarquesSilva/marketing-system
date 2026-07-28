@@ -11,6 +11,7 @@ import { ProfileSectionsEditor } from "./profile-sections-editor";
 import { ProfilePublicationPanel } from "./profile-publication-panel";
 import { ProfileContentPanel } from "./profile-content-panel";
 import { ProfileCardsPanel } from "./profile-cards-panel";
+import { ProfileAnalyticsPanel } from "./profile-analytics-panel";
 import {
   buildEditorState,
   buildProfileUpdatePayload,
@@ -268,6 +269,7 @@ export function ProfileEditorClient({
             profileStatus={detail.status}
             initialCards={detail.cards}
           />
+          <ProfileAnalyticsPanel profileId={detail.id} />
         </div>
       </div>
 

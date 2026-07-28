@@ -15,6 +15,7 @@ import {
 import { NfcPageHeading } from "@/components/nfc/nfc-page-heading";
 import { ProfileCompletenessBar, ProfileStatusBadge } from "./profile-status-badge";
 import { ProfileImportDialog } from "./profile-import-dialog";
+import { ProfileCampaignSettings } from "./profile-campaign-settings";
 import { matchesProfileListFilters } from "@/lib/profiles/admin";
 import type {
   ProfessionalProfileListItem,
@@ -120,6 +121,8 @@ export function ProfilesDashboardClient({ initialData }: ProfilesDashboardClient
       />
 
       <SummaryCards summary={data.summary} />
+
+      <ProfileCampaignSettings />
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative flex-1 sm:max-w-xs">

@@ -533,26 +533,16 @@ export async function getPublicProfessionalProfile(
 export async function recordContactDownloadEvent(
   profileId: string,
   locale: ProfileLocale,
-  options?: { client?: SupabaseClient }
+  options?: { client?: SupabaseClient; source?: "direct" | "nfc" | "qr" | "share" }
 ): Promise<void> {
-  try {
-    const db = options?.client ?? createProfileAdminClient();
-    const { error } = await db.rpc("record_professional_profile_event", {
-      p_profile_id: profileId,
-      p_event_type: "contact_download",
-      p_source: "direct",
-      p_locale: locale,
-      p_card_id: null,
-    });
-    if (error) {
-      await db.from("professional_profile_events").insert({
-        profile_id: profileId,
-        event_type: "contact_download",
-        source: "direct",
-        locale,
-      });
-    }
-  } catch {
-    // Melhor esforço: métrica nunca bloqueia o vCard.
-  }
+  const { recordProfileEvent } = await import("@/lib/profiles/metrics-record");
+  await recordProfileEvent(
+    {
+      profileId,
+      eventType: "contact_download",
+      source: options?.source ?? "direct",
+      locale,
+    },
+    { client: options?.client }
+  );
 }

@@ -1,12 +1,15 @@
 "use client";
 
 import { useMemo, useState, type MouseEvent } from "react";
-import type { PublicProfessionalProfile } from "@/lib/profiles/types";
+import type { PublicProfessionalProfile, ProfileEventSource } from "@/lib/profiles/types";
+import { beaconProfileEvent } from "@/lib/profiles/metrics";
+import { ProfileEventLink } from "@/components/profiles/profile-event-link";
 import {
   buildCanonicalProfileUrl,
   buildContactDownloadHref,
   downloadVCardOrFail,
   formatVisibleContacts,
+  isAllowedProfileSource,
   profileUiCopy,
   shareOrCopyProfileUrl,
   whatsappHref,
@@ -19,6 +22,10 @@ type ProfileContactActionsProps = {
 
 const ACTION_CLASS = "pp-action min-h-11 min-w-11";
 
+function resolveSource(source: string | null | undefined): ProfileEventSource {
+  return isAllowedProfileSource(source) ? source : "direct";
+}
+
 export function ProfileContactActions({
   profile,
   source = null,
@@ -27,6 +34,7 @@ export function ProfileContactActions({
   const { contacts } = profile;
   const [vcardFailed, setVcardFailed] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const eventSource = resolveSource(source);
 
   const contatoHref = useMemo(
     () => buildContactDownloadHref(profile.slug, profile.locale, source),
@@ -78,6 +86,13 @@ export function ProfileContactActions({
         text: profile.identity.tagline || profile.identity.role,
         navigatorLike: typeof navigator !== "undefined" ? navigator : undefined,
       });
+      if (result === "shared" || result === "copied") {
+        beaconProfileEvent(profile.slug, {
+          eventType: "share",
+          source: "share",
+          locale: profile.locale,
+        });
+      }
       if (result === "copied") {
         setStatusMessage(copy.shareCopied);
       }
@@ -99,37 +114,49 @@ export function ProfileContactActions({
         </a>
 
         {contacts.whatsapp ? (
-          <a
+          <ProfileEventLink
             className={ACTION_CLASS}
             href={whatsappHref(contacts.whatsapp)}
             rel="noopener noreferrer"
             target="_blank"
             data-action="whatsapp"
+            slug={profile.slug}
+            action="whatsapp"
+            locale={profile.locale}
+            source={eventSource}
           >
             {copy.whatsapp}
-          </a>
+          </ProfileEventLink>
         ) : null}
 
         {contacts.email ? (
-          <a
+          <ProfileEventLink
             className={ACTION_CLASS}
             href={`mailto:${contacts.email}`}
             data-action="email"
+            slug={profile.slug}
+            action="email"
+            locale={profile.locale}
+            source={eventSource}
           >
             {copy.email}
-          </a>
+          </ProfileEventLink>
         ) : null}
 
         {contacts.linkedinUrl ? (
-          <a
+          <ProfileEventLink
             className={ACTION_CLASS}
             href={contacts.linkedinUrl}
             rel="noopener noreferrer"
             target="_blank"
             data-action="linkedin"
+            slug={profile.slug}
+            action="linkedin"
+            locale={profile.locale}
+            source={eventSource}
           >
             {copy.linkedin}
-          </a>
+          </ProfileEventLink>
         ) : null}
 
         <button
@@ -142,15 +169,19 @@ export function ProfileContactActions({
         </button>
 
         {contacts.websiteUrl ? (
-          <a
+          <ProfileEventLink
             className={ACTION_CLASS}
             href={contacts.websiteUrl}
             rel="noopener noreferrer"
             target="_blank"
             data-action="website"
+            slug={profile.slug}
+            action="website"
+            locale={profile.locale}
+            source={eventSource}
           >
             {copy.website}
-          </a>
+          </ProfileEventLink>
         ) : null}
       </div>
 
