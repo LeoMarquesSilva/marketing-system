@@ -704,7 +704,7 @@ git commit -m "feat: add bilingual profile editor"
 - Create: `src/components/nfc/profiles/profile-content-panel.tsx`
 - Modify: `src/components/nfc/profiles/profile-editor-client.tsx`
 
-- [ ] **Step 1: Write failing adapter tests**
+- [x] **Step 1: Write failing adapter tests**
 
 Test source adapters for:
 
@@ -720,7 +720,7 @@ Test source adapters for:
 
 Do not interpret `content_roteiros.approved_by_id` as authorship and do not infer event participation without a direct relation.
 
-- [ ] **Step 2: Implement the content aggregator**
+- [x] **Step 2: Implement the content aggregator**
 
 Expose:
 
@@ -748,7 +748,7 @@ npm.cmd test -- src/lib/profiles/content.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 4: Commit content aggregation**
+- [x] **Step 4: Commit content aggregation**
 
 ```powershell
 git add src/lib/profiles/content.ts src/lib/profiles/content.test.ts src/components/nfc/profiles
