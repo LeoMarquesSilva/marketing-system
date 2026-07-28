@@ -1,10 +1,18 @@
 import { notFound, redirect } from "next/navigation";
 import { requireProfessionalProfileAdmin } from "@/lib/profiles/auth";
-import { ProfileHttpError, getProfessionalProfileAdmin } from "@/lib/profiles/admin";
+import {
+  ProfileHttpError,
+  createProfileAdminClient,
+  getProfessionalProfileAdmin,
+} from "@/lib/profiles/admin";
+import { listRecentProfessionalContent } from "@/lib/profiles/content";
 import { ProfileEditorClient } from "@/components/nfc/profiles/profile-editor-client";
-import type { ProfessionalProfileAdminDetail } from "@/lib/profiles/types";
+import type { ProfessionalProfileAdminDetail, ProfileContentItem } from "@/lib/profiles/types";
 
 export const dynamic = "force-dynamic";
+
+/** Limite maior no admin para ainda listar itens ocultos e permitir restaurar. */
+const ADMIN_CONTENT_LIMIT = 12;
 
 export default async function NfcProfileEditorPage(context: {
   params: Promise<{ id: string }>;
@@ -30,6 +38,19 @@ export default async function NfcProfileEditorPage(context: {
     throw error;
   }
 
+  // hiddenKeys vazio: o painel marca “oculto” com detail.hiddenContentKeys.
+  let initialContent: ProfileContentItem[] = [];
+  try {
+    initialContent = await listRecentProfessionalContent(createProfileAdminClient(), {
+      userId: detail.userId,
+      userName: detail.userName ?? "",
+      hiddenKeys: new Set(),
+      limit: ADMIN_CONTENT_LIMIT,
+    });
+  } catch {
+    initialContent = [];
+  }
+
   // JSX fora do try/catch para não capturar erro de renderização.
-  return <ProfileEditorClient initialDetail={detail} />;
+  return <ProfileEditorClient initialDetail={detail} initialContent={initialContent} />;
 }

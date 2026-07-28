@@ -9,6 +9,7 @@ import { ProfileIdentityForm } from "./profile-identity-form";
 import { ProfileContactForm } from "./profile-contact-form";
 import { ProfileSectionsEditor } from "./profile-sections-editor";
 import { ProfilePublicationPanel } from "./profile-publication-panel";
+import { ProfileContentPanel } from "./profile-content-panel";
 import {
   buildEditorState,
   buildProfileUpdatePayload,
@@ -19,6 +20,7 @@ import { listMissingPublishRequirements } from "@/lib/profiles/admin";
 import type {
   ProfessionalProfileAdminDetail,
   ProfessionalProfileStatus,
+  ProfileContentItem,
   ProfileLocale,
 } from "@/lib/profiles/types";
 
@@ -59,8 +61,10 @@ function projectDetail(
 
 export function ProfileEditorClient({
   initialDetail,
+  initialContent = [],
 }: {
   initialDetail: ProfessionalProfileAdminDetail;
+  initialContent?: ProfileContentItem[];
 }) {
   const [detail, setDetail] = useState(initialDetail);
   const [state, setState] = useState<EditorState>(() => buildEditorState(initialDetail));
@@ -240,6 +244,11 @@ export function ProfileEditorClient({
           />
           {locale === "pt-BR" && <ProfileContactForm state={state} onChange={patchState} />}
           <ProfileSectionsEditor state={state} locale={locale} onSectionsChange={setSections} />
+          <ProfileContentPanel
+            profileId={detail.id}
+            initialItems={initialContent}
+            initialHiddenKeys={detail.hiddenContentKeys}
+          />
         </div>
 
         <div className="space-y-5 lg:sticky lg:top-4 lg:self-start">
