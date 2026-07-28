@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireProfessionalProfileAdmin } from "@/lib/profiles/auth";
 import { ProfileHttpError, createProfileAdminClient, toProfileApiError } from "@/lib/profiles/admin";
 import { buildImportPayload, buildImportPreview, parseCollaboratorWorkbook } from "@/lib/profiles/import";
-import { loadReconciliationContext, readWorkbookFromRequest } from "../preview/route";
+import { loadReconciliationContext, readWorkbookFromRequest } from "@/lib/profiles/import-server";
 import type { ProfessionalProfileImportResult } from "@/lib/profiles/types";
 
 export const dynamic = "force-dynamic";
