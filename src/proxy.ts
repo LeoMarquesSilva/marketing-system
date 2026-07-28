@@ -3,8 +3,16 @@ import { NextResponse, type NextRequest } from "next/server";
 const PUBLIC_PATHS = ["/login", "/t"];
 const PUBLIC_API_PREFIXES = ["/api/evolution/webhook"];
 
+/** Perfil profissional público (não confundir com /perfil = conta autenticada). */
+function isPublicProfessionalProfilePath(pathname: string): boolean {
+  return /^\/perfil\/[^/]+(?:\/contato)?\/?$/.test(pathname);
+}
+
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+    return true;
+  }
+  if (isPublicProfessionalProfilePath(pathname)) {
     return true;
   }
   return PUBLIC_API_PREFIXES.some(

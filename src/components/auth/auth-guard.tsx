@@ -9,6 +9,11 @@ import { resolvePostLoginPathFromProfile } from "@/lib/post-login-path";
 
 const PUBLIC_PATHS = ["/login", "/t"];
 
+/** Perfil profissional público NFC: /perfil/<slug> e /perfil/<slug>/contato. */
+function isPublicProfessionalProfilePath(pathname: string): boolean {
+  return /^\/perfil\/[^/]+(?:\/contato)?\/?$/.test(pathname);
+}
+
 /** Rotas acessíveis por colaboradores de conteúdo (advogados por área). */
 const COLLABORATOR_PATHS = ["/conteudo", "/perfil"];
 
@@ -20,7 +25,9 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
 
-  const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
+  const isPublic =
+    PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/")) ||
+    isPublicProfessionalProfilePath(pathname);
   const isServerProtected = SERVER_PROTECTED_PATHS.some(
     (p) => pathname === p || pathname.startsWith(p + "/")
   );
