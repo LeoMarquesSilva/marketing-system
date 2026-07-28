@@ -349,6 +349,12 @@ export interface ProfessionalProfileImportPreview {
     inactiveSource: number;
     duplicate: number;
   };
+  /**
+   * Linhas cruas da planilha, usadas apenas no servidor para montar o payload
+   * do apply (telefone e admissão). Nunca serializar na resposta HTTP: o
+   * preview enviado ao navegador não deve carregar contato privado.
+   */
+  sourceRows: ProfessionalProfileImportRow[];
 }
 
 export interface ProfessionalProfileImportResult {
