@@ -58,18 +58,18 @@ export function truncateContentTitle(
 
 function parseSolicitantes(value: unknown): Array<{ id: string; name?: string }> {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") return null;
-      const id = "id" in entry ? String((entry as { id: unknown }).id ?? "") : "";
-      if (!id) return null;
-      const name =
-        "name" in entry && typeof (entry as { name: unknown }).name === "string"
-          ? (entry as { name: string }).name
-          : undefined;
-      return { id, name };
-    })
-    .filter((entry): entry is { id: string; name?: string } => Boolean(entry));
+  const parsed: Array<{ id: string; name?: string }> = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const id = "id" in entry ? String((entry as { id: unknown }).id ?? "") : "";
+    if (!id) continue;
+    const name =
+      "name" in entry && typeof (entry as { name: unknown }).name === "string"
+        ? (entry as { name: string }).name
+        : undefined;
+    parsed.push(name === undefined ? { id } : { id, name });
+  }
+  return parsed;
 }
 
 export function instagramRowBelongsToUser(
