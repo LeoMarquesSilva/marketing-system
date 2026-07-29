@@ -29,7 +29,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const body = await request.json().catch(() => null);
     const parsed = profileUpdateSchema.safeParse(body);
     if (!parsed.success) {
-      throw new ProfileHttpError("Dados do perfil inválidos.", 400, "PROFILE_INVALID");
+      throw new ProfileHttpError(
+        parsed.error.issues[0]?.message ?? "Dados do perfil inválidos.",
+        400,
+        "PROFILE_INVALID"
+      );
     }
 
     const profile = await saveProfessionalProfile(id, parsed.data, admin.userId);

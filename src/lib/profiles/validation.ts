@@ -104,7 +104,7 @@ export const profileLocalizationInputSchema = z.object({
   displayName: shortText.nullish(),
   role: shortText.nullish(),
   practiceArea: shortText.nullish(),
-  tagline: z.string().trim().max(400).nullish(),
+  tagline: z.string().trim().max(2000).nullish(),
   bio: longText.nullish(),
 });
 
@@ -125,7 +125,11 @@ export const profileEntryInputSchema = z.object({
     .array(
       z.object({
         locale: profileLocaleSchema,
-        title: z.string().trim().min(1).max(240),
+        title: z
+          .string()
+          .trim()
+          .min(1, "Informe o título da entrada.")
+          .max(240, "O título da entrada pode ter no máximo 240 caracteres."),
         subtitle: shortText.nullish(),
         description: longText.nullish(),
       })

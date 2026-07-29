@@ -136,4 +136,29 @@ describe("profileUpdateSchema", () => {
       false
     );
   });
+
+  it("rejeita título de entrada acima de 240 caracteres com mensagem clara", () => {
+    const parsed = profileUpdateSchema.safeParse({
+      sections: [
+        {
+          key: "education",
+          enabled: true,
+          entries: [
+            {
+              entryType: "education",
+              localizations: [
+                {
+                  locale: "pt-BR",
+                  title: "x".repeat(241),
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    expect(parsed.success).toBe(false);
+    if (parsed.success) return;
+    expect(parsed.error.issues[0]?.message).toContain("240");
+  });
 });
