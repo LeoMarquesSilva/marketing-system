@@ -130,6 +130,27 @@ describe("ProfessionalProfilePage — hero e identidade", () => {
     expect(markup).toContain('alt="Bismarchi | Pires"');
   });
 
+  it("usa a composição concierge e preserva a hierarquia mobile", () => {
+    const markup = renderToStaticMarkup(
+      <ProfessionalProfilePage profile={makeProfile()} />
+    );
+    expect(markup).toContain("pp-atmosphere");
+    expect(markup).toContain("pp-profile-card");
+    expect(markup).toContain("pp-hero__portrait");
+    expect(markup).toContain("pp-hero__identity");
+  });
+
+  it("mantém hero, ações e seções visíveis no HTML inicial", () => {
+    const markup = renderToStaticMarkup(
+      <ProfessionalProfilePage profile={makeProfile()} />
+    );
+
+    expect(markup).toContain("Letícia Rodrigues");
+    expect(markup).toContain("Salvar contato");
+    expect(markup).toContain("Áreas de atuação");
+    expect(markup).not.toMatch(/opacity\s*:\s*0(?:[;"']|$)/);
+  });
+
   it("usa avatar com iniciais quando a foto está ausente", () => {
     const markup = renderToStaticMarkup(
       <ProfessionalProfilePage
@@ -148,6 +169,16 @@ describe("ProfessionalProfilePage — hero e identidade", () => {
 });
 
 describe("ProfessionalProfilePage — contatos", () => {
+  it("renderiza CTA primário e dock preservando ações públicas", () => {
+    const markup = renderToStaticMarkup(
+      <ProfessionalProfilePage profile={makeProfile()} />
+    );
+    expect(markup).toContain("pp-action--primary");
+    expect(markup).toContain("pp-contact-dock");
+    expect(markup).toContain('data-action="whatsapp"');
+    expect(markup).toContain('data-action="linkedin"');
+  });
+
   it("sempre exibe Salvar contato apontando para a rota de vCard", () => {
     const markup = renderToStaticMarkup(
       <ProfessionalProfilePage profile={makeProfile()} source="nfc" />
@@ -198,6 +229,14 @@ describe("ProfessionalProfilePage — contatos", () => {
     expect(indexes.every((index) => index >= 0)).toBe(true);
     expect([...indexes].sort((a, b) => a - b)).toEqual(indexes);
   });
+
+  it("não cria wrappers focáveis além das ações interativas", () => {
+    const markup = renderToStaticMarkup(
+      <ProfessionalProfilePage profile={makeProfile()} />
+    );
+
+    expect(markup).not.toContain('tabindex="0"');
+  });
 });
 
 describe("ProfessionalProfilePage — campanha, seções e conteúdo", () => {
@@ -207,6 +246,8 @@ describe("ProfessionalProfilePage — campanha, seções e conteúdo", () => {
     );
     expect(withCampaign).toContain('data-campaign="true"');
     expect(withCampaign).toContain("Semana do cliente no escritório.");
+    expect(withCampaign).not.toContain("Campanha");
+    expect(withCampaign).not.toContain('role="status"');
 
     const withoutCampaign = renderToStaticMarkup(
       <ProfessionalProfilePage

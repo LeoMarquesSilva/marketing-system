@@ -15,9 +15,11 @@ export function ProfileInstitutionalFooter({
 }: ProfileInstitutionalFooterProps) {
   const copy = profileUiCopy(profile.locale);
   const siteUrl = profile.contacts.websiteUrl || FIRM_WEBSITE_URL;
+  const siteHost = siteUrl.replace(/^https?:\/\//, "").replace(/\/$/, "");
 
   return (
     <footer className="pp-footer">
+      <div className="pp-footer__rule" aria-hidden="true" />
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         className="pp-footer__logo"
@@ -30,7 +32,7 @@ export function ProfileInstitutionalFooter({
       {siteUrl ? (
         <p className="pp-footer__site">
           <a href={siteUrl} rel="noopener noreferrer">
-            {siteUrl.replace(/^https?:\/\//, "")}
+            {siteHost}
           </a>
         </p>
       ) : null}

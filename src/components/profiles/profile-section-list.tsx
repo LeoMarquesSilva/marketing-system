@@ -16,9 +16,11 @@ export function ProfileSectionList({ profile }: ProfileSectionListProps) {
           className="pp-section"
           data-section={section.key}
         >
-          <h2 className="pp-section__title">
-            {sectionLabel(section.key, profile.locale)}
-          </h2>
+          <div className="pp-section__heading">
+            <h2 className="pp-section__title">
+              {sectionLabel(section.key, profile.locale)}
+            </h2>
+          </div>
           <ul className="pp-section__list">
             {section.entries.map((entry) => (
               <li key={entry.id} className="pp-section__item">

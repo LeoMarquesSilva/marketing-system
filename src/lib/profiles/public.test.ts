@@ -175,6 +175,26 @@ describe("projectPublicIdentity", () => {
     expect(identity.joinedOn).toBeNull();
     expect(identity.tenureLabel).toBeNull();
   });
+
+  it("normaliza nome, cargo e área para Title Case", () => {
+    const identity = projectPublicIdentity({
+      locale: "pt-BR",
+      pt: {
+        ...pt,
+        displayName: "FELIPE SOARES DE CAMARGO",
+        role: "ASSOCIADO",
+        practiceArea: "DIREITO EMPRESARIAL",
+      },
+      en,
+      oab: null,
+      photoUrl: null,
+      joinedOn: null,
+      showTenure: false,
+    });
+    expect(identity.name).toBe("Felipe Soares de Camargo");
+    expect(identity.role).toBe("Associado");
+    expect(identity.practiceArea).toBe("Direito Empresarial");
+  });
 });
 
 describe("projectPublicSections", () => {

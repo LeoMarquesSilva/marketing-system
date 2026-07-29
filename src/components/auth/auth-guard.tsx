@@ -108,7 +108,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(t);
   }, [user, profile, loading]);
 
-  if (loading) {
+  if (loading && !isPublic) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-pulse text-muted-foreground">Carregando...</div>

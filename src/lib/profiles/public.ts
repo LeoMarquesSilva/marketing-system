@@ -7,6 +7,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createProfileAdminClient, resolveProfilePhotoUrl } from "@/lib/profiles/admin";
+import { toTitleCasePt } from "@/lib/profiles/text";
 import { resolveCampaignMessage } from "@/lib/profiles/campaign";
 import { listRecentProfessionalContent } from "@/lib/profiles/content";
 import {
@@ -172,9 +173,9 @@ export function projectPublicIdentity(input: {
   );
 
   return {
-    name,
-    role,
-    practiceArea,
+    name: toTitleCasePt(name),
+    role: toTitleCasePt(role),
+    practiceArea: toTitleCasePt(practiceArea),
     oab: input.oab,
     photoUrl: input.photoUrl,
     tagline,
