@@ -10,6 +10,19 @@
 export const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
+/**
+ * Cabeçalhos que um navegador real envia junto do User-Agent. Vários veículos
+ * recusam (403) requisição que manda só o UA — medido: com estes cabeçalhos o
+ * Jornal Opção passa de 403 para 200. Sites com proteção mais forte continuam
+ * bloqueando, e isso é tratado como página ilegível, sem tentar burlar.
+ */
+const BROWSER_HEADERS: Record<string, string> = {
+  "User-Agent": BROWSER_UA,
+  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+  "Upgrade-Insecure-Requests": "1",
+};
+
 /** Tamanho máximo do texto do artigo enviado à IA (evita prompts gigantes). */
 export const ARTICLE_TEXT_MAX_CHARS = 5000;
 
@@ -24,7 +37,7 @@ export async function fetchWithTimeout(
     return await fetch(url, {
       ...rest,
       signal: controller.signal,
-      headers: { "User-Agent": BROWSER_UA, ...(rest.headers ?? {}) },
+      headers: { ...BROWSER_HEADERS, ...(rest.headers ?? {}) },
     });
   } finally {
     clearTimeout(timer);
@@ -91,6 +104,42 @@ export function extractOgImage(html: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Extrai o título da matéria. Prioriza og:title (o que o veículo escolheu para
+ * compartilhamento) e cai para <title>, removendo o sufixo do veículo — em
+ * "Título da notícia - Valor Econômico", o nome do jornal não deve entrar no post.
+ */
+export function extractArticleTitle(html: string): string | null {
+  if (!html) return null;
+  const head = html.slice(0, 200_000);
+
+  const metaPatterns = [
+    /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i,
+    /<meta[^>]+name=["']twitter:title["'][^>]+content=["']([^"']+)["']/i,
+  ];
+  for (const re of metaPatterns) {
+    const match = head.match(re);
+    const value = match?.[1] ? decodeEntities(match[1]).replace(/\s+/g, " ").trim() : "";
+    if (value) return stripOutletSuffix(value);
+  }
+
+  const titleMatch = head.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const raw = titleMatch?.[1] ? decodeEntities(titleMatch[1]).replace(/\s+/g, " ").trim() : "";
+  if (!raw) return null;
+  return stripOutletSuffix(raw);
+}
+
+/**
+ * Remove o nome do veículo no fim do título ("… de alimentos - Migalhas").
+ * O prompt do carrossel proíbe citar a imprensa, então o sufixo não pode
+ * entrar no post. Só corta se o que sobra ainda é uma manchete de verdade.
+ */
+function stripOutletSuffix(title: string): string {
+  const withoutOutlet = title.replace(/\s+[-–—|]\s+[^-–—|]{2,40}$/, "").trim();
+  return withoutOutlet.length >= 15 ? withoutOutlet : title;
 }
 
 /** Decodifica entidades HTML mais comuns para texto legível. */
@@ -162,6 +211,8 @@ export interface ArticleContent {
   resolvedUrl: string | null;
   text: string;
   imageUrl: string | null;
+  /** Título da própria página — usado quando não há título de RSS (link avulso). */
+  title: string | null;
 }
 
 /**
@@ -171,7 +222,7 @@ export interface ArticleContent {
 export async function fetchArticleContent(
   link: string | undefined
 ): Promise<ArticleContent> {
-  const empty: ArticleContent = { resolvedUrl: null, text: "", imageUrl: null };
+  const empty: ArticleContent = { resolvedUrl: null, text: "", imageUrl: null, title: null };
   if (!link) return empty;
 
   try {
@@ -187,6 +238,7 @@ export async function fetchArticleContent(
       resolvedUrl: realUrl,
       text: extractArticleText(html),
       imageUrl: extractOgImage(html),
+      title: extractArticleTitle(html),
     };
   } catch {
     return empty;

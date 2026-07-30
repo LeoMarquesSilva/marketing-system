@@ -6,6 +6,7 @@ import { supabase } from "@/utils/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
 import { isTourDemoStep, useContentTour } from "@/contexts/content-tour-context";
 import { ContentTourRoteiroDemo } from "@/components/conteudo/content-tour-roteiro-demo";
+import { ManualLinkCard } from "@/components/conteudo/manual-link-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -656,6 +657,9 @@ export function RoteirosClient() {
           )}
         </Card>
       )}
+
+      {/* Link avulso — marketing */}
+      {isManager && <ManualLinkCard onCreated={loadRoteiros} />}
 
       {/* Carrossel recentes — mobile/colaborador */}
       {isCollaborator && recentHighlights.length > 1 && (

@@ -85,7 +85,7 @@ Baseie-se no conteúdo da matéria quando disponível (é mais completo que o re
 const RSS_BASE =
   "https://news.google.com/rss/search?hl=pt-BR&gl=BR&ceid=BR:pt-419&q=";
 
-function getSupabaseAdmin() {
+export function getSupabaseAdmin() {
   if (!supabaseServiceKey) {
     throw new Error("SUPABASE_SERVICE_ROLE_KEY não configurada.");
   }
@@ -159,7 +159,7 @@ export function filterItems(items: RssItem[], monthsBack = 4): RssItem[] {
   });
 }
 
-async function resolveNewsArea(
+export async function resolveNewsArea(
   openai: ReturnType<typeof createOpenAI>,
   title: string,
   snippet: string,
@@ -205,7 +205,7 @@ async function resolveNewsArea(
   return validateClassifiedArea(finalArea, title, snippet);
 }
 
-async function generateCarousel(
+export async function generateCarousel(
   openai: ReturnType<typeof createOpenAI>,
   title: string,
   snippet: string,
@@ -593,7 +593,7 @@ export interface FetchPipelineOptions {
 }
 
 /** Chave normalizada de título para detectar notícias repetidas (ignora veículo, acentos, pontuação). */
-function normalizeTitleKey(title: string): string {
+export function normalizeTitleKey(title: string): string {
   return (title || "")
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")

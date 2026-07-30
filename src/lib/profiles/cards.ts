@@ -297,7 +297,7 @@ export async function createProfileCard(
     nfcTagId = createdTag.id;
   }
 
-  let replaceCardId = input.replaceCardId ?? null;
+  const replaceCardId = input.replaceCardId ?? null;
   if (replaceCardId) {
     const { data: previous, error } = await db
       .from("professional_profile_cards")
