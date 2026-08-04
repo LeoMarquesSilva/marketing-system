@@ -263,6 +263,10 @@ export interface ContentRoteiro {
   sent_to_mkt_by_name?: string | null;
   marketing_request_id?: string | null;
   vios_task_id?: string | null;
+  /** Nota 1–5 de relevância para o boletim; null = ainda sem avaliação. */
+  boletim_score?: number | null;
+  boletim_scored_by_name?: string | null;
+  boletim_scored_at?: string | null;
 }
 
 export interface UserViosTaskOption {
@@ -288,7 +292,7 @@ export async function fetchContentRoteiros(options?: {
   const supabase = getSupabaseAdmin();
   let query = supabase
     .from("content_roteiros")
-    .select("id, topic_id, title, link, content_snippet, area, post, status, published_at, created_at, approved_by_id, approved_by_name, approved_at, has_alterations, alterations_notes, sent_for_manager_review, performance_hint, image_url, original_post, edited_by_id, edited_by_name, edited_at, reviewer_approved_at, sent_to_mkt_at, sent_to_mkt_by_name, marketing_request_id, vios_task_id")
+    .select("id, topic_id, title, link, content_snippet, area, post, status, published_at, created_at, approved_by_id, approved_by_name, approved_at, has_alterations, alterations_notes, sent_for_manager_review, performance_hint, image_url, original_post, edited_by_id, edited_by_name, edited_at, reviewer_approved_at, sent_to_mkt_at, sent_to_mkt_by_name, marketing_request_id, vios_task_id, boletim_score, boletim_scored_by_name, boletim_scored_at")
     .gte("created_at", since.toISOString())
     .order("published_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false });
@@ -319,11 +323,94 @@ export async function fetchRoteiroById(id: string): Promise<ContentRoteiro | nul
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("content_roteiros")
-    .select("id, topic_id, title, link, content_snippet, area, post, status, published_at, created_at, approved_by_id, approved_by_name, approved_at, has_alterations, alterations_notes, sent_for_manager_review, performance_hint, image_url, original_post, edited_by_id, edited_by_name, edited_at, reviewer_approved_at, sent_to_mkt_at, sent_to_mkt_by_name, marketing_request_id, vios_task_id")
+    .select("id, topic_id, title, link, content_snippet, area, post, status, published_at, created_at, approved_by_id, approved_by_name, approved_at, has_alterations, alterations_notes, sent_for_manager_review, performance_hint, image_url, original_post, edited_by_id, edited_by_name, edited_at, reviewer_approved_at, sent_to_mkt_at, sent_to_mkt_by_name, marketing_request_id, vios_task_id, boletim_score, boletim_scored_by_name, boletim_scored_at")
     .eq("id", id)
     .maybeSingle();
   if (error) throw new Error(error.message);
   return (data ?? null) as ContentRoteiro | null;
+}
+
+/** Nota de relevância para o boletim (1–5) ou null para limpar. */
+export async function updateRoteiroBoletimScore(
+  id: string,
+  score: number | null,
+  actor: { name: string | null }
+): Promise<{ boletim_score: number | null; boletim_scored_by_name: string | null; boletim_scored_at: string | null }> {
+  if (score !== null && (!Number.isInteger(score) || score < 1 || score > 5)) {
+    throw new Error("A nota da newsletter deve ser um número inteiro de 1 a 5.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const updates =
+    score === null
+      ? {
+          boletim_score: null,
+          boletim_scored_by_name: null,
+          boletim_scored_at: null,
+        }
+      : {
+          boletim_score: score,
+          boletim_scored_by_name: actor.name,
+          boletim_scored_at: new Date().toISOString(),
+        };
+
+  const { data, error } = await supabase
+    .from("content_roteiros")
+    .update(updates)
+    .eq("id", id)
+    .select("boletim_score, boletim_scored_by_name, boletim_scored_at")
+    .single();
+  if (error || !data) throw new Error(error?.message ?? "Não foi possível salvar a nota.");
+  return data as {
+    boletim_score: number | null;
+    boletim_scored_by_name: string | null;
+    boletim_scored_at: string | null;
+  };
+}
+
+/**
+ * Extrai um resumo longo da matéria para o sócio avaliar no boletim.
+ * Preferimos o texto raspado da página; se o veículo bloquear, caímos no snippet.
+ */
+export async function fetchRoteiroArticlePreview(id: string): Promise<{
+  id: string;
+  title: string;
+  link: string | null;
+  snippet: string | null;
+  excerpt: string;
+  source: "article" | "snippet" | "empty";
+}> {
+  const roteiro = await fetchRoteiroById(id);
+  if (!roteiro) throw new Error("Notícia não encontrada.");
+
+  let excerpt = "";
+  let source: "article" | "snippet" | "empty" = "empty";
+
+  if (roteiro.link) {
+    try {
+      const article = await fetchArticleContent(roteiro.link);
+      if (article.text.trim().length > 80) {
+        excerpt = article.text.trim().slice(0, 3500);
+        source = "article";
+      }
+    } catch {
+      // Veículo pode bloquear; seguimos com o snippet.
+    }
+  }
+
+  if (!excerpt && roteiro.content_snippet?.trim()) {
+    excerpt = roteiro.content_snippet.trim();
+    source = "snippet";
+  }
+
+  return {
+    id: roteiro.id,
+    title: roteiro.title,
+    link: roteiro.link,
+    snippet: roteiro.content_snippet,
+    excerpt,
+    source,
+  };
 }
 
 /** Tarefas do VIOS atribuídas ao usuário (para vincular ao post). */

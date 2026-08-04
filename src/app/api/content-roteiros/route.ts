@@ -9,6 +9,7 @@ import {
   saveRoteiroEdit,
   sendRoteiroToMarketing,
   linkRoteiroViosTask,
+  updateRoteiroBoletimScore,
 } from "@/lib/content-roteiros";
 
 export const dynamic = "force-dynamic";
@@ -98,6 +99,23 @@ export async function PATCH(request: Request) {
       const viosTaskId = (body as { vios_task_id?: string | null }).vios_task_id ?? null;
       await linkRoteiroViosTask(id, viosTaskId);
       return NextResponse.json({ success: true });
+    }
+
+    // Nota de relevância para o boletim (1–5) ou null para limpar.
+    if (action === "boletim_score") {
+      const scoreRaw = (body as { score?: number | null }).score;
+      const score =
+        scoreRaw === null || scoreRaw === undefined ? null : Number(scoreRaw);
+      if (score !== null && (!Number.isInteger(score) || score < 1 || score > 5)) {
+        return NextResponse.json(
+          { error: "Informe uma nota de 1 a 5, ou null para limpar." },
+          { status: 400 }
+        );
+      }
+      const result = await updateRoteiroBoletimScore(id, score, {
+        name: auth.profile?.name ?? null,
+      });
+      return NextResponse.json({ success: true, ...result });
     }
 
     // Envio ao marketing: cria card no Planner.

@@ -14,6 +14,7 @@ const PAGE_META: Record<string, PageMeta> = {
   "/solicitacoes": { label: "Solicitações", section: "Operação" },
   "/conteudo/inicio": { label: "Conteúdo", section: "Conteúdo" },
   "/conteudo/roteiros": { label: "Conteúdo para posts", section: "Conteúdo" },
+  "/conteudo/boletim": { label: "Newsletter", section: "Conteúdo" },
   "/conteudo/reels": { label: "Roteiros de Reels", section: "Conteúdo" },
   "/instagram-insights": { label: "Instagram Insights", section: "Performance" },
   "/linkedin-insights": { label: "LinkedIn Insights", section: "Performance" },

@@ -51,6 +51,7 @@ import { RoteiroCard, PerformanceHint, RoteiroCover, type RoteiroItem } from "@/
 import { parseCarousel, buildRoteiroWordHtml, roteiroWordSlug } from "@/lib/content-word";
 import { RoteiroListRow } from "@/components/conteudo/roteiro-list-row";
 import {
+  getAllowedLegalAreas,
   getAreaDotColor,
   getLegalAreasForDepartment,
   isContentCollaborator,
@@ -88,6 +89,10 @@ export function RoteirosClient() {
   const showTourDemo = tour.active && isTourDemoStep(tour.stepId);
   const isManager = isContentManager(profile);
   const isCollaborator = isContentCollaborator(profile);
+  const allowedAreas = useMemo(() => getAllowedLegalAreas(profile), [profile]);
+  /** Filtro de área: gestores e quem enxerga mais de uma área (ex.: Sócio, Institucional). */
+  const canFilterByArea =
+    isManager || (Array.isArray(allowedAreas) && allowedAreas.length > 1);
   const userAreas = useMemo(
     () => (profile?.department ? getLegalAreasForDepartment(profile.department) : []),
     [profile?.department]
@@ -266,11 +271,17 @@ export function RoteirosClient() {
 
   const uniqueAreas = useMemo(() => {
     const fromData = Array.from(new Set(roteiros.map((r) => r.area)));
+    const base =
+      allowedAreas === null
+        ? [...LEGAL_AREAS]
+        : allowedAreas.length > 0
+          ? [...allowedAreas]
+          : [...LEGAL_AREAS];
     return [
-      ...LEGAL_AREAS,
-      ...fromData.filter((a) => !(LEGAL_AREAS as readonly string[]).includes(a)),
+      ...base,
+      ...fromData.filter((a) => !(base as readonly string[]).includes(a)),
     ].sort();
-  }, [roteiros]);
+  }, [roteiros, allowedAreas]);
 
   const handleFetch = async () => {
     setFetching(true);
@@ -734,35 +745,35 @@ export function RoteirosClient() {
                 ))}
               </SelectContent>
             </Select>
+            {canFilterByArea && (
+              <Select value={areaFilter || "all"} onValueChange={(v) => setAreaFilter(v === "all" ? "" : v)}>
+                <SelectTrigger className="w-[160px] h-9 text-xs">
+                  <SelectValue placeholder="Área" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas áreas</SelectItem>
+                  {uniqueAreas.map((a) => (
+                    <SelectItem key={a} value={a}>
+                      {a}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             {isManager && (
-              <>
-                <Select value={areaFilter || "all"} onValueChange={(v) => setAreaFilter(v === "all" ? "" : v)}>
-                  <SelectTrigger className="w-[160px] h-9 text-xs hidden sm:flex">
-                    <SelectValue placeholder="Área" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas áreas</SelectItem>
-                    {uniqueAreas.map((a) => (
-                      <SelectItem key={a} value={a}>
-                        {a}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={topicFilter || "all"} onValueChange={(v) => setTopicFilter(v === "all" ? "" : v)}>
-                  <SelectTrigger className="w-[140px] h-9 text-xs hidden md:flex">
-                    <SelectValue placeholder="Tema" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos temas</SelectItem>
-                    {topics.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>
-                        {t.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </>
+              <Select value={topicFilter || "all"} onValueChange={(v) => setTopicFilter(v === "all" ? "" : v)}>
+                <SelectTrigger className="w-[140px] h-9 text-xs hidden md:flex">
+                  <SelectValue placeholder="Tema" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos temas</SelectItem>
+                  {topics.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             )}
             <div className="flex rounded-lg border p-0.5">
               <button

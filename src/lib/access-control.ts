@@ -18,6 +18,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/planner", label: "Planner" },
   { key: "/solicitacoes", label: "Solicitações" },
   { key: "/conteudo/roteiros", label: "Conteúdo para Post" },
+  { key: "/conteudo/boletim", label: "Newsletter" },
   { key: "/clima", label: "Clima" },
   { key: "/instagram-insights", label: "Instagram Insights" },
   { key: "/linkedin-insights", label: "LinkedIn Insights" },

@@ -26,6 +26,7 @@ import {
   Clapperboard,
   MoreHorizontal,
   RadioTower,
+  ScrollText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -51,6 +52,7 @@ const baseNavItems = [
   { href: "/planner", icon: Columns3, label: "Planner" },
   { href: "/solicitacoes", icon: List, label: "Solicitacoes" },
   { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteudo para Post" },
+  { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
   { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
   { href: "/clima", icon: Heart, label: "Clima" },
   { href: "/instagram-insights", icon: Instagram, label: "Instagram Insights" },
@@ -68,6 +70,7 @@ const baseNavItems = [
 const collaboratorNavItems = [
   { href: "/conteudo/inicio", icon: Instagram, label: "Inicio" },
   { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteudo para Post" },
+  { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
   { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
 ];
 
@@ -96,6 +99,7 @@ function getNavItems(
       items = [
         { href: "/conteudo/inicio", icon: Instagram, label: "Inicio" },
         { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteudo para Post" },
+        { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
         { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
         ...items.filter((i) => !i.href.startsWith("/conteudo")),
       ];
