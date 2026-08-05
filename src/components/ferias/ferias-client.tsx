@@ -66,10 +66,12 @@ import {
 } from "@/lib/ferias/client";
 import { formatISODateBR } from "@/lib/ferias/balance";
 import {
+  BALANCE_FILTER_LABEL,
   computeFeriasKpis,
   filterEmployeesWithBalance,
   listEmployeeDepartments,
   RECESS_APPLY_STATE_LABEL,
+  type BalanceFilter,
   type SituationFilter,
   type StatusFilter,
 } from "@/lib/ferias/filters";
@@ -165,6 +167,7 @@ export function FeriasClient({ employees, recess, users, viosAlerts }: FeriasCli
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [situationFilter, setSituationFilter] = useState<SituationFilter>("ativos");
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
+  const [balanceFilter, setBalanceFilter] = useState<BalanceFilter>("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [recessDialogOpen, setRecessDialogOpen] = useState(false);
@@ -215,15 +218,17 @@ export function FeriasClient({ employees, recess, users, viosAlerts }: FeriasCli
         status: statusFilter,
         situation: situationFilter,
         department: departmentFilter,
+        balance: balanceFilter,
       }),
-    [employees, search, statusFilter, situationFilter, departmentFilter]
+    [employees, search, statusFilter, situationFilter, departmentFilter, balanceFilter]
   );
 
   const hasFilters =
     search.trim() !== "" ||
     statusFilter !== "all" ||
     situationFilter !== "ativos" ||
-    departmentFilter !== "all";
+    departmentFilter !== "all" ||
+    balanceFilter !== "all";
 
   async function handleCreate(values: EmployeeFormValues): Promise<string | null> {
     const { error } = await createEmployeeRequest({
@@ -494,12 +499,43 @@ export function FeriasClient({ employees, recess, users, viosAlerts }: FeriasCli
                     setStatusFilter("all");
                     setSituationFilter("ativos");
                     setDepartmentFilter("all");
+                    setBalanceFilter("all");
                   }}
                 >
                   <X className="h-3.5 w-3.5" />
                   Limpar
                 </Button>
               )}
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  "all",
+                  "a_tirar",
+                  "a_mais",
+                  "zerado",
+                ] as BalanceFilter[]
+              ).map((key) => (
+                <Button
+                  key={key}
+                  type="button"
+                  size="sm"
+                  variant={balanceFilter === key ? "default" : "outline"}
+                  className={cn(
+                    "h-8 rounded-full px-3 text-xs",
+                    balanceFilter === key &&
+                      key === "a_mais" &&
+                      "border-red-600 bg-red-600 text-white hover:bg-red-600/90",
+                    balanceFilter !== key &&
+                      key === "a_mais" &&
+                      "border-red-200 text-red-800 hover:border-red-300 hover:bg-red-50"
+                  )}
+                  onClick={() => setBalanceFilter(key)}
+                >
+                  {BALANCE_FILTER_LABEL[key]}
+                </Button>
+              ))}
             </div>
 
             {departments.length > 0 && (

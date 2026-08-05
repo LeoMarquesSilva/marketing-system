@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  classifyVacationBalanceSign,
   computeFeriasKpis,
   dateRangesOverlap,
   employeeEligibleForRecess,
@@ -100,6 +101,14 @@ const samuel = row(
   }
 );
 
+describe("classifyVacationBalanceSign", () => {
+  it("prioriza saldo negativo sobre residual positivo", () => {
+    expect(classifyVacationBalanceSign({ pendingDays: -3, unallocatedDays: 3 })).toBe("a_mais");
+    expect(classifyVacationBalanceSign({ pendingDays: 12, unallocatedDays: 0 })).toBe("a_tirar");
+    expect(classifyVacationBalanceSign({ pendingDays: 0, unallocatedDays: 0 })).toBe("zerado");
+  });
+});
+
 describe("filterEmployeesWithBalance", () => {
   const all = [felipe, andressa, samuel];
 
@@ -124,7 +133,7 @@ describe("filterEmployeesWithBalance", () => {
     expect(result[0].employee.full_name).toBe("Andressa da Silva");
   });
 
-  it("filtra por status do saldo", () => {
+  it("filtra por status do prazo concessivo", () => {
     const result = filterEmployeesWithBalance(all, {
       search: "",
       status: "a_vencer",
@@ -133,6 +142,48 @@ describe("filterEmployeesWithBalance", () => {
     });
     expect(result).toHaveLength(1);
     expect(result[0].employee.id).toBe("1");
+  });
+
+  it("filtra por saldo positivo, negativo e zerado", () => {
+    const overdrawn = row(
+      makeEmployee({ id: "9", full_name: "Saldo Negativo" }),
+      { pendingDays: -5, unallocatedDays: 5, status: "quitado" }
+    );
+    const zeroed = row(
+      makeEmployee({ id: "10", full_name: "Saldo Zerado" }),
+      { pendingDays: 0, unallocatedDays: 0, status: "quitado" }
+    );
+    const list = [felipe, samuel, overdrawn, zeroed];
+
+    expect(
+      filterEmployeesWithBalance(list, {
+        search: "",
+        status: "all",
+        situation: "all",
+        department: "all",
+        balance: "a_tirar",
+      }).map((item) => item.employee.id)
+    ).toEqual(["1", "3"]);
+
+    expect(
+      filterEmployeesWithBalance(list, {
+        search: "",
+        status: "all",
+        situation: "all",
+        department: "all",
+        balance: "a_mais",
+      }).map((item) => item.employee.id)
+    ).toEqual(["9"]);
+
+    expect(
+      filterEmployeesWithBalance(list, {
+        search: "",
+        status: "all",
+        situation: "all",
+        department: "all",
+        balance: "zerado",
+      }).map((item) => item.employee.id)
+    ).toEqual(["10"]);
   });
 
   it("filtra por área", () => {

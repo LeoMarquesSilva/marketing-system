@@ -16,6 +16,20 @@ export const RECESS_APPLY_STATE_LABEL: Record<RecessApplyState, string> = {
 
 export type SituationFilter = "ativos" | "inativos" | "all";
 export type StatusFilter = "all" | VacationPeriodStatus;
+/**
+ * Sinal do saldo (quantidade), ortogonal ao status do prazo concessivo.
+ * - a_tirar: saldo positivo (ainda há dias a gozar)
+ * - a_mais: saldo negativo (gozou além do direito)
+ * - zerado: direito e gozo batem
+ */
+export type BalanceFilter = "all" | "a_tirar" | "a_mais" | "zerado";
+
+export const BALANCE_FILTER_LABEL: Record<BalanceFilter, string> = {
+  all: "Todos os saldos",
+  a_tirar: "Saldo positivo",
+  a_mais: "Saldo negativo",
+  zerado: "Zerado",
+};
 
 export interface FeriasListFilters {
   search: string;
@@ -23,6 +37,8 @@ export interface FeriasListFilters {
   situation: SituationFilter;
   /** Área do filtro em botões; `all` = sem filtro. */
   department: string;
+  /** Sinal do saldo; `all` = sem filtro. */
+  balance?: BalanceFilter;
 }
 
 export interface FeriasKpis {
@@ -90,16 +106,29 @@ export function departmentMatchesAreaFilter(
   return normalizeDepartmentKey(department ?? "") === normalizeDepartmentKey(areaFilter);
 }
 
-/** Filtra a lista da tela principal: situação, status do saldo e busca textual. */
+/** Classifica o saldo pela quantidade (não pelo prazo concessivo). */
+export function classifyVacationBalanceSign(
+  balance: Pick<EmployeeWithBalance["balance"], "pendingDays" | "unallocatedDays">
+): Exclude<BalanceFilter, "all"> {
+  if (balance.unallocatedDays > 0 || balance.pendingDays < 0) return "a_mais";
+  if (balance.pendingDays > 0) return "a_tirar";
+  return "zerado";
+}
+
+/** Filtra a lista da tela principal: situação, status do prazo, sinal do saldo e busca. */
 export function filterEmployeesWithBalance(
   employees: EmployeeWithBalance[],
   filters: FeriasListFilters
 ): EmployeeWithBalance[] {
   const query = filters.search.trim().toLowerCase();
+  const balanceFilter = filters.balance ?? "all";
   return employees.filter(({ employee, balance }) => {
     if (filters.situation === "ativos" && !employee.is_active) return false;
     if (filters.situation === "inativos" && employee.is_active) return false;
     if (filters.status !== "all" && balance.status !== filters.status) return false;
+    if (balanceFilter !== "all" && classifyVacationBalanceSign(balance) !== balanceFilter) {
+      return false;
+    }
     if (!departmentMatchesAreaFilter(employee.department, filters.department)) return false;
     if (!query) return true;
     const haystack = `${employee.full_name} ${employee.department ?? ""} ${employee.position ?? ""}`;
