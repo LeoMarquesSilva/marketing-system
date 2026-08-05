@@ -4,11 +4,11 @@ import {
   FeriasHttpError,
   listEmployeesWithBalance,
   listLinkableUsers,
-  listRecess,
+  listRecessWithApplicationStatus,
   listViosSyncAlerts,
 } from "@/lib/ferias/server";
 import type {
-  CompanyRecess,
+  CompanyRecessWithStatus,
   EmployeeWithBalance,
   LinkableUser,
   ViosSyncAlerts,
@@ -21,7 +21,7 @@ type PageData =
   | {
       forbidden: false;
       employees: EmployeeWithBalance[];
-      recess: CompanyRecess[];
+      recess: CompanyRecessWithStatus[];
       users: LinkableUser[];
       viosAlerts: ViosSyncAlerts;
     };
@@ -30,7 +30,7 @@ async function loadPageData(): Promise<PageData> {
   try {
     const [employees, recess, users, viosAlerts] = await Promise.all([
       listEmployeesWithBalance(),
-      listRecess(),
+      listRecessWithApplicationStatus(),
       listLinkableUsers(),
       listViosSyncAlerts(),
     ]);

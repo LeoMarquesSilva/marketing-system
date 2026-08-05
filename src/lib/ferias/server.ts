@@ -4,9 +4,14 @@ import { createClient as createSupabaseClient, type SupabaseClient } from "@supa
 import { createClient as createSsrClient } from "@/utils/supabase/server";
 import { computeEmployeeBalance, generateAccrualPeriods, todayISO } from "@/lib/ferias/balance";
 import { FeriasHttpError } from "@/lib/ferias/errors";
-import { employeeEligibleForRecess, resolveEmployeeAvatarUrl } from "@/lib/ferias/filters";
+import {
+  employeeEligibleForRecess,
+  resolveEmployeeAvatarUrl,
+  summarizeRecessApplication,
+} from "@/lib/ferias/filters";
 import type {
   CompanyRecess,
+  CompanyRecessWithStatus,
   EmployeeDetail,
   EmployeeWithBalance,
   HrEmployee,
@@ -410,6 +415,64 @@ export async function listRecess(): Promise<CompanyRecess[]> {
   return (data ?? []) as CompanyRecess[];
 }
 
+/**
+ * Lista recessos com resumo de quem já recebeu o lançamento entre os ativos.
+ */
+export async function listRecessWithApplicationStatus(): Promise<CompanyRecessWithStatus[]> {
+  await requireFeriasManager();
+  const admin = createFeriasAdminClient();
+
+  const [recessResult, employeesResult] = await Promise.all([
+    admin.from("company_recess").select(RECESS_SELECT).order("year", { ascending: false }),
+    admin
+      .from("hr_employees")
+      .select("id, admission_date, termination_date, is_active")
+      .eq("is_active", true),
+  ]);
+
+  if (recessResult.error) failed("Não foi possível carregar o recesso coletivo.");
+  if (employeesResult.error) failed("Não foi possível carregar os colaboradores.");
+
+  const recesses = (recessResult.data ?? []) as CompanyRecess[];
+  const activeEmployees = (employeesResult.data ?? []) as Array<{
+    id: string;
+    admission_date: string;
+    termination_date: string | null;
+    is_active: boolean;
+  }>;
+
+  if (recesses.length === 0) return [];
+
+  // Recesso já lançado se o intervalo se sobrepõe ao calendário coletivo
+  // (não só match exato — evita duplicar quem voltou 1 dia antes, etc.).
+  const leaveResults = await Promise.all(
+    recesses.map((recess) =>
+      admin
+        .from("vacation_leaves")
+        .select("employee_id")
+        .eq("kind", "recesso")
+        .lte("start_date", recess.end_date)
+        .gte("end_date", recess.start_date)
+    )
+  );
+
+  return recesses.map((recess, index) => {
+    const leaveResult = leaveResults[index];
+    if (leaveResult.error) failed("Não foi possível verificar lançamentos de recesso.");
+    const appliedEmployeeIds = (leaveResult.data ?? []).map(
+      (row) => row.employee_id as string
+    );
+    return {
+      ...recess,
+      application: summarizeRecessApplication({
+        activeEmployees,
+        recess,
+        appliedEmployeeIds,
+      }),
+    };
+  });
+}
+
 export async function upsertRecess(input: RecessCreateInput): Promise<CompanyRecess> {
   await requireFeriasManager();
   const admin = createFeriasAdminClient();
@@ -446,7 +509,7 @@ export interface ApplyRecessResult {
 
 /**
  * Gera lançamento `recesso` para cada colaborador ativo elegível.
- * Idempotente: não duplica quem já tem o mesmo intervalo como recesso.
+ * Idempotente: não duplica quem já tem recesso com intervalo sobreposto.
  */
 export async function applyRecessToActiveEmployees(
   recessId: string
@@ -493,8 +556,8 @@ export async function applyRecessToActiveEmployees(
     .select("employee_id, start_date, end_date, kind")
     .in("employee_id", eligibleIds)
     .eq("kind", "recesso")
-    .eq("start_date", recessRow.start_date)
-    .eq("end_date", recessRow.end_date);
+    .lte("start_date", recessRow.end_date)
+    .gte("end_date", recessRow.start_date);
   if (leavesError) failed("Não foi possível verificar lançamentos existentes.");
 
   const alreadyApplied = new Set(

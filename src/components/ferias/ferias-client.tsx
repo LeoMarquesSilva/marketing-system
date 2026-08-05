@@ -69,24 +69,58 @@ import {
   computeFeriasKpis,
   filterEmployeesWithBalance,
   listEmployeeDepartments,
+  RECESS_APPLY_STATE_LABEL,
   type SituationFilter,
   type StatusFilter,
 } from "@/lib/ferias/filters";
 import type {
-  CompanyRecess,
+  CompanyRecessWithStatus,
   EmployeeWithBalance,
   LinkableUser,
+  RecessApplyState,
   ViosSyncAlerts,
 } from "@/lib/ferias/types";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 
 type TabKey = "colaboradores" | "recesso";
 
 interface FeriasClientProps {
   employees: EmployeeWithBalance[];
-  recess: CompanyRecess[];
+  recess: CompanyRecessWithStatus[];
   users: LinkableUser[];
   viosAlerts: ViosSyncAlerts;
+}
+
+const RECESS_APPLY_STATE_CLASS: Record<RecessApplyState, string> = {
+  pendente: "border-amber-200 bg-amber-50 text-amber-800",
+  parcial: "border-sky-200 bg-sky-50 text-sky-800",
+  aplicado: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  sem_elegiveis: "border-muted bg-muted/60 text-muted-foreground",
+};
+
+function RecessApplyBadge({ state }: { state: RecessApplyState }) {
+  return (
+    <Badge variant="outline" className={cn("font-medium", RECESS_APPLY_STATE_CLASS[state])}>
+      {RECESS_APPLY_STATE_LABEL[state]}
+    </Badge>
+  );
+}
+
+function recessApplicationHint(item: CompanyRecessWithStatus): string {
+  const { application } = item;
+  if (application.state === "sem_elegiveis") {
+    return application.ineligible > 0
+      ? `${application.ineligible} ativo(s), nenhum elegível neste período`
+      : "Nenhum colaborador ativo elegível";
+  }
+  if (application.state === "aplicado") {
+    return `Lançamento em ${application.applied} de ${application.eligible} elegível(is)`;
+  }
+  if (application.state === "parcial") {
+    return `${application.applied} já tem · ${application.pending} ainda sem lançamento`;
+  }
+  return `${application.pending} elegível(is) ainda sem lançamento`;
 }
 
 function KpiCard({
@@ -134,9 +168,13 @@ export function FeriasClient({ employees, recess, users, viosAlerts }: FeriasCli
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [recessDialogOpen, setRecessDialogOpen] = useState(false);
-  const [editingRecess, setEditingRecess] = useState<CompanyRecess | null>(null);
-  const [deleteRecessTarget, setDeleteRecessTarget] = useState<CompanyRecess | null>(null);
-  const [applyRecessTarget, setApplyRecessTarget] = useState<CompanyRecess | null>(null);
+  const [editingRecess, setEditingRecess] = useState<CompanyRecessWithStatus | null>(null);
+  const [deleteRecessTarget, setDeleteRecessTarget] = useState<CompanyRecessWithStatus | null>(
+    null
+  );
+  const [applyRecessTarget, setApplyRecessTarget] = useState<CompanyRecessWithStatus | null>(
+    null
+  );
   const [deletingRecess, setDeletingRecess] = useState(false);
   const [applyingRecess, setApplyingRecess] = useState(false);
   const [recessError, setRecessError] = useState<string | null>(null);
@@ -243,11 +281,40 @@ export function FeriasClient({ employees, recess, users, viosAlerts }: FeriasCli
       setRecessError(error ?? "Não foi possível aplicar o recesso.");
       return;
     }
+    const year = applyRecessTarget.year;
     setApplyRecessTarget(null);
+
+    if (data.applied === 0 && data.skippedExisting > 0 && data.skippedIneligible >= 0) {
+      const parts = [
+        `Recesso ${year}: já estava aplicado`,
+        data.skippedExisting === 1
+          ? "1 colaborador já tinha este lançamento"
+          : `${data.skippedExisting} colaboradores já tinham este lançamento`,
+      ];
+      if (data.skippedIneligible > 0) {
+        parts.push(
+          data.skippedIneligible === 1
+            ? "1 fora do período de vínculo"
+            : `${data.skippedIneligible} fora do período de vínculo`
+        );
+      }
+      setRecessSuccess(parts.join(" · "));
+      router.refresh();
+      return;
+    }
+
+    if (data.applied === 0 && data.skippedExisting === 0) {
+      setRecessSuccess(
+        `Recesso ${year}: nenhum colaborador elegível para receber o lançamento.`
+      );
+      router.refresh();
+      return;
+    }
+
     const parts = [
       data.applied === 1
-        ? "1 colaborador recebeu o lançamento"
-        : `${data.applied} colaboradores receberam o lançamento`,
+        ? `Recesso ${year}: 1 colaborador recebeu o lançamento`
+        : `Recesso ${year}: ${data.applied} colaboradores receberam o lançamento`,
     ];
     if (data.skippedExisting > 0) {
       parts.push(
@@ -559,11 +626,26 @@ export function FeriasClient({ employees, recess, users, viosAlerts }: FeriasCli
         </div>
       ) : (
         <div className="space-y-4">
-          {recessError && <p className="text-sm text-destructive">{recessError}</p>}
-          {recessSuccess && <p className="text-sm text-emerald-700">{recessSuccess}</p>}
+          {recessError && (
+            <div
+              role="alert"
+              className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+            >
+              {recessError}
+            </div>
+          )}
+          {recessSuccess && (
+            <div
+              role="status"
+              className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
+            >
+              {recessSuccess}
+            </div>
+          )}
           <p className="text-xs text-muted-foreground">
-            O calendário sozinho não altera o saldo. Use &quot;Aplicar aos ativos&quot; para gerar o
-            lançamento de recesso em cada ficha elegível.
+            Cadastrar o calendário não altera o saldo. Use &quot;Aplicar aos ativos&quot; para gerar o
+            lançamento de recesso em cada ficha elegível. A coluna Status mostra se o ano já foi
+            aplicado.
           </p>
           <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
             <Table>
@@ -573,15 +655,16 @@ export function FeriasClient({ employees, recess, users, viosAlerts }: FeriasCli
                   <TableHead>Início</TableHead>
                   <TableHead>Retorno</TableHead>
                   <TableHead className="text-right">Dias</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Observação</TableHead>
-                  <TableHead className="w-[140px] text-right">Ações</TableHead>
+                  <TableHead className="w-[220px] text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {recess.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={7}
                       className="py-12 text-center text-sm text-muted-foreground"
                     >
                       Nenhum recesso coletivo cadastrado. Adicione o calendário do próximo fim de
@@ -599,22 +682,45 @@ export function FeriasClient({ employees, recess, users, viosAlerts }: FeriasCli
                       {formatISODateBR(item.end_date)}
                     </TableCell>
                     <TableCell className="text-right text-sm tabular-nums">{item.days}</TableCell>
+                    <TableCell>
+                      <div className="flex max-w-[220px] flex-col gap-1">
+                        <RecessApplyBadge state={item.application.state} />
+                        <span className="text-xs text-muted-foreground">
+                          {recessApplicationHint(item)}
+                        </span>
+                      </div>
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {item.notes ?? "-"}
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="inline-flex gap-1">
+                      <div className="inline-flex flex-wrap items-center justify-end gap-1">
                         <Button
-                          variant="ghost"
+                          variant={
+                            item.application.state === "aplicado" ? "outline" : "default"
+                          }
                           size="sm"
+                          className="h-8"
                           aria-label={`Aplicar recesso ${item.year} aos ativos`}
-                          title="Aplicar aos ativos"
+                          title={
+                            item.application.state === "aplicado"
+                              ? "Já aplicado — clique para verificar novamente"
+                              : item.application.state === "parcial"
+                                ? "Aplicar aos que ainda não têm o lançamento"
+                                : "Aplicar aos ativos elegíveis"
+                          }
                           onClick={() => {
                             setRecessSuccess(null);
+                            setRecessError(null);
                             setApplyRecessTarget(item);
                           }}
                         >
-                          <UserCheck className="h-3.5 w-3.5" />
+                          <UserCheck className="mr-1.5 h-3.5 w-3.5" />
+                          {item.application.state === "aplicado"
+                            ? "Já aplicado"
+                            : item.application.state === "parcial"
+                              ? "Completar"
+                              : "Aplicar"}
                         </Button>
                         <Button
                           variant="ghost"
@@ -709,17 +815,81 @@ export function FeriasClient({ employees, recess, users, viosAlerts }: FeriasCli
               {applyRecessTarget
                 ? `${formatISODateBR(applyRecessTarget.start_date)} a ${formatISODateBR(applyRecessTarget.end_date)} · ${applyRecessTarget.days} dia(s)`
                 : ""}
-              ) para cada colaborador ativo elegível. Quem já tiver o mesmo intervalo não é
-              duplicado.
+              ) para cada colaborador ativo elegível. Quem já tiver recesso no mesmo período
+              (mesmo que as datas sejam um pouco diferentes) não é duplicado.
             </DialogDescription>
           </DialogHeader>
+          {applyRecessTarget && (
+            <div className="space-y-3 rounded-lg border bg-muted/30 px-3 py-3 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-muted-foreground">Situação atual:</span>
+                <RecessApplyBadge state={applyRecessTarget.application.state} />
+              </div>
+              <ul className="space-y-1 text-muted-foreground">
+                <li>
+                  <span className="font-medium text-foreground">
+                    {applyRecessTarget.application.eligible}
+                  </span>{" "}
+                  elegível(is) entre os ativos
+                </li>
+                <li>
+                  <span className="font-medium text-emerald-700">
+                    {applyRecessTarget.application.applied}
+                  </span>{" "}
+                  já {applyRecessTarget.application.applied === 1 ? "tem" : "têm"} este recesso
+                </li>
+                <li>
+                  <span className="font-medium text-amber-700">
+                    {applyRecessTarget.application.pending}
+                  </span>{" "}
+                  ainda{" "}
+                  {applyRecessTarget.application.pending === 1
+                    ? "não tem"
+                    : "não têm"}{" "}
+                  o lançamento
+                </li>
+                {applyRecessTarget.application.ineligible > 0 && (
+                  <li>
+                    <span className="font-medium text-foreground">
+                      {applyRecessTarget.application.ineligible}
+                    </span>{" "}
+                    fora do período de vínculo (não recebem)
+                  </li>
+                )}
+              </ul>
+              {applyRecessTarget.application.state === "aplicado" && (
+                <p className="text-xs text-emerald-800">
+                  Este ano já foi aplicado a todos os elegíveis. Rodar de novo só confirma — não
+                  cria duplicatas.
+                </p>
+              )}
+              {applyRecessTarget.application.state === "sem_elegiveis" && (
+                <p className="text-xs text-amber-800">
+                  Não há quem receber o lançamento agora. Confira admissões e desligamentos.
+                </p>
+              )}
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setApplyRecessTarget(null)}>
               Cancelar
             </Button>
-            <Button onClick={handleApplyRecess} disabled={applyingRecess}>
+            <Button
+              onClick={handleApplyRecess}
+              disabled={
+                applyingRecess ||
+                applyRecessTarget?.application.state === "sem_elegiveis" ||
+                applyRecessTarget?.application.pending === 0
+              }
+            >
               {applyingRecess ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
+              ) : applyRecessTarget?.application.state === "aplicado" ? (
+                "Já está aplicado"
+              ) : applyRecessTarget?.application.state === "parcial" ? (
+                `Aplicar aos ${applyRecessTarget.application.pending} pendentes`
+              ) : applyRecessTarget?.application.state === "sem_elegiveis" ? (
+                "Sem elegíveis"
               ) : (
                 "Aplicar aos ativos"
               )}

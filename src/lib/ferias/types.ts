@@ -94,6 +94,25 @@ export interface CompanyRecess {
   notes: string | null;
 }
 
+/** Situação da aplicação do recesso coletivo nos colaboradores ativos. */
+export type RecessApplyState =
+  | "pendente"
+  | "parcial"
+  | "aplicado"
+  | "sem_elegiveis";
+
+export interface RecessApplicationSummary {
+  eligible: number;
+  applied: number;
+  pending: number;
+  ineligible: number;
+  state: RecessApplyState;
+}
+
+export interface CompanyRecessWithStatus extends CompanyRecess {
+  application: RecessApplicationSummary;
+}
+
 /** Parcela de um gozo alocada a um período aquisitivo específico (FIFO). */
 export interface LeaveAllocation {
   leave: VacationLeave;

@@ -2,8 +2,17 @@ import type {
   CompanyRecess,
   EmployeeWithBalance,
   HrEmployee,
+  RecessApplicationSummary,
+  RecessApplyState,
   VacationPeriodStatus,
 } from "@/lib/ferias/types";
+
+export const RECESS_APPLY_STATE_LABEL: Record<RecessApplyState, string> = {
+  pendente: "Não aplicado",
+  parcial: "Parcialmente aplicado",
+  aplicado: "Já aplicado",
+  sem_elegiveis: "Sem elegíveis",
+};
 
 export type SituationFilter = "ativos" | "inativos" | "all";
 export type StatusFilter = "all" | VacationPeriodStatus;
@@ -163,4 +172,47 @@ export function employeeEligibleForRecess(
     return false;
   }
   return true;
+}
+
+/** Intervalos inclusivos em ISO `YYYY-MM-DD`. */
+export function dateRangesOverlap(
+  a: Pick<CompanyRecess, "start_date" | "end_date">,
+  b: Pick<CompanyRecess, "start_date" | "end_date">
+): boolean {
+  return a.start_date <= b.end_date && b.start_date <= a.end_date;
+}
+
+/**
+ * Resume quantos ativos elegíveis já têm (ou ainda não) o lançamento do recesso.
+ * `appliedEmployeeIds` deve incluir quem já tem recesso com intervalo sobreposto.
+ */
+export function summarizeRecessApplication(input: {
+  activeEmployees: Array<
+    Pick<HrEmployee, "id" | "admission_date" | "termination_date" | "is_active">
+  >;
+  recess: Pick<CompanyRecess, "start_date" | "end_date">;
+  /** IDs com lançamento `recesso` que se sobrepõe ao calendário coletivo. */
+  appliedEmployeeIds: Iterable<string>;
+}): RecessApplicationSummary {
+  const appliedSet = new Set(input.appliedEmployeeIds);
+  const eligible = input.activeEmployees.filter((employee) =>
+    employeeEligibleForRecess(employee, input.recess)
+  );
+  const applied = eligible.filter((employee) => appliedSet.has(employee.id)).length;
+  const pending = eligible.length - applied;
+  const ineligible = input.activeEmployees.length - eligible.length;
+
+  let state: RecessApplyState;
+  if (eligible.length === 0) state = "sem_elegiveis";
+  else if (pending === 0) state = "aplicado";
+  else if (applied === 0) state = "pendente";
+  else state = "parcial";
+
+  return {
+    eligible: eligible.length,
+    applied,
+    pending,
+    ineligible,
+    state,
+  };
 }

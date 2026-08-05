@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   computeFeriasKpis,
+  dateRangesOverlap,
   employeeEligibleForRecess,
   filterEmployeesWithBalance,
   getInitials,
   listEmployeeDepartments,
   resolveEmployeeAvatarUrl,
+  summarizeRecessApplication,
 } from "@/lib/ferias/filters";
 import type { EmployeeBalance, EmployeeWithBalance, HrEmployee } from "@/lib/ferias/types";
 
@@ -309,5 +311,105 @@ describe("employeeEligibleForRecess", () => {
         recess
       )
     ).toBe(false);
+  });
+});
+
+describe("dateRangesOverlap", () => {
+  it("detecta sobreposição parcial e identidade", () => {
+    expect(
+      dateRangesOverlap(
+        { start_date: "2024-12-20", end_date: "2025-01-06" },
+        { start_date: "2024-12-20", end_date: "2025-01-05" }
+      )
+    ).toBe(true);
+    expect(
+      dateRangesOverlap(
+        { start_date: "2024-12-20", end_date: "2025-01-06" },
+        { start_date: "2024-12-20", end_date: "2025-01-06" }
+      )
+    ).toBe(true);
+  });
+
+  it("recusa intervalos encostados sem cruzar", () => {
+    expect(
+      dateRangesOverlap(
+        { start_date: "2024-12-20", end_date: "2025-01-06" },
+        { start_date: "2025-01-07", end_date: "2025-01-10" }
+      )
+    ).toBe(false);
+  });
+});
+
+describe("summarizeRecessApplication", () => {
+  const recess = { start_date: "2025-12-20", end_date: "2026-01-06" };
+  const employees = [
+    {
+      id: "a",
+      admission_date: "2020-01-01",
+      termination_date: null,
+      is_active: true,
+    },
+    {
+      id: "b",
+      admission_date: "2021-01-01",
+      termination_date: null,
+      is_active: true,
+    },
+    {
+      id: "c",
+      admission_date: "2026-02-01",
+      termination_date: null,
+      is_active: true,
+    },
+  ];
+
+  it("marca como pendente quando ninguém tem o lançamento", () => {
+    expect(
+      summarizeRecessApplication({
+        activeEmployees: employees,
+        recess,
+        appliedEmployeeIds: [],
+      })
+    ).toEqual({
+      eligible: 2,
+      applied: 0,
+      pending: 2,
+      ineligible: 1,
+      state: "pendente",
+    });
+  });
+
+  it("marca como aplicado quando todos os elegíveis já têm", () => {
+    expect(
+      summarizeRecessApplication({
+        activeEmployees: employees,
+        recess,
+        appliedEmployeeIds: ["a", "b"],
+      }).state
+    ).toBe("aplicado");
+  });
+
+  it("marca como parcial quando só parte já tem", () => {
+    expect(
+      summarizeRecessApplication({
+        activeEmployees: employees,
+        recess,
+        appliedEmployeeIds: ["a"],
+      })
+    ).toMatchObject({
+      applied: 1,
+      pending: 1,
+      state: "parcial",
+    });
+  });
+
+  it("marca sem elegíveis quando ninguém se qualifica", () => {
+    expect(
+      summarizeRecessApplication({
+        activeEmployees: [employees[2]],
+        recess,
+        appliedEmployeeIds: [],
+      }).state
+    ).toBe("sem_elegiveis");
   });
 });

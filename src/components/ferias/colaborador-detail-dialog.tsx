@@ -392,34 +392,41 @@ function DetailBody({
                       </div>
                     </div>
                     {item.allocations.length > 0 && (
-                      <ul className="space-y-1 border-t border-[#e4eef3] pt-2">
-                        {item.allocations.map((allocation, index) => {
-                          const credit = allocation.days < 0;
-                          return (
-                            <li
-                              key={`${item.period.id}-${allocation.leave.id}-${index}`}
-                              className="flex flex-wrap items-baseline gap-x-2 text-xs text-muted-foreground"
-                            >
-                              <span className="text-foreground">
-                                {formatISODateBR(allocation.leave.start_date)}
-                                {allocation.leave.end_date !== allocation.leave.start_date
-                                  ? ` a ${formatISODateBR(allocation.leave.end_date)}`
-                                  : ""}
-                              </span>
-                              <span
-                                className={cn(
-                                  credit ? "font-medium text-emerald-700" : undefined
-                                )}
+                      <div className="space-y-1.5 border-t border-[#e4eef3] pt-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-[#285f7a]">
+                          Período usufruído
+                        </p>
+                        <ul className="space-y-1.5">
+                          {item.allocations.map((allocation, index) => {
+                            const credit = allocation.days < 0;
+                            return (
+                              <li
+                                key={`${item.period.id}-${allocation.leave.id}-${index}`}
+                                className="space-y-0.5 text-xs text-muted-foreground"
                               >
-                                {credit ? "+" : ""}
-                                {Math.abs(allocation.days)} dia(s) ·{" "}
-                                {LEAVE_KIND_LABEL[allocation.leave.kind]}
-                              </span>
-                              {allocation.leave.notes && <span>· {allocation.leave.notes}</span>}
-                            </li>
-                          );
-                        })}
-                      </ul>
+                                <p className="text-foreground">
+                                  {formatISODateBR(allocation.leave.start_date)}
+                                  {allocation.leave.end_date !== allocation.leave.start_date
+                                    ? ` a ${formatISODateBR(allocation.leave.end_date)}`
+                                    : ""}
+                                </p>
+                                <p
+                                  className={cn(
+                                    credit ? "font-medium text-emerald-700" : undefined
+                                  )}
+                                >
+                                  {credit ? "+" : ""}
+                                  {Math.abs(allocation.days)} dia(s) ·{" "}
+                                  {LEAVE_KIND_LABEL[allocation.leave.kind]}
+                                  {allocation.leave.notes
+                                    ? ` · ${allocation.leave.notes}`
+                                    : ""}
+                                </p>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
                     )}
                   </div>
                 ))}
