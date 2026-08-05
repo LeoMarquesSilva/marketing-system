@@ -37,6 +37,7 @@ import {
   type InviteClassification,
 } from "@/components/meus-clientes/invite-classification-section";
 import type { PartyInviteTipo } from "@/lib/party-invite-types";
+import { canEditPartyInvite } from "@/lib/access-control";
 import { useAuth } from "@/contexts/auth-context";
 
 interface PersonEditDialogProps {
@@ -64,6 +65,7 @@ export function PersonEditDialog({
   onSaved,
 }: PersonEditDialogProps) {
   const { profile } = useAuth();
+  const partyInviteEditable = canEditPartyInvite(profile);
   const isPerson = Boolean(person);
   const target = person ?? contact ?? null;
 
@@ -106,7 +108,15 @@ export function PersonEditDialog({
     { label: "E-mail", ok: Boolean(email.trim()) },
     { label: "Telefone", ok: Boolean(phone.trim()) },
     { label: "Cargo", ok: Boolean(resolvedCargo) },
-    { label: "NPS e Festa", ok: isInviteClassificationComplete({ classification: inviteClassification, partyInvite, partyInviteTipo }) },
+    {
+      label: partyInviteEditable ? "NPS e Festa" : "NPS",
+      ok: isInviteClassificationComplete({
+        classification: inviteClassification,
+        partyInvite,
+        partyInviteTipo,
+        partyInviteEditable,
+      }),
+    },
   ];
   const completeCount = checklist.filter((c) => c.ok).length;
 
@@ -128,14 +138,24 @@ export function PersonEditDialog({
         classification: inviteClassification,
         partyInvite,
         partyInviteTipo,
+        partyInviteEditable,
       });
+      // Gestores não alteram festa: preserva o valor já salvo no registro.
+      const originalPartyInvite = target.partyInvite;
+      const originalPartyInviteTipo = target.partyInviteTipo;
+      const nextPartyInvite = partyInviteEditable ? partyInvite : originalPartyInvite;
+      const nextPartyInviteTipo = partyInviteEditable
+        ? partyInvite
+          ? partyInviteTipo
+          : null
+        : originalPartyInviteTipo;
       const patch = {
         name: name.trim(),
         phone: phoneValue,
         cargo: resolvedCargo || null,
         npsEligible,
-        partyInvite,
-        partyInviteTipo: partyInvite ? partyInviteTipo : null,
+        partyInvite: nextPartyInvite,
+        partyInviteTipo: nextPartyInviteTipo,
         enrichedByUserId,
         ...(classificationComplete && enrichedByUserId
           ? { invitesClassifiedByUserId: enrichedByUserId }
@@ -289,6 +309,7 @@ export function PersonEditDialog({
             npsEligible={npsEligible}
             partyInvite={partyInvite}
             partyInviteTipo={partyInviteTipo}
+            partyInviteEditable={partyInviteEditable}
             onClassificationChange={({
               classification,
               npsEligible: nps,
@@ -297,8 +318,10 @@ export function PersonEditDialog({
             }) => {
               setInviteClassification(classification);
               setNpsEligible(nps);
-              setPartyInvite(party);
-              setPartyInviteTipo(tipo);
+              if (partyInviteEditable) {
+                setPartyInvite(party);
+                setPartyInviteTipo(tipo);
+              }
             }}
           />
         </div>

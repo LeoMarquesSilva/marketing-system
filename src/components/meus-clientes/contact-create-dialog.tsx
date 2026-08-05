@@ -30,6 +30,7 @@ import {
   type InviteClassification,
 } from "@/components/meus-clientes/invite-classification-section";
 import type { PartyInviteTipo } from "@/lib/party-invite-types";
+import { canEditPartyInvite } from "@/lib/access-control";
 import { useAuth } from "@/contexts/auth-context";
 
 interface ContactGroupTarget {
@@ -46,6 +47,7 @@ interface ContactCreateDialogProps {
 
 export function ContactCreateDialog({ open, onOpenChange, group, onCreated }: ContactCreateDialogProps) {
   const { profile } = useAuth();
+  const partyInviteEditable = canEditPartyInvite(profile);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -88,21 +90,25 @@ export function ContactCreateDialog({ open, onOpenChange, group, onCreated }: Co
     setSaving(true);
     setError(null);
     try {
+      const nextPartyInvite = partyInviteEditable ? partyInvite : false;
+      const nextPartyInviteTipo =
+        partyInviteEditable && nextPartyInvite ? partyInviteTipo : null;
       await createEmailContact({
         email: email.trim(),
         name: name.trim(),
         phone: phone.trim() || null,
         cargo: resolvedCargo || null,
         npsEligible,
-        partyInvite,
-        partyInviteTipo: partyInvite ? partyInviteTipo : null,
+        partyInvite: nextPartyInvite,
+        partyInviteTipo: nextPartyInviteTipo,
         clientGroupId: group.clientGroupId,
         company: group.name,
         enrichedByUserId: profile?.id,
         ...(isInviteClassificationComplete({
           classification: inviteClassification,
-          partyInvite,
-          partyInviteTipo,
+          partyInvite: nextPartyInvite,
+          partyInviteTipo: nextPartyInviteTipo,
+          partyInviteEditable,
         }) && profile?.id
           ? { invitesClassifiedByUserId: profile.id }
           : {}),
@@ -214,6 +220,7 @@ export function ContactCreateDialog({ open, onOpenChange, group, onCreated }: Co
             npsEligible={npsEligible}
             partyInvite={partyInvite}
             partyInviteTipo={partyInviteTipo}
+            partyInviteEditable={partyInviteEditable}
             onClassificationChange={({
               classification,
               npsEligible: nps,
@@ -222,8 +229,10 @@ export function ContactCreateDialog({ open, onOpenChange, group, onCreated }: Co
             }) => {
               setInviteClassification(classification);
               setNpsEligible(nps);
-              setPartyInvite(party);
-              setPartyInviteTipo(tipo);
+              if (partyInviteEditable) {
+                setPartyInvite(party);
+                setPartyInviteTipo(tipo);
+              }
             }}
           />
         </div>

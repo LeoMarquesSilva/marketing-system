@@ -10,6 +10,8 @@ export interface AccessSection {
   key: string; // rota base
   label: string;
   admin?: boolean;
+  /** Liberação só manual (nunca entra em preset de lote, exceto Administrador). */
+  manualOnly?: boolean;
 }
 
 /** Seções do sistema (chave = rota base usada no menu e nas rotas). */
@@ -19,6 +21,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/solicitacoes", label: "Solicitações" },
   { key: "/conteudo/roteiros", label: "Conteúdo para Post" },
   { key: "/conteudo/boletim", label: "Newsletter" },
+  { key: "/conteudo/reels", label: "Roteiros de Reels" },
   { key: "/clima", label: "Clima" },
   { key: "/instagram-insights", label: "Instagram Insights" },
   { key: "/linkedin-insights", label: "LinkedIn Insights" },
@@ -27,25 +30,28 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/eventos", label: "Eventos" },
   { key: "/email-marketing", label: "E-mail Marketing" },
   { key: "/nfc", label: "NFC Hub" },
-  { key: "/meus-clientes", label: "Meus Clientes" },
+  { key: "/meus-clientes", label: "Meus Clientes", manualOnly: true },
   { key: "/fotos-colaboradores", label: "Fotos Colaboradores" },
   { key: "/usuarios", label: "Usuários" },
   { key: "/custos-projetos", label: "Custos de Projetos" },
-  { key: "/ferias", label: "Férias" },
+  { key: "/ferias", label: "Férias", manualOnly: true },
   { key: "/admin", label: "Configurações", admin: true },
 ];
 
 const ALL_KEYS = ACCESS_SECTIONS.map((s) => s.key);
+const VALID_PERMISSION_KEYS = new Set(ALL_KEYS);
+
 /** Chaves liberadas apenas manualmente (por usuário), nunca via preset em lote. */
-const MEUS_CLIENTES_KEY = "/meus-clientes";
-const FERIAS_KEY = "/ferias";
-const MANUAL_ONLY_KEYS = [MEUS_CLIENTES_KEY, FERIAS_KEY];
+export const MEUS_CLIENTES_KEY = "/meus-clientes";
+export const MANUAL_ONLY_KEYS = ACCESS_SECTIONS.filter((s) => s.manualOnly).map((s) => s.key);
+
 const NON_ADMIN_KEYS = ACCESS_SECTIONS.filter(
-  (s) => !s.admin && !MANUAL_ONLY_KEYS.includes(s.key)
+  (s) => !s.admin && !s.manualOnly
 ).map((s) => s.key);
 
 /** Presets de acesso (preenchem os checkboxes; o salvo é a lista final). */
 export const ACCESS_PRESETS: Record<string, string[]> = {
+  "Gestor Meus Clientes": [MEUS_CLIENTES_KEY],
   "Colaborador de conteúdo": ["/conteudo/roteiros"],
   "Marketing completo": [...NON_ADMIN_KEYS],
   Administrador: [...ALL_KEYS],
@@ -88,6 +94,29 @@ export function hasCollaboratorPhotosAccess(
   return COLLABORATOR_PHOTOS_USER_IDS.has(profile.id);
 }
 
+export function isAdminRole(profile: AccessProfile | null | undefined): boolean {
+  return (profile?.role ?? "").toLowerCase() === "admin";
+}
+
+export function isManualOnlyKey(key: string): boolean {
+  return MANUAL_ONLY_KEYS.includes(key);
+}
+
+/**
+ * Normaliza a lista salva em `users.permissions`:
+ * - remove chaves inválidas
+ * - array vazio → null (regra legada por cargo/área)
+ */
+export function normalizePermissionsInput(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  const keys = raw
+    .filter((k): k is string => typeof k === "string")
+    .filter((k) => VALID_PERMISSION_KEYS.has(k));
+  // Mantém ordem do catálogo para UI estável.
+  const ordered = ALL_KEYS.filter((k) => keys.includes(k));
+  return ordered.length > 0 ? ordered : null;
+}
+
 /**
  * Seções permitidas explicitamente. Retorna null quando não há permissões
  * definidas (usar regra legada). Admin sempre tem tudo.
@@ -97,7 +126,7 @@ export function resolveAllowedSections(
 ): string[] | null {
   if (!profile) return null;
   // Admin nunca é limitado pelo catálogo (acesso total, inclusive rotas futuras).
-  if ((profile.role ?? "").toLowerCase() === "admin") return null;
+  if (isAdminRole(profile)) return null;
   if (profile.permissions && profile.permissions.length > 0) {
     return profile.permissions;
   }
@@ -113,7 +142,7 @@ export function canAccessPath(
     (key) => pathname === key || pathname.startsWith(key + "/")
   );
   if (manualOnlyKey) {
-    if ((profile?.role ?? "").toLowerCase() === "admin") return true;
+    if (isAdminRole(profile)) return true;
     return Boolean(profile?.permissions?.includes(manualOnlyKey));
   }
 
@@ -148,4 +177,12 @@ export function firstAllowedPath(profile: AccessProfile | null | undefined): str
   // Colaborador de conteúdo cai na home de desempenho.
   if (hasContentAccess(allowed) && !allowed.includes("/")) return CONTENT_HOME_PATH;
   return allowed.includes("/") ? "/" : allowed[0];
+}
+
+/**
+ * Só admin altera convite da Festa de 10 anos em Meus Clientes.
+ * Gestores com `/meus-clientes` veem a opção, mas ela fica inativa.
+ */
+export function canEditPartyInvite(profile: AccessProfile | null | undefined): boolean {
+  return isAdminRole(profile);
 }

@@ -155,6 +155,28 @@ describe("computeEmployeeBalance", () => {
     expect(excess.unallocatedDays).toBe(13);
     expect(excess.pendingDays).toBe(-13);
   });
+
+  it("credita dia trabalhado no recesso devolvendo saldo", () => {
+    const withCredit = computeEmployeeBalance({
+      admissionDate: ADMISSION,
+      periods: buildPeriods(),
+      leaves: [
+        ...buildLeaves(),
+        {
+          id: "credit-1",
+          employee_id: "felipe",
+          start_date: "2026-01-02",
+          end_date: "2026-01-02",
+          days: 1,
+          kind: "trabalho_recesso",
+          notes: null,
+        },
+      ],
+      referenceDate: REFERENCE,
+    });
+    expect(withCredit.totalTakenDays).toBe(128);
+    expect(withCredit.pendingDays).toBe(52);
+  });
 });
 
 describe("inclusiveDayCount", () => {

@@ -1,6 +1,8 @@
 import { createClient } from "@/utils/supabase/server";
 import {
+  canCreateRoteiroFromLink,
   getAllowedLegalAreas,
+  isContentCollaborator,
   isContentManager,
   type ContentAccessProfile,
 } from "@/lib/content-areas";
@@ -57,4 +59,9 @@ export function resolveAreaFilter(
   return { areas: allowed };
 }
 
-export { isContentManager, getAllowedLegalAreas };
+export {
+  canCreateRoteiroFromLink,
+  getAllowedLegalAreas,
+  isContentCollaborator,
+  isContentManager,
+};

@@ -72,6 +72,17 @@ export function isContentCollaborator(profile: ContentAccessProfile | null | und
   return getLegalAreasForDepartment(profile.department ?? "").length > 0;
 }
 
+/**
+ * Quem pode colar um link e gerar post: gestores de conteúdo e colaboradores
+ * de área (ex.: Operações Legais). A IA classifica a área; o post entra
+ * aguardando aprovação.
+ */
+export function canCreateRoteiroFromLink(
+  profile: ContentAccessProfile | null | undefined
+): boolean {
+  return isContentManager(profile) || isContentCollaborator(profile);
+}
+
 /** null = acesso a todas as áreas; array vazio = sem acesso a conteúdo por área. */
 export function getAllowedLegalAreas(profile: ContentAccessProfile | null | undefined): LegalArea[] | null {
   if (!profile) return [];

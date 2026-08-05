@@ -15,6 +15,7 @@ import type {
   VacationPeriod,
   VacationPeriodStatus,
 } from "@/lib/ferias/types";
+import { isVacationCreditKind } from "@/lib/ferias/types";
 
 export const DEFAULT_ENTITLED_DAYS = 30;
 /** Janela de alerta antes do fim do período concessivo. */
@@ -153,14 +154,20 @@ export function computeEmployeeBalance({
   referenceDate = todayISO(),
 }: ComputeBalanceInput): EmployeeBalance {
   const sortedPeriods = [...periods].sort((a, b) => a.period_start.localeCompare(b.period_start));
-  const sortedLeaves = [...leaves].sort((a, b) => a.start_date.localeCompare(b.start_date));
+  const debitLeaves = [...leaves]
+    .filter((leave) => !isVacationCreditKind(leave.kind))
+    .sort((a, b) => a.start_date.localeCompare(b.start_date));
+  const creditLeaves = [...leaves]
+    .filter((leave) => isVacationCreditKind(leave.kind))
+    .sort((a, b) => a.start_date.localeCompare(b.start_date));
 
   const allocationsByPeriod = new Map<string, LeaveAllocation[]>();
   const usedByPeriod = new Map<string, number>();
   let unallocatedDays = 0;
   let periodIndex = 0;
 
-  for (const leave of sortedLeaves) {
+  // Débitos (férias/recesso/abono) consomem FIFO nos períodos mais antigos.
+  for (const leave of debitLeaves) {
     let pending = leave.days;
     while (pending > 0 && periodIndex < sortedPeriods.length) {
       const period = sortedPeriods[periodIndex];
@@ -180,6 +187,23 @@ export function computeEmployeeBalance({
     unallocatedDays += pending;
   }
 
+  // Créditos (dia trabalhado) devolvem saldo LIFO nos períodos mais recentes usados.
+  for (const leave of creditLeaves) {
+    let pending = leave.days;
+    for (let index = sortedPeriods.length - 1; index >= 0 && pending > 0; index -= 1) {
+      const period = sortedPeriods[index];
+      const alreadyUsed = usedByPeriod.get(period.id) ?? 0;
+      if (alreadyUsed <= 0) continue;
+      const restored = Math.min(alreadyUsed, pending);
+      usedByPeriod.set(period.id, alreadyUsed - restored);
+      const allocations = allocationsByPeriod.get(period.id) ?? [];
+      allocations.push({ leave, days: -restored });
+      allocationsByPeriod.set(period.id, allocations);
+      pending -= restored;
+    }
+    // Crédito sem consumo prévio: não gera “dívida” negativa; sobra é ignorada no saldo.
+  }
+
   const periodBalances: PeriodBalance[] = sortedPeriods.map((period) => {
     const usedDays = usedByPeriod.get(period.id) ?? 0;
     const remainingDays = period.entitled_days - usedDays;
@@ -195,7 +219,9 @@ export function computeEmployeeBalance({
   });
 
   const totalEntitledDays = sortedPeriods.reduce((sum, period) => sum + period.entitled_days, 0);
-  const totalTakenDays = sortedLeaves.reduce((sum, leave) => sum + leave.days, 0);
+  const debitDays = debitLeaves.reduce((sum, leave) => sum + leave.days, 0);
+  const creditDays = creditLeaves.reduce((sum, leave) => sum + leave.days, 0);
+  const totalTakenDays = Math.max(0, debitDays - creditDays);
   const overdueDays = periodBalances
     .filter((item) => item.status === "vencido")
     .reduce((sum, item) => sum + item.remainingDays, 0);
@@ -220,7 +246,7 @@ export function computeEmployeeBalance({
   );
 
   const onLeaveNow =
-    sortedLeaves.find(
+    debitLeaves.find(
       (leave) => leave.start_date <= referenceDate && leave.end_date >= referenceDate
     ) ?? null;
 
@@ -251,6 +277,8 @@ export const LEAVE_KIND_LABEL: Record<VacationLeave["kind"], string> = {
   ferias: "Férias",
   recesso: "Recesso",
   abono: "Abono",
+  trabalho_recesso: "Dia trabalhado no recesso",
+  trabalho_ferias: "Dia trabalhado nas férias",
 };
 
 export function formatISODateBR(value: string | null | undefined): string {

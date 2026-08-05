@@ -21,7 +21,12 @@ import {
 import { Loader2, KeyRound, ShieldCheck, Check, Clock3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { User } from "@/lib/users";
-import { ACCESS_SECTIONS, ACCESS_PRESETS } from "@/lib/access-control";
+import {
+  ACCESS_SECTIONS,
+  ACCESS_PRESETS,
+  isManualOnlyKey,
+  normalizePermissionsInput,
+} from "@/lib/access-control";
 import { formatAuthDateTime } from "@/lib/users-auth-activity";
 
 interface UserAccessDialogProps {
@@ -44,7 +49,7 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
   useEffect(() => {
     if (user) {
       setEmail(user.email ?? "");
-      setPermissions(user.permissions ?? []);
+      setPermissions(normalizePermissionsInput(user.permissions) ?? []);
       setAuthActivity(user.auth_activity ?? null);
       setError(null);
       setNotice(null);
@@ -125,16 +130,27 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
     setNotice(null);
     setSavingPerms(true);
     try {
+      const normalized = normalizePermissionsInput(permissions);
       const res = await fetch("/api/admin/users", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "set_access", userId: user!.id, permissions }),
+        body: JSON.stringify({
+          action: "set_access",
+          userId: user!.id,
+          permissions: normalized ?? [],
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Erro ao salvar permissões");
-      onUpdated(user!.id, { permissions, role: data.role ?? user!.role });
-      setNotice("Permissões salvas.");
+      const saved = normalizePermissionsInput(data.permissions ?? normalized) ?? null;
+      setPermissions(saved ?? []);
+      onUpdated(user!.id, { permissions: saved, role: data.role ?? user!.role });
+      setNotice(
+        saved
+          ? "Permissões salvas."
+          : "Permissões limpas — vale a regra padrão por cargo/área."
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao salvar permissões");
     } finally {
@@ -272,6 +288,7 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
             <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
               {ACCESS_SECTIONS.map((s) => {
                 const checked = permissions.includes(s.key);
+                const manual = isManualOnlyKey(s.key);
                 return (
                   <button
                     key={s.key}
@@ -281,7 +298,8 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
                       "flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors",
                       checked
                         ? "border-primary/40 bg-primary/[0.06] text-foreground"
-                        : "hover:bg-muted/50 text-muted-foreground"
+                        : "hover:bg-muted/50 text-muted-foreground",
+                      manual && checked && "border-amber-300/70 bg-amber-50/70 dark:bg-amber-950/20"
                     )}
                   >
                     <span
@@ -292,16 +310,22 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
                     >
                       {checked && <Check className="h-3 w-3" />}
                     </span>
-                    <span className="truncate">
-                      {s.label}
-                      {s.admin && <span className="ml-1 text-[10px] text-muted-foreground">(admin)</span>}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{s.label}</span>
+                      {(s.admin || manual) && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {s.admin ? "admin" : "liberação manual"}
+                        </span>
+                      )}
                     </span>
                   </button>
                 );
               })}
             </div>
             <p className="text-[11px] text-muted-foreground">
-              Deixe tudo desmarcado para usar a regra padrão por cargo/área.
+              Meus Clientes e Férias só entram se você marcar (ou usar o perfil
+              &quot;Gestor Meus Clientes&quot;). Deixe tudo desmarcado para a regra padrão por
+              cargo/área.
             </p>
             <div className="flex justify-end">
               <Button onClick={savePerms} disabled={savingPerms} size="sm" className="gap-2">

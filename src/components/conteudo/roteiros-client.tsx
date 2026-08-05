@@ -54,6 +54,7 @@ import {
   getAllowedLegalAreas,
   getAreaDotColor,
   getLegalAreasForDepartment,
+  canCreateRoteiroFromLink,
   isContentCollaborator,
   isContentManager,
   LEGAL_AREAS,
@@ -89,6 +90,7 @@ export function RoteirosClient() {
   const showTourDemo = tour.active && isTourDemoStep(tour.stepId);
   const isManager = isContentManager(profile);
   const isCollaborator = isContentCollaborator(profile);
+  const canPasteLink = canCreateRoteiroFromLink(profile);
   const allowedAreas = useMemo(() => getAllowedLegalAreas(profile), [profile]);
   /** Filtro de área: gestores e quem enxerga mais de uma área (ex.: Sócio, Institucional). */
   const canFilterByArea =
@@ -669,8 +671,8 @@ export function RoteirosClient() {
         </Card>
       )}
 
-      {/* Link avulso — marketing */}
-      {isManager && <ManualLinkCard onCreated={loadRoteiros} />}
+      {/* Link avulso — marketing e colaboradores de área */}
+      {canPasteLink && <ManualLinkCard onCreated={loadRoteiros} />}
 
       {/* Carrossel recentes — mobile/colaborador */}
       {isCollaborator && recentHighlights.length > 1 && (

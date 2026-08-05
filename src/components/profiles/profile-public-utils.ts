@@ -17,10 +17,10 @@ export const FIRM_LOGO_ALT = "Bismarchi | Pires";
 
 const SECTION_LABELS_EN: Record<ProfileSectionKey, string> = {
   practice: "Practice areas",
-  education: "Education and qualifications",
-  knowledge: "Knowledge",
-  highlights: "Professional highlights",
-  timeline: "Firm tenure",
+  education: "Academic background",
+  knowledge: "Specialties and knowledge",
+  highlights: "Recognition and highlights",
+  timeline: "Journey at Bismarchi | Pires",
 };
 
 export function isAllowedProfileSource(
@@ -35,6 +35,23 @@ export function getProfileInitials(name: string): string {
   if (parts.length === 0) return "?";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0] ?? ""}${parts[parts.length - 1]?.[0] ?? ""}`.toUpperCase();
+}
+
+/** Exibe data pública sempre em DD/MM/AAAA (calendário da ISO, sem fuso local). */
+export function formatProfilePublishedAtBr(
+  value: string | null | undefined
+): string | null {
+  if (!value) return null;
+  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    return `${match[3]}/${match[2]}/${match[1]}`;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const day = String(parsed.getUTCDate()).padStart(2, "0");
+  const month = String(parsed.getUTCMonth() + 1).padStart(2, "0");
+  const year = String(parsed.getUTCFullYear());
+  return `${day}/${month}/${year}`;
 }
 
 export function whatsappHref(phone: string): string {
@@ -55,6 +72,8 @@ export type ProfileUiCopy = {
   share: string;
   website: string;
   recentContent: string;
+  viewAllPublications: string;
+  readFullBio: string;
   institutionalNotice: string;
   copyContacts: string;
   contactsCopied: string;
@@ -74,7 +93,9 @@ export function profileUiCopy(locale: ProfileLocale): ProfileUiCopy {
       linkedin: "LinkedIn",
       share: "Share",
       website: "Website",
-      recentContent: "Recent content",
+      recentContent: "Publications and content",
+      viewAllPublications: "View all publications",
+      readFullBio: "Read the full career path",
       institutionalNotice:
         "This is an institutional professional profile of Bismarchi | Pires.",
       copyContacts: "Copy visible contacts",
@@ -93,7 +114,9 @@ export function profileUiCopy(locale: ProfileLocale): ProfileUiCopy {
     linkedin: "LinkedIn",
     share: "Compartilhar",
     website: "Site",
-    recentContent: "Conteúdo recente",
+    recentContent: "Publicações e conteúdos",
+    viewAllPublications: "Ver todas as publicações",
+    readFullBio: "Conheça a trajetória completa",
     institutionalNotice:
       "Este é um perfil profissional institucional do Bismarchi | Pires.",
     copyContacts: "Copiar contatos visíveis",

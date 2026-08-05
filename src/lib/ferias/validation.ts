@@ -35,7 +35,9 @@ export const leaveCreateSchema = z
     startDate: isoDate,
     endDate: isoDate,
     days: z.number().int().min(1).max(365),
-    kind: z.enum(["ferias", "recesso", "abono"]).default("ferias"),
+    kind: z
+      .enum(["ferias", "recesso", "abono", "trabalho_recesso", "trabalho_ferias"])
+      .default("ferias"),
     notes: optionalText(500),
   })
   .refine((value) => value.endDate >= value.startDate, {
@@ -48,7 +50,9 @@ export const leaveUpdateSchema = z
     startDate: isoDate.optional(),
     endDate: isoDate.optional(),
     days: z.number().int().min(1).max(365).optional(),
-    kind: z.enum(["ferias", "recesso", "abono"]).optional(),
+    kind: z
+      .enum(["ferias", "recesso", "abono", "trabalho_recesso", "trabalho_ferias"])
+      .optional(),
     notes: optionalText(500),
   })
   .refine(

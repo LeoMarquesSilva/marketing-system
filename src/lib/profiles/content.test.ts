@@ -311,7 +311,7 @@ function createSupabaseStub(handlers: {
 }
 
 describe("listRecentProfessionalContent", () => {
-  it("agrega as três fontes com chave estável e limite", async () => {
+  it("agrega apenas Instagram com chave estável e limite", async () => {
     const supabase = createSupabaseStub({
       instagramBySolicitante: () => ({ data: [igOwnedById], error: null }),
       instagramByContains: () => ({ data: [igOwnedByJson], error: null }),
@@ -326,20 +326,20 @@ describe("listRecentProfessionalContent", () => {
       limit: 3,
     });
 
-    expect(result).toHaveLength(3);
+    expect(result).toHaveLength(2);
     expect(result.map((item) => item.key)).toEqual([
-      "reel_studio:reel-1",
-      "linkedin:li-1",
+      "instagram:ig-1",
       "instagram:ig-2",
     ]);
+    expect(result.every((item) => item.sourceType === "instagram")).toBe(true);
   });
 
-  it("deduplica Instagram quando LinkedIn referencia o mesmo post", async () => {
+  it("ignora LinkedIn e Reel Studio mesmo quando disponíveis", async () => {
     const supabase = createSupabaseStub({
       instagramBySolicitante: () => ({ data: [igOwnedById], error: null }),
       instagramByContains: () => ({ data: [], error: null }),
       linkedin: () => ({ data: [liLinked], error: null }),
-      reels: () => ({ data: [], error: null }),
+      reels: () => ({ data: [reelRow], error: null }),
     });
 
     const result = await listRecentProfessionalContent(supabase, {
@@ -349,7 +349,7 @@ describe("listRecentProfessionalContent", () => {
       limit: 5,
     });
 
-    expect(result.map((item) => item.key)).toEqual(["linkedin:li-1"]);
+    expect(result.map((item) => item.key)).toEqual(["instagram:ig-1"]);
   });
 
   it("ignora override oculto antes do limite", async () => {
@@ -363,14 +363,14 @@ describe("listRecentProfessionalContent", () => {
     const result = await listRecentProfessionalContent(supabase, {
       userId: USER_ID,
       userName: USER_NAME,
-      hiddenKeys: new Set(["reel_studio:reel-1"]),
+      hiddenKeys: new Set(["instagram:ig-1"]),
       limit: 2,
     });
 
-    expect(result.map((item) => item.key)).toEqual(["instagram:ig-1", "instagram:ig-2"]);
+    expect(result.map((item) => item.key)).toEqual(["instagram:ig-2"]);
   });
 
-  it("retorna as fontes restantes quando uma falha", async () => {
+  it("propaga falha quando o Instagram não responde", async () => {
     const supabase = createSupabaseStub({
       instagramBySolicitante: () => ({ data: null, error: { message: "boom" } }),
       instagramByContains: () => ({ data: null, error: { message: "boom" } }),
@@ -378,17 +378,17 @@ describe("listRecentProfessionalContent", () => {
       reels: () => ({ data: [reelRow], error: null }),
     });
 
-    const result = await listRecentProfessionalContent(supabase, {
-      userId: USER_ID,
-      userName: USER_NAME,
-      hiddenKeys: new Set(),
-      limit: 5,
-    });
-
-    expect(result.map((item) => item.key)).toEqual(["reel_studio:reel-1", "linkedin:li-2"]);
+    await expect(
+      listRecentProfessionalContent(supabase, {
+        userId: USER_ID,
+        userName: USER_NAME,
+        hiddenKeys: new Set(),
+        limit: 5,
+      })
+    ).rejects.toThrow();
   });
 
-  it("não interpreta content_roteiros e não usa approved_by_id", async () => {
+  it("consulta apenas instagram_posts", async () => {
     const fromSpy = vi.fn();
     const supabase = createSupabaseStub({
       instagramBySolicitante: () => ({ data: [], error: null }),
@@ -410,11 +410,11 @@ describe("listRecentProfessionalContent", () => {
     });
 
     expect(fromSpy).not.toHaveBeenCalledWith("content_roteiros");
+    expect(fromSpy).not.toHaveBeenCalledWith("linkedin_posts");
+    expect(fromSpy).not.toHaveBeenCalledWith("reel_studio_items");
     expect(fromSpy.mock.calls.map((call) => call[0]).sort()).toEqual([
       "instagram_posts",
       "instagram_posts",
-      "linkedin_posts",
-      "reel_studio_items",
     ]);
   });
 });

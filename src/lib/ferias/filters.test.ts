@@ -4,6 +4,7 @@ import {
   employeeEligibleForRecess,
   filterEmployeesWithBalance,
   getInitials,
+  listEmployeeDepartments,
   resolveEmployeeAvatarUrl,
 } from "@/lib/ferias/filters";
 import type { EmployeeBalance, EmployeeWithBalance, HrEmployee } from "@/lib/ferias/types";
@@ -105,6 +106,7 @@ describe("filterEmployeesWithBalance", () => {
       search: "",
       status: "all",
       situation: "ativos",
+      department: "all",
     });
     expect(result.map((item) => item.employee.id)).toEqual(["1", "3"]);
   });
@@ -114,6 +116,7 @@ describe("filterEmployeesWithBalance", () => {
       search: "",
       status: "all",
       situation: "inativos",
+      department: "all",
     });
     expect(result).toHaveLength(1);
     expect(result[0].employee.full_name).toBe("Andressa da Silva");
@@ -124,9 +127,72 @@ describe("filterEmployeesWithBalance", () => {
       search: "",
       status: "a_vencer",
       situation: "all",
+      department: "all",
     });
     expect(result).toHaveLength(1);
     expect(result[0].employee.id).toBe("1");
+  });
+
+  it("filtra por área", () => {
+    const result = filterEmployeesWithBalance(all, {
+      search: "",
+      status: "all",
+      situation: "all",
+      department: "Recuperação de Crédito",
+    });
+    expect(result).toHaveLength(0);
+  });
+
+  it("Operações Legais engloba Marketing, Financeiro, Facilities e RH", () => {
+    const marketing = row(
+      makeEmployee({
+        id: "4",
+        full_name: "Pessoa Marketing",
+        department: "Marketing",
+      })
+    );
+    const rh = row(
+      makeEmployee({
+        id: "5",
+        full_name: "Pessoa RH",
+        department: "R.H.",
+      })
+    );
+    const result = filterEmployeesWithBalance([felipe, andressa, samuel, marketing, rh], {
+      search: "",
+      status: "all",
+      situation: "all",
+      department: "Operações Legais",
+    });
+    expect(result.map((item) => item.employee.full_name).sort()).toEqual([
+      "Felipe Soares de Camargo",
+      "Pessoa Marketing",
+      "Pessoa RH",
+      "Samuel Willian Silva",
+      // Andressa está em Recursos Humanos → também entra no agrupamento
+      "Andressa da Silva",
+    ].sort());
+  });
+
+  it("lista áreas agrupando RH/Marketing/etc em Operações Legais", () => {
+    const marketing = row(
+      makeEmployee({
+        id: "4",
+        full_name: "Pessoa Marketing",
+        department: "Marketing",
+      })
+    );
+    const insolvencia = row(
+      makeEmployee({
+        id: "5",
+        full_name: "Pessoa Insolvência",
+        department: "Insolvência",
+      })
+    );
+    expect(listEmployeeDepartments([felipe, andressa, samuel, marketing, insolvencia])).toEqual([
+      "Insolvência",
+      "Operações Legais",
+    ]);
   });
 
   it("busca por nome, área ou cargo", () => {
@@ -135,6 +201,7 @@ describe("filterEmployeesWithBalance", () => {
         search: "gerente",
         status: "all",
         situation: "all",
+        department: "all",
       })
     ).toHaveLength(1);
 
@@ -143,6 +210,7 @@ describe("filterEmployeesWithBalance", () => {
         search: "recursos",
         status: "all",
         situation: "all",
+        department: "all",
       })
     ).toHaveLength(1);
 
@@ -151,6 +219,7 @@ describe("filterEmployeesWithBalance", () => {
         search: "xyz",
         status: "all",
         situation: "all",
+        department: "all",
       })
     ).toHaveLength(0);
   });

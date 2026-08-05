@@ -1,8 +1,9 @@
 /**
- * Agrega conteúdo profissional recente sem duplicar publicações-fonte.
+ * Agrega conteúdo profissional recente do Instagram.
  *
- * Fontes: Instagram, LinkedIn e Reel Studio. Overrides só ocultam itens
- * na projeção — nunca alteram a publicação original.
+ * A página pública e o painel NFC usam apenas posts do Instagram.
+ * Helpers de LinkedIn/Reel permanecem para testes e utilidades internas.
+ * Overrides só ocultam itens na projeção — nunca alteram a publicação original.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -233,52 +234,8 @@ async function queryInstagramRows(
   return [...map.values()];
 }
 
-async function queryLinkedinRows(
-  supabase: SupabaseClient,
-  userName: string,
-  ownedInstagramIds: string[]
-): Promise<LinkedinContentRow[]> {
-  const filters: string[] = [];
-  const trimmed = userName.trim();
-  if (trimmed) {
-    // byline exato (case-insensitive) via ilike sem curingas; aspas para espaços.
-    const escaped = trimmed.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-    filters.push(`byline.ilike."${escaped}"`);
-  }
-  if (ownedInstagramIds.length > 0) {
-    filters.push(`instagram_post_id.in.(${ownedInstagramIds.join(",")})`);
-  }
-  if (filters.length === 0) return [];
-
-  const { data, error } = await supabase
-    .from("linkedin_posts")
-    .select("id, caption, permalink, published_at, byline, instagram_post_id")
-    .or(filters.join(","))
-    .order("published_at", { ascending: false })
-    .limit(DEFAULT_FETCH_CAP);
-
-  if (error) throw error;
-  return (data ?? []) as LinkedinContentRow[];
-}
-
-async function queryReelStudioRows(
-  supabase: SupabaseClient,
-  userId: string
-): Promise<ReelStudioContentRow[]> {
-  const { data, error } = await supabase
-    .from("reel_studio_items")
-    .select("id, title, cover_image_url, updated_at, created_at, reel_studio_assignees!inner(user_id)")
-    .eq("reel_studio_assignees.user_id", userId)
-    .order("updated_at", { ascending: false })
-    .limit(DEFAULT_FETCH_CAP);
-
-  if (error) throw error;
-  return (data ?? []) as ReelStudioContentRow[];
-}
-
 /**
- * Lista conteúdos recentes associados ao colaborador.
- * Uma fonte que falha não impede as demais (`Promise.allSettled`).
+ * Lista posts recentes do Instagram associados ao colaborador.
  */
 export async function listRecentProfessionalContent(
   supabase: SupabaseClient,
@@ -289,43 +246,12 @@ export async function listRecentProfessionalContent(
     limit: number;
   }
 ): Promise<ProfileContentItem[]> {
-  const igResult = await Promise.allSettled([queryInstagramRows(supabase, input.userId)]);
-  const instagramRows =
-    igResult[0].status === "fulfilled" ? igResult[0].value : ([] as InstagramContentRow[]);
-
-  const ownedInstagramIds = new Set(instagramRows.map((row) => row.id));
-  const instagramImageById = new Map(
-    instagramRows.map((row) => [row.id, row.thumbnail_url || row.media_url || null] as const)
-  );
-
-  const [linkedinSettled, reelSettled] = await Promise.allSettled([
-    queryLinkedinRows(supabase, input.userName, [...ownedInstagramIds]),
-    queryReelStudioRows(supabase, input.userId),
-  ]);
-
-  const linkedinRows =
-    linkedinSettled.status === "fulfilled" ? linkedinSettled.value : ([] as LinkedinContentRow[]);
-  const reelRows =
-    reelSettled.status === "fulfilled" ? reelSettled.value : ([] as ReelStudioContentRow[]);
-
-  const linkedinOwned = linkedinRows.filter((row) =>
-    linkedinRowBelongsToUser(row, input.userName, ownedInstagramIds)
-  );
-  const linkedinInstagramIds = new Set(
-    linkedinOwned
-      .map((row) => row.instagram_post_id)
-      .filter((id): id is string => Boolean(id))
-  );
-
-  const items: ProfileContentItem[] = [
-    ...instagramRows.map(normalizeInstagramRow),
-    ...linkedinOwned.map((row) => normalizeLinkedinRow(row, instagramImageById)),
-    ...reelRows.map(normalizeReelStudioRow),
-  ];
+  void input.userName;
+  const instagramRows = await queryInstagramRows(supabase, input.userId);
+  const items = instagramRows.map(normalizeInstagramRow);
 
   return aggregateProfileContentItems(items, {
     hiddenKeys: input.hiddenKeys,
     limit: input.limit,
-    linkedinInstagramIds,
   });
 }

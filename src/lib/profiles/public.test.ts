@@ -290,6 +290,20 @@ describe("projectPublicSections", () => {
     expect(result[0]?.entries.some((e) => e.id === "e-hidden")).toBe(false);
   });
 
+  it("omite seções habilitadas sem entradas visíveis", () => {
+    const result = projectPublicSections({
+      locale: "pt-BR",
+      sections: [
+        ...sections,
+        { id: "sec-empty", section_key: "knowledge", enabled: true, sort_order: 3 },
+      ],
+      entries,
+      entryLocalizations: locs,
+    });
+    expect(result.map((s) => s.key)).toEqual(["practice", "education"]);
+    expect(result.some((s) => s.key === "knowledge")).toBe(false);
+  });
+
   it("localiza entradas com fallback por campo", () => {
     const result = projectPublicSections({
       locale: "en",
@@ -499,6 +513,7 @@ describe("getPublicProfessionalProfile", () => {
     expect(result.profile.contacts.email).toBe("leticia@bismarchipires.com.br");
     expect(result.profile.contacts.whatsapp).toBeNull();
     expect(result.profile.campaignMessage).toBe("Mensagem da campanha");
+    expect(result.profile.campaignTitle).toBe("Dia");
     expect(result.profile.recentContent).toHaveLength(1);
   });
 
@@ -554,7 +569,7 @@ describe("getPublicProfessionalProfile", () => {
     expect(result.profile.recentContent).toEqual([]);
   });
 
-  it("define campaignMessage=null quando a campanha falha", async () => {
+  it("define campaignMessage e campaignTitle nulos quando a campanha falha", async () => {
     const client = createPublicSupabaseStub({
       profileBySlug: () => ({ data: publishedRow, error: null }),
       localizations: () => ({
@@ -587,5 +602,6 @@ describe("getPublicProfessionalProfile", () => {
     expect(result?.kind).toBe("profile");
     if (result?.kind !== "profile") return;
     expect(result.profile.campaignMessage).toBeNull();
+    expect(result.profile.campaignTitle).toBeNull();
   });
 });

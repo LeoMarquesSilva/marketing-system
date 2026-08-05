@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type MouseEvent } from "react";
+import { useMemo, useState, type MouseEvent, type ReactNode } from "react";
 import type { PublicProfessionalProfile, ProfileEventSource } from "@/lib/profiles/types";
 import { beaconProfileEvent } from "@/lib/profiles/metrics";
 import { ProfileEventLink } from "@/components/profiles/profile-event-link";
@@ -33,6 +33,10 @@ const SOCIAL_CLASS = "pp-social min-h-11 min-w-11";
 
 function resolveSource(source: string | null | undefined): ProfileEventSource {
   return isAllowedProfileSource(source) ? source : "direct";
+}
+
+function DockItem({ children }: { children: ReactNode }) {
+  return <div className="pp-contact-dock__item">{children}</div>;
 }
 
 export function ProfileContactActions({
@@ -149,50 +153,8 @@ export function ProfileContactActions({
       ) : null}
 
       <div className="pp-contact-dock">
-        {contacts.whatsapp ? (
-          <div className="pp-contact-dock__item">
-            <ProfileEventLink
-              className={`${SOCIAL_CLASS} pp-social--whatsapp`}
-              href={whatsappHref(contacts.whatsapp)}
-              rel="noopener noreferrer"
-              target="_blank"
-              data-action="whatsapp"
-              slug={profile.slug}
-              action="whatsapp"
-              locale={profile.locale}
-              source={eventSource}
-              aria-label={copy.whatsapp}
-            >
-              <span className="pp-social__icon" aria-hidden="true">
-                <IconWhatsApp />
-              </span>
-              <span className="pp-social__label">{copy.whatsapp}</span>
-            </ProfileEventLink>
-          </div>
-        ) : null}
-
-        {contacts.email ? (
-          <div className="pp-contact-dock__item">
-            <ProfileEventLink
-              className={`${SOCIAL_CLASS} pp-social--email`}
-              href={`mailto:${contacts.email}`}
-              data-action="email"
-              slug={profile.slug}
-              action="email"
-              locale={profile.locale}
-              source={eventSource}
-              aria-label={copy.email}
-            >
-              <span className="pp-social__icon" aria-hidden="true">
-                <IconMail />
-              </span>
-              <span className="pp-social__label">{copy.email}</span>
-            </ProfileEventLink>
-          </div>
-        ) : null}
-
         {contacts.linkedinUrl ? (
-          <div className="pp-contact-dock__item">
+          <DockItem>
             <ProfileEventLink
               className={`${SOCIAL_CLASS} pp-social--linkedin`}
               href={contacts.linkedinUrl}
@@ -210,10 +172,10 @@ export function ProfileContactActions({
               </span>
               <span className="pp-social__label">{copy.linkedin}</span>
             </ProfileEventLink>
-          </div>
+          </DockItem>
         ) : null}
 
-        <div className="pp-contact-dock__item">
+        <DockItem>
           <button
             type="button"
             className={`${SOCIAL_CLASS} pp-social--share`}
@@ -226,10 +188,52 @@ export function ProfileContactActions({
             </span>
             <span className="pp-social__label">{copy.share}</span>
           </button>
-        </div>
+        </DockItem>
+
+        {contacts.email ? (
+          <DockItem>
+            <ProfileEventLink
+              className={`${SOCIAL_CLASS} pp-social--email`}
+              href={`mailto:${contacts.email}`}
+              data-action="email"
+              slug={profile.slug}
+              action="email"
+              locale={profile.locale}
+              source={eventSource}
+              aria-label={copy.email}
+            >
+              <span className="pp-social__icon" aria-hidden="true">
+                <IconMail />
+              </span>
+              <span className="pp-social__label">{copy.email}</span>
+            </ProfileEventLink>
+          </DockItem>
+        ) : null}
+
+        {contacts.whatsapp ? (
+          <DockItem>
+            <ProfileEventLink
+              className={`${SOCIAL_CLASS} pp-social--whatsapp`}
+              href={whatsappHref(contacts.whatsapp)}
+              rel="noopener noreferrer"
+              target="_blank"
+              data-action="whatsapp"
+              slug={profile.slug}
+              action="whatsapp"
+              locale={profile.locale}
+              source={eventSource}
+              aria-label={copy.whatsapp}
+            >
+              <span className="pp-social__icon" aria-hidden="true">
+                <IconWhatsApp />
+              </span>
+              <span className="pp-social__label">{copy.whatsapp}</span>
+            </ProfileEventLink>
+          </DockItem>
+        ) : null}
 
         {contacts.websiteUrl ? (
-          <div className="pp-contact-dock__item">
+          <DockItem>
             <ProfileEventLink
               className={`${SOCIAL_CLASS} pp-social--website`}
               href={contacts.websiteUrl}
@@ -247,7 +251,7 @@ export function ProfileContactActions({
               </span>
               <span className="pp-social__label">{copy.website}</span>
             </ProfileEventLink>
-          </div>
+          </DockItem>
         ) : null}
       </div>
     </section>

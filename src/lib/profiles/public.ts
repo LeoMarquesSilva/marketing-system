@@ -8,7 +8,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createProfileAdminClient, resolveProfilePhotoUrl } from "@/lib/profiles/admin";
 import { toTitleCasePt } from "@/lib/profiles/text";
-import { resolveCampaignMessage } from "@/lib/profiles/campaign";
+import {
+  resolveCampaignMessage,
+  resolveCampaignTitle,
+} from "@/lib/profiles/campaign";
 import { listRecentProfessionalContent } from "@/lib/profiles/content";
 import {
   localizeField,
@@ -250,7 +253,8 @@ export function projectPublicSections(input: {
         });
 
       return { key: section.section_key, entries };
-    });
+    })
+    .filter((section) => section.entries.length > 0);
 }
 
 export function mapCampaignRow(row: Row | null | undefined): ProfileCampaign | null {
@@ -317,28 +321,32 @@ async function loadRecentContentSafe(
       userId: input.userId,
       userName: input.userName,
       hiddenKeys,
-      limit: 3,
+      limit: 12,
     });
   } catch {
     return [];
   }
 }
 
-async function loadCampaignMessageSafe(
+async function loadCampaignSafe(
   db: SupabaseClient,
   locale: ProfileLocale,
   now: Date
-): Promise<string | null> {
+): Promise<{ message: string | null; title: string | null }> {
   try {
     const { data, error } = await db
       .from("professional_profile_campaign")
       .select(CAMPAIGN_COLUMNS)
       .eq("id", true)
       .maybeSingle();
-    if (error) return null;
-    return resolveCampaignMessage(mapCampaignRow(data as unknown as Row | null), locale, now);
+    if (error) return { message: null, title: null };
+    const campaign = mapCampaignRow(data as unknown as Row | null);
+    return {
+      message: resolveCampaignMessage(campaign, locale, now),
+      title: resolveCampaignTitle(campaign, locale, now),
+    };
   } catch {
-    return null;
+    return { message: null, title: null };
   }
 }
 
@@ -446,13 +454,13 @@ async function assemblePublicProfile(
     pt.displayName ||
     "";
 
-  const [recentContent, campaignMessage] = await Promise.all([
+  const [recentContent, campaign] = await Promise.all([
     loadRecentContentSafe(db, {
       profileId: row.id,
       userId: row.user_id,
       userName,
     }),
-    loadCampaignMessageSafe(db, locale, now),
+    loadCampaignSafe(db, locale, now),
   ]);
 
   return {
@@ -477,7 +485,8 @@ async function assemblePublicProfile(
       entryLocalizations,
     }),
     recentContent,
-    campaignMessage,
+    campaignMessage: campaign.message,
+    campaignTitle: campaign.title,
   };
 }
 

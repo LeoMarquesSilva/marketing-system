@@ -12,6 +12,8 @@ export interface FeriasListFilters {
   search: string;
   status: StatusFilter;
   situation: SituationFilter;
+  /** Área do filtro em botões; `all` = sem filtro. */
+  department: string;
 }
 
 export interface FeriasKpis {
@@ -20,6 +22,59 @@ export interface FeriasKpis {
   dueSoon: number;
   onLeave: number;
   activeCount: number;
+}
+
+/** Rótulo canônico do agrupamento Operações Legais no filtro. */
+export const AREA_FILTER_OPERACOES_LEGAIS = "Operações Legais";
+
+function normalizeDepartmentKey(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\./g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Departamentos que entram no filtro "Operações Legais"
+ * (Marketing, Financeiro, Facilities, RH + a própria área).
+ */
+const OPERACOES_LEGAIS_DEPARTMENTS = new Set([
+  "operacoes legais",
+  "marketing",
+  "comercial", // legado; Marketing fica sob Operações Legais
+  "financeiro",
+  "facilities",
+  "rh",
+  "r h",
+  "recursos humanos",
+]);
+
+function isOperacoesLegaisDepartment(department: string | null | undefined): boolean {
+  if (!department?.trim()) return false;
+  return OPERACOES_LEGAIS_DEPARTMENTS.has(normalizeDepartmentKey(department));
+}
+
+/** Resolve o rótulo do botão de área a partir do departamento bruto. */
+export function resolveAreaFilterLabel(department: string | null | undefined): string | null {
+  const trimmed = department?.trim();
+  if (!trimmed) return null;
+  if (isOperacoesLegaisDepartment(trimmed)) return AREA_FILTER_OPERACOES_LEGAIS;
+  return trimmed;
+}
+
+/** Verifica se o departamento do colaborador cabe no filtro de área selecionado. */
+export function departmentMatchesAreaFilter(
+  department: string | null | undefined,
+  areaFilter: string
+): boolean {
+  if (areaFilter === "all") return true;
+  if (normalizeDepartmentKey(areaFilter) === normalizeDepartmentKey(AREA_FILTER_OPERACOES_LEGAIS)) {
+    return isOperacoesLegaisDepartment(department);
+  }
+  return normalizeDepartmentKey(department ?? "") === normalizeDepartmentKey(areaFilter);
 }
 
 /** Filtra a lista da tela principal: situação, status do saldo e busca textual. */
@@ -32,10 +87,24 @@ export function filterEmployeesWithBalance(
     if (filters.situation === "ativos" && !employee.is_active) return false;
     if (filters.situation === "inativos" && employee.is_active) return false;
     if (filters.status !== "all" && balance.status !== filters.status) return false;
+    if (!departmentMatchesAreaFilter(employee.department, filters.department)) return false;
     if (!query) return true;
     const haystack = `${employee.full_name} ${employee.department ?? ""} ${employee.position ?? ""}`;
     return haystack.toLowerCase().includes(query);
   });
+}
+
+/**
+ * Áreas para os botões de filtro. Marketing/Financeiro/Facilities/RH
+ * entram agrupados em "Operações Legais".
+ */
+export function listEmployeeDepartments(employees: EmployeeWithBalance[]): string[] {
+  const set = new Set<string>();
+  for (const { employee } of employees) {
+    const label = resolveAreaFilterLabel(employee.department);
+    if (label) set.add(label);
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
 
 /** KPIs só consideram colaboradores ativos — ex-funcionários não entram no alerta. */

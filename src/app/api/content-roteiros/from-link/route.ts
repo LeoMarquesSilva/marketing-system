@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { getAuthenticatedContentUser, isContentManager } from "@/lib/content-access";
+import {
+  canCreateRoteiroFromLink,
+  getAuthenticatedContentUser,
+} from "@/lib/content-access";
 import {
   ManualLinkError,
   createRoteiroFromLink,
@@ -19,10 +22,10 @@ export async function POST(request: Request) {
         { status: 401 }
       );
     }
-    if (!isContentManager(contentUser.profile)) {
+    if (!canCreateRoteiroFromLink(contentUser.profile)) {
       return NextResponse.json(
         {
-          error: "Apenas a equipe de marketing pode gerar post a partir de link.",
+          error: "Sem permissão para gerar post a partir de link.",
           code: "FORBIDDEN",
         },
         { status: 403 }

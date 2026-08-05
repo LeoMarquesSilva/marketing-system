@@ -5,6 +5,7 @@ import {
   buildCanonicalProfileUrl,
   buildLanguageSwitchHref,
   downloadVCardOrFail,
+  formatProfilePublishedAtBr,
   formatVisibleContacts,
   getProfileInitials,
   shareOrCopyProfileUrl,
@@ -83,21 +84,21 @@ function makeProfile(
         publishedAt: "2026-07-01T00:00:00.000Z",
       },
       {
-        sourceType: "linkedin",
+        sourceType: "instagram",
         sourceId: "2",
-        key: "linkedin:2",
+        key: "instagram:2",
         title: "Post dois",
         imageUrl: null,
-        url: "https://linkedin.com/posts/2",
+        url: "https://instagram.com/p/2",
         publishedAt: "2026-07-02T00:00:00.000Z",
       },
       {
-        sourceType: "reel_studio",
+        sourceType: "instagram",
         sourceId: "3",
-        key: "reel_studio:3",
+        key: "instagram:3",
         title: "Post três",
         imageUrl: null,
-        url: null,
+        url: "https://instagram.com/p/3",
         publishedAt: "2026-07-03T00:00:00.000Z",
       },
       {
@@ -110,7 +111,8 @@ function makeProfile(
         publishedAt: "2026-07-04T00:00:00.000Z",
       },
     ],
-    campaignMessage: "Semana do cliente no escritório.",
+    campaignMessage: "A advocacia começa pela escuta.",
+    campaignTitle: "Dia do Advogado 2026",
     ...overrides,
   };
 }
@@ -217,10 +219,10 @@ describe("ProfessionalProfilePage — contatos", () => {
     );
     const actions = [
       "save-contact",
-      "whatsapp",
-      "email",
       "linkedin",
       "share",
+      "email",
+      "whatsapp",
       "website",
     ];
     const indexes = actions.map((action) =>
@@ -240,18 +242,18 @@ describe("ProfessionalProfilePage — contatos", () => {
 });
 
 describe("ProfessionalProfilePage — campanha, seções e conteúdo", () => {
-  it("exibe faixa de campanha somente quando há mensagem", () => {
+  it("exibe faixa de campanha somente quando há mensagem ou título", () => {
     const withCampaign = renderToStaticMarkup(
       <ProfessionalProfilePage profile={makeProfile()} />
     );
     expect(withCampaign).toContain('data-campaign="true"');
-    expect(withCampaign).toContain("Semana do cliente no escritório.");
-    expect(withCampaign).not.toContain("Campanha");
+    expect(withCampaign).toContain("A advocacia começa pela escuta.");
+    expect(withCampaign).toContain("Dia do Advogado 2026");
     expect(withCampaign).not.toContain('role="status"');
 
     const withoutCampaign = renderToStaticMarkup(
       <ProfessionalProfilePage
-        profile={makeProfile({ campaignMessage: null })}
+        profile={makeProfile({ campaignMessage: null, campaignTitle: null })}
       />
     );
     expect(withoutCampaign).not.toContain('data-campaign="true"');
@@ -266,12 +268,12 @@ describe("ProfessionalProfilePage — campanha, seções e conteúdo", () => {
     expect(practice).toBeGreaterThan(-1);
     expect(education).toBeGreaterThan(practice);
     expect(markup).toContain("Áreas de atuação");
-    expect(markup).toContain("Formação e qualificações");
+    expect(markup).toContain("Formação acadêmica");
     expect(markup).toContain("Contencioso tributário");
     expect(markup).toContain("USP");
   });
 
-  it("mostra no máximo três conteúdos recentes", () => {
+  it("mostra três conteúdos inicialmente e oferece ver todas", () => {
     const markup = renderToStaticMarkup(
       <ProfessionalProfilePage profile={makeProfile()} />
     );
@@ -279,7 +281,35 @@ describe("ProfessionalProfilePage — campanha, seções e conteúdo", () => {
     expect(markup).toContain("Post dois");
     expect(markup).toContain("Post três");
     expect(markup).not.toContain("Post quatro");
-    expect(markup).toContain("Conteúdo recente");
+    expect(markup).toContain("Publicações e conteúdos");
+    expect(markup).toContain("Ver todas as publicações");
+    expect(markup).toContain("Instagram");
+    expect(markup).toContain(">01/07/2026</time>");
+    expect(markup).toContain(">02/07/2026</time>");
+    expect(markup).toContain(">03/07/2026</time>");
+  });
+
+  it("formatProfilePublishedAtBr usa sempre DD/MM/AAAA", () => {
+    expect(formatProfilePublishedAtBr("2026-07-01T00:00:00.000Z")).toBe("01/07/2026");
+    expect(formatProfilePublishedAtBr("2026-12-31")).toBe("31/12/2026");
+    expect(formatProfilePublishedAtBr(null)).toBeNull();
+  });
+
+  it("resume o mini-CV e oferece trajetória completa", () => {
+    const markup = renderToStaticMarkup(
+      <ProfessionalProfilePage
+        profile={makeProfile({
+          identity: {
+            ...makeProfile().identity,
+            bio: "Resumo curto do profissional.\n\nParágrafo longo da trajetória completa.",
+          },
+        })}
+      />
+    );
+    expect(markup).toContain("Resumo curto do profissional.");
+    expect(markup).toContain("Conheça a trajetória completa");
+    expect(markup).toContain("Parágrafo longo da trajetória completa.");
+    expect(markup).toContain("pp-hero__bio-more");
   });
 });
 

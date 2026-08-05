@@ -1,4 +1,20 @@
-export type VacationLeaveKind = "ferias" | "recesso" | "abono";
+export type VacationLeaveKind =
+  | "ferias"
+  | "recesso"
+  | "abono"
+  /** Crédito: dia trabalhado durante o recesso (devolve saldo). */
+  | "trabalho_recesso"
+  /** Crédito: dia trabalhado durante as férias (devolve saldo). */
+  | "trabalho_ferias";
+
+export const VACATION_CREDIT_KINDS: readonly VacationLeaveKind[] = [
+  "trabalho_recesso",
+  "trabalho_ferias",
+];
+
+export function isVacationCreditKind(kind: VacationLeaveKind): boolean {
+  return kind === "trabalho_recesso" || kind === "trabalho_ferias";
+}
 
 export type VacationPeriodStatus = "em_dia" | "a_vencer" | "vencido" | "quitado";
 

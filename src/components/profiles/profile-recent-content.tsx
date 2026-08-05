@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import type {
   ProfileContentSourceType,
   PublicProfessionalProfile,
@@ -7,9 +10,12 @@ import {
   IconLinkedIn,
   IconPlay,
 } from "@/components/profiles/profile-icons";
-import { profileUiCopy } from "@/components/profiles/profile-public-utils";
+import {
+  formatProfilePublishedAtBr,
+  profileUiCopy,
+} from "@/components/profiles/profile-public-utils";
 
-const MAX_RECENT = 3;
+const PREVIEW_COUNT = 3;
 
 type ProfileRecentContentProps = {
   profile: PublicProfessionalProfile;
@@ -22,16 +28,25 @@ function SourceIcon({ type }: { type: ProfileContentSourceType }) {
 }
 
 function sourceLabel(type: ProfileContentSourceType, locale: "pt-BR" | "en") {
+  if (locale === "en") {
+    if (type === "instagram") return "Instagram";
+    if (type === "linkedin") return "Article";
+    return "Video";
+  }
   if (type === "instagram") return "Instagram";
-  if (type === "linkedin") return "LinkedIn";
-  return locale === "en" ? "Reel" : "Reel";
+  if (type === "linkedin") return "Artigo";
+  return "Vídeo";
 }
 
 export function ProfileRecentContent({ profile }: ProfileRecentContentProps) {
-  const items = profile.recentContent.slice(0, MAX_RECENT);
-  if (items.length === 0) return null;
+  const allItems = profile.recentContent;
+  const [expanded, setExpanded] = useState(false);
+
+  if (allItems.length === 0) return null;
 
   const copy = profileUiCopy(profile.locale);
+  const hasMore = allItems.length > PREVIEW_COUNT;
+  const items = expanded ? allItems : allItems.slice(0, PREVIEW_COUNT);
 
   return (
     <section className="pp-recent" aria-labelledby="pp-recent-heading">
@@ -66,7 +81,7 @@ export function ProfileRecentContent({ profile }: ProfileRecentContentProps) {
                 )}
                 {item.publishedAt ? (
                   <time className="pp-recent__date" dateTime={item.publishedAt}>
-                    {item.publishedAt.slice(0, 10)}
+                    {formatProfilePublishedAtBr(item.publishedAt)}
                   </time>
                 ) : null}
               </span>
@@ -99,6 +114,16 @@ export function ProfileRecentContent({ profile }: ProfileRecentContentProps) {
           );
         })}
       </ul>
+      {hasMore && !expanded ? (
+        <button
+          type="button"
+          className="pp-recent__more"
+          onClick={() => setExpanded(true)}
+          data-action="view-all-publications"
+        >
+          {copy.viewAllPublications}
+        </button>
+      ) : null}
     </section>
   );
 }

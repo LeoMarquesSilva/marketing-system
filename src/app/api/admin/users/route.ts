@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/utils/supabase/server";
+import { normalizePermissionsInput } from "@/lib/access-control";
 import type { UserAuthActivity } from "@/lib/users-auth-activity";
 
 export const dynamic = "force-dynamic";
@@ -158,9 +159,8 @@ export async function POST(request: Request) {
     }
 
     if (action === "set_access") {
-      const permissions = Array.isArray(body.permissions)
-        ? (body.permissions as string[])
-        : null;
+      // Array vazio → null (regra legada). Chaves fora do catálogo são ignoradas.
+      const permissions = normalizePermissionsInput(body.permissions);
 
       // A permissão "/admin" (checkbox "Configurações") é o que os admins usam pra
       // tornar alguém admin — mas várias features (ex.: "Ver todos" em Meus Clientes)
@@ -180,7 +180,11 @@ export async function POST(request: Request) {
 
       const { error } = await db.from("users").update(update).eq("id", userId);
       if (error) throw new Error(error.message);
-      return NextResponse.json({ success: true, role: update.role ?? currentRole });
+      return NextResponse.json({
+        success: true,
+        role: update.role ?? currentRole,
+        permissions,
+      });
     }
 
     return NextResponse.json({ error: "Ação inválida." }, { status: 400 });

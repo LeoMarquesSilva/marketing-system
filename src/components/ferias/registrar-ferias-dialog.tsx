@@ -22,8 +22,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { inclusiveDayCount } from "@/lib/ferias/balance";
-import type { VacationLeave, VacationLeaveKind } from "@/lib/ferias/types";
+import { inclusiveDayCount, LEAVE_KIND_LABEL } from "@/lib/ferias/balance";
+import {
+  isVacationCreditKind,
+  type VacationLeave,
+  type VacationLeaveKind,
+} from "@/lib/ferias/types";
 
 export interface LeaveFormValues {
   startDate: string;
@@ -38,6 +42,8 @@ interface RegistrarFeriasDialogProps {
   onOpenChange: (open: boolean) => void;
   employeeName: string;
   leave: VacationLeave | null;
+  /** Tipo pré-selecionado ao abrir um lançamento novo. */
+  defaultKind?: VacationLeaveKind;
   onSubmit: (values: LeaveFormValues) => Promise<string | null>;
 }
 
@@ -46,22 +52,36 @@ export function RegistrarFeriasDialog({
   onOpenChange,
   employeeName,
   leave,
+  defaultKind = "ferias",
   onSubmit,
 }: RegistrarFeriasDialogProps) {
+  const kindForNew = leave?.kind ?? defaultKind;
+  const isCredit = isVacationCreditKind(kindForNew);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{leave ? "Editar lançamento" : "Registrar férias"}</DialogTitle>
+          <DialogTitle>
+            {leave
+              ? "Editar lançamento"
+              : isCredit
+                ? LEAVE_KIND_LABEL[kindForNew]
+                : "Registrar lançamento"}
+          </DialogTitle>
           <DialogDescription>
-            {employeeName}. Os dias são abatidos do período aquisitivo mais antigo com saldo.
+            {employeeName}.{" "}
+            {isCredit
+              ? "Esse lançamento credita dias de volta no saldo de férias."
+              : "Os dias são abatidos do período aquisitivo mais antigo com saldo."}
           </DialogDescription>
         </DialogHeader>
         {/* Remontar por lançamento evita arrastar o estado do formulário anterior. */}
         {open && (
           <LeaveForm
-            key={leave?.id ?? "novo"}
+            key={`${leave?.id ?? "novo"}-${defaultKind}`}
             leave={leave}
+            defaultKind={defaultKind}
             onSubmit={onSubmit}
             onCancel={() => onOpenChange(false)}
             onSaved={() => onOpenChange(false)}
@@ -74,11 +94,13 @@ export function RegistrarFeriasDialog({
 
 function LeaveForm({
   leave,
+  defaultKind,
   onSubmit,
   onCancel,
   onSaved,
 }: {
   leave: VacationLeave | null;
+  defaultKind: VacationLeaveKind;
   onSubmit: (values: LeaveFormValues) => Promise<string | null>;
   onCancel: () => void;
   onSaved: () => void;
@@ -89,10 +111,11 @@ function LeaveForm({
   const [daysOverride, setDaysOverride] = useState<string | null>(
     leave ? String(leave.days) : null
   );
-  const [kind, setKind] = useState<VacationLeaveKind>(leave?.kind ?? "ferias");
+  const [kind, setKind] = useState<VacationLeaveKind>(leave?.kind ?? defaultKind);
   const [notes, setNotes] = useState(leave?.notes ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isCredit = isVacationCreditKind(kind);
 
   const suggestedDays =
     startDate && endDate && endDate >= startDate ? inclusiveDayCount(startDate, endDate) : null;
@@ -101,7 +124,7 @@ function LeaveForm({
   async function handleSubmit() {
     const parsedDays = Number(days);
     if (!startDate || !endDate) {
-      setError("Informe o período de férias.");
+      setError(isCredit ? "Informe a data do dia trabalhado." : "Informe o período de férias.");
       return;
     }
     if (endDate < startDate) {
@@ -109,7 +132,7 @@ function LeaveForm({
       return;
     }
     if (!Number.isInteger(parsedDays) || parsedDays < 1) {
-      setError("Informe a quantidade de dias gozados.");
+      setError(isCredit ? "Informe a quantidade de dias creditados." : "Informe a quantidade de dias gozados.");
       return;
     }
     setSaving(true);
@@ -140,7 +163,7 @@ function LeaveForm({
           <DatePickerField id="leave-fim" value={endDate} onChange={setEndDate} />
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="leave-dias">Dias gozados</Label>
+          <Label htmlFor="leave-dias">{isCredit ? "Dias creditados" : "Dias gozados"}</Label>
           <Input
             id="leave-dias"
             type="number"
@@ -159,6 +182,8 @@ function LeaveForm({
               <SelectItem value="ferias">Férias</SelectItem>
               <SelectItem value="recesso">Recesso</SelectItem>
               <SelectItem value="abono">Abono</SelectItem>
+              <SelectItem value="trabalho_recesso">Dia trabalhado no recesso</SelectItem>
+              <SelectItem value="trabalho_ferias">Dia trabalhado nas férias</SelectItem>
             </SelectContent>
           </Select>
         </div>

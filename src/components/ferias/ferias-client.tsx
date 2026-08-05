@@ -68,6 +68,7 @@ import { formatISODateBR } from "@/lib/ferias/balance";
 import {
   computeFeriasKpis,
   filterEmployeesWithBalance,
+  listEmployeeDepartments,
   type SituationFilter,
   type StatusFilter,
 } from "@/lib/ferias/filters";
@@ -129,6 +130,7 @@ export function FeriasClient({ employees, recess, users, viosAlerts }: FeriasCli
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [situationFilter, setSituationFilter] = useState<SituationFilter>("ativos");
+  const [departmentFilter, setDepartmentFilter] = useState<string>("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [recessDialogOpen, setRecessDialogOpen] = useState(false);
@@ -166,17 +168,24 @@ export function FeriasClient({ employees, recess, users, viosAlerts }: FeriasCli
     [employees]
   );
 
+  const departments = useMemo(() => listEmployeeDepartments(employees), [employees]);
+
   const filtered = useMemo(
     () =>
       filterEmployeesWithBalance(employees, {
         search,
         status: statusFilter,
         situation: situationFilter,
+        department: departmentFilter,
       }),
-    [employees, search, statusFilter, situationFilter]
+    [employees, search, statusFilter, situationFilter, departmentFilter]
   );
 
-  const hasFilters = search.trim() !== "" || statusFilter !== "all" || situationFilter !== "ativos";
+  const hasFilters =
+    search.trim() !== "" ||
+    statusFilter !== "all" ||
+    situationFilter !== "ativos" ||
+    departmentFilter !== "all";
 
   async function handleCreate(values: EmployeeFormValues): Promise<string | null> {
     const { error } = await createEmployeeRequest({
@@ -369,58 +378,87 @@ export function FeriasClient({ employees, recess, users, viosAlerts }: FeriasCli
 
       {tab === "colaboradores" ? (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
-              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Buscar por nome, área ou cargo…"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                className="h-9 pl-9 text-sm"
-              />
-            </div>
-            <Select
-              value={statusFilter}
-              onValueChange={(value) => setStatusFilter(value as StatusFilter)}
-            >
-              <SelectTrigger className="h-9 w-[160px] text-xs">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Status: todos</SelectItem>
-                <SelectItem value="vencido">Vencidas</SelectItem>
-                <SelectItem value="a_vencer">A vencer</SelectItem>
-                <SelectItem value="em_dia">Em dia</SelectItem>
-                <SelectItem value="quitado">Sem saldo</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              value={situationFilter}
-              onValueChange={(value) => setSituationFilter(value as SituationFilter)}
-            >
-              <SelectTrigger className="h-9 w-[160px] text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ativos">Ativos</SelectItem>
-                <SelectItem value="inativos">Ex-colaboradores</SelectItem>
-                <SelectItem value="all">Todos</SelectItem>
-              </SelectContent>
-            </Select>
-            {hasFilters && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-9 gap-1.5 text-xs"
-                onClick={() => {
-                  setSearch("");
-                  setStatusFilter("all");
-                  setSituationFilter("ativos");
-                }}
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar por nome, área ou cargo…"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  className="h-9 pl-9 text-sm"
+                />
+              </div>
+              <Select
+                value={statusFilter}
+                onValueChange={(value) => setStatusFilter(value as StatusFilter)}
               >
-                <X className="h-3.5 w-3.5" />
-                Limpar
-              </Button>
+                <SelectTrigger className="h-9 w-[160px] text-xs">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Status: todos</SelectItem>
+                  <SelectItem value="vencido">Vencidas</SelectItem>
+                  <SelectItem value="a_vencer">A vencer</SelectItem>
+                  <SelectItem value="em_dia">Em dia</SelectItem>
+                  <SelectItem value="quitado">Sem saldo</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={situationFilter}
+                onValueChange={(value) => setSituationFilter(value as SituationFilter)}
+              >
+                <SelectTrigger className="h-9 w-[160px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ativos">Ativos</SelectItem>
+                  <SelectItem value="inativos">Ex-colaboradores</SelectItem>
+                  <SelectItem value="all">Todos</SelectItem>
+                </SelectContent>
+              </Select>
+              {hasFilters && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 gap-1.5 text-xs"
+                  onClick={() => {
+                    setSearch("");
+                    setStatusFilter("all");
+                    setSituationFilter("ativos");
+                    setDepartmentFilter("all");
+                  }}
+                >
+                  <X className="h-3.5 w-3.5" />
+                  Limpar
+                </Button>
+              )}
+            </div>
+
+            {departments.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={departmentFilter === "all" ? "default" : "outline"}
+                  className="h-8 rounded-full px-3 text-xs"
+                  onClick={() => setDepartmentFilter("all")}
+                >
+                  Todas as áreas
+                </Button>
+                {departments.map((department) => (
+                  <Button
+                    key={department}
+                    type="button"
+                    size="sm"
+                    variant={departmentFilter === department ? "default" : "outline"}
+                    className="h-8 rounded-full px-3 text-xs"
+                    onClick={() => setDepartmentFilter(department)}
+                  >
+                    {department}
+                  </Button>
+                ))}
+              </div>
             )}
           </div>
 

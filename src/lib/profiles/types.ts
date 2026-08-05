@@ -68,10 +68,10 @@ export const PROFILE_EVENT_SOURCES: readonly ProfileEventSource[] = [
 /** Rótulos das seções na administração (a página pública usa o texto do idioma). */
 export const PROFILE_SECTION_LABELS: Record<ProfileSectionKey, string> = {
   practice: "Áreas de atuação",
-  education: "Formação e qualificações",
-  knowledge: "Conhecimentos",
-  highlights: "Destaques profissionais",
-  timeline: "Trajetória no escritório",
+  education: "Formação acadêmica",
+  knowledge: "Especialidades e conhecimentos",
+  highlights: "Reconhecimentos e destaques",
+  timeline: "Trajetória no Bismarchi | Pires",
 };
 
 // ---------------------------------------------------------------------------
@@ -159,6 +159,7 @@ export interface PublicProfessionalProfile {
   sections: PublicProfileSection[];
   recentContent: ProfileContentItem[];
   campaignMessage: string | null;
+  campaignTitle: string | null;
 }
 
 // ---------------------------------------------------------------------------

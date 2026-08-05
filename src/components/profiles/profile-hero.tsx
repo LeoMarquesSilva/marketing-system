@@ -1,31 +1,53 @@
-import type { PublicProfessionalProfile } from "@/lib/profiles/types";
+import type { ProfileLocale, PublicProfessionalProfile } from "@/lib/profiles/types";
 import {
   FIRM_LOGO_ALT,
   FIRM_LOGO_SRC,
   getProfileInitials,
+  profileUiCopy,
 } from "@/components/profiles/profile-public-utils";
 
 type ProfileHeroProps = {
   profile: PublicProfessionalProfile;
 };
 
-function BioParagraphs({ bio }: { bio: string }) {
-  const parts = bio
+function splitBioParts(bio: string): string[] {
+  return bio
     .split(/\n{2,}/)
     .map((part) => part.trim())
     .filter(Boolean);
+}
+
+function BioParagraphs({
+  bio,
+  locale,
+}: {
+  bio: string;
+  locale: ProfileLocale;
+}) {
+  const parts = splitBioParts(bio);
+  const copy = profileUiCopy(locale);
 
   if (parts.length <= 1) {
     return <p className="pp-hero__bio">{bio}</p>;
   }
 
+  const [summary, ...rest] = parts;
+
   return (
     <div className="pp-hero__bio-stack">
-      {parts.map((part, index) => (
-        <p key={index} className="pp-hero__bio">
-          {part}
-        </p>
-      ))}
+      <p className="pp-hero__bio">{summary}</p>
+      <details className="pp-hero__bio-more">
+        <summary className="pp-hero__bio-more-summary">
+          {copy.readFullBio}
+        </summary>
+        <div className="pp-hero__bio-more-body">
+          {rest.map((part, index) => (
+            <p key={index} className="pp-hero__bio">
+              {part}
+            </p>
+          ))}
+        </div>
+      </details>
     </div>
   );
 }
@@ -42,8 +64,8 @@ export function ProfileHero({ profile }: ProfileHeroProps) {
           className="pp-hero__logo"
           src={FIRM_LOGO_SRC}
           alt={FIRM_LOGO_ALT}
-          width={200}
-          height={44}
+          width={160}
+          height={35}
         />
       </div>
 
@@ -57,8 +79,8 @@ export function ProfileHero({ profile }: ProfileHeroProps) {
                 className="pp-hero__photo"
                 src={identity.photoUrl}
                 alt=""
-                width={176}
-                height={176}
+                width={200}
+                height={200}
               />
             ) : (
               <div
@@ -74,21 +96,28 @@ export function ProfileHero({ profile }: ProfileHeroProps) {
         </div>
 
         <div className="pp-hero__identity">
-          <p className="pp-hero__eyebrow">{identity.role}</p>
           <h1 className="pp-hero__name">{identity.name}</h1>
+
+          {identity.role ? (
+            <p className="pp-hero__role">{identity.role}</p>
+          ) : null}
+
+          {identity.practiceArea ? (
+            <p className="pp-hero__practice">{identity.practiceArea}</p>
+          ) : null}
+
           <div className="pp-hero__rule" aria-hidden="true" />
 
-          <div className="pp-hero__meta">
-            {identity.practiceArea ? (
-              <span className="pp-hero__chip">{identity.practiceArea}</span>
-            ) : null}
-            {identity.oab ? (
-              <span className="pp-hero__chip">{identity.oab}</span>
-            ) : null}
-            {identity.tenureLabel ? (
-              <span className="pp-hero__chip">{identity.tenureLabel}</span>
-            ) : null}
-          </div>
+          {identity.oab || identity.tenureLabel ? (
+            <div className="pp-hero__meta">
+              {identity.oab ? (
+                <span className="pp-hero__chip">{identity.oab}</span>
+              ) : null}
+              {identity.tenureLabel ? (
+                <span className="pp-hero__chip">{identity.tenureLabel}</span>
+              ) : null}
+            </div>
+          ) : null}
 
           {identity.tagline ? (
             <p className="pp-hero__tagline">{identity.tagline}</p>
@@ -96,7 +125,9 @@ export function ProfileHero({ profile }: ProfileHeroProps) {
         </div>
       </div>
 
-      {identity.bio ? <BioParagraphs bio={identity.bio} /> : null}
+      {identity.bio ? (
+        <BioParagraphs bio={identity.bio} locale={profile.locale} />
+      ) : null}
     </header>
   );
 }

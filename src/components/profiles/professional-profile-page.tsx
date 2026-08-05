@@ -75,9 +75,14 @@ export function ProfessionalProfilePage({
               <LanguageSwitch profile={profile} source={source} />
             </div>
 
-            {profile.campaignMessage ? (
+            {profile.campaignMessage || profile.campaignTitle ? (
               <aside className="pp-campaign" data-campaign="true">
-                <p className="pp-campaign__message">{profile.campaignMessage}</p>
+                {profile.campaignMessage ? (
+                  <p className="pp-campaign__message">{profile.campaignMessage}</p>
+                ) : null}
+                {profile.campaignTitle ? (
+                  <p className="pp-campaign__title">{profile.campaignTitle}</p>
+                ) : null}
               </aside>
             ) : null}
           </ProfileMotionItem>
