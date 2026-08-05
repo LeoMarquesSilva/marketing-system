@@ -37,7 +37,7 @@ export async function POST(request: Request) {
       edition_label?: string;
     };
 
-    const area = body.area ?? access.allowedAreas?.[0] ?? "Reestruturação (Insolvência)";
+    const area = body.area ?? access.allowedAreas?.[0] ?? "Reestruturação";
     if (!LEGAL_AREAS.includes(area as (typeof LEGAL_AREAS)[number])) {
       throw new NewsletterError("Área inválida.", 400);
     }

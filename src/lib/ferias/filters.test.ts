@@ -182,17 +182,23 @@ describe("filterEmployeesWithBalance", () => {
         department: "Marketing",
       })
     );
-    const insolvencia = row(
+    const reestruturacao = row(
       makeEmployee({
         id: "5",
-        full_name: "Pessoa Insolvência",
-        department: "Insolvência",
+        full_name: "Pessoa Reestruturação",
+        department: "Reestruturação",
       })
     );
-    expect(listEmployeeDepartments([felipe, andressa, samuel, marketing, insolvencia])).toEqual([
-      "Insolvência",
-      "Operações Legais",
-    ]);
+    const distressed = row(
+      makeEmployee({
+        id: "6",
+        full_name: "Pessoa Distressed",
+        department: "Distressed Deals",
+      })
+    );
+    expect(
+      listEmployeeDepartments([felipe, andressa, samuel, marketing, reestruturacao, distressed])
+    ).toEqual(["Operações Legais", "Reestruturação"]);
   });
 
   it("busca por nome, área ou cargo", () => {

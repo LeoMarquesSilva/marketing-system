@@ -4,10 +4,19 @@ import { LEGAL_AREAS, type LegalArea } from "@/lib/content-areas";
 const TOPIC_AREA_TO_LEGAL: Record<string, LegalArea> = {
   Cível: "Cível",
   Trabalhista: "Trabalhista",
-  Reestruturação: "Reestruturação (Insolvência)",
-  "Societário e Contratos": "Societário e Contrato",
+  Reestruturação: "Reestruturação",
+  Insolvência: "Reestruturação",
+  "Societário e Contratos": "Societário e Contratos",
+  Contratos: "Societário e Contratos",
   "Operações Legais": "Operações Legais (Legal Ops)",
-  "Distressed Deals - Special Situations": "Distressed Deals",
+};
+
+/** Aliases legados → nome canônico atual. */
+const LEGAL_AREA_ALIASES: Record<string, LegalArea> = {
+  "reestruturação (insolvência)": "Reestruturação",
+  insolvência: "Reestruturação",
+  "societário e contrato": "Societário e Contratos",
+  contratos: "Societário e Contratos",
 };
 
 export function mapTopicAreaToLegalArea(topicLegalArea: string): LegalArea | null {
@@ -150,16 +159,15 @@ export const CLASSIFY_PROMPT = `Você é um classificador jurídico especializad
 
 - Cível — contratos civis, responsabilidade civil, família, sucessões, indenizações, direito do consumidor.
 - Trabalhista — CLT, relações de trabalho, demissões, rescisões, acidentes de trabalho, sindicatos.
-- Reestruturação (Insolvência) — falência, recuperação judicial, RJ, concurso de credores, massa falida, crise financeira de empresas.
-- Societário e Contrato — M&A, fusões, aquisições, joint ventures, governança corporativa, acordo de acionistas, contratos comerciais entre empresas.
+- Reestruturação — falência, recuperação judicial, RJ, concurso de credores, massa falida, crise financeira de empresas, insolvência.
+- Societário e Contratos — M&A, fusões, aquisições, joint ventures, governança corporativa, acordo de acionistas, contratos comerciais entre empresas.
 - Operações Legais (Legal Ops) — SOMENTE gestão operacional de departamentos jurídicos e escritórios: legal tech, software jurídico, automação de contratos (CLM), IA aplicada ao jurídico, legal design, métricas/BI jurídico, eficiência de processos internos, eBilling, matter management, transformação digital do jurídico (CLOC). NÃO é crime, polícia, compliance penal nem auditoria de governo.
-- Distressed Deals — aquisição de empresas em crise, compra de ativos em insolvência, negociação com credores em cenário de distress.
 
 REGRAS CRÍTICAS:
 1. "Operação" policial, PF, Polícia Civil, lavagem de dinheiro criminal, tráfico, prisão → NÃO é Legal Ops. Classifique em Cível ou ignore o tema se for notícia criminal/policial pura.
 2. Tribunal de Contas (TCE), prestação de contas de governo, política estadual → NÃO é Legal Ops.
 3. Legal Ops exige contexto de gestão/tecnologia/processos do departamento jurídico ou escritório — não basta mencionar "legal" ou "compliance" genérico.
-4. GPA, recuperação judicial, credores → Reestruturação (Insolvência) ou Societário e Contrato, nunca Legal Ops.
+4. GPA, recuperação judicial, credores → Reestruturação ou Societário e Contratos, nunca Legal Ops.
 5. Na dúvida entre Legal Ops e outra área, escolha a outra área.
 
 GATE DE RELEVÂNCIA (faça ANTES de classificar):
@@ -170,7 +178,7 @@ Título: {{TITLE}}
 Resumo: {{SNIPPET}}
 {{TOPIC_HINT}}
 
-Responda APENAS com "IRRELEVANTE" ou com o nome exato de uma área da lista. Exemplo: "Reestruturação (Insolvência)"`;
+Responda APENAS com "IRRELEVANTE" ou com o nome exato de uma área da lista. Exemplo: "Reestruturação"`;
 
 export function buildClassifyPrompt(
   title: string,
@@ -189,13 +197,17 @@ export function buildClassifyPrompt(
 
 export function parseClassifiedArea(raw: string): LegalArea {
   const trimmed = raw.trim().replace(/^["']|["']$/g, "");
-  const exact = LEGAL_AREAS.find((a) => a.toLowerCase() === trimmed.toLowerCase());
+  const lower = trimmed.toLowerCase();
+  const alias = LEGAL_AREA_ALIASES[lower];
+  if (alias) return alias;
+
+  const exact = LEGAL_AREAS.find((a) => a.toLowerCase() === lower);
   if (exact) return exact;
 
   const partial = LEGAL_AREAS.find(
     (a) =>
-      trimmed.toLowerCase().includes(a.toLowerCase().split(" ")[0] ?? "") ||
-      a.toLowerCase().includes(trimmed.toLowerCase())
+      lower.includes(a.toLowerCase().split(" ")[0] ?? "") ||
+      a.toLowerCase().includes(lower)
   );
   return partial ?? LEGAL_AREAS[0];
 }

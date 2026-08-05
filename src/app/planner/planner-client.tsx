@@ -17,6 +17,7 @@ import { PostsTab } from "@/components/planner/posts-tab";
 import { PostAvailableDetailDialog } from "@/components/planner/post-available-detail-dialog";
 import { useAuth } from "@/contexts/auth-context";
 import {
+  filterRequestsByKanbanVisibility,
   filterRequestsByStageVisibility,
   filterWorkflowStagesForUser,
 } from "@/lib/planner-visibility";
@@ -81,22 +82,18 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
   const requestsRef = useRef<MarketingRequest[]>([]);
 
   const requests = useMemo(() => {
-    let list = initialRequests;
-    list = filterRequestsByStageVisibility(
-      list,
+    const visibleByStage = filterRequestsByStageVisibility(
+      initialRequests,
       appSettings.workflowStages,
       profile?.id,
       isAdmin
     );
-    if (appSettings.kanbanVisibility === "everyone_all") {
-      return list;
-    }
-    const r = (profile?.role ?? "").toLowerCase();
-    const isDesigner = r === "designer" || profile?.department === "Marketing";
-    if (isDesigner && profile?.id) {
-      return list.filter((req) => req.assignee_id === profile.id);
-    }
-    return list;
+    return filterRequestsByKanbanVisibility(visibleByStage, {
+      kanbanVisibility: appSettings.kanbanVisibility,
+      userId: profile?.id,
+      role: profile?.role,
+      department: profile?.department,
+    });
   }, [initialRequests, profile, appSettings.kanbanVisibility, appSettings.workflowStages, isAdmin]);
 
   useEffect(() => {

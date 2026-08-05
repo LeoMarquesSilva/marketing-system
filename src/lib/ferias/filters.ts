@@ -52,6 +52,9 @@ const OPERACOES_LEGAIS_DEPARTMENTS = new Set([
   "recursos humanos",
 ]);
 
+/** Departamentos que não ganham botão próprio (continuam em "Todas as áreas"). */
+const HIDDEN_AREA_FILTER_BUTTONS = new Set(["distressed deals"]);
+
 function isOperacoesLegaisDepartment(department: string | null | undefined): boolean {
   if (!department?.trim()) return false;
   return OPERACOES_LEGAIS_DEPARTMENTS.has(normalizeDepartmentKey(department));
@@ -61,6 +64,7 @@ function isOperacoesLegaisDepartment(department: string | null | undefined): boo
 export function resolveAreaFilterLabel(department: string | null | undefined): string | null {
   const trimmed = department?.trim();
   if (!trimmed) return null;
+  if (HIDDEN_AREA_FILTER_BUTTONS.has(normalizeDepartmentKey(trimmed))) return null;
   if (isOperacoesLegaisDepartment(trimmed)) return AREA_FILTER_OPERACOES_LEGAIS;
   return trimmed;
 }

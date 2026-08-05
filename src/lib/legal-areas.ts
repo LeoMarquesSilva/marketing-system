@@ -1,6 +1,10 @@
 /**
- * Normalização de nomes de áreas jurídicas vindos do SIOE.
+ * Normalização de nomes de áreas jurídicas vindos do SIOE / Meus Clientes.
  * Mantém "Recuperação de Crédito" como subárea (agrupada sob Cível na UI).
+ *
+ * Nomenclatura oficial:
+ * - Reestruturação (não usar mais "Insolvência")
+ * - Societário e Contratos (não usar mais "Contratos")
  */
 
 function areaKey(value: string): string {
@@ -14,8 +18,16 @@ function areaKey(value: string): string {
 }
 
 const AREA_CANONICAL: Record<string, string> = {
-  "civel | insolvencia": "Insolvência",
-  "civel|insolvencia": "Insolvência",
+  // Reestruturação (legado: Insolvência)
+  insolvencia: "Reestruturação",
+  "civel | insolvencia": "Reestruturação",
+  "civel|insolvencia": "Reestruturação",
+  "reestruturacao (insolvencia)": "Reestruturação",
+  reestruturacao: "Reestruturação",
+  // Societário e Contratos (legado: Contratos / Societário e Contrato)
+  contratos: "Societário e Contratos",
+  "societario e contrato": "Societário e Contratos",
+  "societario e contratos": "Societário e Contratos",
 };
 
 /** Áreas cadastradas só como subárea — gestores vêm da área pai. */
@@ -44,18 +56,18 @@ export function normalizeLegalAreas(areas: string[] | null | undefined): string[
 }
 
 /**
- * Traduz o "department" do usuário (nome interno da área de prática, ex.:
- * "Reestruturação") para o vocabulário de área usado no SIOE/Meus Clientes
- * (ex.: "Insolvência"). Usado para vincular o cliente à área do advogado
- * responsável, e não à área bruta do processo.
+ * Traduz o "department" do usuário (nome interno da área de prática) para o
+ * vocabulário de área usado no SIOE/Meus Clientes.
  */
 const DEPARTMENT_TO_SIOE_AREA: Record<string, string> = {
-  "Cível": "Cível",
+  Cível: "Cível",
   Trabalhista: "Trabalhista",
   "Operações Legais": "Operações Legais",
   Tributário: "Tributário",
-  Reestruturação: "Insolvência",
-  "Societário e Contratos": "Contratos",
+  Reestruturação: "Reestruturação",
+  Insolvência: "Reestruturação",
+  "Societário e Contratos": "Societário e Contratos",
+  Contratos: "Societário e Contratos",
   "Distressed Deals - Special Situations": "Special Situations",
 };
 

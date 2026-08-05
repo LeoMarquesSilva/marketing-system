@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarPlus, Loader2, Pencil, Plus, Trash2, Undo2 } from "lucide-react";
+import { Loader2, Pencil, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,6 +15,7 @@ import {
 import { VacationStatusBadge } from "@/components/ferias/status-badge";
 import { VacationDebtTags } from "@/components/ferias/vacation-debt-tags";
 import { EmployeeAvatar } from "@/components/ferias/employee-avatar";
+import { LeaveLaunchesSection } from "@/components/ferias/leave-launches-section";
 import {
   ColaboradorFormDialog,
   NO_LINKED_USER,
@@ -38,7 +39,6 @@ import {
   updatePeriodRequest,
 } from "@/lib/ferias/client";
 import {
-  isVacationCreditKind,
   type EmployeeDetail,
   type LinkableUser,
   type VacationLeave,
@@ -127,6 +127,12 @@ function DetailBody({
   const [editOpen, setEditOpen] = useState(false);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
   const [leaveDefaultKind, setLeaveDefaultKind] = useState<VacationLeaveKind>("ferias");
+  const [creditPreset, setCreditPreset] = useState<{
+    kind: VacationLeaveKind;
+    rangeStart: string;
+    rangeEnd: string;
+    sourceLabel: string;
+  } | null>(null);
   const [editingLeave, setEditingLeave] = useState<VacationLeave | null>(null);
   const [periodDialogOpen, setPeriodDialogOpen] = useState(false);
   const [editingPeriod, setEditingPeriod] = useState<VacationPeriod | null>(null);
@@ -278,6 +284,7 @@ function DetailBody({
                 size="sm"
                 onClick={() => {
                   setEditingLeave(null);
+                  setCreditPreset(null);
                   setLeaveDefaultKind("ferias");
                   setLeaveDialogOpen(true);
                 }}
@@ -334,9 +341,7 @@ function DetailBody({
             )}
 
             <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-foreground">
-                Períodos aquisitivos — Quadro demonstrativo
-              </h3>
+              <h3 className="text-sm font-semibold text-foreground">Quadro demonstrativo</h3>
               {balance.periods.length === 0 && (
                 <p className="text-sm text-muted-foreground">
                   Nenhum período aquisitivo completo desde a admissão.
@@ -348,6 +353,9 @@ function DetailBody({
                     key={item.period.id}
                     className="space-y-2 rounded-xl border border-[#d7e8ef] bg-gradient-to-br from-[#f7fbfc] to-white px-4 py-3 shadow-sm"
                   >
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[#285f7a]">
+                      Períodos aquisitivos
+                    </p>
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <p className="text-sm font-medium text-foreground">
@@ -418,121 +426,38 @@ function DetailBody({
               </div>
             </div>
 
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground">Lançamentos</h3>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Gozo, recesso e créditos por dias trabalhados.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8 border-emerald-200 bg-emerald-50 text-xs text-emerald-800 hover:bg-emerald-100"
-                    onClick={() => {
-                      setEditingLeave(null);
-                      setLeaveDefaultKind("trabalho_recesso");
-                      setLeaveDialogOpen(true);
-                    }}
-                  >
-                    <Undo2 className="mr-1.5 h-3.5 w-3.5" />
-                    Dia trabalhado no recesso
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-8 border-sky-200 bg-sky-50 text-xs text-sky-800 hover:bg-sky-100"
-                    onClick={() => {
-                      setEditingLeave(null);
-                      setLeaveDefaultKind("trabalho_ferias");
-                      setLeaveDialogOpen(true);
-                    }}
-                  >
-                    <CalendarPlus className="mr-1.5 h-3.5 w-3.5" />
-                    Dia trabalhado nas férias
-                  </Button>
-                </div>
-              </div>
-              {error && <p className="text-sm text-destructive">{error}</p>}
-              {orderedLeaves.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nenhum lançamento registrado.</p>
-              ) : (
-                <div className="grid gap-2">
-                  {orderedLeaves.map((leave) => {
-                    const credit = isVacationCreditKind(leave.kind);
-                    return (
-                      <div
-                        key={leave.id}
-                        className={cn(
-                          "flex flex-wrap items-center justify-between gap-2 rounded-xl border px-4 py-3",
-                          credit
-                            ? "border-emerald-200 bg-emerald-50/60"
-                            : "border-border bg-card"
-                        )}
-                      >
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span
-                              className={cn(
-                                "rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
-                                credit
-                                  ? "bg-emerald-100 text-emerald-800"
-                                  : leave.kind === "recesso"
-                                    ? "bg-violet-100 text-violet-800"
-                                    : leave.kind === "abono"
-                                      ? "bg-amber-100 text-amber-800"
-                                      : "bg-[#e8f8f8] text-[#285f7a]"
-                              )}
-                            >
-                              {LEAVE_KIND_LABEL[leave.kind]}
-                            </span>
-                            <p className="text-sm font-medium text-foreground">
-                              {formatISODateBR(leave.start_date)}
-                              {leave.end_date !== leave.start_date
-                                ? ` a ${formatISODateBR(leave.end_date)}`
-                                : ""}
-                            </p>
-                          </div>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            <span
-                              className={cn(
-                                "font-medium tabular-nums",
-                                credit ? "text-emerald-700" : "text-foreground"
-                              )}
-                            >
-                              {credit ? "+" : "−"}
-                              {leave.days} dia(s)
-                            </span>
-                            {credit ? " · crédito no saldo" : " · débito no saldo"}
-                            {leave.notes ? ` · ${leave.notes}` : ""}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setEditingLeave(leave);
-                              setLeaveDefaultKind(leave.kind);
-                              setLeaveDialogOpen(true);
-                            }}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => setDeleteTarget(leave)}>
-                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            <LeaveLaunchesSection
+              leaves={orderedLeaves}
+              error={error}
+              onRegisterWorkedDay={(leave) => {
+                const creditKind: VacationLeaveKind =
+                  leave.kind === "recesso" ? "trabalho_recesso" : "trabalho_ferias";
+                const periodLabel = `${LEAVE_KIND_LABEL[leave.kind]} ${formatISODateBR(
+                  leave.start_date
+                )}${
+                  leave.end_date !== leave.start_date
+                    ? ` a ${formatISODateBR(leave.end_date)}`
+                    : ""
+                }`;
+
+                setEditingLeave(null);
+                setLeaveDefaultKind(creditKind);
+                setCreditPreset({
+                  kind: creditKind,
+                  rangeStart: leave.start_date,
+                  rangeEnd: leave.end_date,
+                  sourceLabel: periodLabel,
+                });
+                setLeaveDialogOpen(true);
+              }}
+              onEdit={(leave) => {
+                setEditingLeave(leave);
+                setCreditPreset(null);
+                setLeaveDefaultKind(leave.kind);
+                setLeaveDialogOpen(true);
+              }}
+              onDelete={setDeleteTarget}
+            />
           </div>
         )}
       </div>
@@ -554,12 +479,14 @@ function DetailBody({
               setLeaveDialogOpen(nextOpen);
               if (!nextOpen) {
                 setEditingLeave(null);
+                setCreditPreset(null);
                 setLeaveDefaultKind("ferias");
               }
             }}
             employeeName={employee.full_name}
             leave={editingLeave}
             defaultKind={leaveDefaultKind}
+            creditPreset={creditPreset}
             onSubmit={handleLeaveSubmit}
           />
 

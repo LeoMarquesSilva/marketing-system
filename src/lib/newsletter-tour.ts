@@ -52,7 +52,7 @@ export const NEWSLETTER_LIST_TOUR_STEPS: NewsletterTourStep[] = [
     id: "list-new",
     target: '[data-tour="nl-new-edition"]',
     title: "Nova edição",
-    body: "Clique aqui, dê um título (ex.: Newsletter de Reestruturação e Insolvência) e, se quiser, o rótulo da edição. Em seguida você escolhe as notícias.",
+    body: "Clique aqui, dê um título (ex.: Newsletter de Reestruturação) e, se quiser, o rótulo da edição. Em seguida você escolhe as notícias.",
   },
   {
     id: "list-finish",

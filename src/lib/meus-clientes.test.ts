@@ -20,12 +20,21 @@ import { normalizeLegalArea, normalizeLegalAreas } from "@/lib/legal-areas";
 import type { EmailCompany, EmailContact, EmailPerson } from "@/lib/email-marketing";
 
 describe("legal-areas", () => {
-  it("normaliza Cível | Insolvência para Insolvência", () => {
-    expect(normalizeLegalArea("Cível | Insolvência")).toBe("Insolvência");
+  it("normaliza Insolvência e aliases para Reestruturação", () => {
+    expect(normalizeLegalArea("Insolvência")).toBe("Reestruturação");
+    expect(normalizeLegalArea("Cível | Insolvência")).toBe("Reestruturação");
+    expect(normalizeLegalArea("Reestruturação (Insolvência)")).toBe("Reestruturação");
+  });
+
+  it("normaliza Contratos para Societário e Contratos", () => {
+    expect(normalizeLegalArea("Contratos")).toBe("Societário e Contratos");
+    expect(normalizeLegalArea("Societário e Contrato")).toBe("Societário e Contratos");
   });
 
   it("deduplica áreas normalizadas", () => {
-    expect(normalizeLegalAreas(["Cível | Insolvência", "Insolvência"])).toEqual(["Insolvência"]);
+    expect(normalizeLegalAreas(["Cível | Insolvência", "Insolvência", "Reestruturação"])).toEqual([
+      "Reestruturação",
+    ]);
   });
 });
 

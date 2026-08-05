@@ -12,7 +12,6 @@ import {
   Zap,
   Folder,
   Monitor,
-  Landmark,
   CircleDollarSign,
   Receipt,
   type LucideIcon,
@@ -25,10 +24,10 @@ export const AREA_ICONS: Record<string, LucideIcon> = {
   Trabalhista: Briefcase,
   "Operações Legais": Settings,
   Reestruturação: RefreshCw,
-  Insolvência: Landmark,
+  Insolvência: RefreshCw, // legado → Reestruturação
   "Recuperação de Crédito": CircleDollarSign,
   Tributário: Receipt,
-  Contratos: FileSignature,
+  Contratos: FileSignature, // legado → Societário e Contratos
   Marketing: Megaphone,
   "Societário e Contratos": FileSignature,
   Sócio: Crown,
@@ -41,10 +40,10 @@ export const AREA_ICONS: Record<string, LucideIcon> = {
 export const AREA_ICON_STYLES: Record<string, string> = {
   Cível: "bg-violet-100 text-violet-700 ring-violet-200/60",
   Trabalhista: "bg-amber-100 text-amber-700 ring-amber-200/60",
-  Insolvência: "bg-rose-100 text-rose-700 ring-rose-200/60",
+  Insolvência: "bg-rose-100 text-rose-700 ring-rose-200/60", // legado
   "Recuperação de Crédito": "bg-orange-100 text-orange-700 ring-orange-200/60",
   Tributário: "bg-teal-100 text-teal-700 ring-teal-200/60",
-  Contratos: "bg-sky-100 text-sky-700 ring-sky-200/60",
+  Contratos: "bg-sky-100 text-sky-700 ring-sky-200/60", // legado
   "Operações Legais": "bg-emerald-100 text-emerald-700 ring-emerald-200/60",
   Reestruturação: "bg-rose-100 text-rose-700 ring-rose-200/60",
   Marketing: "bg-pink-100 text-pink-700 ring-pink-200/60",
@@ -53,7 +52,7 @@ export const AREA_ICON_STYLES: Record<string, string> = {
   "Distressed Deals - Special Situations": "bg-orange-100 text-orange-700 ring-orange-200/60",
   Geral: "bg-slate-100 text-slate-700 ring-slate-200/60",
   "T.I": "bg-indigo-100 text-indigo-700 ring-indigo-200/60",
-  "Cível | Insolvência": "bg-violet-100 text-violet-700 ring-violet-200/60",
+  "Cível | Insolvência": "bg-rose-100 text-rose-700 ring-rose-200/60", // legado → Reestruturação
 };
 
 const DEFAULT_AREA_ICON_STYLE = "bg-muted text-muted-foreground ring-border/60";

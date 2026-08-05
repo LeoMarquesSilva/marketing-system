@@ -37,6 +37,14 @@ export interface LeaveFormValues {
   notes: string;
 }
 
+interface CreditPreset {
+  kind: VacationLeaveKind;
+  /** Intervalo do lançamento de origem (recesso/férias). */
+  rangeStart: string;
+  rangeEnd: string;
+  sourceLabel: string;
+}
+
 interface RegistrarFeriasDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -44,6 +52,8 @@ interface RegistrarFeriasDialogProps {
   leave: VacationLeave | null;
   /** Tipo pré-selecionado ao abrir um lançamento novo. */
   defaultKind?: VacationLeaveKind;
+  /** Crédito a partir de um lançamento de recesso/férias. */
+  creditPreset?: CreditPreset | null;
   onSubmit: (values: LeaveFormValues) => Promise<string | null>;
 }
 
@@ -53,9 +63,10 @@ export function RegistrarFeriasDialog({
   employeeName,
   leave,
   defaultKind = "ferias",
+  creditPreset = null,
   onSubmit,
 }: RegistrarFeriasDialogProps) {
-  const kindForNew = leave?.kind ?? defaultKind;
+  const kindForNew = leave?.kind ?? creditPreset?.kind ?? defaultKind;
   const isCredit = isVacationCreditKind(kindForNew);
 
   return (
@@ -71,17 +82,20 @@ export function RegistrarFeriasDialog({
           </DialogTitle>
           <DialogDescription>
             {employeeName}.{" "}
-            {isCredit
-              ? "Esse lançamento credita dias de volta no saldo de férias."
-              : "Os dias são abatidos do período aquisitivo mais antigo com saldo."}
+            {creditPreset
+              ? `Crédito referente a ${creditPreset.sourceLabel}. Informe o(s) dia(s) trabalhados nesse período.`
+              : isCredit
+                ? "Esse lançamento credita dias de volta no saldo de férias."
+                : "Os dias são abatidos do período aquisitivo mais antigo com saldo."}
           </DialogDescription>
         </DialogHeader>
         {/* Remontar por lançamento evita arrastar o estado do formulário anterior. */}
         {open && (
           <LeaveForm
-            key={`${leave?.id ?? "novo"}-${defaultKind}`}
+            key={`${leave?.id ?? "novo"}-${creditPreset?.kind ?? defaultKind}-${creditPreset?.rangeStart ?? ""}`}
             leave={leave}
-            defaultKind={defaultKind}
+            defaultKind={kindForNew}
+            creditPreset={creditPreset}
             onSubmit={onSubmit}
             onCancel={() => onOpenChange(false)}
             onSaved={() => onOpenChange(false)}
@@ -95,24 +109,35 @@ export function RegistrarFeriasDialog({
 function LeaveForm({
   leave,
   defaultKind,
+  creditPreset,
   onSubmit,
   onCancel,
   onSaved,
 }: {
   leave: VacationLeave | null;
   defaultKind: VacationLeaveKind;
+  creditPreset: CreditPreset | null;
   onSubmit: (values: LeaveFormValues) => Promise<string | null>;
   onCancel: () => void;
   onSaved: () => void;
 }) {
-  const [startDate, setStartDate] = useState(leave?.start_date ?? "");
-  const [endDate, setEndDate] = useState(leave?.end_date ?? "");
+  const [startDate, setStartDate] = useState(
+    leave?.start_date ?? creditPreset?.rangeStart ?? ""
+  );
+  const [endDate, setEndDate] = useState(
+    leave?.end_date ?? creditPreset?.rangeStart ?? ""
+  );
   // Só existe quando o RH digita um total diferente do intervalo escolhido.
   const [daysOverride, setDaysOverride] = useState<string | null>(
-    leave ? String(leave.days) : null
+    leave ? String(leave.days) : creditPreset ? "1" : null
   );
   const [kind, setKind] = useState<VacationLeaveKind>(leave?.kind ?? defaultKind);
-  const [notes, setNotes] = useState(leave?.notes ?? "");
+  const [notes, setNotes] = useState(
+    leave?.notes ??
+      (creditPreset
+        ? `Dia trabalhado em ${creditPreset.sourceLabel}`
+        : "")
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isCredit = isVacationCreditKind(kind);
@@ -129,6 +154,15 @@ function LeaveForm({
     }
     if (endDate < startDate) {
       setError("A data de retorno não pode ser anterior à data de início.");
+      return;
+    }
+    if (
+      creditPreset &&
+      (startDate < creditPreset.rangeStart || endDate > creditPreset.rangeEnd)
+    ) {
+      setError(
+        `Informe datas dentro do período (${creditPreset.rangeStart} a ${creditPreset.rangeEnd}).`
+      );
       return;
     }
     if (!Number.isInteger(parsedDays) || parsedDays < 1) {
@@ -172,21 +206,32 @@ function LeaveForm({
             onChange={(event) => setDaysOverride(event.target.value)}
           />
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="leave-tipo">Tipo</Label>
-          <Select value={kind} onValueChange={(value) => setKind(value as VacationLeaveKind)}>
-            <SelectTrigger id="leave-tipo" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ferias">Férias</SelectItem>
-              <SelectItem value="recesso">Recesso</SelectItem>
-              <SelectItem value="abono">Abono</SelectItem>
-              <SelectItem value="trabalho_recesso">Dia trabalhado no recesso</SelectItem>
-              <SelectItem value="trabalho_ferias">Dia trabalhado nas férias</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {!creditPreset && (
+          <div className="space-y-1.5">
+            <Label htmlFor="leave-tipo">Tipo</Label>
+            <Select value={kind} onValueChange={(value) => setKind(value as VacationLeaveKind)}>
+              <SelectTrigger id="leave-tipo" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ferias">Férias</SelectItem>
+                <SelectItem value="recesso">Recesso</SelectItem>
+                <SelectItem value="abono">Abono</SelectItem>
+                <SelectItem value="trabalho_recesso">Dia trabalhado no recesso</SelectItem>
+                <SelectItem value="trabalho_ferias">Dia trabalhado nas férias</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        {creditPreset && (
+          <div className="space-y-1.5 sm:col-span-2">
+            <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+              Tipo: <strong>{LEAVE_KIND_LABEL[kind]}</strong> · período de referência{" "}
+              {creditPreset.rangeStart.split("-").reverse().join("/")} a{" "}
+              {creditPreset.rangeEnd.split("-").reverse().join("/")}
+            </p>
+          </div>
+        )}
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="leave-obs">Observação</Label>
           <Textarea

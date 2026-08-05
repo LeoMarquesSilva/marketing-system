@@ -12,7 +12,6 @@ export const AREAS = [
   "Marketing",
   "Societário e Contratos",
   "Sócio",
-  "Distressed Deals - Special Situations",
   "Geral",
   "T.I",
 ] as const;

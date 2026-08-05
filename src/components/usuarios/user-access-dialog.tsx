@@ -46,27 +46,30 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // Sincroniza só ao abrir/trocar usuário. Depender do objeto `user` inteiro
+  // apagava os toggles locais quando auth_activity (ou outro patch) atualizava o pai.
   useEffect(() => {
-    if (user) {
-      setEmail(user.email ?? "");
-      setPermissions(normalizePermissionsInput(user.permissions) ?? []);
-      setAuthActivity(user.auth_activity ?? null);
-      setError(null);
-      setNotice(null);
-    }
-  }, [user, open]);
+    if (!open || !user) return;
+    setEmail(user.email ?? "");
+    setPermissions(normalizePermissionsInput(user.permissions) ?? []);
+    setAuthActivity(user.auth_activity ?? null);
+    setError(null);
+    setNotice(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intencional: não resetar em todo patch do user
+  }, [open, user?.id]);
 
   useEffect(() => {
     if (!open || !user?.auth_id) return;
 
+    const userId = user.id;
     let cancelled = false;
     setLoadingActivity(true);
-    fetch(`/api/admin/users?userId=${encodeURIComponent(user.id)}`, { credentials: "include" })
+    fetch(`/api/admin/users?userId=${encodeURIComponent(userId)}`, { credentials: "include" })
       .then((res) => res.json().catch(() => ({})))
       .then((data) => {
         if (cancelled || !data.auth_activity) return;
         setAuthActivity(data.auth_activity);
-        onUpdated(user.id, { auth_activity: data.auth_activity });
+        onUpdated(userId, { auth_activity: data.auth_activity });
       })
       .catch(() => {})
       .finally(() => {
@@ -76,7 +79,9 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
     return () => {
       cancelled = true;
     };
-  }, [open, user?.id, user?.auth_id, onUpdated]);
+    // onUpdated é estável o suficiente para o patch; não re-buscar a cada render do pai
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, user?.id, user?.auth_id]);
 
   if (!user) return null;
   const isActive = Boolean(user.auth_id);

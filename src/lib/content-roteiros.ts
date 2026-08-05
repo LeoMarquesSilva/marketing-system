@@ -35,10 +35,9 @@ const supabaseServiceKey =
 const LEGAL_AREAS = [
   "Cível",
   "Trabalhista",
-  "Reestruturação (Insolvência)",
-  "Societário e Contrato",
+  "Reestruturação",
+  "Societário e Contratos",
   "Operações Legais (Legal Ops)",
-  "Distressed Deals",
 ] as const;
 
 const CAROUSEL_PROMPT = `Você é redator jurídico de um escritório de advocacia.
@@ -185,17 +184,16 @@ export async function resolveNewsArea(
 
   if (topicMapped && topicMapped !== "Operações Legais (Legal Ops)") {
     const reestruturacaoCluster = [
-      "Reestruturação (Insolvência)",
-      "Societário e Contrato",
-      "Distressed Deals",
+      "Reestruturação",
+      "Societário e Contratos",
     ] as const;
 
     if (
-      topicMapped === "Reestruturação (Insolvência)" &&
+      topicMapped === "Reestruturação" &&
       reestruturacaoCluster.includes(aiArea as (typeof reestruturacaoCluster)[number])
     ) {
       finalArea = aiArea;
-    } else if (topicMapped !== "Reestruturação (Insolvência)") {
+    } else if (topicMapped !== "Reestruturação") {
       finalArea = aiArea;
     } else {
       finalArea = topicMapped;

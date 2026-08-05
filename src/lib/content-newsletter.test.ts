@@ -44,9 +44,9 @@ describe("parse da seção redigida pela IA", () => {
 
 describe("documento da newsletter", () => {
   const newsletter = {
-    title: "Newsletter de Reestruturação e Insolvência",
+    title: "Newsletter de Reestruturação",
     edition_label: "1ª Edição | 2026",
-    area: "Reestruturação (Insolvência)",
+    area: "Reestruturação",
     intro_title: "Nesta edição",
     intro_body: "Panorama do período.",
     signature_names: "Ricardo",
@@ -108,8 +108,8 @@ describe("documento da newsletter", () => {
   });
 
   it("gera nome de arquivo sem acento nem espaço", () => {
-    expect(newsletterWordSlug("Newsletter de Reestruturação e Insolvência")).toBe(
-      "newsletter-de-reestruturacao-e-insolvencia"
+    expect(newsletterWordSlug("Newsletter de Reestruturação")).toBe(
+      "newsletter-de-reestruturacao"
     );
     expect(newsletterWordSlug("")).toBe("newsletter");
   });

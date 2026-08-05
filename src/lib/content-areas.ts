@@ -2,10 +2,9 @@
 export const LEGAL_AREAS = [
   "Cível",
   "Trabalhista",
-  "Reestruturação (Insolvência)",
-  "Societário e Contrato",
+  "Reestruturação",
+  "Societário e Contratos",
   "Operações Legais (Legal Ops)",
-  "Distressed Deals",
 ] as const;
 
 export type LegalArea = (typeof LEGAL_AREAS)[number];
@@ -14,10 +13,11 @@ export type LegalArea = (typeof LEGAL_AREAS)[number];
 const DEPARTMENT_TO_LEGAL_AREAS: Record<string, LegalArea[]> = {
   Cível: ["Cível"],
   Trabalhista: ["Trabalhista"],
-  Reestruturação: ["Reestruturação (Insolvência)"],
-  "Societário e Contratos": ["Societário e Contrato"],
+  Reestruturação: ["Reestruturação"],
+  Insolvência: ["Reestruturação"],
+  "Societário e Contratos": ["Societário e Contratos"],
+  Contratos: ["Societário e Contratos"],
   "Operações Legais": ["Operações Legais (Legal Ops)"],
-  "Distressed Deals - Special Situations": ["Distressed Deals"],
 };
 
 /** Departamentos com visão de todas as áreas (sócios, marketing, etc.). */
@@ -31,7 +31,8 @@ const ALL_AREAS_DEPARTMENTS = new Set(["Marketing", "Institucional", "Sócio"]);
 export function getDepartmentsForLegalArea(area: LegalArea | string): string[] {
   return Object.entries(DEPARTMENT_TO_LEGAL_AREAS)
     .filter(([, areas]) => areas.includes(area as LegalArea))
-    .map(([department]) => department);
+    .map(([department]) => department)
+    .filter((department) => department !== "Insolvência" && department !== "Contratos");
 }
 
 export function getLegalAreasForDepartment(department: string): LegalArea[] {
@@ -104,12 +105,13 @@ export function canAccessContentArea(
 export const AREA_COLORS: Record<string, string> = {
   Cível: "bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-300 border-violet-200/60",
   Trabalhista: "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200/60",
-  "Reestruturação (Insolvência)":
+  Reestruturação:
     "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-200/60",
-  "Societário e Contrato":
+  "Societário e Contratos":
     "bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 border-sky-200/60",
   "Operações Legais (Legal Ops)":
     "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200/60",
+  // Legado — área inativa, só para exibir posts antigos.
   "Distressed Deals":
     "bg-orange-100 text-orange-800 dark:bg-orange-950/60 dark:text-orange-300 border-orange-200/60",
 };
@@ -125,8 +127,8 @@ export function getAreaStyle(area: string) {
 export const AREA_DOT_COLORS: Record<string, string> = {
   Cível: "bg-violet-500",
   Trabalhista: "bg-amber-500",
-  "Reestruturação (Insolvência)": "bg-rose-500",
-  "Societário e Contrato": "bg-sky-500",
+  Reestruturação: "bg-rose-500",
+  "Societário e Contratos": "bg-sky-500",
   "Operações Legais (Legal Ops)": "bg-emerald-500",
   "Distressed Deals": "bg-orange-500",
 };

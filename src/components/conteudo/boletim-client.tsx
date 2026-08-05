@@ -60,7 +60,7 @@ import {
   startNewsletterTour,
 } from "@/components/conteudo/newsletter-tour";
 
-const DEFAULT_AREA: LegalArea = "Reestruturação (Insolvência)";
+const DEFAULT_AREA: LegalArea = "Reestruturação";
 
 const STATUS_LABELS: Record<string, string> = {
   rascunho: "Rascunho",
@@ -247,7 +247,7 @@ function BoletimClientInner() {
                 <Input
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
-                  placeholder="Newsletter de Reestruturação e Insolvência"
+                  placeholder="Newsletter de Reestruturação"
                 />
               </div>
               <div className="space-y-1.5">

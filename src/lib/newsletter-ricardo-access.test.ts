@@ -63,8 +63,8 @@ describe("acesso do perfil tipo Ricardo à Newsletter", () => {
   it("como Sócio enxerga todas as áreas jurídicas, inclusive Reestruturação", () => {
     expect(isContentCollaborator(RICARDO_LIKE)).toBe(true);
     const areas = getAllowedLegalAreas(RICARDO_LIKE);
-    expect(areas).toContain("Reestruturação (Insolvência)");
-    expect(canAccessContentArea(RICARDO_LIKE, "Reestruturação (Insolvência)")).toBe(true);
+    expect(areas).toContain("Reestruturação");
+    expect(canAccessContentArea(RICARDO_LIKE, "Reestruturação")).toBe(true);
   });
 
   it("recebe o tour da Newsletter até concluir", () => {
@@ -82,9 +82,9 @@ describe("acesso do perfil tipo Ricardo à Newsletter", () => {
 describe("fluxo de documento que o Ricardo baixa", () => {
   it("monta Word com abertura, sumário, seções e assinatura", () => {
     const newsletter = {
-      title: "Newsletter de Reestruturação e Insolvência",
+      title: "Newsletter de Reestruturação",
       edition_label: "1ª Edição | 2026",
-      area: "Reestruturação (Insolvência)",
+      area: "Reestruturação",
       intro_title: "Nesta edição",
       intro_body: "Panorama do período.",
       signature_names: "Ricardo Viscardi Pires",
@@ -114,7 +114,7 @@ describe("fluxo de documento que o Ricardo baixa", () => {
       {
         title: "Teste",
         edition_label: null,
-        area: "Reestruturação (Insolvência)",
+        area: "Reestruturação",
         intro_title: null,
         intro_body: null,
         signature_names: null,
