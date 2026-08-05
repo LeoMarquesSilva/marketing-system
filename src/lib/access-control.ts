@@ -31,15 +31,18 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/fotos-colaboradores", label: "Fotos Colaboradores" },
   { key: "/usuarios", label: "Usuários" },
   { key: "/custos-projetos", label: "Custos de Projetos" },
+  { key: "/ferias", label: "Férias" },
   { key: "/admin", label: "Configurações", admin: true },
 ];
 
 const ALL_KEYS = ACCESS_SECTIONS.map((s) => s.key);
-/** Chave liberada apenas manualmente (por usuário), nunca via preset em lote. */
+/** Chaves liberadas apenas manualmente (por usuário), nunca via preset em lote. */
 const MEUS_CLIENTES_KEY = "/meus-clientes";
-const NON_ADMIN_KEYS = ACCESS_SECTIONS.filter((s) => !s.admin && s.key !== MEUS_CLIENTES_KEY).map(
-  (s) => s.key
-);
+const FERIAS_KEY = "/ferias";
+const MANUAL_ONLY_KEYS = [MEUS_CLIENTES_KEY, FERIAS_KEY];
+const NON_ADMIN_KEYS = ACCESS_SECTIONS.filter(
+  (s) => !s.admin && !MANUAL_ONLY_KEYS.includes(s.key)
+).map((s) => s.key);
 
 /** Presets de acesso (preenchem os checkboxes; o salvo é a lista final). */
 export const ACCESS_PRESETS: Record<string, string[]> = {
@@ -54,9 +57,8 @@ export const ALWAYS_ALLOWED_PATHS = ["/perfil", "/alterar-senha"];
 /**
  * Rotas sensíveis que exigem permissão explícita mesmo no modo legado (perfil sem
  * `permissions` configuradas não ganha acesso automático, ao contrário do resto do
- * catálogo). Usado por "/meus-clientes" (dados de clientes por gestor).
+ * catálogo): "/meus-clientes" (carteira por gestor) e "/ferias" (dados de RH).
  */
-const MANUAL_ONLY_KEYS = [MEUS_CLIENTES_KEY];
 
 /** Página inicial do colaborador de conteúdo (desempenho no Instagram). */
 export const CONTENT_HOME_PATH = "/conteudo/inicio";
@@ -107,12 +109,12 @@ export function canAccessPath(
   profile: AccessProfile | null | undefined,
   pathname: string
 ): boolean {
-  const isManualOnlyRoute = MANUAL_ONLY_KEYS.some(
+  const manualOnlyKey = MANUAL_ONLY_KEYS.find(
     (key) => pathname === key || pathname.startsWith(key + "/")
   );
-  if (isManualOnlyRoute) {
+  if (manualOnlyKey) {
     if ((profile?.role ?? "").toLowerCase() === "admin") return true;
-    return Boolean(profile?.permissions?.some((k) => MANUAL_ONLY_KEYS.includes(k)));
+    return Boolean(profile?.permissions?.includes(manualOnlyKey));
   }
 
   const isFotosRoute =

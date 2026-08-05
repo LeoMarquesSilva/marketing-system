@@ -27,6 +27,7 @@ import {
   MoreHorizontal,
   RadioTower,
   ScrollText,
+  Palmtree,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
@@ -76,6 +77,7 @@ const collaboratorNavItems = [
 
 const manualOnlyNavItems = [
   { href: "/meus-clientes", icon: Contact, label: "Meus Clientes" },
+  { href: "/ferias", icon: Palmtree, label: "Ferias" },
 ];
 
 const adminNavItems = [
