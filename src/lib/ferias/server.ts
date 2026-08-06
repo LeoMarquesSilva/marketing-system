@@ -37,7 +37,7 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabas
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
 const EMPLOYEE_SELECT =
-  "id, user_id, full_name, cpf, email, department, position, admission_date, termination_date, is_active, notes, vios_ci";
+  "id, user_id, full_name, cpf, email, department, position, admission_date, termination_date, is_active, notes, vios_ci, vacation_exempt";
 const VIOS_SELECT =
   "ci, company, department, full_name, position, email, situation, is_active, matched_employee_id, synced_at";
 const PERIOD_SELECT =
@@ -175,7 +175,12 @@ async function loadDataset(
   referenceDate: string = todayISO()
 ): Promise<FeriasDataset> {
   let employeeQuery = admin.from("hr_employees").select(EMPLOYEE_SELECT).order("full_name");
-  if (employeeId) employeeQuery = employeeQuery.eq("id", employeeId);
+  if (employeeId) {
+    employeeQuery = employeeQuery.eq("id", employeeId);
+  } else {
+    // Sócios fundadores e demais isentos ficam fora do controle de férias.
+    employeeQuery = employeeQuery.eq("vacation_exempt", false);
+  }
 
   const employeesResult = await employeeQuery;
   if (employeesResult.error) failed("Não foi possível carregar os dados de férias.");
@@ -427,7 +432,8 @@ export async function listRecessWithApplicationStatus(): Promise<CompanyRecessWi
     admin
       .from("hr_employees")
       .select("id, admission_date, termination_date, is_active")
-      .eq("is_active", true),
+      .eq("is_active", true)
+      .eq("vacation_exempt", false),
   ]);
 
   if (recessResult.error) failed("Não foi possível carregar o recesso coletivo.");
@@ -530,7 +536,8 @@ export async function applyRecessToActiveEmployees(
   const { data: employees, error: employeesError } = await admin
     .from("hr_employees")
     .select("id, full_name, admission_date, termination_date, is_active")
-    .eq("is_active", true);
+    .eq("is_active", true)
+    .eq("vacation_exempt", false);
   if (employeesError) failed("Não foi possível carregar os colaboradores.");
 
   const activeRows = (employees ?? []) as Array<{
@@ -674,6 +681,7 @@ export async function listViosSyncAlerts(): Promise<ViosSyncAlerts> {
       .from("hr_employees")
       .select("id, full_name, email, department, is_active, vios_ci")
       .eq("is_active", true)
+      .eq("vacation_exempt", false)
       .order("full_name"),
   ]);
 

@@ -32,6 +32,8 @@ export interface HrEmployee {
   notes: string | null;
   /** CI do colaborador no VIOS, quando já houve match no sync. */
   vios_ci: string | null;
+  /** Fora do controle de férias (ex.: sócios fundadores). */
+  vacation_exempt: boolean;
   /** Foto do usuário vinculado (`users.avatar_url` / OneDrive), quando existir. */
   avatar_url: string | null;
 }

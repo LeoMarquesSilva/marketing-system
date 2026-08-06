@@ -57,7 +57,6 @@ import {
   RecessoFormDialog,
   type RecessFormValues,
 } from "@/components/ferias/recesso-form-dialog";
-import { ViosSyncAlertsBanner } from "@/components/ferias/vios-sync-alerts";
 import {
   applyRecessRequest,
   createEmployeeRequest,
@@ -80,7 +79,6 @@ import type {
   EmployeeWithBalance,
   LinkableUser,
   RecessApplyState,
-  ViosSyncAlerts,
 } from "@/lib/ferias/types";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -91,7 +89,6 @@ interface FeriasClientProps {
   employees: EmployeeWithBalance[];
   recess: CompanyRecessWithStatus[];
   users: LinkableUser[];
-  viosAlerts: ViosSyncAlerts;
 }
 
 const RECESS_APPLY_STATE_CLASS: Record<RecessApplyState, string> = {
@@ -160,7 +157,7 @@ function KpiCard({
   );
 }
 
-export function FeriasClient({ employees, recess, users, viosAlerts }: FeriasClientProps) {
+export function FeriasClient({ employees, recess, users }: FeriasClientProps) {
   const router = useRouter();
   const [tab, setTab] = useState<TabKey>("colaboradores");
   const [search, setSearch] = useState("");
@@ -388,13 +385,6 @@ export function FeriasClient({ employees, recess, users, viosAlerts }: FeriasCli
           )}
         </div>
       </div>
-
-      {tab === "colaboradores" ? (
-        <ViosSyncAlertsBanner
-          alerts={viosAlerts}
-          onRegisterClick={() => setCreateOpen(true)}
-        />
-      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard

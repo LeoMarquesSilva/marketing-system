@@ -26,6 +26,7 @@ function makeEmployee(
     is_active: true,
     notes: null,
     vios_ci: null,
+    vacation_exempt: false,
     avatar_url: null,
     ...overrides,
   };
