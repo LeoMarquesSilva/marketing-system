@@ -12,7 +12,7 @@ import { TimerProvider } from "@/contexts/timer-context";
 import { FloatingTimer } from "@/components/timer/floating-timer";
 
 /** Telas sem chrome (sidebar/header) nem tour. */
-const BARE_LAYOUT_PATHS = ["/login", "/alterar-senha", "/t"];
+const BARE_LAYOUT_PATHS = ["/login", "/alterar-senha", "/t", "/nps"];
 
 function isBareLayoutPath(pathname: string): boolean {
   if (BARE_LAYOUT_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {

@@ -6,10 +6,12 @@ import {
   Download,
   Eye,
   LayoutList,
+  MessageSquareHeart,
   RefreshCw,
   Search,
   Trash2,
 } from "lucide-react";
+import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -71,6 +73,7 @@ import {
 import { PersonEditDialog } from "./person-edit-dialog";
 import { ContactCreateDialog } from "./contact-create-dialog";
 import { GroupStatusDialog } from "./group-status-dialog";
+import { NpsLinkDialog } from "./nps-link-dialog";
 import { MeusClientesTour } from "./meus-clientes-tour";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -231,6 +234,9 @@ function MeusClientesClientContent() {
   const [clientGroupStatusById, setClientGroupStatusById] = useState<
     Record<string, ClientGroupGestorStatus>
   >({});
+  const [npsSentByGroupId, setNpsSentByGroupId] = useState<
+    Record<string, { sentAt: string; sentByName: string }>
+  >({});
   const [syncing, setSyncing] = useState(false);
   const [syncMenuOpen, setSyncMenuOpen] = useState(false);
   const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -258,6 +264,9 @@ function MeusClientesClientContent() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [groupStatusDialogOpen, setGroupStatusDialogOpen] = useState(false);
   const [editingGroupStatus, setEditingGroupStatus] = useState<ClientGroupBucket | null>(null);
+  const [npsLinkDialogOpen, setNpsLinkDialogOpen] = useState(false);
+  const [npsLinkGroup, setNpsLinkGroup] = useState<ClientGroupBucket | null>(null);
+  const [npsLinkEligibleCount, setNpsLinkEligibleCount] = useState(0);
   const [editingGroupAtividadeIndicio, setEditingGroupAtividadeIndicio] =
     useState<SioeClienteAtividade | null>(null);
   const [editingGroupCategoriaIndicio, setEditingGroupCategoriaIndicio] =
@@ -327,6 +336,7 @@ function MeusClientesClientContent() {
       setSyncMeta(data.syncMeta ?? null);
       setClienteAtividade(data.clienteAtividade ?? emptySioeClienteAtividadeIndex(""));
       setClientGroupStatusById(data.clientGroupStatusById ?? {});
+      setNpsSentByGroupId(data.npsSentByGroupId ?? {});
     } catch (err) {
       setToast({
         type: "error",
@@ -340,7 +350,8 @@ function MeusClientesClientContent() {
   const reloadRef = useRef(reload);
   reloadRef.current = reload;
 
-  const realtimePaused = dialogOpen || createDialogOpen || deleteConfirmOpen || groupStatusDialogOpen;
+  const realtimePaused =
+    dialogOpen || createDialogOpen || deleteConfirmOpen || groupStatusDialogOpen || npsLinkDialogOpen;
   useMeusClientesRealtime({
     enabled: Boolean(user) && !loading,
     paused: realtimePaused,
@@ -1096,6 +1107,12 @@ function MeusClientesClientContent() {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" className="gap-2" asChild>
+            <Link href="/meus-clientes/nps" title="Resultados NPS">
+              <MessageSquareHeart className="h-4 w-4" />
+              Resultados NPS
+            </Link>
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -1641,6 +1658,9 @@ function MeusClientesClientContent() {
                 gestorStatus={
                   group.clientGroupId ? clientGroupStatusById[group.clientGroupId] : null
                 }
+                npsSent={
+                  group.clientGroupId ? npsSentByGroupId[group.clientGroupId] ?? null : null
+                }
                 onEditGroupStatus={(g) => {
                   setEditingGroupStatus(g);
                   setEditingGroupAtividadeIndicio(resolveSioeAtividadeForBucket(g));
@@ -1648,6 +1668,19 @@ function MeusClientesClientContent() {
                   setEditingGroupFaturamentoIndicios(resolveSioeFaturamentoIndiciosForBucket(g));
                   setEditingGroupPrevistoDate(resolveSioePrevistoDateForBucket(g));
                   setGroupStatusDialogOpen(true);
+                }}
+                onGenerateNpsLink={(g) => {
+                  const groupContacts = displayContactsByGroup.get(g.key) ?? [];
+                  const { contacts: mergedC, people: mergedP } = mergeGroupMembers(
+                    groupContacts,
+                    g.groupPeople
+                  );
+                  const count =
+                    mergedC.filter((c) => c.npsEligible).length +
+                    mergedP.filter((p) => p.npsEligible).length;
+                  setNpsLinkEligibleCount(count);
+                  setNpsLinkGroup(g);
+                  setNpsLinkDialogOpen(true);
                 }}
               />
             ))}
@@ -1701,6 +1734,23 @@ function MeusClientesClientContent() {
         onSaved={(clientGroupId, status) => {
           setClientGroupStatusById((prev) => ({ ...prev, [clientGroupId]: status }));
           setToast({ type: "success", text: "Status do grupo salvo." });
+        }}
+      />
+
+      <NpsLinkDialog
+        open={npsLinkDialogOpen}
+        onOpenChange={(open) => {
+          setNpsLinkDialogOpen(open);
+          if (!open) setNpsLinkGroup(null);
+        }}
+        group={npsLinkGroup}
+        eligibleCount={npsLinkEligibleCount}
+        onMarkedSent={(info) => {
+          if (!npsLinkGroup?.clientGroupId) return;
+          setNpsSentByGroupId((prev) => ({
+            ...prev,
+            [npsLinkGroup.clientGroupId!]: info,
+          }));
         }}
       />
 

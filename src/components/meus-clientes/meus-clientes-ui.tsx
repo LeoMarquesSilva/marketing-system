@@ -7,6 +7,7 @@ import {
   ChevronRight,
   CircleHelp,
   Layers,
+  MessageSquareHeart,
   Pencil,
   UserPlus,
   Users,
@@ -438,6 +439,8 @@ export function GroupSection({
   clienteAtividadeIndex,
   gestorStatus,
   onEditGroupStatus,
+  onGenerateNpsLink,
+  npsSent,
   compact,
   searchQuery,
   inviteFilter = "all",
@@ -460,6 +463,8 @@ export function GroupSection({
   clienteAtividadeIndex?: SioeClienteAtividadeIndex | null;
   gestorStatus?: ClientGroupGestorStatus | null;
   onEditGroupStatus?: (group: ClientGroupBucket) => void;
+  onGenerateNpsLink?: (group: ClientGroupBucket) => void;
+  npsSent?: { sentAt: string; sentByName: string } | null;
   compact?: boolean;
   searchQuery?: string;
   inviteFilter?: InviteFilter;
@@ -532,7 +537,11 @@ export function GroupSection({
     ? statusPending
     : Boolean(groupAtividade && isGestorStatusPending(gestorStatus));
   const canEditGroupStatus = Boolean(group.clientGroupId && onEditGroupStatus);
-  const showStatusArea = canEditGroupStatus || Boolean(groupAtividade);
+  const npsEligibleCount =
+    mergedContacts.filter((c) => c.npsEligible).length +
+    mergedPeople.filter((p) => p.npsEligible).length;
+  const canGenerateNps = Boolean(group.clientGroupId && onGenerateNpsLink);
+  const showStatusArea = canEditGroupStatus || canGenerateNps || Boolean(groupAtividade);
   const groupPrevistoDate = clienteAtividadeIndex
     ? resolveClientePrevistoDate(clienteAtividadeIndex, { grupoName: group.name })
     : null;
@@ -635,22 +644,51 @@ export function GroupSection({
               labelOverride={badgeLabel}
               tooltipTitle={badgeTooltipTitle}
             />
-            {canEditGroupStatus && (
-              <Button
-                type="button"
-                variant={statusPending ? "default" : "outline"}
-                size="sm"
-                className={`shrink-0 ${
-                  statusPending
-                    ? "bg-amber-600 text-white hover:bg-amber-700 border-amber-600"
-                    : ""
-                }`}
-                onClick={() => onEditGroupStatus?.(group)}
-                {...(tourGroupSample ? { "data-tour": "mc-group-status" } : {})}
-              >
-                {statusPending ? "Confirmar status" : "Editar status"}
-              </Button>
-            )}
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              {canGenerateNps && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 border-blue-200 text-blue-700 hover:bg-blue-50"
+                  disabled={npsEligibleCount === 0}
+                  title={
+                    npsEligibleCount === 0
+                      ? "Nenhum contato com NPS ligado neste grupo"
+                      : "Gerar link NPS deste grupo"
+                  }
+                  onClick={() => onGenerateNpsLink?.(group)}
+                >
+                  <MessageSquareHeart className="mr-1 h-3.5 w-3.5" />
+                  NPS
+                </Button>
+              )}
+              {canGenerateNps && npsSent && (
+                <Badge
+                  variant="outline"
+                  className="max-w-[11rem] truncate border-emerald-200 bg-emerald-50 text-emerald-800"
+                  title={`Enviado por: ${npsSent.sentByName} · ${formatSyncDate(npsSent.sentAt)}`}
+                >
+                  Enviado
+                </Badge>
+              )}
+              {canEditGroupStatus && (
+                <Button
+                  type="button"
+                  variant={statusPending ? "default" : "outline"}
+                  size="sm"
+                  className={`shrink-0 ${
+                    statusPending
+                      ? "bg-amber-600 text-white hover:bg-amber-700 border-amber-600"
+                      : ""
+                  }`}
+                  onClick={() => onEditGroupStatus?.(group)}
+                  {...(tourGroupSample ? { "data-tour": "mc-group-status" } : {})}
+                >
+                  {statusPending ? "Confirmar status" : "Editar status"}
+                </Button>
+              )}
+            </div>
           </div>
         )}
       </div>

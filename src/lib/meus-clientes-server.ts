@@ -35,6 +35,7 @@ import {
   type ClientGroupGestorStatus,
   type UpdateClientGroupGestorStatusInput,
 } from "@/lib/client-group-gestor-status";
+import { fetchActiveCampaignNpsSentMap } from "@/lib/nps/server";
 
 export interface MeusClientesSyncMeta {
   lastSyncedAt: string | null;
@@ -54,6 +55,7 @@ export interface MeusClientesPayload {
   syncMeta: MeusClientesSyncMeta;
   clienteAtividade: SioeClienteAtividadeIndex;
   clientGroupStatusById: Record<string, ClientGroupGestorStatus>;
+  npsSentByGroupId: Record<string, { sentAt: string; sentByName: string }>;
 }
 
 async function resolveProfile(authUserId: string): Promise<AccessProfile & { id: string }> {
@@ -232,6 +234,8 @@ export async function fetchMeusClientesPayload(options: {
     }
   }
 
+  const npsSentByGroupId = await fetchActiveCampaignNpsSentMap(Array.from(scopedGroupIds));
+
   return {
     companies,
     contacts,
@@ -244,6 +248,7 @@ export async function fetchMeusClientesPayload(options: {
     syncMeta,
     clienteAtividade,
     clientGroupStatusById,
+    npsSentByGroupId,
   };
 }
 

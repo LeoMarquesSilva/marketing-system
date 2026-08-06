@@ -7,7 +7,7 @@ import { isContentCollaborator } from "@/lib/content-areas";
 import { resolveAllowedSections, canAccessPath } from "@/lib/access-control";
 import { resolvePostLoginPathFromProfile } from "@/lib/post-login-path";
 
-const PUBLIC_PATHS = ["/login", "/t"];
+const PUBLIC_PATHS = ["/login", "/t", "/nps"];
 
 /** Perfil profissional público NFC: /perfil/<slug> e /perfil/<slug>/contato. */
 function isPublicProfessionalProfilePath(pathname: string): boolean {

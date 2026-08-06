@@ -1,0 +1,991 @@
+/*
+ * Tipografia e paleta extraídas do site institucional bismarchipires.com.br:
+ * papel #FCF9F5, navy #0D1E2E, dourado #E1B16D, sans geométrica (Gotham → Montserrat),
+ * títulos em caixa baixa e peso leve.
+ */
+
+.root {
+  --paper: #fcf9f5;
+  --paper-tint: #f6f2eb;
+  --navy: #0d1e2e;
+  --ink: #212529;
+  --ink-soft: #5a6570;
+  --ink-faint: #98a2ac;
+  --gold: #e1b16d;
+  --gold-deep: #9c7434;
+  --mist: #d9e2ea;
+  --rule: rgba(13, 30, 46, 0.13);
+  --rule-soft: rgba(13, 30, 46, 0.07);
+
+  --low: #a63f2e;
+  --mid: #96681a;
+  --high: #3d6b4a;
+
+  --sans: var(--font-nps-sans), "Montserrat", "Gotham", "Segoe UI", system-ui, sans-serif;
+
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+
+  background: var(--paper);
+}
+
+/* Papel iluminado: foco de luz no alto à esquerda, brilho dourado à direita e
+   uma sombra fria assentando a base. Camada fixa — evita o comportamento
+   instável de background-attachment: fixed no iOS. */
+.root::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(68rem 44rem at 10% -10%, #ffffff, rgba(255, 255, 255, 0) 62%),
+    radial-gradient(52rem 38rem at 96% 4%, rgba(225, 177, 109, 0.13), rgba(225, 177, 109, 0) 58%),
+    radial-gradient(64rem 46rem at 46% 112%, rgba(217, 226, 234, 0.5), rgba(217, 226, 234, 0) 62%);
+}
+
+/* textura de papel sobre toda a página */
+.root::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0.04;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+}
+
+/* ================= masthead ================= */
+
+.root :global(.page) {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 78rem);
+  max-width: 100%;
+  min-width: 0;
+  margin: 0 auto;
+  padding: 0 clamp(1.25rem, 5vw, 4rem);
+  box-sizing: border-box;
+}
+
+/* fênix da marca como marca d'água, sangrando pelo alto à direita */
+.root :global(.page)::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: -6rem;
+  right: -10rem;
+  width: min(38rem, 62vw);
+  height: min(47rem, 77vw);
+  background: url("/fenix.png") no-repeat top right / contain;
+  opacity: 0.055;
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .root :global(.page)::before {
+    top: -3rem;
+    right: -7rem;
+    opacity: 0.04;
+  }
+}
+
+.root :global(.masthead) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: clamp(1.5rem, 4vw, 2.75rem) 0;
+}
+
+.root :global(.masthead__logo) {
+  display: block;
+  height: clamp(2.15rem, 4.6vw, 3rem);
+  width: auto;
+  object-fit: contain;
+}
+
+.root :global(.social) {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.4rem;
+}
+
+.root :global(.social__link) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-decoration: none;
+  transition: color 200ms ease;
+}
+
+.root :global(.social__link svg) {
+  width: 0.95rem;
+  height: 0.95rem;
+  stroke-width: 1.5;
+}
+
+.root :global(.social__label) {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .root :global(.social__label) {
+    display: inline;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .root :global(.social__link:hover) {
+    color: var(--gold-deep);
+  }
+}
+
+.root :global(.social__link:focus-visible) {
+  outline: 2px solid var(--gold-deep);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+/* ================= body grid ================= */
+
+.root :global(.body) {
+  display: grid;
+  gap: clamp(3rem, 7vw, 4.5rem);
+  padding-top: clamp(2.5rem, 6vw, 5rem);
+  padding-bottom: clamp(4rem, 10vw, 8rem);
+  border-top: 1px solid var(--rule);
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .root :global(.body) {
+    grid-template-columns: minmax(0, 24rem) minmax(0, 1fr);
+    gap: 6rem;
+    align-items: start;
+  }
+}
+
+.root :global(.questions),
+.root :global(.form),
+.root :global(.field),
+.root :global(.q) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* ================= lede ================= */
+
+@media (min-width: 1024px) {
+  .root :global(.lede) {
+    position: sticky;
+    top: 3rem;
+  }
+}
+
+.root :global(.eyebrow) {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--gold-deep);
+}
+
+/* título display: caixa baixa + peso leve, como o site institucional */
+.root :global(.lede__title) {
+  margin: 1.4rem 0 0;
+  font-size: clamp(2.15rem, 4.6vw, 3.15rem);
+  font-weight: 200;
+  line-height: 1.14;
+  letter-spacing: 0.005em;
+  text-transform: lowercase;
+  color: var(--navy);
+  text-wrap: balance;
+}
+
+.root :global(.lede__title em) {
+  font-style: normal;
+  font-weight: 500;
+}
+
+.root :global(.lede__note) {
+  margin: 1.75rem 0 0;
+  max-width: 30rem;
+  font-size: 0.9rem;
+  font-weight: 400;
+  line-height: 1.75;
+  color: var(--ink-soft);
+  text-wrap: pretty;
+}
+
+.root :global(.facts) {
+  margin: 2.5rem 0 0;
+  display: grid;
+  gap: 1.15rem;
+}
+
+.root :global(.fact) {
+  display: flex;
+  align-items: baseline;
+  gap: 0.85rem;
+}
+
+.root :global(.fact svg) {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex-shrink: 0;
+  stroke-width: 1.5;
+  color: var(--gold-deep);
+  transform: translateY(0.15rem);
+}
+
+.root :global(.fact span) {
+  font-size: 0.83rem;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.root :global(.client) {
+  margin: 2.75rem 0 0;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--rule);
+}
+
+.root :global(.client__name) {
+  margin: 0.75rem 0 0;
+  font-size: clamp(1.2rem, 2.4vw, 1.4rem);
+  font-weight: 300;
+  line-height: 1.3;
+  letter-spacing: 0.005em;
+  color: var(--navy);
+  text-wrap: balance;
+}
+
+.root :global(.client__campaign) {
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--ink-faint);
+}
+
+/* ================= respondent field ================= */
+
+.root :global(.form) {
+  display: grid;
+  gap: 1.1rem;
+  width: 100%;
+}
+
+/* Superfície comum das perguntas: folha levemente destacada do papel de fundo.
+   Sem sombra e sem borda pesada — a delimitação vem da própria superfície. */
+.root :global(.field),
+.root :global(.q) {
+  padding: clamp(1.6rem, 3.4vw, 2.15rem) clamp(1.25rem, 3vw, 2rem);
+  border: 1px solid rgba(13, 30, 46, 0.09);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.5);
+  transition: border-color 240ms ease, background-color 240ms ease;
+}
+
+.root :global(.field.is-answered),
+.root :global(.q.is-answered) {
+  border-color: rgba(13, 30, 46, 0.16);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.root :global(.field) {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.root :global(.field__label) {
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--gold-deep);
+}
+
+/* ---- combobox próprio (o popup do <select> nativo é do SO, não estilizável) ---- */
+
+.root :global(.combo) {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.root :global(.combo__trigger) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: 3.5rem;
+  padding: 0 0.25rem 0 0;
+  border: none;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  background: transparent;
+  color: var(--navy);
+  font-family: var(--sans);
+  font-size: clamp(1.05rem, 2.2vw, 1.3rem);
+  font-weight: 300;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 200ms ease;
+}
+
+.root :global(.combo__trigger.is-placeholder) {
+  color: var(--ink-faint);
+}
+
+.root :global(.combo__trigger:disabled) {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .root :global(.combo__trigger:not(:disabled):hover) {
+    border-bottom-color: var(--gold-deep);
+  }
+}
+
+.root :global(.combo__trigger:focus-visible),
+.root :global(.combo.is-open .combo__trigger) {
+  outline: none;
+  border-bottom-color: var(--gold-deep);
+}
+
+.root :global(.combo__value) {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.root :global(.combo__chevron) {
+  flex-shrink: 0;
+  width: 1.05rem;
+  height: 1.05rem;
+  stroke-width: 1.5;
+  color: var(--ink-soft);
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.root :global(.combo.is-open .combo__chevron) {
+  transform: rotate(180deg);
+}
+
+.root :global(.combo__list) {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  right: 0;
+  width: 100%;
+  max-width: 100%;
+  max-height: min(17rem, 50vh);
+  margin: 0;
+  padding: 0.4rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  list-style: none;
+  border: 1px solid rgba(13, 30, 46, 0.12);
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 22px 44px -26px rgba(13, 30, 46, 0.45);
+  box-sizing: border-box;
+}
+
+.root :global(.combo__option) {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+  min-width: 0;
+}
+
+.root :global(.combo__option[data-active="true"]) {
+  background: rgba(225, 177, 109, 0.14);
+}
+
+.root :global(.combo__option[aria-selected="true"]) {
+  background: rgba(13, 30, 46, 0.05);
+}
+
+.root :global(.combo__option.is-disabled) {
+  cursor: not-allowed;
+  opacity: 0.72;
+  background: rgba(13, 30, 46, 0.035);
+}
+
+.root :global(.combo__option.is-disabled:hover),
+.root :global(.combo__option.is-disabled[data-active="true"]) {
+  background: rgba(13, 30, 46, 0.035);
+}
+
+.root :global(.combo__name) {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: 0.95rem;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--navy);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.root :global(.combo__cargo) {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.74rem;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+}
+
+.root :global(.combo__done) {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--gold-deep);
+}
+
+.root :global(.combo__check) {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  stroke-width: 2;
+  color: var(--gold-deep);
+}
+
+.root :global(.combo__check.is-done) {
+  opacity: 0.85;
+}
+
+/* ================= question block ================= */
+
+.root :global(.q__head) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1.1rem;
+  align-items: baseline;
+}
+
+/* numeral grande e leve: é ele que ancora visualmente o início de cada pergunta */
+.root :global(.q__num) {
+  font-size: clamp(1.5rem, 3.2vw, 2rem);
+  font-weight: 200;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: rgba(13, 30, 46, 0.26);
+  font-variant-numeric: tabular-nums;
+  transition: color 240ms ease;
+}
+
+.root :global(.q.is-answered .q__num) {
+  color: var(--gold-deep);
+}
+
+.root :global(.q__label) {
+  display: block;
+  margin: 0;
+  max-width: 36rem;
+  font-size: clamp(1.05rem, 2.2vw, 1.32rem);
+  font-weight: 300;
+  line-height: 1.5;
+  letter-spacing: 0.005em;
+  color: var(--navy);
+  text-wrap: pretty;
+}
+
+.root :global(.q__body) {
+  margin-top: 1.85rem;
+}
+
+.root :global(.textarea) {
+  width: 100%;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  font-weight: 400;
+  line-height: 1.7;
+  resize: vertical;
+  box-sizing: border-box;
+  transition: border-color 200ms ease, background-color 200ms ease;
+}
+
+.root :global(.textarea::placeholder) {
+  color: var(--ink-faint);
+  font-weight: 400;
+}
+
+.root :global(.textarea:focus-visible) {
+  outline: none;
+  border-color: var(--gold-deep);
+  background: #fff;
+}
+
+/* ================= score scale ================= */
+
+.root :global(.scale__track) {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.25rem;
+}
+
+/* Eixo contínuo: gradiente do tom baixo ao alto, para o vermelho→âmbar→verde
+   já existir em repouso, sem depender da seleção. */
+.root :global(.scale__track::before) {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  border-radius: 2px;
+  transform: translateY(-50%);
+  background: linear-gradient(
+    90deg,
+    rgba(166, 63, 46, 0.32) 0%,
+    rgba(166, 63, 46, 0.32) 26%,
+    rgba(150, 104, 26, 0.32) 55%,
+    rgba(61, 107, 74, 0.32) 84%,
+    rgba(61, 107, 74, 0.32) 100%
+  );
+}
+
+.root :global(.mark) {
+  --tone: var(--ink-soft);
+  --tone-faint: var(--rule);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
+  height: 3.25rem;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.root :global(.mark.tone-low) {
+  --tone: var(--low);
+  --tone-faint: rgba(166, 63, 46, 0.3);
+}
+
+.root :global(.mark.tone-mid) {
+  --tone: var(--mid);
+  --tone-faint: rgba(150, 104, 26, 0.3);
+}
+
+.root :global(.mark.tone-high) {
+  --tone: var(--high);
+  --tone-faint: rgba(61, 107, 74, 0.3);
+}
+
+.root :global(.mark__dot) {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  max-width: 2.65rem;
+  aspect-ratio: 1;
+  border: 1.5px solid var(--tone-faint);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink-soft);
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (min-width: 640px) {
+  .root :global(.mark__dot) {
+    font-size: 0.9rem;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .root :global(.mark:not(:disabled):hover .mark__dot) {
+    border-color: var(--tone);
+    color: var(--tone);
+    transform: scale(1.12);
+  }
+}
+
+.root :global(.mark[aria-checked="true"] .mark__dot) {
+  border-color: var(--tone);
+  background: var(--tone);
+  color: var(--paper);
+  font-weight: 500;
+  transform: scale(1.16);
+}
+
+.root :global(.mark:disabled) {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.root :global(.mark:focus-visible) {
+  outline: none;
+}
+
+.root :global(.mark:focus-visible .mark__dot) {
+  outline: 2px solid var(--gold-deep);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root :global(.mark__dot) {
+    transition: none;
+    transform: none !important;
+  }
+}
+
+.root :global(.scale__ends) {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-top: 1.15rem;
+}
+
+.root :global(.scale__ends span) {
+  max-width: 15rem;
+  font-size: 0.78rem;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.root :global(.scale__ends span:last-child) {
+  text-align: right;
+}
+
+.root :global(.scale__readout) {
+  min-height: 1.5rem;
+  margin: 1.35rem 0 0;
+  padding-top: 1.1rem;
+  border-top: 1px solid rgba(13, 30, 46, 0.08);
+  font-size: 0.8rem;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.root :global(.scale__readout strong) {
+  font-weight: 600;
+}
+
+.root :global(.scale__readout.tone-low) {
+  color: var(--low);
+}
+
+.root :global(.scale__readout.tone-mid) {
+  color: var(--mid);
+}
+
+.root :global(.scale__readout.tone-high) {
+  color: var(--high);
+}
+
+/* ================= submit ================= */
+
+.root :global(.foot) {
+  padding-top: clamp(1.75rem, 4vw, 2.5rem);
+}
+
+.root :global(.alert) {
+  position: relative;
+  margin: 0 0 1.5rem;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  font-weight: 400;
+  line-height: 1.6;
+  color: var(--low);
+}
+
+.root :global(.alert::before) {
+  content: "—";
+  position: absolute;
+  left: 0;
+}
+
+.root :global(.submit) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  width: 100%;
+  min-height: 3.6rem;
+  padding: 0 2.25rem;
+  border: 1px solid var(--navy);
+  border-radius: 999px;
+  background: var(--navy);
+  color: var(--paper);
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color 220ms ease, color 220ms ease;
+}
+
+@media (min-width: 640px) {
+  .root :global(.submit) {
+    width: auto;
+    min-width: 17rem;
+  }
+}
+
+.root :global(.submit svg) {
+  width: 0.95rem;
+  height: 0.95rem;
+  stroke-width: 1.5;
+  transition: transform 220ms ease;
+}
+
+.root :global(.submit .spin) {
+  animation: spin 900ms linear infinite;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .root :global(.submit:not(:disabled):hover) {
+    background: transparent;
+    color: var(--navy);
+  }
+
+  .root :global(.submit:not(:disabled):hover svg:not(.spin)) {
+    transform: translateX(0.25rem);
+  }
+}
+
+.root :global(.submit:disabled) {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.root :global(.submit:focus-visible) {
+  outline: 2px solid var(--gold-deep);
+  outline-offset: 4px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root :global(.submit),
+  .root :global(.submit svg) {
+    transition: none;
+  }
+  .root :global(.submit .spin) {
+    animation: none;
+  }
+}
+
+/* ================= status screens ================= */
+
+.root :global(.status) {
+  max-width: 34rem;
+}
+
+.root :global(.status__icon) {
+  display: block;
+  width: 2.25rem;
+  height: 2.25rem;
+  stroke-width: 1.25;
+  color: var(--gold-deep);
+}
+
+.root :global(.status__icon.is-good) {
+  color: var(--high);
+}
+
+.root :global(.status__icon.is-bad) {
+  color: var(--low);
+}
+
+.root :global(.status__icon.spin) {
+  animation: spin 900ms linear infinite;
+}
+
+.root :global(.status__title) {
+  margin: 2rem 0 0;
+  font-size: clamp(1.85rem, 4.2vw, 2.6rem);
+  font-weight: 200;
+  line-height: 1.16;
+  letter-spacing: 0.005em;
+  text-transform: lowercase;
+  color: var(--navy);
+  text-wrap: balance;
+}
+
+.root :global(.status__text) {
+  margin: 1.5rem 0 0;
+  max-width: 28rem;
+  font-size: 0.92rem;
+  font-weight: 400;
+  line-height: 1.75;
+  color: var(--ink-soft);
+  text-wrap: pretty;
+}
+
+.root :global(.status__tag) {
+  margin: 2.25rem 0 0;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--gold-deep);
+}
+
+.root :global(.status__action) {
+  margin-top: 2.25rem;
+}
+
+/* ================= colophon ================= */
+
+.root :global(.colophon) {
+  position: relative;
+  display: grid;
+  gap: clamp(1.75rem, 3.5vw, 2.25rem);
+  padding: clamp(2.5rem, 5vw, 3.25rem) 0 clamp(2rem, 4vw, 2.5rem);
+}
+
+/* faixa navy sangrando de ponta a ponta, para dar chão à página */
+.root :global(.colophon)::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 100vw;
+  transform: translateX(-50%);
+  background: var(--navy);
+  border-top: 1px solid rgba(225, 177, 109, 0.22);
+}
+
+.root :global(.colophon__top) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.root :global(.colophon__brand) {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.root :global(.colophon__mark) {
+  height: clamp(2.25rem, 4.5vw, 2.85rem);
+  width: auto;
+  object-fit: contain;
+}
+
+.root :global(.colophon__firm) {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  color: var(--paper);
+}
+
+.root :global(.colophon__sub) {
+  margin: 0.3rem 0 0;
+  font-size: 0.66rem;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(252, 249, 245, 0.45);
+}
+
+.root :global(.colophon__links) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.75rem;
+}
+
+.root :global(.colophon__links a) {
+  font-size: 0.78rem;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  color: rgba(252, 249, 245, 0.68);
+  text-decoration: none;
+  transition: color 200ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .root :global(.colophon__links a:hover) {
+    color: var(--gold);
+  }
+}
+
+.root :global(.colophon__links a:focus-visible) {
+  outline: 2px solid var(--gold);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+.root :global(.colophon__base) {
+  margin: 0;
+  padding-top: clamp(1.5rem, 3vw, 1.85rem);
+  border-top: 1px solid rgba(252, 249, 245, 0.12);
+  font-size: 0.66rem;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(252, 249, 245, 0.38);
+}
