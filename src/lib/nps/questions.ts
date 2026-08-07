@@ -13,6 +13,8 @@ export interface NpsScaleQuestion {
   kind: "scale";
   id: NpsScoreField;
   label: string;
+  /** Termos-chave do enunciado a destacar em negrito na página pública. */
+  emphasis?: string[];
   lowLabel: string;
   highLabel: string;
   required: true;
@@ -22,9 +24,16 @@ export interface NpsTextQuestion {
   kind: "text";
   id: NpsTextField;
   label: string;
+  /** Termos-chave do enunciado a destacar em negrito na página pública. */
+  emphasis?: string[];
   placeholder?: string;
   required: false;
   rows?: number;
+  /**
+   * Renderiza este campo dentro do bloco da pergunta anterior, em vez de abrir
+   * uma seção numerada própria (ex.: o "Motivo" pertence à nota de recomendação).
+   */
+  attachToPrevious?: boolean;
 }
 
 export type NpsQuestion = NpsScaleQuestion | NpsTextQuestion;
@@ -35,6 +44,7 @@ export const NPS_QUESTIONS: NpsQuestion[] = [
     id: "score_recommend",
     label:
       "Em uma escala de 0 a 10, o quanto você recomendaria o Bismarchi | Pires Sociedade de Advogados a um colega ou outras empresas?",
+    emphasis: ["recomendaria"],
     lowLabel: "Definitivamente não recomendaria",
     highLabel: "Definitivamente recomendaria",
     required: true,
@@ -46,12 +56,14 @@ export const NPS_QUESTIONS: NpsQuestion[] = [
     placeholder: "Conte-nos o motivo da sua nota (opcional)",
     required: false,
     rows: 3,
+    attachToPrevious: true,
   },
   {
     kind: "scale",
     id: "score_availability",
     label:
       "Em uma escala de 0 a 10, como você avalia a disponibilidade da equipe que o(a) atende?",
+    emphasis: ["disponibilidade"],
     lowLabel: "Equipe não está disponível",
     highLabel: "Equipe totalmente disponível",
     required: true,
@@ -61,6 +73,7 @@ export const NPS_QUESTIONS: NpsQuestion[] = [
     id: "score_communication",
     label:
       "Em uma escala de 0 a 10, como você avalia a comunicação da equipe que o(a) atende?",
+    emphasis: ["comunicação"],
     lowLabel: "Comunicação totalmente insatisfatória",
     highLabel: "Comunicação totalmente satisfatória",
     required: true,
@@ -69,7 +82,8 @@ export const NPS_QUESTIONS: NpsQuestion[] = [
     kind: "scale",
     id: "score_innovation",
     label:
-      "Em uma escala de 0 a 10, como você avalia a capacidade do escritório de apresentar soluções inovadoras e se antecipar às suas necessidades?",
+      "Em uma escala de 0 a 10, como você avalia a capacidade do escritório de apresentar soluções inovadoras?",
+    emphasis: ["capacidade"],
     lowLabel: "Nunca apresenta soluções inovadoras",
     highLabel: "Sempre apresenta soluções inovadoras",
     required: true,
@@ -79,6 +93,7 @@ export const NPS_QUESTIONS: NpsQuestion[] = [
     id: "score_technical",
     label:
       "Em uma escala de 0 a 10, como você avalia a competência técnica do escritório no atendimento ao seu caso?",
+    emphasis: ["competência técnica"],
     lowLabel: "Competência técnica totalmente insatisfatória",
     highLabel: "Competência técnica totalmente satisfatória",
     required: true,
@@ -87,11 +102,32 @@ export const NPS_QUESTIONS: NpsQuestion[] = [
     kind: "text",
     id: "improvement",
     label: "Há algo que você acredita que poderíamos fazer para melhorar sua experiência?",
+    emphasis: ["melhorar"],
     placeholder: "Sugestões de melhoria (opcional)",
     required: false,
     rows: 4,
   },
 ];
+
+/**
+ * Quebra o enunciado nos trechos a destacar, preservando o texto original.
+ * O `label` continua puro — a página de resultados e leitores de tela usam ele.
+ */
+export function splitLabelEmphasis(
+  label: string,
+  emphasis?: string[]
+): Array<{ text: string; strong: boolean }> {
+  if (!emphasis?.length) return [{ text: label, strong: false }];
+
+  const escaped = emphasis.map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const pattern = new RegExp(`(${escaped.join("|")})`, "gi");
+  const lowered = emphasis.map((word) => word.toLowerCase());
+
+  return label
+    .split(pattern)
+    .filter((part) => part.length > 0)
+    .map((part) => ({ text: part, strong: lowered.includes(part.toLowerCase()) }));
+}
 
 export const NPS_SCORE_FIELDS: NpsScoreField[] = [
   "score_recommend",

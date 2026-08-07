@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { NPS_QUESTIONS, validateNpsResponsePayload } from "@/lib/nps/questions";
+import {
+  NPS_QUESTIONS,
+  splitLabelEmphasis,
+  validateNpsResponsePayload,
+} from "@/lib/nps/questions";
 
 describe("NPS_QUESTIONS", () => {
   it("tem 7 perguntas na ordem correta", () => {
@@ -20,6 +24,74 @@ describe("NPS_QUESTIONS", () => {
       if (q.kind === "scale") expect(q.required).toBe(true);
       else expect(q.required).toBe(false);
     }
+  });
+
+  it("o motivo é anexado à pergunta de recomendação", () => {
+    const reason = NPS_QUESTIONS.find((q) => q.id === "reason");
+    expect(reason?.kind).toBe("text");
+    if (reason?.kind === "text") expect(reason.attachToPrevious).toBe(true);
+  });
+
+  it("a pergunta de inovação não menciona antecipação de necessidades", () => {
+    const innovation = NPS_QUESTIONS.find((q) => q.id === "score_innovation");
+    expect(innovation?.label).toContain("soluções inovadoras");
+    expect(innovation?.label).not.toContain("antecipar");
+  });
+
+  it("toda pergunta de escala destaca um termo presente no enunciado", () => {
+    for (const q of NPS_QUESTIONS) {
+      if (q.kind !== "scale") continue;
+      expect(q.emphasis?.length).toBeGreaterThan(0);
+      for (const term of q.emphasis ?? []) {
+        expect(q.label.toLowerCase()).toContain(term.toLowerCase());
+      }
+    }
+  });
+
+  it("destaca o atributo avaliado, não o verbo 'avalia'", () => {
+    const expected: Record<string, string> = {
+      score_availability: "disponibilidade",
+      score_communication: "comunicação",
+      score_innovation: "capacidade",
+      score_technical: "competência técnica",
+    };
+    for (const [id, term] of Object.entries(expected)) {
+      const q = NPS_QUESTIONS.find((item) => item.id === id);
+      expect(q?.emphasis).toEqual([term]);
+    }
+    for (const q of NPS_QUESTIONS) {
+      expect(q.emphasis ?? []).not.toContain("avalia");
+    }
+  });
+});
+
+describe("splitLabelEmphasis", () => {
+  it("devolve o rótulo inteiro quando não há ênfase", () => {
+    expect(splitLabelEmphasis("Motivo")).toEqual([{ text: "Motivo", strong: false }]);
+  });
+
+  it("marca o termo e preserva o texto original", () => {
+    const parts = splitLabelEmphasis("como você avalia a comunicação da equipe?", [
+      "comunicação",
+    ]);
+    expect(parts.map((p) => p.text).join("")).toBe(
+      "como você avalia a comunicação da equipe?"
+    );
+    expect(parts.filter((p) => p.strong).map((p) => p.text)).toEqual(["comunicação"]);
+  });
+
+  it("destaca termos com mais de uma palavra", () => {
+    const parts = splitLabelEmphasis("avalia a competência técnica do escritório", [
+      "competência técnica",
+    ]);
+    expect(parts.filter((p) => p.strong).map((p) => p.text)).toEqual([
+      "competência técnica",
+    ]);
+  });
+
+  it("ignora diferença de caixa sem alterar o texto exibido", () => {
+    const parts = splitLabelEmphasis("Avalia e avalia", ["avalia"]);
+    expect(parts.filter((p) => p.strong).map((p) => p.text)).toEqual(["Avalia", "avalia"]);
   });
 });
 

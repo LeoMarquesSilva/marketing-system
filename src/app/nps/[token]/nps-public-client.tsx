@@ -19,7 +19,13 @@ import {
   FIRM_WEBSITE_URL,
 } from "@/components/profiles/profile-public-utils";
 import type { NpsEligibleRespondent } from "@/lib/nps/eligible";
-import type { NpsQuestion, NpsScoreField, NpsTextField } from "@/lib/nps/questions";
+import {
+  splitLabelEmphasis,
+  type NpsQuestion,
+  type NpsScoreField,
+  type NpsTextField,
+  type NpsTextQuestion,
+} from "@/lib/nps/questions";
 import styles from "./nps-public-page.module.css";
 
 const FIRM_INSTAGRAM_URL = "https://www.instagram.com/bismarchipires/";
@@ -353,9 +359,7 @@ function RespondentSelect({
         className={selected ? "combo__trigger" : "combo__trigger is-placeholder"}
       >
         <span className="combo__value">
-          {selected
-            ? `${selected.name}${selected.cargo ? ` — ${selected.cargo}` : ""}`
-            : "Selecione o seu nome"}
+          {selected ? selected.name : "Selecione o seu nome"}
         </span>
         <ChevronDown className="combo__chevron" aria-hidden="true" />
       </button>
@@ -390,7 +394,6 @@ function RespondentSelect({
               >
                 <span className="combo__name">
                   {option.name}
-                  {option.cargo && <span className="combo__cargo">{option.cargo}</span>}
                   {already && option.respondedAt && (
                     <span className="combo__done">
                       Já respondeu · {formatRespondedAt(option.respondedAt)}
@@ -411,6 +414,17 @@ function RespondentSelect({
         </ul>
       )}
     </div>
+  );
+}
+
+/** Enunciado com os termos-chave em negrito, preservando o texto original. */
+function QuestionLabel({ label, emphasis }: { label: string; emphasis?: string[] }) {
+  return (
+    <>
+      {splitLabelEmphasis(label, emphasis).map((part, i) =>
+        part.strong ? <strong key={i}>{part.text}</strong> : <span key={i}>{part.text}</span>
+      )}
+    </>
   );
 }
 
@@ -558,6 +572,23 @@ export function NpsPublicClient({ token }: { token: string }) {
 
   const respondentOptions = useMemo(() => payload?.respondents ?? [], [payload]);
 
+  /**
+   * Agrupa em seções numeradas: campos de texto marcados com `attachToPrevious`
+   * entram no bloco da pergunta anterior em vez de abrir uma seção própria.
+   */
+  const sections = useMemo(() => {
+    const grouped: Array<{ lead: NpsQuestion; attached: NpsTextQuestion[] }> = [];
+    for (const question of payload?.questions ?? []) {
+      const last = grouped[grouped.length - 1];
+      if (question.kind === "text" && question.attachToPrevious && last) {
+        last.attached.push(question);
+      } else {
+        grouped.push({ lead: question, attached: [] });
+      }
+    }
+    return grouped;
+  }, [payload]);
+
   const client: ClientRef | null = groupLabel
     ? { name: groupLabel, campaign: campaignLabel }
     : null;
@@ -687,49 +718,72 @@ export function NpsPublicClient({ token }: { token: string }) {
           />
         </div>
 
-        {payload.questions.map((q, i) => {
+        {sections.map(({ lead, attached }, i) => {
           const index = String(i + 1).padStart(2, "0");
           const answered =
-            q.kind === "scale"
-              ? scores[q.id] != null
-              : (texts[q.id] ?? "").trim().length > 0;
+            lead.kind === "scale"
+              ? scores[lead.id] != null
+              : (texts[lead.id] ?? "").trim().length > 0;
 
           return (
-            <div key={q.id} className={answered ? "q is-answered" : "q"}>
+            <div key={lead.id} className={answered ? "q is-answered" : "q"}>
               <div className="q__head">
                 <span className="q__num" aria-hidden="true">
                   {index}
                 </span>
-                {q.kind === "scale" ? (
-                  <p className="q__label">{q.label}</p>
+                {lead.kind === "scale" ? (
+                  <p className="q__label">
+                    <QuestionLabel label={lead.label} emphasis={lead.emphasis} />
+                  </p>
                 ) : (
-                  <label htmlFor={q.id} className="q__label">
-                    {q.label}
+                  <label htmlFor={lead.id} className="q__label">
+                    <QuestionLabel label={lead.label} emphasis={lead.emphasis} />
                   </label>
                 )}
               </div>
 
               <div className="q__body">
-                {q.kind === "scale" ? (
+                {lead.kind === "scale" ? (
                   <ScorePicker
-                    value={scores[q.id] ?? null}
+                    value={scores[lead.id] ?? null}
                     disabled={submitting}
-                    lowLabel={q.lowLabel}
-                    highLabel={q.highLabel}
-                    onChange={(n) => setScores((prev) => ({ ...prev, [q.id]: n }))}
+                    lowLabel={lead.lowLabel}
+                    highLabel={lead.highLabel}
+                    onChange={(n) => setScores((prev) => ({ ...prev, [lead.id]: n }))}
                   />
                 ) : (
                   <textarea
-                    id={q.id}
-                    rows={q.rows ?? 3}
+                    id={lead.id}
+                    rows={lead.rows ?? 3}
                     disabled={submitting}
-                    placeholder={q.placeholder}
-                    value={texts[q.id] ?? ""}
-                    onChange={(e) => setTexts((prev) => ({ ...prev, [q.id]: e.target.value }))}
+                    placeholder={lead.placeholder}
+                    value={texts[lead.id] ?? ""}
+                    onChange={(e) =>
+                      setTexts((prev) => ({ ...prev, [lead.id]: e.target.value }))
+                    }
                     className="textarea"
                   />
                 )}
               </div>
+
+              {attached.map((sub) => (
+                <div key={sub.id} className="q__sub">
+                  <label htmlFor={sub.id} className="q__sub-label">
+                    {sub.label}
+                  </label>
+                  <textarea
+                    id={sub.id}
+                    rows={sub.rows ?? 3}
+                    disabled={submitting}
+                    placeholder={sub.placeholder}
+                    value={texts[sub.id] ?? ""}
+                    onChange={(e) =>
+                      setTexts((prev) => ({ ...prev, [sub.id]: e.target.value }))
+                    }
+                    className="textarea"
+                  />
+                </div>
+              ))}
             </div>
           );
         })}
