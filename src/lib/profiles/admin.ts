@@ -387,6 +387,7 @@ function mapCard(row: Row): ProfessionalProfileCard {
     activatedAt: (row.activated_at as string | null) ?? null,
     retiredAt: (row.retired_at as string | null) ?? null,
     createdAt: row.created_at as string,
+    physicallyActivatedAt: (row.physically_activated_at as string | null) ?? null,
   };
 }
 
@@ -439,7 +440,9 @@ export async function listProfessionalProfiles(
     await Promise.all([
       db.from("professional_profiles").select(PROFILE_COLUMNS).order("updated_at", { ascending: false }),
       db.from("professional_profile_localizations").select(LOCALIZATION_COLUMNS),
-      db.from("professional_profile_cards").select("id, profile_id, status"),
+      db
+        .from("professional_profile_cards")
+        .select("id, profile_id, status, physically_activated_at"),
     ]);
 
   if (profileError) {
@@ -475,6 +478,7 @@ export async function listProfessionalProfiles(
 
   const cardsByProfile = new Map<string, { total: number; active: number }>();
   const cardStatusCounts = { pending: 0, active: 0, replaced: 0, inactive: 0 };
+  let cardsPhysicallyDone = 0;
   for (const row of (cardRows ?? []) as unknown as Row[]) {
     const profileId = row.profile_id as string;
     const entry = cardsByProfile.get(profileId) ?? { total: 0, active: 0 };
@@ -482,6 +486,7 @@ export async function listProfessionalProfiles(
     const status = row.status as keyof typeof cardStatusCounts;
     if (status in cardStatusCounts) cardStatusCounts[status] += 1;
     if (status === "active") entry.active += 1;
+    if (row.physically_activated_at) cardsPhysicallyDone += 1;
     cardsByProfile.set(profileId, entry);
   }
 
@@ -495,6 +500,8 @@ export async function listProfessionalProfiles(
     cardsActive: cardStatusCounts.active,
     cardsReplaced: cardStatusCounts.replaced,
     cardsInactive: cardStatusCounts.inactive,
+    cardsPhysicallyDone,
+    cardsTotal: (cardRows ?? []).length,
   };
 
   const items: ProfessionalProfileListItem[] = [];
@@ -586,7 +593,7 @@ export async function getProfessionalProfileAdmin(
     db
       .from("professional_profile_cards")
       .select(
-        "id, profile_id, nfc_tag_id, code, label, status, replaced_card_id, issued_at, activated_at, retired_at, created_at, nfc_tags ( code, public_token )"
+        "id, profile_id, nfc_tag_id, code, label, status, replaced_card_id, issued_at, activated_at, retired_at, created_at, physically_activated_at, nfc_tags ( code, public_token )"
       )
       .eq("profile_id", id)
       .order("created_at", { ascending: false }),

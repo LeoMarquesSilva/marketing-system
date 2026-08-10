@@ -222,6 +222,8 @@ export interface ProfessionalProfileCard {
   activatedAt: string | null;
   retiredAt: string | null;
   createdAt: string;
+  /** Checklist manual: quando a etiqueta foi fisicamente gravada. Independente do status digital. */
+  physicallyActivatedAt: string | null;
 }
 
 /** Cartão enriquecido com dados da etiqueta NFC vinculada (painel admin). */
@@ -277,6 +279,9 @@ export interface ProfessionalProfileListResult {
     cardsActive: number;
     cardsReplaced: number;
     cardsInactive: number;
+    /** Checklist manual de produção — quantos cartões já tiveram a etiqueta gravada. */
+    cardsPhysicallyDone: number;
+    cardsTotal: number;
   };
 }
 

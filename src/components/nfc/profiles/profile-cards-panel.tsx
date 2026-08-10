@@ -10,6 +10,7 @@ import {
   Plus,
   RefreshCw,
   Replace,
+  Stamp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -124,6 +125,29 @@ export function ProfileCardsPanel({
       setMessage({
         tone: "error",
         text: error instanceof Error ? error.message : "Falha ao criar cartão.",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setPhysical(cardId: string, done: boolean) {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/nfc/profiles/cards/${cardId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "physical", done }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error ?? "Não foi possível salvar.");
+      await refresh();
+    } catch (error) {
+      setMessage({
+        tone: "error",
+        text: error instanceof Error ? error.message : "Falha ao salvar a confirmação física.",
       });
     } finally {
       setBusy(false);
@@ -324,6 +348,22 @@ export function ProfileCardsPanel({
                     </Button>
                   </div>
                 )}
+
+                <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-[#dce9eb] bg-white px-3 py-1.5">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-[#347796]"
+                    checked={Boolean(card.physicallyActivatedAt)}
+                    disabled={busy}
+                    onChange={(event) => setPhysical(card.id, event.target.checked)}
+                  />
+                  <Stamp className="h-3.5 w-3.5 text-[#347796]" aria-hidden />
+                  <span className="text-xs font-medium text-foreground">
+                    {card.physicallyActivatedAt
+                      ? `Etiqueta física gravada em ${formatDate(card.physicallyActivatedAt)}`
+                      : "Marcar etiqueta física como gravada"}
+                  </span>
+                </label>
 
                 <div className="flex flex-wrap gap-2">
                   {canActivate && (

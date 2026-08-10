@@ -39,9 +39,13 @@ function SummaryCards({ summary }: { summary: ProfessionalProfileListResult["sum
     { label: "Incompletos", value: summary.incomplete },
     { label: "Cartões ativos", value: summary.cardsActive },
     { label: "Cartões pendentes", value: summary.cardsPending },
+    {
+      label: "Etiquetas gravadas",
+      value: `${summary.cardsPhysicallyDone}/${summary.cardsTotal}`,
+    },
   ];
   return (
-    <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+    <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
       {cards.map((card) => (
         <div
           key={card.label}

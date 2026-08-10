@@ -6,7 +6,11 @@ import {
   createProfileAdminClient,
   toProfileApiError,
 } from "@/lib/profiles/admin";
-import { createProfileCard, setProfileCardStatus } from "@/lib/profiles/cards";
+import {
+  createProfileCard,
+  setProfileCardPhysicalStatus,
+  setProfileCardStatus,
+} from "@/lib/profiles/cards";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +23,10 @@ const patchSchema = z.discriminatedUnion("action", [
     action: z.literal("replace"),
     label: z.string().trim().min(1).max(120),
     nfcTagId: z.string().uuid().nullable().optional(),
+  }),
+  z.object({
+    action: z.literal("physical"),
+    done: z.boolean(),
   }),
 ]);
 
@@ -38,6 +46,11 @@ export async function PATCH(
     if (parsed.data.action === "status") {
       await setProfileCardStatus(cardId, parsed.data.status, admin.userId);
       return NextResponse.json({ ok: true });
+    }
+
+    if (parsed.data.action === "physical") {
+      const card = await setProfileCardPhysicalStatus(cardId, parsed.data.done);
+      return NextResponse.json({ card });
     }
 
     const db = createProfileAdminClient();

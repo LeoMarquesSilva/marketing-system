@@ -48,7 +48,7 @@ export interface ProfessionalProfilePublicHint {
 }
 
 const CARD_COLUMNS =
-  "id, profile_id, nfc_tag_id, code, label, status, replaced_card_id, issued_at, activated_at, retired_at, created_at";
+  "id, profile_id, nfc_tag_id, code, label, status, replaced_card_id, issued_at, activated_at, retired_at, created_at, physically_activated_at";
 
 function mapCard(row: Row): ProfessionalProfileCard {
   return {
@@ -63,6 +63,7 @@ function mapCard(row: Row): ProfessionalProfileCard {
     activatedAt: (row.activated_at as string | null) ?? null,
     retiredAt: (row.retired_at as string | null) ?? null,
     createdAt: row.created_at as string,
+    physicallyActivatedAt: (row.physically_activated_at as string | null) ?? null,
   };
 }
 
@@ -435,6 +436,37 @@ export async function setProfileCardStatus(
       "PROFILE_CARD_STATUS_FAILED"
     );
   }
+}
+
+/**
+ * Marca (ou desmarca) que a etiqueta física foi gravada. Não mexe no status
+ * digital do cartão nem exige perfil publicado — é só o checklist manual de
+ * produção, separado da lógica que controla o redirecionamento do toque.
+ */
+export async function setProfileCardPhysicalStatus(
+  cardId: string,
+  done: boolean
+): Promise<ProfessionalProfileCard> {
+  const db = createProfileAdminClient();
+  const { data: updated, error } = await db
+    .from("professional_profile_cards")
+    .update({ physically_activated_at: done ? new Date().toISOString() : null })
+    .eq("id", cardId)
+    .select(CARD_COLUMNS)
+    .maybeSingle();
+
+  if (error) {
+    throw new ProfileHttpError(
+      "Não foi possível atualizar a confirmação física do cartão.",
+      500,
+      "PROFILE_CARD_PHYSICAL_FAILED"
+    );
+  }
+  if (!updated) {
+    throw new ProfileHttpError("Cartão não encontrado.", 404, "PROFILE_CARD_NOT_FOUND");
+  }
+
+  return mapCard(updated as Row);
 }
 
 export async function getProfileCardQrPayload(
