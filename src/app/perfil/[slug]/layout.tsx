@@ -1,13 +1,5 @@
-import { Cormorant_Garamond, Source_Sans_3 } from "next/font/google";
+import { Source_Sans_3 } from "next/font/google";
 import type { ReactNode } from "react";
-
-const display = Cormorant_Garamond({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  style: ["normal", "italic"],
-  variable: "--font-pp-display",
-  display: "swap",
-});
 
 const sans = Source_Sans_3({
   subsets: ["latin"],
@@ -18,7 +10,5 @@ const sans = Source_Sans_3({
 });
 
 export default function PublicProfileLayout({ children }: { children: ReactNode }) {
-  return (
-    <div className={`${display.variable} ${sans.variable}`}>{children}</div>
-  );
+  return <div className={sans.variable}>{children}</div>;
 }

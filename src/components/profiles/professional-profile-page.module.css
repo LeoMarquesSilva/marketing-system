@@ -13,7 +13,7 @@
   --pp-measure: 44rem;
   --pp-radius: 4px;
   --pp-touch: 2.75rem;
-  --pp-display: var(--font-pp-display), "Palatino Linotype", Palatino, Georgia, serif;
+  --pp-display: var(--font-pp-display, "Palatino Linotype"), Palatino, Georgia, serif;
   --pp-sans: var(--font-pp-sans), "Segoe UI", system-ui, sans-serif;
 
   position: relative;
