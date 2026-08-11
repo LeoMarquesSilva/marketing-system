@@ -113,6 +113,82 @@ export function buildProfileRedirectPath(
   return `/perfil/${encodeURIComponent(slug)}?source=${source}`;
 }
 
+export interface DirectProfileNfcCandidate {
+  cardStatus: ProfileCardStatus;
+  publicToken: string | null;
+  tagStatus: string | null;
+  tagActionType: string | null;
+  tagProfileId: string | null;
+  tagDeletedAt: string | null;
+}
+
+/**
+ * Faz apenas acessos diretos ao perfil passarem pela resolução NFC.
+ * Quando `source` já existe, o acesso veio de /t e não pode redirecionar
+ * novamente, evitando um loop entre as duas rotas.
+ */
+export function buildDirectProfileNfcRedirectUrl(
+  profileId: string,
+  source: string | null,
+  candidates: DirectProfileNfcCandidate[],
+  environment: Parameters<typeof getNfcPublicUrl>[1] = process.env
+): string | null {
+  if (source) return null;
+
+  const linkedTag = candidates.find(
+    (candidate) =>
+      canRedirectProfileCard(candidate.cardStatus) &&
+      Boolean(candidate.publicToken?.trim()) &&
+      candidate.tagStatus === "active" &&
+      candidate.tagActionType === "professional_profile" &&
+      candidate.tagProfileId === profileId &&
+      candidate.tagDeletedAt === null
+  );
+
+  if (!linkedTag?.publicToken) return null;
+  return getNfcPublicUrl(linkedTag.publicToken, environment, { source: "nfc" });
+}
+
+/**
+ * Resolve a etiqueta vinculada sem impedir a abertura do perfil caso a
+ * consulta de telemetria falhe.
+ */
+export async function getDirectProfileNfcRedirectUrl(
+  profileId: string,
+  source: string | null
+): Promise<string | null> {
+  if (source) return null;
+
+  const db = createProfileAdminClient();
+  const { data, error } = await db
+    .from("professional_profile_cards")
+    .select(
+      "status, created_at, nfc_tags ( public_token, status, action_type, action_config, deleted_at )"
+    )
+    .eq("profile_id", profileId)
+    .in("status", ["active", "pending"])
+    .order("created_at", { ascending: false });
+
+  if (error) return null;
+
+  const candidates = ((data ?? []) as Row[]).map((row) => {
+    const relation = row.nfc_tags as Row | Row[] | null | undefined;
+    const tag = Array.isArray(relation) ? relation[0] : relation;
+    const actionConfig = (tag?.action_config as Row | null | undefined) ?? null;
+
+    return {
+      cardStatus: row.status as ProfileCardStatus,
+      publicToken: tag?.public_token ? String(tag.public_token) : null,
+      tagStatus: tag?.status ? String(tag.status) : null,
+      tagActionType: tag?.action_type ? String(tag.action_type) : null,
+      tagProfileId: actionConfig?.profileId ? String(actionConfig.profileId) : null,
+      tagDeletedAt: tag?.deleted_at ? String(tag.deleted_at) : null,
+    } satisfies DirectProfileNfcCandidate;
+  });
+
+  return buildDirectProfileNfcRedirectUrl(profileId, source, candidates);
+}
+
 async function nextCardCode(db: SupabaseClient): Promise<string> {
   const { data } = await db
     .from("professional_profile_cards")

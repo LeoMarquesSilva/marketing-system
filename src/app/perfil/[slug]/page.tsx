@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
-import { notFound, permanentRedirect } from "next/navigation";
+import { notFound, permanentRedirect, redirect } from "next/navigation";
 import { ProfessionalProfilePage } from "@/components/profiles/professional-profile-page";
 import { resolveProfileLocale } from "@/lib/profiles/localization";
 import { recordProfileEvent } from "@/lib/profiles/metrics-record";
 import { getPublicProfessionalProfile } from "@/lib/profiles/public";
 import { isAllowedProfileSource } from "@/components/profiles/profile-public-utils";
+import { getDirectProfileNfcRedirectUrl } from "@/lib/profiles/cards";
 
 export const dynamic = "force-dynamic";
 
@@ -81,6 +82,14 @@ export default async function PublicProfessionalProfilePage({
   }
 
   const source = isAllowedProfileSource(query.source) ? query.source : null;
+  const nfcRedirectUrl = await getDirectProfileNfcRedirectUrl(
+    result.profile.id,
+    source
+  );
+
+  if (nfcRedirectUrl) {
+    redirect(nfcRedirectUrl);
+  }
 
   // Uma vez por render do servidor — falha de métrica não derruba a página.
   void recordProfileEvent({

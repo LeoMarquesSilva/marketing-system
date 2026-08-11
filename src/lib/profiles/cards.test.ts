@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertCanActivateProfileCard,
   buildProfessionalProfilePublicAction,
+  buildDirectProfileNfcRedirectUrl,
   buildProfileRedirectPath,
   canRedirectProfileCard,
   nextProfileCardCode,
@@ -60,6 +61,61 @@ describe("buildProfessionalProfilePublicAction", () => {
 });
 
 describe("URLs NFC/QR de cartão", () => {
+  it("faz o link direto do perfil passar pela etiqueta vinculada apenas uma vez", () => {
+    const candidates = [
+      {
+        cardStatus: "active" as const,
+        publicToken: "nfc_tokenABC1234567890",
+        tagStatus: "active",
+        tagActionType: "professional_profile",
+        tagProfileId: PROFILE_ID,
+        tagDeletedAt: null,
+      },
+    ];
+
+    expect(buildDirectProfileNfcRedirectUrl(PROFILE_ID, null, candidates, {})).toBe(
+      "https://marketing-system-xi.vercel.app/t/nfc_tokenABC1234567890?source=nfc"
+    );
+    expect(buildDirectProfileNfcRedirectUrl(PROFILE_ID, "nfc", candidates, {})).toBeNull();
+    expect(buildDirectProfileNfcRedirectUrl(PROFILE_ID, "qr", candidates, {})).toBeNull();
+  });
+
+  it("não redireciona por etiqueta inativa, excluída ou vinculada a outro perfil", () => {
+    expect(
+      buildDirectProfileNfcRedirectUrl(
+        PROFILE_ID,
+        null,
+        [
+          {
+            cardStatus: "active",
+            publicToken: "nfc_inactive",
+            tagStatus: "inactive",
+            tagActionType: "professional_profile",
+            tagProfileId: PROFILE_ID,
+            tagDeletedAt: null,
+          },
+          {
+            cardStatus: "active",
+            publicToken: "nfc_deleted",
+            tagStatus: "active",
+            tagActionType: "professional_profile",
+            tagProfileId: PROFILE_ID,
+            tagDeletedAt: "2026-08-10T00:00:00.000Z",
+          },
+          {
+            cardStatus: "pending",
+            publicToken: "nfc_wrong_profile",
+            tagStatus: "active",
+            tagActionType: "professional_profile",
+            tagProfileId: "0f301ccf-5d08-488e-b744-05a60d41fe77",
+            tagDeletedAt: null,
+          },
+        ],
+        {}
+      )
+    ).toBeNull();
+  });
+
   it("monta URL de NFC programado com source=nfc", () => {
     expect(getNfcPublicUrl("nfc_tokenABC1234567890", {}, { source: "nfc" })).toBe(
       "https://marketing-system-xi.vercel.app/t/nfc_tokenABC1234567890?source=nfc"
