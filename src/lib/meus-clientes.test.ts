@@ -14,6 +14,7 @@ import {
   getAreaParent,
   isInternalClientGroupName,
   userCoversEntityArea,
+  computeMyClientScope,
 } from "@/lib/meus-clientes";
 import { personNameKey } from "@/lib/email-marketing-normalize";
 import { normalizeLegalArea, normalizeLegalAreas } from "@/lib/legal-areas";
@@ -269,3 +270,99 @@ describe("buildClientGroupKeysForAreaFilter", () => {
     expect(semArea.has("gy")).toBe(false);
   });
 });
+
+describe("área responsável exclusiva", () => {
+  const trabalhistaGestor = { area: "Trabalhista", userId: "u-trab" };
+  const civelGestor = { area: "Cível", userId: "u-civel" };
+
+  function company(partial: Partial<EmailCompany> & { id: string }): EmailCompany {
+    return {
+      name: "Empresa",
+      city: null,
+      state: null,
+      country: null,
+      website: null,
+      linkedin: null,
+      cnpj: null,
+      source: null,
+      clientGroupId: "g1",
+      clientGroupName: "Grupo",
+      legalAreas: ["Trabalhista", "Cível"],
+      responsibleUserIds: [],
+      responsibleArea: null,
+      customFields: {},
+      createdAt: "",
+      updatedAt: "",
+      ...partial,
+    };
+  }
+
+  it("sem marcação, gestores não veem o grupo", () => {
+    const companies = [company({ id: "c1" })];
+    const trab = computeMyClientScope(companies, [], "u-trab", [trabalhistaGestor, civelGestor]);
+    const civel = computeMyClientScope(companies, [], "u-civel", [trabalhistaGestor, civelGestor]);
+    expect(trab.companyIds.has("c1")).toBe(false);
+    expect(civel.companyIds.has("c1")).toBe(false);
+  });
+
+  it("sem marcação, vínculo de advogado ou área do SIOE não libera o grupo", () => {
+    const companies = [
+      company({
+        id: "c1",
+        legalAreas: ["Cível"],
+        responsibleUserIds: ["u-civel"],
+      }),
+    ];
+    const civel = computeMyClientScope(companies, [], "u-civel", [trabalhistaGestor, civelGestor]);
+    expect(civel.companyIds.has("c1")).toBe(false);
+  });
+
+  it("com área responsável, só o gestor da área marcada vê o grupo", () => {
+    const companies = [company({ id: "c1", responsibleArea: "Trabalhista" })];
+    const trab = computeMyClientScope(companies, [], "u-trab", [trabalhistaGestor, civelGestor]);
+    const civel = computeMyClientScope(companies, [], "u-civel", [trabalhistaGestor, civelGestor]);
+    expect(trab.companyIds.has("c1")).toBe(true);
+    expect(civel.companyIds.has("c1")).toBe(false);
+  });
+
+  it("advogado responsável de outra área deixa de ver o cliente marcado", () => {
+    const companies = [
+      company({
+        id: "c1",
+        responsibleArea: "Trabalhista",
+        responsibleUserIds: ["u-advogado-civel"],
+      }),
+    ];
+    const scope = computeMyClientScope(companies, [], "u-advogado-civel", [trabalhistaGestor, civelGestor]);
+    expect(scope.companyIds.has("c1")).toBe(false);
+  });
+
+  it("inclui pessoas do grupo marcado mesmo sem processo na área dona", () => {
+    const companies = [company({ id: "c1", responsibleArea: "Trabalhista" })];
+    const people = [
+      {
+        id: "p1",
+        name: "Pessoa",
+        clientGroupId: "g1",
+        responsibleArea: "Trabalhista",
+      } as EmailPerson,
+    ];
+    const trab = computeMyClientScope(
+      companies,
+      [],
+      "u-trab",
+      [trabalhistaGestor, civelGestor],
+      people
+    );
+    const civel = computeMyClientScope(
+      companies,
+      [],
+      "u-civel",
+      [trabalhistaGestor, civelGestor],
+      people
+    );
+    expect(trab.personIds.has("p1")).toBe(true);
+    expect(civel.personIds.has("p1")).toBe(false);
+  });
+});
+

@@ -15,6 +15,13 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Dialog,
@@ -43,7 +50,9 @@ import {
   type AreaSummaryGroup,
   type EnrichmentTotals,
   countGroupPendingMembers,
+  getAreaParent,
   groupHasNoContacts,
+  isSubArea,
   mergeGroupMembers,
 } from "@/lib/meus-clientes";
 import { AreaIcon, getAreaIconStyle } from "@/lib/area-icons";
@@ -65,6 +74,7 @@ import {
 
 export const SEM_GRUPO_KEY = "__sem_grupo__";
 export const FILTER_SEM_AREA = "__sem_area__";
+export const FILTER_SEM_RESPONSAVEL = "__sem_responsavel__";
 
 export type StatusFilter = "all" | "pending" | "complete";
 export type AtividadeFilter = "all" | "ativo" | "inativo";
@@ -78,6 +88,7 @@ export interface ClientGroupBucket {
   clientGroupId: string | null;
   companies: EmailCompany[];
   groupPeople: EmailPerson[];
+  responsibleArea?: string | null;
 }
 
 export function contactSelectKey(id: string): SelectKey {
@@ -159,19 +170,50 @@ export function highlightMatch(text: string, query: string): ReactNode {
   );
 }
 
-function AreaBadges({ areas, compact }: { areas: string[]; compact?: boolean }) {
-  if (areas.length === 0) return null;
-  const shown = compact ? areas.slice(0, 2) : areas;
+function AreaBadges({
+  areas,
+  compact,
+  ownerArea,
+}: {
+  areas: string[];
+  compact?: boolean;
+  ownerArea?: string | null;
+}) {
+  const ordered = [...areas];
+  if (ownerArea && !ordered.includes(ownerArea)) ordered.unshift(ownerArea);
+  else if (ownerArea) {
+    ordered.sort((a, b) => {
+      if (a === ownerArea) return -1;
+      if (b === ownerArea) return 1;
+      return a.localeCompare(b, "pt-BR");
+    });
+  }
+  if (ordered.length === 0) return null;
+  const shown = compact ? ordered.slice(0, 2) : ordered;
   return (
     <>
-      {shown.map((area) => (
-        <Badge key={area} variant="outline" className="text-[10px] text-sky-700 border-sky-200 bg-sky-50">
-          {area}
-        </Badge>
-      ))}
-      {compact && areas.length > 2 && (
+      {shown.map((area) => {
+        const isOwner = Boolean(ownerArea) && area === ownerArea;
+        return (
+          <Badge
+            key={area}
+            variant="outline"
+            className={
+              isOwner
+                ? "text-[10px] font-semibold text-violet-950 border-violet-500 bg-violet-200 shadow-sm"
+                : ownerArea
+                  ? "text-[10px] text-muted-foreground border-border/70 bg-muted/40"
+                  : "text-[10px] text-sky-700 border-sky-200 bg-sky-50"
+            }
+            title={isOwner ? "Área responsável por este cliente" : undefined}
+          >
+            {isOwner ? `Responsável: ${area}` : area}
+          </Badge>
+        );
+      })}
+      {compact && ordered.length > shown.length && (
         <Badge variant="outline" className="text-[10px]">
-          +{areas.length - 2}
+          +{ordered.length - shown.length}
         </Badge>
       )}
     </>
@@ -447,6 +489,9 @@ export function GroupSection({
   partyTipoFilter = "all",
   tourGroupSample,
   tourContactEdit,
+  fallbackAreaOptions,
+  onResponsibleAreaChange,
+  savingResponsible,
 }: {
   group: ClientGroupBucket;
   groupContacts: EmailContact[];
@@ -471,6 +516,9 @@ export function GroupSection({
   partyTipoFilter?: PartyInviteTipo | "all";
   tourGroupSample?: boolean;
   tourContactEdit?: boolean;
+  fallbackAreaOptions?: string[];
+  onResponsibleAreaChange?: (group: ClientGroupBucket, area: string | null) => void;
+  savingResponsible?: boolean;
 }) {
   const { contacts: mergedContacts, people: mergedPeople } = mergeGroupMembers(
     groupContacts,
@@ -489,6 +537,19 @@ export function GroupSection({
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
   }, [group.companies, group.groupPeople, personAreas]);
+
+  const responsibleArea = group.responsibleArea ?? null;
+  const ownerAreaOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const area of groupAreas) set.add(getAreaParent(area));
+    if (set.size === 0) {
+      for (const area of fallbackAreaOptions ?? []) set.add(getAreaParent(area));
+    }
+    if (responsibleArea) set.add(getAreaParent(responsibleArea));
+    return Array.from(set)
+      .filter((area) => area && !isSubArea(area))
+      .sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [groupAreas, fallbackAreaOptions, responsibleArea]);
 
   const sortedContacts = useMemo(
     () =>
@@ -541,7 +602,15 @@ export function GroupSection({
     mergedContacts.filter((c) => c.npsEligible).length +
     mergedPeople.filter((p) => p.npsEligible).length;
   const canGenerateNps = Boolean(group.clientGroupId && onGenerateNpsLink);
-  const showStatusArea = canEditGroupStatus || canGenerateNps || Boolean(groupAtividade);
+  const canAssignResponsibleArea = Boolean(
+    isAdmin && group.clientGroupId && onResponsibleAreaChange
+  );
+  const showStatusArea =
+    canEditGroupStatus ||
+    canGenerateNps ||
+    Boolean(groupAtividade) ||
+    canAssignResponsibleArea ||
+    Boolean(responsibleArea);
   const groupPrevistoDate = clienteAtividadeIndex
     ? resolveClientePrevistoDate(clienteAtividadeIndex, { grupoName: group.name })
     : null;
@@ -621,7 +690,7 @@ export function GroupSection({
                     : `${pendingCount} pendência${pendingCount === 1 ? "" : "s"}`}
                 </Badge>
               )}
-              <AreaBadges areas={groupAreas} />
+              <AreaBadges areas={groupAreas} compact={compact} ownerArea={responsibleArea} />
             </span>
             <span className="mt-1 block text-xs text-muted-foreground">
               {displayedMemberCount} contato{displayedMemberCount === 1 ? "" : "s"}
@@ -645,6 +714,33 @@ export function GroupSection({
               tooltipTitle={badgeTooltipTitle}
             />
             <div className="flex flex-wrap items-center justify-end gap-1.5">
+              {canAssignResponsibleArea && (
+                <div
+                  className="min-w-[10.5rem]"
+                  onClick={(event) => event.stopPropagation()}
+                  onPointerDown={(event) => event.stopPropagation()}
+                >
+                  <Select
+                    value={responsibleArea ?? "__none__"}
+                    disabled={savingResponsible}
+                    onValueChange={(value) =>
+                      onResponsibleAreaChange?.(group, value === "__none__" ? null : value)
+                    }
+                  >
+                    <SelectTrigger size="sm" className="h-8 w-[10.5rem] text-xs">
+                      <SelectValue placeholder="Área responsável" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Sem responsável</SelectItem>
+                      {ownerAreaOptions.map((area) => (
+                        <SelectItem key={area} value={area}>
+                          {area}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               {canGenerateNps && (
                 <Button
                   type="button"
@@ -957,6 +1053,7 @@ export function FilterChips({
   filterFaturamentoPrevisto,
   filterInvite,
   filterPartyTipo,
+  filterResponsibleArea,
   gestorName,
   filterResultCount,
   onClearArea,
@@ -966,6 +1063,7 @@ export function FilterChips({
   onClearFaturamentoPrevisto,
   onClearInvite,
   onClearPartyTipo,
+  onClearResponsibleArea,
 }: {
   filterArea: string;
   filterGestor: string;
@@ -974,6 +1072,7 @@ export function FilterChips({
   filterFaturamentoPrevisto?: FaturamentoPrevistoFilter;
   filterInvite?: InviteFilter;
   filterPartyTipo?: PartyInviteTipo | "all";
+  filterResponsibleArea?: string;
   gestorName?: string;
   filterResultCount?: number;
   onClearArea: () => void;
@@ -983,12 +1082,22 @@ export function FilterChips({
   onClearFaturamentoPrevisto?: () => void;
   onClearInvite?: () => void;
   onClearPartyTipo?: () => void;
+  onClearResponsibleArea?: () => void;
 }) {
   const chips: { label: string; onClear: () => void }[] = [];
   if (filterArea) {
     chips.push({
       label: filterArea === FILTER_SEM_AREA ? "Sem área" : `Área: ${filterArea}`,
       onClear: onClearArea,
+    });
+  }
+  if (filterResponsibleArea) {
+    chips.push({
+      label:
+        filterResponsibleArea === FILTER_SEM_RESPONSAVEL
+          ? "Sem área responsável"
+          : `Responsável: ${filterResponsibleArea}`,
+      onClear: onClearResponsibleArea ?? (() => {}),
     });
   }
   if (filterGestor) {
@@ -1114,8 +1223,8 @@ export function EmptyState({
     "no-scope": {
       title: "Nenhum cliente vinculado a você",
       desc: isAdmin
-        ? "Avise o admin para vincular seu usuário aos processos do SIOE em Configurações → E-mail Marketing."
-        : "Se você é responsável por clientes e não vê nada aqui, avise o administrador para vincular seu usuário.",
+        ? "Use Ver todos para marcar a área responsável de cada cliente. Sem isso, gestores não veem o grupo."
+        : "Só aparecem aqui os clientes que o administrador direcionou para a sua área.",
       action: null as ReactNode,
     },
     "no-search": {

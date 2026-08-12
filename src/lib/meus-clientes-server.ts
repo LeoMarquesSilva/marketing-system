@@ -21,11 +21,12 @@ import {
   filterInternalContacts,
   filterInternalResponsibles,
   filterOutInternalClientGroups,
+  getAreaParent,
   resolveClientGroupKey,
   resolveContactGroupKey,
   type MyClientScope,
 } from "@/lib/meus-clientes";
-import { isSubareaOnlyManagerArea } from "@/lib/legal-areas";
+import { isSubareaOnlyManagerArea, normalizeLegalArea } from "@/lib/legal-areas";
 import { canAccessPath, type AccessProfile } from "@/lib/access-control";
 import { fetchSioeClienteAtividadeIndex } from "@/lib/sioe-cliente-atividade-server";
 import type { SioeClienteAtividadeIndex } from "@/lib/sioe-cliente-atividade";
@@ -138,13 +139,13 @@ export async function fetchMeusClientesPayload(options: {
   ] = await Promise.all([
     admin
       .from("email_companies")
-      .select("*, email_contacts(count), email_client_groups(id, name)")
+      .select("*, email_contacts(count), email_client_groups(id, name, responsible_area)")
       .order("name"),
     admin
       .from("email_contacts")
-      .select("*, email_companies(id, name), email_client_groups(id, name)")
+      .select("*, email_companies(id, name), email_client_groups(id, name, responsible_area)")
       .order("created_at", { ascending: false }),
-    admin.from("email_people").select("*, email_client_groups(id, name)").order("name"),
+    admin.from("email_people").select("*, email_client_groups(id, name, responsible_area)").order("name"),
     admin
       .from("email_group_responsibles")
       .select(
@@ -182,7 +183,7 @@ export async function fetchMeusClientesPayload(options: {
 
   const scope = useFullDataset
     ? null
-    : computeMyClientScope(allCompanies, allResponsibles, scopeUserId, areaManagers);
+    : computeMyClientScope(allCompanies, allResponsibles, scopeUserId, areaManagers, allPeople);
 
   const companies = useFullDataset
     ? allCompanies
@@ -255,8 +256,8 @@ export async function fetchMeusClientesPayload(options: {
 async function loadMeusClientesScopeContext(admin: ReturnType<typeof getAdminClient>) {
   const [{ data: companyRows }, { data: peopleRows }, { data: responsibleRows }, { data: managerRows }] =
     await Promise.all([
-      admin.from("email_companies").select("*"),
-      admin.from("email_people").select("*"),
+      admin.from("email_companies").select("*, email_client_groups(id, name, responsible_area)"),
+      admin.from("email_people").select("*, email_client_groups(id, name, responsible_area)"),
       admin
         .from("email_group_responsibles")
         .select(
@@ -294,7 +295,8 @@ function userCanAccessClientGroup(
     context.allCompanies,
     context.allResponsibles,
     profile.id,
-    context.areaManagers
+    context.areaManagers,
+    context.allPeople
   );
   for (const company of context.allCompanies) {
     if (company.clientGroupId !== clientGroupId) continue;
@@ -371,4 +373,46 @@ export async function updateClientGroupGestorStatus(options: {
 
   if (error) throw new Error(error.message);
   return mapClientGroupGestorStatus(data as Record<string, unknown>);
+}
+
+export async function updateClientGroupResponsibleArea(options: {
+  authUserId: string;
+  clientGroupId: string;
+  responsibleArea: string | null;
+}): Promise<string | null> {
+  const publicClient = await createPublicClient();
+  const {
+    data: { user },
+  } = await publicClient.auth.getUser();
+  if (!user || user.id !== options.authUserId) {
+    throw new Error("Não autenticado.");
+  }
+
+  const profile = await resolveProfile(options.authUserId);
+  if (!canAccessPath(profile, "/meus-clientes")) {
+    throw new Error("Sem permissão para Meus Clientes.");
+  }
+  const isAdmin = (profile.role ?? "").toLowerCase() === "admin";
+  if (!isAdmin) {
+    throw new Error("Somente administradores podem definir a área responsável.");
+  }
+
+  const normalized = options.responsibleArea
+    ? getAreaParent(normalizeLegalArea(options.responsibleArea) ?? options.responsibleArea.trim())
+    : null;
+  const responsibleArea = normalized?.trim() ? normalized : null;
+
+  const admin = getAdminClient();
+  const { data, error } = await admin
+    .from("email_client_groups")
+    .update({
+      responsible_area: responsibleArea,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", options.clientGroupId)
+    .select("responsible_area")
+    .single();
+
+  if (error) throw new Error(error.message);
+  return normalizeLegalArea((data?.responsible_area as string | null) ?? null);
 }

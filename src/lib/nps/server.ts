@@ -114,9 +114,9 @@ async function loadScopeDataset() {
     { data: responsibleRows },
     { data: managerRows },
   ] = await Promise.all([
-    admin.from("email_companies").select("*, email_client_groups(id, name)"),
-    admin.from("email_people").select("*, email_client_groups(id, name)"),
-    admin.from("email_contacts").select("*, email_companies(id, name), email_client_groups(id, name)"),
+    admin.from("email_companies").select("*, email_client_groups(id, name, responsible_area)"),
+    admin.from("email_people").select("*, email_client_groups(id, name, responsible_area)"),
+    admin.from("email_contacts").select("*, email_companies(id, name), email_client_groups(id, name, responsible_area)"),
     admin
       .from("email_group_responsibles")
       .select(
@@ -154,7 +154,7 @@ function scopedGroupIdsForUser(
   areaManagers: EmailAreaManagerRow[],
   userId: string
 ): Set<string> {
-  const scope = computeMyClientScope(companies, responsibles, userId, areaManagers);
+  const scope = computeMyClientScope(companies, responsibles, userId, areaManagers, people);
   const scopedCompanies = companies.filter((c) => scope.companyIds.has(c.id));
   const scopedPeople = people.filter((p) => scope.personIds.has(p.id));
   return new Set([

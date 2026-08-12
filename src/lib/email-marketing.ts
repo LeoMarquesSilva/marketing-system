@@ -50,6 +50,7 @@ export interface EmailPerson {
   invitesClassifiedByUserId: string | null;
   clientGroupId: string | null;
   clientGroupName?: string | null;
+  responsibleArea: string | null;
   companyId: string | null;
   source: string | null;
   customFields: Record<string, unknown>;
@@ -92,6 +93,7 @@ export interface EmailCompany {
   clientGroupName: string | null;
   legalAreas: string[];
   responsibleUserIds: string[];
+  responsibleArea: string | null;
   customFields: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
@@ -225,6 +227,15 @@ async function getEmailDb() {
 
 // --- Mappers ---
 
+function mapJoinedResponsibleArea(row: Record<string, unknown>): string | null {
+  const joined = (
+    row as {
+      email_client_groups?: { responsible_area?: string | null } | null;
+    }
+  ).email_client_groups;
+  return normalizeLegalArea(joined?.responsible_area ?? null);
+}
+
 export function mapPerson(row: Record<string, unknown>): EmailPerson {
   const joined = (row as { email_client_groups?: { id: string; name: string } | null }).email_client_groups;
   const groupFromJoin = joined?.name
@@ -248,6 +259,7 @@ export function mapPerson(row: Record<string, unknown>): EmailPerson {
     invitesClassifiedByUserId: (row.invites_classified_by_user_id as string | null) ?? null,
     clientGroupId: (row.client_group_id as string | null) ?? joined?.id ?? null,
     clientGroupName: groupFromJoin ?? groupFromCustom,
+    responsibleArea: mapJoinedResponsibleArea(row),
     companyId: (row.company_id as string | null) ?? null,
     source: (row.source as string | null) ?? null,
     customFields: (row.custom_fields as Record<string, unknown> | null) ?? {},
@@ -293,6 +305,7 @@ export function mapCompany(row: Record<string, unknown>): EmailCompany {
     clientGroupName: groupFromJoin ?? groupFromCustom,
     legalAreas: normalizeLegalAreas((row.legal_areas as string[] | null) ?? []),
     responsibleUserIds: (row.responsible_user_ids as string[] | null) ?? [],
+    responsibleArea: mapJoinedResponsibleArea(row),
     customFields: (row.custom_fields as Record<string, unknown> | null) ?? {},
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
@@ -393,7 +406,7 @@ export async function fetchEmailContacts(): Promise<EmailContact[]> {
   const db = await getEmailDb();
   const { data, error } = await db
     .from("email_contacts")
-    .select("*, email_companies(id, name), email_client_groups(id, name)")
+    .select("*, email_companies(id, name), email_client_groups(id, name, responsible_area)")
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
   return (data ?? []).map(mapContact);
@@ -403,7 +416,7 @@ export async function fetchEmailPeople(): Promise<EmailPerson[]> {
   const db = await getEmailDb();
   const { data, error } = await db
     .from("email_people")
-    .select("*, email_client_groups(id, name)")
+    .select("*, email_client_groups(id, name, responsible_area)")
     .order("name", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []).map(mapPerson);
@@ -535,7 +548,7 @@ export async function fetchEmailCompanies(): Promise<EmailCompany[]> {
   const db = await getEmailDb();
   const { data, error } = await db
     .from("email_companies")
-    .select("*, email_contacts(count), email_client_groups(id, name)")
+    .select("*, email_contacts(count), email_client_groups(id, name, responsible_area)")
     .order("name", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []).map((row) => {

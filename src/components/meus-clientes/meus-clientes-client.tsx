@@ -93,6 +93,7 @@ import {
   DeleteConfirmDialog,
   EmptyState,
   FILTER_SEM_AREA,
+  FILTER_SEM_RESPONSAVEL,
   FilterChips,
   FilterAreaIcon,
   FilterUserAvatar,
@@ -134,6 +135,9 @@ function buildGroupBuckets(
     if (existing) {
       existing.companies.push(company);
       if (!existing.clientGroupId && company.clientGroupId) existing.clientGroupId = company.clientGroupId;
+      if (!existing.responsibleArea && company.responsibleArea) {
+        existing.responsibleArea = company.responsibleArea;
+      }
     } else {
       buckets.set(key, {
         key,
@@ -141,6 +145,7 @@ function buildGroupBuckets(
         clientGroupId: company.clientGroupId,
         companies: [company],
         groupPeople: [],
+        responsibleArea: company.responsibleArea ?? null,
       });
     }
   }
@@ -150,6 +155,9 @@ function buildGroupBuckets(
     if (existing) {
       existing.groupPeople.push(person);
       if (!existing.clientGroupId && person.clientGroupId) existing.clientGroupId = person.clientGroupId;
+      if (!existing.responsibleArea && person.responsibleArea) {
+        existing.responsibleArea = person.responsibleArea;
+      }
     } else {
       buckets.set(key, {
         key,
@@ -157,6 +165,7 @@ function buildGroupBuckets(
         clientGroupId: person.clientGroupId,
         companies: [],
         groupPeople: [person],
+        responsibleArea: person.responsibleArea ?? null,
       });
     }
   }
@@ -250,6 +259,8 @@ function MeusClientesClientContent() {
     useState<FaturamentoPrevistoFilter>("all");
   const [filterInvite, setFilterInvite] = useState<InviteFilter>("all");
   const [filterPartyTipo, setFilterPartyTipo] = useState<PartyInviteTipo | "all">("all");
+  const [filterResponsibleArea, setFilterResponsibleArea] = useState("");
+  const [savingResponsibleGroupId, setSavingResponsibleGroupId] = useState<string | null>(null);
   const [atividadeMenuOpen, setAtividadeMenuOpen] = useState(false);
   const [faturamentoMenuOpen, setFaturamentoMenuOpen] = useState(false);
   const [compactMode, setCompactMode] = useState(false);
@@ -379,6 +390,7 @@ function MeusClientesClientContent() {
     filterFaturamentoPrevisto,
     filterInvite,
     filterPartyTipo,
+    filterResponsibleArea,
     search,
   ]);
 
@@ -429,6 +441,51 @@ function MeusClientesClientContent() {
   }, []);
 
   const handleClearSelection = useCallback(() => setSelectedKeys(new Set()), []);
+
+  const handleResponsibleAreaChange = useCallback(
+    async (group: ClientGroupBucket, area: string | null) => {
+      if (!group.clientGroupId) return;
+      setSavingResponsibleGroupId(group.clientGroupId);
+      try {
+        const res = await fetch(`/api/meus-clientes/groups/${group.clientGroupId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ responsibleArea: area }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Erro ao salvar área responsável.");
+        const nextArea = (data.responsibleArea as string | null) ?? null;
+        setCompanies((prev) =>
+          prev.map((company) =>
+            company.clientGroupId === group.clientGroupId
+              ? { ...company, responsibleArea: nextArea }
+              : company
+          )
+        );
+        setPeople((prev) =>
+          prev.map((person) =>
+            person.clientGroupId === group.clientGroupId
+              ? { ...person, responsibleArea: nextArea }
+              : person
+          )
+        );
+        setToast({
+          type: "success",
+          text: nextArea
+            ? `Área responsável: ${nextArea}. Só os gestores dessa área veem este cliente.`
+            : "Área responsável removida. O cliente volta a aparecer para todas as áreas dele.",
+        });
+      } catch (err) {
+        setToast({
+          type: "error",
+          text: err instanceof Error ? err.message : "Erro ao salvar área responsável.",
+        });
+      } finally {
+        setSavingResponsibleGroupId(null);
+      }
+    },
+    []
+  );
 
   const confirmDeleteSelected = async () => {
     const contactIds: string[] = [];
@@ -661,6 +718,7 @@ function MeusClientesClientContent() {
           clientGroupId: null,
           companies: [],
           groupPeople: [],
+          responsibleArea: null,
         }) satisfies ClientGroupBucket
     );
     if (extras.length === 0) return groups;
@@ -694,11 +752,19 @@ function MeusClientesClientContent() {
         return filterFaturamentoPrevisto === "com" ? hasPrevisto : !hasPrevisto;
       });
     }
+    if (isAdmin && filterResponsibleArea) {
+      list = list.filter((group) => {
+        const area = group.responsibleArea ?? null;
+        if (filterResponsibleArea === FILTER_SEM_RESPONSAVEL) return !area;
+        return area === filterResponsibleArea;
+      });
+    }
     return list;
   }, [
     clientGroups,
     filterAtividade,
     filterFaturamentoPrevisto,
+    filterResponsibleArea,
     groupHasFaturamentoPrevisto,
     isAdmin,
     resolveClienteStatusForFilter,
@@ -984,7 +1050,7 @@ function MeusClientesClientContent() {
   const gestorFilterCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const row of managerFilterOptions) {
-      const scope = computeMyClientScope(companies, responsibles, row.userId, areaManagers);
+      const scope = computeMyClientScope(companies, responsibles, row.userId, areaManagers, people);
       const groupKeys = new Set<string>();
       for (const company of companies) {
         if (scope.companyIds.has(company.id)) groupKeys.add(resolveGroupKey(company));
@@ -997,6 +1063,23 @@ function MeusClientesClientContent() {
     }
     return counts;
   }, [managerFilterOptions, companies, people, responsibles, areaManagers]);
+
+  const responsibleAreaFilterCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    const baseGroups = buildGroupBuckets(companies, people).filter((g) => g.key !== SEM_GRUPO_KEY);
+    counts.set("__all__", baseGroups.length);
+    counts.set(FILTER_SEM_RESPONSAVEL, 0);
+    for (const area of allAreasList) counts.set(area, 0);
+    for (const group of baseGroups) {
+      const area = group.responsibleArea ?? null;
+      if (!area) {
+        counts.set(FILTER_SEM_RESPONSAVEL, (counts.get(FILTER_SEM_RESPONSAVEL) ?? 0) + 1);
+        continue;
+      }
+      counts.set(area, (counts.get(area) ?? 0) + 1);
+    }
+    return counts;
+  }, [companies, people, allAreasList]);
 
   const displayContactsByGroup = useMemo(() => {
     const map = new Map<string, EmailContact[]>();
@@ -1052,6 +1135,7 @@ function MeusClientesClientContent() {
       (isAdmin && filterFaturamentoPrevisto !== "all") ||
       filterInvite !== "all" ||
       filterPartyTipo !== "all" ||
+      (isAdmin && Boolean(filterResponsibleArea)) ||
       search.trim()
   );
 
@@ -1073,6 +1157,7 @@ function MeusClientesClientContent() {
     setFilterFaturamentoPrevisto("all");
     setFilterInvite("all");
     setFilterPartyTipo("all");
+    setFilterResponsibleArea("");
     setSearch("");
   };
 
@@ -1385,6 +1470,59 @@ function MeusClientesClientContent() {
           {isAdmin && (
             <>
               <Select
+                value={filterResponsibleArea || "__all__"}
+                onValueChange={(v) => setFilterResponsibleArea(v === "__all__" ? "" : v)}
+              >
+                <SelectTrigger size="sm" className="w-52">
+                  {filterResponsibleArea ? (
+                    <span className="flex min-w-0 items-center gap-2">
+                      {filterResponsibleArea !== FILTER_SEM_RESPONSAVEL && (
+                        <FilterAreaIcon area={filterResponsibleArea} size="sm" />
+                      )}
+                      <span className="truncate">
+                        {filterResponsibleArea === FILTER_SEM_RESPONSAVEL
+                          ? "Sem responsável"
+                          : filterResponsibleArea}
+                      </span>
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
+                        ({responsibleAreaFilterCounts.get(filterResponsibleArea) ?? 0})
+                      </span>
+                    </span>
+                  ) : (
+                    <SelectValue placeholder="Área responsável" />
+                  )}
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">
+                    <span className="flex w-full items-center gap-2">
+                      <span className="flex-1">Todas (responsável)</span>
+                      <span className="tabular-nums text-xs text-muted-foreground">
+                        {responsibleAreaFilterCounts.get("__all__") ?? 0}
+                      </span>
+                    </span>
+                  </SelectItem>
+                  <SelectItem value={FILTER_SEM_RESPONSAVEL}>
+                    <span className="flex w-full items-center gap-2">
+                      <span className="flex-1">Sem responsável</span>
+                      <span className="tabular-nums text-xs text-muted-foreground">
+                        {responsibleAreaFilterCounts.get(FILTER_SEM_RESPONSAVEL) ?? 0}
+                      </span>
+                    </span>
+                  </SelectItem>
+                  {allAreasList.map((area) => (
+                    <SelectItem key={`resp-${area}`} value={area}>
+                      <span className="flex w-full items-center gap-2">
+                        <FilterAreaIcon area={area} size="sm" />
+                        <span className="truncate flex-1">{area}</span>
+                        <span className="tabular-nums text-xs text-muted-foreground">
+                          {responsibleAreaFilterCounts.get(area) ?? 0}
+                        </span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
                 value={filterGestor || "__all__"}
                 onValueChange={(v) => setFilterGestor(v === "__all__" ? "" : v)}
               >
@@ -1600,6 +1738,7 @@ function MeusClientesClientContent() {
           filterFaturamentoPrevisto={isAdmin ? filterFaturamentoPrevisto : "all"}
           filterInvite={filterInvite}
           filterPartyTipo={filterPartyTipo}
+          filterResponsibleArea={isAdmin ? filterResponsibleArea : ""}
           gestorName={gestorName}
           filterResultCount={hasActiveFilters ? displayGroups.length : undefined}
           onClearArea={() => setFilterArea("")}
@@ -1609,6 +1748,7 @@ function MeusClientesClientContent() {
           onClearFaturamentoPrevisto={() => setFilterFaturamentoPrevisto("all")}
           onClearInvite={() => setFilterInvite("all")}
           onClearPartyTipo={() => setFilterPartyTipo("all")}
+          onClearResponsibleArea={() => setFilterResponsibleArea("")}
         />
       </div>
 
@@ -1682,6 +1822,11 @@ function MeusClientesClientContent() {
                   setNpsLinkGroup(g);
                   setNpsLinkDialogOpen(true);
                 }}
+                fallbackAreaOptions={allAreasList}
+                onResponsibleAreaChange={handleResponsibleAreaChange}
+                savingResponsible={
+                  Boolean(group.clientGroupId) && savingResponsibleGroupId === group.clientGroupId
+                }
               />
             ))}
           </div>
