@@ -14,6 +14,7 @@ import {
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   Select,
@@ -56,6 +57,7 @@ import {
   type PartyInviteTipo,
 } from "@/lib/party-invite-types";
 import {
+  AREA_SUBAREAS,
   buildAreaManagerSummary,
   buildClientGroupKeysForAreaFilter,
   compareGroupsByPendingFirst,
@@ -102,7 +104,6 @@ import {
   HealthPanel,
   ManagerSummaryTable,
   MeusClientesSkeleton,
-  ProgressBarCard,
   SEM_GRUPO_KEY,
   StatusToggle,
   contactSearchHaystack,
@@ -250,7 +251,7 @@ function MeusClientesClientContent() {
   const [syncMenuOpen, setSyncMenuOpen] = useState(false);
   const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [search, setSearch] = useState("");
-  const [viewAll, setViewAll] = useState(false);
+  const [viewAll, setViewAll] = useState(true);
   const [filterArea, setFilterArea] = useState("");
   const [filterGestor, setFilterGestor] = useState("");
   const [filterStatus, setFilterStatus] = useState<StatusFilter>("all");
@@ -570,8 +571,9 @@ function MeusClientesClientContent() {
     if (filterGestor) params.set("gestorId", filterGestor);
     if (filterArea) params.set("area", filterArea);
     if (filterStatus !== "all") params.set("status", filterStatus);
-    if (filterInvite !== "all") params.set("invite", filterInvite);
-    if (filterPartyTipo !== "all") params.set("partyTipo", filterPartyTipo);
+    const inviteForExport = isAdmin ? filterInvite : "nps";
+    if (inviteForExport !== "all") params.set("invite", inviteForExport);
+    if (isAdmin && filterPartyTipo !== "all") params.set("partyTipo", filterPartyTipo);
     if (search.trim()) params.set("search", search.trim());
     params.set("excludeSemGrupo", "1");
     setToast({ type: "success", text: "Exportando CSV com filtros atuais…" });
@@ -625,16 +627,27 @@ function MeusClientesClientContent() {
   const allAreasList = useMemo(() => {
     const set = new Set<string>();
     for (const c of companies) {
-      for (const a of c.legalAreas) set.add(getAreaParent(a));
+      for (const a of c.legalAreas) {
+        set.add(a);
+        set.add(getAreaParent(a));
+      }
     }
     for (const areas of personAreas.values()) {
-      for (const a of areas) set.add(getAreaParent(a));
+      for (const a of areas) {
+        set.add(a);
+        set.add(getAreaParent(a));
+      }
     }
     for (const manager of areaManagers) {
+      set.add(manager.area);
       set.add(getAreaParent(manager.area));
     }
+    for (const [parent, subs] of Object.entries(AREA_SUBAREAS)) {
+      set.add(parent);
+      for (const sub of subs) set.add(sub);
+    }
     return Array.from(set)
-      .filter((a) => !isSubArea(a))
+      .filter(Boolean)
       .sort((a, b) => a.localeCompare(b, "pt-BR"));
   }, [companies, personAreas, areaManagers]);
 
@@ -770,12 +783,21 @@ function MeusClientesClientContent() {
     resolveClienteStatusForFilter,
   ]);
 
+  /** Gestores só veem clientes com alguém marcado como elegível ao NPS. */
+  const effectiveInviteFilter: InviteFilter = isAdmin ? filterInvite : "nps";
+  const effectivePartyTipoFilter: PartyInviteTipo | "all" = isAdmin ? filterPartyTipo : "all";
+
   const displayGroups = useMemo(
     () =>
       displayGroupsBeforeInvite.filter((group) =>
-        groupMatchesInviteFilters(group, contactsByGroup, filterInvite, filterPartyTipo)
+        groupMatchesInviteFilters(
+          group,
+          contactsByGroup,
+          effectiveInviteFilter,
+          effectivePartyTipoFilter
+        )
       ),
-    [displayGroupsBeforeInvite, contactsByGroup, filterInvite, filterPartyTipo]
+    [displayGroupsBeforeInvite, contactsByGroup, effectiveInviteFilter, effectivePartyTipoFilter]
   );
 
   const tourSampleGroupKey = displayGroups[0]?.key ?? null;
@@ -1281,14 +1303,6 @@ function MeusClientesClientContent() {
         />
       )}
 
-      <div data-tour="mc-progress">
-        <ProgressBarCard
-          complete={stats.completo}
-          total={stats.total}
-          onShowPending={stats.incompleto > 0 ? () => setFilterStatus("pending") : undefined}
-        />
-      </div>
-
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-6" data-tour="mc-stats">
         <ClickableStatCard
           label={hasActiveFilters ? "Grupos no filtro" : showAll ? "Total de grupos" : "Meus grupos"}
@@ -1308,24 +1322,32 @@ function MeusClientesClientContent() {
           active={filterStatus === "pending"}
           onClick={() => setFilterStatus((s) => (s === "pending" ? "all" : "pending"))}
         />
-        <ClickableStatCard
-          label="Pessoas para festa"
-          value={inviteFilterCounts.party}
-          active={filterInvite === "party"}
-          onClick={() => setFilterInvite((s) => (s === "party" ? "all" : "party"))}
-        />
+        {isAdmin && (
+          <ClickableStatCard
+            label="Pessoas para festa"
+            value={inviteFilterCounts.party}
+            active={filterInvite === "party"}
+            onClick={() => setFilterInvite((s) => (s === "party" ? "all" : "party"))}
+          />
+        )}
         <ClickableStatCard
           label="Pessoas NPS"
           value={inviteFilterCounts.nps}
-          active={filterInvite === "nps"}
-          onClick={() => setFilterInvite((s) => (s === "nps" ? "all" : "nps"))}
+          active={!isAdmin || filterInvite === "nps"}
+          onClick={
+            isAdmin
+              ? () => setFilterInvite((s) => (s === "nps" ? "all" : "nps"))
+              : undefined
+          }
         />
-        <ClickableStatCard
-          label="Grupos com festa"
-          value={inviteFilterCounts.partyGroups}
-          active={filterInvite === "party"}
-          onClick={() => setFilterInvite((s) => (s === "party" ? "all" : "party"))}
-        />
+        {isAdmin && (
+          <ClickableStatCard
+            label="Grupos com festa"
+            value={inviteFilterCounts.partyGroups}
+            active={filterInvite === "party"}
+            onClick={() => setFilterInvite((s) => (s === "party" ? "all" : "party"))}
+          />
+        )}
       </div>
 
       <div
@@ -1350,34 +1372,45 @@ function MeusClientesClientContent() {
             counts={statusFilterCounts}
           />
 
-          <Select
-            value={filterInvite}
-            onValueChange={(v) => setFilterInvite(v as InviteFilter)}
-          >
-            <SelectTrigger size="sm" className="w-44">
-              <span className="flex min-w-0 items-center gap-2">
-                <span className="truncate">
-                  {filterInvite === "all" ? "NPS/Festa" : selectedInviteOption.label}
-                </span>
-                <span className="shrink-0 tabular-nums text-muted-foreground">
-                  ({selectedInviteOption.count})
-                </span>
-              </span>
-            </SelectTrigger>
-            <SelectContent>
-              {inviteFilterOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  <span className="flex w-full items-center gap-2">
-                    <span className="flex-1">{option.label}</span>
-                    <span className="tabular-nums text-xs text-muted-foreground">
-                      {option.count}
-                    </span>
+          {isAdmin ? (
+            <Select
+              value={filterInvite}
+              onValueChange={(v) => setFilterInvite(v as InviteFilter)}
+            >
+              <SelectTrigger size="sm" className="w-44">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate">
+                    {filterInvite === "all" ? "NPS/Festa" : selectedInviteOption.label}
                   </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                  <span className="shrink-0 tabular-nums text-muted-foreground">
+                    ({selectedInviteOption.count})
+                  </span>
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                {inviteFilterOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    <span className="flex w-full items-center gap-2">
+                      <span className="flex-1">{option.label}</span>
+                      <span className="tabular-nums text-xs text-muted-foreground">
+                        {option.count}
+                      </span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Badge
+              variant="outline"
+              className="h-8 border-blue-200 bg-blue-50 px-3 text-xs font-medium text-blue-800"
+              title="Gestores veem apenas clientes com pessoas elegíveis ao NPS"
+            >
+              Só clientes NPS ({inviteFilterCounts.npsGroups})
+            </Badge>
+          )}
 
+          {isAdmin && (
           <Select
             value={filterPartyTipo}
             onValueChange={(v) => setFilterPartyTipo(v as PartyInviteTipo | "all")}
@@ -1419,6 +1452,7 @@ function MeusClientesClientContent() {
               ))}
             </SelectContent>
           </Select>
+          )}
 
           <Select value={filterArea || "__all__"} onValueChange={(v) => setFilterArea(v === "__all__" ? "" : v)}>
             <SelectTrigger size="sm" className="w-48">
@@ -1736,8 +1770,8 @@ function MeusClientesClientContent() {
           filterStatus={filterStatus}
           filterAtividade={isAdmin ? filterAtividade : "all"}
           filterFaturamentoPrevisto={isAdmin ? filterFaturamentoPrevisto : "all"}
-          filterInvite={filterInvite}
-          filterPartyTipo={filterPartyTipo}
+          filterInvite={isAdmin ? filterInvite : "nps"}
+          filterPartyTipo={isAdmin ? filterPartyTipo : "all"}
           filterResponsibleArea={isAdmin ? filterResponsibleArea : ""}
           gestorName={gestorName}
           filterResultCount={hasActiveFilters ? displayGroups.length : undefined}
@@ -1777,8 +1811,8 @@ function MeusClientesClientContent() {
                 onToggleSelectAllInGroup={handleToggleSelectAllInGroup}
                 compact={compactMode}
                 searchQuery={search}
-                inviteFilter={filterInvite}
-                partyTipoFilter={filterPartyTipo}
+                inviteFilter={effectiveInviteFilter}
+                partyTipoFilter={effectivePartyTipoFilter}
                 tourGroupSample={index === 0}
                 tourContactEdit={index === 0 && tourActive}
                 onEditContact={(contact) => {

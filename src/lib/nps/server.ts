@@ -14,7 +14,6 @@ import {
   mapPerson,
   type EmailAreaManagerRow,
   type EmailCompany,
-  type EmailContact,
   type EmailGroupResponsible,
   type EmailPerson,
 } from "@/lib/email-marketing";
@@ -24,7 +23,6 @@ import {
   filterInternalResponsibles,
   filterOutInternalClientGroups,
 } from "@/lib/meus-clientes";
-import { isSubareaOnlyManagerArea } from "@/lib/legal-areas";
 import { buildEligibleRespondents, type NpsEligibleRespondent } from "@/lib/nps/eligible";
 import { buildNpsWhatsAppMessage } from "@/lib/nps/message";
 import { getNpsPublicUrl } from "@/lib/nps/public-url";
@@ -92,17 +90,20 @@ async function requireMeusClientesAccess(authUserId: string) {
 }
 
 function mapAreaManagers(rows: Record<string, unknown>[] | null): EmailAreaManagerRow[] {
-  return (rows ?? [])
-    .map((row) => {
-      const joined = (row as { users?: { name: string } | { name: string }[] | null }).users;
-      const userName = Array.isArray(joined) ? (joined[0]?.name ?? null) : (joined?.name ?? null);
-      return {
-        area: row.area as string,
-        userId: row.user_id as string,
-        userName,
-      };
-    })
-    .filter((row) => !isSubareaOnlyManagerArea(row.area));
+  return (rows ?? []).flatMap((row) => {
+    const joined = (
+      row as {
+        users?: { name: string; is_active: boolean | null } | { name: string; is_active: boolean | null }[] | null;
+      }
+    ).users;
+    const user = Array.isArray(joined) ? joined[0] : joined;
+    if (!user || user.is_active === false) return [];
+    return [{
+      area: row.area as string,
+      userId: row.user_id as string,
+      userName: user.name ?? null,
+    }];
+  });
 }
 
 async function loadScopeDataset() {
@@ -124,7 +125,7 @@ async function loadScopeDataset() {
       ),
     admin
       .from("email_area_managers")
-      .select("area, user_id, users!email_area_managers_user_id_fkey(name)"),
+      .select("area, user_id, users!email_area_managers_user_id_fkey(name, is_active)"),
   ]);
 
   const companies = filterOutInternalClientGroups(

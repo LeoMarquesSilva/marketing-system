@@ -160,7 +160,8 @@ export function computeMyClientScope(
   for (const company of companies) {
     const ownerArea =
       assignedAreaForGroup(company.clientGroupId, areaByGroupId) ?? company.responsibleArea;
-    if (ownerArea && userCoversEntityArea(userAreas, ownerArea)) {
+    // Escopo exclusivo: só gestores da área marcada (exata), sem herdar da área pai.
+    if (ownerArea && userAreas.has(ownerArea)) {
       companyIds.add(company.id);
     }
   }
@@ -169,7 +170,7 @@ export function computeMyClientScope(
   for (const person of people) {
     const ownerArea =
       assignedAreaForGroup(person.clientGroupId, areaByGroupId) ?? person.responsibleArea;
-    if (ownerArea && userCoversEntityArea(userAreas, ownerArea)) {
+    if (ownerArea && userAreas.has(ownerArea)) {
       personIds.add(person.id);
     }
   }
@@ -663,7 +664,6 @@ export function computeEnrichmentTotals(
   for (const person of peopleList) scopedGroupKeys.add(resolveClientGroupKey(person));
 
   const companiesById = new Map(companies.map((c) => [c.id, c]));
-  const contactsByGroup = buildContactsByGroup(contacts, companies);
 
   let profilesComplete = 0;
   let profilesPending = 0;

@@ -50,9 +50,7 @@ import {
   type AreaSummaryGroup,
   type EnrichmentTotals,
   countGroupPendingMembers,
-  getAreaParent,
   groupHasNoContacts,
-  isSubArea,
   mergeGroupMembers,
 } from "@/lib/meus-clientes";
 import { AreaIcon, getAreaIconStyle } from "@/lib/area-icons";
@@ -540,16 +538,15 @@ export function GroupSection({
 
   const responsibleArea = group.responsibleArea ?? null;
   const ownerAreaOptions = useMemo(() => {
+    // Sempre todas as áreas do sistema: dá para atribuir responsável mesmo
+    // se o cliente não tiver processo/escopo naquela área.
     const set = new Set<string>();
-    for (const area of groupAreas) set.add(getAreaParent(area));
-    if (set.size === 0) {
-      for (const area of fallbackAreaOptions ?? []) set.add(getAreaParent(area));
+    for (const area of fallbackAreaOptions ?? []) {
+      if (area) set.add(area);
     }
-    if (responsibleArea) set.add(getAreaParent(responsibleArea));
-    return Array.from(set)
-      .filter((area) => area && !isSubArea(area))
-      .sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [groupAreas, fallbackAreaOptions, responsibleArea]);
+    if (responsibleArea) set.add(responsibleArea);
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [fallbackAreaOptions, responsibleArea]);
 
   const sortedContacts = useMemo(
     () =>
@@ -1402,7 +1399,7 @@ export function ManagerSummaryTable({
   onAreaClick?: (area: string) => void;
   onGestorClick?: (userId: string) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   if (groups.length === 0) return null;
 
   return (

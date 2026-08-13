@@ -20,6 +20,17 @@ export async function requireAuthenticatedUser() {
   if (!user) {
     throw new Error("Não autenticado.");
   }
+
+  const admin = getAdminClient();
+  const { data: profile, error } = await admin
+    .from("users")
+    .select("is_active")
+    .eq("auth_id", user.id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!profile || profile.is_active === false) {
+    throw new Error("Usuário inativo.");
+  }
   return user;
 }
 
@@ -27,10 +38,13 @@ export async function requireAdminUser(authUserId: string) {
   const supabase = getAdminClient();
   const { data, error } = await supabase
     .from("users")
-    .select("role")
+    .select("role, is_active")
     .eq("auth_id", authUserId)
     .maybeSingle();
   if (error) throw new Error(error.message);
+  if (!data || data.is_active === false) {
+    throw new Error("Usuário inativo.");
+  }
   const role = (data?.role as string | undefined)?.toLowerCase();
   if (role !== "admin") {
     throw new Error("Apenas administradores podem executar esta ação.");

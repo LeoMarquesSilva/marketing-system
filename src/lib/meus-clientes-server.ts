@@ -21,12 +21,11 @@ import {
   filterInternalContacts,
   filterInternalResponsibles,
   filterOutInternalClientGroups,
-  getAreaParent,
   resolveClientGroupKey,
   resolveContactGroupKey,
   type MyClientScope,
 } from "@/lib/meus-clientes";
-import { isSubareaOnlyManagerArea, normalizeLegalArea } from "@/lib/legal-areas";
+import { normalizeLegalArea } from "@/lib/legal-areas";
 import { canAccessPath, type AccessProfile } from "@/lib/access-control";
 import { fetchSioeClienteAtividadeIndex } from "@/lib/sioe-cliente-atividade-server";
 import type { SioeClienteAtividadeIndex } from "@/lib/sioe-cliente-atividade";
@@ -93,17 +92,20 @@ async function fetchSyncMeta(admin: ReturnType<typeof getAdminClient>): Promise<
 }
 
 function mapAreaManagers(rows: Record<string, unknown>[] | null): EmailAreaManagerRow[] {
-  return (rows ?? [])
-    .map((row) => {
-      const joined = (row as { users?: { name: string } | { name: string }[] | null }).users;
-      const userName = Array.isArray(joined) ? (joined[0]?.name ?? null) : (joined?.name ?? null);
-      return {
-        area: row.area as string,
-        userId: row.user_id as string,
-        userName,
-      };
-    })
-    .filter((row) => !isSubareaOnlyManagerArea(row.area));
+  return (rows ?? []).flatMap((row) => {
+    const joined = (
+      row as {
+        users?: { name: string; is_active: boolean | null } | { name: string; is_active: boolean | null }[] | null;
+      }
+    ).users;
+    const user = Array.isArray(joined) ? joined[0] : joined;
+    if (!user || user.is_active === false) return [];
+    return [{
+      area: row.area as string,
+      userId: row.user_id as string,
+      userName: user.name ?? null,
+    }];
+  });
 }
 
 export async function fetchMeusClientesPayload(options: {
@@ -153,7 +155,7 @@ export async function fetchMeusClientesPayload(options: {
       ),
     admin
       .from("email_area_managers")
-      .select("area, user_id, users!email_area_managers_user_id_fkey(name)")
+      .select("area, user_id, users!email_area_managers_user_id_fkey(name, is_active)")
       .order("area"),
     admin.from("users").select("id, name, avatar_url").or("is_active.eq.true,is_active.is.null").order("name"),
     fetchSyncMeta(admin),
@@ -265,7 +267,7 @@ async function loadMeusClientesScopeContext(admin: ReturnType<typeof getAdminCli
         ),
       admin
         .from("email_area_managers")
-        .select("area, user_id, users!email_area_managers_user_id_fkey(name)")
+        .select("area, user_id, users!email_area_managers_user_id_fkey(name, is_active)")
         .order("area"),
     ]);
 
@@ -398,7 +400,7 @@ export async function updateClientGroupResponsibleArea(options: {
   }
 
   const normalized = options.responsibleArea
-    ? getAreaParent(normalizeLegalArea(options.responsibleArea) ?? options.responsibleArea.trim())
+    ? normalizeLegalArea(options.responsibleArea) ?? options.responsibleArea.trim()
     : null;
   const responsibleArea = normalized?.trim() ? normalized : null;
 

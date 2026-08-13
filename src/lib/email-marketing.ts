@@ -14,7 +14,7 @@ import {
   companyNameKey,
   resolveCanonicalCompanyName,
 } from "@/lib/email-marketing-normalize";
-import { normalizeLegalArea, normalizeLegalAreas, isSubareaOnlyManagerArea } from "@/lib/legal-areas";
+import { normalizeLegalArea, normalizeLegalAreas } from "@/lib/legal-areas";
 import { parsePartyInviteTipo, type PartyInviteTipo } from "@/lib/party-invite-types";
 
 export type EmailContactStatus = "subscribed" | "unsubscribed" | "bounced" | "complained";
@@ -268,20 +268,6 @@ export function mapPerson(row: Record<string, unknown>): EmailPerson {
   };
 }
 
-function mapClientGroup(row: Record<string, unknown>): EmailClientGroup {
-  const name =
-    normalizeCompanyName(row.name as string) ??
-    resolveCanonicalCompanyName(row.name as string) ??
-    (row.name as string);
-  return {
-    id: row.id as string,
-    name,
-    source: (row.source as string | null) ?? null,
-    createdAt: row.created_at as string,
-    updatedAt: row.updated_at as string,
-  };
-}
-
 export function mapCompany(row: Record<string, unknown>): EmailCompany {
   const joined = (row as { email_client_groups?: { id: string; name: string } | null }).email_client_groups;
   const groupFromJoin = joined?.name
@@ -457,20 +443,24 @@ export async function fetchEmailAreaManagers(): Promise<EmailAreaManagerRow[]> {
   const db = await getEmailDb();
   const { data, error } = await db
     .from("email_area_managers")
-    .select("area, user_id, users!email_area_managers_user_id_fkey(name)")
+    .select("area, user_id, users!email_area_managers_user_id_fkey(name, is_active)")
     .order("area", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? [])
-    .map((row) => {
-      const joined = (row as { users?: { name: string } | { name: string }[] | null }).users;
-      const userName = Array.isArray(joined) ? (joined[0]?.name ?? null) : (joined?.name ?? null);
-      return {
+    .flatMap((row) => {
+      const joined = (
+        row as {
+          users?: { name: string; is_active: boolean | null } | { name: string; is_active: boolean | null }[] | null;
+        }
+      ).users;
+      const user = Array.isArray(joined) ? joined[0] : joined;
+      if (!user || user.is_active === false) return [];
+      return [{
         area: row.area as string,
         userId: row.user_id as string,
-        userName,
-      };
-    })
-    .filter((row) => !isSubareaOnlyManagerArea(row.area));
+        userName: user.name ?? null,
+      }];
+    });
 }
 
 export interface UpdateEmailPersonInput {

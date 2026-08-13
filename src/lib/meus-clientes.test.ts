@@ -364,5 +364,24 @@ describe("área responsável exclusiva", () => {
     expect(trab.personIds.has("p1")).toBe(true);
     expect(civel.personIds.has("p1")).toBe(false);
   });
+
+  it("com área responsável Recuperação de Crédito, só o gestor dessa área vê o grupo", () => {
+    const recuperacaoGestor = { area: "Recuperação de Crédito", userId: "u-rec" };
+    const companies = [company({ id: "c1", responsibleArea: "Recuperação de Crédito" })];
+    const rec = computeMyClientScope(
+      companies,
+      [],
+      "u-rec",
+      [trabalhistaGestor, civelGestor, recuperacaoGestor]
+    );
+    const civel = computeMyClientScope(
+      companies,
+      [],
+      "u-civel",
+      [trabalhistaGestor, civelGestor, recuperacaoGestor]
+    );
+    expect(rec.companyIds.has("c1")).toBe(true);
+    expect(civel.companyIds.has("c1")).toBe(false);
+  });
 });
 

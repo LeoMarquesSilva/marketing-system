@@ -36,13 +36,18 @@ export async function listAreaManagers(): Promise<AreaManagerEntry[]> {
   const admin = getAdminClient();
   const { data, error } = await admin
     .from("email_area_managers")
-    .select("area, user_id, users!email_area_managers_user_id_fkey(name)")
+    .select("area, user_id, users!email_area_managers_user_id_fkey(name, is_active)")
     .order("area", { ascending: true });
   if (error) throw new Error(error.message);
-  return (data ?? []).map((row) => {
-    const joined = (row as { users?: { name: string } | { name: string }[] | null }).users;
-    const userName = Array.isArray(joined) ? (joined[0]?.name ?? null) : (joined?.name ?? null);
-    return { area: row.area as string, userId: row.user_id as string, userName };
+  return (data ?? []).flatMap((row) => {
+    const joined = (
+      row as {
+        users?: { name: string; is_active: boolean | null } | { name: string; is_active: boolean | null }[] | null;
+      }
+    ).users;
+    const user = Array.isArray(joined) ? joined[0] : joined;
+    if (!user || user.is_active === false) return [];
+    return [{ area: row.area as string, userId: row.user_id as string, userName: user.name ?? null }];
   });
 }
 
@@ -52,6 +57,16 @@ export async function addAreaManager(
   createdByUserId: string | null
 ): Promise<void> {
   const admin = getAdminClient();
+  const { data: user, error: userError } = await admin
+    .from("users")
+    .select("is_active")
+    .eq("id", userId)
+    .maybeSingle();
+  if (userError) throw new Error(userError.message);
+  if (!user || user.is_active === false) {
+    throw new Error("Não é possível cadastrar um usuário inativo como gestor de área.");
+  }
+
   const { error } = await admin
     .from("email_area_managers")
     .upsert(
