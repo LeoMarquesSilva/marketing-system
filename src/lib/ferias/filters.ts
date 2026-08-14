@@ -64,7 +64,7 @@ function normalizeDepartmentKey(value: string): string {
 
 /**
  * Departamentos que entram no filtro "Operações Legais"
- * (Marketing, Financeiro, Facilities, RH + a própria área).
+ * (Marketing, Financeiro, Facilities, Limpeza, RH + a própria área).
  */
 const OPERACOES_LEGAIS_DEPARTMENTS = new Set([
   "operacoes legais",
@@ -72,6 +72,7 @@ const OPERACOES_LEGAIS_DEPARTMENTS = new Set([
   "comercial", // legado; Marketing fica sob Operações Legais
   "financeiro",
   "facilities",
+  "limpeza",
   "rh",
   "r h",
   "recursos humanos",
@@ -137,7 +138,7 @@ export function filterEmployeesWithBalance(
 }
 
 /**
- * Áreas para os botões de filtro. Marketing/Financeiro/Facilities/RH
+ * Áreas para os botões de filtro. Marketing/Financeiro/Facilities/Limpeza/RH
  * entram agrupados em "Operações Legais".
  */
 export function listEmployeeDepartments(employees: EmployeeWithBalance[]): string[] {

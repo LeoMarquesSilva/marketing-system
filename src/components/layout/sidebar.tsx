@@ -15,6 +15,7 @@ import {
   Settings,
   Newspaper,
   Heart,
+  Images,
   Instagram,
   Linkedin,
   Megaphone,
@@ -32,7 +33,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { isContentCollaborator } from "@/lib/content-areas";
-import { resolveAllowedSections, hasCollaboratorPhotosAccess } from "@/lib/access-control";
+import { resolveAllowedSections, isCollaboratorPhotosManager } from "@/lib/access-control";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { fetchCommentStats } from "@/lib/request-comments";
 import { fetchMarketingRequests } from "@/lib/marketing-requests";
@@ -63,6 +64,7 @@ const baseNavItems = [
   { href: "/eventos", icon: CalendarDays, label: "Eventos" },
   { href: "/email-marketing", icon: Mail, label: "E-mail Marketing" },
   { href: "/nfc", icon: RadioTower, label: "NFC Hub" },
+  { href: "/minhas-fotos", icon: Images, label: "Minhas fotos" },
   { href: "/fotos-colaboradores", icon: Camera, label: "Fotos Colaboradores" },
   { href: "/usuarios", icon: Users, label: "Usuarios" },
   { href: "/custos-projetos", icon: Wallet, label: "Custos de Projetos" },
@@ -70,6 +72,7 @@ const baseNavItems = [
 
 const collaboratorNavItems = [
   { href: "/conteudo/inicio", icon: Instagram, label: "Inicio" },
+  { href: "/minhas-fotos", icon: Images, label: "Minhas fotos" },
   { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteudo para Post" },
   { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
   { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
@@ -84,15 +87,31 @@ const adminNavItems = [
   { href: "/admin", icon: Settings, label: "Configuracoes" },
 ];
 
+function withMinhasFotos<T extends { href: string }>(
+  items: T[],
+  minhasFotos: T
+): T[] {
+  if (items.some((i) => i.href === "/minhas-fotos")) return items;
+  const contentIndex = items.findIndex((i) => i.href.startsWith("/conteudo"));
+  if (contentIndex >= 0) {
+    const copy = [...items];
+    copy.splice(contentIndex + 1, 0, minhasFotos);
+    return copy;
+  }
+  return [items[0], minhasFotos, ...items.slice(1)].filter(Boolean) as T[];
+}
+
 function getNavItems(
-  profile: { role?: string | null; department?: string | null; permissions?: string[] | null } | null
+  profile: { id?: string; role?: string | null; department?: string | null; permissions?: string[] | null } | null
 ) {
+  const minhasFotos = { href: "/minhas-fotos", icon: Images, label: "Minhas fotos" };
   const allowed = resolveAllowedSections(profile);
   if (allowed) {
     const catalog = [...baseNavItems, ...manualOnlyNavItems, ...adminNavItems];
     let items = catalog.filter((i) => {
+      if (i.href === "/minhas-fotos") return true;
       if (i.href === "/fotos-colaboradores") {
-        return hasCollaboratorPhotosAccess(profile) || allowed.includes("/fotos-colaboradores") || allowed.includes("/usuarios");
+        return isCollaboratorPhotosManager(profile);
       }
       return allowed.includes(i.href);
     });
@@ -100,11 +119,14 @@ function getNavItems(
     if (allowed.some((k) => k.startsWith("/conteudo"))) {
       items = [
         { href: "/conteudo/inicio", icon: Instagram, label: "Inicio" },
+        minhasFotos,
         { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteudo para Post" },
         { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
         { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
-        ...items.filter((i) => !i.href.startsWith("/conteudo")),
+        ...items.filter((i) => !i.href.startsWith("/conteudo") && i.href !== "/minhas-fotos"),
       ];
+    } else {
+      items = withMinhasFotos(items, minhasFotos);
     }
     return items;
   }
@@ -117,7 +139,8 @@ function getNavItems(
   return [
     ...baseNavItems.filter((i) => {
       if (i.href === "/nfc") return isAdmin;
-      return i.href !== "/fotos-colaboradores" || hasCollaboratorPhotosAccess(profile);
+      if (i.href === "/minhas-fotos") return true;
+      return i.href !== "/fotos-colaboradores" || isCollaboratorPhotosManager(profile);
     }),
     ...(isAdmin ? [...manualOnlyNavItems, ...adminNavItems] : []),
   ];

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { ExternalLink, FileText, Globe, Instagram, MessageCircle, Plus, Search, Trash2, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { EventStorageUrlField } from "@/components/eventos/event-storage-url-field";
@@ -23,6 +24,7 @@ import {
   type EventSupplierQuote,
   type ProposalStatus,
 } from "@/lib/eventos";
+import { parseBrlInput } from "@/lib/money-br";
 import { cn } from "@/lib/utils";
 
 const PROPOSAL_STATUS_STYLE: Record<ProposalStatus, string> = {
@@ -207,7 +209,7 @@ export function EventoFornecedoresTab({
             ))}
           </select>
           <Input value={quoteCategory} onChange={(e) => setQuoteCategory(e.target.value)} placeholder="Categoria" />
-          <Input value={quoteValue} onChange={(e) => setQuoteValue(e.target.value)} placeholder="Valor cotado" />
+          <CurrencyInput value={quoteValue} onChange={setQuoteValue} placeholder="Valor cotado" />
           <EventStorageUrlField
             eventId={eventId}
             folder="propostas"
@@ -218,11 +220,12 @@ export function EventoFornecedoresTab({
         </div>
         <Button
           onClick={() => {
-            if (!quoteSupplierId || !quoteValue) return;
+            const amount = parseBrlInput(quoteValue);
+            if (!quoteSupplierId || amount == null || amount <= 0) return;
             onAddQuote(
               quoteSupplierId,
               quoteCategory || "outros",
-              Number(quoteValue),
+              amount,
               quoteFileLink.trim() || null
             );
             setQuoteValue("");

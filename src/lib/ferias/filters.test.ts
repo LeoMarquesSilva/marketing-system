@@ -197,7 +197,7 @@ describe("filterEmployeesWithBalance", () => {
     expect(result).toHaveLength(0);
   });
 
-  it("Operações Legais engloba Marketing, Financeiro, Facilities e RH", () => {
+  it("Operações Legais engloba Marketing, Financeiro, Facilities, Limpeza e RH", () => {
     const marketing = row(
       makeEmployee({
         id: "4",
@@ -212,14 +212,25 @@ describe("filterEmployeesWithBalance", () => {
         department: "R.H.",
       })
     );
-    const result = filterEmployeesWithBalance([felipe, andressa, samuel, marketing, rh], {
-      search: "",
-      status: "all",
-      situation: "all",
-      department: "Operações Legais",
-    });
+    const limpeza = row(
+      makeEmployee({
+        id: "6",
+        full_name: "Pessoa Limpeza",
+        department: "Limpeza",
+      })
+    );
+    const result = filterEmployeesWithBalance(
+      [felipe, andressa, samuel, marketing, rh, limpeza],
+      {
+        search: "",
+        status: "all",
+        situation: "all",
+        department: "Operações Legais",
+      }
+    );
     expect(result.map((item) => item.employee.full_name).sort()).toEqual([
       "Felipe Soares de Camargo",
+      "Pessoa Limpeza",
       "Pessoa Marketing",
       "Pessoa RH",
       "Samuel Willian Silva",
@@ -228,12 +239,19 @@ describe("filterEmployeesWithBalance", () => {
     ].sort());
   });
 
-  it("lista áreas agrupando RH/Marketing/etc em Operações Legais", () => {
+  it("lista áreas agrupando RH/Marketing/Limpeza/etc em Operações Legais", () => {
     const marketing = row(
       makeEmployee({
         id: "4",
         full_name: "Pessoa Marketing",
         department: "Marketing",
+      })
+    );
+    const limpeza = row(
+      makeEmployee({
+        id: "7",
+        full_name: "Pessoa Limpeza",
+        department: "Limpeza",
       })
     );
     const reestruturacao = row(
@@ -251,7 +269,15 @@ describe("filterEmployeesWithBalance", () => {
       })
     );
     expect(
-      listEmployeeDepartments([felipe, andressa, samuel, marketing, reestruturacao, distressed])
+      listEmployeeDepartments([
+        felipe,
+        andressa,
+        samuel,
+        marketing,
+        limpeza,
+        reestruturacao,
+        distressed,
+      ])
     ).toEqual(["Operações Legais", "Reestruturação"]);
   });
 

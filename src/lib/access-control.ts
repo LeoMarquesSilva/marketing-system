@@ -58,7 +58,7 @@ export const ACCESS_PRESETS: Record<string, string[]> = {
 };
 
 /** Rotas sempre acessíveis para qualquer usuário autenticado. */
-export const ALWAYS_ALLOWED_PATHS = ["/perfil", "/alterar-senha"];
+export const ALWAYS_ALLOWED_PATHS = ["/perfil", "/alterar-senha", "/minhas-fotos"];
 
 /**
  * Rotas sensíveis que exigem permissão explícita mesmo no modo legado (perfil sem
@@ -92,6 +92,18 @@ export function hasCollaboratorPhotosAccess(
 ): boolean {
   if (!profile?.id) return false;
   return COLLABORATOR_PHOTOS_USER_IDS.has(profile.id);
+}
+
+/** MTK/admin: sobe galeria, apaga fotos e edita categorias de uso. */
+export function isCollaboratorPhotosManager(
+  profile: AccessProfile | null | undefined
+): boolean {
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  if (hasCollaboratorPhotosAccess(profile)) return true;
+  return Boolean(
+    profile.permissions?.some((k) => k === "/usuarios" || k === "/fotos-colaboradores")
+  );
 }
 
 export function isAdminRole(profile: AccessProfile | null | undefined): boolean {
@@ -150,10 +162,7 @@ export function canAccessPath(
     pathname === "/fotos-colaboradores" || pathname.startsWith("/fotos-colaboradores/");
 
   if (isFotosRoute) {
-    if (hasCollaboratorPhotosAccess(profile)) return true;
-    const allowed = resolveAllowedSections(profile);
-    if (allowed?.some((k) => k === "/usuarios" || k === "/fotos-colaboradores")) return true;
-    return false;
+    return isCollaboratorPhotosManager(profile);
   }
 
   const allowed = resolveAllowedSections(profile);

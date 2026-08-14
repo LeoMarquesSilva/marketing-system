@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CalendarRange, Truck } from "lucide-react";
+import { CalendarRange, TrendingUp, Truck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const SUB_NAV_ITEMS = [
   { href: "/eventos", label: "Visão geral", icon: CalendarRange },
+  { href: "/eventos/planejamento", label: "Planejamento", icon: TrendingUp },
   { href: "/eventos/prestadores", label: "Prestadores", icon: Truck },
 ];
 

@@ -6,6 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/utils/supabase/client";
 
 export type EventStatus = "nao_iniciada" | "em_andamento" | "concluida" | "cancelada";
+export type EventKind = "evento" | "campanha";
 export type EventTaskStatus = "pendente" | "em_andamento" | "concluida";
 export type EventTaskPhase = "pre_evento" | "dia_evento" | "pos_evento";
 export type BudgetPaymentStatus = "pendente" | "parcial" | "pago";
@@ -36,18 +37,32 @@ export type InviteStatus = "nao_enviado" | "enviado" | "erro_envio";
 export type ConfirmationStatus = "sem_resposta" | "confirmado" | "recusado";
 export type ProposalStatus = "pendente" | "aprovada" | "descartada";
 
+export interface EventSeries {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface OrgEvent {
   id: string;
   year: number;
   name: string;
+  seriesId: string | null;
+  seriesName?: string | null;
+  kind: EventKind;
   monthLabel: string | null;
   commemorativeDate: string | null;
   eventDate: string | null;
+  endDate: string | null;
   giftsNotes: string | null;
   organizationTeam: string | null;
   status: EventStatus;
   objectives: string | null;
-  budgetPlanned: number | null;
+  budgetApproved: number | null;
   notes: string | null;
   eventType: string | null;
   eventSize: string | null;
@@ -237,6 +252,24 @@ export interface EventTemplateTask {
   createdAt: string;
 }
 
+/**
+ * A partir de "aprovado" o evento passou do campo das ideias e já se espera
+ * fornecedor e orçamento. Antes disso, cobrar isso é ruído — todo evento
+ * recém-cadastrado nasceria com alerta vermelho.
+ */
+const COMMITTED_STAGES: EventStageStatus[] = [
+  "aprovado",
+  "orcando",
+  "em_producao",
+  "em_comunicacao",
+  "pronto_para_execucao",
+];
+
+function expectsSupplierAndBudget(event: OrgEvent): boolean {
+  if (event.status === "cancelada") return false;
+  return COMMITTED_STAGES.includes(event.stageStatus);
+}
+
 export interface EventAlertSummary {
   noApprovedSupplier: boolean;
   noBudget: boolean;
@@ -259,6 +292,7 @@ export interface EventsOverview {
   totalEvents: number;
   inProgress: number;
   completed: number;
+  budgetApprovedTotal: number;
   budgetPlannedTotal: number;
   budgetActualTotal: number;
   overdueTasks: number;
@@ -267,6 +301,45 @@ export interface EventsOverview {
   budgetExceeded: number;
   pendingPayments: number;
   missingPostEvent: number;
+}
+
+/** De onde saiu o valor usado como base da projeção, em ordem de confiança. */
+export type ForecastBaseSource = "realizado" | "previsto" | "verba";
+
+export interface SeriesYearStats {
+  year: number;
+  eventId: string;
+  eventName: string;
+  status: EventStatus;
+  budgetApproved: number | null;
+  plannedTotal: number;
+  actualTotal: number;
+  participantsActual: number | null;
+  participantsExpected: number | null;
+}
+
+export interface SeriesForecastRow {
+  seriesId: string;
+  seriesName: string;
+  kind: EventKind;
+  byYear: Record<number, SeriesYearStats>;
+  /** Ano de onde veio a base — o mais recente com algum valor. */
+  baseYear: number | null;
+  baseValue: number | null;
+  baseSource: ForecastBaseSource | null;
+  /** Realizado ÷ participantes reais do ano-base, quando ambos existem. */
+  costPerParticipant: number | null;
+  /** Id da edição do ano-alvo, se já tiver sido cadastrada. */
+  targetEventId: string | null;
+}
+
+export interface EventsForecast {
+  targetYear: number;
+  /** Anos com histórico, do mais antigo ao mais recente. */
+  historyYears: number[];
+  rows: SeriesForecastRow[];
+  /** Eventos fora de qualquer série — não entram na comparação. */
+  unlinkedCount: number;
 }
 
 export interface EventToPlannerFormData {
@@ -289,6 +362,11 @@ export const EVENT_STATUS_LABEL: Record<EventStatus, string> = {
   em_andamento: "Em andamento",
   concluida: "Concluída",
   cancelada: "Cancelada",
+};
+
+export const EVENT_KIND_LABEL: Record<EventKind, string> = {
+  evento: "Evento",
+  campanha: "Campanha",
 };
 
 export const EVENT_STATUS_STYLE: Record<EventStatus, string> = {
@@ -423,18 +501,31 @@ export const GUEST_TYPE_LABEL: Record<GuestType, string> = {
   convidado_externo: "Convidado externo",
 };
 
+type EventSeriesRow = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 type EventRow = {
   id: string;
   year: number;
   name: string;
+  series_id: string | null;
+  kind: string | null;
   month_label: string | null;
   commemorative_date: string | null;
   event_date: string | null;
+  end_date: string | null;
   gifts_notes: string | null;
   organization_team: string | null;
   status: string;
   objectives: string | null;
-  budget_planned: number | null;
+  budget_approved: number | null;
   notes: string | null;
   event_type: string | null;
   event_size: string | null;
@@ -449,6 +540,7 @@ type EventRow = {
   risk_level: string | null;
   created_at: string;
   updated_at: string;
+  event_series?: { name: string } | { name: string }[] | null;
 };
 
 type TaskRow = {
@@ -617,18 +709,24 @@ type EventTemplateTaskRow = {
 };
 
 function rowToEvent(row: EventRow): OrgEvent {
+  const seriesRaw = row.event_series;
+  const series = Array.isArray(seriesRaw) ? seriesRaw[0] : seriesRaw;
   return {
     id: row.id,
     year: row.year,
     name: row.name,
+    seriesId: row.series_id,
+    seriesName: series?.name ?? null,
+    kind: (row.kind as EventKind) ?? "evento",
     monthLabel: row.month_label,
     commemorativeDate: row.commemorative_date,
     eventDate: row.event_date,
+    endDate: row.end_date,
     giftsNotes: row.gifts_notes,
     organizationTeam: row.organization_team,
     status: row.status as EventStatus,
     objectives: row.objectives,
-    budgetPlanned: row.budget_planned != null ? Number(row.budget_planned) : null,
+    budgetApproved: row.budget_approved != null ? Number(row.budget_approved) : null,
     notes: row.notes,
     eventType: row.event_type,
     eventSize: row.event_size,
@@ -906,6 +1004,8 @@ export function formatDateBR(iso: string | null | undefined): string {
   return `${day}/${month}/${year}`;
 }
 
+const EVENT_SELECT = "*, event_series:series_id (name)";
+
 const TASK_SELECT = `
   id, event_id, title, description, assignee_id, due_date, status, phase,
   sort_order, marketing_request_id, created_at, updated_at,
@@ -919,7 +1019,7 @@ export async function fetchEventsByYear(
   const db = client ?? supabase;
   const { data, error } = await db
     .from("events")
-    .select("*")
+    .select(EVENT_SELECT)
     .eq("year", year)
     .order("event_date", { ascending: true, nullsFirst: false })
     .order("name", { ascending: true });
@@ -936,7 +1036,7 @@ export async function fetchEventById(
   client?: SupabaseClient
 ): Promise<OrgEvent | null> {
   const db = client ?? supabase;
-  const { data, error } = await db.from("events").select("*").eq("id", id).single();
+  const { data, error } = await db.from("events").select(EVENT_SELECT).eq("id", id).single();
   if (error || !data) return null;
   return rowToEvent(data as EventRow);
 }
@@ -1000,21 +1100,26 @@ export async function fetchEventsWithStats(
     }
   }
 
-  for (const q of quoteRes.data ?? []) {
-    const eid = q.event_id as string;
-    if (!alertsByEvent[eid]) continue;
-    if (q.proposal_status === "aprovada") {
-      alertsByEvent[eid].noApprovedSupplier = false;
-    }
-  }
+  for (const event of events) {
+    const id = event.id;
+    const committed = expectsSupplierAndBudget(event);
 
-  for (const id of ids) {
-    const hasApproved = (quoteRes.data ?? []).some(
-      (q) => q.event_id === id && q.proposal_status === "aprovada"
-    );
-    if (!hasApproved) alertsByEvent[id].noApprovedSupplier = true;
-    if (budgetByEvent[id].planned <= 0) alertsByEvent[id].noBudget = true;
-    if (budgetByEvent[id].actual > budgetByEvent[id].planned && budgetByEvent[id].planned > 0) {
+    // Campanha muitas vezes roda sem fornecedor contratado (peça interna,
+    // comunicação própria), então só evento é cobrado nesse ponto.
+    if (committed && event.kind === "evento") {
+      const hasApproved = (quoteRes.data ?? []).some(
+        (q) => q.event_id === id && q.proposal_status === "aprovada"
+      );
+      if (!hasApproved) alertsByEvent[id].noApprovedSupplier = true;
+    }
+    if (committed && budgetByEvent[id].planned <= 0 && event.budgetApproved == null) {
+      alertsByEvent[id].noBudget = true;
+    }
+
+    // Estouro é sempre relevante: mede o realizado contra o teto aprovado
+    // quando existe, senão contra a soma das linhas previstas.
+    const ceiling = event.budgetApproved ?? budgetByEvent[id].planned;
+    if (ceiling > 0 && budgetByEvent[id].actual > ceiling) {
       alertsByEvent[id].budgetExceeded = true;
     }
   }
@@ -1023,6 +1128,17 @@ export async function fetchEventsWithStats(
   for (const event of events) {
     if (event.stageStatus === "realizado" && !postSet.has(event.id)) {
       alertsByEvent[event.id].missingPostEvent = true;
+    }
+    // Evento cancelado não cobra mais nada de ninguém.
+    if (event.status === "cancelada") {
+      alertsByEvent[event.id] = {
+        noApprovedSupplier: false,
+        noBudget: false,
+        budgetExceeded: false,
+        overdueTasks: false,
+        pendingPayments: false,
+        missingPostEvent: false,
+      };
     }
   }
 
@@ -1046,6 +1162,7 @@ export async function fetchEventsOverview(
     totalEvents: withStats.length,
     inProgress: withStats.filter((e) => e.status === "em_andamento").length,
     completed: withStats.filter((e) => e.status === "concluida").length,
+    budgetApprovedTotal: withStats.reduce((s, e) => s + (e.budgetApproved ?? 0), 0),
     budgetPlannedTotal: withStats.reduce((s, e) => s + e.budgetPlannedTotal, 0),
     budgetActualTotal: withStats.reduce((s, e) => s + e.budgetActualTotal, 0),
     overdueTasks: withStats.reduce((s, e) => s + e.tasksOverdue, 0),
@@ -1057,6 +1174,126 @@ export async function fetchEventsOverview(
   };
 }
 
+/**
+ * Consolida o histórico de cada série para servir de base ao planejamento do
+ * ano seguinte. O valor-base é o do ano mais recente que tenha algum número,
+ * preferindo o realizado (o que de fato saiu do caixa) ao previsto e à verba.
+ */
+export async function fetchEventsForecast(
+  targetYear: number,
+  client?: SupabaseClient
+): Promise<EventsForecast> {
+  const db = client ?? supabase;
+
+  const [eventsRes, budgetRes] = await Promise.all([
+    db.from("events").select(EVENT_SELECT).order("year", { ascending: true }),
+    db.from("event_budget_items").select("event_id, amount_planned, amount_actual"),
+  ]);
+
+  if (eventsRes.error) {
+    console.error("Erro ao montar previsão de eventos:", eventsRes.error);
+    return { targetYear, historyYears: [], rows: [], unlinkedCount: 0 };
+  }
+
+  const events = (eventsRes.data ?? []).map((r) => rowToEvent(r as EventRow));
+
+  const budgetByEvent: Record<string, { planned: number; actual: number }> = {};
+  for (const b of budgetRes.data ?? []) {
+    const eid = b.event_id as string;
+    const entry = budgetByEvent[eid] ?? { planned: 0, actual: 0 };
+    entry.planned += Number(b.amount_planned ?? 0);
+    entry.actual += Number(b.amount_actual ?? 0);
+    budgetByEvent[eid] = entry;
+  }
+
+  const bySeries = new Map<string, SeriesForecastRow>();
+  const historyYears = new Set<number>();
+  let unlinkedCount = 0;
+
+  for (const event of events) {
+    if (!event.seriesId) {
+      unlinkedCount++;
+      continue;
+    }
+    // Edição cancelada não representa custo esperado do ano seguinte.
+    if (event.status === "cancelada") continue;
+
+    const budget = budgetByEvent[event.id] ?? { planned: 0, actual: 0 };
+    const row = bySeries.get(event.seriesId) ?? {
+      seriesId: event.seriesId,
+      seriesName: event.seriesName ?? event.name,
+      kind: event.kind,
+      byYear: {},
+      baseYear: null,
+      baseValue: null,
+      baseSource: null,
+      costPerParticipant: null,
+      targetEventId: null,
+    };
+
+    row.byYear[event.year] = {
+      year: event.year,
+      eventId: event.id,
+      eventName: event.name,
+      status: event.status,
+      budgetApproved: event.budgetApproved,
+      plannedTotal: budget.planned,
+      actualTotal: budget.actual,
+      participantsActual: event.participantsActual,
+      participantsExpected: event.participantsExpected,
+    };
+
+    if (event.year === targetYear) {
+      row.targetEventId = event.id;
+    } else if (event.year < targetYear) {
+      historyYears.add(event.year);
+    }
+
+    // O tipo mais recente manda: uma série pode ter virado campanha.
+    row.kind = event.kind;
+    bySeries.set(event.seriesId, row);
+  }
+
+  const years = [...historyYears].sort((a, b) => a - b);
+
+  for (const row of bySeries.values()) {
+    for (const year of [...years].reverse()) {
+      const stats = row.byYear[year];
+      if (!stats) continue;
+
+      let value: number | null = null;
+      let source: ForecastBaseSource | null = null;
+      if (stats.actualTotal > 0) {
+        value = stats.actualTotal;
+        source = "realizado";
+      } else if (stats.plannedTotal > 0) {
+        value = stats.plannedTotal;
+        source = "previsto";
+      } else if (stats.budgetApproved != null && stats.budgetApproved > 0) {
+        value = stats.budgetApproved;
+        source = "verba";
+      }
+      if (value == null) continue;
+
+      row.baseYear = year;
+      row.baseValue = value;
+      row.baseSource = source;
+      if (source === "realizado" && stats.participantsActual && stats.participantsActual > 0) {
+        row.costPerParticipant = value / stats.participantsActual;
+      }
+      break;
+    }
+  }
+
+  const rows = [...bySeries.values()].sort((a, b) => {
+    // Quem já tem número sobe: é o que sustenta a previsão.
+    if ((b.baseValue ?? 0) !== (a.baseValue ?? 0)) return (b.baseValue ?? 0) - (a.baseValue ?? 0);
+    return a.seriesName.localeCompare(b.seriesName, "pt-BR");
+  });
+
+  return { targetYear, historyYears: years, rows, unlinkedCount };
+}
+
 export async function fetchAvailableYears(client?: SupabaseClient): Promise<number[]> {
   const db = client ?? supabase;
   const { data, error } = await db.from("events").select("year");
@@ -1065,22 +1302,88 @@ export async function fetchAvailableYears(client?: SupabaseClient): Promise<numb
   return years.length > 0 ? years : [new Date().getFullYear()];
 }
 
+function rowToSeries(row: EventSeriesRow): EventSeries {
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    description: row.description,
+    active: row.active,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** Gera slug estável a partir do nome ("Dia das Mães" → "dia-das-maes"). */
+export function slugifySeriesName(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+export async function fetchEventSeries(client?: SupabaseClient): Promise<EventSeries[]> {
+  const db = client ?? supabase;
+  const { data, error } = await db
+    .from("event_series")
+    .select("*")
+    .eq("active", true)
+    .order("name");
+  if (error) {
+    console.error("Erro ao buscar séries de eventos:", error);
+    return [];
+  }
+  return (data ?? []).map((row) => rowToSeries(row as EventSeriesRow));
+}
+
+/**
+ * Busca a série pelo slug ou cria se não existir. Usado quando o usuário
+ * cadastra um evento novo que ainda não tem edição anterior.
+ */
+export async function findOrCreateEventSeries(name: string): Promise<EventSeries | null> {
+  const slug = slugifySeriesName(name);
+  if (!slug) return null;
+
+  const { data: existing } = await supabase
+    .from("event_series")
+    .select("*")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (existing) return rowToSeries(existing as EventSeriesRow);
+
+  const { data, error } = await supabase
+    .from("event_series")
+    .insert({ slug, name: name.trim() })
+    .select("*")
+    .single();
+  if (error) {
+    console.error("Erro ao criar série de evento:", error);
+    return null;
+  }
+  return rowToSeries(data as EventSeriesRow);
+}
+
 export async function insertEvent(
-  input: Omit<OrgEvent, "id" | "createdAt" | "updatedAt">
+  input: Omit<OrgEvent, "id" | "createdAt" | "updatedAt" | "seriesName">
 ): Promise<OrgEvent | null> {
   const { data, error } = await supabase
     .from("events")
     .insert({
       year: input.year,
       name: input.name,
+      series_id: input.seriesId,
+      kind: input.kind,
       month_label: input.monthLabel,
       commemorative_date: input.commemorativeDate,
       event_date: input.eventDate,
+      end_date: input.endDate,
       gifts_notes: input.giftsNotes,
       organization_team: input.organizationTeam,
       status: input.status,
       objectives: input.objectives,
-      budget_planned: input.budgetPlanned,
+      budget_approved: input.budgetApproved,
       notes: input.notes,
       event_type: input.eventType,
       event_size: input.eventSize,
@@ -1094,7 +1397,7 @@ export async function insertEvent(
       stage_status: input.stageStatus,
       risk_level: input.riskLevel,
     })
-    .select()
+    .select(EVENT_SELECT)
     .single();
 
   if (error) {
@@ -1106,19 +1409,22 @@ export async function insertEvent(
 
 export async function updateEvent(
   id: string,
-  partial: Partial<Omit<OrgEvent, "id" | "createdAt" | "updatedAt">>
+  partial: Partial<Omit<OrgEvent, "id" | "createdAt" | "updatedAt" | "seriesName">>
 ): Promise<boolean> {
   const payload: Record<string, unknown> = {};
   if (partial.year != null) payload.year = partial.year;
   if (partial.name != null) payload.name = partial.name;
+  if (partial.seriesId !== undefined) payload.series_id = partial.seriesId;
+  if (partial.kind != null) payload.kind = partial.kind;
   if (partial.monthLabel !== undefined) payload.month_label = partial.monthLabel;
   if (partial.commemorativeDate !== undefined) payload.commemorative_date = partial.commemorativeDate;
   if (partial.eventDate !== undefined) payload.event_date = partial.eventDate;
+  if (partial.endDate !== undefined) payload.end_date = partial.endDate;
   if (partial.giftsNotes !== undefined) payload.gifts_notes = partial.giftsNotes;
   if (partial.organizationTeam !== undefined) payload.organization_team = partial.organizationTeam;
   if (partial.status != null) payload.status = partial.status;
   if (partial.objectives !== undefined) payload.objectives = partial.objectives;
-  if (partial.budgetPlanned !== undefined) payload.budget_planned = partial.budgetPlanned;
+  if (partial.budgetApproved !== undefined) payload.budget_approved = partial.budgetApproved;
   if (partial.notes !== undefined) payload.notes = partial.notes;
   if (partial.eventType !== undefined) payload.event_type = partial.eventType;
   if (partial.eventSize !== undefined) payload.event_size = partial.eventSize;
@@ -1802,15 +2108,38 @@ export async function duplicateEventToNextYear(
 ): Promise<{ error: string | null; newEventId?: string }> {
   const source = await fetchEventById(eventId);
   if (!source) return { error: "Evento não encontrado" };
+  return duplicateEventToYear(eventId, source.year + 1);
+}
+
+export async function duplicateEventToYear(
+  eventId: string,
+  targetYear: number,
+  options?: { name?: string }
+): Promise<{ error: string | null; newEventId?: string }> {
+  const source = await fetchEventById(eventId);
+  if (!source) return { error: "Evento não encontrado" };
+  if (targetYear === source.year) return { error: "O ano de destino é o mesmo da origem" };
+  const name = options?.name?.trim() || source.name;
+
+  // A série é o que liga as edições entre anos — sem ela a próxima edição
+  // não entra na comparação histórica. Se a origem não tiver série, cria uma.
+  const seriesId = source.seriesId ?? (await findOrCreateEventSeries(source.name))?.id ?? null;
 
   const duplicated = await insertEvent({
     ...source,
-    year: source.year + 1,
+    name,
+    year: targetYear,
+    seriesId,
     status: "nao_iniciada",
     stageStatus: "ideia_cadastrada",
     riskLevel: "baixo",
     participantsActual: null,
-    budgetPlanned: source.budgetPlanned,
+    // Datas não se repetem entre anos; o teto de verba é o ponto de partida
+    // do planejamento e por isso é mantido.
+    eventDate: null,
+    endDate: null,
+    commemorativeDate: null,
+    budgetApproved: source.budgetApproved,
     notes: source.notes,
   });
 
@@ -1857,6 +2186,66 @@ export async function duplicateEventToNextYear(
   });
 
   return { error: null, newEventId: duplicated.id };
+}
+
+export interface CreateEditionResult {
+  seriesId: string;
+  seriesName: string;
+  newEventId: string | null;
+  error: string | null;
+}
+
+/**
+ * Abre as edições do ano-alvo a partir da última edição de cada série.
+ * As linhas de orçamento não são copiadas: o valor do ano anterior é
+ * referência de planejamento, não compromisso já assumido.
+ */
+export async function createEditionsForYear(
+  rows: SeriesForecastRow[],
+  targetYear: number
+): Promise<CreateEditionResult[]> {
+  const results: CreateEditionResult[] = [];
+
+  for (const row of rows) {
+    if (row.targetEventId) {
+      results.push({
+        seriesId: row.seriesId,
+        seriesName: row.seriesName,
+        newEventId: null,
+        error: "Já existe edição neste ano",
+      });
+      continue;
+    }
+
+    const lastYear = Object.keys(row.byYear)
+      .map(Number)
+      .filter((y) => y < targetYear)
+      .sort((a, b) => b - a)[0];
+    const source = lastYear != null ? row.byYear[lastYear] : undefined;
+
+    if (!source) {
+      results.push({
+        seriesId: row.seriesId,
+        seriesName: row.seriesName,
+        newEventId: null,
+        error: "Sem edição anterior para copiar",
+      });
+      continue;
+    }
+
+    // O nome da série normaliza o cadastro: evita arrastar "… 2026" adiante.
+    const { error, newEventId } = await duplicateEventToYear(source.eventId, targetYear, {
+      name: row.seriesName,
+    });
+    results.push({
+      seriesId: row.seriesId,
+      seriesName: row.seriesName,
+      newEventId: newEventId ?? null,
+      error,
+    });
+  }
+
+  return results;
 }
 
 export async function promoteEventTaskToPlanner(

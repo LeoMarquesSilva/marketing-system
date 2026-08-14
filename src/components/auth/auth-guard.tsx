@@ -15,7 +15,7 @@ function isPublicProfessionalProfilePath(pathname: string): boolean {
 }
 
 /** Rotas acessíveis por colaboradores de conteúdo (advogados por área). */
-const COLLABORATOR_PATHS = ["/conteudo", "/perfil"];
+const COLLABORATOR_PATHS = ["/conteudo", "/perfil", "/minhas-fotos"];
 
 /** Rotas que o servidor já protege (redirect se não autenticado/admin). */
 const SERVER_PROTECTED_PATHS = ["/admin"];

@@ -3,7 +3,13 @@
 import { CalendarDays } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { EVENT_STAGE_LABEL, RISK_LEVEL_LABEL, type OrgEvent } from "@/lib/eventos";
+import {
+  EVENT_KIND_LABEL,
+  EVENT_STAGE_LABEL,
+  RISK_LEVEL_LABEL,
+  formatBrl,
+  type OrgEvent,
+} from "@/lib/eventos";
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -21,8 +27,23 @@ export function EventoResumoTab({
   budgetPlannedTotal: number;
   budgetActualTotal: number;
 }) {
+  const approved = event.budgetApproved;
+  const balance = approved != null ? approved - budgetActualTotal : null;
+
   return (
     <div className="grid gap-4 md:grid-cols-2">
+      <div className="md:col-span-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <MoneyCard label="Verba aprovada" value={approved != null ? formatBrl(approved) : "Não informada"} />
+        <MoneyCard label="Previsto (linhas)" value={formatBrl(budgetPlannedTotal)} />
+        <MoneyCard label="Realizado" value={formatBrl(budgetActualTotal)} />
+        <MoneyCard
+          label="Saldo da verba"
+          value={balance != null ? formatBrl(balance) : "—"}
+          negative={balance != null && balance < 0}
+        />
+      </div>
+      <InfoCard label="Tipo de registro" value={EVENT_KIND_LABEL[event.kind]} />
+      <InfoCard label="Série anual" value={event.seriesName || "Sem série (avulso)"} />
       <InfoCard label="Tipo de evento" value={event.eventType || "—"} />
       <InfoCard label="Porte" value={event.eventSize || "—"} />
       <InfoCard label="Público-alvo" value={event.targetAudience || "—"} />
@@ -36,21 +57,15 @@ export function EventoResumoTab({
       <InfoCard label="Risco calculado" value={RISK_LEVEL_LABEL[event.riskLevel]} />
       <InfoCard label="Status por etapa" value={EVENT_STAGE_LABEL[event.stageStatus]} />
       <InfoCard label="Brindes" value={event.giftsNotes || "—"} />
-      <InfoCard
-        label="Orçamento"
-        value={`${budgetPlannedTotal.toLocaleString("pt-BR", {
-          style: "currency",
-          currency: "BRL",
-        })} / ${budgetActualTotal.toLocaleString("pt-BR", {
-          style: "currency",
-          currency: "BRL",
-        })}`}
-      />
       <InfoCard label="Equipe de organização" value={event.organizationTeam || "—"} />
       <div className="md:col-span-2 rounded-xl border border-border/60 bg-card p-4">
         <p className="text-sm text-muted-foreground flex items-center gap-1">
           <CalendarDays className="h-4 w-4" />
-          Data do evento: {formatDate(event.eventDate)} · Data comemorativa: {formatDate(event.commemorativeDate)}
+          {event.endDate
+            ? `Período: ${formatDate(event.eventDate)} a ${formatDate(event.endDate)}`
+            : `Data do evento: ${formatDate(event.eventDate)}`}
+          {" · "}
+          Data comemorativa: {formatDate(event.commemorativeDate)}
         </p>
       </div>
       <div className="md:col-span-2 rounded-xl border border-border/60 bg-card p-4">
@@ -65,6 +80,25 @@ export function EventoResumoTab({
           {event.notes || "Sem observações."}
         </p>
       </div>
+    </div>
+  );
+}
+
+function MoneyCard({
+  label,
+  value,
+  negative,
+}: {
+  label: string;
+  value: string;
+  negative?: boolean;
+}) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-card p-4">
+      <p className="text-xs font-medium text-muted-foreground mb-1">{label}</p>
+      <p className={`text-lg font-semibold tabular-nums ${negative ? "text-red-600" : ""}`}>
+        {value}
+      </p>
     </div>
   );
 }

@@ -12,7 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Check, Cloud, ExternalLink, ImageOff, Loader2, Pencil } from "lucide-react";
+import { Check, Cloud, ExternalLink, ImageOff, Images, Loader2, Pencil } from "lucide-react";
 import type { User } from "@/lib/users";
 import { updateUser } from "@/lib/users";
 import { COLLABORATOR_PHOTOS_BUCKET, isSupabaseStorageUrl } from "@/lib/storage-buckets";
@@ -21,15 +21,21 @@ import { cn } from "@/lib/utils";
 
 interface CollaboratorPhotosChecklistProps {
   users: User[];
+  photoCountByUserId?: Record<string, number>;
+  officialByUserId?: Record<string, boolean>;
   onUserUpdated: (user: User) => void;
   onEdit: (user: User) => void;
+  onOpenGallery: (user: User) => void;
   onError: (message: string) => void;
 }
 
 export function CollaboratorPhotosChecklist({
   users,
+  photoCountByUserId = {},
+  officialByUserId = {},
   onUserUpdated,
   onEdit,
+  onOpenGallery,
   onError,
 }: CollaboratorPhotosChecklistProps) {
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -96,7 +102,7 @@ export function CollaboratorPhotosChecklist({
             <TableHead className="hidden md:table-cell w-[140px]">Área</TableHead>
             <TableHead className="w-[180px]">Foto</TableHead>
             <TableHead>OneDrive (opcional)</TableHead>
-            <TableHead className="w-[80px] text-right">Ações</TableHead>
+            <TableHead className="w-[110px] text-right">Ações</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -146,6 +152,12 @@ export function CollaboratorPhotosChecklist({
                       </Badge>
                     )}
                     <p className="truncate text-xs text-muted-foreground md:hidden">{user.department}</p>
+                    {(photoCountByUserId[user.id] ?? 0) > 0 && (
+                      <p className="text-[11px] text-[#1a6b72]">
+                        {photoCountByUserId[user.id]} na galeria
+                        {officialByUserId[user.id] ? " · oficial escolhida" : " · oficial pendente"}
+                      </p>
+                    )}
                   </div>
                 </TableCell>
                 <TableCell className="hidden md:table-cell align-middle text-sm text-muted-foreground">
@@ -234,6 +246,15 @@ export function CollaboratorPhotosChecklist({
                         </a>
                       </Button>
                     )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      title="Galeria da sessão"
+                      onClick={() => onOpenGallery(user)}
+                    >
+                      <Images className="h-4 w-4" />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"

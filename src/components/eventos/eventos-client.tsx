@@ -17,9 +17,11 @@ import { EventoCard } from "@/components/eventos/evento-card";
 import { EventoFormDialog } from "@/components/eventos/evento-form-dialog";
 import { EventosSubNav } from "@/components/eventos/eventos-sub-nav";
 import {
+  EVENT_KIND_LABEL,
   EVENT_STATUS_LABEL,
   MONTH_NAMES,
   getEventMonthIndex,
+  type EventKind,
   type EventStatus,
   type EventWithStats,
   type EventsOverview,
@@ -46,6 +48,7 @@ export function EventosClient({
   const [overview, setOverview] = useState(initialOverview);
   const [view, setView] = useState<"list" | "calendar">("list");
   const [statusFilter, setStatusFilter] = useState<string>("__all__");
+  const [kindFilter, setKindFilter] = useState<string>("__all__");
   const [monthFilter, setMonthFilter] = useState<string>("__all__");
   const [search, setSearch] = useState("");
   const [formOpen, setFormOpen] = useState(false);
@@ -59,6 +62,7 @@ export function EventosClient({
   const filtered = useMemo(() => {
     return events.filter((e) => {
       if (statusFilter !== "__all__" && e.status !== statusFilter) return false;
+      if (kindFilter !== "__all__" && e.kind !== kindFilter) return false;
       if (monthFilter !== "__all__") {
         const monthIndex = getEventMonthIndex(e);
         if (monthFilter === "__none__" ? monthIndex !== null : monthIndex !== Number(monthFilter)) return false;
@@ -73,7 +77,7 @@ export function EventosClient({
       }
       return true;
     });
-  }, [events, statusFilter, monthFilter, search]);
+  }, [events, statusFilter, kindFilter, monthFilter, search]);
 
   const groupedByMonth = useMemo(() => {
     if (monthFilter !== "__all__") return null;
@@ -177,6 +181,19 @@ export function EventosClient({
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          <Select value={kindFilter} onValueChange={setKindFilter}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="Tipo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">Eventos e campanhas</SelectItem>
+              {(Object.keys(EVENT_KIND_LABEL) as EventKind[]).map((k) => (
+                <SelectItem key={k} value={k}>
+                  {k === "evento" ? "Só eventos" : "Só campanhas"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select value={monthFilter} onValueChange={setMonthFilter}>
             <SelectTrigger className="w-[160px]">
               <SelectValue placeholder="Mês" />

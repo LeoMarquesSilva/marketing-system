@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Input } from "@/components/ui/input";
 import {
   Form,
@@ -22,6 +23,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { parseBrlInput } from "@/lib/money-br";
 import {
   Select,
   SelectContent,
@@ -52,7 +54,7 @@ const schema = z.object({
   amount_planned: z
     .string()
     .min(1, "Valor previsto é obrigatório")
-    .refine((v) => Number(v) > 0, "Valor previsto deve ser maior que zero"),
+    .refine((v) => (parseBrlInput(v) ?? 0) > 0, "Valor previsto deve ser maior que zero"),
   amount_quoted: z.string().optional(),
   amount_actual: z.string().optional(),
   payment_status: z.enum(["pendente", "parcial", "pago"]),
@@ -95,7 +97,7 @@ export function EventoBudgetDialog({
   const [supplierPrefillName, setSupplierPrefillName] = useState("");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { category: "outros", amount_planned: "0", payment_status: "pendente" },
+    defaultValues: { category: "outros", amount_planned: "", payment_status: "pendente" },
   });
 
   useEffect(() => {
@@ -105,7 +107,7 @@ export function EventoBudgetDialog({
         category: item.category,
         description: item.description ?? "",
         vendor_name: item.vendorName ?? "",
-        amount_planned: String(item.amountPlanned ?? 0),
+        amount_planned: item.amountPlanned ? String(item.amountPlanned) : "",
         amount_quoted: item.amountQuoted != null ? String(item.amountQuoted) : "",
         amount_actual: item.amountActual != null ? String(item.amountActual) : "",
         payment_status: item.paymentStatus,
@@ -122,7 +124,7 @@ export function EventoBudgetDialog({
         category: "outros",
         description: "",
         vendor_name: "",
-        amount_planned: "0",
+        amount_planned: "",
         amount_quoted: "",
         amount_actual: "",
         payment_status: "pendente",
@@ -142,9 +144,9 @@ export function EventoBudgetDialog({
       category: values.category,
       description: values.description?.trim() || null,
       vendorName: values.vendor_name?.trim() || null,
-      amountPlanned: Number(values.amount_planned) || 0,
-      amountQuoted: values.amount_quoted ? Number(values.amount_quoted) : null,
-      amountActual: values.amount_actual ? Number(values.amount_actual) : null,
+      amountPlanned: parseBrlInput(values.amount_planned) ?? 0,
+      amountQuoted: values.amount_quoted ? parseBrlInput(values.amount_quoted) : null,
+      amountActual: values.amount_actual ? parseBrlInput(values.amount_actual) : null,
       paymentStatus: values.payment_status as BudgetPaymentStatus,
       dueDate: values.due_date || null,
       paymentDueDate: values.payment_due_date || null,
@@ -241,15 +243,27 @@ export function EventoBudgetDialog({
                 <FormField control={form.control} name="amount_planned" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Previsto <span className="text-red-500">*</span></FormLabel>
-                    <FormControl><Input type="number" step="0.01" {...field} /></FormControl>
+                    <FormControl>
+                      <CurrencyInput value={field.value} onChange={field.onChange} onBlur={field.onBlur} name={field.name} />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
                 <FormField control={form.control} name="amount_quoted" render={({ field }) => (
-                  <FormItem><FormLabel>Cotado</FormLabel><FormControl><Input type="number" step="0.01" {...field} /></FormControl></FormItem>
+                  <FormItem>
+                    <FormLabel>Cotado</FormLabel>
+                    <FormControl>
+                      <CurrencyInput value={field.value ?? ""} onChange={field.onChange} onBlur={field.onBlur} name={field.name} />
+                    </FormControl>
+                  </FormItem>
                 )} />
                 <FormField control={form.control} name="amount_actual" render={({ field }) => (
-                  <FormItem><FormLabel>Realizado</FormLabel><FormControl><Input type="number" step="0.01" {...field} /></FormControl></FormItem>
+                  <FormItem>
+                    <FormLabel>Realizado</FormLabel>
+                    <FormControl>
+                      <CurrencyInput value={field.value ?? ""} onChange={field.onChange} onBlur={field.onBlur} name={field.name} />
+                    </FormControl>
+                  </FormItem>
                 )} />
               </div>
 
