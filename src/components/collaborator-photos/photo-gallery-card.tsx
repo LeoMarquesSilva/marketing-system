@@ -79,9 +79,8 @@ export function PhotoGalleryCard({
         <span className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#03131d]/55 to-transparent" aria-hidden="true" />
 
         {isOfficial && (
-          <span className="absolute left-2 top-2 flex max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-md border border-white/35 bg-[#e8f8f8]/95 px-2 py-1 text-xs font-semibold text-[#153f51] shadow-sm backdrop-blur-sm">
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#347796]" aria-hidden="true" />
-            <span className="truncate">Foto dos sistemas</span>
+          <span className="absolute inset-x-2 top-2 rounded-md border border-white/35 bg-[#e8f8f8]/95 px-1.5 py-1 text-center text-xs font-semibold leading-4 text-[#153f51] shadow-sm backdrop-blur-sm">
+            Foto dos sistemas
           </span>
         )}
 
