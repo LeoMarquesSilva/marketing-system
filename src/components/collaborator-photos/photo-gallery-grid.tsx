@@ -3,7 +3,7 @@
 /* eslint-disable react-hooks/set-state-in-effect -- Fecha o lightbox quando a foto aberta é removida da coleção. */
 
 import { useEffect, useState } from "react";
-import { Download, Images, Loader2, Trash2, X } from "lucide-react";
+import { Download, Expand, Images, Loader2, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { collaboratorPhotoPreviewUrl } from "@/lib/collaborator-photos/preview-url";
@@ -24,18 +24,11 @@ function downloadHref(photoId: string) {
   return `/api/collaborator-photos/${photoId}/download`;
 }
 
+/** Preview leve do card — sem crop agressivo (contain). */
 function gridPreviewSrc(publicUrl: string) {
   return collaboratorPhotoPreviewUrl(publicUrl, {
-    width: 720,
-    quality: 78,
-    resize: "cover",
-  });
-}
-
-function lightboxPreviewSrc(publicUrl: string) {
-  return collaboratorPhotoPreviewUrl(publicUrl, {
-    width: 1600,
-    quality: 85,
+    width: 360,
+    quality: 70,
     resize: "contain",
   });
 }
@@ -91,7 +84,7 @@ export function PhotoGalleryGrid({
   return (
     <>
       <div
-        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+        className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
         data-tour="mf-gallery"
       >
         {photos.map((photo, photoIndex) => {
@@ -101,49 +94,45 @@ export function PhotoGalleryGrid({
             <article
               key={photo.id}
               className={cn(
-                "overflow-hidden rounded-2xl border bg-white shadow-[0_1px_2px_rgba(3,32,47,0.06)]",
+                "overflow-hidden rounded-xl border bg-white shadow-[0_1px_2px_rgba(3,32,47,0.06)]",
                 isOfficial ? "border-[#47cdd0] ring-1 ring-[#47cdd0]/40" : "border-[#dce9eb]"
               )}
             >
-              <button
-                type="button"
-                className="relative aspect-[3/4] w-full bg-[#04202f] text-left"
-                onClick={() => setOpened(photo)}
-              >
+              <div className="relative aspect-[3/4] max-h-48 w-full bg-[#e8f2f3]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={gridPreviewSrc(photo.publicUrl)}
                   alt={photo.originalFilename || "Foto da sessão"}
-                  className="h-full w-full object-cover object-top"
+                  className="h-full w-full object-contain object-center"
                   loading="lazy"
                   decoding="async"
                 />
                 {isOfficial && (
-                  <span className="absolute left-3 top-3 rounded-full bg-[#47cdd0] px-2.5 py-1 text-[10px] font-semibold tracking-wide text-[#04202f]">
+                  <span className="absolute left-2 top-2 max-w-[calc(100%-1rem)] truncate rounded-full bg-[#47cdd0] px-2 py-0.5 text-[9px] font-semibold tracking-wide text-[#04202f]">
                     Sistemas do escritório
                   </span>
                 )}
                 {photo.sessionLabel && (
                   <span
-                    className="absolute bottom-3 left-3 right-3 truncate rounded-md bg-black/55 px-2 py-1 text-[10px] font-medium text-white"
+                    className="absolute bottom-2 left-2 right-2 truncate rounded-md bg-black/55 px-1.5 py-0.5 text-[9px] font-medium text-white"
                     data-tour={photoIndex === 0 ? "mf-session" : undefined}
                   >
                     {photo.sessionLabel}
                   </span>
                 )}
-              </button>
-              <div className="space-y-0.5 px-3 pt-2">
+              </div>
+              <div className="space-y-0.5 px-2.5 pt-1.5">
                 {photo.originalFilename && (
-                  <p className="truncate text-[11px] text-[#04202f]/55">{photo.originalFilename}</p>
+                  <p className="truncate text-[10px] text-[#04202f]/55">{photo.originalFilename}</p>
                 )}
                 {photo.sessionLabel && (
-                  <p className="truncate text-[11px] font-medium text-[#1a6b72]">
+                  <p className="truncate text-[10px] font-medium text-[#1a6b72]">
                     {photo.sessionLabel}
                   </p>
                 )}
               </div>
               <div
-                className="flex flex-wrap gap-1.5 p-3"
+                className="flex flex-wrap gap-1 px-2.5 py-2"
                 data-tour={photoIndex === 0 ? "mf-usage-options" : undefined}
               >
                 {usageTypes.map((usage) => {
@@ -160,7 +149,7 @@ export function PhotoGalleryGrid({
                           : undefined
                       }
                       className={cn(
-                        "rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
+                        "rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors",
                         active
                           ? usage.isOfficial
                             ? "border-[#04202f] bg-[#04202f] text-white"
@@ -174,10 +163,20 @@ export function PhotoGalleryGrid({
                 })}
               </div>
               <div
-                className="flex items-center gap-1 border-t border-[#edf4f5] px-2 py-2"
+                className="flex items-center gap-0.5 border-t border-[#edf4f5] px-1.5 py-1.5"
                 data-tour={photoIndex === 0 ? "mf-actions" : undefined}
               >
-                <Button type="button" variant="ghost" size="sm" className="h-8 gap-1.5 text-xs" asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-[11px]"
+                  onClick={() => setOpened(photo)}
+                >
+                  <Expand className="h-3.5 w-3.5" />
+                  Abrir
+                </Button>
+                <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-[11px]" asChild>
                   <a href={downloadHref(photo.id)}>
                     <Download className="h-3.5 w-3.5" />
                     Baixar
@@ -188,7 +187,7 @@ export function PhotoGalleryGrid({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="ml-auto h-8 gap-1.5 text-xs text-destructive hover:text-destructive"
+                    className="ml-auto h-7 gap-1 px-2 text-[11px] text-destructive hover:text-destructive"
                     disabled={busy}
                     onClick={() => onDelete?.(photo)}
                   >
@@ -211,9 +210,10 @@ export function PhotoGalleryGrid({
             className="relative max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-2xl bg-black shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
+            {/* Qualidade original — sem transformação do Storage. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={lightboxPreviewSrc(opened.publicUrl)}
+              src={opened.publicUrl}
               alt={opened.originalFilename || "Foto da sessão"}
               className="max-h-[78vh] w-full object-contain"
               decoding="async"

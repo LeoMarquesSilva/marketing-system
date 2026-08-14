@@ -54,7 +54,7 @@ export const MINHAS_FOTOS_TOUR_STEPS: MinhasFotosTourStep[] = [
     id: "gallery",
     target: '[data-tour="mf-gallery"]',
     title: "Grade de fotos",
-    body: "Cada card é uma foto da sessão. Clique na imagem para ampliar, baixar ou excluir.",
+    body: "Cada card é uma foto da sessão. Use Abrir para ver em qualidade normal, ou Baixar e Excluir nas ações do card.",
   },
   {
     id: "session",
