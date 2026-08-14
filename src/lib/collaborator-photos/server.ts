@@ -15,7 +15,11 @@ import {
   imageExtensionFromName,
   nextPhotoSequence,
 } from "@/lib/collaborator-photos/upload";
-import type { CollaboratorPhoto, PhotoUsageType } from "@/lib/collaborator-photos/types";
+import type {
+  CollaboratorPhoto,
+  PhotoSession,
+  PhotoUsageType,
+} from "@/lib/collaborator-photos/types";
 import {
   aggregateStorageUsage,
   SUPABASE_PRO_STORAGE_QUOTA_BYTES,
@@ -49,6 +53,16 @@ interface PhotoRow {
   original_filename: string | null;
   uploaded_by: string | null;
   created_at: string;
+  session_id: string | null;
+}
+
+interface SessionRow {
+  id: string;
+  slug: string;
+  label: string;
+  year: number | null;
+  sort_order: number;
+  is_active: boolean;
 }
 
 interface UsageTypeRow {
@@ -101,6 +115,62 @@ function mapUsageType(row: UsageTypeRow): PhotoUsageType {
   };
 }
 
+function mapSession(row: SessionRow): PhotoSession {
+  return {
+    id: row.id,
+    slug: row.slug,
+    label: row.label,
+    year: row.year,
+    sortOrder: row.sort_order,
+    isActive: row.is_active,
+  };
+}
+
+export async function listPhotoSessions(includeInactive = false): Promise<PhotoSession[]> {
+  const db = await getServerDb();
+  let query = db
+    .from("collaborator_photo_sessions")
+    .select("id, slug, label, year, sort_order, is_active")
+    .order("sort_order")
+    .order("label");
+  if (!includeInactive) query = query.eq("is_active", true);
+  const { data, error } = await query;
+  if (error) throw new PhotoHttpError(500, error.message);
+  return ((data ?? []) as SessionRow[]).map(mapSession);
+}
+
+export async function createPhotoSession(
+  actor: AppUserRow,
+  label: string,
+  year?: number | null
+): Promise<PhotoSession> {
+  assertManager(actor);
+  const trimmed = label.trim();
+  if (!trimmed) throw new PhotoHttpError(400, "Informe o nome da sessão.");
+  const slug = slugifyUsageLabel(trimmed);
+  if (!slug) throw new PhotoHttpError(400, "Nome inválido.");
+
+  const current = await listPhotoSessions(true);
+  const maxOrder = current.reduce((max, item) => Math.max(max, item.sortOrder), -1);
+  const db = await getServerDb();
+  const { data, error } = await db
+    .from("collaborator_photo_sessions")
+    .insert({
+      slug,
+      label: trimmed,
+      year: year ?? null,
+      sort_order: maxOrder + 1,
+      is_active: true,
+    })
+    .select("id, slug, label, year, sort_order, is_active")
+    .single();
+  if (error || !data) {
+    if (error?.code === "23505") throw new PhotoHttpError(409, "Já existe uma sessão com esse nome.");
+    throw new PhotoHttpError(500, error?.message ?? "Erro ao criar sessão.");
+  }
+  return mapSession(data as SessionRow);
+}
+
 export async function listUsageTypes(includeInactive = false): Promise<PhotoUsageType[]> {
   const db = await getServerDb();
   let query = db
@@ -115,11 +185,13 @@ export async function listUsageTypes(includeInactive = false): Promise<PhotoUsag
 
 export async function listGalleryForUser(userId: string): Promise<CollaboratorPhoto[]> {
   const db = await getServerDb();
-  const [{ data: photos, error: photosError }, { data: usages, error: usagesError }, types] =
+  const [{ data: photos, error: photosError }, { data: usages, error: usagesError }, types, sessions] =
     await Promise.all([
       db
         .from("collaborator_photos")
-        .select("id, user_id, storage_path, public_url, original_filename, uploaded_by, created_at")
+        .select(
+          "id, user_id, storage_path, public_url, original_filename, uploaded_by, created_at, session_id"
+        )
         .eq("user_id", userId)
         .order("created_at", { ascending: false }),
       db
@@ -127,11 +199,13 @@ export async function listGalleryForUser(userId: string): Promise<CollaboratorPh
         .select("user_id, usage_type_id, photo_id")
         .eq("user_id", userId),
       listUsageTypes(true),
+      listPhotoSessions(true),
     ]);
   if (photosError) throw new PhotoHttpError(500, photosError.message);
   if (usagesError) throw new PhotoHttpError(500, usagesError.message);
 
   const typeById = new Map(types.map((t) => [t.id, t]));
+  const sessionById = new Map(sessions.map((s) => [s.id, s]));
   const slugsByPhoto = new Map<string, string[]>();
   for (const usage of (usages ?? []) as UsageRow[]) {
     const slug = typeById.get(usage.usage_type_id)?.slug;
@@ -141,16 +215,22 @@ export async function listGalleryForUser(userId: string): Promise<CollaboratorPh
     slugsByPhoto.set(usage.photo_id, list);
   }
 
-  return ((photos ?? []) as PhotoRow[]).map((row) => ({
-    id: row.id,
-    userId: row.user_id,
-    storagePath: row.storage_path,
-    publicUrl: row.public_url,
-    originalFilename: row.original_filename,
-    uploadedBy: row.uploaded_by,
-    createdAt: row.created_at,
-    usageSlugs: slugsByPhoto.get(row.id) ?? [],
-  }));
+  return ((photos ?? []) as PhotoRow[]).map((row) => {
+    const session = row.session_id ? sessionById.get(row.session_id) : null;
+    return {
+      id: row.id,
+      userId: row.user_id,
+      storagePath: row.storage_path,
+      publicUrl: row.public_url,
+      originalFilename: row.original_filename,
+      uploadedBy: row.uploaded_by,
+      createdAt: row.created_at,
+      usageSlugs: slugsByPhoto.get(row.id) ?? [],
+      sessionId: row.session_id,
+      sessionLabel: session?.label ?? null,
+      sessionSlug: session?.slug ?? null,
+    };
+  });
 }
 
 export function assertCanViewGallery(actor: AppUserRow, targetUserId: string): void {
@@ -160,7 +240,13 @@ export function assertCanViewGallery(actor: AppUserRow, targetUserId: string): v
 
 export async function createPhotoRecord(
   actor: AppUserRow,
-  input: { userId: string; storagePath: string; publicUrl: string; originalFilename?: string | null }
+  input: {
+    userId: string;
+    storagePath: string;
+    publicUrl: string;
+    originalFilename?: string | null;
+    sessionId?: string | null;
+  }
 ): Promise<CollaboratorPhoto> {
   assertManager(actor);
   const db = await getServerDb();
@@ -171,6 +257,15 @@ export async function createPhotoRecord(
     .maybeSingle();
   if (ownerError) throw new PhotoHttpError(500, ownerError.message);
   if (!owner?.name) throw new PhotoHttpError(404, "Colaborador não encontrado.");
+
+  let session: PhotoSession | null = null;
+  if (input.sessionId) {
+    const sessions = await listPhotoSessions(true);
+    session = sessions.find((item) => item.id === input.sessionId) ?? null;
+    if (!session || !session.isActive) {
+      throw new PhotoHttpError(400, "Sessão de fotos inválida.");
+    }
+  }
 
   const { data: existing, error: existingError } = await db
     .from("collaborator_photos")
@@ -196,8 +291,11 @@ export async function createPhotoRecord(
       public_url: input.publicUrl,
       original_filename: originalFilename,
       uploaded_by: actor.id,
+      session_id: session?.id ?? null,
     })
-    .select("id, user_id, storage_path, public_url, original_filename, uploaded_by, created_at")
+    .select(
+      "id, user_id, storage_path, public_url, original_filename, uploaded_by, created_at, session_id"
+    )
     .single();
   if (error || !data) throw new PhotoHttpError(500, error?.message ?? "Erro ao registrar foto.");
   const row = data as PhotoRow;
@@ -210,6 +308,9 @@ export async function createPhotoRecord(
     uploadedBy: row.uploaded_by,
     createdAt: row.created_at,
     usageSlugs: [],
+    sessionId: row.session_id,
+    sessionLabel: session?.label ?? null,
+    sessionSlug: session?.slug ?? null,
   };
 }
 

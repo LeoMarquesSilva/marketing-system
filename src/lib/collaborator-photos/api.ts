@@ -1,4 +1,8 @@
-import type { CollaboratorPhoto, PhotoUsageType } from "@/lib/collaborator-photos/types";
+import type {
+  CollaboratorPhoto,
+  PhotoSession,
+  PhotoUsageType,
+} from "@/lib/collaborator-photos/types";
 import type { StorageUsageSummary } from "@/lib/collaborator-photos/storage-usage";
 
 async function parseError(res: Response, fallback: string) {
@@ -23,11 +27,36 @@ export async function fetchUsageTypes(all = false): Promise<PhotoUsageType[]> {
   return data.usageTypes;
 }
 
+export async function fetchPhotoSessions(all = false): Promise<PhotoSession[]> {
+  const res = await fetch(`/api/collaborator-photos/sessions${all ? "?all=1" : ""}`, {
+    credentials: "include",
+  });
+  if (!res.ok) await parseError(res, "Erro ao carregar sessões.");
+  const data = (await res.json()) as { sessions: PhotoSession[] };
+  return data.sessions;
+}
+
+export async function createGalleryPhotoSession(
+  label: string,
+  year?: number | null
+): Promise<PhotoSession> {
+  const res = await fetch("/api/collaborator-photos/sessions", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ label, year }),
+  });
+  if (!res.ok) await parseError(res, "Erro ao criar sessão.");
+  const data = (await res.json()) as { session: PhotoSession };
+  return data.session;
+}
+
 export async function registerUploadedPhoto(input: {
   userId: string;
   storagePath: string;
   publicUrl: string;
   originalFilename?: string | null;
+  sessionId: string;
 }): Promise<CollaboratorPhoto> {
   const res = await fetch("/api/collaborator-photos", {
     method: "POST",

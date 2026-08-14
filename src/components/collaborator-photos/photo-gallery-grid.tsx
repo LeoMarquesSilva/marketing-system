@@ -88,12 +88,22 @@ export function PhotoGalleryGrid({
                     Oficial
                   </span>
                 )}
+                {photo.sessionLabel && (
+                  <span className="absolute bottom-3 left-3 right-3 truncate rounded-md bg-black/55 px-2 py-1 text-[10px] font-medium text-white">
+                    {photo.sessionLabel}
+                  </span>
+                )}
               </button>
-              {photo.originalFilename && (
-                <p className="truncate px-3 pt-2 text-[11px] text-[#04202f]/55">
-                  {photo.originalFilename}
-                </p>
-              )}
+              <div className="space-y-0.5 px-3 pt-2">
+                {photo.originalFilename && (
+                  <p className="truncate text-[11px] text-[#04202f]/55">{photo.originalFilename}</p>
+                )}
+                {photo.sessionLabel && (
+                  <p className="truncate text-[11px] font-medium text-[#1a6b72]">
+                    {photo.sessionLabel}
+                  </p>
+                )}
+              </div>
               <div className="flex flex-wrap gap-1.5 p-3">
                 {usageTypes.map((usage) => {
                   const active = photo.usageSlugs.includes(usage.slug);
@@ -159,9 +169,14 @@ export function PhotoGalleryGrid({
               className="max-h-[78vh] w-full object-contain"
             />
             <div className="flex flex-wrap items-center justify-between gap-2 bg-[#04202f] px-4 py-3 text-white">
-              <p className="truncate text-sm font-medium">
-                {opened.originalFilename || "Foto da sessão"}
-              </p>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">
+                  {opened.originalFilename || "Foto da sessão"}
+                </p>
+                {opened.sessionLabel && (
+                  <p className="truncate text-xs text-[#47cdd0]">{opened.sessionLabel}</p>
+                )}
+              </div>
               <div className="flex items-center gap-1">
                 <Button
                   type="button"

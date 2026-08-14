@@ -62,15 +62,23 @@ export async function POST(request: Request) {
       storagePath?: string;
       publicUrl?: string;
       originalFilename?: string | null;
+      sessionId?: string | null;
     };
     if (!body.userId || !body.storagePath || !body.publicUrl) {
       return NextResponse.json({ error: "Dados da foto incompletos." }, { status: 400 });
+    }
+    if (!body.sessionId) {
+      return NextResponse.json(
+        { error: "Selecione a sessão das fotos (ex.: Fotos Corporativas 2026)." },
+        { status: 400 }
+      );
     }
     const photo = await createPhotoRecord(actor, {
       userId: body.userId,
       storagePath: body.storagePath,
       publicUrl: body.publicUrl,
       originalFilename: body.originalFilename,
+      sessionId: body.sessionId,
     });
     return NextResponse.json({ photo });
   } catch (err) {

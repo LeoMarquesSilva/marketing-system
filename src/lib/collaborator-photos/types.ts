@@ -14,6 +14,15 @@ export interface PhotoUsageType {
   isActive: boolean;
 }
 
+export interface PhotoSession {
+  id: string;
+  slug: string;
+  label: string;
+  year: number | null;
+  sortOrder: number;
+  isActive: boolean;
+}
+
 export interface CollaboratorPhoto {
   id: string;
   userId: string;
@@ -23,4 +32,7 @@ export interface CollaboratorPhoto {
   uploadedBy: string | null;
   createdAt: string;
   usageSlugs: string[];
+  sessionId: string | null;
+  sessionLabel: string | null;
+  sessionSlug: string | null;
 }
