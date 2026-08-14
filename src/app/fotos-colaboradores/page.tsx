@@ -1,4 +1,4 @@
-import { fetchUsersServer } from "@/lib/users-server";
+import { fetchPhotoRosterServer } from "@/lib/collaborator-photos/roster-server";
 import { CollaboratorPhotosGrid } from "@/components/usuarios/collaborator-photos-grid";
 import { PhotoUsageTypesPanel } from "@/components/collaborator-photos/usage-types-panel";
 import { PhotoSessionsPanel } from "@/components/collaborator-photos/photo-sessions-panel";
@@ -7,16 +7,15 @@ import { StorageUsageBar } from "@/components/collaborator-photos/storage-usage-
 export const dynamic = "force-dynamic";
 
 export default async function FotosColaboradoresPage() {
-  const users = await fetchUsersServer();
+  const people = await fetchPhotoRosterServer();
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-xl font-bold tracking-tight text-foreground">Fotos dos Colaboradores</h2>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Checklist da figurinha da Copa e galeria da sessão corporativa: suba várias fotos por
-          pessoa, marcando a sessão (ex.: Fotos Corporativas 2026). O colaborador escolhe os usos em
-          Minhas fotos.
+          Mesma lista de colaboradores de Férias (RH / VIOS). Suba as fotos por sessão (ex.: Fotos
+          Corporativas 2026); cada pessoa escolhe os usos em Minhas fotos.
         </p>
       </div>
 
@@ -26,7 +25,7 @@ export default async function FotosColaboradoresPage() {
 
       <PhotoUsageTypesPanel />
 
-      <CollaboratorPhotosGrid initialUsers={users} />
+      <CollaboratorPhotosGrid initialPeople={people} />
     </div>
   );
 }
