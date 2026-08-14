@@ -51,6 +51,7 @@ export interface FeriasKpis {
 
 /** Rótulo canônico do agrupamento Operações Legais no filtro. */
 export const AREA_FILTER_OPERACOES_LEGAIS = "Operações Legais";
+export const AREA_FILTER_REESTRUTURACAO = "Reestruturação";
 
 function normalizeDepartmentKey(value: string): string {
   return value
@@ -64,7 +65,8 @@ function normalizeDepartmentKey(value: string): string {
 
 /**
  * Departamentos que entram no filtro "Operações Legais"
- * (Marketing, Financeiro, Facilities, Limpeza, RH + a própria área).
+ * (Marketing, Comercial, Financeiro, Facilities, Administrativo,
+ * Recepção, Limpeza, RH + a própria área).
  */
 const OPERACOES_LEGAIS_DEPARTMENTS = new Set([
   "operacoes legais",
@@ -72,18 +74,30 @@ const OPERACOES_LEGAIS_DEPARTMENTS = new Set([
   "comercial", // legado; Marketing fica sob Operações Legais
   "financeiro",
   "facilities",
+  "administrativo",
+  "administracao",
+  "recepcao",
   "limpeza",
   "rh",
   "r h",
   "recursos humanos",
 ]);
 
+const REESTRUTURACAO_DEPARTMENTS = new Set(["insolvencia", "reestruturacao"]);
+
 /** Departamentos que não ganham botão próprio (continuam em "Todas as áreas"). */
 const HIDDEN_AREA_FILTER_BUTTONS = new Set(["distressed deals"]);
 
-function isOperacoesLegaisDepartment(department: string | null | undefined): boolean {
-  if (!department?.trim()) return false;
-  return OPERACOES_LEGAIS_DEPARTMENTS.has(normalizeDepartmentKey(department));
+/** Nome canônico exibido nas telas, filtros e buscas. */
+export function resolveCanonicalAreaLabel(
+  department: string | null | undefined
+): string | null {
+  const trimmed = department?.trim();
+  if (!trimmed) return null;
+  const key = normalizeDepartmentKey(trimmed);
+  if (REESTRUTURACAO_DEPARTMENTS.has(key)) return AREA_FILTER_REESTRUTURACAO;
+  if (OPERACOES_LEGAIS_DEPARTMENTS.has(key)) return AREA_FILTER_OPERACOES_LEGAIS;
+  return trimmed;
 }
 
 /** Resolve o rótulo do botão de área a partir do departamento bruto. */
@@ -91,8 +105,7 @@ export function resolveAreaFilterLabel(department: string | null | undefined): s
   const trimmed = department?.trim();
   if (!trimmed) return null;
   if (HIDDEN_AREA_FILTER_BUTTONS.has(normalizeDepartmentKey(trimmed))) return null;
-  if (isOperacoesLegaisDepartment(trimmed)) return AREA_FILTER_OPERACOES_LEGAIS;
-  return trimmed;
+  return resolveCanonicalAreaLabel(trimmed);
 }
 
 /** Verifica se o departamento do colaborador cabe no filtro de área selecionado. */
@@ -101,10 +114,9 @@ export function departmentMatchesAreaFilter(
   areaFilter: string
 ): boolean {
   if (areaFilter === "all") return true;
-  if (normalizeDepartmentKey(areaFilter) === normalizeDepartmentKey(AREA_FILTER_OPERACOES_LEGAIS)) {
-    return isOperacoesLegaisDepartment(department);
-  }
-  return normalizeDepartmentKey(department ?? "") === normalizeDepartmentKey(areaFilter);
+  const canonicalDepartment = resolveCanonicalAreaLabel(department);
+  const canonicalFilter = resolveCanonicalAreaLabel(areaFilter);
+  return normalizeDepartmentKey(canonicalDepartment ?? "") === normalizeDepartmentKey(canonicalFilter ?? "");
 }
 
 /** Classifica o saldo pela quantidade (não pelo prazo concessivo). */

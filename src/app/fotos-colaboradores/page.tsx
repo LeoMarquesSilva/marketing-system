@@ -14,8 +14,9 @@ export default async function FotosColaboradoresPage() {
       <div>
         <h2 className="text-xl font-bold tracking-tight text-foreground">Fotos dos Colaboradores</h2>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Mesma lista de colaboradores de Férias (RH / VIOS). Suba as fotos por sessão (ex.: Fotos
-          Corporativas 2026); cada pessoa escolhe os usos em Minhas fotos.
+          Lista de colaboradores do RH / VIOS, incluindo os sócios que participam das sessões. Suba
+          as fotos por sessão (ex.: Fotos Corporativas 2026); cada pessoa escolhe os usos em Minhas
+          fotos.
         </p>
       </div>
 

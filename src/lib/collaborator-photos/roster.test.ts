@@ -3,6 +3,8 @@ import {
   computePhotoRosterStats,
   filterPhotoRoster,
   listPhotoRosterAreas,
+  PHOTO_ROSTER_INCLUDED_VACATION_EXEMPT_IDS,
+  resolvePhotoRosterAreaLabel,
   type PhotoRosterPerson,
 } from "@/lib/collaborator-photos/roster";
 
@@ -41,7 +43,7 @@ const people: PhotoRosterPerson[] = [
 
 describe("listPhotoRosterAreas", () => {
   it("agrupa Limpeza/Marketing em Operações Legais como em Férias", () => {
-    expect(listPhotoRosterAreas(people)).toEqual(["Insolvência", "Operações Legais"]);
+    expect(listPhotoRosterAreas(people)).toEqual(["Operações Legais", "Reestruturação"]);
   });
 });
 
@@ -87,5 +89,56 @@ describe("computePhotoRosterStats", () => {
       withPhotos: 1,
       withoutPhotos: 1,
     });
+  });
+});
+
+describe("PHOTO_ROSTER_INCLUDED_VACATION_EXEMPT_IDS", () => {
+  it("inclui Gustavo Bismarchi e Ricardo Pires na gestão de fotos", () => {
+    expect(PHOTO_ROSTER_INCLUDED_VACATION_EXEMPT_IDS).toEqual([
+      "3da9c5f0-cf80-4743-aea9-76ec5c80ddb2",
+      "1948ec31-133f-402d-9f66-27b6b5eea093",
+    ]);
+  });
+
+  it("busca Insolvência pelo nome canônico Reestruturação", () => {
+    const filtered = filterPhotoRoster(people, {
+      search: "reestruturação",
+      department: "all",
+      situation: "ativos",
+      gallery: "all",
+      photoCountByUserId: {},
+    });
+    expect(filtered.map((p) => p.name)).toEqual(["Bruno"]);
+  });
+
+  it("mantém Gustavo e Ricardo apenas na área Sócio", () => {
+    const gustavo: PhotoRosterPerson = {
+      ...people[0],
+      employeeId: "3da9c5f0-cf80-4743-aea9-76ec5c80ddb2",
+      name: "Gustavo Bismarchi Motta",
+      department: "Facilities",
+    };
+    const ricardo: PhotoRosterPerson = {
+      ...people[0],
+      employeeId: "1948ec31-133f-402d-9f66-27b6b5eea093",
+      name: "Ricardo Viscardi Pires",
+      department: "Sócio",
+    };
+
+    expect(resolvePhotoRosterAreaLabel(gustavo)).toBe("Sócio");
+    expect(resolvePhotoRosterAreaLabel(ricardo)).toBe("Sócio");
+    expect(listPhotoRosterAreas([gustavo, ricardo])).toEqual(["Sócio"]);
+
+    const socios = filterPhotoRoster([gustavo, ricardo], {
+      search: "",
+      department: "Sócio",
+      situation: "ativos",
+      gallery: "all",
+      photoCountByUserId: {},
+    });
+    expect(socios.map((person) => person.name)).toEqual([
+      "Gustavo Bismarchi Motta",
+      "Ricardo Viscardi Pires",
+    ]);
   });
 });

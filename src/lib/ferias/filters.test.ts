@@ -7,6 +7,7 @@ import {
   filterEmployeesWithBalance,
   getInitials,
   listEmployeeDepartments,
+  resolveCanonicalAreaLabel,
   resolveEmployeeAvatarUrl,
   summarizeRecessApplication,
 } from "@/lib/ferias/filters";
@@ -308,6 +309,27 @@ describe("filterEmployeesWithBalance", () => {
         department: "all",
       })
     ).toHaveLength(0);
+  });
+});
+
+describe("resolveCanonicalAreaLabel", () => {
+  it("renomeia Insolvência para Reestruturação", () => {
+    expect(resolveCanonicalAreaLabel("Insolvência")).toBe("Reestruturação");
+    expect(resolveCanonicalAreaLabel("insolvencia")).toBe("Reestruturação");
+  });
+
+  it("agrupa áreas administrativas em Operações Legais", () => {
+    for (const area of [
+      "Financeiro",
+      "Facilities",
+      "Administrativo",
+      "Administração",
+      "Recepção",
+      "Limpeza",
+      "Comercial",
+    ]) {
+      expect(resolveCanonicalAreaLabel(area)).toBe("Operações Legais");
+    }
   });
 });
 

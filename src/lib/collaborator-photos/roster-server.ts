@@ -1,9 +1,13 @@
 import { getServerDb } from "@/lib/users-server";
-import type { PhotoRosterPerson } from "@/lib/collaborator-photos/roster";
+import {
+  PHOTO_ROSTER_INCLUDED_VACATION_EXEMPT_IDS,
+  type PhotoRosterPerson,
+} from "@/lib/collaborator-photos/roster";
 
 /**
  * Lista de colaboradores para Fotos — mesma fonte de Férias (`hr_employees`),
- * sincronizada com o VIOS. Exclui isentos de férias (sócios etc.), como em Férias.
+ * sincronizada com o VIOS. Inclui explicitamente os sócios que participam
+ * das sessões, mesmo quando estão marcados como isentos de férias.
  */
 export async function fetchPhotoRosterServer(): Promise<PhotoRosterPerson[]> {
   const db = await getServerDb();
@@ -11,7 +15,9 @@ export async function fetchPhotoRosterServer(): Promise<PhotoRosterPerson[]> {
   const { data: employees, error } = await db
     .from("hr_employees")
     .select("id, user_id, full_name, email, department, position, is_active")
-    .eq("vacation_exempt", false)
+    .or(
+      `vacation_exempt.eq.false,id.in.(${PHOTO_ROSTER_INCLUDED_VACATION_EXEMPT_IDS.join(",")})`
+    )
     .order("full_name");
 
   if (error) {

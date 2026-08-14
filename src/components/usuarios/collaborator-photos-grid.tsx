@@ -18,6 +18,7 @@ import {
   computePhotoRosterStats,
   filterPhotoRoster,
   listPhotoRosterAreas,
+  resolvePhotoRosterAreaLabel,
   type PhotoGalleryFilter,
   type PhotoRosterPerson,
   type PhotoRosterSituation,
@@ -51,7 +52,19 @@ export function CollaboratorPhotosGrid({ initialPeople }: CollaboratorPhotosGrid
   }
 
   useEffect(() => {
-    void refreshGallerySummary();
+    let cancelled = false;
+    void fetchGallerySummary()
+      .then((summary) => {
+        if (cancelled) return;
+        setOfficialByUserId(summary.officialByUserId);
+        setPhotoCountByUserId(summary.photoCountByUserId);
+      })
+      .catch(() => {
+        // resumo opcional
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const departments = useMemo(() => listPhotoRosterAreas(people), [people]);
@@ -239,7 +252,7 @@ export function CollaboratorPhotosGrid({ initialPeople }: CollaboratorPhotosGrid
           <p className="mt-3 text-sm text-muted-foreground">Nenhum colaborador encontrado.</p>
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-9">
           {filteredPeople.map((person) => {
             const photoCount = person.userId ? photoCountByUserId[person.userId] ?? 0 : 0;
             const hasOfficial = person.userId ? officialByUserId[person.userId] === true : false;
@@ -256,7 +269,7 @@ export function CollaboratorPhotosGrid({ initialPeople }: CollaboratorPhotosGrid
               >
                 <button
                   type="button"
-                  className="relative aspect-[3/4] max-h-44 w-full bg-muted/40 text-left"
+                  className="relative h-40 w-full overflow-hidden bg-[#eaf1f2] text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#47cdd0] sm:h-36"
                   onClick={() => openGallery(person)}
                   title={person.userId ? "Abrir galeria" : "Sem usuário no sistema"}
                 >
@@ -264,12 +277,12 @@ export function CollaboratorPhotosGrid({ initialPeople }: CollaboratorPhotosGrid
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={collaboratorPhotoPreviewUrl(person.avatarUrl!, {
-                        width: 480,
-                        quality: 78,
-                        resize: "cover",
+                        width: 360,
+                        quality: 76,
+                        resize: "contain",
                       })}
                       alt={`Foto de ${person.name}`}
-                      className="h-full w-full object-cover object-top"
+                      className="h-full w-full object-contain object-center p-1"
                       loading="lazy"
                       decoding="async"
                     />
@@ -284,7 +297,7 @@ export function CollaboratorPhotosGrid({ initialPeople }: CollaboratorPhotosGrid
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent px-2 pb-2 pt-8">
                     <p className="truncate text-xs font-medium text-white">{person.name}</p>
                     <p className="truncate text-[10px] text-white/75">
-                      {person.department ?? "—"}
+                      {resolvePhotoRosterAreaLabel(person) ?? "—"}
                     </p>
                   </div>
                 </button>
