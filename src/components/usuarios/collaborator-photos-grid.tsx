@@ -11,42 +11,28 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Search,
-  X,
-  Pencil,
-  Copy,
-  ImageOff,
-  Images,
-  Check,
-  UserRound,
-  Cloud,
-  LayoutGrid,
-  ListChecks,
-} from "lucide-react";
-import type { User } from "@/lib/users";
-import { updateUser } from "@/lib/users";
-import { CollaboratorPhotoEditDialog, type CollaboratorPhotoFormValues } from "./collaborator-photo-edit-dialog";
-import { CollaboratorPhotoUploadButton } from "./collaborator-photo-upload-button";
-import { CollaboratorPhotosChecklist } from "./collaborator-photos-checklist";
+import { Search, X, Images, ImageOff, UserRound } from "lucide-react";
 import { ManagerGalleryDialog } from "@/components/collaborator-photos/manager-gallery-dialog";
 import { fetchGallerySummary } from "@/lib/collaborator-photos/api";
+import {
+  computePhotoRosterStats,
+  filterPhotoRoster,
+  type PhotoRosterPerson,
+  type PhotoRosterSituation,
+} from "@/lib/collaborator-photos/roster";
 import { cn } from "@/lib/utils";
 
 interface CollaboratorPhotosGridProps {
-  initialUsers: User[];
+  initialPeople: PhotoRosterPerson[];
 }
 
-export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridProps) {
-  const [users, setUsers] = useState(initialUsers);
-  const [viewMode, setViewMode] = useState<"checklist" | "grid">("checklist");
+export function CollaboratorPhotosGrid({ initialPeople }: CollaboratorPhotosGridProps) {
+  const [people] = useState(initialPeople);
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
-  const [collectFilter, setCollectFilter] = useState<"all" | "obtidas" | "pendentes">("all");
-  const [statusFilter, setStatusFilter] = useState<"ativos" | "todos">("ativos");
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [galleryUser, setGalleryUser] = useState<User | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [galleryFilter, setGalleryFilter] = useState<"all" | "com_fotos" | "sem_fotos">("all");
+  const [situationFilter, setSituationFilter] = useState<PhotoRosterSituation>("ativos");
+  const [galleryPerson, setGalleryPerson] = useState<PhotoRosterPerson | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [officialByUserId, setOfficialByUserId] = useState<Record<string, boolean>>({});
   const [photoCountByUserId, setPhotoCountByUserId] = useState<Record<string, number>>({});
@@ -67,101 +53,54 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
 
   const departments = useMemo(() => {
     const set = new Set<string>();
-    users.forEach((u) => u.department && set.add(u.department));
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [users]);
+    people.forEach((person) => person.department && set.add(person.department));
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [people]);
 
-  const activeUsers = useMemo(
-    () => users.filter((u) => u.is_active !== false),
-    [users]
+  const situationPool = useMemo(
+    () => (situationFilter === "ativos" ? people.filter((p) => p.isActive) : people),
+    [people, situationFilter]
   );
 
-  const stats = useMemo(() => {
-    const pool = statusFilter === "ativos" ? activeUsers : users;
-    const obtained = pool.filter((u) => u.photo_collected === true).length;
-    return {
-      total: pool.length,
-      obtained,
-      pending: pool.length - obtained,
-    };
-  }, [users, activeUsers, statusFilter]);
+  const stats = useMemo(
+    () => computePhotoRosterStats(situationPool, photoCountByUserId),
+    [situationPool, photoCountByUserId]
+  );
 
-  const progressPct = stats.total > 0 ? Math.round((stats.obtained / stats.total) * 100) : 0;
-
-  const filteredUsers = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return users
-      .filter((u) => {
-        if (statusFilter === "ativos" && u.is_active === false) return false;
-        if (q && !u.name.toLowerCase().includes(q)) return false;
-        if (deptFilter !== "all" && u.department !== deptFilter) return false;
-        const collected = u.photo_collected === true;
-        if (collectFilter === "obtidas" && !collected) return false;
-        if (collectFilter === "pendentes" && collected) return false;
-        return true;
-      })
-      .sort((a, b) => {
-        const aDone = a.photo_collected === true;
-        const bDone = b.photo_collected === true;
-        if (aDone !== bDone) return aDone ? 1 : -1;
-        return a.name.localeCompare(b.name);
-      });
-  }, [users, search, deptFilter, collectFilter, statusFilter]);
+  const filteredPeople = useMemo(
+    () =>
+      filterPhotoRoster(people, {
+        search,
+        department: deptFilter,
+        situation: situationFilter,
+        gallery: galleryFilter,
+        photoCountByUserId,
+      }),
+    [people, search, deptFilter, situationFilter, galleryFilter, photoCountByUserId]
+  );
 
   const hasActiveFilters =
     search.trim() !== "" ||
     deptFilter !== "all" ||
-    collectFilter !== "all" ||
-    statusFilter !== "ativos";
+    galleryFilter !== "all" ||
+    situationFilter !== "ativos";
 
   function clearFilters() {
     setSearch("");
     setDeptFilter("all");
-    setCollectFilter("all");
-    setStatusFilter("ativos");
+    setGalleryFilter("all");
+    setSituationFilter("ativos");
   }
 
-  function handleUserUpdated(data: User) {
-    setUsers((prev) => prev.map((u) => (u.id === data.id ? { ...u, ...data } : u)));
-  }
-
-  async function handleSavePhoto(userId: string, values: CollaboratorPhotoFormValues) {
-    setError(null);
-    const collected = values.photo_collected === true;
-    const { data, error: err } = await updateUser(userId, {
-      avatar_url: values.avatar_url?.trim() || null,
-      photo_onedrive_url: values.photo_onedrive_url?.trim() || null,
-      photo_collected: collected,
-      photo_collected_at: collected ? new Date().toISOString() : null,
-    });
-    if (err) {
-      setError(err);
+  function openGallery(person: PhotoRosterPerson) {
+    if (!person.userId) {
+      setError(
+        `${person.name} ainda não tem usuário no sistema. Cadastre o login em Usuários e vincule em Férias.`
+      );
       return;
     }
-    if (data) {
-      handleUserUpdated(data);
-      setEditingUser(null);
-    }
-  }
-
-  async function handleQuickUpload(userId: string, publicUrl: string) {
     setError(null);
-    const { data, error: err } = await updateUser(userId, {
-      avatar_url: publicUrl,
-      photo_collected: true,
-      photo_collected_at: new Date().toISOString(),
-    });
-    if (err) {
-      setError(err);
-      return;
-    }
-    if (data) handleUserUpdated(data);
-  }
-
-  async function copyUrl(text: string, userId: string) {
-    await navigator.clipboard.writeText(text);
-    setCopiedId(userId);
-    setTimeout(() => setCopiedId(null), 2000);
+    setGalleryPerson(person);
   }
 
   return (
@@ -172,42 +111,21 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
         </div>
       )}
 
-      <div className="rounded-xl border bg-gradient-to-r from-emerald-50/80 to-sky-50/50 px-4 py-3 dark:from-emerald-950/20 dark:to-sky-950/20">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-medium">Figurinha Copa — coleta de fotos</p>
-            <p className="text-xs text-muted-foreground">
-              Envie a foto para o storage (botão de upload) ou marque ✓ quando coletada. OneDrive é opcional.
-            </p>
-          </div>
-          <p className="text-2xl font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
-            {stats.obtained}/{stats.total}
-            <span className="ml-1 text-sm font-normal text-muted-foreground">({progressPct}%)</span>
-          </p>
-        </div>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-emerald-500 transition-all duration-300"
-            style={{ width: `${progressPct}%` }}
-          />
-        </div>
-      </div>
-
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-xl border bg-card px-4 py-3 shadow-sm">
-          <p className="text-xs text-muted-foreground">Colaboradores</p>
+          <p className="text-xs text-muted-foreground">Colaboradores (RH)</p>
           <p className="text-2xl font-semibold tabular-nums">{stats.total}</p>
         </div>
         <div className="rounded-xl border border-emerald-200/60 bg-emerald-50/50 px-4 py-3 shadow-sm dark:border-emerald-900/40 dark:bg-emerald-950/20">
-          <p className="text-xs text-emerald-700 dark:text-emerald-400">Foto obtida</p>
+          <p className="text-xs text-emerald-700 dark:text-emerald-400">Com fotos na galeria</p>
           <p className="text-2xl font-semibold tabular-nums text-emerald-800 dark:text-emerald-300">
-            {stats.obtained}
+            {stats.withPhotos}
           </p>
         </div>
         <div className="rounded-xl border border-amber-200/60 bg-amber-50/50 px-4 py-3 shadow-sm dark:border-amber-900/40 dark:bg-amber-950/20">
-          <p className="text-xs text-amber-700 dark:text-amber-400">Pendentes</p>
+          <p className="text-xs text-amber-700 dark:text-amber-400">Sem fotos</p>
           <p className="text-2xl font-semibold tabular-nums text-amber-800 dark:text-amber-300">
-            {stats.pending}
+            {stats.withoutPhotos}
           </p>
         </div>
       </div>
@@ -237,21 +155,24 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
             </SelectContent>
           </Select>
           <Select
-            value={collectFilter}
-            onValueChange={(v) => setCollectFilter(v as typeof collectFilter)}
+            value={galleryFilter}
+            onValueChange={(v) => setGalleryFilter(v as typeof galleryFilter)}
           >
-            <SelectTrigger className="h-9 w-[150px] text-xs">
-              <SelectValue placeholder="Coleta" />
+            <SelectTrigger className="h-9 w-[160px] text-xs">
+              <SelectValue placeholder="Galeria" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Coleta: todas</SelectItem>
-              <SelectItem value="obtidas">Foto obtida</SelectItem>
-              <SelectItem value="pendentes">Pendentes</SelectItem>
+              <SelectItem value="all">Galeria: todas</SelectItem>
+              <SelectItem value="com_fotos">Com fotos</SelectItem>
+              <SelectItem value="sem_fotos">Sem fotos</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
+          <Select
+            value={situationFilter}
+            onValueChange={(v) => setSituationFilter(v as PhotoRosterSituation)}
+          >
             <SelectTrigger className="h-9 w-[140px] text-xs">
-              <SelectValue placeholder="Status" />
+              <SelectValue placeholder="Situação" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ativos">Ativos</SelectItem>
@@ -265,207 +186,111 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
             </Button>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          {stats.pending > 0 && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 shrink-0"
-              onClick={() => setCollectFilter("pendentes")}
-            >
-              Ver {stats.pending} pendentes
-            </Button>
-          )}
-          <div className="flex rounded-lg border p-0.5">
-            <Button
-              variant={viewMode === "checklist" ? "secondary" : "ghost"}
-              size="sm"
-              className="h-8 gap-1.5 px-2.5 text-xs"
-              onClick={() => setViewMode("checklist")}
-            >
-              <ListChecks className="h-3.5 w-3.5" />
-              Checklist
-            </Button>
-            <Button
-              variant={viewMode === "grid" ? "secondary" : "ghost"}
-              size="sm"
-              className="h-8 gap-1.5 px-2.5 text-xs"
-              onClick={() => setViewMode("grid")}
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-              Galeria
-            </Button>
-          </div>
-        </div>
+        {stats.withoutPhotos > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-9 shrink-0"
+            onClick={() => setGalleryFilter("sem_fotos")}
+          >
+            Ver {stats.withoutPhotos} sem fotos
+          </Button>
+        )}
       </div>
 
       <p className="text-xs text-muted-foreground">
-        {filteredUsers.length} colaborador{filteredUsers.length !== 1 ? "es" : ""} exibido
-        {filteredUsers.length !== 1 ? "s" : ""}
+        {filteredPeople.length} colaborador{filteredPeople.length !== 1 ? "es" : ""} · mesma lista
+        de Férias (RH / VIOS)
       </p>
 
-      <CollaboratorPhotoEditDialog
-        open={!!editingUser}
-        onOpenChange={(open) => !open && setEditingUser(null)}
-        user={editingUser}
-        onSubmit={handleSavePhoto}
-        error={error}
-      />
       <ManagerGalleryDialog
-        open={!!galleryUser}
-        user={galleryUser}
-        onOpenChange={(open) => !open && setGalleryUser(null)}
+        open={!!galleryPerson?.userId}
+        person={
+          galleryPerson?.userId
+            ? {
+                id: galleryPerson.userId,
+                name: galleryPerson.name,
+                department: galleryPerson.department,
+                avatar_url: galleryPerson.avatarUrl,
+              }
+            : null
+        }
+        onOpenChange={(open) => !open && setGalleryPerson(null)}
         onChanged={() => void refreshGallerySummary()}
       />
 
-      {filteredUsers.length === 0 ? (
+      {filteredPeople.length === 0 ? (
         <div className="rounded-xl border bg-card py-16 text-center shadow-sm">
           <UserRound className="mx-auto h-10 w-10 text-muted-foreground/50" />
           <p className="mt-3 text-sm text-muted-foreground">Nenhum colaborador encontrado.</p>
         </div>
-      ) : viewMode === "checklist" ? (
-        <CollaboratorPhotosChecklist
-          users={filteredUsers}
-          photoCountByUserId={photoCountByUserId}
-          officialByUserId={officialByUserId}
-          onUserUpdated={handleUserUpdated}
-          onEdit={(user) => {
-            setError(null);
-            setEditingUser(user);
-          }}
-          onOpenGallery={(user) => {
-            setError(null);
-            setGalleryUser(user);
-          }}
-          onError={setError}
-        />
       ) : (
         <div className="grid gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7">
-          {filteredUsers.map((user) => {
-            const hasPhotoLink = Boolean(user.avatar_url?.trim());
-            const hasOnedrive = Boolean(user.photo_onedrive_url?.trim());
-            const collected = user.photo_collected === true;
-            const isActive = user.is_active !== false;
+          {filteredPeople.map((person) => {
+            const photoCount = person.userId ? photoCountByUserId[person.userId] ?? 0 : 0;
+            const hasOfficial = person.userId ? officialByUserId[person.userId] === true : false;
+            const hasPreview = Boolean(person.avatarUrl?.trim());
 
             return (
               <article
-                key={user.id}
+                key={person.employeeId}
                 className={cn(
                   "group overflow-hidden rounded-lg border bg-card shadow-sm transition-shadow hover:shadow-md",
-                  collected && "ring-1 ring-emerald-400/50",
-                  !isActive && "opacity-70"
+                  photoCount > 0 && "ring-1 ring-emerald-400/40",
+                  !person.isActive && "opacity-70"
                 )}
               >
-                <div className="relative aspect-[3/4] max-h-44 bg-muted/40">
-                  {hasPhotoLink ? (
+                <button
+                  type="button"
+                  className="relative aspect-[3/4] max-h-44 w-full bg-muted/40 text-left"
+                  onClick={() => openGallery(person)}
+                  title={person.userId ? "Abrir galeria" : "Sem usuário no sistema"}
+                >
+                  {hasPreview ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={user.avatar_url!}
-                      alt={`Foto de ${user.name}`}
+                      src={person.avatarUrl!}
+                      alt={`Foto de ${person.name}`}
                       className="h-full w-full object-cover object-top"
                     />
-                  ) : hasOnedrive ? (
-                    <div className="flex h-full flex-col items-center justify-center gap-1.5 bg-sky-50/80 text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
-                      <Cloud className="h-8 w-8 opacity-60" />
-                      <span className="px-2 text-center text-[10px] leading-tight">Só OneDrive</span>
-                    </div>
                   ) : (
                     <div className="flex h-full flex-col items-center justify-center gap-1.5 text-muted-foreground">
                       <ImageOff className="h-7 w-7 opacity-40" />
-                      <span className="px-2 text-center text-[10px] leading-tight">Sem foto</span>
-                    </div>
-                  )}
-                  {collected && (
-                    <div className="absolute left-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-md bg-emerald-500 text-white shadow">
-                      <Check className="h-3.5 w-3.5" />
+                      <span className="px-2 text-center text-[10px] leading-tight">
+                        {person.userId ? "Sem foto" : "Sem login"}
+                      </span>
                     </div>
                   )}
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/25 to-transparent px-2 pb-2 pt-8">
-                    <p className="truncate text-xs font-medium text-white">{user.name}</p>
-                    <p className="truncate text-[10px] text-white/75">{user.department}</p>
+                    <p className="truncate text-xs font-medium text-white">{person.name}</p>
+                    <p className="truncate text-[10px] text-white/75">
+                      {person.department ?? "—"}
+                    </p>
                   </div>
-                </div>
+                </button>
 
                 <div className="flex items-center justify-between gap-1 border-t px-2 py-1.5">
                   <Badge
-                    variant={collected ? "secondary" : "outline"}
+                    variant={photoCount > 0 ? "secondary" : "outline"}
                     className={cn(
                       "px-1.5 py-0 text-[10px] font-normal",
-                      !collected && "border-amber-200 text-amber-700"
+                      photoCount === 0 && "border-amber-200 text-amber-700"
                     )}
                   >
-                    {collected ? "Obtida" : "Pendente"}
+                    {photoCount > 0
+                      ? `${photoCount} foto${photoCount === 1 ? "" : "s"}${hasOfficial ? " · oficial" : ""}`
+                      : "Pendente"}
                   </Badge>
-                  {(photoCountByUserId[user.id] ?? 0) > 0 && (
-                    <span className="text-[10px] text-[#1a6b72]">
-                      {photoCountByUserId[user.id]}
-                      {officialByUserId[user.id] ? " ✓" : ""}
-                    </span>
-                  )}
-                  <div className="flex gap-0.5">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      title="Galeria da sessão"
-                      onClick={() => {
-                        setError(null);
-                        setGalleryUser(user);
-                      }}
-                    >
-                      <Images className="h-3.5 w-3.5" />
-                    </Button>
-                    <CollaboratorPhotoUploadButton
-                      userId={user.id}
-                      onError={setError}
-                      onUploaded={(url) => handleQuickUpload(user.id, url)}
-                      className="h-7 px-2"
-                    />
-                    {hasOnedrive && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-sky-600"
-                        title="Abrir OneDrive"
-                        asChild
-                      >
-                        <a
-                          href={user.photo_onedrive_url!}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <Cloud className="h-3.5 w-3.5" />
-                        </a>
-                      </Button>
-                    )}
-                    {hasPhotoLink && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        title="Copiar link da foto"
-                        onClick={() => copyUrl(user.avatar_url!, user.id)}
-                      >
-                        {copiedId === user.id ? (
-                          <Check className="h-3.5 w-3.5 text-emerald-600" />
-                        ) : (
-                          <Copy className="h-3.5 w-3.5" />
-                        )}
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      title="Editar links"
-                      onClick={() => {
-                        setError(null);
-                        setEditingUser(user);
-                      }}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    title="Galeria"
+                    disabled={!person.userId}
+                    onClick={() => openGallery(person)}
+                  >
+                    <Images className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
               </article>
             );

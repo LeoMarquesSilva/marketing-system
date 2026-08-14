@@ -22,7 +22,7 @@ export default async function UsuariosPage() {
       <div>
         <h2 className="text-xl font-bold tracking-tight text-foreground">Usuários</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Gerencie os usuários que podem ser solicitantes. Para cadastrar fotos preferidas, use{" "}
+          Gerencie os usuários do sistema. A galeria corporativa fica em{" "}
           <Link href="/fotos-colaboradores" className="text-primary underline-offset-4 hover:underline">
             Fotos Colaboradores
           </Link>

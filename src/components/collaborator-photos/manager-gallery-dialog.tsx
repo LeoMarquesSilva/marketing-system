@@ -38,18 +38,24 @@ import type {
   PhotoSession,
   PhotoUsageType,
 } from "@/lib/collaborator-photos/types";
-import type { User } from "@/lib/users";
+
+export interface GalleryPerson {
+  id: string;
+  name: string;
+  department?: string | null;
+  avatar_url?: string | null;
+}
 
 interface ManagerGalleryDialogProps {
   open: boolean;
-  user: User | null;
+  person: GalleryPerson | null;
   onOpenChange: (open: boolean) => void;
   onChanged?: (userId: string) => void;
 }
 
 export function ManagerGalleryDialog({
   open,
-  user,
+  person,
   onOpenChange,
   onChanged,
 }: ManagerGalleryDialogProps) {
@@ -65,14 +71,14 @@ export function ManagerGalleryDialog({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!open || !user) return;
+    if (!open || !person) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
     (async () => {
       try {
         const [nextPhotos, nextTypes, nextSessions] = await Promise.all([
-          fetchGallery(user.id),
+          fetchGallery(person.id),
           fetchUsageTypes(),
           fetchPhotoSessions(),
         ]);
@@ -92,7 +98,7 @@ export function ManagerGalleryDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, user]);
+  }, [open, person]);
 
   const visiblePhotos = useMemo(() => {
     if (filterSessionId === "all") return photos;
@@ -101,7 +107,7 @@ export function ManagerGalleryDialog({
   }, [photos, filterSessionId]);
 
   async function handleFiles(fileList: FileList | null) {
-    if (!user || !fileList?.length) return;
+    if (!person || !fileList?.length) return;
     if (!selectedSessionId) {
       setError("Selecione a sessão antes de subir (ex.: Fotos Corporativas 2026).");
       return;
@@ -111,19 +117,19 @@ export function ManagerGalleryDialog({
     try {
       let sequence = nextPhotoSequence(
         photos.map((photo) => photo.originalFilename),
-        user.name
+        person.name
       );
       for (const file of Array.from(fileList)) {
         const invalid = validateCollaboratorPhotoFile(file);
         if (invalid) throw new Error(`${file.name}: ${invalid}`);
         const fileName = buildCollaboratorPhotoFileName(
-          user.name,
+          person.name,
           sequence,
           imageExtensionFromName(file.name)
         );
-        const uploaded = await uploadCollaboratorPhoto(user.id, file, fileName);
+        const uploaded = await uploadCollaboratorPhoto(person.id, file, fileName);
         const photo = await registerUploadedPhoto({
-          userId: user.id,
+          userId: person.id,
           storagePath: uploaded.path,
           publicUrl: uploaded.publicUrl,
           originalFilename: fileName,
@@ -132,7 +138,7 @@ export function ManagerGalleryDialog({
         sequence += 1;
         setPhotos((prev) => [photo, ...prev.filter((item) => item.id !== photo.id)]);
       }
-      onChanged?.(user.id);
+      onChanged?.(person.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao enviar fotos.");
     } finally {
@@ -180,7 +186,7 @@ export function ManagerGalleryDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-auto sm:max-w-5xl">
         <DialogHeader>
-          <DialogTitle>Galeria de {user?.name ?? "colaborador"}</DialogTitle>
+          <DialogTitle>Galeria de {person?.name ?? "colaborador"}</DialogTitle>
           <DialogDescription>
             Escolha a sessão antes de subir. Assim você sabe depois quais fotos são das Fotos
             Corporativas 2026 (ou de outra campanha).
@@ -243,7 +249,7 @@ export function ManagerGalleryDialog({
             <Button
               type="button"
               className="gap-1.5 bg-[#04202f] text-white hover:bg-[#04202f]/90"
-              disabled={uploading || !user || !selectedSessionId}
+              disabled={uploading || !person || !selectedSessionId}
               onClick={() => fileRef.current?.click()}
             >
               {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
