@@ -47,4 +47,16 @@ describe("access-control permissions catalog", () => {
     expect(canEditPartyInvite({ role: "admin", permissions: null })).toBe(true);
     expect(canEditPartyInvite({ role: null, permissions: ["/meus-clientes"] })).toBe(false);
   });
+
+  it("qualquer autenticado acessa Minhas fotos, mesmo com permissões restritas", () => {
+    const colaborador = { role: null, permissions: ["/conteudo/roteiros"] };
+    expect(canAccessPath(colaborador, "/minhas-fotos")).toBe(true);
+    expect(canAccessPath(colaborador, "/fotos-colaboradores")).toBe(false);
+  });
+
+  it("admin gerencia Fotos Colaboradores mesmo sem a chave no catálogo", () => {
+    const admin = { id: "admin-1", role: "admin", permissions: null };
+    expect(canAccessPath(admin, "/fotos-colaboradores")).toBe(true);
+    expect(canAccessPath(admin, "/minhas-fotos")).toBe(true);
+  });
 });

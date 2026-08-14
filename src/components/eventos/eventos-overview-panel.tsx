@@ -14,6 +14,7 @@ export function EventosOverviewPanel({ overview, year, loading }: EventosOvervie
     totalEvents,
     inProgress,
     completed,
+    budgetApprovedTotal,
     budgetPlannedTotal,
     budgetActualTotal,
     overdueTasks,
@@ -46,12 +47,12 @@ export function EventosOverviewPanel({ overview, year, loading }: EventosOvervie
         />
         <MetricCard
           icon={<Wallet2 className="h-4 w-4" />}
-          label="Orçamento previsto"
-          value={budgetPlannedTotal > 0 ? formatBrl(budgetPlannedTotal) : "—"}
+          label="Verba aprovada"
+          value={budgetApprovedTotal > 0 ? formatBrl(budgetApprovedTotal) : "—"}
           sub={
-            budgetActualTotal > 0
-              ? `Realizado: ${formatBrl(budgetActualTotal)}`
-              : "Adicione linhas no detalhe do evento"
+            budgetPlannedTotal > 0 || budgetActualTotal > 0
+              ? `Previsto: ${formatBrl(budgetPlannedTotal)} · Realizado: ${formatBrl(budgetActualTotal)}`
+              : "Informe a verba no cadastro do evento"
           }
         />
         <MetricCard

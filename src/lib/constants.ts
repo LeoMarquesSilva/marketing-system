@@ -13,7 +13,6 @@ export const AREAS = [
   "Societário e Contratos",
   "Sócio",
   "Geral",
-  "T.I",
 ] as const;
 
 /**

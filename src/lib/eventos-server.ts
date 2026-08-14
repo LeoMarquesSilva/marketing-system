@@ -10,6 +10,7 @@ import {
   fetchEventPostmortem,
   fetchEventSupplierLinks,
   fetchEventTemplates,
+  fetchEventsForecast,
   fetchEventsOverview,
   fetchEventsWithStats,
   fetchSuppliersCatalog,
@@ -26,6 +27,15 @@ export async function fetchEventosPageData(year: number) {
     fetchEventsOverview(year, supabase),
   ]);
   return { years, events, overview, year };
+}
+
+export async function fetchPlanejamentoPageData(targetYear: number) {
+  const supabase = await createClient();
+  const [forecast, years] = await Promise.all([
+    fetchEventsForecast(targetYear, supabase),
+    fetchAvailableYears(supabase),
+  ]);
+  return { forecast, years, targetYear };
 }
 
 export async function fetchPrestadoresPageData() {

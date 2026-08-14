@@ -10,6 +10,7 @@ import {
   EVENT_STATUS_LABEL,
   EVENT_STATUS_STYLE,
   RISK_LEVEL_LABEL,
+  formatBrl,
   getEventDisplayDate,
   type EventWithStats,
 } from "@/lib/eventos";
@@ -69,6 +70,11 @@ export function EventoCard({ event }: { event: EventWithStats }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+        {event.kind === "campanha" && (
+          <Badge variant="outline" className="text-[11px] bg-sky-50 text-sky-700 border-sky-200">
+            Campanha
+          </Badge>
+        )}
         <Badge variant="outline" className={cn("text-[11px]", EVENT_STATUS_STYLE[event.status])}>
           {EVENT_STATUS_LABEL[event.status]}
         </Badge>
@@ -83,7 +89,9 @@ export function EventoCard({ event }: { event: EventWithStats }) {
 
       <div className="mt-3 flex items-center gap-1.5 text-sm text-foreground/80">
         <CalendarDays className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-        {formatDate(getEventDisplayDate(event))}
+        {event.endDate && event.eventDate
+          ? `${formatDate(event.eventDate)} a ${formatDate(event.endDate)}`
+          : formatDate(getEventDisplayDate(event))}
       </div>
 
       {event.giftsNotes && (
@@ -113,13 +121,20 @@ export function EventoCard({ event }: { event: EventWithStats }) {
         <div>
           <p className="text-[11px] text-muted-foreground mb-1 flex items-center gap-1">
             <Wallet className="h-3 w-3" />
-            Orçamento
+            {event.budgetApproved != null ? "Verba aprovada" : "Orçamento previsto"}
           </p>
-          <p className="text-sm font-medium text-foreground">
-            {event.budgetPlannedTotal > 0
-              ? event.budgetPlannedTotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
-              : "—"}
+          <p className="text-sm font-medium text-foreground tabular-nums">
+            {event.budgetApproved != null
+              ? formatBrl(event.budgetApproved)
+              : event.budgetPlannedTotal > 0
+                ? formatBrl(event.budgetPlannedTotal)
+                : "—"}
           </p>
+          {event.budgetActualTotal > 0 && (
+            <p className="text-[11px] text-muted-foreground mt-0.5 tabular-nums">
+              Realizado {formatBrl(event.budgetActualTotal)}
+            </p>
+          )}
         </div>
       </div>
 

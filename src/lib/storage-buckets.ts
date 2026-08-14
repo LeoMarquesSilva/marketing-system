@@ -80,9 +80,13 @@ export function buildEventStoragePath(
 /** Upload de foto de colaborador para o bucket MARKETING-SYSTEM-FOTOS (Pro). */
 export async function uploadCollaboratorPhoto(
   userId: string,
-  file: File
+  file: File,
+  fileName?: string
 ): Promise<StorageUploadResult> {
-  const path = `colaboradores/${userId}/${Date.now()}-${sanitizeFileName(file.name)}`;
+  const storedName = fileName
+    ? sanitizeFileName(fileName)
+    : `${Date.now()}-${sanitizeFileName(file.name)}`;
+  const path = `colaboradores/${userId}/${storedName}`;
   return uploadToBucket(COLLABORATOR_PHOTOS_BUCKET, path, file);
 }
 

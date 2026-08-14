@@ -1,5 +1,8 @@
 import { fetchUsersServer } from "@/lib/users-server";
 import { CollaboratorPhotosGrid } from "@/components/usuarios/collaborator-photos-grid";
+import { PhotoUsageTypesPanel } from "@/components/collaborator-photos/usage-types-panel";
+import { PhotoSessionsPanel } from "@/components/collaborator-photos/photo-sessions-panel";
+import { StorageUsageBar } from "@/components/collaborator-photos/storage-usage-bar";
 
 export const dynamic = "force-dynamic";
 
@@ -11,10 +14,17 @@ export default async function FotosColaboradoresPage() {
       <div>
         <h2 className="text-xl font-bold tracking-tight text-foreground">Fotos dos Colaboradores</h2>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Checklist para a figurinha da Copa: envie a foto para o storage do sistema (bucket Pro)
-          ou cadastre link do OneDrive como referência externa.
+          Checklist da figurinha da Copa e galeria da sessão corporativa: suba várias fotos por
+          pessoa, marcando a sessão (ex.: Fotos Corporativas 2026). O colaborador escolhe os usos em
+          Minhas fotos.
         </p>
       </div>
+
+      <StorageUsageBar />
+
+      <PhotoSessionsPanel />
+
+      <PhotoUsageTypesPanel />
 
       <CollaboratorPhotosGrid initialUsers={users} />
     </div>

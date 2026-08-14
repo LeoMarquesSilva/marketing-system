@@ -25,6 +25,7 @@ const PAGE_META: Record<string, PageMeta> = {
   "/meus-clientes/nps": { label: "Resultados NPS", section: "Relacionamento" },
   "/clima": { label: "Clima", section: "Pessoas" },
   "/fotos-colaboradores": { label: "Fotos dos colaboradores", section: "Pessoas" },
+  "/minhas-fotos": { label: "Minhas fotos", section: "Conta" },
   "/usuarios": { label: "Usuários", section: "Pessoas" },
   "/vios-tarefas": { label: "Tarefas VIOS", section: "Operação" },
   "/eventos": { label: "Eventos", section: "Eventos" },

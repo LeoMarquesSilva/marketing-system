@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useEffect, useState } from "react";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { CalendarClock, CalendarDays, Flag, Gift, LayoutGrid, MapPin, StickyNote, Tag, Users } from "lucide-react";
+import { CalendarClock, CalendarDays, Flag, Gift, LayoutGrid, MapPin, StickyNote, Tag, Users, Wallet } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -30,18 +30,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { DatePickerField } from "@/components/ui/date-picker-field";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { UserSelectSearch } from "@/components/solicitacoes/user-select-search";
 import { DialogHeaderIcon, DialogSectionHeading } from "@/components/eventos/dialog-section-heading";
 import { AREAS } from "@/lib/constants";
 import {
+  EVENT_KIND_LABEL,
   EVENT_SIZE_OPTIONS,
   EVENT_STAGE_LABEL,
   EVENT_STATUS_LABEL,
   EVENT_TYPE_OPTIONS,
   RISK_LEVEL_LABEL,
   createEventTasksFromTemplate,
+  fetchEventSeries,
+  findOrCreateEventSeries,
   insertEvent,
   updateEvent,
+  type EventKind,
+  type EventSeries,
   type EventStageStatus,
   type EventTemplate,
   type EventStatus,
@@ -49,12 +55,21 @@ import {
 } from "@/lib/eventos";
 import type { User } from "@/lib/users";
 
+/** Cria/reaproveita a série a partir do nome do evento. */
+const SERIES_AUTO = "__auto__";
+/** Evento avulso: fica fora da comparação entre anos. */
+const SERIES_NONE = "__none__";
+
 const schema = z.object({
   year: z.string().min(4),
   name: z.string().min(1, "Nome é obrigatório"),
+  kind: z.enum(["evento", "campanha"]),
+  series_id: z.string().optional(),
+  budget_approved: z.string().optional(),
   month_label: z.string().optional(),
   commemorative_date: z.string().optional(),
   event_date: z.string().optional(),
+  end_date: z.string().optional(),
   gifts_notes: z.string().optional(),
   organization_team: z.string().optional(),
   objectives: z.string().optional(),
@@ -83,7 +98,10 @@ const schema = z.object({
   risk_level: z.enum(["baixo", "medio", "alto"]),
   template_id: z.string().optional(),
   owner_user_id: z.string().optional(),
-});
+}).refine(
+  (v) => !v.end_date || !v.event_date || v.end_date >= v.event_date,
+  { message: "A data final não pode ser anterior à inicial", path: ["end_date"] }
+);
 
 type FormValues = z.infer<typeof schema>;
 
@@ -107,11 +125,15 @@ export function EventoFormDialog({
   onSuccess,
 }: EventoFormDialogProps) {
   const isEdit = !!event;
+  const [series, setSeries] = useState<EventSeries[]>([]);
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       year: String(defaultYear),
       name: "",
+      kind: "evento",
+      series_id: SERIES_AUTO,
+      budget_approved: "",
       status: "nao_iniciada",
       priority: "normal",
       stage_status: "ideia_cadastrada",
@@ -122,6 +144,19 @@ export function EventoFormDialog({
   });
 
   const templates = providedTemplates ?? [];
+  const kind = useWatch({ control: form.control, name: "kind" });
+  const isCampaign = kind === "campanha";
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    fetchEventSeries().then((rows) => {
+      if (active) setSeries(rows);
+    });
+    return () => {
+      active = false;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -129,9 +164,13 @@ export function EventoFormDialog({
       form.reset({
         year: String(event.year),
         name: event.name,
+        kind: event.kind,
+        series_id: event.seriesId ?? SERIES_NONE,
+        budget_approved: event.budgetApproved != null ? String(event.budgetApproved) : "",
         month_label: event.monthLabel ?? "",
         commemorative_date: event.commemorativeDate ?? "",
         event_date: event.eventDate ?? "",
+        end_date: event.endDate ?? "",
         gifts_notes: event.giftsNotes ?? "",
         organization_team: event.organizationTeam ?? "",
         objectives: event.objectives ?? "",
@@ -154,9 +193,13 @@ export function EventoFormDialog({
       form.reset({
         year: String(defaultYear),
         name: "",
+        kind: "evento",
+        series_id: SERIES_AUTO,
+        budget_approved: "",
         month_label: "",
         commemorative_date: "",
         event_date: "",
+        end_date: "",
         gifts_notes: "",
         organization_team: "",
         objectives: "",
@@ -179,17 +222,34 @@ export function EventoFormDialog({
   }, [open, event, defaultYear, form]);
 
   async function onSubmit(values: FormValues) {
+    const name = values.name.trim();
+
+    // A série é o que liga esta edição às dos outros anos. "Automático" cria
+    // (ou reaproveita) uma série com o nome do evento; escolher uma existente
+    // é o caminho quando o nome muda de um ano para o outro.
+    let seriesId: string | null = null;
+    if (values.series_id === SERIES_AUTO) {
+      seriesId = (await findOrCreateEventSeries(name))?.id ?? null;
+    } else if (values.series_id && values.series_id !== SERIES_NONE) {
+      seriesId = values.series_id;
+    }
+
+    const approved = values.budget_approved?.trim();
+
     const payload = {
       year: Number(values.year),
-      name: values.name.trim(),
+      name,
+      seriesId,
+      kind: values.kind as EventKind,
       monthLabel: values.month_label?.trim() || null,
       commemorativeDate: values.commemorative_date || null,
       eventDate: values.event_date || null,
+      endDate: values.end_date || null,
       giftsNotes: values.gifts_notes?.trim() || null,
       organizationTeam: values.organization_team?.trim() || null,
       status: values.status as EventStatus,
       objectives: values.objectives?.trim() || null,
-      budgetPlanned: null,
+      budgetApproved: approved ? Number(approved) : null,
       notes: values.notes?.trim() || null,
       eventType: values.event_type?.trim() || null,
       eventSize: values.event_size?.trim() || null,
@@ -249,9 +309,9 @@ export function EventoFormDialog({
                   name="name"
                   render={({ field }) => (
                     <FormItem className="sm:col-span-2">
-                      <FormLabel>Nome do evento <span className="text-red-500">*</span></FormLabel>
+                      <FormLabel>Nome {isCampaign ? "da campanha" : "do evento"} <span className="text-red-500">*</span></FormLabel>
                       <FormControl>
-                        <Input placeholder="Nome do evento" {...field} />
+                        <Input placeholder={isCampaign ? "Nome da campanha" : "Nome do evento"} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -267,6 +327,54 @@ export function EventoFormDialog({
                         <Input type="number" {...field} />
                       </FormControl>
                       <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="kind"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Tipo de registro</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          {(Object.keys(EVENT_KIND_LABEL) as EventKind[]).map((k) => (
+                            <SelectItem key={k} value={k}>{EVENT_KIND_LABEL[k]}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        {isCampaign ? "Ocupa um período (início e fim)." : "Acontece em uma data."}
+                      </p>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="series_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Série anual</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecionar" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value={SERIES_AUTO}>Automático (pelo nome)</SelectItem>
+                          <SelectItem value={SERIES_NONE}>Sem série (avulso)</SelectItem>
+                          {series.map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Liga esta edição às dos outros anos para comparar custos.
+                      </p>
                     </FormItem>
                   )}
                 />
@@ -294,6 +402,26 @@ export function EventoFormDialog({
                     </FormItem>
                   )}
                 />
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border/60 bg-muted/20 p-5 space-y-4">
+              <DialogSectionHeading icon={Wallet}>Verba</DialogSectionHeading>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <FormField control={form.control} name="budget_approved" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Verba aprovada (teto)</FormLabel>
+                    <FormControl>
+                      <CurrencyInput value={field.value ?? ""} onChange={field.onChange} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <p className="text-xs text-muted-foreground sm:col-span-2 sm:self-end sm:pb-2">
+                  Limite autorizado para esta edição. O detalhamento por item (previsto,
+                  cotado e realizado) fica na aba Orçamento — é a comparação entre os dois
+                  que alimenta a previsão do ano seguinte.
+                </p>
               </div>
             </div>
 
@@ -435,8 +563,15 @@ export function EventoFormDialog({
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <FormField control={form.control} name="event_date" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Data do evento</FormLabel>
+                    <FormLabel>{isCampaign ? "Início" : "Data do evento"}</FormLabel>
                     <FormControl><DatePickerField value={field.value ?? ""} onChange={field.onChange} /></FormControl>
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="end_date" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{isCampaign ? "Fim" : "Data final (se durar mais de um dia)"}</FormLabel>
+                    <FormControl><DatePickerField value={field.value ?? ""} onChange={field.onChange} /></FormControl>
+                    <FormMessage />
                   </FormItem>
                 )} />
                 <FormField control={form.control} name="commemorative_date" render={({ field }) => (

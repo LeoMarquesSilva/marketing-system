@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,7 @@ import {
   Pencil,
   Copy,
   ImageOff,
+  Images,
   Check,
   UserRound,
   Cloud,
@@ -28,6 +29,8 @@ import { updateUser } from "@/lib/users";
 import { CollaboratorPhotoEditDialog, type CollaboratorPhotoFormValues } from "./collaborator-photo-edit-dialog";
 import { CollaboratorPhotoUploadButton } from "./collaborator-photo-upload-button";
 import { CollaboratorPhotosChecklist } from "./collaborator-photos-checklist";
+import { ManagerGalleryDialog } from "@/components/collaborator-photos/manager-gallery-dialog";
+import { fetchGallerySummary } from "@/lib/collaborator-photos/api";
 import { cn } from "@/lib/utils";
 
 interface CollaboratorPhotosGridProps {
@@ -42,8 +45,25 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
   const [collectFilter, setCollectFilter] = useState<"all" | "obtidas" | "pendentes">("all");
   const [statusFilter, setStatusFilter] = useState<"ativos" | "todos">("ativos");
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [galleryUser, setGalleryUser] = useState<User | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [officialByUserId, setOfficialByUserId] = useState<Record<string, boolean>>({});
+  const [photoCountByUserId, setPhotoCountByUserId] = useState<Record<string, number>>({});
+
+  async function refreshGallerySummary() {
+    try {
+      const summary = await fetchGallerySummary();
+      setOfficialByUserId(summary.officialByUserId);
+      setPhotoCountByUserId(summary.photoCountByUserId);
+    } catch {
+      // resumo opcional
+    }
+  }
+
+  useEffect(() => {
+    void refreshGallerySummary();
+  }, []);
 
   const departments = useMemo(() => {
     const set = new Set<string>();
@@ -291,6 +311,12 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
         onSubmit={handleSavePhoto}
         error={error}
       />
+      <ManagerGalleryDialog
+        open={!!galleryUser}
+        user={galleryUser}
+        onOpenChange={(open) => !open && setGalleryUser(null)}
+        onChanged={() => void refreshGallerySummary()}
+      />
 
       {filteredUsers.length === 0 ? (
         <div className="rounded-xl border bg-card py-16 text-center shadow-sm">
@@ -300,10 +326,16 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
       ) : viewMode === "checklist" ? (
         <CollaboratorPhotosChecklist
           users={filteredUsers}
+          photoCountByUserId={photoCountByUserId}
+          officialByUserId={officialByUserId}
           onUserUpdated={handleUserUpdated}
           onEdit={(user) => {
             setError(null);
             setEditingUser(user);
+          }}
+          onOpenGallery={(user) => {
+            setError(null);
+            setGalleryUser(user);
           }}
           onError={setError}
         />
@@ -364,7 +396,25 @@ export function CollaboratorPhotosGrid({ initialUsers }: CollaboratorPhotosGridP
                   >
                     {collected ? "Obtida" : "Pendente"}
                   </Badge>
+                  {(photoCountByUserId[user.id] ?? 0) > 0 && (
+                    <span className="text-[10px] text-[#1a6b72]">
+                      {photoCountByUserId[user.id]}
+                      {officialByUserId[user.id] ? " ✓" : ""}
+                    </span>
+                  )}
                   <div className="flex gap-0.5">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      title="Galeria da sessão"
+                      onClick={() => {
+                        setError(null);
+                        setGalleryUser(user);
+                      }}
+                    >
+                      <Images className="h-3.5 w-3.5" />
+                    </Button>
                     <CollaboratorPhotoUploadButton
                       userId={user.id}
                       onError={setError}

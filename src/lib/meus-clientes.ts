@@ -1,13 +1,10 @@
 /**
- * Escopo "meus clientes": quais empresas/pessoas um usuário (gestor/advogado)
+ * Escopo "meus clientes": quais empresas/pessoas um usuário (gestor)
  * é responsável por preencher.
  *
- * Duas fontes se combinam:
- * 1) Vínculo individual por processo (email_group_responsibles), gerado
- *    automaticamente a partir do advogado_responsavel de cada processo do SIOE.
- * 2) Vínculo por área (email_area_managers): o sócio/gerente de uma área
- *    jurídica (ex.: Trabalhista, Cível, Tributário) enxerga TODOS os clientes
- *    daquela área, independente de qual advogado específico atuou no processo.
+ * Só entram grupos com área responsável marcada (email_client_groups.responsible_area)
+ * e cuja área o usuário gestiona em email_area_managers. Sem marcação, o grupo
+ * não aparece para gestores — só o admin em "Ver todos".
  */
 
 import type { EmailCompany, EmailContact, EmailGroupResponsible, EmailPerson } from "./email-marketing";
@@ -123,36 +120,59 @@ export interface MyClientScope {
   personIds: Set<string>;
 }
 
+export function buildResponsibleAreaByGroupId(
+  companies: EmailCompany[],
+  people: EmailPerson[] = []
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const company of companies) {
+    if (company.clientGroupId && company.responsibleArea) {
+      map.set(company.clientGroupId, company.responsibleArea);
+    }
+  }
+  for (const person of people) {
+    if (person.clientGroupId && person.responsibleArea && !map.has(person.clientGroupId)) {
+      map.set(person.clientGroupId, person.responsibleArea);
+    }
+  }
+  return map;
+}
+
+function assignedAreaForGroup(
+  groupId: string | null | undefined,
+  areaByGroupId: Map<string, string>
+): string | null {
+  if (!groupId) return null;
+  return areaByGroupId.get(groupId) ?? null;
+}
+
 export function computeMyClientScope(
   companies: EmailCompany[],
   responsibles: EmailGroupResponsible[],
   userId: string,
-  areaManagers: EmailAreaManager[] = []
+  areaManagers: EmailAreaManager[] = [],
+  people: EmailPerson[] = []
 ): MyClientScope {
   const userAreas = new Set(areaManagers.filter((m) => m.userId === userId).map((m) => m.area));
+  const areaByGroupId = buildResponsibleAreaByGroupId(companies, people);
 
-  const companyIds = new Set(
-    companies
-      .filter(
-        (c) =>
-          c.responsibleUserIds.includes(userId) ||
-          c.legalAreas.some((area) => userCoversEntityArea(userAreas, area))
-      )
-      .map((c) => c.id)
-  );
-
-  const personAreas = new Map<string, Set<string>>();
-  for (const r of responsibles) {
-    if (!r.personId || !r.area) continue;
-    if (!personAreas.has(r.personId)) personAreas.set(r.personId, new Set());
-    personAreas.get(r.personId)!.add(r.area);
+  const companyIds = new Set<string>();
+  for (const company of companies) {
+    const ownerArea =
+      assignedAreaForGroup(company.clientGroupId, areaByGroupId) ?? company.responsibleArea;
+    // Escopo exclusivo: só gestores da área marcada (exata), sem herdar da área pai.
+    if (ownerArea && userAreas.has(ownerArea)) {
+      companyIds.add(company.id);
+    }
   }
 
-  const personIds = new Set(
-    responsibles.filter((r) => r.responsibleUserId === userId && r.personId).map((r) => r.personId as string)
-  );
-  for (const [personId, areas] of personAreas) {
-    if (Array.from(areas).some((area) => userCoversEntityArea(userAreas, area))) personIds.add(personId);
+  const personIds = new Set<string>();
+  for (const person of people) {
+    const ownerArea =
+      assignedAreaForGroup(person.clientGroupId, areaByGroupId) ?? person.responsibleArea;
+    if (ownerArea && userAreas.has(ownerArea)) {
+      personIds.add(person.id);
+    }
   }
 
   return { companyIds, personIds };
@@ -197,7 +217,7 @@ export function buildManagerSummary(
 
   const rows: ManagerSummaryRow[] = [];
   for (const userId of userIds) {
-    const scope = computeMyClientScope(companies, responsibles, userId, areaManagers);
+    const scope = computeMyClientScope(companies, responsibles, userId, areaManagers, people);
     if (scope.companyIds.size === 0 && scope.personIds.size === 0) continue;
 
     // Mostra apenas a(s) área(s) pela(s) qual(is) o usuário é gestor oficial —
@@ -644,7 +664,6 @@ export function computeEnrichmentTotals(
   for (const person of peopleList) scopedGroupKeys.add(resolveClientGroupKey(person));
 
   const companiesById = new Map(companies.map((c) => [c.id, c]));
-  const contactsByGroup = buildContactsByGroup(contacts, companies);
 
   let profilesComplete = 0;
   let profilesPending = 0;

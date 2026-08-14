@@ -18,6 +18,7 @@ export interface AuthProfile {
   department: string;
   role: string | null;
   auth_id: string;
+  is_active?: boolean | null;
   avatar_url?: string | null;
   permissions?: string[] | null;
   must_change_password?: boolean | null;
@@ -53,10 +54,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     for (let attempt = 0; attempt < 3; attempt++) {
       const { data, error } = await supabase
         .from("users")
-        .select("id, name, email, department, role, auth_id, avatar_url, permissions, must_change_password, content_tutorial_completed_at, meus_clientes_tutorial_completed_at, newsletter_tutorial_completed_at")
+        .select("id, name, email, department, role, auth_id, is_active, avatar_url, permissions, must_change_password, content_tutorial_completed_at, meus_clientes_tutorial_completed_at, newsletter_tutorial_completed_at")
         .eq("auth_id", authId)
         .maybeSingle();
       if (data) {
+        if (data.is_active === false) {
+          await supabase.auth.signOut();
+          setUser(null);
+          setProfile(null);
+          return;
+        }
         setProfile(data as AuthProfile);
         return;
       }
@@ -151,8 +158,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(
     async (email: string, password: string) => {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      return { error: error?.message ?? null };
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) return { error: error.message };
+
+      const { data: appUser, error: profileError } = await supabase
+        .from("users")
+        .select("is_active")
+        .eq("auth_id", data.user.id)
+        .maybeSingle();
+      if (profileError || !appUser || appUser.is_active === false) {
+        await supabase.auth.signOut();
+        return {
+          error:
+            appUser?.is_active === false
+              ? "Usuário inativo. Procure o administrador."
+              : "Usuário sem cadastro ativo no sistema.",
+        };
+      }
+
+      return { error: null };
     },
     []
   );

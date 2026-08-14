@@ -14,6 +14,7 @@ import {
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   Select,
@@ -56,6 +57,7 @@ import {
   type PartyInviteTipo,
 } from "@/lib/party-invite-types";
 import {
+  AREA_SUBAREAS,
   buildAreaManagerSummary,
   buildClientGroupKeysForAreaFilter,
   compareGroupsByPendingFirst,
@@ -93,6 +95,7 @@ import {
   DeleteConfirmDialog,
   EmptyState,
   FILTER_SEM_AREA,
+  FILTER_SEM_RESPONSAVEL,
   FilterChips,
   FilterAreaIcon,
   FilterUserAvatar,
@@ -101,7 +104,6 @@ import {
   HealthPanel,
   ManagerSummaryTable,
   MeusClientesSkeleton,
-  ProgressBarCard,
   SEM_GRUPO_KEY,
   StatusToggle,
   contactSearchHaystack,
@@ -134,6 +136,9 @@ function buildGroupBuckets(
     if (existing) {
       existing.companies.push(company);
       if (!existing.clientGroupId && company.clientGroupId) existing.clientGroupId = company.clientGroupId;
+      if (!existing.responsibleArea && company.responsibleArea) {
+        existing.responsibleArea = company.responsibleArea;
+      }
     } else {
       buckets.set(key, {
         key,
@@ -141,6 +146,7 @@ function buildGroupBuckets(
         clientGroupId: company.clientGroupId,
         companies: [company],
         groupPeople: [],
+        responsibleArea: company.responsibleArea ?? null,
       });
     }
   }
@@ -150,6 +156,9 @@ function buildGroupBuckets(
     if (existing) {
       existing.groupPeople.push(person);
       if (!existing.clientGroupId && person.clientGroupId) existing.clientGroupId = person.clientGroupId;
+      if (!existing.responsibleArea && person.responsibleArea) {
+        existing.responsibleArea = person.responsibleArea;
+      }
     } else {
       buckets.set(key, {
         key,
@@ -157,6 +166,7 @@ function buildGroupBuckets(
         clientGroupId: person.clientGroupId,
         companies: [],
         groupPeople: [person],
+        responsibleArea: person.responsibleArea ?? null,
       });
     }
   }
@@ -241,7 +251,7 @@ function MeusClientesClientContent() {
   const [syncMenuOpen, setSyncMenuOpen] = useState(false);
   const [toast, setToast] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [search, setSearch] = useState("");
-  const [viewAll, setViewAll] = useState(false);
+  const [viewAll, setViewAll] = useState(true);
   const [filterArea, setFilterArea] = useState("");
   const [filterGestor, setFilterGestor] = useState("");
   const [filterStatus, setFilterStatus] = useState<StatusFilter>("all");
@@ -250,6 +260,8 @@ function MeusClientesClientContent() {
     useState<FaturamentoPrevistoFilter>("all");
   const [filterInvite, setFilterInvite] = useState<InviteFilter>("all");
   const [filterPartyTipo, setFilterPartyTipo] = useState<PartyInviteTipo | "all">("all");
+  const [filterResponsibleArea, setFilterResponsibleArea] = useState("");
+  const [savingResponsibleGroupId, setSavingResponsibleGroupId] = useState<string | null>(null);
   const [atividadeMenuOpen, setAtividadeMenuOpen] = useState(false);
   const [faturamentoMenuOpen, setFaturamentoMenuOpen] = useState(false);
   const [compactMode, setCompactMode] = useState(false);
@@ -379,6 +391,7 @@ function MeusClientesClientContent() {
     filterFaturamentoPrevisto,
     filterInvite,
     filterPartyTipo,
+    filterResponsibleArea,
     search,
   ]);
 
@@ -429,6 +442,51 @@ function MeusClientesClientContent() {
   }, []);
 
   const handleClearSelection = useCallback(() => setSelectedKeys(new Set()), []);
+
+  const handleResponsibleAreaChange = useCallback(
+    async (group: ClientGroupBucket, area: string | null) => {
+      if (!group.clientGroupId) return;
+      setSavingResponsibleGroupId(group.clientGroupId);
+      try {
+        const res = await fetch(`/api/meus-clientes/groups/${group.clientGroupId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ responsibleArea: area }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Erro ao salvar área responsável.");
+        const nextArea = (data.responsibleArea as string | null) ?? null;
+        setCompanies((prev) =>
+          prev.map((company) =>
+            company.clientGroupId === group.clientGroupId
+              ? { ...company, responsibleArea: nextArea }
+              : company
+          )
+        );
+        setPeople((prev) =>
+          prev.map((person) =>
+            person.clientGroupId === group.clientGroupId
+              ? { ...person, responsibleArea: nextArea }
+              : person
+          )
+        );
+        setToast({
+          type: "success",
+          text: nextArea
+            ? `Área responsável: ${nextArea}. Só os gestores dessa área veem este cliente.`
+            : "Área responsável removida. O cliente volta a aparecer para todas as áreas dele.",
+        });
+      } catch (err) {
+        setToast({
+          type: "error",
+          text: err instanceof Error ? err.message : "Erro ao salvar área responsável.",
+        });
+      } finally {
+        setSavingResponsibleGroupId(null);
+      }
+    },
+    []
+  );
 
   const confirmDeleteSelected = async () => {
     const contactIds: string[] = [];
@@ -513,8 +571,9 @@ function MeusClientesClientContent() {
     if (filterGestor) params.set("gestorId", filterGestor);
     if (filterArea) params.set("area", filterArea);
     if (filterStatus !== "all") params.set("status", filterStatus);
-    if (filterInvite !== "all") params.set("invite", filterInvite);
-    if (filterPartyTipo !== "all") params.set("partyTipo", filterPartyTipo);
+    const inviteForExport = isAdmin ? filterInvite : "nps";
+    if (inviteForExport !== "all") params.set("invite", inviteForExport);
+    if (isAdmin && filterPartyTipo !== "all") params.set("partyTipo", filterPartyTipo);
     if (search.trim()) params.set("search", search.trim());
     params.set("excludeSemGrupo", "1");
     setToast({ type: "success", text: "Exportando CSV com filtros atuais…" });
@@ -568,16 +627,27 @@ function MeusClientesClientContent() {
   const allAreasList = useMemo(() => {
     const set = new Set<string>();
     for (const c of companies) {
-      for (const a of c.legalAreas) set.add(getAreaParent(a));
+      for (const a of c.legalAreas) {
+        set.add(a);
+        set.add(getAreaParent(a));
+      }
     }
     for (const areas of personAreas.values()) {
-      for (const a of areas) set.add(getAreaParent(a));
+      for (const a of areas) {
+        set.add(a);
+        set.add(getAreaParent(a));
+      }
     }
     for (const manager of areaManagers) {
+      set.add(manager.area);
       set.add(getAreaParent(manager.area));
     }
+    for (const [parent, subs] of Object.entries(AREA_SUBAREAS)) {
+      set.add(parent);
+      for (const sub of subs) set.add(sub);
+    }
     return Array.from(set)
-      .filter((a) => !isSubArea(a))
+      .filter(Boolean)
       .sort((a, b) => a.localeCompare(b, "pt-BR"));
   }, [companies, personAreas, areaManagers]);
 
@@ -661,6 +731,7 @@ function MeusClientesClientContent() {
           clientGroupId: null,
           companies: [],
           groupPeople: [],
+          responsibleArea: null,
         }) satisfies ClientGroupBucket
     );
     if (extras.length === 0) return groups;
@@ -694,22 +765,39 @@ function MeusClientesClientContent() {
         return filterFaturamentoPrevisto === "com" ? hasPrevisto : !hasPrevisto;
       });
     }
+    if (isAdmin && filterResponsibleArea) {
+      list = list.filter((group) => {
+        const area = group.responsibleArea ?? null;
+        if (filterResponsibleArea === FILTER_SEM_RESPONSAVEL) return !area;
+        return area === filterResponsibleArea;
+      });
+    }
     return list;
   }, [
     clientGroups,
     filterAtividade,
     filterFaturamentoPrevisto,
+    filterResponsibleArea,
     groupHasFaturamentoPrevisto,
     isAdmin,
     resolveClienteStatusForFilter,
   ]);
 
+  /** Gestores só veem clientes com alguém marcado como elegível ao NPS. */
+  const effectiveInviteFilter: InviteFilter = isAdmin ? filterInvite : "nps";
+  const effectivePartyTipoFilter: PartyInviteTipo | "all" = isAdmin ? filterPartyTipo : "all";
+
   const displayGroups = useMemo(
     () =>
       displayGroupsBeforeInvite.filter((group) =>
-        groupMatchesInviteFilters(group, contactsByGroup, filterInvite, filterPartyTipo)
+        groupMatchesInviteFilters(
+          group,
+          contactsByGroup,
+          effectiveInviteFilter,
+          effectivePartyTipoFilter
+        )
       ),
-    [displayGroupsBeforeInvite, contactsByGroup, filterInvite, filterPartyTipo]
+    [displayGroupsBeforeInvite, contactsByGroup, effectiveInviteFilter, effectivePartyTipoFilter]
   );
 
   const tourSampleGroupKey = displayGroups[0]?.key ?? null;
@@ -984,7 +1072,7 @@ function MeusClientesClientContent() {
   const gestorFilterCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const row of managerFilterOptions) {
-      const scope = computeMyClientScope(companies, responsibles, row.userId, areaManagers);
+      const scope = computeMyClientScope(companies, responsibles, row.userId, areaManagers, people);
       const groupKeys = new Set<string>();
       for (const company of companies) {
         if (scope.companyIds.has(company.id)) groupKeys.add(resolveGroupKey(company));
@@ -997,6 +1085,23 @@ function MeusClientesClientContent() {
     }
     return counts;
   }, [managerFilterOptions, companies, people, responsibles, areaManagers]);
+
+  const responsibleAreaFilterCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    const baseGroups = buildGroupBuckets(companies, people).filter((g) => g.key !== SEM_GRUPO_KEY);
+    counts.set("__all__", baseGroups.length);
+    counts.set(FILTER_SEM_RESPONSAVEL, 0);
+    for (const area of allAreasList) counts.set(area, 0);
+    for (const group of baseGroups) {
+      const area = group.responsibleArea ?? null;
+      if (!area) {
+        counts.set(FILTER_SEM_RESPONSAVEL, (counts.get(FILTER_SEM_RESPONSAVEL) ?? 0) + 1);
+        continue;
+      }
+      counts.set(area, (counts.get(area) ?? 0) + 1);
+    }
+    return counts;
+  }, [companies, people, allAreasList]);
 
   const displayContactsByGroup = useMemo(() => {
     const map = new Map<string, EmailContact[]>();
@@ -1052,6 +1157,7 @@ function MeusClientesClientContent() {
       (isAdmin && filterFaturamentoPrevisto !== "all") ||
       filterInvite !== "all" ||
       filterPartyTipo !== "all" ||
+      (isAdmin && Boolean(filterResponsibleArea)) ||
       search.trim()
   );
 
@@ -1073,6 +1179,7 @@ function MeusClientesClientContent() {
     setFilterFaturamentoPrevisto("all");
     setFilterInvite("all");
     setFilterPartyTipo("all");
+    setFilterResponsibleArea("");
     setSearch("");
   };
 
@@ -1196,14 +1303,6 @@ function MeusClientesClientContent() {
         />
       )}
 
-      <div data-tour="mc-progress">
-        <ProgressBarCard
-          complete={stats.completo}
-          total={stats.total}
-          onShowPending={stats.incompleto > 0 ? () => setFilterStatus("pending") : undefined}
-        />
-      </div>
-
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-6" data-tour="mc-stats">
         <ClickableStatCard
           label={hasActiveFilters ? "Grupos no filtro" : showAll ? "Total de grupos" : "Meus grupos"}
@@ -1223,24 +1322,32 @@ function MeusClientesClientContent() {
           active={filterStatus === "pending"}
           onClick={() => setFilterStatus((s) => (s === "pending" ? "all" : "pending"))}
         />
-        <ClickableStatCard
-          label="Pessoas para festa"
-          value={inviteFilterCounts.party}
-          active={filterInvite === "party"}
-          onClick={() => setFilterInvite((s) => (s === "party" ? "all" : "party"))}
-        />
+        {isAdmin && (
+          <ClickableStatCard
+            label="Pessoas para festa"
+            value={inviteFilterCounts.party}
+            active={filterInvite === "party"}
+            onClick={() => setFilterInvite((s) => (s === "party" ? "all" : "party"))}
+          />
+        )}
         <ClickableStatCard
           label="Pessoas NPS"
           value={inviteFilterCounts.nps}
-          active={filterInvite === "nps"}
-          onClick={() => setFilterInvite((s) => (s === "nps" ? "all" : "nps"))}
+          active={!isAdmin || filterInvite === "nps"}
+          onClick={
+            isAdmin
+              ? () => setFilterInvite((s) => (s === "nps" ? "all" : "nps"))
+              : undefined
+          }
         />
-        <ClickableStatCard
-          label="Grupos com festa"
-          value={inviteFilterCounts.partyGroups}
-          active={filterInvite === "party"}
-          onClick={() => setFilterInvite((s) => (s === "party" ? "all" : "party"))}
-        />
+        {isAdmin && (
+          <ClickableStatCard
+            label="Grupos com festa"
+            value={inviteFilterCounts.partyGroups}
+            active={filterInvite === "party"}
+            onClick={() => setFilterInvite((s) => (s === "party" ? "all" : "party"))}
+          />
+        )}
       </div>
 
       <div
@@ -1265,34 +1372,45 @@ function MeusClientesClientContent() {
             counts={statusFilterCounts}
           />
 
-          <Select
-            value={filterInvite}
-            onValueChange={(v) => setFilterInvite(v as InviteFilter)}
-          >
-            <SelectTrigger size="sm" className="w-44">
-              <span className="flex min-w-0 items-center gap-2">
-                <span className="truncate">
-                  {filterInvite === "all" ? "NPS/Festa" : selectedInviteOption.label}
-                </span>
-                <span className="shrink-0 tabular-nums text-muted-foreground">
-                  ({selectedInviteOption.count})
-                </span>
-              </span>
-            </SelectTrigger>
-            <SelectContent>
-              {inviteFilterOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  <span className="flex w-full items-center gap-2">
-                    <span className="flex-1">{option.label}</span>
-                    <span className="tabular-nums text-xs text-muted-foreground">
-                      {option.count}
-                    </span>
+          {isAdmin ? (
+            <Select
+              value={filterInvite}
+              onValueChange={(v) => setFilterInvite(v as InviteFilter)}
+            >
+              <SelectTrigger size="sm" className="w-44">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate">
+                    {filterInvite === "all" ? "NPS/Festa" : selectedInviteOption.label}
                   </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                  <span className="shrink-0 tabular-nums text-muted-foreground">
+                    ({selectedInviteOption.count})
+                  </span>
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                {inviteFilterOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    <span className="flex w-full items-center gap-2">
+                      <span className="flex-1">{option.label}</span>
+                      <span className="tabular-nums text-xs text-muted-foreground">
+                        {option.count}
+                      </span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Badge
+              variant="outline"
+              className="h-8 border-blue-200 bg-blue-50 px-3 text-xs font-medium text-blue-800"
+              title="Gestores veem apenas clientes com pessoas elegíveis ao NPS"
+            >
+              Só clientes NPS ({inviteFilterCounts.npsGroups})
+            </Badge>
+          )}
 
+          {isAdmin && (
           <Select
             value={filterPartyTipo}
             onValueChange={(v) => setFilterPartyTipo(v as PartyInviteTipo | "all")}
@@ -1334,6 +1452,7 @@ function MeusClientesClientContent() {
               ))}
             </SelectContent>
           </Select>
+          )}
 
           <Select value={filterArea || "__all__"} onValueChange={(v) => setFilterArea(v === "__all__" ? "" : v)}>
             <SelectTrigger size="sm" className="w-48">
@@ -1384,6 +1503,59 @@ function MeusClientesClientContent() {
 
           {isAdmin && (
             <>
+              <Select
+                value={filterResponsibleArea || "__all__"}
+                onValueChange={(v) => setFilterResponsibleArea(v === "__all__" ? "" : v)}
+              >
+                <SelectTrigger size="sm" className="w-52">
+                  {filterResponsibleArea ? (
+                    <span className="flex min-w-0 items-center gap-2">
+                      {filterResponsibleArea !== FILTER_SEM_RESPONSAVEL && (
+                        <FilterAreaIcon area={filterResponsibleArea} size="sm" />
+                      )}
+                      <span className="truncate">
+                        {filterResponsibleArea === FILTER_SEM_RESPONSAVEL
+                          ? "Sem responsável"
+                          : filterResponsibleArea}
+                      </span>
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
+                        ({responsibleAreaFilterCounts.get(filterResponsibleArea) ?? 0})
+                      </span>
+                    </span>
+                  ) : (
+                    <SelectValue placeholder="Área responsável" />
+                  )}
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">
+                    <span className="flex w-full items-center gap-2">
+                      <span className="flex-1">Todas (responsável)</span>
+                      <span className="tabular-nums text-xs text-muted-foreground">
+                        {responsibleAreaFilterCounts.get("__all__") ?? 0}
+                      </span>
+                    </span>
+                  </SelectItem>
+                  <SelectItem value={FILTER_SEM_RESPONSAVEL}>
+                    <span className="flex w-full items-center gap-2">
+                      <span className="flex-1">Sem responsável</span>
+                      <span className="tabular-nums text-xs text-muted-foreground">
+                        {responsibleAreaFilterCounts.get(FILTER_SEM_RESPONSAVEL) ?? 0}
+                      </span>
+                    </span>
+                  </SelectItem>
+                  {allAreasList.map((area) => (
+                    <SelectItem key={`resp-${area}`} value={area}>
+                      <span className="flex w-full items-center gap-2">
+                        <FilterAreaIcon area={area} size="sm" />
+                        <span className="truncate flex-1">{area}</span>
+                        <span className="tabular-nums text-xs text-muted-foreground">
+                          {responsibleAreaFilterCounts.get(area) ?? 0}
+                        </span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Select
                 value={filterGestor || "__all__"}
                 onValueChange={(v) => setFilterGestor(v === "__all__" ? "" : v)}
@@ -1598,8 +1770,9 @@ function MeusClientesClientContent() {
           filterStatus={filterStatus}
           filterAtividade={isAdmin ? filterAtividade : "all"}
           filterFaturamentoPrevisto={isAdmin ? filterFaturamentoPrevisto : "all"}
-          filterInvite={filterInvite}
-          filterPartyTipo={filterPartyTipo}
+          filterInvite={isAdmin ? filterInvite : "nps"}
+          filterPartyTipo={isAdmin ? filterPartyTipo : "all"}
+          filterResponsibleArea={isAdmin ? filterResponsibleArea : ""}
           gestorName={gestorName}
           filterResultCount={hasActiveFilters ? displayGroups.length : undefined}
           onClearArea={() => setFilterArea("")}
@@ -1609,6 +1782,7 @@ function MeusClientesClientContent() {
           onClearFaturamentoPrevisto={() => setFilterFaturamentoPrevisto("all")}
           onClearInvite={() => setFilterInvite("all")}
           onClearPartyTipo={() => setFilterPartyTipo("all")}
+          onClearResponsibleArea={() => setFilterResponsibleArea("")}
         />
       </div>
 
@@ -1637,8 +1811,8 @@ function MeusClientesClientContent() {
                 onToggleSelectAllInGroup={handleToggleSelectAllInGroup}
                 compact={compactMode}
                 searchQuery={search}
-                inviteFilter={filterInvite}
-                partyTipoFilter={filterPartyTipo}
+                inviteFilter={effectiveInviteFilter}
+                partyTipoFilter={effectivePartyTipoFilter}
                 tourGroupSample={index === 0}
                 tourContactEdit={index === 0 && tourActive}
                 onEditContact={(contact) => {
@@ -1682,6 +1856,11 @@ function MeusClientesClientContent() {
                   setNpsLinkGroup(g);
                   setNpsLinkDialogOpen(true);
                 }}
+                fallbackAreaOptions={allAreasList}
+                onResponsibleAreaChange={handleResponsibleAreaChange}
+                savingResponsible={
+                  Boolean(group.clientGroupId) && savingResponsibleGroupId === group.clientGroupId
+                }
               />
             ))}
           </div>
