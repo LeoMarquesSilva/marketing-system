@@ -11,13 +11,13 @@ export function slugifyUsageLabel(label: string): string {
 
 export function assertUsageTypeCanDelete(type: PhotoUsageType): void {
   if (type.isOfficial || type.isSystem) {
-    throw new Error("O uso Oficial não pode ser apagado.");
+    throw new Error("O uso Foto dos sistemas do escritório não pode ser apagado.");
   }
 }
 
 export function assertUsageTypeCanDeactivate(type: PhotoUsageType): void {
   if (type.isOfficial || type.isSystem) {
-    throw new Error("O uso Oficial não pode ser desativado.");
+    throw new Error("O uso Foto dos sistemas do escritório não pode ser desativado.");
   }
 }
 

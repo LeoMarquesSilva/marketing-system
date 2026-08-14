@@ -82,7 +82,8 @@ export function PhotoUsageTypesPanel() {
         <div>
           <h3 className="text-sm font-semibold text-[#04202f]">Usos das fotos</h3>
           <p className="text-xs text-muted-foreground">
-            Oficial é fixo. Os demais aparecem como chips em Minhas fotos.
+            O uso “Foto dos sistemas do escritório” é fixo. Os demais aparecem como chips em Minhas
+            fotos.
           </p>
         </div>
         <form

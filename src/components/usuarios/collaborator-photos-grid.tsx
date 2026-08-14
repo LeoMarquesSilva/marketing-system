@@ -282,22 +282,22 @@ export function CollaboratorPhotosGrid({ initialPeople }: CollaboratorPhotosGrid
                   </div>
                 </button>
 
-                <div className="flex items-center justify-between gap-1 border-t px-2 py-1.5">
+                <div className="flex items-start justify-between gap-1.5 border-t px-2 py-1.5">
                   <Badge
                     variant={photoCount > 0 ? "secondary" : "outline"}
                     className={cn(
-                      "px-1.5 py-0 text-[10px] font-normal",
+                      "h-auto min-w-0 flex-1 whitespace-normal px-1.5 py-0.5 text-left text-[10px] font-normal leading-snug",
                       photoCount === 0 && "border-amber-200 text-amber-700"
                     )}
                   >
                     {photoCount > 0
-                      ? `${photoCount} foto${photoCount === 1 ? "" : "s"}${hasOfficial ? " · oficial" : ""}`
+                      ? `${photoCount} foto${photoCount === 1 ? "" : "s"}${hasOfficial ? " · Sistemas do escritório" : ""}`
                       : "Pendente"}
                   </Badge>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7"
+                    className="h-7 w-7 shrink-0"
                     title="Galeria"
                     disabled={!person.userId}
                     onClick={() => openGallery(person)}

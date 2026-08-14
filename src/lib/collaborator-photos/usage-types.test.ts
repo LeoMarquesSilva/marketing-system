@@ -10,7 +10,7 @@ import type { PhotoUsageType } from "@/lib/collaborator-photos/types";
 const oficial: PhotoUsageType = {
   id: "t-oficial",
   slug: "oficial",
-  label: "Oficial",
+  label: "Foto dos sistemas do escritório",
   isOfficial: true,
   isSystem: true,
   sortOrder: 0,
@@ -29,11 +29,15 @@ const posts: PhotoUsageType = {
 
 describe("photo usage types", () => {
   it("impede apagar o uso oficial", () => {
-    expect(() => assertUsageTypeCanDelete(oficial)).toThrow(/oficial/i);
+    expect(() => assertUsageTypeCanDelete(oficial)).toThrow(
+      "O uso Foto dos sistemas do escritório não pode ser apagado."
+    );
   });
 
   it("impede desativar o uso oficial", () => {
-    expect(() => assertUsageTypeCanDeactivate(oficial)).toThrow(/oficial/i);
+    expect(() => assertUsageTypeCanDeactivate(oficial)).toThrow(
+      "O uso Foto dos sistemas do escritório não pode ser desativado."
+    );
   });
 
   it("permite desativar categoria extra", () => {

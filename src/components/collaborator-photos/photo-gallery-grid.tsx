@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable react-hooks/set-state-in-effect -- Fecha o lightbox quando a foto aberta é removida da coleção. */
+
 import { useEffect, useState } from "react";
 import { Download, Images, Loader2, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -50,7 +52,10 @@ export function PhotoGalleryGrid({
 
   if (photos.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-[#9ec5c8]/70 bg-[#f4fbfb] px-6 py-16 text-center">
+      <div
+        className="rounded-2xl border border-dashed border-[#9ec5c8]/70 bg-[#f4fbfb] px-6 py-16 text-center"
+        data-tour="mf-gallery"
+      >
         <Images className="mx-auto h-10 w-10 text-[#1a6b72]/50" />
         <p className="mt-3 text-sm font-semibold text-[#04202f]">{emptyTitle}</p>
         <p className="mx-auto mt-1 max-w-md text-sm text-[#04202f]/65">{emptyDescription}</p>
@@ -60,8 +65,11 @@ export function PhotoGalleryGrid({
 
   return (
     <>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {photos.map((photo) => {
+      <div
+        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+        data-tour="mf-gallery"
+      >
+        {photos.map((photo, photoIndex) => {
           const isOfficial = photo.usageSlugs.includes("oficial");
           const busy = busyPhotoId === photo.id;
           return (
@@ -84,12 +92,15 @@ export function PhotoGalleryGrid({
                   className="h-full w-full object-cover object-top"
                 />
                 {isOfficial && (
-                  <span className="absolute left-3 top-3 rounded-full bg-[#47cdd0] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#04202f]">
-                    Oficial
+                  <span className="absolute left-3 top-3 rounded-full bg-[#47cdd0] px-2.5 py-1 text-[10px] font-semibold tracking-wide text-[#04202f]">
+                    Sistemas do escritório
                   </span>
                 )}
                 {photo.sessionLabel && (
-                  <span className="absolute bottom-3 left-3 right-3 truncate rounded-md bg-black/55 px-2 py-1 text-[10px] font-medium text-white">
+                  <span
+                    className="absolute bottom-3 left-3 right-3 truncate rounded-md bg-black/55 px-2 py-1 text-[10px] font-medium text-white"
+                    data-tour={photoIndex === 0 ? "mf-session" : undefined}
+                  >
                     {photo.sessionLabel}
                   </span>
                 )}
@@ -104,7 +115,10 @@ export function PhotoGalleryGrid({
                   </p>
                 )}
               </div>
-              <div className="flex flex-wrap gap-1.5 p-3">
+              <div
+                className="flex flex-wrap gap-1.5 p-3"
+                data-tour={photoIndex === 0 ? "mf-usage-options" : undefined}
+              >
                 {usageTypes.map((usage) => {
                   const active = photo.usageSlugs.includes(usage.slug);
                   return (
@@ -113,6 +127,11 @@ export function PhotoGalleryGrid({
                       type="button"
                       disabled={busy}
                       onClick={() => onToggleUsage(photo, usage)}
+                      data-tour={
+                        photoIndex === 0 && usage.slug === "oficial"
+                          ? "mf-official-usage"
+                          : undefined
+                      }
                       className={cn(
                         "rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
                         active
@@ -127,7 +146,10 @@ export function PhotoGalleryGrid({
                   );
                 })}
               </div>
-              <div className="flex items-center gap-1 border-t border-[#edf4f5] px-2 py-2">
+              <div
+                className="flex items-center gap-1 border-t border-[#edf4f5] px-2 py-2"
+                data-tour={photoIndex === 0 ? "mf-actions" : undefined}
+              >
                 <Button type="button" variant="ghost" size="sm" className="h-8 gap-1.5 text-xs" asChild>
                   <a href={downloadHref(photo.id)}>
                     <Download className="h-3.5 w-3.5" />

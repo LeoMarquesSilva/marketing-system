@@ -25,6 +25,7 @@ export interface AuthProfile {
   content_tutorial_completed_at?: string | null;
   meus_clientes_tutorial_completed_at?: string | null;
   newsletter_tutorial_completed_at?: string | null;
+  minhas_fotos_tutorial_completed_at?: string | null;
 }
 
 interface AuthContextValue {
@@ -54,7 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     for (let attempt = 0; attempt < 3; attempt++) {
       const { data, error } = await supabase
         .from("users")
-        .select("id, name, email, department, role, auth_id, is_active, avatar_url, permissions, must_change_password, content_tutorial_completed_at, meus_clientes_tutorial_completed_at, newsletter_tutorial_completed_at")
+        .select("id, name, email, department, role, auth_id, is_active, avatar_url, permissions, must_change_password, content_tutorial_completed_at, meus_clientes_tutorial_completed_at, newsletter_tutorial_completed_at, minhas_fotos_tutorial_completed_at")
         .eq("auth_id", authId)
         .maybeSingle();
       if (data) {
