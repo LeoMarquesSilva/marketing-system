@@ -1,3 +1,8 @@
+import {
+  departmentMatchesAreaFilter,
+  resolveAreaFilterLabel,
+} from "@/lib/ferias/filters";
+
 /** Pessoa da lista de Fotos Colaboradores — mesma base RH de Férias (`hr_employees`). */
 export interface PhotoRosterPerson {
   employeeId: string;
@@ -11,7 +16,23 @@ export interface PhotoRosterPerson {
   avatarUrl: string | null;
 }
 
-export type PhotoRosterSituation = "ativos" | "todos";
+/** Mesma situação do filtro de Férias. */
+export type PhotoRosterSituation = "ativos" | "inativos" | "all";
+
+export type PhotoGalleryFilter = "all" | "com_fotos" | "sem_fotos";
+
+/**
+ * Áreas para os botões — mesma regra de Férias
+ * (Marketing/Financeiro/Facilities/Limpeza/RH → Operações Legais).
+ */
+export function listPhotoRosterAreas(people: PhotoRosterPerson[]): string[] {
+  const set = new Set<string>();
+  for (const person of people) {
+    const label = resolveAreaFilterLabel(person.department);
+    if (label) set.add(label);
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
 
 export function filterPhotoRoster(
   people: PhotoRosterPerson[],
@@ -19,7 +40,7 @@ export function filterPhotoRoster(
     search: string;
     department: string;
     situation: PhotoRosterSituation;
-    gallery: "all" | "com_fotos" | "sem_fotos";
+    gallery: PhotoGalleryFilter;
     photoCountByUserId: Record<string, number>;
   }
 ): PhotoRosterPerson[] {
@@ -27,12 +48,14 @@ export function filterPhotoRoster(
   return people
     .filter((person) => {
       if (opts.situation === "ativos" && !person.isActive) return false;
-      if (q && !person.name.toLowerCase().includes(q)) return false;
-      if (opts.department !== "all" && person.department !== opts.department) return false;
+      if (opts.situation === "inativos" && person.isActive) return false;
+      if (!departmentMatchesAreaFilter(person.department, opts.department)) return false;
       const count = person.userId ? opts.photoCountByUserId[person.userId] ?? 0 : 0;
       if (opts.gallery === "com_fotos" && count === 0) return false;
       if (opts.gallery === "sem_fotos" && count > 0) return false;
-      return true;
+      if (!q) return true;
+      const haystack = `${person.name} ${person.department ?? ""} ${person.position ?? ""}`;
+      return haystack.toLowerCase().includes(q);
     })
     .sort((a, b) => {
       const aCount = a.userId ? opts.photoCountByUserId[a.userId] ?? 0 : 0;

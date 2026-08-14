@@ -17,6 +17,8 @@ import { fetchGallerySummary } from "@/lib/collaborator-photos/api";
 import {
   computePhotoRosterStats,
   filterPhotoRoster,
+  listPhotoRosterAreas,
+  type PhotoGalleryFilter,
   type PhotoRosterPerson,
   type PhotoRosterSituation,
 } from "@/lib/collaborator-photos/roster";
@@ -30,7 +32,7 @@ export function CollaboratorPhotosGrid({ initialPeople }: CollaboratorPhotosGrid
   const [people] = useState(initialPeople);
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
-  const [galleryFilter, setGalleryFilter] = useState<"all" | "com_fotos" | "sem_fotos">("all");
+  const [galleryFilter, setGalleryFilter] = useState<PhotoGalleryFilter>("all");
   const [situationFilter, setSituationFilter] = useState<PhotoRosterSituation>("ativos");
   const [galleryPerson, setGalleryPerson] = useState<PhotoRosterPerson | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,16 +53,13 @@ export function CollaboratorPhotosGrid({ initialPeople }: CollaboratorPhotosGrid
     void refreshGallerySummary();
   }, []);
 
-  const departments = useMemo(() => {
-    const set = new Set<string>();
-    people.forEach((person) => person.department && set.add(person.department));
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [people]);
+  const departments = useMemo(() => listPhotoRosterAreas(people), [people]);
 
-  const situationPool = useMemo(
-    () => (situationFilter === "ativos" ? people.filter((p) => p.isActive) : people),
-    [people, situationFilter]
-  );
+  const situationPool = useMemo(() => {
+    if (situationFilter === "ativos") return people.filter((p) => p.isActive);
+    if (situationFilter === "inativos") return people.filter((p) => !p.isActive);
+    return people;
+  }, [people, situationFilter]);
 
   const stats = useMemo(
     () => computePhotoRosterStats(situationPool, photoCountByUserId),
@@ -130,33 +129,20 @@ export function CollaboratorPhotosGrid({ initialPeople }: CollaboratorPhotosGrid
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-1 flex-wrap items-center gap-2">
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Buscar colaborador…"
+              placeholder="Buscar por nome, área ou cargo…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="h-9 pl-9 text-sm"
             />
           </div>
-          <Select value={deptFilter} onValueChange={setDeptFilter}>
-            <SelectTrigger className="h-9 w-[160px] text-xs">
-              <SelectValue placeholder="Área" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas as áreas</SelectItem>
-              {departments.map((d) => (
-                <SelectItem key={d} value={d}>
-                  {d}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
           <Select
             value={galleryFilter}
-            onValueChange={(v) => setGalleryFilter(v as typeof galleryFilter)}
+            onValueChange={(v) => setGalleryFilter(v as PhotoGalleryFilter)}
           >
             <SelectTrigger className="h-9 w-[160px] text-xs">
               <SelectValue placeholder="Galeria" />
@@ -171,12 +157,13 @@ export function CollaboratorPhotosGrid({ initialPeople }: CollaboratorPhotosGrid
             value={situationFilter}
             onValueChange={(v) => setSituationFilter(v as PhotoRosterSituation)}
           >
-            <SelectTrigger className="h-9 w-[140px] text-xs">
+            <SelectTrigger className="h-9 w-[160px] text-xs">
               <SelectValue placeholder="Situação" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ativos">Ativos</SelectItem>
-              <SelectItem value="todos">Todos</SelectItem>
+              <SelectItem value="inativos">Ex-colaboradores</SelectItem>
+              <SelectItem value="all">Todos</SelectItem>
             </SelectContent>
           </Select>
           {hasActiveFilters && (
@@ -185,21 +172,47 @@ export function CollaboratorPhotosGrid({ initialPeople }: CollaboratorPhotosGrid
               Limpar
             </Button>
           )}
+          {stats.withoutPhotos > 0 && situationFilter === "ativos" && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 shrink-0"
+              onClick={() => setGalleryFilter("sem_fotos")}
+            >
+              Ver {stats.withoutPhotos} sem fotos
+            </Button>
+          )}
         </div>
-        {stats.withoutPhotos > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 shrink-0"
-            onClick={() => setGalleryFilter("sem_fotos")}
-          >
-            Ver {stats.withoutPhotos} sem fotos
-          </Button>
+
+        {departments.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              variant={deptFilter === "all" ? "default" : "outline"}
+              className="h-8 rounded-full px-3 text-xs"
+              onClick={() => setDeptFilter("all")}
+            >
+              Todas as áreas
+            </Button>
+            {departments.map((department) => (
+              <Button
+                key={department}
+                type="button"
+                size="sm"
+                variant={deptFilter === department ? "default" : "outline"}
+                className="h-8 rounded-full px-3 text-xs"
+                onClick={() => setDeptFilter(department)}
+              >
+                {department}
+              </Button>
+            ))}
+          </div>
         )}
       </div>
 
       <p className="text-xs text-muted-foreground">
-        {filteredPeople.length} colaborador{filteredPeople.length !== 1 ? "es" : ""} · mesma lista
+        {filteredPeople.length} colaborador{filteredPeople.length !== 1 ? "es" : ""} · mesmas áreas
         de Férias (RH / VIOS)
       </p>
 
