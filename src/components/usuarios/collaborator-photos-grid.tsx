@@ -23,6 +23,7 @@ import {
   type PhotoRosterSituation,
 } from "@/lib/collaborator-photos/roster";
 import { cn } from "@/lib/utils";
+import { collaboratorPhotoPreviewUrl } from "@/lib/collaborator-photos/preview-url";
 
 interface CollaboratorPhotosGridProps {
   initialPeople: PhotoRosterPerson[];
@@ -262,9 +263,15 @@ export function CollaboratorPhotosGrid({ initialPeople }: CollaboratorPhotosGrid
                   {hasPreview ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={person.avatarUrl!}
+                      src={collaboratorPhotoPreviewUrl(person.avatarUrl!, {
+                        width: 480,
+                        quality: 78,
+                        resize: "cover",
+                      })}
                       alt={`Foto de ${person.name}`}
                       className="h-full w-full object-cover object-top"
+                      loading="lazy"
+                      decoding="async"
                     />
                   ) : (
                     <div className="flex h-full flex-col items-center justify-center gap-1.5 text-muted-foreground">

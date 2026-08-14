@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Download, Images, Loader2, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { collaboratorPhotoPreviewUrl } from "@/lib/collaborator-photos/preview-url";
 import type { CollaboratorPhoto, PhotoUsageType } from "@/lib/collaborator-photos/types";
 
 interface PhotoGalleryGridProps {
@@ -16,11 +17,27 @@ interface PhotoGalleryGridProps {
   emptyTitle: string;
   emptyDescription: string;
   onToggleUsage: (photo: CollaboratorPhoto, usage: PhotoUsageType) => void;
-  onDelete?: (photo: CollaboratorPhoto) => void;
+  onDelete?: (photo: CollaboratorPhoto) => void | Promise<void>;
 }
 
 function downloadHref(photoId: string) {
   return `/api/collaborator-photos/${photoId}/download`;
+}
+
+function gridPreviewSrc(publicUrl: string) {
+  return collaboratorPhotoPreviewUrl(publicUrl, {
+    width: 720,
+    quality: 78,
+    resize: "cover",
+  });
+}
+
+function lightboxPreviewSrc(publicUrl: string) {
+  return collaboratorPhotoPreviewUrl(publicUrl, {
+    width: 1600,
+    quality: 85,
+    resize: "contain",
+  });
 }
 
 export function PhotoGalleryGrid({
@@ -49,6 +66,14 @@ export function PhotoGalleryGrid({
       setOpened(null);
     }
   }, [opened, photos]);
+
+  // Assim que a exclusão começa (após o confirm), fecha o lightbox para não
+  // mostrar a imagem já removida do Storage até o reload.
+  useEffect(() => {
+    if (opened && busyPhotoId === opened.id) {
+      setOpened(null);
+    }
+  }, [busyPhotoId, opened]);
 
   if (photos.length === 0) {
     return (
@@ -87,9 +112,11 @@ export function PhotoGalleryGrid({
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={photo.publicUrl}
+                  src={gridPreviewSrc(photo.publicUrl)}
                   alt={photo.originalFilename || "Foto da sessão"}
                   className="h-full w-full object-cover object-top"
+                  loading="lazy"
+                  decoding="async"
                 />
                 {isOfficial && (
                   <span className="absolute left-3 top-3 rounded-full bg-[#47cdd0] px-2.5 py-1 text-[10px] font-semibold tracking-wide text-[#04202f]">
@@ -163,7 +190,7 @@ export function PhotoGalleryGrid({
                     size="sm"
                     className="ml-auto h-8 gap-1.5 text-xs text-destructive hover:text-destructive"
                     disabled={busy}
-                    onClick={() => onDelete(photo)}
+                    onClick={() => onDelete?.(photo)}
                   >
                     {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                     Excluir
@@ -186,9 +213,10 @@ export function PhotoGalleryGrid({
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={opened.publicUrl}
+              src={lightboxPreviewSrc(opened.publicUrl)}
               alt={opened.originalFilename || "Foto da sessão"}
               className="max-h-[78vh] w-full object-contain"
+              decoding="async"
             />
             <div className="flex flex-wrap items-center justify-between gap-2 bg-[#04202f] px-4 py-3 text-white">
               <div className="min-w-0">
@@ -218,7 +246,7 @@ export function PhotoGalleryGrid({
                     variant="ghost"
                     className="h-8 gap-1.5 text-white hover:bg-white/10 hover:text-white"
                     disabled={busyPhotoId === opened.id}
-                    onClick={() => onDelete(opened)}
+                    onClick={() => onDelete?.(opened)}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     Excluir
