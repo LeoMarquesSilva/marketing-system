@@ -25,6 +25,7 @@ import {
   SUPABASE_PRO_STORAGE_QUOTA_BYTES,
   type StorageUsageSummary,
 } from "@/lib/collaborator-photos/storage-usage";
+import { loadPhotoCountsByUserId } from "@/lib/collaborator-photos/photo-counts";
 
 const COLLABORATOR_PHOTOS_BUCKET = "MARKETING-SYSTEM-FOTOS";
 
@@ -589,19 +590,20 @@ export async function listPhotoCountsByUserIds(
   userIds?: string[]
 ): Promise<Record<string, number>> {
   const db = await getServerDb();
-  let query = db.from("collaborator_photos").select("user_id");
-  if (userIds && userIds.length > 0) query = query.in("user_id", userIds);
-  const { data, error } = await query;
-  if (error) throw new PhotoHttpError(500, error.message);
-  const counts: Record<string, number> = {};
-  if (userIds) {
-    for (const id of userIds) counts[id] = 0;
-  }
-  for (const row of data ?? []) {
-    const id = row.user_id as string;
-    counts[id] = (counts[id] ?? 0) + 1;
-  }
-  return counts;
+  return loadPhotoCountsByUserId(
+    async (from, to) => {
+      let query = db
+        .from("collaborator_photos")
+        .select("id, user_id")
+        .order("id")
+        .range(from, to);
+      if (userIds && userIds.length > 0) query = query.in("user_id", userIds);
+      const { data, error } = await query;
+      if (error) throw new PhotoHttpError(500, error.message);
+      return (data ?? []).map((row) => ({ user_id: row.user_id as string }));
+    },
+    { userIds }
+  );
 }
 
 export async function getStorageUsage(actor: AppUserRow): Promise<StorageUsageSummary> {
