@@ -160,21 +160,24 @@ export function ManagerGalleryDialog({
       onChanged?.(photo.userId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar uso.");
+      throw err;
     } finally {
       setBusyPhotoId(null);
     }
   }
 
   async function handleDelete(photo: CollaboratorPhoto) {
-    if (!confirm("Apagar esta foto da galeria?")) return;
+    if (!confirm("Apagar esta foto da galeria?")) return false;
     setBusyPhotoId(photo.id);
     setError(null);
     try {
       await deleteGalleryPhoto(photo.id);
       setPhotos((prev) => prev.filter((item) => item.id !== photo.id));
       onChanged?.(photo.userId);
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao apagar foto.");
+      throw err;
     } finally {
       setBusyPhotoId(null);
     }
