@@ -205,6 +205,10 @@ export function MinhasFotosClient() {
               canDelete
               onToggleUsage={handleToggle}
               onDelete={handleDelete}
+              onPhotosRemoved={(photoIds) => {
+                const removed = new Set(photoIds);
+                setPhotos((prev) => prev.filter((item) => !removed.has(item.id)));
+              }}
             />
             {photos.length > 0 && (
               <p className="text-xs leading-relaxed text-[#5e7a85]">

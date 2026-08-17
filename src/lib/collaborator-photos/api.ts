@@ -77,6 +77,33 @@ export async function deleteGalleryPhoto(photoId: string): Promise<void> {
   if (!res.ok) await parseError(res, "Erro ao apagar foto.");
 }
 
+export async function deleteGalleryPhotosBatch(photoIds: string[]): Promise<string[]> {
+  const res = await fetch("/api/collaborator-photos/batch", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "delete", photoIds }),
+  });
+  if (!res.ok) await parseError(res, "Erro ao apagar fotos selecionadas.");
+  const data = (await res.json()) as { deletedIds: string[] };
+  return data.deletedIds;
+}
+
+export async function moveGalleryPhotosSession(
+  photoIds: string[],
+  sessionId: string
+): Promise<CollaboratorPhoto[]> {
+  const res = await fetch("/api/collaborator-photos/batch", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "move-session", photoIds, sessionId }),
+  });
+  if (!res.ok) await parseError(res, "Erro ao mudar a sessão das fotos.");
+  const data = (await res.json()) as { photos: CollaboratorPhoto[] };
+  return data.photos;
+}
+
 export async function downloadGalleryPhotosZip(photoIds: string[]): Promise<void> {
   const res = await fetch("/api/collaborator-photos/download-batch", {
     method: "POST",

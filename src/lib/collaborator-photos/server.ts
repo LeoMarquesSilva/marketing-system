@@ -20,6 +20,10 @@ import {
   batchDownloadZipName,
   buildPhotosZip,
 } from "@/lib/collaborator-photos/batch-download";
+import {
+  assertBatchMoveSessionInput,
+  assertBatchPhotoIds,
+} from "@/lib/collaborator-photos/batch-ops";
 import type {
   CollaboratorPhoto,
   PhotoSession,
@@ -373,6 +377,69 @@ export async function deletePhoto(actor: AppUserRow, photoId: string): Promise<v
   ) {
     await applyOfficialProjection(photo.user_id, null);
   }
+}
+
+export async function deletePhotosBatch(
+  actor: AppUserRow,
+  photoIds: unknown
+): Promise<{ deletedIds: string[] }> {
+  let ids: string[];
+  try {
+    ids = assertBatchPhotoIds(photoIds, "excluir");
+  } catch (err) {
+    throw new PhotoHttpError(400, err instanceof Error ? err.message : "Lista de fotos inválida.");
+  }
+
+  for (const id of ids) {
+    await deletePhoto(actor, id);
+  }
+  return { deletedIds: ids };
+}
+
+export async function movePhotosToSession(
+  actor: AppUserRow,
+  input: { photoIds: unknown; sessionId: unknown }
+): Promise<CollaboratorPhoto[]> {
+  assertManager(actor);
+
+  let parsed: { photoIds: string[]; sessionId: string };
+  try {
+    parsed = assertBatchMoveSessionInput(input);
+  } catch (err) {
+    throw new PhotoHttpError(400, err instanceof Error ? err.message : "Dados inválidos.");
+  }
+
+  const sessions = await listPhotoSessions(true);
+  const session = sessions.find((item) => item.id === parsed.sessionId) ?? null;
+  if (!session || !session.isActive) {
+    throw new PhotoHttpError(400, "Sessão inválida ou inativa.");
+  }
+
+  const db = await getServerDb();
+  const { data: photos, error: photosError } = await db
+    .from("collaborator_photos")
+    .select("id, user_id")
+    .in("id", parsed.photoIds);
+  if (photosError) throw new PhotoHttpError(500, photosError.message);
+  if (!photos || photos.length === 0) {
+    throw new PhotoHttpError(404, "Nenhuma foto encontrada.");
+  }
+  if (photos.length !== parsed.photoIds.length) {
+    throw new PhotoHttpError(404, "Uma ou mais fotos não foram encontradas.");
+  }
+
+  const ownerIds = [...new Set(photos.map((photo) => photo.user_id as string))];
+  if (ownerIds.length !== 1) {
+    throw new PhotoHttpError(400, "Selecione fotos do mesmo colaborador para mudar a sessão.");
+  }
+
+  const { error: updateError } = await db
+    .from("collaborator_photos")
+    .update({ session_id: session.id })
+    .in("id", parsed.photoIds);
+  if (updateError) throw new PhotoHttpError(500, updateError.message);
+
+  return listGalleryForUser(ownerIds[0]!);
 }
 
 export async function getPhotoDownload(

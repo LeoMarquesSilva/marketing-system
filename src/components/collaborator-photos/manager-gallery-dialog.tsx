@@ -275,10 +275,20 @@ export function ManagerGalleryDialog({
             usageTypes={usageTypes}
             busyPhotoId={busyPhotoId}
             canDelete
+            sessions={sessions}
             emptyTitle="Nenhuma foto nesta galeria"
             emptyDescription="Suba as fotos da pasta desta pessoa no Drive, marcando a sessão correta."
             onToggleUsage={handleToggle}
             onDelete={handleDelete}
+            onPhotosRemoved={(photoIds) => {
+              const removed = new Set(photoIds);
+              setPhotos((prev) => prev.filter((item) => !removed.has(item.id)));
+              if (person) onChanged?.(person.id);
+            }}
+            onGalleryReplaced={(nextPhotos) => {
+              setPhotos(nextPhotos);
+              if (person) onChanged?.(person.id);
+            }}
           />
         )}
       </DialogContent>

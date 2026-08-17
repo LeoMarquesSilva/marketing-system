@@ -1,31 +1,13 @@
 import JSZip from "jszip";
+import {
+  MAX_BATCH_PHOTO_OPS,
+  assertBatchPhotoIds,
+} from "@/lib/collaborator-photos/batch-ops";
 
-export const MAX_BATCH_DOWNLOAD_PHOTOS = 40;
+export const MAX_BATCH_DOWNLOAD_PHOTOS = MAX_BATCH_PHOTO_OPS;
 
 export function assertBatchDownloadIds(photoIds: unknown): string[] {
-  if (!Array.isArray(photoIds) || photoIds.length === 0) {
-    throw new Error("Selecione ao menos uma foto para baixar.");
-  }
-  if (photoIds.length > MAX_BATCH_DOWNLOAD_PHOTOS) {
-    throw new Error(`Selecione no máximo ${MAX_BATCH_DOWNLOAD_PHOTOS} fotos por vez.`);
-  }
-
-  const unique: string[] = [];
-  const seen = new Set<string>();
-  for (const value of photoIds) {
-    if (typeof value !== "string" || !value.trim()) {
-      throw new Error("Lista de fotos inválida.");
-    }
-    const id = value.trim();
-    if (seen.has(id)) continue;
-    seen.add(id);
-    unique.push(id);
-  }
-
-  if (unique.length === 0) {
-    throw new Error("Selecione ao menos uma foto para baixar.");
-  }
-  return unique;
+  return assertBatchPhotoIds(photoIds, "baixar");
 }
 
 /** Evita colisão de nomes dentro do ZIP. */
