@@ -55,8 +55,8 @@ export function ChangePasswordForm() {
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-[#dce9eb] bg-card p-5 shadow-[0_1px_2px_rgba(3,32,47,0.05)]">
-      <div className="flex items-center gap-2">
+    <div className="space-y-4 rounded-2xl border border-[#dce9eb] bg-card p-5 shadow-[0_8px_28px_rgba(3,32,47,0.05)] sm:p-6">
+      <div className="flex items-center gap-2 border-b border-[#e7eff0] pb-4">
         <Lock className="h-4 w-4 text-[#04202f]/70" />
         <p className="text-sm font-semibold text-foreground">Alterar senha</p>
       </div>

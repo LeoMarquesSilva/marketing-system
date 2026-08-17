@@ -29,11 +29,20 @@ import {
   RadioTower,
   ScrollText,
   Palmtree,
+  BriefcaseBusiness,
+  IdCard,
+  ChevronDown,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import { isContentCollaborator } from "@/lib/content-areas";
-import { resolveAllowedSections, isCollaboratorPhotosManager } from "@/lib/access-control";
+import {
+  resolveAllowedSections,
+  isCollaboratorPhotosManager,
+  isAdminRole,
+} from "@/lib/access-control";
+import { hasHrAccess } from "@/lib/rh/access";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { fetchCommentStats } from "@/lib/request-comments";
 import { fetchMarketingRequests } from "@/lib/marketing-requests";
@@ -44,12 +53,35 @@ type SidebarProps = {
   onExpandedChange: (expanded: boolean) => void;
 };
 
+type NavLeaf = {
+  href: string;
+  icon: LucideIcon;
+  label: string;
+};
+
+type NavGroup = {
+  key: string;
+  icon: LucideIcon;
+  label: string;
+  children: NavLeaf[];
+};
+
+type NavEntry = NavLeaf | NavGroup;
+
+function isNavGroup(item: NavEntry): item is NavGroup {
+  return "children" in item && Array.isArray(item.children);
+}
+
+function flattenNav(items: NavEntry[]): NavLeaf[] {
+  return items.flatMap((item) => (isNavGroup(item) ? item.children : [item]));
+}
+
 const SIDEBAR_WIDTH = {
   collapsed: 72,
   expanded: 260,
 };
 
-const baseNavItems = [
+const baseNavItems: NavLeaf[] = [
   { href: "/", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/planner", icon: Columns3, label: "Planner" },
   { href: "/solicitacoes", icon: List, label: "Solicitacoes" },
@@ -70,7 +102,7 @@ const baseNavItems = [
   { href: "/custos-projetos", icon: Wallet, label: "Custos de Projetos" },
 ];
 
-const collaboratorNavItems = [
+const collaboratorNavItems: NavLeaf[] = [
   { href: "/conteudo/inicio", icon: Instagram, label: "Inicio" },
   { href: "/minhas-fotos", icon: Images, label: "Minhas fotos" },
   { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteudo para Post" },
@@ -78,43 +110,69 @@ const collaboratorNavItems = [
   { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
 ];
 
-const manualOnlyNavItems = [
-  { href: "/meus-clientes", icon: Contact, label: "Meus Clientes" },
-  { href: "/ferias", icon: Palmtree, label: "Ferias" },
-];
+const meusClientesNavItem: NavLeaf = {
+  href: "/meus-clientes",
+  icon: Contact,
+  label: "Meus Clientes",
+};
 
-const adminNavItems = [
+const rhNavGroup: NavGroup = {
+  key: "/rh",
+  icon: BriefcaseBusiness,
+  label: "RH",
+  children: [
+    { href: "/rh/ferias", icon: Palmtree, label: "Ferias" },
+    { href: "/rh/qualificacoes", icon: IdCard, label: "Qualificacoes" },
+  ],
+};
+
+const adminNavItems: NavLeaf[] = [
   { href: "/admin", icon: Settings, label: "Configuracoes" },
 ];
 
-function withMinhasFotos<T extends { href: string }>(
-  items: T[],
-  minhasFotos: T
-): T[] {
-  if (items.some((i) => i.href === "/minhas-fotos")) return items;
-  const contentIndex = items.findIndex((i) => i.href.startsWith("/conteudo"));
+function withMinhasFotos(items: NavEntry[], minhasFotos: NavLeaf): NavEntry[] {
+  const flat = flattenNav(items);
+  if (flat.some((i) => i.href === "/minhas-fotos")) return items;
+  const contentIndex = items.findIndex(
+    (i) => !isNavGroup(i) && i.href.startsWith("/conteudo")
+  );
   if (contentIndex >= 0) {
     const copy = [...items];
     copy.splice(contentIndex + 1, 0, minhasFotos);
     return copy;
   }
-  return [items[0], minhasFotos, ...items.slice(1)].filter(Boolean) as T[];
+  return [items[0], minhasFotos, ...items.slice(1)].filter(Boolean) as NavEntry[];
+}
+
+function profileHasRhAccess(
+  profile: { role?: string | null; permissions?: string[] | null } | null
+): boolean {
+  return hasHrAccess(profile?.role, profile?.permissions);
 }
 
 function getNavItems(
-  profile: { id?: string; role?: string | null; department?: string | null; permissions?: string[] | null } | null
-) {
-  const minhasFotos = { href: "/minhas-fotos", icon: Images, label: "Minhas fotos" };
+  profile: {
+    id?: string;
+    role?: string | null;
+    department?: string | null;
+    permissions?: string[] | null;
+  } | null
+): NavEntry[] {
+  const minhasFotos: NavLeaf = { href: "/minhas-fotos", icon: Images, label: "Minhas fotos" };
   const allowed = resolveAllowedSections(profile);
   if (allowed) {
-    const catalog = [...baseNavItems, ...manualOnlyNavItems, ...adminNavItems];
-    let items = catalog.filter((i) => {
+    const leafCatalog: NavLeaf[] = [...baseNavItems, meusClientesNavItem, ...adminNavItems];
+    let items: NavEntry[] = leafCatalog.filter((i) => {
       if (i.href === "/minhas-fotos") return true;
       if (i.href === "/fotos-colaboradores") {
         return isCollaboratorPhotosManager(profile);
       }
       return allowed.includes(i.href);
     });
+
+    if (profileHasRhAccess(profile) || allowed.includes("/rh") || allowed.includes("/ferias")) {
+      items = [...items, rhNavGroup];
+    }
 
     if (allowed.some((k) => k.startsWith("/conteudo"))) {
       items = [
@@ -123,7 +181,11 @@ function getNavItems(
         { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteudo para Post" },
         { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
         { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
-        ...items.filter((i) => !i.href.startsWith("/conteudo") && i.href !== "/minhas-fotos"),
+        ...items.filter(
+          (i) =>
+            isNavGroup(i) ||
+            (!i.href.startsWith("/conteudo") && i.href !== "/minhas-fotos")
+        ),
       ];
     } else {
       items = withMinhasFotos(items, minhasFotos);
@@ -135,14 +197,14 @@ function getNavItems(
     return collaboratorNavItems;
   }
 
-  const isAdmin = profile?.role === "admin";
+  const isAdmin = isAdminRole(profile);
   return [
     ...baseNavItems.filter((i) => {
       if (i.href === "/nfc") return isAdmin;
       if (i.href === "/minhas-fotos") return true;
       return i.href !== "/fotos-colaboradores" || isCollaboratorPhotosManager(profile);
     }),
-    ...(isAdmin ? [...manualOnlyNavItems, ...adminNavItems] : []),
+    ...(isAdmin ? [meusClientesNavItem, rhNavGroup, ...adminNavItems] : []),
   ];
 }
 
@@ -215,9 +277,29 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
   const whatsappUnread = useWhatsappUnreadCount();
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const navItems = getNavItems(profile);
-  const mobileNavItems = navItems.slice(0, 4);
+  const flatNavItems = flattenNav(navItems);
+  const mobileNavItems = flatNavItems.slice(0, 4);
+
+  const toggleGroup = (key: string) => {
+    if (!expanded) {
+      onExpandedChange(true);
+      setOpenGroups((prev) => ({ ...prev, [key]: true }));
+      return;
+    }
+    setOpenGroups((prev) => {
+      const forcedOpen = pathname.startsWith(key);
+      const currentlyOpen = prev[key] ?? forcedOpen;
+      return { ...prev, [key]: !currentlyOpen };
+    });
+  };
+
+  const isGroupOpen = (key: string) => {
+    if (key in openGroups) return Boolean(openGroups[key]);
+    return pathname.startsWith(key);
+  };
 
   const handleSignOut = async () => {
     setMobileMenuOpen(false);
@@ -339,6 +421,136 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
             data-tour="sidebar-nav"
           >
             {navItems.map((item) => {
+              if (isNavGroup(item)) {
+                const groupOpen = isGroupOpen(item.key);
+                const groupActive = item.children.some((child) =>
+                  isRouteActive(pathname, child.href)
+                );
+                return (
+                  <div key={item.key} className="flex flex-col gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(item.key)}
+                      title={!expanded ? item.label : undefined}
+                      aria-label={item.label}
+                      aria-expanded={groupOpen}
+                      className={cn(
+                        "group relative flex h-11 w-full items-center rounded-xl text-sm font-medium outline-none transition-colors duration-200",
+                        expanded ? "gap-3 px-3" : "justify-center px-0",
+                        groupActive && !groupOpen
+                          ? "text-[#1c1c1c]"
+                          : "text-white/55 hover:bg-white/[0.08] hover:text-white focus-visible:bg-white/[0.08] focus-visible:text-white"
+                      )}
+                    >
+                      {groupActive && !groupOpen && (
+                        <motion.span
+                          layoutId="sidebar-active-item"
+                          className="absolute inset-0 rounded-xl bg-[#47cdd0] shadow-[0_10px_28px_rgba(71,205,208,0.26)]"
+                          transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                        />
+                      )}
+                      <span
+                        className={cn(
+                          "relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+                          groupActive && !groupOpen
+                            ? "text-[#1c1c1c]"
+                            : "text-white/65 group-hover:text-white"
+                        )}
+                      >
+                        <item.icon className="h-[18px] w-[18px]" />
+                      </span>
+                      <AnimatePresence initial={false}>
+                        {expanded && (
+                          <motion.span
+                            initial={{ opacity: 0, x: -6 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -6 }}
+                            transition={{ duration: 0.14 }}
+                            className="relative z-10 min-w-0 flex-1 truncate text-left"
+                          >
+                            {item.label}
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                      {expanded && (
+                        <ChevronDown
+                          className={cn(
+                            "relative z-10 h-4 w-4 shrink-0 transition-transform duration-200",
+                            groupOpen ? "rotate-0" : "-rotate-90",
+                            groupActive && !groupOpen ? "text-[#1c1c1c]" : "text-white/40"
+                          )}
+                        />
+                      )}
+                      {!expanded && (
+                        <span
+                          className={cn(
+                            "pointer-events-none absolute left-full ml-3 whitespace-nowrap rounded-lg",
+                            "border border-white/10 bg-[#04202f]/95 px-3 py-1.5 text-xs font-medium text-white shadow-xl backdrop-blur-xl",
+                            "z-50 -translate-x-1 scale-95 opacity-0 transition-all duration-150",
+                            "group-hover:translate-x-0 group-hover:scale-100 group-hover:opacity-100"
+                          )}
+                          aria-hidden
+                        >
+                          {item.label}
+                        </span>
+                      )}
+                    </button>
+                    <AnimatePresence initial={false}>
+                      {expanded && groupOpen && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.18 }}
+                          className="overflow-hidden pl-3"
+                        >
+                          <div className="flex flex-col gap-0.5 border-l border-white/10 pl-2">
+                            {item.children.map((child) => {
+                              const isActive = isRouteActive(pathname, child.href);
+                              return (
+                                <Link
+                                  key={child.href}
+                                  href={child.href}
+                                  aria-label={child.label}
+                                  aria-current={isActive ? "page" : undefined}
+                                  className={cn(
+                                    "group relative flex h-10 items-center gap-2.5 rounded-xl px-2.5 text-sm font-medium outline-none transition-colors duration-200",
+                                    isActive
+                                      ? "text-[#1c1c1c]"
+                                      : "text-white/55 hover:bg-white/[0.08] hover:text-white focus-visible:bg-white/[0.08] focus-visible:text-white"
+                                  )}
+                                >
+                                  {isActive && (
+                                    <motion.span
+                                      layoutId="sidebar-active-item"
+                                      className="absolute inset-0 rounded-xl bg-[#47cdd0] shadow-[0_10px_28px_rgba(71,205,208,0.26)]"
+                                      transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                                    />
+                                  )}
+                                  <span
+                                    className={cn(
+                                      "relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
+                                      isActive
+                                        ? "text-[#1c1c1c]"
+                                        : "text-white/65 group-hover:text-white"
+                                    )}
+                                  >
+                                    <child.icon className="h-4 w-4" />
+                                  </span>
+                                  <span className="relative z-10 min-w-0 flex-1 truncate">
+                                    {child.label}
+                                  </span>
+                                </Link>
+                              );
+                            })}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                );
+              }
+
               const isActive = isRouteActive(pathname, item.href);
               const badgeValue =
                 item.href === "/planner"
@@ -555,7 +767,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
                 <span className="text-xs font-medium text-white/55">Navegação</span>
               </div>
               <div className="grid grid-cols-2 gap-1.5">
-                {navItems.map((item) => {
+                {flatNavItems.map((item) => {
                   const isActive = isRouteActive(pathname, item.href);
                   const badgeValue =
                     item.href === "/planner"

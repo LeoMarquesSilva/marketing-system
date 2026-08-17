@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { isContentCollaborator } from "@/lib/content-areas";
 import { resolveAllowedSections, canAccessPath } from "@/lib/access-control";
 import { resolvePostLoginPathFromProfile } from "@/lib/post-login-path";
+import { isQualificationPending } from "@/lib/qualification-requirement";
 
 const PUBLIC_PATHS = ["/login", "/t", "/nps"];
 
@@ -47,6 +48,18 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     // Troca de senha obrigatória (primeiro acesso) — inclusive saindo de /login.
     if (profile?.must_change_password && pathname !== "/alterar-senha") {
       return "/alterar-senha";
+    }
+
+    const qualificationPending =
+      !profile?.must_change_password && isQualificationPending(profile);
+    if (qualificationPending) {
+      return pathname === "/completar-qualificacao"
+        ? null
+        : "/completar-qualificacao";
+    }
+
+    if (pathname === "/completar-qualificacao") {
+      return profile ? resolvePostLoginPathFromProfile(profile) : null;
     }
 
     if (pathname === "/login") {

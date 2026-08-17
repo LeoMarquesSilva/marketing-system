@@ -19,6 +19,8 @@ interface DatePickerFieldProps {
   disabled?: boolean;
   className?: string;
   id?: string;
+  startYear?: number;
+  endYear?: number;
 }
 
 function isoToDisplay(iso: string): string {
@@ -60,6 +62,8 @@ export function DatePickerField({
   disabled,
   className,
   id,
+  startYear,
+  endYear,
 }: DatePickerFieldProps) {
   const [open, setOpen] = React.useState(false);
   const [text, setText] = React.useState(() => isoToDisplay(value));
@@ -75,8 +79,8 @@ export function DatePickerField({
   }, [value]);
 
   const year = new Date().getFullYear();
-  const startMonth = new Date(year - 30, 0);
-  const endMonth = new Date(year + 10, 11);
+  const startMonth = new Date(startYear ?? year - 30, 0);
+  const endMonth = new Date(endYear ?? year + 10, 11);
 
   const commitText = (next: string) => {
     const iso = displayToIso(next);
@@ -95,35 +99,39 @@ export function DatePickerField({
   };
 
   return (
-    <div className="relative w-full">
-      <Input
-        id={id}
-        type="text"
-        inputMode="numeric"
-        autoComplete="off"
-        disabled={disabled}
-        placeholder={placeholder}
-        value={text}
-        onChange={(event) => {
-          const masked = maskDateInput(event.target.value);
-          setText(masked);
-          if (masked.length === 10) {
-            const iso = displayToIso(masked);
-            if (iso) onChange(iso);
-          } else if (masked === "") {
-            onChange("");
-          }
-        }}
-        onBlur={() => commitText(text)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            commitText(text);
-          }
-        }}
-        className={cn("h-9 pr-9", className)}
-      />
-      <PopoverPrimitive.Root open={open} onOpenChange={setOpen} modal={false}>
+    <PopoverPrimitive.Root open={open} onOpenChange={setOpen} modal={false}>
+      <div className="relative w-full">
+        <Input
+          id={id}
+          type="text"
+          inputMode="numeric"
+          autoComplete="off"
+          disabled={disabled}
+          placeholder={placeholder}
+          value={text}
+          onChange={(event) => {
+            const masked = maskDateInput(event.target.value);
+            setText(masked);
+            if (masked.length === 10) {
+              const iso = displayToIso(masked);
+              if (iso) onChange(iso);
+            } else if (masked === "") {
+              onChange("");
+            }
+          }}
+          onBlur={() => commitText(text)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commitText(text);
+            }
+            if (event.key === "ArrowDown" && event.altKey) {
+              event.preventDefault();
+              setOpen(true);
+            }
+          }}
+          className={cn("h-9 pr-9", className)}
+        />
         <PopoverPrimitive.Trigger asChild>
           <Button
             type="button"
@@ -131,35 +139,35 @@ export function DatePickerField({
             size="icon"
             disabled={disabled}
             aria-label="Abrir calendário"
+            aria-expanded={open}
             className="absolute top-1/2 right-0.5 h-8 w-8 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            onClick={() => !open && setOpen(true)}
           >
             <CalendarIcon className="h-4 w-4" />
           </Button>
         </PopoverPrimitive.Trigger>
-        <PopoverPrimitive.Portal>
-          <PopoverPrimitive.Content
-            className="z-[100] rounded-xl border bg-popover p-0 shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
-            align="end"
-            sideOffset={4}
-          >
-            <Calendar
-              mode="single"
-              selected={date}
-              onSelect={handleSelect}
-              locale={locale}
-              captionLayout="dropdown"
-              startMonth={startMonth}
-              endMonth={endMonth}
-              defaultMonth={date}
-              formatters={{
-                formatMonthDropdown: (month) =>
-                  format(month, "LLL", { locale: ptBR }),
-              }}
-            />
-          </PopoverPrimitive.Content>
-        </PopoverPrimitive.Portal>
-      </PopoverPrimitive.Root>
-    </div>
+      </div>
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Content
+          className="z-[100] rounded-xl border bg-popover p-0 shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
+          align="end"
+          sideOffset={4}
+        >
+          <Calendar
+            mode="single"
+            selected={date}
+            onSelect={handleSelect}
+            locale={locale}
+            captionLayout="dropdown"
+            startMonth={startMonth}
+            endMonth={endMonth}
+            defaultMonth={date}
+            formatters={{
+              formatMonthDropdown: (month) =>
+                format(month, "LLL", { locale: ptBR }),
+            }}
+          />
+        </PopoverPrimitive.Content>
+      </PopoverPrimitive.Portal>
+    </PopoverPrimitive.Root>
   );
 }

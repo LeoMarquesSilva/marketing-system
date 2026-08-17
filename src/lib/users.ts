@@ -16,11 +16,13 @@ export interface User {
   permissions?: string[] | null;
   must_change_password?: boolean | null;
   last_seen_at?: string | null;
+  qualification_required_at?: string | null;
+  qualification_completed_at?: string | null;
   auth_activity?: UserAuthActivity | null;
 }
 
 const USER_LIST_SELECT =
-  "id, name, email, department, avatar_url, photo_onedrive_url, photo_collected, photo_collected_at, is_active, role, auth_id, permissions, must_change_password, last_seen_at";
+  "id, name, email, department, avatar_url, photo_onedrive_url, photo_collected, photo_collected_at, is_active, role, auth_id, permissions, must_change_password, last_seen_at, qualification_required_at, qualification_completed_at";
 
 const ACTIVE_USER_SELECT = "id, name, email, department, avatar_url, is_active";
 

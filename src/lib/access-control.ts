@@ -34,7 +34,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/fotos-colaboradores", label: "Fotos Colaboradores" },
   { key: "/usuarios", label: "Usuários" },
   { key: "/custos-projetos", label: "Custos de Projetos" },
-  { key: "/ferias", label: "Férias", manualOnly: true },
+  { key: "/rh", label: "RH (Férias e Qualificações)", manualOnly: true },
   { key: "/admin", label: "Configurações", admin: true },
 ];
 
@@ -63,7 +63,7 @@ export const ALWAYS_ALLOWED_PATHS = ["/perfil", "/alterar-senha", "/minhas-fotos
 /**
  * Rotas sensíveis que exigem permissão explícita mesmo no modo legado (perfil sem
  * `permissions` configuradas não ganha acesso automático, ao contrário do resto do
- * catálogo): "/meus-clientes" (carteira por gestor) e "/ferias" (dados de RH).
+ * catálogo): "/meus-clientes" (carteira por gestor) e "/rh" (dados de RH).
  */
 
 /** Página inicial do colaborador de conteúdo (desempenho no Instagram). */
@@ -150,6 +150,17 @@ export function canAccessPath(
   profile: AccessProfile | null | undefined,
   pathname: string
 ): boolean {
+  const isRhRoute =
+    pathname === "/rh" ||
+    pathname.startsWith("/rh/") ||
+    pathname === "/ferias" ||
+    pathname.startsWith("/ferias/");
+  if (isRhRoute) {
+    if (isAdminRole(profile)) return true;
+    const permissions = profile?.permissions ?? [];
+    return permissions.includes("/rh") || permissions.includes("/ferias");
+  }
+
   const manualOnlyKey = MANUAL_ONLY_KEYS.find(
     (key) => pathname === key || pathname.startsWith(key + "/")
   );

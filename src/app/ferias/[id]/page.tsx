@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-/** A ficha do colaborador abre em modal na listagem; deep links voltam para /ferias. */
-export default async function FeriasColaboradorPage() {
-  redirect("/ferias");
+/** Compatibilidade: deep links antigos de /ferias/[id]. */
+export default function FeriasLegacyColaboradorRedirectPage() {
+  redirect("/rh/ferias");
 }

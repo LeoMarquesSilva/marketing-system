@@ -137,8 +137,8 @@ export function ProfileForm({ profile }: ProfileFormProps) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-        <div className="flex items-center gap-6">
-          <Avatar className="h-20 w-20">
+        <div className="flex flex-col gap-5 rounded-xl border border-[#e4edef] bg-[#f8fbfc] p-4 sm:flex-row sm:items-center sm:gap-6">
+          <Avatar className="h-20 w-20 shrink-0 ring-4 ring-white shadow-sm">
             <AvatarImage
               src={avatarUrl || profile.avatar_url || undefined}
               className="object-cover"
@@ -180,6 +180,7 @@ export function ProfileForm({ profile }: ProfileFormProps) {
           </div>
         </div>
 
+        <div className="grid gap-5 sm:grid-cols-2">
         <FormField
           control={form.control}
           name="name"
@@ -236,7 +237,7 @@ export function ProfileForm({ profile }: ProfileFormProps) {
                 onValueChange={field.onChange}
               >
                 <FormControl>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="Selecione o departamento" />
                   </SelectTrigger>
                 </FormControl>
@@ -252,21 +253,24 @@ export function ProfileForm({ profile }: ProfileFormProps) {
             </FormItem>
           )}
         />
+        </div>
 
         {submitError && (
           <p className="text-sm text-destructive">{submitError}</p>
         )}
 
-        <Button type="submit" disabled={form.formState.isSubmitting}>
-          {form.formState.isSubmitting ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Salvando...
-            </>
-          ) : (
-            "Salvar alterações"
-          )}
-        </Button>
+        <div className="flex justify-end border-t border-[#e7eff0] pt-5">
+          <Button type="submit" disabled={form.formState.isSubmitting} className="min-w-40">
+            {form.formState.isSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Salvando...
+              </>
+            ) : (
+              "Salvar alterações"
+            )}
+          </Button>
+        </div>
       </form>
     </Form>
   );

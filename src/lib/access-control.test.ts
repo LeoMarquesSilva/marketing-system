@@ -13,8 +13,9 @@ describe("access-control permissions catalog", () => {
     expect(ACCESS_PRESETS["Gestor Meus Clientes"]).toEqual(["/meus-clientes"]);
   });
 
-  it("não inclui Meus Clientes/Férias no Marketing completo", () => {
+  it("não inclui Meus Clientes/RH no Marketing completo", () => {
     expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/meus-clientes");
+    expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/rh");
     expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/ferias");
   });
 
@@ -30,10 +31,25 @@ describe("access-control permissions catalog", () => {
     ]);
   });
 
-  it("marca Meus Clientes e Férias como manual-only", () => {
+  it("marca Meus Clientes e RH como manual-only", () => {
     expect(isManualOnlyKey("/meus-clientes")).toBe(true);
-    expect(isManualOnlyKey("/ferias")).toBe(true);
+    expect(isManualOnlyKey("/rh")).toBe(true);
+    expect(isManualOnlyKey("/ferias")).toBe(false);
     expect(isManualOnlyKey("/planner")).toBe(false);
+  });
+
+  it("permissão /rh libera /rh/ferias e /rh/qualificacoes", () => {
+    const rh = { role: null, permissions: ["/rh"] };
+    expect(canAccessPath(rh, "/rh")).toBe(true);
+    expect(canAccessPath(rh, "/rh/ferias")).toBe(true);
+    expect(canAccessPath(rh, "/rh/qualificacoes")).toBe(true);
+    expect(canAccessPath(rh, "/planner")).toBe(false);
+  });
+
+  it("permissão legada /ferias ainda libera rotas de RH", () => {
+    const legado = { role: null, permissions: ["/ferias"] };
+    expect(canAccessPath(legado, "/rh/ferias")).toBe(true);
+    expect(canAccessPath(legado, "/ferias")).toBe(true);
   });
 
   it("gestor só com Meus Clientes acessa a rota e não o Planner", () => {

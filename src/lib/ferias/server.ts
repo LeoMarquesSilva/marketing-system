@@ -30,6 +30,7 @@ import type {
   PeriodUpdateInput,
   RecessCreateInput,
 } from "@/lib/ferias/validation";
+import { hasHrAccess } from "@/lib/rh/access";
 
 export { FeriasHttpError, toApiError } from "@/lib/ferias/errors";
 
@@ -67,7 +68,7 @@ function createFeriasAdminClient(): SupabaseClient {
   });
 }
 
-/** Acesso ao módulo: admin ou permissão explícita "/ferias" (dados sensíveis de RH). */
+/** Acesso ao módulo: admin ou permissão explícita "/rh" (ou "/ferias" legado). */
 export async function requireFeriasManager(): Promise<FeriasManager> {
   const ssr = await createSsrClient();
   const {
@@ -86,9 +87,9 @@ export async function requireFeriasManager(): Promise<FeriasManager> {
     throw new FeriasHttpError("Não foi possível validar o acesso.", 500, "ACCESS_LOOKUP_FAILED");
   }
 
-  const role = ((data?.role as string | null | undefined) ?? "").toLowerCase();
+  const role = (data?.role as string | null | undefined) ?? null;
   const permissions = (data?.permissions as string[] | null | undefined) ?? [];
-  if (!data || (role !== "admin" && !permissions.includes("/ferias"))) {
+  if (!data || !hasHrAccess(role, permissions)) {
     throw new FeriasHttpError("Você não tem acesso ao módulo de Férias.", 403, "FORBIDDEN");
   }
 
