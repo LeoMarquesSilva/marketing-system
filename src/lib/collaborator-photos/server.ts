@@ -3,7 +3,7 @@ import {
   isCollaboratorPhotosManager,
   type AccessProfile,
 } from "@/lib/access-control";
-import { shouldClearOfficialProjection, canDeleteCollaboratorPhoto } from "@/lib/collaborator-photos/usages";
+import { canDeleteCollaboratorPhoto } from "@/lib/collaborator-photos/usages";
 import {
   assertUsageTypeCanDeactivate,
   assertUsageTypeCanDelete,
@@ -344,39 +344,10 @@ export async function deletePhoto(actor: AppUserRow, photoId: string): Promise<v
     throw new PhotoHttpError(403, "Sem permissão para apagar esta foto.");
   }
 
-  const types = await listUsageTypes(true);
-  const official = types.find((t) => t.isOfficial);
-  const { data: officialUsage } = official
-    ? await db
-        .from("collaborator_photo_usages")
-        .select("photo_id")
-        .eq("user_id", photo.user_id)
-        .eq("usage_type_id", official.id)
-        .maybeSingle()
-    : { data: null };
-
-  const wasOfficial = officialUsage?.photo_id === photoId;
-
-  const { data: userRow } = await db
-    .from("users")
-    .select("avatar_url")
-    .eq("id", photo.user_id)
-    .maybeSingle();
-
   const { error: deleteError } = await db.from("collaborator_photos").delete().eq("id", photoId);
   if (deleteError) throw new PhotoHttpError(500, deleteError.message);
 
   await db.storage.from(COLLABORATOR_PHOTOS_BUCKET).remove([photo.storage_path]);
-
-  if (
-    shouldClearOfficialProjection({
-      currentAvatarUrl: userRow?.avatar_url,
-      deletedPhotoUrl: photo.public_url,
-      deletedPhotoWasOfficial: wasOfficial,
-    })
-  ) {
-    await applyOfficialProjection(photo.user_id, null);
-  }
 }
 
 export async function deletePhotosBatch(
@@ -632,9 +603,6 @@ export async function setPhotoUsage(
       { onConflict: "user_id,usage_type_id" }
     );
     if (error) throw new PhotoHttpError(500, error.message);
-    if (usageType.is_official) {
-      await applyOfficialProjection(photo.user_id, photo.public_url);
-    }
   } else {
     const { error } = await db
       .from("collaborator_photo_usages")
@@ -646,18 +614,6 @@ export async function setPhotoUsage(
   }
 
   return listGalleryForUser(photo.user_id);
-}
-
-async function applyOfficialProjection(userId: string, photoUrl: string | null): Promise<void> {
-  const db = await getServerDb();
-  const { error: userError } = await db.from("users").update({ avatar_url: photoUrl }).eq("id", userId);
-  if (userError) throw new PhotoHttpError(500, userError.message);
-
-  const { error: profileError } = await db
-    .from("professional_profiles")
-    .update({ photo_url: photoUrl })
-    .eq("user_id", userId);
-  if (profileError) throw new PhotoHttpError(500, profileError.message);
 }
 
 export async function createUsageType(

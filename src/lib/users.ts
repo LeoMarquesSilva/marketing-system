@@ -107,24 +107,36 @@ export interface CreateUserInput {
   avatar_url?: string | null;
 }
 
+type UserMutationResult = { data: User | null; error: string | null };
+
+async function parseMutationResponse(response: Response): Promise<UserMutationResult> {
+  const payload = (await response.json().catch(() => ({}))) as {
+    user?: User;
+    error?: string;
+  };
+  if (!response.ok) {
+    return { data: null, error: payload.error ?? "Erro ao salvar usuário." };
+  }
+  return { data: payload.user ?? null, error: null };
+}
+
+async function userMutation(
+  url: string,
+  method: "POST" | "PATCH",
+  body?: Record<string, unknown>
+): Promise<UserMutationResult> {
+  const response = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  return parseMutationResponse(response);
+}
+
 export async function createUser(
   input: CreateUserInput
 ): Promise<{ data: User | null; error: string | null }> {
-  const { data, error } = await browserSupabase
-    .from("users")
-    .insert({
-      id: crypto.randomUUID(),
-      name: input.name.trim(),
-      email: input.email?.trim() || null,
-      department: input.department.trim(),
-      avatar_url: input.avatar_url || null,
-      is_active: true,
-    })
-    .select("id, name, email, department, avatar_url, is_active")
-    .single();
-
-  if (error) return { data: null, error: error.message };
-  return { data: data as User, error: null };
+  return userMutation("/api/admin/users", "POST", { ...input });
 }
 
 export interface UpdateUserInput {
@@ -142,46 +154,35 @@ export async function updateUser(
   id: string,
   input: UpdateUserInput
 ): Promise<{ data: User | null; error: string | null }> {
-  const updates: Record<string, unknown> = {};
-  if (input.name !== undefined) updates.name = input.name.trim();
-  if (input.email !== undefined) updates.email = input.email?.trim() || null;
-  if (input.department !== undefined) updates.department = input.department.trim();
-  if (input.avatar_url !== undefined) updates.avatar_url = input.avatar_url || null;
-  if (input.photo_onedrive_url !== undefined) updates.photo_onedrive_url = input.photo_onedrive_url || null;
-  if (input.photo_collected !== undefined) updates.photo_collected = input.photo_collected;
-  if (input.photo_collected_at !== undefined) updates.photo_collected_at = input.photo_collected_at || null;
-  if (input.is_active !== undefined) updates.is_active = input.is_active;
-
-  const { data, error } = await browserSupabase
-    .from("users")
-    .update(updates)
-    .eq("id", id)
-    .select("id, name, email, department, avatar_url, photo_onedrive_url, photo_collected, photo_collected_at, is_active")
-    .single();
-
-  if (error) return { data: null, error: error.message };
-  return { data: data as User, error: null };
+  return userMutation(`/api/admin/users/${encodeURIComponent(id)}`, "PATCH", {
+    ...input,
+  });
 }
 
 export async function toggleUserActive(
   id: string
 ): Promise<{ data: User | null; error: string | null }> {
-  const { data: current } = await browserSupabase
-    .from("users")
-    .select("is_active")
-    .eq("id", id)
-    .single();
-
-  if (!current) return { data: null, error: "Usuário não encontrado" };
-  const newActive = !(current.is_active ?? true);
-
-  return updateUser(id, { is_active: newActive });
+  return userMutation(
+    `/api/admin/users/${encodeURIComponent(id)}/toggle-active`,
+    "POST"
+  );
 }
 
 export async function deleteUser(
   id: string
 ): Promise<{ error: string | null }> {
-  const { error } = await browserSupabase.from("users").delete().eq("id", id);
-  if (error) return { error: error.message };
-  return { error: null };
+  const response = await fetch(`/api/admin/users/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  const payload = (await response.json().catch(() => ({}))) as { error?: string };
+  return { error: response.ok ? null : payload.error ?? "Erro ao excluir usuário." };
+}
+
+export type UpdateOwnProfileInput = Pick<
+  UpdateUserInput,
+  "name" | "email" | "department" | "avatar_url"
+>;
+
+export async function updateOwnProfile(input: UpdateOwnProfileInput): Promise<UserMutationResult> {
+  return userMutation("/api/account/profile", "PATCH", { ...input });
 }

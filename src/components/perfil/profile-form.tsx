@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/contexts/auth-context";
-import { updateUser } from "@/lib/users";
+import { updateOwnProfile } from "@/lib/users";
 import { fetchAreas } from "@/lib/areas";
 import { AREAS } from "@/lib/constants";
 import type { AuthProfile } from "@/contexts/auth-context";
@@ -106,7 +106,7 @@ export function ProfileForm({ profile }: ProfileFormProps) {
 
   async function onSubmit(values: ProfileFormValues) {
     setSubmitError(null);
-    const { error } = await updateUser(profile.id, {
+    const { error } = await updateOwnProfile({
       name: values.name.trim(),
       email: values.email?.trim() || null,
       avatar_url: values.avatar_url?.trim() || null,

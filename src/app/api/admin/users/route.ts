@@ -87,6 +87,36 @@ export async function POST(request: Request) {
 
     const body = await request.json().catch(() => ({}));
     const { action, userId } = body as { action?: string; userId?: string };
+    if (!action && "name" in body && "department" in body) {
+      const name = typeof body.name === "string" ? body.name.trim() : "";
+      const department = typeof body.department === "string" ? body.department.trim() : "";
+      if (!name || !department) {
+        return NextResponse.json(
+          { error: "Nome e área são obrigatórios." },
+          { status: 400 }
+        );
+      }
+
+      const email = typeof body.email === "string" ? body.email.trim() || null : null;
+      const avatarUrl =
+        typeof body.avatar_url === "string" ? body.avatar_url.trim() || null : null;
+      const db = admin();
+      const { data, error } = await db
+        .from("users")
+        .insert({
+          id: crypto.randomUUID(),
+          name,
+          email,
+          department,
+          avatar_url: avatarUrl,
+          is_active: true,
+        })
+        .select("id, name, email, department, avatar_url, is_active")
+        .single();
+      if (error) throw new Error(error.message);
+      return NextResponse.json({ user: data }, { status: 201 });
+    }
+
     if (!userId) {
       return NextResponse.json({ error: "userId é obrigatório." }, { status: 400 });
     }
