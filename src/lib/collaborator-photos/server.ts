@@ -15,6 +15,11 @@ import {
   imageExtensionFromName,
   nextPhotoSequence,
 } from "@/lib/collaborator-photos/upload";
+import {
+  assertBatchDownloadIds,
+  batchDownloadZipName,
+  buildPhotosZip,
+} from "@/lib/collaborator-photos/batch-download";
 import type {
   CollaboratorPhoto,
   PhotoSession,
@@ -413,6 +418,91 @@ export async function getPhotoDownload(
     throw new PhotoHttpError(404, fileError?.message ?? "Arquivo não encontrado no storage.");
   }
   return { filename, blob: file };
+}
+
+export async function getPhotosDownloadZip(
+  actor: AppUserRow,
+  photoIds: unknown
+): Promise<{ filename: string; bytes: Uint8Array }> {
+  let ids: string[];
+  try {
+    ids = assertBatchDownloadIds(photoIds);
+  } catch (err) {
+    throw new PhotoHttpError(400, err instanceof Error ? err.message : "Lista de fotos inválida.");
+  }
+  const db = await getServerDb();
+
+  const { data: photos, error: photosError } = await db
+    .from("collaborator_photos")
+    .select("id, user_id, storage_path, original_filename, created_at")
+    .in("id", ids);
+  if (photosError) throw new PhotoHttpError(500, photosError.message);
+  if (!photos || photos.length === 0) {
+    throw new PhotoHttpError(404, "Nenhuma foto encontrada.");
+  }
+  if (photos.length !== ids.length) {
+    throw new PhotoHttpError(404, "Uma ou mais fotos não foram encontradas.");
+  }
+
+  const byId = new Map(photos.map((photo) => [photo.id, photo]));
+  const ordered = ids.map((id) => byId.get(id)!);
+  const ownerIds = [...new Set(ordered.map((photo) => photo.user_id))];
+  for (const ownerId of ownerIds) {
+    await assertCanViewGallery(actor, ownerId);
+  }
+
+  const { data: owners, error: ownersError } = await db
+    .from("users")
+    .select("id, name")
+    .in("id", ownerIds);
+  if (ownersError) throw new PhotoHttpError(500, ownersError.message);
+  const ownerNameById = new Map((owners ?? []).map((owner) => [owner.id, owner.name as string]));
+
+  const siblingsByUser = new Map<string, string[]>();
+  for (const ownerId of ownerIds) {
+    const { data: siblings, error: siblingsError } = await db
+      .from("collaborator_photos")
+      .select("id")
+      .eq("user_id", ownerId)
+      .order("created_at", { ascending: true });
+    if (siblingsError) throw new PhotoHttpError(500, siblingsError.message);
+    siblingsByUser.set(
+      ownerId,
+      (siblings ?? []).map((row) => row.id as string)
+    );
+  }
+
+  const files: Array<{ filename: string; bytes: Uint8Array }> = [];
+  for (const photo of ordered) {
+    const siblingIds = siblingsByUser.get(photo.user_id) ?? [];
+    const chronologicalIndex = siblingIds.findIndex((id) => id === photo.id) + 1 || 1;
+    const filename = downloadFileNameForPhoto(
+      ownerNameById.get(photo.user_id) ?? "colaborador",
+      { originalFilename: photo.original_filename },
+      chronologicalIndex
+    );
+
+    const { data: file, error: fileError } = await db.storage
+      .from(COLLABORATOR_PHOTOS_BUCKET)
+      .download(photo.storage_path);
+    if (fileError || !file) {
+      throw new PhotoHttpError(
+        404,
+        fileError?.message ?? `Arquivo não encontrado: ${filename}`
+      );
+    }
+    files.push({
+      filename,
+      bytes: new Uint8Array(await file.arrayBuffer()),
+    });
+  }
+
+  const zipNameOwner =
+    ownerIds.length === 1 ? ownerNameById.get(ownerIds[0]!) : actor.name;
+  return {
+    filename: batchDownloadZipName(zipNameOwner),
+    bytes: await buildPhotosZip(files),
+  };
 }
 
 export async function setPhotoUsage(

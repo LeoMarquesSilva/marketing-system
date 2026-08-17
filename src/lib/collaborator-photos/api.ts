@@ -77,6 +77,30 @@ export async function deleteGalleryPhoto(photoId: string): Promise<void> {
   if (!res.ok) await parseError(res, "Erro ao apagar foto.");
 }
 
+export async function downloadGalleryPhotosZip(photoIds: string[]): Promise<void> {
+  const res = await fetch("/api/collaborator-photos/download-batch", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ photoIds }),
+  });
+  if (!res.ok) await parseError(res, "Erro ao baixar fotos selecionadas.");
+
+  const blob = await res.blob();
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = disposition.match(/filename="([^"]+)"/i);
+  const filename = match?.[1] || "fotos.zip";
+
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export async function setGalleryUsage(input: {
   photoId: string;
   usageTypeId: string;
