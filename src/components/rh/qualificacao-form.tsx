@@ -66,10 +66,6 @@ const formSchema = z.object({
   city: z.string().min(1, "Cidade é obrigatória"),
   state: z.string().min(2, "UF é obrigatória"),
   personal_phone: z.string().optional(),
-  personal_email: z
-    .string()
-    .optional()
-    .refine((v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), "E-mail inválido"),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -95,7 +91,6 @@ function toFormValues(q: HrQualification | null, fallbackName: string): FormValu
     city: q?.city ?? "",
     state: q?.state ?? "",
     personal_phone: q?.personal_phone ?? "",
-    personal_email: q?.personal_email ?? "",
   };
 }
 
@@ -171,7 +166,6 @@ export function QualificacaoForm({
           oab_uf: values.oab_uf || null,
           complement: values.complement || null,
           personal_phone: values.personal_phone || null,
-          personal_email: values.personal_email || null,
         }),
       });
       const data = await res.json();
@@ -589,19 +583,6 @@ export function QualificacaoForm({
                     <FormLabel>Telefone</FormLabel>
                     <FormControl>
                       <PhoneInput value={field.value ?? ""} onChange={field.onChange} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="personal_email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>E-mail pessoal</FormLabel>
-                    <FormControl>
-                      <Input type="email" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

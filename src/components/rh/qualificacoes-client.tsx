@@ -40,9 +40,10 @@ import {
   qualificationAreaLabel,
   qualificationMatchesArea,
 } from "@/lib/rh/qualifications/areas";
+import { resolveAreaFilterLabel } from "@/lib/ferias/filters";
+import { isLawyerCollaborator } from "@/lib/rh/qualifications/lawyers";
 import {
-  listQualificationPositionsForArea,
-  matchesQualificationRequirementTarget,
+  listQualificationPeopleForArea,
   type QualificationRequirementHistoryItem,
 } from "@/lib/rh/qualifications/requirements";
 import { cn } from "@/lib/utils";
@@ -115,15 +116,16 @@ export function QualificacoesClient({
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "completo" | "pendente">("all");
+  const [roleFilter, setRoleFilter] = useState<"all" | "advogados">("all");
   const [deptFilter, setDeptFilter] = useState<string>("all");
   const [selected, setSelected] = useState<QualificationListItem | null>(null);
   const [copied, setCopied] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [requirementOpen, setRequirementOpen] = useState(false);
   const [selectedAreas, setSelectedAreas] = useState<Set<string>>(() => new Set());
-  const [selectedPositionsByArea, setSelectedPositionsByArea] = useState<
-    Record<string, string[]>
-  >({});
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [savingRequirement, setSavingRequirement] = useState(false);
   const [clearingRequirement, setClearingRequirement] = useState(false);
   const [requirementError, setRequirementError] = useState<string | null>(null);
@@ -132,26 +134,15 @@ export function QualificacoesClient({
   const departments = useMemo(() => {
     return listQualificationAreas(items);
   }, [items]);
-  const positionsByArea = useMemo(
+  const peopleByArea = useMemo(
     () =>
       Object.fromEntries(
         departments.map((area) => [
           area,
-          listQualificationPositionsForArea(items, area),
+          listQualificationPeopleForArea(items, area),
         ])
-      ) as Record<string, string[]>,
+      ),
     [departments, items]
-  );
-  const requirementScopes = useMemo(
-    () =>
-      [...selectedAreas].map((area) => ({
-        area,
-        positions: selectedPositionsByArea[area] ?? [],
-      })),
-    [selectedAreas, selectedPositionsByArea]
-  );
-  const hasAreaWithoutPosition = requirementScopes.some(
-    (scope) => scope.positions.length === 0
   );
 
   const filtered = useMemo(() => {
@@ -160,6 +151,7 @@ export function QualificacoesClient({
       const complete = itemIsComplete(item);
       const status = complete ? "completo" : "pendente";
       if (statusFilter !== "all" && status !== statusFilter) return false;
+      if (roleFilter === "advogados" && !isLawyerCollaborator(item)) return false;
       if (
         deptFilter !== "all" &&
         !qualificationMatchesArea(item, deptFilter)
@@ -177,32 +169,21 @@ export function QualificacoesClient({
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [items, search, statusFilter, deptFilter]);
+  }, [items, search, statusFilter, roleFilter, deptFilter]);
 
   const filled = items.filter(itemIsComplete).length;
   const pending = items.length - filled;
   const requiredCount = items.filter((item) => isQualificationPending(item)).length;
+  const lawyerCount = items.filter(isLawyerCollaborator).length;
 
-  const selectedTargetCount = useMemo(
-    () =>
-      items.filter((item) =>
-        matchesQualificationRequirementTarget(item, {
-          scopes: requirementScopes,
-        })
-      ).length,
-    [items, requirementScopes]
+  const selectedTargets = useMemo(
+    () => items.filter((item) => selectedUserIds.has(item.user_id)),
+    [items, selectedUserIds]
   );
-  const selectedPendingCount = useMemo(
-    () =>
-      items.filter(
-        (item) =>
-          item.qualification?.status !== "completo" &&
-          matchesQualificationRequirementTarget(item, {
-            scopes: requirementScopes,
-          })
-      ).length,
-    [items, requirementScopes]
-  );
+  const selectedTargetCount = selectedTargets.length;
+  const selectedPendingCount = selectedTargets.filter(
+    (item) => item.qualification?.status !== "completo"
+  ).length;
 
   const exportCsv = () => {
     const blob = new Blob([toCsv(filtered)], { type: "text/csv;charset=utf-8" });
@@ -233,7 +214,7 @@ export function QualificacoesClient({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          scopes: requirementScopes,
+          user_ids: [...selectedUserIds],
         }),
       });
       const data = (await response.json()) as {
@@ -292,40 +273,51 @@ export function QualificacoesClient({
   };
 
   const toggleArea = (area: string) => {
-    const removing = selectedAreas.has(area);
+    const people = peopleByArea[area] ?? [];
+    const peopleIds = people.map((person) => person.user_id);
+    const allSelected =
+      peopleIds.length > 0 && peopleIds.every((id) => selectedUserIds.has(id));
     setSelectedAreas((current) => {
       const next = new Set(current);
-      if (removing) next.delete(area);
+      if (allSelected) next.delete(area);
       else next.add(area);
       return next;
     });
-    setSelectedPositionsByArea((current) => {
-      const next = { ...current };
-      if (removing) delete next[area];
-      else next[area] = [];
+    setSelectedUserIds((current) => {
+      const next = new Set(current);
+      if (allSelected) {
+        for (const id of peopleIds) next.delete(id);
+      } else {
+        for (const id of peopleIds) next.add(id);
+      }
       return next;
     });
   };
 
-  const togglePosition = (area: string, position: string) => {
-    setSelectedPositionsByArea((current) => {
-      const selected = current[area] ?? [];
-      return {
-        ...current,
-        [area]: selected.includes(position)
-          ? selected.filter((item) => item !== position)
-          : [...selected, position],
-      };
+  const togglePerson = (area: string, userId: string) => {
+    setSelectedAreas((current) => new Set(current).add(area));
+    setSelectedUserIds((current) => {
+      const next = new Set(current);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
     });
   };
 
-  const toggleAllPositions = (area: string) => {
-    const available = positionsByArea[area] ?? [];
-    const selected = selectedPositionsByArea[area] ?? [];
-    setSelectedPositionsByArea((current) => ({
-      ...current,
-      [area]: selected.length === available.length ? [] : [...available],
-    }));
+  const toggleAllPeople = (area: string) => {
+    const people = peopleByArea[area] ?? [];
+    const peopleIds = people.map((person) => person.user_id);
+    const allSelected =
+      peopleIds.length > 0 && peopleIds.every((id) => selectedUserIds.has(id));
+    setSelectedUserIds((current) => {
+      const next = new Set(current);
+      if (allSelected) {
+        for (const id of peopleIds) next.delete(id);
+      } else {
+        for (const id of peopleIds) next.add(id);
+      }
+      return next;
+    });
   };
 
   const detailText = selected?.qualification
@@ -369,7 +361,7 @@ export function QualificacoesClient({
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <div className="rounded-xl border border-[#dce9eb] bg-card p-4 shadow-sm">
           <p className="text-xs font-medium text-muted-foreground">Colaboradores</p>
           <p className="mt-1 text-2xl font-bold text-foreground">{items.length}</p>
@@ -385,6 +377,10 @@ export function QualificacoesClient({
         <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-4 shadow-sm">
           <p className="text-xs font-medium text-sky-800">Obrigatórios agora</p>
           <p className="mt-1 text-2xl font-bold text-sky-950">{requiredCount}</p>
+        </div>
+        <div className="rounded-xl border border-[#dce9eb] bg-card p-4 shadow-sm">
+          <p className="text-xs font-medium text-muted-foreground">Advogados</p>
+          <p className="mt-1 text-2xl font-bold text-foreground">{lawyerCount}</p>
         </div>
       </div>
 
@@ -409,6 +405,18 @@ export function QualificacoesClient({
             <SelectItem value="all">Todos os status</SelectItem>
             <SelectItem value="completo">Preenchido</SelectItem>
             <SelectItem value="pendente">Pendente</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={roleFilter}
+          onValueChange={(v) => setRoleFilter(v as typeof roleFilter)}
+        >
+          <SelectTrigger className="w-full sm:w-44">
+            <SelectValue placeholder="Perfil" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os cargos</SelectItem>
+            <SelectItem value="advogados">Somente advogados</SelectItem>
           </SelectContent>
         </Select>
         <Select value={deptFilter} onValueChange={setDeptFilter}>
@@ -603,7 +611,11 @@ export function QualificacoesClient({
                             {scope.area}:
                           </span>{" "}
                           <span className="text-muted-foreground">
-                            {scope.positions.join(", ")}
+                            {scope.people?.length
+                              ? scope.people
+                                  .map((person) => person.name)
+                                  .join(", ")
+                              : (scope.positions ?? []).join(", ")}
                           </span>
                         </div>
                       ))}
@@ -628,93 +640,144 @@ export function QualificacoesClient({
           <DialogHeader>
             <DialogTitle>Definir obrigatoriedade</DialogTitle>
             <DialogDescription>
-              Selecione as equipes e os cargos que deverão preencher a
-              qualificação antes de continuar usando o sistema.
+              Selecione as equipes e, em seguida, as pessoas que deverão
+              preencher a qualificação antes de continuar usando o sistema.
             </DialogDescription>
           </DialogHeader>
 
           <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-xs leading-relaxed text-sky-900">
-            Selecione uma equipe para abrir os cargos disponíveis nela. Cada
-            equipe terá sua própria seleção, sem cruzar cargos com outras
-            áreas. Quem já preencheu continuará liberado.
+            Selecione uma equipe para ver as pessoas. Quem já preencheu
+            continuará liberado.
           </div>
 
           <div className="space-y-3">
-            <div>
-              <h3 className="text-sm font-semibold text-foreground">Equipes e cargos</h3>
-              <p className="text-xs text-muted-foreground">
-                Áreas agrupadas conforme o padrão do módulo de Férias
-              </p>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Equipes e pessoas</h3>
+                <p className="text-xs text-muted-foreground">
+                  Áreas agrupadas conforme o padrão do módulo de Férias
+                </p>
+              </div>
+              <button
+                type="button"
+                className="text-xs font-medium text-[#258b91] hover:underline"
+                onClick={() => {
+                  const nextAreas = new Set<string>();
+                  const nextUserIds = new Set<string>();
+                  for (const item of items) {
+                    if (!isLawyerCollaborator(item)) continue;
+                    const area = resolveAreaFilterLabel(item.department);
+                    if (area) nextAreas.add(area);
+                    nextUserIds.add(item.user_id);
+                  }
+                  setSelectedAreas(nextAreas);
+                  setSelectedUserIds(nextUserIds);
+                }}
+              >
+                Marcar advogados
+              </button>
             </div>
             <div className="max-h-[50vh] space-y-2 overflow-y-auto pr-1">
               {departments.map((area) => {
-                const areaSelected = selectedAreas.has(area);
-                const availablePositions = positionsByArea[area] ?? [];
-                const selectedPositions = selectedPositionsByArea[area] ?? [];
+                const people = peopleByArea[area] ?? [];
+                const selectedInArea = people.filter((person) =>
+                  selectedUserIds.has(person.user_id)
+                );
+                const areaOpen =
+                  selectedAreas.has(area) || selectedInArea.length > 0;
+                const allSelected =
+                  people.length > 0 && selectedInArea.length === people.length;
                 return (
                   <section
                     key={area}
                     className={cn(
                       "overflow-hidden rounded-lg border transition-colors",
-                      areaSelected
-                        ? selectedPositions.length > 0
+                      areaOpen
+                        ? selectedInArea.length > 0
                           ? "border-[#8ed8db] bg-[#f7fefe]"
                           : "border-amber-300 bg-amber-50/40"
                         : "border-[#dce9eb] bg-card"
                     )}
                   >
-                    <label className="flex cursor-pointer items-center gap-3 px-4 py-3">
+                    <div className="flex items-center gap-3 px-4 py-3">
                       <input
                         type="checkbox"
-                        checked={areaSelected}
+                        checked={allSelected}
                         onChange={() => toggleArea(area)}
                         className="h-4 w-4 rounded border-[#b8cdd1] accent-[#258b91]"
+                        aria-label={`Selecionar todos de ${area}`}
                       />
-                      <span className="flex-1 text-sm font-semibold text-foreground">
+                      <button
+                        type="button"
+                        className="flex-1 text-left text-sm font-semibold text-foreground"
+                        onClick={() =>
+                          setSelectedAreas((current) => {
+                            const next = new Set(current);
+                            if (next.has(area)) next.delete(area);
+                            else next.add(area);
+                            return next;
+                          })
+                        }
+                      >
                         {area}
-                      </span>
+                      </button>
                       <span className="text-xs text-muted-foreground">
-                        {areaSelected
-                          ? `${selectedPositions.length}/${availablePositions.length} cargos`
-                          : `${availablePositions.length} cargos`}
+                        {areaOpen
+                          ? `${selectedInArea.length}/${people.length} pessoas`
+                          : `${people.length} pessoas`}
                       </span>
-                    </label>
+                    </div>
 
-                    {areaSelected && (
+                    {areaOpen && (
                       <div className="border-t border-[#dce9eb] bg-white px-4 py-3">
                         <div className="mb-2 flex items-center justify-between gap-3">
                           <p className="text-xs font-medium text-muted-foreground">
-                            Selecione os cargos desta equipe
+                            Selecione as pessoas desta equipe
                           </p>
                           <button
                             type="button"
                             className="text-xs font-medium text-[#258b91] hover:underline"
-                            onClick={() => toggleAllPositions(area)}
+                            onClick={() => toggleAllPeople(area)}
                           >
-                            {selectedPositions.length === availablePositions.length
-                              ? "Limpar"
-                              : "Selecionar todos"}
+                            {allSelected ? "Limpar" : "Selecionar todos"}
                           </button>
                         </div>
                         <div className="grid gap-1 sm:grid-cols-2">
-                          {availablePositions.map((position) => (
+                          {people.map((person) => (
                             <label
-                              key={position}
-                              className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-sm transition-colors hover:bg-muted"
+                              key={person.user_id}
+                              className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors hover:bg-muted"
                             >
                               <input
                                 type="checkbox"
-                                checked={selectedPositions.includes(position)}
-                                onChange={() => togglePosition(area, position)}
-                                className="h-4 w-4 rounded border-[#b8cdd1] accent-[#258b91]"
+                                checked={selectedUserIds.has(person.user_id)}
+                                onChange={() =>
+                                  togglePerson(area, person.user_id)
+                                }
+                                className="h-4 w-4 shrink-0 rounded border-[#b8cdd1] accent-[#258b91]"
                               />
-                              <span>{position}</span>
+                              <Avatar className="h-8 w-8 shrink-0">
+                                <AvatarImage
+                                  src={person.avatar_url || undefined}
+                                />
+                                <AvatarFallback className="text-[10px]">
+                                  {initials(person.user_name)}
+                                </AvatarFallback>
+                              </Avatar>
+                              <span className="min-w-0">
+                                <span className="block truncate font-medium text-foreground">
+                                  {person.user_name}
+                                </span>
+                                <span className="block truncate text-xs text-muted-foreground">
+                                  {person.position || "Sem cargo"}
+                                </span>
+                              </span>
                             </label>
                           ))}
                         </div>
-                        {selectedPositions.length === 0 && (
+                        {selectedInArea.length === 0 && (
                           <p className="mt-2 text-xs font-medium text-amber-700">
-                            Selecione pelo menos um cargo desta equipe.
+                            Selecione pelo menos uma pessoa desta equipe.
                           </p>
                         )}
                       </div>
@@ -769,9 +832,7 @@ export function QualificacoesClient({
                 disabled={
                   savingRequirement ||
                   clearingRequirement ||
-                  selectedAreas.size === 0 ||
-                  hasAreaWithoutPosition ||
-                  selectedTargetCount === 0
+                  selectedUserIds.size === 0
                 }
                 onClick={() => void activateRequirement()}
               >
@@ -847,8 +908,8 @@ export function QualificacoesClient({
                       <dd>{selected.qualification.personal_phone || "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs text-muted-foreground">E-mail pessoal</dt>
-                      <dd>{selected.qualification.personal_email || "—"}</dd>
+                      <dt className="text-xs text-muted-foreground">E-mail</dt>
+                      <dd>{selected.user_email || "—"}</dd>
                     </div>
                   </dl>
 

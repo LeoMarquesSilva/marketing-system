@@ -1,17 +1,27 @@
 import { departmentMatchesAreaFilter } from "@/lib/ferias/filters";
 
 export interface QualificationRequirementTarget {
+  user_id?: string;
   department: string | null | undefined;
   position: string | null | undefined;
 }
 
+export interface QualificationRequirementPerson {
+  user_id: string;
+  name: string;
+  position: string | null;
+}
+
 export interface QualificationRequirementScope {
   area: string;
-  positions: string[];
+  people: QualificationRequirementPerson[];
+  /** Mantido para registros antigos do histórico. */
+  positions?: string[];
 }
 
 export interface QualificationRequirementSelection {
-  scopes: QualificationRequirementScope[];
+  user_ids: string[];
+  scopes?: QualificationRequirementScope[];
 }
 
 export type QualificationRequirementAction = "activated" | "deactivated";
@@ -28,43 +38,18 @@ export interface QualificationRequirementHistoryItem {
   created_at: string;
 }
 
-function normalizePosition(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/**
- * Cada área possui sua própria seleção de cargos. Isso evita cruzamentos
- * indevidos entre os cargos escolhidos para equipes diferentes.
- */
 export function matchesQualificationRequirementTarget(
   target: QualificationRequirementTarget,
   selection: QualificationRequirementSelection
 ): boolean {
-  const position = normalizePosition(target.position ?? "");
-  return selection.scopes.some(
-    (scope) =>
-      scope.positions.length > 0 &&
-      departmentMatchesAreaFilter(target.department, scope.area) &&
-      scope.positions.some(
-        (selected) => normalizePosition(selected) === position
-      )
-  );
+  if (!target.user_id || selection.user_ids.length === 0) return false;
+  return selection.user_ids.includes(target.user_id);
 }
 
-export function listQualificationPositionsForArea(
-  items: QualificationRequirementTarget[],
-  area: string
-): string[] {
-  const positions = new Set<string>();
-  for (const item of items) {
-    if (!departmentMatchesAreaFilter(item.department, area)) continue;
-    const position = item.position?.trim();
-    if (position) positions.add(position);
-  }
-  return [...positions].sort((a, b) => a.localeCompare(b, "pt-BR"));
+export function listQualificationPeopleForArea<
+  T extends { user_id: string; user_name: string; department: string | null },
+>(items: T[], area: string): T[] {
+  return items
+    .filter((item) => departmentMatchesAreaFilter(item.department, area))
+    .sort((a, b) => a.user_name.localeCompare(b.user_name, "pt-BR"));
 }

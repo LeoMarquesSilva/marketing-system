@@ -12,9 +12,10 @@ import {
   isQualificationComplete,
   type QualificationUpsertInput,
 } from "@/lib/rh/qualifications/validation";
+import { resolveAreaFilterLabel } from "@/lib/ferias/filters";
 import {
-  matchesQualificationRequirementTarget,
   type QualificationRequirementHistoryItem,
+  type QualificationRequirementScope,
   type QualificationRequirementSelection,
 } from "@/lib/rh/qualifications/requirements";
 
@@ -184,6 +185,29 @@ export interface QualificationRequirementResult {
   alreadyCompleteCount: number;
 }
 
+function buildPeopleScopes(
+  users: Array<{ id: string; name: string; department: string | null }>,
+  positionByUser: Map<string, string | null>
+): QualificationRequirementScope[] {
+  const byArea = new Map<string, QualificationRequirementScope>();
+  for (const user of users) {
+    const area = resolveAreaFilterLabel(user.department) ?? "Sem área";
+    const current = byArea.get(area) ?? { area, people: [] };
+    current.people.push({
+      user_id: user.id,
+      name: user.name,
+      position: positionByUser.get(user.id) ?? null,
+    });
+    byArea.set(area, current);
+  }
+  return [...byArea.values()]
+    .map((scope) => ({
+      ...scope,
+      people: scope.people.sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
+    }))
+    .sort((a, b) => a.area.localeCompare(b.area, "pt-BR"));
+}
+
 async function insertRequirementHistory(
   admin: SupabaseClient,
   input: Omit<
@@ -217,7 +241,7 @@ export async function requestQualificationsForSelection(
   ] = await Promise.all([
     admin
       .from("users")
-      .select("id, department")
+      .select("id, name, department")
       .eq("is_active", true),
     admin
       .from("hr_employees")
@@ -246,22 +270,23 @@ export async function requestQualificationsForSelection(
       .filter((qualification) => qualification.status === "completo")
       .map((qualification) => qualification.user_id)
   );
-  const selectedUserIds = (
-    (users as Array<{ id: string; department: string | null }>) ?? []
+  const requestedSet = new Set(selection.user_ids);
+  const selectedUsers = (
+    (users as Array<{ id: string; name: string; department: string | null }>) ??
+    []
   )
     // Contas técnicas existem em users para vincular conteúdo, mas somente
     // perfis ligados ao cadastro ativo de RH são colaboradores elegíveis.
-    .filter((user) => positionByUser.has(user.id))
-    .filter((user) =>
-      matchesQualificationRequirementTarget(
-        {
-          department: user.department,
-          position: positionByUser.get(user.id),
-        },
-        selection
-      )
-    )
-    .map((user) => user.id);
+    .filter((user) => positionByUser.has(user.id) && requestedSet.has(user.id));
+  const selectedUserIds = selectedUsers.map((user) => user.id);
+  if (selectedUserIds.length === 0) {
+    throw new RhHttpError(
+      "Nenhum colaborador ativo encontrado na seleção.",
+      404,
+      "USER_NOT_FOUND"
+    );
+  }
+  const historyScopes = buildPeopleScopes(selectedUsers, positionByUser);
   const requestedUserIds = selectedUserIds.filter(
     (userId) => !completeUserIds.has(userId)
   );
@@ -300,7 +325,7 @@ export async function requestQualificationsForSelection(
 
   await insertRequirementHistory(admin, {
     action: "activated",
-    scopes: selection.scopes,
+    scopes: historyScopes,
     selected_count: selectedUserIds.length,
     affected_count: requestedUserIds.length,
     already_complete_count: selectedUserIds.length - requestedUserIds.length,

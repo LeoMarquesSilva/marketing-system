@@ -7,15 +7,7 @@ import {
 } from "@/lib/rh/qualifications/server";
 
 const requestSchema = z.object({
-  scopes: z
-    .array(
-      z.object({
-        area: z.string().trim().min(1),
-        positions: z.array(z.string().trim().min(1)).min(1).max(100),
-      })
-    )
-    .min(1)
-    .max(50),
+  user_ids: z.array(z.string().uuid()).min(1).max(200),
 });
 
 export async function POST(request: Request) {
@@ -24,7 +16,7 @@ export async function POST(request: Request) {
     if (!parsed.success) {
       return NextResponse.json(
         {
-          error: "Selecione pelo menos uma equipe e um cargo.",
+          error: "Selecione pelo menos um colaborador.",
           code: "VALIDATION_ERROR",
         },
         { status: 400 }

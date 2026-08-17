@@ -13,15 +13,6 @@ const optionalText = (max: number) =>
     .optional()
     .transform((v) => (v && v.length > 0 ? v : null));
 
-const optionalEmail = z
-  .string()
-  .trim()
-  .optional()
-  .transform((v) => (v && v.length > 0 ? v : null))
-  .refine((v) => v === null || z.string().email().safeParse(v).success, {
-    message: "E-mail inválido",
-  });
-
 const optionalDate = z
   .string()
   .trim()
@@ -100,7 +91,6 @@ export const qualificationUpsertSchema = z.object({
   city: optionalText(120),
   state: optionalUf,
   personal_phone: optionalText(20),
-  personal_email: optionalEmail,
 });
 
 export type QualificationUpsertInput = z.infer<typeof qualificationUpsertSchema>;
