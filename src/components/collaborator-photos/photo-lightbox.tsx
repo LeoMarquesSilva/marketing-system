@@ -12,7 +12,9 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PhotoConfirmDialog } from "@/components/collaborator-photos/photo-confirm-dialog";
 import { PhotoUsageSelector } from "@/components/collaborator-photos/photo-usage-selector";
+import { downloadGalleryPhoto } from "@/lib/collaborator-photos/api";
 import type { CollaboratorPhoto, PhotoUsageType } from "@/lib/collaborator-photos/types";
 
 interface PhotoLightboxProps {
@@ -28,10 +30,6 @@ interface PhotoLightboxProps {
   onNext: () => void;
   onToggleUsage: (photo: CollaboratorPhoto, usage: PhotoUsageType) => void | Promise<void>;
   onDelete?: (photo: CollaboratorPhoto) => boolean | void | Promise<boolean | void>;
-}
-
-function downloadHref(photoId: string) {
-  return `/api/collaborator-photos/${photoId}/download`;
 }
 
 export function PhotoLightbox({
@@ -51,6 +49,8 @@ export function PhotoLightbox({
   const closeRef = useRef<HTMLButtonElement>(null);
   const [imageStatus, setImageStatus] = useState<"loading" | "ready" | "error">("loading");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [confirmDownload, setConfirmDownload] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const canGoPrevious = photoIndex > 0;
   const canGoNext = photoIndex < photoCount - 1;
 
@@ -96,6 +96,25 @@ export function PhotoLightbox({
       setActionError(error instanceof Error ? error.message : "Não foi possível excluir a foto.");
     }
   }
+
+  async function handleConfirmDownload() {
+    setDownloading(true);
+    setActionError(null);
+    try {
+      await downloadGalleryPhoto(photo.id);
+      setConfirmDownload(false);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Não foi possível baixar a foto.");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  useEffect(() => {
+    setImageStatus("loading");
+    setActionError(null);
+    setConfirmDownload(false);
+  }, [photo.id]);
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
@@ -242,11 +261,15 @@ export function PhotoLightbox({
             </div>
 
             <footer className="flex items-center gap-2 border-t border-[#dce9eb] bg-white px-4 py-3">
-              <Button type="button" size="sm" className="flex-1" asChild>
-                <a href={downloadHref(photo.id)}>
-                  <Download className="h-4 w-4" />
-                  Baixar original
-                </a>
+              <Button
+                type="button"
+                size="sm"
+                className="flex-1 gap-1.5"
+                disabled={busy || downloading}
+                onClick={() => setConfirmDownload(true)}
+              >
+                {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                Baixar original
               </Button>
               {canDelete && onDelete && (
                 <Button
@@ -254,7 +277,7 @@ export function PhotoLightbox({
                   size="icon-sm"
                   variant="ghost"
                   className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  disabled={busy}
+                  disabled={busy || downloading}
                   onClick={() => {
                     void handleDeleteCurrent();
                   }}
@@ -268,6 +291,20 @@ export function PhotoLightbox({
           </aside>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
+
+      <PhotoConfirmDialog
+        open={confirmDownload}
+        title="Baixar foto"
+        description={`Baixar o original de “${photo.sessionLabel || photo.originalFilename || "esta foto"}”?`}
+        confirmLabel="Baixar"
+        busy={downloading}
+        onConfirm={() => {
+          void handleConfirmDownload();
+        }}
+        onOpenChange={(next) => {
+          if (!downloading) setConfirmDownload(next);
+        }}
+      />
     </DialogPrimitive.Root>
   );
 }

@@ -390,6 +390,23 @@ export async function deletePhotosBatch(
     throw new PhotoHttpError(400, err instanceof Error ? err.message : "Lista de fotos inválida.");
   }
 
+  const db = await getServerDb();
+  const { data: existing, error: existingError } = await db
+    .from("collaborator_photos")
+    .select("id")
+    .in("id", ids);
+  if (existingError) throw new PhotoHttpError(500, existingError.message);
+  const found = new Set((existing ?? []).map((row) => row.id as string));
+  const missing = ids.filter((id) => !found.has(id));
+  if (missing.length > 0) {
+    throw new PhotoHttpError(
+      404,
+      missing.length === ids.length
+        ? "Foto não encontrada."
+        : `${missing.length} foto(s) não encontrada(s). Atualize a galeria e tente de novo.`
+    );
+  }
+
   for (const id of ids) {
     await deletePhoto(actor, id);
   }
@@ -433,11 +450,18 @@ export async function movePhotosToSession(
     throw new PhotoHttpError(400, "Selecione fotos do mesmo colaborador para mudar a sessão.");
   }
 
-  const { error: updateError } = await db
+  const { error: updateError, data: updatedRows } = await db
     .from("collaborator_photos")
     .update({ session_id: session.id })
-    .in("id", parsed.photoIds);
+    .in("id", parsed.photoIds)
+    .select("id");
   if (updateError) throw new PhotoHttpError(500, updateError.message);
+  if (!updatedRows || updatedRows.length !== parsed.photoIds.length) {
+    throw new PhotoHttpError(
+      403,
+      "Não foi possível atualizar a sessão de uma ou mais fotos. Verifique sua permissão de gestor."
+    );
+  }
 
   return listGalleryForUser(ownerIds[0]!);
 }

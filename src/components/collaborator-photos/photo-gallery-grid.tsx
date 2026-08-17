@@ -10,10 +10,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { PhotoConfirmDialog } from "@/components/collaborator-photos/photo-confirm-dialog";
 import { PhotoGalleryCard } from "@/components/collaborator-photos/photo-gallery-card";
 import { PhotoLightbox } from "@/components/collaborator-photos/photo-lightbox";
 import {
   deleteGalleryPhotosBatch,
+  downloadGalleryPhoto,
   downloadGalleryPhotosZip,
   moveGalleryPhotosSession,
 } from "@/lib/collaborator-photos/api";
@@ -40,6 +42,12 @@ interface PhotoGalleryGridProps {
 }
 
 type BatchBusy = "download" | "delete" | "move" | null;
+type PendingConfirm =
+  | { kind: "download-one"; photo: CollaboratorPhoto }
+  | { kind: "download-many" }
+  | { kind: "delete-many" }
+  | { kind: "move-many"; sessionId: string; sessionLabel: string }
+  | null;
 
 export function PhotoGalleryGrid({
   photos,
@@ -60,6 +68,7 @@ export function PhotoGalleryGrid({
   const [moveSessionId, setMoveSessionId] = useState<string>("");
   const [batchMessage, setBatchMessage] = useState<string | null>(null);
   const [batchError, setBatchError] = useState<string | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm>(null);
 
   const activeSessions = useMemo(
     () => (sessions ?? []).filter((session) => session.isActive),
@@ -95,9 +104,11 @@ export function PhotoGalleryGrid({
   const openedPhoto = openedIndex >= 0 ? photos[openedIndex] : null;
   const selectedCount = selectedIds.length;
   const allSelected = photos.length > 0 && selectedCount === photos.length;
-  const selectionHint = canDelete || canMoveSession
-    ? "Selecione fotos para baixar, excluir ou mudar de sessão."
-    : "Selecione fotos para baixar várias de uma vez.";
+  const selectionHint =
+    canDelete || canMoveSession
+      ? "Selecione fotos para baixar, excluir ou mudar de sessão."
+      : "Selecione fotos para baixar várias de uma vez.";
+  const confirmBusy = Boolean(batchBusy);
 
   const openPhoto = useCallback((photoId: string) => setOpenedPhotoId(photoId), []);
   const closePhoto = useCallback(() => setOpenedPhotoId(null), []);
@@ -142,8 +153,23 @@ export function PhotoGalleryGrid({
     setSelectedIds(ids);
   }, [photos]);
 
-  const downloadSelected = useCallback(async () => {
-    if (selectedIds.length === 0 || batchBusy) return;
+  const runDownloadOne = useCallback(async (photo: CollaboratorPhoto) => {
+    setBatchBusy("download");
+    setBatchError(null);
+    setBatchMessage(null);
+    try {
+      await downloadGalleryPhoto(photo.id);
+      setBatchMessage("Download da foto iniciado.");
+      setPendingConfirm(null);
+    } catch (err) {
+      setBatchError(err instanceof Error ? err.message : "Erro ao baixar foto.");
+    } finally {
+      setBatchBusy(null);
+    }
+  }, []);
+
+  const runDownloadMany = useCallback(async () => {
+    if (selectedIds.length === 0) return;
     setBatchBusy("download");
     setBatchError(null);
     setBatchMessage(null);
@@ -155,21 +181,16 @@ export function PhotoGalleryGrid({
           : `ZIP com ${selectedIds.length} fotos pronto.`
       );
       setSelectedIds([]);
+      setPendingConfirm(null);
     } catch (err) {
       setBatchError(err instanceof Error ? err.message : "Erro ao baixar fotos selecionadas.");
     } finally {
       setBatchBusy(null);
     }
-  }, [batchBusy, selectedIds]);
+  }, [selectedIds]);
 
-  const deleteSelected = useCallback(async () => {
-    if (!canDelete || selectedIds.length === 0 || batchBusy) return;
-    const label =
-      selectedIds.length === 1
-        ? "Apagar 1 foto selecionada da galeria?"
-        : `Apagar ${selectedIds.length} fotos selecionadas da galeria?`;
-    if (!confirm(label)) return;
-
+  const runDeleteMany = useCallback(async () => {
+    if (!canDelete || selectedIds.length === 0) return;
     setBatchBusy("delete");
     setBatchError(null);
     setBatchMessage(null);
@@ -179,50 +200,93 @@ export function PhotoGalleryGrid({
       setOpenedPhotoId((current) => (current && deletedIds.includes(current) ? null : current));
       setSelectedIds([]);
       setBatchMessage(
-        deletedIds.length === 1
-          ? "Foto excluída."
-          : `${deletedIds.length} fotos excluídas.`
+        deletedIds.length === 1 ? "Foto excluída." : `${deletedIds.length} fotos excluídas.`
       );
+      setPendingConfirm(null);
     } catch (err) {
       setBatchError(err instanceof Error ? err.message : "Erro ao excluir fotos selecionadas.");
     } finally {
       setBatchBusy(null);
     }
-  }, [batchBusy, canDelete, onPhotosRemoved, selectedIds]);
+  }, [canDelete, onPhotosRemoved, selectedIds]);
 
-  const moveSelected = useCallback(async () => {
+  const runMoveMany = useCallback(
+    async (sessionId: string, sessionLabel: string) => {
+      if (!canMoveSession || selectedIds.length === 0) return;
+      setBatchBusy("move");
+      setBatchError(null);
+      setBatchMessage(null);
+      try {
+        const nextPhotos = await moveGalleryPhotosSession(selectedIds, sessionId);
+        onGalleryReplaced?.(nextPhotos);
+        setSelectedIds([]);
+        setBatchMessage(
+          selectedIds.length === 1
+            ? `Foto movida para “${sessionLabel}”.`
+            : `${selectedIds.length} fotos movidas para “${sessionLabel}”.`
+        );
+        setPendingConfirm(null);
+      } catch (err) {
+        setBatchError(err instanceof Error ? err.message : "Erro ao mudar a sessão das fotos.");
+      } finally {
+        setBatchBusy(null);
+      }
+    },
+    [canMoveSession, onGalleryReplaced, selectedIds]
+  );
+
+  const confirmPending = useCallback(() => {
+    if (!pendingConfirm || batchBusy) return;
+    if (pendingConfirm.kind === "download-one") {
+      void runDownloadOne(pendingConfirm.photo);
+      return;
+    }
+    if (pendingConfirm.kind === "download-many") {
+      void runDownloadMany();
+      return;
+    }
+    if (pendingConfirm.kind === "delete-many") {
+      void runDeleteMany();
+      return;
+    }
+    void runMoveMany(pendingConfirm.sessionId, pendingConfirm.sessionLabel);
+  }, [batchBusy, pendingConfirm, runDeleteMany, runDownloadMany, runDownloadOne, runMoveMany]);
+
+  const requestDownloadOne = useCallback((photo: CollaboratorPhoto) => {
+    setBatchError(null);
+    setBatchMessage(null);
+    setPendingConfirm({ kind: "download-one", photo });
+  }, []);
+
+  const requestDownloadMany = useCallback(() => {
+    if (selectedIds.length === 0 || batchBusy) return;
+    setBatchError(null);
+    setBatchMessage(null);
+    setPendingConfirm({ kind: "download-many" });
+  }, [batchBusy, selectedIds.length]);
+
+  const requestDeleteMany = useCallback(() => {
+    if (!canDelete || selectedIds.length === 0 || batchBusy) return;
+    setBatchError(null);
+    setBatchMessage(null);
+    setPendingConfirm({ kind: "delete-many" });
+  }, [batchBusy, canDelete, selectedIds.length]);
+
+  const requestMoveMany = useCallback(() => {
     if (!canMoveSession || !moveSessionId || selectedIds.length === 0 || batchBusy) return;
     const session = activeSessions.find((item) => item.id === moveSessionId);
     if (!session) {
       setBatchError("Selecione a sessão de destino.");
       return;
     }
-
-    setBatchBusy("move");
     setBatchError(null);
     setBatchMessage(null);
-    try {
-      const nextPhotos = await moveGalleryPhotosSession(selectedIds, moveSessionId);
-      onGalleryReplaced?.(nextPhotos);
-      setSelectedIds([]);
-      setBatchMessage(
-        selectedIds.length === 1
-          ? `Foto movida para “${session.label}”.`
-          : `${selectedIds.length} fotos movidas para “${session.label}”.`
-      );
-    } catch (err) {
-      setBatchError(err instanceof Error ? err.message : "Erro ao mudar a sessão das fotos.");
-    } finally {
-      setBatchBusy(null);
-    }
-  }, [
-    activeSessions,
-    batchBusy,
-    canMoveSession,
-    moveSessionId,
-    onGalleryReplaced,
-    selectedIds,
-  ]);
+    setPendingConfirm({
+      kind: "move-many",
+      sessionId: session.id,
+      sessionLabel: session.label,
+    });
+  }, [activeSessions, batchBusy, canMoveSession, moveSessionId, selectedIds.length]);
 
   const deletePhoto = useCallback(
     async (photo: CollaboratorPhoto) => {
@@ -235,6 +299,60 @@ export function PhotoGalleryGrid({
     },
     [onDelete]
   );
+
+  const confirmCopy = useMemo(() => {
+    if (!pendingConfirm) {
+      return {
+        title: "",
+        description: "",
+        confirmLabel: "Confirmar",
+        tone: "default" as const,
+      };
+    }
+    if (pendingConfirm.kind === "download-one") {
+      const label =
+        pendingConfirm.photo.sessionLabel ||
+        pendingConfirm.photo.originalFilename ||
+        "esta foto";
+      return {
+        title: "Baixar foto",
+        description: `Baixar “${label}” agora?`,
+        confirmLabel: "Baixar",
+        tone: "default" as const,
+      };
+    }
+    if (pendingConfirm.kind === "download-many") {
+      return {
+        title: selectedCount === 1 ? "Baixar foto" : "Baixar fotos",
+        description:
+          selectedCount === 1
+            ? "Baixar a foto selecionada agora?"
+            : `Baixar ${selectedCount} fotos em um arquivo ZIP?`,
+        confirmLabel: selectedCount === 1 ? "Baixar" : `Baixar ${selectedCount}`,
+        tone: "default" as const,
+      };
+    }
+    if (pendingConfirm.kind === "delete-many") {
+      return {
+        title: selectedCount === 1 ? "Excluir foto" : "Excluir fotos",
+        description:
+          selectedCount === 1
+            ? "Apagar a foto selecionada da galeria? Esta ação não pode ser desfeita."
+            : `Apagar ${selectedCount} fotos selecionadas da galeria? Esta ação não pode ser desfeita.`,
+        confirmLabel: selectedCount === 1 ? "Excluir" : `Excluir ${selectedCount}`,
+        tone: "danger" as const,
+      };
+    }
+    return {
+      title: selectedCount === 1 ? "Mudar sessão" : "Mudar sessão das fotos",
+      description:
+        selectedCount === 1
+          ? `Mover a foto selecionada para “${pendingConfirm.sessionLabel}”?`
+          : `Mover ${selectedCount} fotos para “${pendingConfirm.sessionLabel}”?`,
+      confirmLabel: selectedCount === 1 ? "Mover" : `Mover ${selectedCount}`,
+      tone: "default" as const,
+    };
+  }, [pendingConfirm, selectedCount]);
 
   if (photos.length === 0) {
     return (
@@ -292,11 +410,9 @@ export function PhotoGalleryGrid({
               size="xs"
               className="h-8 gap-1.5"
               disabled={selectedCount === 0 || Boolean(batchBusy)}
-              onClick={() => {
-                void downloadSelected();
-              }}
+              onClick={requestDownloadMany}
             >
-              {batchBusy === "download" ? (
+              {batchBusy === "download" && pendingConfirm?.kind === "download-many" ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
                 <Download className="h-3.5 w-3.5" />
@@ -310,9 +426,7 @@ export function PhotoGalleryGrid({
                 size="xs"
                 className="h-8 gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
                 disabled={selectedCount === 0 || Boolean(batchBusy)}
-                onClick={() => {
-                  void deleteSelected();
-                }}
+                onClick={requestDeleteMany}
               >
                 {batchBusy === "delete" ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -335,7 +449,7 @@ export function PhotoGalleryGrid({
                 <SelectTrigger className="h-8 w-[220px] text-xs">
                   <SelectValue placeholder="Sessão de destino" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="z-[90]">
                   {activeSessions.map((session) => (
                     <SelectItem key={session.id} value={session.id}>
                       {session.label}
@@ -349,9 +463,7 @@ export function PhotoGalleryGrid({
                 size="xs"
                 className="h-8 gap-1.5"
                 disabled={selectedCount === 0 || !moveSessionId || Boolean(batchBusy)}
-                onClick={() => {
-                  void moveSelected();
-                }}
+                onClick={requestMoveMany}
               >
                 {batchBusy === "move" ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -388,6 +500,7 @@ export function PhotoGalleryGrid({
             selected={selectedIds.includes(photo.id)}
             onOpen={openPhoto}
             onToggleSelect={toggleSelect}
+            onDownload={requestDownloadOne}
             onToggleUsage={onToggleUsage}
             onDelete={onDelete ? deletePhoto : undefined}
           />
@@ -413,6 +526,19 @@ export function PhotoGalleryGrid({
           onDelete={onDelete ? deletePhoto : undefined}
         />
       )}
+
+      <PhotoConfirmDialog
+        open={pendingConfirm !== null}
+        title={confirmCopy.title}
+        description={confirmCopy.description}
+        confirmLabel={confirmCopy.confirmLabel}
+        tone={confirmCopy.tone}
+        busy={confirmBusy}
+        onConfirm={confirmPending}
+        onOpenChange={(open) => {
+          if (!open && !confirmBusy) setPendingConfirm(null);
+        }}
+      />
     </>
   );
 }

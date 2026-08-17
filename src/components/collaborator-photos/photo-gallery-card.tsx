@@ -17,6 +17,7 @@ interface PhotoGalleryCardProps {
   selected: boolean;
   onOpen: (photoId: string) => void;
   onToggleSelect: (photoId: string) => void;
+  onDownload: (photo: CollaboratorPhoto) => void;
   onToggleUsage: (photo: CollaboratorPhoto, usage: PhotoUsageType) => void | Promise<void>;
   onDelete?: (photo: CollaboratorPhoto) => boolean | void | Promise<boolean | void>;
 }
@@ -29,10 +30,6 @@ function gridPreviewSrc(publicUrl: string) {
   });
 }
 
-function downloadHref(photoId: string) {
-  return `/api/collaborator-photos/${photoId}/download`;
-}
-
 export function PhotoGalleryCard({
   photo,
   photoIndex,
@@ -42,6 +39,7 @@ export function PhotoGalleryCard({
   selected,
   onOpen,
   onToggleSelect,
+  onDownload,
   onToggleUsage,
   onDelete,
 }: PhotoGalleryCardProps) {
@@ -153,11 +151,10 @@ export function PhotoGalleryCard({
           className="ml-auto h-8 w-8"
           title="Baixar foto"
           aria-label={`Baixar ${primaryLabel}`}
-          asChild
+          disabled={busy}
+          onClick={() => onDownload(photo)}
         >
-          <a href={downloadHref(photo.id)}>
-            <Download className="h-3.5 w-3.5" />
-          </a>
+          <Download className="h-3.5 w-3.5" />
         </Button>
         {canDelete && onDelete && (
           <Button

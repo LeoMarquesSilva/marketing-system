@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2, Upload } from "lucide-react";
+import { PhotoConfirmDialog } from "@/components/collaborator-photos/photo-confirm-dialog";
 import { PhotoGalleryGrid } from "@/components/collaborator-photos/photo-gallery-grid";
 import {
   deleteGalleryPhoto,
@@ -69,6 +70,8 @@ export function ManagerGalleryDialog({
   const [uploading, setUploading] = useState(false);
   const [busyPhotoId, setBusyPhotoId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingDeletePhoto, setPendingDeletePhoto] = useState<CollaboratorPhoto | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!open || !person) return;
@@ -167,18 +170,25 @@ export function ManagerGalleryDialog({
   }
 
   async function handleDelete(photo: CollaboratorPhoto) {
-    if (!confirm("Apagar esta foto da galeria?")) return false;
+    setPendingDeletePhoto(photo);
+    return false;
+  }
+
+  async function confirmDeletePhoto() {
+    if (!pendingDeletePhoto || deleting) return;
+    const photo = pendingDeletePhoto;
+    setDeleting(true);
     setBusyPhotoId(photo.id);
     setError(null);
     try {
       await deleteGalleryPhoto(photo.id);
       setPhotos((prev) => prev.filter((item) => item.id !== photo.id));
       onChanged?.(photo.userId);
-      return true;
+      setPendingDeletePhoto(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao apagar foto.");
-      throw err;
     } finally {
+      setDeleting(false);
       setBusyPhotoId(null);
     }
   }
@@ -291,6 +301,21 @@ export function ManagerGalleryDialog({
             }}
           />
         )}
+
+        <PhotoConfirmDialog
+          open={pendingDeletePhoto !== null}
+          title="Excluir foto"
+          description={`Apagar “${pendingDeletePhoto?.sessionLabel || pendingDeletePhoto?.originalFilename || "esta foto"}” da galeria? Esta ação não pode ser desfeita.`}
+          confirmLabel="Excluir"
+          tone="danger"
+          busy={deleting}
+          onConfirm={() => {
+            void confirmDeletePhoto();
+          }}
+          onOpenChange={(open) => {
+            if (!open && !deleting) setPendingDeletePhoto(null);
+          }}
+        />
       </DialogContent>
     </Dialog>
   );

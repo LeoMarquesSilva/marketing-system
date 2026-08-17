@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Camera, CircleCheck, CircleDashed, HelpCircle, RefreshCw } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
+import { PhotoConfirmDialog } from "@/components/collaborator-photos/photo-confirm-dialog";
 import { PhotoGalleryGrid } from "@/components/collaborator-photos/photo-gallery-grid";
 import {
   MinhasFotosTour,
@@ -45,6 +46,8 @@ export function MinhasFotosClient() {
   const [error, setError] = useState<string | null>(null);
   const [busyPhotoId, setBusyPhotoId] = useState<string | null>(null);
   const [tourKey, setTourKey] = useState(0);
+  const [pendingDeletePhoto, setPendingDeletePhoto] = useState<CollaboratorPhoto | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadGallery = useCallback(async () => {
     setLoading(true);
@@ -85,18 +88,25 @@ export function MinhasFotosClient() {
   }
 
   async function handleDelete(photo: CollaboratorPhoto) {
-    if (!confirm("Excluir esta foto da sua galeria?")) return false;
+    setPendingDeletePhoto(photo);
+    return false;
+  }
+
+  async function confirmDeletePhoto() {
+    if (!pendingDeletePhoto || deleting) return;
+    const photo = pendingDeletePhoto;
+    setDeleting(true);
     setBusyPhotoId(photo.id);
     setError(null);
     try {
       await deleteGalleryPhoto(photo.id);
       setPhotos((prev) => prev.filter((item) => item.id !== photo.id));
       if (photo.usageSlugs.includes("oficial")) await refreshProfile();
-      return true;
+      setPendingDeletePhoto(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao excluir foto.");
-      throw err;
     } finally {
+      setDeleting(false);
       setBusyPhotoId(null);
     }
   }
@@ -220,6 +230,21 @@ export function MinhasFotosClient() {
           </>
         )}
       </div>
+
+      <PhotoConfirmDialog
+        open={pendingDeletePhoto !== null}
+        title="Excluir foto"
+        description={`Excluir “${pendingDeletePhoto?.sessionLabel || pendingDeletePhoto?.originalFilename || "esta foto"}” da sua galeria? Esta ação não pode ser desfeita.`}
+        confirmLabel="Excluir"
+        tone="danger"
+        busy={deleting}
+        onConfirm={() => {
+          void confirmDeletePhoto();
+        }}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setPendingDeletePhoto(null);
+        }}
+      />
     </div>
   );
 }
