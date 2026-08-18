@@ -35,6 +35,12 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const isCollaboratorRoute = COLLABORATOR_PATHS.some(
     (p) => pathname === p || pathname.startsWith(p + "/")
   );
+  const isFeriasRoute =
+    pathname === "/rh" ||
+    pathname === "/rh/ferias" ||
+    pathname.startsWith("/rh/ferias/") ||
+    pathname === "/ferias" ||
+    pathname.startsWith("/ferias/");
 
   // Decide de forma síncrona para onde (se for o caso) o usuário deve ir.
   const redirectTo = (() => {
@@ -78,6 +84,12 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     const allowed = resolveAllowedSections(profile);
     if (profile && allowed && !isPublic) {
       return canAccessPath(profile, pathname) ? null : resolvePostLoginPathFromProfile(profile);
+    }
+
+    // Viewers por área podem também ser colaboradores de conteúdo. O acesso
+    // específico a Férias deve prevalecer sobre o redirect legado abaixo.
+    if (profile && isFeriasRoute && canAccessPath(profile, pathname)) {
+      return null;
     }
 
     // Comportamento legado (colaborador de conteúdo).
