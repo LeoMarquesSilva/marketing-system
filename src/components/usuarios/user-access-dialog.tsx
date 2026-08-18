@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, KeyRound, ShieldCheck, Check, Clock3 } from "lucide-react";
+import { Loader2, KeyRound, ShieldCheck, Check, Clock3, Palmtree } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { User } from "@/lib/users";
 import {
@@ -41,6 +41,14 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
   const [permissions, setPermissions] = useState<string[]>([]);
   const [activating, setActivating] = useState(false);
   const [savingPerms, setSavingPerms] = useState(false);
+  const [savingFerias, setSavingFerias] = useState(false);
+  const [feriasMode, setFeriasMode] = useState<"auto" | "disabled" | "custom">("auto");
+  const [feriasAreas, setFeriasAreas] = useState<string[]>([]);
+  const [availableFeriasAreas, setAvailableFeriasAreas] = useState<string[]>([]);
+  const [automaticFeriasAreas, setAutomaticFeriasAreas] = useState<string[]>([]);
+  const [automaticFeriasEligible, setAutomaticFeriasEligible] = useState(false);
+  const [feriasPosition, setFeriasPosition] = useState<string | null>(null);
+  const [feriasDepartment, setFeriasDepartment] = useState<string | null>(null);
   const [loadingActivity, setLoadingActivity] = useState(false);
   const [authActivity, setAuthActivity] = useState(user?.auth_activity ?? null);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +60,8 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
     if (!open || !user) return;
     setEmail(user.email ?? "");
     setPermissions(normalizePermissionsInput(user.permissions) ?? []);
+    setFeriasMode(user.ferias_access_mode ?? "auto");
+    setFeriasAreas(user.ferias_area_scope ?? []);
     setAuthActivity(user.auth_activity ?? null);
     setError(null);
     setNotice(null);
@@ -59,7 +69,7 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
   }, [open, user?.id]);
 
   useEffect(() => {
-    if (!open || !user?.auth_id) return;
+    if (!open || !user) return;
 
     const userId = user.id;
     let cancelled = false;
@@ -67,9 +77,20 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
     fetch(`/api/admin/users?userId=${encodeURIComponent(userId)}`, { credentials: "include" })
       .then((res) => res.json().catch(() => ({})))
       .then((data) => {
-        if (cancelled || !data.auth_activity) return;
-        setAuthActivity(data.auth_activity);
-        onUpdated(userId, { auth_activity: data.auth_activity });
+        if (cancelled) return;
+        if (data.auth_activity) {
+          setAuthActivity(data.auth_activity);
+          onUpdated(userId, { auth_activity: data.auth_activity });
+        }
+        if (data.ferias_access) {
+          setFeriasMode(data.ferias_access.mode ?? "auto");
+          setFeriasAreas(data.ferias_access.areas ?? []);
+          setAvailableFeriasAreas(data.ferias_access.availableAreas ?? []);
+          setAutomaticFeriasAreas(data.ferias_access.automaticAreas ?? []);
+          setAutomaticFeriasEligible(Boolean(data.ferias_access.automaticEligible));
+          setFeriasPosition(data.ferias_access.position ?? null);
+          setFeriasDepartment(data.ferias_access.department ?? null);
+        }
       })
       .catch(() => {})
       .finally(() => {
@@ -160,6 +181,49 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
       setError(e instanceof Error ? e.message : "Erro ao salvar permissões");
     } finally {
       setSavingPerms(false);
+    }
+  }
+
+  const toggleFeriasArea = (area: string) => {
+    setFeriasAreas((current) => {
+      if (area === "*") return current.includes("*") ? [] : ["*"];
+      const withoutGlobal = current.filter((item) => item !== "*");
+      return withoutGlobal.includes(area)
+        ? withoutGlobal.filter((item) => item !== area)
+        : [...withoutGlobal, area];
+    });
+  };
+
+  async function saveFeriasAccess() {
+    setError(null);
+    setNotice(null);
+    setSavingFerias(true);
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "set_ferias_access",
+          userId: user!.id,
+          mode: feriasMode,
+          areas: feriasMode === "custom" ? feriasAreas : [],
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Erro ao salvar o acesso às férias");
+      const savedAreas = data.ferias_area_scope ?? [];
+      setFeriasAreas(savedAreas);
+      onUpdated(user!.id, {
+        ferias_access_mode: data.ferias_access_mode,
+        ferias_area_scope: savedAreas,
+        ferias_view_enabled: Boolean(data.ferias_view_enabled),
+      });
+      setNotice("Acesso às férias atualizado.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao salvar o acesso às férias");
+    } finally {
+      setSavingFerias(false);
     }
   }
 
@@ -336,6 +400,97 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
               <Button onClick={savePerms} disabled={savingPerms} size="sm" className="gap-2">
                 {savingPerms && <Loader2 className="h-4 w-4 animate-spin" />}
                 Salvar permissões
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
+            <div>
+              <p className="flex items-center gap-1.5 text-sm font-medium">
+                <Palmtree className="h-4 w-4" />
+                Férias — visão por área
+              </p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Este controle libera somente Férias. A permissão completa de RH acima continua
+                permitindo editar e acessar Qualificações.
+              </p>
+            </div>
+
+            <Select
+              value={feriasMode}
+              onValueChange={(value) =>
+                setFeriasMode(value as "auto" | "disabled" | "custom")
+              }
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Automático por cargo e área</SelectItem>
+                <SelectItem value="custom">Personalizado</SelectItem>
+                <SelectItem value="disabled">Desativado</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {feriasMode === "auto" && (
+              <div className="rounded-lg border border-dashed bg-background/80 px-3 py-2 text-xs">
+                <p className="font-medium text-foreground">
+                  {automaticFeriasEligible
+                    ? `Acesso somente leitura: ${automaticFeriasAreas.join(", ")}`
+                    : "Sem acesso automático"}
+                </p>
+                <p className="mt-0.5 text-muted-foreground">
+                  {[feriasPosition, feriasDepartment].filter(Boolean).join(" · ") ||
+                    "Sem cargo/área vinculados no cadastro de RH"}
+                </p>
+              </div>
+            )}
+
+            {feriasMode === "custom" && (
+              <div className="space-y-2">
+                <Label className="text-xs">Áreas permitidas</Label>
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                  {["*", ...availableFeriasAreas].map((area) => {
+                    const checked = feriasAreas.includes(area);
+                    return (
+                      <button
+                        key={area}
+                        type="button"
+                        onClick={() => toggleFeriasArea(area)}
+                        className={cn(
+                          "flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors",
+                          checked
+                            ? "border-primary/40 bg-primary/[0.06] text-foreground"
+                            : "text-muted-foreground hover:bg-muted/50"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                            checked
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-input"
+                          )}
+                        >
+                          {checked && <Check className="h-3 w-3" />}
+                        </span>
+                        {area === "*" ? "Todas as áreas" : area}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end">
+              <Button
+                onClick={saveFeriasAccess}
+                disabled={savingFerias || (feriasMode === "custom" && feriasAreas.length === 0)}
+                size="sm"
+                className="gap-2"
+              >
+                {savingFerias && <Loader2 className="h-4 w-4 animate-spin" />}
+                Salvar acesso às férias
               </Button>
             </div>
           </div>

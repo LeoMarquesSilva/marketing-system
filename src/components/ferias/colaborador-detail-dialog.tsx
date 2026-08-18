@@ -53,6 +53,7 @@ interface ColaboradorDetailDialogProps {
   employeeId: string | null;
   users: LinkableUser[];
   occupiedUserIds?: string[];
+  canManage: boolean;
 }
 
 function SummaryItem({
@@ -86,6 +87,7 @@ export function ColaboradorDetailDialog({
   employeeId,
   users,
   occupiedUserIds = [],
+  canManage,
 }: ColaboradorDetailDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -97,6 +99,7 @@ export function ColaboradorDetailDialog({
             employeeId={employeeId}
             users={users}
             occupiedUserIds={occupiedUserIds}
+            canManage={canManage}
           />
         ) : (
           <>
@@ -115,10 +118,12 @@ function DetailBody({
   employeeId,
   users,
   occupiedUserIds,
+  canManage,
 }: {
   employeeId: string;
   users: LinkableUser[];
   occupiedUserIds: string[];
+  canManage: boolean;
 }) {
   const router = useRouter();
   const [detail, setDetail] = useState<EmployeeDetail | null>(null);
@@ -275,7 +280,7 @@ function DetailBody({
                 </div>
               </div>
             </div>
-            <div className="flex shrink-0 gap-2">
+            {canManage && <div className="flex shrink-0 gap-2">
               <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
                 <Pencil className="mr-1.5 h-3.5 w-3.5" />
                 Editar
@@ -292,7 +297,7 @@ function DetailBody({
                 <Plus className="mr-1.5 h-3.5 w-3.5" />
                 Registrar
               </Button>
-            </div>
+            </div>}
           </div>
         )}
       </DialogHeader>
@@ -378,7 +383,7 @@ function DetailBody({
                           {item.usedDays}/{item.period.entitled_days} · resta {item.remainingDays}
                         </span>
                         <VacationStatusBadge status={item.status} />
-                        <Button
+                        {canManage && <Button
                           variant="ghost"
                           size="sm"
                           aria-label="Ajustar direito do período"
@@ -388,7 +393,7 @@ function DetailBody({
                           }}
                         >
                           <Pencil className="h-3.5 w-3.5" />
-                        </Button>
+                        </Button>}
                       </div>
                     </div>
                     {item.allocations.length > 0 && (
@@ -436,6 +441,7 @@ function DetailBody({
             <LeaveLaunchesSection
               leaves={orderedLeaves}
               error={error}
+              readOnly={!canManage}
               onRegisterWorkedDay={(leave) => {
                 const creditKind: VacationLeaveKind =
                   leave.kind === "recesso" ? "trabalho_recesso" : "trabalho_ferias";
@@ -469,7 +475,7 @@ function DetailBody({
         )}
       </div>
 
-      {employee && (
+      {employee && canManage && (
         <>
           <ColaboradorFormDialog
             open={editOpen}
@@ -509,7 +515,7 @@ function DetailBody({
         </>
       )}
 
-      <Dialog open={!!deleteTarget} onOpenChange={(nextOpen) => !nextOpen && setDeleteTarget(null)}>
+      {canManage && <Dialog open={!!deleteTarget} onOpenChange={(nextOpen) => !nextOpen && setDeleteTarget(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Excluir lançamento</DialogTitle>
@@ -527,7 +533,7 @@ function DetailBody({
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog>}
     </>
   );
 }

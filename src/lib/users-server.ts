@@ -8,7 +8,7 @@ const supabaseUrl =
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
 const USER_SELECT =
-  "id, name, email, department, avatar_url, photo_onedrive_url, photo_collected, photo_collected_at, is_active, role, auth_id, permissions, must_change_password, last_seen_at";
+  "id, name, email, department, avatar_url, photo_onedrive_url, photo_collected, photo_collected_at, is_active, role, auth_id, permissions, ferias_access_mode, ferias_area_scope, ferias_view_enabled, must_change_password, last_seen_at";
 
 function getAdminClient() {
   if (!supabaseServiceKey) {

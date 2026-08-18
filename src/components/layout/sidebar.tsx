@@ -126,6 +126,11 @@ const rhNavGroup: NavGroup = {
   ],
 };
 
+const feriasViewerNavGroup: NavGroup = {
+  ...rhNavGroup,
+  children: rhNavGroup.children.filter((item) => item.href === "/rh/ferias"),
+};
+
 const adminNavItems: NavLeaf[] = [
   { href: "/admin", icon: Settings, label: "Configuracoes" },
 ];
@@ -150,12 +155,23 @@ function profileHasRhAccess(
   return hasHrAccess(profile?.role, profile?.permissions);
 }
 
+function profileHasFeriasView(
+  profile: {
+    role?: string | null;
+    permissions?: string[] | null;
+    ferias_view_enabled?: boolean | null;
+  } | null
+): boolean {
+  return profileHasRhAccess(profile) || profile?.ferias_view_enabled === true;
+}
+
 function getNavItems(
   profile: {
     id?: string;
     role?: string | null;
     department?: string | null;
     permissions?: string[] | null;
+    ferias_view_enabled?: boolean | null;
   } | null
 ): NavEntry[] {
   const minhasFotos: NavLeaf = { href: "/minhas-fotos", icon: Images, label: "Minhas fotos" };
@@ -172,6 +188,8 @@ function getNavItems(
 
     if (profileHasRhAccess(profile) || allowed.includes("/rh") || allowed.includes("/ferias")) {
       items = [...items, rhNavGroup];
+    } else if (profileHasFeriasView(profile)) {
+      items = [...items, feriasViewerNavGroup];
     }
 
     if (allowed.some((k) => k.startsWith("/conteudo"))) {
@@ -194,17 +212,24 @@ function getNavItems(
   }
 
   if (isContentCollaborator(profile)) {
-    return collaboratorNavItems;
+    return profileHasFeriasView(profile)
+      ? [...collaboratorNavItems, feriasViewerNavGroup]
+      : collaboratorNavItems;
   }
 
   const isAdmin = isAdminRole(profile);
+  const canViewFerias = profileHasFeriasView(profile);
   return [
     ...baseNavItems.filter((i) => {
       if (i.href === "/nfc") return isAdmin;
       if (i.href === "/minhas-fotos") return true;
       return i.href !== "/fotos-colaboradores" || isCollaboratorPhotosManager(profile);
     }),
-    ...(isAdmin ? [meusClientesNavItem, rhNavGroup, ...adminNavItems] : []),
+    ...(isAdmin
+      ? [meusClientesNavItem, rhNavGroup, ...adminNavItems]
+      : canViewFerias
+        ? [feriasViewerNavGroup]
+        : []),
   ];
 }
 

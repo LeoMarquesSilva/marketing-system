@@ -79,6 +79,8 @@ export interface AccessProfile {
   role?: string | null;
   permissions?: string[] | null;
   id?: string;
+  /** Indicador de navegação; a autorização de dados é refeita no servidor. */
+  ferias_view_enabled?: boolean | null;
 }
 
 /** Usuários com acesso à página Fotos Colaboradores (além do catálogo de permissões). */
@@ -150,12 +152,24 @@ export function canAccessPath(
   profile: AccessProfile | null | undefined,
   pathname: string
 ): boolean {
-  const isRhRoute =
+  const isFeriasRoute =
     pathname === "/rh" ||
-    pathname.startsWith("/rh/") ||
+    pathname === "/rh/ferias" ||
+    pathname.startsWith("/rh/ferias/") ||
     pathname === "/ferias" ||
     pathname.startsWith("/ferias/");
-  if (isRhRoute) {
+  if (isFeriasRoute) {
+    if (isAdminRole(profile)) return true;
+    const permissions = profile?.permissions ?? [];
+    return (
+      permissions.includes("/rh") ||
+      permissions.includes("/ferias") ||
+      profile?.ferias_view_enabled === true
+    );
+  }
+
+  const isOtherRhRoute = pathname.startsWith("/rh/");
+  if (isOtherRhRoute) {
     if (isAdminRole(profile)) return true;
     const permissions = profile?.permissions ?? [];
     return permissions.includes("/rh") || permissions.includes("/ferias");

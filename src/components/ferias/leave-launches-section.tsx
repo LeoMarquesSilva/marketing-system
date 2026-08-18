@@ -59,6 +59,7 @@ export function groupVacationLaunches(
 interface LeaveLaunchesSectionProps {
   leaves: VacationLeave[];
   error: string | null;
+  readOnly?: boolean;
   onRegisterWorkedDay: (leave: VacationLeave) => void;
   onEdit: (leave: VacationLeave) => void;
   onDelete: (leave: VacationLeave) => void;
@@ -68,10 +69,12 @@ function CreditRow({
   credit,
   onEdit,
   onDelete,
+  readOnly,
 }: {
   credit: VacationLeave;
   onEdit: (leave: VacationLeave) => void;
   onDelete: (leave: VacationLeave) => void;
+  readOnly: boolean;
 }) {
   const dateLabel =
     credit.start_date === credit.end_date
@@ -92,7 +95,7 @@ function CreditRow({
         <p className="text-sm font-medium text-foreground">{dateLabel}</p>
         <p className="text-xs font-medium text-emerald-700">{daysLabel}</p>
       </div>
-      <div className="flex shrink-0 items-center gap-0.5">
+      {!readOnly && <div className="flex shrink-0 items-center gap-0.5">
         <Button
           type="button"
           variant="ghost"
@@ -113,7 +116,7 @@ function CreditRow({
         >
           <Trash2 className="text-destructive" aria-hidden="true" />
         </Button>
-      </div>
+      </div>}
     </div>
   );
 }
@@ -121,6 +124,7 @@ function CreditRow({
 export function LeaveLaunchesSection({
   leaves,
   error,
+  readOnly = false,
   onRegisterWorkedDay,
   onEdit,
   onDelete,
@@ -138,7 +142,9 @@ export function LeaveLaunchesSection({
           Lançamentos
         </h3>
         <p className="mt-0.5 max-w-[65ch] text-xs text-muted-foreground">
-          Consulte cada período e registre compensações sem perder o contexto.
+          {readOnly
+            ? "Consulte os períodos de férias, recessos, abonos e compensações."
+            : "Consulte cada período e registre compensações sem perder o contexto."}
         </p>
       </div>
 
@@ -227,7 +233,7 @@ export function LeaveLaunchesSection({
                             : "compensações registradas"
                         }`}
                   </p>
-                  <div className="flex flex-wrap items-center gap-1">
+                  {!readOnly && <div className="flex flex-wrap items-center gap-1">
                     {canRegisterWorkedDay && (
                       <Button
                         type="button"
@@ -260,7 +266,7 @@ export function LeaveLaunchesSection({
                     >
                       <Trash2 className="text-destructive" aria-hidden="true" />
                     </Button>
-                  </div>
+                  </div>}
                 </div>
 
                 {credits.length > 0 && (
@@ -275,6 +281,7 @@ export function LeaveLaunchesSection({
                           credit={credit}
                           onEdit={onEdit}
                           onDelete={onDelete}
+                          readOnly={readOnly}
                         />
                       ))}
                     </div>
@@ -301,6 +308,7 @@ export function LeaveLaunchesSection({
                     credit={credit}
                     onEdit={onEdit}
                     onDelete={onDelete}
+                    readOnly={readOnly}
                   />
                 ))}
               </div>

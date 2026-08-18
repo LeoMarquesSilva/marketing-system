@@ -52,6 +52,18 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(legado, "/ferias")).toBe(true);
   });
 
+  it("viewer de férias acessa somente Férias, não Qualificações", () => {
+    const viewer = {
+      role: null,
+      permissions: ["/conteudo/roteiros"],
+      ferias_view_enabled: true,
+    };
+    expect(canAccessPath(viewer, "/rh")).toBe(true);
+    expect(canAccessPath(viewer, "/rh/ferias")).toBe(true);
+    expect(canAccessPath(viewer, "/ferias")).toBe(true);
+    expect(canAccessPath(viewer, "/rh/qualificacoes")).toBe(false);
+  });
+
   it("gestor só com Meus Clientes acessa a rota e não o Planner", () => {
     const gestor = { role: null, permissions: ["/meus-clientes"] };
     expect(canAccessPath(gestor, "/meus-clientes")).toBe(true);

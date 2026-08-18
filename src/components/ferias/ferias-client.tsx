@@ -89,6 +89,8 @@ interface FeriasClientProps {
   employees: EmployeeWithBalance[];
   recess: CompanyRecessWithStatus[];
   users: LinkableUser[];
+  canManage: boolean;
+  scopeAreas: string[] | null;
 }
 
 const RECESS_APPLY_STATE_CLASS: Record<RecessApplyState, string> = {
@@ -157,7 +159,13 @@ function KpiCard({
   );
 }
 
-export function FeriasClient({ employees, recess, users }: FeriasClientProps) {
+export function FeriasClient({
+  employees,
+  recess,
+  users,
+  canManage,
+  scopeAreas,
+}: FeriasClientProps) {
   const router = useRouter();
   const [tab, setTab] = useState<TabKey>("colaboradores");
   const [search, setSearch] = useState("");
@@ -192,6 +200,7 @@ export function FeriasClient({ employees, recess, users }: FeriasClientProps) {
   }, [router]);
 
   const { status: realtimeStatus, lastSyncAt } = useFeriasRealtime({
+    enabled: canManage,
     paused: realtimePaused,
     onRefresh: handleRealtimeRefresh,
   });
@@ -340,48 +349,63 @@ export function FeriasClient({ employees, recess, users }: FeriasClientProps) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold tracking-tight text-foreground">Férias</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-xl font-bold tracking-tight text-foreground">Férias</h2>
+            {!canManage && (
+              <Badge variant="outline" className="border-sky-200 bg-sky-50 text-sky-800">
+                Somente leitura
+              </Badge>
+            )}
+          </div>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Controle dos períodos aquisitivos, dos dias já gozados e de quem precisa sair de férias.
+            {canManage
+              ? "Controle dos períodos aquisitivos, dos dias já gozados e de quem precisa sair de férias."
+              : `Visualização de férias: ${
+                  scopeAreas === null ? "todas as áreas" : scopeAreas.join(", ")
+                }.`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div
-            className={cn(
-              "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium",
-              realtimeStatus === "connected"
-                ? "bg-emerald-100 text-emerald-700"
-                : "bg-amber-100 text-amber-700"
-            )}
-            title={
-              lastSyncAt
-                ? `Última atualização em tempo real: ${lastSyncAt.toLocaleTimeString("pt-BR")}`
-                : undefined
-            }
-          >
-            {realtimeStatus === "connected" ? (
-              <Wifi className="h-3.5 w-3.5" aria-hidden />
-            ) : (
-              <WifiOff className="h-3.5 w-3.5" aria-hidden />
-            )}
-            {realtimeStatus === "connected" ? "Tempo real ativo" : "Tempo real indisponível"}
-          </div>
-          {tab === "colaboradores" ? (
-            <Button onClick={() => setCreateOpen(true)} className="shrink-0">
-              <Plus className="mr-2 h-4 w-4" />
-              Novo colaborador
-            </Button>
-          ) : (
-            <Button
-              onClick={() => {
-                setEditingRecess(null);
-                setRecessDialogOpen(true);
-              }}
-              className="shrink-0"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Novo recesso
-            </Button>
+          {canManage && (
+            <>
+              <div
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium",
+                  realtimeStatus === "connected"
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-amber-100 text-amber-700"
+                )}
+                title={
+                  lastSyncAt
+                    ? `Última atualização em tempo real: ${lastSyncAt.toLocaleTimeString("pt-BR")}`
+                    : undefined
+                }
+              >
+                {realtimeStatus === "connected" ? (
+                  <Wifi className="h-3.5 w-3.5" aria-hidden />
+                ) : (
+                  <WifiOff className="h-3.5 w-3.5" aria-hidden />
+                )}
+                {realtimeStatus === "connected" ? "Tempo real ativo" : "Tempo real indisponível"}
+              </div>
+              {tab === "colaboradores" ? (
+                <Button onClick={() => setCreateOpen(true)} className="shrink-0">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Novo colaborador
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => {
+                    setEditingRecess(null);
+                    setRecessDialogOpen(true);
+                  }}
+                  className="shrink-0"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Novo recesso
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -669,9 +693,9 @@ export function FeriasClient({ employees, recess, users }: FeriasClientProps) {
             </div>
           )}
           <p className="text-xs text-muted-foreground">
-            Cadastrar o calendário não altera o saldo. Use &quot;Aplicar aos ativos&quot; para gerar o
-            lançamento de recesso em cada ficha elegível. A coluna Status mostra se o ano já foi
-            aplicado.
+            {canManage
+              ? "Cadastrar o calendário não altera o saldo. Use “Aplicar aos ativos” para gerar o lançamento de recesso em cada ficha elegível. A coluna Status mostra se o ano já foi aplicado."
+              : "Calendário de recessos coletivos e situação dos lançamentos dentro do seu escopo."}
           </p>
           <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
             <Table>
@@ -683,14 +707,14 @@ export function FeriasClient({ employees, recess, users }: FeriasClientProps) {
                   <TableHead className="text-right">Dias</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Observação</TableHead>
-                  <TableHead className="w-[220px] text-right">Ações</TableHead>
+                  {canManage && <TableHead className="w-[220px] text-right">Ações</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {recess.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={canManage ? 7 : 6}
                       className="py-12 text-center text-sm text-muted-foreground"
                     >
                       Nenhum recesso coletivo cadastrado. Adicione o calendário do próximo fim de
@@ -719,7 +743,7 @@ export function FeriasClient({ employees, recess, users }: FeriasClientProps) {
                     <TableCell className="text-sm text-muted-foreground">
                       {item.notes ?? "-"}
                     </TableCell>
-                    <TableCell className="text-right">
+                    {canManage && <TableCell className="text-right">
                       <div className="inline-flex flex-wrap items-center justify-end gap-1">
                         <Button
                           variant={
@@ -768,7 +792,7 @@ export function FeriasClient({ employees, recess, users }: FeriasClientProps) {
                           <Trash2 className="h-3.5 w-3.5 text-destructive" />
                         </Button>
                       </div>
-                    </TableCell>
+                    </TableCell>}
                   </TableRow>
                 ))}
               </TableBody>
@@ -777,14 +801,14 @@ export function FeriasClient({ employees, recess, users }: FeriasClientProps) {
         </div>
       )}
 
-      <ColaboradorFormDialog
+      {canManage && <ColaboradorFormDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
         employee={null}
         users={users}
         occupiedUserIds={occupiedUserIds}
         onSubmit={handleCreate}
-      />
+      />}
 
       <ColaboradorDetailDialog
         open={!!selectedEmployeeId}
@@ -794,9 +818,10 @@ export function FeriasClient({ employees, recess, users }: FeriasClientProps) {
         employeeId={selectedEmployeeId}
         users={users}
         occupiedUserIds={occupiedUserIds}
+        canManage={canManage}
       />
 
-      <RecessoFormDialog
+      {canManage && <RecessoFormDialog
         open={recessDialogOpen}
         onOpenChange={(open) => {
           setRecessDialogOpen(open);
@@ -804,9 +829,9 @@ export function FeriasClient({ employees, recess, users }: FeriasClientProps) {
         }}
         recess={editingRecess}
         onSubmit={handleRecessSubmit}
-      />
+      />}
 
-      <Dialog
+      {canManage && <Dialog
         open={!!deleteRecessTarget}
         onOpenChange={(open) => !open && setDeleteRecessTarget(null)}
       >
@@ -827,9 +852,9 @@ export function FeriasClient({ employees, recess, users }: FeriasClientProps) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog>}
 
-      <Dialog
+      {canManage && <Dialog
         open={!!applyRecessTarget}
         onOpenChange={(open) => !open && setApplyRecessTarget(null)}
       >
@@ -922,7 +947,7 @@ export function FeriasClient({ employees, recess, users }: FeriasClientProps) {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog>}
     </div>
   );
 }

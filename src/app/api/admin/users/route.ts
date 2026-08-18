@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/utils/supabase/server";
 import { normalizePermissionsInput } from "@/lib/access-control";
+import { resolveFeriasAccess, type FeriasAccessMode } from "@/lib/ferias/access";
+import { resolveCanonicalAreaLabel } from "@/lib/ferias/filters";
 import type { UserAuthActivity } from "@/lib/users-auth-activity";
 
 export const dynamic = "force-dynamic";
@@ -62,6 +64,54 @@ async function getAuthActivityForUser(userId: string): Promise<UserAuthActivity 
   return mapAuthActivity(authUser.user);
 }
 
+async function getFeriasAccessForUser(userId: string) {
+  const db = admin();
+  const [userResult, employeeResult, departmentsResult] = await Promise.all([
+    db
+      .from("users")
+      .select("ferias_access_mode, ferias_area_scope, ferias_view_enabled")
+      .eq("id", userId)
+      .single(),
+    db
+      .from("hr_employees")
+      .select("position, department")
+      .eq("user_id", userId)
+      .maybeSingle(),
+    db.from("hr_employees").select("department").not("department", "is", null),
+  ]);
+
+  if (userResult.error) throw new Error(userResult.error.message);
+  if (employeeResult.error) throw new Error(employeeResult.error.message);
+  if (departmentsResult.error) throw new Error(departmentsResult.error.message);
+
+  const automatic = resolveFeriasAccess({
+    role: null,
+    permissions: [],
+    accessMode: "auto",
+    areaScope: null,
+    position: employeeResult.data?.position as string | null | undefined,
+    department: employeeResult.data?.department as string | null | undefined,
+  });
+  const availableAreas = [
+    ...new Set(
+      (departmentsResult.data ?? [])
+        .map((row) => resolveCanonicalAreaLabel(row.department as string | null))
+        .filter((area): area is string => Boolean(area))
+    ),
+  ].sort((a, b) => a.localeCompare(b, "pt-BR"));
+
+  return {
+    mode: (userResult.data.ferias_access_mode ?? "auto") as FeriasAccessMode,
+    areas: (userResult.data.ferias_area_scope as string[] | null) ?? [],
+    enabled: Boolean(userResult.data.ferias_view_enabled),
+    automaticEligible: automatic.level === "viewer",
+    automaticAreas: automatic.areas ?? [],
+    position: (employeeResult.data?.position as string | null | undefined) ?? null,
+    department: (employeeResult.data?.department as string | null | undefined) ?? null,
+    availableAreas,
+  };
+}
+
 export async function GET(request: Request) {
   try {
     const auth = await ensureAdmin();
@@ -72,8 +122,11 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "userId é obrigatório." }, { status: 400 });
     }
 
-    const authActivity = await getAuthActivityForUser(userId);
-    return NextResponse.json({ auth_activity: authActivity });
+    const [authActivity, feriasAccess] = await Promise.all([
+      getAuthActivityForUser(userId),
+      getFeriasAccessForUser(userId),
+    ]);
+    return NextResponse.json({ auth_activity: authActivity, ferias_access: feriasAccess });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro ao buscar atividade.";
     return NextResponse.json({ error: msg }, { status: 500 });
@@ -214,6 +267,51 @@ export async function POST(request: Request) {
         success: true,
         role: update.role ?? currentRole,
         permissions,
+      });
+    }
+
+    if (action === "set_ferias_access") {
+      const mode = body.mode as FeriasAccessMode | undefined;
+      if (!mode || !["auto", "disabled", "custom"].includes(mode)) {
+        return NextResponse.json({ error: "Modo de acesso às férias inválido." }, { status: 400 });
+      }
+
+      const rawAreas: string[] = Array.isArray(body.areas)
+        ? (body.areas as unknown[]).filter(
+            (area: unknown): area is string => typeof area === "string"
+          )
+        : [];
+      const areas = rawAreas.includes("*")
+        ? ["*"]
+        : [
+            ...new Set(
+              rawAreas
+                .map((area) => resolveCanonicalAreaLabel(area))
+                .filter((area): area is string => Boolean(area))
+            ),
+          ];
+      if (mode === "custom" && areas.length === 0) {
+        return NextResponse.json(
+          { error: "Selecione ao menos uma área para o acesso personalizado." },
+          { status: 400 }
+        );
+      }
+
+      const { data: saved, error } = await db
+        .from("users")
+        .update({
+          ferias_access_mode: mode,
+          ferias_area_scope: mode === "custom" ? areas : null,
+        })
+        .eq("id", userId)
+        .select("ferias_access_mode, ferias_area_scope, ferias_view_enabled")
+        .single();
+      if (error) throw new Error(error.message);
+      return NextResponse.json({
+        success: true,
+        ferias_access_mode: saved.ferias_access_mode,
+        ferias_area_scope: saved.ferias_area_scope,
+        ferias_view_enabled: saved.ferias_view_enabled,
       });
     }
 

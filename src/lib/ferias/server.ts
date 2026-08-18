@@ -9,6 +9,14 @@ import {
   resolveEmployeeAvatarUrl,
   summarizeRecessApplication,
 } from "@/lib/ferias/filters";
+import {
+  employeeMatchesFeriasAccess,
+  isFeriasEditor,
+  redactFeriasEmployee,
+  resolveFeriasAccess,
+  type FeriasAccess,
+  type FeriasAccessMode,
+} from "@/lib/ferias/access";
 import type {
   CompanyRecess,
   CompanyRecessWithStatus,
@@ -30,8 +38,6 @@ import type {
   PeriodUpdateInput,
   RecessCreateInput,
 } from "@/lib/ferias/validation";
-import { hasHrAccess } from "@/lib/rh/access";
-
 export { FeriasHttpError, toApiError } from "@/lib/ferias/errors";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
@@ -48,11 +54,12 @@ const RECESS_SELECT = "id, year, start_date, end_date, days, notes";
 
 type EmployeeRow = Omit<HrEmployee, "avatar_url">;
 
-export interface FeriasManager {
+export interface FeriasActor {
   authUserId: string;
   profileId: string;
   role: string | null;
   name: string;
+  access: FeriasAccess;
 }
 
 function createFeriasAdminClient(): SupabaseClient {
@@ -68,8 +75,8 @@ function createFeriasAdminClient(): SupabaseClient {
   });
 }
 
-/** Acesso ao módulo: admin ou permissão explícita "/rh" (ou "/ferias" legado). */
-export async function requireFeriasManager(): Promise<FeriasManager> {
+/** Autoriza RH editor ou viewer de área; o escopo sempre é recalculado no servidor. */
+export async function requireFeriasAccess(): Promise<FeriasActor> {
   const ssr = await createSsrClient();
   const {
     data: { user },
@@ -79,7 +86,7 @@ export async function requireFeriasManager(): Promise<FeriasManager> {
   const admin = createFeriasAdminClient();
   const { data, error } = await admin
     .from("users")
-    .select("id, name, role, permissions")
+    .select("id, name, role, permissions, ferias_access_mode, ferias_area_scope")
     .eq("auth_id", user.id)
     .maybeSingle();
 
@@ -89,7 +96,28 @@ export async function requireFeriasManager(): Promise<FeriasManager> {
 
   const role = (data?.role as string | null | undefined) ?? null;
   const permissions = (data?.permissions as string[] | null | undefined) ?? [];
-  if (!data || !hasHrAccess(role, permissions)) {
+  if (!data) {
+    throw new FeriasHttpError("Você não tem acesso ao módulo de Férias.", 403, "FORBIDDEN");
+  }
+
+  const { data: employee, error: employeeError } = await admin
+    .from("hr_employees")
+    .select("position, department")
+    .eq("user_id", data.id)
+    .maybeSingle();
+  if (employeeError) {
+    throw new FeriasHttpError("Não foi possível validar sua área.", 500, "ACCESS_LOOKUP_FAILED");
+  }
+
+  const access = resolveFeriasAccess({
+    role,
+    permissions,
+    accessMode: data.ferias_access_mode as FeriasAccessMode | null,
+    areaScope: data.ferias_area_scope as string[] | null,
+    position: employee?.position as string | null | undefined,
+    department: employee?.department as string | null | undefined,
+  });
+  if (access.level === "denied") {
     throw new FeriasHttpError("Você não tem acesso ao módulo de Férias.", 403, "FORBIDDEN");
   }
 
@@ -98,12 +126,26 @@ export async function requireFeriasManager(): Promise<FeriasManager> {
     profileId: data.id as string,
     role: (data.role as string | null) ?? null,
     name: data.name as string,
+    access,
   };
+}
+
+/** Mantido como guard explícito para todas as mutações. */
+export async function requireFeriasManager(): Promise<FeriasActor> {
+  const actor = await requireFeriasAccess();
+  if (!isFeriasEditor(actor.access)) {
+    throw new FeriasHttpError(
+      "Seu acesso ao módulo de Férias é somente leitura.",
+      403,
+      "READ_ONLY"
+    );
+  }
+  return actor;
 }
 
 export async function hasFeriasAccess(): Promise<boolean> {
   try {
-    await requireFeriasManager();
+    await requireFeriasAccess();
     return true;
   } catch {
     return false;
@@ -172,6 +214,7 @@ async function attachAvatars(
 
 async function loadDataset(
   admin: SupabaseClient,
+  access: FeriasAccess,
   employeeId?: string,
   referenceDate: string = todayISO()
 ): Promise<FeriasDataset> {
@@ -186,29 +229,48 @@ async function loadDataset(
   const employeesResult = await employeeQuery;
   if (employeesResult.error) failed("Não foi possível carregar os dados de férias.");
 
-  const employeeRows = (employeesResult.data ?? []) as EmployeeRow[];
-
-  // Garante períodos novos após aniversário de admissão (idempotente; não sobrescreve ajustes).
-  await Promise.all(
-    employeeRows.map((row) =>
-      syncEmployeePeriods(admin, row.id, row.admission_date, referenceDate)
-    )
+  const employeeRows = ((employeesResult.data ?? []) as EmployeeRow[]).filter((row) =>
+    employeeMatchesFeriasAccess(row.department, access)
   );
 
-  let periodQuery = admin.from("vacation_periods").select(PERIOD_SELECT).order("period_start");
-  let leaveQuery = admin.from("vacation_leaves").select(LEAVE_SELECT).order("start_date");
-  if (employeeId) {
-    periodQuery = periodQuery.eq("employee_id", employeeId);
-    leaveQuery = leaveQuery.eq("employee_id", employeeId);
+  // Uma leitura parcial não provoca escrita. O RH editor continua garantindo
+  // períodos novos após o aniversário de admissão.
+  if (isFeriasEditor(access)) {
+    await Promise.all(
+      employeeRows.map((row) =>
+        syncEmployeePeriods(admin, row.id, row.admission_date, referenceDate)
+      )
+    );
   }
+
+  const employeeIds = employeeRows.map((row) => row.id);
+  if (employeeIds.length === 0) {
+    return { employees: [], periods: [], leaves: [] };
+  }
+
+  const periodQuery = admin
+    .from("vacation_periods")
+    .select(PERIOD_SELECT)
+    .in("employee_id", employeeIds)
+    .order("period_start");
+  const leaveQuery = admin
+    .from("vacation_leaves")
+    .select(LEAVE_SELECT)
+    .in("employee_id", employeeIds)
+    .order("start_date");
 
   const [periods, leaves] = await Promise.all([periodQuery, leaveQuery]);
   if (periods.error || leaves.error) {
     failed("Não foi possível carregar os dados de férias.");
   }
 
+  const employeesWithAvatars = await attachAvatars(admin, employeeRows);
+  const employees = employeesWithAvatars.map((employee) =>
+    redactFeriasEmployee(employee, access)
+  );
+
   return {
-    employees: await attachAvatars(admin, employeeRows),
+    employees,
     periods: (periods.data ?? []) as VacationPeriod[],
     leaves: (leaves.data ?? []) as VacationLeave[],
   };
@@ -230,21 +292,23 @@ function buildBalances(
 }
 
 export async function listEmployeesWithBalance(
-  referenceDate: string = todayISO()
+  referenceDate: string = todayISO(),
+  actor?: FeriasActor
 ): Promise<EmployeeWithBalance[]> {
-  await requireFeriasManager();
+  const currentActor = actor ?? (await requireFeriasAccess());
   const admin = createFeriasAdminClient();
-  const dataset = await loadDataset(admin, undefined, referenceDate);
+  const dataset = await loadDataset(admin, currentActor.access, undefined, referenceDate);
   return buildBalances(dataset, referenceDate);
 }
 
 export async function fetchEmployeeDetail(
   employeeId: string,
-  referenceDate: string = todayISO()
+  referenceDate: string = todayISO(),
+  actor?: FeriasActor
 ): Promise<EmployeeDetail | null> {
-  await requireFeriasManager();
+  const currentActor = actor ?? (await requireFeriasAccess());
   const admin = createFeriasAdminClient();
-  const dataset = await loadDataset(admin, employeeId, referenceDate);
+  const dataset = await loadDataset(admin, currentActor.access, employeeId, referenceDate);
   const [result] = buildBalances(dataset, referenceDate);
   if (!result) return null;
   return { ...result, leaves: dataset.leaves };
@@ -410,8 +474,8 @@ export async function deleteLeave(leaveId: string): Promise<void> {
   if (error) failed("Não foi possível excluir o lançamento.");
 }
 
-export async function listRecess(): Promise<CompanyRecess[]> {
-  await requireFeriasManager();
+export async function listRecess(actor?: FeriasActor): Promise<CompanyRecess[]> {
+  if (!actor) await requireFeriasAccess();
   const admin = createFeriasAdminClient();
   const { data, error } = await admin
     .from("company_recess")
@@ -424,15 +488,17 @@ export async function listRecess(): Promise<CompanyRecess[]> {
 /**
  * Lista recessos com resumo de quem já recebeu o lançamento entre os ativos.
  */
-export async function listRecessWithApplicationStatus(): Promise<CompanyRecessWithStatus[]> {
-  await requireFeriasManager();
+export async function listRecessWithApplicationStatus(
+  actor?: FeriasActor
+): Promise<CompanyRecessWithStatus[]> {
+  const currentActor = actor ?? (await requireFeriasAccess());
   const admin = createFeriasAdminClient();
 
   const [recessResult, employeesResult] = await Promise.all([
     admin.from("company_recess").select(RECESS_SELECT).order("year", { ascending: false }),
     admin
       .from("hr_employees")
-      .select("id, admission_date, termination_date, is_active")
+      .select("id, department, admission_date, termination_date, is_active")
       .eq("is_active", true)
       .eq("vacation_exempt", false),
   ]);
@@ -441,12 +507,15 @@ export async function listRecessWithApplicationStatus(): Promise<CompanyRecessWi
   if (employeesResult.error) failed("Não foi possível carregar os colaboradores.");
 
   const recesses = (recessResult.data ?? []) as CompanyRecess[];
-  const activeEmployees = (employeesResult.data ?? []) as Array<{
+  const activeEmployees = ((employeesResult.data ?? []) as Array<{
     id: string;
+    department: string | null;
     admission_date: string;
     termination_date: string | null;
     is_active: boolean;
-  }>;
+  }>).filter((employee) =>
+    employeeMatchesFeriasAccess(employee.department, currentActor.access)
+  );
 
   if (recesses.length === 0) return [];
 
@@ -466,9 +535,10 @@ export async function listRecessWithApplicationStatus(): Promise<CompanyRecessWi
   return recesses.map((recess, index) => {
     const leaveResult = leaveResults[index];
     if (leaveResult.error) failed("Não foi possível verificar lançamentos de recesso.");
-    const appliedEmployeeIds = (leaveResult.data ?? []).map(
-      (row) => row.employee_id as string
-    );
+    const scopedEmployeeIds = new Set(activeEmployees.map((employee) => employee.id));
+    const appliedEmployeeIds = (leaveResult.data ?? [])
+      .map((row) => row.employee_id as string)
+      .filter((employeeId) => scopedEmployeeIds.has(employeeId));
     return {
       ...recess,
       application: summarizeRecessApplication({
