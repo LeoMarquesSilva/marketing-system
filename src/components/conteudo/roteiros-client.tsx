@@ -497,7 +497,7 @@ export function RoteirosClient() {
           </h2>
           <p className="text-muted-foreground mt-1.5 text-sm max-w-xl">
             {isCollaborator
-              ? `Notícias e posts da área ${areaLabel} para revisar e aprovar.`
+              ? `Notícias e posts da área ${areaLabel} para revisar e aprovar. Posts que você gerar por link também aparecem aqui.`
               : "Notícias jurídicas convertidas em posts para redes sociais."}{" "}
             <span className="text-muted-foreground/80">
               (últimos {CONTENT_MAX_AGE_DAYS} dias)

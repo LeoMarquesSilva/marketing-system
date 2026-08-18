@@ -36,6 +36,7 @@ export async function GET(request: Request) {
       topic_id,
       area: access.area,
       areas: access.areas ?? undefined,
+      createdById: access.includeCreatedById,
     });
     return NextResponse.json(roteiros);
   } catch (err) {

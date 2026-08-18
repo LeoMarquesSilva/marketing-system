@@ -83,7 +83,8 @@ export function ManualLinkCard({ onCreated }: { onCreated: () => void | Promise<
           <p className="mb-4 mt-4 text-sm text-muted-foreground">
             Cole o link de uma notícia. A IA lê a matéria, identifica a área do
             escritório e monta o carrossel — o post entra como{" "}
-            <strong>aguardando aprovação</strong>, igual aos que vêm do RSS.
+            <strong>aguardando aprovação</strong>, igual aos que vêm do RSS. Se
+            a área for outra, o post continua na sua lista porque você gerou.
           </p>
 
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -148,7 +149,8 @@ export function ManualLinkCard({ onCreated }: { onCreated: () => void | Promise<
                 </div>
               </dl>
               <p className="mt-2 text-xs text-muted-foreground">
-                Confira a área e o texto na lista abaixo antes de aprovar.
+                Confira a área e o texto na lista abaixo antes de aprovar. O
+                post aparece para você mesmo se a área detectada for outra.
               </p>
             </div>
           )}

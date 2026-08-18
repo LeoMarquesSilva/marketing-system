@@ -265,6 +265,9 @@ export interface ContentRoteiro {
   boletim_score?: number | null;
   boletim_scored_by_name?: string | null;
   boletim_scored_at?: string | null;
+  created_by_id?: string | null;
+  created_by_name?: string | null;
+  source?: string | null;
 }
 
 export interface UserViosTaskOption {
@@ -277,44 +280,84 @@ export interface UserViosTaskOption {
   already_linked: boolean;
 }
 
+const ROTEIRO_LIST_SELECT =
+  "id, topic_id, title, link, content_snippet, area, post, status, published_at, created_at, approved_by_id, approved_by_name, approved_at, has_alterations, alterations_notes, sent_for_manager_review, performance_hint, image_url, original_post, edited_by_id, edited_by_name, edited_at, reviewer_approved_at, sent_to_mkt_at, sent_to_mkt_by_name, marketing_request_id, vios_task_id, boletim_score, boletim_scored_by_name, boletim_scored_at, created_by_id, created_by_name, source";
+
+function mergeRoteirosById(rows: ContentRoteiro[]): ContentRoteiro[] {
+  const seen = new Set<string>();
+  const merged: ContentRoteiro[] = [];
+  for (const row of rows) {
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    merged.push(row);
+  }
+  return merged;
+}
+
 export async function fetchContentRoteiros(options?: {
   status?: string;
   topic_id?: string;
   area?: string;
   areas?: string[];
+  createdById?: string;
   max_age_days?: number;
 }): Promise<ContentRoteiro[]> {
   const maxAgeDays = options?.max_age_days ?? CONTENT_MAX_AGE_DAYS;
   const since = getContentCutoffDate(maxAgeDays);
 
   const supabase = getSupabaseAdmin();
-  let query = supabase
-    .from("content_roteiros")
-    .select("id, topic_id, title, link, content_snippet, area, post, status, published_at, created_at, approved_by_id, approved_by_name, approved_at, has_alterations, alterations_notes, sent_for_manager_review, performance_hint, image_url, original_post, edited_by_id, edited_by_name, edited_at, reviewer_approved_at, sent_to_mkt_at, sent_to_mkt_by_name, marketing_request_id, vios_task_id, boletim_score, boletim_scored_by_name, boletim_scored_at")
-    .gte("created_at", since.toISOString())
-    .order("published_at", { ascending: false, nullsFirst: false })
-    .order("created_at", { ascending: false });
 
-  if (options?.status) {
-    query = query.eq("status", options.status);
-  }
-  if (options?.topic_id) {
-    query = query.eq("topic_id", options.topic_id);
-  }
+  const applyCommonFilters = (query: ReturnType<typeof supabase.from>) => {
+    let next = query
+      .select(ROTEIRO_LIST_SELECT)
+      .gte("created_at", since.toISOString())
+      .order("published_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false });
+
+    if (options?.status) {
+      next = next.eq("status", options.status);
+    }
+    if (options?.topic_id) {
+      next = next.eq("topic_id", options.topic_id);
+    }
+    return next;
+  };
+
   if (options?.area) {
-    query = query.eq("area", options.area);
-  } else if (options?.areas && options.areas.length > 0) {
-    query = query.in("area", options.areas);
-  } else if (options?.areas && options.areas.length === 0) {
+    const { data, error } = await applyCommonFilters(supabase.from("content_roteiros")).eq(
+      "area",
+      options.area
+    );
+    if (error) throw new Error(error.message);
+    return ((data ?? []) as ContentRoteiro[]).filter((r) => getRoteiroDate(r) >= since);
+  }
+
+  if (options?.areas && options.areas.length === 0 && !options.createdById) {
     return [];
   }
 
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
+  const batches: ContentRoteiro[] = [];
 
-  return ((data ?? []) as ContentRoteiro[]).filter(
-    (r) => getRoteiroDate(r) >= since
-  );
+  if (!options?.areas || options.areas.length > 0) {
+    let areaQuery = applyCommonFilters(supabase.from("content_roteiros"));
+    if (options?.areas && options.areas.length > 0) {
+      areaQuery = areaQuery.in("area", options.areas);
+    }
+    const { data, error } = await areaQuery;
+    if (error) throw new Error(error.message);
+    batches.push(...((data ?? []) as ContentRoteiro[]));
+  }
+
+  if (options?.createdById) {
+    const { data, error } = await applyCommonFilters(supabase.from("content_roteiros")).eq(
+      "created_by_id",
+      options.createdById
+    );
+    if (error) throw new Error(error.message);
+    batches.push(...((data ?? []) as ContentRoteiro[]));
+  }
+
+  return mergeRoteirosById(batches).filter((r) => getRoteiroDate(r) >= since);
 }
 
 export async function fetchRoteiroById(id: string): Promise<ContentRoteiro | null> {

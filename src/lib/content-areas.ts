@@ -102,6 +102,20 @@ export function canAccessContentArea(
   return allowed.includes(area as LegalArea);
 }
 
+/**
+ * Lista de roteiros: a área do colaborador E os posts que ele mesmo gerou
+ * (ex.: link de notícia classificado em outra área). Sem isso o post some
+ * da tela de quem colou o link.
+ */
+export function canSeeContentRoteiro(
+  profile: (ContentAccessProfile & { id?: string | null }) | null | undefined,
+  roteiro: { area: string; createdById?: string | null }
+): boolean {
+  if (canAccessContentArea(profile, roteiro.area)) return true;
+  const userId = profile?.id;
+  return Boolean(userId && roteiro.createdById && userId === roteiro.createdById);
+}
+
 export const AREA_COLORS: Record<string, string> = {
   Cível: "bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-300 border-violet-200/60",
   Trabalhista: "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200/60",

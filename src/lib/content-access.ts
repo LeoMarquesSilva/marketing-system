@@ -38,7 +38,12 @@ export async function getAuthenticatedContentUser(): Promise<{
 export function resolveAreaFilter(
   profile: UserContentAccess | null,
   requestedArea?: string
-): { areas: string[] | null; area?: string; denied?: boolean } {
+): {
+  areas: string[] | null;
+  area?: string;
+  denied?: boolean;
+  includeCreatedById?: string;
+} {
   const allowed = getAllowedLegalAreas(profile);
 
   if (allowed === null) {
@@ -56,7 +61,10 @@ export function resolveAreaFilter(
     return { areas: allowed, area: requestedArea };
   }
 
-  return { areas: allowed };
+  return {
+    areas: allowed,
+    includeCreatedById: profile?.id || undefined,
+  };
 }
 
 export {
