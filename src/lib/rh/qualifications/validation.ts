@@ -86,7 +86,12 @@ export const qualificationUpsertSchema = z.object({
   cep: optionalCep,
   street: optionalText(200),
   number: optionalText(30),
-  complement: optionalText(120),
+  complement: z
+    .string()
+    .trim()
+    .max(120)
+    .nullish()
+    .transform((v) => (v && v.length > 0 ? v : null)),
   district: optionalText(120),
   city: optionalText(120),
   state: optionalUf,

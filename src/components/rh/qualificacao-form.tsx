@@ -506,9 +506,9 @@ export function QualificacaoForm({
                 name="complement"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Complemento</FormLabel>
+                    <FormLabel>Complemento (opcional)</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="Apto, sala..." />
+                      <Input {...field} placeholder="Apto, sala..." required={false} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
