@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Pencil, Plus } from "lucide-react";
+import { Loader2, MessageSquareText, Pencil, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -16,6 +16,7 @@ import { VacationStatusBadge } from "@/components/ferias/status-badge";
 import { VacationDebtTags } from "@/components/ferias/vacation-debt-tags";
 import { EmployeeAvatar } from "@/components/ferias/employee-avatar";
 import { LeaveLaunchesSection } from "@/components/ferias/leave-launches-section";
+import { InformarColaboradorDialog } from "@/components/ferias/informar-colaborador-dialog";
 import {
   ColaboradorFormDialog,
   NO_LINKED_USER,
@@ -144,6 +145,7 @@ function DetailBody({
   const [deleteTarget, setDeleteTarget] = useState<VacationLeave | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [informOpen, setInformOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -280,24 +282,32 @@ function DetailBody({
                 </div>
               </div>
             </div>
-            {canManage && <div className="flex shrink-0 gap-2">
-              <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
-                <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                Editar
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={() => setInformOpen(true)}>
+                <MessageSquareText className="mr-1.5 h-3.5 w-3.5" />
+                Informar colaborador
               </Button>
-              <Button
-                size="sm"
-                onClick={() => {
-                  setEditingLeave(null);
-                  setCreditPreset(null);
-                  setLeaveDefaultKind("ferias");
-                  setLeaveDialogOpen(true);
-                }}
-              >
-                <Plus className="mr-1.5 h-3.5 w-3.5" />
-                Registrar
-              </Button>
-            </div>}
+              {canManage && (
+                <>
+                  <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+                    <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                    Editar
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setEditingLeave(null);
+                      setCreditPreset(null);
+                      setLeaveDefaultKind("ferias");
+                      setLeaveDialogOpen(true);
+                    }}
+                  >
+                    <Plus className="mr-1.5 h-3.5 w-3.5" />
+                    Registrar
+                  </Button>
+                </>
+              )}
+            </div>
           </div>
         )}
       </DialogHeader>
@@ -474,6 +484,14 @@ function DetailBody({
           </div>
         )}
       </div>
+
+      {detail && (
+        <InformarColaboradorDialog
+          open={informOpen}
+          onOpenChange={setInformOpen}
+          detail={detail}
+        />
+      )}
 
       {employee && canManage && (
         <>
