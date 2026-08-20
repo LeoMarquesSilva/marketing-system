@@ -116,6 +116,8 @@ export function KanbanCardDetail({
   const [deleteRequestError, setDeleteRequestError] = useState<string | null>(null);
   const [artLinkDraft, setArtLinkDraft] = useState("");
   const [isSavingArtLink, setIsSavingArtLink] = useState(false);
+  const [sourceLinkDraft, setSourceLinkDraft] = useState("");
+  const [isSavingSourceLink, setIsSavingSourceLink] = useState(false);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
   const [isRevertingToDisponivel, setIsRevertingToDisponivel] = useState(false);
@@ -140,6 +142,7 @@ export function KanbanCardDetail({
       return;
     }
     setArtLinkDraft(request.art_link ?? "");
+    setSourceLinkDraft(request.link ?? "");
     const load = async () => {
       const [entries, commentsList, log, linkedVios, checklist] = await Promise.all([
         fetchTimeEntriesForRequest(request.id),
@@ -347,6 +350,17 @@ export function KanbanCardDetail({
     setIsSavingArtLink(true);
     await updateMarketingRequest(request.id, { art_link: value });
     setIsSavingArtLink(false);
+    onRefresh?.();
+  };
+
+  const handleSaveSourceLink = async () => {
+    if (!request) return;
+    const next = sourceLinkDraft.trim();
+    const current = request.link ?? "";
+    if (next === current) return;
+    setIsSavingSourceLink(true);
+    await updateMarketingRequest(request.id, { link: next || null });
+    setIsSavingSourceLink(false);
     onRefresh?.();
   };
 
@@ -597,24 +611,49 @@ export function KanbanCardDetail({
           ) : null}
 
           {/* Link e referências — não se aplica a reels */}
-          {!isReel && (request.link || request.referencias) && (
+          {!isReel && (isAdmin || request.link || request.referencias) && (
             <section aria-labelledby="links-heading" className={sectionClass}>
               <h4 id="links-heading" className={sectionTitleClass}>
                 <Link2 className="h-4 w-4 shrink-0" aria-hidden /> Link e referências
               </h4>
               <div className="space-y-3">
-                {request.link && (
+                {(isAdmin || request.link) && (
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Link</p>
-                    <a
-                      href={request.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 dark:bg-primary/20 text-sm font-medium text-primary hover:bg-primary/20 dark:hover:bg-primary/30 border border-primary/20"
-                    >
-                      <Link2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                      Abrir link
-                    </a>
+                    {isAdmin ? (
+                      <div className="space-y-2">
+                        <input
+                          type="url"
+                          placeholder="https://..."
+                          value={sourceLinkDraft}
+                          onChange={(e) => setSourceLinkDraft(e.target.value)}
+                          onBlur={handleSaveSourceLink}
+                          disabled={isSavingSourceLink}
+                          className="flex h-9 w-full rounded-xl border border-input bg-white/80 dark:bg-background/50 px-3 py-1 text-sm text-foreground shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50"
+                        />
+                        {request.link && (
+                          <a
+                            href={request.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 dark:bg-primary/20 text-sm font-medium text-primary hover:bg-primary/20 dark:hover:bg-primary/30 border border-primary/20"
+                          >
+                            <Link2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                            Abrir link
+                          </a>
+                        )}
+                      </div>
+                    ) : (
+                      <a
+                        href={request.link!}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 dark:bg-primary/20 text-sm font-medium text-primary hover:bg-primary/20 dark:hover:bg-primary/30 border border-primary/20"
+                      >
+                        <Link2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                        Abrir link
+                      </a>
+                    )}
                   </div>
                 )}
                 {request.referencias && (
