@@ -67,6 +67,7 @@ export interface FeriasKpis {
 /** Rótulo canônico do agrupamento Operações Legais no filtro. */
 export const AREA_FILTER_OPERACOES_LEGAIS = "Operações Legais";
 export const AREA_FILTER_REESTRUTURACAO = "Reestruturação";
+export const AREA_FILTER_SOCIETARIO_CONTRATOS = "Societário e Contratos";
 
 function normalizeDepartmentKey(value: string): string {
   return value
@@ -100,6 +101,13 @@ const OPERACOES_LEGAIS_DEPARTMENTS = new Set([
 
 const REESTRUTURACAO_DEPARTMENTS = new Set(["insolvencia", "reestruturacao"]);
 
+/** Legado: "Contratos" / "Societário e Contrato" → nomenclatura oficial atual. */
+const SOCIETARIO_CONTRATOS_DEPARTMENTS = new Set([
+  "contratos",
+  "societario e contrato",
+  "societario e contratos",
+]);
+
 /** Departamentos que não ganham botão próprio (continuam em "Todas as áreas"). */
 const HIDDEN_AREA_FILTER_BUTTONS = new Set(["distressed deals"]);
 
@@ -111,6 +119,7 @@ export function resolveCanonicalAreaLabel(
   if (!trimmed) return null;
   const key = normalizeDepartmentKey(trimmed);
   if (REESTRUTURACAO_DEPARTMENTS.has(key)) return AREA_FILTER_REESTRUTURACAO;
+  if (SOCIETARIO_CONTRATOS_DEPARTMENTS.has(key)) return AREA_FILTER_SOCIETARIO_CONTRATOS;
   if (OPERACOES_LEGAIS_DEPARTMENTS.has(key)) return AREA_FILTER_OPERACOES_LEGAIS;
   return trimmed;
 }

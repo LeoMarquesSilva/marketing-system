@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ChevronDown, Search } from "lucide-react";
 import type { User } from "@/lib/users";
 import { isUserActive, sortUsersActiveFirst } from "@/lib/user-status";
+import { departmentMatchesAreaFilter } from "@/lib/ferias/filters";
 import { FormerEmployeeBadge } from "@/components/usuarios/former-employee-badge";
 import { cn } from "@/lib/utils";
 
@@ -48,14 +49,18 @@ export function UserSelectSearch({
   const [search, setSearch] = useState("");
 
   const departmentHasMatch = useMemo(
-    () => !departmentFilter || users.some((u) => u.department === departmentFilter),
+    () =>
+      !departmentFilter ||
+      users.some((u) => departmentMatchesAreaFilter(u.department, departmentFilter)),
     [users, departmentFilter]
   );
 
   const pool = useMemo(() => {
     let list = users;
     if (departmentFilter) {
-      const matched = users.filter((u) => u.department === departmentFilter);
+      // Compara pelo nome canônico (ex.: "Contratos" == "Societário e Contratos",
+      // "Insolvência" == "Reestruturação"), não string exata.
+      const matched = users.filter((u) => departmentMatchesAreaFilter(u.department, departmentFilter));
       // Sem ninguém nesse departamento (ex.: área recém-criada sem correspondência) → não esconde todo mundo
       list = matched.length > 0 ? matched : users;
       const selected = users.find((u) => u.id === value);
