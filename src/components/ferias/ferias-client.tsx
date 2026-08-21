@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   CalendarClock,
   CalendarDays,
+  CalendarPlus,
   Loader2,
   Palmtree,
   Pencil,
@@ -65,11 +66,13 @@ import {
 } from "@/lib/ferias/client";
 import { formatISODateBR } from "@/lib/ferias/balance";
 import {
+  ACTIVITY_FILTER_LABEL,
   BALANCE_FILTER_LABEL,
   computeFeriasKpis,
   filterEmployeesWithBalance,
   listEmployeeDepartments,
   RECESS_APPLY_STATE_LABEL,
+  type ActivityFilter,
   type BalanceFilter,
   type SituationFilter,
   type StatusFilter,
@@ -173,6 +176,7 @@ export function FeriasClient({
   const [situationFilter, setSituationFilter] = useState<SituationFilter>("ativos");
   const [departmentFilter, setDepartmentFilter] = useState<string>("all");
   const [balanceFilter, setBalanceFilter] = useState<BalanceFilter>("all");
+  const [activityFilter, setActivityFilter] = useState<ActivityFilter>("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [recessDialogOpen, setRecessDialogOpen] = useState(false);
@@ -225,8 +229,17 @@ export function FeriasClient({
         situation: situationFilter,
         department: departmentFilter,
         balance: balanceFilter,
+        activity: activityFilter,
       }),
-    [employees, search, statusFilter, situationFilter, departmentFilter, balanceFilter]
+    [
+      employees,
+      search,
+      statusFilter,
+      situationFilter,
+      departmentFilter,
+      balanceFilter,
+      activityFilter,
+    ]
   );
 
   const hasFilters =
@@ -234,7 +247,8 @@ export function FeriasClient({
     statusFilter !== "all" ||
     situationFilter !== "ativos" ||
     departmentFilter !== "all" ||
-    balanceFilter !== "all";
+    balanceFilter !== "all" ||
+    activityFilter !== "all";
 
   async function handleCreate(values: EmployeeFormValues): Promise<string | null> {
     const { error } = await createEmployeeRequest({
@@ -410,7 +424,7 @@ export function FeriasClient({
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <KpiCard
           icon={Palmtree}
           label="Dias pendentes"
@@ -436,6 +450,12 @@ export function FeriasClient({
           label="Em férias hoje"
           value={kpis.onLeave}
           hint="Considera recesso e abono"
+        />
+        <KpiCard
+          icon={CalendarPlus}
+          label="Férias programadas"
+          value={kpis.scheduledDays}
+          hint={`${kpis.scheduledCount} colaborador${kpis.scheduledCount === 1 ? "" : "es"} · ainda não descontam o saldo`}
         />
       </div>
 
@@ -514,6 +534,7 @@ export function FeriasClient({
                     setSituationFilter("ativos");
                     setDepartmentFilter("all");
                     setBalanceFilter("all");
+                    setActivityFilter("all");
                   }}
                 >
                   <X className="h-3.5 w-3.5" />
@@ -548,6 +569,21 @@ export function FeriasClient({
                   onClick={() => setBalanceFilter(key)}
                 >
                   {BALANCE_FILTER_LABEL[key]}
+                </Button>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {(["all", "em_ferias", "programada"] as ActivityFilter[]).map((key) => (
+                <Button
+                  key={key}
+                  type="button"
+                  size="sm"
+                  variant={activityFilter === key ? "default" : "outline"}
+                  className="h-8 rounded-full px-3 text-xs"
+                  onClick={() => setActivityFilter(key)}
+                >
+                  {ACTIVITY_FILTER_LABEL[key]}
                 </Button>
               ))}
             </div>
@@ -588,6 +624,7 @@ export function FeriasClient({
                   <TableHead className="text-right">Adquiridos</TableHead>
                   <TableHead className="text-right">Gozados</TableHead>
                   <TableHead className="text-right">Saldo</TableHead>
+                  <TableHead className="text-right">Programados</TableHead>
                   <TableHead>Situação</TableHead>
                   <TableHead>Prazo mais próximo</TableHead>
                 </TableRow>
@@ -596,7 +633,7 @@ export function FeriasClient({
                 {filtered.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={8}
                       className="py-12 text-center text-sm text-muted-foreground"
                     >
                       {employees.length === 0
@@ -653,6 +690,9 @@ export function FeriasClient({
                       </TableCell>
                       <TableCell className="text-right text-sm font-semibold tabular-nums">
                         {balance.pendingDays}
+                      </TableCell>
+                      <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                        {balance.scheduledDays > 0 ? balance.scheduledDays : "-"}
                       </TableCell>
                       <TableCell>
                         <VacationDebtTags balance={balance} compact />

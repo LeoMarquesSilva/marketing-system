@@ -6,7 +6,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { LEAVE_KIND_LABEL, formatISODateBR } from "@/lib/ferias/balance";
+import { LEAVE_KIND_LABEL, formatISODateBR, todayISO } from "@/lib/ferias/balance";
 import type { VacationLeave } from "@/lib/ferias/types";
 import { isVacationCreditKind } from "@/lib/ferias/types";
 import { cn } from "@/lib/utils";
@@ -131,6 +131,7 @@ export function LeaveLaunchesSection({
 }: LeaveLaunchesSectionProps) {
   const { groups, unlinkedCredits } = groupVacationLaunches(leaves);
   const isEmpty = groups.length === 0 && unlinkedCredits.length === 0;
+  const today = todayISO();
 
   return (
     <section className="space-y-3" aria-labelledby="vacation-launches-title">
@@ -182,6 +183,7 @@ export function LeaveLaunchesSection({
             const redundantNote =
               leave.notes?.trim().toLocaleLowerCase("pt-BR") ===
               kindLabel.toLocaleLowerCase("pt-BR");
+            const isScheduled = leave.start_date > today;
 
             return (
               <article
@@ -203,6 +205,11 @@ export function LeaveLaunchesSection({
                       >
                         {kindLabel.toLocaleUpperCase("pt-BR")}
                       </span>
+                      {isScheduled && (
+                        <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700">
+                          PROGRAMADO
+                        </span>
+                      )}
                       <p className="text-sm font-semibold text-foreground">
                         {dateLabel}
                       </p>
@@ -218,7 +225,7 @@ export function LeaveLaunchesSection({
                       −{leave.days} {leave.days === 1 ? "dia" : "dias"}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      descontados do saldo
+                      {isScheduled ? "ainda não descontados do saldo" : "descontados do saldo"}
                     </p>
                   </div>
                 </div>

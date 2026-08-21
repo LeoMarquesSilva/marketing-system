@@ -43,10 +43,12 @@ function makeBalance(overrides: Partial<EmployeeBalance> = {}): EmployeeBalance 
     dueSoonDays: 0,
     onTimeDays: 30,
     unallocatedDays: 0,
+    scheduledDays: 0,
     status: "a_vencer",
     periods: [],
     currentPeriod: null,
     onLeaveNow: null,
+    scheduledLeaves: [],
     ...overrides,
   };
 }
@@ -186,6 +188,34 @@ describe("filterEmployeesWithBalance", () => {
         balance: "zerado",
       }).map((item) => item.employee.id)
     ).toEqual(["10"]);
+  });
+
+  it("filtra por atividade: em férias agora ou com férias programadas", () => {
+    const scheduled = row(
+      makeEmployee({ id: "11", full_name: "Com Férias Programadas" }),
+      { scheduledDays: 10 }
+    );
+    const list = [felipe, samuel, scheduled];
+
+    expect(
+      filterEmployeesWithBalance(list, {
+        search: "",
+        status: "all",
+        situation: "all",
+        department: "all",
+        activity: "em_ferias",
+      }).map((item) => item.employee.id)
+    ).toEqual(["3"]);
+
+    expect(
+      filterEmployeesWithBalance(list, {
+        search: "",
+        status: "all",
+        situation: "all",
+        department: "all",
+        activity: "programada",
+      }).map((item) => item.employee.id)
+    ).toEqual(["11"]);
   });
 
   it("filtra por área", () => {

@@ -154,8 +154,15 @@ export function computeEmployeeBalance({
   referenceDate = todayISO(),
 }: ComputeBalanceInput): EmployeeBalance {
   const sortedPeriods = [...periods].sort((a, b) => a.period_start.localeCompare(b.period_start));
-  const debitLeaves = [...leaves]
-    .filter((leave) => !isVacationCreditKind(leave.kind))
+  const allDebitLeaves = [...leaves].filter((leave) => !isVacationCreditKind(leave.kind));
+  // Só o que já começou consome o saldo. Uma férias "a programar" (início no
+  // futuro) não pode descontar dias de quem ainda não chegou lá — o dia ainda
+  // não chegou, então o direito continua inteiro até a data de início.
+  const debitLeaves = allDebitLeaves
+    .filter((leave) => leave.start_date <= referenceDate)
+    .sort((a, b) => a.start_date.localeCompare(b.start_date));
+  const scheduledLeaves = allDebitLeaves
+    .filter((leave) => leave.start_date > referenceDate)
     .sort((a, b) => a.start_date.localeCompare(b.start_date));
   const creditLeaves = [...leaves]
     .filter((leave) => isVacationCreditKind(leave.kind))
@@ -166,7 +173,7 @@ export function computeEmployeeBalance({
   let unallocatedDays = 0;
   let periodIndex = 0;
 
-  // Débitos (férias/recesso/abono) consomem FIFO nos períodos mais antigos.
+  // Débitos (férias/recesso/abono) já iniciados consomem FIFO nos períodos mais antigos.
   for (const leave of debitLeaves) {
     let pending = leave.days;
     while (pending > 0 && periodIndex < sortedPeriods.length) {
@@ -222,6 +229,7 @@ export function computeEmployeeBalance({
   const debitDays = debitLeaves.reduce((sum, leave) => sum + leave.days, 0);
   const creditDays = creditLeaves.reduce((sum, leave) => sum + leave.days, 0);
   const totalTakenDays = Math.max(0, debitDays - creditDays);
+  const scheduledDays = scheduledLeaves.reduce((sum, leave) => sum + leave.days, 0);
   const overdueDays = periodBalances
     .filter((item) => item.status === "vencido")
     .reduce((sum, item) => sum + item.remainingDays, 0);
@@ -259,10 +267,12 @@ export function computeEmployeeBalance({
     dueSoonDays,
     onTimeDays,
     unallocatedDays,
+    scheduledDays,
     status,
     periods: periodBalances,
     currentPeriod: currentAccrualPeriod(admissionDate, referenceDate),
     onLeaveNow,
+    scheduledLeaves,
   };
 }
 

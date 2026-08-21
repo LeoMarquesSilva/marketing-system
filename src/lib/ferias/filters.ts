@@ -31,6 +31,15 @@ export const BALANCE_FILTER_LABEL: Record<BalanceFilter, string> = {
   zerado: "Zerado",
 };
 
+/** Situação de gozo em relação a hoje, ortogonal ao saldo e ao prazo concessivo. */
+export type ActivityFilter = "all" | "em_ferias" | "programada";
+
+export const ACTIVITY_FILTER_LABEL: Record<ActivityFilter, string> = {
+  all: "Todas",
+  em_ferias: "Em férias",
+  programada: "Férias programadas",
+};
+
 export interface FeriasListFilters {
   search: string;
   status: StatusFilter;
@@ -39,6 +48,8 @@ export interface FeriasListFilters {
   department: string;
   /** Sinal do saldo; `all` = sem filtro. */
   balance?: BalanceFilter;
+  /** Em férias agora ou com férias já lançadas para o futuro; `all` = sem filtro. */
+  activity?: ActivityFilter;
 }
 
 export interface FeriasKpis {
@@ -47,6 +58,10 @@ export interface FeriasKpis {
   dueSoon: number;
   onLeave: number;
   activeCount: number;
+  /** Colaboradores ativos com férias/recesso/abono já lançados para o futuro. */
+  scheduledCount: number;
+  /** Soma dos dias já programados (ainda não descontados do saldo). */
+  scheduledDays: number;
 }
 
 /** Rótulo canônico do agrupamento Operações Legais no filtro. */
@@ -128,6 +143,16 @@ export function classifyVacationBalanceSign(
   return "zerado";
 }
 
+/** Verifica se o colaborador cabe no filtro de atividade (em férias agora / com férias programadas). */
+export function employeeMatchesActivityFilter(
+  balance: Pick<EmployeeWithBalance["balance"], "onLeaveNow" | "scheduledDays">,
+  activityFilter: ActivityFilter
+): boolean {
+  if (activityFilter === "em_ferias") return Boolean(balance.onLeaveNow);
+  if (activityFilter === "programada") return balance.scheduledDays > 0;
+  return true;
+}
+
 /** Filtra a lista da tela principal: situação, status do prazo, sinal do saldo e busca. */
 export function filterEmployeesWithBalance(
   employees: EmployeeWithBalance[],
@@ -135,6 +160,7 @@ export function filterEmployeesWithBalance(
 ): EmployeeWithBalance[] {
   const query = filters.search.trim().toLowerCase();
   const balanceFilter = filters.balance ?? "all";
+  const activityFilter = filters.activity ?? "all";
   return employees.filter(({ employee, balance }) => {
     if (filters.situation === "ativos" && !employee.is_active) return false;
     if (filters.situation === "inativos" && employee.is_active) return false;
@@ -142,6 +168,7 @@ export function filterEmployeesWithBalance(
     if (balanceFilter !== "all" && classifyVacationBalanceSign(balance) !== balanceFilter) {
       return false;
     }
+    if (!employeeMatchesActivityFilter(balance, activityFilter)) return false;
     if (!departmentMatchesAreaFilter(employee.department, filters.department)) return false;
     if (!query) return true;
     const haystack = `${employee.full_name} ${employee.department ?? ""} ${employee.position ?? ""}`;
@@ -176,6 +203,8 @@ export function computeFeriasKpis(employees: EmployeeWithBalance[]): FeriasKpis 
         (item.balance.dueSoonDays > 0 || item.balance.dueTodayDays > 0)
     ).length,
     onLeave: active.filter((item) => item.balance.onLeaveNow).length,
+    scheduledCount: active.filter((item) => item.balance.scheduledDays > 0).length,
+    scheduledDays: active.reduce((sum, item) => sum + item.balance.scheduledDays, 0),
   };
 }
 

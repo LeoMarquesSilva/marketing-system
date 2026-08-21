@@ -33,9 +33,11 @@ function sampleDetail(overrides?: Partial<EmployeeDetail["employee"]>): Employee
       dueSoonDays: 15,
       onTimeDays: 15,
       unallocatedDays: 0,
+      scheduledDays: 0,
       status: "a_vencer",
       currentPeriod: null,
       onLeaveNow: null,
+      scheduledLeaves: [],
       periods: [
         {
           period: {

@@ -179,13 +179,14 @@ function formatSummaryBlock(
   const leaveStats = sumLeaveDays(filteredLeaves);
 
   if (scope.type === "all") {
-    const { totalEntitledDays, totalTakenDays, pendingDays } = detail.balance;
+    const { totalEntitledDays, totalTakenDays, pendingDays, scheduledDays } = detail.balance;
     if (style === "whatsapp") {
       return [
         "Resumo",
         `• Adquiridos: ${daysLabel(totalEntitledDays)}`,
         `• Gozados: ${daysLabel(totalTakenDays)}`,
         `• Saldo: ${daysLabel(pendingDays)}`,
+        ...(scheduledDays > 0 ? [`• Já programados (não descontam o saldo ainda): ${daysLabel(scheduledDays)}`] : []),
         ...leaveStats.byKind.map(
           ({ kind, days }) =>
             `• ${LEAVE_KIND_LABEL[kind]}: ${isVacationCreditKind(kind) ? "+" : ""}${daysLabel(days)}`
@@ -197,6 +198,7 @@ function formatSummaryBlock(
       `Adquiridos: ${daysLabel(totalEntitledDays)}`,
       `Gozados: ${daysLabel(totalTakenDays)}`,
       `Saldo: ${daysLabel(pendingDays)}`,
+      ...(scheduledDays > 0 ? [`Já programados (não descontam o saldo ainda): ${daysLabel(scheduledDays)}`] : []),
       ...leaveStats.byKind.map(
         ({ kind, days }) =>
           `${LEAVE_KIND_LABEL[kind]}: ${isVacationCreditKind(kind) ? "+" : ""}${daysLabel(days)}`

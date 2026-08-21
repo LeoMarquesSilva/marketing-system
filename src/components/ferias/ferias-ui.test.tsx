@@ -30,10 +30,12 @@ describe("VacationDebtTags", () => {
     dueSoonDays: 0,
     onTimeDays: 30,
     unallocatedDays: 0,
+    scheduledDays: 0,
     status: "a_vencer",
     periods: [],
     currentPeriod: null,
     onLeaveNow: null,
+    scheduledLeaves: [],
   };
 
   it("mostra o desdobramento do saldo, sem tratar pendência como dívida", () => {

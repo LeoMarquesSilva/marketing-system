@@ -81,6 +81,16 @@ export function VacationDebtTags({
     });
   }
 
+  if (balance.scheduledDays > 0) {
+    tags.push({
+      key: "programado",
+      label: compact
+        ? `${balance.scheduledDays} programados`
+        : daysLabel(balance.scheduledDays, "dia programado", "dias programados"),
+      className: "border-sky-200 bg-sky-50 text-sky-700",
+    });
+  }
+
   if (tags.length === 0) {
     tags.push({
       key: "quitado",

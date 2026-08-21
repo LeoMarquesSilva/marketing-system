@@ -145,6 +145,11 @@ export interface EmployeeBalance {
   onTimeDays: number;
   /** Dias gozados além do direito adquirido (adiantamento ou ficha incompleta). */
   unallocatedDays: number;
+  /**
+   * Dias já lançados (férias/recesso/abono) com início no futuro — "a programar".
+   * Ainda não descontam o saldo: o direito só é consumido quando a data chega.
+   */
+  scheduledDays: number;
   status: VacationPeriodStatus;
   periods: PeriodBalance[];
   /** Período aquisitivo ainda em curso, com proporcional de 2,5 dias/mês. */
@@ -155,6 +160,8 @@ export interface EmployeeBalance {
   } | null;
   /** Gozo que engloba a data de referência, quando existir. */
   onLeaveNow: VacationLeave | null;
+  /** Lançamentos futuros (início após a data de referência), ordenados por início. */
+  scheduledLeaves: VacationLeave[];
 }
 
 export interface EmployeeWithBalance {

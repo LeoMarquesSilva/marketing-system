@@ -349,6 +349,13 @@ function DetailBody({
               />
             </div>
 
+            {balance.scheduledDays > 0 && (
+              <p className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
+                {balance.scheduledDays} dia(s) já programados para o futuro — ainda não descontados
+                do saldo, pois o período ainda não começou.
+              </p>
+            )}
+
             {balance.unallocatedDays > 0 && (
               <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                 {balance.unallocatedDays} dia(s) gozados além do direito adquirido.

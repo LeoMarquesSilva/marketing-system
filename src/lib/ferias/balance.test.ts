@@ -156,6 +156,32 @@ describe("computeEmployeeBalance", () => {
     expect(excess.pendingDays).toBe(-13);
   });
 
+  it("não desconta do saldo férias já lançadas com início no futuro", () => {
+    const withScheduled = computeEmployeeBalance({
+      admissionDate: ADMISSION,
+      periods: buildPeriods(),
+      leaves: [
+        ...buildLeaves(),
+        {
+          id: "future-1",
+          employee_id: "felipe",
+          start_date: "2026-12-01",
+          end_date: "2026-12-15",
+          days: 15,
+          kind: "ferias",
+          notes: null,
+        },
+      ],
+      referenceDate: REFERENCE,
+    });
+    // Mesmo totalTakenDays/pendingDays de antes: o lançamento futuro não conta ainda.
+    expect(withScheduled.totalTakenDays).toBe(129);
+    expect(withScheduled.pendingDays).toBe(51);
+    expect(withScheduled.scheduledDays).toBe(15);
+    expect(withScheduled.scheduledLeaves).toHaveLength(1);
+    expect(withScheduled.scheduledLeaves[0].id).toBe("future-1");
+  });
+
   it("credita dia trabalhado no recesso devolvendo saldo", () => {
     const withCredit = computeEmployeeBalance({
       admissionDate: ADMISSION,
