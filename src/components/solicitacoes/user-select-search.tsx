@@ -47,10 +47,17 @@ export function UserSelectSearch({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
 
+  const departmentHasMatch = useMemo(
+    () => !departmentFilter || users.some((u) => u.department === departmentFilter),
+    [users, departmentFilter]
+  );
+
   const pool = useMemo(() => {
     let list = users;
     if (departmentFilter) {
-      list = users.filter((u) => u.department === departmentFilter);
+      const matched = users.filter((u) => u.department === departmentFilter);
+      // Sem ninguém nesse departamento (ex.: área recém-criada sem correspondência) → não esconde todo mundo
+      list = matched.length > 0 ? matched : users;
       const selected = users.find((u) => u.id === value);
       if (selected && !list.some((u) => u.id === selected.id)) {
         list = [selected, ...list];
@@ -132,7 +139,7 @@ export function UserSelectSearch({
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder={
-                  departmentFilter
+                  departmentFilter && departmentHasMatch
                     ? `Buscar em ${departmentFilter} (inclui ex-funcionários)...`
                     : "Buscar por nome, área ou email..."
                 }
@@ -142,6 +149,11 @@ export function UserSelectSearch({
                 autoFocus
               />
             </div>
+            {departmentFilter && !departmentHasMatch && (
+              <p className="text-[11px] text-amber-600 px-0.5">
+                Ninguém tem o departamento &quot;{departmentFilter}&quot; cadastrado — mostrando todos.
+              </p>
+            )}
             {inactiveInPool > 0 && (
               <p className="text-[11px] text-muted-foreground px-0.5">
                 Inclui {inactiveInPool} ex-funcionário{inactiveInPool !== 1 ? "s" : ""}
@@ -162,7 +174,7 @@ export function UserSelectSearch({
             )}
             {filtered.length === 0 ? (
               <li className="py-4 text-center text-sm text-muted-foreground">
-                {departmentFilter
+                {departmentFilter && departmentHasMatch
                   ? `Nenhum colaborador em ${departmentFilter}`
                   : "Nenhum resultado"}
               </li>
@@ -191,7 +203,7 @@ export function UserSelectSearch({
                           </span>
                           {inactive && <FormerEmployeeBadge />}
                         </div>
-                        {!departmentFilter && (
+                        {(!departmentFilter || !departmentHasMatch) && (
                           <span className="text-muted-foreground text-xs">
                             {user.department}
                           </span>
