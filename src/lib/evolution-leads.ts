@@ -25,6 +25,34 @@ export function isMetaAdLeadMessage(body: string | null | undefined): boolean {
   );
 }
 
+export const SITE_LEAD_TAG = "Site";
+
+/** Texto padrão enviado pelo botão flutuante de WhatsApp do site institucional. */
+export const SITE_LEAD_MESSAGE_PREFIX =
+  "Olá! Vim pelo site e gostaria de falar com um especialista.";
+
+export function isSiteLeadMessage(body: string | null | undefined): boolean {
+  if (!body?.trim()) return false;
+  const normalized = normalizeLeadText(body);
+  return normalized.startsWith(normalizeLeadText(SITE_LEAD_MESSAGE_PREFIX));
+}
+
+export interface SiteLeadPageInfo {
+  pageTitle: string | null;
+  pageUrl: string | null;
+}
+
+/** O widget do site anexa "Página: <título>" e a URL na própria mensagem. */
+export function parseSiteLeadPage(body: string | null | undefined): SiteLeadPageInfo {
+  if (!body) return { pageTitle: null, pageUrl: null };
+  const titleMatch = body.match(/P[aá]gina:\s*(.+)/);
+  const urlMatch = body.match(/(https?:\/\/\S+)/);
+  return {
+    pageTitle: titleMatch ? titleMatch[1].trim() : null,
+    pageUrl: urlMatch ? urlMatch[1].trim() : null,
+  };
+}
+
 export function isAudioMessageType(
   messageType: string | null | undefined,
   body: string | null | undefined

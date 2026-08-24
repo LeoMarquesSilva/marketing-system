@@ -5,6 +5,7 @@ const MESSAGE_EVENTS = new Set([
   "MESSAGES_UPSERT",
   "SEND_MESSAGE",
   "MESSAGES_UPDATE",
+  "CONNECTION_UPDATE",
 ]);
 
 interface MetaAttribution {
@@ -34,10 +35,12 @@ interface ParsedMessage {
   isReaction?: boolean;
   reactionTargetId?: string | null;
   reactionEmoji?: string | null;
+  isGroup: boolean;
+  participantPhone: string | null;
 }
 
 const CONV_SELECT =
-  "id, unread_count, push_name, phone, lead_source, tags, meta_ad_id, meta_ad_title, last_message_at, remote_jid";
+  "id, unread_count, push_name, phone, lead_source, tags, meta_ad_id, meta_ad_title, last_message_at, remote_jid, attendance_status, is_group, group_subject";
 
 function readContextInfo(
   message: Record<string, unknown> | undefined
@@ -189,7 +192,7 @@ function isMetaAdLeadFromAttribution(attribution: MetaAttribution | null): boole
 }
 
 function isMetaLeadMessage(msg: ParsedMessage): boolean {
-  if (msg.fromMe) return false;
+  if (msg.fromMe || msg.isGroup) return false;
   return isMetaAdLeadMessage(msg.body) || isMetaAdLeadFromAttribution(msg.metaAttribution);
 }
 
@@ -305,6 +308,9 @@ function extractMessageText(message: Record<string, unknown> | undefined): strin
 function jidToPhone(remoteJid: string): string | null {
   if (!remoteJid || remoteJid.endsWith("@g.us")) return null;
   if (remoteJid === "status@broadcast") return null;
+  // @lid é o JID de privacidade do WhatsApp (Linked ID) — a parte numérica
+  // não é um telefone discável, é um ID interno opaco.
+  if (remoteJid.endsWith("@lid")) return null;
   const userPart = remoteJid.split("@")[0] ?? "";
   const digits = userPart.replace(/\D/g, "");
   if (digits.length >= 10 && digits.length <= 15) return digits;
@@ -319,6 +325,34 @@ function phoneVariants(phone: string | null | undefined): string[] {
   if (d.startsWith("55") && d.length > 11) set.add(d.slice(2));
   if (!d.startsWith("55") && d.length >= 10) set.add(`55${d}`);
   return [...set];
+}
+
+/**
+ * Nome do grupo, buscado sob demanda na Evolution API — o payload de
+ * MESSAGES_UPSERT não traz o "subject" do grupo, só o pushName de quem
+ * mandou a mensagem. Best-effort: se falhar, a conversa fica sem nome e
+ * cai no fallback de exibição ("Grupo"), sem travar a ingestão.
+ */
+async function fetchGroupSubject(
+  instanceName: string,
+  groupJid: string
+): Promise<string | null> {
+  const baseUrl = Deno.env.get("EVOLUTION_API_URL")?.trim().replace(/\/$/, "");
+  const apiKey = Deno.env.get("EVOLUTION_API_KEY")?.trim();
+  if (!baseUrl || !apiKey) return null;
+  try {
+    const res = await fetch(
+      `${baseUrl}/group/findGroupInfos/${encodeURIComponent(instanceName)}?groupJid=${encodeURIComponent(groupJid)}`,
+      { headers: { apikey: apiKey }, signal: AbortSignal.timeout(8000) }
+    );
+    if (!res.ok) return null;
+    const json = await res.json();
+    const subject = (json as { subject?: string })?.subject;
+    return subject?.trim() || null;
+  } catch (err) {
+    console.error("[evolution-webhook] falha ao buscar nome do grupo:", err);
+    return null;
+  }
 }
 
 async function findConversationForMessage(
@@ -359,6 +393,31 @@ function isMetaAdLeadMessage(body: string): boolean {
     normalized.includes("tenho interesse") &&
     normalized.includes("mais informacoes")
   );
+}
+
+/** Texto padrão enviado pelo botão flutuante de WhatsApp do site institucional. */
+const SITE_LEAD_MESSAGE_PREFIX =
+  "Olá! Vim pelo site e gostaria de falar com um especialista.";
+
+function isSiteLeadMessage(body: string): boolean {
+  if (!body?.trim()) return false;
+  const normalize = (t: string) =>
+    t.trim().toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replace(/\s+/g, " ");
+  return normalize(body).startsWith(normalize(SITE_LEAD_MESSAGE_PREFIX));
+}
+
+function isSiteLead(msg: ParsedMessage): boolean {
+  return !msg.fromMe && !msg.isGroup && isSiteLeadMessage(msg.body);
+}
+
+/** O widget do site anexa "Página: <título>" e a URL na própria mensagem. */
+function parseSiteLeadPage(body: string): { pageTitle: string | null; pageUrl: string | null } {
+  const titleMatch = body.match(/P[aá]gina:\s*(.+)/);
+  const urlMatch = body.match(/(https?:\/\/\S+)/);
+  return {
+    pageTitle: titleMatch ? titleMatch[1].trim() : null,
+    pageUrl: urlMatch ? urlMatch[1].trim() : null,
+  };
 }
 
 const BLOCKED_INSTANCE_PUSH_NAMES = new Set([
@@ -403,12 +462,16 @@ function parseSingleMessage(
   instanceName: string
 ): ParsedMessage | null {
   const key = item.key as
-    | { remoteJid?: string; fromMe?: boolean; id?: string }
+    | { remoteJid?: string; fromMe?: boolean; id?: string; participant?: string }
     | undefined;
   if (!key?.remoteJid || !key.id) return null;
 
   const remoteJid = key.remoteJid;
-  if (remoteJid.endsWith("@g.us") || remoteJid === "status@broadcast") return null;
+  if (remoteJid === "status@broadcast") return null;
+  const isGroup = remoteJid.endsWith("@g.us");
+  // Em mensagens de grupo o remetente real vem em key.participant — o
+  // remoteJid é o JID do grupo, não de uma pessoa.
+  const participantPhone = isGroup ? jidToPhone(key.participant ?? "") : null;
 
   const message = item.message as Record<string, unknown> | undefined;
   const messageTimestamp = parseMessageTimestamp(
@@ -421,7 +484,7 @@ function parseSingleMessage(
     return {
       waMessageId: key.id,
       remoteJid,
-      phone: jidToPhone(remoteJid),
+      phone: isGroup ? null : jidToPhone(remoteJid),
       pushName: fromMe ? null : ((item.pushName as string | undefined) ?? null),
       fromMe,
       messageType: "reactionMessage",
@@ -432,6 +495,8 @@ function parseSingleMessage(
       isReaction: true,
       reactionTargetId: reaction.targetWaMessageId,
       reactionEmoji: reaction.emoji,
+      isGroup,
+      participantPhone,
     };
   }
 
@@ -440,7 +505,7 @@ function parseSingleMessage(
   return {
     waMessageId: key.id,
     remoteJid,
-    phone: jidToPhone(remoteJid),
+    phone: isGroup ? null : jidToPhone(remoteJid),
     pushName: fromMe ? null : ((item.pushName as string | undefined) ?? null),
     fromMe,
     messageType: (item.messageType as string | undefined) ?? "unknown",
@@ -450,6 +515,8 @@ function parseSingleMessage(
     metaAttribution: extractMetaWhatsappAttribution(message),
     quotedWaMessageId,
     quotedBody,
+    isGroup,
+    participantPhone,
   };
 }
 
@@ -518,6 +585,28 @@ async function applyMetaLeadPatch(
   }
 }
 
+async function applySiteLeadPatch(
+  supabase: SupabaseClient,
+  conversationId: string,
+  msg: ParsedMessage,
+  existingConv: Record<string, unknown> | null
+): Promise<void> {
+  if (!isSiteLead(msg)) return;
+  // Não sobrescreve uma origem já identificada (ex.: já é lead do Meta Ads).
+  if (existingConv?.lead_source) return;
+
+  const { pageTitle, pageUrl } = parseSiteLeadPage(msg.body);
+  const tags = (existingConv?.tags as string[] | undefined) ?? [];
+  const patch = {
+    updated_at: new Date().toISOString(),
+    lead_source: "site_whatsapp",
+    tags: tags.some((t) => t.toLowerCase() === "site") ? tags : [...tags, "Site"],
+    site_lead_page_title: pageTitle,
+    site_lead_page_url: pageUrl,
+  };
+  await supabase.from("whatsapp_conversations").update(patch).eq("id", conversationId);
+}
+
 async function upsertMessages(messages: ParsedMessage[]): Promise<number> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -527,13 +616,16 @@ async function upsertMessages(messages: ParsedMessage[]): Promise<number> {
 
   for (const msg of messages) {
     if (msg.isReaction && msg.reactionTargetId) {
-      await supabase
+      const { error: reactionError } = await supabase
         .from("whatsapp_messages")
         .update({
           reaction_emoji: msg.reactionEmoji || msg.body || "👍",
         })
         .eq("instance_name", msg.instanceName)
         .eq("wa_message_id", msg.reactionTargetId);
+      if (reactionError) {
+        console.error("[evolution-webhook] falha ao salvar reação:", reactionError.message);
+      }
       continue;
     }
 
@@ -566,6 +658,8 @@ async function upsertMessages(messages: ParsedMessage[]): Promise<number> {
     const inboundName = contactPushNameFromMessage(msg);
     const isMetaLead = isMetaLeadMessage(msg);
     const metaFields = metaFieldsFromAttribution(msg.metaAttribution);
+    const isNewSiteLead = !isMetaLead && isSiteLead(msg);
+    const sitePageInfo = isNewSiteLead ? parseSiteLeadPage(msg.body) : null;
 
     let existingConv = await findConversationForMessage(
       supabase,
@@ -579,24 +673,38 @@ async function upsertMessages(messages: ParsedMessage[]): Promise<number> {
       (existingConv?.remote_jid as string | undefined) ?? msg.remoteJid;
 
     if (!conversationId) {
+      const groupSubject = msg.isGroup
+        ? await fetchGroupSubject(msg.instanceName, msg.remoteJid)
+        : null;
       const { data: created, error } = await supabase
         .from("whatsapp_conversations")
         .insert({
           remote_jid: msg.remoteJid,
           instance_name: msg.instanceName,
           phone: msgPhone,
-          push_name: inboundName,
+          push_name: msg.isGroup ? null : inboundName,
+          is_group: msg.isGroup,
+          group_subject: groupSubject,
           last_message_at: msg.messageTimestamp.toISOString(),
           last_message_preview: null,
           last_inbound_at: msg.fromMe ? null : msg.messageTimestamp.toISOString(),
           unread_count: 0,
-          lead_source: isMetaLead ? "meta_ads" : null,
-          tags: isMetaLead ? ["Tráfego pago"] : [],
+          lead_source: isMetaLead ? "meta_ads" : isNewSiteLead ? "site_whatsapp" : null,
+          tags: isMetaLead ? ["Tráfego pago"] : isNewSiteLead ? ["Site"] : [],
+          site_lead_page_title: sitePageInfo?.pageTitle ?? null,
+          site_lead_page_url: sitePageInfo?.pageUrl ?? null,
           ...metaFields,
         })
-        .select("id, unread_count, last_message_at")
+        .select("id, unread_count, last_message_at, is_group")
         .single();
-      if (error || !created) continue;
+      if (error || !created) {
+        console.error(
+          "[evolution-webhook] falha ao criar conversa:",
+          error?.message ?? "sem dados retornados",
+          { remoteJid: msg.remoteJid, waMessageId: msg.waMessageId }
+        );
+        continue;
+      }
       conversationId = created.id;
       existingConv = created as Record<string, unknown>;
     } else if (msgPhone && !existingConv?.phone) {
@@ -619,6 +727,8 @@ async function upsertMessages(messages: ParsedMessage[]): Promise<number> {
         wa_status: msg.fromMe ? "sent" : null,
         quoted_wa_message_id: msg.quotedWaMessageId ?? null,
         quoted_body: msg.quotedBody ?? null,
+        participant_phone: msg.isGroup ? msg.participantPhone : null,
+        participant_name: msg.isGroup ? inboundName : null,
         raw_payload: {
           key: {
             id: msg.waMessageId,
@@ -630,7 +740,14 @@ async function upsertMessages(messages: ParsedMessage[]): Promise<number> {
       { onConflict: "instance_name,wa_message_id", ignoreDuplicates: true }
     );
 
-    if (msgError) continue;
+    if (msgError) {
+      console.error(
+        "[evolution-webhook] falha ao salvar mensagem:",
+        msgError.message,
+        { conversationId, waMessageId: msg.waMessageId }
+      );
+      continue;
+    }
     inserted += 1;
 
     const existingLastAt = existingConv?.last_message_at
@@ -642,7 +759,7 @@ async function upsertMessages(messages: ParsedMessage[]): Promise<number> {
       updated_at: new Date().toISOString(),
     };
 
-    if (inboundName) {
+    if (inboundName && !msg.isGroup) {
       const existingName = existingConv?.push_name as string | null | undefined;
       if (!existingName?.trim() || isBlockedInstancePushName(existingName)) {
         convUpdate.push_name = inboundName;
@@ -652,11 +769,21 @@ async function upsertMessages(messages: ParsedMessage[]): Promise<number> {
     if (isNewer) {
       convUpdate.last_message_at = msg.messageTimestamp.toISOString();
       convUpdate.last_message_preview = preview;
+      const currentStatus = existingConv?.attendance_status as string | undefined;
       if (!msg.fromMe) {
         convUpdate.last_inbound_at = msg.messageTimestamp.toISOString();
+        // Cliente escreveu de novo: volta pra fila, a menos que alguém já
+        // esteja atendendo essa conversa agora (não tira do atendente).
+        if (currentStatus !== "em_atendimento") {
+          convUpdate.attendance_status = "nao_respondido";
+        }
         await supabase.rpc("increment_whatsapp_unread", {
           p_conversation_id: conversationId,
         });
+      } else {
+        // Respondemos: a bola passa pro cliente.
+        convUpdate.last_outbound_at = msg.messageTimestamp.toISOString();
+        convUpdate.attendance_status = "aguardando_cliente";
       }
     }
 
@@ -668,6 +795,7 @@ async function upsertMessages(messages: ParsedMessage[]): Promise<number> {
     }
 
     await applyMetaLeadPatch(supabase, conversationId!, msg, existingConv);
+    await applySiteLeadPatch(supabase, conversationId!, msg, existingConv);
   }
 
   return inserted;
@@ -716,18 +844,21 @@ async function processMessagesUpdate(payload: Record<string, unknown>): Promise<
   let updated = 0;
 
   for (const item of items) {
+    // A Evolution manda o payload de MESSAGES_UPDATE achatado (keyId), não
+    // aninhado como MESSAGES_UPSERT (key.id) — checamos os dois formatos.
     const key = item.key as { id?: string } | undefined;
+    const waMessageId = (item.keyId as string | undefined) ?? key?.id;
     const patch = item.update as { status?: unknown } | undefined;
     const status = mapEvolutionAckStatus(
       patch?.status ?? item.status ?? (item as { ack?: unknown }).ack
     );
-    if (!key?.id || !status) continue;
+    if (!waMessageId || !status) continue;
 
     const { error } = await supabase
       .from("whatsapp_messages")
       .update({ wa_status: status })
       .eq("instance_name", instanceName)
-      .eq("wa_message_id", key.id);
+      .eq("wa_message_id", waMessageId);
 
     if (!error) updated += 1;
   }
@@ -740,6 +871,41 @@ const corsHeaders = {
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-evolution-api-key",
 };
+
+/** Estado de conexão da instância Evolution (evento CONNECTION_UPDATE). */
+async function processConnectionUpdate(
+  supabase: SupabaseClient,
+  payload: Record<string, unknown>
+): Promise<void> {
+  const instanceName = (payload.instance as string | undefined) ?? "BP";
+  const data = (payload.data ?? {}) as Record<string, unknown>;
+  const state = String(data.state ?? data.status ?? "unknown").toLowerCase();
+  const statusReason = data.statusReason != null ? String(data.statusReason) : null;
+  const now = new Date().toISOString();
+
+  const { data: existing } = await supabase
+    .from("whatsapp_instance_status")
+    .select("state")
+    .eq("instance_name", instanceName)
+    .maybeSingle();
+
+  const patch: Record<string, unknown> = {
+    instance_name: instanceName,
+    state,
+    status_reason: statusReason,
+    updated_at: now,
+  };
+  if (state === "open") patch.last_connected_at = now;
+  if (state === "close") patch.last_disconnected_at = now;
+
+  await supabase.from("whatsapp_instance_status").upsert(patch, { onConflict: "instance_name" });
+
+  if (state === "close" && existing?.state !== "close") {
+    console.error(
+      `[evolution-webhook] instância "${instanceName}" desconectou (statusReason=${statusReason ?? "?"}). Mensagens do WhatsApp deixaram de chegar até reconectar.`
+    );
+  }
+}
 
 Deno.serve(async (req: Request) => {
   const startedAt = Date.now();
@@ -788,6 +954,20 @@ Deno.serve(async (req: Request) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
+
+    if (eventRaw === "CONNECTION_UPDATE") {
+      await processConnectionUpdate(supabase, payload);
+      await insertWebhookAuditLog(supabase, {
+        event: eventRaw,
+        received: 1,
+        stored: 1,
+        status: "ok",
+        latencyMs: Date.now() - startedAt,
+      });
+      return new Response(JSON.stringify({ ok: true, event: eventRaw }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (eventRaw === "MESSAGES_UPDATE") {
       const updated = await processMessagesUpdate(payload);

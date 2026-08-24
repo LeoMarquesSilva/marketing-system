@@ -14,10 +14,7 @@ import { requireAdminUser } from "@/lib/api-auth";
 export const dynamic = "force-dynamic";
 
 function webhookPointsToApp(url: string): boolean {
-  return (
-    url.includes("/api/evolution/webhook") ||
-    url.includes("/functions/v1/evolution-webhook")
-  );
+  return url.includes("/functions/v1/evolution-webhook");
 }
 
 export async function GET() {
@@ -37,7 +34,6 @@ export async function GET() {
     const marketingPublicUrl = getMarketingPublicUrl();
     const targetWebhookUrl = getEvolutionWebhookReceiveUrl();
 
-    const appWebhookPath = "/api/evolution/webhook";
     const webhookPointsToAppFlag = webhook?.url
       ? webhookPointsToApp(webhook.url)
       : false;
@@ -56,7 +52,7 @@ export async function GET() {
       marketingPublicUrl,
       supabaseWebhookUrl,
       targetWebhookUrl,
-      preferredTarget: supabaseWebhookUrl ? "supabase" : "nextjs",
+      preferredTarget: "supabase",
       webhook: webhook
         ? {
             enabled: webhook.enabled,
@@ -67,20 +63,17 @@ export async function GET() {
             messageEventsConfigured,
           }
         : null,
-      appWebhookPath,
       realtime: {
         channel: "supabase_realtime",
         tables: ["whatsapp_conversations", "whatsapp_messages"],
-        flow: supabaseWebhookUrl
-          ? "Evolution → Supabase Edge Function → Postgres → Realtime → Inbox"
-          : "Evolution → Next.js → Postgres → Realtime → Inbox",
+        flow: "Evolution → Supabase Edge Function → Postgres → Realtime → Inbox",
       },
       recommendations: webhookPointsToAppFlag
         ? []
         : [
             supabaseWebhookUrl
-              ? `Aponte a instância BP para ${supabaseWebhookUrl} — grava direto no Supabase (Edge Function), sem passar pelo app Next.js.`
-              : "Configure NEXT_PUBLIC_SUPABASE_URL para habilitar webhook direto no Supabase.",
+              ? `Aponte a instância BP para ${supabaseWebhookUrl} — grava direto no Supabase (Edge Function).`
+              : "Configure NEXT_PUBLIC_SUPABASE_URL para habilitar o webhook.",
             "A Evolution aceita apenas 1 webhook por instância.",
             "Enquanto não configurar, use Sincronizar Evolution na UI.",
           ],

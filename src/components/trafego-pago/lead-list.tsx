@@ -11,6 +11,7 @@ import type { LeadFilter, WhatsappConversation } from "./whatsapp-crm-types";
 import {
   formatMessageTime,
   formatRelativeLeadTime,
+  isGroupConversation,
   isHotLead,
   isMetaLead,
   isPaidTrafficLead,
@@ -34,6 +35,9 @@ const filters: Array<{ id: LeadFilter; label: string }> = [
   { id: "unread", label: "Não lidas" },
   { id: "meta_ads", label: "Meta Ads" },
   { id: "trafego_pago", label: "Tráfego Pago" },
+  { id: "site", label: "Site" },
+  { id: "colaborador", label: "Colaborador" },
+  { id: "grupo", label: "Grupos" },
 ];
 
 export function LeadList({
@@ -140,6 +144,7 @@ function LeadListCard({
   const hot = isHotLead(conversation);
   const meta = isMetaLead(conversation);
   const paidTraffic = isPaidTrafficLead(conversation);
+  const isGroup = isGroupConversation(conversation);
 
   return (
     <button
@@ -160,6 +165,7 @@ function LeadListCard({
         <WhatsappLeadAvatar
           name={leadDisplayName(conversation)}
           avatarUrl={conversation.avatar_url}
+          conversationId={conversation.id}
           size="lg"
         />
         <div className="min-w-0 flex-1">
@@ -189,6 +195,7 @@ function LeadListCard({
 
           <div className="mt-2 flex items-center justify-between gap-2">
             <div className="flex min-w-0 flex-wrap gap-1.5">
+              {isGroup && <LeadChip tone="indigo" label="Grupo" />}
               {meta && <LeadChip tone="blue" label="Meta Ads" icon={<Megaphone className="h-3 w-3" />} />}
               {paidTraffic && !meta && <LeadChip tone="violet" label="Tráfego Pago" />}
               {hot && <LeadChip tone="rose" label="Lead quente" />}
@@ -219,7 +226,7 @@ function LeadChip({
   icon,
 }: {
   label: string;
-  tone: "emerald" | "blue" | "violet" | "rose";
+  tone: "emerald" | "blue" | "violet" | "rose" | "indigo";
   icon?: React.ReactNode;
 }) {
   const classes = {
@@ -227,6 +234,7 @@ function LeadChip({
     blue: "bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-900",
     violet: "bg-violet-50 text-violet-700 border-violet-100 dark:bg-violet-950/50 dark:text-violet-300 dark:border-violet-900",
     rose: "bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-900",
+    indigo: "bg-indigo-50 text-indigo-700 border-indigo-100 dark:bg-indigo-950/50 dark:text-indigo-300 dark:border-indigo-900",
   };
 
   return (

@@ -52,6 +52,7 @@ export function MessageBubble({
           <WhatsappLeadAvatar
             name={leadDisplayName(conversation)}
             avatarUrl={conversation.avatar_url}
+            conversationId={conversation.id}
             size="sm"
           />
         </div>
@@ -82,6 +83,12 @@ export function MessageBubble({
             {pinned && <BubbleLabel icon={<Pin className="h-3 w-3" />} label="Fixada" tone="emerald" />}
             {hot && <BubbleLabel icon={<Flame className="h-3 w-3" />} label="Lead quente" tone="amber" />}
           </div>
+        )}
+
+        {conversation.is_group && fromLead && message.participant_name && (
+          <p className="mb-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+            {message.participant_name}
+          </p>
         )}
 
         {message.quoted_body && (

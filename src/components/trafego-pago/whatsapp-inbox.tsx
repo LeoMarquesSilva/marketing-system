@@ -9,6 +9,8 @@ import {
   Radio,
   Wifi,
   WifiOff,
+  List,
+  LayoutGrid,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authFetch } from "@/lib/auth-fetch";
@@ -16,6 +18,8 @@ import { supabase } from "@/utils/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
 import { AnimatePresence } from "framer-motion";
 import { LeadList } from "@/components/trafego-pago/lead-list";
+import { WhatsappKanbanBoard } from "@/components/trafego-pago/whatsapp-kanban-board";
+import type { AttendanceStatus } from "@/components/trafego-pago/whatsapp-crm-utils";
 import { ConversationHeader } from "@/components/trafego-pago/conversation-header";
 import { MessageBubble } from "@/components/trafego-pago/message-bubble";
 import { ChatInput } from "@/components/trafego-pago/chat-input";
@@ -31,6 +35,9 @@ import {
   formatRelativeLeadTime,
   isMetaLead,
   isPaidTrafficLead,
+  isSiteLead,
+  isColaboradorConversation,
+  isGroupConversation,
   leadDisplayName,
   sameMessageDay,
 } from "@/components/trafego-pago/whatsapp-crm-utils";
@@ -41,7 +48,7 @@ interface EvolutionStatus {
   marketingPublicUrl?: string | null;
   supabaseWebhookUrl?: string | null;
   targetWebhookUrl?: string | null;
-  preferredTarget?: "supabase" | "nextjs";
+  preferredTarget?: "supabase";
   webhook?: {
     enabled: boolean;
     url: string;
@@ -49,7 +56,6 @@ interface EvolutionStatus {
     messageEventsConfigured: boolean;
   } | null;
   recommendations?: string[];
-  appWebhookPath?: string;
 }
 
 type Conversation = WhatsappConversation;
@@ -181,6 +187,7 @@ export function WhatsappInbox() {
   const [sending, setSending] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<LeadFilter>("all");
+  const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("connecting");
   const [evolutionStatus, setEvolutionStatus] = useState<EvolutionStatus | null>(null);
   const [configuringWebhook, setConfiguringWebhook] = useState(false);
@@ -189,6 +196,10 @@ export function WhatsappInbox() {
   const [pinnedMessageId, setPinnedMessageId] = useState<string | null>(null);
   const [hotMessageIds, setHotMessageIds] = useState<Set<string>>(() => new Set());
   const [detailsOpen, setDetailsOpen] = useState(true);
+  const [connectionState, setConnectionState] = useState<{
+    state: string;
+    updated_at: string;
+  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const selectedIdRef = useRef<string | null>(null);
@@ -197,6 +208,25 @@ export function WhatsappInbox() {
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function checkConnection() {
+      try {
+        const res = await authFetch("/api/evolution/connection-state");
+        const json = await res.json();
+        if (!cancelled && res.ok) setConnectionState(json.status ?? null);
+      } catch {
+        /* ignore */
+      }
+    }
+    void checkConnection();
+    const interval = setInterval(checkConnection, 2 * 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
 
   const loadConversations = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -310,15 +340,14 @@ export function WhatsappInbox() {
     [loadTagSuggestions]
   );
 
-  const updateSelectedCrm = useCallback(
-    async (patch: Record<string, unknown>) => {
-      if (!selectedId) return;
+  const updateConversationCrm = useCallback(
+    async (conversationId: string, patch: Record<string, unknown>) => {
       setError(null);
       try {
         const res = await authFetch("/api/evolution/conversations", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ conversationId: selectedId, ...patch }),
+          body: JSON.stringify({ conversationId, ...patch }),
         });
         const json = await res.json();
         if (!res.ok) throw new Error(json.error ?? "Erro ao atualizar CRM.");
@@ -328,9 +357,25 @@ export function WhatsappInbox() {
         );
       } catch (err) {
         setError(err instanceof Error ? err.message : "Erro ao atualizar CRM.");
+        throw err;
       }
     },
-    [selectedId]
+    []
+  );
+
+  const updateSelectedCrm = useCallback(
+    async (patch: Record<string, unknown>) => {
+      if (!selectedId) return;
+      await updateConversationCrm(selectedId, patch);
+    },
+    [selectedId, updateConversationCrm]
+  );
+
+  const handleKanbanMove = useCallback(
+    async (conversationId: string, status: AttendanceStatus) => {
+      await updateConversationCrm(conversationId, { attendance_status: status });
+    },
+    [updateConversationCrm]
   );
 
   const sendMessage = useCallback(async () => {
@@ -646,6 +691,9 @@ export function WhatsappInbox() {
     if (activeFilter === "unread" && c.unread_count === 0) return false;
     if (activeFilter === "meta_ads" && !isMetaLead(c)) return false;
     if (activeFilter === "trafego_pago" && !isPaidTrafficLead(c)) return false;
+    if (activeFilter === "site" && !isSiteLead(c)) return false;
+    if (activeFilter === "colaborador" && !isColaboradorConversation(c)) return false;
+    if (activeFilter === "grupo" && !isGroupConversation(c)) return false;
     if (!normalizedSearch) return true;
     const haystack = [
       c.push_name,
@@ -654,6 +702,7 @@ export function WhatsappInbox() {
       ...(c.tags ?? []),
       c.meta_campaign_name,
       c.meta_adset_name,
+      c.site_lead_page_title,
       leadDisplayName(c),
     ]
       .filter(Boolean)
@@ -819,6 +868,54 @@ export function WhatsappInbox() {
         </div>
       )}
 
+      {connectionState && connectionState.state !== "open" && (
+        <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+          <WifiOff className="h-5 w-5 shrink-0" />
+          <div>
+            <p className="font-medium">WhatsApp desconectado — mensagens novas não estão chegando.</p>
+            <p className="text-xs opacity-80">
+              Alguém precisa reconectar o número na Evolution (escanear o QR de novo). Desde{" "}
+              {new Date(connectionState.updated_at).toLocaleString("pt-BR")}.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-end">
+        <div className="inline-flex rounded-lg border bg-muted/40 p-0.5">
+          <Button
+            type="button"
+            variant={viewMode === "list" ? "default" : "ghost"}
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+            onClick={() => setViewMode("list")}
+          >
+            <List className="h-3.5 w-3.5" />
+            Lista
+          </Button>
+          <Button
+            type="button"
+            variant={viewMode === "kanban" ? "default" : "ghost"}
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+            onClick={() => setViewMode("kanban")}
+          >
+            <LayoutGrid className="h-3.5 w-3.5" />
+            Kanban
+          </Button>
+        </div>
+      </div>
+
+      {viewMode === "kanban" ? (
+        <WhatsappKanbanBoard
+          conversations={filteredConversations}
+          onCardClick={(c) => {
+            setSelectedId(c.id);
+            setViewMode("list");
+          }}
+          onMove={handleKanbanMove}
+        />
+      ) : (
       <div
         className={
           detailsOpen
@@ -979,6 +1076,7 @@ export function WhatsappInbox() {
         />
         )}
       </div>
+      )}
     </div>
   );
 }

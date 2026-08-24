@@ -11,6 +11,7 @@ import {
   refreshConversationAvatar,
   refreshConversationPushName,
   refreshMissingConversationAvatars,
+  refreshMissingConversationPushNames,
   syncConversationMessages,
   updateWhatsappConversationCrm,
   updateWhatsappConversationTags,
@@ -83,6 +84,7 @@ export async function GET(request: Request) {
 
     const conversations = await fetchWhatsappConversations();
     void refreshMissingConversationAvatars(8);
+    void refreshMissingConversationPushNames(8);
     return NextResponse.json({
       configured: isEvolutionConfigured(),
       conversations,
@@ -124,7 +126,8 @@ export async function PATCH(request: Request) {
       "owner_user_id" in (body as object) ||
       "pipeline_stage" in (body as object) ||
       "qualification" in (body as object) ||
-      "notes" in (body as object);
+      "notes" in (body as object) ||
+      "attendance_status" in (body as object);
 
     if (!hasTags && !hasCrmFields) {
       return NextResponse.json(
@@ -141,6 +144,36 @@ export async function PATCH(request: Request) {
       : null;
 
     if (hasCrmFields) {
+      const rawAttendanceStatus =
+        typeof (body as { attendance_status?: unknown }).attendance_status === "string"
+          ? (body as { attendance_status: string }).attendance_status.trim()
+          : undefined;
+      const validAttendanceStatuses = [
+        "nao_respondido",
+        "em_atendimento",
+        "aguardando_cliente",
+        "resolvido",
+      ];
+      const attendanceStatus =
+        rawAttendanceStatus && validAttendanceStatuses.includes(rawAttendanceStatus)
+          ? rawAttendanceStatus
+          : undefined;
+
+      // Ao assumir a conversa, marca o usuário logado (users.id, não o auth_id) como responsável.
+      const explicitOwnerId =
+        typeof (body as { owner_user_id?: unknown }).owner_user_id === "string"
+          ? (body as { owner_user_id: string }).owner_user_id.trim() || null
+          : undefined;
+      let ownerUserId = explicitOwnerId;
+      if (explicitOwnerId === undefined && attendanceStatus === "em_atendimento") {
+        const { data: appUser } = await supabase
+          .from("users")
+          .select("id")
+          .eq("auth_id", user.id)
+          .maybeSingle();
+        ownerUserId = appUser?.id ?? undefined;
+      }
+
       conversation = await updateWhatsappConversationCrm(conversationId, {
         city:
           typeof (body as { city?: unknown }).city === "string"
@@ -150,10 +183,7 @@ export async function PATCH(request: Request) {
           typeof (body as { state?: unknown }).state === "string"
             ? (body as { state: string }).state.trim() || null
             : undefined,
-        owner_user_id:
-          typeof (body as { owner_user_id?: unknown }).owner_user_id === "string"
-            ? (body as { owner_user_id: string }).owner_user_id.trim() || null
-            : undefined,
+        owner_user_id: ownerUserId,
         pipeline_stage:
           typeof (body as { pipeline_stage?: unknown }).pipeline_stage === "string"
             ? (body as { pipeline_stage: string }).pipeline_stage.trim() || null
@@ -167,6 +197,7 @@ export async function PATCH(request: Request) {
           typeof (body as { notes?: unknown }).notes === "string"
             ? (body as { notes: string }).notes.trim() || null
             : undefined,
+        attendance_status: attendanceStatus,
       });
     }
 

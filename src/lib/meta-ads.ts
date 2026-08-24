@@ -1041,3 +1041,24 @@ export async function fetchMetaAdSummary(adId: string): Promise<MetaAdSummary | 
     return null;
   }
 }
+
+/**
+ * Busca a URL de imagem do criativo direto na Graph API — thumbnail_url/image_url
+ * retornados pelo /ads são links assinados do fbcdn que expiram, então buscamos
+ * uma URL fresca sob demanda em vez de reusar a salva no dashboard.
+ */
+export async function fetchAdCreativeImageUrl(adId: string): Promise<string | null> {
+  const id = adId.trim();
+  if (!id) return null;
+  const creativeFields =
+    "thumbnail_url,image_url,video_id,object_story_spec{video_data{message,title,video_id},link_data{message,picture}}";
+  try {
+    const data = await graphFetch<{ creative?: AdMetaRow["creative"] }>(
+      `/${id}?fields=creative{${creativeFields}}`
+    );
+    const media = parseCreativeMedia(data.creative);
+    return media.imageUrl ?? data.creative?.thumbnail_url ?? null;
+  } catch {
+    return null;
+  }
+}

@@ -765,6 +765,7 @@ function AdCard({
       )}
     >
       <AdMediaPlayer
+        adId={ad.ad_id}
         videoId={ad.video_id}
         thumbnailUrl={ad.thumbnail_url}
         imageUrl={ad.image_url}

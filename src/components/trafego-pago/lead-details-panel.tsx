@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Building2, CircleHelp, FileText, Hash, MessageSquarePlus, PanelRightClose, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WhatsappTagList } from "@/components/trafego-pago/whatsapp-conversation-tags";
@@ -10,6 +10,7 @@ import { PipelineProgress } from "./pipeline-progress";
 import {
   isMetaLead,
   isPaidTrafficLead,
+  isSiteLead,
   leadCampaign,
   leadLocation,
   leadPhone,
@@ -76,7 +77,32 @@ export function LeadDetailsPanel({
               rows={[
                 ["Telefone", leadPhone(conversation)],
                 ["Localização", leadLocation(conversation)],
-                ["Origem", isMetaLead(conversation) ? "Meta Ads" : isPaidTrafficLead(conversation) ? "Tráfego Pago" : "WhatsApp"],
+                [
+                  "Origem",
+                  isMetaLead(conversation)
+                    ? "Meta Ads"
+                    : isSiteLead(conversation)
+                      ? "Botão do site"
+                      : isPaidTrafficLead(conversation)
+                        ? "Tráfego Pago"
+                        : "WhatsApp",
+                ],
+                ...(isSiteLead(conversation) && conversation.site_lead_page_url
+                  ? ([
+                      [
+                        "Página de origem",
+                        <a
+                          key="site-lead-page"
+                          href={conversation.site_lead_page_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[#47cdd0] underline underline-offset-2"
+                        >
+                          {conversation.site_lead_page_title || conversation.site_lead_page_url}
+                        </a>,
+                      ],
+                    ] as Array<[string, ReactNode]>)
+                  : []),
                 ["Campanha", leadCampaign(conversation)],
                 ["Entrou em", new Date(conversation.last_message_at).toLocaleDateString("pt-BR")],
                 ["Responsável", leadResponsible(conversation)],
@@ -156,6 +182,7 @@ export function LeadDetailsPanel({
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {isMetaLead(conversation) && <TagPill label="Meta Ads" />}
+                {isSiteLead(conversation) && <TagPill label="Site" />}
                 <WhatsappTagList tags={conversation.tags ?? []} />
                 <button
                   type="button"

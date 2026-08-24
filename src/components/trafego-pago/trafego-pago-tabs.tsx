@@ -85,23 +85,26 @@ export function TrafegoPagoTabs() {
         </button>
       </div>
 
-      {tab === "anuncios" ? (
-        <section
-          role="tabpanel"
-          id="tab-panel-anuncios"
-          aria-labelledby="tab-anuncios"
-        >
-          <TrafegoPagoClient />
-        </section>
-      ) : (
-        <section
-          role="tabpanel"
-          id="tab-panel-whatsapp"
-          aria-labelledby="tab-whatsapp"
-        >
-          <WhatsappInbox />
-        </section>
-      )}
+      {/* As duas seções ficam montadas o tempo todo — só a visibilidade
+          alterna. Desmontar ao trocar de aba fazia o WhatsApp Inbox perder
+          todo o estado (lista, conversa aberta, mensagens) e recarregar do
+          zero toda vez que o usuário voltava pra essa aba. */}
+      <section
+        role="tabpanel"
+        id="tab-panel-anuncios"
+        aria-labelledby="tab-anuncios"
+        hidden={tab !== "anuncios"}
+      >
+        <TrafegoPagoClient />
+      </section>
+      <section
+        role="tabpanel"
+        id="tab-panel-whatsapp"
+        aria-labelledby="tab-whatsapp"
+        hidden={tab !== "whatsapp"}
+      >
+        <WhatsappInbox />
+      </section>
     </div>
   );
 }

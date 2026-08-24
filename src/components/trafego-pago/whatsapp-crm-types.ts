@@ -3,6 +3,8 @@ export interface WhatsappConversation {
   remote_jid: string;
   phone: string | null;
   push_name: string | null;
+  is_group?: boolean | null;
+  group_subject?: string | null;
   last_message_at: string;
   last_message_preview: string | null;
   last_inbound_at: string | null;
@@ -18,6 +20,10 @@ export interface WhatsappConversation {
   meta_adset_name?: string | null;
   meta_ctwa_clid?: string | null;
   meta_conversion_app?: string | null;
+  site_lead_page_title?: string | null;
+  site_lead_page_url?: string | null;
+  attendance_status?: string | null;
+  last_outbound_at?: string | null;
   city?: string | null;
   state?: string | null;
   owner_user_id?: string | null;
@@ -44,6 +50,7 @@ export interface WhatsappMessage {
   reaction_emoji?: string | null;
   quoted_wa_message_id?: string | null;
   quoted_body?: string | null;
+  participant_name?: string | null;
 }
 
 export interface WhatsappReplyTarget {
@@ -52,7 +59,7 @@ export interface WhatsappReplyTarget {
   fromName?: string;
 }
 
-export type LeadFilter = "all" | "unread" | "meta_ads" | "trafego_pago";
+export type LeadFilter = "all" | "unread" | "meta_ads" | "trafego_pago" | "site" | "colaborador" | "grupo";
 
 export type PipelineStage =
   | "lead_recebido"

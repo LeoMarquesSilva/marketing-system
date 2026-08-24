@@ -41,7 +41,12 @@ export function ConversationHeader({
     <header className="z-10 border-b bg-white px-5 py-4 shadow-sm dark:bg-card">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="flex min-w-0 items-start gap-3">
-          <WhatsappLeadAvatar name={name} avatarUrl={conversation.avatar_url} size="lg" />
+          <WhatsappLeadAvatar
+            name={name}
+            avatarUrl={conversation.avatar_url}
+            conversationId={conversation.id}
+            size="lg"
+          />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="truncate text-lg font-bold tracking-tight">{name}</h2>

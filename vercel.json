@@ -21,6 +21,10 @@
     {
       "path": "/api/cron/sioe-sync-full",
       "schedule": "0 4 * * 0"
+    },
+    {
+      "path": "/api/cron/ga4-sync",
+      "schedule": "0 10 * * *"
     }
   ]
 }

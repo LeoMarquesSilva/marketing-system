@@ -5,6 +5,7 @@ import { Loader2, Play, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AdMediaPlayerProps {
+  adId: string;
   videoId: string | null;
   thumbnailUrl: string | null;
   imageUrl: string | null;
@@ -13,7 +14,19 @@ interface AdMediaPlayerProps {
   inactive?: boolean;
 }
 
+/** thumbnail_url/image_url da Graph API são links assinados do fbcdn que expiram
+ * e retornam 403 no browser — passamos pelo proxy do servidor nesses casos. */
+function isMetaCdnUrl(url: string | null): boolean {
+  return !!url && /fbcdn\.net|cdninstagram\.com/i.test(url);
+}
+
+function resolveMediaSrc(adId: string, url: string | null): string | null {
+  if (!url) return null;
+  return isMetaCdnUrl(url) ? `/api/meta-ads/thumbnail?adId=${encodeURIComponent(adId)}` : url;
+}
+
 export function AdMediaPlayer({
+  adId,
   videoId,
   thumbnailUrl,
   imageUrl,
@@ -26,7 +39,9 @@ export function AdMediaPlayer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const preview = thumbnailUrl ?? imageUrl;
+  const resolvedImageUrl = resolveMediaSrc(adId, imageUrl);
+  const resolvedThumbnailUrl = resolveMediaSrc(adId, thumbnailUrl);
+  const preview = resolvedThumbnailUrl ?? resolvedImageUrl;
 
   const loadVideo = useCallback(async () => {
     if (!videoId || embedHtml) {
@@ -81,7 +96,7 @@ export function AdMediaPlayer({
     );
   }
 
-  if (mediaType === "image" && imageUrl) {
+  if (mediaType === "image" && resolvedImageUrl) {
     return (
       <div
         className={cn(
@@ -90,7 +105,7 @@ export function AdMediaPlayer({
         )}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={imageUrl} alt={adName} className="h-full w-full object-cover" />
+        <img src={resolvedImageUrl} alt={adName} className="h-full w-full object-cover" />
       </div>
     );
   }

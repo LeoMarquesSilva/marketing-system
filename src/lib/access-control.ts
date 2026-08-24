@@ -25,6 +25,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/clima", label: "Clima" },
   { key: "/instagram-insights", label: "Instagram Insights" },
   { key: "/linkedin-insights", label: "LinkedIn Insights" },
+  { key: "/ga4-insights", label: "Analytics (GA4)" },
   { key: "/trafego-pago", label: "Tráfego Pago" },
   { key: "/vios-tarefas", label: "Tarefas VIOS" },
   { key: "/eventos", label: "Eventos" },

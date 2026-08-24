@@ -18,6 +18,7 @@ import {
   Images,
   Instagram,
   Linkedin,
+  Globe,
   Megaphone,
   User,
   Camera,
@@ -32,6 +33,10 @@ import {
   BriefcaseBusiness,
   IdCard,
   ChevronDown,
+  TrendingUp,
+  Layers,
+  Rocket,
+  Shield,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -91,6 +96,7 @@ const baseNavItems: NavLeaf[] = [
   { href: "/clima", icon: Heart, label: "Clima" },
   { href: "/instagram-insights", icon: Instagram, label: "Instagram Insights" },
   { href: "/linkedin-insights", icon: Linkedin, label: "LinkedIn Insights" },
+  { href: "/ga4-insights", icon: Globe, label: "Analytics (GA4)" },
   { href: "/trafego-pago", icon: Megaphone, label: "Trafego Pago" },
   { href: "/vios-tarefas", icon: ClipboardList, label: "Tarefas VIOS" },
   { href: "/eventos", icon: CalendarDays, label: "Eventos" },
@@ -130,6 +136,81 @@ const feriasViewerNavGroup: NavGroup = {
   ...rhNavGroup,
   children: rhNavGroup.children.filter((item) => item.href === "/rh/ferias"),
 };
+
+type CollapsibleGroupSpec = {
+  key: string;
+  icon: LucideIcon;
+  label: string;
+  hrefs: string[];
+};
+
+const METRICS_GROUP: CollapsibleGroupSpec = {
+  key: "__metricas",
+  icon: TrendingUp,
+  label: "Métricas",
+  hrefs: ["/instagram-insights", "/linkedin-insights", "/ga4-insights"],
+};
+
+const CONTENT_GROUP: CollapsibleGroupSpec = {
+  key: "__conteudo",
+  icon: Layers,
+  label: "Conteúdo",
+  hrefs: ["/conteudo/inicio", "/conteudo/roteiros", "/conteudo/boletim", "/conteudo/reels"],
+};
+
+const PHOTOS_GROUP: CollapsibleGroupSpec = {
+  key: "__fotos",
+  icon: Images,
+  label: "Fotos",
+  hrefs: ["/minhas-fotos", "/fotos-colaboradores"],
+};
+
+const MARKETING_GROUP: CollapsibleGroupSpec = {
+  key: "__marketing-pago",
+  icon: Rocket,
+  label: "Marketing Pago",
+  hrefs: ["/trafego-pago", "/email-marketing"],
+};
+
+const ADMIN_GROUP: CollapsibleGroupSpec = {
+  key: "__administracao",
+  icon: Shield,
+  label: "Administração",
+  hrefs: ["/usuarios", "/custos-projetos", "/admin"],
+};
+
+function collapseIntoGroup(items: NavEntry[], spec: CollapsibleGroupSpec): NavEntry[] {
+  const children = spec.hrefs
+    .map((href) =>
+      items.find((i) => !isNavGroup(i) && i.href === href) as NavLeaf | undefined
+    )
+    .filter((i): i is NavLeaf => Boolean(i));
+  // Só vale colapsar quando sobra mais de 1 item — um grupo com 1 filho só adiciona clique.
+  if (children.length < 2) return items;
+
+  const group: NavGroup = { key: spec.key, icon: spec.icon, label: spec.label, children };
+
+  const result: NavEntry[] = [];
+  let inserted = false;
+  for (const item of items) {
+    if (!isNavGroup(item) && spec.hrefs.includes(item.href)) {
+      if (!inserted) {
+        result.push(group);
+        inserted = true;
+      }
+      continue;
+    }
+    result.push(item);
+  }
+  return result;
+}
+
+function applyCollapsibleGroups(items: NavEntry[]): NavEntry[] {
+  return [CONTENT_GROUP, PHOTOS_GROUP, MARKETING_GROUP, METRICS_GROUP, ADMIN_GROUP].reduce(
+    collapseIntoGroup,
+    items
+  );
+}
 
 const adminNavItems: NavLeaf[] = [
   { href: "/admin", icon: Settings, label: "Configuracoes" },
@@ -208,18 +289,19 @@ function getNavItems(
     } else {
       items = withMinhasFotos(items, minhasFotos);
     }
-    return items;
+    return applyCollapsibleGroups(items);
   }
 
   if (isContentCollaborator(profile)) {
-    return profileHasFeriasView(profile)
+    const collaboratorItems: NavEntry[] = profileHasFeriasView(profile)
       ? [...collaboratorNavItems, feriasViewerNavGroup]
       : collaboratorNavItems;
+    return applyCollapsibleGroups(collaboratorItems);
   }
 
   const isAdmin = isAdminRole(profile);
   const canViewFerias = profileHasFeriasView(profile);
-  return [
+  return applyCollapsibleGroups([
     ...baseNavItems.filter((i) => {
       if (i.href === "/nfc") return isAdmin;
       if (i.href === "/minhas-fotos") return true;
@@ -230,7 +312,7 @@ function getNavItems(
       : canViewFerias
         ? [feriasViewerNavGroup]
         : []),
-  ];
+  ]);
 }
 
 function getInitials(name: string) {
@@ -307,6 +389,14 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
   const navItems = getNavItems(profile);
   const flatNavItems = flattenNav(navItems);
   const mobileNavItems = flatNavItems.slice(0, 4);
+  const groupActiveMap: Record<string, boolean> = {};
+  for (const item of navItems) {
+    if (isNavGroup(item)) {
+      groupActiveMap[item.key] = item.children.some((child) =>
+        isRouteActive(pathname, child.href)
+      );
+    }
+  }
 
   const toggleGroup = (key: string) => {
     if (!expanded) {
@@ -315,7 +405,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
       return;
     }
     setOpenGroups((prev) => {
-      const forcedOpen = pathname.startsWith(key);
+      const forcedOpen = groupActiveMap[key] ?? pathname.startsWith(key);
       const currentlyOpen = prev[key] ?? forcedOpen;
       return { ...prev, [key]: !currentlyOpen };
     });
@@ -323,7 +413,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
 
   const isGroupOpen = (key: string) => {
     if (key in openGroups) return Boolean(openGroups[key]);
-    return pathname.startsWith(key);
+    return groupActiveMap[key] ?? pathname.startsWith(key);
   };
 
   const handleSignOut = async () => {

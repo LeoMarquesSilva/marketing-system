@@ -3,6 +3,10 @@
 export function jidToPhone(remoteJid: string): string | null {
   if (!remoteJid || remoteJid.endsWith("@g.us")) return null;
   if (remoteJid === "status@broadcast") return null;
+  // @lid é o JID de privacidade do WhatsApp (Linked ID) — a parte numérica
+  // não é um telefone discável, é um ID interno opaco. Tratar como telefone
+  // gera números falsos na tela.
+  if (remoteJid.endsWith("@lid")) return null;
   const userPart = remoteJid.split("@")[0] ?? "";
   const digits = userPart.replace(/\D/g, "");
   if (digits.length >= 10 && digits.length <= 15) return digits;
@@ -25,7 +29,10 @@ export function formatPhoneDisplay(phone: string | null): string {
 export function formatConversationLabel(conversation: {
   push_name?: string | null;
   phone?: string | null;
+  is_group?: boolean | null;
+  group_subject?: string | null;
 }): string {
+  if (conversation.is_group) return conversation.group_subject?.trim() || "Grupo sem nome";
   if (conversation.push_name?.trim()) return conversation.push_name.trim();
   return formatPhoneDisplay(conversation.phone ?? null);
 }

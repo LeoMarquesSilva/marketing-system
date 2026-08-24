@@ -5,15 +5,19 @@ import {
   isMetaAdLeadFromAttribution,
   type MetaWhatsappAttribution,
 } from "@/lib/evolution-meta-attribution";
-import { isMetaAdLeadMessage, META_AD_LEAD_TAG } from "@/lib/evolution-leads";
+import {
+  isMetaAdLeadMessage,
+  META_AD_LEAD_TAG,
+  isSiteLeadMessage,
+  parseSiteLeadPage,
+  SITE_LEAD_TAG,
+} from "@/lib/evolution-leads";
 import {
   buildEvolutionQuotedPayload,
   extractQuotedMessage,
   extractReactionUpdate,
   extractWhatsappMessageText,
   isPlaceholderWhatsappBody,
-  mapEvolutionAckStatus,
-  type WaMessageStatus,
 } from "@/lib/evolution-message-meta";
 import { normalizeWhatsappTags } from "@/lib/evolution-tags";
 
@@ -108,6 +112,8 @@ export interface ParsedEvolutionMessage {
   isReaction?: boolean;
   reactionTargetId?: string | null;
   reactionEmoji?: string | null;
+  isGroup: boolean;
+  participantPhone: string | null;
 }
 
 function phoneVariants(phone: string | null | undefined): string[] {
@@ -121,7 +127,7 @@ function phoneVariants(phone: string | null | undefined): string[] {
 }
 
 const CONV_SELECT =
-  "id, unread_count, push_name, phone, lead_source, tags, meta_ad_id, meta_ad_title, meta_campaign_name, last_message_at, remote_jid";
+  "id, unread_count, push_name, phone, lead_source, tags, meta_ad_id, meta_ad_title, meta_campaign_name, last_message_at, remote_jid, attendance_status, is_group, group_subject";
 
 async function findConversationForMessage(
   supabase: ReturnType<typeof getAdminClient>,
@@ -177,14 +183,18 @@ function parseSingleMessage(
   instanceName: string
 ): ParsedEvolutionMessage | null {
   const key = item.key as
-    | { remoteJid?: string; fromMe?: boolean; id?: string }
+    | { remoteJid?: string; fromMe?: boolean; id?: string; participant?: string }
     | undefined;
   if (!key?.remoteJid || !key.id) return null;
 
   const remoteJid = key.remoteJid;
-  if (remoteJid.endsWith("@g.us") || remoteJid === "status@broadcast") {
+  if (remoteJid === "status@broadcast") {
     return null;
   }
+  const isGroup = remoteJid.endsWith("@g.us");
+  // Em mensagens de grupo o remetente real vem em key.participant — o
+  // remoteJid é o JID do grupo, não de uma pessoa.
+  const participantPhone = isGroup ? jidToPhone(key.participant ?? "") : null;
 
   const message = item.message as Record<string, unknown> | undefined;
   const messageTimestamp = parseMessageTimestamp(
@@ -197,7 +207,7 @@ function parseSingleMessage(
     return {
       waMessageId: key.id,
       remoteJid,
-      phone: jidToPhone(remoteJid),
+      phone: isGroup ? null : jidToPhone(remoteJid),
       pushName: fromMe ? null : ((item.pushName as string | undefined) ?? null),
       fromMe,
       messageType: "reactionMessage",
@@ -208,6 +218,8 @@ function parseSingleMessage(
       isReaction: true,
       reactionTargetId: reaction.targetWaMessageId,
       reactionEmoji: reaction.emoji,
+      isGroup,
+      participantPhone,
     };
   }
 
@@ -216,7 +228,7 @@ function parseSingleMessage(
   return {
     waMessageId: key.id,
     remoteJid,
-    phone: jidToPhone(remoteJid),
+    phone: isGroup ? null : jidToPhone(remoteJid),
     pushName: fromMe ? null : ((item.pushName as string | undefined) ?? null),
     fromMe,
     messageType: (item.messageType as string | undefined) ?? "unknown",
@@ -226,6 +238,8 @@ function parseSingleMessage(
     metaAttribution: extractMetaWhatsappAttribution(message),
     quotedWaMessageId,
     quotedBody,
+    isGroup,
+    participantPhone,
   };
 }
 
@@ -234,54 +248,8 @@ export const EVOLUTION_MESSAGE_EVENTS = [
   "MESSAGES_UPSERT",
   "SEND_MESSAGE",
   "MESSAGES_UPDATE",
+  "CONNECTION_UPDATE",
 ] as const;
-
-export function normalizeEvolutionEvent(raw: string): string {
-  return raw.trim().toUpperCase().replace(/\./g, "_").replace(/-/g, "_");
-}
-
-export function resolveEvolutionWebhookEvent(
-  payload: Record<string, unknown>,
-  pathEvent?: string
-): string {
-  const fromPayload = payload.event;
-  if (typeof fromPayload === "string" && fromPayload.trim()) {
-    return normalizeEvolutionEvent(fromPayload);
-  }
-  if (pathEvent?.trim()) {
-    return normalizeEvolutionEvent(pathEvent);
-  }
-  return "";
-}
-
-export function isEvolutionMessageEvent(event: string): boolean {
-  const normalized = normalizeEvolutionEvent(event);
-  return (EVOLUTION_MESSAGE_EVENTS as readonly string[]).includes(normalized);
-}
-
-/** Normaliza payload do webhook Evolution (messages.upsert, send.message, etc.). */
-export function parseEvolutionWebhookPayload(
-  payload: Record<string, unknown>
-): ParsedEvolutionMessage[] {
-  const instanceName =
-    (payload.instance as string | undefined) ??
-    getEvolutionConfig()?.instanceName ??
-    "BP";
-
-  const data = payload.data;
-  const items: Record<string, unknown>[] = Array.isArray(data)
-    ? (data as Record<string, unknown>[])
-    : data && typeof data === "object"
-      ? [data as Record<string, unknown>]
-      : [];
-
-  const parsed: ParsedEvolutionMessage[] = [];
-  for (const item of items) {
-    const msg = parseSingleMessage(item, instanceName);
-    if (msg) parsed.push(msg);
-  }
-  return parsed;
-}
 
 export function getSupabaseEvolutionWebhookUrl(): string | null {
   const supabaseUrl = readEnv("NEXT_PUBLIC_SUPABASE_URL").replace(/\/$/, "");
@@ -289,13 +257,14 @@ export function getSupabaseEvolutionWebhookUrl(): string | null {
   return `${supabaseUrl}/functions/v1/evolution-webhook`;
 }
 
-/** URL que a Evolution deve chamar — preferência: Edge Function Supabase. */
+/**
+ * URL que a Evolution deve chamar. Único receptor válido é a Edge Function
+ * Supabase — não existe mais rota de webhook no Next.js (código morto
+ * removido: Evolution só aceita 1 destino por instância, e a Edge Function
+ * já era o único de fato usado em produção).
+ */
 export function getEvolutionWebhookReceiveUrl(): string | null {
-  const supabaseUrl = getSupabaseEvolutionWebhookUrl();
-  if (supabaseUrl) return supabaseUrl;
-  const marketingBase = getMarketingPublicUrl()?.replace(/\/$/, "");
-  if (marketingBase) return `${marketingBase}/api/evolution/webhook`;
-  return null;
+  return getSupabaseEvolutionWebhookUrl();
 }
 
 export function getMarketingPublicUrl(): string | null {
@@ -305,27 +274,19 @@ export function getMarketingPublicUrl(): string | null {
 
 export async function configureEvolutionMarketingWebhook(
   webhookUrlOverride?: string
-): Promise<{ webhookUrl: string; events: string[]; target: "supabase" | "nextjs" }> {
+): Promise<{ webhookUrl: string; events: string[]; target: "supabase" }> {
   const config = getEvolutionConfig();
   if (!config) throw new Error("Evolution API não configurada.");
 
-  const supabaseUrl = getSupabaseEvolutionWebhookUrl();
-  const marketingBase = getMarketingPublicUrl()?.replace(/\/$/, "");
-  const webhookUrl =
-    webhookUrlOverride ??
-    supabaseUrl ??
-    (marketingBase ? `${marketingBase}/api/evolution/webhook` : null);
+  const webhookUrl = webhookUrlOverride ?? getSupabaseEvolutionWebhookUrl();
 
   if (!webhookUrl) {
-    throw new Error(
-      "NEXT_PUBLIC_SUPABASE_URL não configurada (Edge Function) e MARKETING_PUBLIC_URL ausente."
-    );
+    throw new Error("NEXT_PUBLIC_SUPABASE_URL não configurada (Edge Function).");
   }
 
-  const target: "supabase" | "nextjs" = webhookUrl.includes("/functions/v1/")
-    ? "supabase"
-    : "nextjs";
+  const target = "supabase" as const;
   const events = [...EVOLUTION_MESSAGE_EVENTS];
+  const secret = readEnv("EVOLUTION_WEBHOOK_SECRET").trim();
 
   await evolutionFetch(`/webhook/set/${config.instanceName}`, {
     method: "POST",
@@ -333,6 +294,7 @@ export async function configureEvolutionMarketingWebhook(
       webhook: {
         enabled: true,
         url: webhookUrl,
+        headers: secret ? { apikey: secret } : undefined,
         webhookByEvents: false,
         webhookBase64: false,
         events,
@@ -365,124 +327,6 @@ export async function fetchEvolutionWebhookConfig(): Promise<{
     webhookByEvents: Boolean(data.webhookByEvents),
     events: data.events ?? [],
   };
-}
-
-export async function processEvolutionWebhookPayload(
-  payload: Record<string, unknown>,
-  options?: { pathEvent?: string }
-): Promise<
-  | { ok: true; event: string; received: number; stored: number }
-  | { ok: true; skipped: string }
-> {
-  const event = resolveEvolutionWebhookEvent(payload, options?.pathEvent);
-
-  if (event && !isEvolutionMessageEvent(event)) {
-    return { ok: true, skipped: event };
-  }
-
-  const messages = parseEvolutionWebhookPayload(payload);
-  if (messages.length === 0) {
-    return { ok: true, event: event || "UNKNOWN", received: 0, stored: 0 };
-  }
-
-  const result = await upsertEvolutionMessages(messages, payload);
-  return {
-    ok: true,
-    event: event || "MESSAGES_UPSERT",
-    received: messages.length,
-    stored: result.inserted,
-  };
-}
-
-export async function processEvolutionWebhookRequest(
-  request: Request,
-  pathEvent?: string
-): Promise<Response> {
-  const { NextResponse } = await import("next/server");
-  const startedAt = Date.now();
-  const payload = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-
-  async function auditWebhook(data: {
-    event: string;
-    received: number;
-    stored: number;
-    status: "ok" | "error";
-    errorMessage?: string;
-  }) {
-    try {
-      const supabase = getAdminClient();
-      await supabase.from("whatsapp_webhook_events").insert({
-        source: "nextjs",
-        event_name: data.event,
-        received_count: data.received,
-        stored_count: data.stored,
-        status: data.status,
-        error_message: data.errorMessage ?? null,
-        latency_ms: Date.now() - startedAt,
-        processed_at: new Date().toISOString(),
-      });
-    } catch {
-      /* ignore */
-    }
-  }
-
-  try {
-    if (!verifyEvolutionWebhook(request)) {
-      await auditWebhook({
-        event: pathEvent ? normalizeEvolutionEvent(pathEvent) : "UNKNOWN",
-        received: 0,
-        stored: 0,
-        status: "error",
-        errorMessage: "Não autorizado",
-      });
-      return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
-    }
-
-    const result = await processEvolutionWebhookPayload(payload, { pathEvent });
-
-    if ("skipped" in result) {
-      await auditWebhook({
-        event: result.skipped,
-        received: 0,
-        stored: 0,
-        status: "ok",
-      });
-      return NextResponse.json({ ok: true, skipped: result.skipped });
-    }
-
-    await auditWebhook({
-      event: result.event,
-      received: result.received,
-      stored: result.stored,
-      status: "ok",
-    });
-    return NextResponse.json(result);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Erro no webhook.";
-    console.error("[evolution/webhook]", msg);
-    await auditWebhook({
-      event: pathEvent ? normalizeEvolutionEvent(pathEvent) : "UNKNOWN",
-      received: 0,
-      stored: 0,
-      status: "error",
-      errorMessage: msg,
-    });
-    return NextResponse.json({ error: msg }, { status: 500 });
-  }
-}
-
-export function verifyEvolutionWebhook(request: Request): boolean {
-  const secret = process.env.EVOLUTION_WEBHOOK_SECRET?.trim();
-  if (!secret) {
-    // Em produção, nunca aceitar webhook sem segredo compartilhado.
-    if (process.env.NODE_ENV === "production") return false;
-    return true;
-  }
-  const headerKey =
-    request.headers.get("apikey") ??
-    request.headers.get("x-evolution-api-key") ??
-    request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  return headerKey === secret;
 }
 
 export async function evolutionFetch<T>(
@@ -753,7 +597,7 @@ function metaLeadTags(existingTags: unknown): string[] {
 }
 
 function isMetaLeadMessage(msg: ParsedEvolutionMessage): boolean {
-  if (msg.fromMe) return false;
+  if (msg.fromMe || msg.isGroup) return false;
   return (
     isMetaAdLeadMessage(msg.body) ||
     isMetaAdLeadFromAttribution(msg.metaAttribution ?? null)
@@ -858,41 +702,67 @@ async function applyMetaLeadFromMessage(
   }
 }
 
-export async function processEvolutionMessagesUpdate(
-  payload: Record<string, unknown>
-): Promise<number> {
-  const config = getEvolutionConfig();
-  const instanceName =
-    (payload.instance as string | undefined) ?? config?.instanceName ?? "BP";
-  const raw = payload.data;
-  const items: Record<string, unknown>[] = Array.isArray(raw)
-    ? (raw as Record<string, unknown>[])
-    : raw && typeof raw === "object"
-      ? [raw as Record<string, unknown>]
-      : [];
+function isSiteLead(msg: ParsedEvolutionMessage): boolean {
+  return !msg.fromMe && !msg.isGroup && isSiteLeadMessage(msg.body);
+}
 
-  if (items.length === 0) return 0;
-  const supabase = getAdminClient();
-  let updated = 0;
-
-  for (const item of items) {
-    const key = item.key as { id?: string } | undefined;
-    const patch = item.update as { status?: unknown } | undefined;
-    const status = mapEvolutionAckStatus(
-      patch?.status ?? item.status ?? (item as { ack?: unknown }).ack
+/**
+ * Nome do grupo, buscado sob demanda na Evolution API — o payload de
+ * MESSAGES_UPSERT não traz o "subject" do grupo, só o pushName de quem
+ * mandou a mensagem. Best-effort: se falhar, a conversa fica sem nome e
+ * cai no fallback de exibição ("Grupo").
+ */
+async function fetchGroupSubject(groupJid: string): Promise<string | null> {
+  const instanceName = getEvolutionConfig()?.instanceName;
+  if (!instanceName) return null;
+  try {
+    const data = await evolutionFetch<{ subject?: string }>(
+      `/group/findGroupInfos/${encodeURIComponent(instanceName)}?groupJid=${encodeURIComponent(groupJid)}`
     );
-    if (!key?.id || !status) continue;
-
-    const { error } = await supabase
-      .from("whatsapp_messages")
-      .update({ wa_status: status })
-      .eq("instance_name", instanceName)
-      .eq("wa_message_id", key.id);
-
-    if (!error) updated += 1;
+    return data.subject?.trim() || null;
+  } catch {
+    return null;
   }
+}
 
-  return updated;
+function siteLeadTags(existingTags: unknown): string[] {
+  const tags = normalizeWhatsappTags(existingTags);
+  const hasTag = tags.some((t) => t.toLowerCase() === SITE_LEAD_TAG.toLowerCase());
+  return hasTag ? tags : [...tags, SITE_LEAD_TAG];
+}
+
+/**
+ * Lead do botão de WhatsApp do site institucional: o widget já embute
+ * "Página: <título>" + a URL na própria mensagem, então dá pra saber
+ * exatamente de qual página do site a pessoa mandou mensagem.
+ */
+function buildSiteLeadConversationPatch(
+  msg: ParsedEvolutionMessage,
+  existing?: { lead_source?: string | null; tags?: unknown }
+): Record<string, unknown> | null {
+  if (!isSiteLead(msg)) return null;
+  // Não sobrescreve uma origem já identificada (ex.: já é lead do Meta Ads).
+  if (existing?.lead_source) return null;
+
+  const { pageTitle, pageUrl } = parseSiteLeadPage(msg.body);
+  return {
+    updated_at: new Date().toISOString(),
+    lead_source: "site_whatsapp",
+    tags: siteLeadTags(existing?.tags),
+    site_lead_page_title: pageTitle,
+    site_lead_page_url: pageUrl,
+  };
+}
+
+async function applySiteLeadFromMessage(
+  supabase: ReturnType<typeof getAdminClient>,
+  conversationId: string,
+  msg: ParsedEvolutionMessage,
+  existing?: { lead_source?: string | null; tags?: unknown }
+): Promise<void> {
+  const patch = buildSiteLeadConversationPatch(msg, existing);
+  if (!patch) return;
+  await supabase.from("whatsapp_conversations").update(patch).eq("id", conversationId);
 }
 
 export async function upsertEvolutionMessages(
@@ -955,26 +825,40 @@ export async function upsertEvolutionMessages(
       (existingConv?.remote_jid as string | undefined) ?? msg.remoteJid;
     const isMetaLead = isMetaLeadMessage(msg);
     const metaFields = metaFieldsFromAttribution(msg.metaAttribution);
+    const isNewSiteLead = !isMetaLead && isSiteLead(msg);
+    const sitePageInfo = isNewSiteLead ? parseSiteLeadPage(msg.body) : null;
 
     if (!conversationId) {
+      const groupSubject = msg.isGroup ? await fetchGroupSubject(msg.remoteJid) : null;
       const { data: created, error } = await supabase
         .from("whatsapp_conversations")
         .insert({
           remote_jid: msg.remoteJid,
           instance_name: msg.instanceName,
           phone: msgPhone,
-          push_name: inboundName,
+          push_name: msg.isGroup ? null : inboundName,
+          is_group: msg.isGroup,
+          group_subject: groupSubject,
           last_message_at: msg.messageTimestamp.toISOString(),
           last_message_preview: null,
           last_inbound_at: msg.fromMe ? null : msg.messageTimestamp.toISOString(),
           unread_count: 0,
-          lead_source: isMetaLead ? "meta_ads" : null,
-          tags: isMetaLead ? [META_AD_LEAD_TAG] : [],
+          lead_source: isMetaLead ? "meta_ads" : isNewSiteLead ? "site_whatsapp" : null,
+          tags: isMetaLead ? [META_AD_LEAD_TAG] : isNewSiteLead ? [SITE_LEAD_TAG] : [],
+          site_lead_page_title: sitePageInfo?.pageTitle ?? null,
+          site_lead_page_url: sitePageInfo?.pageUrl ?? null,
           ...metaFields,
         })
         .select("id")
         .single();
-      if (error || !created) continue;
+      if (error || !created) {
+        console.error(
+          "[evolution] falha ao criar conversa:",
+          error?.message ?? "sem dados retornados",
+          { remoteJid: msg.remoteJid, waMessageId: msg.waMessageId }
+        );
+        continue;
+      }
       conversationId = created.id;
       existingConv = { id: created.id, unread_count: 0, last_message_at: null };
       if (metaFields.meta_ad_id && conversationId) {
@@ -1000,6 +884,8 @@ export async function upsertEvolutionMessages(
         wa_status: msg.fromMe ? "sent" : null,
         quoted_wa_message_id: msg.quotedWaMessageId ?? null,
         quoted_body: msg.quotedBody ?? null,
+        participant_phone: msg.isGroup ? msg.participantPhone : null,
+        participant_name: msg.isGroup ? inboundName : null,
         raw_payload: {
           key: {
             id: msg.waMessageId,
@@ -1011,7 +897,14 @@ export async function upsertEvolutionMessages(
       { onConflict: "instance_name,wa_message_id", ignoreDuplicates: true }
     );
 
-    if (msgError) continue;
+    if (msgError) {
+      console.error(
+        "[evolution] falha ao salvar mensagem:",
+        msgError.message,
+        { conversationId, waMessageId: msg.waMessageId }
+      );
+      continue;
+    }
 
     inserted += 1;
     if (!conversationId) continue;
@@ -1025,7 +918,7 @@ export async function upsertEvolutionMessages(
       updated_at: new Date().toISOString(),
     };
 
-    if (inboundName) {
+    if (inboundName && !msg.isGroup) {
       const existingName = existingConv?.push_name as string | null | undefined;
       if (!existingName?.trim() || isBlockedInstancePushName(existingName)) {
         convUpdate.push_name = inboundName;
@@ -1035,8 +928,18 @@ export async function upsertEvolutionMessages(
     if (isNewer) {
       convUpdate.last_message_at = msg.messageTimestamp.toISOString();
       convUpdate.last_message_preview = preview;
+      const currentStatus = existingConv?.attendance_status as string | undefined;
       if (!msg.fromMe) {
         convUpdate.last_inbound_at = msg.messageTimestamp.toISOString();
+        // Cliente escreveu de novo: volta pra fila, a menos que alguém já
+        // esteja atendendo essa conversa agora (não tira do atendente).
+        if (currentStatus !== "em_atendimento") {
+          convUpdate.attendance_status = "nao_respondido";
+        }
+      } else {
+        // Respondemos: a bola passa pro cliente.
+        convUpdate.last_outbound_at = msg.messageTimestamp.toISOString();
+        convUpdate.attendance_status = "aguardando_cliente";
       }
       if (!skipUnread && !msg.fromMe) {
         await supabase.rpc("increment_whatsapp_unread", {
@@ -1064,6 +967,12 @@ export async function upsertEvolutionMessages(
         meta_campaign_name?: string | null;
       }
     );
+    await applySiteLeadFromMessage(
+      supabase,
+      conversationId,
+      msg,
+      existingConv as { lead_source?: string | null; tags?: unknown }
+    );
   }
 
   return { inserted };
@@ -1074,6 +983,8 @@ export interface WhatsappConversation {
   remote_jid: string;
   phone: string | null;
   push_name: string | null;
+  is_group: boolean;
+  group_subject: string | null;
   last_message_at: string;
   last_message_preview: string | null;
   last_inbound_at: string | null;
@@ -1089,6 +1000,10 @@ export interface WhatsappConversation {
   meta_adset_name: string | null;
   meta_ctwa_clid: string | null;
   meta_conversion_app: string | null;
+  site_lead_page_title: string | null;
+  site_lead_page_url: string | null;
+  attendance_status: string;
+  last_outbound_at: string | null;
   city: string | null;
   state: string | null;
   owner_user_id: string | null;
@@ -1427,6 +1342,7 @@ export async function updateWhatsappConversationCrm(
     pipeline_stage?: string | null;
     qualification?: Record<string, unknown> | null;
     notes?: string | null;
+    attendance_status?: string;
   }
 ): Promise<WhatsappConversation> {
   const supabase = getAdminClient();
@@ -1494,6 +1410,7 @@ export interface WhatsappMessage {
   reaction_emoji?: string | null;
   quoted_wa_message_id?: string | null;
   quoted_body?: string | null;
+  participant_name?: string | null;
 }
 
 export async function fetchWhatsappUnreadSummary(): Promise<{
@@ -1518,7 +1435,7 @@ export async function fetchWhatsappUnreadSummary(): Promise<{
 }
 
 export async function fetchWhatsappConversations(
-  limit = 50
+  limit = 500
 ): Promise<WhatsappConversation[]> {
   const supabase = getAdminClient();
   const { data, error } = await supabase
@@ -1613,6 +1530,30 @@ export async function refreshMissingConversationAvatars(limit = 5): Promise<void
   }
 }
 
+/**
+ * Busca nome de contato para conversas recentes sem push_name (best-effort).
+ * Acontece quando a conversa só tem mensagens nossas (sem inbound com
+ * pushName) — a Evolution ainda pode ter o nome salvo no contato.
+ */
+export async function refreshMissingConversationPushNames(limit = 5): Promise<void> {
+  const supabase = getAdminClient();
+  const { data } = await supabase
+    .from("whatsapp_conversations")
+    .select("id")
+    .or("push_name.is.null,push_name.eq.")
+    .eq("is_group", false)
+    .order("last_message_at", { ascending: false })
+    .limit(limit);
+
+  for (const row of data ?? []) {
+    try {
+      await refreshConversationPushName(row.id as string);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 function defaultMimetypeForMessage(
   messageType: string,
   body: string | null
@@ -1700,7 +1641,7 @@ export async function fetchWhatsappMessages(
   const { data, error } = await supabase
     .from("whatsapp_messages")
     .select(
-      "id, wa_message_id, from_me, message_type, body, message_timestamp, audio_transcript, wa_status, reaction_emoji, quoted_wa_message_id, quoted_body"
+      "id, wa_message_id, from_me, message_type, body, message_timestamp, audio_transcript, wa_status, reaction_emoji, quoted_wa_message_id, quoted_body, participant_name"
     )
     .eq("conversation_id", conversationId)
     .order("message_timestamp", { ascending: false })
@@ -1905,6 +1846,10 @@ export async function sendEvolutionAudioMessage(
     conversation.phone
   );
 
+  // O indicador "gravando áudio" não é um campo do envio de áudio em si — é o
+  // endpoint de presença dedicado (o "options.presence" antigo não fazia nada).
+  await sendEvolutionPresence(conversationId, "recording").catch(() => {});
+
   const response = await evolutionFetch<Record<string, unknown>>(
     `/message/sendWhatsAppAudio/${config.instanceName}`,
     {
@@ -1913,10 +1858,6 @@ export async function sendEvolutionAudioMessage(
         number: recipient,
         audio: raw,
         encoding: true,
-        options: {
-          presence: "recording",
-          encoding: true,
-        },
       },
     }
   );
