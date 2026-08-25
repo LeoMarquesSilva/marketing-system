@@ -25,6 +25,10 @@
     {
       "path": "/api/cron/ga4-sync",
       "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron/cafe-cultura-sync",
+      "schedule": "0 10,13,16,19,22 * * *"
     }
   ]
 }

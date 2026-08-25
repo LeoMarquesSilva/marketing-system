@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ClipboardList, CheckSquare, Wallet, Truck, Users, Megaphone, Paperclip, ChartLine, History, Pencil, Copy, Loader2 } from "lucide-react";
+import { ArrowLeft, ClipboardList, CheckSquare, Wallet, Truck, Users, Megaphone, Paperclip, ChartLine, History, Pencil, Copy, Loader2, Coffee } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EventoFormDialog } from "@/components/eventos/evento-form-dialog";
@@ -22,6 +22,7 @@ import {
 } from "@/lib/storage-buckets";
 import { EventoPosEventoTab } from "@/components/eventos/evento-pos-evento-tab";
 import { EventoHistoricoTab } from "@/components/eventos/evento-historico-tab";
+import { EventoPresencasTab } from "@/components/eventos/evento-presencas-tab";
 import {
   EVENT_STATUS_LABEL,
   EVENT_STATUS_STYLE,
@@ -76,6 +77,7 @@ type TabId =
   | "orcamento"
   | "fornecedores"
   | "convidados"
+  | "presencas"
   | "comunicacao"
   | "arquivos"
   | "pos_evento"
@@ -495,6 +497,9 @@ export function EventoDetailClient({
     { id: "orcamento", label: "Orçamento", icon: <Wallet className="h-4 w-4" /> },
     { id: "fornecedores", label: "Prestadores", icon: <Truck className="h-4 w-4" /> },
     { id: "convidados", label: "Convidados", icon: <Users className="h-4 w-4" /> },
+    ...(event.seriesSlug === "cafe-com-cultura"
+      ? [{ id: "presencas" as const, label: "Presenças", icon: <Coffee className="h-4 w-4" /> }]
+      : []),
     { id: "comunicacao", label: "Comunicação", icon: <Megaphone className="h-4 w-4" /> },
     { id: "arquivos", label: "Arquivos", icon: <Paperclip className="h-4 w-4" /> },
     { id: "pos_evento", label: "Pós-evento", icon: <ChartLine className="h-4 w-4" /> },
@@ -647,6 +652,7 @@ export function EventoDetailClient({
           isLoading={isBusy}
         />
       )}
+      {tab === "presencas" && <EventoPresencasTab eventId={event.id} />}
       {tab === "comunicacao" && (
         <EventoComunicacaoTab
           communications={communications}

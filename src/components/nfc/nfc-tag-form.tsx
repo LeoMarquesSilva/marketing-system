@@ -67,6 +67,7 @@ const CAFE_FORM_PRESETS: Array<{
   name: string;
   description: string;
   icon: typeof Coffee;
+  actionType?: NfcActionType;
   config: NfcActionConfig;
 }> = [
   {
@@ -97,15 +98,15 @@ const CAFE_FORM_PRESETS: Array<{
   },
   {
     name: "Check-in do encontro",
-    description: "Registro rápido de chegada no Café com Cultura.",
+    description: "Etiqueta permanente com login e identificação automática.",
     icon: Coffee,
+    actionType: "url",
     config: {
-      title: "Check-in — Café com Cultura",
-      description: "Que bom ter você por aqui. Selecione seu nome para confirmar a chegada.",
-      fields: [
-        { id: "colaborador", label: "Colaborador", type: "user_select", required: true },
-      ],
-      successMessage: "Check-in confirmado. Aproveite o Café com Cultura!",
+      title: "Café com Cultura",
+      description: "Confirme sua presença no encontro deste mês.",
+      destinationUrl: "https://marketing-system-xi.vercel.app/cafe-com-cultura",
+      loadingMessage: "Preparando seu check-in…",
+      sensitive: true,
     },
   },
   {
@@ -203,6 +204,7 @@ function initialValues(tag?: NfcTag | null, template?: NfcTemplate | null) {
   const actionType = tag?.action_type ?? template?.action_type ?? "url";
   const templateRequiresAuth =
     actionType === "asset_loan" ||
+    template?.action_config.sensitive === true ||
     template?.action_config.fields?.some((field) => field.type === "user_select");
   return {
     name: tag?.name ?? "",
@@ -328,12 +330,17 @@ export function NfcTagForm({
     });
   };
 
-  const applyFormPreset = (config: NfcActionConfig) => {
+  const applyFormPreset = (preset: (typeof CAFE_FORM_PRESETS)[number]) => {
+    const actionType = preset.actionType ?? "form";
+    const config = preset.config;
+    const requiresAuth =
+      config.sensitive === true || config.fields?.some((field) => field.type === "user_select");
     setValues((current) => ({
       ...current,
-      actionType: "form",
+      actionType,
       accessMode:
-        current.accessMode === "public" || current.accessMode === "public_confirmation"
+        requiresAuth &&
+        (current.accessMode === "public" || current.accessMode === "public_confirmation")
           ? "authenticated"
           : current.accessMode,
       actionConfig: config,
@@ -610,7 +617,7 @@ export function NfcTagForm({
                     <button
                       key={preset.name}
                       type="button"
-                      onClick={() => applyFormPreset(preset.config)}
+                      onClick={() => applyFormPreset(preset)}
                       className="rounded-lg border border-[#dce9eb] bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-[#47cdd0] hover:shadow-sm"
                     >
                       <preset.icon className="h-4 w-4 text-[#347796]" />

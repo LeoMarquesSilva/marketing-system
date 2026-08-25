@@ -53,6 +53,7 @@ export interface OrgEvent {
   name: string;
   seriesId: string | null;
   seriesName?: string | null;
+  seriesSlug?: string | null;
   kind: EventKind;
   monthLabel: string | null;
   commemorativeDate: string | null;
@@ -540,7 +541,7 @@ type EventRow = {
   risk_level: string | null;
   created_at: string;
   updated_at: string;
-  event_series?: { name: string } | { name: string }[] | null;
+  event_series?: { name: string; slug: string } | { name: string; slug: string }[] | null;
 };
 
 type TaskRow = {
@@ -717,6 +718,7 @@ function rowToEvent(row: EventRow): OrgEvent {
     name: row.name,
     seriesId: row.series_id,
     seriesName: series?.name ?? null,
+    seriesSlug: series?.slug ?? null,
     kind: (row.kind as EventKind) ?? "evento",
     monthLabel: row.month_label,
     commemorativeDate: row.commemorative_date,
@@ -1004,7 +1006,7 @@ export function formatDateBR(iso: string | null | undefined): string {
   return `${day}/${month}/${year}`;
 }
 
-const EVENT_SELECT = "*, event_series:series_id (name)";
+const EVENT_SELECT = "*, event_series:series_id (name, slug)";
 
 const TASK_SELECT = `
   id, event_id, title, description, assignee_id, due_date, status, phase,
