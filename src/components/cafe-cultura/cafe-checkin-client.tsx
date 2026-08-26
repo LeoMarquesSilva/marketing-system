@@ -49,23 +49,6 @@ function formatTime(value: string): string {
   }).format(new Date(value));
 }
 
-function BrandRibbon() {
-  return (
-    <div
-      aria-hidden="true"
-      className="flex h-9 items-center overflow-hidden border-y border-[#dcb76f]/40 bg-[#0d2131] text-[#e1bb70]"
-    >
-      <div className="flex min-w-max items-center gap-5 whitespace-nowrap px-5 text-[9px] font-semibold uppercase tracking-[0.28em] sm:gap-7 sm:text-[10px]">
-        {[0, 1, 2, 3, 4].map((item) => (
-          <span key={item} className="flex items-center gap-5 sm:gap-7">
-            Café com Cultura <span className="size-1 rounded-full bg-[#e1bb70]" />
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function BrandPanel() {
   return (
     <div className="relative flex min-h-[248px] flex-col justify-between overflow-hidden bg-[#102637] px-6 pb-6 pt-7 sm:min-h-[290px] sm:px-9 sm:pb-8 lg:min-h-[610px] lg:px-11 lg:py-11">
@@ -110,7 +93,6 @@ function ExperienceShell({ children }: { children: React.ReactNode }) {
       <div className="pointer-events-none absolute inset-0 opacity-[0.025] [background-image:radial-gradient(#102637_0.7px,transparent_0.7px)] [background-size:5px_5px]" />
 
       <section className="relative mx-auto w-full max-w-[980px] overflow-hidden rounded-[26px] border border-white/65 bg-[#f8f3ed] shadow-[0_35px_100px_-48px_rgba(16,38,55,0.72)] sm:rounded-[34px]">
-        <BrandRibbon />
         <div className="grid lg:grid-cols-[0.88fr_1.12fr]">
           <BrandPanel />
           <div className="relative min-w-0 bg-[#f8f3ed]">{children}</div>
