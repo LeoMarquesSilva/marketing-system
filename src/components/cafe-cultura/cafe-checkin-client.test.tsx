@@ -29,6 +29,9 @@ describe("CafeCheckinView", () => {
       <CafeCheckinView current={base} busy={false} error="" onCheckin={vi.fn()} />
     );
     expect(html).toContain("Olá, Ana");
+    expect(html).toContain("/cafe-cultura/cafe-com-cultura-logo.png");
+    expect(html).toContain("Uma manhã para celebrar, aprender e se conectar.");
+    expect(html).toContain("Auditório");
     expect(html).toContain("Confirmar minha presença");
     expect(html).not.toContain("Selecione seu nome");
   });
