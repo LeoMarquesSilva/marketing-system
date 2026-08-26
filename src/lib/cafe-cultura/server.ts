@@ -11,6 +11,7 @@ import type {
   CafeCurrentView,
   CafeExpectationSource,
   CafeExpectationStatus,
+  CafeResponsumJustification,
 } from "./types";
 
 const CAFE_SERIES_SLUG = "cafe-com-cultura";
@@ -453,7 +454,7 @@ export async function getCafeAdminData(
   const [{ data, error }, { data: lastSync }] = await Promise.all([
     admin
       .from("event_participants")
-      .select("id, user_id, expectation_status, expectation_source, checkin_at, checkin_source, responsum_ticket_ids, users:user_id(name,email,department,avatar_url)")
+      .select("id, user_id, expectation_status, expectation_source, checkin_at, checkin_source, responsum_ticket_ids, responsum_justifications, users:user_id(name,email,department,avatar_url)")
       .eq("event_id", eventId),
     admin
       .from("event_attendance_sync_runs")
@@ -467,6 +468,17 @@ export async function getCafeAdminData(
   const participants = (data ?? []).map((row) => {
     const raw = row.users as unknown;
     const user = (Array.isArray(raw) ? raw[0] : raw) as Record<string, unknown> | null;
+    const rawJustifications = Array.isArray(row.responsum_justifications)
+      ? row.responsum_justifications
+      : [];
+    const responsumJustifications = rawJustifications
+      .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+      .map((item) => ({
+        ticketId: String(item.ticketId ?? ""),
+        title: String(item.title ?? "Justificativa de ausência"),
+        description: typeof item.description === "string" ? item.description : null,
+      }))
+      .filter((item): item is CafeResponsumJustification => Boolean(item.ticketId));
     return {
       id: String(row.id),
       userId: String(row.user_id),
@@ -479,6 +491,7 @@ export async function getCafeAdminData(
       checkinAt: (row.checkin_at as string | null) ?? null,
       checkinSource: (row.checkin_source as CafeCheckinSource | null) ?? null,
       responsumTicketCount: Array.isArray(row.responsum_ticket_ids) ? row.responsum_ticket_ids.length : 0,
+      responsumJustifications,
     };
   });
   const summary = summarizeCafeParticipants(participants);

@@ -10,13 +10,17 @@ function expectationLabel(value: CafeAdminParticipant["expectationStatus"]): str
 }
 
 export function buildCafeAttendanceCsv(participants: CafeAdminParticipant[]): string {
-  const header = ["Nome", "E-mail", "Área", "Situação", "Presença", "Horário"].join(";");
+  const header = ["Nome", "E-mail", "Área", "Situação", "Justificativa RESPONSUM", "Presença", "Horário"].join(";");
   const rows = participants.map((participant) =>
     [
       participant.name,
       participant.email ?? "",
       participant.department ?? "",
       expectationLabel(participant.expectationStatus),
+      participant.responsumJustifications
+        .map((justification) => justification.description || justification.title)
+        .filter(Boolean)
+        .join(" | "),
       participant.checkinAt ? "Presente" : "Não registrada",
       participant.checkinAt
         ? new Intl.DateTimeFormat("pt-BR", {

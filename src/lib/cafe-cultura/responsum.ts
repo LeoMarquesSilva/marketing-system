@@ -140,6 +140,7 @@ export async function syncResponsumAbsences(
           expectation_status: "excused_absence",
           expectation_source: "responsum",
           responsum_ticket_ids: match.ticketIds,
+          responsum_justifications: match.justifications,
           responsum_synced_at: new Date().toISOString(),
         })
         .eq("event_id", eventId)
@@ -166,6 +167,7 @@ export async function syncResponsumAbsences(
           expectation_status: "confirmed",
           expectation_source: "automatic_roster",
           responsum_ticket_ids: [],
+          responsum_justifications: [],
           responsum_synced_at: new Date().toISOString(),
         })
         .eq("event_id", eventId)

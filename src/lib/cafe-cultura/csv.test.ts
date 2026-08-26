@@ -16,11 +16,12 @@ describe("buildCafeAttendanceCsv", () => {
         checkinAt: "2026-08-28T12:10:00.000Z",
         checkinSource: "nfc",
         responsumTicketCount: 0,
+        responsumJustifications: [],
       },
     ]);
-    expect(csv.startsWith("\uFEFFNome;E-mail;Área;Situação;Presença;Horário")).toBe(true);
+    expect(csv.startsWith("\uFEFFNome;E-mail;Área;Situação;Justificativa RESPONSUM;Presença;Horário")).toBe(true);
     expect(csv).toContain('"Ana ""Nina"" Souza"');
     expect(csv).toContain('"Societário; Contratos"');
-    expect(csv).toContain("Confirmado;Presente;09:10");
+    expect(csv).toContain("Confirmado;;Presente;09:10");
   });
 });

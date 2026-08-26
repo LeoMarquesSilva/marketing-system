@@ -28,7 +28,7 @@ describe("mapResponsumAbsences", () => {
         {
           id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
           title: "Ausência 28/08",
-          description: null,
+          description: "Consulta médica previamente agendada.",
           createdBy: users[0].id,
           createdByEmail: "ana@bp.com",
         },
@@ -45,7 +45,22 @@ describe("mapResponsumAbsences", () => {
     );
 
     expect(result.matches).toEqual([
-      { userId: users[0].id, ticketIds: ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2"] },
+      {
+        userId: users[0].id,
+        ticketIds: ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2"],
+        justifications: [
+          {
+            ticketId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+            title: "Ausência 28/08",
+            description: "Consulta médica previamente agendada.",
+          },
+          {
+            ticketId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2",
+            title: "Aula dia 28/08",
+            description: null,
+          },
+        ],
+      },
     ]);
     expect(result.unmatchedTicketIds).toEqual([]);
   });
@@ -73,7 +88,17 @@ describe("mapResponsumAbsences", () => {
     );
 
     expect(result.matches).toEqual([
-      { userId: users[1].id, ticketIds: ["bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1"] },
+      {
+        userId: users[1].id,
+        ticketIds: ["bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1"],
+        justifications: [
+          {
+            ticketId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+            title: "Café 28/08",
+            description: null,
+          },
+        ],
+      },
     ]);
     expect(result.unmatchedTicketIds).toEqual(["bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2"]);
   });

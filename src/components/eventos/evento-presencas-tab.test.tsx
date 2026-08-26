@@ -27,6 +27,7 @@ const data: CafeAdminData = {
       checkinAt: null,
       checkinSource: null,
       responsumTicketCount: 0,
+      responsumJustifications: [],
     },
   ],
   lastSync: null,
@@ -46,6 +47,42 @@ describe("EventoPresencasContent", () => {
     expect(html).toContain("Confirmados para o local");
     expect(html).toContain("Ana Souza");
     expect(html).toContain("https://example.com/ana.jpg");
-    expect(html).toContain("Registrar presença");
+    expect(html).toContain("Presença");
+    expect(html).toContain("Sem justificativa registrada");
+  });
+
+  it("mostra o texto sincronizado do RESPONSUM", () => {
+    const justified: CafeAdminData = {
+      ...data,
+      summary: { total: 1, expected: 0, excused: 1, excluded: 0, present: 0, pending: 0 },
+      participants: [
+        {
+          ...data.participants[0]!,
+          expectationStatus: "excused_absence",
+          expectationSource: "responsum",
+          responsumTicketCount: 1,
+          responsumJustifications: [
+            {
+              ticketId: "ticket-1",
+              title: "Justificativa 28/08",
+              description: "Consulta médica previamente agendada.",
+            },
+          ],
+        },
+      ],
+    };
+
+    const html = renderToStaticMarkup(
+      <EventoPresencasContent
+        data={justified}
+        search=""
+        status="all"
+        busy={false}
+        onParticipantChange={vi.fn()}
+      />
+    );
+
+    expect(html).toContain("Consulta médica previamente agendada.");
+    expect(html).toContain("RESPONSUM");
   });
 });

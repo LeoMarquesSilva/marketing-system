@@ -13,6 +13,12 @@ export interface ResponsumUserLink {
   email: string | null;
 }
 
+export interface ResponsumJustificationSnapshot {
+  ticketId: string;
+  title: string;
+  description: string | null;
+}
+
 interface SupabaseApiKeyRecord {
   name?: unknown;
   type?: unknown;
@@ -40,7 +46,14 @@ export function mapResponsumAbsences(
   tickets: ResponsumAbsenceTicket[],
   users: ResponsumUserLink[],
   eventDate: string
-): { matches: Array<{ userId: string; ticketIds: string[] }>; unmatchedTicketIds: string[] } {
+): {
+  matches: Array<{
+    userId: string;
+    ticketIds: string[];
+    justifications: ResponsumJustificationSnapshot[];
+  }>;
+  unmatchedTicketIds: string[];
+} {
   const referenceYear = Number(eventDate.slice(0, 4));
   const usersById = new Map(users.map((user) => [user.id, user]));
   const usersByEmail = new Map(
@@ -48,7 +61,7 @@ export function mapResponsumAbsences(
       .map((user) => [normalizeEmail(user.email), user] as const)
       .filter((entry): entry is readonly [string, ResponsumUserLink] => Boolean(entry[0]))
   );
-  const grouped = new Map<string, string[]>();
+  const grouped = new Map<string, ResponsumAbsenceTicket[]>();
   const unmatchedTicketIds: string[] = [];
 
   for (const ticket of tickets) {
@@ -65,11 +78,19 @@ export function mapResponsumAbsences(
       unmatchedTicketIds.push(ticket.id);
       continue;
     }
-    grouped.set(user.id, [...(grouped.get(user.id) ?? []), ticket.id]);
+    grouped.set(user.id, [...(grouped.get(user.id) ?? []), ticket]);
   }
 
   return {
-    matches: [...grouped].map(([userId, ticketIds]) => ({ userId, ticketIds })),
+    matches: [...grouped].map(([userId, userTickets]) => ({
+      userId,
+      ticketIds: userTickets.map((ticket) => ticket.id),
+      justifications: userTickets.map((ticket) => ({
+        ticketId: ticket.id,
+        title: ticket.title.trim().slice(0, 500),
+        description: ticket.description?.trim().slice(0, 8000) || null,
+      })),
+    })),
     unmatchedTicketIds,
   };
 }

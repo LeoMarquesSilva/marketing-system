@@ -3,6 +3,12 @@ export type CafeExpectationSource = "automatic_roster" | "responsum" | "admin";
 export type CafeCheckinSource = "nfc" | "qr" | "admin";
 export type CafeWindowState = "before" | "open" | "closed";
 
+export interface CafeResponsumJustification {
+  ticketId: string;
+  title: string;
+  description: string | null;
+}
+
 export interface CafeWindow {
   opensAt: string;
   closesAt: string;
@@ -40,6 +46,7 @@ export interface CafeAdminParticipant {
   checkinAt: string | null;
   checkinSource: CafeCheckinSource | null;
   responsumTicketCount: number;
+  responsumJustifications: CafeResponsumJustification[];
 }
 
 export interface CafeAdminData {
