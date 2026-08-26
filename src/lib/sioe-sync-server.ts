@@ -19,7 +19,7 @@ import {
   normalizeLegalAreas,
   SUBAREA_ONLY,
 } from "@/lib/legal-areas";
-import { isInternalClientGroupName } from "@/lib/meus-clientes";
+import { isInternalClientGroupName, resolveEffectiveResponsibleArea } from "@/lib/meus-clientes";
 
 const DEFAULT_SIOE_URL = "https://pzfxmlidwdmsqfwrxdbd.supabase.co";
 const PAGE_SIZE = 500;
@@ -718,6 +718,19 @@ async function syncResponsibles(
         })
         .eq("id", groupId)
     )
+  );
+
+  // Só preenche responsible_area quando ainda está vazia — não sobrescreve marcação manual.
+  await Promise.all(
+    Array.from(areasByGroup.entries()).map(([groupId, areas]) => {
+      const inferred = resolveEffectiveResponsibleArea(null, Array.from(areas));
+      if (!inferred) return Promise.resolve();
+      return admin
+        .from("email_client_groups")
+        .update({ responsible_area: inferred })
+        .eq("id", groupId)
+        .is("responsible_area", null);
+    })
   );
 
   await Promise.all(

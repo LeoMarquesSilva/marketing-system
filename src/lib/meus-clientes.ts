@@ -2,8 +2,8 @@
  * Escopo "meus clientes": quais empresas/pessoas um usuário (gestor)
  * é responsável por preencher.
  *
- * Só entram grupos com área responsável marcada (email_client_groups.responsible_area)
- * e cuja área o usuário gestiona em email_area_managers. Sem marcação, o grupo
+ * Entram grupos com área responsável: marcada em email_client_groups.responsible_area
+ * ou inferida quando o grupo tem exatamente uma área envolvida. Sem isso, o grupo
  * não aparece para gestores — só o admin em "Ver todos".
  */
 
@@ -11,6 +11,7 @@ import type { EmailCompany, EmailContact, EmailGroupResponsible, EmailPerson } f
 import { personNameKey } from "./email-marketing-normalize";
 import { clientProfileIsIncomplete, contactToClientProfile, listClientMissingFieldLabels, personToClientProfile } from "./email-marketing-enrichment";
 import { companyNameKey } from "./email-marketing-normalize";
+import { normalizeLegalArea } from "./legal-areas";
 
 /** Grupos do próprio escritório — não aparecem em Meus Clientes. */
 const INTERNAL_CLIENT_GROUP_NAME_KEYS = new Set(["bismarchi pires"]);
@@ -120,6 +121,37 @@ export interface MyClientScope {
   personIds: Set<string>;
 }
 
+export function resolveEffectiveResponsibleArea(
+  explicitResponsibleArea: string | null | undefined,
+  involvedAreas: string[]
+): string | null {
+  const explicit = normalizeLegalArea(explicitResponsibleArea?.trim() || null);
+  if (explicit) return explicit;
+  const unique = new Set<string>();
+  for (const area of involvedAreas) {
+    const normalized = normalizeLegalArea(area);
+    if (normalized) unique.add(normalized);
+  }
+  if (unique.size !== 1) return null;
+  return Array.from(unique)[0];
+}
+
+function personAreasFromResponsibles(
+  responsibles: EmailGroupResponsible[]
+): Map<string, string[]> {
+  const map = new Map<string, Set<string>>();
+  for (const responsible of responsibles) {
+    if (!responsible.personId || !responsible.area) continue;
+    if (!map.has(responsible.personId)) map.set(responsible.personId, new Set());
+    map.get(responsible.personId)!.add(responsible.area);
+  }
+  const result = new Map<string, string[]>();
+  for (const [personId, areas] of map) {
+    result.set(personId, Array.from(areas));
+  }
+  return result;
+}
+
 export function buildResponsibleAreaByGroupId(
   companies: EmailCompany[],
   people: EmailPerson[] = []
@@ -138,6 +170,57 @@ export function buildResponsibleAreaByGroupId(
   return map;
 }
 
+export function buildEffectiveResponsibleAreaByGroupId(
+  companies: EmailCompany[],
+  people: EmailPerson[] = [],
+  responsibles: EmailGroupResponsible[] = []
+): Map<string, string> {
+  const map = buildResponsibleAreaByGroupId(companies, people);
+  const personAreas = personAreasFromResponsibles(responsibles);
+  const groupIds = new Set<string>();
+  for (const company of companies) {
+    if (company.clientGroupId) groupIds.add(company.clientGroupId);
+  }
+  for (const person of people) {
+    if (person.clientGroupId) groupIds.add(person.clientGroupId);
+  }
+  for (const responsible of responsibles) {
+    if (responsible.clientGroupId) groupIds.add(responsible.clientGroupId);
+  }
+  for (const groupId of groupIds) {
+    if (map.has(groupId)) continue;
+    const inferred = resolveEffectiveResponsibleArea(
+      null,
+      resolveClientGroupAreas(groupId, companies, people, personAreas, responsibles)
+    );
+    if (inferred) map.set(groupId, inferred);
+  }
+  return map;
+}
+
+export function applyEffectiveResponsibleAreas(
+  companies: EmailCompany[],
+  people: EmailPerson[],
+  responsibles: EmailGroupResponsible[] = []
+): { companies: EmailCompany[]; people: EmailPerson[] } {
+  const areaByGroupId = buildEffectiveResponsibleAreaByGroupId(companies, people, responsibles);
+  const personAreas = personAreasFromResponsibles(responsibles);
+  return {
+    companies: companies.map((company) => {
+      const next = company.clientGroupId
+        ? areaByGroupId.get(company.clientGroupId) ?? company.responsibleArea
+        : resolveEffectiveResponsibleArea(company.responsibleArea, company.legalAreas);
+      return next === company.responsibleArea ? company : { ...company, responsibleArea: next };
+    }),
+    people: people.map((person) => {
+      const next = person.clientGroupId
+        ? areaByGroupId.get(person.clientGroupId) ?? person.responsibleArea
+        : resolveEffectiveResponsibleArea(person.responsibleArea, personAreas.get(person.id) ?? []);
+      return next === person.responsibleArea ? person : { ...person, responsibleArea: next };
+    }),
+  };
+}
+
 function assignedAreaForGroup(
   groupId: string | null | undefined,
   areaByGroupId: Map<string, string>
@@ -154,12 +237,14 @@ export function computeMyClientScope(
   people: EmailPerson[] = []
 ): MyClientScope {
   const userAreas = new Set(areaManagers.filter((m) => m.userId === userId).map((m) => m.area));
-  const areaByGroupId = buildResponsibleAreaByGroupId(companies, people);
+  const areaByGroupId = buildEffectiveResponsibleAreaByGroupId(companies, people, responsibles);
+  const personAreas = personAreasFromResponsibles(responsibles);
 
   const companyIds = new Set<string>();
   for (const company of companies) {
-    const ownerArea =
-      assignedAreaForGroup(company.clientGroupId, areaByGroupId) ?? company.responsibleArea;
+    const ownerArea = company.clientGroupId
+      ? assignedAreaForGroup(company.clientGroupId, areaByGroupId)
+      : resolveEffectiveResponsibleArea(company.responsibleArea, company.legalAreas);
     // Escopo exclusivo: só gestores da área marcada (exata), sem herdar da área pai.
     if (ownerArea && userAreas.has(ownerArea)) {
       companyIds.add(company.id);
@@ -168,8 +253,9 @@ export function computeMyClientScope(
 
   const personIds = new Set<string>();
   for (const person of people) {
-    const ownerArea =
-      assignedAreaForGroup(person.clientGroupId, areaByGroupId) ?? person.responsibleArea;
+    const ownerArea = person.clientGroupId
+      ? assignedAreaForGroup(person.clientGroupId, areaByGroupId)
+      : resolveEffectiveResponsibleArea(person.responsibleArea, personAreas.get(person.id) ?? []);
     if (ownerArea && userAreas.has(ownerArea)) {
       personIds.add(person.id);
     }

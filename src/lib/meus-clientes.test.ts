@@ -14,11 +14,13 @@ import {
   getAreaParent,
   isInternalClientGroupName,
   userCoversEntityArea,
+  applyEffectiveResponsibleAreas,
   computeMyClientScope,
+  resolveEffectiveResponsibleArea,
 } from "@/lib/meus-clientes";
 import { personNameKey } from "@/lib/email-marketing-normalize";
 import { normalizeLegalArea, normalizeLegalAreas } from "@/lib/legal-areas";
-import type { EmailCompany, EmailContact, EmailPerson } from "@/lib/email-marketing";
+import type { EmailCompany, EmailContact, EmailGroupResponsible, EmailPerson } from "@/lib/email-marketing";
 
 describe("legal-areas", () => {
   it("normaliza Insolvência e aliases para Reestruturação", () => {
@@ -305,15 +307,87 @@ describe("área responsável exclusiva", () => {
     expect(civel.companyIds.has("c1")).toBe(false);
   });
 
-  it("sem marcação, vínculo de advogado ou área do SIOE não libera o grupo", () => {
+  it("sem marcação e com várias áreas, vínculo de advogado não libera o grupo", () => {
     const companies = [
       company({
         id: "c1",
-        legalAreas: ["Cível"],
+        legalAreas: ["Cível", "Trabalhista"],
         responsibleUserIds: ["u-civel"],
       }),
     ];
     const civel = computeMyClientScope(companies, [], "u-civel", [trabalhistaGestor, civelGestor]);
+    expect(civel.companyIds.has("c1")).toBe(false);
+  });
+
+  it("com uma única área envolvida, essa área vira responsável automaticamente", () => {
+    const companies = [company({ id: "c1", legalAreas: ["Trabalhista"] })];
+    const trab = computeMyClientScope(companies, [], "u-trab", [trabalhistaGestor, civelGestor]);
+    const civel = computeMyClientScope(companies, [], "u-civel", [trabalhistaGestor, civelGestor]);
+    expect(trab.companyIds.has("c1")).toBe(true);
+    expect(civel.companyIds.has("c1")).toBe(false);
+  });
+
+  it("com uma única área no grupo, todas as empresas do grupo entram no escopo", () => {
+    const companies = [
+      company({ id: "c1", legalAreas: ["Trabalhista"] }),
+      company({ id: "c2", legalAreas: [] }),
+    ];
+    const trab = computeMyClientScope(companies, [], "u-trab", [trabalhistaGestor, civelGestor]);
+    expect(trab.companyIds.has("c1")).toBe(true);
+    expect(trab.companyIds.has("c2")).toBe(true);
+  });
+
+  it("com uma única área só nos responsáveis, essa área vira responsável", () => {
+    const companies = [company({ id: "c1", legalAreas: [] })];
+    const responsibles: EmailGroupResponsible[] = [
+      {
+        id: "r1",
+        clientGroupId: "g1",
+        companyId: "c1",
+        personId: null,
+        area: "Cível",
+        advogadoResponsavelName: null,
+        responsibleUserId: "u-civel",
+        openProcessesCount: 1,
+      },
+    ];
+    const civel = computeMyClientScope(companies, responsibles, "u-civel", [
+      trabalhistaGestor,
+      civelGestor,
+    ]);
+    const trab = computeMyClientScope(companies, responsibles, "u-trab", [
+      trabalhistaGestor,
+      civelGestor,
+    ]);
+    expect(civel.companyIds.has("c1")).toBe(true);
+    expect(trab.companyIds.has("c1")).toBe(false);
+  });
+
+  it("com uma única área, inclui pessoas do grupo sem marcação", () => {
+    const companies = [company({ id: "c1", legalAreas: ["Trabalhista"] })];
+    const people = [
+      {
+        id: "p1",
+        name: "Pessoa",
+        clientGroupId: "g1",
+        responsibleArea: null,
+      } as EmailPerson,
+    ];
+    const trab = computeMyClientScope(
+      companies,
+      [],
+      "u-trab",
+      [trabalhistaGestor, civelGestor],
+      people
+    );
+    expect(trab.personIds.has("p1")).toBe(true);
+  });
+
+  it("marcação explícita prevalece sobre a única área envolvida", () => {
+    const companies = [company({ id: "c1", legalAreas: ["Cível"], responsibleArea: "Trabalhista" })];
+    const trab = computeMyClientScope(companies, [], "u-trab", [trabalhistaGestor, civelGestor]);
+    const civel = computeMyClientScope(companies, [], "u-civel", [trabalhistaGestor, civelGestor]);
+    expect(trab.companyIds.has("c1")).toBe(true);
     expect(civel.companyIds.has("c1")).toBe(false);
   });
 
@@ -382,6 +456,58 @@ describe("área responsável exclusiva", () => {
     );
     expect(rec.companyIds.has("c1")).toBe(true);
     expect(civel.companyIds.has("c1")).toBe(false);
+  });
+});
+
+describe("resolveEffectiveResponsibleArea", () => {
+  it("usa a área marcada quando existe", () => {
+    expect(resolveEffectiveResponsibleArea("Trabalhista", ["Cível"])).toBe("Trabalhista");
+  });
+
+  it("infere a área quando o grupo tem exatamente uma envolvida", () => {
+    expect(resolveEffectiveResponsibleArea(null, ["Cível"])).toBe("Cível");
+  });
+
+  it("não infere quando há mais de uma área envolvida", () => {
+    expect(resolveEffectiveResponsibleArea(null, ["Cível", "Trabalhista"])).toBeNull();
+  });
+
+  it("trata a mesma área repetida como uma só", () => {
+    expect(resolveEffectiveResponsibleArea(null, ["Cível", "Cível"])).toBe("Cível");
+  });
+
+  it("normaliza aliases da mesma área para uma só", () => {
+    expect(resolveEffectiveResponsibleArea(null, ["Insolvência", "Reestruturação"])).toBe(
+      "Reestruturação"
+    );
+  });
+});
+
+describe("applyEffectiveResponsibleAreas", () => {
+  it("preenche responsibleArea quando o grupo tem uma única área", () => {
+    const companies = [
+      {
+        id: "c1",
+        clientGroupId: "g1",
+        legalAreas: ["Trabalhista"],
+        responsibleArea: null,
+      } as EmailCompany,
+    ];
+    const { companies: next } = applyEffectiveResponsibleAreas(companies, []);
+    expect(next[0].responsibleArea).toBe("Trabalhista");
+  });
+
+  it("não altera grupo que já tem área responsável marcada", () => {
+    const companies = [
+      {
+        id: "c1",
+        clientGroupId: "g1",
+        legalAreas: ["Cível"],
+        responsibleArea: "Trabalhista",
+      } as EmailCompany,
+    ];
+    const { companies: next } = applyEffectiveResponsibleAreas(companies, []);
+    expect(next[0].responsibleArea).toBe("Trabalhista");
   });
 });
 

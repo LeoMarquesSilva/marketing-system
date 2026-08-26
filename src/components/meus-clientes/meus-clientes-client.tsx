@@ -64,6 +64,7 @@ import {
   computeEnrichmentTotals,
   computeMyClientScope,
   resolveClientGroupAreas,
+  resolveEffectiveResponsibleArea,
   filterPeopleNotInContacts,
   getAreaParent,
   groupHasNoContacts,
@@ -127,7 +128,9 @@ function resolveGroupKey(entity: {
 
 function buildGroupBuckets(
   companies: EmailCompany[],
-  people: EmailPerson[]
+  people: EmailPerson[],
+  personAreas: Map<string, string[]> = new Map(),
+  responsibles: EmailGroupResponsible[] = []
 ): ClientGroupBucket[] {
   const buckets = new Map<string, ClientGroupBucket>();
   for (const company of companies) {
@@ -169,6 +172,12 @@ function buildGroupBuckets(
         responsibleArea: person.responsibleArea ?? null,
       });
     }
+  }
+  for (const bucket of buckets.values()) {
+    bucket.responsibleArea = resolveEffectiveResponsibleArea(
+      bucket.responsibleArea,
+      resolveClientGroupAreas(bucket.key, companies, people, personAreas, responsibles)
+    );
   }
   return Array.from(buckets.values());
 }
@@ -706,10 +715,10 @@ function MeusClientesClientContent() {
 
   const groupsBeforeStatus = useMemo(
     () =>
-      buildGroupBuckets(scopedCompanies, scopedPeople).sort((a, b) =>
+      buildGroupBuckets(scopedCompanies, scopedPeople, personAreas, responsibles).sort((a, b) =>
         compareGroupsByPendingFirst(a, b, contactsByGroup, (g) => g.key)
       ),
-    [scopedCompanies, scopedPeople, contactsByGroup]
+    [scopedCompanies, scopedPeople, contactsByGroup, personAreas, responsibles]
   );
 
   const groups = useMemo(
@@ -1042,7 +1051,9 @@ function MeusClientesClientContent() {
 
   const areaFilterCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    const baseGroups = buildGroupBuckets(companies, people).filter((g) => g.key !== SEM_GRUPO_KEY);
+    const baseGroups = buildGroupBuckets(companies, people, personAreas, responsibles).filter(
+      (g) => g.key !== SEM_GRUPO_KEY
+    );
     counts.set("__all__", baseGroups.length);
     counts.set(FILTER_SEM_AREA, 0);
     for (const area of allAreasList) counts.set(area, 0);
@@ -1088,7 +1099,9 @@ function MeusClientesClientContent() {
 
   const responsibleAreaFilterCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    const baseGroups = buildGroupBuckets(companies, people).filter((g) => g.key !== SEM_GRUPO_KEY);
+    const baseGroups = buildGroupBuckets(companies, people, personAreas, responsibles).filter(
+      (g) => g.key !== SEM_GRUPO_KEY
+    );
     counts.set("__all__", baseGroups.length);
     counts.set(FILTER_SEM_RESPONSAVEL, 0);
     for (const area of allAreasList) counts.set(area, 0);
@@ -1101,7 +1114,7 @@ function MeusClientesClientContent() {
       counts.set(area, (counts.get(area) ?? 0) + 1);
     }
     return counts;
-  }, [companies, people, allAreasList]);
+  }, [companies, people, allAreasList, personAreas, responsibles]);
 
   const displayContactsByGroup = useMemo(() => {
     const map = new Map<string, EmailContact[]>();

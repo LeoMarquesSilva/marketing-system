@@ -1220,8 +1220,8 @@ export function EmptyState({
     "no-scope": {
       title: "Nenhum cliente vinculado a você",
       desc: isAdmin
-        ? "Use Ver todos para marcar a área responsável de cada cliente. Sem isso, gestores não veem o grupo."
-        : "Só aparecem aqui os clientes que o administrador direcionou para a sua área.",
+        ? "Use Ver todos para marcar a área responsável dos clientes com mais de uma área. Grupos com uma só área já entram automaticamente."
+        : "Só aparecem aqui os clientes da sua área: com responsável marcado ou com uma única área envolvida.",
       action: null as ReactNode,
     },
     "no-search": {

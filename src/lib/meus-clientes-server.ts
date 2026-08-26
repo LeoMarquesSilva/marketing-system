@@ -17,6 +17,7 @@ import {
 } from "@/lib/email-marketing";
 import type { User } from "@/lib/users";
 import {
+  applyEffectiveResponsibleAreas,
   computeMyClientScope,
   filterInternalContacts,
   filterInternalResponsibles,
@@ -162,20 +163,25 @@ export async function fetchMeusClientesPayload(options: {
     fetchSioeClienteAtividadeIndex(),
   ]);
 
-  const allCompanies = filterOutInternalClientGroups(
+  const mappedCompanies = filterOutInternalClientGroups(
     (companyRows ?? []).map((row) => mapCompany(row as Record<string, unknown>))
   );
-  const allPeople = filterOutInternalClientGroups(
+  const mappedPeople = filterOutInternalClientGroups(
     (peopleRows ?? []).map((row) => mapPerson(row as Record<string, unknown>))
+  );
+  const allResponsibles = filterInternalResponsibles(
+    (responsibleRows ?? []).map((row) => mapGroupResponsible(row as Record<string, unknown>)),
+    mappedCompanies,
+    mappedPeople
+  );
+  const { companies: allCompanies, people: allPeople } = applyEffectiveResponsibleAreas(
+    mappedCompanies,
+    mappedPeople,
+    allResponsibles
   );
   const allContacts = filterInternalContacts(
     (contactRows ?? []).map((row) => mapContact(row as Record<string, unknown>)),
     allCompanies
-  );
-  const allResponsibles = filterInternalResponsibles(
-    (responsibleRows ?? []).map((row) => mapGroupResponsible(row as Record<string, unknown>)),
-    allCompanies,
-    allPeople
   );
   const areaManagers = mapAreaManagers(managerRows as Record<string, unknown>[] | null);
 
