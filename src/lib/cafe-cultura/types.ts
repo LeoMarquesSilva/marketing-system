@@ -62,3 +62,14 @@ export interface CafeAdminData {
     finishedAt: string | null;
   } | null;
 }
+
+export interface CafeAdminEdition {
+  id: string;
+  name: string;
+  eventDate: string;
+  location: string | null;
+  attendanceCutoffAt: string | null;
+  checkinOpensAt: string;
+  checkinClosesAt: string;
+  summary: CafeAdminData["summary"];
+}

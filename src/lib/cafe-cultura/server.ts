@@ -6,6 +6,7 @@ import { buildCafeEditionDraft, summarizeCafeParticipants } from "./domain";
 import { isCafeRosterEligible, planCafeRosterSync } from "./roster";
 import type {
   CafeAdminData,
+  CafeAdminEdition,
   CafeCheckinSource,
   CafeCurrentView,
   CafeExpectationSource,
@@ -211,6 +212,62 @@ export async function ensureCafeEditions(
     eventIds.push(eventId);
   }
   return eventIds;
+}
+
+export async function listCafeAdminEditions(
+  now: Date = new Date(),
+  admin: SupabaseClient = createCafeAdminClient()
+): Promise<CafeAdminEdition[]> {
+  await ensureCafeEditions(now, admin);
+  const seriesId = await getCafeSeriesId(admin);
+  const { data: events, error } = await admin
+    .from("events")
+    .select("id,name,event_date,location,attendance_cutoff_at,checkin_opens_at,checkin_closes_at")
+    .eq("series_id", seriesId)
+    .order("event_date", { ascending: false });
+  if (error) {
+    throw new CafeCulturaError("Não foi possível carregar as edições.", 500, "EDITIONS_LOOKUP_FAILED");
+  }
+
+  const ids = (events ?? []).map((event) => String(event.id));
+  const { data: participantRows, error: participantError } = ids.length
+    ? await admin
+        .from("event_participants")
+        .select("event_id,expectation_status,checkin_at")
+        .in("event_id", ids)
+    : { data: [], error: null };
+  if (participantError) {
+    throw new CafeCulturaError("Não foi possível carregar os indicadores das edições.", 500, "EDITIONS_COUNTS_FAILED");
+  }
+
+  const participantsByEvent = new Map<
+    string,
+    Array<{ expectationStatus: CafeExpectationStatus; checkinAt: string | null }>
+  >();
+  for (const row of participantRows ?? []) {
+    const eventId = String(row.event_id);
+    const current = participantsByEvent.get(eventId) ?? [];
+    current.push({
+      expectationStatus: row.expectation_status as CafeExpectationStatus,
+      checkinAt: (row.checkin_at as string | null) ?? null,
+    });
+    participantsByEvent.set(eventId, current);
+  }
+
+  return (events ?? []).map((event) => {
+    const eventDate = String(event.event_date);
+    const fallback = buildCafeWindow(eventDate);
+    return {
+      id: String(event.id),
+      name: String(event.name),
+      eventDate,
+      location: (event.location as string | null) ?? null,
+      attendanceCutoffAt: (event.attendance_cutoff_at as string | null) ?? null,
+      checkinOpensAt: (event.checkin_opens_at as string | null) ?? fallback.opensAt,
+      checkinClosesAt: (event.checkin_closes_at as string | null) ?? fallback.closesAt,
+      summary: summarizeCafeParticipants(participantsByEvent.get(String(event.id)) ?? []),
+    };
+  });
 }
 
 export async function getCafeProfileForAuthUser(
@@ -445,6 +502,7 @@ export async function getCafeAdminData(
 export async function updateCafeEventSettings(
   eventId: string,
   input: {
+    name?: string;
     eventDate?: string;
     location?: string | null;
     attendanceCutoffAt?: string | null;
@@ -455,9 +513,14 @@ export async function updateCafeEventSettings(
   admin: SupabaseClient = createCafeAdminClient()
 ) {
   const previous = await assertCafeEvent(admin, eventId);
+  const name = input.name?.trim();
+  if (input.name !== undefined && !name) {
+    throw new CafeCulturaError("Informe o nome da edição.", 400, "INVALID_EDITION_NAME");
+  }
   const eventDate = input.eventDate ?? previous.eventDate;
   const defaultWindow = buildCafeWindow(eventDate);
   const payload = {
+    name: name ?? previous.name,
     event_date: eventDate,
     location: input.location === undefined ? previous.location : input.location,
     attendance_cutoff_at:

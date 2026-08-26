@@ -8,6 +8,7 @@ type EventSeed = {
   name: string;
   series_id: string | null;
   series_name?: string;
+  series_slug?: string;
   kind?: string;
   status?: string;
   budget_approved?: number | null;
@@ -54,7 +55,7 @@ function makeClient(events: EventSeed[], budget: BudgetSeed[]): SupabaseClient {
     risk_level: "baixo",
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
-    event_series: e.series_name ? { name: e.series_name } : null,
+    event_series: e.series_name ? { name: e.series_name, slug: e.series_slug ?? "serie-geral" } : null,
   }));
 
   const budgetRows = budget.map((b) => ({
@@ -218,5 +219,35 @@ describe("fetchEventsForecast", () => {
     const forecast = await fetchEventsForecast(2027, client);
 
     expect(forecast.rows.map((r) => r.seriesName)).toEqual(["Caro", "Barato", "Sem valor"]);
+  });
+
+  it("não mistura o Café com Cultura no planejamento de Eventos", async () => {
+    const client = makeClient(
+      [
+        {
+          id: "cafe",
+          year: 2026,
+          name: "Café com Cultura — Agosto 2026",
+          series_id: "cafe-series",
+          series_name: "Café com Cultura",
+          series_slug: "cafe-com-cultura",
+        },
+        {
+          id: "evento",
+          year: 2026,
+          name: "Dia do Advogado",
+          series_id: "evento-series",
+          series_name: "Dia do Advogado",
+        },
+      ],
+      [
+        { event_id: "cafe", amount_planned: 2000, amount_actual: 2000 },
+        { event_id: "evento", amount_planned: 1000, amount_actual: 1000 },
+      ]
+    );
+
+    const forecast = await fetchEventsForecast(2027, client);
+
+    expect(forecast.rows.map((row) => row.seriesName)).toEqual(["Dia do Advogado"]);
   });
 });

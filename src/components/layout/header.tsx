@@ -29,6 +29,7 @@ const PAGE_META: Record<string, PageMeta> = {
   "/usuarios": { label: "Usuários", section: "Pessoas" },
   "/vios-tarefas": { label: "Tarefas VIOS", section: "Operação" },
   "/eventos": { label: "Eventos", section: "Eventos" },
+  "/cafe-cultura": { label: "Café com Cultura", section: "Pessoas e Cultura" },
   "/custos-projetos": { label: "Custos de projetos", section: "Gestão" },
   "/perfil": { label: "Meu perfil", section: "Conta" },
   "/admin": { label: "Configurações", section: "Administração" },

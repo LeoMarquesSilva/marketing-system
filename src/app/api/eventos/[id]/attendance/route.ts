@@ -57,6 +57,7 @@ export async function PATCH(request: Request, context: Context) {
     const data = await updateCafeEventSettings(
       id,
       {
+        name: typeof settings.name === "string" ? settings.name : undefined,
         eventDate: typeof settings.eventDate === "string" ? settings.eventDate : undefined,
         location: settings.location === null || typeof settings.location === "string" ? settings.location : undefined,
         attendanceCutoffAt:

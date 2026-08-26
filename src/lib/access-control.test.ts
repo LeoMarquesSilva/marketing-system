@@ -17,6 +17,11 @@ describe("access-control permissions catalog", () => {
     expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/meus-clientes");
     expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/rh");
     expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/ferias");
+    expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/cafe-cultura");
+  });
+
+  it("mantém o Café com Cultura no preset administrativo", () => {
+    expect(ACCESS_PRESETS.Administrador).toContain("/cafe-cultura");
   });
 
   it("normaliza array vazio para null (regra legada)", () => {

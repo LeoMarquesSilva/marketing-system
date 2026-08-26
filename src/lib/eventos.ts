@@ -1007,6 +1007,11 @@ export function formatDateBR(iso: string | null | undefined): string {
 }
 
 const EVENT_SELECT = "*, event_series:series_id (name, slug)";
+const CAFE_CULTURA_SERIES_SLUG = "cafe-com-cultura";
+
+export function isStandaloneModuleEvent(event: Pick<OrgEvent, "seriesSlug">): boolean {
+  return event.seriesSlug === CAFE_CULTURA_SERIES_SLUG;
+}
 
 const TASK_SELECT = `
   id, event_id, title, description, assignee_id, due_date, status, phase,
@@ -1030,7 +1035,9 @@ export async function fetchEventsByYear(
     console.error("Erro ao buscar eventos:", error);
     return [];
   }
-  return (data ?? []).map((r) => rowToEvent(r as EventRow));
+  return (data ?? [])
+    .map((r) => rowToEvent(r as EventRow))
+    .filter((event) => !isStandaloneModuleEvent(event));
 }
 
 export async function fetchEventById(
@@ -1197,7 +1204,9 @@ export async function fetchEventsForecast(
     return { targetYear, historyYears: [], rows: [], unlinkedCount: 0 };
   }
 
-  const events = (eventsRes.data ?? []).map((r) => rowToEvent(r as EventRow));
+  const events = (eventsRes.data ?? [])
+    .map((r) => rowToEvent(r as EventRow))
+    .filter((event) => !isStandaloneModuleEvent(event));
 
   const budgetByEvent: Record<string, { planned: number; actual: number }> = {};
   for (const b of budgetRes.data ?? []) {
@@ -1298,9 +1307,16 @@ export async function fetchEventsForecast(
 
 export async function fetchAvailableYears(client?: SupabaseClient): Promise<number[]> {
   const db = client ?? supabase;
-  const { data, error } = await db.from("events").select("year");
+  const { data, error } = await db.from("events").select(EVENT_SELECT);
   if (error) return [new Date().getFullYear()];
-  const years = [...new Set((data ?? []).map((r) => r.year as number))].sort((a, b) => b - a);
+  const years = [
+    ...new Set(
+      (data ?? [])
+        .map((row) => rowToEvent(row as EventRow))
+        .filter((event) => !isStandaloneModuleEvent(event))
+        .map((event) => event.year)
+    ),
+  ].sort((a, b) => b - a);
   return years.length > 0 ? years : [new Date().getFullYear()];
 }
 
@@ -1337,7 +1353,9 @@ export async function fetchEventSeries(client?: SupabaseClient): Promise<EventSe
     console.error("Erro ao buscar séries de eventos:", error);
     return [];
   }
-  return (data ?? []).map((row) => rowToSeries(row as EventSeriesRow));
+  return (data ?? [])
+    .map((row) => rowToSeries(row as EventSeriesRow))
+    .filter((series) => series.slug !== CAFE_CULTURA_SERIES_SLUG);
 }
 
 /**

@@ -235,7 +235,13 @@ export function EventoPresencasContent({
   );
 }
 
-export function EventoPresencasTab({ eventId }: { eventId: string }) {
+export function EventoPresencasTab({
+  eventId,
+  onDataChange,
+}: {
+  eventId: string;
+  onDataChange?: (data: CafeAdminData) => void;
+}) {
   const [data, setData] = useState<CafeAdminData | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -243,24 +249,26 @@ export function EventoPresencasTab({ eventId }: { eventId: string }) {
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<FilterStatus>("all");
-  const [settings, setSettings] = useState({ eventDate: "", location: "", cutoff: "", opens: "", closes: "" });
+  const [settings, setSettings] = useState({ name: "", eventDate: "", location: "", cutoff: "", opens: "", closes: "" });
 
   const applyData = useCallback((next: CafeAdminData) => {
     setData(next);
+    onDataChange?.(next);
     setSettings({
+      name: next.event.name,
       eventDate: next.event.eventDate,
       location: next.event.location ?? "",
       cutoff: toLocalInput(next.event.attendanceCutoffAt),
       opens: toLocalInput(next.event.checkinOpensAt),
       closes: toLocalInput(next.event.checkinClosesAt),
     });
-  }, []);
+  }, [onDataChange]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const response = await fetch(`/api/eventos/${eventId}/attendance`, { cache: "no-store" });
+      const response = await fetch(`/api/cafe-cultura/editions/${eventId}`, { cache: "no-store" });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Não foi possível carregar as presenças.");
       applyData(body.data);
@@ -317,16 +325,17 @@ export function EventoPresencasTab({ eventId }: { eventId: string }) {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" disabled={busy} onClick={() => request(`/api/eventos/${eventId}/attendance/roster`, { method: "POST" }, "Lista de colaboradores atualizada.")}><Users /> Atualizar lista</Button>
-            <Button disabled={busy} onClick={() => request(`/api/eventos/${eventId}/attendance/sync-responsum`, { method: "POST" }, "Justificativas sincronizadas.")}><RefreshCw className={busy ? "animate-spin" : ""} /> Sincronizar agora</Button>
-            <Button asChild variant="outline"><a href={`/api/eventos/${eventId}/attendance/export`}><Download /> Exportar CSV</a></Button>
+            <Button variant="outline" disabled={busy} onClick={() => request(`/api/cafe-cultura/editions/${eventId}/roster`, { method: "POST" }, "Lista de colaboradores atualizada.")}><Users /> Atualizar lista</Button>
+            <Button disabled={busy} onClick={() => request(`/api/cafe-cultura/editions/${eventId}/sync-responsum`, { method: "POST" }, "Justificativas sincronizadas.")}><RefreshCw className={busy ? "animate-spin" : ""} /> Sincronizar agora</Button>
+            <Button asChild variant="outline"><a href={`/api/cafe-cultura/editions/${eventId}/export`}><Download /> Exportar CSV</a></Button>
           </div>
         </div>
       </section>
 
       <section className="rounded-2xl border border-border/60 bg-card p-4 sm:p-5">
         <div className="mb-4 flex items-center gap-2"><CalendarClock className="size-4 text-[#347796]" /><h3 className="text-sm font-semibold">Data e janela de confirmação</h3></div>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-7">
+          <div className="space-y-1.5 sm:col-span-2 xl:col-span-2"><Label htmlFor="cafe-name">Nome da edição</Label><Input id="cafe-name" value={settings.name} onChange={(e) => setSettings((s) => ({ ...s, name: e.target.value }))} /></div>
           <div className="space-y-1.5"><Label htmlFor="cafe-date">Data</Label><Input id="cafe-date" type="date" value={settings.eventDate} onChange={(e) => setSettings((s) => ({ ...s, eventDate: e.target.value }))} /></div>
           <div className="space-y-1.5"><Label htmlFor="cafe-location">Local</Label><Input id="cafe-location" value={settings.location} onChange={(e) => setSettings((s) => ({ ...s, location: e.target.value }))} placeholder="Informe o local" /></div>
           <div className="space-y-1.5"><Label htmlFor="cafe-cutoff">Prazo para o local</Label><Input id="cafe-cutoff" type="datetime-local" value={settings.cutoff} onChange={(e) => setSettings((s) => ({ ...s, cutoff: e.target.value }))} /></div>
@@ -334,7 +343,7 @@ export function EventoPresencasTab({ eventId }: { eventId: string }) {
           <div className="space-y-1.5"><Label htmlFor="cafe-closes">Encerramento</Label><Input id="cafe-closes" type="datetime-local" value={settings.closes} onChange={(e) => setSettings((s) => ({ ...s, closes: e.target.value }))} /></div>
         </div>
         <div className="mt-4 flex justify-end">
-          <Button disabled={busy} onClick={() => request(`/api/eventos/${eventId}/attendance`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ settings: { eventDate: settings.eventDate, location: settings.location || null, attendanceCutoffAt: fromLocalInput(settings.cutoff), checkinOpensAt: fromLocalInput(settings.opens), checkinClosesAt: fromLocalInput(settings.closes) } }) }, "Configuração salva.")}>Salvar configuração</Button>
+          <Button disabled={busy} onClick={() => request(`/api/cafe-cultura/editions/${eventId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ settings: { name: settings.name, eventDate: settings.eventDate, location: settings.location || null, attendanceCutoffAt: fromLocalInput(settings.cutoff), checkinOpensAt: fromLocalInput(settings.opens), checkinClosesAt: fromLocalInput(settings.closes) } }) }, "Configuração salva.")}>Salvar configuração</Button>
         </div>
       </section>
 
@@ -352,7 +361,7 @@ export function EventoPresencasTab({ eventId }: { eventId: string }) {
         search={search}
         status={status}
         busy={busy}
-        onParticipantChange={(userId, patch) => request(`/api/eventos/${eventId}/attendance`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ participant: { userId, ...patch } }) }, "Participação atualizada.")}
+        onParticipantChange={(userId, patch) => request(`/api/cafe-cultura/editions/${eventId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ participant: { userId, ...patch } }) }, "Participação atualizada.")}
       />
     </div>
   );

@@ -29,6 +29,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/trafego-pago", label: "Tráfego Pago" },
   { key: "/vios-tarefas", label: "Tarefas VIOS" },
   { key: "/eventos", label: "Eventos" },
+  { key: "/cafe-cultura", label: "Café com Cultura", admin: true },
   { key: "/email-marketing", label: "E-mail Marketing" },
   { key: "/nfc", label: "NFC Hub" },
   { key: "/meus-clientes", label: "Meus Clientes", manualOnly: true },

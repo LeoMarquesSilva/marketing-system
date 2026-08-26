@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { EventoDetailClient } from "@/components/eventos/evento-detail-client";
 import { fetchEventoDetailData } from "@/lib/eventos-server";
 import { fetchActiveUsers, fetchDesigners } from "@/lib/users";
@@ -18,6 +18,9 @@ export default async function EventoDetailPage({ params }: PageProps) {
   ]);
 
   if (!event) notFound();
+  if (event.seriesSlug === "cafe-com-cultura") {
+    redirect(`/cafe-cultura?edicao=${event.id}`);
+  }
 
   return (
     <EventoDetailClient

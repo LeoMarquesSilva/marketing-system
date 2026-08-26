@@ -37,6 +37,7 @@ import {
   Layers,
   Rocket,
   Shield,
+  Coffee,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -100,6 +101,7 @@ const baseNavItems: NavLeaf[] = [
   { href: "/trafego-pago", icon: Megaphone, label: "Trafego Pago" },
   { href: "/vios-tarefas", icon: ClipboardList, label: "Tarefas VIOS" },
   { href: "/eventos", icon: CalendarDays, label: "Eventos" },
+  { href: "/cafe-cultura", icon: Coffee, label: "Café com Cultura" },
   { href: "/email-marketing", icon: Mail, label: "E-mail Marketing" },
   { href: "/nfc", icon: RadioTower, label: "NFC Hub" },
   { href: "/minhas-fotos", icon: Images, label: "Minhas fotos" },
@@ -304,6 +306,7 @@ function getNavItems(
   return applyCollapsibleGroups([
     ...baseNavItems.filter((i) => {
       if (i.href === "/nfc") return isAdmin;
+      if (i.href === "/cafe-cultura") return isAdmin;
       if (i.href === "/minhas-fotos") return true;
       return i.href !== "/fotos-colaboradores" || isCollaboratorPhotosManager(profile);
     }),
