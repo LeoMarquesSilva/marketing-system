@@ -3,10 +3,12 @@ import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { buildCafeWindow, getCheckinWindowState } from "./dates";
 import { buildCafeEditionDraft, summarizeCafeParticipants } from "./domain";
+import { isCafeRosterEligible, planCafeRosterSync } from "./roster";
 import type {
   CafeAdminData,
   CafeCheckinSource,
   CafeCurrentView,
+  CafeExpectationSource,
   CafeExpectationStatus,
 } from "./types";
 
@@ -134,20 +136,51 @@ export async function ensureEventRoster(
   admin: SupabaseClient = createCafeAdminClient()
 ): Promise<{ added: number; total: number }> {
   await assertCafeEvent(admin, eventId);
-  const [{ data: users, error: usersError }, { data: existing, error: existingError }] = await Promise.all([
-    admin.from("users").select("id").eq("is_active", true),
-    admin.from("event_participants").select("user_id").eq("event_id", eventId),
+  const [employeesResult, existingResult] = await Promise.all([
+    admin
+      .from("hr_employees")
+      .select("user_id")
+      .eq("is_active", true)
+      .not("user_id", "is", null),
+    admin
+      .from("event_participants")
+      .select("id, user_id, expectation_source, checkin_at")
+      .eq("event_id", eventId),
   ]);
-  if (usersError || existingError) {
+  if (employeesResult.error || existingResult.error) {
     throw new CafeCulturaError("Não foi possível atualizar a lista de colaboradores.", 500, "ROSTER_LOOKUP_FAILED");
   }
-  const existingIds = new Set((existing ?? []).map((row) => String(row.user_id)));
-  const missing = (users ?? [])
-    .map((row) => String(row.id))
-    .filter((userId) => !existingIds.has(userId));
-  if (missing.length) {
+
+  const officialUserIds = [
+    ...new Set(
+      (employeesResult.data ?? [])
+        .map((row) => row.user_id as string | null)
+        .filter((userId): userId is string => Boolean(userId))
+    ),
+  ];
+  const plan = planCafeRosterSync(
+    officialUserIds,
+    (existingResult.data ?? []).map((row) => ({
+      participantId: String(row.id),
+      userId: String(row.user_id),
+      expectationSource: row.expectation_source as CafeExpectationSource,
+      checkinAt: (row.checkin_at as string | null) ?? null,
+    }))
+  );
+
+  if (plan.removableParticipantIds.length) {
+    const { error } = await admin
+      .from("event_participants")
+      .delete()
+      .in("id", plan.removableParticipantIds);
+    if (error) {
+      throw new CafeCulturaError("Não foi possível remover contas fora do cadastro oficial.", 500, "ROSTER_CLEANUP_FAILED");
+    }
+  }
+
+  if (plan.missingUserIds.length) {
     const { error } = await admin.from("event_participants").insert(
-      missing.map((userId) => ({
+      plan.missingUserIds.map((userId) => ({
         event_id: eventId,
         user_id: userId,
         expectation_status: "confirmed",
@@ -157,7 +190,7 @@ export async function ensureEventRoster(
     if (error) throw new CafeCulturaError("Não foi possível incluir os colaboradores.", 500, "ROSTER_INSERT_FAILED");
   }
   const summary = await refreshCafeEventCounts(eventId, admin);
-  return { added: missing.length, total: summary.total };
+  return { added: plan.missingUserIds.length, total: summary.total };
 }
 
 export async function ensureCafeEditions(
@@ -189,8 +222,25 @@ export async function getCafeProfileForAuthUser(
     .select("id, name, avatar_url, is_active")
     .eq("auth_id", authUserId)
     .maybeSingle();
-  if (error || !data || data.is_active === false) {
+  if (error || !data) {
     throw new CafeCulturaError("Seu usuário não está ativo no cadastro de colaboradores.", 403, "PROFILE_UNAVAILABLE");
+  }
+
+  const { data: employee, error: employeeError } = await admin
+    .from("hr_employees")
+    .select("id")
+    .eq("user_id", data.id)
+    .eq("is_active", true)
+    .limit(1)
+    .maybeSingle();
+  if (
+    employeeError ||
+    !isCafeRosterEligible({
+      userActive: data.is_active !== false,
+      hasActiveEmployee: Boolean(employee),
+    })
+  ) {
+    throw new CafeCulturaError("Seu usuário não consta no cadastro oficial de colaboradores.", 403, "PROFILE_UNAVAILABLE");
   }
   return { id: String(data.id), name: String(data.name), avatarUrl: (data.avatar_url as string | null) ?? null };
 }
