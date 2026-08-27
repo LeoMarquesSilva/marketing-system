@@ -2,6 +2,8 @@
 
 Guia operacional para **gestores de área** e **colaboradores responsáveis** pelo envio da pesquisa NPS.
 
+> **Versão HTML com prints:** [/manuais/nps.html](/manuais/nps.html) (também em produção após o deploy).
+>
 > **Auto-instructor no sistema:** abra **Meus Clientes** e clique em **Ver guia** no cabeçalho. O tour interativo adapta os passos conforme seu perfil (gestor ou responsável).
 
 ---

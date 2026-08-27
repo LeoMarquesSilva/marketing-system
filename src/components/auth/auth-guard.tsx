@@ -8,7 +8,7 @@ import { resolveAllowedSections, canAccessPath } from "@/lib/access-control";
 import { loginPathWithReturn, resolvePostLoginPathFromProfile } from "@/lib/post-login-path";
 import { isQualificationPending } from "@/lib/qualification-requirement";
 
-const PUBLIC_PATHS = ["/login", "/t", "/nps"];
+const PUBLIC_PATHS = ["/login", "/t", "/nps", "/manuais"];
 
 /** Perfil profissional público NFC: /perfil/<slug> e /perfil/<slug>/contato. */
 function isPublicProfessionalProfilePath(pathname: string): boolean {

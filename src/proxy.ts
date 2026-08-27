@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/t", "/nps"];
+const PUBLIC_PATHS = ["/login", "/t", "/nps", "/manuais"];
 const PUBLIC_API_PREFIXES = ["/api/evolution/webhook"];
 
 /** Perfil profissional público (não confundir com /perfil = conta autenticada). */

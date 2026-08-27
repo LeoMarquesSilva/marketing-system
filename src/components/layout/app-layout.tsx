@@ -18,6 +18,7 @@ const BARE_LAYOUT_PATHS = [
   "/completar-qualificacao",
   "/t",
   "/nps",
+  "/manuais",
 ];
 
 function isBareLayoutPath(pathname: string): boolean {
@@ -64,7 +65,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               }
             >
               <Header />
-              <main className="relative isolate min-h-[calc(100vh-3.5rem)] overflow-hidden p-4 pb-20 md:p-6">
+              <main className="relative isolate min-h-[calc(100vh-3.5rem)] overflow-x-hidden p-4 pb-20 md:p-6">
                 <div
                   className="pointer-events-none fixed bottom-5 right-5 z-0 hidden select-none opacity-[0.055] lg:block"
                   aria-hidden="true"

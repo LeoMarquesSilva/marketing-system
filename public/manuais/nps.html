@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>Manual NPS — Meus Clientes · ORQESTRAI</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <style>
+    :root {
+      --cyan: #47cdd0;
+      --blue: #3e84a8;
+      --action: #347796;
+      --action-hover: #285f7a;
+      --indigo: #48466e;
+      --dark-from: #03070c;
+      --dark-to: #04202f;
+      --text: #1c1c1c;
+      --muted: #5e7a85;
+      --line: #dce9eb;
+      --bg: #f4f7f8;
+      --card: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.55;
+      font-size: 16px;
+    }
+    a { color: var(--action); }
+    .hero {
+      background: linear-gradient(160deg, var(--dark-from), var(--dark-to));
+      color: #f9f9f9;
+      padding: 40px 24px 36px;
+    }
+    .wrap { max-width: 920px; margin: 0 auto; }
+    .brand {
+      display: flex; align-items: center; gap: 12px;
+      font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #9bb8c3;
+    }
+    .hero h1 { font-size: 34px; line-height: 1.15; margin: 14px 0 8px; font-weight: 700; }
+    .hero p { margin: 0; color: #c5d6dd; max-width: 640px; }
+    nav.toc {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin: -28px auto 32px;
+      max-width: 920px;
+      position: relative;
+      box-shadow: 0 8px 24px rgba(4, 32, 47, 0.08);
+    }
+    nav.toc h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; color: var(--muted); }
+    nav.toc ol { margin: 0; padding-left: 18px; columns: 2; gap: 24px; }
+    nav.toc li { break-inside: avoid; margin: 4px 0; }
+    main.wrap { padding: 0 24px 80px; }
+    h2 { font-size: 24px; margin: 40px 0 12px; color: var(--dark-to); }
+    h3 { font-size: 18px; margin: 28px 0 10px; }
+    .roles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .role {
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px;
+    }
+    .role strong { display: inline-block; background: #e8f6f7; color: var(--action); font-size: 11px; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; margin-bottom: 8px; }
+    .flow {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px;
+      font-size: 13px;
+    }
+    .flow span {
+      background: #04202f; color: #fff; padding: 6px 10px; border-radius: 8px;
+    }
+    .flow span.warn { background: #0f6b4c; }
+    .flow i { color: var(--muted); font-style: normal; }
+    .callout {
+      border-left: 4px solid #d97706;
+      background: #fff7ed;
+      padding: 12px 14px;
+      border-radius: 0 10px 10px 0;
+      margin: 16px 0;
+    }
+    .callout.danger {
+      border-left-color: #b45309;
+      background: #fff1e8;
+    }
+    .callout.ok {
+      border-left-color: #059669;
+      background: #ecfdf5;
+    }
+    figure {
+      margin: 16px 0 28px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    figure img { display: block; width: 100%; height: auto; }
+    figcaption {
+      font-size: 13px; color: var(--muted); padding: 10px 14px 12px; border-top: 1px solid var(--line);
+    }
+    ol.steps, ul { padding-left: 20px; }
+    ol.steps li { margin: 6px 0; }
+    .check { columns: 2; gap: 24px; }
+    .faq dt { font-weight: 650; margin-top: 14px; }
+    .faq dd { margin: 4px 0 0; color: #334; }
+    footer {
+      max-width: 920px; margin: 0 auto; padding: 0 24px 48px; color: var(--muted); font-size: 13px;
+    }
+    @media (max-width: 720px) {
+      .roles, nav.toc ol, .check { columns: 1; grid-template-columns: 1fr; }
+      .hero h1 { font-size: 26px; }
+    }
+    @media print {
+      .hero { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      nav.toc { margin-top: 16px; box-shadow: none; }
+      figure { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <div class="brand">
+        <img src="/ORQESTRAI/identidade-visual/logos/orquestrai-symbol-white.svg" alt="" width="28" height="28" />
+        ORQESTRAI · Uso interno
+      </div>
+      <h1>Manual da pesquisa NPS em Meus Clientes</h1>
+      <p>Passo a passo para o gestor da área designar quem contata o cliente e para o responsável completar cadastros, enviar o link e marcar <strong>NPS enviado</strong>.</p>
+    </div>
+  </header>
+
+  <nav class="toc wrap">
+    <h2>Neste manual</h2>
+    <ol>
+      <li><a href="#visao">Visão geral</a></li>
+      <li><a href="#gestor">Parte 1 — Gestor da área</a></li>
+      <li><a href="#responsavel">Parte 2 — Responsável</a></li>
+      <li><a href="#enviado">Marcar NPS enviado</a></li>
+      <li><a href="#checklist">Checklist</a></li>
+      <li><a href="#faq">Perguntas frequentes</a></li>
+    </ol>
+  </nav>
+
+  <main class="wrap">
+    <h2 id="visao">Visão geral</h2>
+    <div class="roles">
+      <div class="role">
+        <strong>Gestor</strong>
+        <p>Sócio ou gerente cadastrado como gestor oficial da área. Define <em>quem contata</em> cada grupo e cobra o envio.</p>
+      </div>
+      <div class="role">
+        <strong>Responsável</strong>
+        <p>Colaborador escolhido pelo gestor. Completa cadastros, marca elegíveis, envia o WhatsApp e registra o envio no sistema.</p>
+      </div>
+    </div>
+    <p>No sistema, abra <strong>Meus Clientes</strong> e clique em <strong>Ver guia</strong> para o tour interativo. Este manual é a versão com prints.</p>
+    <div class="flow">
+      <span>1. Gestor escolhe quem contata</span><i>→</i>
+      <span>2. Completar cadastro</span><i>→</i>
+      <span>3. Marcar elegível ao NPS</span><i>→</i>
+      <span>4. Enviar link no WhatsApp</span><i>→</i>
+      <span class="warn">5. Marcar NPS enviado (não desmarca)</span><i>→</i>
+      <span>6. Cobrar a resposta</span>
+    </div>
+
+    <h2 id="gestor">Parte 1 — Gestor da área</h2>
+    <h3>Passo 1 — Acessar Meus Clientes</h3>
+    <ol class="steps">
+      <li>Entre no ORQESTRAI.</li>
+      <li>No menu, abra <strong>Meus Clientes</strong>.</li>
+      <li>Você vê os clientes da sua área, o progresso do cadastro e o botão <strong>Ver guia</strong>.</li>
+    </ol>
+    <figure>
+      <img src="nps/images/01-visao-geral.png" alt="Visão geral de Meus Clientes com cabeçalho, progresso e lista de grupos" />
+      <figcaption>Figura 1 — Cabeçalho, barra de progresso, estatísticas e botão Ver guia.</figcaption>
+    </figure>
+
+    <h3>Passo 2 — Identificar pendências</h3>
+    <ol class="steps">
+      <li>Olhe a barra <strong>Progresso do cadastro</strong>.</li>
+      <li>Clique em <strong>Ver pendências</strong> ou no card <strong>Cadastros pendentes</strong>.</li>
+      <li>Priorize grupos com badge de pendência.</li>
+    </ol>
+    <figure>
+      <img src="nps/images/02-progresso-stats.png" alt="Barra de progresso e cards de cadastros completos e pendentes" />
+      <figcaption>Figura 2 — Use os cards para filtrar o que falta antes do envio do NPS.</figcaption>
+    </figure>
+
+    <h3>Passo 3 — Expandir um grupo</h3>
+    <ol class="steps">
+      <li>Clique no card do cliente para expandir.</li>
+      <li>Confira a área responsável e o status comercial (ativo/inativo).</li>
+    </ol>
+    <figure>
+      <img src="nps/images/03-grupo-expandido.png" alt="Card de grupo expandido com lista de contatos" />
+      <figcaption>Figura 3 — Contatos, área responsável e ações do grupo.</figcaption>
+    </figure>
+
+    <h3>Passo 4 — Designar quem contata</h3>
+    <ol class="steps">
+      <li>No card, abra o select <strong>Quem contata</strong>.</li>
+      <li>Escolha um colaborador da <strong>mesma área</strong> do grupo (Cível só vê Cível; Recuperação de Crédito é área separada).</li>
+      <li>A escolha salva sozinha. Repita para todos os grupos da área.</li>
+    </ol>
+    <div class="callout">Só o gestor oficial da área edita este campo. Os demais veem o badge “Contato: Nome”.</div>
+    <figure>
+      <img src="nps/images/04-quem-contata.png" alt="Select Quem contata aberto com lista de colaboradores da área" />
+      <figcaption>Figura 4 — Gestor escolhendo o responsável pelo contato e pelo NPS daquele grupo.</figcaption>
+    </figure>
+
+    <h3>Passo 5 — Acompanhar o responsável</h3>
+    <p>O gestor não precisa enviar o link (salvo se for a pessoa designada). Cobrar até:</p>
+    <ul>
+      <li>cadastros completos;</li>
+      <li>contatos marcados como <strong>Elegível ao NPS</strong>;</li>
+      <li>badge verde <strong>Enviado</strong> no card — essa marcação <strong>não pode ser desfeita</strong>.</li>
+    </ul>
+
+    <h2 id="responsavel">Parte 2 — Responsável (quem contata)</h2>
+    <h3>Passo 1 — Localizar os grupos</h3>
+    <ol class="steps">
+      <li>Abra Meus Clientes.</li>
+      <li>Use busca ou o filtro de cadastros pendentes.</li>
+    </ol>
+    <figure>
+      <img src="nps/images/05-filtro-pendentes.png" alt="Lista filtrada em cadastros pendentes" />
+      <figcaption>Figura 5 — Filtro de cadastros pendentes.</figcaption>
+    </figure>
+
+    <h3>Passo 2 — Confirmar status comercial</h3>
+    <ol class="steps">
+      <li>Expanda o grupo e clique em <strong>Confirmar status</strong> ou <strong>Editar status</strong>.</li>
+      <li>Informe se o cliente está ativo ou inativo (com motivo e data, se inativo).</li>
+    </ol>
+    <figure>
+      <img src="nps/images/06-status-comercial.png" alt="Dialog para confirmar se o grupo está ativo ou inativo" />
+      <figcaption>Figura 6 — Confirmação de status comercial.</figcaption>
+    </figure>
+
+    <h3>Passo 3 — Completar o cadastro</h3>
+    <ol class="steps">
+      <li>Clique no lápis ao lado do contato.</li>
+      <li>Preencha nome, e-mail, telefone e cargo.</li>
+      <li>O checklist precisa ficar verde para o cadastro valer como completo.</li>
+    </ol>
+    <figure>
+      <img src="nps/images/07-editar-contato.png" alt="Formulário de edição do contato com checklist de progresso" />
+      <figcaption>Figura 7 — Checklist do cadastro (nome, e-mail, telefone, cargo e NPS).</figcaption>
+    </figure>
+
+    <h3>Passo 4 — Marcar elegíveis ao NPS</h3>
+    <p>Na seção <strong>Classificação</strong> do mesmo formulário:</p>
+    <ol class="steps">
+      <li>Marque <strong>Elegível ao NPS</strong> para quem pode responder a pesquisa.</li>
+      <li>Se a pessoa não participa, use <strong>Sem NPS</strong>.</li>
+      <li>Salve.</li>
+    </ol>
+    <div class="callout">A Festa de 10 anos fica inativa para gestor/colaborador — só a administração altera.</div>
+    <figure>
+      <img src="nps/images/08-classificacao-nps.png" alt="Seção Classificação com opção Elegível ao NPS" />
+      <figcaption>Figura 8 — Marque Elegível ao NPS ou Sem NPS e salve.</figcaption>
+    </figure>
+
+    <h3>Passo 5 — Gerar e enviar o link</h3>
+    <ol class="steps">
+      <li>No card do grupo, clique em <strong>NPS</strong> (precisa haver pelo menos 1 elegível).</li>
+      <li>Copie o link ou a <strong>mensagem WhatsApp</strong>.</li>
+      <li>Envie ao cliente.</li>
+    </ol>
+    <figure>
+      <img src="nps/images/10-dialog-link-nps.png" alt="Dialog do link NPS com botão NPS enviado e aviso de que não dá para desmarcar" />
+      <figcaption>Figura 10 — Copie a mensagem, envie ao cliente e só então use o botão verde NPS enviado.</figcaption>
+    </figure>
+
+    <h2 id="enviado">Passo 6 — Marcar NPS enviado (obrigatório e irreversível)</h2>
+    <div class="callout danger">
+      <strong>Atenção:</strong> enviar no WhatsApp não registra sozinho no sistema. Depois do envio real, clique em <strong>NPS enviado</strong>.
+      O primeiro clique trava o campo (quem enviou e quando). <strong>Não é possível desmarcar.</strong>
+    </div>
+    <ul>
+      <li>O card passa a mostrar o badge verde <strong>Enviado</strong>.</li>
+      <li>Só clique depois que o link já tiver ido para o cliente.</li>
+    </ul>
+    <figure>
+      <img src="nps/images/09-nps-enviado-badge.png" alt="Card do grupo com badge verde Enviado ao lado do botão NPS" />
+      <figcaption>Figura 9 — Badge Enviado no card do grupo depois da marcação.</figcaption>
+    </figure>
+
+    <h3>Passo 7 — Cobrar a resposta</h3>
+    <ol class="steps">
+      <li>Se o cliente não responder, cobre por WhatsApp, e-mail ou ligação.</li>
+      <li>No dialog NPS, a seção <strong>Já responderam</strong> lista quem concluiu.</li>
+      <li>Para a visão da área, use <strong>Resultados NPS</strong>.</li>
+    </ol>
+    <figure>
+      <img src="nps/images/11-resultados-nps.png" alt="Página Resultados NPS com score e campanha ativa" />
+      <figcaption>Figura 11 — Página de resultados da campanha.</figcaption>
+    </figure>
+
+    <h2 id="checklist">Checklist rápido</h2>
+    <div class="check">
+      <div>
+        <h3>Gestor</h3>
+        <ul>
+          <li>Todos os grupos com Quem contata</li>
+          <li>Responsáveis cientes da tarefa</li>
+          <li>Acompanhar grupos sem badge Enviado</li>
+          <li>Cobrar cadastros pendentes</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Responsável</h3>
+        <ul>
+          <li>Status comercial confirmado</li>
+          <li>Nome, e-mail, telefone e cargo</li>
+          <li>Elegível ao NPS marcado</li>
+          <li>Link enviado ao cliente</li>
+          <li>NPS enviado marcado (não desmarca)</li>
+          <li>Cliente cobrado até responder</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2 id="faq">Perguntas frequentes</h2>
+    <dl class="faq">
+      <dt>Por que o botão NPS está desabilitado?</dt>
+      <dd>Nenhum contato do grupo está marcado como Elegível ao NPS, ou o cadastro ainda está incompleto.</dd>
+      <dt>Preciso marcar NPS enviado depois de mandar o link?</dt>
+      <dd>Sim. O WhatsApp não registra sozinho. Abra o dialog e clique em NPS enviado.</dd>
+      <dt>Dá para desmarcar se cliquei por engano?</dt>
+      <dd>Não. O primeiro clique trava quem enviou e quando.</dd>
+      <dt>Cível e Recuperação de Crédito são a mesma área?</dt>
+      <dd>Não. O select Quem contata lista só pessoas da área exata do grupo.</dd>
+      <dt>Como rever o tour no sistema?</dt>
+      <dd>Em Meus Clientes, clique em Ver guia.</dd>
+    </dl>
+  </main>
+  <footer>
+    ORQESTRAI · Bismarchi Pires · agosto/2026 · uso interno. Tour no app: Meus Clientes → Ver guia.
+  </footer>
+</body>
+</html>
