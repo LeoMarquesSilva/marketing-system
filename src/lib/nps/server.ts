@@ -171,7 +171,7 @@ function scopedGroupIdsForUser(
 }
 
 async function assertGroupInScope(
-  profile: AccessProfile & { id: string },
+  profile: AccessProfile & { id: string; department: string | null },
   clientGroupId: string
 ): Promise<void> {
   const isAdmin = (profile.role ?? "").toLowerCase() === "admin";

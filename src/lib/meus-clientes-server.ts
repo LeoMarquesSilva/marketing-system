@@ -53,7 +53,9 @@ export interface MeusClientesPayload {
   people: EmailPerson[];
   responsibles: EmailGroupResponsible[];
   areaManagers: EmailAreaManagerRow[];
-  systemUsers: Pick<User, "id" | "name" | "avatar_url" | "department">[];
+  systemUsers: Array<
+    Pick<User, "id" | "name" | "avatar_url"> & { department: string | null }
+  >;
   scope: MyClientScope | null;
   isAdmin: boolean;
   syncMeta: MeusClientesSyncMeta;
