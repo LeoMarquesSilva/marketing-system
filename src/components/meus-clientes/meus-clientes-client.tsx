@@ -1925,7 +1925,11 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
                   (tourStepId === "contact-edit" || tourStepId === "contact-nps")
                 }
                 tourAreaContact={index === 0 && tourActive && tourStepId === "area-contact"}
-                tourNpsButton={index === 0 && tourActive && tourStepId === "nps-send"}
+                tourNpsButton={
+                  index === 0 &&
+                  tourActive &&
+                  (tourStepId === "nps-send" || tourStepId === "nps-mark-sent")
+                }
                 onEditContact={(contact) => {
                   setEditingContact(contact);
                   setEditingPerson(null);

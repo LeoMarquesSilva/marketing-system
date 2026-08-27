@@ -42,7 +42,7 @@ const COMMON_STEPS: MeusClientesTourStep[] = [
     id: "welcome",
     target: null,
     title: "Guia do NPS em Meus Clientes",
-    body: "Este guia explica o fluxo completo da pesquisa NPS: o gestor da área designa quem vai contatar cada cliente; a pessoa responsável completa os cadastros, marca quem responde o NPS, envia o link e acompanha até o cliente responder.",
+    body: "Este guia explica o fluxo completo da pesquisa NPS: o gestor da área designa quem vai contatar cada cliente; a pessoa responsável completa os cadastros, marca quem responde o NPS, envia o link, marca “NPS enviado” (essa marcação não pode ser desfeita) e acompanha até o cliente responder.",
   },
   {
     id: "header",
@@ -110,7 +110,14 @@ const COLABORADOR_STEPS: MeusClientesTourStep[] = [
     target: '[data-tour="mc-nps-button"]',
     title: "Responsável: enviar o link NPS",
     roleLabel: "Responsável",
-    body: "Com contatos completos e NPS marcado, clique em NPS no card. Copie a mensagem do WhatsApp, envie ao cliente, marque “NPS enviado” e acompanhe até ele responder. Se necessário, cobre o cliente pelo retorno.",
+    body: "Com cadastros completos e elegíveis marcados, clique em NPS no card. Copie a mensagem do WhatsApp e envie o link ao cliente. Só depois disso volte ao dialog para registrar o envio.",
+  },
+  {
+    id: "nps-mark-sent",
+    target: '[data-tour="mc-nps-button"]',
+    title: "Responsável: marcar NPS enviado",
+    roleLabel: "Responsável",
+    body: "Depois de enviar o link ao cliente, abra o dialog NPS e clique em “NPS enviado”. Isso registra quem mandou e quando. Atenção: depois de marcado, não é possível desmarcar — clique só quando o envio já tiver sido feito. Em seguida, cobre o cliente até ele responder.",
   },
 ];
 
@@ -133,13 +140,13 @@ const CLOSING_STEPS: MeusClientesTourStep[] = [
     target: null,
     title: "Resumo — responsável",
     roleLabel: "Responsável",
-    body: "Seu papel: (1) completar cadastros; (2) marcar elegíveis ao NPS; (3) enviar o link pelo WhatsApp; (4) marcar “NPS enviado”; (5) cobrar o cliente até responder. Dúvidas: fale com o marketing.",
+    body: "Seu papel: (1) completar cadastros; (2) marcar elegíveis ao NPS; (3) enviar o link pelo WhatsApp; (4) marcar “NPS enviado” — essa marcação não pode ser desfeita; (5) cobrar o cliente até responder. Dúvidas: fale com o marketing.",
   },
   {
     id: "finish",
     target: null,
     title: "Pronto para começar",
-    body: "Comece pelos grupos com pendência. Gestores: definam quem contata. Responsáveis: completem cadastros, marquem NPS e enviem o link. Qualquer dúvida, fale com o marketing.",
+    body: "Comece pelos grupos com pendência. Gestores: definam quem contata. Responsáveis: completem cadastros, marquem NPS, enviem o link e marquem “NPS enviado” (não dá para desmarcar depois). Qualquer dúvida, fale com o marketing.",
   },
 ];
 
@@ -151,6 +158,7 @@ export const MEUS_CLIENTES_TOUR_EXPAND_STEPS = new Set([
   "contact-edit",
   "contact-nps",
   "nps-send",
+  "nps-mark-sent",
 ]);
 
 export function buildMeusClientesTourSteps(options: {

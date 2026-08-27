@@ -74,6 +74,10 @@ describe("meus-clientes-tour", () => {
     });
     expect(gestor.some((step) => step.id === "area-contact")).toBe(true);
     expect(gestor.some((step) => step.id === "nps-send")).toBe(true);
+    expect(gestor.some((step) => step.id === "nps-mark-sent")).toBe(true);
+    expect(gestor.find((step) => step.id === "nps-mark-sent")?.body).toMatch(
+      /não é possível desmarcar/
+    );
     expect(gestor.some((step) => step.id === "finish-gestor")).toBe(true);
     expect(gestor.some((step) => step.id === "finish-colaborador")).toBe(true);
 
@@ -85,6 +89,7 @@ describe("meus-clientes-tour", () => {
     expect(colaborador.some((step) => step.id === "area-contact")).toBe(false);
     expect(colaborador.some((step) => step.id === "finish-gestor")).toBe(false);
     expect(colaborador.some((step) => step.id === "contact-nps")).toBe(true);
+    expect(colaborador.some((step) => step.id === "nps-mark-sent")).toBe(true);
   });
 
   it("omite passos de card quando não há grupo de exemplo", () => {
@@ -95,6 +100,7 @@ describe("meus-clientes-tour", () => {
     });
     expect(steps.some((step) => step.id === "group-sample")).toBe(false);
     expect(steps.some((step) => step.id === "nps-send")).toBe(false);
+    expect(steps.some((step) => step.id === "nps-mark-sent")).toBe(false);
     expect(steps.some((step) => step.id === "welcome")).toBe(true);
   });
 });

@@ -13,7 +13,7 @@ O fluxo NPS tem **dois papéis**:
 | Papel | Quem é | O que faz |
 |-------|--------|-----------|
 | **Gestor da área** | Sócio/gerente cadastrado em *Gestores por área* | Designa **quem contata** cada grupo de clientes |
-| **Responsável (quem contata)** | Colaborador escolhido pelo gestor | Completa cadastros, marca elegíveis ao NPS, envia o link e cobra a resposta |
+| **Responsável (quem contata)** | Colaborador escolhido pelo gestor | Completa cadastros, marca elegíveis ao NPS, envia o link, marca **NPS enviado** (irreversível) e cobra a resposta |
 
 ```mermaid
 flowchart TD
@@ -23,7 +23,7 @@ flowchart TD
   D --> E[Marca Elegível ao NPS nos contatos certos]
   E --> F[Gera link NPS no card do grupo]
   F --> G[Copia mensagem WhatsApp e envia ao cliente]
-  G --> H[Marca NPS enviado]
+  G --> H[Marca NPS enviado — não dá para desmarcar]
   H --> I[Acompanha e cobra até o cliente responder]
 ```
 
@@ -96,12 +96,8 @@ Como gestor, você **não precisa** enviar o link pessoalmente (salvo se for voc
 2. Cobrar o responsável até:
    - cadastros completos;
    - contatos marcados como **Elegível ao NPS**;
-   - badge **Enviado** aparecer no card (NPS enviado ao cliente).
+   - o responsável marcar **NPS enviado** (o card passa a mostrar o badge **Enviado** — essa marcação não pode ser desfeita).
 3. Usar **Exportar** se precisar de planilha para controle interno.
-
-![Badge NPS enviado](images/meus-clientes/09-nps-enviado-badge.png)
-
-*Figura 9 — Grupo com NPS já enviado (badge verde **Enviado**).*
 
 ---
 
@@ -177,8 +173,6 @@ No mesmo formulário, seção **Classificação**:
 3. No dialog:
    - copie o **link da pesquisa** ou a **mensagem WhatsApp**;
    - envie ao cliente pelo canal combinado (geralmente WhatsApp).
-4. **Depois de enviar**, clique em **NPS enviado** — isso registra quem mandou e quando (não pode desfazer).
-5. O card passa a exibir o badge **Enviado**.
 
 ![Dialog do link NPS](images/meus-clientes/10-dialog-link-nps.png)
 
@@ -186,7 +180,25 @@ No mesmo formulário, seção **Classificação**:
 
 ---
 
-### Passo 6 — Cobrar e acompanhar resposta
+### Passo 6 — Marcar NPS enviado (obrigatório e irreversível)
+
+Depois de enviar o link ao cliente, volte ao dialog NPS e clique em **NPS enviado**.
+
+Essa marcação:
+
+- registra **quem enviou** e **quando**;
+- faz o card do grupo exibir o badge verde **Enviado**;
+- **não pode ser desmarcada** depois do primeiro clique.
+
+> **Atenção:** só clique em **NPS enviado** depois que o link já tiver sido enviado ao cliente. O primeiro clique trava o campo — não dá para desfazer.
+
+![Badge NPS enviado](images/meus-clientes/09-nps-enviado-badge.png)
+
+*Figura 9 — Grupo com NPS já enviado (badge verde **Enviado**).*
+
+---
+
+### Passo 7 — Cobrar e acompanhar resposta
 
 1. Se o cliente não responder em alguns dias, **cobre** gentilmente (WhatsApp, e-mail ou ligação).
 2. No dialog NPS, veja a seção **Já responderam** quando houver respostas.
@@ -213,7 +225,7 @@ No mesmo formulário, seção **Classificação**:
 - [ ] Nome, e-mail, telefone e cargo de cada contato
 - [ ] **Elegível ao NPS** marcado corretamente
 - [ ] Link enviado ao cliente
-- [ ] **NPS enviado** marcado no sistema
+- [ ] **NPS enviado** marcado no sistema (não dá para desmarcar depois)
 - [ ] Cliente cobrado até responder
 
 ---
@@ -234,6 +246,12 @@ Não. Cada área tem gestor e colaboradores próprios; o select **Quem contata**
 
 **Como rever o passo a passo interativo?**  
 Clique em **Ver guia** no cabeçalho de Meus Clientes.
+
+**Preciso marcar “NPS enviado” depois de mandar o link?**  
+Sim. Enviar no WhatsApp não registra sozinho no sistema. Depois do envio, abra o dialog NPS e clique em **NPS enviado**.
+
+**Dá para desmarcar “NPS enviado” se cliquei por engano?**  
+Não. O primeiro clique trava o campo (quem enviou e quando). Só marque quando o link já tiver sido enviado ao cliente.
 
 ---
 
