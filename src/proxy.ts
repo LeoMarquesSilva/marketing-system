@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { loginPathWithReturn } from "@/lib/login-redirect";
 
 const PUBLIC_PATHS = ["/login", "/t", "/nps", "/manuais"];
 const PUBLIC_API_PREFIXES = ["/api/evolution/webhook"];
@@ -35,7 +36,9 @@ export function proxy(request: NextRequest) {
   // órfão e gera loop infinito (cliente manda p/ login, proxy devolve p/ /).
 
   if (!isAuthenticated && !isPublicPath(pathname) && !pathname.startsWith("/api/")) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(
+      new URL(loginPathWithReturn(pathname, request.nextUrl.search), request.url)
+    );
   }
 
   return NextResponse.next();

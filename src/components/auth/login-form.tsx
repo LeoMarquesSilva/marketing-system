@@ -16,7 +16,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { useAuth } from "@/contexts/auth-context";
-import { resolvePostLoginPath } from "@/lib/post-login-path";
+import { resolvePostLoginPath, resolveRequestedNext } from "@/lib/post-login-path";
 
 const loginSchema = z.object({
   email: z.string().email("E-mail inválido"),
@@ -33,7 +33,7 @@ type SignUpFormValues = z.infer<typeof signUpSchema>;
 export function LoginForm() {
   const { signIn, signUp } = useAuth();
   const searchParams = useSearchParams();
-  const nextPath = searchParams.get("next");
+  const nextPath = resolveRequestedNext(searchParams.get("next"));
   const [isSignUp, setIsSignUp] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 

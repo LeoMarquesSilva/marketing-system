@@ -5,7 +5,11 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { isContentCollaborator } from "@/lib/content-areas";
 import { resolveAllowedSections, canAccessPath } from "@/lib/access-control";
-import { loginPathWithReturn, resolvePostLoginPathFromProfile } from "@/lib/post-login-path";
+import {
+  loginPathWithReturn,
+  resolvePostLoginPathFromProfile,
+  resolveRequestedNext,
+} from "@/lib/post-login-path";
 import { isQualificationPending } from "@/lib/qualification-requirement";
 
 const PUBLIC_PATHS = ["/login", "/t", "/nps", "/manuais"];
@@ -26,8 +30,13 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const search = searchParams.toString() ? `?${searchParams.toString()}` : "";
-  const nextPath = searchParams.get("next");
+  const search =
+    searchParams.toString()
+      ? `?${searchParams.toString()}`
+      : typeof window !== "undefined"
+        ? window.location.search
+        : "";
+  const nextPath = resolveRequestedNext(searchParams.get("next"));
 
   const isPublic =
     PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/")) ||

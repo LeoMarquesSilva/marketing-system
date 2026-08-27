@@ -1,29 +1,15 @@
 import { supabase } from "@/utils/supabase/client";
 import { firstAllowedPath, resolveAllowedSections } from "@/lib/access-control";
 import { isContentCollaborator, isContentManager } from "@/lib/content-areas";
+import { sanitizeNextPath } from "@/lib/login-redirect";
+
+export { loginPathWithReturn, resolveRequestedNext, sanitizeNextPath } from "@/lib/login-redirect";
 
 export interface PostLoginProfile {
   department?: string | null;
   role?: string | null;
   must_change_password?: boolean | null;
   permissions?: string[] | null;
-}
-
-/** Destino interno seguro para `?next=`. Rejeita URL absoluta, protocol-relative e /login. */
-export function sanitizeNextPath(next: string | null | undefined): string | null {
-  if (!next) return null;
-  const trimmed = next.trim();
-  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return null;
-  const pathOnly = trimmed.split("?")[0] ?? "";
-  if (pathOnly === "/login" || pathOnly.startsWith("/login/")) return null;
-  return trimmed;
-}
-
-/** Login com retorno para a página que a pessoa tentou abrir. */
-export function loginPathWithReturn(pathname: string, search = ""): string {
-  if (pathname === "/login" || pathname.startsWith("/login/")) return "/login";
-  const safe = sanitizeNextPath(`${pathname}${search}`);
-  return safe ? `/login?next=${encodeURIComponent(safe)}` : "/login";
 }
 
 /** Destino após login — mesma regra usada no AuthGuard e no formulário de login. */

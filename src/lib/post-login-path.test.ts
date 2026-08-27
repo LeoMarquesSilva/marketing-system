@@ -45,4 +45,11 @@ describe("resolvePostLoginPathFromProfile", () => {
       )
     ).toBe("/alterar-senha");
   });
+
+  it("sem next, gestor/admin cai no dashboard — por isso o next precisa sobreviver", () => {
+    expect(resolvePostLoginPathFromProfile({ role: "designer", department: "Operações Legais" })).toBe(
+      "/"
+    );
+    expect(resolvePostLoginPathFromProfile({ role: "admin", department: "Comercial" })).toBe("/");
+  });
 });
