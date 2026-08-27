@@ -18,6 +18,7 @@ const authState = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({
   usePathname: () => route.pathname,
   useRouter: () => ({ replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@/contexts/auth-context", () => ({
@@ -76,6 +77,27 @@ describe("AuthGuard — acesso parcial a Férias", () => {
     );
 
     expect(markup).toContain("Módulo de férias");
+    expect(markup).not.toContain("Redirecionando...");
+  });
+});
+
+describe("AuthGuard — check-in do Café com Cultura", () => {
+  it("não redireciona colaborador de conteúdo autenticado no check-in", () => {
+    route.pathname = "/cafe-com-cultura";
+    authState.user = { id: "colab-1" };
+    authState.profile = {
+      department: "Cível",
+      permissions: ["/conteudo/roteiros"],
+    };
+    authState.loading = false;
+
+    const markup = renderToStaticMarkup(
+      <AuthGuard>
+        <p>Check-in do café</p>
+      </AuthGuard>
+    );
+
+    expect(markup).toContain("Check-in do café");
     expect(markup).not.toContain("Redirecionando...");
   });
 });

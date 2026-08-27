@@ -38,7 +38,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthGuard>
+    <Suspense fallback={null}>
+      <AuthGuard>
       <MotionConfig reducedMotion="user">
         {/* Tour só no app autenticado com senha já definida — nunca em /alterar-senha. */}
         {!isBareLayout && (
@@ -82,6 +83,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </TimerProvider>
         )}
       </MotionConfig>
-    </AuthGuard>
+      </AuthGuard>
+    </Suspense>
   );
 }

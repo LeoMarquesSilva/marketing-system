@@ -87,6 +87,12 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(colaborador, "/fotos-colaboradores")).toBe(false);
   });
 
+  it("qualquer autenticado acessa o check-in do Café com Cultura", () => {
+    const colaborador = { role: null, permissions: ["/conteudo/roteiros"] };
+    expect(canAccessPath(colaborador, "/cafe-com-cultura")).toBe(true);
+    expect(canAccessPath(colaborador, "/cafe-cultura")).toBe(false);
+  });
+
   it("admin gerencia Fotos Colaboradores mesmo sem a chave no catálogo", () => {
     const admin = { id: "admin-1", role: "admin", permissions: null };
     expect(canAccessPath(admin, "/fotos-colaboradores")).toBe(true);

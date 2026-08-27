@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { isContentCollaborator } from "@/lib/content-areas";
 import { resolveAllowedSections, canAccessPath } from "@/lib/access-control";
-import { resolvePostLoginPathFromProfile } from "@/lib/post-login-path";
+import { loginPathWithReturn, resolvePostLoginPathFromProfile } from "@/lib/post-login-path";
 import { isQualificationPending } from "@/lib/qualification-requirement";
 
 const PUBLIC_PATHS = ["/login", "/t", "/nps"];
@@ -16,7 +16,7 @@ function isPublicProfessionalProfilePath(pathname: string): boolean {
 }
 
 /** Rotas acessíveis por colaboradores de conteúdo (advogados por área). */
-const COLLABORATOR_PATHS = ["/conteudo", "/perfil", "/minhas-fotos"];
+const COLLABORATOR_PATHS = ["/conteudo", "/perfil", "/minhas-fotos", "/cafe-com-cultura"];
 
 /** Rotas que o servidor já protege (redirect se não autenticado/admin). */
 const SERVER_PROTECTED_PATHS = ["/admin"];
@@ -24,7 +24,10 @@ const SERVER_PROTECTED_PATHS = ["/admin"];
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
+  const search = searchParams.toString() ? `?${searchParams.toString()}` : "";
+  const nextPath = searchParams.get("next");
 
   const isPublic =
     PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/")) ||
@@ -45,7 +48,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   // Decide de forma síncrona para onde (se for o caso) o usuário deve ir.
   const redirectTo = (() => {
     if (loading) return null;
-    if (!user && !isPublic) return "/login";
+    if (!user && !isPublic) return loginPathWithReturn(pathname, search);
     if (!user) return null;
 
     // Rotas protegidas pelo servidor (admin): não interferir aqui.
@@ -65,11 +68,11 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
 
     if (pathname === "/completar-qualificacao") {
-      return profile ? resolvePostLoginPathFromProfile(profile) : null;
+      return profile ? resolvePostLoginPathFromProfile(profile, nextPath) : null;
     }
 
     if (pathname === "/login") {
-      return profile ? resolvePostLoginPathFromProfile(profile) : null;
+      return profile ? resolvePostLoginPathFromProfile(profile, nextPath) : null;
     }
 
     // Já trocou a senha: não deixa ficar em /alterar-senha (evita loop / reenvio).

@@ -60,7 +60,7 @@ export const ACCESS_PRESETS: Record<string, string[]> = {
 };
 
 /** Rotas sempre acessíveis para qualquer usuário autenticado. */
-export const ALWAYS_ALLOWED_PATHS = ["/perfil", "/alterar-senha", "/minhas-fotos"];
+export const ALWAYS_ALLOWED_PATHS = ["/perfil", "/alterar-senha", "/minhas-fotos", "/cafe-com-cultura"];
 
 /**
  * Rotas sensíveis que exigem permissão explícita mesmo no modo legado (perfil sem
