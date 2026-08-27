@@ -3,6 +3,7 @@ import { requireAuthenticatedUser } from "@/lib/api-auth";
 import {
   updateClientGroupGestorStatus,
   updateClientGroupResponsibleArea,
+  updateClientGroupAreaContactUser,
 } from "@/lib/meus-clientes-server";
 import type {
   GestorAtividade,
@@ -25,7 +26,18 @@ export async function PATCH(
       contratoVigenciaTermino?: string | null;
       rescisaoContratualData?: string | null;
       responsibleArea?: string | null;
+      areaContactUserId?: string | null;
     };
+
+    if (Object.prototype.hasOwnProperty.call(body, "areaContactUserId")) {
+      const areaContactUserId = await updateClientGroupAreaContactUser({
+        authUserId: user.id,
+        clientGroupId: id,
+        areaContactUserId:
+          typeof body.areaContactUserId === "string" ? body.areaContactUserId : null,
+      });
+      return NextResponse.json({ success: true, areaContactUserId });
+    }
 
     if (Object.prototype.hasOwnProperty.call(body, "responsibleArea")) {
       const responsibleArea = await updateClientGroupResponsibleArea({

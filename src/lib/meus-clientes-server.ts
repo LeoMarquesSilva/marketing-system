@@ -1,5 +1,5 @@
 /**
- * Meus Clientes — leitura no servidor com escopo por gestor/área.
+ * Meus Clientes — leitura no servidor com escopo por área do usuário.
  */
 
 import { createClient as createPublicClient } from "@/utils/supabase/server";
@@ -24,6 +24,9 @@ import {
   filterOutInternalClientGroups,
   resolveClientGroupKey,
   resolveContactGroupKey,
+  resolveUserMeusClientesAreas,
+  userBelongsToClientArea,
+  userManagesClientGroupArea,
   type MyClientScope,
 } from "@/lib/meus-clientes";
 import { normalizeLegalArea } from "@/lib/legal-areas";
@@ -50,25 +53,31 @@ export interface MeusClientesPayload {
   people: EmailPerson[];
   responsibles: EmailGroupResponsible[];
   areaManagers: EmailAreaManagerRow[];
-  systemUsers: Pick<User, "id" | "name" | "avatar_url">[];
+  systemUsers: Pick<User, "id" | "name" | "avatar_url" | "department">[];
   scope: MyClientScope | null;
   isAdmin: boolean;
   syncMeta: MeusClientesSyncMeta;
   clienteAtividade: SioeClienteAtividadeIndex;
   clientGroupStatusById: Record<string, ClientGroupGestorStatus>;
+  areaContactByGroupId: Record<string, string | null>;
   npsSentByGroupId: Record<string, { sentAt: string; sentByName: string }>;
 }
 
-async function resolveProfile(authUserId: string): Promise<AccessProfile & { id: string }> {
+async function resolveProfile(
+  authUserId: string
+): Promise<AccessProfile & { id: string; department: string | null }> {
   const admin = getAdminClient();
   const { data, error } = await admin
     .from("users")
-    .select("id, role, permissions")
+    .select("id, role, permissions, department")
     .eq("auth_id", authUserId)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Usuário sem cadastro no sistema.");
-  return data as AccessProfile & { id: string };
+  return {
+    ...(data as AccessProfile & { id: string }),
+    department: (data.department as string | null) ?? null,
+  };
 }
 
 async function fetchSyncMeta(admin: ReturnType<typeof getAdminClient>): Promise<MeusClientesSyncMeta> {
@@ -158,7 +167,7 @@ export async function fetchMeusClientesPayload(options: {
       .from("email_area_managers")
       .select("area, user_id, users!email_area_managers_user_id_fkey(name, is_active)")
       .order("area"),
-    admin.from("users").select("id, name, avatar_url").or("is_active.eq.true,is_active.is.null").order("name"),
+    admin.from("users").select("id, name, avatar_url, department").or("is_active.eq.true,is_active.is.null").order("name"),
     fetchSyncMeta(admin),
     fetchSioeClienteAtividadeIndex(),
   ]);
@@ -185,13 +194,19 @@ export async function fetchMeusClientesPayload(options: {
   );
   const areaManagers = mapAreaManagers(managerRows as Record<string, unknown>[] | null);
 
+  const departmentByUserId = new Map<string, string | null>(
+    (userRows ?? []).map((row) => [row.id as string, (row.department as string | null) ?? null])
+  );
+
   const useFullDataset = isAdmin && options.viewAll && !options.filterGestorId;
   const scopeUserId =
     isAdmin && options.filterGestorId ? options.filterGestorId : profile.id;
+  const scopeDepartment = departmentByUserId.get(scopeUserId) ?? profile.department;
+  const scopeAreas = resolveUserMeusClientesAreas(scopeDepartment);
 
   const scope = useFullDataset
     ? null
-    : computeMyClientScope(allCompanies, allResponsibles, scopeUserId, areaManagers, allPeople);
+    : computeMyClientScope(allCompanies, allResponsibles, scopeAreas, allPeople);
 
   const companies = useFullDataset
     ? allCompanies
@@ -225,21 +240,23 @@ export async function fetchMeusClientesPayload(options: {
     id: u.id as string,
     name: u.name as string,
     avatar_url: (u.avatar_url as string | null) ?? null,
+    department: (u.department as string | null) ?? null,
   }));
 
   const clientGroupStatusById: Record<string, ClientGroupGestorStatus> = {};
+  const areaContactByGroupId: Record<string, string | null> = {};
   if (scopedGroupIds.size > 0) {
     const { data: groupStatusRows, error: groupStatusError } = await admin
       .from("email_client_groups")
       .select(
-        "id, gestor_atividade, inativo_encerramento_tipo, contrato_vigencia_termino, rescisao_contratual_data, rescisao_contratual, gestor_atividade_confirmed_at, gestor_atividade_confirmed_by_user_id"
+        "id, gestor_atividade, inativo_encerramento_tipo, contrato_vigencia_termino, rescisao_contratual_data, rescisao_contratual, gestor_atividade_confirmed_at, gestor_atividade_confirmed_by_user_id, area_contact_user_id"
       )
       .in("id", Array.from(scopedGroupIds));
     if (groupStatusError) throw new Error(groupStatusError.message);
     for (const row of groupStatusRows ?? []) {
-      clientGroupStatusById[row.id as string] = mapClientGroupGestorStatus(
-        row as Record<string, unknown>
-      );
+      const groupId = row.id as string;
+      clientGroupStatusById[groupId] = mapClientGroupGestorStatus(row as Record<string, unknown>);
+      areaContactByGroupId[groupId] = (row.area_contact_user_id as string | null) ?? null;
     }
   }
 
@@ -257,6 +274,7 @@ export async function fetchMeusClientesPayload(options: {
     syncMeta,
     clienteAtividade,
     clientGroupStatusById,
+    areaContactByGroupId,
     npsSentByGroupId,
   };
 }
@@ -294,16 +312,16 @@ async function loadMeusClientesScopeContext(admin: ReturnType<typeof getAdminCli
 
 function userCanAccessClientGroup(
   clientGroupId: string,
-  profile: AccessProfile & { id: string },
+  profile: AccessProfile & { id: string; department: string | null },
   isAdmin: boolean,
   context: Awaited<ReturnType<typeof loadMeusClientesScopeContext>>
 ): boolean {
   if (isAdmin) return true;
+  const scopeAreas = resolveUserMeusClientesAreas(profile.department);
   const scope = computeMyClientScope(
     context.allCompanies,
     context.allResponsibles,
-    profile.id,
-    context.areaManagers,
+    scopeAreas,
     context.allPeople
   );
   for (const company of context.allCompanies) {
@@ -423,4 +441,80 @@ export async function updateClientGroupResponsibleArea(options: {
 
   if (error) throw new Error(error.message);
   return normalizeLegalArea((data?.responsible_area as string | null) ?? null);
+}
+
+export async function updateClientGroupAreaContactUser(options: {
+  authUserId: string;
+  clientGroupId: string;
+  areaContactUserId: string | null;
+}): Promise<string | null> {
+  const publicClient = await createPublicClient();
+  const {
+    data: { user },
+  } = await publicClient.auth.getUser();
+  if (!user || user.id !== options.authUserId) {
+    throw new Error("Não autenticado.");
+  }
+
+  const profile = await resolveProfile(options.authUserId);
+  if (!canAccessPath(profile, "/meus-clientes")) {
+    throw new Error("Sem permissão para Meus Clientes.");
+  }
+
+  const admin = getAdminClient();
+  const context = await loadMeusClientesScopeContext(admin);
+  const isAdmin = (profile.role ?? "").toLowerCase() === "admin";
+  if (
+    !userCanAccessClientGroup(options.clientGroupId, profile, isAdmin, context)
+  ) {
+    throw new Error("Sem permissão para editar este grupo.");
+  }
+
+  const { data: groupRow, error: groupError } = await admin
+    .from("email_client_groups")
+    .select("id, responsible_area")
+    .eq("id", options.clientGroupId)
+    .maybeSingle();
+  if (groupError) throw new Error(groupError.message);
+  if (!groupRow) throw new Error("Grupo não encontrado.");
+
+  const responsibleArea = normalizeLegalArea((groupRow.responsible_area as string | null) ?? null);
+  if (!responsibleArea) {
+    throw new Error("Defina a área responsável do grupo antes de designar quem contata.");
+  }
+
+  if (
+    !userManagesClientGroupArea(profile.id, responsibleArea, context.areaManagers)
+  ) {
+    throw new Error("Somente o gestor oficial da área pode designar quem contata o grupo.");
+  }
+
+  let areaContactUserId = options.areaContactUserId?.trim() || null;
+  if (areaContactUserId) {
+    const { data: assignee, error: assigneeError } = await admin
+      .from("users")
+      .select("id, department, is_active")
+      .eq("id", areaContactUserId)
+      .maybeSingle();
+    if (assigneeError) throw new Error(assigneeError.message);
+    if (!assignee || assignee.is_active === false) {
+      throw new Error("Selecione um usuário ativo da área.");
+    }
+    if (!userBelongsToClientArea(assignee.department as string | null, responsibleArea)) {
+      throw new Error("A pessoa designada precisa pertencer à área responsável do grupo.");
+    }
+  }
+
+  const { data, error } = await admin
+    .from("email_client_groups")
+    .update({
+      area_contact_user_id: areaContactUserId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", options.clientGroupId)
+    .select("area_contact_user_id")
+    .single();
+
+  if (error) throw new Error(error.message);
+  return (data?.area_contact_user_id as string | null) ?? null;
 }

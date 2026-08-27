@@ -6,11 +6,12 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/auth-context";
 import { useMeusClientesTour } from "@/contexts/meus-clientes-tour-context";
 import {
+  buildMeusClientesTourSteps,
   MEUS_CLIENTES_TOUR_EXPAND_STEPS,
-  MEUS_CLIENTES_TOUR_STEPS,
   MEUS_CLIENTES_TUTORIAL_SESSION_KEY,
   shouldShowMeusClientesTutorial,
 } from "@/lib/meus-clientes-tour";
@@ -113,6 +114,7 @@ function TourCard({
   total,
   title,
   body,
+  roleLabel,
   rect,
   onBack,
   onNext,
@@ -123,6 +125,7 @@ function TourCard({
   total: number;
   title: string;
   body: string;
+  roleLabel?: string;
   rect: DOMRect | null;
   onBack: () => void;
   onNext: () => void;
@@ -137,7 +140,7 @@ function TourCard({
       return;
     }
     const cardW = 380;
-    const cardH = 240;
+    const cardH = 260;
     const gap = 16;
     let top = rect.bottom + gap;
     let left = rect.left + rect.width / 2 - cardW / 2;
@@ -167,9 +170,19 @@ function TourCard({
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/20">
             <Sparkles className="h-4 w-4 text-violet-200" />
           </span>
-          <p className="text-[11px] font-medium uppercase tracking-wide text-white/50">
-            Passo {stepIndex + 1} de {total}
-          </p>
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-white/50">
+              Passo {stepIndex + 1} de {total}
+            </p>
+            {roleLabel && (
+              <Badge
+                variant="outline"
+                className="mt-1 border-violet-300/40 bg-violet-500/10 px-1.5 py-0 text-[10px] font-medium text-violet-100"
+              >
+                {roleLabel}
+              </Badge>
+            )}
+          </div>
         </div>
         <button
           type="button"
@@ -228,23 +241,33 @@ function TourCard({
   );
 }
 
-export function MeusClientesTour() {
+interface MeusClientesTourProps {
+  /** Incrementar para reiniciar o guia (botão Ver guia). */
+  restartKey?: number;
+}
+
+export function MeusClientesTour({ restartKey = 0 }: MeusClientesTourProps) {
   const { profile, refreshProfile } = useAuth();
-  const { setTourState, dataLoaded, hasSampleGroup } = useMeusClientesTour();
+  const {
+    setTourState,
+    dataLoaded,
+    hasSampleGroup,
+    isAreaManager,
+    canShowAreaContactStep,
+  } = useMeusClientesTour();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [active, setActive] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
 
-  // Sem nenhum grupo de cliente vinculado ao usuário, os passos que dependem de
-  // um card de exemplo (expandir grupo, status, editar contato) não têm o que
-  // destacar — pula-los evita um card "solto" no meio da tela sem contexto.
   const steps = useMemo(
     () =>
-      hasSampleGroup
-        ? MEUS_CLIENTES_TOUR_STEPS
-        : MEUS_CLIENTES_TOUR_STEPS.filter((s) => !MEUS_CLIENTES_TOUR_EXPAND_STEPS.has(s.id)),
-    [hasSampleGroup]
+      buildMeusClientesTourSteps({
+        hasSampleGroup,
+        isAreaManager,
+        canShowAreaContactStep,
+      }),
+    [hasSampleGroup, isAreaManager, canShowAreaContactStep]
   );
 
   const step = steps[stepIndex];
@@ -258,16 +281,17 @@ export function MeusClientesTour() {
     });
   }, [active, stepIndex, step?.id, setTourState]);
 
-  // Evita que o tour reabra sozinho: refreshProfile() (dentro de finish) muda a
-  // referência de `profile`, o que re-executa o efeito abaixo antes do
-  // router.replace remover "?tutorial=1" da URL — sem essa guarda, o efeito via
-  // `forced=true` (query ainda presente) e reativava o tour no último passo.
   const dismissedRef = useRef(false);
+
+  useEffect(() => {
+    dismissedRef.current = false;
+    setStepIndex(0);
+    setActive(false);
+  }, [restartKey]);
 
   useEffect(() => {
     if (!profile || !dataLoaded) return;
     if (dismissedRef.current) return;
-    // Defesa extra: nunca iniciar enquanto a troca de senha é obrigatória.
     if (profile.must_change_password) {
       setActive(false);
       return;
@@ -276,12 +300,12 @@ export function MeusClientesTour() {
     const fromSession =
       typeof window !== "undefined" &&
       sessionStorage.getItem(MEUS_CLIENTES_TUTORIAL_SESSION_KEY) === "1";
-    const forced = fromQuery || fromSession;
+    const forced = fromQuery || fromSession || restartKey > 0;
     if (!shouldShowMeusClientesTutorial(profile, { forced })) return;
     if (forced) sessionStorage.setItem(MEUS_CLIENTES_TUTORIAL_SESSION_KEY, "1");
     const t = window.setTimeout(() => setActive(true), 400);
     return () => window.clearTimeout(t);
-  }, [profile, searchParams, dataLoaded]);
+  }, [profile, searchParams, dataLoaded, restartKey]);
 
   const finish = useCallback(async () => {
     dismissedRef.current = true;
@@ -323,6 +347,7 @@ export function MeusClientesTour() {
         total={steps.length}
         title={step.title}
         body={step.body}
+        roleLabel={step.roleLabel}
         rect={rect}
         onBack={goBack}
         onNext={goNext}
@@ -331,4 +356,11 @@ export function MeusClientesTour() {
       />
     </>
   );
+}
+
+/** Dispara o guia na sessão atual (botão "Ver guia"). */
+export function startMeusClientesTour() {
+  if (typeof window !== "undefined") {
+    sessionStorage.setItem(MEUS_CLIENTES_TUTORIAL_SESSION_KEY, "1");
+  }
 }

@@ -1,10 +1,9 @@
 /**
- * Escopo "meus clientes": quais empresas/pessoas um usuário (gestor)
- * é responsável por preencher.
+ * Escopo "meus clientes": quais empresas/pessoas um usuário vê no painel.
  *
- * Entram grupos com área responsável: marcada em email_client_groups.responsible_area
- * ou inferida quando o grupo tem exatamente uma área envolvida. Sem isso, o grupo
- * não aparece para gestores — só o admin em "Ver todos".
+ * A visibilidade é pela **área do usuário** (`users.department`), não pelo
+ * cadastro em `email_area_managers`. Entram grupos cuja área responsável
+ * (marcada ou inferida) coincide com a área do usuário.
  */
 
 import type { EmailCompany, EmailContact, EmailGroupResponsible, EmailPerson } from "./email-marketing";
@@ -229,14 +228,50 @@ function assignedAreaForGroup(
   return areaByGroupId.get(groupId) ?? null;
 }
 
+export function resolveUserMeusClientesAreas(department: string | null | undefined): Set<string> {
+  const normalized = normalizeLegalArea(department?.trim() || null);
+  if (!normalized) return new Set();
+  if (isSubArea(normalized)) return new Set([normalized]);
+  return new Set(expandRootArea(normalized));
+}
+
+/** Áreas de departamento elegíveis para ser contato de um grupo com área responsável X. */
+export function resolveContactAssigneeAreas(clientArea: string | null | undefined): Set<string> {
+  const normalized = normalizeLegalArea(clientArea?.trim() || null);
+  if (!normalized) return new Set();
+  return new Set([normalized]);
+}
+
+export function userBelongsToClientArea(
+  department: string | null | undefined,
+  clientArea: string | null | undefined
+): boolean {
+  if (!clientArea) return false;
+  const userArea = normalizeLegalArea(department?.trim() || null);
+  if (!userArea) return false;
+  return resolveContactAssigneeAreas(clientArea).has(userArea);
+}
+
+/** Gestor oficial (`email_area_managers`) que cobre a área responsável do grupo. */
+export function userManagesClientGroupArea(
+  userId: string,
+  clientArea: string | null | undefined,
+  areaManagers: EmailAreaManager[]
+): boolean {
+  const normalized = normalizeLegalArea(clientArea?.trim() || null);
+  if (!normalized) return false;
+  return areaManagers.some((manager) => {
+    if (manager.userId !== userId) return false;
+    return normalizeLegalArea(manager.area) === normalized;
+  });
+}
+
 export function computeMyClientScope(
   companies: EmailCompany[],
   responsibles: EmailGroupResponsible[],
-  userId: string,
-  areaManagers: EmailAreaManager[] = [],
+  userAreas: Set<string>,
   people: EmailPerson[] = []
 ): MyClientScope {
-  const userAreas = new Set(areaManagers.filter((m) => m.userId === userId).map((m) => m.area));
   const areaByGroupId = buildEffectiveResponsibleAreaByGroupId(companies, people, responsibles);
   const personAreas = personAreasFromResponsibles(responsibles);
 
@@ -245,7 +280,6 @@ export function computeMyClientScope(
     const ownerArea = company.clientGroupId
       ? assignedAreaForGroup(company.clientGroupId, areaByGroupId)
       : resolveEffectiveResponsibleArea(company.responsibleArea, company.legalAreas);
-    // Escopo exclusivo: só gestores da área marcada (exata), sem herdar da área pai.
     if (ownerArea && userAreas.has(ownerArea)) {
       companyIds.add(company.id);
     }
@@ -288,7 +322,8 @@ export function buildManagerSummary(
   people: EmailPerson[],
   responsibles: EmailGroupResponsible[],
   areaManagers: EmailAreaManager[],
-  userNameById: Map<string, string>
+  userNameById: Map<string, string>,
+  departmentByUserId: Map<string, string | null>
 ): ManagerSummaryRow[] {
   const userIds = new Set(areaManagers.map((m) => m.userId));
 
@@ -303,7 +338,8 @@ export function buildManagerSummary(
 
   const rows: ManagerSummaryRow[] = [];
   for (const userId of userIds) {
-    const scope = computeMyClientScope(companies, responsibles, userId, areaManagers, people);
+    const userAreas = resolveUserMeusClientesAreas(departmentByUserId.get(userId));
+    const scope = computeMyClientScope(companies, responsibles, userAreas, people);
     if (scope.companyIds.size === 0 && scope.personIds.size === 0) continue;
 
     // Mostra apenas a(s) área(s) pela(s) qual(is) o usuário é gestor oficial —

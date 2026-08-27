@@ -16,6 +16,10 @@ import {
   userCoversEntityArea,
   applyEffectiveResponsibleAreas,
   computeMyClientScope,
+  resolveUserMeusClientesAreas,
+  resolveContactAssigneeAreas,
+  userBelongsToClientArea,
+  userManagesClientGroupArea,
   resolveEffectiveResponsibleArea,
 } from "@/lib/meus-clientes";
 import { personNameKey } from "@/lib/email-marketing-normalize";
@@ -274,9 +278,6 @@ describe("buildClientGroupKeysForAreaFilter", () => {
 });
 
 describe("área responsável exclusiva", () => {
-  const trabalhistaGestor = { area: "Trabalhista", userId: "u-trab" };
-  const civelGestor = { area: "Cível", userId: "u-civel" };
-
   function company(partial: Partial<EmailCompany> & { id: string }): EmailCompany {
     return {
       name: "Empresa",
@@ -299,10 +300,10 @@ describe("área responsável exclusiva", () => {
     };
   }
 
-  it("sem marcação, gestores não veem o grupo", () => {
+  it("sem marcação, usuários da área não veem o grupo", () => {
     const companies = [company({ id: "c1" })];
-    const trab = computeMyClientScope(companies, [], "u-trab", [trabalhistaGestor, civelGestor]);
-    const civel = computeMyClientScope(companies, [], "u-civel", [trabalhistaGestor, civelGestor]);
+    const trab = computeMyClientScope(companies, [], resolveUserMeusClientesAreas("Trabalhista"));
+    const civel = computeMyClientScope(companies, [], resolveUserMeusClientesAreas("Cível"));
     expect(trab.companyIds.has("c1")).toBe(false);
     expect(civel.companyIds.has("c1")).toBe(false);
   });
@@ -315,14 +316,14 @@ describe("área responsável exclusiva", () => {
         responsibleUserIds: ["u-civel"],
       }),
     ];
-    const civel = computeMyClientScope(companies, [], "u-civel", [trabalhistaGestor, civelGestor]);
+    const civel = computeMyClientScope(companies, [], resolveUserMeusClientesAreas("Cível"));
     expect(civel.companyIds.has("c1")).toBe(false);
   });
 
   it("com uma única área envolvida, essa área vira responsável automaticamente", () => {
     const companies = [company({ id: "c1", legalAreas: ["Trabalhista"] })];
-    const trab = computeMyClientScope(companies, [], "u-trab", [trabalhistaGestor, civelGestor]);
-    const civel = computeMyClientScope(companies, [], "u-civel", [trabalhistaGestor, civelGestor]);
+    const trab = computeMyClientScope(companies, [], resolveUserMeusClientesAreas("Trabalhista"));
+    const civel = computeMyClientScope(companies, [], resolveUserMeusClientesAreas("Cível"));
     expect(trab.companyIds.has("c1")).toBe(true);
     expect(civel.companyIds.has("c1")).toBe(false);
   });
@@ -332,7 +333,7 @@ describe("área responsável exclusiva", () => {
       company({ id: "c1", legalAreas: ["Trabalhista"] }),
       company({ id: "c2", legalAreas: [] }),
     ];
-    const trab = computeMyClientScope(companies, [], "u-trab", [trabalhistaGestor, civelGestor]);
+    const trab = computeMyClientScope(companies, [], resolveUserMeusClientesAreas("Trabalhista"));
     expect(trab.companyIds.has("c1")).toBe(true);
     expect(trab.companyIds.has("c2")).toBe(true);
   });
@@ -351,14 +352,16 @@ describe("área responsável exclusiva", () => {
         openProcessesCount: 1,
       },
     ];
-    const civel = computeMyClientScope(companies, responsibles, "u-civel", [
-      trabalhistaGestor,
-      civelGestor,
-    ]);
-    const trab = computeMyClientScope(companies, responsibles, "u-trab", [
-      trabalhistaGestor,
-      civelGestor,
-    ]);
+    const civel = computeMyClientScope(
+      companies,
+      responsibles,
+      resolveUserMeusClientesAreas("Cível")
+    );
+    const trab = computeMyClientScope(
+      companies,
+      responsibles,
+      resolveUserMeusClientesAreas("Trabalhista")
+    );
     expect(civel.companyIds.has("c1")).toBe(true);
     expect(trab.companyIds.has("c1")).toBe(false);
   });
@@ -376,8 +379,7 @@ describe("área responsável exclusiva", () => {
     const trab = computeMyClientScope(
       companies,
       [],
-      "u-trab",
-      [trabalhistaGestor, civelGestor],
+      resolveUserMeusClientesAreas("Trabalhista"),
       people
     );
     expect(trab.personIds.has("p1")).toBe(true);
@@ -385,21 +387,21 @@ describe("área responsável exclusiva", () => {
 
   it("marcação explícita prevalece sobre a única área envolvida", () => {
     const companies = [company({ id: "c1", legalAreas: ["Cível"], responsibleArea: "Trabalhista" })];
-    const trab = computeMyClientScope(companies, [], "u-trab", [trabalhistaGestor, civelGestor]);
-    const civel = computeMyClientScope(companies, [], "u-civel", [trabalhistaGestor, civelGestor]);
+    const trab = computeMyClientScope(companies, [], resolveUserMeusClientesAreas("Trabalhista"));
+    const civel = computeMyClientScope(companies, [], resolveUserMeusClientesAreas("Cível"));
     expect(trab.companyIds.has("c1")).toBe(true);
     expect(civel.companyIds.has("c1")).toBe(false);
   });
 
-  it("com área responsável, só o gestor da área marcada vê o grupo", () => {
+  it("com área responsável, só usuários da área marcada veem o grupo", () => {
     const companies = [company({ id: "c1", responsibleArea: "Trabalhista" })];
-    const trab = computeMyClientScope(companies, [], "u-trab", [trabalhistaGestor, civelGestor]);
-    const civel = computeMyClientScope(companies, [], "u-civel", [trabalhistaGestor, civelGestor]);
+    const trab = computeMyClientScope(companies, [], resolveUserMeusClientesAreas("Trabalhista"));
+    const civel = computeMyClientScope(companies, [], resolveUserMeusClientesAreas("Cível"));
     expect(trab.companyIds.has("c1")).toBe(true);
     expect(civel.companyIds.has("c1")).toBe(false);
   });
 
-  it("advogado responsável de outra área deixa de ver o cliente marcado", () => {
+  it("advogado de outra área não vê cliente marcado para área diferente", () => {
     const companies = [
       company({
         id: "c1",
@@ -407,7 +409,11 @@ describe("área responsável exclusiva", () => {
         responsibleUserIds: ["u-advogado-civel"],
       }),
     ];
-    const scope = computeMyClientScope(companies, [], "u-advogado-civel", [trabalhistaGestor, civelGestor]);
+    const scope = computeMyClientScope(
+      companies,
+      [],
+      resolveUserMeusClientesAreas("Cível")
+    );
     expect(scope.companyIds.has("c1")).toBe(false);
   });
 
@@ -424,38 +430,62 @@ describe("área responsável exclusiva", () => {
     const trab = computeMyClientScope(
       companies,
       [],
-      "u-trab",
-      [trabalhistaGestor, civelGestor],
+      resolveUserMeusClientesAreas("Trabalhista"),
       people
     );
     const civel = computeMyClientScope(
       companies,
       [],
-      "u-civel",
-      [trabalhistaGestor, civelGestor],
+      resolveUserMeusClientesAreas("Cível"),
       people
     );
     expect(trab.personIds.has("p1")).toBe(true);
     expect(civel.personIds.has("p1")).toBe(false);
   });
 
-  it("com área responsável Recuperação de Crédito, só o gestor dessa área vê o grupo", () => {
-    const recuperacaoGestor = { area: "Recuperação de Crédito", userId: "u-rec" };
+  it("área pai Cível enxerga subárea Recuperação de Crédito", () => {
     const companies = [company({ id: "c1", responsibleArea: "Recuperação de Crédito" })];
     const rec = computeMyClientScope(
       companies,
       [],
-      "u-rec",
-      [trabalhistaGestor, civelGestor, recuperacaoGestor]
+      resolveUserMeusClientesAreas("Recuperação de Crédito")
     );
-    const civel = computeMyClientScope(
-      companies,
-      [],
-      "u-civel",
-      [trabalhistaGestor, civelGestor, recuperacaoGestor]
-    );
+    const civel = computeMyClientScope(companies, [], resolveUserMeusClientesAreas("Cível"));
+    const trab = computeMyClientScope(companies, [], resolveUserMeusClientesAreas("Trabalhista"));
     expect(rec.companyIds.has("c1")).toBe(true);
-    expect(civel.companyIds.has("c1")).toBe(false);
+    expect(civel.companyIds.has("c1")).toBe(true);
+    expect(trab.companyIds.has("c1")).toBe(false);
+  });
+});
+
+describe("contato da área por gestor", () => {
+  it("limita colaboradores elegíveis à área responsável exata do grupo", () => {
+    const areas = resolveContactAssigneeAreas("Cível");
+    expect(areas.has("Cível")).toBe(true);
+    expect(areas.has("Recuperação de Crédito")).toBe(false);
+    expect(resolveContactAssigneeAreas("Recuperação de Crédito")).toEqual(
+      new Set(["Recuperação de Crédito"])
+    );
+  });
+
+  it("identifica colaborador da área", () => {
+    expect(userBelongsToClientArea("Cível", "Cível")).toBe(true);
+    expect(userBelongsToClientArea("Recuperação de Crédito", "Cível")).toBe(false);
+    expect(userBelongsToClientArea("Recuperação de Crédito", "Recuperação de Crédito")).toBe(true);
+    expect(userBelongsToClientArea("Trabalhista", "Cível")).toBe(false);
+  });
+
+  it("só gestor oficial da mesma área pode gerenciar o grupo", () => {
+    const managers = [
+      { area: "Cível", userId: "gestor-civel" },
+      { area: "Trabalhista", userId: "gestor-trab" },
+    ];
+    expect(userManagesClientGroupArea("gestor-civel", "Cível", managers)).toBe(true);
+    expect(userManagesClientGroupArea("gestor-civel", "Recuperação de Crédito", managers)).toBe(
+      false
+    );
+    expect(userManagesClientGroupArea("gestor-trab", "Cível", managers)).toBe(false);
+    expect(userManagesClientGroupArea("advogado-civel", "Cível", managers)).toBe(false);
   });
 });
 

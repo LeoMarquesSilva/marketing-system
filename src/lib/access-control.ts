@@ -65,7 +65,7 @@ export const ALWAYS_ALLOWED_PATHS = ["/perfil", "/alterar-senha", "/minhas-fotos
 /**
  * Rotas sensíveis que exigem permissão explícita mesmo no modo legado (perfil sem
  * `permissions` configuradas não ganha acesso automático, ao contrário do resto do
- * catálogo): "/meus-clientes" (carteira por gestor) e "/rh" (dados de RH).
+ * catálogo): "/meus-clientes" (carteira por área do usuário) e "/rh" (dados de RH).
  */
 
 /** Página inicial do colaborador de conteúdo (desempenho no Instagram). */

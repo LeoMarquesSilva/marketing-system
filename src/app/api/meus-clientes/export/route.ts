@@ -15,6 +15,11 @@ import {
 } from "@/lib/meus-clientes";
 import { getPartyInviteTipoLabel, parsePartyInviteTipo } from "@/lib/party-invite-types";
 import type { PartyInviteTipo } from "@/lib/party-invite-types";
+import {
+  parseInviteFilterParam,
+  memberMatchesInviteFilter,
+  resolveGestorInviteFilter,
+} from "@/lib/meus-clientes-invite-filter";
 
 export const dynamic = "force-dynamic";
 
@@ -25,41 +30,6 @@ function csvEscape(value: string): string {
 
 function csvRow(cols: string[]): string {
   return cols.map(csvEscape).join(",");
-}
-
-type InviteFilter = "all" | "party" | "nps" | "both" | "none" | "not_party" | "not_nps";
-
-function parseInviteFilter(value: string | null): InviteFilter {
-  if (
-    value === "party" ||
-    value === "nps" ||
-    value === "both" ||
-    value === "none" ||
-    value === "not_party" ||
-    value === "not_nps"
-  ) {
-    return value;
-  }
-  return "all";
-}
-
-function matchesInviteFilters(
-  entity: {
-    npsEligible: boolean;
-    partyInvite: boolean;
-    partyInviteTipo?: PartyInviteTipo | null;
-  },
-  inviteFilter: InviteFilter,
-  partyTipoFilter: PartyInviteTipo | null
-): boolean {
-  if (partyTipoFilter && entity.partyInviteTipo !== partyTipoFilter) return false;
-  if (inviteFilter === "party") return entity.partyInvite;
-  if (inviteFilter === "nps") return entity.npsEligible;
-  if (inviteFilter === "both") return entity.partyInvite && entity.npsEligible;
-  if (inviteFilter === "none") return !entity.partyInvite && !entity.npsEligible;
-  if (inviteFilter === "not_party") return !entity.partyInvite;
-  if (inviteFilter === "not_nps") return !entity.npsEligible;
-  return true;
 }
 
 function rowMatchesSearch(values: Array<string | null | undefined>, query: string): boolean {
@@ -77,16 +47,18 @@ export async function GET(request: Request) {
     const filterGestorId = url.searchParams.get("gestorId") || null;
     const filterArea = url.searchParams.get("area") || null;
     const filterStatus = url.searchParams.get("status") || "all";
-    const inviteFilter = parseInviteFilter(url.searchParams.get("invite"));
+    const inviteFilterParam = parseInviteFilterParam(url.searchParams.get("invite"));
     const partyTipoFilter = parsePartyInviteTipo(url.searchParams.get("partyTipo"));
     const search = (url.searchParams.get("search") ?? "").trim();
     const excludeSemGrupo = url.searchParams.get("excludeSemGrupo") === "1";
 
-    const { companies, contacts, people, responsibles } = await fetchMeusClientesPayload({
+    const { companies, contacts, people, responsibles, isAdmin } = await fetchMeusClientesPayload({
       authUserId: user.id,
       viewAll,
       filterGestorId,
     });
+    const inviteFilter = resolveGestorInviteFilter(isAdmin, inviteFilterParam);
+    const partyTipo: PartyInviteTipo | "all" = partyTipoFilter ?? "all";
 
     const companiesById = new Map(companies.map((c) => [c.id, c]));
     const personAreas = new Map<string, string[]>();
@@ -133,7 +105,7 @@ export async function GET(request: Request) {
       ) {
         return false;
       }
-      if (!matchesInviteFilters(contact, inviteFilter, partyTipoFilter)) return false;
+      if (!memberMatchesInviteFilter(contact, inviteFilter, partyTipo)) return false;
       return true;
     });
 
@@ -166,7 +138,7 @@ export async function GET(request: Request) {
       ) {
         return false;
       }
-      if (!matchesInviteFilters(person, inviteFilter, partyTipoFilter)) return false;
+      if (!memberMatchesInviteFilter(person, inviteFilter, partyTipo)) return false;
       return true;
     });
     const filteredPeople = filterPeopleNotInContacts(filteredPeopleRaw, filteredContacts);

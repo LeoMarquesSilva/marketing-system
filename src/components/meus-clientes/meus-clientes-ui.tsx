@@ -77,7 +77,11 @@ export const FILTER_SEM_RESPONSAVEL = "__sem_responsavel__";
 export type StatusFilter = "all" | "pending" | "complete";
 export type AtividadeFilter = "all" | "ativo" | "inativo";
 export type FaturamentoPrevistoFilter = "all" | "com" | "sem";
-export type InviteFilter = "all" | "party" | "nps" | "both" | "none" | "not_party" | "not_nps";
+export type { InviteFilter } from "@/lib/meus-clientes-invite-filter";
+import {
+  memberMatchesInviteFilter as matchInviteFilterMember,
+  type InviteFilter,
+} from "@/lib/meus-clientes-invite-filter";
 export type SelectKey = `c:${string}` | `p:${string}`;
 
 export interface ClientGroupBucket {
@@ -246,24 +250,6 @@ function PartyInviteBadge({ partyInviteTipo }: { partyInviteTipo?: PartyInviteTi
   );
 }
 
-function memberMatchesInviteFilter(
-  member: {
-    npsEligible: boolean;
-    partyInvite: boolean;
-    partyInviteTipo?: PartyInviteTipo | null;
-  },
-  inviteFilter: InviteFilter,
-  partyTipoFilter: PartyInviteTipo | "all"
-): boolean {
-  if (partyTipoFilter !== "all" && member.partyInviteTipo !== partyTipoFilter) return false;
-  if (inviteFilter === "party") return member.partyInvite;
-  if (inviteFilter === "nps") return member.npsEligible;
-  if (inviteFilter === "both") return member.partyInvite && member.npsEligible;
-  if (inviteFilter === "none") return !member.partyInvite && !member.npsEligible;
-  if (inviteFilter === "not_party") return !member.partyInvite;
-  if (inviteFilter === "not_nps") return !member.npsEligible;
-  return true;
-}
 
 function ClienteAtividadeBadge({
   status,
@@ -487,9 +473,18 @@ export function GroupSection({
   partyTipoFilter = "all",
   tourGroupSample,
   tourContactEdit,
+  tourAreaContact,
+  tourNpsButton,
   fallbackAreaOptions,
   onResponsibleAreaChange,
   savingResponsible,
+  areaContactUserId,
+  canAssignAreaContact,
+  areaContactCandidates,
+  onAreaContactChange,
+  savingAreaContact,
+  userNameById,
+  userAvatarById,
 }: {
   group: ClientGroupBucket;
   groupContacts: EmailContact[];
@@ -514,9 +509,23 @@ export function GroupSection({
   partyTipoFilter?: PartyInviteTipo | "all";
   tourGroupSample?: boolean;
   tourContactEdit?: boolean;
+  tourAreaContact?: boolean;
+  tourNpsButton?: boolean;
   fallbackAreaOptions?: string[];
   onResponsibleAreaChange?: (group: ClientGroupBucket, area: string | null) => void;
   savingResponsible?: boolean;
+  areaContactUserId?: string | null;
+  canAssignAreaContact?: boolean;
+  areaContactCandidates?: Array<{
+    id: string;
+    name: string;
+    avatar_url: string | null;
+    department: string | null;
+  }>;
+  onAreaContactChange?: (group: ClientGroupBucket, userId: string | null) => void;
+  savingAreaContact?: boolean;
+  userNameById?: Map<string, string>;
+  userAvatarById?: Map<string, string | null>;
 }) {
   const { contacts: mergedContacts, people: mergedPeople } = mergeGroupMembers(
     groupContacts,
@@ -551,7 +560,7 @@ export function GroupSection({
   const sortedContacts = useMemo(
     () =>
       mergedContacts
-        .filter((contact) => memberMatchesInviteFilter(contact, inviteFilter, partyTipoFilter))
+        .filter((contact) => matchInviteFilterMember(contact, inviteFilter, partyTipoFilter))
         .slice()
         .sort((a, b) => (a.name ?? a.email).localeCompare(b.name ?? b.email, "pt-BR")),
     [mergedContacts, inviteFilter, partyTipoFilter]
@@ -559,7 +568,7 @@ export function GroupSection({
   const sortedPeople = useMemo(
     () =>
       mergedPeople
-        .filter((person) => memberMatchesInviteFilter(person, inviteFilter, partyTipoFilter))
+        .filter((person) => matchInviteFilterMember(person, inviteFilter, partyTipoFilter))
         .slice()
         .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", "pt-BR")),
     [mergedPeople, inviteFilter, partyTipoFilter]
@@ -602,11 +611,15 @@ export function GroupSection({
   const canAssignResponsibleArea = Boolean(
     isAdmin && group.clientGroupId && onResponsibleAreaChange
   );
+  const canAssignAreaContactUser = Boolean(
+    canAssignAreaContact && group.clientGroupId && responsibleArea && onAreaContactChange
+  );
   const showStatusArea =
     canEditGroupStatus ||
     canGenerateNps ||
     Boolean(groupAtividade) ||
     canAssignResponsibleArea ||
+    canAssignAreaContactUser ||
     Boolean(responsibleArea);
   const groupPrevistoDate = clienteAtividadeIndex
     ? resolveClientePrevistoDate(clienteAtividadeIndex, { grupoName: group.name })
@@ -738,6 +751,50 @@ export function GroupSection({
                   </Select>
                 </div>
               )}
+              {canAssignAreaContactUser && (
+                <div
+                  className="min-w-[12rem]"
+                  onClick={(event) => event.stopPropagation()}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  {...(tourAreaContact ? { "data-tour": "mc-area-contact" } : {})}
+                >
+                  <Select
+                    value={areaContactUserId ?? "__none__"}
+                    disabled={savingAreaContact}
+                    onValueChange={(value) =>
+                      onAreaContactChange?.(group, value === "__none__" ? null : value)
+                    }
+                  >
+                    <SelectTrigger size="sm" className="h-8 w-[12rem] text-xs">
+                      <SelectValue placeholder="Quem contata" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Não definido</SelectItem>
+                      {(areaContactCandidates ?? []).map((candidate) => (
+                        <SelectItem key={candidate.id} value={candidate.id}>
+                          <span className="flex items-center gap-2">
+                            <FilterUserAvatar
+                              name={candidate.name}
+                              avatarUrl={candidate.avatar_url}
+                              size="sm"
+                            />
+                            <span>{candidate.name}</span>
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {!canAssignAreaContactUser && areaContactUserId && userNameById && (
+                <Badge
+                  variant="outline"
+                  className="max-w-[12rem] truncate border-slate-200 bg-slate-50 text-slate-800"
+                  title="Pessoa da área designada pelo gestor para contatar este grupo"
+                >
+                  Contato: {userNameById.get(areaContactUserId) ?? "Colaborador"}
+                </Badge>
+              )}
               {canGenerateNps && (
                 <Button
                   type="button"
@@ -751,6 +808,7 @@ export function GroupSection({
                       : "Gerar link NPS deste grupo"
                   }
                   onClick={() => onGenerateNpsLink?.(group)}
+                  {...(tourNpsButton ? { "data-tour": "mc-nps-button" } : {})}
                 >
                   <MessageSquareHeart className="mr-1 h-3.5 w-3.5" />
                   NPS
@@ -969,15 +1027,20 @@ export function ProgressBarCard({
   complete,
   total,
   onShowPending,
+  tourAnchor,
 }: {
   complete: number;
   total: number;
   onShowPending?: () => void;
+  tourAnchor?: boolean;
 }) {
   const pct = total > 0 ? Math.round((complete / total) * 100) : 100;
   const pending = total - complete;
   return (
-    <div className="rounded-xl border border-border/80 bg-card px-4 py-3 shadow-sm">
+    <div
+      className="rounded-xl border border-border/80 bg-card px-4 py-3 shadow-sm"
+      {...(tourAnchor ? { "data-tour": "mc-progress" } : {})}
+    >
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm">
         <span className="font-medium">Progresso do cadastro</span>
         <span className="text-muted-foreground">
@@ -1133,6 +1196,7 @@ export function FilterChips({
       none: "Sem NPS/Festa",
       not_party: "Festa: não",
       not_nps: "NPS: não",
+      gestor_default: "NPS: sim ou pendente",
     };
     chips.push({
       label: inviteLabels[filterInvite],
@@ -1221,7 +1285,7 @@ export function EmptyState({
       title: "Nenhum cliente vinculado a você",
       desc: isAdmin
         ? "Use Ver todos para marcar a área responsável dos clientes com mais de uma área. Grupos com uma só área já entram automaticamente."
-        : "Só aparecem aqui os clientes da sua área: com responsável marcado ou com uma única área envolvida.",
+        : "Só aparecem aqui os clientes da sua área (departamento cadastrado no seu perfil), com responsável marcado ou com uma única área envolvida.",
       action: null as ReactNode,
     },
     "no-search": {

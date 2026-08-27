@@ -22,6 +22,7 @@ import {
   filterInternalContacts,
   filterInternalResponsibles,
   filterOutInternalClientGroups,
+  resolveUserMeusClientesAreas,
 } from "@/lib/meus-clientes";
 import { buildEligibleRespondents, type NpsEligibleRespondent } from "@/lib/nps/eligible";
 import { buildNpsWhatsAppMessage } from "@/lib/nps/message";
@@ -62,16 +63,21 @@ export class NpsHttpError extends Error {
   }
 }
 
-async function resolveProfile(authUserId: string): Promise<AccessProfile & { id: string }> {
+async function resolveProfile(
+  authUserId: string
+): Promise<AccessProfile & { id: string; department: string | null }> {
   const admin = getAdminClient();
   const { data, error } = await admin
     .from("users")
-    .select("id, role, permissions")
+    .select("id, role, permissions, department")
     .eq("auth_id", authUserId)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Usuário sem cadastro no sistema.");
-  return data as AccessProfile & { id: string };
+  return {
+    ...(data as AccessProfile & { id: string }),
+    department: (data.department as string | null) ?? null,
+  };
 }
 
 async function requireMeusClientesAccess(authUserId: string) {
@@ -152,10 +158,10 @@ function scopedGroupIdsForUser(
   companies: EmailCompany[],
   people: EmailPerson[],
   responsibles: EmailGroupResponsible[],
-  areaManagers: EmailAreaManagerRow[],
-  userId: string
+  department: string | null
 ): Set<string> {
-  const scope = computeMyClientScope(companies, responsibles, userId, areaManagers, people);
+  const scopeAreas = resolveUserMeusClientesAreas(department);
+  const scope = computeMyClientScope(companies, responsibles, scopeAreas, people);
   const scopedCompanies = companies.filter((c) => scope.companyIds.has(c.id));
   const scopedPeople = people.filter((p) => scope.personIds.has(p.id));
   return new Set([
@@ -171,8 +177,8 @@ async function assertGroupInScope(
   const isAdmin = (profile.role ?? "").toLowerCase() === "admin";
   if (isAdmin) return;
 
-  const { companies, people, responsibles, areaManagers } = await loadScopeDataset();
-  const ids = scopedGroupIdsForUser(companies, people, responsibles, areaManagers, profile.id);
+  const { companies, people, responsibles } = await loadScopeDataset();
+  const ids = scopedGroupIdsForUser(companies, people, responsibles, profile.department);
   if (!ids.has(clientGroupId)) {
     throw new NpsHttpError("Grupo fora do seu escopo.", 403, "FORBIDDEN");
   }
@@ -958,13 +964,12 @@ export async function fetchNpsResults(options: {
 
   let allowedGroupIds: Set<string> | null = null;
   if (!isAdmin) {
-    const { companies, people, responsibles, areaManagers } = await loadScopeDataset();
+    const { companies, people, responsibles } = await loadScopeDataset();
     allowedGroupIds = scopedGroupIdsForUser(
       companies,
       people,
       responsibles,
-      areaManagers,
-      profile.id
+      profile.department
     );
   }
 

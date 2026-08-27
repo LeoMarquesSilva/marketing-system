@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildMeusClientesTourSteps,
   isMeusClientesUserForTour,
   shouldShowMeusClientesTutorial,
 } from "@/lib/meus-clientes-tour";
@@ -63,5 +64,37 @@ describe("meus-clientes-tour", () => {
         { forced: true }
       )
     ).toBe(false);
+  });
+
+  it("monta passos do gestor e do responsável", () => {
+    const gestor = buildMeusClientesTourSteps({
+      hasSampleGroup: true,
+      isAreaManager: true,
+      canShowAreaContactStep: true,
+    });
+    expect(gestor.some((step) => step.id === "area-contact")).toBe(true);
+    expect(gestor.some((step) => step.id === "nps-send")).toBe(true);
+    expect(gestor.some((step) => step.id === "finish-gestor")).toBe(true);
+    expect(gestor.some((step) => step.id === "finish-colaborador")).toBe(true);
+
+    const colaborador = buildMeusClientesTourSteps({
+      hasSampleGroup: true,
+      isAreaManager: false,
+      canShowAreaContactStep: false,
+    });
+    expect(colaborador.some((step) => step.id === "area-contact")).toBe(false);
+    expect(colaborador.some((step) => step.id === "finish-gestor")).toBe(false);
+    expect(colaborador.some((step) => step.id === "contact-nps")).toBe(true);
+  });
+
+  it("omite passos de card quando não há grupo de exemplo", () => {
+    const steps = buildMeusClientesTourSteps({
+      hasSampleGroup: false,
+      isAreaManager: true,
+      canShowAreaContactStep: false,
+    });
+    expect(steps.some((step) => step.id === "group-sample")).toBe(false);
+    expect(steps.some((step) => step.id === "nps-send")).toBe(false);
+    expect(steps.some((step) => step.id === "welcome")).toBe(true);
   });
 });

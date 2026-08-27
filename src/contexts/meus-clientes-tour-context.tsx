@@ -9,6 +9,10 @@ export interface MeusClientesTourState {
   dataLoaded: boolean;
   /** Há pelo menos um grupo de cliente para usar como exemplo nos passos guiados. */
   hasSampleGroup: boolean;
+  /** Gestor oficial de área (`email_area_managers`). */
+  isAreaManager: boolean;
+  /** Card de exemplo permite editar “Quem contata”. */
+  canShowAreaContactStep: boolean;
 }
 
 interface MeusClientesTourContextValue extends MeusClientesTourState {
@@ -24,6 +28,8 @@ export function MeusClientesTourProvider({ children }: { children: ReactNode }) 
     stepId: null,
     dataLoaded: false,
     hasSampleGroup: false,
+    isAreaManager: false,
+    canShowAreaContactStep: false,
   });
 
   const setTourState = useCallback((patch: Partial<MeusClientesTourState>) => {
@@ -46,6 +52,8 @@ export function useMeusClientesTour() {
       stepId: null as string | null,
       dataLoaded: false,
       hasSampleGroup: false,
+      isAreaManager: false,
+      canShowAreaContactStep: false,
       setTourState: () => {},
     };
   }

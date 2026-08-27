@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Download,
   Eye,
+  HelpCircle,
   LayoutList,
   MessageSquareHeart,
   RefreshCw,
@@ -63,6 +64,7 @@ import {
   compareGroupsByPendingFirst,
   computeEnrichmentTotals,
   computeMyClientScope,
+  resolveUserMeusClientesAreas,
   resolveClientGroupAreas,
   resolveEffectiveResponsibleArea,
   filterPeopleNotInContacts,
@@ -72,12 +74,14 @@ import {
   mergeGroupMembers,
   resolveContactGroupKey,
   isSubArea,
+  userBelongsToClientArea,
+  userManagesClientGroupArea,
 } from "@/lib/meus-clientes";
 import { PersonEditDialog } from "./person-edit-dialog";
 import { ContactCreateDialog } from "./contact-create-dialog";
 import { GroupStatusDialog } from "./group-status-dialog";
 import { NpsLinkDialog } from "./nps-link-dialog";
-import { MeusClientesTour } from "./meus-clientes-tour";
+import { MeusClientesTour, startMeusClientesTour } from "./meus-clientes-tour";
 import { useAuth } from "@/contexts/auth-context";
 import {
   MeusClientesTourProvider,
@@ -86,12 +90,18 @@ import {
 import { MEUS_CLIENTES_TOUR_EXPAND_STEPS } from "@/lib/meus-clientes-tour";
 import { useMeusClientesRealtime } from "@/hooks/use-meus-clientes-realtime";
 import {
+  GESTOR_DEFAULT_INVITE_FILTER,
+  groupMatchesInviteFilter,
+  memberMatchesInviteFilter,
+  resolveGestorInviteFilter,
+  type InviteFilter,
+} from "@/lib/meus-clientes-invite-filter";
+import {
   type ClientGroupBucket,
   type SelectKey,
   type StatusFilter,
   type AtividadeFilter,
   type FaturamentoPrevistoFilter,
-  type InviteFilter,
   ClickableStatCard,
   DeleteConfirmDialog,
   EmptyState,
@@ -105,6 +115,7 @@ import {
   HealthPanel,
   ManagerSummaryTable,
   MeusClientesSkeleton,
+  ProgressBarCard,
   SEM_GRUPO_KEY,
   StatusToggle,
   contactSearchHaystack,
@@ -112,12 +123,6 @@ import {
   isContactPending,
   parseSelectKey,
 } from "./meus-clientes-ui";
-
-type InviteMember = {
-  npsEligible: boolean;
-  partyInvite: boolean;
-  partyInviteTipo?: PartyInviteTipo | null;
-};
 
 function resolveGroupKey(entity: {
   clientGroupId: string | null;
@@ -201,39 +206,21 @@ function groupMatchesSearch(
   );
 }
 
-function memberMatchesInviteFilters(
-  member: InviteMember,
-  inviteFilter: InviteFilter,
-  partyTipoFilter: PartyInviteTipo | "all"
-): boolean {
-  if (partyTipoFilter !== "all" && member.partyInviteTipo !== partyTipoFilter) return false;
-  if (inviteFilter === "party") return member.partyInvite;
-  if (inviteFilter === "nps") return member.npsEligible;
-  if (inviteFilter === "both") return member.partyInvite && member.npsEligible;
-  if (inviteFilter === "none") return !member.partyInvite && !member.npsEligible;
-  if (inviteFilter === "not_party") return !member.partyInvite;
-  if (inviteFilter === "not_nps") return !member.npsEligible;
-  return true;
-}
-
 function groupMatchesInviteFilters(
   group: ClientGroupBucket,
   contactsByGroup: Map<string, EmailContact[]>,
   inviteFilter: InviteFilter,
   partyTipoFilter: PartyInviteTipo | "all"
 ): boolean {
-  if (inviteFilter === "all" && partyTipoFilter === "all") return true;
   const { contacts, people } = mergeGroupMembers(
     contactsByGroup.get(group.key) ?? [],
     group.groupPeople
   );
-  return [...contacts, ...people].some((member) =>
-    memberMatchesInviteFilters(member, inviteFilter, partyTipoFilter)
-  );
+  return groupMatchesInviteFilter([...contacts, ...people], inviteFilter, partyTipoFilter);
 }
 
-function MeusClientesClientContent() {
-  const { user } = useAuth();
+function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => void }) {
+  const { user, profile } = useAuth();
   const { active: tourActive, stepId: tourStepId, setTourState } = useMeusClientesTour();
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -245,7 +232,9 @@ function MeusClientesClientContent() {
   const [people, setPeople] = useState<EmailPerson[]>([]);
   const [responsibles, setResponsibles] = useState<EmailGroupResponsible[]>([]);
   const [areaManagers, setAreaManagers] = useState<EmailAreaManagerRow[]>([]);
-  const [systemUsers, setSystemUsers] = useState<{ id: string; name: string; avatar_url: string | null }[]>([]);
+  const [systemUsers, setSystemUsers] = useState<
+    { id: string; name: string; avatar_url: string | null; department: string | null }[]
+  >([]);
   const [syncMeta, setSyncMeta] = useState<MeusClientesSyncMeta | null>(null);
   const [clienteAtividade, setClienteAtividade] = useState<SioeClienteAtividadeIndex>(
     () => emptySioeClienteAtividadeIndex("")
@@ -253,6 +242,9 @@ function MeusClientesClientContent() {
   const [clientGroupStatusById, setClientGroupStatusById] = useState<
     Record<string, ClientGroupGestorStatus>
   >({});
+  const [areaContactByGroupId, setAreaContactByGroupId] = useState<Record<string, string | null>>(
+    {}
+  );
   const [npsSentByGroupId, setNpsSentByGroupId] = useState<
     Record<string, { sentAt: string; sentByName: string }>
   >({});
@@ -271,6 +263,7 @@ function MeusClientesClientContent() {
   const [filterPartyTipo, setFilterPartyTipo] = useState<PartyInviteTipo | "all">("all");
   const [filterResponsibleArea, setFilterResponsibleArea] = useState("");
   const [savingResponsibleGroupId, setSavingResponsibleGroupId] = useState<string | null>(null);
+  const [savingAreaContactGroupId, setSavingAreaContactGroupId] = useState<string | null>(null);
   const [atividadeMenuOpen, setAtividadeMenuOpen] = useState(false);
   const [faturamentoMenuOpen, setFaturamentoMenuOpen] = useState(false);
   const [compactMode, setCompactMode] = useState(false);
@@ -357,6 +350,7 @@ function MeusClientesClientContent() {
       setSyncMeta(data.syncMeta ?? null);
       setClienteAtividade(data.clienteAtividade ?? emptySioeClienteAtividadeIndex(""));
       setClientGroupStatusById(data.clientGroupStatusById ?? {});
+      setAreaContactByGroupId(data.areaContactByGroupId ?? {});
       setNpsSentByGroupId(data.npsSentByGroupId ?? {});
     } catch (err) {
       setToast({
@@ -497,6 +491,41 @@ function MeusClientesClientContent() {
     []
   );
 
+  const handleAreaContactChange = useCallback(
+    async (group: ClientGroupBucket, userId: string | null) => {
+      if (!group.clientGroupId) return;
+      setSavingAreaContactGroupId(group.clientGroupId);
+      try {
+        const res = await fetch(`/api/meus-clientes/groups/${group.clientGroupId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ areaContactUserId: userId }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Erro ao salvar contato da área.");
+        const nextUserId = (data.areaContactUserId as string | null) ?? null;
+        setAreaContactByGroupId((prev) => ({ ...prev, [group.clientGroupId!]: nextUserId }));
+        const assigneeName = nextUserId
+          ? systemUsers.find((u) => u.id === nextUserId)?.name ?? "Colaborador"
+          : null;
+        setToast({
+          type: "success",
+          text: assigneeName
+            ? `Contato da área: ${assigneeName}.`
+            : "Contato da área removido.",
+        });
+      } catch (err) {
+        setToast({
+          type: "error",
+          text: err instanceof Error ? err.message : "Erro ao salvar contato da área.",
+        });
+      } finally {
+        setSavingAreaContactGroupId(null);
+      }
+    },
+    [systemUsers]
+  );
+
   const confirmDeleteSelected = async () => {
     const contactIds: string[] = [];
     const personIds: string[] = [];
@@ -580,7 +609,7 @@ function MeusClientesClientContent() {
     if (filterGestor) params.set("gestorId", filterGestor);
     if (filterArea) params.set("area", filterArea);
     if (filterStatus !== "all") params.set("status", filterStatus);
-    const inviteForExport = isAdmin ? filterInvite : "nps";
+    const inviteForExport = isAdmin ? filterInvite : GESTOR_DEFAULT_INVITE_FILTER;
     if (inviteForExport !== "all") params.set("invite", inviteForExport);
     if (isAdmin && filterPartyTipo !== "all") params.set("partyTipo", filterPartyTipo);
     if (search.trim()) params.set("search", search.trim());
@@ -792,8 +821,8 @@ function MeusClientesClientContent() {
     resolveClienteStatusForFilter,
   ]);
 
-  /** Gestores só veem clientes com alguém marcado como elegível ao NPS. */
-  const effectiveInviteFilter: InviteFilter = isAdmin ? filterInvite : "nps";
+  /** Gestores: NPS sim ou pendente — exclui só quem marcou NPS não explicitamente. */
+  const effectiveInviteFilter = resolveGestorInviteFilter(isAdmin, filterInvite);
   const effectivePartyTipoFilter: PartyInviteTipo | "all" = isAdmin ? filterPartyTipo : "all";
 
   const displayGroups = useMemo(
@@ -810,6 +839,21 @@ function MeusClientesClientContent() {
   );
 
   const tourSampleGroupKey = displayGroups[0]?.key ?? null;
+  const tourSampleGroup = displayGroups[0] ?? null;
+
+  const isAreaManager = useMemo(() => {
+    if (!profile?.id) return false;
+    return areaManagers.some((manager) => manager.userId === profile.id);
+  }, [areaManagers, profile?.id]);
+
+  const canShowAreaContactStep = useMemo(() => {
+    if (!profile?.id || !tourSampleGroup?.responsibleArea) return false;
+    return userManagesClientGroupArea(
+      profile.id,
+      tourSampleGroup.responsibleArea,
+      areaManagers
+    );
+  }, [profile?.id, tourSampleGroup, areaManagers]);
 
   useEffect(() => {
     if (!tourActive || !tourStepId || !tourSampleGroupKey) return;
@@ -818,8 +862,12 @@ function MeusClientesClientContent() {
   }, [tourActive, tourStepId, tourSampleGroupKey]);
 
   useEffect(() => {
-    setTourState({ hasSampleGroup: Boolean(tourSampleGroupKey) });
-  }, [tourSampleGroupKey, setTourState]);
+    setTourState({
+      hasSampleGroup: Boolean(tourSampleGroupKey),
+      isAreaManager,
+      canShowAreaContactStep,
+    });
+  }, [tourSampleGroupKey, isAreaManager, canShowAreaContactStep, setTourState]);
 
   const groupsForAtividadeCounts = useMemo(() => {
     let list = groups.filter((g) => g.key !== SEM_GRUPO_KEY);
@@ -935,6 +983,7 @@ function MeusClientesClientContent() {
       notNps: 0,
       partyGroups: 0,
       npsGroups: 0,
+      gestorDefaultGroups: 0,
     };
     const partyTipoCounts = new Map<PartyInviteTipo, number>(
       PARTY_INVITE_TYPES.map((tipo) => [tipo.id, 0])
@@ -950,6 +999,7 @@ function MeusClientesClientContent() {
 
       let groupHasParty = false;
       let groupHasNps = false;
+      let groupMatchesGestorDefault = members.length === 0;
       for (const member of members) {
         if (member.partyInvite && member.partyInviteTipo) {
           partyTipoCounts.set(
@@ -971,9 +1021,13 @@ function MeusClientesClientContent() {
         if (!member.partyInvite && !member.npsEligible) counts.none++;
         if (!member.partyInvite) counts.notParty++;
         if (!member.npsEligible) counts.notNps++;
+        if (memberMatchesInviteFilter(member, "gestor_default", "all")) {
+          groupMatchesGestorDefault = true;
+        }
       }
       if (groupHasParty) counts.partyGroups++;
       if (groupHasNps) counts.npsGroups++;
+      if (groupMatchesGestorDefault) counts.gestorDefaultGroups++;
     }
 
     return { ...counts, partyTipoCounts };
@@ -1080,10 +1134,37 @@ function MeusClientesClientContent() {
     return counts;
   }, [companies, people, allAreasList, personAreas, responsibles]);
 
+  const departmentByUserId = useMemo(
+    () => new Map(systemUsers.map((user) => [user.id, user.department])),
+    [systemUsers]
+  );
+
+  const areaContactCandidatesByArea = useMemo(() => {
+    const map = new Map<string, typeof systemUsers>();
+    const areas = new Set(allAreasList);
+    for (const group of displayGroups) {
+      if (group.responsibleArea) areas.add(group.responsibleArea);
+    }
+    for (const area of areas) {
+      map.set(
+        area,
+        systemUsers
+          .filter((candidate) => userBelongsToClientArea(candidate.department, area))
+          .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+      );
+    }
+    return map;
+  }, [allAreasList, displayGroups, systemUsers]);
+
   const gestorFilterCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const row of managerFilterOptions) {
-      const scope = computeMyClientScope(companies, responsibles, row.userId, areaManagers, people);
+      const scope = computeMyClientScope(
+        companies,
+        responsibles,
+        resolveUserMeusClientesAreas(departmentByUserId.get(row.userId)),
+        people
+      );
       const groupKeys = new Set<string>();
       for (const company of companies) {
         if (scope.companyIds.has(company.id)) groupKeys.add(resolveGroupKey(company));
@@ -1095,7 +1176,7 @@ function MeusClientesClientContent() {
       counts.set(row.userId, groupKeys.size);
     }
     return counts;
-  }, [managerFilterOptions, companies, people, responsibles, areaManagers]);
+  }, [managerFilterOptions, companies, people, responsibles, departmentByUserId]);
 
   const responsibleAreaFilterCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -1227,6 +1308,10 @@ function MeusClientesClientContent() {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" className="gap-2" type="button" onClick={onRestartTour}>
+            <HelpCircle className="h-4 w-4" />
+            Ver guia
+          </Button>
           <Button variant="outline" size="sm" className="gap-2" asChild>
             <Link href="/meus-clientes/nps" title="Resultados NPS">
               <MessageSquareHeart className="h-4 w-4" />
@@ -1298,6 +1383,13 @@ function MeusClientesClientContent() {
       {isAdmin && syncMeta && (
         <HealthPanel syncMeta={syncMeta} clienteAtividade={clienteAtividade} />
       )}
+
+      <ProgressBarCard
+        complete={stats.completo}
+        total={stats.completo + stats.incompleto}
+        onShowPending={() => setFilterStatus("pending")}
+        tourAnchor
+      />
 
       {isAdmin && (
         <ManagerSummaryTable
@@ -1417,9 +1509,9 @@ function MeusClientesClientContent() {
             <Badge
               variant="outline"
               className="h-8 border-blue-200 bg-blue-50 px-3 text-xs font-medium text-blue-800"
-              title="Gestores veem apenas clientes com pessoas elegíveis ao NPS"
+              title="Gestores veem clientes da sua área, excluindo quem já foi marcado como NPS não"
             >
-              Só clientes NPS ({inviteFilterCounts.npsGroups})
+              NPS sim ou pendente ({inviteFilterCounts.gestorDefaultGroups})
             </Badge>
           )}
 
@@ -1827,7 +1919,13 @@ function MeusClientesClientContent() {
                 inviteFilter={effectiveInviteFilter}
                 partyTipoFilter={effectivePartyTipoFilter}
                 tourGroupSample={index === 0}
-                tourContactEdit={index === 0 && tourActive}
+                tourContactEdit={
+                  index === 0 &&
+                  tourActive &&
+                  (tourStepId === "contact-edit" || tourStepId === "contact-nps")
+                }
+                tourAreaContact={index === 0 && tourActive && tourStepId === "area-contact"}
+                tourNpsButton={index === 0 && tourActive && tourStepId === "nps-send"}
                 onEditContact={(contact) => {
                   setEditingContact(contact);
                   setEditingPerson(null);
@@ -1874,6 +1972,26 @@ function MeusClientesClientContent() {
                 savingResponsible={
                   Boolean(group.clientGroupId) && savingResponsibleGroupId === group.clientGroupId
                 }
+                areaContactUserId={
+                  group.clientGroupId ? areaContactByGroupId[group.clientGroupId] ?? null : null
+                }
+                canAssignAreaContact={Boolean(
+                  profile?.id &&
+                    group.responsibleArea &&
+                    userManagesClientGroupArea(profile.id, group.responsibleArea, areaManagers)
+                )}
+                areaContactCandidates={
+                  group.responsibleArea
+                    ? areaContactCandidatesByArea.get(group.responsibleArea) ?? []
+                    : []
+                }
+                onAreaContactChange={handleAreaContactChange}
+                savingAreaContact={
+                  Boolean(group.clientGroupId) &&
+                  savingAreaContactGroupId === group.clientGroupId
+                }
+                userNameById={userNameById}
+                userAvatarById={userAvatarById}
               />
             ))}
           </div>
@@ -1980,11 +2098,18 @@ function MeusClientesClientContent() {
 }
 
 export function MeusClientesClient() {
+  const [tourKey, setTourKey] = useState(0);
+
+  const restartTour = useCallback(() => {
+    startMeusClientesTour();
+    setTourKey((key) => key + 1);
+  }, []);
+
   return (
     <MeusClientesTourProvider>
       <Suspense fallback={null}>
-        <MeusClientesClientContent />
-        <MeusClientesTour />
+        <MeusClientesClientContent onRestartTour={restartTour} />
+        <MeusClientesTour restartKey={tourKey} />
       </Suspense>
     </MeusClientesTourProvider>
   );
