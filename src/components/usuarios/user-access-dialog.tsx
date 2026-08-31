@@ -18,15 +18,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, KeyRound, ShieldCheck, Check, Clock3, Palmtree } from "lucide-react";
+import { Loader2, KeyRound, ShieldCheck, Check, Clock3, Palmtree, Contact } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { User } from "@/lib/users";
 import {
   ACCESS_SECTIONS,
   ACCESS_PRESETS,
+  ALWAYS_ALLOWED_PATHS,
   isManualOnlyKey,
   normalizePermissionsInput,
 } from "@/lib/access-control";
+import { DEFAULT_AREA_MANAGER_AREAS } from "@/lib/legal-areas";
 import { formatAuthDateTime } from "@/lib/users-auth-activity";
 
 interface UserAccessDialogProps {
@@ -49,6 +51,11 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
   const [automaticFeriasEligible, setAutomaticFeriasEligible] = useState(false);
   const [feriasPosition, setFeriasPosition] = useState<string | null>(null);
   const [feriasDepartment, setFeriasDepartment] = useState<string | null>(null);
+  const [managerAreas, setManagerAreas] = useState<string[]>([]);
+  const [availableManagerAreas, setAvailableManagerAreas] = useState<string[]>(
+    DEFAULT_AREA_MANAGER_AREAS
+  );
+  const [savingManagers, setSavingManagers] = useState(false);
   const [loadingActivity, setLoadingActivity] = useState(false);
   const [authActivity, setAuthActivity] = useState(user?.auth_activity ?? null);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +69,7 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
     setPermissions(normalizePermissionsInput(user.permissions) ?? []);
     setFeriasMode(user.ferias_access_mode ?? "auto");
     setFeriasAreas(user.ferias_area_scope ?? []);
+    setManagerAreas(user.managedLegalAreas ?? []);
     setAuthActivity(user.auth_activity ?? null);
     setError(null);
     setNotice(null);
@@ -90,6 +98,11 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
           setAutomaticFeriasEligible(Boolean(data.ferias_access.automaticEligible));
           setFeriasPosition(data.ferias_access.position ?? null);
           setFeriasDepartment(data.ferias_access.department ?? null);
+        }
+        if (data.area_managers) {
+          setManagerAreas(data.area_managers.areas ?? []);
+          setAvailableManagerAreas(data.area_managers.availableAreas ?? []);
+          onUpdated(userId, { managedLegalAreas: data.area_managers.areas ?? [] });
         }
       })
       .catch(() => {})
@@ -227,6 +240,43 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
     }
   }
 
+  const toggleManagerArea = (area: string) =>
+    setManagerAreas((prev) =>
+      prev.includes(area) ? prev.filter((item) => item !== area) : [...prev, area]
+    );
+
+  async function saveAreaManagers() {
+    setError(null);
+    setNotice(null);
+    setSavingManagers(true);
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "set_area_managers",
+          userId: user!.id,
+          areas: managerAreas,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Erro ao salvar gestores de área.");
+      const saved = Array.isArray(data.areas) ? (data.areas as string[]) : managerAreas;
+      setManagerAreas(saved);
+      onUpdated(user!.id, { managedLegalAreas: saved });
+      setNotice(
+        saved.length > 0
+          ? `Gestor de ${saved.join(", ")}.`
+          : "Vínculo de gestor de área removido."
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao salvar gestores de área.");
+    } finally {
+      setSavingManagers(false);
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-auto">
@@ -355,7 +405,7 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
               </Select>
             </div>
             <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-              {ACCESS_SECTIONS.map((s) => {
+              {ACCESS_SECTIONS.filter((s) => !ALWAYS_ALLOWED_PATHS.includes(s.key)).map((s) => {
                 const checked = permissions.includes(s.key);
                 const manual = isManualOnlyKey(s.key);
                 return (
@@ -392,14 +442,75 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
               })}
             </div>
             <p className="text-[11px] text-muted-foreground">
-              Meus Clientes e Férias só entram se você marcar (ou usar o perfil
-              &quot;Gestor Meus Clientes&quot;). Deixe tudo desmarcado para a regra padrão por
-              cargo/área.
+              Meus Clientes fica liberado para todo usuário com login e ativo. Férias só entra
+              se você marcar. Deixe tudo desmarcado para a regra padrão por cargo/área.
             </p>
             <div className="flex justify-end">
               <Button onClick={savePerms} disabled={savingPerms} size="sm" className="gap-2">
                 {savingPerms && <Loader2 className="h-4 w-4 animate-spin" />}
                 Salvar permissões
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-3 rounded-xl border bg-muted/20 p-4">
+            <div>
+              <p className="flex items-center gap-1.5 text-sm font-medium">
+                <Contact className="h-4 w-4" />
+                Gestor de área — Meus Clientes
+              </p>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Marque as áreas em que esta pessoa é gerente/sócio. Ela passa a designar quem
+                contata os grupos daquela área. Departamento define só quais clientes ela vê.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+              {Array.from(new Set([...availableManagerAreas, ...managerAreas]))
+                .sort((a, b) => a.localeCompare(b, "pt-BR"))
+                .map((area) => {
+                  const checked = managerAreas.includes(area);
+                  return (
+                    <button
+                      key={area}
+                      type="button"
+                      onClick={() => toggleManagerArea(area)}
+                      disabled={user.is_active === false}
+                      className={cn(
+                        "flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors",
+                        checked
+                          ? "border-primary/40 bg-primary/[0.06] text-foreground"
+                          : "text-muted-foreground hover:bg-muted/50"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                          checked
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-input"
+                        )}
+                      >
+                        {checked && <Check className="h-3 w-3" />}
+                      </span>
+                      {area}
+                    </button>
+                  );
+                })}
+            </div>
+            {user.is_active === false && (
+              <p className="text-[11px] text-muted-foreground">
+                Reative o colaborador para vinculá-lo como gestor.
+              </p>
+            )}
+            <div className="flex justify-end">
+              <Button
+                onClick={saveAreaManagers}
+                disabled={savingManagers || user.is_active === false}
+                size="sm"
+                className="gap-2"
+              >
+                {savingManagers && <Loader2 className="h-4 w-4 animate-spin" />}
+                Salvar gestor de área
               </Button>
             </div>
           </div>

@@ -25,7 +25,7 @@ import {
   resolveEffectiveResponsibleArea,
 } from "@/lib/meus-clientes";
 import { personNameKey } from "@/lib/email-marketing-normalize";
-import { normalizeLegalArea, normalizeLegalAreas } from "@/lib/legal-areas";
+import { normalizeLegalArea, normalizeLegalAreas, mergeAreaManagerPickerAreas } from "@/lib/legal-areas";
 import type { EmailCompany, EmailContact, EmailGroupResponsible, EmailPerson } from "@/lib/email-marketing";
 
 describe("legal-areas", () => {
@@ -44,6 +44,14 @@ describe("legal-areas", () => {
     expect(normalizeLegalAreas(["Cível | Insolvência", "Insolvência", "Reestruturação"])).toEqual([
       "Reestruturação",
     ]);
+  });
+
+  it("sempre oferece as áreas de prática no seletor de gestor", () => {
+    const areas = mergeAreaManagerPickerAreas(["Insolvência"]);
+    expect(areas).toEqual(
+      expect.arrayContaining(["Cível", "Reestruturação", "Recuperação de Crédito"])
+    );
+    expect(areas.filter((area) => area === "Reestruturação")).toHaveLength(1);
   });
 });
 

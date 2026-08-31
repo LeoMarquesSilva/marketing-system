@@ -12,6 +12,8 @@ export interface AccessSection {
   admin?: boolean;
   /** Liberação só manual (nunca entra em preset de lote, exceto Administrador). */
   manualOnly?: boolean;
+  /** Sempre visível para usuário autenticado e ativo — não depende de checkbox. */
+  alwaysAllowed?: boolean;
 }
 
 /** Seções do sistema (chave = rota base usada no menu e nas rotas). */
@@ -32,7 +34,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/cafe-cultura", label: "Café com Cultura", admin: true },
   { key: "/email-marketing", label: "E-mail Marketing" },
   { key: "/nfc", label: "NFC Hub" },
-  { key: "/meus-clientes", label: "Meus Clientes", manualOnly: true },
+  { key: "/meus-clientes", label: "Meus Clientes", alwaysAllowed: true },
   { key: "/fotos-colaboradores", label: "Fotos Colaboradores" },
   { key: "/usuarios", label: "Usuários" },
   { key: "/custos-projetos", label: "Custos de Projetos" },
@@ -48,24 +50,29 @@ export const MEUS_CLIENTES_KEY = "/meus-clientes";
 export const MANUAL_ONLY_KEYS = ACCESS_SECTIONS.filter((s) => s.manualOnly).map((s) => s.key);
 
 const NON_ADMIN_KEYS = ACCESS_SECTIONS.filter(
-  (s) => !s.admin && !s.manualOnly
+  (s) => !s.admin && !s.manualOnly && !s.alwaysAllowed
 ).map((s) => s.key);
 
 /** Presets de acesso (preenchem os checkboxes; o salvo é a lista final). */
 export const ACCESS_PRESETS: Record<string, string[]> = {
-  "Gestor Meus Clientes": [MEUS_CLIENTES_KEY],
   "Colaborador de conteúdo": ["/conteudo/roteiros"],
   "Marketing completo": [...NON_ADMIN_KEYS],
   Administrador: [...ALL_KEYS],
 };
 
 /** Rotas sempre acessíveis para qualquer usuário autenticado. */
-export const ALWAYS_ALLOWED_PATHS = ["/perfil", "/alterar-senha", "/minhas-fotos", "/cafe-com-cultura"];
+export const ALWAYS_ALLOWED_PATHS = [
+  "/perfil",
+  "/alterar-senha",
+  "/minhas-fotos",
+  "/cafe-com-cultura",
+  MEUS_CLIENTES_KEY,
+];
 
 /**
  * Rotas sensíveis que exigem permissão explícita mesmo no modo legado (perfil sem
  * `permissions` configuradas não ganha acesso automático, ao contrário do resto do
- * catálogo): "/meus-clientes" (carteira por área do usuário) e "/rh" (dados de RH).
+ * catálogo): "/rh" (dados de RH).
  */
 
 /** Página inicial do colaborador de conteúdo (desempenho no Instagram). */
@@ -154,6 +161,10 @@ export function canAccessPath(
   profile: AccessProfile | null | undefined,
   pathname: string
 ): boolean {
+  if (ALWAYS_ALLOWED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
+    return true;
+  }
+
   const isFeriasRoute =
     pathname === "/rh" ||
     pathname === "/rh/ferias" ||
@@ -194,9 +205,6 @@ export function canAccessPath(
 
   const allowed = resolveAllowedSections(profile);
   if (!allowed) return true; // sem permissões explícitas → regra legada decide
-  if (ALWAYS_ALLOWED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
-    return true;
-  }
   if (pathname.startsWith("/conteudo") && hasContentAccess(allowed)) {
     return true;
   }

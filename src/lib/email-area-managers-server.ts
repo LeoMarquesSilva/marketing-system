@@ -4,6 +4,7 @@
  * processo do SIOE). Usa service role, chamado a partir das API routes.
  */
 import { getAdminClient } from "@/lib/email-marketing-server";
+import { mergeAreaManagerPickerAreas, normalizeLegalAreas } from "@/lib/legal-areas";
 
 export interface AreaManagerEntry {
   area: string;
@@ -11,7 +12,6 @@ export interface AreaManagerEntry {
   userName: string | null;
 }
 
-/** Áreas jurídicas conhecidas (SIOE processos_completo), para o seletor do admin. */
 export async function listKnownAreas(): Promise<string[]> {
   const admin = getAdminClient();
   const [groups, companies, managers] = await Promise.all([
@@ -29,7 +29,55 @@ export async function listKnownAreas(): Promise<string[]> {
   for (const row of managers.data ?? []) {
     if (row.area) set.add(row.area as string);
   }
-  return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  return mergeAreaManagerPickerAreas(Array.from(set));
+}
+
+export async function listAreaManagerAreasForUser(userId: string): Promise<string[]> {
+  const admin = getAdminClient();
+  const { data, error } = await admin
+    .from("email_area_managers")
+    .select("area")
+    .eq("user_id", userId)
+    .order("area", { ascending: true });
+  if (error) throw new Error(error.message);
+  return normalizeLegalAreas((data ?? []).map((row) => row.area as string));
+}
+
+export async function replaceAreaManagersForUser(options: {
+  userId: string;
+  areas: string[];
+  createdByUserId: string | null;
+}): Promise<string[]> {
+  const admin = getAdminClient();
+  const { data: user, error: userError } = await admin
+    .from("users")
+    .select("is_active")
+    .eq("id", options.userId)
+    .maybeSingle();
+  if (userError) throw new Error(userError.message);
+
+  const nextAreas = normalizeLegalAreas(options.areas);
+  if (nextAreas.length > 0 && (!user || user.is_active === false)) {
+    throw new Error("Não é possível cadastrar um usuário inativo como gestor de área.");
+  }
+  const { error: deleteError } = await admin
+    .from("email_area_managers")
+    .delete()
+    .eq("user_id", options.userId);
+  if (deleteError) throw new Error(deleteError.message);
+
+  if (nextAreas.length > 0) {
+    const { error: insertError } = await admin.from("email_area_managers").insert(
+      nextAreas.map((area) => ({
+        area,
+        user_id: options.userId,
+        created_by: options.createdByUserId,
+      }))
+    );
+    if (insertError) throw new Error(insertError.message);
+  }
+
+  return nextAreas;
 }
 
 export async function listAreaManagers(): Promise<AreaManagerEntry[]> {

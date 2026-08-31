@@ -22,6 +22,8 @@ export interface User {
   qualification_required_at?: string | null;
   qualification_completed_at?: string | null;
   auth_activity?: UserAuthActivity | null;
+  /** Áreas em `email_area_managers` — gestor oficial do Meus Clientes. */
+  managedLegalAreas?: string[];
 }
 
 const USER_LIST_SELECT =

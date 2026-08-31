@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Link2, RefreshCw, X } from "lucide-react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -127,8 +128,12 @@ export function AreaManagersCard() {
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
           O sócio/gerente vinculado a uma área enxerga <strong>todos os clientes daquela área</strong> em
-          &quot;Meus Clientes&quot;, mesmo quando não é ele o advogado responsável em cada processo
-          específico.
+          &quot;Meus Clientes&quot; e pode designar quem contata. Para alterar o vínculo de uma
+          pessoa, use{" "}
+          <Link href="/usuarios" className="underline underline-offset-2">
+            Usuários → Acesso
+          </Link>{" "}
+          (ícone de chave). Este card continua útil para ver a lista por área.
         </p>
 
         {error && <p className="text-sm text-destructive">{error}</p>}

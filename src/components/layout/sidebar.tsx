@@ -113,6 +113,7 @@ const baseNavItems: NavLeaf[] = [
 const collaboratorNavItems: NavLeaf[] = [
   { href: "/conteudo/inicio", icon: Instagram, label: "Inicio" },
   { href: "/minhas-fotos", icon: Images, label: "Minhas fotos" },
+  { href: "/meus-clientes", icon: Contact, label: "Meus Clientes" },
   { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteudo para Post" },
   { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
   { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
@@ -262,7 +263,7 @@ function getNavItems(
   if (allowed) {
     const leafCatalog: NavLeaf[] = [...baseNavItems, meusClientesNavItem, ...adminNavItems];
     let items: NavEntry[] = leafCatalog.filter((i) => {
-      if (i.href === "/minhas-fotos") return true;
+      if (i.href === "/minhas-fotos" || i.href === "/meus-clientes") return true;
       if (i.href === "/fotos-colaboradores") {
         return isCollaboratorPhotosManager(profile);
       }
@@ -279,13 +280,16 @@ function getNavItems(
       items = [
         { href: "/conteudo/inicio", icon: Instagram, label: "Inicio" },
         minhasFotos,
+        meusClientesNavItem,
         { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteudo para Post" },
         { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
         { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
         ...items.filter(
           (i) =>
             isNavGroup(i) ||
-            (!i.href.startsWith("/conteudo") && i.href !== "/minhas-fotos")
+            (!i.href.startsWith("/conteudo") &&
+              i.href !== "/minhas-fotos" &&
+              i.href !== "/meus-clientes")
         ),
       ];
     } else {
@@ -310,11 +314,8 @@ function getNavItems(
       if (i.href === "/minhas-fotos") return true;
       return i.href !== "/fotos-colaboradores" || isCollaboratorPhotosManager(profile);
     }),
-    ...(isAdmin
-      ? [meusClientesNavItem, rhNavGroup, ...adminNavItems]
-      : canViewFerias
-        ? [feriasViewerNavGroup]
-        : []),
+    meusClientesNavItem,
+    ...(isAdmin ? [rhNavGroup, ...adminNavItems] : canViewFerias ? [feriasViewerNavGroup] : []),
   ]);
 }
 

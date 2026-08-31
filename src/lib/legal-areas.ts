@@ -76,3 +76,19 @@ export function departmentToSioeArea(department: string | null | undefined): str
   if (!department) return null;
   return DEPARTMENT_TO_SIOE_AREA[department.trim()] ?? null;
 }
+
+/** Áreas de prática sempre oferecidas no seletor de gestor, mesmo sem clientes cadastrados. */
+export const DEFAULT_AREA_MANAGER_AREAS = [
+  "Cível",
+  "Trabalhista",
+  "Reestruturação",
+  "Societário e Contratos",
+  "Recuperação de Crédito",
+  "Operações Legais",
+  "Tributário",
+  "Special Situations",
+];
+
+export function mergeAreaManagerPickerAreas(known: string[]): string[] {
+  return normalizeLegalAreas([...DEFAULT_AREA_MANAGER_AREAS, ...known]);
+}

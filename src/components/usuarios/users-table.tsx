@@ -80,7 +80,7 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
     const q = search.trim();
     return users.filter((u) => {
       if (q) {
-        const hay = `${u.name} ${u.email ?? ""} ${u.department ?? ""}`;
+        const hay = `${u.name} ${u.email ?? ""} ${u.department ?? ""} ${(u.managedLegalAreas ?? []).join(" ")}`;
         if (!userMatchesSearch(hay, q)) return false;
       }
       if (deptFilter !== "all" && u.department !== deptFilter) return false;
@@ -346,6 +346,7 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
               <TableHead>Usuário</TableHead>
               <TableHead>E-mail</TableHead>
               <TableHead>Departamento</TableHead>
+              <TableHead>Gestor de área</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Último acesso</TableHead>
               <TableHead className="w-[160px] text-right">Ações</TableHead>
@@ -354,7 +355,7 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
           <TableBody>
             {filteredUsers.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
                   Nenhum usuário encontrado com esses filtros.
                 </TableCell>
               </TableRow>
@@ -381,6 +382,19 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
                     {user.email || "—"}
                   </TableCell>
                   <TableCell>{user.department}</TableCell>
+                  <TableCell>
+                    {(user.managedLegalAreas ?? []).length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {(user.managedLegalAreas ?? []).map((area) => (
+                          <Badge key={area} variant="outline" className="font-normal">
+                            {area}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     {isActive ? (
                       <Badge variant="secondary" className="font-normal">
@@ -434,7 +448,7 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
                           user.auth_id ? "text-emerald-600" : "text-muted-foreground"
                         )}
                         onClick={() => { setError(null); setAccessUser(user); }}
-                        title="Gerenciar acesso e permissões"
+                        title="Gerenciar acesso, permissões e gestor de área"
                       >
                         <KeyRound className="h-4 w-4" />
                       </Button>

@@ -52,8 +52,14 @@ describe("acesso do perfil tipo Ricardo à Newsletter", () => {
     expect(canAccessPath(RICARDO_LIKE, "/usuarios")).toBe(false);
   });
 
-  it("acessa Meus Clientes (manual-only) porque está nas permissions", () => {
+  it("acessa Meus Clientes mesmo sem a chave nas permissions", () => {
     expect(canAccessPath(RICARDO_LIKE, "/meus-clientes")).toBe(true);
+    expect(
+      canAccessPath(
+        { ...RICARDO_LIKE, permissions: RICARDO_LIKE.permissions.filter((k) => k !== "/meus-clientes") },
+        "/meus-clientes"
+      )
+    ).toBe(true);
   });
 
   it("cai na home de conteúdo como primeira rota", () => {

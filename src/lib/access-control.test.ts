@@ -9,15 +9,18 @@ import {
 } from "@/lib/access-control";
 
 describe("access-control permissions catalog", () => {
-  it("expõe preset Gestor Meus Clientes só com a rota manual", () => {
-    expect(ACCESS_PRESETS["Gestor Meus Clientes"]).toEqual(["/meus-clientes"]);
-  });
-
   it("não inclui Meus Clientes/RH no Marketing completo", () => {
     expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/meus-clientes");
     expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/rh");
     expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/ferias");
     expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/cafe-cultura");
+  });
+
+  it("libera Meus Clientes para qualquer autenticado", () => {
+    const colaborador = { role: null, permissions: ["/conteudo/roteiros"] };
+    expect(canAccessPath(colaborador, "/meus-clientes")).toBe(true);
+    expect(canAccessPath(colaborador, "/meus-clientes/nps")).toBe(true);
+    expect(canAccessPath(colaborador, "/planner")).toBe(false);
   });
 
   it("mantém o Café com Cultura no preset administrativo", () => {
@@ -36,8 +39,8 @@ describe("access-control permissions catalog", () => {
     ]);
   });
 
-  it("marca Meus Clientes e RH como manual-only", () => {
-    expect(isManualOnlyKey("/meus-clientes")).toBe(true);
+  it("marca só RH como manual-only", () => {
+    expect(isManualOnlyKey("/meus-clientes")).toBe(false);
     expect(isManualOnlyKey("/rh")).toBe(true);
     expect(isManualOnlyKey("/ferias")).toBe(false);
     expect(isManualOnlyKey("/planner")).toBe(false);
@@ -69,7 +72,7 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(viewer, "/rh/qualificacoes")).toBe(false);
   });
 
-  it("gestor só com Meus Clientes acessa a rota e não o Planner", () => {
+  it("gestor só com Meus Clientes nas permissions ainda acessa a rota e não o Planner", () => {
     const gestor = { role: null, permissions: ["/meus-clientes"] };
     expect(canAccessPath(gestor, "/meus-clientes")).toBe(true);
     expect(canAccessPath(gestor, "/planner")).toBe(false);

@@ -4,6 +4,11 @@ import { createClient as createServerClient } from "@/utils/supabase/server";
 import { normalizePermissionsInput } from "@/lib/access-control";
 import { resolveFeriasAccess, type FeriasAccessMode } from "@/lib/ferias/access";
 import { resolveCanonicalAreaLabel } from "@/lib/ferias/filters";
+import {
+  listAreaManagerAreasForUser,
+  listKnownAreas,
+  replaceAreaManagersForUser,
+} from "@/lib/email-area-managers-server";
 import type { UserAuthActivity } from "@/lib/users-auth-activity";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +24,7 @@ function admin() {
   return createClient(supabaseUrl, serviceKey);
 }
 
-async function ensureAdmin(): Promise<{ error?: Response }> {
+async function ensureAdmin(): Promise<{ error?: Response; authUserId?: string }> {
   const supabase = await createServerClient();
   const {
     data: { user },
@@ -35,7 +40,7 @@ async function ensureAdmin(): Promise<{ error?: Response }> {
   if ((profile?.role as string | null)?.toLowerCase?.() !== "admin") {
     return { error: NextResponse.json({ error: "Acesso negado." }, { status: 403 }) };
   }
-  return {};
+  return { authUserId: user.id };
 }
 
 function mapAuthActivity(authUser: {
@@ -122,11 +127,17 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "userId é obrigatório." }, { status: 400 });
     }
 
-    const [authActivity, feriasAccess] = await Promise.all([
+    const [authActivity, feriasAccess, managerAreas, availableManagerAreas] = await Promise.all([
       getAuthActivityForUser(userId),
       getFeriasAccessForUser(userId),
+      listAreaManagerAreasForUser(userId),
+      listKnownAreas(),
     ]);
-    return NextResponse.json({ auth_activity: authActivity, ferias_access: feriasAccess });
+    return NextResponse.json({
+      auth_activity: authActivity,
+      ferias_access: feriasAccess,
+      area_managers: { areas: managerAreas, availableAreas: availableManagerAreas },
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro ao buscar atividade.";
     return NextResponse.json({ error: msg }, { status: 500 });
@@ -313,6 +324,21 @@ export async function POST(request: Request) {
         ferias_area_scope: saved.ferias_area_scope,
         ferias_view_enabled: saved.ferias_view_enabled,
       });
+    }
+
+    if (action === "set_area_managers") {
+      const rawAreas: string[] = Array.isArray(body.areas)
+        ? (body.areas as unknown[]).filter((area: unknown): area is string => typeof area === "string")
+        : [];
+      const { data: actor } = auth.authUserId
+        ? await db.from("users").select("id").eq("auth_id", auth.authUserId).maybeSingle()
+        : { data: null };
+      const areas = await replaceAreaManagersForUser({
+        userId,
+        areas: rawAreas,
+        createdByUserId: (actor?.id as string | undefined) ?? null,
+      });
+      return NextResponse.json({ success: true, areas });
     }
 
     return NextResponse.json({ error: "Ação inválida." }, { status: 400 });

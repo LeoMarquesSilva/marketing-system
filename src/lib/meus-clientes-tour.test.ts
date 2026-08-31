@@ -16,7 +16,8 @@ describe("meus-clientes-tour", () => {
       isMeusClientesUserForTour({
         permissions: ["/planner"],
       })
-    ).toBe(false);
+    ).toBe(true);
+    expect(isMeusClientesUserForTour(null)).toBe(false);
   });
 
   it("mostra tutorial na primeira visita", () => {
