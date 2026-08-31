@@ -303,6 +303,39 @@ describe("buildClientGroupKeysForAreaFilter", () => {
     ).toBe(true);
   });
 
+  it("filtro Cível não inclui grupo com responsável Recuperação de Crédito", () => {
+    const companies = [
+      {
+        id: "c1",
+        clientGroupId: "g-rec",
+        clientGroupName: "Grupo Ma7",
+        legalAreas: ["Recuperação de Crédito"],
+        responsibleArea: "Recuperação de Crédito",
+      },
+      {
+        id: "c2",
+        clientGroupId: "g-civel",
+        clientGroupName: "Grupo Cível",
+        legalAreas: ["Cível"],
+        responsibleArea: "Cível",
+      },
+    ] as EmailCompany[];
+
+    const civel = buildClientGroupKeysForAreaFilter("Cível", companies, [], new Map(), []);
+    const rec = buildClientGroupKeysForAreaFilter(
+      "Recuperação de Crédito",
+      companies,
+      [],
+      new Map(),
+      []
+    );
+
+    expect(civel.has("g-rec")).toBe(false);
+    expect(civel.has("g-civel")).toBe(true);
+    expect(rec.has("g-rec")).toBe(true);
+    expect(rec.has("g-civel")).toBe(false);
+  });
+
   it("área de quem envia o NPS tira o grupo de Sem área", () => {
     const companies = [
       {

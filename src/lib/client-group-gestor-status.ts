@@ -187,6 +187,7 @@ export function validateClientGroupGestorStatusInput(
   }
 
   const date = input.rescisaoContratualData?.trim();
-  if (date && !isIsoDate(date)) return "Data da rescisão contratual inválida.";
+  if (!date) return "Informe a data da rescisão contratual.";
+  if (!isIsoDate(date)) return "Data da rescisão contratual inválida.";
   return null;
 }

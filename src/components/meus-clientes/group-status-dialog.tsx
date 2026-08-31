@@ -55,18 +55,24 @@ export function GroupStatusDialog({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const groupId = group?.clientGroupId ?? null;
+  const savedAtividade = gestorStatus?.gestorAtividade ?? null;
+  const savedEncerramento = gestorStatus?.inativoEncerramentoTipo ?? null;
+  const savedVigencia = gestorStatus?.contratoVigenciaTermino ?? "";
+  const savedRescisao = gestorStatus?.rescisaoContratualData ?? "";
+
   useEffect(() => {
-    if (!open || !group) return;
-    if (gestorStatus?.gestorAtividade === "ativo") {
+    if (!open) return;
+    if (savedAtividade === "ativo") {
       setIsActive(true);
       setEncerramentoTipo(null);
       setVigenciaTermino("");
       setRescisaoData("");
-    } else if (gestorStatus?.gestorAtividade === "inativo") {
+    } else if (savedAtividade === "inativo") {
       setIsActive(false);
-      setEncerramentoTipo(gestorStatus.inativoEncerramentoTipo);
-      setVigenciaTermino(gestorStatus.contratoVigenciaTermino ?? "");
-      setRescisaoData(gestorStatus.rescisaoContratualData ?? "");
+      setEncerramentoTipo(savedEncerramento);
+      setVigenciaTermino(savedVigencia);
+      setRescisaoData(savedRescisao);
     } else {
       setIsActive(null);
       setEncerramentoTipo(null);
@@ -74,7 +80,7 @@ export function GroupStatusDialog({
       setRescisaoData("");
     }
     setError(null);
-  }, [open, group, gestorStatus]);
+  }, [open, groupId, savedAtividade, savedEncerramento, savedVigencia, savedRescisao]);
 
   if (!group?.clientGroupId) return null;
   const hasIndicio = Boolean(
@@ -122,6 +128,10 @@ export function GroupStatusDialog({
     }
     if (!isActive && !encerramentoTipo) {
       setError("Selecione término da vigência ou rescisão contratual.");
+      return;
+    }
+    if (!isActive && encerramentoTipo === "rescisao_contratual" && !rescisaoData.trim()) {
+      setError("Informe a data da rescisão contratual.");
       return;
     }
     setSaving(true);
@@ -284,7 +294,7 @@ export function GroupStatusDialog({
             <div className="space-y-4 rounded-xl border border-border/80 bg-muted/20 p-4">
               <DialogSectionHeading icon={Scale}>Motivo do inativo</DialogSectionHeading>
               <p className="text-xs text-muted-foreground">
-                Escolha uma das opções abaixo. A data é opcional.
+                Escolha uma das opções abaixo. A data da rescisão é obrigatória.
               </p>
 
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -348,7 +358,7 @@ export function GroupStatusDialog({
 
               {encerramentoTipo === "rescisao_contratual" && (
                 <div className="space-y-2">
-                  <Label htmlFor="rescisao-data">Data da rescisão contratual (opcional)</Label>
+                  <Label htmlFor="rescisao-data">Data da rescisão contratual</Label>
                   <DatePickerField
                     id="rescisao-data"
                     value={rescisaoData}

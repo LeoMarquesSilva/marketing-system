@@ -36,23 +36,33 @@ describe("client-group-gestor-status", () => {
     ).toContain("Selecione");
   });
 
-  it("permite salvar inativo sem data de encerramento", () => {
+  it("permite salvar término da vigência sem data", () => {
     expect(
       validateClientGroupGestorStatusInput({
         gestorAtividade: "inativo",
         inativoEncerramentoTipo: "termino_vigencia",
       })
     ).toBeNull();
+  });
 
+  it("exige data da rescisão contratual", () => {
     expect(
       validateClientGroupGestorStatusInput({
         gestorAtividade: "inativo",
         inativoEncerramentoTipo: "rescisao_contratual",
       })
+    ).toContain("data da rescisão");
+
+    expect(
+      validateClientGroupGestorStatusInput({
+        gestorAtividade: "inativo",
+        inativoEncerramentoTipo: "rescisao_contratual",
+        rescisaoContratualData: "2026-12-31",
+      })
     ).toBeNull();
   });
 
-  it("valida formato da data opcional quando preenchida", () => {
+  it("valida formato da data quando preenchida", () => {
     expect(
       validateClientGroupGestorStatusInput({
         gestorAtividade: "inativo",

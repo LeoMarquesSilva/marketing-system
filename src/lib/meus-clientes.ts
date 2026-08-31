@@ -620,10 +620,11 @@ export function resolveContactGroupKey(
 /** Valor do filtro “Sem área” (UI e export CSV). */
 export const CLIENT_AREA_FILTER_SEM = "__sem_area__";
 
-function groupAreasMatchRootFilter(groupAreas: string[], filterArea: string): boolean {
-  const root = getAreaParent(filterArea);
-  const expanded = expandRootArea(root);
-  return groupAreas.some((area) => getAreaParent(area) === root || expanded.includes(area));
+/** Filtro de Área é exato: Cível não inclui Recuperação de Crédito. */
+function collectionAreaMatchesFilter(collectionArea: string, filterArea: string): boolean {
+  const area = normalizeLegalArea(collectionArea) ?? collectionArea;
+  const filter = normalizeLegalArea(filterArea) ?? filterArea;
+  return area === filter;
 }
 
 /** Áreas do grupo: área responsável, áreas de processo e responsáveis SIOE. */
@@ -796,6 +797,7 @@ export function buildClientGroupKeysWithoutArea(
 /**
  * Grupos que entram no filtro de área — mesma regra da coleta NPS:
  * área responsável marcada, senão a única área envolvida, senão a área de quem envia.
+ * A comparação é exata: filtrar Cível não traz Recuperação de Crédito.
  */
 export function buildClientGroupKeysForAreaFilter(
   filterArea: string,
@@ -829,7 +831,7 @@ export function buildClientGroupKeysForAreaFilter(
       responsibles,
       collectorDepartmentByGroupId
     );
-    if (area && groupAreasMatchRootFilter([area], filterArea)) {
+    if (area && collectionAreaMatchesFilter(area, filterArea)) {
       matching.add(groupKey);
     }
   }

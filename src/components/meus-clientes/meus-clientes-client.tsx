@@ -73,7 +73,6 @@ import {
   groupIsPending,
   mergeGroupMembers,
   resolveContactGroupKey,
-  isSubArea,
   userBelongsToClientArea,
   userManagesClientGroupArea,
 } from "@/lib/meus-clientes";
@@ -1153,10 +1152,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
         counts.set(FILTER_SEM_AREA, (counts.get(FILTER_SEM_AREA) ?? 0) + 1);
         continue;
       }
-      const root = getAreaParent(area);
-      if (root && !isSubArea(root)) {
-        counts.set(root, (counts.get(root) ?? 0) + 1);
-      }
+      counts.set(area, (counts.get(area) ?? 0) + 1);
     }
     return counts;
   }, [companies, people, allAreasList, personAreas, responsibles, collectorDepartmentByGroupId]);
