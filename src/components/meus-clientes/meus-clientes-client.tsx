@@ -66,7 +66,7 @@ import {
   computeMyClientScope,
   resolveUserMeusClientesAreas,
   resolveClientGroupAreas,
-  resolveEffectiveResponsibleArea,
+  resolveNpsCollectionArea,
   filterPeopleNotInContacts,
   getAreaParent,
   groupHasNoContacts,
@@ -135,7 +135,8 @@ function buildGroupBuckets(
   companies: EmailCompany[],
   people: EmailPerson[],
   personAreas: Map<string, string[]> = new Map(),
-  responsibles: EmailGroupResponsible[] = []
+  responsibles: EmailGroupResponsible[] = [],
+  collectorDepartmentByGroupId: Map<string, string | null> = new Map()
 ): ClientGroupBucket[] {
   const buckets = new Map<string, ClientGroupBucket>();
   for (const company of companies) {
@@ -179,10 +180,19 @@ function buildGroupBuckets(
     }
   }
   for (const bucket of buckets.values()) {
-    bucket.responsibleArea = resolveEffectiveResponsibleArea(
-      bucket.responsibleArea,
-      resolveClientGroupAreas(bucket.key, companies, people, personAreas, responsibles)
-    );
+    bucket.responsibleArea = resolveNpsCollectionArea({
+      responsibleArea: bucket.responsibleArea,
+      involvedAreas: resolveClientGroupAreas(
+        bucket.key,
+        companies,
+        people,
+        personAreas,
+        responsibles
+      ),
+      collectorDepartment: bucket.clientGroupId
+        ? collectorDepartmentByGroupId.get(bucket.clientGroupId) ?? null
+        : collectorDepartmentByGroupId.get(bucket.key) ?? null,
+    });
   }
   return Array.from(buckets.values());
 }
@@ -704,6 +714,20 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
     return groups;
   }, [areaManagerSummary, filterArea, filterGestor]);
 
+  const departmentByUserId = useMemo(
+    () => new Map(systemUsers.map((user) => [user.id, user.department])),
+    [systemUsers]
+  );
+
+  const collectorDepartmentByGroupId = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const [groupId, userId] of Object.entries(areaContactByGroupId)) {
+      if (!userId) continue;
+      map.set(groupId, departmentByUserId.get(userId) ?? null);
+    }
+    return map;
+  }, [areaContactByGroupId, departmentByUserId]);
+
   const groupKeysForAreaFilter = useMemo(() => {
     if (!filterArea) return null;
     return buildClientGroupKeysForAreaFilter(
@@ -711,9 +735,10 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
       companies,
       people,
       personAreas,
-      responsibles
+      responsibles,
+      collectorDepartmentByGroupId
     );
-  }, [filterArea, companies, people, personAreas, responsibles]);
+  }, [filterArea, companies, people, personAreas, responsibles, collectorDepartmentByGroupId]);
 
   const scopedCompanies = useMemo(() => {
     if (!groupKeysForAreaFilter) return companies;
@@ -744,10 +769,16 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
 
   const groupsBeforeStatus = useMemo(
     () =>
-      buildGroupBuckets(scopedCompanies, scopedPeople, personAreas, responsibles).sort((a, b) =>
+      buildGroupBuckets(
+        scopedCompanies,
+        scopedPeople,
+        personAreas,
+        responsibles,
+        collectorDepartmentByGroupId
+      ).sort((a, b) =>
         compareGroupsByPendingFirst(a, b, contactsByGroup, (g) => g.key)
       ),
-    [scopedCompanies, scopedPeople, contactsByGroup, personAreas, responsibles]
+    [scopedCompanies, scopedPeople, contactsByGroup, personAreas, responsibles, collectorDepartmentByGroupId]
   );
 
   const groups = useMemo(
@@ -1105,39 +1136,30 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
 
   const areaFilterCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    const baseGroups = buildGroupBuckets(companies, people, personAreas, responsibles).filter(
-      (g) => g.key !== SEM_GRUPO_KEY
-    );
+    const baseGroups = buildGroupBuckets(
+      companies,
+      people,
+      personAreas,
+      responsibles,
+      collectorDepartmentByGroupId
+    ).filter((g) => g.key !== SEM_GRUPO_KEY);
     counts.set("__all__", baseGroups.length);
     counts.set(FILTER_SEM_AREA, 0);
     for (const area of allAreasList) counts.set(area, 0);
 
     for (const group of baseGroups) {
-      const areas = resolveClientGroupAreas(
-        group.key,
-        companies,
-        people,
-        personAreas,
-        responsibles
-      );
-      if (areas.length === 0) {
+      const area = group.responsibleArea;
+      if (!area) {
         counts.set(FILTER_SEM_AREA, (counts.get(FILTER_SEM_AREA) ?? 0) + 1);
         continue;
       }
-      const roots = new Set(
-        areas.map(getAreaParent).filter((area) => area && !isSubArea(area))
-      );
-      for (const root of roots) {
+      const root = getAreaParent(area);
+      if (root && !isSubArea(root)) {
         counts.set(root, (counts.get(root) ?? 0) + 1);
       }
     }
     return counts;
-  }, [companies, people, allAreasList, personAreas, responsibles]);
-
-  const departmentByUserId = useMemo(
-    () => new Map(systemUsers.map((user) => [user.id, user.department])),
-    [systemUsers]
-  );
+  }, [companies, people, allAreasList, personAreas, responsibles, collectorDepartmentByGroupId]);
 
   const areaContactCandidatesByArea = useMemo(() => {
     const map = new Map<string, typeof systemUsers>();
@@ -1180,7 +1202,13 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
 
   const responsibleAreaFilterCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    const baseGroups = buildGroupBuckets(companies, people, personAreas, responsibles).filter(
+    const baseGroups = buildGroupBuckets(
+      companies,
+      people,
+      personAreas,
+      responsibles,
+      collectorDepartmentByGroupId
+    ).filter(
       (g) => g.key !== SEM_GRUPO_KEY
     );
     counts.set("__all__", baseGroups.length);
@@ -1195,7 +1223,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
       counts.set(area, (counts.get(area) ?? 0) + 1);
     }
     return counts;
-  }, [companies, people, allAreasList, personAreas, responsibles]);
+  }, [companies, people, allAreasList, personAreas, responsibles, collectorDepartmentByGroupId]);
 
   const displayContactsByGroup = useMemo(() => {
     const map = new Map<string, EmailContact[]>();

@@ -10,7 +10,7 @@ import type { EmailCompany, EmailContact, EmailGroupResponsible, EmailPerson } f
 import { personNameKey } from "./email-marketing-normalize";
 import { clientProfileIsIncomplete, contactToClientProfile, listClientMissingFieldLabels, personToClientProfile } from "./email-marketing-enrichment";
 import { companyNameKey } from "./email-marketing-normalize";
-import { normalizeLegalArea } from "./legal-areas";
+import { departmentToSioeArea, normalizeLegalArea } from "./legal-areas";
 
 /** Grupos do próprio escritório — não aparecem em Meus Clientes. */
 const INTERNAL_CLIENT_GROUP_NAME_KEYS = new Set(["bismarchi pires"]);
@@ -133,6 +133,23 @@ export function resolveEffectiveResponsibleArea(
   }
   if (unique.size !== 1) return null;
   return Array.from(unique)[0];
+}
+
+/** Área da coleta NPS: responsável marcada, senão a única área envolvida, senão a área de quem vai enviar. */
+export function resolveNpsCollectionArea(input: {
+  responsibleArea?: string | null;
+  involvedAreas?: string[];
+  collectorDepartment?: string | null;
+}): string | null {
+  const marked = resolveEffectiveResponsibleArea(
+    input.responsibleArea,
+    input.involvedAreas ?? []
+  );
+  if (marked) return marked;
+  return (
+    departmentToSioeArea(input.collectorDepartment) ??
+    normalizeLegalArea(input.collectorDepartment)
+  );
 }
 
 function personAreasFromResponsibles(
@@ -609,7 +626,7 @@ function groupAreasMatchRootFilter(groupAreas: string[], filterArea: string): bo
   return groupAreas.some((area) => getAreaParent(area) === root || expanded.includes(area));
 }
 
-/** Áreas atribuídas a um grupo (empresas, pessoas e responsáveis por grupo). */
+/** Áreas do grupo: área responsável, áreas de processo e responsáveis SIOE. */
 export function resolveClientGroupAreas(
   groupKey: string,
   companies: EmailCompany[],
@@ -618,27 +635,91 @@ export function resolveClientGroupAreas(
   responsibles: EmailGroupResponsible[] = []
 ): string[] {
   const set = new Set<string>();
+  const add = (area: string | null | undefined) => {
+    const normalized = normalizeLegalArea(area);
+    if (normalized) set.add(normalized);
+  };
+
   for (const company of companies) {
     if (resolveClientGroupKey(company) !== groupKey) continue;
-    for (const area of company.legalAreas) set.add(area);
+    add(company.responsibleArea);
+    for (const area of company.legalAreas) add(area);
   }
   for (const person of people) {
     if (resolveClientGroupKey(person) !== groupKey) continue;
-    for (const area of personAreas.get(person.id) ?? []) set.add(area);
+    add(person.responsibleArea);
+    for (const area of personAreas.get(person.id) ?? []) add(area);
   }
   for (const responsible of responsibles) {
     if (!responsible.area || responsible.clientGroupId !== groupKey) continue;
-    set.add(responsible.area);
+    add(responsible.area);
   }
   return Array.from(set);
 }
 
-/** Grupos sem nenhuma área atribuída (considerando todas as entidades do grupo). */
+function collectorDepartmentForGroupKey(
+  groupKey: string,
+  companies: EmailCompany[],
+  people: EmailPerson[],
+  collectorDepartmentByGroupId?: Map<string, string | null> | Record<string, string | null>
+): string | null {
+  if (!collectorDepartmentByGroupId) return null;
+  const get = (id: string) =>
+    collectorDepartmentByGroupId instanceof Map
+      ? collectorDepartmentByGroupId.get(id) ?? null
+      : collectorDepartmentByGroupId[id] ?? null;
+  const fromKey = get(groupKey);
+  if (fromKey) return fromKey;
+  const groupId =
+    companies.find((company) => resolveClientGroupKey(company) === groupKey)?.clientGroupId ??
+    people.find((person) => resolveClientGroupKey(person) === groupKey)?.clientGroupId ??
+    null;
+  return groupId ? get(groupId) : null;
+}
+
+function explicitResponsibleAreaForGroup(
+  groupKey: string,
+  companies: EmailCompany[],
+  people: EmailPerson[]
+): string | null {
+  for (const company of companies) {
+    if (resolveClientGroupKey(company) !== groupKey) continue;
+    if (company.responsibleArea) return company.responsibleArea;
+  }
+  for (const person of people) {
+    if (resolveClientGroupKey(person) !== groupKey) continue;
+    if (person.responsibleArea) return person.responsibleArea;
+  }
+  return null;
+}
+
+export function resolveGroupCollectionArea(
+  groupKey: string,
+  companies: EmailCompany[],
+  people: EmailPerson[],
+  personAreas: Map<string, string[]>,
+  responsibles: EmailGroupResponsible[] = [],
+  collectorDepartmentByGroupId?: Map<string, string | null> | Record<string, string | null>
+): string | null {
+  return resolveNpsCollectionArea({
+    responsibleArea: explicitResponsibleAreaForGroup(groupKey, companies, people),
+    involvedAreas: resolveClientGroupAreas(groupKey, companies, people, personAreas, responsibles),
+    collectorDepartment: collectorDepartmentForGroupKey(
+      groupKey,
+      companies,
+      people,
+      collectorDepartmentByGroupId
+    ),
+  });
+}
+
+/** Grupos sem área de coleta NPS (responsável, área única ou quem envia). */
 export function buildClientGroupKeysWithoutArea(
   companies: EmailCompany[],
   people: EmailPerson[],
   personAreas: Map<string, string[]>,
-  responsibles: EmailGroupResponsible[] = []
+  responsibles: EmailGroupResponsible[] = [],
+  collectorDepartmentByGroupId?: Map<string, string | null> | Record<string, string | null>
 ): Set<string> {
   const groupKeys = new Set<string>();
   for (const company of companies) groupKeys.add(resolveClientGroupKey(company));
@@ -647,7 +728,14 @@ export function buildClientGroupKeysWithoutArea(
   const withoutArea = new Set<string>();
   for (const groupKey of groupKeys) {
     if (
-      resolveClientGroupAreas(groupKey, companies, people, personAreas, responsibles).length === 0
+      !resolveGroupCollectionArea(
+        groupKey,
+        companies,
+        people,
+        personAreas,
+        responsibles,
+        collectorDepartmentByGroupId
+      )
     ) {
       withoutArea.add(groupKey);
     }
@@ -656,19 +744,25 @@ export function buildClientGroupKeysWithoutArea(
 }
 
 /**
- * Grupos que entram no filtro de área.
- * Regra: se qualquer empresa/pessoa do grupo tem a área, o grupo inteiro conta
- * (ex.: 1 de 30 empresas com Trabalhista → Grupo Y é Trabalhista).
+ * Grupos que entram no filtro de área — mesma regra da coleta NPS:
+ * área responsável marcada, senão a única área envolvida, senão a área de quem envia.
  */
 export function buildClientGroupKeysForAreaFilter(
   filterArea: string,
   companies: EmailCompany[],
   people: EmailPerson[],
   personAreas: Map<string, string[]>,
-  responsibles: EmailGroupResponsible[] = []
+  responsibles: EmailGroupResponsible[] = [],
+  collectorDepartmentByGroupId?: Map<string, string | null> | Record<string, string | null>
 ): Set<string> {
   if (filterArea === CLIENT_AREA_FILTER_SEM) {
-    return buildClientGroupKeysWithoutArea(companies, people, personAreas, responsibles);
+    return buildClientGroupKeysWithoutArea(
+      companies,
+      people,
+      personAreas,
+      responsibles,
+      collectorDepartmentByGroupId
+    );
   }
 
   const groupKeys = new Set<string>();
@@ -677,8 +771,15 @@ export function buildClientGroupKeysForAreaFilter(
 
   const matching = new Set<string>();
   for (const groupKey of groupKeys) {
-    const areas = resolveClientGroupAreas(groupKey, companies, people, personAreas, responsibles);
-    if (groupAreasMatchRootFilter(areas, filterArea)) {
+    const area = resolveGroupCollectionArea(
+      groupKey,
+      companies,
+      people,
+      personAreas,
+      responsibles,
+      collectorDepartmentByGroupId
+    );
+    if (area && groupAreasMatchRootFilter([area], filterArea)) {
       matching.add(groupKey);
     }
   }

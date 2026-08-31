@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  isClientGroupInactiveForOutreach,
   mapClientGroupGestorStatus,
   resolveGroupAtividade,
   validateClientGroupGestorStatusInput,
 } from "@/lib/client-group-gestor-status";
-import { emptySioeClienteAtividadeIndex } from "@/lib/sioe-cliente-atividade";
+import { emptySioeClienteAtividadeIndex, grupoClienteKey } from "@/lib/sioe-cliente-atividade";
 
 describe("client-group-gestor-status", () => {
   it("prioriza confirmação do gestor sobre SIOE", () => {
@@ -83,5 +84,23 @@ describe("client-group-gestor-status", () => {
       inativoEncerramentoTipo: "rescisao_contratual",
       rescisaoContratualData: "2026-12-31",
     });
+  });
+
+  it("exclui inativos confirmados e o fallback SIOE do outreach", () => {
+    const sioe = emptySioeClienteAtividadeIndex("2026-07");
+    sioe.byGrupoCategoriaAtividade[grupoClienteKey("Grupo Y")] = "inativo";
+
+    expect(
+      isClientGroupInactiveForOutreach({ name: "Grupo X", gestorAtividade: "inativo" }, sioe)
+    ).toBe(true);
+    expect(
+      isClientGroupInactiveForOutreach({ name: "Grupo X", gestorAtividade: "ativo" }, sioe)
+    ).toBe(false);
+    expect(
+      isClientGroupInactiveForOutreach({ name: "Grupo Y", gestorAtividade: null }, sioe)
+    ).toBe(true);
+    expect(
+      isClientGroupInactiveForOutreach({ name: "Grupo Z", gestorAtividade: null }, sioe)
+    ).toBe(false);
   });
 });

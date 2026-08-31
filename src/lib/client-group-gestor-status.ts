@@ -1,5 +1,6 @@
 import {
   resolveClienteAtividade,
+  resolveClienteCategoriaAtividade,
   type SioeClienteAtividade,
   type SioeClienteAtividadeIndex,
 } from "@/lib/sioe-cliente-atividade";
@@ -69,6 +70,17 @@ export function resolveGroupAtividade(
   if (gestorStatus?.gestorAtividade) return gestorStatus.gestorAtividade;
   if (!sioeIndex) return null;
   return resolveClienteAtividade(sioeIndex, { grupoName: group.name });
+}
+
+/** Mesma regra do filtro Status em Meus Clientes: gestor, senão categoria SIOE. */
+export function isClientGroupInactiveForOutreach(
+  group: { name: string; gestorAtividade?: GestorAtividade | null },
+  sioeIndex: SioeClienteAtividadeIndex | null | undefined
+): boolean {
+  if (group.gestorAtividade === "inativo") return true;
+  if (group.gestorAtividade === "ativo") return false;
+  if (!sioeIndex) return false;
+  return resolveClienteCategoriaAtividade(sioeIndex, { grupoName: group.name }) === "inativo";
 }
 
 export function groupAtividadeTooltip(

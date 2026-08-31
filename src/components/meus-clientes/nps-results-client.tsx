@@ -4,13 +4,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
+  Building2,
+  ChevronDown,
   Filter,
   Loader2,
   MessageSquareHeart,
   Plus,
   RefreshCw,
   Search,
+  Send,
   TrendingUp,
+  UserCheck,
   Users,
 } from "lucide-react";
 import {
@@ -35,6 +39,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { NpsCampaign, NpsResponseRow } from "@/lib/nps/types";
+import type { NpsOutreachAreaBreakdown, NpsOutreachProgress } from "@/lib/nps/eligible";
 import {
   classifyNpsScore,
   type NpsBucket,
@@ -43,6 +48,8 @@ import {
 } from "@/lib/nps/scoring";
 import { NPS_QUESTIONS } from "@/lib/nps/questions";
 import { cn } from "@/lib/utils";
+import { AreaIcon, getAreaIconStyle } from "@/lib/area-icons";
+import { FilterUserAvatar } from "@/components/meus-clientes/meus-clientes-ui";
 
 const RECOMMEND_QUESTION =
   NPS_QUESTIONS.find((q) => q.id === "score_recommend")?.label ??
@@ -69,6 +76,7 @@ interface ResultsPayload {
   dimensions: NpsDimensionAverages;
   groups: GroupResult[];
   responses: Array<NpsResponseRow & { groupName: string }>;
+  outreach: NpsOutreachProgress;
 }
 
 interface ResponseRow extends NpsResponseRow {
@@ -111,6 +119,297 @@ function avgTone(value: number | null): string {
 function pct(part: number, total: number): number {
   if (total <= 0) return 0;
   return Math.round((part / total) * 100);
+}
+
+type OutreachMetric = keyof Pick<
+  NpsOutreachAreaBreakdown,
+  "eligiblePeople" | "eligibleGroups" | "sentGroups" | "respondedPeople"
+>;
+
+function OutreachMeter({
+  label,
+  value,
+  total,
+  hint,
+  icon: Icon,
+  expanded,
+  onToggle,
+}: {
+  label: string;
+  value: number;
+  total?: number;
+  hint: string;
+  icon: typeof Users;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const ratio = total != null && total > 0 ? Math.min(100, (value / total) * 100) : null;
+
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={expanded}
+      className={cn(
+        "rounded-xl border bg-card px-4 py-3 text-left shadow-sm transition-colors",
+        "hover:border-[#347796]/40 hover:bg-[#347796]/[0.03]",
+        expanded && "border-[#347796] ring-1 ring-[#347796]/30"
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+        <div className="flex items-center gap-1 text-[#347796]">
+          <Icon className="h-3.5 w-3.5" />
+          <ChevronDown
+            className={cn("h-3.5 w-3.5 transition-transform", expanded && "rotate-180")}
+            aria-hidden
+          />
+        </div>
+      </div>
+      <p className="mt-1 text-2xl font-bold tabular-nums tracking-tight">
+        {value}
+        {total != null && (
+          <span className="ml-1 text-sm font-medium text-muted-foreground">/ {total}</span>
+        )}
+      </p>
+      <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>
+      {ratio != null && (
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+          <div className="h-full rounded-full bg-[#347796]" style={{ width: `${ratio}%` }} />
+        </div>
+      )}
+    </button>
+  );
+}
+
+function groupMetricValue(
+  group: NpsOutreachAreaBreakdown["groups"][number],
+  metric: OutreachMetric
+): number {
+  if (metric === "eligiblePeople") return group.eligiblePeople;
+  if (metric === "eligibleGroups") return 1;
+  if (metric === "sentGroups") return group.sent ? 1 : 0;
+  return group.respondedPeople;
+}
+
+function sendersForArea(groups: NpsOutreachAreaBreakdown["groups"]) {
+  const map = new Map<
+    string,
+    {
+      userId: string | null;
+      name: string;
+      avatarUrl: string | null;
+      groups: NpsOutreachAreaBreakdown["groups"];
+    }
+  >();
+  for (const group of groups) {
+    const key = group.senderUserId ?? "__none__";
+    const existing = map.get(key);
+    if (existing) {
+      existing.groups.push(group);
+      continue;
+    }
+    map.set(key, {
+      userId: group.senderUserId,
+      name: group.senderName,
+      avatarUrl: group.senderAvatarUrl,
+      groups: [group],
+    });
+  }
+  return Array.from(map.values()).sort((a, b) => {
+    if (Boolean(a.userId) !== Boolean(b.userId)) return a.userId ? -1 : 1;
+    return a.name.localeCompare(b.name, "pt-BR");
+  });
+}
+
+function OutreachAreaBreakdown({
+  metric,
+  label,
+  rows,
+}: {
+  metric: OutreachMetric;
+  label: string;
+  rows: NpsOutreachAreaBreakdown[];
+}) {
+  const [openArea, setOpenArea] = useState<string | null>(null);
+  const sorted = [...rows].sort((a, b) => {
+    if (b.eligibleGroups !== a.eligibleGroups) return b.eligibleGroups - a.eligibleGroups;
+    return a.area.localeCompare(b.area, "pt-BR");
+  });
+
+  return (
+    <div className="rounded-xl border bg-card px-4 py-3 shadow-sm">
+      <p className="text-xs font-medium text-muted-foreground">{label} por área responsável</p>
+      {sorted.length === 0 ? (
+        <p className="mt-2 text-sm text-muted-foreground">Nenhuma área para exibir.</p>
+      ) : (
+        <ul className="mt-2 divide-y divide-border/60">
+          {sorted.map((row) => {
+            const sentRatio =
+              row.eligibleGroups > 0 ? Math.min(100, (row.sentGroups / row.eligibleGroups) * 100) : 0;
+            const expanded = openArea === row.area;
+            const senders = sendersForArea(row.groups);
+            return (
+              <li key={row.area} className="py-2 first:pt-1 last:pb-0">
+                <button
+                  type="button"
+                  onClick={() => setOpenArea((current) => (current === row.area ? null : row.area))}
+                  aria-expanded={expanded}
+                  className="flex w-full items-start gap-3 text-left"
+                >
+                  <span
+                    className={cn(
+                      "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md ring-1",
+                      getAreaIconStyle(row.area)
+                    )}
+                  >
+                    <AreaIcon area={row.area} className="h-3.5 w-3.5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium">{row.area}</span>
+                      <ChevronDown
+                        className={cn(
+                          "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+                          expanded && "rotate-180"
+                        )}
+                        aria-hidden
+                      />
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      {row.eligiblePeople} pessoas · {row.respondedPeople} respondidas
+                    </p>
+                    <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-[#347796]" style={{ width: `${sentRatio}%` }} />
+                    </div>
+                  </div>
+                  <p className="shrink-0 text-right text-sm font-semibold tabular-nums">
+                    {row.sentGroups}
+                    <span className="ml-1 text-xs font-medium text-muted-foreground">
+                      / {row.eligibleGroups}
+                    </span>
+                  </p>
+                </button>
+                {expanded && (
+                  <ul className="mt-2 space-y-2 rounded-lg bg-muted/40 px-3 py-2">
+                    {senders.length === 0 ? (
+                      <li className="text-xs text-muted-foreground">Nenhum colaborador nesta área.</li>
+                    ) : (
+                      senders.map((sender) => {
+                        const sentCount = sender.groups.filter((group) => group.sent).length;
+                        return (
+                          <li key={sender.userId ?? sender.name}>
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="flex min-w-0 items-center gap-2">
+                                <FilterUserAvatar
+                                  name={sender.name}
+                                  avatarUrl={sender.avatarUrl}
+                                  size="sm"
+                                />
+                                <span className="truncate text-sm font-medium">{sender.name}</span>
+                              </span>
+                              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                                {sentCount}/{sender.groups.length} enviados
+                              </span>
+                            </div>
+                            <ul className="mt-1 space-y-0.5 pl-9">
+                              {sender.groups.map((group) => (
+                                <li
+                                  key={group.id}
+                                  className="flex items-center justify-between gap-3 text-xs text-muted-foreground"
+                                >
+                                  <span className="min-w-0 truncate">{group.name}</span>
+                                  <span className="shrink-0 tabular-nums">
+                                    {group.sent ? "enviado" : "pendente"} ·{" "}
+                                    {groupMetricValue(group, metric)}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </li>
+                        );
+                      })
+                    )}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function NpsOutreachBoard({ outreach }: { outreach: NpsOutreachProgress }) {
+  const [openMetric, setOpenMetric] = useState<OutreachMetric | null>(null);
+  const byArea = outreach.byArea ?? [];
+
+  const cards: Array<{
+    metric: OutreachMetric;
+    label: string;
+    value: number;
+    total?: number;
+    hint: string;
+    icon: typeof Users;
+  }> = [
+    {
+      metric: "eligiblePeople",
+      label: "Pessoas Elegíveis",
+      value: outreach.eligiblePeople,
+      hint: "NPS sim ou ainda sem classificação",
+      icon: UserCheck,
+    },
+    {
+      metric: "eligibleGroups",
+      label: "Grupos elegíveis",
+      value: outreach.eligibleGroups,
+      hint: "clientes ativos com pelo menos 1 pessoa sim ou pendente",
+      icon: Building2,
+    },
+    {
+      metric: "sentGroups",
+      label: "Enviados",
+      value: outreach.sentGroups,
+      total: outreach.eligibleGroups,
+      hint: "grupos com NPS enviado",
+      icon: Send,
+    },
+    {
+      metric: "respondedPeople",
+      label: "Respondidos",
+      value: outreach.respondedPeople,
+      total: outreach.eligiblePeople,
+      hint: "pessoas que já responderam",
+      icon: Users,
+    },
+  ];
+
+  const openCard = cards.find((card) => card.metric === openMetric) ?? null;
+
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {cards.map((card) => (
+          <OutreachMeter
+            key={card.metric}
+            label={card.label}
+            value={card.value}
+            total={card.total}
+            hint={card.hint}
+            icon={card.icon}
+            expanded={openMetric === card.metric}
+            onToggle={() =>
+              setOpenMetric((current) => (current === card.metric ? null : card.metric))
+            }
+          />
+        ))}
+      </div>
+      {openCard && (
+        <OutreachAreaBreakdown metric={openCard.metric} label={openCard.label} rows={byArea} />
+      )}
+    </div>
+  );
 }
 
 function DimensionMeter({
@@ -557,12 +856,14 @@ export function NpsResultsClient() {
           <div className="ml-auto flex items-center gap-4 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">
               <Users className="h-3.5 w-3.5" />
-              {data.groups.length} grupo{data.groups.length === 1 ? "" : "s"}
+              {data.groups.length} grupo{data.groups.length === 1 ? "" : "s"} com resposta
             </span>
             <span>{commentsOnlyCount} com comentário</span>
           </div>
         </div>
       )}
+
+      {data && <NpsOutreachBoard outreach={data.outreach} />}
 
       {loading && (
         <div className="flex items-center justify-center gap-2 py-20 text-sm text-muted-foreground">

@@ -17,14 +17,27 @@ import {
   type EmailGroupResponsible,
   type EmailPerson,
 } from "@/lib/email-marketing";
+import { normalizeLegalArea } from "@/lib/legal-areas";
 import {
   computeMyClientScope,
   filterInternalContacts,
   filterInternalResponsibles,
   filterOutInternalClientGroups,
+  isInternalClientGroupName,
   resolveUserMeusClientesAreas,
 } from "@/lib/meus-clientes";
-import { buildEligibleRespondents, type NpsEligibleRespondent } from "@/lib/nps/eligible";
+import {
+  isClientGroupInactiveForOutreach,
+  mapClientGroupGestorStatus,
+} from "@/lib/client-group-gestor-status";
+import { fetchSioeClienteAtividadeIndex } from "@/lib/sioe-cliente-atividade-server";
+import {
+  buildEligibleRespondents,
+  computeNpsOutreachProgress,
+  resolveNpsCollectionArea,
+  type NpsEligibleRespondent,
+  type NpsOutreachProgress,
+} from "@/lib/nps/eligible";
 import { buildNpsWhatsAppMessage } from "@/lib/nps/message";
 import { getNpsPublicUrl } from "@/lib/nps/public-url";
 import {
@@ -168,6 +181,209 @@ function scopedGroupIdsForUser(
     ...(scopedCompanies.map((c) => c.clientGroupId).filter(Boolean) as string[]),
     ...(scopedPeople.map((p) => p.clientGroupId).filter(Boolean) as string[]),
   ]);
+}
+
+const EMPTY_NPS_OUTREACH: NpsOutreachProgress = {
+  eligiblePeople: 0,
+  eligibleGroups: 0,
+  sentGroups: 0,
+  respondedPeople: 0,
+  byArea: [],
+};
+
+async function loadNpsOutreachProgress(options: {
+  campaignId: string;
+  allowedGroupIds: Set<string> | null;
+  respondedCountByGroupId: Map<string, number>;
+}): Promise<NpsOutreachProgress> {
+  const admin = getAdminClient();
+  const [
+    { data: contactRows },
+    { data: peopleRows },
+    { data: groupRows },
+    { data: sentRows },
+    { data: companyRows },
+    { data: responsibleRows },
+    clienteAtividade,
+  ] = await Promise.all([
+    admin
+      .from("email_contacts")
+      .select("id, name, email, cargo, nps_eligible, invites_classified_by_user_id, client_group_id")
+      .not("client_group_id", "is", null),
+    admin
+      .from("email_people")
+      .select("id, name, email, cargo, nps_eligible, invites_classified_by_user_id, client_group_id")
+      .not("client_group_id", "is", null),
+    admin
+      .from("email_client_groups")
+      .select("id, name, responsible_area, legal_areas, gestor_atividade, area_contact_user_id"),
+    admin
+      .from("nps_survey_links")
+      .select("client_group_id")
+      .eq("campaign_id", options.campaignId)
+      .not("sent_at", "is", null),
+    admin.from("email_companies").select("client_group_id, legal_areas").not("client_group_id", "is", null),
+    admin.from("email_group_responsibles").select("client_group_id, area"),
+    fetchSioeClienteAtividadeIndex(),
+  ]);
+
+  const internalGroupIds = new Set(
+    (groupRows ?? [])
+      .filter((row) => isInternalClientGroupName(row.name as string | null))
+      .map((row) => row.id as string)
+  );
+
+  const inactiveGroupIds = new Set(
+    (groupRows ?? [])
+      .filter((row) =>
+        isClientGroupInactiveForOutreach(
+          {
+            name: (row.name as string | null) ?? "",
+            gestorAtividade: mapClientGroupGestorStatus(row as Record<string, unknown>).gestorAtividade,
+          },
+          clienteAtividade
+        )
+      )
+      .map((row) => row.id as string)
+  );
+
+  const inScope = (groupId: string | null | undefined): groupId is string => {
+    if (!groupId || internalGroupIds.has(groupId) || inactiveGroupIds.has(groupId)) return false;
+    if (options.allowedGroupIds && !options.allowedGroupIds.has(groupId)) return false;
+    return true;
+  };
+
+  const contacts = (contactRows ?? []).flatMap((row) => {
+    const clientGroupId = (row.client_group_id as string | null) ?? null;
+    if (!inScope(clientGroupId)) return [];
+    return [
+      {
+        id: row.id as string,
+        name: (row.name as string | null) ?? null,
+        email: (row.email as string) ?? "",
+        cargo: (row.cargo as string | null) ?? null,
+        npsEligible: Boolean(row.nps_eligible),
+        invitesClassifiedByUserId: (row.invites_classified_by_user_id as string | null) ?? null,
+        clientGroupId,
+      },
+    ];
+  });
+
+  const people = (peopleRows ?? []).flatMap((row) => {
+    const clientGroupId = (row.client_group_id as string | null) ?? null;
+    if (!inScope(clientGroupId)) return [];
+    return [
+      {
+        id: row.id as string,
+        name: (row.name as string) ?? "",
+        email: (row.email as string | null) ?? null,
+        cargo: (row.cargo as string | null) ?? null,
+        npsEligible: Boolean(row.nps_eligible),
+        invitesClassifiedByUserId: (row.invites_classified_by_user_id as string | null) ?? null,
+        clientGroupId,
+      },
+    ];
+  });
+
+  const groupIds = new Set<string>();
+  for (const contact of contacts) groupIds.add(contact.clientGroupId!);
+  for (const person of people) groupIds.add(person.clientGroupId!);
+
+  const eligibleCountByGroupId = new Map<string, number>();
+  for (const groupId of groupIds) {
+    eligibleCountByGroupId.set(
+      groupId,
+      buildEligibleRespondents(contacts, people, groupId, { includeUnclassified: true }).length
+    );
+  }
+
+  const sentGroupIds = (sentRows ?? [])
+    .map((row) => row.client_group_id as string)
+    .filter((id) => inScope(id));
+
+  const involvedAreasByGroupId = new Map<string, string[]>();
+  const addInvolved = (groupId: string | null | undefined, area: string | null | undefined) => {
+    const normalized = normalizeLegalArea(area);
+    if (!groupId || !normalized) return;
+    const list = involvedAreasByGroupId.get(groupId) ?? [];
+    list.push(normalized);
+    involvedAreasByGroupId.set(groupId, list);
+  };
+  for (const row of groupRows ?? []) {
+    const groupId = row.id as string;
+    const legalAreas = Array.isArray(row.legal_areas) ? (row.legal_areas as string[]) : [];
+    for (const area of legalAreas) addInvolved(groupId, area);
+  }
+  for (const row of companyRows ?? []) {
+    const groupId = (row.client_group_id as string | null) ?? null;
+    const legalAreas = Array.isArray(row.legal_areas) ? (row.legal_areas as string[]) : [];
+    for (const area of legalAreas) addInvolved(groupId, area);
+  }
+  for (const row of responsibleRows ?? []) {
+    addInvolved((row.client_group_id as string | null) ?? null, row.area as string | null);
+  }
+
+  const senderUserIds = Array.from(
+    new Set(
+      (groupRows ?? [])
+        .map((row) => (row.area_contact_user_id as string | null) ?? null)
+        .filter((id): id is string => Boolean(id))
+    )
+  );
+  const { data: senderRows } =
+    senderUserIds.length > 0
+      ? await admin.from("users").select("id, name, avatar_url, department").in("id", senderUserIds)
+      : { data: [] as Record<string, unknown>[] };
+  const senderUserById = new Map(
+    (senderRows ?? []).map((row) => [
+      row.id as string,
+      {
+        userId: row.id as string,
+        name: (row.name as string | null)?.trim() || "Colaborador",
+        avatarUrl: (row.avatar_url as string | null) ?? null,
+        department: (row.department as string | null) ?? null,
+      },
+    ])
+  );
+
+  const areaByGroupId = new Map<string, string | null>();
+  const groupNameById = new Map<string, string>();
+  const senderByGroupId = new Map<
+    string,
+    { userId: string; name: string; avatarUrl: string | null } | null
+  >();
+  for (const row of groupRows ?? []) {
+    const groupId = row.id as string;
+    const sender = senderUserById.get((row.area_contact_user_id as string | null) ?? "");
+    groupNameById.set(groupId, (row.name as string | null) ?? "Grupo");
+    senderByGroupId.set(groupId, sender ?? null);
+    areaByGroupId.set(
+      groupId,
+      resolveNpsCollectionArea({
+        responsibleArea: row.responsible_area as string | null,
+        involvedAreas: involvedAreasByGroupId.get(groupId) ?? [],
+        collectorDepartment: sender?.department ?? null,
+      })
+    );
+  }
+
+  const respondedCountByGroupId = new Map<string, number>();
+  let respondedPeople = 0;
+  for (const [groupId, count] of options.respondedCountByGroupId) {
+    if (!inScope(groupId)) continue;
+    respondedCountByGroupId.set(groupId, count);
+    respondedPeople += count;
+  }
+
+  return computeNpsOutreachProgress({
+    eligibleCountByGroupId,
+    sentGroupIds,
+    respondedPeople,
+    respondedCountByGroupId,
+    areaByGroupId,
+    groupNameById,
+    senderByGroupId,
+  });
 }
 
 async function assertGroupInScope(
@@ -936,6 +1152,7 @@ export interface NpsResultsPayload {
       groupName: string;
     }
   >;
+  outreach: NpsOutreachProgress;
 }
 
 export async function fetchNpsResults(options: {
@@ -989,6 +1206,7 @@ export async function fetchNpsResults(options: {
         dimensions: computeDimensionAverages([]),
         groups: [],
         responses: [],
+        outreach: EMPTY_NPS_OUTREACH,
       };
     }
     query = query.in("client_group_id", Array.from(allowedGroupIds));
@@ -1044,6 +1262,20 @@ export async function fetchNpsResults(options: {
     score_technical: r.scoreTechnical,
   }));
 
+  const respondedCountByGroupId = new Map<string, number>();
+  for (const response of responses) {
+    respondedCountByGroupId.set(
+      response.clientGroupId,
+      (respondedCountByGroupId.get(response.clientGroupId) ?? 0) + 1
+    );
+  }
+
+  const outreach = await loadNpsOutreachProgress({
+    campaignId: campaign.id,
+    allowedGroupIds,
+    respondedCountByGroupId,
+  });
+
   return {
     campaign,
     campaigns,
@@ -1055,6 +1287,7 @@ export async function fetchNpsResults(options: {
       ...r,
       groupName: groupNameById.get(r.clientGroupId) ?? "Grupo",
     })),
+    outreach,
   };
 }
 

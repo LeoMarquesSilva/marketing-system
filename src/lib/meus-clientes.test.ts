@@ -275,6 +275,52 @@ describe("buildClientGroupKeysForAreaFilter", () => {
     );
     expect(semArea.has("gy")).toBe(false);
   });
+
+  it("área responsável tira o grupo de Sem área e entra no filtro da área", () => {
+    const companies = [
+      {
+        id: "c1",
+        clientGroupId: "g3",
+        clientGroupName: "Grupo Marcado",
+        legalAreas: [] as string[],
+        responsibleArea: "Cível",
+      },
+    ] as EmailCompany[];
+
+    expect(buildClientGroupKeysWithoutArea(companies, [], new Map(), []).has("g3")).toBe(false);
+    expect(
+      buildClientGroupKeysForAreaFilter("Cível", companies, [], new Map(), []).has("g3")
+    ).toBe(true);
+  });
+
+  it("área de quem envia o NPS tira o grupo de Sem área", () => {
+    const companies = [
+      {
+        id: "c1",
+        clientGroupId: "g4",
+        clientGroupName: "Grupo Contato",
+        legalAreas: [] as string[],
+        responsibleArea: null,
+      },
+    ] as EmailCompany[];
+
+    expect(buildClientGroupKeysWithoutArea(companies, [], new Map(), []).has("g4")).toBe(true);
+    expect(
+      buildClientGroupKeysWithoutArea(companies, [], new Map(), [], new Map([["g4", "Cível"]])).has(
+        "g4"
+      )
+    ).toBe(false);
+    expect(
+      buildClientGroupKeysForAreaFilter(
+        "Cível",
+        companies,
+        [],
+        new Map(),
+        [],
+        new Map([["g4", "Cível"]])
+      ).has("g4")
+    ).toBe(true);
+  });
 });
 
 describe("área responsável exclusiva", () => {

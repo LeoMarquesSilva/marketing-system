@@ -52,7 +52,8 @@ export async function GET(request: Request) {
     const search = (url.searchParams.get("search") ?? "").trim();
     const excludeSemGrupo = url.searchParams.get("excludeSemGrupo") === "1";
 
-    const { companies, contacts, people, responsibles, isAdmin } = await fetchMeusClientesPayload({
+    const { companies, contacts, people, responsibles, isAdmin, areaContactByGroupId, systemUsers } =
+      await fetchMeusClientesPayload({
       authUserId: user.id,
       viewAll,
       filterGestorId,
@@ -68,13 +69,22 @@ export async function GET(request: Request) {
       areas.push(responsible.area);
       personAreas.set(responsible.personId, areas);
     }
+    const collectorDepartmentByGroupId = new Map<string, string | null>();
+    const departmentByUserId = new Map(
+      (systemUsers ?? []).map((user) => [user.id, user.department])
+    );
+    for (const [groupId, userId] of Object.entries(areaContactByGroupId ?? {})) {
+      if (!userId) continue;
+      collectorDepartmentByGroupId.set(groupId, departmentByUserId.get(userId) ?? null);
+    }
     const groupKeysForAreaFilter = filterArea
       ? buildClientGroupKeysForAreaFilter(
           filterArea,
           companies,
           people,
           personAreas,
-          responsibles
+          responsibles,
+          collectorDepartmentByGroupId
         )
       : null;
 
