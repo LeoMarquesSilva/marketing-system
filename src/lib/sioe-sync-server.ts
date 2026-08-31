@@ -19,7 +19,8 @@ import {
   normalizeLegalAreas,
   SUBAREA_ONLY,
 } from "@/lib/legal-areas";
-import { isInternalClientGroupName, resolveEffectiveResponsibleArea } from "@/lib/meus-clientes";
+import { isInternalClientGroupName } from "@/lib/meus-clientes";
+import { persistInferredClientGroupResponsibleAreas } from "@/lib/persist-inferred-responsible-areas";
 
 const DEFAULT_SIOE_URL = "https://pzfxmlidwdmsqfwrxdbd.supabase.co";
 const PAGE_SIZE = 500;
@@ -720,19 +721,6 @@ async function syncResponsibles(
     )
   );
 
-  // Só preenche responsible_area quando ainda está vazia — não sobrescreve marcação manual.
-  await Promise.all(
-    Array.from(areasByGroup.entries()).map(([groupId, areas]) => {
-      const inferred = resolveEffectiveResponsibleArea(null, Array.from(areas));
-      if (!inferred) return Promise.resolve();
-      return admin
-        .from("email_client_groups")
-        .update({ responsible_area: inferred })
-        .eq("id", groupId)
-        .is("responsible_area", null);
-    })
-  );
-
   await Promise.all(
     Array.from(new Set([...areasByCompany.keys(), ...usersByCompany.keys()])).map((companyId) =>
       admin
@@ -744,6 +732,9 @@ async function syncResponsibles(
         .eq("id", companyId)
     )
   );
+
+  // Só preenche responsible_area quando ainda está vazia — não sobrescreve marcação manual.
+  await persistInferredClientGroupResponsibleAreas(admin);
 
   return { responsiblesUpserted: rows.length, unmatchedAdvogados: Array.from(unmatched).sort() };
 }

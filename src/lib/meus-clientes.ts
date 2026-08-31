@@ -713,6 +713,56 @@ export function resolveGroupCollectionArea(
   });
 }
 
+/** Área de coleta do grupo (coluna, área única envolvida ou departamento de quem envia). */
+export function resolveCollectionAreaForClientGroup(
+  clientGroupId: string,
+  companies: EmailCompany[],
+  people: EmailPerson[],
+  responsibles: EmailGroupResponsible[],
+  collectorDepartment?: string | null
+): string | null {
+  return resolveGroupCollectionArea(
+    clientGroupId,
+    companies,
+    people,
+    personAreasFromResponsibles(responsibles),
+    responsibles,
+    collectorDepartment != null ? new Map([[clientGroupId, collectorDepartment]]) : undefined
+  );
+}
+
+export interface InferredResponsibleAreaUpdate {
+  id: string;
+  name: string;
+  area: string;
+}
+
+/**
+ * Grupos cuja área já aparece na UI (única área envolvida), mas a coluna
+ * `responsible_area` ainda está vazia — mesmos que bloqueiam “quem contata”.
+ */
+export function inferResponsibleAreasToPersist(
+  groups: { id: string; name: string | null; responsibleArea: string | null }[],
+  companies: EmailCompany[],
+  people: EmailPerson[],
+  responsibles: EmailGroupResponsible[]
+): InferredResponsibleAreaUpdate[] {
+  const updates: InferredResponsibleAreaUpdate[] = [];
+  for (const group of groups) {
+    if (normalizeLegalArea(group.responsibleArea)) continue;
+    if (isInternalClientGroupName(group.name)) continue;
+    const area = resolveCollectionAreaForClientGroup(
+      group.id,
+      companies,
+      people,
+      responsibles
+    );
+    if (!area) continue;
+    updates.push({ id: group.id, name: group.name?.trim() || "Grupo", area });
+  }
+  return updates;
+}
+
 /** Grupos sem área de coleta NPS (responsável, área única ou quem envia). */
 export function buildClientGroupKeysWithoutArea(
   companies: EmailCompany[],

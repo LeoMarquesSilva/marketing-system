@@ -24,6 +24,7 @@ import {
   filterOutInternalClientGroups,
   resolveClientGroupKey,
   resolveContactGroupKey,
+  resolveCollectionAreaForClientGroup,
   resolveUserMeusClientesAreas,
   userBelongsToClientArea,
   userManagesClientGroupArea,
@@ -480,7 +481,15 @@ export async function updateClientGroupAreaContactUser(options: {
   if (groupError) throw new Error(groupError.message);
   if (!groupRow) throw new Error("Grupo não encontrado.");
 
-  const responsibleArea = normalizeLegalArea((groupRow.responsible_area as string | null) ?? null);
+  const storedArea = normalizeLegalArea((groupRow.responsible_area as string | null) ?? null);
+  const responsibleArea =
+    storedArea ??
+    resolveCollectionAreaForClientGroup(
+      options.clientGroupId,
+      context.allCompanies,
+      context.allPeople,
+      context.allResponsibles
+    );
   if (!responsibleArea) {
     throw new Error("Defina a área responsável do grupo antes de designar quem contata.");
   }
@@ -511,6 +520,7 @@ export async function updateClientGroupAreaContactUser(options: {
     .from("email_client_groups")
     .update({
       area_contact_user_id: areaContactUserId,
+      ...(storedArea ? {} : { responsible_area: responsibleArea }),
       updated_at: new Date().toISOString(),
     })
     .eq("id", options.clientGroupId)

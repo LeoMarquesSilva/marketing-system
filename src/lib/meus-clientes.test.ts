@@ -20,6 +20,8 @@ import {
   resolveContactAssigneeAreas,
   userBelongsToClientArea,
   userManagesClientGroupArea,
+  resolveCollectionAreaForClientGroup,
+  inferResponsibleAreasToPersist,
   resolveEffectiveResponsibleArea,
 } from "@/lib/meus-clientes";
 import { personNameKey } from "@/lib/email-marketing-normalize";
@@ -556,6 +558,83 @@ describe("resolveEffectiveResponsibleArea", () => {
     expect(resolveEffectiveResponsibleArea(null, ["Insolvência", "Reestruturação"])).toBe(
       "Reestruturação"
     );
+  });
+});
+
+describe("resolveCollectionAreaForClientGroup", () => {
+  it("infere a área quando a coluna está vazia e o grupo tem uma só área envolvida", () => {
+    const companies = [
+      {
+        id: "c1",
+        clientGroupId: "g-buritis",
+        legalAreas: ["Insolvência"],
+        responsibleArea: null,
+      } as EmailCompany,
+    ];
+    expect(resolveCollectionAreaForClientGroup("g-buritis", companies, [], [])).toBe(
+      "Reestruturação"
+    );
+  });
+
+  it("não infere quando o grupo tem mais de uma área e a coluna está vazia", () => {
+    const companies = [
+      {
+        id: "c1",
+        clientGroupId: "g1",
+        legalAreas: ["Cível", "Trabalhista"],
+        responsibleArea: null,
+      } as EmailCompany,
+    ];
+    expect(resolveCollectionAreaForClientGroup("g1", companies, [], [])).toBeNull();
+  });
+
+  it("usa a área marcada mesmo se as envolvidas forem outras", () => {
+    const companies = [
+      {
+        id: "c1",
+        clientGroupId: "g1",
+        legalAreas: ["Cível"],
+        responsibleArea: "Reestruturação",
+      } as EmailCompany,
+    ];
+    expect(resolveCollectionAreaForClientGroup("g1", companies, [], [])).toBe("Reestruturação");
+  });
+});
+
+describe("inferResponsibleAreasToPersist", () => {
+  it("grava só grupos com coluna vazia e uma única área envolvida", () => {
+    const companies = [
+      {
+        id: "c1",
+        clientGroupId: "g-buritis",
+        legalAreas: ["Insolvência"],
+        responsibleArea: null,
+      } as EmailCompany,
+      {
+        id: "c2",
+        clientGroupId: "g-misto",
+        legalAreas: ["Cível", "Trabalhista"],
+        responsibleArea: null,
+      } as EmailCompany,
+      {
+        id: "c3",
+        clientGroupId: "g-marcado",
+        legalAreas: ["Cível"],
+        responsibleArea: "Reestruturação",
+      } as EmailCompany,
+    ];
+    const updates = inferResponsibleAreasToPersist(
+      [
+        { id: "g-buritis", name: "Buritis", responsibleArea: null },
+        { id: "g-misto", name: "Misto", responsibleArea: null },
+        { id: "g-marcado", name: "Já marcado", responsibleArea: "Reestruturação" },
+        { id: "g-interno", name: "Bismarchi Pires", responsibleArea: null },
+      ],
+      companies,
+      [],
+      []
+    );
+    expect(updates).toEqual([{ id: "g-buritis", name: "Buritis", area: "Reestruturação" }]);
   });
 });
 
