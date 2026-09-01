@@ -44,6 +44,7 @@ describe("acesso do perfil tipo Ricardo à Newsletter", () => {
     expect(canAccessPath(RICARDO_LIKE, "/conteudo/roteiros")).toBe(true);
     expect(canAccessPath(RICARDO_LIKE, "/conteudo/inicio")).toBe(true);
     expect(canAccessPath(RICARDO_LIKE, "/conteudo/reels")).toBe(true);
+    expect(canAccessPath(RICARDO_LIKE, "/conteudo/gustavo")).toBe(false);
   });
 
   it("não acessa Planner/admin sem permissão", () => {

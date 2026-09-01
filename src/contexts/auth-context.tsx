@@ -29,6 +29,8 @@ export interface AuthProfile {
   minhas_fotos_tutorial_completed_at?: string | null;
   qualification_required_at?: string | null;
   qualification_completed_at?: string | null;
+  gustavo_content_member?: boolean;
+  gustavo_content_member_role?: "owner" | "editor" | null;
 }
 
 interface AuthContextValue {
@@ -68,7 +70,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setProfile(null);
           return;
         }
-        setProfile(data as AuthProfile);
+        const { data: membership } = await supabase
+          .from("gustavo_content_members")
+          .select("member_role")
+          .eq("user_id", data.id)
+          .maybeSingle();
+        setProfile({
+          ...(data as AuthProfile),
+          gustavo_content_member: Boolean(membership),
+          gustavo_content_member_role:
+            membership?.member_role === "owner" || membership?.member_role === "editor"
+              ? membership.member_role
+              : null,
+        });
         return;
       }
       if (!error) {

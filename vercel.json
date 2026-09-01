@@ -11,6 +11,10 @@
       "schedule": "0 11 * * *"
     },
     {
+      "path": "/api/cron/gustavo-content-fetch",
+      "schedule": "0 12 * * 1-5"
+    },
+    {
       "path": "/api/cron/email-campaigns",
       "schedule": "0 8 * * *"
     },

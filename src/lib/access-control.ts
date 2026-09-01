@@ -6,6 +6,11 @@
  * seção). Quando null/vazio, cai no comportamento legado (role/department).
  */
 
+import {
+  canAccessGustavoContent,
+  isGustavoContentPath,
+} from "@/lib/gustavo-content/access";
+
 export interface AccessSection {
   key: string; // rota base
   label: string;
@@ -90,6 +95,8 @@ export interface AccessProfile {
   id?: string;
   /** Indicador de navegação; a autorização de dados é refeita no servidor. */
   ferias_view_enabled?: boolean | null;
+  /** Membership do módulo Posicionamento Gustavo — nunca inferir por nome. */
+  gustavo_content_member?: boolean | null;
 }
 
 /** Usuários com acesso à página Fotos Colaboradores (além do catálogo de permissões). */
@@ -201,6 +208,10 @@ export function canAccessPath(
 
   if (isFotosRoute) {
     return isCollaboratorPhotosManager(profile);
+  }
+
+  if (isGustavoContentPath(pathname)) {
+    return canAccessGustavoContent(profile);
   }
 
   const allowed = resolveAllowedSections(profile);

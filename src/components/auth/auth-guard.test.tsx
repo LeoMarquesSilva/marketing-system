@@ -81,6 +81,27 @@ describe("AuthGuard — acesso parcial a Férias", () => {
   });
 });
 
+describe("AuthGuard — Posicionamento Gustavo", () => {
+  it("redireciona colaborador de conteúdo sem membership", () => {
+    route.pathname = "/conteudo/gustavo";
+    authState.user = { id: "colab-1" };
+    authState.profile = {
+      department: "Cível",
+      permissions: ["/conteudo/roteiros"],
+    };
+    authState.loading = false;
+
+    const markup = renderToStaticMarkup(
+      <AuthGuard>
+        <p>Módulo do Gustavo</p>
+      </AuthGuard>
+    );
+
+    expect(markup).not.toContain("Módulo do Gustavo");
+    expect(markup).toContain("Redirecionando...");
+  });
+});
+
 describe("AuthGuard — check-in do Café com Cultura", () => {
   it("não redireciona colaborador de conteúdo autenticado no check-in", () => {
     route.pathname = "/cafe-com-cultura";

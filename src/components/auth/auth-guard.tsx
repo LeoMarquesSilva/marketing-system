@@ -6,6 +6,10 @@ import { useAuth } from "@/contexts/auth-context";
 import { isContentCollaborator } from "@/lib/content-areas";
 import { resolveAllowedSections, canAccessPath } from "@/lib/access-control";
 import {
+  canAccessGustavoContent,
+  isGustavoContentPath,
+} from "@/lib/gustavo-content/access";
+import {
   loginPathWithReturn,
   resolvePostLoginPathFromProfile,
   resolveRequestedNext,
@@ -50,9 +54,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const isServerProtected = SERVER_PROTECTED_PATHS.some(
     (p) => pathname === p || pathname.startsWith(p + "/")
   );
-  const isCollaboratorRoute = COLLABORATOR_PATHS.some(
-    (p) => pathname === p || pathname.startsWith(p + "/")
-  );
+  const isGustavoContentRoute = isGustavoContentPath(pathname);
+  const isCollaboratorRoute =
+    !isGustavoContentRoute &&
+    COLLABORATOR_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
   const isFeriasRoute =
     pathname === "/rh" ||
     pathname === "/rh/ferias" ||
@@ -96,6 +101,13 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         return resolvePostLoginPathFromProfile(profile);
       }
       return null;
+    }
+
+    // Módulo do Gustavo: nunca herda a subárvore /conteudo nem o modo legado.
+    if (profile && isGustavoContentRoute && !isPublic) {
+      return canAccessGustavoContent(profile)
+        ? null
+        : resolvePostLoginPathFromProfile(profile);
     }
 
     // Permissões explícitas definidas pelo admin.

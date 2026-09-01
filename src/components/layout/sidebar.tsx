@@ -38,6 +38,7 @@ import {
   Rocket,
   Shield,
   Coffee,
+  PenLine,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -48,6 +49,7 @@ import {
   isCollaboratorPhotosManager,
   isAdminRole,
 } from "@/lib/access-control";
+import { canAccessGustavoContent } from "@/lib/gustavo-content/access";
 import { hasHrAccess } from "@/lib/rh/access";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { fetchCommentStats } from "@/lib/request-comments";
@@ -125,6 +127,12 @@ const meusClientesNavItem: NavLeaf = {
   label: "Meus Clientes",
 };
 
+const gustavoNavItem: NavLeaf = {
+  href: "/conteudo/gustavo",
+  icon: PenLine,
+  label: "Posicionamento Gustavo",
+};
+
 const rhNavGroup: NavGroup = {
   key: "/rh",
   icon: BriefcaseBusiness,
@@ -158,7 +166,13 @@ const CONTENT_GROUP: CollapsibleGroupSpec = {
   key: "__conteudo",
   icon: Layers,
   label: "Conteúdo",
-  hrefs: ["/conteudo/inicio", "/conteudo/roteiros", "/conteudo/boletim", "/conteudo/reels"],
+  hrefs: [
+    "/conteudo/inicio",
+    "/conteudo/roteiros",
+    "/conteudo/boletim",
+    "/conteudo/reels",
+    "/conteudo/gustavo",
+  ],
 };
 
 const PHOTOS_GROUP: CollapsibleGroupSpec = {
@@ -219,6 +233,34 @@ const adminNavItems: NavLeaf[] = [
   { href: "/admin", icon: Settings, label: "Configuracoes" },
 ];
 
+function withGustavoNav(
+  items: NavEntry[],
+  profile: { role?: string | null; gustavo_content_member?: boolean | null } | null
+): NavEntry[] {
+  if (!canAccessGustavoContent(profile)) return items;
+  if (flattenNav(items).some((i) => i.href === gustavoNavItem.href)) return items;
+
+  const reelsIndex = items.findIndex(
+    (i) => !isNavGroup(i) && i.href === "/conteudo/reels"
+  );
+  if (reelsIndex >= 0) {
+    const copy = [...items];
+    copy.splice(reelsIndex + 1, 0, gustavoNavItem);
+    return copy;
+  }
+
+  const contentIndex = items.findIndex(
+    (i) => !isNavGroup(i) && i.href.startsWith("/conteudo")
+  );
+  if (contentIndex >= 0) {
+    const copy = [...items];
+    copy.splice(contentIndex + 1, 0, gustavoNavItem);
+    return copy;
+  }
+
+  return [items[0], gustavoNavItem, ...items.slice(1)].filter(Boolean) as NavEntry[];
+}
+
 function withMinhasFotos(items: NavEntry[], minhasFotos: NavLeaf): NavEntry[] {
   const flat = flattenNav(items);
   if (flat.some((i) => i.href === "/minhas-fotos")) return items;
@@ -256,6 +298,7 @@ function getNavItems(
     department?: string | null;
     permissions?: string[] | null;
     ferias_view_enabled?: boolean | null;
+    gustavo_content_member?: boolean | null;
   } | null
 ): NavEntry[] {
   const minhasFotos: NavLeaf = { href: "/minhas-fotos", icon: Images, label: "Minhas fotos" };
@@ -295,28 +338,33 @@ function getNavItems(
     } else {
       items = withMinhasFotos(items, minhasFotos);
     }
-    return applyCollapsibleGroups(items);
+    return applyCollapsibleGroups(withGustavoNav(items, profile));
   }
 
   if (isContentCollaborator(profile)) {
     const collaboratorItems: NavEntry[] = profileHasFeriasView(profile)
       ? [...collaboratorNavItems, feriasViewerNavGroup]
       : collaboratorNavItems;
-    return applyCollapsibleGroups(collaboratorItems);
+    return applyCollapsibleGroups(withGustavoNav(collaboratorItems, profile));
   }
 
   const isAdmin = isAdminRole(profile);
   const canViewFerias = profileHasFeriasView(profile);
-  return applyCollapsibleGroups([
-    ...baseNavItems.filter((i) => {
-      if (i.href === "/nfc") return isAdmin;
-      if (i.href === "/cafe-cultura") return isAdmin;
-      if (i.href === "/minhas-fotos") return true;
-      return i.href !== "/fotos-colaboradores" || isCollaboratorPhotosManager(profile);
-    }),
-    meusClientesNavItem,
-    ...(isAdmin ? [rhNavGroup, ...adminNavItems] : canViewFerias ? [feriasViewerNavGroup] : []),
-  ]);
+  return applyCollapsibleGroups(
+    withGustavoNav(
+      [
+        ...baseNavItems.filter((i) => {
+          if (i.href === "/nfc") return isAdmin;
+          if (i.href === "/cafe-cultura") return isAdmin;
+          if (i.href === "/minhas-fotos") return true;
+          return i.href !== "/fotos-colaboradores" || isCollaboratorPhotosManager(profile);
+        }),
+        meusClientesNavItem,
+        ...(isAdmin ? [rhNavGroup, ...adminNavItems] : canViewFerias ? [feriasViewerNavGroup] : []),
+      ],
+      profile
+    )
+  );
 }
 
 function getInitials(name: string) {
