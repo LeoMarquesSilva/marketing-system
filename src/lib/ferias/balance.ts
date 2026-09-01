@@ -200,9 +200,13 @@ export function computeEmployeeBalance({
     unallocatedDays += pending;
   }
 
-  // Créditos (dia trabalhado) devolvem saldo LIFO nos períodos mais recentes usados.
+  // Créditos (dia trabalhado) primeiro abatem o excesso sem período
+  // e só então devolvem saldo LIFO nos períodos mais recentes usados.
   for (const leave of creditLeaves) {
     let pending = leave.days;
+    const fromUnallocated = Math.min(unallocatedDays, pending);
+    unallocatedDays -= fromUnallocated;
+    pending -= fromUnallocated;
     for (let index = sortedPeriods.length - 1; index >= 0 && pending > 0; index -= 1) {
       const period = sortedPeriods[index];
       const alreadyUsed = usedByPeriod.get(period.id) ?? 0;

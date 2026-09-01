@@ -183,6 +183,68 @@ describe("computeEmployeeBalance", () => {
     expect(withScheduled.scheduledLeaves[0].id).toBe("future-1");
   });
 
+  it("abate crédito do excesso antes de devolver dias ao período (Mariana)", () => {
+    const mariana = computeEmployeeBalance({
+      admissionDate: "2025-01-27",
+      periods: [
+        {
+          id: "mariana-p1",
+          employee_id: "mariana",
+          period_start: "2025-01-27",
+          period_end: "2026-01-26",
+          concessive_start: "2026-01-27",
+          concessive_end: "2027-01-26",
+          entitled_days: 30,
+          notes: null,
+        },
+      ],
+      leaves: [
+        {
+          id: "recess",
+          employee_id: "mariana",
+          start_date: "2025-12-22",
+          end_date: "2026-01-06",
+          days: 16,
+          kind: "recesso",
+          notes: null,
+        },
+        {
+          id: "credit",
+          employee_id: "mariana",
+          start_date: "2025-12-23",
+          end_date: "2025-12-25",
+          days: 3,
+          kind: "trabalho_recesso",
+          notes: null,
+        },
+        {
+          id: "jan",
+          employee_id: "mariana",
+          start_date: "2026-01-07",
+          end_date: "2026-01-11",
+          days: 5,
+          kind: "ferias",
+          notes: null,
+        },
+        {
+          id: "jun",
+          employee_id: "mariana",
+          start_date: "2026-06-08",
+          end_date: "2026-06-21",
+          days: 14,
+          kind: "ferias",
+          notes: null,
+        },
+      ],
+      referenceDate: "2026-09-01",
+    });
+    expect(mariana.totalEntitledDays).toBe(30);
+    expect(mariana.totalTakenDays).toBe(32);
+    expect(mariana.pendingDays).toBe(-2);
+    expect(mariana.unallocatedDays).toBe(2);
+    expect(mariana.onTimeDays).toBe(0);
+  });
+
   it("credita dia trabalhado no recesso devolvendo saldo", () => {
     const withCredit = computeEmployeeBalance({
       admissionDate: ADMISSION,

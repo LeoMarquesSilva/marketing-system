@@ -275,7 +275,10 @@ function DetailBody({
                   · Admissão em {formatISODateBR(employee.admission_date)}
                 </DialogDescription>
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <VacationDebtTags balance={balance} />
+                  <VacationDebtTags
+                    balance={balance}
+                    admissionDate={employee.admission_date}
+                  />
                   {!employee.is_active && (
                     <span className="text-xs text-muted-foreground">Ex-colaborador</span>
                   )}
@@ -522,6 +525,9 @@ function DetailBody({
               }
             }}
             employeeName={employee.full_name}
+            admissionDate={employee.admission_date}
+            pendingDays={balance?.pendingDays ?? 0}
+            scheduledLeaves={balance?.scheduledLeaves ?? []}
             leave={editingLeave}
             defaultKind={leaveDefaultKind}
             creditPreset={creditPreset}

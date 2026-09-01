@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { EmployeeAvatar } from "@/components/ferias/employee-avatar";
 import { VacationStatusBadge } from "@/components/ferias/status-badge";
-import { VacationDebtTags } from "@/components/ferias/vacation-debt-tags";
+import {
+  scheduledWhileInDebtWarning,
+  VacationDebtTags,
+} from "@/components/ferias/vacation-debt-tags";
 import { PERIOD_STATUS_LABEL } from "@/lib/ferias/balance";
 import type { EmployeeBalance } from "@/lib/ferias/types";
 
@@ -55,6 +58,75 @@ describe("VacationDebtTags", () => {
       />
     );
     expect(markup).toContain("Deve 5");
+  });
+
+  it("avisa no badge quando já deve e ainda tem férias programadas", () => {
+    expect(
+      scheduledWhileInDebtWarning({ unallocatedDays: 2, scheduledDays: 4 })
+    ).toBe(
+      "Já deve 2 dias e ainda tem 4 dias programados. Quando o gozo começar, a dívida aumenta."
+    );
+    expect(scheduledWhileInDebtWarning({ unallocatedDays: 0, scheduledDays: 4 })).toBeNull();
+    expect(scheduledWhileInDebtWarning({ unallocatedDays: 2, scheduledDays: 0 })).toBeNull();
+
+    const markup = renderToStaticMarkup(
+      <VacationDebtTags
+        balance={{
+          ...felipeBalance,
+          unallocatedDays: 2,
+          pendingDays: -2,
+          scheduledDays: 4,
+          dueTodayDays: 0,
+          onTimeDays: 0,
+        }}
+        compact
+      />
+    );
+    expect(markup).toContain("4 dias programados");
+    expect(markup).toContain("Já deve 2 dias e ainda tem 4 dias programados");
+  });
+
+  it("avisa de outra forma quando o programado passa do saldo atual", () => {
+    const markup = renderToStaticMarkup(
+      <VacationDebtTags
+        balance={{
+          ...felipeBalance,
+          pendingDays: 1,
+          dueTodayDays: 0,
+          onTimeDays: 0,
+          scheduledDays: 5,
+          scheduledLeaves: [
+            {
+              id: "prog",
+              employee_id: "x",
+              start_date: "2026-10-10",
+              end_date: "2026-10-14",
+              days: 5,
+              kind: "ferias",
+              notes: null,
+            },
+          ],
+        }}
+        admissionDate="2025-01-27"
+        referenceDate="2026-09-01"
+        compact
+      />
+    );
+    expect(markup).toContain("5 dias programados");
+    expect(markup).toContain("Saldo insuficiente");
+    expect(markup).toContain("Tem 1 dia de saldo e 5 dias programados");
+    expect(markup).not.toContain("Já deve");
+  });
+
+  it("escreve 'dias programados' na situação compacta", () => {
+    const markup = renderToStaticMarkup(
+      <VacationDebtTags
+        balance={{ ...felipeBalance, scheduledDays: 4, dueTodayDays: 0, onTimeDays: 0 }}
+        compact
+      />
+    );
+    expect(markup).toContain("4 dias programados");
+    expect(markup).not.toContain("4 programados");
   });
 
   it("destaca férias vencidas quando o concessivo já passou", () => {

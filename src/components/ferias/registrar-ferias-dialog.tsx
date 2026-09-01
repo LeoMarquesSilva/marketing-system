@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,7 +22,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { inclusiveDayCount, LEAVE_KIND_LABEL } from "@/lib/ferias/balance";
+import { inclusiveDayCount, LEAVE_KIND_LABEL, todayISO } from "@/lib/ferias/balance";
+import { debitExceedsAvailableBalance } from "@/lib/ferias/schedule-balance";
 import {
   isVacationCreditKind,
   type VacationLeave,
@@ -49,6 +50,9 @@ interface RegistrarFeriasDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   employeeName: string;
+  admissionDate?: string;
+  pendingDays?: number;
+  scheduledLeaves?: VacationLeave[];
   leave: VacationLeave | null;
   /** Tipo pré-selecionado ao abrir um lançamento novo. */
   defaultKind?: VacationLeaveKind;
@@ -61,6 +65,9 @@ export function RegistrarFeriasDialog({
   open,
   onOpenChange,
   employeeName,
+  admissionDate,
+  pendingDays = 0,
+  scheduledLeaves = [],
   leave,
   defaultKind = "ferias",
   creditPreset = null,
@@ -94,6 +101,9 @@ export function RegistrarFeriasDialog({
           <LeaveForm
             key={`${leave?.id ?? "novo"}-${creditPreset?.kind ?? defaultKind}-${creditPreset?.rangeStart ?? ""}`}
             leave={leave}
+            admissionDate={admissionDate}
+            pendingDays={pendingDays}
+            scheduledLeaves={scheduledLeaves}
             defaultKind={kindForNew}
             creditPreset={creditPreset}
             onSubmit={onSubmit}
@@ -108,6 +118,9 @@ export function RegistrarFeriasDialog({
 
 function LeaveForm({
   leave,
+  admissionDate,
+  pendingDays,
+  scheduledLeaves,
   defaultKind,
   creditPreset,
   onSubmit,
@@ -115,6 +128,9 @@ function LeaveForm({
   onSaved,
 }: {
   leave: VacationLeave | null;
+  admissionDate?: string;
+  pendingDays: number;
+  scheduledLeaves: VacationLeave[];
   defaultKind: VacationLeaveKind;
   creditPreset: CreditPreset | null;
   onSubmit: (values: LeaveFormValues) => Promise<string | null>;
@@ -140,11 +156,33 @@ function LeaveForm({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shortageConfirm, setShortageConfirm] = useState<string | null>(null);
   const isCredit = isVacationCreditKind(kind);
 
   const suggestedDays =
     startDate && endDate && endDate >= startDate ? inclusiveDayCount(startDate, endDate) : null;
   const days = daysOverride ?? (suggestedDays === null ? "" : String(suggestedDays));
+  const parsedDays = Number(days);
+  const liveShortage =
+    !isCredit &&
+    admissionDate &&
+    startDate &&
+    Number.isInteger(parsedDays) &&
+    parsedDays >= 1
+      ? debitExceedsAvailableBalance({
+          days: parsedDays,
+          startDate,
+          pendingDays,
+          admissionDate,
+          otherScheduledLeaves: scheduledLeaves
+            .filter((item) => item.id !== leave?.id && !isVacationCreditKind(item.kind))
+            .map((item) => ({ start_date: item.start_date, days: item.days })),
+          editingConsumedDays:
+            leave && !isVacationCreditKind(leave.kind) && leave.start_date <= todayISO()
+              ? leave.days
+              : 0,
+        })
+      : null;
 
   async function handleSubmit() {
     const parsedDays = Number(days);
@@ -167,6 +205,10 @@ function LeaveForm({
     }
     if (!Number.isInteger(parsedDays) || parsedDays < 1) {
       setError(isCredit ? "Informe a quantidade de dias creditados." : "Informe a quantidade de dias gozados.");
+      return;
+    }
+    if (liveShortage && shortageConfirm !== liveShortage.message) {
+      setShortageConfirm(liveShortage.message);
       return;
     }
     setSaving(true);
@@ -204,7 +246,14 @@ function LeaveForm({
             min={1}
             value={days}
             onChange={(event) => setDaysOverride(event.target.value)}
+            aria-invalid={Boolean(liveShortage) || undefined}
+            className={liveShortage ? "border-orange-300 focus-visible:ring-orange-300/40" : undefined}
           />
+          {!isCredit && (
+            <p className="text-xs text-muted-foreground">
+              Saldo atual: {pendingDays} {pendingDays === 1 ? "dia" : "dias"}
+            </p>
+          )}
         </div>
         {!creditPreset && (
           <div className="space-y-1.5">
@@ -244,6 +293,19 @@ function LeaveForm({
         </div>
       </div>
 
+      {liveShortage && (
+        <div
+          role="status"
+          className="flex gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs leading-relaxed text-orange-950"
+        >
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-orange-600" />
+          <p>
+            <span className="font-semibold">Saldo insuficiente. </span>
+            {liveShortage.message.replace(" Confirma mesmo assim?", "")}
+          </p>
+        </div>
+      )}
+
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <DialogFooter>
@@ -254,6 +316,29 @@ function LeaveForm({
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Salvar"}
         </Button>
       </DialogFooter>
+
+      <Dialog
+        open={Boolean(shortageConfirm)}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setShortageConfirm(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-orange-600" />
+              Saldo insuficiente
+            </DialogTitle>
+            <DialogDescription>{shortageConfirm}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShortageConfirm(null)}>
+              Voltar
+            </Button>
+            <Button onClick={() => void handleSubmit()}>Confirmar mesmo assim</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -644,10 +644,6 @@ export function FeriasClient({
                 <TableRow>
                   <TableHead>Colaborador</TableHead>
                   <TableHead>Admissão</TableHead>
-                  <TableHead className="text-right">Adquiridos</TableHead>
-                  <TableHead className="text-right">Gozados</TableHead>
-                  <TableHead className="text-right">Saldo</TableHead>
-                  <TableHead className="text-right">Programados</TableHead>
                   <TableHead>Situação</TableHead>
                   <TableHead>Prazo mais próximo</TableHead>
                 </TableRow>
@@ -656,7 +652,7 @@ export function FeriasClient({
                 {filtered.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={8}
+                      colSpan={4}
                       className="py-12 text-center text-sm text-muted-foreground"
                     >
                       {employees.length === 0
@@ -705,20 +701,12 @@ export function FeriasClient({
                       <TableCell className="text-sm tabular-nums">
                         {formatISODateBR(employee.admission_date)}
                       </TableCell>
-                      <TableCell className="text-right text-sm tabular-nums">
-                        {balance.totalEntitledDays}
-                      </TableCell>
-                      <TableCell className="text-right text-sm tabular-nums">
-                        {balance.totalTakenDays}
-                      </TableCell>
-                      <TableCell className="text-right text-sm font-semibold tabular-nums">
-                        {balance.pendingDays}
-                      </TableCell>
-                      <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
-                        {balance.scheduledDays > 0 ? balance.scheduledDays : "-"}
-                      </TableCell>
                       <TableCell>
-                        <VacationDebtTags balance={balance} compact />
+                        <VacationDebtTags
+                          balance={balance}
+                          admissionDate={employee.admission_date}
+                          compact
+                        />
                       </TableCell>
                       <TableCell className="text-sm tabular-nums text-muted-foreground">
                         {nextDeadline

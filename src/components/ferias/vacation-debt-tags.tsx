@@ -1,9 +1,26 @@
+"use client";
+
+import { AlertTriangle, CalendarClock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { scheduledExceedsBalanceWarning } from "@/lib/ferias/schedule-balance";
 import type { EmployeeBalance } from "@/lib/ferias/types";
 import { cn } from "@/lib/utils";
 
 function daysLabel(count: number, singular: string, plural: string): string {
   return `${count} ${count === 1 ? singular : plural}`;
+}
+
+export function scheduledWhileInDebtWarning(
+  balance: Pick<EmployeeBalance, "unallocatedDays" | "scheduledDays">
+): string | null {
+  if (balance.unallocatedDays <= 0 || balance.scheduledDays <= 0) return null;
+  return `Já deve ${daysLabel(balance.unallocatedDays, "dia", "dias")} e ainda tem ${daysLabel(balance.scheduledDays, "dia programado", "dias programados")}. Quando o gozo começar, a dívida aumenta.`;
 }
 
 /**
@@ -14,14 +31,36 @@ function daysLabel(count: number, singular: string, plural: string): string {
  */
 export function VacationDebtTags({
   balance,
+  admissionDate,
+  referenceDate,
   className,
   compact = false,
 }: {
   balance: EmployeeBalance;
+  admissionDate?: string;
+  referenceDate?: string;
   className?: string;
   compact?: boolean;
 }) {
-  const tags: Array<{ key: string; label: string; className: string }> = [];
+  const debtWarning = scheduledWhileInDebtWarning(balance);
+  const shortfallWarning = scheduledExceedsBalanceWarning({
+    pendingDays: balance.pendingDays,
+    unallocatedDays: balance.unallocatedDays,
+    scheduledDays: balance.scheduledDays,
+    admissionDate,
+    scheduledLeaves: balance.scheduledLeaves,
+    referenceDate,
+  });
+  const scheduledWarning = debtWarning ?? shortfallWarning;
+  const scheduledTone = debtWarning ? "debt" : shortfallWarning ? "shortfall" : null;
+  const tags: Array<{
+    key: string;
+    label: string;
+    className: string;
+    warning?: string | null;
+    warningTitle?: string;
+    warningTone?: "debt" | "shortfall";
+  }> = [];
 
   if (balance.unallocatedDays > 0) {
     tags.push({
@@ -84,10 +123,15 @@ export function VacationDebtTags({
   if (balance.scheduledDays > 0) {
     tags.push({
       key: "programado",
-      label: compact
-        ? `${balance.scheduledDays} programados`
-        : daysLabel(balance.scheduledDays, "dia programado", "dias programados"),
-      className: "border-sky-200 bg-sky-50 text-sky-700",
+      label: daysLabel(balance.scheduledDays, "dia programado", "dias programados"),
+      className: scheduledTone === "debt"
+        ? "border-amber-300 bg-amber-50 text-amber-900"
+        : scheduledTone === "shortfall"
+          ? "border-orange-300 bg-orange-50 text-orange-950"
+          : "border-sky-200 bg-sky-50 text-sky-700",
+      warning: scheduledWarning,
+      warningTitle: scheduledTone === "shortfall" ? "Saldo insuficiente" : "Atenção",
+      warningTone: scheduledTone ?? undefined,
     });
   }
 
@@ -100,12 +144,40 @@ export function VacationDebtTags({
   }
 
   return (
-    <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
-      {tags.map((tag) => (
-        <Badge key={tag.key} variant="outline" className={tag.className}>
-          {tag.label}
-        </Badge>
-      ))}
-    </div>
+    <TooltipProvider delayDuration={150}>
+      <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
+        {tags.map((tag) =>
+          tag.warning ? (
+            <Tooltip key={tag.key}>
+              <TooltipTrigger asChild>
+                <Badge
+                  variant="outline"
+                  title={`${tag.warningTitle}. ${tag.warning}`}
+                  className={cn("cursor-help", tag.className)}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  {tag.warningTone === "shortfall" ? (
+                    <CalendarClock className="size-3" aria-hidden />
+                  ) : (
+                    <AlertTriangle className="size-3" aria-hidden />
+                  )}
+                  {tag.label}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-64">
+                <p className="text-sm font-semibold leading-snug text-[#b7f0f1]">
+                  {tag.warningTitle ?? "Atenção"}
+                </p>
+                <p className="mt-1.5 text-xs leading-relaxed text-white/80">{tag.warning}</p>
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <Badge key={tag.key} variant="outline" className={tag.className}>
+              {tag.label}
+            </Badge>
+          )
+        )}
+      </div>
+    </TooltipProvider>
   );
 }
