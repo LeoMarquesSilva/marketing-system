@@ -46,7 +46,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { VacationDebtTags } from "@/components/ferias/vacation-debt-tags";
+import { VacationSituationCells } from "@/components/ferias/vacation-debt-tags";
 import { EmployeeAvatar } from "@/components/ferias/employee-avatar";
 import {
   ColaboradorFormDialog,
@@ -639,20 +639,30 @@ export function FeriasClient({
           </div>
 
           <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
-            <Table>
+            <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Colaborador</TableHead>
-                  <TableHead>Admissão</TableHead>
-                  <TableHead>Situação</TableHead>
-                  <TableHead>Prazo mais próximo</TableHead>
+                  <TableHead className="w-[32%]">Colaborador</TableHead>
+                  <TableHead className="w-[12%]">Admissão</TableHead>
+                  <TableHead className="w-[11%] text-right">Adquiridos</TableHead>
+                  <TableHead className="w-[11%] text-right">Gozados</TableHead>
+                  <TableHead className="w-[10%] text-right">Saldo</TableHead>
+                  <TableHead className="w-[13%] text-center" title="Se a pessoa está de férias agora">
+                    Situação
+                  </TableHead>
+                  <TableHead
+                    className="w-[11%] text-center"
+                    title="Dias já lançados com início no futuro"
+                  >
+                    Programação
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtered.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={4}
+                      colSpan={7}
                       className="py-12 text-center text-sm text-muted-foreground"
                     >
                       {employees.length === 0
@@ -662,7 +672,6 @@ export function FeriasClient({
                   </TableRow>
                 )}
                 {filtered.map(({ employee, balance }) => {
-                  const nextDeadline = balance.periods.find((item) => item.remainingDays > 0);
                   return (
                     <TableRow
                       key={employee.id}
@@ -687,10 +696,10 @@ export function FeriasClient({
                             avatarUrl={employee.avatar_url}
                           />
                           <span className="min-w-0">
-                            <span className="block font-medium text-foreground">
+                            <span className="block truncate font-medium text-foreground">
                               {employee.full_name}
                             </span>
-                            <span className="block text-xs text-muted-foreground">
+                            <span className="block truncate text-xs text-muted-foreground">
                               {[employee.position, employee.department]
                                 .filter(Boolean)
                                 .join(" · ") || "Sem cargo informado"}
@@ -701,18 +710,25 @@ export function FeriasClient({
                       <TableCell className="text-sm tabular-nums">
                         {formatISODateBR(employee.admission_date)}
                       </TableCell>
-                      <TableCell>
-                        <VacationDebtTags
-                          balance={balance}
-                          admissionDate={employee.admission_date}
-                          compact
-                        />
+                      <TableCell className="text-right text-sm tabular-nums">
+                        {balance.totalEntitledDays}
                       </TableCell>
-                      <TableCell className="text-sm tabular-nums text-muted-foreground">
-                        {nextDeadline
-                          ? formatISODateBR(nextDeadline.period.concessive_end)
-                          : "Sem pendência"}
+                      <TableCell className="text-right text-sm tabular-nums">
+                        {balance.totalTakenDays}
                       </TableCell>
+                      <TableCell
+                        className={cn(
+                          "text-right text-sm font-semibold tabular-nums",
+                          balance.pendingDays > 0 && "text-emerald-700",
+                          balance.pendingDays < 0 && "text-red-700"
+                        )}
+                      >
+                        {balance.pendingDays}
+                      </TableCell>
+                      <VacationSituationCells
+                        balance={balance}
+                        admissionDate={employee.admission_date}
+                      />
                     </TableRow>
                   );
                 })}

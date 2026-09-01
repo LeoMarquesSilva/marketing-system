@@ -5,6 +5,7 @@ import { VacationStatusBadge } from "@/components/ferias/status-badge";
 import {
   scheduledWhileInDebtWarning,
   VacationDebtTags,
+  VacationSituationCells,
 } from "@/components/ferias/vacation-debt-tags";
 import { PERIOD_STATUS_LABEL } from "@/lib/ferias/balance";
 import type { EmployeeBalance } from "@/lib/ferias/types";
@@ -44,20 +45,21 @@ describe("VacationDebtTags", () => {
   it("mostra o desdobramento do saldo, sem tratar pendência como dívida", () => {
     const markup = renderToStaticMarkup(<VacationDebtTags balance={felipeBalance} />);
     expect(markup).toContain("21 dias vencem hoje");
-    expect(markup).toContain("30 dias em dia");
+    expect(markup).toContain("30 dias positivos");
     expect(markup).not.toContain("Deve");
     expect(markup).not.toContain("a gozar");
     expect(markup).not.toContain("vencidos");
   });
 
-  it("usa 'deve' só quando gozou dias além do direito", () => {
+  it("mostra o excesso gozado como saldo negativo", () => {
     const markup = renderToStaticMarkup(
       <VacationDebtTags
         balance={{ ...felipeBalance, unallocatedDays: 5, pendingDays: -5 }}
-        compact
       />
     );
-    expect(markup).toContain("Deve 5");
+    expect(markup).toContain("-5");
+    expect(markup).not.toContain("dias a mais");
+    expect(markup).not.toContain("Deve 5");
   });
 
   it("avisa no badge quando já deve e ainda tem férias programadas", () => {
@@ -127,6 +129,58 @@ describe("VacationDebtTags", () => {
     );
     expect(markup).toContain("4 dias programados");
     expect(markup).not.toContain("4 programados");
+  });
+
+  it("na lista mostra situação de férias e programação", () => {
+    const markup = renderToStaticMarkup(
+      <table>
+        <tbody>
+          <tr>
+            <VacationSituationCells
+              balance={{
+                ...felipeBalance,
+                unallocatedDays: 2,
+                overdueDays: 10,
+                dueSoonDays: 4,
+                scheduledDays: 5,
+                onLeaveNow: {
+                  id: "now",
+                  employee_id: "x",
+                  start_date: "2026-08-20",
+                  end_date: "2026-09-03",
+                  days: 15,
+                  kind: "ferias",
+                  notes: null,
+                },
+              }}
+            />
+          </tr>
+        </tbody>
+      </table>
+    );
+    expect(markup).toContain('data-situation="em_ferias"');
+    expect(markup).toContain('data-situation="programados"');
+    expect(markup).toContain("Em férias");
+    expect(markup).toMatch(/data-situation="programados"[^>]*>[\s\S]*5/);
+    expect(markup).not.toContain('data-situation="deve"');
+    expect(markup).not.toContain('data-situation="vencidas"');
+    expect(markup).not.toContain('data-situation="a_vencer"');
+    expect(markup).not.toContain('data-situation="positivo"');
+  });
+
+  it("mostra traço na situação quando não está de férias", () => {
+    const markup = renderToStaticMarkup(
+      <table>
+        <tbody>
+          <tr>
+            <VacationSituationCells balance={felipeBalance} />
+          </tr>
+        </tbody>
+      </table>
+    );
+    expect(markup).toContain(">-<");
+    expect(markup).not.toContain("Não");
+    expect(markup).not.toContain("Em férias");
   });
 
   it("destaca férias vencidas quando o concessivo já passou", () => {

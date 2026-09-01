@@ -1,7 +1,9 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { AlertTriangle, CalendarClock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { TableCell } from "@/components/ui/table";
 import {
   Tooltip,
   TooltipContent,
@@ -23,6 +25,129 @@ export function scheduledWhileInDebtWarning(
   return `Já deve ${daysLabel(balance.unallocatedDays, "dia", "dias")} e ainda tem ${daysLabel(balance.scheduledDays, "dia programado", "dias programados")}. Quando o gozo começar, a dívida aumenta.`;
 }
 
+export function scheduledSituationMeta(
+  balance: EmployeeBalance,
+  admissionDate?: string,
+  referenceDate?: string
+): {
+  warning: string | null;
+  title: string | null;
+  tone: "debt" | "shortfall" | null;
+} {
+  const debtWarning = scheduledWhileInDebtWarning(balance);
+  if (debtWarning) {
+    return { warning: debtWarning, title: "Atenção", tone: "debt" };
+  }
+  const shortfallWarning = scheduledExceedsBalanceWarning({
+    pendingDays: balance.pendingDays,
+    unallocatedDays: balance.unallocatedDays,
+    scheduledDays: balance.scheduledDays,
+    admissionDate,
+    scheduledLeaves: balance.scheduledLeaves,
+    referenceDate,
+  });
+  if (shortfallWarning) {
+    return { warning: shortfallWarning, title: "Saldo insuficiente", tone: "shortfall" };
+  }
+  return { warning: null, title: null, tone: null };
+}
+
+function SituationDaysCell({
+  column,
+  value,
+  className,
+  children,
+}: {
+  column: string;
+  value: number;
+  className: string;
+  children?: ReactNode;
+}) {
+  return (
+    <TableCell
+      data-situation={column}
+      className={cn(
+        "text-center text-sm tabular-nums",
+        value > 0 ? className : "text-muted-foreground"
+      )}
+    >
+      {children ?? (value > 0 ? value : "—")}
+    </TableCell>
+  );
+}
+
+/** Colunas da lista no lugar do antigo agrupamento "Situação". */
+export function VacationSituationCells({
+  balance,
+  admissionDate,
+  referenceDate,
+}: {
+  balance: EmployeeBalance;
+  admissionDate?: string;
+  referenceDate?: string;
+}) {
+  const scheduled = scheduledSituationMeta(balance, admissionDate, referenceDate);
+  const scheduledClass =
+    scheduled.tone === "debt"
+      ? "font-semibold text-amber-900"
+      : scheduled.tone === "shortfall"
+        ? "font-semibold text-orange-950"
+        : "font-semibold text-sky-700";
+
+  return (
+    <TooltipProvider delayDuration={150}>
+      <TableCell data-situation="em_ferias" className="text-center text-sm">
+        {balance.onLeaveNow ? (
+          <Badge
+            variant="outline"
+            className="border-[#47cdd0]/35 bg-[#47cdd0]/15 text-[#285f7a]"
+          >
+            Em férias
+          </Badge>
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        )}
+      </TableCell>
+      <SituationDaysCell
+        column="programados"
+        value={balance.scheduledDays}
+        className={scheduledClass}
+      >
+        {balance.scheduledDays <= 0 ? (
+          "—"
+        ) : scheduled.warning ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="inline-flex cursor-help items-center justify-center gap-1"
+                title={`${scheduled.title}. ${scheduled.warning}`}
+                onClick={(event) => event.stopPropagation()}
+              >
+                {scheduled.tone === "shortfall" ? (
+                  <CalendarClock className="size-3" aria-hidden />
+                ) : (
+                  <AlertTriangle className="size-3" aria-hidden />
+                )}
+                {balance.scheduledDays}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-64">
+              <p className="text-sm font-semibold leading-snug text-[#b7f0f1]">
+                {scheduled.title}
+              </p>
+              <p className="mt-1.5 text-xs leading-relaxed text-white/80">
+                {scheduled.warning}
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          balance.scheduledDays
+        )}
+      </SituationDaysCell>
+    </TooltipProvider>
+  );
+}
+
 /**
  * Tags do saldo de férias sob a ótica do RH/CLT.
  *
@@ -42,17 +167,9 @@ export function VacationDebtTags({
   className?: string;
   compact?: boolean;
 }) {
-  const debtWarning = scheduledWhileInDebtWarning(balance);
-  const shortfallWarning = scheduledExceedsBalanceWarning({
-    pendingDays: balance.pendingDays,
-    unallocatedDays: balance.unallocatedDays,
-    scheduledDays: balance.scheduledDays,
-    admissionDate,
-    scheduledLeaves: balance.scheduledLeaves,
-    referenceDate,
-  });
-  const scheduledWarning = debtWarning ?? shortfallWarning;
-  const scheduledTone = debtWarning ? "debt" : shortfallWarning ? "shortfall" : null;
+  const scheduled = scheduledSituationMeta(balance, admissionDate, referenceDate);
+  const scheduledWarning = scheduled.warning;
+  const scheduledTone = scheduled.tone;
   const tags: Array<{
     key: string;
     label: string;
@@ -65,9 +182,7 @@ export function VacationDebtTags({
   if (balance.unallocatedDays > 0) {
     tags.push({
       key: "deve",
-      label: compact
-        ? `Deve ${balance.unallocatedDays}`
-        : daysLabel(balance.unallocatedDays, "dia a mais", "dias a mais"),
+      label: `-${balance.unallocatedDays}`,
       className: "border-red-300 bg-red-50 text-red-800",
     });
   }
@@ -106,8 +221,8 @@ export function VacationDebtTags({
     tags.push({
       key: "em_dia",
       label: compact
-        ? `${balance.onTimeDays} em dia`
-        : daysLabel(balance.onTimeDays, "dia em dia", "dias em dia"),
+        ? `${balance.onTimeDays} ${balance.onTimeDays === 1 ? "positivo" : "positivos"}`
+        : daysLabel(balance.onTimeDays, "dia positivo", "dias positivos"),
       className: "border-emerald-200 bg-emerald-50 text-emerald-700",
     });
   }

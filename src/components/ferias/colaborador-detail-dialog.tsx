@@ -64,7 +64,7 @@ function SummaryItem({
 }: {
   label: string;
   value: string | number;
-  tone?: "danger" | "warning";
+  tone?: "danger" | "warning" | "success";
 }) {
   return (
     <div>
@@ -72,8 +72,9 @@ function SummaryItem({
       <p
         className={cn(
           "text-xl font-semibold tracking-tight tabular-nums",
-          tone === "danger" && "text-red-600",
-          tone === "warning" && "text-amber-600"
+          tone === "danger" && "text-red-700",
+          tone === "warning" && "text-amber-600",
+          tone === "success" && "text-emerald-700"
         )}
       >
         {value}
@@ -332,13 +333,13 @@ function DetailBody({
               <SummaryItem label="Adquiridos" value={balance.totalEntitledDays} />
               <SummaryItem label="Gozados" value={balance.totalTakenDays} />
               <SummaryItem
-                label="Pendentes"
+                label="Saldo"
                 value={balance.pendingDays}
                 tone={
-                  balance.overdueDays > 0
+                  balance.pendingDays < 0
                     ? "danger"
-                    : balance.dueSoonDays > 0
-                      ? "warning"
+                    : balance.pendingDays > 0
+                      ? "success"
                       : undefined
                 }
               />
