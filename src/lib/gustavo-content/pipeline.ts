@@ -2,7 +2,7 @@ import { fetchArticleContent } from "@/lib/content-extraction";
 import { fetchRssItems, filterItems } from "@/lib/content-roteiros";
 import { analyzeScore, generateAngles } from "@/lib/gustavo-content/ai";
 import { SCORE_SUGGESTION_FROM } from "@/lib/gustavo-content/constants";
-import { findSameFact } from "@/lib/gustavo-content/dedupe";
+import { findSameFact, type DedupeCandidate } from "@/lib/gustavo-content/dedupe";
 import { listRecentForDedupe } from "@/lib/gustavo-content/items";
 import { statusFromScore } from "@/lib/gustavo-content/score";
 import { GustavoContentError, getGustavoContentAdmin } from "@/lib/gustavo-content/server";
@@ -71,7 +71,7 @@ export async function runGustavoContentFetchPipeline(
 
   const theses = (await listTheses()).filter((thesis) => thesis.status !== "disabled");
   const existing = await listRecentForDedupe();
-  const seen = [...existing];
+  const seen: DedupeCandidate[] = [...existing];
 
   let created = 0;
   topicLoop: for (const topic of topics) {
@@ -171,7 +171,7 @@ export async function runGustavoContentFetchPipeline(
             continue;
           }
 
-          seen.push({ title, link: article.resolvedUrl ?? link, id: "new" });
+          seen.push({ title, link: article.resolvedUrl ?? link });
           created += 1;
           if (status === "sugestao") result.suggestionsCreated += 1;
           else result.radarCreated += 1;
@@ -274,7 +274,7 @@ export async function importInstitutionalNews(options: {
   );
 
   result.duplicates = (roteiros?.length ?? 0) - candidates.length;
-  const seen = [...existing];
+  const seen: DedupeCandidate[] = [...existing];
   let created = 0;
 
   for (const item of candidates) {
