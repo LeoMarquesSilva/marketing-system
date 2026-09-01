@@ -8,6 +8,7 @@ import { NovaPautaButton } from "@/components/gustavo-content/nova-pauta";
 
 const TABS = [
   { href: "/conteudo/gustavo", label: "Visão geral", exact: true },
+  { href: "/conteudo/gustavo/estrategia", label: "Estratégia" },
   { href: "/conteudo/gustavo/radar", label: "Radar" },
   { href: "/conteudo/gustavo/producao", label: "Produção" },
   { href: "/conteudo/gustavo/teses", label: "Teses" },

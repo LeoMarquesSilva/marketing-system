@@ -24,6 +24,10 @@ import {
   type EditorialHistoryAssessment,
 } from "@/lib/gustavo-content/history";
 import type { SourceContext } from "@/lib/gustavo-content/types";
+import {
+  buildStrategyPrompt,
+  type GustavoStrategy,
+} from "@/lib/gustavo-content/strategy";
 
 function getOpenAI() {
   const apiKey = process.env.NEXT_OPENAI_API_KEY;
@@ -61,6 +65,7 @@ export interface AnalyzeInput {
   article: string;
   link: string | null;
   theses: GustavoThesis[];
+  strategy: GustavoStrategy;
 }
 
 export async function analyzeScore(input: AnalyzeInput) {
@@ -74,6 +79,7 @@ export async function analyzeScore(input: AnalyzeInput) {
       `RESUMO: ${input.snippet}`,
       `MATÉRIA: ${input.article || "(não disponível — use título e resumo)"}`,
       `LINK: ${input.link ?? "—"}`,
+      `ESTRATEGIA_DE_POSICIONAMENTO:\n${buildStrategyPrompt(input.strategy)}`,
       `BIBLIOTECA_DE_TESES:\n${thesesBlock(input.theses)}`,
     ].join("\n\n"),
     temperature: 0.2,
@@ -100,6 +106,7 @@ export async function generateAngles(input: AnalyzeInput) {
       `TÍTULO: ${input.title}`,
       `RESUMO: ${input.snippet}`,
       `MATÉRIA: ${input.article || "(não disponível)"}`,
+      `ESTRATEGIA_DE_POSICIONAMENTO:\n${buildStrategyPrompt(input.strategy)}`,
       `BIBLIOTECA_DE_TESES:\n${thesesBlock(input.theses)}`,
     ].join("\n\n"),
     temperature: 0.35,
@@ -121,6 +128,7 @@ export async function generateEditorialContent(input: {
   voice: GustavoVoiceSample[];
   history: EditorialHistoryAssessment;
   sourceContext: SourceContext | null;
+  strategy: GustavoStrategy;
 }) {
   const result = await generateObject({
     model: model(),
@@ -136,6 +144,7 @@ export async function generateEditorialContent(input: {
       `EMPRESAS_E_DATAS: ${(input.sourceContext?.companies ?? []).join(", ") || "—"} | ${(input.sourceContext?.dates ?? []).join(", ") || "—"}`,
       `FONTES: ${(input.sourceContext?.sourceUrls ?? []).join(" | ") || input.link || "—"}`,
       `LINK: ${input.link ?? "—"}`,
+      `ESTRATEGIA_DE_POSICIONAMENTO:\n${buildStrategyPrompt(input.strategy)}`,
       `PROBLEMA_EMPRESARIAL: ${input.businessProblem ?? "—"}`,
       `ANGULO_SELECIONADO: ${JSON.stringify(input.selectedAngle ?? null)}`,
       `TESE: ${input.thesisSnapshot ?? "—"}`,

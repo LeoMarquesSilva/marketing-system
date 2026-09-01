@@ -13,7 +13,8 @@ export type GustavoContentAction =
   | "reject"
   | "publish"
   | "planner_linkedin"
-  | "planner_reel";
+  | "planner_reel"
+  | "edit_strategy";
 
 const GUSTAVO_CONTENT_ACTIONS = new Set<string>([
   "analyze",
@@ -27,6 +28,7 @@ const GUSTAVO_CONTENT_ACTIONS = new Set<string>([
   "publish",
   "planner_linkedin",
   "planner_reel",
+  "edit_strategy",
 ]);
 
 const ADMIN_ONLY_ACTIONS = new Set<GustavoContentAction>([

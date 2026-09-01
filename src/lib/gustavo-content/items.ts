@@ -42,6 +42,7 @@ import {
 } from "@/lib/gustavo-content/workflow";
 import { canSubmitForApproval } from "@/lib/gustavo-content/compliance";
 import { POST_REQUEST_TYPE, REEL_REQUEST_TYPE } from "@/lib/planner-posts";
+import { getStrategy } from "@/lib/gustavo-content/strategy-server";
 
 function addBusinessDays(from: Date, days: number): Date {
   const result = new Date(from);
@@ -229,15 +230,17 @@ export async function createItemFromIdea(
 }
 
 async function loadContext() {
-  const [theses, voice, previous] = await Promise.all([
+  const [theses, voice, previous, strategy] = await Promise.all([
     listTheses(),
     listActiveVoice(),
     listHistoryItems(),
+    getStrategy(),
   ]);
   return {
     theses: theses.filter((thesis) => thesis.status !== "disabled"),
     voice,
     previous,
+    strategy,
   };
 }
 
@@ -259,7 +262,7 @@ export async function analyzeItem(id: string): Promise<GustavoContentItem> {
   if (!canRunEditorialAction("analyze", item.status)) {
     throw new GustavoContentError("Esta pauta não pode ser reanalisada nesta etapa.", 409);
   }
-  const { theses } = await loadContext();
+  const { theses, strategy } = await loadContext();
   const article = sourceTextForGeneration({
     contentSnippet: item.content_snippet,
     sourceContext: item.source_context,
@@ -271,6 +274,7 @@ export async function analyzeItem(id: string): Promise<GustavoContentItem> {
     article,
     link: item.link,
     theses,
+    strategy,
   });
 
   const status = statusFromScore(score.total);
@@ -313,6 +317,7 @@ export async function analyzeItem(id: string): Promise<GustavoContentItem> {
       article,
       link: item.link,
       theses,
+      strategy,
     });
     Object.assign(patch, applyThesisMatch(angles, theses, status));
   }
@@ -371,7 +376,7 @@ export async function generateItemContent(id: string): Promise<GustavoContentIte
     );
   }
 
-  const { theses, voice, previous } = await loadContext();
+  const { theses, voice, previous, strategy } = await loadContext();
   const history = assessEditorialHistory(
     {
       title: item.title,
@@ -399,6 +404,7 @@ export async function generateItemContent(id: string): Promise<GustavoContentIte
     voice,
     history,
     sourceContext: item.source_context,
+    strategy,
   });
 
   const reelScript = JSON.stringify(content.reel);

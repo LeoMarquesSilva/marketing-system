@@ -11,6 +11,7 @@ import { thesisSnapshot } from "@/lib/gustavo-content/theses";
 import { listTopics } from "@/lib/gustavo-content/topics";
 import { pickInstitutionalCandidates } from "@/lib/gustavo-content/institutional-import";
 import { preserveArticleText } from "@/lib/gustavo-content/editorial-context";
+import { getStrategy } from "@/lib/gustavo-content/strategy-server";
 
 export interface GustavoFetchOptions {
   topicIds?: string[];
@@ -70,7 +71,8 @@ export async function runGustavoContentFetchPipeline(
     return result;
   }
 
-  const theses = (await listTheses()).filter((thesis) => thesis.status !== "disabled");
+  const [allTheses, strategy] = await Promise.all([listTheses(), getStrategy()]);
+  const theses = allTheses.filter((thesis) => thesis.status !== "disabled");
   const existing = await listRecentForDedupe();
   const seen: DedupeCandidate[] = [...existing];
 
@@ -101,6 +103,7 @@ export async function runGustavoContentFetchPipeline(
             article: article.text,
             link: article.resolvedUrl ?? link,
             theses,
+            strategy,
           });
 
           const status = statusFromScore(score.total);
@@ -118,6 +121,7 @@ export async function runGustavoContentFetchPipeline(
                 article: article.text,
                 link: article.resolvedUrl ?? link,
                 theses,
+                strategy,
               });
               const matched =
                 theses.find((thesis) => thesis.id === angles.thesisMatch.thesisId) ?? null;
@@ -261,7 +265,8 @@ export async function importInstitutionalNews(options: {
     throw new GustavoContentError(roteirosError.message, 500);
   }
 
-  const theses = (await listTheses()).filter((thesis) => thesis.status !== "disabled");
+  const [allTheses, strategy] = await Promise.all([listTheses(), getStrategy()]);
+  const theses = allTheses.filter((thesis) => thesis.status !== "disabled");
   const existing = await listRecentForDedupe();
   const candidates = pickInstitutionalCandidates(
     existing,
@@ -295,6 +300,7 @@ export async function importInstitutionalNews(options: {
         article: article.text || item.content_snippet || "",
         link: article.resolvedUrl ?? link,
         theses,
+        strategy,
       });
 
       const status = statusFromScore(score.total);
@@ -311,6 +317,7 @@ export async function importInstitutionalNews(options: {
           article: article.text || item.content_snippet || "",
           link: article.resolvedUrl ?? link,
           theses,
+          strategy,
         });
         const matched = theses.find((thesis) => thesis.id === angles.thesisMatch.thesisId) ?? null;
         const validated = matched?.status === "validated" ? matched : null;

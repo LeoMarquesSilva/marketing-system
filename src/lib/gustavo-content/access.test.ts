@@ -121,6 +121,8 @@ describe("permissões por ação", () => {
     expect(canPerformGustavoContentAction(ownerActor, "save")).toBe(true);
     expect(canPerformGustavoContentAction(editorActor, "generate")).toBe(true);
     expect(canPerformGustavoContentAction(editorActor, "submit")).toBe(true);
+    expect(canPerformGustavoContentAction(ownerActor, "edit_strategy")).toBe(true);
+    expect(canPerformGustavoContentAction(editorActor, "edit_strategy")).toBe(true);
   });
 
   it("rejeita ações desconhecidas recebidas pela API", () => {
