@@ -101,11 +101,14 @@ export type RecessApplyState =
   | "pendente"
   | "parcial"
   | "aplicado"
+  | "desatualizado"
   | "sem_elegiveis";
 
 export interface RecessApplicationSummary {
   eligible: number;
   applied: number;
+  /** Fichas com recesso sobreposto, mas datas/dias diferentes do calendário. */
+  outdated: number;
   pending: number;
   ineligible: number;
   state: RecessApplyState;

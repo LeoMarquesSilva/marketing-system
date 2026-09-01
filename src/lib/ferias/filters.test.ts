@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   classifyVacationBalanceSign,
   computeFeriasKpis,
+  classifyRecessLeaveSync,
   dateRangesOverlap,
   employeeEligibleForRecess,
   filterEmployeesWithBalance,
+  planRecessLeaveSync,
   getInitials,
   listEmployeeDepartments,
   resolveCanonicalAreaLabel,
@@ -503,6 +505,7 @@ describe("summarizeRecessApplication", () => {
     ).toEqual({
       eligible: 2,
       applied: 0,
+      outdated: 0,
       pending: 2,
       ineligible: 1,
       state: "pendente",
@@ -541,5 +544,81 @@ describe("summarizeRecessApplication", () => {
         appliedEmployeeIds: [],
       }).state
     ).toBe("sem_elegiveis");
+  });
+
+  it("marca como desatualizado quando o calendário mudou e as fichas ainda têm as datas antigas", () => {
+    expect(
+      summarizeRecessApplication({
+        activeEmployees: employees,
+        recess,
+        appliedEmployeeIds: [],
+        outdatedEmployeeIds: ["a", "b"],
+      })
+    ).toMatchObject({
+      applied: 0,
+      outdated: 2,
+      pending: 0,
+      state: "desatualizado",
+    });
+  });
+});
+
+describe("classifyRecessLeaveSync", () => {
+  const calendar = { start_date: "2025-12-22", end_date: "2026-01-06", days: 16 };
+
+  it("insere quando o colaborador ainda não tem lançamento", () => {
+    expect(classifyRecessLeaveSync(calendar, null)).toBe("insert");
+  });
+
+  it("mantém quando as datas e os dias já batem com o calendário", () => {
+    expect(classifyRecessLeaveSync(calendar, calendar)).toBe("keep");
+  });
+
+  it("atualiza quando o lançamento sobreposto tem datas ou dias diferentes", () => {
+    expect(
+      classifyRecessLeaveSync(calendar, {
+        start_date: "2025-12-20",
+        end_date: "2026-01-06",
+        days: 18,
+      })
+    ).toBe("update");
+    expect(
+      classifyRecessLeaveSync(calendar, {
+        start_date: "2025-12-22",
+        end_date: "2026-01-06",
+        days: 18,
+      })
+    ).toBe("update");
+  });
+});
+
+describe("planRecessLeaveSync", () => {
+  const recess = { start_date: "2025-12-22", end_date: "2026-01-06", days: 16 };
+
+  it("separa quem precisa inserir, atualizar ou só confirmar", () => {
+    const plan = planRecessLeaveSync({
+      eligibleIds: ["novo", "antigo", "ok"],
+      recess,
+      existingLeaves: [
+        {
+          id: "leave-old",
+          employee_id: "antigo",
+          start_date: "2025-12-20",
+          end_date: "2026-01-06",
+          days: 18,
+        },
+        {
+          id: "leave-ok",
+          employee_id: "ok",
+          start_date: "2025-12-22",
+          end_date: "2026-01-06",
+          days: 16,
+        },
+      ],
+    });
+
+    expect(plan.insertIds).toEqual(["novo"]);
+    expect(plan.updateLeaveIds).toEqual(["leave-old"]);
+    expect(plan.keepEmployeeIds).toEqual(["ok"]);
   });
 });

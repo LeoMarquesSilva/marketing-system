@@ -102,6 +102,7 @@ export function deleteRecessRequest(id: string) {
 
 export interface ApplyRecessResult {
   applied: number;
+  updated: number;
   skippedExisting: number;
   skippedIneligible: number;
 }

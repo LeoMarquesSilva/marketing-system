@@ -11,8 +11,77 @@ export const RECESS_APPLY_STATE_LABEL: Record<RecessApplyState, string> = {
   pendente: "Não aplicado",
   parcial: "Parcialmente aplicado",
   aplicado: "Já aplicado",
+  desatualizado: "Datas desatualizadas",
   sem_elegiveis: "Sem elegíveis",
 };
+
+export type RecessLeaveSyncAction = "insert" | "keep" | "update";
+
+export function recessLeaveMatchesCalendar(
+  leave: Pick<CompanyRecess, "start_date" | "end_date" | "days">,
+  recess: Pick<CompanyRecess, "start_date" | "end_date" | "days">
+): boolean {
+  return (
+    leave.start_date === recess.start_date &&
+    leave.end_date === recess.end_date &&
+    leave.days === recess.days
+  );
+}
+
+export function classifyRecessLeaveSync(
+  recess: Pick<CompanyRecess, "start_date" | "end_date" | "days">,
+  existing: Pick<CompanyRecess, "start_date" | "end_date" | "days"> | null
+): RecessLeaveSyncAction {
+  if (!existing) return "insert";
+  return recessLeaveMatchesCalendar(existing, recess) ? "keep" : "update";
+}
+
+export interface RecessLeaveSyncPlan {
+  insertIds: string[];
+  updateLeaveIds: string[];
+  keepEmployeeIds: string[];
+}
+
+export function planRecessLeaveSync(input: {
+  eligibleIds: string[];
+  recess: Pick<CompanyRecess, "start_date" | "end_date" | "days">;
+  existingLeaves: Array<{
+    id: string;
+    employee_id: string;
+    start_date: string;
+    end_date: string;
+    days: number;
+  }>;
+}): RecessLeaveSyncPlan {
+  const leaveByEmployee = new Map<string, (typeof input.existingLeaves)[number]>();
+  for (const leave of input.existingLeaves) {
+    const current = leaveByEmployee.get(leave.employee_id);
+    if (!current) {
+      leaveByEmployee.set(leave.employee_id, leave);
+      continue;
+    }
+    if (
+      classifyRecessLeaveSync(input.recess, current) !== "keep" &&
+      classifyRecessLeaveSync(input.recess, leave) === "keep"
+    ) {
+      leaveByEmployee.set(leave.employee_id, leave);
+    }
+  }
+
+  const insertIds: string[] = [];
+  const updateLeaveIds: string[] = [];
+  const keepEmployeeIds: string[] = [];
+
+  for (const employeeId of input.eligibleIds) {
+    const existing = leaveByEmployee.get(employeeId) ?? null;
+    const action = classifyRecessLeaveSync(input.recess, existing);
+    if (action === "insert") insertIds.push(employeeId);
+    else if (action === "keep") keepEmployeeIds.push(employeeId);
+    else if (existing) updateLeaveIds.push(existing.id);
+  }
+
+  return { insertIds, updateLeaveIds, keepEmployeeIds };
+}
 
 export type SituationFilter = "ativos" | "inativos" | "all";
 export type StatusFilter = "all" | VacationPeriodStatus;
@@ -264,33 +333,42 @@ export function dateRangesOverlap(
 
 /**
  * Resume quantos ativos elegíveis já têm (ou ainda não) o lançamento do recesso.
- * `appliedEmployeeIds` deve incluir quem já tem recesso com intervalo sobreposto.
+ * `appliedEmployeeIds` são fichas com datas iguais ao calendário.
+ * `outdatedEmployeeIds` são fichas com recesso sobreposto, mas datas/dias diferentes.
  */
 export function summarizeRecessApplication(input: {
   activeEmployees: Array<
     Pick<HrEmployee, "id" | "admission_date" | "termination_date" | "is_active">
   >;
   recess: Pick<CompanyRecess, "start_date" | "end_date">;
-  /** IDs com lançamento `recesso` que se sobrepõe ao calendário coletivo. */
+  /** IDs com lançamento `recesso` igual ao calendário coletivo. */
   appliedEmployeeIds: Iterable<string>;
+  /** IDs com recesso sobreposto que ainda não acompanhou a mudança do calendário. */
+  outdatedEmployeeIds?: Iterable<string>;
 }): RecessApplicationSummary {
   const appliedSet = new Set(input.appliedEmployeeIds);
+  const outdatedSet = new Set(input.outdatedEmployeeIds ?? []);
   const eligible = input.activeEmployees.filter((employee) =>
     employeeEligibleForRecess(employee, input.recess)
   );
   const applied = eligible.filter((employee) => appliedSet.has(employee.id)).length;
-  const pending = eligible.length - applied;
+  const outdated = eligible.filter(
+    (employee) => !appliedSet.has(employee.id) && outdatedSet.has(employee.id)
+  ).length;
+  const pending = eligible.length - applied - outdated;
   const ineligible = input.activeEmployees.length - eligible.length;
 
   let state: RecessApplyState;
   if (eligible.length === 0) state = "sem_elegiveis";
-  else if (pending === 0) state = "aplicado";
-  else if (applied === 0) state = "pendente";
+  else if (pending === 0 && outdated === 0) state = "aplicado";
+  else if (outdated > 0 && pending === 0) state = "desatualizado";
+  else if (applied === 0 && outdated === 0) state = "pendente";
   else state = "parcial";
 
   return {
     eligible: eligible.length,
     applied,
+    outdated,
     pending,
     ineligible,
     state,

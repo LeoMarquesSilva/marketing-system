@@ -3,6 +3,7 @@ import {
   computeEmployeeBalance,
   currentAccrualPeriod,
   generateAccrualPeriods,
+  daysFromInclusiveRange,
   inclusiveDayCount,
 } from "@/lib/ferias/balance";
 import type { VacationLeave, VacationPeriod } from "@/lib/ferias/types";
@@ -209,5 +210,27 @@ describe("inclusiveDayCount", () => {
   it("conta as duas pontas do intervalo", () => {
     expect(inclusiveDayCount("2025-12-20", "2026-01-06")).toBe(18);
     expect(inclusiveDayCount("2023-10-09", "2023-10-13")).toBe(5);
+  });
+});
+
+describe("daysFromInclusiveRange", () => {
+  it("fica vazio até as duas datas estarem preenchidas", () => {
+    expect(daysFromInclusiveRange("", "")).toBeNull();
+    expect(daysFromInclusiveRange("2025-12-22", "")).toBeNull();
+    expect(daysFromInclusiveRange("", "2026-01-07")).toBeNull();
+  });
+
+  it("conta os dias automaticamente a partir de início e retorno", () => {
+    expect(daysFromInclusiveRange("2025-12-22", "2026-01-07")).toBe(17);
+    expect(daysFromInclusiveRange("2025-12-20", "2026-01-06")).toBe(18);
+  });
+
+  it("recalcula quando qualquer ponta do intervalo muda", () => {
+    expect(daysFromInclusiveRange("2025-12-22", "2026-01-06")).toBe(16);
+    expect(daysFromInclusiveRange("2025-12-22", "2026-01-07")).toBe(17);
+  });
+
+  it("não conta intervalo invertido", () => {
+    expect(daysFromInclusiveRange("2026-01-07", "2025-12-22")).toBeNull();
   });
 });

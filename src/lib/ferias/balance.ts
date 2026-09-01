@@ -54,6 +54,12 @@ export function inclusiveDayCount(startDate: string, endDate: string): number {
   return diffInDays(startDate, endDate) + 1;
 }
 
+/** Total de dias do intervalo, ou null se as datas estiverem incompletas ou invertidas. */
+export function daysFromInclusiveRange(startDate: string, endDate: string): number | null {
+  if (!startDate || !endDate || endDate < startDate) return null;
+  return inclusiveDayCount(startDate, endDate);
+}
+
 export function todayISO(): string {
   return toISODate(new Date());
 }

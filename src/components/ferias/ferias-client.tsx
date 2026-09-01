@@ -100,6 +100,7 @@ const RECESS_APPLY_STATE_CLASS: Record<RecessApplyState, string> = {
   pendente: "border-amber-200 bg-amber-50 text-amber-800",
   parcial: "border-sky-200 bg-sky-50 text-sky-800",
   aplicado: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  desatualizado: "border-amber-200 bg-amber-50 text-amber-800",
   sem_elegiveis: "border-muted bg-muted/60 text-muted-foreground",
 };
 
@@ -121,8 +122,15 @@ function recessApplicationHint(item: CompanyRecessWithStatus): string {
   if (application.state === "aplicado") {
     return `Lançamento em ${application.applied} de ${application.eligible} elegível(is)`;
   }
+  if (application.state === "desatualizado") {
+    return `Calendário mudou — ${application.outdated} ficha(s) ainda com as datas antigas`;
+  }
   if (application.state === "parcial") {
-    return `${application.applied} já tem · ${application.pending} ainda sem lançamento`;
+    const parts = [];
+    if (application.applied > 0) parts.push(`${application.applied} em dia`);
+    if (application.outdated > 0) parts.push(`${application.outdated} desatualizada(s)`);
+    if (application.pending > 0) parts.push(`${application.pending} sem lançamento`);
+    return parts.join(" · ");
   }
   return `${application.pending} elegível(is) ainda sem lançamento`;
 }
@@ -307,9 +315,10 @@ export function FeriasClient({
       return;
     }
     const year = applyRecessTarget.year;
+    const updated = data.updated ?? 0;
     setApplyRecessTarget(null);
 
-    if (data.applied === 0 && data.skippedExisting > 0 && data.skippedIneligible >= 0) {
+    if (data.applied === 0 && updated === 0 && data.skippedExisting > 0) {
       const parts = [
         `Recesso ${year}: já estava aplicado`,
         data.skippedExisting === 1
@@ -328,7 +337,7 @@ export function FeriasClient({
       return;
     }
 
-    if (data.applied === 0 && data.skippedExisting === 0) {
+    if (data.applied === 0 && updated === 0 && data.skippedExisting === 0) {
       setRecessSuccess(
         `Recesso ${year}: nenhum colaborador elegível para receber o lançamento.`
       );
@@ -336,16 +345,30 @@ export function FeriasClient({
       return;
     }
 
-    const parts = [
-      data.applied === 1
-        ? `Recesso ${year}: 1 colaborador recebeu o lançamento`
-        : `Recesso ${year}: ${data.applied} colaboradores receberam o lançamento`,
-    ];
+    const parts: string[] = [];
+    if (updated > 0) {
+      parts.push(
+        updated === 1
+          ? `Recesso ${year}: 1 ficha atualizada para as novas datas`
+          : `Recesso ${year}: ${updated} fichas atualizadas para as novas datas`
+      );
+    }
+    if (data.applied > 0) {
+      parts.push(
+        updated > 0
+          ? data.applied === 1
+            ? "1 recebeu o lançamento"
+            : `${data.applied} receberam o lançamento`
+          : data.applied === 1
+            ? `Recesso ${year}: 1 colaborador recebeu o lançamento`
+            : `Recesso ${year}: ${data.applied} colaboradores receberam o lançamento`
+      );
+    }
     if (data.skippedExisting > 0) {
       parts.push(
         data.skippedExisting === 1
-          ? "1 já tinha este recesso"
-          : `${data.skippedExisting} já tinham este recesso`
+          ? "1 já estava com as datas certas"
+          : `${data.skippedExisting} já estavam com as datas certas`
       );
     }
     if (data.skippedIneligible > 0) {
@@ -734,7 +757,7 @@ export function FeriasClient({
           )}
           <p className="text-xs text-muted-foreground">
             {canManage
-              ? "Cadastrar o calendário não altera o saldo. Use “Aplicar aos ativos” para gerar o lançamento de recesso em cada ficha elegível. A coluna Status mostra se o ano já foi aplicado."
+              ? "Cadastrar o calendário não altera o saldo. Use “Aplicar aos ativos” para gerar ou atualizar o lançamento de recesso em cada ficha elegível. Se as datas do calendário mudarem, aplique de novo para as fichas acompanharem."
               : "Calendário de recessos coletivos e situação dos lançamentos dentro do seu escopo."}
           </p>
           <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
@@ -795,9 +818,11 @@ export function FeriasClient({
                           title={
                             item.application.state === "aplicado"
                               ? "Já aplicado — clique para verificar novamente"
-                              : item.application.state === "parcial"
-                                ? "Aplicar aos que ainda não têm o lançamento"
-                                : "Aplicar aos ativos elegíveis"
+                              : item.application.state === "desatualizado"
+                                ? "Atualizar as fichas para as novas datas do calendário"
+                                : item.application.state === "parcial"
+                                  ? "Aplicar aos que ainda não têm o lançamento"
+                                  : "Aplicar aos ativos elegíveis"
                           }
                           onClick={() => {
                             setRecessSuccess(null);
@@ -808,9 +833,11 @@ export function FeriasClient({
                           <UserCheck className="mr-1.5 h-3.5 w-3.5" />
                           {item.application.state === "aplicado"
                             ? "Já aplicado"
-                            : item.application.state === "parcial"
-                              ? "Completar"
-                              : "Aplicar"}
+                            : item.application.state === "desatualizado"
+                              ? "Atualizar"
+                              : item.application.state === "parcial"
+                                ? "Completar"
+                                : "Aplicar"}
                         </Button>
                         <Button
                           variant="ghost"
@@ -902,12 +929,12 @@ export function FeriasClient({
           <DialogHeader>
             <DialogTitle>Aplicar recesso {applyRecessTarget?.year}</DialogTitle>
             <DialogDescription>
-              Vai criar um lançamento de recesso (
+              Vai criar ou atualizar o lançamento de recesso (
               {applyRecessTarget
                 ? `${formatISODateBR(applyRecessTarget.start_date)} a ${formatISODateBR(applyRecessTarget.end_date)} · ${applyRecessTarget.days} dia(s)`
                 : ""}
-              ) para cada colaborador ativo elegível. Quem já tiver recesso no mesmo período
-              (mesmo que as datas sejam um pouco diferentes) não é duplicado.
+              ) em cada colaborador ativo elegível. Fichas com datas antigas neste período
+              são atualizadas; quem já está com o calendário atual não é duplicado.
             </DialogDescription>
           </DialogHeader>
           {applyRecessTarget && (
@@ -927,8 +954,19 @@ export function FeriasClient({
                   <span className="font-medium text-emerald-700">
                     {applyRecessTarget.application.applied}
                   </span>{" "}
-                  já {applyRecessTarget.application.applied === 1 ? "tem" : "têm"} este recesso
+                  já {applyRecessTarget.application.applied === 1 ? "está" : "estão"} com as
+                  datas atuais
                 </li>
+                {applyRecessTarget.application.outdated > 0 && (
+                  <li>
+                    <span className="font-medium text-amber-800">
+                      {applyRecessTarget.application.outdated}
+                    </span>{" "}
+                    {applyRecessTarget.application.outdated === 1
+                      ? "ficha ainda tem as datas antigas"
+                      : "fichas ainda têm as datas antigas"}
+                  </li>
+                )}
                 <li>
                   <span className="font-medium text-amber-700">
                     {applyRecessTarget.application.pending}
@@ -954,6 +992,12 @@ export function FeriasClient({
                   cria duplicatas.
                 </p>
               )}
+              {applyRecessTarget.application.state === "desatualizado" && (
+                <p className="text-xs text-amber-800">
+                  O calendário mudou depois da última aplicação. Confirmar atualiza as fichas
+                  para as novas datas.
+                </p>
+              )}
               {applyRecessTarget.application.state === "sem_elegiveis" && (
                 <p className="text-xs text-amber-800">
                   Não há quem receber o lançamento agora. Confira admissões e desligamentos.
@@ -970,15 +1014,19 @@ export function FeriasClient({
               disabled={
                 applyingRecess ||
                 applyRecessTarget?.application.state === "sem_elegiveis" ||
-                applyRecessTarget?.application.pending === 0
+                applyRecessTarget?.application.state === "aplicado"
               }
             >
               {applyingRecess ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : applyRecessTarget?.application.state === "aplicado" ? (
                 "Já está aplicado"
+              ) : applyRecessTarget?.application.state === "desatualizado" ? (
+                `Atualizar ${applyRecessTarget.application.outdated} ficha(s)`
               ) : applyRecessTarget?.application.state === "parcial" ? (
-                `Aplicar aos ${applyRecessTarget.application.pending} pendentes`
+                applyRecessTarget.application.outdated > 0
+                  ? "Atualizar e completar"
+                  : `Aplicar aos ${applyRecessTarget.application.pending} pendentes`
               ) : applyRecessTarget?.application.state === "sem_elegiveis" ? (
                 "Sem elegíveis"
               ) : (

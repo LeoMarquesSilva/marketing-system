@@ -6,6 +6,8 @@ import { computeEmployeeBalance, generateAccrualPeriods, todayISO } from "@/lib/
 import { FeriasHttpError } from "@/lib/ferias/errors";
 import {
   employeeEligibleForRecess,
+  planRecessLeaveSync,
+  recessLeaveMatchesCalendar,
   resolveEmployeeAvatarUrl,
   summarizeRecessApplication,
 } from "@/lib/ferias/filters";
@@ -525,7 +527,7 @@ export async function listRecessWithApplicationStatus(
     recesses.map((recess) =>
       admin
         .from("vacation_leaves")
-        .select("employee_id")
+        .select("employee_id, start_date, end_date, days")
         .eq("kind", "recesso")
         .lte("start_date", recess.end_date)
         .gte("end_date", recess.start_date)
@@ -536,15 +538,37 @@ export async function listRecessWithApplicationStatus(
     const leaveResult = leaveResults[index];
     if (leaveResult.error) failed("Não foi possível verificar lançamentos de recesso.");
     const scopedEmployeeIds = new Set(activeEmployees.map((employee) => employee.id));
-    const appliedEmployeeIds = (leaveResult.data ?? [])
-      .map((row) => row.employee_id as string)
-      .filter((employeeId) => scopedEmployeeIds.has(employeeId));
+    const appliedEmployeeIds: string[] = [];
+    const outdatedEmployeeIds: string[] = [];
+    const leavesByEmployee = new Map<
+      string,
+      Array<{ start_date: string; end_date: string; days: number }>
+    >();
+    for (const row of leaveResult.data ?? []) {
+      const employeeId = row.employee_id as string;
+      if (!scopedEmployeeIds.has(employeeId)) continue;
+      const leaves = leavesByEmployee.get(employeeId) ?? [];
+      leaves.push({
+        start_date: row.start_date as string,
+        end_date: row.end_date as string,
+        days: row.days as number,
+      });
+      leavesByEmployee.set(employeeId, leaves);
+    }
+    for (const [employeeId, leaves] of leavesByEmployee) {
+      if (leaves.some((leave) => recessLeaveMatchesCalendar(leave, recess))) {
+        appliedEmployeeIds.push(employeeId);
+      } else {
+        outdatedEmployeeIds.push(employeeId);
+      }
+    }
     return {
       ...recess,
       application: summarizeRecessApplication({
         activeEmployees,
         recess,
         appliedEmployeeIds,
+        outdatedEmployeeIds,
       }),
     };
   });
@@ -580,13 +604,15 @@ export async function deleteRecess(recessId: string): Promise<void> {
 
 export interface ApplyRecessResult {
   applied: number;
+  updated: number;
   skippedExisting: number;
   skippedIneligible: number;
 }
 
 /**
- * Gera lançamento `recesso` para cada colaborador ativo elegível.
- * Idempotente: não duplica quem já tem recesso com intervalo sobreposto.
+ * Gera ou atualiza o lançamento `recesso` de cada colaborador ativo elegível.
+ * Quem já tem as datas do calendário é só confirmado; quem tem recesso
+ * sobreposto com datas antigas é atualizado — não duplicado.
  */
 export async function applyRecessToActiveEmployees(
   recessId: string
@@ -625,25 +651,32 @@ export async function applyRecessToActiveEmployees(
   const skippedIneligible = activeRows.length - eligible.length;
 
   if (eligible.length === 0) {
-    return { applied: 0, skippedExisting: 0, skippedIneligible };
+    return { applied: 0, updated: 0, skippedExisting: 0, skippedIneligible };
   }
 
   const eligibleIds = eligible.map((row) => row.id);
   const { data: existingLeaves, error: leavesError } = await admin
     .from("vacation_leaves")
-    .select("employee_id, start_date, end_date, kind")
+    .select("id, employee_id, start_date, end_date, days")
     .in("employee_id", eligibleIds)
     .eq("kind", "recesso")
     .lte("start_date", recessRow.end_date)
     .gte("end_date", recessRow.start_date);
   if (leavesError) failed("Não foi possível verificar lançamentos existentes.");
 
-  const alreadyApplied = new Set(
-    (existingLeaves ?? []).map((leave) => leave.employee_id as string)
-  );
+  const plan = planRecessLeaveSync({
+    eligibleIds,
+    recess: recessRow,
+    existingLeaves: (existingLeaves ?? []) as Array<{
+      id: string;
+      employee_id: string;
+      start_date: string;
+      end_date: string;
+      days: number;
+    }>,
+  });
 
-  const toInsert = eligible.filter((row) => !alreadyApplied.has(row.id));
-  const skippedExisting = eligible.length - toInsert.length;
+  const toInsert = eligible.filter((row) => plan.insertIds.includes(row.id));
 
   if (toInsert.length > 0) {
     const note = `Recesso coletivo ${recessRow.year}`;
@@ -667,9 +700,27 @@ export async function applyRecessToActiveEmployees(
     );
   }
 
+  if (plan.updateLeaveIds.length > 0) {
+    const updateResults = await Promise.all(
+      plan.updateLeaveIds.map((leaveId) =>
+        admin
+          .from("vacation_leaves")
+          .update({
+            start_date: recessRow.start_date,
+            end_date: recessRow.end_date,
+            days: recessRow.days,
+          })
+          .eq("id", leaveId)
+      )
+    );
+    const updateError = updateResults.find((result) => result.error)?.error;
+    if (updateError) failed("Não foi possível atualizar o recesso nas fichas.");
+  }
+
   return {
-    applied: toInsert.length,
-    skippedExisting,
+    applied: plan.insertIds.length,
+    updated: plan.updateLeaveIds.length,
+    skippedExisting: plan.keepEmployeeIds.length,
     skippedIneligible,
   };
 }

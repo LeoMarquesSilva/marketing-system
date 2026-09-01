@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePickerField } from "@/components/ui/date-picker-field";
-import { inclusiveDayCount } from "@/lib/ferias/balance";
+import { daysFromInclusiveRange } from "@/lib/ferias/balance";
 import type { CompanyRecess } from "@/lib/ferias/types";
 
 export interface RecessFormValues {
@@ -79,16 +79,12 @@ function RecessForm({
   );
   const [startDate, setStartDate] = useState(recess?.start_date ?? "");
   const [endDate, setEndDate] = useState(recess?.end_date ?? "");
-  const [daysOverride, setDaysOverride] = useState<string | null>(
-    recess ? String(recess.days) : null
-  );
   const [notes, setNotes] = useState(recess?.notes ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const suggestedDays =
-    startDate && endDate && endDate >= startDate ? inclusiveDayCount(startDate, endDate) : null;
-  const days = daysOverride ?? (suggestedDays === null ? "" : String(suggestedDays));
+  const suggestedDays = daysFromInclusiveRange(startDate, endDate);
+  const days = suggestedDays === null ? "" : String(suggestedDays);
 
   async function handleSubmit() {
     const parsedYear = Number(year);
@@ -146,8 +142,14 @@ function RecessForm({
             type="number"
             min={1}
             value={days}
-            onChange={(event) => setDaysOverride(event.target.value)}
+            readOnly
+            aria-readonly="true"
+            tabIndex={-1}
+            placeholder="—"
+            className="bg-muted/50"
+            title="Calculado automaticamente pelo período"
           />
+          <p className="text-xs text-muted-foreground">Calculado automaticamente.</p>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="recess-inicio">Início</Label>
