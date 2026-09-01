@@ -12,8 +12,10 @@ export interface HistoryCandidate {
 export interface HistoryItem {
   title?: string | null;
   thesis_id?: string | null;
-  selected_angle?: { type?: string } | null;
+  selected_angle?: { type?: string; title?: string } | null;
   source_context?: { companies?: string[] } | null;
+  linkedin_post?: string | null;
+  alternative_hooks?: string[] | null;
   created_at?: string | null;
 }
 
@@ -105,4 +107,34 @@ export function historyAlertText(assessment: EditorialHistoryAssessment): string
     : "";
   const when = days != null ? `Você já falou sobre este tema há ${days} dias.` : "Há conteúdo próximo no histórico.";
   return `${when} ${angle} ${assessment.reason}`.trim();
+}
+
+export function buildEditorialHistoryPrompt(
+  assessment: EditorialHistoryAssessment
+): string {
+  if (assessment.similarItems.length === 0) {
+    return `Risco ${assessment.similarityRisk}. ${assessment.reason}`;
+  }
+
+  const examples = assessment.similarItems.map((item, index) => {
+    const hook = item.alternative_hooks?.[0] ?? "—";
+    const post = (item.linkedin_post ?? "—").replace(/\s+/g, " ").slice(0, 500);
+    const angle = item.selected_angle?.title ?? item.selected_angle?.type ?? "—";
+    return [
+      `HISTÓRICO ${index + 1}`,
+      `Pauta: ${item.title ?? "—"}`,
+      `Ângulo anterior: ${angle}`,
+      `Hook anterior: ${hook}`,
+      `Trecho anterior: ${post}`,
+      `Data: ${item.created_at ?? "—"}`,
+    ].join("\n");
+  });
+
+  return [
+    `Risco ${assessment.similarityRisk}. ${assessment.reason}`,
+    ...examples,
+    assessment.varyAngle
+      ? "OBRIGATÓRIO: use uma tensão, estrutura e conclusão diferentes dos exemplos acima."
+      : "Diferencie o gancho e a estrutura quando houver proximidade.",
+  ].join("\n\n");
 }

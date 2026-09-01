@@ -13,9 +13,14 @@ import {
   submitToGustavo,
 } from "@/lib/gustavo-content/items";
 import {
+  GustavoContentError,
   gustavoContentErrorResponse,
   requireGustavoContentAccess,
 } from "@/lib/gustavo-content/server";
+import {
+  canPerformGustavoContentAction,
+  type GustavoContentAction,
+} from "@/lib/gustavo-content/access";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -42,6 +47,12 @@ export async function PATCH(
     const { id } = await context.params;
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const action = String(body.action ?? "");
+    if (!action) {
+      return NextResponse.json({ error: "Ação inválida." }, { status: 400 });
+    }
+    if (!canPerformGustavoContentAction(actor, action as GustavoContentAction)) {
+      throw new GustavoContentError("Sem permissão para executar esta ação.", 403);
+    }
 
     if (action === "analyze") return NextResponse.json(await analyzeItem(id));
     if (action === "generate") return NextResponse.json(await generateItemContent(id));

@@ -53,7 +53,9 @@ Não: prometer resultado; divulgar honorários; oferecer desconto; comparar-se a
 
 FATOS
 Separe FATOS DA FONTE de INTERPRETAÇÃO DO GUSTAVO.
-Nunca transforme interpretação em fato.`;
+Nunca transforme interpretação em fato.
+Use números, datas e nomes somente quando estiverem presentes na matéria ou em FATOS_DA_FONTE.
+Se a evidência for insuficiente, escreva de forma prudente e não complete lacunas por plausibilidade.`;
 
 export const SCORE_INSTRUCTIONS = `Analise a pauta para thought leadership de reestruturação empresarial.
 
@@ -84,6 +86,8 @@ Se não houver tese suficiente, confidence = none e até 3 perguntas objetivas p
 
 export const CONTENT_INSTRUCTIONS = `Gere o post textual de LinkedIn e o roteiro de Reel em bullets de fala.
 Use somente teses validadas ou respostas do Gustavo.
+Antes de redigir, identifique silenciosamente: fato, tensão empresarial, tese, implicação e diferença em relação ao histórico.
+O texto deve entregar interpretação empresarial específica, não apenas recontar a notícia.
 Se ainda faltar opinião, não escreva em primeira pessoa fingindo saber.
 Não use "Você sabia?", CTA comercial, emoji padrão nem pergunta automática no final.
 Se o histórico pediu variação de ângulo, varie.`;

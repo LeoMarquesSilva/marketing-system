@@ -15,7 +15,10 @@ export function filterRadarItems(
     if (filters.status && item.status !== filters.status) return false;
     if (filters.topicId && item.topic_id !== filters.topicId) return false;
     if (filters.minScore != null && (item.editorial_score ?? 0) < filters.minScore) return false;
-    if (filters.channel === "linkedin" && item.recommended_channels?.linkedin.recommended === false) {
+    if (
+      filters.channel === "linkedin" &&
+      item.recommended_channels?.linkedin.recommended !== true
+    ) {
       return false;
     }
     if (filters.channel === "reel" && item.recommended_channels?.instagramReel.recommended !== true) {

@@ -3,6 +3,7 @@ import { canAccessPath } from "@/lib/access-control";
 import {
   GUSTAVO_CONTENT_PATH,
   canAccessGustavoContent,
+  canPerformGustavoContentAction,
   isGustavoContentPath,
 } from "@/lib/gustavo-content/access";
 
@@ -94,5 +95,37 @@ describe("canAccessPath — /conteudo/gustavo não herda a subárvore de conteú
   it("continua liberando o módulo institucional de conteúdo", () => {
     expect(canAccessPath(MARKETING, "/conteudo/roteiros")).toBe(true);
     expect(canAccessPath(COLLABORATOR, "/conteudo/reels")).toBe(true);
+  });
+});
+
+describe("permissões por ação", () => {
+  const adminActor = { isAdmin: true, memberRole: null as null };
+  const ownerActor = { isAdmin: false, memberRole: "owner" as const };
+  const editorActor = { isAdmin: false, memberRole: "editor" as const };
+
+  it("reserva publicação e Planner ao admin", () => {
+    expect(canPerformGustavoContentAction(adminActor, "publish")).toBe(true);
+    expect(canPerformGustavoContentAction(adminActor, "planner_linkedin")).toBe(true);
+    expect(canPerformGustavoContentAction(ownerActor, "publish")).toBe(false);
+    expect(canPerformGustavoContentAction(ownerActor, "planner_reel")).toBe(false);
+    expect(canPerformGustavoContentAction(editorActor, "publish")).toBe(false);
+  });
+
+  it("permite aprovação apenas ao Gustavo ou ao admin", () => {
+    expect(canPerformGustavoContentAction(ownerActor, "approve")).toBe(true);
+    expect(canPerformGustavoContentAction(adminActor, "approve")).toBe(true);
+    expect(canPerformGustavoContentAction(editorActor, "approve")).toBe(false);
+  });
+
+  it("mantém edição e geração disponíveis aos membros do fluxo", () => {
+    expect(canPerformGustavoContentAction(ownerActor, "save")).toBe(true);
+    expect(canPerformGustavoContentAction(editorActor, "generate")).toBe(true);
+    expect(canPerformGustavoContentAction(editorActor, "submit")).toBe(true);
+  });
+
+  it("rejeita ações desconhecidas recebidas pela API", () => {
+    expect(
+      canPerformGustavoContentAction(ownerActor, "delete_all" as never)
+    ).toBe(false);
   });
 });

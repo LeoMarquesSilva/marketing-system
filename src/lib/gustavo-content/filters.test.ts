@@ -76,6 +76,24 @@ describe("filterRadarItems", () => {
     expect(filterRadarItems(items, { thesis: "without" }).map((row) => row.id)).toEqual(["2"]);
     expect(filterRadarItems(items, { channel: "reel" }).map((row) => row.id)).toEqual(["2"]);
   });
+
+  it("não trata recomendação ausente como recomendação de LinkedIn", () => {
+    const items = [
+      item({ id: "recommended" }),
+      item({ id: "unknown", recommended_channels: null }),
+      item({
+        id: "not-recommended",
+        recommended_channels: {
+          linkedin: { recommended: false, reason: "não é o melhor canal" },
+          instagramReel: { recommended: true, reason: "visual" },
+        },
+      }),
+    ];
+
+    expect(filterRadarItems(items, { channel: "linkedin" }).map((row) => row.id)).toEqual([
+      "recommended",
+    ]);
+  });
 });
 
 describe("overviewMetrics", () => {

@@ -33,6 +33,10 @@ import {
   type ThesisConviction,
   type ThesisStatus,
 } from "@/lib/gustavo-content/theses";
+import {
+  EditorialEmpty,
+  EditorialLoading,
+} from "@/components/gustavo-content/editorial-states";
 
 type ThesisForm = {
   title: string;
@@ -212,10 +216,10 @@ export function TesesLibrary() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#347796]">
+          <p className="editorial-kicker font-mono text-[11px] uppercase text-[#347796]">
             Biblioteca de teses
           </p>
-          <h3 className="mt-1 text-xl font-semibold text-[#04202f]">
+          <h3 className="editorial-display mt-2 text-2xl font-semibold text-[#04202f]">
             Opiniões que a IA pode usar
           </h3>
           <p className="mt-1 max-w-xl text-sm text-muted-foreground">
@@ -226,7 +230,7 @@ export function TesesLibrary() {
         <Button onClick={openCreate}>Nova tese</Button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 rounded-[1.25rem] bg-white/70 p-3 sm:grid-cols-3">
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -267,29 +271,26 @@ export function TesesLibrary() {
       )}
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Carregando teses…</p>
+        <EditorialLoading label="Organizando a biblioteca de teses" />
       ) : theses.length === 0 ? (
-        <section className="rounded-2xl border border-dashed border-[#04202f]/15 bg-[#04202f]/[0.02] px-5 py-10">
-          <h4 className="text-lg font-semibold text-[#04202f]">
-            A Biblioteca de Teses ainda está vazia.
-          </h4>
-          <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-            Cadastre as primeiras posições do Gustavo para melhorar a qualidade
-            dos conteúdos.
-          </p>
-        </section>
+        <EditorialEmpty
+          eyebrow="Memória de opinião"
+          title="A Biblioteca de Teses ainda está vazia"
+          description="Cadastre as primeiras posições do Gustavo. Sem uma tese validada, o sistema pergunta em vez de inventar opinião."
+          action={{ label: "Cadastrar primeira tese", onClick: openCreate }}
+        />
       ) : visible.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           Nenhuma tese corresponde aos filtros atuais.
         </p>
       ) : (
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
           {visible.map((thesis) => (
             <button
               key={thesis.id}
               type="button"
               onClick={() => setSelected(thesis)}
-              className="rounded-2xl border border-black/[0.06] bg-white p-5 text-left shadow-[0_1px_0_rgba(4,32,47,0.03)] transition-colors hover:border-[#47cdd0]/50"
+              className="group rounded-[1.35rem] bg-white/85 p-5 text-left shadow-[0_18px_48px_rgba(4,32,47,0.05)] transition-all hover:-translate-y-0.5 hover:shadow-[0_24px_60px_rgba(4,32,47,0.09)]"
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span className={cn("rounded-full border px-2 py-0.5 text-[11px] font-medium", statusTone(thesis.status))}>

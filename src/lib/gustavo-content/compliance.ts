@@ -59,6 +59,6 @@ export function normalizeCompliance(raw: {
 }
 
 export function canSubmitForApproval(compliance: ComplianceResult | null | undefined): boolean {
-  if (!compliance) return true;
+  if (!compliance) return false;
   return !compliance.flags.some((flag) => SEVERE_COMPLIANCE_FLAGS.includes(flag));
 }

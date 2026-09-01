@@ -19,7 +19,11 @@ import { clampScoreBreakdown } from "@/lib/gustavo-content/score";
 import { normalizeCompliance } from "@/lib/gustavo-content/compliance";
 import type { GustavoThesis } from "@/lib/gustavo-content/theses";
 import type { GustavoVoiceSample } from "@/lib/gustavo-content/voice";
-import type { EditorialHistoryAssessment } from "@/lib/gustavo-content/history";
+import {
+  buildEditorialHistoryPrompt,
+  type EditorialHistoryAssessment,
+} from "@/lib/gustavo-content/history";
+import type { SourceContext } from "@/lib/gustavo-content/types";
 
 function getOpenAI() {
   const apiKey = process.env.NEXT_OPENAI_API_KEY;
@@ -116,6 +120,7 @@ export async function generateEditorialContent(input: {
   theses: GustavoThesis[];
   voice: GustavoVoiceSample[];
   history: EditorialHistoryAssessment;
+  sourceContext: SourceContext | null;
 }) {
   const result = await generateObject({
     model: model(),
@@ -126,6 +131,10 @@ export async function generateEditorialContent(input: {
       `TÍTULO: ${input.title}`,
       `RESUMO: ${input.snippet}`,
       `MATÉRIA: ${input.article || "(não disponível)"}`,
+      `FATOS_DA_FONTE:\n${(input.sourceContext?.facts ?? []).map((fact) => `- ${fact}`).join("\n") || "—"}`,
+      `NÚMEROS_DA_FONTE:\n${(input.sourceContext?.numbers ?? []).map((number) => `- ${number}`).join("\n") || "—"}`,
+      `EMPRESAS_E_DATAS: ${(input.sourceContext?.companies ?? []).join(", ") || "—"} | ${(input.sourceContext?.dates ?? []).join(", ") || "—"}`,
+      `FONTES: ${(input.sourceContext?.sourceUrls ?? []).join(" | ") || input.link || "—"}`,
       `LINK: ${input.link ?? "—"}`,
       `PROBLEMA_EMPRESARIAL: ${input.businessProblem ?? "—"}`,
       `ANGULO_SELECIONADO: ${JSON.stringify(input.selectedAngle ?? null)}`,
@@ -134,10 +143,7 @@ export async function generateEditorialContent(input: {
       `RESPOSTAS_DO_GUSTAVO: ${(input.answers ?? []).join(" | ") || "—"}`,
       `BIBLIOTECA_DE_TESES:\n${thesesBlock(input.theses)}`,
       `VOZ_HISTORICA_GUSTAVO:\n${voiceBlock(input.voice)}`,
-      `HISTORICO_EDITORIAL_GUSTAVO: risco=${input.history.similarityRisk}. ${input.history.reason}`,
-      input.history.varyAngle
-        ? "OBRIGATÓRIO: variar o ângulo em relação ao histórico."
-        : "",
+      `HISTORICO_EDITORIAL_GUSTAVO:\n${buildEditorialHistoryPrompt(input.history)}`,
     ]
       .filter(Boolean)
       .join("\n\n"),

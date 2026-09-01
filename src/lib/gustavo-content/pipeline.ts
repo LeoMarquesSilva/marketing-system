@@ -10,6 +10,7 @@ import { listTheses } from "@/lib/gustavo-content/theses-server";
 import { thesisSnapshot } from "@/lib/gustavo-content/theses";
 import { listTopics } from "@/lib/gustavo-content/topics";
 import { pickInstitutionalCandidates } from "@/lib/gustavo-content/institutional-import";
+import { preserveArticleText } from "@/lib/gustavo-content/editorial-context";
 
 export interface GustavoFetchOptions {
   topicIds?: string[];
@@ -153,6 +154,7 @@ export async function runGustavoContentFetchPipeline(
             image_url: article.imageUrl,
             source_context: {
               ...score.sourceContext,
+              articleText: preserveArticleText(article.text),
               extractionWarning: article.text
                 ? null
                 : "Matéria incompleta — seguimos com título e resumo do RSS.",
@@ -336,6 +338,7 @@ export async function importInstitutionalNews(options: {
         image_url: article.imageUrl ?? item.image_url ?? null,
         source_context: {
           ...score.sourceContext,
+          articleText: preserveArticleText(article.text || item.content_snippet),
           extractionWarning: article.text
             ? null
             : "Reaproveitada do Conteúdo para Post — extração complementar quando disponível.",

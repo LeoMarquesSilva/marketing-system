@@ -17,12 +17,12 @@ export function ScoreBadge({ score }: { score: number | null | undefined }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium",
+        "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-mono text-xs font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]",
         tone
       )}
     >
       <span className="tabular-nums">{score ?? "—"}</span>
-      <span className="text-[10px] uppercase tracking-wide">{scoreBandLabel(score)}</span>
+      <span className="editorial-kicker text-[9px] uppercase opacity-75">{scoreBandLabel(score)}</span>
     </span>
   );
 }

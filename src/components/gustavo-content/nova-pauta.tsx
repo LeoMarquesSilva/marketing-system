@@ -54,21 +54,24 @@ export function NovaPautaButton() {
   return (
     <>
       <Button size="sm" onClick={() => setOpen(true)}>
-        Nova pauta
+        + Nova pauta
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Nova pauta</DialogTitle>
           </DialogHeader>
-          <div className="flex gap-2">
+          <p className="text-sm leading-6 text-muted-foreground">
+            Traga uma matéria ou registre uma tensão empresarial que merece virar conteúdo.
+          </p>
+          <div className="flex gap-1 rounded-lg bg-[#04202f]/[0.05] p-1">
             <button
               type="button"
               onClick={() => setMode("link")}
-              className={`rounded-full px-3 py-1.5 text-sm ${
+              className={`rounded-md px-3 py-1.5 text-sm font-medium ${
                 mode === "link"
                   ? "bg-[#04202f] text-white"
-                  : "bg-black/[0.04] text-muted-foreground"
+                  : "text-muted-foreground"
               }`}
             >
               Link
@@ -76,10 +79,10 @@ export function NovaPautaButton() {
             <button
               type="button"
               onClick={() => setMode("idea")}
-              className={`rounded-full px-3 py-1.5 text-sm ${
+              className={`rounded-md px-3 py-1.5 text-sm font-medium ${
                 mode === "idea"
                   ? "bg-[#04202f] text-white"
-                  : "bg-black/[0.04] text-muted-foreground"
+                  : "text-muted-foreground"
               }`}
             >
               Ideia própria
@@ -112,7 +115,10 @@ export function NovaPautaButton() {
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={submit} disabled={busy}>
+            <Button
+              onClick={submit}
+              disabled={busy || (mode === "link" ? !url.trim() : idea.trim().length < 20)}
+            >
               {busy ? "Analisando…" : "Criar pauta"}
             </Button>
           </DialogFooter>

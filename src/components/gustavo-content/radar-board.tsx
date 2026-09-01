@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { ArrowRight, RefreshCw, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -19,6 +20,11 @@ import { TopicsAdmin } from "@/components/gustavo-content/topics-admin";
 import { filterRadarItems } from "@/lib/gustavo-content/filters";
 import { GUSTAVO_CONTENT_STATUS_LABELS } from "@/lib/gustavo-content/constants";
 import type { GustavoContentItem, GustavoContentTopic, GustavoFetchRun } from "@/lib/gustavo-content/types";
+import {
+  EditorialEmpty,
+  EditorialError,
+  EditorialLoading,
+} from "@/components/gustavo-content/editorial-states";
 
 export function RadarBoard({ isAdmin }: { isAdmin: boolean }) {
   const [items, setItems] = useState<GustavoContentItem[]>([]);
@@ -26,23 +32,36 @@ export function RadarBoard({ isAdmin }: { isAdmin: boolean }) {
   const [runs, setRuns] = useState<GustavoFetchRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [status, setStatus] = useState("all");
   const [topicId, setTopicId] = useState("all");
   const [channel, setChannel] = useState("all");
   const [thesis, setThesis] = useState("all");
   const [query, setQuery] = useState("");
 
-  async function load() {
-    setLoading(true);
-    const [itemsRes, topicsRes, runsRes] = await Promise.all([
-      fetch("/api/gustavo-content/items?view=radar"),
-      fetch("/api/gustavo-content/topics"),
-      fetch("/api/gustavo-content/runs"),
-    ]);
-    if (itemsRes.ok) setItems(await itemsRes.json());
-    if (topicsRes.ok) setTopics(await topicsRes.json());
-    if (runsRes.ok) setRuns(await runsRes.json());
-    setLoading(false);
+  async function load(silent = false) {
+    if (!silent) setLoading(true);
+    setError(null);
+    try {
+      const [itemsRes, topicsRes, runsRes] = await Promise.all([
+        fetch("/api/gustavo-content/items?view=radar"),
+        fetch("/api/gustavo-content/topics"),
+        fetch("/api/gustavo-content/runs"),
+      ]);
+      const failed = [itemsRes, topicsRes, runsRes].find((response) => !response.ok);
+      if (failed) {
+        const data = await failed.json().catch(() => ({}));
+        throw new Error(data.error ?? "Falha ao carregar o radar.");
+      }
+      setItems(await itemsRes.json());
+      setTopics(await topicsRes.json());
+      setRuns(await runsRes.json());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao carregar o radar.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -61,27 +80,22 @@ export function RadarBoard({ isAdmin }: { isAdmin: boolean }) {
     [items, status, topicId, channel, thesis, query]
   );
 
-  async function fetchRadar() {
+  async function triggerFetch(source?: "institutional") {
     setFetching(true);
+    setError(null);
+    setNotice(null);
     try {
-      await fetch("/api/gustavo-content/fetch", {
+      const response = await fetch("/api/gustavo-content/fetch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify(source ? { source, maxCreated: 8 } : {}),
       });
-    } finally {
-      setFetching(false);
-    }
-  }
-
-  async function importInstitutional() {
-    setFetching(true);
-    try {
-      await fetch("/api/gustavo-content/fetch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: "institutional", maxCreated: 8 }),
-      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error ?? "Não foi possível iniciar a busca.");
+      setNotice(data.message ?? "Busca iniciada. O radar será atualizado em instantes.");
+      window.setTimeout(() => void load(true), 5000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível iniciar a busca.");
     } finally {
       setFetching(false);
     }
@@ -90,40 +104,53 @@ export function RadarBoard({ isAdmin }: { isAdmin: boolean }) {
   const lastRun = runs[0];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-7">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#347796]">
+          <p className="editorial-kicker font-mono text-[11px] uppercase text-[#347796]">
             Radar
           </p>
-          <h3 className="text-xl font-semibold text-[#04202f]">Oportunidades editoriais</h3>
+          <h3 className="editorial-display mt-2 text-2xl font-semibold text-[#04202f]">Oportunidades editoriais</h3>
         </div>
         {isAdmin && (
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={fetchRadar} disabled={fetching}>
-              {fetching ? "Buscando…" : "Buscar agora"}
+            <Button size="sm" variant="outline" onClick={() => void load()} disabled={loading}>
+              <RefreshCw className="h-4 w-4" aria-hidden /> Atualizar
             </Button>
             <Button
               size="sm"
-              variant="outline"
-              onClick={() => void importInstitutional()}
+              onClick={() => void triggerFetch()}
               disabled={fetching}
             >
-              Usar notícias do outro módulo
+              {fetching ? "Busca iniciada…" : "Buscar novas pautas"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void triggerFetch("institutional")}
+              disabled={fetching}
+            >
+              Reaproveitar institucional
             </Button>
           </div>
         )}
       </div>
 
-      {lastRun && (
-        <p className="text-xs text-muted-foreground">
+      {notice && (
+        <p className="rounded-xl bg-[#e4f5f5] px-4 py-3 text-sm text-[#285f7a]" role="status">{notice}</p>
+      )}
+      {error && <EditorialError message={error} onRetry={() => void load()} />}
+
+      {lastRun && !error && (
+        <p className="font-mono text-xs text-[#6f858d]">
           Última busca: {format(new Date(lastRun.started_at), "dd MMM HH:mm", { locale: ptBR })} ·{" "}
           {lastRun.suggestions_created} sugestões · {lastRun.radar_created} radar ·{" "}
           {lastRun.discarded_under_55} abaixo de 55 · {lastRun.duplicates} duplicatas
         </p>
       )}
 
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="rounded-[1.25rem] bg-white/75 p-3 shadow-[0_12px_38px_rgba(4,32,47,0.04)]">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[1.6fr_repeat(4,1fr)_auto]">
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -175,27 +202,36 @@ export function RadarBoard({ isAdmin }: { isAdmin: boolean }) {
             <SelectItem value="without">Sem tese</SelectItem>
           </SelectContent>
         </Select>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setStatus("all"); setTopicId("all"); setChannel("all"); setThesis("all"); setQuery("");
+          }}
+          aria-label="Limpar filtros"
+        >
+          <RotateCcw className="h-4 w-4" aria-hidden />
+        </Button>
+        </div>
+        <p className="mt-2 px-1 font-mono text-[11px] text-[#7b9098]">{visible.length} pautas nesta seleção</p>
       </div>
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Carregando radar…</p>
+        <EditorialLoading label="Lendo sinais empresariais" />
       ) : items.length === 0 ? (
-        <section className="rounded-2xl border border-dashed border-[#04202f]/15 bg-[#04202f]/[0.02] px-5 py-10">
-          <h4 className="text-lg font-semibold text-[#04202f]">
-            Nenhuma oportunidade encontrada no momento.
-          </h4>
-          <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-            A busca automática continuará acompanhando os temas configurados.
-          </p>
-        </section>
+        <EditorialEmpty
+          eyebrow="Radar em observação"
+          title="Nenhuma oportunidade encontrada no momento"
+          description="A busca automática continuará acompanhando os temas configurados e separará sinais fortes de simples notícias."
+        />
       ) : visible.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nenhuma pauta corresponde aos filtros.</p>
       ) : (
-        <div className="grid gap-3">
+        <div className="overflow-hidden rounded-[1.4rem] bg-white/80 shadow-[0_20px_60px_rgba(4,32,47,0.055)]">
           {visible.map((item) => (
             <article
               key={item.id}
-              className="rounded-2xl border border-black/[0.06] bg-white p-3 shadow-[0_1px_0_rgba(4,32,47,0.03)] sm:p-4"
+              className="group border-b border-[#04202f]/[0.07] p-4 last:border-b-0 sm:p-5"
             >
               <div className="flex items-start gap-3">
                 <NewsThumb src={item.image_url} />
@@ -228,9 +264,9 @@ export function RadarBoard({ isAdmin }: { isAdmin: boolean }) {
                 {item.recommended_channels?.instagramReel.recommended && <span>Reel</span>}
                 <Link
                   href={`/conteudo/gustavo/producao/${item.id}`}
-                  className="ml-auto text-sm font-medium text-[#347796] hover:underline"
+                  className="ml-auto inline-flex items-center gap-2 text-sm font-semibold text-[#347796]"
                 >
-                  Analisar pauta
+                  Analisar <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" aria-hidden />
                 </Link>
               </div>
             </article>

@@ -5,6 +5,11 @@ import {
 } from "@/lib/gustavo-content/compliance";
 
 describe("compliance", () => {
+  it("exige uma análise atual antes do envio", () => {
+    expect(canSubmitForApproval(null)).toBe(false);
+    expect(canSubmitForApproval(undefined)).toBe(false);
+  });
+
   it("mostra alerta sem bloquear observação leve", () => {
     const result = normalizeCompliance({
       safe: true,

@@ -32,6 +32,10 @@ import {
   type VoiceAuthenticity,
   type VoiceSourceType,
 } from "@/lib/gustavo-content/voice";
+import {
+  EditorialEmpty,
+  EditorialLoading,
+} from "@/components/gustavo-content/editorial-states";
 
 type VoiceForm = {
   original_text: string;
@@ -164,10 +168,10 @@ export function VozLibrary() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#347796]">
+          <p className="editorial-kicker font-mono text-[11px] uppercase text-[#347796]">
             Voz do Gustavo
           </p>
-          <h3 className="mt-1 text-xl font-semibold text-[#04202f]">
+          <h3 className="editorial-display mt-2 text-2xl font-semibold text-[#04202f]">
             Textos reais, não scraping
           </h3>
           <p className="mt-1 max-w-xl text-sm text-muted-foreground">
@@ -185,17 +189,14 @@ export function VozLibrary() {
       )}
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Carregando amostras…</p>
+        <EditorialLoading label="Lendo as amostras de voz" />
       ) : samples.length === 0 ? (
-        <section className="rounded-2xl border border-dashed border-[#04202f]/15 bg-[#04202f]/[0.02] px-5 py-10">
-          <h4 className="text-lg font-semibold text-[#04202f]">
-            Nenhuma amostra de voz cadastrada.
-          </h4>
-          <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-            Cole o texto de um post antigo, a data e se é original do Gustavo.
-            Sem isso, a geração tende a soar genérica.
-          </p>
-        </section>
+        <EditorialEmpty
+          eyebrow="Memória de voz"
+          title="Nenhuma amostra real cadastrada"
+          description="Cole um post antigo, informe a origem e a autenticidade. Isso reduz o tom genérico e aproxima a redação da voz real do Gustavo."
+          action={{ label: "Adicionar primeira amostra", onClick: openCreate }}
+        />
       ) : (
         <div className="space-y-3">
           {samples.map((sample) => (
@@ -204,10 +205,10 @@ export function VozLibrary() {
               type="button"
               onClick={() => setSelected(sample)}
               className={cn(
-                "w-full rounded-2xl border bg-white p-5 text-left transition-colors",
+                "w-full rounded-[1.25rem] bg-white/85 p-5 text-left shadow-[0_14px_40px_rgba(4,32,47,0.04)] transition-all hover:-translate-y-0.5",
                 sample.is_active
-                  ? "border-black/[0.06] hover:border-[#47cdd0]/50"
-                  : "border-dashed border-black/10 opacity-70"
+                  ? "opacity-100"
+                  : "opacity-60"
               )}
             >
               <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wider text-muted-foreground">

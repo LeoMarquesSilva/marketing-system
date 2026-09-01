@@ -2,6 +2,51 @@ export const GUSTAVO_CONTENT_PATH = "/conteudo/gustavo";
 
 export type GustavoMemberRole = "owner" | "editor";
 
+export type GustavoContentAction =
+  | "analyze"
+  | "generate"
+  | "select_angle"
+  | "answer"
+  | "save"
+  | "submit"
+  | "approve"
+  | "reject"
+  | "publish"
+  | "planner_linkedin"
+  | "planner_reel";
+
+const GUSTAVO_CONTENT_ACTIONS = new Set<string>([
+  "analyze",
+  "generate",
+  "select_angle",
+  "answer",
+  "save",
+  "submit",
+  "approve",
+  "reject",
+  "publish",
+  "planner_linkedin",
+  "planner_reel",
+]);
+
+const ADMIN_ONLY_ACTIONS = new Set<GustavoContentAction>([
+  "publish",
+  "planner_linkedin",
+  "planner_reel",
+]);
+
+export function canPerformGustavoContentAction(
+  actor: { isAdmin: boolean; memberRole: GustavoMemberRole | null },
+  action: GustavoContentAction
+): boolean {
+  if (!GUSTAVO_CONTENT_ACTIONS.has(action)) return false;
+  if (actor.isAdmin) return true;
+  if (!actor.memberRole) return false;
+  if (ADMIN_ONLY_ACTIONS.has(action)) return false;
+  if (action === "approve") return actor.memberRole === "owner";
+  return true;
+}
+
 export interface GustavoContentProfile {
   role?: string | null;
   /** Membership explícita em `gustavo_content_members`. Nunca inferir por nome. */

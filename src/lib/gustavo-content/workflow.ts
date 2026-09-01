@@ -8,6 +8,19 @@ import type { GustavoMemberRole } from "@/lib/gustavo-content/access";
 export type OpinionStatus = "validated" | "needs_gustavo";
 export type ApprovalKind = "gustavo" | "admin_exception";
 
+export function canRunEditorialAction(
+  action: "analyze" | "generate",
+  status: GustavoContentStatus
+): boolean {
+  const editable: GustavoContentStatus[] = [
+    "radar",
+    "sugestao",
+    "aguardando_opiniao",
+    "rascunho",
+  ];
+  return editable.includes(status) && (action === "analyze" || action === "generate");
+}
+
 export function canGenerateDraft(input: { opinionStatus: OpinionStatus | null | undefined }): boolean {
   return input.opinionStatus === "validated";
 }

@@ -28,6 +28,7 @@ export interface SourceContext {
   companies: string[];
   dates: string[];
   sourceUrls: string[];
+  articleText?: string | null;
   extractionWarning?: string | null;
   historyAlert?: string | null;
 }

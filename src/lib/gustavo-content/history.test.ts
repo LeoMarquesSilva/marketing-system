@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { assessEditorialHistory } from "@/lib/gustavo-content/history";
+import {
+  assessEditorialHistory,
+  buildEditorialHistoryPrompt,
+} from "@/lib/gustavo-content/history";
 
 describe("assessEditorialHistory", () => {
   it("marca risco alto quando o mesmo tema/tese já foi usado pelo mesmo ângulo", () => {
@@ -43,5 +46,33 @@ describe("assessEditorialHistory", () => {
       ]
     );
     expect(result.similarityRisk).toBe("low");
+  });
+
+  it("entrega ao redator o ângulo, hook e trecho concretos do histórico semelhante", () => {
+    const assessment = assessEditorialHistory(
+      {
+        title: "GPA renegocia dívida com credores",
+        thesisId: "tese-1",
+        angleType: "strategy",
+        companies: ["GPA"],
+      },
+      [
+        {
+          title: "GPA avança na renegociação da dívida",
+          thesis_id: "tese-1",
+          selected_angle: { type: "strategy", title: "Negociar antes do caixa acabar" },
+          source_context: { companies: ["GPA"] },
+          linkedin_post: "A reestruturação não começa no protocolo. Ela começa na negociação.",
+          alternative_hooks: ["Esperar todos os credores concordarem pode custar caro."],
+          created_at: "2026-08-01T00:00:00.000Z",
+        },
+      ]
+    );
+
+    const prompt = buildEditorialHistoryPrompt(assessment);
+
+    expect(prompt).toContain("Negociar antes do caixa acabar");
+    expect(prompt).toContain("Esperar todos os credores concordarem");
+    expect(prompt).toContain("A reestruturação não começa no protocolo");
   });
 });

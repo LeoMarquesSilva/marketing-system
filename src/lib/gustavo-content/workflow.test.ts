@@ -3,9 +3,20 @@ import { GUSTAVO_OWNER_USER_ID } from "@/lib/gustavo-content/constants";
 import {
   approvalKindForActor,
   canGenerateDraft,
+  canRunEditorialAction,
   nextStatusAfterThesisMatch,
   resolveOutputEdit,
 } from "@/lib/gustavo-content/workflow";
+
+describe("canRunEditorialAction", () => {
+  it("não permite reanalisar ou regenerar conteúdo depois da aprovação", () => {
+    expect(canRunEditorialAction("analyze", "aprovado")).toBe(false);
+    expect(canRunEditorialAction("generate", "aguardando_aprovacao")).toBe(false);
+    expect(canRunEditorialAction("generate", "publicado")).toBe(false);
+    expect(canRunEditorialAction("analyze", "rascunho")).toBe(true);
+    expect(canRunEditorialAction("generate", "rascunho")).toBe(true);
+  });
+});
 
 describe("nextStatusAfterThesisMatch", () => {
   it("sem tese validada entra em aguardando opinião e não gera rascunho", () => {
