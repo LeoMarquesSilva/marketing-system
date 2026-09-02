@@ -28,7 +28,7 @@ export interface EditorialBrief {
   businessDecision: string;
   supportingFacts: string[];
   practicalConsequence: string;
-  limits?: string[];
+  limits?: string[] | null;
 }
 
 export interface AngleAlignment {

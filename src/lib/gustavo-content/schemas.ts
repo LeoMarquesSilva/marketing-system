@@ -59,7 +59,9 @@ export const contentObjectSchema = z.object({
     businessDecision: z.string(),
     supportingFacts: z.array(z.string()).max(3),
     practicalConsequence: z.string(),
-    limits: z.array(z.string()).optional(),
+    // OpenAI structured outputs (strict) exige toda propriedade em `required`;
+    // opcionalidade se expressa com nullable, não com `.optional()`.
+    limits: z.array(z.string()).nullable(),
   }),
   angleAlignment: z.object({
     aligned: z.boolean(),
@@ -68,8 +70,8 @@ export const contentObjectSchema = z.object({
   linkedin: z.object({
     hook: z.string(),
     body: z.array(z.string()).min(1).max(6),
-    closing: z.string().optional(),
-    hashtags: z.array(z.string()).max(3).optional(),
+    closing: z.string().nullable(),
+    hashtags: z.array(z.string()).max(3).nullable(),
   }),
   alternativeHooks: z.array(z.string()).length(3),
   reel: z.object({
@@ -85,7 +87,7 @@ export const complianceObjectSchema = z.object({
   safe: z.boolean(),
   flags: z.array(z.enum(COMPLIANCE_FLAGS)),
   requiresHumanReview: z.boolean(),
-  notes: z.array(z.string()).optional(),
+  notes: z.array(z.string()).nullable(),
 });
 
 export const editorialReviewObjectSchema = z.object({
