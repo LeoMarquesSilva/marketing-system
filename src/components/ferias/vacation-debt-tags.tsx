@@ -10,8 +10,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { scheduledExceedsBalanceWarning } from "@/lib/ferias/schedule-balance";
-import type { EmployeeBalance } from "@/lib/ferias/types";
+import { formatISODateBR } from "@/lib/ferias/balance";
+import {
+  scheduledExceedsBalanceWarning,
+  simulateScheduledShortfall,
+} from "@/lib/ferias/schedule-balance";
+import type { EmployeeBalance, VacationLeave } from "@/lib/ferias/types";
 import { cn } from "@/lib/utils";
 
 function daysLabel(count: number, singular: string, plural: string): string {
@@ -25,25 +29,75 @@ export function scheduledWhileInDebtWarning(
   return `Já deve ${daysLabel(balance.unallocatedDays, "dia", "dias")} e ainda tem ${daysLabel(balance.scheduledDays, "dia programado", "dias programados")}. Quando o gozo começar, a dívida aumenta.`;
 }
 
+export function splitScheduledLeaves(leaves: VacationLeave[]): {
+  programming: VacationLeave[];
+  programmingDays: number;
+  nextRecess: VacationLeave | null;
+} {
+  const programming = leaves.filter((leave) => leave.kind !== "recesso");
+  const nextRecess = leaves.find((leave) => leave.kind === "recesso") ?? null;
+  return {
+    programming,
+    programmingDays: programming.reduce((sum, leave) => sum + leave.days, 0),
+    nextRecess,
+  };
+}
+
+export function nextRecessDebtWarning(
+  balance: Pick<EmployeeBalance, "unallocatedDays" | "pendingDays" | "scheduledLeaves">,
+  recess: VacationLeave,
+  admissionDate?: string,
+  referenceDate?: string
+): { warning: string; title: string; tone: "debt" | "shortfall" } | null {
+  if (balance.unallocatedDays > 0) {
+    return {
+      warning: `Já deve ${daysLabel(balance.unallocatedDays, "dia", "dias")} e o próximo recesso é de ${daysLabel(recess.days, "dia", "dias")} a partir de ${formatISODateBR(recess.start_date)}. Quando o recesso começar, a dívida aumenta.`,
+      title: "Atenção",
+      tone: "debt",
+    };
+  }
+  if (!admissionDate) return null;
+  const shortfall = simulateScheduledShortfall({
+    pendingDays: balance.pendingDays,
+    admissionDate,
+    leaves: balance.scheduledLeaves.length > 0 ? balance.scheduledLeaves : [recess],
+    referenceDate,
+  });
+  if (shortfall <= 0) return null;
+  return {
+    warning: `Tem ${daysLabel(Math.max(0, balance.pendingDays), "dia", "dias")} de saldo e o recesso é de ${daysLabel(recess.days, "dia", "dias")} a partir de ${formatISODateBR(recess.start_date)}. Quando o gozo começar, ficará devendo ${daysLabel(shortfall, "dia", "dias")}.`,
+    title: "Saldo insuficiente",
+    tone: "shortfall",
+  };
+}
+
 export function scheduledSituationMeta(
   balance: EmployeeBalance,
   admissionDate?: string,
-  referenceDate?: string
+  referenceDate?: string,
+  leaves?: VacationLeave[]
 ): {
   warning: string | null;
   title: string | null;
   tone: "debt" | "shortfall" | null;
 } {
-  const debtWarning = scheduledWhileInDebtWarning(balance);
+  const targetLeaves = leaves ?? balance.scheduledLeaves;
+  const scheduledDays = leaves
+    ? leaves.reduce((sum, leave) => sum + leave.days, 0)
+    : balance.scheduledDays;
+  const debtWarning = scheduledWhileInDebtWarning({
+    unallocatedDays: balance.unallocatedDays,
+    scheduledDays,
+  });
   if (debtWarning) {
     return { warning: debtWarning, title: "Atenção", tone: "debt" };
   }
   const shortfallWarning = scheduledExceedsBalanceWarning({
     pendingDays: balance.pendingDays,
     unallocatedDays: balance.unallocatedDays,
-    scheduledDays: balance.scheduledDays,
+    scheduledDays,
     admissionDate,
-    scheduledLeaves: balance.scheduledLeaves,
+    scheduledLeaves: targetLeaves,
     referenceDate,
   });
   if (shortfallWarning) {
@@ -76,7 +130,57 @@ function SituationDaysCell({
   );
 }
 
-/** Colunas da lista no lugar do antigo agrupamento "Situação". */
+function WarningCellValue({
+  value,
+  warning,
+  title,
+  tone,
+  detail,
+}: {
+  value: ReactNode;
+  warning: string | null;
+  title: string | null;
+  tone: "debt" | "shortfall" | null;
+  detail?: string | null;
+}) {
+  if (!warning && !detail) return <>{value}</>;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className="inline-flex cursor-help items-center justify-center gap-1"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {tone === "shortfall" ? (
+            <CalendarClock className="size-3" aria-hidden />
+          ) : tone === "debt" ? (
+            <AlertTriangle className="size-3" aria-hidden />
+          ) : null}
+          {value}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-64">
+        <p className="text-sm font-semibold leading-snug text-[#b7f0f1]">
+          {title ?? "Detalhes"}
+        </p>
+        {detail ? (
+          <p className="mt-1.5 text-xs leading-relaxed text-white/80">{detail}</p>
+        ) : null}
+        {warning ? (
+          <p className="mt-1.5 text-xs leading-relaxed text-white/80">{warning}</p>
+        ) : null}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function warningToneClass(tone: "debt" | "shortfall" | null): string {
+  if (tone === "debt") return "font-semibold text-amber-900";
+  if (tone === "shortfall") return "font-semibold text-orange-950";
+  return "font-semibold text-sky-700";
+}
+
+/** Colunas da lista: situação, programação de férias e próximo recesso. */
 export function VacationSituationCells({
   balance,
   admissionDate,
@@ -86,13 +190,18 @@ export function VacationSituationCells({
   admissionDate?: string;
   referenceDate?: string;
 }) {
-  const scheduled = scheduledSituationMeta(balance, admissionDate, referenceDate);
-  const scheduledClass =
-    scheduled.tone === "debt"
-      ? "font-semibold text-amber-900"
-      : scheduled.tone === "shortfall"
-        ? "font-semibold text-orange-950"
-        : "font-semibold text-sky-700";
+  const { programming, programmingDays, nextRecess } = splitScheduledLeaves(
+    balance.scheduledLeaves
+  );
+  const scheduled = scheduledSituationMeta(
+    balance,
+    admissionDate,
+    referenceDate,
+    programming
+  );
+  const recessMeta = nextRecess
+    ? nextRecessDebtWarning(balance, nextRecess, admissionDate, referenceDate)
+    : null;
 
   return (
     <TooltipProvider delayDuration={150}>
@@ -110,40 +219,41 @@ export function VacationSituationCells({
       </TableCell>
       <SituationDaysCell
         column="programados"
-        value={balance.scheduledDays}
-        className={scheduledClass}
+        value={programmingDays}
+        className={warningToneClass(scheduled.tone)}
       >
-        {balance.scheduledDays <= 0 ? (
-          "—"
-        ) : scheduled.warning ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span
-                className="inline-flex cursor-help items-center justify-center gap-1"
-                title={`${scheduled.title}. ${scheduled.warning}`}
-                onClick={(event) => event.stopPropagation()}
-              >
-                {scheduled.tone === "shortfall" ? (
-                  <CalendarClock className="size-3" aria-hidden />
-                ) : (
-                  <AlertTriangle className="size-3" aria-hidden />
-                )}
-                {balance.scheduledDays}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-64">
-              <p className="text-sm font-semibold leading-snug text-[#b7f0f1]">
-                {scheduled.title}
-              </p>
-              <p className="mt-1.5 text-xs leading-relaxed text-white/80">
-                {scheduled.warning}
-              </p>
-            </TooltipContent>
-          </Tooltip>
+        {programmingDays <= 0 ? (
+          "-"
         ) : (
-          balance.scheduledDays
+          <WarningCellValue
+            value={programmingDays}
+            warning={scheduled.warning}
+            title={scheduled.title}
+            tone={scheduled.tone}
+          />
         )}
       </SituationDaysCell>
+      <TableCell
+        data-situation="proximo_recesso"
+        className={cn(
+          "text-center text-sm tabular-nums",
+          nextRecess
+            ? warningToneClass(recessMeta?.tone ?? null)
+            : "text-muted-foreground"
+        )}
+      >
+        {nextRecess ? (
+          <WarningCellValue
+            value={nextRecess.days}
+            warning={recessMeta?.warning ?? null}
+            title={recessMeta?.title ?? "Próximo recesso"}
+            tone={recessMeta?.tone ?? null}
+            detail={`${formatISODateBR(nextRecess.start_date)} a ${formatISODateBR(nextRecess.end_date)}`}
+          />
+        ) : (
+          "-"
+        )}
+      </TableCell>
     </TooltipProvider>
   );
 }
@@ -267,7 +377,6 @@ export function VacationDebtTags({
               <TooltipTrigger asChild>
                 <Badge
                   variant="outline"
-                  title={`${tag.warningTitle}. ${tag.warning}`}
                   className={cn("cursor-help", tag.className)}
                   onClick={(event) => event.stopPropagation()}
                 >

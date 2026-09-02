@@ -3,7 +3,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { EmployeeAvatar } from "@/components/ferias/employee-avatar";
 import { VacationStatusBadge } from "@/components/ferias/status-badge";
 import {
+  nextRecessDebtWarning,
   scheduledWhileInDebtWarning,
+  splitScheduledLeaves,
   VacationDebtTags,
   VacationSituationCells,
 } from "@/components/ferias/vacation-debt-tags";
@@ -85,7 +87,7 @@ describe("VacationDebtTags", () => {
       />
     );
     expect(markup).toContain("4 dias programados");
-    expect(markup).toContain("Já deve 2 dias e ainda tem 4 dias programados");
+    expect(markup).not.toMatch(/title="[^"]*Já deve/);
   });
 
   it("avisa de outra forma quando o programado passa do saldo atual", () => {
@@ -115,8 +117,7 @@ describe("VacationDebtTags", () => {
       />
     );
     expect(markup).toContain("5 dias programados");
-    expect(markup).toContain("Saldo insuficiente");
-    expect(markup).toContain("Tem 1 dia de saldo e 5 dias programados");
+    expect(markup).not.toMatch(/title="[^"]*Saldo insuficiente/);
     expect(markup).not.toContain("Já deve");
   });
 
@@ -131,7 +132,7 @@ describe("VacationDebtTags", () => {
     expect(markup).not.toContain("4 programados");
   });
 
-  it("na lista mostra situação de férias e programação", () => {
+  it("na lista mostra situação, programação e próximo recesso", () => {
     const markup = renderToStaticMarkup(
       <table>
         <tbody>
@@ -142,7 +143,27 @@ describe("VacationDebtTags", () => {
                 unallocatedDays: 2,
                 overdueDays: 10,
                 dueSoonDays: 4,
-                scheduledDays: 5,
+                scheduledDays: 22,
+                scheduledLeaves: [
+                  {
+                    id: "ferias",
+                    employee_id: "x",
+                    start_date: "2026-10-10",
+                    end_date: "2026-10-14",
+                    days: 5,
+                    kind: "ferias",
+                    notes: null,
+                  },
+                  {
+                    id: "recesso",
+                    employee_id: "x",
+                    start_date: "2026-12-22",
+                    end_date: "2027-01-07",
+                    days: 17,
+                    kind: "recesso",
+                    notes: null,
+                  },
+                ],
                 onLeaveNow: {
                   id: "now",
                   employee_id: "x",
@@ -160,12 +181,62 @@ describe("VacationDebtTags", () => {
     );
     expect(markup).toContain('data-situation="em_ferias"');
     expect(markup).toContain('data-situation="programados"');
+    expect(markup).toContain('data-situation="proximo_recesso"');
     expect(markup).toContain("Em férias");
     expect(markup).toMatch(/data-situation="programados"[^>]*>[\s\S]*5/);
+    expect(markup).toMatch(/data-situation="proximo_recesso"[^>]*>[\s\S]*17/);
+    expect(markup).not.toContain("22/12/2026");
+    expect(markup).not.toMatch(/title="[^"]*Já deve/);
+    expect(
+      nextRecessDebtWarning(
+        { unallocatedDays: 2, pendingDays: -2, scheduledLeaves: [] },
+        {
+          id: "recesso",
+          employee_id: "x",
+          start_date: "2026-12-22",
+          end_date: "2027-01-07",
+          days: 17,
+          kind: "recesso",
+          notes: null,
+        }
+      )?.warning
+    ).toContain("22/12/2026");
     expect(markup).not.toContain('data-situation="deve"');
     expect(markup).not.toContain('data-situation="vencidas"');
     expect(markup).not.toContain('data-situation="a_vencer"');
     expect(markup).not.toContain('data-situation="positivo"');
+  });
+
+  it("não mistura recesso na coluna de programação", () => {
+    const split = splitScheduledLeaves([
+      {
+        id: "ferias",
+        employee_id: "x",
+        start_date: "2026-10-10",
+        end_date: "2026-10-14",
+        days: 5,
+        kind: "ferias",
+        notes: null,
+      },
+      {
+        id: "recesso",
+        employee_id: "x",
+        start_date: "2026-12-22",
+        end_date: "2027-01-07",
+        days: 17,
+        kind: "recesso",
+        notes: null,
+      },
+    ]);
+    expect(split.programmingDays).toBe(5);
+    expect(split.nextRecess?.days).toBe(17);
+
+    expect(
+      nextRecessDebtWarning(
+        { unallocatedDays: 2, pendingDays: -2, scheduledLeaves: [] },
+        split.nextRecess!
+      )?.tone
+    ).toBe("debt");
   });
 
   it("mostra traço na situação quando não está de férias", () => {

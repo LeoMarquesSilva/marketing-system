@@ -642,19 +642,19 @@ export function FeriasClient({
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[32%]">Colaborador</TableHead>
-                  <TableHead className="w-[12%]">Admissão</TableHead>
-                  <TableHead className="w-[11%] text-right">Adquiridos</TableHead>
-                  <TableHead className="w-[11%] text-right">Gozados</TableHead>
-                  <TableHead className="w-[10%] text-right">Saldo</TableHead>
-                  <TableHead className="w-[13%] text-center" title="Se a pessoa está de férias agora">
+                  <TableHead className="w-[26%]">Colaborador</TableHead>
+                  <TableHead className="w-[11%]">Admissão</TableHead>
+                  <TableHead className="w-[10%] text-right">Adquiridos</TableHead>
+                  <TableHead className="w-[10%] text-right">Gozados</TableHead>
+                  <TableHead className="w-[9%] text-right">Saldo</TableHead>
+                  <TableHead className="w-[12%] text-center">
                     Situação
                   </TableHead>
-                  <TableHead
-                    className="w-[11%] text-center"
-                    title="Dias já lançados com início no futuro"
-                  >
+                  <TableHead className="w-[10%] text-center">
                     Programação
+                  </TableHead>
+                  <TableHead className="w-[12%] text-center">
+                    Próximo recesso
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -662,7 +662,7 @@ export function FeriasClient({
                 {filtered.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={8}
                       className="py-12 text-center text-sm text-muted-foreground"
                     >
                       {employees.length === 0
