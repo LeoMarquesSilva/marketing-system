@@ -19,7 +19,7 @@ const FUNCOES: {
   {
     href: "/operacoes-legais/vistagem",
     title: "Vistagem e agendamento",
-    blurb: "Publicações, prazos, motor de datas e agendamento no VIOS — o que substitui o Power Apps.",
+    blurb: "Filas reais: captura Kurrier, match, jurídico, prazos e jobs VIOS (dry-run até o connector).",
     skill: "vios-vistagem-agendamento",
     icon: CalendarClock,
   },

@@ -14,7 +14,17 @@ Módulo em `/operacoes-legais`. **Só quem tem `users.department = Operações L
 
 Código: `src/lib/operacoes-legais/`, `src/app/operacoes-legais/`, `src/components/operacoes-legais/`.
 
-O app `vistagem-bp` (Next + Supabase de captura/matching) entra neste módulo — não duplicar regra de negócio fora das skills.
+## Vistagem (já no módulo)
+
+Telas em `/operacoes-legais/vistagem` (controladoria, jurídico, prazos, catálogo, jobs). Dados via **service role** depois de `requireOperacoesLegaisAccess` — não copiar `profiles`/`app_role` do vistagem-bp.
+
+- Libs: `src/lib/operacoes-legais/vistagem/`
+- UI: `src/components/operacoes-legais/vistagem/`
+- APIs: `/api/operacoes-legais/capture/run`, `/api/operacoes-legais/publications/[id]`, `/api/operacoes-legais/schedule/process`
+- Schema: `supabase/migrations/20260902180000_vistagem.sql` (domínio + seed). **Não aplicar no remoto sem confirmação.**
+- Env: `VIOS_DRY_RUN` (default true). Agendamento real ainda é dry-run até o connector browser.
+
+Não duplicar regra de negócio fora das skills `vios-*`.
 
 ## Skills deste módulo
 

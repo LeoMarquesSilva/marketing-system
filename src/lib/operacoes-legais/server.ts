@@ -18,6 +18,17 @@ export class OperacoesLegaisHttpError extends Error {
   }
 }
 
+export function toOperacoesLegaisApiError(error: unknown): {
+  status: number;
+  body: { error: string; code: string };
+} {
+  if (error instanceof OperacoesLegaisHttpError) {
+    return { status: error.status, body: { error: error.message, code: error.code } };
+  }
+  const message = error instanceof Error ? error.message : "Ocorreu um erro inesperado.";
+  return { status: 500, body: { error: message, code: "INTERNAL_ERROR" } };
+}
+
 export async function requireOperacoesLegaisAccess(): Promise<OperacoesLegaisAccessProfile & { id: string }> {
   const ssr = await createClient();
   const {
