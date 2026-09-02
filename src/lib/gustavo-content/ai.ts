@@ -184,6 +184,9 @@ export async function generateEditorialContent(input: {
       .filter(Boolean)
       .join("\n\n"),
     temperature: 0.55,
+    // O objeto ficou mais pesado (brief + linkedin estruturado + reel + 3 hooks);
+    // um teto explícito evita truncamento silencioso da saída estruturada.
+    maxOutputTokens: 4000,
   });
 
   return {

@@ -68,6 +68,17 @@ function formatDateYMD(d: Date): string {
 function generationFailed(err: unknown, fallback: string): never {
   if (err instanceof GustavoContentError) throw err;
   const message = err instanceof Error ? err.message : "";
+  const finishReason = (err as { finishReason?: string } | undefined)?.finishReason;
+  const cause = err instanceof Error ? err.cause : undefined;
+  const causeMessage = cause instanceof Error ? cause.message : undefined;
+  // Diagnóstico: a mensagem ao usuário é genérica, então registramos o erro real do
+  // SDK/OpenAI aqui — sem incluir o texto gerado, só metadados de erro.
+  console.error("[gustavo-content] geração falhou", {
+    name: err instanceof Error ? err.name : typeof err,
+    message,
+    finishReason,
+    causeMessage,
+  });
   if (/context|token|too large|maximum/i.test(message)) {
     throw new GustavoContentError(
       "O material desta pauta é longo demais para gerar agora. Tente de novo em instantes.",
