@@ -23,12 +23,41 @@ describe("nextStatusAfterThesisMatch", () => {
     expect(nextStatusAfterThesisMatch({ opinionStatus: "needs_gustavo" })).toBe(
       "aguardando_opiniao"
     );
-    expect(canGenerateDraft({ opinionStatus: "needs_gustavo" })).toBe(false);
+    expect(
+      canGenerateDraft({ opinionStatus: "needs_gustavo", hasSelectedAngle: true })
+    ).toBe(false);
   });
 
   it("com tese validada pode gerar rascunho", () => {
     expect(nextStatusAfterThesisMatch({ opinionStatus: "validated" })).toBe("rascunho");
-    expect(canGenerateDraft({ opinionStatus: "validated" })).toBe(true);
+    expect(
+      canGenerateDraft({ opinionStatus: "validated", hasSelectedAngle: true })
+    ).toBe(true);
+  });
+});
+
+describe("canGenerateDraft", () => {
+  it("exige uma leitura selecionada mesmo com opinião validada", () => {
+    expect(
+      canGenerateDraft({ opinionStatus: "validated", hasSelectedAngle: false })
+    ).toBe(false);
+  });
+
+  it("modo factual libera geração sem opinião validada, desde que haja leitura escolhida", () => {
+    expect(
+      canGenerateDraft({
+        opinionStatus: "needs_gustavo",
+        hasSelectedAngle: true,
+        mode: "factual",
+      })
+    ).toBe(true);
+    expect(
+      canGenerateDraft({
+        opinionStatus: "needs_gustavo",
+        hasSelectedAngle: false,
+        mode: "factual",
+      })
+    ).toBe(false);
   });
 });
 

@@ -22,6 +22,26 @@ export interface RecommendedChannels {
   instagramReel: RecommendedChannel;
 }
 
+export interface EditorialBrief {
+  centralThesis: string;
+  icp: string;
+  businessDecision: string;
+  supportingFacts: string[];
+  practicalConsequence: string;
+  limits?: string[];
+}
+
+export interface AngleAlignment {
+  aligned: boolean;
+  note: string;
+}
+
+export interface EditorialReview {
+  passesReview: boolean;
+  issues: string[];
+  notes: string;
+}
+
 export interface SourceContext {
   facts: string[];
   numbers: string[];
@@ -31,6 +51,9 @@ export interface SourceContext {
   articleText?: string | null;
   extractionWarning?: string | null;
   historyAlert?: string | null;
+  editorialBrief?: EditorialBrief | null;
+  angleAlignment?: AngleAlignment | null;
+  editorialReview?: EditorialReview | null;
 }
 
 export interface GustavoContentItem {

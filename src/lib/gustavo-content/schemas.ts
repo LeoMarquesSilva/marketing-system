@@ -53,8 +53,25 @@ export const anglesObjectSchema = z.object({
 });
 
 export const contentObjectSchema = z.object({
-  linkedinPost: z.string(),
-  alternativeHooks: z.array(z.string()).max(3),
+  editorialBrief: z.object({
+    centralThesis: z.string(),
+    icp: z.string(),
+    businessDecision: z.string(),
+    supportingFacts: z.array(z.string()).max(3),
+    practicalConsequence: z.string(),
+    limits: z.array(z.string()).optional(),
+  }),
+  angleAlignment: z.object({
+    aligned: z.boolean(),
+    note: z.string(),
+  }),
+  linkedin: z.object({
+    hook: z.string(),
+    body: z.array(z.string()).min(1).max(6),
+    closing: z.string().optional(),
+    hashtags: z.array(z.string()).max(3).optional(),
+  }),
+  alternativeHooks: z.array(z.string()).length(3),
   reel: z.object({
     duration: z.string(),
     hook: z.string(),
@@ -69,4 +86,10 @@ export const complianceObjectSchema = z.object({
   flags: z.array(z.enum(COMPLIANCE_FLAGS)),
   requiresHumanReview: z.boolean(),
   notes: z.array(z.string()).optional(),
+});
+
+export const editorialReviewObjectSchema = z.object({
+  passesReview: z.boolean(),
+  issues: z.array(z.string()),
+  notes: z.string(),
 });

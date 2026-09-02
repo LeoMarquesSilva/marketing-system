@@ -22,8 +22,21 @@ export const GUSTAVO_CONTENT_SOURCES = [
 
 export type GustavoContentSource = (typeof GUSTAVO_CONTENT_SOURCES)[number];
 
+/** @deprecated Use as constantes por etapa abaixo. Mantida como fallback comum. */
 export const GUSTAVO_CONTENT_MODEL =
   process.env.GUSTAVO_CONTENT_MODEL ?? "gpt-4.1-mini";
+
+/** Modelo usado na triagem/score e na geração de ângulos. */
+export const GUSTAVO_CONTENT_MODEL_SCORE =
+  process.env.GUSTAVO_CONTENT_MODEL_SCORE ?? GUSTAVO_CONTENT_MODEL;
+
+/** Modelo usado na redação do LinkedIn e do Reel. */
+export const GUSTAVO_CONTENT_MODEL_WRITING =
+  process.env.GUSTAVO_CONTENT_MODEL_WRITING ?? GUSTAVO_CONTENT_MODEL;
+
+/** Modelo usado na revisão editorial e no compliance. */
+export const GUSTAVO_CONTENT_MODEL_REVIEW =
+  process.env.GUSTAVO_CONTENT_MODEL_REVIEW ?? GUSTAVO_CONTENT_MODEL;
 
 export const GUSTAVO_WEEKLY_LINKEDIN_TARGET = 2;
 export const GUSTAVO_WEEKLY_REEL_TARGET = 1;

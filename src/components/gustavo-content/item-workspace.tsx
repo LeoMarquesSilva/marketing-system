@@ -23,6 +23,7 @@ import { SCORE_CRITERIA } from "@/lib/gustavo-content/score";
 import { COMPLIANCE_FLAG_LABELS } from "@/lib/gustavo-content/compliance";
 import { GUSTAVO_CONTENT_STATUS_LABELS } from "@/lib/gustavo-content/constants";
 import { parseReelScript } from "@/lib/gustavo-content/planner";
+import { applyAlternativeHook } from "@/lib/gustavo-content/text";
 import { ANGLE_LABELS, type GustavoContentItem } from "@/lib/gustavo-content/types";
 import { cn } from "@/lib/utils";
 import {
@@ -50,6 +51,8 @@ export function ItemWorkspace({
   const [linkedinUrl, setLinkedinUrl] = useState("");
   const [instagramUrl, setInstagramUrl] = useState("");
   const [copied, setCopied] = useState(false);
+  const [previousLinkedin, setPreviousLinkedin] = useState<string | null>(null);
+  const [lastGenerateMode, setLastGenerateMode] = useState<"opinion" | "factual" | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -95,6 +98,7 @@ export function ItemWorkspace({
     setItem(next);
     setLinkedin(next.linkedin_post ?? "");
     setReel(next.reel_script ?? "");
+    setPreviousLinkedin(null);
     if (Array.isArray(next.gustavo_answers) && next.gustavo_answers.length > 0) {
       setAnswers(next.gustavo_answers);
     }
@@ -112,21 +116,46 @@ export function ItemWorkspace({
     }
   }
 
-  async function submitVision(skip: boolean) {
-    setBusy(skip ? "skip" : "answer");
+  async function generate(mode?: "factual") {
+    setLastGenerateMode(mode ?? "opinion");
+    setBusy("generate");
     setError(null);
     try {
-      applyItem(await patchItem("answer", { answers, skip }));
+      applyItem(await patchItem("generate", mode ? { mode } : undefined));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível gerar o rascunho.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Registra uma visão real do Gustavo e gera o conteúdo com base nela. */
+  async function addVisionAndGenerate() {
+    setBusy("answer");
+    setError(null);
+    try {
+      applyItem(await patchItem("answer", { answers, skip: false }));
+      setLastGenerateMode("opinion");
       setBusy("generate");
       applyItem(await patchItem("generate"));
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : skip
-            ? "Não foi possível seguir sem registrar a visão."
-            : "Não foi possível usar as respostas."
-      );
+      setError(err instanceof Error ? err.message : "Não foi possível usar as respostas.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Segue sem visão registrada (mas com perguntas já geradas) e pede a análise factual. */
+  async function skipVisionAndGenerateFactual() {
+    setBusy("skip");
+    setError(null);
+    try {
+      applyItem(await patchItem("answer", { answers, skip: true }));
+      setLastGenerateMode("factual");
+      setBusy("generate");
+      applyItem(await patchItem("generate", { mode: "factual" }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível gerar a análise factual.");
     } finally {
       setBusy(null);
     }
@@ -141,6 +170,13 @@ export function ItemWorkspace({
   const linkedinCharacters = linkedin.length;
   const canReanalyze = ["radar", "sugestao", "aguardando_opiniao", "rascunho"].includes(item.status);
   const canReject = !["publicado", "arquivado"].includes(item.status);
+  const hasAngles = (item.angles?.length ?? 0) > 0;
+  const hasSelectedAngle = Boolean(item.selected_angle);
+  const hasQuestions = (item.gustavo_questions?.length ?? 0) > 0;
+  const hasDraft = Boolean(item.linkedin_post);
+  const editorialBrief = item.source_context?.editorialBrief ?? null;
+  const angleAlignment = item.source_context?.angleAlignment ?? null;
+  const editorialReview = item.source_context?.editorialReview ?? null;
 
   function updateReelField(
     field: "duration" | "hook" | "talkingPoints" | "closing" | "recordingNote",
@@ -188,8 +224,8 @@ export function ItemWorkspace({
           busy={busy}
           error={error}
           onRetry={
-            item.opinion_status === "validated" && !item.linkedin_post
-              ? () => void act("generate")
+            hasSelectedAngle && (item.opinion_status === "validated" || lastGenerateMode === "factual")
+              ? () => void generate(lastGenerateMode === "factual" ? "factual" : undefined)
               : undefined
           }
         />
@@ -297,34 +333,58 @@ export function ItemWorkspace({
               </p>
             </section>
           )}
-          {item.angles && item.angles.length > 0 && (
+          {hasAngles && (
             <section className="space-y-3 rounded-[1.5rem] bg-white/80 p-5 sm:p-6">
-              <p className="editorial-kicker font-mono text-[11px] uppercase text-[#347796]">
-                Escolha editorial · três leituras possíveis
-              </p>
-              {item.angles.map((angle, index) => {
+              <div className="flex items-center justify-between gap-2">
+                <p className="editorial-kicker font-mono text-[11px] uppercase text-[#347796]">
+                  Escolha editorial · três leituras possíveis
+                </p>
+                {dirty && (
+                  <span className="text-xs text-amber-800">Salve as edições para trocar a leitura</span>
+                )}
+              </div>
+              {item.angles!.map((angle, index) => {
                 const selected = item.selected_angle?.type === angle.type;
+                const suggested = !hasSelectedAngle && index === 0;
                 return (
                   <button
                     key={angle.type}
                     type="button"
                     onClick={() => act("select_angle", { angleIndex: index })}
+                    disabled={!!busy || dirty}
                     className={cn(
-                      "group w-full rounded-xl border-l-2 px-4 py-4 text-left transition-all",
+                      "group w-full rounded-xl border-l-2 px-4 py-4 text-left transition-all disabled:cursor-not-allowed disabled:opacity-60",
                       selected
                         ? "border-[#347796] bg-[#e4f5f5] shadow-[0_10px_32px_rgba(4,32,47,0.055)]"
-                        : "border-transparent bg-[#04202f]/[0.025] hover:bg-[#04202f]/[0.05]"
+                        : suggested
+                          ? "border-dashed border-[#347796]/40 bg-[#04202f]/[0.025] hover:bg-[#04202f]/[0.05]"
+                          : "border-transparent bg-[#04202f]/[0.025] hover:bg-[#04202f]/[0.05]"
                     )}
                   >
-                    <p className="editorial-kicker font-mono text-[10px] uppercase text-[#347796]">
-                      {ANGLE_LABELS[angle.type]}
-                    </p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="editorial-kicker font-mono text-[10px] uppercase text-[#347796]">
+                        {ANGLE_LABELS[angle.type]}
+                      </p>
+                      {selected && (
+                        <span className="rounded-full bg-[#347796] px-2 py-0.5 text-[10px] font-semibold uppercase text-white">
+                          Selecionada
+                        </span>
+                      )}
+                      {suggested && (
+                        <span className="rounded-full border border-[#347796]/40 px-2 py-0.5 text-[10px] font-medium uppercase text-[#347796]">
+                          Sugestão — clique para confirmar
+                        </span>
+                      )}
+                    </div>
                     <p className="mt-1 font-semibold text-[#04202f]">{angle.title}</p>
                     <p className="mt-1 text-sm text-muted-foreground">{angle.thesis}</p>
                     <p className="mt-2 text-xs text-[#04202f]/70">{angle.whyItMatters}</p>
                   </button>
                 );
               })}
+              {!hasSelectedAngle && (
+                <p className="text-sm text-[#526b75]">Selecione uma leitura para continuar.</p>
+              )}
             </section>
           )}
 
@@ -340,95 +400,123 @@ export function ItemWorkspace({
             <p className="mt-3 text-xs text-white/45">
               {item.opinion_status === "validated" ? "Status: validada" : "A IA não inventa opinião."}
             </p>
+            {editorialBrief?.centralThesis && (
+              <p className="mt-3 border-t border-white/10 pt-3 text-xs leading-5 text-white/60">
+                Argumento central do texto gerado: {editorialBrief.centralThesis}
+              </p>
+            )}
           </section>
 
-          {item.status === "aguardando_opiniao" &&
-            item.opinion_status !== "validated" &&
-            (item.gustavo_questions?.length ?? 0) > 0 && (
-            <section className="rounded-2xl border border-[#04202f]/15 bg-white p-5">
-              <h4 className="text-lg font-semibold text-[#04202f]">Precisamos da sua visão</h4>
-              <p className="mt-1 text-sm text-muted-foreground">
-                A IA propositalmente não gerou opinião. Responda para liberar o rascunho, ou
-                siga só com o ângulo já escolhido.
-              </p>
-              <div className="mt-4 space-y-3">
-                {item.gustavo_questions?.map((question, index) => (
-                  <div key={question}>
-                    <p className="text-sm font-medium text-[#04202f]">{question}</p>
-                    <Textarea
-                      className="mt-1"
-                      rows={2}
-                      value={answers[index] ?? ""}
-                      disabled={!!busy}
-                      onChange={(event) => {
-                        const next = [...answers];
-                        next[index] = event.target.value;
-                        setAnswers(next);
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Button onClick={() => void submitVision(false)} disabled={!!busy}>
-                  {busy === "answer" || busy === "generate" ? (
-                    <>
-                      <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
-                      {busy === "answer" ? "Salvando respostas…" : "Gerando rascunho…"}
-                    </>
-                  ) : (
-                    "Usar minhas respostas"
-                  )}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => void submitVision(true)}
-                  disabled={!!busy}
-                >
-                  {busy === "skip" ? "Seguindo sem visão…" : "Seguir sem registrar visão"}
-                </Button>
-              </div>
-              <p className="mt-3 text-xs leading-5 text-[#6f858d]">
-                Sem uma visão escrita, o rascunho usa só o ângulo escolhido e a estratégia. A IA
-                não inventa uma opinião no seu lugar.
-              </p>
+          {angleAlignment && !angleAlignment.aligned && (
+            <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+              <p className="font-semibold">A leitura escolhida pode não estar alinhada à opinião disponível</p>
+              <p className="mt-1">{angleAlignment.note}</p>
             </section>
           )}
 
-          {item.opinion_status === "validated" && !item.linkedin_post && (
-            <section className="rounded-2xl border border-[#347796]/20 bg-[#e4f5f5] p-5">
-              <h4 className="text-lg font-semibold text-[#04202f]">Visão registrada</h4>
-              <p className="mt-1 text-sm text-[#4f6872]">
-                {busy === "generate"
-                  ? "Gerando LinkedIn e Reel. Isso pode levar até um minuto."
-                  : "O rascunho ainda não foi gerado. Pode tentar de novo sem refazer as respostas."}
-              </p>
-              {(item.gustavo_answers?.length ?? 0) > 0 && (
-                <ul className="mt-3 space-y-2 text-sm leading-6 text-[#294d5a]">
-                  {item.gustavo_answers?.map((answer) => (
-                    <li key={answer} className="rounded-lg bg-white/70 px-3 py-2">
-                      {answer}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <Button
-                className="mt-4"
-                onClick={() => void act("generate")}
-                disabled={!!busy}
-              >
-                {busy === "generate" ? (
+          {hasAngles && hasSelectedAngle && (
+            <section className="rounded-2xl border border-[#04202f]/15 bg-white p-5">
+              {item.opinion_status === "validated" ? (
+                !hasDraft ? (
                   <>
-                    <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
-                    Gerando rascunho…
+                    <h4 className="text-lg font-semibold text-[#04202f]">Visão registrada</h4>
+                    <p className="mt-1 text-sm text-[#4f6872]">
+                      {busy === "generate"
+                        ? "Gerando LinkedIn e Reel. Isso pode levar até um minuto."
+                        : "O rascunho ainda não foi gerado. Pode tentar de novo sem refazer as respostas."}
+                    </p>
+                    {(item.gustavo_answers?.length ?? 0) > 0 && (
+                      <ul className="mt-3 space-y-2 text-sm leading-6 text-[#294d5a]">
+                        {item.gustavo_answers?.map((answer) => (
+                          <li key={answer} className="rounded-lg bg-white/70 px-3 py-2">
+                            {answer}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <Button className="mt-4" onClick={() => void generate()} disabled={!!busy}>
+                      {busy === "generate" ? (
+                        <>
+                          <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
+                          Gerando rascunho…
+                        </>
+                      ) : (
+                        <>
+                          <WandSparkles className="h-4 w-4" aria-hidden />
+                          Gerar conteúdo com esta leitura
+                        </>
+                      )}
+                    </Button>
                   </>
                 ) : (
-                  <>
-                    <WandSparkles className="h-4 w-4" aria-hidden />
-                    Gerar rascunho
-                  </>
-                )}
-              </Button>
+                  <p className="text-sm text-[#526b75]">
+                    Leitura e opinião registradas. Use &quot;Gerar nova versão&quot; no rodapé para regenerar.
+                  </p>
+                )
+              ) : (
+                <>
+                  <h4 className="text-lg font-semibold text-[#04202f]">Precisamos da sua visão</h4>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    A IA propositalmente não inventa a opinião do Gustavo. Registre a visão dele para
+                    escrever em primeira pessoa, ou peça uma análise factual — que interpreta o fato sem
+                    atribuir experiência, opinião ou aprovação a ele.
+                  </p>
+                  {hasQuestions && (
+                    <div className="mt-4 space-y-3">
+                      {item.gustavo_questions?.map((question, index) => (
+                        <div key={question}>
+                          <p className="text-sm font-medium text-[#04202f]">{question}</p>
+                          <Textarea
+                            className="mt-1"
+                            rows={2}
+                            value={answers[index] ?? ""}
+                            disabled={!!busy}
+                            onChange={(event) => {
+                              const next = [...answers];
+                              next[index] = event.target.value;
+                              setAnswers(next);
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {hasQuestions && (
+                      <Button onClick={() => void addVisionAndGenerate()} disabled={!!busy}>
+                        {busy === "answer" || (busy === "generate" && lastGenerateMode === "opinion") ? (
+                          <>
+                            <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
+                            {busy === "answer" ? "Salvando respostas…" : "Gerando rascunho…"}
+                          </>
+                        ) : (
+                          "Adicionar minha visão e gerar"
+                        )}
+                      </Button>
+                    )}
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        void (hasQuestions ? skipVisionAndGenerateFactual() : generate("factual"))
+                      }
+                      disabled={!!busy}
+                    >
+                      {busy === "skip" || (busy === "generate" && lastGenerateMode === "factual") ? (
+                        <>
+                          <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
+                          Gerando análise factual…
+                        </>
+                      ) : (
+                        "Gerar análise factual"
+                      )}
+                    </Button>
+                  </div>
+                  <p className="mt-3 text-xs leading-5 text-[#6f858d]">
+                    A análise factual não inventa experiência, opinião pessoal ou aprovação do Gustavo —
+                    ela interpreta o fato de forma analítica, sujeita à validação dele depois.
+                  </p>
+                </>
+              )}
             </section>
           )}
 
@@ -468,7 +556,10 @@ export function ItemWorkspace({
                 <Textarea
                   className="min-h-[360px] resize-y border-0 bg-[#f5f8f8] px-4 py-4 text-[0.95rem] leading-7 shadow-none focus-visible:ring-[#347796]"
                   value={linkedin}
-                  onChange={(event) => setLinkedin(event.target.value)}
+                  onChange={(event) => {
+                    setLinkedin(event.target.value);
+                    setPreviousLinkedin(null);
+                  }}
                   placeholder="O post textual aparece aqui depois da geração."
                 />
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-3 text-xs text-[#6f858d]">
@@ -508,19 +599,47 @@ export function ItemWorkspace({
 
             {(item.alternative_hooks?.length ?? 0) > 0 && (
               <div className="mt-3 text-sm">
-                <p className="font-medium text-[#04202f]">Hooks alternativos</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium text-[#04202f]">Hooks alternativos</p>
+                  {previousLinkedin != null && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLinkedin(previousLinkedin);
+                        setPreviousLinkedin(null);
+                      }}
+                      className="text-xs font-medium text-[#347796] underline underline-offset-2"
+                    >
+                      Desfazer aplicação do gancho
+                    </button>
+                  )}
+                </div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {item.alternative_hooks?.map((hook) => (
                     <button
                       key={hook}
                       type="button"
-                      onClick={() => setLinkedin((current) => current ? `${hook}\n\n${current.replace(/^[\s\S]*?(\n\n|$)/, "")}` : hook)}
+                      onClick={() => {
+                        setPreviousLinkedin(linkedin);
+                        setLinkedin((current) => applyAlternativeHook(current, hook));
+                      }}
                       className="rounded-lg bg-[#04202f]/[0.045] px-3 py-2 text-left text-xs leading-5 text-[#36535f] transition-colors hover:bg-[#e4f5f5]"
                     >
                       {hook}
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {editorialReview && !editorialReview.passesReview && editorialReview.issues.length > 0 && (
+              <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+                <p className="font-medium">Revisão editorial encontrou pontos de atenção</p>
+                <ul className="mt-1 list-disc space-y-1 pl-4">
+                  {editorialReview.issues.map((issue) => (
+                    <li key={issue}>{issue}</li>
+                  ))}
+                </ul>
               </div>
             )}
 
@@ -544,23 +663,13 @@ export function ItemWorkspace({
               <div>
                 <p className="editorial-kicker font-mono text-[11px] uppercase text-[#7fe1e3]">Próximo passo</p>
                 <p className="mt-2 text-sm text-white/60">
-                  {nextStepText(item.status, dirty, item.opinion_status, Boolean(item.linkedin_post), busy)}
+                  {nextStepText(item, dirty, busy)}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
                 {dirty && (
                   <Button onClick={() => act("save", { linkedin_post: linkedin, reel_script: reel })} disabled={!!busy} className="bg-[#7fe1e3] text-[#04202f] hover:bg-white">
                     <Save className="h-4 w-4" aria-hidden /> {busy === "save" ? "Salvando…" : "Salvar alterações"}
-                  </Button>
-                )}
-                {!dirty && item.opinion_status === "validated" && !item.linkedin_post && (
-                  <Button onClick={() => void act("generate")} disabled={!!busy} className="bg-[#7fe1e3] text-[#04202f] hover:bg-white">
-                    {busy === "generate" ? (
-                      <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
-                    ) : (
-                      <WandSparkles className="h-4 w-4" aria-hidden />
-                    )}
-                    {busy === "generate" ? "Gerando rascunho…" : "Gerar rascunho"}
                   </Button>
                 )}
                 {!dirty && item.status === "rascunho" && (item.linkedin_post || item.reel_script) && (
@@ -577,12 +686,26 @@ export function ItemWorkspace({
             </div>
             <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
               {canReanalyze && (
-                <Button size="sm" variant="ghost" onClick={() => act("analyze")} disabled={!!busy} className="text-white/70 hover:bg-white/10 hover:text-white">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => act("analyze")}
+                  disabled={!!busy || dirty}
+                  title={dirty ? "Salve ou descarte as edições antes de reanalisar." : undefined}
+                  className="text-white/70 hover:bg-white/10 hover:text-white"
+                >
                   {busy === "analyze" ? "Analisando…" : "Refazer análise"}
                 </Button>
               )}
-              {canReanalyze && item.opinion_status === "validated" && item.linkedin_post && (
-                <Button size="sm" variant="ghost" onClick={() => void act("generate")} disabled={!!busy} className="text-white/70 hover:bg-white/10 hover:text-white">
+              {canReanalyze && hasSelectedAngle && hasDraft && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => void generate(item.opinion_status === "validated" ? undefined : "factual")}
+                  disabled={!!busy || dirty}
+                  title={dirty ? "Salve ou descarte as edições antes de regenerar." : undefined}
+                  className="text-white/70 hover:bg-white/10 hover:text-white"
+                >
                   {busy === "generate" ? "Gerando nova versão…" : "Gerar nova versão"}
                 </Button>
               )}
@@ -697,26 +820,34 @@ function WorkflowRail({ status }: { status: GustavoContentItem["status"] }) {
   );
 }
 
-function nextStepText(
-  status: GustavoContentItem["status"],
+export function nextStepText(
+  item: GustavoContentItem,
   dirty: boolean,
-  opinionStatus: GustavoContentItem["opinion_status"],
-  hasDraft: boolean,
   busy: string | null
 ): string {
+  const { status } = item;
+  const hasAngles = (item.angles?.length ?? 0) > 0;
+  const hasSelectedAngle = Boolean(item.selected_angle);
+  const hasDraft = Boolean(item.linkedin_post);
+
   if (busy === "generate") return "Gerando LinkedIn e Reel. Isso pode levar até um minuto.";
   if (busy === "answer" || busy === "skip") return "Registrando a visão para liberar a redação.";
   if (dirty) return "Salve as alterações para preservar a trilha de edição.";
-  if (status === "aguardando_opiniao" && opinionStatus === "validated" && !hasDraft) {
+  if (hasAngles && !hasSelectedAngle && !hasDraft) {
+    return "Selecione uma leitura para liberar a próxima ação.";
+  }
+  if (hasAngles && hasSelectedAngle && !hasDraft && item.opinion_status === "validated") {
     return "Visão registrada. Agora geramos o rascunho.";
   }
-  if (status === "aguardando_opiniao") return "Aguardando uma resposta do Gustavo para liberar a redação.";
+  if (hasAngles && hasSelectedAngle && !hasDraft) {
+    return "Registre a visão do Gustavo ou peça a análise factual para liberar a redação.";
+  }
   if (status === "rascunho") return "Faça a revisão final; o compliance será recalculado no envio.";
   if (status === "aguardando_aprovacao") return "O texto está pronto para a decisão final do Gustavo.";
   if (status === "aprovado") return "Conteúdo aprovado. Agora cada canal pode seguir para produção.";
   if (status === "enviado_mkt") return "A produção já está no Planner; registre a publicação quando sair.";
   if (status === "publicado") return "Conteúdo publicado e disponível para alimentar a memória editorial.";
-  return "Escolha um ângulo e avance para a redação.";
+  return "Escolha uma leitura e avance para a redação.";
 }
 
 const BUSY_LABELS: Record<string, string> = {

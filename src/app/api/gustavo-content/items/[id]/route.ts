@@ -55,7 +55,13 @@ export async function PATCH(
     }
 
     if (action === "analyze") return NextResponse.json(await analyzeItem(id));
-    if (action === "generate") return NextResponse.json(await generateItemContent(id));
+    if (action === "generate") {
+      return NextResponse.json(
+        await generateItemContent(id, {
+          mode: body.mode === "factual" ? "factual" : undefined,
+        })
+      );
+    }
     if (action === "select_angle") {
       return NextResponse.json(await selectAngle(id, Number(body.angleIndex ?? 0)));
     }

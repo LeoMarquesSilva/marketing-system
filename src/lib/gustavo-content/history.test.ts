@@ -62,8 +62,8 @@ describe("assessEditorialHistory", () => {
           thesis_id: "tese-1",
           selected_angle: { type: "strategy", title: "Negociar antes do caixa acabar" },
           source_context: { companies: ["GPA"] },
-          linkedin_post: "A reestruturação não começa no protocolo. Ela começa na negociação.",
-          alternative_hooks: ["Esperar todos os credores concordarem pode custar caro."],
+          linkedin_post:
+            "A reestruturação não começa no protocolo.\n\nEla começa na negociação, quando ainda há margem para evitar o pior.",
           created_at: "2026-08-01T00:00:00.000Z",
         },
       ]
@@ -72,7 +72,31 @@ describe("assessEditorialHistory", () => {
     const prompt = buildEditorialHistoryPrompt(assessment);
 
     expect(prompt).toContain("Negociar antes do caixa acabar");
-    expect(prompt).toContain("Esperar todos os credores concordarem");
+    expect(prompt).toContain("Hook anterior: A reestruturação não começa no protocolo.");
     expect(prompt).toContain("A reestruturação não começa no protocolo");
+  });
+
+  it("não usa um gancho alternativo nunca aplicado como se fosse a abertura usada", () => {
+    const assessment = assessEditorialHistory(
+      {
+        title: "GPA renegocia dívida com credores",
+        thesisId: "tese-1",
+        angleType: "strategy",
+        companies: ["GPA"],
+      },
+      [
+        {
+          title: "GPA avança na renegociação da dívida",
+          thesis_id: "tese-1",
+          selected_angle: { type: "strategy" },
+          source_context: { companies: ["GPA"] },
+          linkedin_post: "Abertura de fato publicada, em um único parágrafo.",
+          created_at: "2026-08-01T00:00:00.000Z",
+        },
+      ]
+    );
+
+    const prompt = buildEditorialHistoryPrompt(assessment);
+    expect(prompt).toContain("Hook anterior: Abertura de fato publicada, em um único parágrafo.");
   });
 });

@@ -1,22 +1,31 @@
 import { generateObject } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
-import { GUSTAVO_CONTENT_MODEL } from "@/lib/gustavo-content/constants";
+import {
+  GUSTAVO_CONTENT_MODEL_REVIEW,
+  GUSTAVO_CONTENT_MODEL_SCORE,
+  GUSTAVO_CONTENT_MODEL_WRITING,
+} from "@/lib/gustavo-content/constants";
 import { GustavoContentError } from "@/lib/gustavo-content/errors";
 import {
   ANGLES_INSTRUCTIONS,
   COMPLIANCE_INSTRUCTIONS,
-  CONTENT_INSTRUCTIONS,
+  EDITORIAL_BRIEF_INSTRUCTIONS,
+  EDITORIAL_REVIEW_INSTRUCTIONS,
   GUSTAVO_EDITOR_SYSTEM,
+  LINKEDIN_CONTENT_INSTRUCTIONS,
+  REEL_CONTENT_INSTRUCTIONS,
   SCORE_INSTRUCTIONS,
 } from "@/lib/gustavo-content/prompts";
 import {
   anglesObjectSchema,
   complianceObjectSchema,
   contentObjectSchema,
+  editorialReviewObjectSchema,
   scoreObjectSchema,
 } from "@/lib/gustavo-content/schemas";
 import { clampScoreBreakdown } from "@/lib/gustavo-content/score";
 import { normalizeCompliance } from "@/lib/gustavo-content/compliance";
+import { assembleLinkedInPost } from "@/lib/gustavo-content/text";
 import type { GustavoThesis } from "@/lib/gustavo-content/theses";
 import type { GustavoVoiceSample } from "@/lib/gustavo-content/voice";
 import {
@@ -37,8 +46,16 @@ function getOpenAI() {
   return createOpenAI({ apiKey });
 }
 
-function model() {
-  return getOpenAI()(GUSTAVO_CONTENT_MODEL);
+function scoreModel() {
+  return getOpenAI()(GUSTAVO_CONTENT_MODEL_SCORE);
+}
+
+function writingModel() {
+  return getOpenAI()(GUSTAVO_CONTENT_MODEL_WRITING);
+}
+
+function reviewModel() {
+  return getOpenAI()(GUSTAVO_CONTENT_MODEL_REVIEW);
 }
 
 function thesesBlock(theses: GustavoThesis[]): string {
@@ -70,7 +87,7 @@ export interface AnalyzeInput {
 
 export async function analyzeScore(input: AnalyzeInput) {
   const result = await generateObject({
-    model: model(),
+    model: scoreModel(),
     schema: scoreObjectSchema,
     schemaName: "gustavo_editorial_score",
     system: `${GUSTAVO_EDITOR_SYSTEM}\n\n${SCORE_INSTRUCTIONS}`,
@@ -98,7 +115,7 @@ export async function analyzeScore(input: AnalyzeInput) {
 
 export async function generateAngles(input: AnalyzeInput) {
   const result = await generateObject({
-    model: model(),
+    model: scoreModel(),
     schema: anglesObjectSchema,
     schemaName: "gustavo_editorial_angles",
     system: `${GUSTAVO_EDITOR_SYSTEM}\n\n${ANGLES_INSTRUCTIONS}`,
@@ -129,12 +146,16 @@ export async function generateEditorialContent(input: {
   history: EditorialHistoryAssessment;
   sourceContext: SourceContext | null;
   strategy: GustavoStrategy;
+  /** Sem opinião validada: escrever como leitura analítica, nunca em primeira pessoa. */
+  factualOnly?: boolean;
+  /** Problemas apontados pela revisão editorial anterior, para uma única rodada de correção. */
+  reviewFeedback?: string[] | null;
 }) {
   const result = await generateObject({
-    model: model(),
+    model: writingModel(),
     schema: contentObjectSchema,
     schemaName: "gustavo_editorial_content",
-    system: `${GUSTAVO_EDITOR_SYSTEM}\n\n${CONTENT_INSTRUCTIONS}`,
+    system: `${GUSTAVO_EDITOR_SYSTEM}\n\n${EDITORIAL_BRIEF_INSTRUCTIONS}\n\n${LINKEDIN_CONTENT_INSTRUCTIONS}\n\n${REEL_CONTENT_INSTRUCTIONS}`,
     prompt: [
       `TÍTULO: ${input.title}`,
       `RESUMO: ${input.snippet}`,
@@ -150,13 +171,41 @@ export async function generateEditorialContent(input: {
       `TESE: ${input.thesisSnapshot ?? "—"}`,
       `PERGUNTAS: ${(input.questions ?? []).join(" | ") || "—"}`,
       `RESPOSTAS_DO_GUSTAVO: ${(input.answers ?? []).join(" | ") || "—"}`,
+      input.factualOnly
+        ? "MODO: factual — não há opinião validada do Gustavo. Escreva análise factual e interpretação de mercado, sem atribuir a ele experiências, opiniões pessoais ou aprovação. Não escreva em primeira pessoa como se fosse ele falando."
+        : "MODO: opinião — há opinião validada do Gustavo (tese ou respostas). Pode escrever em primeira pessoa quando apoiado por ela.",
       `BIBLIOTECA_DE_TESES:\n${thesesBlock(input.theses)}`,
       `VOZ_HISTORICA_GUSTAVO:\n${voiceBlock(input.voice)}`,
       `HISTORICO_EDITORIAL_GUSTAVO:\n${buildEditorialHistoryPrompt(input.history)}`,
+      input.reviewFeedback?.length
+        ? `REVISAO_EDITORIAL_ANTERIOR (corrija sem perder a tese e os fatos já usados):\n${input.reviewFeedback.map((issue) => `- ${issue}`).join("\n")}`
+        : "",
     ]
       .filter(Boolean)
       .join("\n\n"),
     temperature: 0.55,
+  });
+
+  return {
+    linkedinPost: assembleLinkedInPost(result.object.linkedin),
+    alternativeHooks: result.object.alternativeHooks,
+    reel: result.object.reel,
+    editorialBrief: result.object.editorialBrief,
+    angleAlignment: result.object.angleAlignment,
+  };
+}
+
+export async function reviewEditorialContent(input: {
+  linkedinPost: string;
+  centralThesis: string;
+}) {
+  const result = await generateObject({
+    model: reviewModel(),
+    schema: editorialReviewObjectSchema,
+    schemaName: "gustavo_editorial_review",
+    system: `${GUSTAVO_EDITOR_SYSTEM}\n\n${EDITORIAL_REVIEW_INSTRUCTIONS}`,
+    prompt: `TESE_CENTRAL: ${input.centralThesis}\n\nLINKEDIN:\n${input.linkedinPost}`,
+    temperature: 0.1,
   });
   return result.object;
 }
@@ -166,7 +215,7 @@ export async function analyzeCompliance(input: {
   reelScript: string;
 }) {
   const result = await generateObject({
-    model: model(),
+    model: reviewModel(),
     schema: complianceObjectSchema,
     schemaName: "gustavo_compliance",
     system: `${GUSTAVO_EDITOR_SYSTEM}\n\n${COMPLIANCE_INSTRUCTIONS}`,

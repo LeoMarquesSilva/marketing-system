@@ -13,6 +13,7 @@ import {
   analyzeScore,
   generateAngles,
   generateEditorialContent,
+  reviewEditorialContent,
 } from "@/lib/gustavo-content/ai";
 import { assessEditorialHistory, historyAlertText } from "@/lib/gustavo-content/history";
 import {
@@ -40,6 +41,7 @@ import {
   canTransition,
   nextStatusAfterThesisMatch,
   resolveOutputEdit,
+  type GenerationMode,
 } from "@/lib/gustavo-content/workflow";
 import { canSubmitForApproval } from "@/lib/gustavo-content/compliance";
 import { POST_REQUEST_TYPE, REEL_REQUEST_TYPE } from "@/lib/planner-posts";
@@ -242,11 +244,11 @@ export async function createItemFromIdea(
   return analyzeItem(data.id as string);
 }
 
-async function loadContext() {
+async function loadContext(excludeId?: string) {
   const [theses, voice, previous, strategy] = await Promise.all([
     listTheses(),
     listActiveVoice(),
-    listHistoryItems(),
+    listHistoryItems(excludeId),
     getStrategy(),
   ]);
   return {
@@ -257,16 +259,18 @@ async function loadContext() {
   };
 }
 
-async function listHistoryItems() {
+async function listHistoryItems(excludeId?: string) {
   const admin = getGustavoContentAdmin();
   const since = getContentCutoffDate(HISTORY_WINDOW_DAYS).toISOString();
-  const { data } = await admin
+  let query = admin
     .from("gustavo_content_items")
-    .select(
-      "title, thesis_id, selected_angle, source_context, linkedin_post, alternative_hooks, created_at, status"
-    )
+    .select("title, thesis_id, selected_angle, source_context, linkedin_post, created_at, status")
     .in("status", ["rascunho", "aguardando_aprovacao", "aprovado", "enviado_mkt", "publicado"])
     .gte("created_at", since);
+  if (excludeId) {
+    query = query.neq("id", excludeId);
+  }
+  const { data } = await query;
   return data ?? [];
 }
 
@@ -275,7 +279,7 @@ export async function analyzeItem(id: string): Promise<GustavoContentItem> {
   if (!canRunEditorialAction("analyze", item.status)) {
     throw new GustavoContentError("Esta pauta não pode ser reanalisada nesta etapa.", 409);
   }
-  const { theses, strategy } = await loadContext();
+  const { theses, strategy } = await loadContext(item.id);
   const article = sourceTextForGeneration({
     contentSnippet: item.content_snippet,
     sourceContext: item.source_context,
@@ -357,7 +361,9 @@ function applyThesisMatch(
 
   return {
     angles: angles.angles,
-    selected_angle: angles.angles[0] ?? null,
+    // Não pré-selecionar: o ângulo enviado à geração precisa ser uma escolha
+    // confirmada pelo usuário, não a primeira sugestão automática.
+    selected_angle: null,
     thesis_id: validated?.id ?? matched?.id ?? null,
     thesis_snapshot: validated
       ? thesisSnapshot(validated)
@@ -377,19 +383,32 @@ export async function selectAngle(id: string, angleIndex: number): Promise<Gusta
   return updateItemRow(id, { selected_angle: angle });
 }
 
-export async function generateItemContent(id: string): Promise<GustavoContentItem> {
+export async function generateItemContent(
+  id: string,
+  options?: { mode?: GenerationMode }
+): Promise<GustavoContentItem> {
   const item = await getItem(id);
   if (!canRunEditorialAction("generate", item.status)) {
     throw new GustavoContentError("O conteúdo não pode ser regenerado nesta etapa.", 409);
   }
-  if (!canGenerateDraft({ opinionStatus: item.opinion_status })) {
+  if (!item.selected_angle) {
+    throw new GustavoContentError("Selecione uma leitura antes de gerar o conteúdo.", 409);
+  }
+  const mode = options?.mode;
+  if (
+    !canGenerateDraft({
+      opinionStatus: item.opinion_status,
+      hasSelectedAngle: true,
+      mode,
+    })
+  ) {
     throw new GustavoContentError(
-      "Ainda precisamos da opinião do Gustavo para gerar o conteúdo em primeira pessoa.",
+      "Ainda precisamos da opinião do Gustavo, ou peça a análise factual.",
       409
     );
   }
 
-  const { theses, voice, previous, strategy } = await loadContext();
+  const { theses, voice, previous, strategy } = await loadContext(item.id);
   const history = assessEditorialHistory(
     {
       title: item.title,
@@ -400,9 +419,8 @@ export async function generateItemContent(id: string): Promise<GustavoContentIte
     previous
   );
 
-  let content;
-  try {
-    content = await generateEditorialContent({
+  async function writeAndReview(reviewFeedback: string[] | null) {
+    const draft = await generateEditorialContent({
       title: item.title ?? "",
       snippet: item.content_snippet ?? "",
       article: sourceTextForGeneration({
@@ -420,7 +438,36 @@ export async function generateItemContent(id: string): Promise<GustavoContentIte
       history,
       sourceContext: item.source_context,
       strategy,
+      factualOnly: mode === "factual",
+      reviewFeedback,
     });
+    let review = null;
+    try {
+      review = await reviewEditorialContent({
+        linkedinPost: draft.linkedinPost,
+        centralThesis: draft.editorialBrief.centralThesis,
+      });
+    } catch {
+      review = null;
+    }
+    return { draft, review };
+  }
+
+  let content;
+  let review;
+  try {
+    const first = await writeAndReview(null);
+    content = first.draft;
+    review = first.review;
+    if (review && !review.passesReview) {
+      try {
+        const retry = await writeAndReview(review.issues);
+        content = retry.draft;
+        review = retry.review;
+      } catch {
+        // Mantém o primeiro rascunho — falha na rodada de revisão não descarta o já produzido.
+      }
+    }
   } catch (err) {
     throw generationFailed(
       err,
@@ -455,6 +502,9 @@ export async function generateItemContent(id: string): Promise<GustavoContentIte
       articleText: item.source_context?.articleText ?? null,
       extractionWarning: item.source_context?.extractionWarning ?? null,
       historyAlert: historyAlertText(history),
+      editorialBrief: content.editorialBrief,
+      angleAlignment: content.angleAlignment,
+      editorialReview: review,
     },
     status: item.status === "aguardando_opiniao" ? "rascunho" : item.status === "sugestao" ? "rascunho" : item.status,
   });
@@ -472,12 +522,14 @@ export async function saveItemAnswers(
   actor: GustavoContentActor,
   options?: { skip?: boolean }
 ): Promise<GustavoContentItem> {
-  await getItem(id);
-  const cleaned = resolveGustavoAnswers(answers, { skip: options?.skip === true });
+  const item = await getItem(id);
+  const skip = options?.skip === true;
+  const cleaned = resolveGustavoAnswers(answers, { skip });
 
   return updateItemRow(id, {
     gustavo_answers: cleaned,
-    opinion_status: "validated",
+    // Pular as perguntas não valida uma opinião — só libera o caminho factual.
+    opinion_status: skip ? item.opinion_status : "validated",
     edited_by: actor.id,
     edited_by_name: actor.name,
     edited_at: new Date().toISOString(),

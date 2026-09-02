@@ -7,6 +7,7 @@ import type { GustavoMemberRole } from "@/lib/gustavo-content/access";
 
 export type OpinionStatus = "validated" | "needs_gustavo";
 export type ApprovalKind = "gustavo" | "admin_exception";
+export type GenerationMode = "opinion" | "factual";
 
 export function canRunEditorialAction(
   action: "analyze" | "generate",
@@ -21,14 +22,20 @@ export function canRunEditorialAction(
   return editable.includes(status) && (action === "analyze" || action === "generate");
 }
 
-export function canGenerateDraft(input: { opinionStatus: OpinionStatus | null | undefined }): boolean {
+export function canGenerateDraft(input: {
+  opinionStatus: OpinionStatus | null | undefined;
+  hasSelectedAngle: boolean;
+  mode?: GenerationMode;
+}): boolean {
+  if (!input.hasSelectedAngle) return false;
+  if (input.mode === "factual") return true;
   return input.opinionStatus === "validated";
 }
 
 export function nextStatusAfterThesisMatch(input: {
   opinionStatus: OpinionStatus | null | undefined;
 }): GustavoContentStatus {
-  return canGenerateDraft(input) ? "rascunho" : "aguardando_opiniao";
+  return input.opinionStatus === "validated" ? "rascunho" : "aguardando_opiniao";
 }
 
 export function approvalKindForActor(actor: {

@@ -84,13 +84,40 @@ NÃO invente opinião do Gustavo.
 Se houver tese validada aderente, devolva o thesisId dela.
 Se não houver tese suficiente, confidence = none e até 3 perguntas objetivas para o Gustavo.`;
 
-export const CONTENT_INSTRUCTIONS = `Gere o post textual de LinkedIn e o roteiro de Reel em bullets de fala.
-Use somente teses validadas ou respostas do Gustavo.
-Antes de redigir, identifique silenciosamente: fato, tensão empresarial, tese, implicação e diferença em relação ao histórico.
-O texto deve entregar interpretação empresarial específica, não apenas recontar a notícia.
-Se ainda faltar opinião, não escreva em primeira pessoa fingindo saber.
-Não use "Você sabia?", CTA comercial, emoji padrão nem pergunta automática no final.
-Se o histórico pediu variação de ângulo, varie.`;
+export const EDITORIAL_BRIEF_INSTRUCTIONS = `Antes de escrever qualquer texto, monte um resumo editorial enxuto (editorialBrief):
+1. centralThesis: o argumento único que o post inteiro vai sustentar. Baseie-se nas respostas do Gustavo ou em tese aprovada; na ausência delas, uma conclusão factual, sem atribuir a ele uma opinião pessoal.
+2. icp: para qual tipo de decisor este conteúdo é útil.
+3. businessDecision: qual decisão empresarial está em jogo.
+4. supportingFacts: 2 a 3 fatos de apoio, distinguindo fonte de interpretação.
+5. practicalConsequence: o que o leitor deve entender na prática.
+6. limits: afirmações que NÃO podem ser feitas com os dados disponíveis.
+
+Depois, avalie angleAlignment: o ângulo escolhido pelo usuário é compatível com a opinião/tese disponível?
+Se não for, aligned=false e explique a divergência em note — nunca troque o ângulo escolhido silenciosamente.
+
+Todo o texto gerado (LinkedIn e Reel) deve sustentar exclusivamente essa tese central. Cada parágrafo contribui para ela.`;
+
+export const LINKEDIN_CONTENT_INSTRUCTIONS = `Gere o LinkedIn como objeto estruturado (linkedin: hook, body, closing, hashtags), nunca como bloco único de texto.
+hook: abertura concreta com tensão, consequência ou contraste relevante para o ICP — nunca genérica, nunca sensacionalista, nunca uma promessa.
+body: um argumento por parágrafo, parágrafos curtos, sustentando a centralThesis do brief.
+closing: fechamento que reforça a implicação prática, sem CTA comercial e sem terminar em pergunta automática.
+hashtags: 0 a 3, só se fizer sentido.
+alternativeHooks: exatamente 3 aberturas distintas entre si, todas alinhadas à mesma centralThesis — nunca pequenas reformulações do título da notícia.
+Não use "Você sabia?", "Em um cenário...", "No mundo atual...". Não use emoji por padrão.
+Se ainda faltar opinião validada (modo factual), escreva como leitura analítica, nunca em primeira pessoa fingindo ser a opinião do Gustavo.
+Se o histórico pediu variação, varie gancho/estrutura/exemplos — mantendo o mesmo ângulo e a mesma tese central já escolhidos.`;
+
+export const REEL_CONTENT_INSTRUCTIONS = `Gere o roteiro de Reel em bullets de fala (reel: duration, hook, talkingPoints, closing, recordingNote), sustentando a mesma centralThesis do LinkedIn.
+45 a 75 segundos, um assunto por vídeo. Não escreva um texto para decorar.`;
+
+/** @deprecated Mantida por compatibilidade; usar LINKEDIN_CONTENT_INSTRUCTIONS + REEL_CONTENT_INSTRUCTIONS. */
+export const CONTENT_INSTRUCTIONS = `${LINKEDIN_CONTENT_INSTRUCTIONS}\n\n${REEL_CONTENT_INSTRUCTIONS}`;
+
+export const EDITORIAL_REVIEW_INSTRUCTIONS = `Revise o post de LinkedIn gerado, de forma independente do compliance OAB.
+Avalie: existe gancho concreto (não genérico)? O texto tem parágrafos, não um bloco único? É claro, coerente e específico?
+Cada parágrafo sustenta a tese central informada, sem se perder em assuntos paralelos? A linguagem evita frases genéricas de IA?
+Não avalie fatos novos nem opinião — isso já foi definido antes. Avalie só redação e estrutura.
+passesReview=false quando houver falha real de gancho, estrutura ou clareza. Liste os problemas em issues, de forma objetiva e acionável.`;
 
 export const COMPLIANCE_INSTRUCTIONS = `Avalie o texto gerado contra as regras da OAB para conteúdo institucional.
 Flags graves: promise_of_result, commercial_cta, client_case, confidentiality, individual_legal_advice.
