@@ -27,6 +27,7 @@ import {
 } from "@/lib/gustavo-content/planner";
 import { SCORE_SUGGESTION_FROM } from "@/lib/gustavo-content/constants";
 import { statusFromScore } from "@/lib/gustavo-content/score";
+import { resolveGustavoAnswers } from "@/lib/gustavo-content/answers";
 import { GustavoContentError, getGustavoContentAdmin, type GustavoContentActor } from "@/lib/gustavo-content/server";
 import { listTheses } from "@/lib/gustavo-content/theses-server";
 import { thesisSnapshot, type GustavoThesis } from "@/lib/gustavo-content/theses";
@@ -60,6 +61,18 @@ function formatDateYMD(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function generationFailed(err: unknown, fallback: string): never {
+  if (err instanceof GustavoContentError) throw err;
+  const message = err instanceof Error ? err.message : "";
+  if (/context|token|too large|maximum/i.test(message)) {
+    throw new GustavoContentError(
+      "O material desta pauta é longo demais para gerar agora. Tente de novo em instantes.",
+      502
+    );
+  }
+  throw new GustavoContentError(fallback, 502);
 }
 
 export async function listItems(filters?: {
@@ -387,33 +400,46 @@ export async function generateItemContent(id: string): Promise<GustavoContentIte
     previous
   );
 
-  const content = await generateEditorialContent({
-    title: item.title ?? "",
-    snippet: item.content_snippet ?? "",
-    article: sourceTextForGeneration({
-      contentSnippet: item.content_snippet,
+  let content;
+  try {
+    content = await generateEditorialContent({
+      title: item.title ?? "",
+      snippet: item.content_snippet ?? "",
+      article: sourceTextForGeneration({
+        contentSnippet: item.content_snippet,
+        sourceContext: item.source_context,
+      }),
+      link: item.link,
+      businessProblem: item.business_problem,
+      selectedAngle: item.selected_angle,
+      thesisSnapshot: item.thesis_snapshot,
+      answers: item.gustavo_answers,
+      questions: item.gustavo_questions,
+      theses,
+      voice,
+      history,
       sourceContext: item.source_context,
-    }),
-    link: item.link,
-    businessProblem: item.business_problem,
-    selectedAngle: item.selected_angle,
-    thesisSnapshot: item.thesis_snapshot,
-    answers: item.gustavo_answers,
-    questions: item.gustavo_questions,
-    theses,
-    voice,
-    history,
-    sourceContext: item.source_context,
-    strategy,
-  });
+      strategy,
+    });
+  } catch (err) {
+    throw generationFailed(
+      err,
+      "Não foi possível gerar o rascunho agora. Sua visão já está salva — tente gerar de novo."
+    );
+  }
 
   const reelScript = JSON.stringify(content.reel);
-  const compliance = await analyzeCompliance({
-    linkedinPost: content.linkedinPost,
-    reelScript,
-  });
+  let compliance = null;
+  try {
+    compliance = await analyzeCompliance({
+      linkedinPost: content.linkedinPost,
+      reelScript,
+    });
+  } catch {
+    compliance = null;
+  }
 
-  return updateItemRow(id, {
+  const updated = await updateItemRow(id, {
     linkedin_post: content.linkedinPost,
     original_linkedin_post: item.original_linkedin_post ?? content.linkedinPost,
     reel_script: reelScript,
@@ -432,36 +458,30 @@ export async function generateItemContent(id: string): Promise<GustavoContentIte
     },
     status: item.status === "aguardando_opiniao" ? "rascunho" : item.status === "sugestao" ? "rascunho" : item.status,
   });
+
+  if (!item.linkedin_post && item.thesis_id) {
+    const actorId = item.edited_by ?? item.created_by;
+    if (actorId) await incrementThesisUsage(item.thesis_id, actorId);
+  }
+  return updated;
 }
 
 export async function saveItemAnswers(
   id: string,
   answers: string[],
-  actor: GustavoContentActor
+  actor: GustavoContentActor,
+  options?: { skip?: boolean }
 ): Promise<GustavoContentItem> {
   await getItem(id);
-  const cleaned = answers.map((answer) => String(answer ?? "").trim());
-  if (cleaned.every((answer) => !answer)) {
-    throw new GustavoContentError("Responda pelo menos uma pergunta.", 400);
-  }
+  const cleaned = resolveGustavoAnswers(answers, { skip: options?.skip === true });
 
-  const admin = getGustavoContentAdmin();
-  await admin
-    .from("gustavo_content_items")
-    .update({
-      gustavo_answers: cleaned,
-      opinion_status: "validated",
-      edited_by: actor.id,
-      edited_by_name: actor.name,
-      edited_at: new Date().toISOString(),
-    })
-    .eq("id", id);
-
-  const generated = await generateItemContent(id);
-  if (generated.thesis_id) {
-    await incrementThesisUsage(generated.thesis_id, actor.id);
-  }
-  return generated;
+  return updateItemRow(id, {
+    gustavo_answers: cleaned,
+    opinion_status: "validated",
+    edited_by: actor.id,
+    edited_by_name: actor.name,
+    edited_at: new Date().toISOString(),
+  });
 }
 
 export async function saveItemEdits(

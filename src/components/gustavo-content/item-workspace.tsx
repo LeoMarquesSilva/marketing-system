@@ -9,6 +9,7 @@ import {
   Check,
   Copy,
   ExternalLink,
+  LoaderCircle,
   Save,
   Send,
   ShieldCheck,
@@ -63,7 +64,11 @@ export function ItemWorkspace({
       setItem(data);
       setLinkedin(data.linkedin_post ?? "");
       setReel(data.reel_script ?? "");
-      setAnswers(data.gustavo_answers ?? data.gustavo_questions?.map(() => "") ?? []);
+      setAnswers(
+        Array.isArray(data.gustavo_answers) && data.gustavo_answers.length > 0
+          ? data.gustavo_answers
+          : data.gustavo_questions?.map(() => "") ?? []
+      );
       setLinkedinUrl(data.linkedin_published_url ?? "");
       setInstagramUrl(data.instagram_published_url ?? "");
     }
@@ -73,22 +78,55 @@ export function ItemWorkspace({
     };
   }, [itemId]);
 
+  async function patchItem(action: string, extra?: Record<string, unknown>) {
+    const response = await fetch(`/api/gustavo-content/items/${itemId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ...extra }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error ?? "Ação não concluída.");
+    }
+    return data as GustavoContentItem;
+  }
+
+  function applyItem(next: GustavoContentItem) {
+    setItem(next);
+    setLinkedin(next.linkedin_post ?? "");
+    setReel(next.reel_script ?? "");
+    if (Array.isArray(next.gustavo_answers) && next.gustavo_answers.length > 0) {
+      setAnswers(next.gustavo_answers);
+    }
+  }
+
   async function act(action: string, extra?: Record<string, unknown>) {
     setBusy(action);
     setError(null);
     try {
-      const response = await fetch(`/api/gustavo-content/items/${itemId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, ...extra }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error ?? "Ação não concluída.");
-      setItem(data);
-      setLinkedin(data.linkedin_post ?? "");
-      setReel(data.reel_script ?? "");
+      applyItem(await patchItem(action, extra));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro.");
+      setError(err instanceof Error ? err.message : "Não foi possível concluir esta ação.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function submitVision(skip: boolean) {
+    setBusy(skip ? "skip" : "answer");
+    setError(null);
+    try {
+      applyItem(await patchItem("answer", { answers, skip }));
+      setBusy("generate");
+      applyItem(await patchItem("generate"));
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : skip
+            ? "Não foi possível seguir sem registrar a visão."
+            : "Não foi possível usar as respostas."
+      );
     } finally {
       setBusy(null);
     }
@@ -145,7 +183,17 @@ export function ItemWorkspace({
 
       <WorkflowRail status={item.status} />
 
-      {error && <EditorialError message={error} />}
+      {(busy || error) && (
+        <ActionBanner
+          busy={busy}
+          error={error}
+          onRetry={
+            item.opinion_status === "validated" && !item.linkedin_post
+              ? () => void act("generate")
+              : undefined
+          }
+        />
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(18rem,0.72fr)_minmax(0,1.28fr)]">
         <aside className="space-y-4 lg:sticky lg:top-5 lg:self-start">
@@ -294,11 +342,14 @@ export function ItemWorkspace({
             </p>
           </section>
 
-          {item.status === "aguardando_opiniao" && (item.gustavo_questions?.length ?? 0) > 0 && (
-            <section className="rounded-2xl border border-[#04202f]/15 bg-white p-4">
+          {item.status === "aguardando_opiniao" &&
+            item.opinion_status !== "validated" &&
+            (item.gustavo_questions?.length ?? 0) > 0 && (
+            <section className="rounded-2xl border border-[#04202f]/15 bg-white p-5">
               <h4 className="text-lg font-semibold text-[#04202f]">Precisamos da sua visão</h4>
               <p className="mt-1 text-sm text-muted-foreground">
-                A IA propositalmente não gerou opinião. Responda para liberar o rascunho.
+                A IA propositalmente não gerou opinião. Responda para liberar o rascunho, ou
+                siga só com o ângulo já escolhido.
               </p>
               <div className="mt-4 space-y-3">
                 {item.gustavo_questions?.map((question, index) => (
@@ -308,6 +359,7 @@ export function ItemWorkspace({
                       className="mt-1"
                       rows={2}
                       value={answers[index] ?? ""}
+                      disabled={!!busy}
                       onChange={(event) => {
                         const next = [...answers];
                         next[index] = event.target.value;
@@ -317,12 +369,65 @@ export function ItemWorkspace({
                   </div>
                 ))}
               </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button onClick={() => void submitVision(false)} disabled={!!busy}>
+                  {busy === "answer" || busy === "generate" ? (
+                    <>
+                      <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
+                      {busy === "answer" ? "Salvando respostas…" : "Gerando rascunho…"}
+                    </>
+                  ) : (
+                    "Usar minhas respostas"
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => void submitVision(true)}
+                  disabled={!!busy}
+                >
+                  {busy === "skip" ? "Seguindo sem visão…" : "Seguir sem registrar visão"}
+                </Button>
+              </div>
+              <p className="mt-3 text-xs leading-5 text-[#6f858d]">
+                Sem uma visão escrita, o rascunho usa só o ângulo escolhido e a estratégia. A IA
+                não inventa uma opinião no seu lugar.
+              </p>
+            </section>
+          )}
+
+          {item.opinion_status === "validated" && !item.linkedin_post && (
+            <section className="rounded-2xl border border-[#347796]/20 bg-[#e4f5f5] p-5">
+              <h4 className="text-lg font-semibold text-[#04202f]">Visão registrada</h4>
+              <p className="mt-1 text-sm text-[#4f6872]">
+                {busy === "generate"
+                  ? "Gerando LinkedIn e Reel. Isso pode levar até um minuto."
+                  : "O rascunho ainda não foi gerado. Pode tentar de novo sem refazer as respostas."}
+              </p>
+              {(item.gustavo_answers?.length ?? 0) > 0 && (
+                <ul className="mt-3 space-y-2 text-sm leading-6 text-[#294d5a]">
+                  {item.gustavo_answers?.map((answer) => (
+                    <li key={answer} className="rounded-lg bg-white/70 px-3 py-2">
+                      {answer}
+                    </li>
+                  ))}
+                </ul>
+              )}
               <Button
-                className="mt-3"
-                onClick={() => act("answer", { answers })}
-                disabled={busy === "answer"}
+                className="mt-4"
+                onClick={() => void act("generate")}
+                disabled={!!busy}
               >
-                Usar minhas respostas
+                {busy === "generate" ? (
+                  <>
+                    <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
+                    Gerando rascunho…
+                  </>
+                ) : (
+                  <>
+                    <WandSparkles className="h-4 w-4" aria-hidden />
+                    Gerar rascunho
+                  </>
+                )}
               </Button>
             </section>
           )}
@@ -438,7 +543,9 @@ export function ItemWorkspace({
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="editorial-kicker font-mono text-[11px] uppercase text-[#7fe1e3]">Próximo passo</p>
-                <p className="mt-2 text-sm text-white/60">{nextStepText(item.status, dirty)}</p>
+                <p className="mt-2 text-sm text-white/60">
+                  {nextStepText(item.status, dirty, item.opinion_status, Boolean(item.linkedin_post), busy)}
+                </p>
               </div>
               <div className="flex flex-wrap gap-2">
                 {dirty && (
@@ -447,8 +554,13 @@ export function ItemWorkspace({
                   </Button>
                 )}
                 {!dirty && item.opinion_status === "validated" && !item.linkedin_post && (
-                  <Button onClick={() => act("generate")} disabled={!!busy} className="bg-[#7fe1e3] text-[#04202f] hover:bg-white">
-                    <WandSparkles className="h-4 w-4" aria-hidden /> {busy === "generate" ? "Gerando…" : "Gerar conteúdo"}
+                  <Button onClick={() => void act("generate")} disabled={!!busy} className="bg-[#7fe1e3] text-[#04202f] hover:bg-white">
+                    {busy === "generate" ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
+                    ) : (
+                      <WandSparkles className="h-4 w-4" aria-hidden />
+                    )}
+                    {busy === "generate" ? "Gerando rascunho…" : "Gerar rascunho"}
                   </Button>
                 )}
                 {!dirty && item.status === "rascunho" && (item.linkedin_post || item.reel_script) && (
@@ -470,8 +582,8 @@ export function ItemWorkspace({
                 </Button>
               )}
               {canReanalyze && item.opinion_status === "validated" && item.linkedin_post && (
-                <Button size="sm" variant="ghost" onClick={() => act("generate")} disabled={!!busy} className="text-white/70 hover:bg-white/10 hover:text-white">
-                  Gerar nova versão
+                <Button size="sm" variant="ghost" onClick={() => void act("generate")} disabled={!!busy} className="text-white/70 hover:bg-white/10 hover:text-white">
+                  {busy === "generate" ? "Gerando nova versão…" : "Gerar nova versão"}
                 </Button>
               )}
               {canReject && <details className="ml-auto text-sm text-white/60">
@@ -585,8 +697,19 @@ function WorkflowRail({ status }: { status: GustavoContentItem["status"] }) {
   );
 }
 
-function nextStepText(status: GustavoContentItem["status"], dirty: boolean): string {
+function nextStepText(
+  status: GustavoContentItem["status"],
+  dirty: boolean,
+  opinionStatus: GustavoContentItem["opinion_status"],
+  hasDraft: boolean,
+  busy: string | null
+): string {
+  if (busy === "generate") return "Gerando LinkedIn e Reel. Isso pode levar até um minuto.";
+  if (busy === "answer" || busy === "skip") return "Registrando a visão para liberar a redação.";
   if (dirty) return "Salve as alterações para preservar a trilha de edição.";
+  if (status === "aguardando_opiniao" && opinionStatus === "validated" && !hasDraft) {
+    return "Visão registrada. Agora geramos o rascunho.";
+  }
   if (status === "aguardando_opiniao") return "Aguardando uma resposta do Gustavo para liberar a redação.";
   if (status === "rascunho") return "Faça a revisão final; o compliance será recalculado no envio.";
   if (status === "aguardando_aprovacao") return "O texto está pronto para a decisão final do Gustavo.";
@@ -594,4 +717,61 @@ function nextStepText(status: GustavoContentItem["status"], dirty: boolean): str
   if (status === "enviado_mkt") return "A produção já está no Planner; registre a publicação quando sair.";
   if (status === "publicado") return "Conteúdo publicado e disponível para alimentar a memória editorial.";
   return "Escolha um ângulo e avance para a redação.";
+}
+
+const BUSY_LABELS: Record<string, string> = {
+  answer: "Salvando sua visão…",
+  skip: "Seguindo sem registrar visão…",
+  generate: "Gerando o rascunho. Isso pode levar até um minuto.",
+  analyze: "Refazendo a análise editorial…",
+  save: "Salvando alterações…",
+  submit: "Revisando o texto antes do envio…",
+  approve: "Registrando a aprovação…",
+  reject: "Registrando a rejeição…",
+  planner_linkedin: "Criando a tarefa de LinkedIn…",
+  planner_reel: "Criando a tarefa de Reel…",
+  publish: "Marcando como publicado…",
+  select_angle: "Registrando o ângulo…",
+};
+
+function ActionBanner({
+  busy,
+  error,
+  onRetry,
+}: {
+  busy: string | null;
+  error: string | null;
+  onRetry?: () => void;
+}) {
+  if (error) {
+    return (
+      <section className="flex flex-col gap-3 rounded-[1.25rem] border border-red-200 bg-red-50 px-5 py-4 text-red-950 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex gap-3">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" aria-hidden />
+          <div>
+            <p className="font-semibold">Esta etapa não concluiu</p>
+            <p className="mt-1 text-sm text-red-900/75">{error}</p>
+          </div>
+        </div>
+        {onRetry && (
+          <Button size="sm" variant="outline" onClick={onRetry} className="border-red-200 bg-white">
+            Tentar gerar de novo
+          </Button>
+        )}
+      </section>
+    );
+  }
+
+  if (!busy) return null;
+
+  return (
+    <section
+      className="flex items-center gap-3 rounded-[1.25rem] bg-[#04202f] px-5 py-4 text-white"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <LoaderCircle className="h-5 w-5 shrink-0 animate-spin text-[#7fe1e3]" aria-hidden />
+      <p className="text-sm font-medium">{BUSY_LABELS[busy] ?? "Processando…"}</p>
+    </section>
+  );
 }

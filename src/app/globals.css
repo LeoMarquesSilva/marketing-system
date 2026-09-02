@@ -212,6 +212,21 @@
       radial-gradient(circle at 88% 8%, rgb(71 205 208 / 0.11), transparent 28rem),
       linear-gradient(180deg, rgb(255 255 255 / 0.72), rgb(242 246 247 / 0.3));
   }
+
+  .gustavo-editorial .strategy-memo {
+    background:
+      linear-gradient(180deg, rgb(255 252 247 / 0.94), rgb(246 242 233 / 0.55));
+    box-shadow: 0 28px 80px rgb(4 32 47 / 0.07);
+  }
+
+  .gustavo-editorial .strategy-dropcap::first-letter {
+    float: left;
+    font-size: 3.6rem;
+    line-height: 0.82;
+    padding-right: 0.12em;
+    font-weight: 600;
+    color: #347796;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

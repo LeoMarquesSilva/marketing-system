@@ -61,7 +61,9 @@ export async function PATCH(
     }
     if (action === "answer") {
       const answers = Array.isArray(body.answers) ? body.answers.map((item) => String(item)) : [];
-      return NextResponse.json(await saveItemAnswers(id, answers, actor));
+      return NextResponse.json(
+        await saveItemAnswers(id, answers, actor, { skip: body.skip === true })
+      );
     }
     if (action === "save") {
       return NextResponse.json(
