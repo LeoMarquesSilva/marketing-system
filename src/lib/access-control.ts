@@ -36,7 +36,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/trafego-pago", label: "Tráfego Pago" },
   { key: "/vios-tarefas", label: "Tarefas VIOS" },
   { key: "/eventos", label: "Eventos" },
-  { key: "/cafe-cultura", label: "Café com Cultura", admin: true },
+  { key: "/cafe-cultura", label: "Café com Cultura", manualOnly: true },
   { key: "/email-marketing", label: "E-mail Marketing" },
   { key: "/nfc", label: "NFC Hub" },
   { key: "/meus-clientes", label: "Meus Clientes", alwaysAllowed: true },
@@ -52,6 +52,7 @@ const VALID_PERMISSION_KEYS = new Set(ALL_KEYS);
 
 /** Chaves liberadas apenas manualmente (por usuário), nunca via preset em lote. */
 export const MEUS_CLIENTES_KEY = "/meus-clientes";
+export const CAFE_CULTURA_KEY = "/cafe-cultura";
 export const MANUAL_ONLY_KEYS = ACCESS_SECTIONS.filter((s) => s.manualOnly).map((s) => s.key);
 
 const NON_ADMIN_KEYS = ACCESS_SECTIONS.filter(
@@ -126,6 +127,13 @@ export function isCollaboratorPhotosManager(
 
 export function isAdminRole(profile: AccessProfile | null | undefined): boolean {
   return (profile?.role ?? "").toLowerCase() === "admin";
+}
+
+/** Painel do Café com Cultura: admin ou liberação manual em Usuários. */
+export function hasCafeCulturaAccess(profile: AccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  return Boolean(profile.permissions?.includes(CAFE_CULTURA_KEY));
 }
 
 export function isManualOnlyKey(key: string): boolean {

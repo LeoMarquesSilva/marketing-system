@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdminUser, requireAuthenticatedUser } from "@/lib/api-auth";
+import { requireAuthenticatedUser, requireCafeCulturaAccess } from "@/lib/api-auth";
 import {
   CafeCulturaError,
   listCafeAdminEditions,
@@ -8,7 +8,7 @@ import {
 export async function GET() {
   try {
     const authUser = await requireAuthenticatedUser();
-    await requireAdminUser(authUser.id);
+    await requireCafeCulturaAccess(authUser.id);
     return NextResponse.json({ editions: await listCafeAdminEditions() });
   } catch (error) {
     if (error instanceof CafeCulturaError) {
@@ -20,7 +20,7 @@ export async function GET() {
     const message = error instanceof Error ? error.message : "";
     const status = /não autenticado/i.test(message)
       ? 401
-      : /administrador/i.test(message)
+      : /administrador|café com cultura/i.test(message)
         ? 403
         : 500;
     return NextResponse.json(

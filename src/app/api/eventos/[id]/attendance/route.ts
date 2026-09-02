@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdminUser, requireAuthenticatedUser } from "@/lib/api-auth";
+import { requireAuthenticatedUser, requireCafeCulturaAccess } from "@/lib/api-auth";
 import {
   CafeCulturaError,
   getCafeAdminData,
@@ -18,12 +18,14 @@ function responseForError(error: unknown) {
   }
   const message = error instanceof Error ? error.message : "";
   if (/não autenticado/i.test(message)) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
-  if (/administrador/i.test(message)) return NextResponse.json({ error: "Acesso restrito a administradores." }, { status: 403 });
+  if (/administrador|café com cultura/i.test(message)) {
+    return NextResponse.json({ error: message || "Sem permissão para o Café com Cultura." }, { status: 403 });
+  }
   return NextResponse.json({ error: "Não foi possível concluir a operação." }, { status: 500 });
 }
 async function requireAttendanceAdmin() {
   const authUser = await requireAuthenticatedUser();
-  await requireAdminUser(authUser.id);
+  await requireCafeCulturaAccess(authUser.id);
   return getCafeProfileForAuthUser(authUser.id);
 }
 

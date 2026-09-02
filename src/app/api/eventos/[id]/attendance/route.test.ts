@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const requireAuthenticatedUser = vi.hoisted(() => vi.fn());
-const requireAdminUser = vi.hoisted(() => vi.fn());
+const requireCafeCulturaAccess = vi.hoisted(() => vi.fn());
 const getCafeAdminData = vi.hoisted(() => vi.fn());
 const getCafeProfileForAuthUser = vi.hoisted(() => vi.fn());
 const updateCafeParticipant = vi.hoisted(() => vi.fn());
 const updateCafeEventSettings = vi.hoisted(() => vi.fn());
 
-vi.mock("@/lib/api-auth", () => ({ requireAuthenticatedUser, requireAdminUser }));
+vi.mock("@/lib/api-auth", () => ({ requireAuthenticatedUser, requireCafeCulturaAccess }));
 vi.mock("@/lib/cafe-cultura/server", () => ({
   CafeCulturaError: class CafeCulturaError extends Error {},
   getCafeAdminData,
@@ -19,9 +19,11 @@ vi.mock("@/lib/cafe-cultura/server", () => ({
 describe("/api/eventos/[id]/attendance", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("não entrega o painel para usuário não administrador", async () => {
+  it("não entrega o painel para quem não tem o módulo Café com Cultura", async () => {
     requireAuthenticatedUser.mockResolvedValueOnce({ id: "auth-user" });
-    requireAdminUser.mockRejectedValueOnce(new Error("Apenas administradores podem executar esta ação."));
+    requireCafeCulturaAccess.mockRejectedValueOnce(
+      new Error("Sem permissão para o Café com Cultura.")
+    );
     vi.resetModules();
     const { GET } = await import("./route");
     const response = await GET(new Request("https://example.com/api/eventos/event-1/attendance"), {
@@ -31,9 +33,9 @@ describe("/api/eventos/[id]/attendance", () => {
     expect(getCafeAdminData).not.toHaveBeenCalled();
   });
 
-  it("audita a correção usando o perfil do administrador autenticado", async () => {
-    requireAuthenticatedUser.mockResolvedValueOnce({ id: "auth-admin" });
-    requireAdminUser.mockResolvedValueOnce(undefined);
+  it("audita a correção usando o perfil de quem tem o módulo", async () => {
+    requireAuthenticatedUser.mockResolvedValueOnce({ id: "auth-cafe" });
+    requireCafeCulturaAccess.mockResolvedValueOnce(undefined);
     getCafeProfileForAuthUser.mockResolvedValueOnce({ id: "admin-profile" });
     updateCafeParticipant.mockResolvedValueOnce({ summary: { present: 1 } });
     vi.resetModules();

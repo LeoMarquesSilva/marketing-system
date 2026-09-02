@@ -17,6 +17,7 @@ import {
 import { CafeAdminPanel } from "@/components/cafe-cultura/cafe-admin-panel";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/auth-context";
+import { hasCafeCulturaAccess } from "@/lib/access-control";
 import type { CafeAdminData, CafeAdminEdition } from "@/lib/cafe-cultura/types";
 import { cn } from "@/lib/utils";
 
@@ -123,12 +124,12 @@ export function CafeAdminClient() {
       router.replace("/login");
       return;
     }
-    if ((profile?.role ?? "").toLowerCase() !== "admin") {
+    if (!hasCafeCulturaAccess(profile)) {
       router.replace("/");
       return;
     }
     void loadEditions();
-  }, [authLoading, loadEditions, profile?.role, router, user]);
+  }, [authLoading, loadEditions, profile, router, user]);
 
   useEffect(() => {
     if (!selectedEdition || requestedEditionId === selectedEdition.id) return;
@@ -155,7 +156,7 @@ export function CafeAdminClient() {
     window.setTimeout(() => setCopied(false), 1800);
   };
 
-  if (authLoading || !user || (profile?.role ?? "").toLowerCase() !== "admin") {
+  if (authLoading || !user || !hasCafeCulturaAccess(profile)) {
     return <div className="flex min-h-[48vh] items-center justify-center"><LoaderCircle className="size-6 animate-spin text-[#347796]" /></div>;
   }
 

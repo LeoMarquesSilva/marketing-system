@@ -3,6 +3,7 @@ import {
   ACCESS_PRESETS,
   canAccessPath,
   canEditPartyInvite,
+  hasCafeCulturaAccess,
   isManualOnlyKey,
   normalizePermissionsInput,
   resolveAllowedSections,
@@ -39,11 +40,30 @@ describe("access-control permissions catalog", () => {
     ]);
   });
 
-  it("marca só RH como manual-only", () => {
+  it("marca RH e Café com Cultura como liberação manual", () => {
     expect(isManualOnlyKey("/meus-clientes")).toBe(false);
     expect(isManualOnlyKey("/rh")).toBe(true);
+    expect(isManualOnlyKey("/cafe-cultura")).toBe(true);
     expect(isManualOnlyKey("/ferias")).toBe(false);
     expect(isManualOnlyKey("/planner")).toBe(false);
+  });
+
+  it("libera o painel do Café com Cultura só com a permissão, sem ser admin", () => {
+    const user = { role: null, permissions: ["/cafe-cultura"] };
+    expect(hasCafeCulturaAccess(user)).toBe(true);
+    expect(canAccessPath(user, "/cafe-cultura")).toBe(true);
+    expect(canAccessPath(user, "/admin")).toBe(false);
+  });
+
+  it("não libera o painel do Café sem a permissão nem cargo admin", () => {
+    expect(hasCafeCulturaAccess({ role: "designer", permissions: null })).toBe(false);
+    expect(hasCafeCulturaAccess({ role: null, permissions: ["/planner"] })).toBe(false);
+    expect(canAccessPath({ role: null, permissions: ["/planner"] }, "/cafe-cultura")).toBe(false);
+  });
+
+  it("admin acessa o painel do Café mesmo sem a chave no cadastro", () => {
+    expect(hasCafeCulturaAccess({ role: "admin", permissions: null })).toBe(true);
+    expect(canAccessPath({ role: "admin" }, "/cafe-cultura")).toBe(true);
   });
 
   it("permissão /rh libera /rh/ferias e /rh/qualificacoes", () => {

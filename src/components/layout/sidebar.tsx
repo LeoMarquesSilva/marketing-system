@@ -48,6 +48,7 @@ import {
   resolveAllowedSections,
   isCollaboratorPhotosManager,
   isAdminRole,
+  hasCafeCulturaAccess,
 } from "@/lib/access-control";
 import { canAccessGustavoContent } from "@/lib/gustavo-content/access";
 import { hasHrAccess } from "@/lib/rh/access";
@@ -355,7 +356,7 @@ function getNavItems(
       [
         ...baseNavItems.filter((i) => {
           if (i.href === "/nfc") return isAdmin;
-          if (i.href === "/cafe-cultura") return isAdmin;
+          if (i.href === "/cafe-cultura") return hasCafeCulturaAccess(profile);
           if (i.href === "/minhas-fotos") return true;
           return i.href !== "/fotos-colaboradores" || isCollaboratorPhotosManager(profile);
         }),
