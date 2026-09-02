@@ -2,6 +2,8 @@
 
 Sistema para rastrear solicitações da equipe de marketing, monitorar prazos e visualizar eficiência através de métricas. Desenvolvido para escritórios de advocacia.
 
+Módulo **Operações Legais** (`/operacoes-legais`): exclusivo de quem tem department Operações Legais. Skills em `.cursor/skills/` (índice: `ops-legais-orquestrai`).
+
 ## Tech Stack
 
 - **Framework:** Next.js 16 (App Router) com TypeScript

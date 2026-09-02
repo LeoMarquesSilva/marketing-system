@@ -43,7 +43,9 @@ yarn-error.log*
 next-env.d.ts
 
 # IDE / local
-.cursor/
+.cursor/*
+!.cursor/skills/
+!.cursor/skills/**
 .agents/
 /.claude/launch.json
 /.claude/settings.local.json

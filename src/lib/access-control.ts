@@ -6,6 +6,8 @@
  * seção). Quando null/vazio, cai no comportamento legado (role/department).
  */
 
+import { hasOperacoesLegaisAccess, isOperacoesLegaisPath } from "@/lib/operacoes-legais/access";
+
 export interface AccessSection {
   key: string; // rota base
   label: string;
@@ -39,6 +41,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/usuarios", label: "Usuários" },
   { key: "/custos-projetos", label: "Custos de Projetos" },
   { key: "/rh", label: "RH (Férias e Qualificações)", manualOnly: true },
+  { key: "/operacoes-legais", label: "Operações Legais", manualOnly: true },
   { key: "/admin", label: "Configurações", admin: true },
 ];
 
@@ -72,7 +75,7 @@ export const ALWAYS_ALLOWED_PATHS = [
 /**
  * Rotas sensíveis que exigem permissão explícita mesmo no modo legado (perfil sem
  * `permissions` configuradas não ganha acesso automático, ao contrário do resto do
- * catálogo): "/rh" (dados de RH).
+ * catálogo): "/rh" (dados de RH) e "/operacoes-legais" (department Ops ou admin).
  */
 
 /** Página inicial do colaborador de conteúdo (desempenho no Instagram). */
@@ -88,6 +91,7 @@ export interface AccessProfile {
   role?: string | null;
   permissions?: string[] | null;
   id?: string;
+  department?: string | null;
   /** Indicador de navegação; a autorização de dados é refeita no servidor. */
   ferias_view_enabled?: boolean | null;
 }
@@ -186,6 +190,10 @@ export function canAccessPath(
     if (isAdminRole(profile)) return true;
     const permissions = profile?.permissions ?? [];
     return permissions.includes("/rh") || permissions.includes("/ferias");
+  }
+
+  if (isOperacoesLegaisPath(pathname)) {
+    return hasOperacoesLegaisAccess(profile);
   }
 
   const manualOnlyKey = MANUAL_ONLY_KEYS.find(

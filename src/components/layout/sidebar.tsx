@@ -32,6 +32,8 @@ import {
   Palmtree,
   BriefcaseBusiness,
   IdCard,
+  Scale,
+  CalendarClock,
   ChevronDown,
   TrendingUp,
   Layers,
@@ -49,6 +51,7 @@ import {
   isAdminRole,
 } from "@/lib/access-control";
 import { hasHrAccess } from "@/lib/rh/access";
+import { hasOperacoesLegaisAccess } from "@/lib/operacoes-legais/access";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { fetchCommentStats } from "@/lib/request-comments";
 import { fetchMarketingRequests } from "@/lib/marketing-requests";
@@ -132,6 +135,19 @@ const rhNavGroup: NavGroup = {
   children: [
     { href: "/rh/ferias", icon: Palmtree, label: "Ferias" },
     { href: "/rh/qualificacoes", icon: IdCard, label: "Qualificacoes" },
+  ],
+};
+
+const opsLegaisNavGroup: NavGroup = {
+  key: "/operacoes-legais",
+  icon: Scale,
+  label: "Operações Legais",
+  children: [
+    { href: "/operacoes-legais", icon: LayoutDashboard, label: "Início" },
+    { href: "/operacoes-legais/vistagem", icon: CalendarClock, label: "Vistagem" },
+    { href: "/operacoes-legais/fechamento", icon: Wallet, label: "Fechamento" },
+    { href: "/operacoes-legais/relatorios", icon: ClipboardList, label: "Relatórios VIOS" },
+    { href: "/operacoes-legais/etiquetas", icon: Shield, label: "Demanda de risco" },
   ],
 };
 
@@ -270,6 +286,10 @@ function getNavItems(
       return allowed.includes(i.href);
     });
 
+    if (hasOperacoesLegaisAccess(profile)) {
+      items = [...items, opsLegaisNavGroup];
+    }
+
     if (profileHasRhAccess(profile) || allowed.includes("/rh") || allowed.includes("/ferias")) {
       items = [...items, rhNavGroup];
     } else if (profileHasFeriasView(profile)) {
@@ -299,9 +319,11 @@ function getNavItems(
   }
 
   if (isContentCollaborator(profile)) {
-    const collaboratorItems: NavEntry[] = profileHasFeriasView(profile)
-      ? [...collaboratorNavItems, feriasViewerNavGroup]
-      : collaboratorNavItems;
+    const collaboratorItems: NavEntry[] = [
+      ...collaboratorNavItems,
+      ...(hasOperacoesLegaisAccess(profile) ? [opsLegaisNavGroup] : []),
+      ...(profileHasFeriasView(profile) ? [feriasViewerNavGroup] : []),
+    ];
     return applyCollapsibleGroups(collaboratorItems);
   }
 
@@ -315,6 +337,7 @@ function getNavItems(
       return i.href !== "/fotos-colaboradores" || isCollaboratorPhotosManager(profile);
     }),
     meusClientesNavItem,
+    ...(hasOperacoesLegaisAccess(profile) ? [opsLegaisNavGroup] : []),
     ...(isAdmin ? [rhNavGroup, ...adminNavItems] : canViewFerias ? [feriasViewerNavGroup] : []),
   ]);
 }

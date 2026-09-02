@@ -12,6 +12,7 @@ describe("access-control permissions catalog", () => {
   it("não inclui Meus Clientes/RH no Marketing completo", () => {
     expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/meus-clientes");
     expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/rh");
+    expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/operacoes-legais");
     expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/ferias");
     expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/cafe-cultura");
   });
@@ -39,9 +40,10 @@ describe("access-control permissions catalog", () => {
     ]);
   });
 
-  it("marca só RH como manual-only", () => {
+  it("marca RH e Operações Legais como manual-only", () => {
     expect(isManualOnlyKey("/meus-clientes")).toBe(false);
     expect(isManualOnlyKey("/rh")).toBe(true);
+    expect(isManualOnlyKey("/operacoes-legais")).toBe(true);
     expect(isManualOnlyKey("/ferias")).toBe(false);
     expect(isManualOnlyKey("/planner")).toBe(false);
   });
@@ -77,6 +79,21 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(gestor, "/meus-clientes")).toBe(true);
     expect(canAccessPath(gestor, "/planner")).toBe(false);
     expect(resolveAllowedSections(gestor)).toEqual(["/meus-clientes"]);
+  });
+
+  it("módulo Operações Legais só para department Ops, admin ou permissão", () => {
+    expect(
+      canAccessPath({ role: null, department: "Operações Legais", permissions: ["/conteudo/roteiros"] }, "/operacoes-legais")
+    ).toBe(true);
+    expect(
+      canAccessPath({ role: null, department: "Operações Legais" }, "/operacoes-legais/fechamento")
+    ).toBe(true);
+    expect(
+      canAccessPath({ role: null, department: "Cível", permissions: ["/conteudo/roteiros"] }, "/operacoes-legais")
+    ).toBe(false);
+    expect(
+      canAccessPath({ role: "admin", department: "Cível" }, "/operacoes-legais")
+    ).toBe(true);
   });
 
   it("só admin edita Festa de 10 anos", () => {

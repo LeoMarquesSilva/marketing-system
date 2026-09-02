@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { isContentCollaborator } from "@/lib/content-areas";
 import { resolveAllowedSections, canAccessPath } from "@/lib/access-control";
+import { isOperacoesLegaisPath } from "@/lib/operacoes-legais/access";
 import {
   loginPathWithReturn,
   resolvePostLoginPathFromProfile,
@@ -108,6 +109,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     // específico a Férias deve prevalecer sobre o redirect legado abaixo.
     if (profile && isFeriasRoute && canAccessPath(profile, pathname)) {
       return null;
+    }
+
+    if (profile && isOperacoesLegaisPath(pathname)) {
+      return canAccessPath(profile, pathname) ? null : resolvePostLoginPathFromProfile(profile);
     }
 
     // Comportamento legado (colaborador de conteúdo).
