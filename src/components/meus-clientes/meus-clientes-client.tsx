@@ -43,6 +43,7 @@ import {
   type SioeClienteAtividadeIndex,
 } from "@/lib/sioe-cliente-atividade";
 import {
+  canEditNpsContactsForGroup,
   resolveGroupAtividade,
   type ClientGroupGestorStatus,
 } from "@/lib/client-group-gestor-status";
@@ -98,6 +99,11 @@ import {
   type NpsSentFilter,
 } from "@/lib/nps/sent-filter";
 import {
+  computeNpsWorkflowProgress,
+  groupMatchesNpsWorkflowFilter,
+  type NpsWorkflowFilter,
+} from "@/lib/nps/workflow-progress";
+import {
   type ClientGroupBucket,
   type SelectKey,
   type StatusFilter,
@@ -116,6 +122,7 @@ import {
   HealthPanel,
   ManagerSummaryTable,
   MeusClientesSkeleton,
+  NpsWorkflowProgressCard,
   ProgressBarCard,
   SEM_GRUPO_KEY,
   StatusToggle,
@@ -272,6 +279,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
     useState<FaturamentoPrevistoFilter>("all");
   const [filterInvite, setFilterInvite] = useState<InviteFilter>("all");
   const [filterNpsSent, setFilterNpsSent] = useState<NpsSentFilter>("all");
+  const [filterWorkflow, setFilterWorkflow] = useState<NpsWorkflowFilter>("all");
   const [filterPartyTipo, setFilterPartyTipo] = useState<PartyInviteTipo | "all">("all");
   const [filterResponsibleArea, setFilterResponsibleArea] = useState("");
   const [savingResponsibleGroupId, setSavingResponsibleGroupId] = useState<string | null>(null);
@@ -290,6 +298,12 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [groupStatusDialogOpen, setGroupStatusDialogOpen] = useState(false);
   const [editingGroupStatus, setEditingGroupStatus] = useState<ClientGroupBucket | null>(null);
+  const [pendingNpsEdit, setPendingNpsEdit] = useState<
+    | { kind: "contact"; contact: EmailContact }
+    | { kind: "person"; person: EmailPerson }
+    | { kind: "create" }
+    | null
+  >(null);
   const [npsLinkDialogOpen, setNpsLinkDialogOpen] = useState(false);
   const [npsLinkGroup, setNpsLinkGroup] = useState<ClientGroupBucket | null>(null);
   const [npsLinkEligibleCount, setNpsLinkEligibleCount] = useState(0);
@@ -341,6 +355,23 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
     (group: ClientGroupBucket) =>
       resolveClienteCategoriaAtividade(clienteAtividade, { grupoName: group.name }),
     [clienteAtividade]
+  );
+
+  const openGroupStatus = useCallback(
+    (group: ClientGroupBucket) => {
+      setEditingGroupStatus(group);
+      setEditingGroupAtividadeIndicio(resolveSioeAtividadeForBucket(group));
+      setEditingGroupCategoriaIndicio(resolveSioeCategoriaForBucket(group));
+      setEditingGroupFaturamentoIndicios(resolveSioeFaturamentoIndiciosForBucket(group));
+      setEditingGroupPrevistoDate(resolveSioePrevistoDateForBucket(group));
+      setGroupStatusDialogOpen(true);
+    },
+    [
+      resolveSioeAtividadeForBucket,
+      resolveSioeCategoriaForBucket,
+      resolveSioeFaturamentoIndiciosForBucket,
+      resolveSioePrevistoDateForBucket,
+    ]
   );
 
   const reload = useCallback(async (options?: { silent?: boolean }) => {
@@ -406,6 +437,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
     filterFaturamentoPrevisto,
     filterInvite,
     filterNpsSent,
+    filterWorkflow,
     filterPartyTipo,
     filterResponsibleArea,
     search,
@@ -857,9 +889,47 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
 
   const effectivePartyTipoFilter: PartyInviteTipo | "all" = isAdmin ? filterPartyTipo : "all";
 
+  const npsWorkflowProgress = useMemo(() => {
+    return computeNpsWorkflowProgress(
+      displayGroupsBeforeInvite.map((group) => {
+        const { contacts: groupContacts, people: groupPeople } = mergeGroupMembers(
+          contactsByGroup.get(group.key) ?? [],
+          group.groupPeople
+        );
+        return {
+          clientGroupId: group.clientGroupId,
+          gestorStatus: group.clientGroupId
+            ? clientGroupStatusById[group.clientGroupId] ?? null
+            : null,
+          members: [...groupContacts, ...groupPeople],
+        };
+      })
+    );
+  }, [displayGroupsBeforeInvite, contactsByGroup, clientGroupStatusById]);
+
+  const groupsAfterWorkflow = useMemo(() => {
+    if (filterWorkflow === "all") return displayGroupsBeforeInvite;
+    return displayGroupsBeforeInvite.filter((group) => {
+      const { contacts: groupContacts, people: groupPeople } = mergeGroupMembers(
+        contactsByGroup.get(group.key) ?? [],
+        group.groupPeople
+      );
+      return groupMatchesNpsWorkflowFilter(
+        {
+          clientGroupId: group.clientGroupId,
+          gestorStatus: group.clientGroupId
+            ? clientGroupStatusById[group.clientGroupId] ?? null
+            : null,
+          members: [...groupContacts, ...groupPeople],
+        },
+        filterWorkflow
+      );
+    });
+  }, [displayGroupsBeforeInvite, contactsByGroup, clientGroupStatusById, filterWorkflow]);
+
   const groupsAfterInvite = useMemo(
     () =>
-      displayGroupsBeforeInvite.filter((group) =>
+      groupsAfterWorkflow.filter((group) =>
         groupMatchesInviteFilters(
           group,
           contactsByGroup,
@@ -867,7 +937,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
           effectivePartyTipoFilter
         )
       ),
-    [displayGroupsBeforeInvite, contactsByGroup, filterInvite, effectivePartyTipoFilter]
+    [groupsAfterWorkflow, contactsByGroup, filterInvite, effectivePartyTipoFilter]
   );
 
   const npsSentFilterCounts = useMemo(() => {
@@ -1050,6 +1120,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
       partyGroups: 0,
       npsGroups: 0,
       gestorDefaultGroups: 0,
+      npsUnclassified: 0,
     };
     const partyTipoCounts = new Map<PartyInviteTipo, number>(
       PARTY_INVITE_TYPES.map((tipo) => [tipo.id, 0])
@@ -1087,6 +1158,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
         if (!member.partyInvite && !member.npsEligible) counts.none++;
         if (!member.partyInvite) counts.notParty++;
         if (!member.npsEligible) counts.notNps++;
+        if (!member.invitesClassifiedByUserId) counts.npsUnclassified++;
         if (memberMatchesInviteFilter(member, "gestor_default", "all")) {
           groupMatchesGestorDefault = true;
         }
@@ -1107,6 +1179,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
         { value: "not_party" as const, label: "Festa: não", count: inviteFilterCounts.notParty },
         { value: "nps" as const, label: "NPS: sim", count: inviteFilterCounts.nps },
         { value: "not_nps" as const, label: "NPS: não", count: inviteFilterCounts.notNps },
+        { value: "nps_unclassified" as const, label: "NPS: classificar", count: inviteFilterCounts.npsUnclassified },
         { value: "both" as const, label: "NPS + Festa", count: inviteFilterCounts.both },
         { value: "none" as const, label: "Sem NPS/Festa", count: inviteFilterCounts.none },
       ] satisfies Array<{ value: InviteFilter; label: string; count: number }>,
@@ -1311,6 +1384,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
       (isAdmin && filterFaturamentoPrevisto !== "all") ||
       filterInvite !== "all" ||
       filterNpsSent !== "all" ||
+      filterWorkflow !== "all" ||
       filterPartyTipo !== "all" ||
       (isAdmin && Boolean(filterResponsibleArea)) ||
       search.trim()
@@ -1334,6 +1408,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
     setFilterFaturamentoPrevisto("all");
     setFilterInvite("all");
     setFilterNpsSent("all");
+    setFilterWorkflow("all");
     setFilterPartyTipo("all");
     setFilterResponsibleArea("");
     setSearch("");
@@ -1451,6 +1526,33 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
         total={stats.completo + stats.incompleto}
         onShowPending={() => setFilterStatus("pending")}
         tourAnchor
+      />
+
+      <NpsWorkflowProgressCard
+        statusConfirmed={npsWorkflowProgress.statusConfirmed}
+        statusTotal={npsWorkflowProgress.groupsWithId}
+        npsClassified={npsWorkflowProgress.npsClassified}
+        npsTotal={npsWorkflowProgress.npsPeopleTotal}
+        statusFilterActive={filterWorkflow === "status_pending"}
+        npsFilterActive={
+          filterWorkflow === "nps_pending" || filterInvite === "nps_unclassified"
+        }
+        onShowStatusPending={() => {
+          setFilterWorkflow((current) => (current === "status_pending" ? "all" : "status_pending"));
+          listRef.current?.scrollIntoView({ behavior: "smooth" });
+        }}
+        onShowNpsPending={() => {
+          const already =
+            filterWorkflow === "nps_pending" && filterInvite === "nps_unclassified";
+          if (already) {
+            setFilterWorkflow("all");
+            setFilterInvite("all");
+          } else {
+            setFilterWorkflow("nps_pending");
+            setFilterInvite("nps_unclassified");
+          }
+          listRef.current?.scrollIntoView({ behavior: "smooth" });
+        }}
       />
 
       {isAdmin && (
@@ -1955,6 +2057,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
           filterNpsSent={filterNpsSent}
           filterPartyTipo={isAdmin ? filterPartyTipo : "all"}
           filterResponsibleArea={isAdmin ? filterResponsibleArea : ""}
+          filterWorkflow={filterWorkflow}
           gestorName={gestorName}
           filterResultCount={hasActiveFilters ? displayGroups.length : undefined}
           onClearArea={() => setFilterArea("")}
@@ -1962,10 +2065,17 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
           onClearStatus={() => setFilterStatus("all")}
           onClearAtividade={() => setFilterAtividade("all")}
           onClearFaturamentoPrevisto={() => setFilterFaturamentoPrevisto("all")}
-          onClearInvite={() => setFilterInvite("all")}
+          onClearInvite={() => {
+            setFilterInvite("all");
+            if (filterWorkflow === "nps_pending") setFilterWorkflow("all");
+          }}
           onClearNpsSent={() => setFilterNpsSent("all")}
           onClearPartyTipo={() => setFilterPartyTipo("all")}
           onClearResponsibleArea={() => setFilterResponsibleArea("")}
+          onClearWorkflow={() => {
+            setFilterWorkflow("all");
+            if (filterInvite === "nps_unclassified") setFilterInvite("all");
+          }}
         />
       </div>
 
@@ -2009,16 +2119,61 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
                   (tourStepId === "nps-send" || tourStepId === "nps-mark-sent")
                 }
                 onEditContact={(contact) => {
+                  const status = group.clientGroupId
+                    ? clientGroupStatusById[group.clientGroupId] ?? null
+                    : null;
+                  if (!canEditNpsContactsForGroup(status)) {
+                    if (!group.clientGroupId) {
+                      setToast({
+                        type: "error",
+                        text: "Este grupo ainda não tem cadastro para confirmar o status.",
+                      });
+                      return;
+                    }
+                    setPendingNpsEdit({ kind: "contact", contact });
+                    openGroupStatus(group);
+                    return;
+                  }
                   setEditingContact(contact);
                   setEditingPerson(null);
                   setDialogOpen(true);
                 }}
                 onEditPerson={(person) => {
+                  const status = group.clientGroupId
+                    ? clientGroupStatusById[group.clientGroupId] ?? null
+                    : null;
+                  if (!canEditNpsContactsForGroup(status)) {
+                    if (!group.clientGroupId) {
+                      setToast({
+                        type: "error",
+                        text: "Este grupo ainda não tem cadastro para confirmar o status.",
+                      });
+                      return;
+                    }
+                    setPendingNpsEdit({ kind: "person", person });
+                    openGroupStatus(group);
+                    return;
+                  }
                   setEditingPerson(person);
                   setEditingContact(null);
                   setDialogOpen(true);
                 }}
                 onAddContact={(g) => {
+                  const status = g.clientGroupId
+                    ? clientGroupStatusById[g.clientGroupId] ?? null
+                    : null;
+                  if (!canEditNpsContactsForGroup(status)) {
+                    if (!g.clientGroupId) {
+                      setToast({
+                        type: "error",
+                        text: "Este grupo ainda não tem cadastro para confirmar o status.",
+                      });
+                      return;
+                    }
+                    setPendingNpsEdit({ kind: "create" });
+                    openGroupStatus(g);
+                    return;
+                  }
                   setCreatingContactGroup(g);
                   setCreateDialogOpen(true);
                 }}
@@ -2029,12 +2184,8 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
                   group.clientGroupId ? npsSentByGroupId[group.clientGroupId] ?? null : null
                 }
                 onEditGroupStatus={(g) => {
-                  setEditingGroupStatus(g);
-                  setEditingGroupAtividadeIndicio(resolveSioeAtividadeForBucket(g));
-                  setEditingGroupCategoriaIndicio(resolveSioeCategoriaForBucket(g));
-                  setEditingGroupFaturamentoIndicios(resolveSioeFaturamentoIndiciosForBucket(g));
-                  setEditingGroupPrevistoDate(resolveSioePrevistoDateForBucket(g));
-                  setGroupStatusDialogOpen(true);
+                  setPendingNpsEdit(null);
+                  openGroupStatus(g);
                 }}
                 onGenerateNpsLink={(g) => {
                   const groupContacts = displayContactsByGroup.get(g.key) ?? [];
@@ -2126,6 +2277,26 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
         onSaved={(clientGroupId, status) => {
           setClientGroupStatusById((prev) => ({ ...prev, [clientGroupId]: status }));
           setToast({ type: "success", text: "Status do grupo salvo." });
+          const nextEdit = pendingNpsEdit;
+          setPendingNpsEdit(null);
+          if (!nextEdit) return;
+          if (nextEdit.kind === "contact") {
+            setEditingContact(nextEdit.contact);
+            setEditingPerson(null);
+            setDialogOpen(true);
+            return;
+          }
+          if (nextEdit.kind === "person") {
+            setEditingPerson(nextEdit.person);
+            setEditingContact(null);
+            setDialogOpen(true);
+            return;
+          }
+          const group = editingGroupStatus;
+          if (group) {
+            setCreatingContactGroup(group);
+            setCreateDialogOpen(true);
+          }
         }}
       />
 

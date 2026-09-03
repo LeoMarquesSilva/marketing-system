@@ -172,7 +172,7 @@ export function GroupStatusDialog({
                 <DialogTitle className="text-base sm:text-lg">Status do grupo</DialogTitle>
                 <DialogDescription className="text-xs sm:text-sm">
                   Informe se <span className="font-medium text-foreground">{group.name}</span>{" "}
-                  está ativo ou inativo.
+                  está ativo ou inativo. Só depois disso dá para editar os contatos e classificar o NPS.
                 </DialogDescription>
               </div>
             </div>

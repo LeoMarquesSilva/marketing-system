@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canEditNpsContactsForGroup,
   isClientGroupInactiveForOutreach,
   mapClientGroupGestorStatus,
   resolveGroupAtividade,
@@ -112,5 +113,39 @@ describe("client-group-gestor-status", () => {
     expect(
       isClientGroupInactiveForOutreach({ name: "Grupo Z", gestorAtividade: null }, sioe)
     ).toBe(false);
+  });
+
+  it("só libera edição NPS depois do status confirmado", () => {
+    expect(canEditNpsContactsForGroup(null)).toBe(false);
+    expect(
+      canEditNpsContactsForGroup({
+        gestorAtividade: null,
+        inativoEncerramentoTipo: null,
+        contratoVigenciaTermino: null,
+        rescisaoContratualData: null,
+        confirmedAt: null,
+        confirmedByUserId: null,
+      })
+    ).toBe(false);
+    expect(
+      canEditNpsContactsForGroup({
+        gestorAtividade: "ativo",
+        inativoEncerramentoTipo: null,
+        contratoVigenciaTermino: null,
+        rescisaoContratualData: null,
+        confirmedAt: "2026-09-02T00:00:00Z",
+        confirmedByUserId: "u1",
+      })
+    ).toBe(true);
+    expect(
+      canEditNpsContactsForGroup({
+        gestorAtividade: "inativo",
+        inativoEncerramentoTipo: "rescisao_contratual",
+        contratoVigenciaTermino: null,
+        rescisaoContratualData: "2026-08-01",
+        confirmedAt: "2026-09-02T00:00:00Z",
+        confirmedByUserId: "u1",
+      })
+    ).toBe(true);
   });
 });
