@@ -8,6 +8,8 @@ export type InviteFilter =
   | "none"
   | "not_party"
   | "not_nps"
+  /** Ainda sem classificação NPS (nem sim nem não). */
+  | "nps_unclassified"
   /** Gestores: NPS sim ou ainda não classificado — exclui só quem marcou NPS não. */
   | "gestor_default";
 
@@ -38,6 +40,7 @@ export function memberMatchesInviteFilter(
   if (inviteFilter === "none") return !member.partyInvite && !member.npsEligible;
   if (inviteFilter === "not_party") return !member.partyInvite;
   if (inviteFilter === "not_nps") return !member.npsEligible;
+  if (inviteFilter === "nps_unclassified") return !member.invitesClassifiedByUserId;
   if (inviteFilter === "gestor_default") {
     return member.npsEligible || !member.invitesClassifiedByUserId;
   }
@@ -62,6 +65,7 @@ export function parseInviteFilterParam(value: string | null): InviteFilter {
     value === "none" ||
     value === "not_party" ||
     value === "not_nps" ||
+    value === "nps_unclassified" ||
     value === "gestor_default"
   ) {
     return value;

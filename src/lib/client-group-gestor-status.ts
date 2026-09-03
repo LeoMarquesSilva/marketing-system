@@ -61,6 +61,13 @@ export function isGestorStatusPending(status: ClientGroupGestorStatus | null | u
   return !status?.gestorAtividade;
 }
 
+/** Classificar NPS só depois de confirmar ativo ou inativo. */
+export function canEditNpsContactsForGroup(
+  status: ClientGroupGestorStatus | null | undefined
+): boolean {
+  return Boolean(status?.gestorAtividade);
+}
+
 /** Prioriza confirmação do gestor; fallback no índice comercial (SIOE). */
 export function resolveGroupAtividade(
   group: { name: string; clientGroupId?: string | null },

@@ -2,13 +2,16 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import {
+  Building2,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   CircleHelp,
   Layers,
+  Lock,
   MessageSquareHeart,
   Pencil,
+  UserCheck,
   UserPlus,
   Users,
   X,
@@ -59,6 +62,7 @@ import type { PartyInviteTipo } from "@/lib/party-invite-types";
 import {
   groupAtividadeTooltip,
   isGestorStatusPending,
+  canEditNpsContactsForGroup,
   resolveGroupAtividade,
   type ClientGroupGestorStatus,
 } from "@/lib/client-group-gestor-status";
@@ -69,6 +73,11 @@ import {
   type SioeClienteAtividade,
   type SioeClienteAtividadeIndex,
 } from "@/lib/sioe-cliente-atividade";
+import {
+  memberMatchesInviteFilter as matchInviteFilterMember,
+  type InviteFilter,
+} from "@/lib/meus-clientes-invite-filter";
+import type { NpsWorkflowFilter } from "@/lib/nps/workflow-progress";
 
 export const SEM_GRUPO_KEY = "__sem_grupo__";
 export const FILTER_SEM_AREA = "__sem_area__";
@@ -78,10 +87,7 @@ export type StatusFilter = "all" | "pending" | "complete";
 export type AtividadeFilter = "all" | "ativo" | "inativo";
 export type FaturamentoPrevistoFilter = "all" | "com" | "sem";
 export type { InviteFilter } from "@/lib/meus-clientes-invite-filter";
-import {
-  memberMatchesInviteFilter as matchInviteFilterMember,
-  type InviteFilter,
-} from "@/lib/meus-clientes-invite-filter";
+export type { NpsWorkflowFilter };
 export type SelectKey = `c:${string}` | `p:${string}`;
 
 export interface ClientGroupBucket {
@@ -339,6 +345,8 @@ export function EditableRow({
   compact,
   searchQuery,
   tourContactEdit,
+  locked,
+  lockReason,
 }: {
   title: string;
   subtitle: string;
@@ -357,6 +365,8 @@ export function EditableRow({
   compact?: boolean;
   searchQuery?: string;
   tourContactEdit?: boolean;
+  locked?: boolean;
+  lockReason?: string;
 }) {
   const q = searchQuery ?? "";
   return (
@@ -376,6 +386,7 @@ export function EditableRow({
       className={`flex cursor-pointer items-center gap-2.5 rounded-xl border bg-card transition-colors hover:bg-muted/30 ${
         compact ? "px-2.5 py-2" : "px-3 py-2.5"
       } ${selected ? "border-primary/40 bg-primary/5" : pending ? "border-amber-200/80 bg-amber-50/30" : ""}`}
+      title={locked ? lockReason : undefined}
     >
       {selectable && (
         <input
@@ -441,9 +452,10 @@ export function EditableRow({
           onEdit();
         }}
         className="shrink-0"
+        title={locked ? lockReason : "Editar contato"}
         {...(tourContactEdit ? { "data-tour": "mc-contact-edit" } : {})}
       >
-        <Pencil className="h-3.5 w-3.5" />
+        {locked ? <Lock className="h-3.5 w-3.5 text-amber-700" /> : <Pencil className="h-3.5 w-3.5" />}
       </Button>
     </div>
   );
@@ -604,6 +616,9 @@ export function GroupSection({
     ? statusPending
     : Boolean(groupAtividade && isGestorStatusPending(gestorStatus));
   const canEditGroupStatus = Boolean(group.clientGroupId && onEditGroupStatus);
+  const npsEditLocked = !canEditNpsContactsForGroup(gestorStatus);
+  const npsEditLockReason =
+    "Confirme se o grupo está ativo ou inativo antes de classificar o NPS.";
   const npsEligibleCount =
     mergedContacts.filter((c) => c.npsEligible).length +
     mergedPeople.filter((p) => p.npsEligible).length;
@@ -801,9 +816,11 @@ export function GroupSection({
                   variant="outline"
                   size="sm"
                   className="shrink-0 border-blue-200 text-blue-700 hover:bg-blue-50"
-                  disabled={npsEligibleCount === 0}
+                  disabled={npsEditLocked || npsEligibleCount === 0}
                   title={
-                    npsEligibleCount === 0
+                    npsEditLocked
+                      ? npsEditLockReason
+                      : npsEligibleCount === 0
                       ? "Nenhum contato com NPS ligado neste grupo"
                       : "Gerar link NPS deste grupo"
                   }
@@ -846,6 +863,11 @@ export function GroupSection({
 
       {open && (
         <div className="border-t px-4 py-4 space-y-4 bg-muted/5">
+          {npsEditLocked && (
+            <p className="rounded-xl border border-amber-200 bg-amber-50/90 px-3 py-2 text-xs text-amber-800">
+              Confirme o status do grupo (ativo ou inativo) para editar contatos e classificar o NPS.
+            </p>
+          )}
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-3">
@@ -868,8 +890,9 @@ export function GroupSection({
                 size="sm"
                 className="gap-1.5 h-7 text-xs"
                 onClick={() => onAddContact(group)}
+                title={npsEditLocked ? npsEditLockReason : undefined}
               >
-                <UserPlus className="h-3.5 w-3.5" />
+                {npsEditLocked ? <Lock className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
                 Adicionar
               </Button>
             </div>
@@ -897,6 +920,8 @@ export function GroupSection({
                         partyInviteTipo={contact.partyInviteTipo}
                         missing={missing}
                         pending={pending}
+                        locked={npsEditLocked}
+                        lockReason={npsEditLockReason}
                         onEdit={() => onEditContact(contact)}
                         selectable={isAdmin}
                         selected={selectedKeys.has(contactSelectKey(contact.id))}
@@ -925,6 +950,8 @@ export function GroupSection({
                       areas={personAreas.get(person.id) ?? []}
                       missing={missing}
                       pending={pending}
+                      locked={npsEditLocked}
+                      lockReason={npsEditLockReason}
                       onEdit={() => onEditPerson(person)}
                       selectable={isAdmin}
                       selected={selectedKeys.has(personSelectKey(person.id))}
@@ -1066,6 +1093,116 @@ export function ProgressBarCard({
   );
 }
 
+function WorkflowMeter({
+  icon: Icon,
+  label,
+  hint,
+  complete,
+  total,
+  pendingLabel,
+  onShowPending,
+  active,
+}: {
+  icon: typeof Building2;
+  label: string;
+  hint: string;
+  complete: number;
+  total: number;
+  pendingLabel: string;
+  onShowPending?: () => void;
+  active?: boolean;
+}) {
+  const pct = total > 0 ? Math.round((complete / total) * 100) : 100;
+  const pending = Math.max(0, total - complete);
+  return (
+    <div className="min-w-0">
+      <div className="mb-1.5 flex items-center gap-2">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+          <Icon className="h-3.5 w-3.5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">{label}</p>
+          <p className="text-[11px] text-muted-foreground">{hint}</p>
+        </div>
+        <p className="shrink-0 text-sm tabular-nums text-muted-foreground">
+          {complete}/{total}
+          <span className="ml-1 text-xs">({pct}%)</span>
+        </p>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      {pending > 0 && onShowPending ? (
+        <button
+          type="button"
+          onClick={onShowPending}
+          className={`mt-1.5 text-xs hover:underline ${
+            active ? "font-medium text-primary" : "text-primary"
+          }`}
+        >
+          {pendingLabel.replace("{n}", String(pending))}
+        </button>
+      ) : (
+        <p className="mt-1.5 text-xs text-emerald-700">Tudo confirmado</p>
+      )}
+    </div>
+  );
+}
+
+export function NpsWorkflowProgressCard({
+  statusConfirmed,
+  statusTotal,
+  npsClassified,
+  npsTotal,
+  onShowStatusPending,
+  onShowNpsPending,
+  statusFilterActive,
+  npsFilterActive,
+}: {
+  statusConfirmed: number;
+  statusTotal: number;
+  npsClassified: number;
+  npsTotal: number;
+  onShowStatusPending?: () => void;
+  onShowNpsPending?: () => void;
+  statusFilterActive?: boolean;
+  npsFilterActive?: boolean;
+}) {
+  return (
+    <div
+      className="rounded-xl border border-border/80 bg-card px-4 py-3 shadow-sm"
+      data-tour="mc-nps-workflow"
+    >
+      <p className="mb-3 text-sm font-medium">Progresso NPS</p>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <WorkflowMeter
+          icon={Building2}
+          label="Status do grupo"
+          hint="Confirmar ativo ou inativo"
+          complete={statusConfirmed}
+          total={statusTotal}
+          pendingLabel="Ver {n} sem confirmar"
+          onShowPending={onShowStatusPending}
+          active={statusFilterActive}
+        />
+        <WorkflowMeter
+          icon={UserCheck}
+          label="Classificação NPS"
+          hint="Marcar se é elegível ou não"
+          complete={npsClassified}
+          total={npsTotal}
+          pendingLabel="Ver {n} sem classificar"
+          onShowPending={onShowNpsPending}
+          active={npsFilterActive}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function HealthPanel({
   syncMeta,
   clienteAtividade,
@@ -1114,6 +1251,7 @@ export function FilterChips({
   filterInvite,
   filterPartyTipo,
   filterResponsibleArea,
+  filterWorkflow,
   gestorName,
   filterResultCount,
   onClearArea,
@@ -1124,6 +1262,7 @@ export function FilterChips({
   onClearInvite,
   onClearPartyTipo,
   onClearResponsibleArea,
+  onClearWorkflow,
 }: {
   filterArea: string;
   filterGestor: string;
@@ -1133,6 +1272,7 @@ export function FilterChips({
   filterInvite?: InviteFilter;
   filterPartyTipo?: PartyInviteTipo | "all";
   filterResponsibleArea?: string;
+  filterWorkflow?: NpsWorkflowFilter;
   gestorName?: string;
   filterResultCount?: number;
   onClearArea: () => void;
@@ -1143,6 +1283,7 @@ export function FilterChips({
   onClearInvite?: () => void;
   onClearPartyTipo?: () => void;
   onClearResponsibleArea?: () => void;
+  onClearWorkflow?: () => void;
 }) {
   const chips: { label: string; onClear: () => void }[] = [];
   if (filterArea) {
@@ -1196,12 +1337,26 @@ export function FilterChips({
       none: "Sem NPS/Festa",
       not_party: "Festa: não",
       not_nps: "NPS: não",
+      nps_unclassified: "NPS: classificar",
       gestor_default: "NPS: sim ou pendente",
     };
     chips.push({
       label: inviteLabels[filterInvite],
       onClear: onClearInvite ?? (() => {}),
     });
+  }
+  if (filterWorkflow && filterWorkflow !== "all") {
+    if (filterWorkflow === "status_pending") {
+      chips.push({
+        label: "Status: confirmar",
+        onClear: onClearWorkflow ?? (() => {}),
+      });
+    } else if (filterInvite !== "nps_unclassified") {
+      chips.push({
+        label: "Fila: classificar NPS",
+        onClear: onClearWorkflow ?? (() => {}),
+      });
+    }
   }
   if (filterPartyTipo && filterPartyTipo !== "all") {
     chips.push({

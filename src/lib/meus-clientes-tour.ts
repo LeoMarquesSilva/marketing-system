@@ -78,7 +78,7 @@ const COMMON_STEPS: MeusClientesTourStep[] = [
     id: "group-status",
     target: '[data-tour="mc-group-status"]',
     title: "Status comercial",
-    body: "Confirme se o grupo está ativo ou inativo. Para inativos, informe se houve término de vigência ou rescisão contratual, com a data correspondente.",
+    body: "Confirme se o grupo está ativo ou inativo — isso é obrigatório antes de editar contatos e classificar o NPS. Para inativos, informe se houve término de vigência ou rescisão contratual, com a data correspondente.",
   },
 ];
 
@@ -96,7 +96,7 @@ const COLABORADOR_STEPS: MeusClientesTourStep[] = [
     target: '[data-tour="mc-contact-edit"]',
     title: "Responsável: editar contatos",
     roleLabel: "Responsável",
-    body: "Clique no lápis para abrir o cadastro. Preencha nome, e-mail, telefone e cargo. Sem esses dados o contato fica pendente e não entra no link NPS.",
+    body: "Depois do status confirmado, clique no contato para abrir o cadastro. Preencha nome, e-mail, telefone e cargo. Sem esses dados o contato fica pendente e não entra no link NPS.",
   },
   {
     id: "contact-nps",
@@ -140,13 +140,13 @@ const CLOSING_STEPS: MeusClientesTourStep[] = [
     target: null,
     title: "Resumo — responsável",
     roleLabel: "Responsável",
-    body: "Seu papel: (1) completar cadastros; (2) marcar elegíveis ao NPS; (3) enviar o link pelo WhatsApp; (4) marcar “NPS enviado” — essa marcação não pode ser desfeita; (5) cobrar o cliente até responder. Dúvidas: fale com o marketing.",
+    body: "Seu papel: (1) confirmar se o grupo está ativo ou inativo; (2) completar cadastros; (3) marcar se cada pessoa é elegível ao NPS; (4) enviar o link pelo WhatsApp; (5) marcar “NPS enviado” — essa marcação não pode ser desfeita; (6) cobrar o cliente até responder. Dúvidas: fale com o marketing.",
   },
   {
     id: "finish",
     target: null,
     title: "Pronto para começar",
-    body: "Comece pelos grupos com pendência. Gestores: definam quem contata. Responsáveis: completem cadastros, marquem NPS, enviem o link e marquem “NPS enviado” (não dá para desmarcar depois). Qualquer dúvida, fale com o marketing.",
+    body: "Comece pelos grupos com pendência. Primeiro confirme o status (ativo ou inativo). Depois complete cadastros, marque se a pessoa é elegível ao NPS, envie o link e marque “NPS enviado” (não dá para desmarcar depois). Qualquer dúvida, fale com o marketing.",
   },
 ];
 

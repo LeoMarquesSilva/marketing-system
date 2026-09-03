@@ -18,6 +18,21 @@ describe("meus-clientes-invite-filter", () => {
     ).toBe(false);
   });
 
+  it("nps_unclassified pega só quem ainda não classificou", () => {
+    expect(
+      memberMatchesInviteFilter(
+        { npsEligible: false, partyInvite: false, invitesClassifiedByUserId: null },
+        "nps_unclassified"
+      )
+    ).toBe(true);
+    expect(
+      memberMatchesInviteFilter(
+        { npsEligible: false, partyInvite: false, invitesClassifiedByUserId: "u1" },
+        "nps_unclassified"
+      )
+    ).toBe(false);
+  });
+
   it("gestor_default inclui NPS sim e pendente, exclui NPS não", () => {
     expect(
       memberMatchesInviteFilter(
