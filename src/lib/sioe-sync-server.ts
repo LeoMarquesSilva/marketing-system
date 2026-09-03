@@ -15,9 +15,9 @@ import {
 } from "@/lib/email-marketing-normalize";
 import {
   departmentToSioeArea,
+  KEEP_SIOE_PROCESS_AREA,
   normalizeLegalArea,
   normalizeLegalAreas,
-  SUBAREA_ONLY,
 } from "@/lib/legal-areas";
 import { isInternalClientGroupName } from "@/lib/meus-clientes";
 import { persistInferredClientGroupResponsibleAreas } from "@/lib/persist-inferred-responsible-areas";
@@ -650,9 +650,9 @@ async function syncResponsibles(
 
     // Área do cliente: prioriza a área de prática do advogado casado (nosso
     // cadastro, department → área SIOE) — vincula pelo usuário, não pelo
-    // processo. Exceção: quando o próprio processo já traz uma subárea
-    // específica (ex.: "Recuperação de Crédito", subárea de Cível), preserva
-    // essa etiqueta — não some só porque o advogado é do Cível em geral.
+    // processo. Exceção: quando o processo já traz uma área autônoma
+    // específica (ex.: Recuperação de Crédito), preserva essa etiqueta —
+    // não some só porque o advogado está cadastrado no Cível.
     // Sem advogado casado (ou department sem área mapeada), cai no valor
     // bruto do processo do SIOE como antes.
     const rawArea = normalizeLegalArea(agg.area);
@@ -660,7 +660,9 @@ async function syncResponsibles(
       ? departmentToSioeArea(departmentByUserId.get(responsibleUserId))
       : null;
     const resolvedArea =
-      rawArea && SUBAREA_ONLY.has(rawArea) ? rawArea : normalizeLegalArea(departmentArea ?? agg.area);
+      rawArea && KEEP_SIOE_PROCESS_AREA.has(rawArea)
+        ? rawArea
+        : normalizeLegalArea(departmentArea ?? agg.area);
 
     rows.push({
       client_group_id: link.clientGroupId,

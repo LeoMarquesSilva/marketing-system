@@ -15,7 +15,6 @@ import {
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   Select,
@@ -89,12 +88,15 @@ import {
 import { MEUS_CLIENTES_TOUR_EXPAND_STEPS } from "@/lib/meus-clientes-tour";
 import { useMeusClientesRealtime } from "@/hooks/use-meus-clientes-realtime";
 import {
-  GESTOR_DEFAULT_INVITE_FILTER,
   groupMatchesInviteFilter,
   memberMatchesInviteFilter,
-  resolveGestorInviteFilter,
   type InviteFilter,
 } from "@/lib/meus-clientes-invite-filter";
+import {
+  groupHasNpsSent,
+  groupMatchesNpsSentFilter,
+  type NpsSentFilter,
+} from "@/lib/nps/sent-filter";
 import {
   type ClientGroupBucket,
   type SelectKey,
@@ -269,6 +271,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
   const [filterFaturamentoPrevisto, setFilterFaturamentoPrevisto] =
     useState<FaturamentoPrevistoFilter>("all");
   const [filterInvite, setFilterInvite] = useState<InviteFilter>("all");
+  const [filterNpsSent, setFilterNpsSent] = useState<NpsSentFilter>("all");
   const [filterPartyTipo, setFilterPartyTipo] = useState<PartyInviteTipo | "all">("all");
   const [filterResponsibleArea, setFilterResponsibleArea] = useState("");
   const [savingResponsibleGroupId, setSavingResponsibleGroupId] = useState<string | null>(null);
@@ -402,6 +405,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
     filterAtividade,
     filterFaturamentoPrevisto,
     filterInvite,
+    filterNpsSent,
     filterPartyTipo,
     filterResponsibleArea,
     search,
@@ -618,8 +622,8 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
     if (filterGestor) params.set("gestorId", filterGestor);
     if (filterArea) params.set("area", filterArea);
     if (filterStatus !== "all") params.set("status", filterStatus);
-    const inviteForExport = isAdmin ? filterInvite : GESTOR_DEFAULT_INVITE_FILTER;
-    if (inviteForExport !== "all") params.set("invite", inviteForExport);
+    if (filterInvite !== "all") params.set("invite", filterInvite);
+    if (filterNpsSent !== "all") params.set("npsSent", filterNpsSent);
     if (isAdmin && filterPartyTipo !== "all") params.set("partyTipo", filterPartyTipo);
     if (search.trim()) params.set("search", search.trim());
     params.set("excludeSemGrupo", "1");
@@ -851,21 +855,53 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
     resolveClienteStatusForFilter,
   ]);
 
-  /** Gestores: NPS sim ou pendente — exclui só quem marcou NPS não explicitamente. */
-  const effectiveInviteFilter = resolveGestorInviteFilter(isAdmin, filterInvite);
   const effectivePartyTipoFilter: PartyInviteTipo | "all" = isAdmin ? filterPartyTipo : "all";
 
-  const displayGroups = useMemo(
+  const groupsAfterInvite = useMemo(
     () =>
       displayGroupsBeforeInvite.filter((group) =>
         groupMatchesInviteFilters(
           group,
           contactsByGroup,
-          effectiveInviteFilter,
+          filterInvite,
           effectivePartyTipoFilter
         )
       ),
-    [displayGroupsBeforeInvite, contactsByGroup, effectiveInviteFilter, effectivePartyTipoFilter]
+    [displayGroupsBeforeInvite, contactsByGroup, filterInvite, effectivePartyTipoFilter]
+  );
+
+  const npsSentFilterCounts = useMemo(() => {
+    let sent = 0;
+    let notSent = 0;
+    for (const group of groupsAfterInvite) {
+      if (groupHasNpsSent(group.clientGroupId, npsSentByGroupId)) sent++;
+      else notSent++;
+    }
+    return { all: groupsAfterInvite.length, sent, notSent };
+  }, [groupsAfterInvite, npsSentByGroupId]);
+
+  const npsSentFilterOptions = useMemo(
+    () =>
+      [
+        { value: "all" as const, label: "NPS enviado", count: npsSentFilterCounts.all },
+        { value: "sent" as const, label: "NPS enviado: sim", count: npsSentFilterCounts.sent },
+        { value: "not_sent" as const, label: "NPS enviado: não", count: npsSentFilterCounts.notSent },
+      ] satisfies Array<{ value: NpsSentFilter; label: string; count: number }>,
+    [npsSentFilterCounts]
+  );
+
+  const selectedNpsSentOption =
+    npsSentFilterOptions.find((option) => option.value === filterNpsSent) ?? npsSentFilterOptions[0];
+
+  const displayGroups = useMemo(
+    () =>
+      groupsAfterInvite.filter((group) =>
+        groupMatchesNpsSentFilter(
+          groupHasNpsSent(group.clientGroupId, npsSentByGroupId),
+          filterNpsSent
+        )
+      ),
+    [groupsAfterInvite, npsSentByGroupId, filterNpsSent]
   );
 
   const tourSampleGroupKey = displayGroups[0]?.key ?? null;
@@ -1274,6 +1310,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
       (isAdmin && filterAtividade !== "all") ||
       (isAdmin && filterFaturamentoPrevisto !== "all") ||
       filterInvite !== "all" ||
+      filterNpsSent !== "all" ||
       filterPartyTipo !== "all" ||
       (isAdmin && Boolean(filterResponsibleArea)) ||
       search.trim()
@@ -1296,6 +1333,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
     setFilterAtividade("all");
     setFilterFaturamentoPrevisto("all");
     setFilterInvite("all");
+    setFilterNpsSent("all");
     setFilterPartyTipo("all");
     setFilterResponsibleArea("");
     setSearch("");
@@ -1462,12 +1500,8 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
         <ClickableStatCard
           label="Pessoas NPS"
           value={inviteFilterCounts.nps}
-          active={!isAdmin || filterInvite === "nps"}
-          onClick={
-            isAdmin
-              ? () => setFilterInvite((s) => (s === "nps" ? "all" : "nps"))
-              : undefined
-          }
+          active={filterInvite === "nps"}
+          onClick={() => setFilterInvite((s) => (s === "nps" ? "all" : "nps"))}
         />
         {isAdmin && (
           <ClickableStatCard
@@ -1501,43 +1535,61 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
             counts={statusFilterCounts}
           />
 
-          {isAdmin ? (
-            <Select
-              value={filterInvite}
-              onValueChange={(v) => setFilterInvite(v as InviteFilter)}
-            >
-              <SelectTrigger size="sm" className="w-44">
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="truncate">
-                    {filterInvite === "all" ? "NPS/Festa" : selectedInviteOption.label}
-                  </span>
-                  <span className="shrink-0 tabular-nums text-muted-foreground">
-                    ({selectedInviteOption.count})
-                  </span>
+          <Select
+            value={filterInvite}
+            onValueChange={(v) => setFilterInvite(v as InviteFilter)}
+          >
+            <SelectTrigger size="sm" className="w-44">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="truncate">
+                  {filterInvite === "all" ? "NPS/Festa" : selectedInviteOption.label}
                 </span>
-              </SelectTrigger>
-              <SelectContent>
-                {inviteFilterOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    <span className="flex w-full items-center gap-2">
-                      <span className="flex-1">{option.label}</span>
-                      <span className="tabular-nums text-xs text-muted-foreground">
-                        {option.count}
-                      </span>
+                <span className="shrink-0 tabular-nums text-muted-foreground">
+                  ({selectedInviteOption.count})
+                </span>
+              </span>
+            </SelectTrigger>
+            <SelectContent>
+              {inviteFilterOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  <span className="flex w-full items-center gap-2">
+                    <span className="flex-1">{option.label}</span>
+                    <span className="tabular-nums text-xs text-muted-foreground">
+                      {option.count}
                     </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <Badge
-              variant="outline"
-              className="h-8 border-blue-200 bg-blue-50 px-3 text-xs font-medium text-blue-800"
-              title="Gestores veem clientes da sua área, excluindo quem já foi marcado como NPS não"
-            >
-              NPS sim ou pendente ({inviteFilterCounts.gestorDefaultGroups})
-            </Badge>
-          )}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={filterNpsSent}
+            onValueChange={(v) => setFilterNpsSent(v as NpsSentFilter)}
+          >
+            <SelectTrigger size="sm" className="w-48">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="truncate">
+                  {filterNpsSent === "all" ? "NPS enviado" : selectedNpsSentOption.label}
+                </span>
+                <span className="shrink-0 tabular-nums text-muted-foreground">
+                  ({selectedNpsSentOption.count})
+                </span>
+              </span>
+            </SelectTrigger>
+            <SelectContent>
+              {npsSentFilterOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  <span className="flex w-full items-center gap-2">
+                    <span className="flex-1">{option.label}</span>
+                    <span className="tabular-nums text-xs text-muted-foreground">
+                      {option.count}
+                    </span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
           {isAdmin && (
           <Select
@@ -1899,7 +1951,8 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
           filterStatus={filterStatus}
           filterAtividade={isAdmin ? filterAtividade : "all"}
           filterFaturamentoPrevisto={isAdmin ? filterFaturamentoPrevisto : "all"}
-          filterInvite={isAdmin ? filterInvite : "nps"}
+          filterInvite={filterInvite}
+          filterNpsSent={filterNpsSent}
           filterPartyTipo={isAdmin ? filterPartyTipo : "all"}
           filterResponsibleArea={isAdmin ? filterResponsibleArea : ""}
           gestorName={gestorName}
@@ -1910,6 +1963,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
           onClearAtividade={() => setFilterAtividade("all")}
           onClearFaturamentoPrevisto={() => setFilterFaturamentoPrevisto("all")}
           onClearInvite={() => setFilterInvite("all")}
+          onClearNpsSent={() => setFilterNpsSent("all")}
           onClearPartyTipo={() => setFilterPartyTipo("all")}
           onClearResponsibleArea={() => setFilterResponsibleArea("")}
         />
@@ -1940,7 +1994,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
                 onToggleSelectAllInGroup={handleToggleSelectAllInGroup}
                 compact={compactMode}
                 searchQuery={search}
-                inviteFilter={effectiveInviteFilter}
+                inviteFilter={filterInvite}
                 partyTipoFilter={effectivePartyTipoFilter}
                 tourGroupSample={index === 0}
                 tourContactEdit={

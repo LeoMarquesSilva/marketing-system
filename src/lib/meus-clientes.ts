@@ -69,16 +69,14 @@ export interface EmailAreaManager {
   userId: string;
 }
 
-/** Subáreas exibidas/agrupadas dentro de uma área pai (mesmos gestores). */
-export const AREA_SUBAREAS: Record<string, string[]> = {
-  Cível: ["Recuperação de Crédito"],
-};
+/** Subáreas exibidas/agrupadas dentro de uma área pai. Vazio: Rec. Crédito é autônoma. */
+export const AREA_SUBAREAS: Record<string, string[]> = {};
 
 const AREA_TO_PARENT = new Map<string, string>(
   Object.entries(AREA_SUBAREAS).flatMap(([parent, subs]) => subs.map((sub) => [sub, parent]))
 );
 
-/** Área raiz para agrupamento (ex.: Recuperação de Crédito → Cível). */
+/** Área raiz para agrupamento; sem subáreas, retorna a própria área. */
 export function getAreaParent(area: string): string {
   return AREA_TO_PARENT.get(area) ?? area;
 }
@@ -94,7 +92,7 @@ export function isSubArea(area: string): boolean {
   return AREA_TO_PARENT.has(area);
 }
 
-/** Gestor de área pai enxerga também as subáreas. */
+/** Gestor cobre a entidade se a área bater; subáreas (se houver) herdam o pai. */
 export function userCoversEntityArea(userAreas: Set<string>, entityArea: string): boolean {
   if (userAreas.has(entityArea)) return true;
   const parent = getAreaParent(entityArea);

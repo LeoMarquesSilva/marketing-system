@@ -25,7 +25,12 @@ import {
   resolveEffectiveResponsibleArea,
 } from "@/lib/meus-clientes";
 import { personNameKey } from "@/lib/email-marketing-normalize";
-import { normalizeLegalArea, normalizeLegalAreas, mergeAreaManagerPickerAreas } from "@/lib/legal-areas";
+import {
+  departmentToSioeArea,
+  mergeAreaManagerPickerAreas,
+  normalizeLegalArea,
+  normalizeLegalAreas,
+} from "@/lib/legal-areas";
 import type { EmailCompany, EmailContact, EmailGroupResponsible, EmailPerson } from "@/lib/email-marketing";
 
 describe("legal-areas", () => {
@@ -53,6 +58,11 @@ describe("legal-areas", () => {
     );
     expect(areas.filter((area) => area === "Reestruturação")).toHaveLength(1);
   });
+
+  it("mapeia department Recuperação de Crédito para a área SIOE homônima", () => {
+    expect(departmentToSioeArea("Recuperação de Crédito")).toBe("Recuperação de Crédito");
+    expect(departmentToSioeArea("Cível")).toBe("Cível");
+  });
 });
 
 describe("meus-clientes scope", () => {
@@ -69,14 +79,18 @@ describe("meus-clientes scope", () => {
     expect(filterOutInternalClientGroups(items)).toHaveLength(1);
   });
 
-  it("expande subárea Recuperação de Crédito sob Cível", () => {
-    expect(expandRootArea("Cível")).toEqual(expect.arrayContaining(["Cível", "Recuperação de Crédito"]));
-    expect(getAreaParent("Recuperação de Crédito")).toBe("Cível");
+  it("Recuperação de Crédito é área autônoma, não subárea de Cível", () => {
+    expect(expandRootArea("Cível")).toEqual(["Cível"]);
+    expect(getAreaParent("Recuperação de Crédito")).toBe("Recuperação de Crédito");
+    expect(expandRootArea("Recuperação de Crédito")).toEqual(["Recuperação de Crédito"]);
   });
 
-  it("gestor de Cível cobre Recuperação de Crédito", () => {
+  it("gestor de Cível não cobre Recuperação de Crédito", () => {
     const areas = new Set(["Cível"]);
-    expect(userCoversEntityArea(areas, "Recuperação de Crédito")).toBe(true);
+    expect(userCoversEntityArea(areas, "Recuperação de Crédito")).toBe(false);
+    expect(userCoversEntityArea(new Set(["Recuperação de Crédito"]), "Recuperação de Crédito")).toBe(
+      true
+    );
   });
 });
 
@@ -532,7 +546,7 @@ describe("área responsável exclusiva", () => {
     expect(civel.personIds.has("p1")).toBe(false);
   });
 
-  it("área pai Cível enxerga subárea Recuperação de Crédito", () => {
+  it("Cível e Recuperação de Crédito não compartilham clientes pelo department", () => {
     const companies = [company({ id: "c1", responsibleArea: "Recuperação de Crédito" })];
     const rec = computeMyClientScope(
       companies,
@@ -542,7 +556,7 @@ describe("área responsável exclusiva", () => {
     const civel = computeMyClientScope(companies, [], resolveUserMeusClientesAreas("Cível"));
     const trab = computeMyClientScope(companies, [], resolveUserMeusClientesAreas("Trabalhista"));
     expect(rec.companyIds.has("c1")).toBe(true);
-    expect(civel.companyIds.has("c1")).toBe(true);
+    expect(civel.companyIds.has("c1")).toBe(false);
     expect(trab.companyIds.has("c1")).toBe(false);
   });
 });

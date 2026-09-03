@@ -15,11 +15,12 @@ import {
 } from "@/lib/meus-clientes";
 import { getPartyInviteTipoLabel, parsePartyInviteTipo } from "@/lib/party-invite-types";
 import type { PartyInviteTipo } from "@/lib/party-invite-types";
+import { parseInviteFilterParam, memberMatchesInviteFilter } from "@/lib/meus-clientes-invite-filter";
 import {
-  parseInviteFilterParam,
-  memberMatchesInviteFilter,
-  resolveGestorInviteFilter,
-} from "@/lib/meus-clientes-invite-filter";
+  groupHasNpsSent,
+  groupMatchesNpsSentFilter,
+  parseNpsSentFilterParam,
+} from "@/lib/nps/sent-filter";
 
 export const dynamic = "force-dynamic";
 
@@ -47,18 +48,18 @@ export async function GET(request: Request) {
     const filterGestorId = url.searchParams.get("gestorId") || null;
     const filterArea = url.searchParams.get("area") || null;
     const filterStatus = url.searchParams.get("status") || "all";
-    const inviteFilterParam = parseInviteFilterParam(url.searchParams.get("invite"));
+    const inviteFilter = parseInviteFilterParam(url.searchParams.get("invite"));
+    const npsSentFilter = parseNpsSentFilterParam(url.searchParams.get("npsSent"));
     const partyTipoFilter = parsePartyInviteTipo(url.searchParams.get("partyTipo"));
     const search = (url.searchParams.get("search") ?? "").trim();
     const excludeSemGrupo = url.searchParams.get("excludeSemGrupo") === "1";
 
-    const { companies, contacts, people, responsibles, isAdmin, areaContactByGroupId, systemUsers } =
+    const { companies, contacts, people, responsibles, areaContactByGroupId, systemUsers, npsSentByGroupId } =
       await fetchMeusClientesPayload({
       authUserId: user.id,
       viewAll,
       filterGestorId,
     });
-    const inviteFilter = resolveGestorInviteFilter(isAdmin, inviteFilterParam);
     const partyTipo: PartyInviteTipo | "all" = partyTipoFilter ?? "all";
 
     const companiesById = new Map(companies.map((c) => [c.id, c]));
@@ -116,6 +117,14 @@ export async function GET(request: Request) {
         return false;
       }
       if (!memberMatchesInviteFilter(contact, inviteFilter, partyTipo)) return false;
+      if (
+        !groupMatchesNpsSentFilter(
+          groupHasNpsSent(contact.clientGroupId, npsSentByGroupId ?? {}),
+          npsSentFilter
+        )
+      ) {
+        return false;
+      }
       return true;
     });
 
@@ -149,6 +158,14 @@ export async function GET(request: Request) {
         return false;
       }
       if (!memberMatchesInviteFilter(person, inviteFilter, partyTipo)) return false;
+      if (
+        !groupMatchesNpsSentFilter(
+          groupHasNpsSent(person.clientGroupId, npsSentByGroupId ?? {}),
+          npsSentFilter
+        )
+      ) {
+        return false;
+      }
       return true;
     });
     const filteredPeople = filterPeopleNotInContacts(filteredPeopleRaw, filteredContacts);

@@ -1,10 +1,10 @@
 /**
  * Normalização de nomes de áreas jurídicas vindos do SIOE / Meus Clientes.
- * Mantém "Recuperação de Crédito" como subárea (agrupada sob Cível na UI).
  *
  * Nomenclatura oficial:
  * - Reestruturação (não usar mais "Insolvência")
  * - Societário e Contratos (não usar mais "Contratos")
+ * - Recuperação de Crédito é área autônoma (não agrupa sob Cível)
  */
 
 function areaKey(value: string): string {
@@ -30,12 +30,19 @@ const AREA_CANONICAL: Record<string, string> = {
   "societario e contratos": "Societário e Contratos",
 };
 
-/** Áreas cadastradas só como subárea — gestores vêm da área pai. */
-export const SUBAREA_ONLY = new Set(["Recuperação de Crédito"]);
+/**
+ * Áreas que o processo do SIOE deve preservar mesmo quando o advogado
+ * casado tem outro department (ex.: processo de Recuperação de Crédito
+ * com advogado cadastrado no Cível).
+ */
+export const KEEP_SIOE_PROCESS_AREA = new Set(["Recuperação de Crédito"]);
+
+/** @deprecated Use KEEP_SIOE_PROCESS_AREA — Recuperação de Crédito não é mais subárea. */
+export const SUBAREA_ONLY = KEEP_SIOE_PROCESS_AREA;
 
 export function isSubareaOnlyManagerArea(area: string): boolean {
   const normalized = normalizeLegalArea(area);
-  return SUBAREA_ONLY.has(normalized ?? area);
+  return KEEP_SIOE_PROCESS_AREA.has(normalized ?? area);
 }
 
 export function normalizeLegalArea(area: string | null | undefined): string | null {
@@ -61,6 +68,7 @@ export function normalizeLegalAreas(areas: string[] | null | undefined): string[
  */
 const DEPARTMENT_TO_SIOE_AREA: Record<string, string> = {
   Cível: "Cível",
+  "Recuperação de Crédito": "Recuperação de Crédito",
   Trabalhista: "Trabalhista",
   "Operações Legais": "Operações Legais",
   Tributário: "Tributário",

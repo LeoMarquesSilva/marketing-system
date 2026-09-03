@@ -6,6 +6,7 @@
 // Áreas do Excel + departamentos do sistema de usuários (app_c009c0e4f1_users_rows)
 export const AREAS = [
   "Cível",
+  "Recuperação de Crédito",
   "Trabalhista",
   "Operações Legais",
   "Reestruturação",

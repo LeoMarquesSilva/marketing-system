@@ -8,7 +8,7 @@ export type InviteFilter =
   | "none"
   | "not_party"
   | "not_nps"
-  /** Gestores: NPS sim ou ainda não classificado — exclui só quem marcou NPS não. */
+  /** Filtro opcional: NPS sim ou ainda não classificado — exclui só quem marcou NPS não. */
   | "gestor_default";
 
 export type InviteFilterMember = {
@@ -67,8 +67,4 @@ export function parseInviteFilterParam(value: string | null): InviteFilter {
     return value;
   }
   return "all";
-}
-
-export function resolveGestorInviteFilter(isAdmin: boolean, filterInvite: InviteFilter): InviteFilter {
-  return isAdmin ? filterInvite : GESTOR_DEFAULT_INVITE_FILTER;
 }

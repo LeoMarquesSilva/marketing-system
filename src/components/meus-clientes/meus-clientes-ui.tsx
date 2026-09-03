@@ -82,6 +82,7 @@ import {
   memberMatchesInviteFilter as matchInviteFilterMember,
   type InviteFilter,
 } from "@/lib/meus-clientes-invite-filter";
+import type { NpsSentFilter } from "@/lib/nps/sent-filter";
 export type SelectKey = `c:${string}` | `p:${string}`;
 
 export interface ClientGroupBucket {
@@ -1112,6 +1113,7 @@ export function FilterChips({
   filterAtividade,
   filterFaturamentoPrevisto,
   filterInvite,
+  filterNpsSent,
   filterPartyTipo,
   filterResponsibleArea,
   gestorName,
@@ -1122,6 +1124,7 @@ export function FilterChips({
   onClearAtividade,
   onClearFaturamentoPrevisto,
   onClearInvite,
+  onClearNpsSent,
   onClearPartyTipo,
   onClearResponsibleArea,
 }: {
@@ -1131,6 +1134,7 @@ export function FilterChips({
   filterAtividade?: AtividadeFilter;
   filterFaturamentoPrevisto?: FaturamentoPrevistoFilter;
   filterInvite?: InviteFilter;
+  filterNpsSent?: NpsSentFilter;
   filterPartyTipo?: PartyInviteTipo | "all";
   filterResponsibleArea?: string;
   gestorName?: string;
@@ -1141,6 +1145,7 @@ export function FilterChips({
   onClearAtividade?: () => void;
   onClearFaturamentoPrevisto?: () => void;
   onClearInvite?: () => void;
+  onClearNpsSent?: () => void;
   onClearPartyTipo?: () => void;
   onClearResponsibleArea?: () => void;
 }) {
@@ -1201,6 +1206,12 @@ export function FilterChips({
     chips.push({
       label: inviteLabels[filterInvite],
       onClear: onClearInvite ?? (() => {}),
+    });
+  }
+  if (filterNpsSent && filterNpsSent !== "all") {
+    chips.push({
+      label: filterNpsSent === "sent" ? "NPS enviado: sim" : "NPS enviado: não",
+      onClear: onClearNpsSent ?? (() => {}),
     });
   }
   if (filterPartyTipo && filterPartyTipo !== "all") {
