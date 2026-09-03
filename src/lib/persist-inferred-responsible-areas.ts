@@ -32,7 +32,7 @@ async function fetchAllRows(
       .select(select)
       .range(from, from + PAGE_SIZE - 1);
     if (error) throw new Error(error.message);
-    const rows = (data ?? []) as Record<string, unknown>[];
+    const rows = (data ?? []) as unknown as Record<string, unknown>[];
     all.push(...rows);
     if (rows.length < PAGE_SIZE) break;
     from += PAGE_SIZE;
