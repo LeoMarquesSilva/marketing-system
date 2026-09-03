@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -69,11 +69,15 @@ import {
   ACTIVITY_FILTER_LABEL,
   BALANCE_FILTER_LABEL,
   computeFeriasKpis,
+  FERIAS_LIST_QUERY_DEFAULTS,
+  feriasListQueryToSearch,
   filterEmployeesWithBalance,
   listEmployeeDepartments,
   RECESS_APPLY_STATE_LABEL,
   type ActivityFilter,
   type BalanceFilter,
+  type FeriasListQuery,
+  type FeriasListTab,
   type SituationFilter,
   type StatusFilter,
 } from "@/lib/ferias/filters";
@@ -86,7 +90,7 @@ import type {
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 
-type TabKey = "colaboradores" | "recesso";
+type TabKey = FeriasListTab;
 
 interface FeriasClientProps {
   employees: EmployeeWithBalance[];
@@ -94,6 +98,7 @@ interface FeriasClientProps {
   users: LinkableUser[];
   canManage: boolean;
   scopeAreas: string[] | null;
+  initialQuery?: FeriasListQuery;
 }
 
 const RECESS_APPLY_STATE_CLASS: Record<RecessApplyState, string> = {
@@ -176,15 +181,16 @@ export function FeriasClient({
   users,
   canManage,
   scopeAreas,
+  initialQuery = FERIAS_LIST_QUERY_DEFAULTS,
 }: FeriasClientProps) {
   const router = useRouter();
-  const [tab, setTab] = useState<TabKey>("colaboradores");
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [situationFilter, setSituationFilter] = useState<SituationFilter>("ativos");
-  const [departmentFilter, setDepartmentFilter] = useState<string>("all");
-  const [balanceFilter, setBalanceFilter] = useState<BalanceFilter>("all");
-  const [activityFilter, setActivityFilter] = useState<ActivityFilter>("all");
+  const [tab, setTab] = useState<TabKey>(initialQuery.tab);
+  const [search, setSearch] = useState(initialQuery.search);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(initialQuery.status);
+  const [situationFilter, setSituationFilter] = useState<SituationFilter>(initialQuery.situation);
+  const [departmentFilter, setDepartmentFilter] = useState<string>(initialQuery.department);
+  const [balanceFilter, setBalanceFilter] = useState<BalanceFilter>(initialQuery.balance);
+  const [activityFilter, setActivityFilter] = useState<ActivityFilter>(initialQuery.activity);
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [recessDialogOpen, setRecessDialogOpen] = useState(false);
@@ -257,6 +263,32 @@ export function FeriasClient({
     departmentFilter !== "all" ||
     balanceFilter !== "all" ||
     activityFilter !== "all";
+
+  useEffect(() => {
+    const nextSearch = feriasListQueryToSearch({
+      search,
+      status: statusFilter,
+      situation: situationFilter,
+      department: departmentFilter,
+      balance: balanceFilter,
+      activity: activityFilter,
+      tab,
+    });
+    if (window.location.search === nextSearch) return;
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${nextSearch}`
+    );
+  }, [
+    search,
+    statusFilter,
+    situationFilter,
+    departmentFilter,
+    balanceFilter,
+    activityFilter,
+    tab,
+  ]);
 
   async function handleCreate(values: EmployeeFormValues): Promise<string | null> {
     const { error } = await createEmployeeRequest({

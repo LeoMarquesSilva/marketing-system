@@ -1,5 +1,6 @@
 import { FeriasClient } from "@/components/ferias/ferias-client";
 import { FeriasAcessoNegado } from "@/components/ferias/acesso-negado";
+import { parseFeriasListQuery } from "@/lib/ferias/filters";
 import {
   FeriasHttpError,
   listEmployeesWithBalance,
@@ -15,6 +16,10 @@ import type {
 } from "@/lib/ferias/types";
 
 export const dynamic = "force-dynamic";
+
+type PageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
 
 type PageData =
   | { forbidden: true }
@@ -50,8 +55,8 @@ async function loadPageData(): Promise<PageData> {
   }
 }
 
-export default async function FeriasPage() {
-  const data = await loadPageData();
+export default async function FeriasPage({ searchParams }: PageProps) {
+  const [data, query] = await Promise.all([loadPageData(), searchParams]);
   if (data.forbidden) return <FeriasAcessoNegado />;
   return (
     <FeriasClient
@@ -60,6 +65,7 @@ export default async function FeriasPage() {
       users={data.users}
       canManage={data.canManage}
       scopeAreas={data.scopeAreas}
+      initialQuery={parseFeriasListQuery(query)}
     />
   );
 }

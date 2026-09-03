@@ -109,6 +109,8 @@ export const ACTIVITY_FILTER_LABEL: Record<ActivityFilter, string> = {
   programada: "Férias programadas",
 };
 
+export type FeriasListTab = "colaboradores" | "recesso";
+
 export interface FeriasListFilters {
   search: string;
   status: StatusFilter;
@@ -119,6 +121,112 @@ export interface FeriasListFilters {
   balance?: BalanceFilter;
   /** Em férias agora ou com férias já lançadas para o futuro; `all` = sem filtro. */
   activity?: ActivityFilter;
+}
+
+/** Filtros da listagem + aba, persistidos na query da URL. */
+export interface FeriasListQuery extends Required<FeriasListFilters> {
+  tab: FeriasListTab;
+}
+
+export const FERIAS_LIST_QUERY_DEFAULTS: FeriasListQuery = {
+  search: "",
+  status: "all",
+  situation: "ativos",
+  department: "all",
+  balance: "all",
+  activity: "all",
+  tab: "colaboradores",
+};
+
+const STATUS_FILTER_VALUES = new Set<StatusFilter>([
+  "all",
+  "em_dia",
+  "a_vencer",
+  "vencido",
+  "quitado",
+]);
+const SITUATION_FILTER_VALUES = new Set<SituationFilter>(["ativos", "inativos", "all"]);
+const BALANCE_FILTER_VALUES = new Set<BalanceFilter>(["all", "a_tirar", "a_mais", "zerado"]);
+const ACTIVITY_FILTER_VALUES = new Set<ActivityFilter>(["all", "em_ferias", "programada"]);
+const TAB_VALUES = new Set<FeriasListTab>(["colaboradores", "recesso"]);
+
+type QueryParamRecord = Record<string, string | string[] | undefined>;
+
+function firstQueryValue(
+  input: string | URLSearchParams | QueryParamRecord,
+  key: string
+): string {
+  if (typeof input === "string" || input instanceof URLSearchParams) {
+    return new URLSearchParams(input).get(key)?.trim() ?? "";
+  }
+  const raw = input[key];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value?.trim() ?? "";
+}
+
+function pickQueryValue<T extends string>(
+  raw: string,
+  allowed: Set<T>,
+  fallback: T
+): T {
+  return allowed.has(raw as T) ? (raw as T) : fallback;
+}
+
+/** Lê filtros da query (`q`, `status`, `situacao`, `area`, `saldo`, `atividade`, `aba`). */
+export function parseFeriasListQuery(
+  input: string | URLSearchParams | QueryParamRecord
+): FeriasListQuery {
+  const department = firstQueryValue(input, "area");
+  return {
+    search: firstQueryValue(input, "q"),
+    status: pickQueryValue(firstQueryValue(input, "status"), STATUS_FILTER_VALUES, "all"),
+    situation: pickQueryValue(
+      firstQueryValue(input, "situacao"),
+      SITUATION_FILTER_VALUES,
+      "ativos"
+    ),
+    department: department || "all",
+    balance: pickQueryValue(firstQueryValue(input, "saldo"), BALANCE_FILTER_VALUES, "all"),
+    activity: pickQueryValue(
+      firstQueryValue(input, "atividade"),
+      ACTIVITY_FILTER_VALUES,
+      "all"
+    ),
+    tab: pickQueryValue(firstQueryValue(input, "aba"), TAB_VALUES, "colaboradores"),
+  };
+}
+
+/** Grava só o que saiu do padrão, para a URL ficar compartilhavel e limpa. */
+export function serializeFeriasListQuery(
+  query: Partial<FeriasListQuery>
+): URLSearchParams {
+  const params = new URLSearchParams();
+  const search = query.search?.trim() ?? "";
+  if (search) params.set("q", search);
+  if (query.status && query.status !== FERIAS_LIST_QUERY_DEFAULTS.status) {
+    params.set("status", query.status);
+  }
+  if (query.situation && query.situation !== FERIAS_LIST_QUERY_DEFAULTS.situation) {
+    params.set("situacao", query.situation);
+  }
+  if (query.department && query.department !== FERIAS_LIST_QUERY_DEFAULTS.department) {
+    params.set("area", query.department);
+  }
+  if (query.balance && query.balance !== FERIAS_LIST_QUERY_DEFAULTS.balance) {
+    params.set("saldo", query.balance);
+  }
+  if (query.activity && query.activity !== FERIAS_LIST_QUERY_DEFAULTS.activity) {
+    params.set("atividade", query.activity);
+  }
+  if (query.tab && query.tab !== FERIAS_LIST_QUERY_DEFAULTS.tab) {
+    params.set("aba", query.tab);
+  }
+  return params;
+}
+
+export function feriasListQueryToSearch(query: Partial<FeriasListQuery>): string {
+  const serialized = serializeFeriasListQuery(query).toString();
+  return serialized ? `?${serialized}` : "";
 }
 
 export interface FeriasKpis {

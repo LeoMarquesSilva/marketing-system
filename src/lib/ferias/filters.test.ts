@@ -9,8 +9,10 @@ import {
   planRecessLeaveSync,
   getInitials,
   listEmployeeDepartments,
+  parseFeriasListQuery,
   resolveCanonicalAreaLabel,
   resolveEmployeeAvatarUrl,
+  serializeFeriasListQuery,
   summarizeRecessApplication,
 } from "@/lib/ferias/filters";
 import type { EmployeeBalance, EmployeeWithBalance, HrEmployee } from "@/lib/ferias/types";
@@ -620,5 +622,102 @@ describe("planRecessLeaveSync", () => {
     expect(plan.insertIds).toEqual(["novo"]);
     expect(plan.updateLeaveIds).toEqual(["leave-old"]);
     expect(plan.keepEmployeeIds).toEqual(["ok"]);
+  });
+});
+
+describe("parseFeriasListQuery", () => {
+  it("volta aos padrões quando a URL não tem filtros", () => {
+    expect(parseFeriasListQuery("")).toEqual({
+      search: "",
+      status: "all",
+      situation: "ativos",
+      department: "all",
+      balance: "all",
+      activity: "all",
+      tab: "colaboradores",
+    });
+  });
+
+  it("lê filtros da query e ignora valores inválidos", () => {
+    expect(
+      parseFeriasListQuery(
+        "q=Felipe&status=vencido&situacao=inativos&area=Reestrutura%C3%A7%C3%A3o&saldo=a_mais&atividade=em_ferias&aba=recesso"
+      )
+    ).toEqual({
+      search: "Felipe",
+      status: "vencido",
+      situation: "inativos",
+      department: "Reestruturação",
+      balance: "a_mais",
+      activity: "em_ferias",
+      tab: "recesso",
+    });
+
+    expect(parseFeriasListQuery("status=foo&situacao=bar&saldo=x&atividade=y&aba=z")).toEqual({
+      search: "",
+      status: "all",
+      situation: "ativos",
+      department: "all",
+      balance: "all",
+      activity: "all",
+      tab: "colaboradores",
+    });
+  });
+
+  it("aceita o formato de searchParams do App Router", () => {
+    expect(
+      parseFeriasListQuery({
+        q: "Lia",
+        situacao: ["all"],
+        area: "Trabalhista",
+        aba: "recesso",
+      })
+    ).toEqual({
+      search: "Lia",
+      status: "all",
+      situation: "all",
+      department: "Trabalhista",
+      balance: "all",
+      activity: "all",
+      tab: "recesso",
+    });
+  });
+});
+
+describe("serializeFeriasListQuery", () => {
+  it("omite padrões e reconstitui o que mudou no parse", () => {
+    expect(
+      serializeFeriasListQuery({
+        search: "",
+        status: "all",
+        situation: "ativos",
+        department: "all",
+        balance: "all",
+        activity: "all",
+        tab: "colaboradores",
+      }).toString()
+    ).toBe("");
+
+    const query = {
+      search: "Ana",
+      status: "a_vencer" as const,
+      situation: "all" as const,
+      department: "Operações Legais",
+      balance: "a_tirar" as const,
+      activity: "programada" as const,
+      tab: "recesso" as const,
+    };
+
+    const serialized = serializeFeriasListQuery(query);
+    expect(Object.fromEntries(serialized.entries())).toEqual({
+      q: "Ana",
+      status: "a_vencer",
+      situacao: "all",
+      area: "Operações Legais",
+      saldo: "a_tirar",
+      atividade: "programada",
+      aba: "recesso",
+    });
+    expect(parseFeriasListQuery(serialized)).toEqual(query);
   });
 });
