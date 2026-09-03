@@ -4,6 +4,15 @@ import Link from "next/link";
 import type { Publication } from "@/lib/operacoes-legais/vistagem/types";
 import { formatDateBR } from "@/lib/operacoes-legais/vistagem/dates";
 import { StatusBadge } from "@/components/operacoes-legais/vistagem/StatusBadge";
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 export function PublicationTable({
   items,
@@ -14,51 +23,48 @@ export function PublicationTable({
 }) {
   if (!items.length) {
     return (
-      <p className="rounded-lg border border-white/10 bg-white/5 p-6 text-sm text-zinc-400">
+      <p className="rounded-lg border border-dashed border-border/80 bg-card px-4 py-10 text-center text-sm text-muted-foreground">
         Nenhum item nesta fila.
       </p>
     );
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-white/10">
-      <table className="min-w-full text-left text-sm">
-        <thead className="bg-[#152b40] text-xs uppercase tracking-wide text-zinc-400">
-          <tr>
-            <th className="px-3 py-2">Status</th>
-            <th className="px-3 py-2">Escritório</th>
-            <th className="px-3 py-2">Processo</th>
-            <th className="px-3 py-2">Pasta / CI</th>
-            <th className="px-3 py-2">Grupo</th>
-            <th className="px-3 py-2">Risco</th>
-            <th className="px-3 py-2">Publicação</th>
-            <th className="px-3 py-2"></th>
-          </tr>
-        </thead>
-        <tbody>
+    <div className="overflow-hidden rounded-lg border border-border/80 bg-card shadow-sm">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Status</TableHead>
+            <TableHead>Escritório</TableHead>
+            <TableHead>Processo</TableHead>
+            <TableHead>Pasta / CI</TableHead>
+            <TableHead>Grupo</TableHead>
+            <TableHead>Risco</TableHead>
+            <TableHead>Publicação</TableHead>
+            <TableHead className="text-right" />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {items.map((p) => (
-            <tr key={p.id} className="border-t border-white/5 hover:bg-white/5">
-              <td className="px-3 py-2">
+            <TableRow key={p.id}>
+              <TableCell>
                 <StatusBadge status={p.status} />
-              </td>
-              <td className="px-3 py-2">{p.escritorio_responsavel || "—"}</td>
-              <td className="px-3 py-2 font-mono text-xs">{p.numero_processo || "—"}</td>
-              <td className="px-3 py-2 text-xs">{p.pasta || "—"}</td>
-              <td className="px-3 py-2">{p.grupo || "—"}</td>
-              <td className="px-3 py-2">{p.demanda_risco ? "Sim" : "Não"}</td>
-              <td className="px-3 py-2">{formatDateBR(p.data_publicacao)}</td>
-              <td className="px-3 py-2 text-right">
-                <Link
-                  href={`${hrefPrefix}/${p.id}`}
-                  className="text-[#c9a227] hover:underline"
-                >
-                  Abrir
-                </Link>
-              </td>
-            </tr>
+              </TableCell>
+              <TableCell>{p.escritorio_responsavel || "—"}</TableCell>
+              <TableCell className="font-mono text-xs">{p.numero_processo || "—"}</TableCell>
+              <TableCell className="text-xs">{p.pasta || "—"}</TableCell>
+              <TableCell>{p.grupo || "—"}</TableCell>
+              <TableCell>{p.demanda_risco ? "Sim" : "Não"}</TableCell>
+              <TableCell>{formatDateBR(p.data_publicacao)}</TableCell>
+              <TableCell className="text-right">
+                <Button asChild variant="ghost" size="sm">
+                  <Link href={`${hrefPrefix}/${p.id}`}>Abrir</Link>
+                </Button>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

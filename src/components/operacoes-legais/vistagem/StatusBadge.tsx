@@ -2,23 +2,23 @@ import { STATUS_LABELS, type PublicationStatus } from "@/lib/operacoes-legais/vi
 import { cn } from "@/lib/utils";
 
 const colors: Partial<Record<PublicationStatus, string>> = {
-  MATCH_PENDENTE: "bg-amber-500/20 text-amber-200 border-amber-500/40",
-  JURIDICO_VISTAR: "bg-sky-500/20 text-sky-200 border-sky-500/40",
-  PRAZO_PENDENTE: "bg-violet-500/20 text-violet-200 border-violet-500/40",
-  AGENDAR: "bg-orange-500/20 text-orange-200 border-orange-500/40",
-  AGENDANDO: "bg-yellow-500/20 text-yellow-100 border-yellow-500/40",
-  SIM_OK: "bg-emerald-500/20 text-emerald-200 border-emerald-500/40",
-  SIM_OK_AJUSTE: "bg-teal-500/20 text-teal-200 border-teal-500/40",
-  ERRO: "bg-red-500/20 text-red-200 border-red-500/40",
-  SKIP: "bg-zinc-500/20 text-zinc-300 border-zinc-500/40",
+  MATCH_PENDENTE: "border-amber-200 bg-amber-50 text-amber-800",
+  JURIDICO_VISTAR: "border-sky-200 bg-sky-50 text-sky-800",
+  PRAZO_PENDENTE: "border-violet-200 bg-violet-50 text-violet-800",
+  AGENDAR: "border-orange-200 bg-orange-50 text-orange-800",
+  AGENDANDO: "border-yellow-200 bg-yellow-50 text-yellow-800",
+  SIM_OK: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  SIM_OK_AJUSTE: "border-teal-200 bg-teal-50 text-teal-800",
+  ERRO: "border-red-200 bg-red-50 text-red-800",
+  SKIP: "border-border bg-muted text-muted-foreground",
 };
 
 export function StatusBadge({ status }: { status: PublicationStatus }) {
   return (
     <span
       className={cn(
-        "inline-flex rounded border px-2 py-0.5 text-xs font-medium",
-        colors[status] || "bg-white/10 text-white border-white/20",
+        "inline-flex rounded-full border px-2 py-0.5 text-xs font-medium",
+        colors[status] || "border-border bg-muted text-foreground"
       )}
     >
       {STATUS_LABELS[status]}

@@ -3,12 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Publication } from "@/lib/operacoes-legais/vistagem/types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export function MatchForm({ publication }: { publication: Publication }) {
   const router = useRouter();
-  const [escritorio, setEscritorio] = useState(
-    publication.escritorio_responsavel || "",
-  );
+  const [escritorio, setEscritorio] = useState(publication.escritorio_responsavel || "");
   const [grupo, setGrupo] = useState(publication.grupo || "");
   const [pasta, setPasta] = useState(publication.pasta || "");
   const [ci, setCi] = useState(publication.ci || "");
@@ -41,59 +42,47 @@ export function MatchForm({ publication }: { publication: Publication }) {
   }
 
   return (
-    <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
-      <h3 className="font-medium text-[#c9a227]">Classificação (Controladoria)</h3>
-      <label className="block text-sm">
-        Escritório responsável
-        <input
+    <div className="space-y-4 rounded-lg border border-border/80 bg-card p-4 shadow-sm">
+      <h3 className="text-sm font-semibold text-foreground">Classificação (Controladoria)</h3>
+      <div className="space-y-2">
+        <Label htmlFor="escritorio">Escritório responsável</Label>
+        <Input
+          id="escritorio"
           value={escritorio}
           onChange={(e) => setEscritorio(e.target.value)}
-          className="mt-1 w-full rounded border border-white/20 bg-[#0b1c2c] px-3 py-2"
           placeholder="CÍVEL | INSOLVÊNCIA"
         />
-      </label>
-      <label className="block text-sm">
-        Grupo
-        <input
-          value={grupo}
-          onChange={(e) => setGrupo(e.target.value)}
-          className="mt-1 w-full rounded border border-white/20 bg-[#0b1c2c] px-3 py-2"
-        />
-      </label>
-      <label className="block text-sm">
-        Pasta
-        <input
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="grupo">Grupo</Label>
+        <Input id="grupo" value={grupo} onChange={(e) => setGrupo(e.target.value)} />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="pasta">Pasta</Label>
+        <Input
+          id="pasta"
           value={pasta}
           onChange={(e) => setPasta(e.target.value)}
-          className="mt-1 w-full rounded border border-white/20 bg-[#0b1c2c] px-3 py-2"
           placeholder="PROCESSO PRINCIPAL - CI 12345"
         />
-      </label>
-      <label className="block text-sm">
-        CI
-        <input
-          value={ci}
-          onChange={(e) => setCi(e.target.value)}
-          className="mt-1 w-full rounded border border-white/20 bg-[#0b1c2c] px-3 py-2"
-        />
-      </label>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="ci">CI</Label>
+        <Input id="ci" value={ci} onChange={(e) => setCi(e.target.value)} />
+      </div>
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"
+          className="h-4 w-4 accent-[#347796]"
           checked={risco}
           onChange={(e) => setRisco(e.target.checked)}
         />
         Demanda de risco
       </label>
-      <button
-        type="button"
-        disabled={saving}
-        onClick={save}
-        className="rounded-md bg-[#c9a227] px-4 py-2 text-sm font-medium text-[#0b1c2c]"
-      >
+      <Button type="button" disabled={saving} onClick={save}>
         {saving ? "Salvando…" : "Salvar e liberar para jurídico"}
-      </button>
-      {msg && <p className="text-sm text-zinc-300">{msg}</p>}
+      </Button>
+      {msg && <p className="text-sm text-muted-foreground">{msg}</p>}
     </div>
   );
 }

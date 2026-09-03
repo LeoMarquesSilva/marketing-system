@@ -29,7 +29,7 @@ export default async function PrazosDetailPage({ params }: Props) {
   if (!data) notFound();
 
   return (
-    <VistagemShell title="Ops · Definir prazo">
+    <VistagemShell title="Prazos" description="Defina tipo VIOS, datas e marque para agendar.">
       <div className="grid gap-6 lg:grid-cols-2">
         <PublicationDetail publication={data} />
         <PrazoForm publication={data} taskTypes={types} />

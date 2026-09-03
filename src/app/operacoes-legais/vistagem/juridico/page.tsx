@@ -31,10 +31,10 @@ export default async function JuridicoPage({
   }
 
   return (
-    <VistagemShell title="Jurídico · Vistar publicações">
-      <p className="mb-4 text-sm text-zinc-400">
-        Fila JURIDICO_VISTAR — registre considerações e envie para definição de prazos.
-      </p>
+    <VistagemShell
+      title="Jurídico"
+      description="Fila JURIDICO_VISTAR — registre considerações e envie para definição de prazos."
+    >
       <PublicationTable items={items} hrefPrefix={`${BASE}/juridico`} />
     </VistagemShell>
   );

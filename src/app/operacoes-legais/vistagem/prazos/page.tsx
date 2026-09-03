@@ -30,11 +30,10 @@ export default async function PrazosPage({
   }
 
   return (
-    <VistagemShell title="Ops Legais · Prazos">
-      <p className="mb-4 text-sm text-zinc-400">
-        Defina tipo VIOS padronizado + datas (conclusão=limite) e marque AGENDAR. Status atual:{" "}
-        <strong>{status}</strong>
-      </p>
+    <VistagemShell
+      title="Prazos"
+      description={`Defina tipo VIOS + datas (conclusão = limite) e marque AGENDAR. Status atual: ${status}.`}
+    >
       <PublicationTable items={items} hrefPrefix={`${BASE}/prazos`} />
     </VistagemShell>
   );

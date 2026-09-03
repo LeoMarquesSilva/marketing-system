@@ -22,7 +22,7 @@ export default async function ControladoriaDetailPage({ params }: Props) {
   if (!data) notFound();
 
   return (
-    <VistagemShell title="Controladoria · Item">
+    <VistagemShell title="Controladoria" description="Classifique este item e libere para o jurídico.">
       <div className="grid gap-6 lg:grid-cols-2">
         <PublicationDetail publication={data} />
         <MatchForm publication={data} />

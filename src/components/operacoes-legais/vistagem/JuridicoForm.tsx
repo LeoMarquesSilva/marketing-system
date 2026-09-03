@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Publication } from "@/lib/operacoes-legais/vistagem/types";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 export function JuridicoForm({ publication }: { publication: Publication }) {
   const router = useRouter();
@@ -31,34 +33,23 @@ export function JuridicoForm({ publication }: { publication: Publication }) {
   }
 
   return (
-    <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
-      <h3 className="font-medium text-[#c9a227]">Vistagem jurídica</h3>
-      <textarea
+    <div className="space-y-4 rounded-lg border border-border/80 bg-card p-4 shadow-sm">
+      <h3 className="text-sm font-semibold text-foreground">Vistagem jurídica</h3>
+      <Textarea
         value={texto}
         onChange={(e) => setTexto(e.target.value)}
         rows={8}
-        className="w-full rounded border border-white/20 bg-[#0b1c2c] px-3 py-2 text-sm"
         placeholder="Considerações do jurídico…"
       />
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={saving}
-          onClick={() => save(false)}
-          className="rounded-md border border-white/20 px-4 py-2 text-sm"
-        >
+        <Button type="button" variant="outline" disabled={saving} onClick={() => save(false)}>
           Salvar rascunho
-        </button>
-        <button
-          type="button"
-          disabled={saving || !texto.trim()}
-          onClick={() => save(true)}
-          className="rounded-md bg-[#c9a227] px-4 py-2 text-sm font-medium text-[#0b1c2c] disabled:opacity-40"
-        >
+        </Button>
+        <Button type="button" disabled={saving || !texto.trim()} onClick={() => save(true)}>
           Concluir vistagem → prazos
-        </button>
+        </Button>
       </div>
-      {msg && <p className="text-sm text-zinc-300">{msg}</p>}
+      {msg && <p className="text-sm text-muted-foreground">{msg}</p>}
     </div>
   );
 }

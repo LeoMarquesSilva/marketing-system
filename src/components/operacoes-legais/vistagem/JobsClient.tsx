@@ -1,6 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 export function JobsClient({
   initialJobs,
@@ -28,79 +37,79 @@ export function JobsClient({
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={loading}
-          onClick={() => processJobs(true)}
-          className="rounded-md bg-[#c9a227] px-4 py-2 text-sm font-medium text-[#0b1c2c]"
-        >
+        <Button type="button" disabled={loading} onClick={() => processJobs(true)}>
           Processar fila (dry-run)
-        </button>
-        <button
-          type="button"
-          disabled={loading}
-          onClick={() => processJobs(false)}
-          className="rounded-md border border-white/20 px-4 py-2 text-sm"
-        >
+        </Button>
+        <Button type="button" variant="outline" disabled={loading} onClick={() => processJobs(false)}>
           Processar (respeita VIOS_DRY_RUN)
-        </button>
+        </Button>
       </div>
       {log && (
-        <pre className="overflow-auto rounded bg-black/40 p-3 text-xs text-zinc-300">
+        <pre className="overflow-auto rounded-lg border border-border/80 bg-muted/30 p-3 text-xs text-muted-foreground">
           {log}
         </pre>
       )}
 
-      <section>
-        <h2 className="mb-2 text-sm uppercase tracking-wide text-zinc-400">Jobs</h2>
-        <div className="overflow-x-auto rounded-lg border border-white/10">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-[#152b40] text-xs text-zinc-400">
-              <tr>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">CI / Tipo</th>
-                <th className="px-3 py-2">Dry-run</th>
-                <th className="px-3 py-2">Erro</th>
-              </tr>
-            </thead>
-            <tbody>
-              {initialJobs.map((j) => {
-                const pub = j.publications as
-                  | { ci?: string; tipo_agendamento_label?: string }
-                  | null;
-                return (
-                  <tr key={String(j.id)} className="border-t border-white/5">
-                    <td className="px-3 py-2">{String(j.status)}</td>
-                    <td className="px-3 py-2 text-xs">
-                      {pub?.ci || "—"} · {pub?.tipo_agendamento_label || "—"}
-                    </td>
-                    <td className="px-3 py-2">{j.dry_run ? "sim" : "não"}</td>
-                    <td className="px-3 py-2 text-xs text-red-300">
-                      {j.error ? String(j.error) : "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      <section className="space-y-2">
+        <h3 className="text-sm font-semibold text-foreground">Jobs</h3>
+        <div className="overflow-hidden rounded-lg border border-border/80 bg-card shadow-sm">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Status</TableHead>
+                <TableHead>CI / Tipo</TableHead>
+                <TableHead>Dry-run</TableHead>
+                <TableHead>Erro</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {initialJobs.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-muted-foreground">
+                    Nenhum job na fila.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                initialJobs.map((j) => {
+                  const pub = j.publications as
+                    | { ci?: string; tipo_agendamento_label?: string }
+                    | null;
+                  return (
+                    <TableRow key={String(j.id)}>
+                      <TableCell>{String(j.status)}</TableCell>
+                      <TableCell className="text-xs">
+                        {pub?.ci || "—"} · {pub?.tipo_agendamento_label || "—"}
+                      </TableCell>
+                      <TableCell>{j.dry_run ? "sim" : "não"}</TableCell>
+                      <TableCell className="text-xs text-red-700">
+                        {j.error ? String(j.error) : "—"}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
         </div>
       </section>
 
-      <section>
-        <h2 className="mb-2 text-sm uppercase tracking-wide text-zinc-400">
-          Últimos resultados
-        </h2>
-        <ul className="space-y-2 text-sm">
-          {initialResults.map((r) => (
-            <li
-              key={String(r.id)}
-              className="rounded border border-white/10 bg-white/5 px-3 py-2"
-            >
-              <span className="text-[#c9a227]">{String(r.review_status)}</span>{" "}
-              · pxe {String(r.vios_pxe_id || "—")} · {String(r.review_notes || "")}
-            </li>
-          ))}
-        </ul>
+      <section className="space-y-2">
+        <h3 className="text-sm font-semibold text-foreground">Últimos resultados</h3>
+        {initialResults.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nenhum resultado ainda.</p>
+        ) : (
+          <ul className="space-y-2 text-sm">
+            {initialResults.map((r) => (
+              <li
+                key={String(r.id)}
+                className="rounded-lg border border-border/80 bg-card px-3 py-2 shadow-sm"
+              >
+                <span className="font-medium text-[#285f7a]">{String(r.review_status)}</span>
+                {" · "}pxe {String(r.vios_pxe_id || "—")} · {String(r.review_notes || "")}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   );

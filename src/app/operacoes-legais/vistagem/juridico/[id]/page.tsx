@@ -22,7 +22,7 @@ export default async function JuridicoDetailPage({ params }: Props) {
   if (!data) notFound();
 
   return (
-    <VistagemShell title="Jurídico · Vistagem">
+    <VistagemShell title="Jurídico" description="Registre a vistagem e envie para definição de prazos.">
       <div className="grid gap-6 lg:grid-cols-2">
         <PublicationDetail publication={data} />
         <JuridicoForm publication={data} />

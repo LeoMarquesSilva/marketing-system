@@ -3,6 +3,7 @@ import { PublicationTable } from "@/components/operacoes-legais/vistagem/Publica
 import { VistagemShell } from "@/components/operacoes-legais/vistagem/VistagemShell";
 import { requireVistagemAccess } from "@/lib/operacoes-legais/vistagem/db";
 import type { Publication } from "@/lib/operacoes-legais/vistagem/types";
+import { Button } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
@@ -23,18 +24,15 @@ export default async function ControladoriaPage() {
   }
 
   return (
-    <VistagemShell title="Controladoria · Match pendente">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <p className="text-sm text-zinc-400">
-          Classifique escritório, grupo, demanda de risco e pasta/CI (POSSÍVEL ABERTURA).
-        </p>
-        <Link
-          href={`${BASE}/controladoria/captura`}
-          className="rounded-md bg-[#c9a227] px-3 py-1.5 text-sm font-medium text-[#0b1c2c]"
-        >
-          Captura
-        </Link>
-      </div>
+    <VistagemShell
+      title="Controladoria"
+      description="Classifique escritório, grupo, demanda de risco e pasta/CI (POSSÍVEL ABERTURA)."
+      action={
+        <Button asChild>
+          <Link href={`${BASE}/controladoria/captura`}>Captura</Link>
+        </Button>
+      }
+    >
       <PublicationTable items={items} hrefPrefix={`${BASE}/controladoria`} />
     </VistagemShell>
   );

@@ -15,7 +15,11 @@ export default async function FechamentoPage() {
     throw error;
   }
   return (
-    <OpsFunctionPage title="Fechamento Legal Ops" skill="vios-fechamento-legal-ops" icon={Wallet}>
+    <OpsFunctionPage
+      title="Fechamento Legal Ops"
+      description="Rateio das horas da equipe Ops para as áreas jurídicas."
+      icon={Wallet}
+    >
       <p>
         Rateio das horas da equipe Ops para as áreas jurídicas. Intimação tácita não entra. No
         arquivo final não resta hora em Operações Legais.

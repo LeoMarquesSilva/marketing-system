@@ -3,6 +3,16 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Publication, TaskType } from "@/lib/operacoes-legais/vistagem/types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export function PrazoForm({
   publication,
@@ -52,79 +62,60 @@ export function PrazoForm({
   }
 
   return (
-    <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
-      <h3 className="font-medium text-[#c9a227]">Definição de prazo / compromisso</h3>
-      <p className="text-xs text-zinc-400">
+    <div className="space-y-4 rounded-lg border border-border/80 bg-card p-4 shadow-sm">
+      <h3 className="text-sm font-semibold text-foreground">Definição de prazo / compromisso</h3>
+      <p className="text-xs text-muted-foreground">
         Conclusão = limite (sempre). Trabalhista: Ops Legais; demais áreas: Controladoria.
       </p>
-      <label className="block text-sm">
-        Tipo VIOS
-        <select
-          value={tipoId}
-          onChange={(e) => setTipoId(e.target.value)}
-          className="mt-1 w-full rounded border border-white/20 bg-[#0b1c2c] px-3 py-2"
-        >
-          <option value="">Selecione…</option>
-          {taskTypes.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.label_vios}
-              {t.kind === "skip" ? " (NÃO AGENDAR)" : ""}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="block text-sm">
-        Data conclusão (= limite)
-        <input
-          type="date"
-          value={data}
-          onChange={(e) => setData(e.target.value)}
-          className="mt-1 w-full rounded border border-white/20 bg-[#0b1c2c] px-3 py-2"
-        />
-      </label>
-      <label className="block text-sm">
-        FATAL (se houver)
-        <input
-          type="date"
-          value={fatal}
-          onChange={(e) => setFatal(e.target.value)}
-          className="mt-1 w-full rounded border border-white/20 bg-[#0b1c2c] px-3 py-2"
-        />
-      </label>
+      <div className="space-y-2">
+        <Label>Tipo VIOS</Label>
+        <Select value={tipoId || "__none__"} onValueChange={(value) => setTipoId(value === "__none__" ? "" : value)}>
+          <SelectTrigger>
+            <SelectValue placeholder="Selecione…" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">Selecione…</SelectItem>
+            {taskTypes.map((t) => (
+              <SelectItem key={t.id} value={t.id}>
+                {t.label_vios}
+                {t.kind === "skip" ? " (NÃO AGENDAR)" : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="data-conclusao">Data conclusão (= limite)</Label>
+        <Input id="data-conclusao" type="date" value={data} onChange={(e) => setData(e.target.value)} />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="data-fatal">FATAL (se houver)</Label>
+        <Input id="data-fatal" type="date" value={fatal} onChange={(e) => setFatal(e.target.value)} />
+      </div>
       {(selected?.requires_hora || /AUD|PER/i.test(selected?.label_vios || "")) && (
-        <label className="block text-sm">
-          Hora início
-          <input
-            type="time"
-            value={hora}
-            onChange={(e) => setHora(e.target.value)}
-            className="mt-1 w-full rounded border border-white/20 bg-[#0b1c2c] px-3 py-2"
-          />
-        </label>
+        <div className="space-y-2">
+          <Label htmlFor="hora-inicio">Hora início</Label>
+          <Input id="hora-inicio" type="time" value={hora} onChange={(e) => setHora(e.target.value)} />
+        </div>
       )}
       <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={prio} onChange={(e) => setPrio(e.target.checked)} />
+        <input
+          type="checkbox"
+          className="h-4 w-4 accent-[#347796]"
+          checked={prio}
+          onChange={(e) => setPrio(e.target.checked)}
+        />
         Prioridade de agendamento
       </label>
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={saving}
-          onClick={() => save(false)}
-          className="rounded-md border border-white/20 px-4 py-2 text-sm"
-        >
+        <Button type="button" variant="outline" disabled={saving} onClick={() => save(false)}>
           Salvar
-        </button>
-        <button
-          type="button"
-          disabled={saving || !tipoId || !data}
-          onClick={() => save(true)}
-          className="rounded-md bg-[#c9a227] px-4 py-2 text-sm font-medium text-[#0b1c2c] disabled:opacity-40"
-        >
+        </Button>
+        <Button type="button" disabled={saving || !tipoId || !data} onClick={() => save(true)}>
           Marcar AGENDAR
-        </button>
+        </Button>
       </div>
-      {msg && <p className="text-sm text-zinc-300">{msg}</p>}
+      {msg && <p className="text-sm text-muted-foreground">{msg}</p>}
     </div>
   );
 }

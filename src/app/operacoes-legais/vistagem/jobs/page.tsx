@@ -26,7 +26,10 @@ export default async function JobsPage() {
   }
 
   return (
-    <VistagemShell title="Jobs de agendamento">
+    <VistagemShell
+      title="Jobs"
+      description="Fila de agendamento VIOS e revisão da cadeia gerada."
+    >
       <JobsClient initialJobs={jobs} initialResults={results} />
     </VistagemShell>
   );

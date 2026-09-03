@@ -15,7 +15,11 @@ export default async function EtiquetasPage() {
     throw error;
   }
   return (
-    <OpsFunctionPage title="Demanda de risco" skill="vios-etiqueta-demanda-risco" icon={ShieldAlert}>
+    <OpsFunctionPage
+      title="Demanda de risco"
+      description="Etiqueta de pasta (id VIOS 203) a partir da base Rec. Crédito."
+      icon={ShieldAlert}
+    >
       <p>
         Etiqueta de pasta <strong>Demanda de risco</strong> (id VIOS 203). Não é prazo nem etapa de
         tarefa. Inclusão aditiva a partir da coluna Demanda de Risco = Sim da base Rec. Crédito.

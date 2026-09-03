@@ -15,7 +15,11 @@ export default async function RelatoriosPage() {
     throw error;
   }
   return (
-    <OpsFunctionPage title="Relatórios VIOS (CSV)" skill="vios-baixar-relatorio-csv" icon={ClipboardList}>
+    <OpsFunctionPage
+      title="Relatórios VIOS"
+      description="Dump completo de processos e prazos, sem o corte de 500 linhas."
+      icon={ClipboardList}
+    >
       <p>
         Pesquisa com Relatório = CSV e limite 9999999, depois o download pelo link{" "}
         <code>download.php</code> (cookie <code>Proc</code>). Encoding latin-1, separador ponto e

@@ -52,10 +52,10 @@ export default async function CatalogoPage() {
   }
 
   return (
-    <VistagemShell title="Catálogo de tipos VIOS">
-      <p className="mb-4 text-sm text-zinc-400">
-        Tipos canônicos, aliases e fluxos vinculados (FATAL / UNA).
-      </p>
+    <VistagemShell
+      title="Catálogo VIOS"
+      description="Tipos canônicos, aliases e fluxos vinculados (FATAL / UNA)."
+    >
       <CatalogClient initialTypes={types} />
     </VistagemShell>
   );

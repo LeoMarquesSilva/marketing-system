@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { VistagemShell } from "@/components/operacoes-legais/vistagem/VistagemShell";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export default function CapturaPage() {
   const [captureDate, setCaptureDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -27,31 +30,27 @@ export default function CapturaPage() {
   }
 
   return (
-    <VistagemShell title="Captura Kurrier">
-      <div className="max-w-xl space-y-4 rounded-xl border border-white/10 bg-white/5 p-6">
-        <p className="text-sm text-zinc-400">
-          Envie os xlsx do dia para o bucket <code>kurrier-inbox/&lt;data&gt;/</code> e rode a
-          captura. A base VIOS deve estar em <code>process_base_rows</code>.
-        </p>
-        <label className="block text-sm">
-          Data da captura
-          <input
+    <VistagemShell
+      title="Captura Kurrier"
+      description="Envie os xlsx do dia para o bucket e rode a captura. A base VIOS deve estar em process_base_rows."
+    >
+      <div className="max-w-xl space-y-4 rounded-lg border border-border/80 bg-card p-5 shadow-sm">
+        <div className="space-y-2">
+          <Label htmlFor="capture-date">Data da captura</Label>
+          <Input
+            id="capture-date"
             type="date"
             value={captureDate}
             onChange={(e) => setCaptureDate(e.target.value)}
-            className="mt-1 w-full rounded border border-white/20 bg-[#0b1c2c] px-3 py-2"
           />
-        </label>
-        <button
-          type="button"
-          disabled={loading}
-          onClick={runCapture}
-          className="rounded-md bg-[#c9a227] px-4 py-2 text-sm font-medium text-[#0b1c2c] disabled:opacity-50"
-        >
+        </div>
+        <Button type="button" disabled={loading} onClick={runCapture}>
           {loading ? "Processando…" : "Rodar captura"}
-        </button>
+        </Button>
         {log && (
-          <pre className="overflow-auto rounded bg-black/40 p-3 text-xs text-zinc-300">{log}</pre>
+          <pre className="overflow-auto rounded-lg border border-border/80 bg-muted/30 p-3 text-xs text-muted-foreground">
+            {log}
+          </pre>
         )}
       </div>
     </VistagemShell>

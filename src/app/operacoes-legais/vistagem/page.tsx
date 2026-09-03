@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { AlertTriangle } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { VistagemShell } from "@/components/operacoes-legais/vistagem/VistagemShell";
 import { requireVistagemAccess } from "@/lib/operacoes-legais/vistagem/db";
 
@@ -41,46 +43,39 @@ export default async function VistagemHomePage() {
   ];
 
   return (
-    <VistagemShell title="Central de Publicações">
-      <section className="mb-8 rounded-xl border border-[#c9a227]/30 bg-gradient-to-br from-[#152b40] to-[#0b1c2c] p-6">
-        <p className="text-sm text-[#c9a227]">BISMARCHI PIRES · OPERAÇÕES LEGAIS</p>
-        <h2 className="mt-2 max-w-2xl font-serif text-3xl text-white">
-          Captura → vistagem → agendamento VIOS
-        </h2>
-        <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-          Filas no ORQESTRAI. Sem SharePoint no caminho feliz.
-        </p>
-        {!schemaReady && (
-          <p className="mt-3 max-w-2xl rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
-            Schema ainda não está no Supabase deste projeto. A migration
-            <code className="mx-1">20260902180000_vistagem.sql</code>
-            não foi aplicada — as filas ficam vazias até isso.
-          </p>
-        )}
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Link
-            href={`${BASE}/controladoria/captura`}
-            className="rounded-md bg-[#c9a227] px-4 py-2 text-sm font-medium text-[#0b1c2c]"
-          >
-            Rodar captura
-          </Link>
-          <Link
-            href={`${BASE}/jobs`}
-            className="rounded-md border border-white/20 px-4 py-2 text-sm text-white"
-          >
-            Processar jobs
-          </Link>
+    <VistagemShell
+      title="Vistagem"
+      description="Captura, classificação, vistagem jurídica e agendamento no VIOS."
+      action={
+        <div className="flex flex-wrap gap-2">
+          <Button asChild>
+            <Link href={`${BASE}/controladoria/captura`}>Rodar captura</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href={`${BASE}/jobs`}>Processar jobs</Link>
+          </Button>
         </div>
-      </section>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      }
+    >
+      {!schemaReady && (
+        <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          Schema ainda não está no Supabase deste projeto. A migration
+          <code className="mx-1">20260902180000_vistagem.sql</code>
+          não foi aplicada — as filas ficam vazias até isso.
+        </p>
+      )}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {cards.map((c) => (
           <Link
             key={c.label}
             href={c.href}
-            className="rounded-xl border border-white/10 bg-white/5 p-5 hover:border-[#c9a227]/50"
+            className="rounded-lg border border-border/80 bg-card px-4 py-3 shadow-sm transition-colors hover:border-[#47cdd0]/50"
           >
-            <p className="text-xs uppercase tracking-wide text-zinc-400">{c.label}</p>
-            <p className="mt-2 text-3xl font-semibold text-white">{c.value}</p>
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              {c.label}
+            </p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{c.value}</p>
           </Link>
         ))}
       </div>
