@@ -54,6 +54,7 @@ export interface SourceContext {
   editorialBrief?: EditorialBrief | null;
   angleAlignment?: AngleAlignment | null;
   editorialReview?: EditorialReview | null;
+  generationMode?: "opinion" | "factual";
 }
 
 export interface GustavoContentItem {

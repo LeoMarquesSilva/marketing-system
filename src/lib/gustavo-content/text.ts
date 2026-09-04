@@ -47,6 +47,14 @@ export function applyAlternativeHook(
   return `${normalizedHook}\n\n${currentHook}`;
 }
 
+/** Normaliza apenas hashtags, preservando nomes, siglas e fragmentos de URLs. */
+export function lowercaseHashtags(text: string): string {
+  return text.replace(
+    /(^|[^\p{L}\p{M}\p{N}_/#])#([\p{L}\p{M}\p{N}_]+)/gu,
+    (_match, prefix: string, tag: string) => `${prefix}#${tag.toLocaleLowerCase("pt-BR")}`
+  );
+}
+
 /** Monta o post final garantindo que o gancho seja sempre a primeira parte. */
 export function assembleLinkedInPost(input: {
   hook: string;
@@ -68,5 +76,5 @@ export function assembleLinkedInPost(input: {
         .join(" ")
     );
   }
-  return parts.filter(Boolean).join("\n\n");
+  return lowercaseHashtags(parts.filter(Boolean).join("\n\n"));
 }

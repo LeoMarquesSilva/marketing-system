@@ -7,9 +7,10 @@ export function resolveGustavoAnswers(
   answers: unknown,
   options?: { skip?: boolean }
 ): string[] {
-  const cleaned = (Array.isArray(answers) ? answers : []).map((item) =>
-    String(item ?? "").trim()
-  );
+  const cleaned = (Array.isArray(answers) ? answers : []).map((item) => {
+    const text = String(item ?? "").trim();
+    return text === SKIPPED_VISION_NOTE ? "" : text;
+  });
 
   if (options?.skip) {
     return cleaned.some(Boolean) ? cleaned : [SKIPPED_VISION_NOTE];

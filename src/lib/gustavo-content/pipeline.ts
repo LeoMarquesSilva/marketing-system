@@ -33,8 +33,8 @@ export interface GustavoFetchResult {
 export async function runGustavoContentFetchPipeline(
   options: GustavoFetchOptions = {}
 ): Promise<GustavoFetchResult> {
-  if (!process.env.NEXT_OPENAI_API_KEY) {
-    throw new GustavoContentError("NEXT_OPENAI_API_KEY não configurada.", 503);
+  if (!process.env.NEXT_OPENAI_API_KEY?.trim() && !process.env.OPENAI_API_KEY?.trim()) {
+    throw new GustavoContentError("Configure OPENAI_API_KEY ou NEXT_OPENAI_API_KEY no servidor.", 503);
   }
 
   const admin = getGustavoContentAdmin();
@@ -129,7 +129,7 @@ export async function runGustavoContentFetchPipeline(
               const opinionStatus = validated ? "validated" : "needs_gustavo";
               anglesPatch = {
                 angles: angles.angles,
-                selected_angle: angles.angles[0] ?? null,
+                selected_angle: null,
                 thesis_id: validated?.id ?? matched?.id ?? null,
                 thesis_snapshot: validated
                   ? thesisSnapshot(validated)
@@ -232,8 +232,8 @@ export async function importInstitutionalNews(options: {
   fetchArticle?: boolean;
   days?: number;
 } = {}): Promise<GustavoFetchResult> {
-  if (!process.env.NEXT_OPENAI_API_KEY) {
-    throw new GustavoContentError("NEXT_OPENAI_API_KEY não configurada.", 503);
+  if (!process.env.NEXT_OPENAI_API_KEY?.trim() && !process.env.OPENAI_API_KEY?.trim()) {
+    throw new GustavoContentError("Configure OPENAI_API_KEY ou NEXT_OPENAI_API_KEY no servidor.", 503);
   }
 
   const admin = getGustavoContentAdmin();
@@ -324,7 +324,7 @@ export async function importInstitutionalNews(options: {
         const opinionStatus = validated ? "validated" : "needs_gustavo";
         anglesPatch = {
           angles: angles.angles,
-          selected_angle: angles.angles[0] ?? null,
+          selected_angle: null,
           thesis_id: validated?.id ?? matched?.id ?? null,
           thesis_snapshot: validated
             ? thesisSnapshot(validated)

@@ -32,7 +32,9 @@ export const GUSTAVO_CONTENT_MODEL_SCORE =
 
 /** Modelo usado na redação do LinkedIn e do Reel. */
 export const GUSTAVO_CONTENT_MODEL_WRITING =
-  process.env.GUSTAVO_CONTENT_MODEL_WRITING ?? GUSTAVO_CONTENT_MODEL;
+  process.env.GUSTAVO_CONTENT_MODEL_WRITING ??
+  process.env.GUSTAVO_CONTENT_MODEL ??
+  "gpt-5.6-sol";
 
 /** Modelo usado na revisão editorial e no compliance. */
 export const GUSTAVO_CONTENT_MODEL_REVIEW =

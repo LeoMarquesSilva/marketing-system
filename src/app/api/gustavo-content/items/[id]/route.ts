@@ -45,7 +45,10 @@ export async function PATCH(
   try {
     const actor = await requireGustavoContentAccess();
     const { id } = await context.params;
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new GustavoContentError("Dados da ação inválidos.", 400);
+    }
     const action = String(body.action ?? "");
     if (!action) {
       return NextResponse.json({ error: "Ação inválida." }, { status: 400 });
@@ -56,6 +59,9 @@ export async function PATCH(
 
     if (action === "analyze") return NextResponse.json(await analyzeItem(id));
     if (action === "generate") {
+      if (body.mode !== undefined && body.mode !== "factual" && body.mode !== "opinion") {
+        throw new GustavoContentError("Modo de geração inválido.", 400);
+      }
       return NextResponse.json(
         await generateItemContent(id, {
           mode: body.mode === "factual" ? "factual" : undefined,
@@ -63,7 +69,10 @@ export async function PATCH(
       );
     }
     if (action === "select_angle") {
-      return NextResponse.json(await selectAngle(id, Number(body.angleIndex ?? 0)));
+      if (typeof body.angleIndex !== "number" || !Number.isInteger(body.angleIndex) || body.angleIndex < 0) {
+        throw new GustavoContentError("Ângulo inválido.", 400);
+      }
+      return NextResponse.json(await selectAngle(id, body.angleIndex));
     }
     if (action === "answer") {
       const answers = Array.isArray(body.answers) ? body.answers.map((item) => String(item)) : [];

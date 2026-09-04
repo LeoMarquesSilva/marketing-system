@@ -89,6 +89,14 @@ describe("assembleLinkedInPost", () => {
       body: ["Corpo"],
       hashtags: ["#RecuperacaoJudicial", "DistressedAssets"],
     });
-    expect(post.endsWith("#RecuperacaoJudicial #DistressedAssets")).toBe(true);
+    expect(post.endsWith("#recuperacaojudicial #distressedassets")).toBe(true);
+  });
+
+  it("mantem maiusculas do texto mas normaliza hashtags inclusive no corpo", () => {
+    expect(assembleLinkedInPost({
+      hook: "CEOs precisam olhar o caixa",
+      body: ["Foco em #Reestruturação e #GESTÃO, segundo o CFO."],
+      hashtags: [" #RecuperaçãoJudicial ", "Crédito"],
+    })).toBe("CEOs precisam olhar o caixa\n\nFoco em #reestruturação e #gestão, segundo o CFO.\n\n#recuperaçãojudicial #crédito");
   });
 });

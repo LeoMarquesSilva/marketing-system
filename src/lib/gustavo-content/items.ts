@@ -26,9 +26,8 @@ import {
   plannerChannelAlreadyCreated,
   type PlannerChannel,
 } from "@/lib/gustavo-content/planner";
-import { SCORE_SUGGESTION_FROM } from "@/lib/gustavo-content/constants";
 import { statusFromScore } from "@/lib/gustavo-content/score";
-import { resolveGustavoAnswers } from "@/lib/gustavo-content/answers";
+import { resolveGustavoAnswers, SKIPPED_VISION_NOTE } from "@/lib/gustavo-content/answers";
 import { GustavoContentError, getGustavoContentAdmin, type GustavoContentActor } from "@/lib/gustavo-content/server";
 import { listTheses } from "@/lib/gustavo-content/theses-server";
 import { thesisSnapshot, type GustavoThesis } from "@/lib/gustavo-content/theses";
@@ -281,7 +280,8 @@ async function listHistoryItems(excludeId?: string) {
   if (excludeId) {
     query = query.neq("id", excludeId);
   }
-  const { data } = await query;
+  const { data, error } = await query;
+  if (error) throw new GustavoContentError("Não foi possível carregar o histórico editorial.", 503);
   return data ?? [];
 }
 
@@ -314,7 +314,7 @@ export async function analyzeItem(id: string): Promise<GustavoContentItem> {
         score_reason: score.reason,
         business_problem: score.businessProblem,
         recommended_channels: score.recommendedChannels,
-      });
+      }, item.updated_at);
     }
     const admin = getGustavoContentAdmin();
     await admin.from("gustavo_content_items").delete().eq("id", id);
@@ -330,15 +330,17 @@ export async function analyzeItem(id: string): Promise<GustavoContentItem> {
     score_reason: score.reason,
     business_problem: score.businessProblem,
     source_context: {
+      ...item.source_context,
       ...score.sourceContext,
       articleText: item.source_context?.articleText ?? null,
       extractionWarning: item.source_context?.extractionWarning ?? null,
     },
     recommended_channels: score.recommendedChannels,
-    status,
+    status: item.status === "rascunho" || item.status === "rejeitado" ? item.status : status,
   };
 
-  if (score.total >= SCORE_SUGGESTION_FROM) {
+  // A analise solicitada na mesa precisa liberar leituras mesmo para pautas do radar.
+  if (!item.selected_angle) {
     const angles = await generateAngles({
       title: item.title ?? "",
       snippet: item.content_snippet ?? "",
@@ -350,7 +352,16 @@ export async function analyzeItem(id: string): Promise<GustavoContentItem> {
     Object.assign(patch, applyThesisMatch(angles, theses, status));
   }
 
-  return updateItemRow(id, patch);
+  // Respostas mantem o pareamento com as perguntas originais e nao perdem validacao.
+  if (item.gustavo_answers?.some((answer) => answer.trim() && answer !== SKIPPED_VISION_NOTE)) {
+    patch.gustavo_questions = item.gustavo_questions;
+    patch.opinion_status = item.opinion_status;
+  }
+  if (item.linkedin_post || item.reel_script || item.status === "rascunho" || item.status === "rejeitado") {
+    patch.status = item.status;
+  }
+
+  return updateItemRow(id, patch, item.updated_at);
 }
 
 function applyThesisMatch(
@@ -389,12 +400,36 @@ function applyThesisMatch(
 
 export async function selectAngle(id: string, angleIndex: number): Promise<GustavoContentItem> {
   const item = await getItem(id);
+  if (!canRunEditorialAction("select_angle", item.status)) {
+    throw new GustavoContentError("A leitura não pode ser alterada nesta etapa.", 409);
+  }
+  if (!Number.isInteger(angleIndex) || angleIndex < 0) {
+    throw new GustavoContentError("Ângulo inválido.", 400);
+  }
   const angle = item.angles?.[angleIndex];
   if (!angle) throw new GustavoContentError("Ângulo inválido.", 400);
-  return updateItemRow(id, { selected_angle: angle });
+  return updateItemRow(id, { selected_angle: angle }, item.updated_at);
 }
 
+// Evita chamadas duplicadas na mesma instancia; updated_at protege entre instancias.
+const generatingItems = new Set<string>();
+
 export async function generateItemContent(
+  id: string,
+  options?: { mode?: GenerationMode }
+): Promise<GustavoContentItem> {
+  if (generatingItems.has(id)) {
+    throw new GustavoContentError("Esta pauta já está sendo gerada. Aguarde a conclusão.", 409);
+  }
+  generatingItems.add(id);
+  try {
+    return await generateItemDraft(id, options);
+  } finally {
+    generatingItems.delete(id);
+  }
+}
+
+async function generateItemDraft(
   id: string,
   options?: { mode?: GenerationMode }
 ): Promise<GustavoContentItem> {
@@ -420,6 +455,13 @@ export async function generateItemContent(
   }
 
   const { theses, voice, previous, strategy } = await loadContext(item.id);
+  const validatedThesis = theses.find((thesis) => thesis.id === item.thesis_id && thesis.status === "validated");
+  const realAnswers = (item.gustavo_answers ?? []).map((answer) =>
+    answer.trim() === SKIPPED_VISION_NOTE ? "" : answer.trim()
+  );
+  if (mode !== "factual" && !validatedThesis && !realAnswers.some(Boolean)) {
+    throw new GustavoContentError("Não há opinião validada disponível. Registre a visão do Gustavo ou gere uma análise factual.", 409);
+  }
   const history = assessEditorialHistory(
     {
       title: item.title,
@@ -430,7 +472,11 @@ export async function generateItemContent(
     previous
   );
 
-  async function writeAndReview(reviewFeedback: string[] | null) {
+  const abortSignal = AbortSignal.timeout(95_000);
+  async function writeAndReview(
+    reviewFeedback: string[] | null,
+    previousDraft?: Awaited<ReturnType<typeof generateEditorialContent>>
+  ) {
     const draft = await generateEditorialContent({
       title: item.title ?? "",
       snippet: item.content_snippet ?? "",
@@ -441,22 +487,25 @@ export async function generateItemContent(
       link: item.link,
       businessProblem: item.business_problem,
       selectedAngle: item.selected_angle,
-      thesisSnapshot: item.thesis_snapshot,
-      answers: item.gustavo_answers,
+      thesisSnapshot: validatedThesis ? thesisSnapshot(validatedThesis) : null,
+      answers: mode === "factual" ? null : realAnswers,
       questions: item.gustavo_questions,
-      theses,
+      theses: theses.filter((thesis) => thesis.status === "validated"),
       voice,
       history,
       sourceContext: item.source_context,
       strategy,
       factualOnly: mode === "factual",
       reviewFeedback,
+      previousDraft,
+      abortSignal,
     });
     let review = null;
     try {
       review = await reviewEditorialContent({
         linkedinPost: draft.linkedinPost,
         centralThesis: draft.editorialBrief.centralThesis,
+        abortSignal,
       });
     } catch {
       review = null;
@@ -472,7 +521,7 @@ export async function generateItemContent(
     review = first.review;
     if (review && !review.passesReview) {
       try {
-        const retry = await writeAndReview(review.issues);
+        const retry = await writeAndReview(review.issues, first.draft);
         content = retry.draft;
         review = retry.review;
       } catch {
@@ -492,6 +541,7 @@ export async function generateItemContent(
     compliance = await analyzeCompliance({
       linkedinPost: content.linkedinPost,
       reelScript,
+      abortSignal,
     });
   } catch {
     compliance = null;
@@ -504,6 +554,9 @@ export async function generateItemContent(
     original_reel_script: item.original_reel_script ?? reelScript,
     alternative_hooks: content.alternativeHooks,
     compliance_flags: compliance,
+    has_alterations:
+      (item.original_linkedin_post != null && item.original_linkedin_post !== content.linkedinPost) ||
+      (item.original_reel_script != null && item.original_reel_script !== reelScript),
     source_context: {
       facts: item.source_context?.facts ?? [],
       numbers: item.source_context?.numbers ?? [],
@@ -516,9 +569,15 @@ export async function generateItemContent(
       editorialBrief: content.editorialBrief,
       angleAlignment: content.angleAlignment,
       editorialReview: review,
+      generationMode: mode ?? "opinion",
     },
-    status: item.status === "aguardando_opiniao" ? "rascunho" : item.status === "sugestao" ? "rascunho" : item.status,
-  });
+    status: "rascunho",
+    rejection_reason: null,
+    submitted_to_gustavo_at: null,
+    approved_at: null,
+    approved_by: null,
+    approval_kind: null,
+  }, item.updated_at);
 
   if (!item.linkedin_post && item.thesis_id) {
     const actorId = item.edited_by ?? item.created_by;
@@ -534,6 +593,9 @@ export async function saveItemAnswers(
   options?: { skip?: boolean }
 ): Promise<GustavoContentItem> {
   const item = await getItem(id);
+  if (!canRunEditorialAction("answer", item.status)) {
+    throw new GustavoContentError("A opinião não pode ser alterada nesta etapa.", 409);
+  }
   const skip = options?.skip === true;
   const cleaned = resolveGustavoAnswers(answers, { skip });
 
@@ -544,7 +606,7 @@ export async function saveItemAnswers(
     edited_by: actor.id,
     edited_by_name: actor.name,
     edited_at: new Date().toISOString(),
-  });
+  }, item.updated_at);
 }
 
 export async function saveItemEdits(
@@ -553,6 +615,9 @@ export async function saveItemEdits(
   actor: GustavoContentActor
 ): Promise<GustavoContentItem> {
   const item = await getItem(id);
+  if (!canRunEditorialAction("save", item.status)) {
+    throw new GustavoContentError("O texto não pode ser editado nesta etapa.", 409);
+  }
   const linkedin = resolveOutputEdit({
     current: item.linkedin_post,
     incoming: input.linkedin_post ?? item.linkedin_post ?? "",
@@ -573,14 +638,26 @@ export async function saveItemEdits(
     original_reel_script: reel.original,
     has_alterations: linkedin.hasAlterations || reel.hasAlterations,
     compliance_flags: contentChanged ? null : item.compliance_flags,
+    ...(contentChanged ? {
+      status: "rascunho",
+      submitted_to_gustavo_at: null,
+      approved_at: null,
+      approved_by: null,
+      approval_kind: null,
+      rejection_reason: null,
+      source_context: item.source_context ? { ...item.source_context, editorialReview: null } : null,
+    } : {}),
     edited_by: actor.id,
     edited_by_name: actor.name,
     edited_at: new Date().toISOString(),
-  });
+  }, item.updated_at);
 }
 
 export async function submitToGustavo(id: string): Promise<GustavoContentItem> {
   const item = await getItem(id);
+  if (item.status !== "rascunho") {
+    throw new GustavoContentError("Esta pauta não pode ir para aprovação agora.", 409);
+  }
   if (!item.linkedin_post && !item.reel_script) {
     throw new GustavoContentError("Gere o conteúdo antes de enviar para aprovação.", 400);
   }
@@ -589,7 +666,7 @@ export async function submitToGustavo(id: string): Promise<GustavoContentItem> {
     reelScript: item.reel_script ?? "",
   });
   if (!canSubmitForApproval(compliance)) {
-    await updateItemRow(id, { compliance_flags: compliance });
+    await updateItemRow(id, { compliance_flags: compliance }, item.updated_at);
     throw new GustavoContentError(
       "Há um alerta grave de compliance. Corrija o texto antes de enviar.",
       409
@@ -602,7 +679,7 @@ export async function submitToGustavo(id: string): Promise<GustavoContentItem> {
     status: "aguardando_aprovacao",
     compliance_flags: compliance,
     submitted_to_gustavo_at: new Date().toISOString(),
-  });
+  }, item.updated_at);
 }
 
 export async function approveItem(
@@ -610,7 +687,7 @@ export async function approveItem(
   actor: GustavoContentActor
 ): Promise<GustavoContentItem> {
   const item = await getItem(id);
-  if (!canTransition(item.status, "aprovado")) {
+  if (item.status !== "aguardando_aprovacao") {
     throw new GustavoContentError("Esta pauta não está aguardando aprovação.", 409);
   }
   return updateItemRow(id, {
@@ -618,7 +695,7 @@ export async function approveItem(
     approved_by: actor.id,
     approved_at: new Date().toISOString(),
     approval_kind: approvalKindForActor(actor),
-  });
+  }, item.updated_at);
 }
 
 export async function rejectItem(
@@ -632,7 +709,7 @@ export async function rejectItem(
   return updateItemRow(id, {
     status: "rejeitado",
     rejection_reason: reason?.trim() || null,
-  });
+  }, item.updated_at);
 }
 
 export async function markPublished(
@@ -645,28 +722,42 @@ export async function markPublished(
   }
 ): Promise<GustavoContentItem> {
   const item = await getItem(id);
+  if (!["aprovado", "enviado_mkt", "publicado"].includes(item.status)) {
+    throw new GustavoContentError("Aprove o conteúdo antes de registrar a publicação.", 409);
+  }
   const now = new Date().toISOString();
   const patch: Record<string, unknown> = {};
   if (input.linkedin_published_url !== undefined) {
-    patch.linkedin_published_url = input.linkedin_published_url?.trim() || null;
+    patch.linkedin_published_url = publicationUrl(input.linkedin_published_url);
     patch.linkedin_published_at =
-      input.linkedin_published_at || (input.linkedin_published_url ? now : null);
+      patch.linkedin_published_url ? input.linkedin_published_at || item.linkedin_published_at || now : null;
   }
   if (input.instagram_published_url !== undefined) {
-    patch.instagram_published_url = input.instagram_published_url?.trim() || null;
+    patch.instagram_published_url = publicationUrl(input.instagram_published_url);
     patch.instagram_published_at =
-      input.instagram_published_at || (input.instagram_published_url ? now : null);
+      patch.instagram_published_url ? input.instagram_published_at || item.instagram_published_at || now : null;
   }
 
-  const nextLinkedin = (patch.linkedin_published_url as string | null | undefined) ?? item.linkedin_published_url;
-  const nextInstagram =
-    (patch.instagram_published_url as string | null | undefined) ?? item.instagram_published_url;
+  const nextLinkedin = input.linkedin_published_url !== undefined ? patch.linkedin_published_url : item.linkedin_published_url;
+  const nextInstagram = input.instagram_published_url !== undefined ? patch.instagram_published_url : item.instagram_published_url;
   if (nextLinkedin || nextInstagram) {
     if (canTransition(item.status, "publicado") || item.status === "publicado") {
       patch.status = "publicado";
     }
   }
-  return updateItemRow(id, patch);
+  return updateItemRow(id, patch, item.updated_at);
+}
+
+function publicationUrl(value: string | null | undefined): string | null {
+  const text = value?.trim();
+  if (!text) return null;
+  try {
+    const parsed = new URL(text);
+    if (parsed.protocol === "https:" || parsed.protocol === "http:") return parsed.toString();
+  } catch {
+    // Mesmo erro para URL malformada e protocolo nao permitido.
+  }
+  throw new GustavoContentError("Informe uma URL de publicação http(s) válida.", 400);
 }
 
 export async function sendItemToPlanner(
@@ -758,17 +849,22 @@ async function incrementThesisUsage(thesisId: string, actorId: string) {
 
 async function updateItemRow(
   id: string,
-  patch: Record<string, unknown>
+  patch: Record<string, unknown>,
+  expectedUpdatedAt?: string
 ): Promise<GustavoContentItem> {
   const admin = getGustavoContentAdmin();
-  const { data, error } = await admin
+  let query = admin
     .from("gustavo_content_items")
     .update(patch)
-    .eq("id", id)
-    .select(ITEM_SELECT)
+    .eq("id", id);
+  if (expectedUpdatedAt) query = query.eq("updated_at", expectedUpdatedAt);
+  const { data, error } = await query.select(ITEM_SELECT)
     .maybeSingle();
   if (error) throw new GustavoContentError(error.message, 500);
-  if (!data) throw new GustavoContentError("Pauta não encontrada.", 404);
+  if (!data) throw new GustavoContentError(
+    expectedUpdatedAt ? "Esta pauta foi alterada durante a operação. Recarregue para ver a versão atual." : "Pauta não encontrada.",
+    expectedUpdatedAt ? 409 : 404
+  );
   const [item] = await enrichItems([data as GustavoContentItem]);
   return item;
 }

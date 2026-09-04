@@ -54,7 +54,7 @@ export const anglesObjectSchema = z.object({
 
 export const contentObjectSchema = z.object({
   editorialBrief: z.object({
-    centralThesis: z.string(),
+    centralThesis: z.string().trim().min(1),
     icp: z.string(),
     businessDecision: z.string(),
     supportingFacts: z.array(z.string()).max(3),
@@ -68,16 +68,16 @@ export const contentObjectSchema = z.object({
     note: z.string(),
   }),
   linkedin: z.object({
-    hook: z.string(),
-    body: z.array(z.string()).min(1).max(6),
+    hook: z.string().trim().min(1),
+    body: z.array(z.string().trim().min(1)).min(1).max(6),
     closing: z.string().nullable(),
     hashtags: z.array(z.string()).max(3).nullable(),
   }),
-  alternativeHooks: z.array(z.string()).length(3),
+  alternativeHooks: z.array(z.string().trim().min(1)).length(3),
   reel: z.object({
     duration: z.string(),
-    hook: z.string(),
-    talkingPoints: z.array(z.string()),
+    hook: z.string().trim().min(1),
+    talkingPoints: z.array(z.string().trim().min(1)).min(1),
     closing: z.string(),
     recordingNote: z.string(),
   }),

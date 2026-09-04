@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -24,6 +24,8 @@ import { COMPLIANCE_FLAG_LABELS } from "@/lib/gustavo-content/compliance";
 import { GUSTAVO_CONTENT_STATUS_LABELS } from "@/lib/gustavo-content/constants";
 import { parseReelScript } from "@/lib/gustavo-content/planner";
 import { applyAlternativeHook } from "@/lib/gustavo-content/text";
+import { SKIPPED_VISION_NOTE } from "@/lib/gustavo-content/answers";
+import { canRunEditorialAction } from "@/lib/gustavo-content/workflow";
 import { ANGLE_LABELS, type GustavoContentItem } from "@/lib/gustavo-content/types";
 import { cn } from "@/lib/utils";
 import {
@@ -53,10 +55,16 @@ export function ItemWorkspace({
   const [copied, setCopied] = useState(false);
   const [previousLinkedin, setPreviousLinkedin] = useState<string | null>(null);
   const [lastGenerateMode, setLastGenerateMode] = useState<"opinion" | "factual" | null>(null);
+  const actionInFlight = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      setItem(null);
+      setError(null);
+      setPreviousLinkedin(null);
+      setLastGenerateMode(null);
+      try {
       const response = await fetch(`/api/gustavo-content/items/${itemId}`);
       const data = await response.json().catch(() => ({}));
       if (cancelled) return;
@@ -69,11 +77,14 @@ export function ItemWorkspace({
       setReel(data.reel_script ?? "");
       setAnswers(
         Array.isArray(data.gustavo_answers) && data.gustavo_answers.length > 0
-          ? data.gustavo_answers
+          ? data.gustavo_answers.map((answer: string) => answer === SKIPPED_VISION_NOTE ? "" : answer)
           : data.gustavo_questions?.map(() => "") ?? []
       );
       setLinkedinUrl(data.linkedin_published_url ?? "");
       setInstagramUrl(data.instagram_published_url ?? "");
+      } catch {
+        if (!cancelled) setError("Não foi possível conectar para abrir a pauta. Tente novamente.");
+      }
     }
     void load();
     return () => {
@@ -94,69 +105,69 @@ export function ItemWorkspace({
     return data as GustavoContentItem;
   }
 
-  function applyItem(next: GustavoContentItem) {
+  function applyItem(next: GustavoContentItem, updateAnswers = false) {
     setItem(next);
     setLinkedin(next.linkedin_post ?? "");
     setReel(next.reel_script ?? "");
     setPreviousLinkedin(null);
-    if (Array.isArray(next.gustavo_answers) && next.gustavo_answers.length > 0) {
-      setAnswers(next.gustavo_answers);
+    if (updateAnswers) {
+      setAnswers((next.gustavo_answers ?? []).map((answer) => answer === SKIPPED_VISION_NOTE ? "" : answer));
     }
   }
 
-  async function act(action: string, extra?: Record<string, unknown>) {
+  const dirty = Boolean(item && (linkedin !== (item.linkedin_post ?? "") || reel !== (item.reel_script ?? "")));
+
+  function beginAction(action: string): boolean {
+    if (actionInFlight.current) return false;
+    if (dirty && action !== "save") {
+      setError("Salve as alterações antes de continuar.");
+      return false;
+    }
+    actionInFlight.current = true;
     setBusy(action);
     setError(null);
+    return true;
+  }
+
+  async function act(action: string, extra?: Record<string, unknown>) {
+    if (!beginAction(action)) return;
+    setLastGenerateMode(null);
     try {
       applyItem(await patchItem(action, extra));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível concluir esta ação.");
     } finally {
+      actionInFlight.current = false;
       setBusy(null);
     }
   }
 
   async function generate(mode?: "factual") {
+    if (!beginAction("generate")) return;
     setLastGenerateMode(mode ?? "opinion");
-    setBusy("generate");
-    setError(null);
     try {
       applyItem(await patchItem("generate", mode ? { mode } : undefined));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível gerar o rascunho.");
     } finally {
+      actionInFlight.current = false;
       setBusy(null);
     }
   }
 
   /** Registra uma visão real do Gustavo e gera o conteúdo com base nela. */
   async function addVisionAndGenerate() {
-    setBusy("answer");
-    setError(null);
+    if (!beginAction("answer")) return;
+    setLastGenerateMode(null);
     try {
-      applyItem(await patchItem("answer", { answers, skip: false }));
+      applyItem(await patchItem("answer", { answers, skip: false }), true);
       setLastGenerateMode("opinion");
       setBusy("generate");
       applyItem(await patchItem("generate"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível usar as respostas.");
     } finally {
-      setBusy(null);
-    }
-  }
-
-  /** Segue sem visão registrada (mas com perguntas já geradas) e pede a análise factual. */
-  async function skipVisionAndGenerateFactual() {
-    setBusy("skip");
-    setError(null);
-    try {
-      applyItem(await patchItem("answer", { answers, skip: true }));
-      setLastGenerateMode("factual");
-      setBusy("generate");
-      applyItem(await patchItem("generate", { mode: "factual" }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível gerar a análise factual.");
-    } finally {
+      actionInFlight.current = false;
       setBusy(null);
     }
   }
@@ -166,17 +177,21 @@ export function ItemWorkspace({
 
   const reelParsed = parseReelScript(reel) ?? {};
   const canApprove = item.status === "aguardando_aprovacao" && (isOwner || isAdmin);
-  const dirty = linkedin !== (item.linkedin_post ?? "") || reel !== (item.reel_script ?? "");
   const linkedinCharacters = linkedin.length;
-  const canReanalyze = ["radar", "sugestao", "aguardando_opiniao", "rascunho"].includes(item.status);
+  const canReanalyze = canRunEditorialAction("analyze", item.status);
+  const canEdit = canRunEditorialAction("save", item.status);
   const canReject = !["publicado", "arquivado"].includes(item.status);
   const hasAngles = (item.angles?.length ?? 0) > 0;
   const hasSelectedAngle = Boolean(item.selected_angle);
   const hasQuestions = (item.gustavo_questions?.length ?? 0) > 0;
-  const hasDraft = Boolean(item.linkedin_post);
+  const hasOpinion = item.opinion_status === "validated" && Boolean(
+    (item.thesis_id && item.thesis_snapshot) ||
+    item.gustavo_answers?.some((answer) => answer.trim() && answer.trim() !== SKIPPED_VISION_NOTE)
+  );
+  const hasDraft = Boolean(item.linkedin_post || item.reel_script);
   const editorialBrief = item.source_context?.editorialBrief ?? null;
   const angleAlignment = item.source_context?.angleAlignment ?? null;
-  const editorialReview = item.source_context?.editorialReview ?? null;
+  const editorialReview = dirty ? null : item.source_context?.editorialReview ?? null;
 
   function updateReelField(
     field: "duration" | "hook" | "talkingPoints" | "closing" | "recordingNote",
@@ -224,7 +239,7 @@ export function ItemWorkspace({
           busy={busy}
           error={error}
           onRetry={
-            hasSelectedAngle && (item.opinion_status === "validated" || lastGenerateMode === "factual")
+            canReanalyze && !dirty && !busy && lastGenerateMode && hasSelectedAngle && (hasOpinion || lastGenerateMode === "factual")
               ? () => void generate(lastGenerateMode === "factual" ? "factual" : undefined)
               : undefined
           }
@@ -351,7 +366,7 @@ export function ItemWorkspace({
                     key={angle.type}
                     type="button"
                     onClick={() => act("select_angle", { angleIndex: index })}
-                    disabled={!!busy || dirty}
+                    disabled={!!busy || dirty || !canReanalyze}
                     className={cn(
                       "group w-full rounded-xl border-l-2 px-4 py-4 text-left transition-all disabled:cursor-not-allowed disabled:opacity-60",
                       selected
@@ -398,7 +413,7 @@ export function ItemWorkspace({
               </p>
             )}
             <p className="mt-3 text-xs text-white/45">
-              {item.opinion_status === "validated" ? "Status: validada" : "A IA não inventa opinião."}
+              {hasOpinion ? "Status: validada" : "A IA não inventa opinião."}
             </p>
             {editorialBrief?.centralThesis && (
               <p className="mt-3 border-t border-white/10 pt-3 text-xs leading-5 text-white/60">
@@ -414,9 +429,9 @@ export function ItemWorkspace({
             </section>
           )}
 
-          {hasAngles && hasSelectedAngle && (
+          {canReanalyze && hasAngles && hasSelectedAngle && (
             <section className="rounded-2xl border border-[#04202f]/15 bg-white p-5">
-              {item.opinion_status === "validated" ? (
+              {hasOpinion ? (
                 !hasDraft ? (
                   <>
                     <h4 className="text-lg font-semibold text-[#04202f]">Visão registrada</h4>
@@ -434,7 +449,7 @@ export function ItemWorkspace({
                         ))}
                       </ul>
                     )}
-                    <Button className="mt-4" onClick={() => void generate()} disabled={!!busy}>
+                    <Button className="mt-4" onClick={() => void generate()} disabled={!!busy || dirty}>
                       {busy === "generate" ? (
                         <>
                           <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
@@ -461,7 +476,7 @@ export function ItemWorkspace({
                     escrever em primeira pessoa, ou peça uma análise factual — que interpreta o fato sem
                     atribuir experiência, opinião ou aprovação a ele.
                   </p>
-                  {hasQuestions && (
+                  {hasQuestions ? (
                     <div className="mt-4 space-y-3">
                       {item.gustavo_questions?.map((question, index) => (
                         <div key={question}>
@@ -480,10 +495,14 @@ export function ItemWorkspace({
                         </div>
                       ))}
                     </div>
+                  ) : (
+                    <label className="mt-4 grid gap-2 text-sm font-medium text-[#04202f]">
+                      Visão do Gustavo
+                      <Textarea rows={3} value={answers[0] ?? ""} disabled={!!busy} onChange={(event) => setAnswers([event.target.value])} />
+                    </label>
                   )}
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {hasQuestions && (
-                      <Button onClick={() => void addVisionAndGenerate()} disabled={!!busy}>
+                      <Button onClick={() => void addVisionAndGenerate()} disabled={!!busy || dirty || !answers.some((answer) => answer.trim())}>
                         {busy === "answer" || (busy === "generate" && lastGenerateMode === "opinion") ? (
                           <>
                             <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden />
@@ -493,13 +512,10 @@ export function ItemWorkspace({
                           "Adicionar minha visão e gerar"
                         )}
                       </Button>
-                    )}
                     <Button
                       variant="outline"
-                      onClick={() =>
-                        void (hasQuestions ? skipVisionAndGenerateFactual() : generate("factual"))
-                      }
-                      disabled={!!busy}
+                      onClick={() => void generate("factual")}
+                      disabled={!!busy || dirty}
                     >
                       {busy === "skip" || (busy === "generate" && lastGenerateMode === "factual") ? (
                         <>
@@ -556,6 +572,7 @@ export function ItemWorkspace({
                 <Textarea
                   className="min-h-[360px] resize-y border-0 bg-[#f5f8f8] px-4 py-4 text-[0.95rem] leading-7 shadow-none focus-visible:ring-[#347796]"
                   value={linkedin}
+                  readOnly={!canEdit || !!busy}
                   onChange={(event) => {
                     setLinkedin(event.target.value);
                     setPreviousLinkedin(null);
@@ -571,7 +588,7 @@ export function ItemWorkspace({
                 </div>
               </div>
             ) : (
-              <div className="mt-4 grid gap-4">
+              <fieldset disabled={!canEdit || !!busy} className="mt-4 grid min-w-0 gap-4">
                 <div className="grid gap-4 sm:grid-cols-[7rem_1fr]">
                   <label className="grid gap-1.5 text-xs font-semibold text-[#36535f]">
                     Duração
@@ -594,16 +611,17 @@ export function ItemWorkspace({
                   Orientação de gravação
                   <Input value={reelParsed.recordingNote ?? ""} onChange={(event) => updateReelField("recordingNote", event.target.value)} />
                 </label>
-              </div>
+              </fieldset>
             )}
 
-            {(item.alternative_hooks?.length ?? 0) > 0 && (
+            {canEdit && (item.alternative_hooks?.length ?? 0) > 0 && (
               <div className="mt-3 text-sm">
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-medium text-[#04202f]">Hooks alternativos</p>
                   {previousLinkedin != null && (
                     <button
                       type="button"
+                      disabled={!!busy}
                       onClick={() => {
                         setLinkedin(previousLinkedin);
                         setPreviousLinkedin(null);
@@ -619,6 +637,7 @@ export function ItemWorkspace({
                     <button
                       key={hook}
                       type="button"
+                      disabled={!!busy}
                       onClick={() => {
                         setPreviousLinkedin(linkedin);
                         setLinkedin((current) => applyAlternativeHook(current, hook));
@@ -643,14 +662,14 @@ export function ItemWorkspace({
               </div>
             )}
 
-            {item.compliance_flags && item.compliance_flags.flags.length > 0 && (
+            {!dirty && item.compliance_flags && item.compliance_flags.flags.length > 0 && (
               <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                 {item.compliance_flags.flags.map((flag) => (
                   <p key={flag}>{COMPLIANCE_FLAG_LABELS[flag]}</p>
                 ))}
               </div>
             )}
-            {!item.compliance_flags && (linkedin || reel) && (
+            {(dirty || !item.compliance_flags) && (linkedin || reel) && (
               <div className="mt-4 flex items-start gap-2 rounded-xl bg-[#04202f]/[0.035] p-3 text-sm text-[#526b75]">
                 <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#347796]" aria-hidden />
                 A revisão de compliance será refeita com o texto atual antes do envio.
@@ -667,7 +686,7 @@ export function ItemWorkspace({
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                {dirty && (
+                {dirty && canEdit && (
                   <Button onClick={() => act("save", { linkedin_post: linkedin, reel_script: reel })} disabled={!!busy} className="bg-[#7fe1e3] text-[#04202f] hover:bg-white">
                     <Save className="h-4 w-4" aria-hidden /> {busy === "save" ? "Salvando…" : "Salvar alterações"}
                   </Button>
@@ -678,7 +697,7 @@ export function ItemWorkspace({
                   </Button>
                 )}
                 {canApprove && (
-                  <Button onClick={() => act("approve")} disabled={!!busy} className="bg-[#7fe1e3] text-[#04202f] hover:bg-white">
+                  <Button onClick={() => act("approve")} disabled={!!busy || dirty} className="bg-[#7fe1e3] text-[#04202f] hover:bg-white">
                     <Check className="h-4 w-4" aria-hidden /> Aprovar conteúdo
                   </Button>
                 )}
@@ -701,7 +720,7 @@ export function ItemWorkspace({
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => void generate(item.opinion_status === "validated" ? undefined : "factual")}
+                  onClick={() => void generate(!hasOpinion || item.source_context?.generationMode === "factual" ? "factual" : undefined)}
                   disabled={!!busy || dirty}
                   title={dirty ? "Salve ou descarte as edições antes de regenerar." : undefined}
                   className="text-white/70 hover:bg-white/10 hover:text-white"
@@ -713,7 +732,7 @@ export function ItemWorkspace({
                 <summary className="cursor-pointer select-none hover:text-white">Solicitar ajuste ou rejeitar</summary>
                 <div className="mt-3 grid min-w-[18rem] gap-2 rounded-xl bg-white/10 p-3">
                   <Input value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} placeholder="Motivo da decisão" className="border-white/15 bg-white text-[#04202f]" />
-                  <Button variant="destructive" size="sm" onClick={() => act("reject", { reason: rejectReason })} disabled={!!busy}>
+                  <Button variant="destructive" size="sm" onClick={() => act("reject", { reason: rejectReason })} disabled={!!busy || dirty}>
                     Confirmar rejeição
                   </Button>
                 </div>
@@ -743,7 +762,7 @@ export function ItemWorkspace({
             </section>
           ) : null}
 
-          {isAdmin && (
+          {isAdmin && ["aprovado", "enviado_mkt", "publicado"].includes(item.status) && (
             <section className="rounded-[1.35rem] bg-white/75 p-5">
               <p className="editorial-kicker font-mono text-[11px] uppercase text-[#347796]">
                 Publicação
@@ -828,7 +847,7 @@ export function nextStepText(
   const { status } = item;
   const hasAngles = (item.angles?.length ?? 0) > 0;
   const hasSelectedAngle = Boolean(item.selected_angle);
-  const hasDraft = Boolean(item.linkedin_post);
+  const hasDraft = Boolean(item.linkedin_post || item.reel_script);
 
   if (busy === "generate") return "Gerando LinkedIn e Reel. Isso pode levar até um minuto.";
   if (busy === "answer" || busy === "skip") return "Registrando a visão para liberar a redação.";
@@ -847,6 +866,8 @@ export function nextStepText(
   if (status === "aprovado") return "Conteúdo aprovado. Agora cada canal pode seguir para produção.";
   if (status === "enviado_mkt") return "A produção já está no Planner; registre a publicação quando sair.";
   if (status === "publicado") return "Conteúdo publicado e disponível para alimentar a memória editorial.";
+  if (status === "rejeitado") return "Ajuste o texto ou gere uma nova versão para retomar a aprovação.";
+  if (!hasAngles) return "Refaça a análise para preparar as leituras desta pauta.";
   return "Escolha uma leitura e avance para a redação.";
 }
 

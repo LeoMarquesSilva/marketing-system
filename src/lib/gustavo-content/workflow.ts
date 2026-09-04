@@ -10,7 +10,7 @@ export type ApprovalKind = "gustavo" | "admin_exception";
 export type GenerationMode = "opinion" | "factual";
 
 export function canRunEditorialAction(
-  action: "analyze" | "generate",
+  action: "analyze" | "generate" | "select_angle" | "answer" | "save",
   status: GustavoContentStatus
 ): boolean {
   const editable: GustavoContentStatus[] = [
@@ -18,8 +18,9 @@ export function canRunEditorialAction(
     "sugestao",
     "aguardando_opiniao",
     "rascunho",
+    "rejeitado",
   ];
-  return editable.includes(status) && (action === "analyze" || action === "generate");
+  return editable.includes(status) || (action === "save" && status === "aguardando_aprovacao");
 }
 
 export function canGenerateDraft(input: {

@@ -24,7 +24,7 @@ Evite sensacionalismo, juridiquês desnecessário, tom professoral, copywriting 
 
 AUTORIA
 Nunca invente uma opinião de Gustavo.
-Utilize somente opiniões existentes na BIBLIOTECA_DE_TESES ou respostas fornecidas diretamente por ele.
+Utilize somente teses com status validated na BIBLIOTECA_DE_TESES ou respostas fornecidas diretamente por ele. Teses pendentes não são opiniões aprovadas.
 Se for necessário um posicionamento que ainda não existe: NÃO ESCREVA COMO SE SOUBESSE. Marque que falta validação e formule no máximo 3 perguntas objetivas.
 
 VOZ HISTÓRICA
@@ -35,13 +35,13 @@ Não transforme Gustavo em uma caricatura de seus posts anteriores.
 HISTÓRICO
 Considere HISTORICO_EDITORIAL_GUSTAVO.
 Evite repetir a mesma tese, o mesmo gancho, a mesma empresa pelo mesmo ângulo ou a mesma estrutura.
-Se o risco de similaridade for alto, busque outro ângulo.
+Se o risco de similaridade for alto, varie a abertura e a estrutura, preservando o ângulo escolhido pelo usuário.
 
 LINKEDIN
 Priorize tese, contexto breve, interpretação, consequência empresarial e conclusão.
 Não iniciar com "Você sabia?", "Em um cenário...", "No mundo atual...".
 Não utilizar CTA comercial. Não terminar todo texto em pergunta. Não utilizar emojis por padrão.
-Hashtags: 0 a 3, só se fizer sentido.
+Hashtags: 0 a 3, só se fizer sentido, sempre inteiramente em letras minúsculas, inclusive nomes e siglas. Nunca use iniciais maiúsculas nem CamelCase nas hashtags.
 
 INSTAGRAM REEL
 Escrever para fala. 45 a 75 segundos. Um assunto por vídeo.
@@ -55,6 +55,7 @@ FATOS
 Separe FATOS DA FONTE de INTERPRETAÇÃO DO GUSTAVO.
 Nunca transforme interpretação em fato.
 Use números, datas e nomes somente quando estiverem presentes na matéria ou em FATOS_DA_FONTE.
+Não apresente saldos, percentuais ou resultados calculados como números confirmados pela fonte. Uma venda destinada à amortização não comprova o saldo final da dívida: podem existir custos, juros e outras movimentações não informadas. Prefira descrever a redução parcial sem calcular um saldo não publicado.
 Se a evidência for insuficiente, escreva de forma prudente e não complete lacunas por plausibilidade.`;
 
 export const SCORE_INSTRUCTIONS = `Analise a pauta para thought leadership de reestruturação empresarial.
@@ -101,7 +102,7 @@ export const LINKEDIN_CONTENT_INSTRUCTIONS = `Gere o LinkedIn como objeto estrut
 hook: abertura concreta com tensão, consequência ou contraste relevante para o ICP — nunca genérica, nunca sensacionalista, nunca uma promessa.
 body: um argumento por parágrafo, parágrafos curtos, sustentando a centralThesis do brief.
 closing: fechamento que reforça a implicação prática, sem CTA comercial e sem terminar em pergunta automática.
-hashtags: 0 a 3, só se fizer sentido.
+hashtags: 0 a 3, só se fizer sentido, sempre inteiramente em letras minúsculas. Exemplo: #recuperaçãojudicial, nunca #RecuperaçãoJudicial.
 alternativeHooks: exatamente 3 aberturas distintas entre si, todas alinhadas à mesma centralThesis — nunca pequenas reformulações do título da notícia.
 Não use "Você sabia?", "Em um cenário...", "No mundo atual...". Não use emoji por padrão.
 Se ainda faltar opinião validada (modo factual), escreva como leitura analítica, nunca em primeira pessoa fingindo ser a opinião do Gustavo.

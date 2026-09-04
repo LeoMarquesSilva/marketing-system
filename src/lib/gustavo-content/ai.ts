@@ -25,25 +25,33 @@ import {
 } from "@/lib/gustavo-content/schemas";
 import { clampScoreBreakdown } from "@/lib/gustavo-content/score";
 import { normalizeCompliance } from "@/lib/gustavo-content/compliance";
-import { assembleLinkedInPost } from "@/lib/gustavo-content/text";
+import { assembleLinkedInPost, lowercaseHashtags } from "@/lib/gustavo-content/text";
 import type { GustavoThesis } from "@/lib/gustavo-content/theses";
 import type { GustavoVoiceSample } from "@/lib/gustavo-content/voice";
 import {
   buildEditorialHistoryPrompt,
   type EditorialHistoryAssessment,
 } from "@/lib/gustavo-content/history";
-import type { SourceContext } from "@/lib/gustavo-content/types";
+import type { EditorialBrief, SourceContext } from "@/lib/gustavo-content/types";
 import {
   buildStrategyPrompt,
   type GustavoStrategy,
 } from "@/lib/gustavo-content/strategy";
 
 function getOpenAI() {
-  const apiKey = process.env.NEXT_OPENAI_API_KEY;
+  const apiKey = process.env.NEXT_OPENAI_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
-    throw new GustavoContentError("NEXT_OPENAI_API_KEY não configurada.", 503);
+    throw new GustavoContentError("Configure OPENAI_API_KEY ou NEXT_OPENAI_API_KEY no servidor.", 503);
   }
   return createOpenAI({ apiKey });
+}
+
+function requestLimits(timeoutMs: number, signal?: AbortSignal) {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return {
+    abortSignal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    maxRetries: 1,
+  };
 }
 
 function scoreModel() {
@@ -87,6 +95,7 @@ export interface AnalyzeInput {
 
 export async function analyzeScore(input: AnalyzeInput) {
   const result = await generateObject({
+    ...requestLimits(30_000),
     model: scoreModel(),
     schema: scoreObjectSchema,
     schemaName: "gustavo_editorial_score",
@@ -115,6 +124,7 @@ export async function analyzeScore(input: AnalyzeInput) {
 
 export async function generateAngles(input: AnalyzeInput) {
   const result = await generateObject({
+    ...requestLimits(30_000),
     model: scoreModel(),
     schema: anglesObjectSchema,
     schemaName: "gustavo_editorial_angles",
@@ -150,8 +160,14 @@ export async function generateEditorialContent(input: {
   factualOnly?: boolean;
   /** Problemas apontados pela revisão editorial anterior, para uma única rodada de correção. */
   reviewFeedback?: string[] | null;
+  previousDraft?: { linkedinPost: string; editorialBrief: EditorialBrief; reel: unknown };
+  abortSignal?: AbortSignal;
 }) {
+  const usesReasoning =
+    (GUSTAVO_CONTENT_MODEL_WRITING.startsWith("gpt-5") && !GUSTAVO_CONTENT_MODEL_WRITING.includes("-chat")) ||
+    /^o[134](?:-|$)/.test(GUSTAVO_CONTENT_MODEL_WRITING);
   const result = await generateObject({
+    ...requestLimits(50_000, input.abortSignal),
     model: writingModel(),
     schema: contentObjectSchema,
     schemaName: "gustavo_editorial_content",
@@ -177,22 +193,32 @@ export async function generateEditorialContent(input: {
       `BIBLIOTECA_DE_TESES:\n${thesesBlock(input.theses)}`,
       `VOZ_HISTORICA_GUSTAVO:\n${voiceBlock(input.voice)}`,
       `HISTORICO_EDITORIAL_GUSTAVO:\n${buildEditorialHistoryPrompt(input.history)}`,
+      input.previousDraft
+        ? `RASCUNHO_A_CORRIGIR (preserve a tese central, os fatos e o ângulo; ajuste somente os problemas da revisão):\n${JSON.stringify(input.previousDraft)}`
+        : "",
       input.reviewFeedback?.length
         ? `REVISAO_EDITORIAL_ANTERIOR (corrija sem perder a tese e os fatos já usados):\n${input.reviewFeedback.map((issue) => `- ${issue}`).join("\n")}`
         : "",
     ]
       .filter(Boolean)
       .join("\n\n"),
-    temperature: 0.55,
-    // O objeto ficou mais pesado (brief + linkedin estruturado + reel + 3 hooks);
-    // um teto explícito evita truncamento silencioso da saída estruturada.
-    maxOutputTokens: 4000,
+    ...(usesReasoning
+      ? { providerOptions: { openai: { reasoningEffort: "low" } } }
+      : { temperature: 0.55 }),
+    // Modelos de raciocinio compartilham o limite entre raciocinio e JSON final.
+    maxOutputTokens: usesReasoning ? 6000 : 4000,
   });
 
   return {
     linkedinPost: assembleLinkedInPost(result.object.linkedin),
-    alternativeHooks: result.object.alternativeHooks,
-    reel: result.object.reel,
+    alternativeHooks: result.object.alternativeHooks.map(lowercaseHashtags),
+    reel: {
+      ...result.object.reel,
+      hook: lowercaseHashtags(result.object.reel.hook),
+      talkingPoints: result.object.reel.talkingPoints.map(lowercaseHashtags),
+      closing: lowercaseHashtags(result.object.reel.closing),
+      recordingNote: lowercaseHashtags(result.object.reel.recordingNote),
+    },
     editorialBrief: result.object.editorialBrief,
     angleAlignment: result.object.angleAlignment,
   };
@@ -201,8 +227,10 @@ export async function generateEditorialContent(input: {
 export async function reviewEditorialContent(input: {
   linkedinPost: string;
   centralThesis: string;
+  abortSignal?: AbortSignal;
 }) {
   const result = await generateObject({
+    ...requestLimits(10_000, input.abortSignal),
     model: reviewModel(),
     schema: editorialReviewObjectSchema,
     schemaName: "gustavo_editorial_review",
@@ -216,8 +244,10 @@ export async function reviewEditorialContent(input: {
 export async function analyzeCompliance(input: {
   linkedinPost: string;
   reelScript: string;
+  abortSignal?: AbortSignal;
 }) {
   const result = await generateObject({
+    ...requestLimits(15_000, input.abortSignal),
     model: reviewModel(),
     schema: complianceObjectSchema,
     schemaName: "gustavo_compliance",
