@@ -25,7 +25,7 @@ import {
 } from "@/lib/gustavo-content/schemas";
 import { clampScoreBreakdown } from "@/lib/gustavo-content/score";
 import { normalizeCompliance } from "@/lib/gustavo-content/compliance";
-import { assembleLinkedInPost, lowercaseHashtags } from "@/lib/gustavo-content/text";
+import { assembleLinkedInPost, normalizeGeneratedText } from "@/lib/gustavo-content/text";
 import type { GustavoThesis } from "@/lib/gustavo-content/theses";
 import type { GustavoVoiceSample } from "@/lib/gustavo-content/voice";
 import {
@@ -211,16 +211,27 @@ export async function generateEditorialContent(input: {
 
   return {
     linkedinPost: assembleLinkedInPost(result.object.linkedin),
-    alternativeHooks: result.object.alternativeHooks.map(lowercaseHashtags),
+    alternativeHooks: result.object.alternativeHooks.map(normalizeGeneratedText),
     reel: {
       ...result.object.reel,
-      hook: lowercaseHashtags(result.object.reel.hook),
-      talkingPoints: result.object.reel.talkingPoints.map(lowercaseHashtags),
-      closing: lowercaseHashtags(result.object.reel.closing),
-      recordingNote: lowercaseHashtags(result.object.reel.recordingNote),
+      duration: normalizeGeneratedText(result.object.reel.duration),
+      hook: normalizeGeneratedText(result.object.reel.hook),
+      talkingPoints: result.object.reel.talkingPoints.map(normalizeGeneratedText),
+      closing: normalizeGeneratedText(result.object.reel.closing),
+      recordingNote: normalizeGeneratedText(result.object.reel.recordingNote),
     },
-    editorialBrief: result.object.editorialBrief,
-    angleAlignment: result.object.angleAlignment,
+    editorialBrief: {
+      centralThesis: normalizeGeneratedText(result.object.editorialBrief.centralThesis),
+      icp: normalizeGeneratedText(result.object.editorialBrief.icp),
+      businessDecision: normalizeGeneratedText(result.object.editorialBrief.businessDecision),
+      supportingFacts: result.object.editorialBrief.supportingFacts.map(normalizeGeneratedText),
+      practicalConsequence: normalizeGeneratedText(result.object.editorialBrief.practicalConsequence),
+      limits: result.object.editorialBrief.limits?.map(normalizeGeneratedText) ?? null,
+    },
+    angleAlignment: {
+      aligned: result.object.angleAlignment.aligned,
+      note: normalizeGeneratedText(result.object.angleAlignment.note),
+    },
   };
 }
 

@@ -55,6 +55,11 @@ export function lowercaseHashtags(text: string): string {
   );
 }
 
+/** Aplica regras mecânicas que não podem depender da obediência do modelo. */
+export function normalizeGeneratedText(text: string): string {
+  return lowercaseHashtags(text).replace(/\s*[—–]\s*/gu, ", ");
+}
+
 /** Monta o post final garantindo que o gancho seja sempre a primeira parte. */
 export function assembleLinkedInPost(input: {
   hook: string;
@@ -76,5 +81,5 @@ export function assembleLinkedInPost(input: {
         .join(" ")
     );
   }
-  return lowercaseHashtags(parts.filter(Boolean).join("\n\n"));
+  return normalizeGeneratedText(parts.filter(Boolean).join("\n\n"));
 }

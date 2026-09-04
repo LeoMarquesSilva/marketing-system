@@ -68,6 +68,17 @@ describe("contrato da geracao", () => {
     expect(draft.reel).toEqual({ duration: "60s", hook: "CFOs e #gestão", talkingPoints: ["#crédito"], closing: "#caixa", recordingNote: "Usar #reestruturação" });
   });
 
+  it("remove travessoes de todos os textos entregues", async () => {
+    generateObject.mockResolvedValueOnce({ object: {
+      ...output,
+      linkedin: { hook: "Caixa — decisão", body: ["Dívida – operação"], closing: "Ação — agora", hashtags: null },
+      alternativeHooks: ["A — um", "B – dois", "C — três"],
+      reel: { duration: "60s", hook: "Caixa — decisão", talkingPoints: ["Dívida – operação"], closing: "Ação — agora", recordingNote: "Tom — natural" },
+    } });
+    const draft = await generateEditorialContent(input);
+    expect(JSON.stringify(draft)).not.toMatch(/[—–]/u);
+  });
+
   it("usa parametros de raciocinio compativeis ao configurar GPT-5.6 para escrita", async () => {
     vi.stubEnv("GUSTAVO_CONTENT_MODEL_WRITING", "gpt-5.6-sol");
     vi.resetModules();

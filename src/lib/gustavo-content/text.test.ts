@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyAlternativeHook,
   assembleLinkedInPost,
+  normalizeGeneratedText,
   splitLinkedInBlocks,
 } from "@/lib/gustavo-content/text";
 
@@ -98,5 +99,12 @@ describe("assembleLinkedInPost", () => {
       body: ["Foco em #Reestruturação e #GESTÃO, segundo o CFO."],
       hashtags: [" #RecuperaçãoJudicial ", "Crédito"],
     })).toBe("CEOs precisam olhar o caixa\n\nFoco em #reestruturação e #gestão, segundo o CFO.\n\n#recuperaçãojudicial #crédito");
+  });
+});
+
+describe("normalizeGeneratedText", () => {
+  it("remove travessoes do texto gerado sem alterar hifens comuns", () => {
+    expect(normalizeGeneratedText("Dívida — sem caixa – exige ação. Curto-prazo."))
+      .toBe("Dívida, sem caixa, exige ação. Curto-prazo.");
   });
 });
