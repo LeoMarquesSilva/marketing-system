@@ -58,4 +58,19 @@ describe("meus-clientes-invite-filter", () => {
     expect(groupMatchesInviteFilter([], "gestor_default")).toBe(true);
     expect(groupMatchesInviteFilter([], "nps")).toBe(false);
   });
+
+  it("all não esconde quem marcou NPS não", () => {
+    expect(
+      memberMatchesInviteFilter(
+        { npsEligible: false, partyInvite: false, invitesClassifiedByUserId: "u1" },
+        "all"
+      )
+    ).toBe(true);
+    expect(
+      groupMatchesInviteFilter(
+        [{ npsEligible: false, partyInvite: false, invitesClassifiedByUserId: "u1" }],
+        "all"
+      )
+    ).toBe(true);
+  });
 });

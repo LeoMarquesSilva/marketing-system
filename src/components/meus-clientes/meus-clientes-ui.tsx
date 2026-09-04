@@ -1668,14 +1668,10 @@ export function ManagerSummaryTable({
 export function ClickableStatCard({
   label,
   value,
-  onClick,
-  active,
   variant,
 }: {
   label: string;
   value: number;
-  onClick?: () => void;
-  active?: boolean;
   variant?: "default" | "success" | "warning";
 }) {
   const border =
@@ -1684,18 +1680,10 @@ export function ClickableStatCard({
       : variant === "warning"
         ? "border-amber-200"
         : "border-border/80";
-  const activeRing = active ? "ring-2 ring-primary/30" : "";
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={!onClick}
-      className={`rounded-xl border bg-card px-4 py-3 text-left shadow-sm transition-colors ${border} ${activeRing} ${
-        onClick ? "hover:bg-muted/20 cursor-pointer" : "cursor-default"
-      }`}
-    >
+    <div className={`rounded-xl border bg-card px-4 py-3 text-left shadow-sm ${border}`}>
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="text-2xl font-bold tabular-nums">{value}</p>
-    </button>
+    </div>
   );
 }

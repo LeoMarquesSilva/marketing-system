@@ -60,7 +60,7 @@ const COMMON_STEPS: MeusClientesTourStep[] = [
     id: "stats",
     target: '[data-tour="mc-stats"]',
     title: "Completos e pendentes",
-    body: "Use os cards para alternar entre cadastros completos e pendentes. Só contatos com cadastro completo e NPS marcado entram no link da pesquisa.",
+    body: "Os cards mostram quantos cadastros estão completos e pendentes. Só contatos com cadastro completo e NPS marcado entram no link da pesquisa.",
   },
   {
     id: "filters",

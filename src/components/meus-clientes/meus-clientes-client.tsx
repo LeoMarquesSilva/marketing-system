@@ -15,7 +15,6 @@ import {
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   Select,
@@ -90,10 +89,8 @@ import {
 import { MEUS_CLIENTES_TOUR_EXPAND_STEPS } from "@/lib/meus-clientes-tour";
 import { useMeusClientesRealtime } from "@/hooks/use-meus-clientes-realtime";
 import {
-  GESTOR_DEFAULT_INVITE_FILTER,
   groupMatchesInviteFilter,
   memberMatchesInviteFilter,
-  resolveGestorInviteFilter,
   type InviteFilter,
 } from "@/lib/meus-clientes-invite-filter";
 import {
@@ -650,8 +647,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
     if (filterGestor) params.set("gestorId", filterGestor);
     if (filterArea) params.set("area", filterArea);
     if (filterStatus !== "all") params.set("status", filterStatus);
-    const inviteForExport = isAdmin ? filterInvite : GESTOR_DEFAULT_INVITE_FILTER;
-    if (inviteForExport !== "all") params.set("invite", inviteForExport);
+    if (filterInvite !== "all") params.set("invite", filterInvite);
     if (isAdmin && filterPartyTipo !== "all") params.set("partyTipo", filterPartyTipo);
     if (search.trim()) params.set("search", search.trim());
     params.set("excludeSemGrupo", "1");
@@ -883,8 +879,6 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
     resolveClienteStatusForFilter,
   ]);
 
-  /** Gestores: NPS sim ou pendente — exclui só quem marcou NPS não explicitamente. */
-  const effectiveInviteFilter = resolveGestorInviteFilter(isAdmin, filterInvite);
   const effectivePartyTipoFilter: PartyInviteTipo | "all" = isAdmin ? filterPartyTipo : "all";
 
   const npsWorkflowProgress = useMemo(() => {
@@ -931,11 +925,11 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
         groupMatchesInviteFilters(
           group,
           contactsByGroup,
-          effectiveInviteFilter,
+          filterInvite,
           effectivePartyTipoFilter
         )
       ),
-    [groupsAfterWorkflow, contactsByGroup, effectiveInviteFilter, effectivePartyTipoFilter]
+    [groupsAfterWorkflow, contactsByGroup, filterInvite, effectivePartyTipoFilter]
   );
 
   const tourSampleGroupKey = displayGroups[0]?.key ?? null;
@@ -1543,40 +1537,26 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
           label="Cadastros completos"
           value={stats.completo}
           variant="success"
-          active={filterStatus === "complete"}
-          onClick={() => setFilterStatus((s) => (s === "complete" ? "all" : "complete"))}
         />
         <ClickableStatCard
           label="Cadastros pendentes"
           value={stats.incompleto}
           variant="warning"
-          active={filterStatus === "pending"}
-          onClick={() => setFilterStatus((s) => (s === "pending" ? "all" : "pending"))}
         />
         {isAdmin && (
           <ClickableStatCard
             label="Pessoas para festa"
             value={inviteFilterCounts.party}
-            active={filterInvite === "party"}
-            onClick={() => setFilterInvite((s) => (s === "party" ? "all" : "party"))}
           />
         )}
         <ClickableStatCard
           label="Pessoas NPS"
           value={inviteFilterCounts.nps}
-          active={!isAdmin || filterInvite === "nps"}
-          onClick={
-            isAdmin
-              ? () => setFilterInvite((s) => (s === "nps" ? "all" : "nps"))
-              : undefined
-          }
         />
         {isAdmin && (
           <ClickableStatCard
             label="Grupos com festa"
             value={inviteFilterCounts.partyGroups}
-            active={filterInvite === "party"}
-            onClick={() => setFilterInvite((s) => (s === "party" ? "all" : "party"))}
           />
         )}
       </div>
@@ -1603,7 +1583,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
             counts={statusFilterCounts}
           />
 
-          {isAdmin ? (
+          {isAdmin && (
             <Select
               value={filterInvite}
               onValueChange={(v) => setFilterInvite(v as InviteFilter)}
@@ -1631,14 +1611,6 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
                 ))}
               </SelectContent>
             </Select>
-          ) : (
-            <Badge
-              variant="outline"
-              className="h-8 border-blue-200 bg-blue-50 px-3 text-xs font-medium text-blue-800"
-              title="Gestores veem clientes da sua área, excluindo quem já foi marcado como NPS não"
-            >
-              NPS sim ou pendente ({inviteFilterCounts.gestorDefaultGroups})
-            </Badge>
           )}
 
           {isAdmin && (
@@ -2001,7 +1973,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
           filterStatus={filterStatus}
           filterAtividade={isAdmin ? filterAtividade : "all"}
           filterFaturamentoPrevisto={isAdmin ? filterFaturamentoPrevisto : "all"}
-          filterInvite={isAdmin ? filterInvite : "nps"}
+          filterInvite={filterInvite}
           filterPartyTipo={isAdmin ? filterPartyTipo : "all"}
           filterResponsibleArea={isAdmin ? filterResponsibleArea : ""}
           filterWorkflow={filterWorkflow}
@@ -2050,7 +2022,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
                 onToggleSelectAllInGroup={handleToggleSelectAllInGroup}
                 compact={compactMode}
                 searchQuery={search}
-                inviteFilter={effectiveInviteFilter}
+                inviteFilter={filterInvite}
                 partyTipoFilter={effectivePartyTipoFilter}
                 tourGroupSample={index === 0}
                 tourContactEdit={

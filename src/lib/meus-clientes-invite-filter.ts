@@ -20,8 +20,6 @@ export type InviteFilterMember = {
   invitesClassifiedByUserId?: string | null;
 };
 
-export const GESTOR_DEFAULT_INVITE_FILTER: InviteFilter = "gestor_default";
-
 export function isExplicitNpsNo(
   member: Pick<InviteFilterMember, "npsEligible" | "invitesClassifiedByUserId">
 ): boolean {
@@ -71,8 +69,4 @@ export function parseInviteFilterParam(value: string | null): InviteFilter {
     return value;
   }
   return "all";
-}
-
-export function resolveGestorInviteFilter(isAdmin: boolean, filterInvite: InviteFilter): InviteFilter {
-  return isAdmin ? filterInvite : GESTOR_DEFAULT_INVITE_FILTER;
 }
