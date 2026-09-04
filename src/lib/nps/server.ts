@@ -34,9 +34,11 @@ import { fetchSioeClienteAtividadeIndex } from "@/lib/sioe-cliente-atividade-ser
 import {
   buildEligibleRespondents,
   computeNpsOutreachProgress,
+  markOutreachPeopleResponses,
   resolveNpsCollectionArea,
   type NpsEligibleRespondent,
   type NpsOutreachProgress,
+  type NpsOutreachResponseRef,
 } from "@/lib/nps/eligible";
 import { buildNpsWhatsAppMessage } from "@/lib/nps/message";
 import { getNpsPublicUrl } from "@/lib/nps/public-url";
@@ -194,7 +196,7 @@ const EMPTY_NPS_OUTREACH: NpsOutreachProgress = {
 async function loadNpsOutreachProgress(options: {
   campaignId: string;
   allowedGroupIds: Set<string> | null;
-  respondedCountByGroupId: Map<string, number>;
+  respondedByGroupId: Map<string, NpsOutreachResponseRef[]>;
 }): Promise<NpsOutreachProgress> {
   const admin = getAdminClient();
   const [
@@ -290,10 +292,15 @@ async function loadNpsOutreachProgress(options: {
   for (const person of people) groupIds.add(person.clientGroupId!);
 
   const eligibleCountByGroupId = new Map<string, number>();
+  const peopleByGroupId = new Map<string, ReturnType<typeof markOutreachPeopleResponses>>();
   for (const groupId of groupIds) {
-    eligibleCountByGroupId.set(
+    const respondents = buildEligibleRespondents(contacts, people, groupId, {
+      includeUnclassified: true,
+    });
+    eligibleCountByGroupId.set(groupId, respondents.length);
+    peopleByGroupId.set(
       groupId,
-      buildEligibleRespondents(contacts, people, groupId, { includeUnclassified: true }).length
+      markOutreachPeopleResponses(respondents, options.respondedByGroupId.get(groupId) ?? [])
     );
   }
 
@@ -369,10 +376,10 @@ async function loadNpsOutreachProgress(options: {
 
   const respondedCountByGroupId = new Map<string, number>();
   let respondedPeople = 0;
-  for (const [groupId, count] of options.respondedCountByGroupId) {
-    if (!inScope(groupId)) continue;
-    respondedCountByGroupId.set(groupId, count);
-    respondedPeople += count;
+  for (const [groupId, rows] of options.respondedByGroupId) {
+    if (!inScope(groupId) || rows.length === 0) continue;
+    respondedCountByGroupId.set(groupId, rows.length);
+    respondedPeople += rows.length;
   }
 
   return computeNpsOutreachProgress({
@@ -380,6 +387,7 @@ async function loadNpsOutreachProgress(options: {
     sentGroupIds,
     respondedPeople,
     respondedCountByGroupId,
+    peopleByGroupId,
     areaByGroupId,
     groupNameById,
     senderByGroupId,
@@ -1262,18 +1270,21 @@ export async function fetchNpsResults(options: {
     score_technical: r.scoreTechnical,
   }));
 
-  const respondedCountByGroupId = new Map<string, number>();
+  const respondedByGroupId = new Map<string, NpsOutreachResponseRef[]>();
   for (const response of responses) {
-    respondedCountByGroupId.set(
-      response.clientGroupId,
-      (respondedCountByGroupId.get(response.clientGroupId) ?? 0) + 1
-    );
+    const list = respondedByGroupId.get(response.clientGroupId) ?? [];
+    list.push({
+      kind: response.respondentKind,
+      id: response.respondentKind === "contact" ? response.contactId : response.personId,
+      name: response.respondentName,
+    });
+    respondedByGroupId.set(response.clientGroupId, list);
   }
 
   const outreach = await loadNpsOutreachProgress({
     campaignId: campaign.id,
     allowedGroupIds,
-    respondedCountByGroupId,
+    respondedByGroupId,
   });
 
   return {

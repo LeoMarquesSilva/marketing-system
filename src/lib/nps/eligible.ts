@@ -105,12 +105,26 @@ export function buildEligibleRespondents(
 export const NPS_OUTREACH_NO_AREA = "Sem área";
 export const NPS_OUTREACH_NO_SENDER = "Sem colaborador definido";
 
+export interface NpsOutreachPerson {
+  id: string;
+  kind: "contact" | "person";
+  name: string;
+  responded: boolean;
+}
+
+export interface NpsOutreachResponseRef {
+  kind: "contact" | "person";
+  id: string | null;
+  name: string;
+}
+
 export interface NpsOutreachAreaGroup {
   id: string;
   name: string;
   eligiblePeople: number;
   sent: boolean;
   respondedPeople: number;
+  people: NpsOutreachPerson[];
   senderUserId: string | null;
   senderName: string;
   senderAvatarUrl: string | null;
@@ -154,6 +168,36 @@ function toNameMap(
   return input instanceof Map ? input : new Map(Object.entries(input));
 }
 
+function toPeopleMap(
+  input:
+    | Map<string, NpsOutreachPerson[]>
+    | Record<string, NpsOutreachPerson[]>
+    | undefined
+): Map<string, NpsOutreachPerson[]> {
+  if (!input) return new Map();
+  return input instanceof Map ? input : new Map(Object.entries(input));
+}
+
+export function markOutreachPeopleResponses(
+  respondents: Array<{ id: string; kind: "contact" | "person"; name: string }>,
+  responded: Iterable<NpsOutreachResponseRef>
+): NpsOutreachPerson[] {
+  const keys = new Set<string>();
+  const names = new Set<string>();
+  for (const row of responded) {
+    if (row.id) keys.add(`${row.kind}:${row.id}`);
+    const name = row.name.trim().toLowerCase();
+    if (name) names.add(name);
+  }
+  return respondents.map((person) => ({
+    id: person.id,
+    kind: person.kind,
+    name: person.name,
+    responded:
+      keys.has(`${person.kind}:${person.id}`) || names.has(person.name.trim().toLowerCase()),
+  }));
+}
+
 function emptyAreaRow(area: string): NpsOutreachAreaBreakdown {
   return {
     area,
@@ -170,6 +214,7 @@ export function computeNpsOutreachProgress(options: {
   sentGroupIds: Iterable<string>;
   respondedPeople?: number;
   respondedCountByGroupId?: Map<string, number> | Record<string, number>;
+  peopleByGroupId?: Map<string, NpsOutreachPerson[]> | Record<string, NpsOutreachPerson[]>;
   areaByGroupId?: Map<string, string | null> | Record<string, string | null>;
   groupNameById?: Map<string, string> | Record<string, string>;
   senderByGroupId?: Map<
@@ -179,6 +224,7 @@ export function computeNpsOutreachProgress(options: {
 }): NpsOutreachProgress {
   const eligible = toCountMap(options.eligibleCountByGroupId);
   const responded = toCountMap(options.respondedCountByGroupId);
+  const peopleByGroupId = toPeopleMap(options.peopleByGroupId);
   const areaByGroupId = toStringMap(options.areaByGroupId);
   const groupNameById = toNameMap(options.groupNameById);
 
@@ -230,6 +276,7 @@ export function computeNpsOutreachProgress(options: {
         eligiblePeople: count,
         sent: sentSet.has(groupId),
         respondedPeople: responded.get(groupId) ?? 0,
+        people: peopleByGroupId.get(groupId) ?? [],
         senderUserId: sender?.userId ?? null,
         senderName: sender?.name ?? NPS_OUTREACH_NO_SENDER,
         senderAvatarUrl: sender?.avatarUrl ?? null,

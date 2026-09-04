@@ -3,6 +3,7 @@ import {
   buildEligibleRespondents,
   computeNpsOutreachProgress,
   isNpsOutreachCandidate,
+  markOutreachPeopleResponses,
   NPS_OUTREACH_NO_AREA,
   NPS_OUTREACH_NO_SENDER,
   resolveNpsCollectionArea,
@@ -262,6 +263,7 @@ describe("computeNpsOutreachProgress", () => {
             eligiblePeople: 3,
             sent: true,
             respondedPeople: 1,
+            people: [],
             senderUserId: null,
             senderName: NPS_OUTREACH_NO_SENDER,
             senderAvatarUrl: null,
@@ -272,6 +274,7 @@ describe("computeNpsOutreachProgress", () => {
             eligiblePeople: 1,
             sent: true,
             respondedPeople: 0,
+            people: [],
             senderUserId: null,
             senderName: NPS_OUTREACH_NO_SENDER,
             senderAvatarUrl: null,
@@ -291,6 +294,7 @@ describe("computeNpsOutreachProgress", () => {
             eligiblePeople: 2,
             sent: false,
             respondedPeople: 2,
+            people: [],
             senderUserId: null,
             senderName: NPS_OUTREACH_NO_SENDER,
             senderAvatarUrl: null,
@@ -315,10 +319,53 @@ describe("computeNpsOutreachProgress", () => {
         eligiblePeople: 1,
         sent: false,
         respondedPeople: 0,
+        people: [],
         senderUserId: null,
         senderName: NPS_OUTREACH_NO_SENDER,
         senderAvatarUrl: null,
       },
+    ]);
+  });
+
+  it("anexa quem já respondeu e quem falta em cada grupo", () => {
+    const progress = computeNpsOutreachProgress({
+      eligibleCountByGroupId: { g1: 2 },
+      sentGroupIds: ["g1"],
+      respondedCountByGroupId: { g1: 1 },
+      areaByGroupId: { g1: "Cível" },
+      groupNameById: { g1: "Grupo 1" },
+      peopleByGroupId: {
+        g1: [
+          { id: "c1", kind: "contact", name: "Ana", responded: true },
+          { id: "c2", kind: "contact", name: "Bruno", responded: false },
+        ],
+      },
+    });
+    expect(progress.byArea[0]?.groups[0]?.people).toEqual([
+      { id: "c1", kind: "contact", name: "Ana", responded: true },
+      { id: "c2", kind: "contact", name: "Bruno", responded: false },
+    ]);
+  });
+});
+
+describe("markOutreachPeopleResponses", () => {
+  it("marca resposta por id e por nome", () => {
+    expect(
+      markOutreachPeopleResponses(
+        [
+          { id: "c1", kind: "contact", name: "Ana" },
+          { id: "c2", kind: "contact", name: "Bruno" },
+          { id: "p1", kind: "person", name: "Carla" },
+        ],
+        [
+          { kind: "contact", id: "c1", name: "Ana" },
+          { kind: "person", id: null, name: "Carla" },
+        ]
+      )
+    ).toEqual([
+      { id: "c1", kind: "contact", name: "Ana", responded: true },
+      { id: "c2", kind: "contact", name: "Bruno", responded: false },
+      { id: "p1", kind: "person", name: "Carla", responded: true },
     ]);
   });
 });

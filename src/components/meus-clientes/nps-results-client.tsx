@@ -39,7 +39,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { NpsCampaign, NpsResponseRow } from "@/lib/nps/types";
-import type { NpsOutreachAreaBreakdown, NpsOutreachProgress } from "@/lib/nps/eligible";
+import type { NpsOutreachAreaBreakdown, NpsOutreachAreaGroup, NpsOutreachProgress } from "@/lib/nps/eligible";
 import {
   classifyNpsScore,
   type NpsBucket,
@@ -182,14 +182,15 @@ function OutreachMeter({
   );
 }
 
-function groupMetricValue(
-  group: NpsOutreachAreaBreakdown["groups"][number],
-  metric: OutreachMetric
-): number {
-  if (metric === "eligiblePeople") return group.eligiblePeople;
-  if (metric === "eligibleGroups") return 1;
-  if (metric === "sentGroups") return group.sent ? 1 : 0;
-  return group.respondedPeople;
+function groupResponseCounts(group: NpsOutreachAreaGroup): { responded: number; eligible: number } {
+  const people = group.people ?? [];
+  if (people.length > 0) {
+    return {
+      responded: people.filter((person) => person.responded).length,
+      eligible: people.length,
+    };
+  }
+  return { responded: group.respondedPeople, eligible: group.eligiblePeople };
 }
 
 function sendersForArea(groups: NpsOutreachAreaBreakdown["groups"]) {
@@ -223,11 +224,9 @@ function sendersForArea(groups: NpsOutreachAreaBreakdown["groups"]) {
 }
 
 function OutreachAreaBreakdown({
-  metric,
   label,
   rows,
 }: {
-  metric: OutreachMetric;
   label: string;
   rows: NpsOutreachAreaBreakdown[];
 }) {
@@ -277,7 +276,8 @@ function OutreachAreaBreakdown({
                       />
                     </div>
                     <p className="mt-0.5 text-[11px] text-muted-foreground">
-                      {row.eligiblePeople} pessoas · {row.respondedPeople} respondidas
+                      {row.eligibleGroups} {row.eligibleGroups === 1 ? "grupo" : "grupos"} ·{" "}
+                      {row.respondedPeople} respondidas
                     </p>
                     <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
                       <div className="h-full rounded-full bg-[#347796]" style={{ width: `${sentRatio}%` }} />
@@ -297,6 +297,15 @@ function OutreachAreaBreakdown({
                     ) : (
                       senders.map((sender) => {
                         const sentCount = sender.groups.filter((group) => group.sent).length;
+                        const responseTotals = sender.groups.reduce(
+                          (acc, group) => {
+                            const counts = groupResponseCounts(group);
+                            acc.responded += counts.responded;
+                            acc.eligible += counts.eligible;
+                            return acc;
+                          },
+                          { responded: 0, eligible: 0 }
+                        );
                         return (
                           <li key={sender.userId ?? sender.name}>
                             <div className="flex items-center justify-between gap-3">
@@ -308,23 +317,46 @@ function OutreachAreaBreakdown({
                                 />
                                 <span className="truncate text-sm font-medium">{sender.name}</span>
                               </span>
-                              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                              <span className="shrink-0 text-right text-xs tabular-nums text-muted-foreground">
                                 {sentCount}/{sender.groups.length} enviados
+                                {responseTotals.eligible > 0 ? (
+                                  <>
+                                    <br />
+                                    {responseTotals.responded}/{responseTotals.eligible} respondidas
+                                  </>
+                                ) : null}
                               </span>
                             </div>
-                            <ul className="mt-1 space-y-0.5 pl-9">
-                              {sender.groups.map((group) => (
-                                <li
-                                  key={group.id}
-                                  className="flex items-center justify-between gap-3 text-xs text-muted-foreground"
-                                >
-                                  <span className="min-w-0 truncate">{group.name}</span>
-                                  <span className="shrink-0 tabular-nums">
-                                    {group.sent ? "enviado" : "pendente"} ·{" "}
-                                    {groupMetricValue(group, metric)}
-                                  </span>
-                                </li>
-                              ))}
+                            <ul className="mt-1 space-y-1.5 pl-9">
+                              {sender.groups.map((group) => {
+                                const people = group.people ?? [];
+                                const counts = groupResponseCounts(group);
+                                const responded = people.filter((person) => person.responded);
+                                const pending = people.filter((person) => !person.responded);
+                                return (
+                                  <li key={group.id} className="text-xs text-muted-foreground">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="min-w-0 truncate font-medium text-foreground/80">
+                                        {group.name}
+                                      </span>
+                                      <span className="shrink-0 tabular-nums">
+                                        {group.sent ? "enviado" : "pendente"} · {counts.responded}/
+                                        {counts.eligible}
+                                      </span>
+                                    </div>
+                                    {responded.length > 0 ? (
+                                      <p className="mt-0.5 text-[11px] text-emerald-700">
+                                        Responderam: {responded.map((person) => person.name).join(", ")}
+                                      </p>
+                                    ) : null}
+                                    {pending.length > 0 ? (
+                                      <p className="mt-0.5 text-[11px]">
+                                        Faltam: {pending.map((person) => person.name).join(", ")}
+                                      </p>
+                                    ) : null}
+                                  </li>
+                                );
+                              })}
                             </ul>
                           </li>
                         );
@@ -379,8 +411,8 @@ function NpsOutreachBoard({ outreach }: { outreach: NpsOutreachProgress }) {
       metric: "respondedPeople",
       label: "Respondidos",
       value: outreach.respondedPeople,
-      total: outreach.eligiblePeople,
-      hint: "pessoas que já responderam",
+      total: outreach.sentGroups,
+      hint: "pessoas que já responderam nos grupos enviados",
       icon: Users,
     },
   ];
@@ -406,7 +438,7 @@ function NpsOutreachBoard({ outreach }: { outreach: NpsOutreachProgress }) {
         ))}
       </div>
       {openCard && (
-        <OutreachAreaBreakdown metric={openCard.metric} label={openCard.label} rows={byArea} />
+        <OutreachAreaBreakdown label={openCard.label} rows={byArea} />
       )}
     </div>
   );
