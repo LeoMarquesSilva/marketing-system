@@ -408,7 +408,21 @@ export async function selectAngle(id: string, angleIndex: number): Promise<Gusta
   }
   const angle = item.angles?.[angleIndex];
   if (!angle) throw new GustavoContentError("Ângulo inválido.", 400);
-  return updateItemRow(id, { selected_angle: angle }, item.updated_at);
+  const changed = JSON.stringify(item.selected_angle) !== JSON.stringify(angle);
+  const hasDraft = Boolean(item.linkedin_post || item.reel_script);
+  return updateItemRow(id, {
+    selected_angle: angle,
+    ...(changed && hasDraft ? {
+      compliance_flags: null,
+      source_context: {
+        facts: [], numbers: [], companies: [], dates: [], sourceUrls: [],
+        ...item.source_context,
+        draftStale: true,
+        editorialReview: null,
+        angleAlignment: null,
+      },
+    } : {}),
+  }, item.updated_at);
 }
 
 // Evita chamadas duplicadas na mesma instancia; updated_at protege entre instancias.
@@ -570,6 +584,7 @@ async function generateItemDraft(
       angleAlignment: content.angleAlignment,
       editorialReview: review,
       generationMode: mode ?? "opinion",
+      draftStale: false,
     },
     status: "rascunho",
     rejection_reason: null,
@@ -655,6 +670,9 @@ export async function saveItemEdits(
 
 export async function submitToGustavo(id: string): Promise<GustavoContentItem> {
   const item = await getItem(id);
+  if (item.source_context?.draftStale) {
+    throw new GustavoContentError("Atualize o texto para a leitura escolhida antes de enviar para aprovação.", 409);
+  }
   if (item.status !== "rascunho") {
     throw new GustavoContentError("Esta pauta não pode ir para aprovação agora.", 409);
   }

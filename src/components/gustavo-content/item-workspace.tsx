@@ -189,6 +189,7 @@ export function ItemWorkspace({
     item.gustavo_answers?.some((answer) => answer.trim() && answer.trim() !== SKIPPED_VISION_NOTE)
   );
   const hasDraft = Boolean(item.linkedin_post || item.reel_script);
+  const draftStale = item.source_context?.draftStale === true;
   const editorialBrief = item.source_context?.editorialBrief ?? null;
   const angleAlignment = item.source_context?.angleAlignment ?? null;
   const editorialReview = dirty ? null : item.source_context?.editorialReview ?? null;
@@ -221,8 +222,8 @@ export function ItemWorkspace({
     <div className="space-y-7">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link href="/conteudo/gustavo/radar" className="text-xs text-[#347796] hover:underline">
-            ← Radar
+          <Link href="/conteudo/gustavo/producao" className="text-xs text-[#347796] hover:underline">
+            ← Fila editorial
           </Link>
           <p className="editorial-kicker mt-3 font-mono text-[11px] uppercase text-[#347796]">
             {GUSTAVO_CONTENT_STATUS_LABELS[item.status]}
@@ -233,6 +234,17 @@ export function ItemWorkspace({
       </div>
 
       <WorkflowRail status={item.status} />
+
+      <div className="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-y border-[#04202f]/15 bg-white px-4 py-3 shadow-sm">
+        <p className="text-sm text-[#36535f]" role="status">{nextStepText(item, dirty, busy)}</p>
+        <div className="flex flex-wrap gap-2">
+          {dirty && canEdit && <Button disabled={!!busy} onClick={() => act("save", { linkedin_post: linkedin, reel_script: reel })}><Save className="h-4 w-4" />Salvar alterações</Button>}
+          {!dirty && draftStale && canReanalyze && <Button disabled={!!busy} onClick={() => void generate(!hasOpinion || item.source_context?.generationMode === "factual" ? "factual" : undefined)}><WandSparkles className="h-4 w-4" />Atualizar texto</Button>}
+          {!dirty && !draftStale && item.status === "rascunho" && hasDraft && <Button disabled={!!busy} onClick={() => act("submit")}><Send className="h-4 w-4" />Revisar e enviar</Button>}
+          {canApprove && <Button disabled={!!busy || dirty || draftStale} onClick={() => act("approve")}><Check className="h-4 w-4" />Aprovar conteúdo</Button>}
+        </div>
+      </div>
+      {draftStale && <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"><strong>Texto gerado com outra leitura.</strong> A escolha mudou. Atualize o texto antes de enviar para aprovação.</div>}
 
       {(busy || error) && (
         <ActionBanner
@@ -246,8 +258,11 @@ export function ItemWorkspace({
         />
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(18rem,0.72fr)_minmax(0,1.28fr)]">
-        <aside className="space-y-4 lg:sticky lg:top-5 lg:self-start">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <aside className="order-2 min-w-0 lg:col-start-2 lg:row-start-1">
+          <details className="rounded-lg border border-[#04202f]/10 bg-white p-3">
+            <summary className="cursor-pointer text-sm font-semibold text-[#36535f]">Fontes, fatos e pontuação</summary>
+            <div className="mt-3 space-y-4">
           <section className="overflow-hidden rounded-[1.35rem] bg-white/85 shadow-[0_18px_48px_rgba(4,32,47,0.055)]">
             <div className="p-5">
             <p className="editorial-kicker font-mono text-[11px] uppercase text-[#347796]">Evidência de origem</p>
@@ -334,9 +349,11 @@ export function ItemWorkspace({
               )}
             </section>
           )}
+            </div>
+          </details>
         </aside>
 
-        <div className="space-y-4">
+        <div className="order-1 flex min-w-0 flex-col gap-4 lg:col-start-1 lg:row-start-1">
           {item.business_problem && (
             <section className="relative overflow-hidden rounded-[1.5rem] bg-[#e4f5f5] px-5 py-6 sm:px-7">
               <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full border border-[#347796]/10" />
@@ -536,7 +553,7 @@ export function ItemWorkspace({
             </section>
           )}
 
-          <section className="rounded-[1.5rem] bg-white/85 p-5 shadow-[0_20px_60px_rgba(4,32,47,0.055)] sm:p-6">
+          <section className={cn("min-w-0 rounded-lg border border-[#04202f]/10 bg-white p-5 sm:p-6", hasDraft && "-order-1")}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="editorial-kicker font-mono text-[11px] uppercase text-[#347796]">Estúdio de conteúdo</p>
@@ -684,23 +701,6 @@ export function ItemWorkspace({
                 <p className="mt-2 text-sm text-white/60">
                   {nextStepText(item, dirty, busy)}
                 </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {dirty && canEdit && (
-                  <Button onClick={() => act("save", { linkedin_post: linkedin, reel_script: reel })} disabled={!!busy} className="bg-[#7fe1e3] text-[#04202f] hover:bg-white">
-                    <Save className="h-4 w-4" aria-hidden /> {busy === "save" ? "Salvando…" : "Salvar alterações"}
-                  </Button>
-                )}
-                {!dirty && item.status === "rascunho" && (item.linkedin_post || item.reel_script) && (
-                  <Button onClick={() => act("submit")} disabled={!!busy} className="bg-[#7fe1e3] text-[#04202f] hover:bg-white">
-                    <Send className="h-4 w-4" aria-hidden /> {busy === "submit" ? "Revisando…" : "Revisar e enviar"}
-                  </Button>
-                )}
-                {canApprove && (
-                  <Button onClick={() => act("approve")} disabled={!!busy || dirty} className="bg-[#7fe1e3] text-[#04202f] hover:bg-white">
-                    <Check className="h-4 w-4" aria-hidden /> Aprovar conteúdo
-                  </Button>
-                )}
               </div>
             </div>
             <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-white/10 pt-4">
@@ -852,6 +852,7 @@ export function nextStepText(
   if (busy === "generate") return "Gerando LinkedIn e Reel. Isso pode levar até um minuto.";
   if (busy === "answer" || busy === "skip") return "Registrando a visão para liberar a redação.";
   if (dirty) return "Salve as alterações para preservar a trilha de edição.";
+  if (item.source_context?.draftStale) return "Atualize o texto para a leitura escolhida antes de enviar para aprovação.";
   if (hasAngles && !hasSelectedAngle && !hasDraft) {
     return "Selecione uma leitura para liberar a próxima ação.";
   }

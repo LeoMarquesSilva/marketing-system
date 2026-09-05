@@ -25,7 +25,7 @@ export async function GET(request: Request) {
 function statusesForView(view: string | null): GustavoContentStatus[] | undefined {
   if (view === "radar") return ["radar", "sugestao", "aguardando_opiniao"];
   if (view === "producao") {
-    return ["sugestao", "aguardando_opiniao", "rascunho", "aguardando_aprovacao", "aprovado"];
+    return ["sugestao", "aguardando_opiniao", "rascunho", "aguardando_aprovacao", "aprovado", "enviado_mkt", "rejeitado"];
   }
   if (view === "historico") return ["enviado_mkt", "publicado", "rejeitado", "arquivado"];
   return undefined;

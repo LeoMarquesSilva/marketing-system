@@ -28,22 +28,23 @@ export function GustavoContentShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const isWorkspace = pathname.startsWith("/conteudo/gustavo/producao/");
   const firstName = actorName.split(" ")[0] ?? actorName;
   const roleLabel = isAdmin ? "Admin" : memberRole === "owner" ? "Gustavo" : "Editor";
 
   return (
-    <div className="gustavo-editorial editorial-surface relative -mx-3 min-h-[calc(100dvh-5rem)] overflow-hidden rounded-t-[1.75rem] px-4 pb-16 pt-7 sm:-mx-5 sm:px-7 lg:px-10">
+    <div className="gustavo-editorial editorial-surface relative -mx-3 min-h-[calc(100dvh-5rem)] overflow-x-clip rounded-t-[1.75rem] px-4 pb-16 pt-7 sm:-mx-5 sm:px-7 lg:px-10">
       <div className="mx-auto max-w-[1380px] space-y-8">
         <header className="space-y-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl border-l-2 border-[#47cdd0] pl-5">
-              <p className="editorial-kicker font-mono text-[11px] font-semibold uppercase text-[#347796]">
+              <p className={cn("editorial-kicker font-mono text-[11px] font-semibold uppercase text-[#347796]", isWorkspace && "hidden")}>
                 Mesa editorial · thought leadership
               </p>
-              <h2 className="editorial-display mt-3 text-[2.35rem] font-semibold leading-[0.96] text-[#04202f] sm:text-[3rem]">
+              <h2 className={cn("editorial-display font-semibold text-[#04202f]", isWorkspace ? "text-xl leading-tight" : "mt-3 text-[2.35rem] leading-[0.96] sm:text-[3rem]")}>
                 Posicionamento Gustavo
               </h2>
-              <p className="mt-4 max-w-2xl text-sm leading-6 text-[#36535f] sm:text-[0.95rem]">
+              <p className={cn("mt-4 max-w-2xl text-sm leading-6 text-[#36535f] sm:text-[0.95rem]", isWorkspace && "hidden")}>
                 Da evidência à leitura empresarial. O sistema conecta fatos, teses e a voz real
                 do Gustavo antes de escrever qualquer conteúdo.
               </p>

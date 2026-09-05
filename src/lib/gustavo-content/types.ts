@@ -55,6 +55,7 @@ export interface SourceContext {
   angleAlignment?: AngleAlignment | null;
   editorialReview?: EditorialReview | null;
   generationMode?: "opinion" | "factual";
+  draftStale?: boolean;
 }
 
 export interface GustavoContentItem {

@@ -71,6 +71,26 @@ beforeEach(() => {
 });
 
 describe("fluxo de geracao Gustavo", () => {
+  it("trocar leitura preserva texto, invalida revisao e impede envio ate regenerar", async () => {
+    row.status = "rascunho";
+    row.linkedin_post = "Texto anterior";
+    row.angles = [angle, { ...angle, type: "strategy", title: "Nova leitura" }];
+    const updated = await selectAngle(row.id, 1);
+    expect(updated.linkedin_post).toBe("Texto anterior");
+    expect(updated.source_context?.draftStale).toBe(true);
+    await expect(submitToGustavo(row.id)).rejects.toMatchObject({ status: 409 });
+    await saveItemEdits(row.id, { linkedin_post: "Edicao manual" }, actor);
+    expect(row.source_context?.draftStale).toBe(true);
+    await generateItemContent(row.id, { mode: "factual" });
+    expect(row.source_context?.draftStale).toBe(false);
+    await expect(submitToGustavo(row.id)).resolves.toMatchObject({ status: "aguardando_aprovacao" });
+  });
+
+  it("selecionar a mesma leitura nao invalida um rascunho", async () => {
+    row.status = "rascunho";
+    row.linkedin_post = "Texto";
+    expect((await selectAngle(row.id, 0)).source_context?.draftStale).toBeUndefined();
+  });
   it("move a pauta do radar para rascunho depois de gerar", async () => {
     expect((await generateItemContent(row.id, { mode: "factual" })).status).toBe("rascunho");
   });
