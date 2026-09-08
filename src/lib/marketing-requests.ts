@@ -60,6 +60,9 @@ export interface MarketingRequest {
   ig_media_id: string | null;
   parent_request_id: string | null;
   reels_metadata: Record<string, unknown> | null;
+  identity_briefing_enabled: boolean;
+  identity_briefing_status: "pending" | "submitted" | null;
+  identity_briefing_submitted_at: string | null;
   created_by_id: string | null;
   created_by: string | null;
   solicitante_user?: { name: string; department: string; avatar_url: string | null } | null;
@@ -78,12 +81,14 @@ const KANBAN_SELECT =
   "id, title, description, requesting_area, status, requested_at, delivered_at, " +
   "assignee, assignee_id, solicitante, solicitante_id, request_type, " +
   "link, referencias, nome_advogado, art_link, posted_at, ig_media_id, parent_request_id, reels_metadata, created_by_id, created_by, " +
+  "identity_briefing_enabled, identity_briefing_status, identity_briefing_submitted_at, " +
   "workflow_stage, completion_type, priority, deadline, deadline_time, stage_changed_at";
 
 const KANBAN_SELECT_WITHOUT_ART_LINK =
   "id, title, description, requesting_area, status, requested_at, delivered_at, " +
   "assignee, assignee_id, solicitante, solicitante_id, request_type, " +
   "link, referencias, nome_advogado, posted_at, ig_media_id, parent_request_id, reels_metadata, created_by_id, created_by, " +
+  "identity_briefing_enabled, identity_briefing_status, identity_briefing_submitted_at, " +
   "workflow_stage, completion_type, priority, deadline, deadline_time, stage_changed_at";
 
 function logSupabaseError(context: string, err: unknown) {

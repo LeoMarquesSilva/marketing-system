@@ -110,6 +110,11 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(colaborador, "/fotos-colaboradores")).toBe(false);
   });
 
+  it("qualquer autenticado pode abrir um briefing que será autorizado pelo banco", () => {
+    const colaborador = { role: null, permissions: ["/conteudo/roteiros"] };
+    expect(canAccessPath(colaborador, "/briefings/identidade-visual/pedido-1")).toBe(true);
+  });
+
   it("qualquer autenticado acessa o check-in do Café com Cultura", () => {
     const colaborador = { role: null, permissions: ["/conteudo/roteiros"] };
     expect(canAccessPath(colaborador, "/cafe-com-cultura")).toBe(true);

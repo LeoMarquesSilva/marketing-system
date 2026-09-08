@@ -19,6 +19,7 @@ import { differenceInDays, isPast, parseISO } from "date-fns";
 import { getDeadlineMoment } from "@/lib/marketing-requests";
 import { useTimer } from "@/contexts/timer-context";
 import { useStopwatch } from "@/hooks/use-stopwatch";
+import { IdentityBriefingStatusBadge } from "@/components/briefings/identity-briefing-status-badge";
 
 function getInitials(name: string) {
   return name
@@ -226,6 +227,10 @@ export function KanbanCard({
         <h3 className="text-sm font-semibold tracking-tight text-foreground line-clamp-2 leading-snug">
           {request.title}
         </h3>
+
+        {request.identity_briefing_enabled && (
+          <IdentityBriefingStatusBadge status={request.identity_briefing_status} />
+        )}
 
         {/* Metadados compactos */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">

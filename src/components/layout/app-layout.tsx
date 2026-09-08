@@ -19,6 +19,7 @@ const BARE_LAYOUT_PATHS = [
   "/t",
   "/nps",
   "/manuais",
+  "/briefings",
 ];
 
 function isBareLayoutPath(pathname: string): boolean {

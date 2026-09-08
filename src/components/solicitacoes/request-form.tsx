@@ -1,6 +1,6 @@
 "use client";
 
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ import type { User } from "@/lib/users";
 import { supabase } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
+import { isIdentityVisualRequest } from "@/lib/identity-visual-briefing";
 
 const formSchema = z.object({
   request_type: z.string().min(1, "Tipo de solicitação é obrigatório"),
@@ -43,6 +44,7 @@ const formSchema = z.object({
   priority: z.enum(["urgente", "alta", "normal", "baixa"]),
   deadline: z.string().optional(),
   deadline_time: z.string().optional(),
+  identity_briefing_enabled: z.boolean(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -50,7 +52,7 @@ type FormValues = z.infer<typeof formSchema>;
 interface RequestFormProps {
   users: User[];
   designers: User[];
-  onSuccess?: () => void;
+  onSuccess?: (result?: { requestId: string; briefingEnabled: boolean }) => void;
   embedded?: boolean;
 }
 
@@ -73,7 +75,14 @@ export function RequestForm({ users, designers, onSuccess, embedded }: RequestFo
       priority: "normal",
       deadline: "",
       deadline_time: "",
+      identity_briefing_enabled: false,
     },
+  });
+
+  const requestType = useWatch({ control: form.control, name: "request_type" });
+  const briefingEnabled = useWatch({
+    control: form.control,
+    name: "identity_briefing_enabled",
   });
 
   async function onSubmit(values: FormValues) {
@@ -84,9 +93,15 @@ export function RequestForm({ users, designers, onSuccess, embedded }: RequestFo
         form.setError("requesting_area", { message: "Selecione um solicitante ou informe a área" });
         return;
       }
+      if (values.identity_briefing_enabled && !values.solicitante_id) {
+        form.setError("solicitante_id", {
+          message: "Selecione o solicitante que responderá ao briefing",
+        });
+        return;
+      }
       const designer = designers.find((d) => d.id === values.assignee_id);
       const title = values.request_type;
-      const { error } = await supabase.from("marketing_requests").insert({
+      const { data: createdRequest, error } = await supabase.from("marketing_requests").insert({
         title,
         description: values.description || null,
         requesting_area: area,
@@ -104,13 +119,32 @@ export function RequestForm({ users, designers, onSuccess, embedded }: RequestFo
         deadline_time: values.deadline_time || null,
         created_by_id: profile?.id ?? null,
         created_by: profile?.name ?? null,
-      });
+        identity_briefing_enabled: values.identity_briefing_enabled,
+        identity_briefing_status: values.identity_briefing_enabled ? "pending" : null,
+      }).select("id").single();
 
       if (error) throw error;
 
+      if (values.identity_briefing_enabled) {
+        const { error: briefingError } = await supabase
+          .from("identity_visual_briefings")
+          .insert({
+            request_id: createdRequest.id,
+            respondent_user_id: values.solicitante_id,
+          });
+
+        if (briefingError) {
+          await supabase.from("marketing_requests").delete().eq("id", createdRequest.id);
+          throw briefingError;
+        }
+      }
+
       form.reset();
       if (onSuccess) {
-        onSuccess();
+        onSuccess({
+          requestId: createdRequest.id,
+          briefingEnabled: values.identity_briefing_enabled,
+        });
       } else {
         router.push("/solicitacoes");
       }
@@ -132,8 +166,13 @@ export function RequestForm({ users, designers, onSuccess, embedded }: RequestFo
                 <FormItem>
                   <FormLabel>Tipo de Solicitação</FormLabel>
                   <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
+                    onValueChange={(value) => {
+                      field.onChange(value);
+                      form.setValue("identity_briefing_enabled", isIdentityVisualRequest(value), {
+                        shouldDirty: true,
+                      });
+                    }}
+                    value={field.value}
                   >
                     <FormControl>
                       <SelectTrigger className="w-full">
@@ -152,6 +191,31 @@ export function RequestForm({ users, designers, onSuccess, embedded }: RequestFo
                 </FormItem>
               )}
             />
+
+            {isIdentityVisualRequest(requestType) && (
+              <div className="rounded-lg border border-[#47cdd0]/40 bg-[#47cdd0]/[0.08] p-4">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={briefingEnabled}
+                    onChange={(event) =>
+                      form.setValue("identity_briefing_enabled", event.target.checked, {
+                        shouldDirty: true,
+                      })
+                    }
+                    className="mt-0.5 h-4 w-4 rounded border-input accent-[#347796]"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-foreground">
+                      Solicitar briefing de identidade visual
+                    </span>
+                    <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+                      Gera um link interno para o solicitante preencher. O card avisará quando as respostas chegarem.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
 
             {users.length > 0 ? (
               <FormField

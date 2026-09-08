@@ -70,6 +70,7 @@ export const ACCESS_PRESETS: Record<string, string[]> = {
 export const ALWAYS_ALLOWED_PATHS = [
   "/perfil",
   "/alterar-senha",
+  "/briefings",
   "/minhas-fotos",
   "/cafe-com-cultura",
   MEUS_CLIENTES_KEY,

@@ -8,6 +8,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Calendar, Clock, MessageSquare } from "lucide-react";
 import type { MarketingRequest } from "@/lib/marketing-requests";
+import { IdentityBriefingStatusBadge } from "@/components/briefings/identity-briefing-status-badge";
 
 function getInitials(name: string) {
   return name
@@ -53,6 +54,10 @@ export function KanbanCardOverlay({ request, timeTotal, commentsCount = 0 }: Kan
             {request.request_type}
           </Badge>
         </div>
+
+        {request.identity_briefing_enabled && (
+          <IdentityBriefingStatusBadge status={request.identity_briefing_status} />
+        )}
 
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
           <span className="flex items-center gap-1.5">

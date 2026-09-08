@@ -46,6 +46,7 @@ import { CompletedByArea } from "./completed-by-area";
 import { KanbanCardDetail } from "@/components/planner/kanban-card-detail";
 import { useAuth } from "@/contexts/auth-context";
 import type { User } from "@/lib/users";
+import { IdentityBriefingStatusBadge } from "@/components/briefings/identity-briefing-status-badge";
 
 const STATUS_LABELS: Record<MarketingRequestStatus, string> = {
   pending: "Pendente",
@@ -198,6 +199,12 @@ export function RequestsTable({
                     <span className="block truncate text-xs text-muted-foreground/70 mt-0.5" title={req.description}>
                       {req.description}
                     </span>
+                  )}
+                  {req.identity_briefing_enabled && (
+                    <IdentityBriefingStatusBadge
+                      status={req.identity_briefing_status}
+                      className="mt-1.5"
+                    />
                   )}
                 </TableCell>
                 <TableCell>

@@ -54,6 +54,7 @@ import { ReelVideoPreview } from "@/components/planner/reel-video-preview";
 import { fetchChecklistForRequest, REEL_LEONARDO_NAME, REEL_LEONARDO_STAGE, completeReelToContentBank, getReelChecklistProgress, type ChecklistItem } from "@/lib/request-checklist";
 import { isReelRequest } from "@/lib/planner-posts";
 import { LEONARDO_USER_ID } from "@/lib/planner-visibility";
+import { IdentityBriefingCardSection } from "@/components/briefings/identity-briefing-card-section";
 
 const PRIORITY_OPTIONS: { value: RequestPriority; label: string; className: string }[] = [
   { value: "urgente", label: "Urgente", className: "text-red-600 dark:text-red-400" },
@@ -550,6 +551,14 @@ export function KanbanCardDetail({
 
         {/* Área rolável */}
         <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-6 space-y-5">
+          {request.identity_briefing_enabled && (
+            <IdentityBriefingCardSection
+              requestId={request.id}
+              status={request.identity_briefing_status}
+              submittedAt={request.identity_briefing_submitted_at}
+            />
+          )}
+
           {/* Vídeo do reel ou link da arte */}
           {isReel && request.art_link ? (
             <section aria-labelledby="reel-video-heading" className={sectionClass}>
