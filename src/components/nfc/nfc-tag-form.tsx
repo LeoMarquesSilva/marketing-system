@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  BookOpen,
   CalendarCheck2,
   CircleHelp,
   Coffee,
@@ -63,11 +64,14 @@ const ACTIONS: Array<{ value: NfcActionType; label: string; description: string;
   },
 ];
 
-const CAFE_FORM_PRESETS: Array<{
+const NFC_PRESETS: Array<{
   name: string;
   description: string;
   icon: typeof Coffee;
   actionType?: NfcActionType;
+  accessMode?: NfcAccessMode;
+  category?: string;
+  environment?: string;
   config: NfcActionConfig;
 }> = [
   {
@@ -133,6 +137,22 @@ const CAFE_FORM_PRESETS: Array<{
         },
       ],
       successMessage: "Feedback recebido. Obrigado por construir esse encontro com a gente!",
+    },
+  },
+  {
+    name: "Leituras que formam trajetórias",
+    description: "Abre a experiência pública com as indicações dos profissionais.",
+    icon: BookOpen,
+    actionType: "url",
+    accessMode: "public",
+    category: "Evento",
+    environment: "Material comercial",
+    config: {
+      title: "Leituras que formam trajetórias",
+      description: "Conheça as histórias e os motivos por trás de cada escolha.",
+      destinationUrl: "https://marketing-system-xi.vercel.app/leituras",
+      loadingMessage: "Abrindo as indicações…",
+      openImmediately: true,
     },
   },
 ];
@@ -330,7 +350,7 @@ export function NfcTagForm({
     });
   };
 
-  const applyFormPreset = (preset: (typeof CAFE_FORM_PRESETS)[number]) => {
+  const applyFormPreset = (preset: (typeof NFC_PRESETS)[number]) => {
     const actionType = preset.actionType ?? "form";
     const config = preset.config;
     const requiresAuth =
@@ -338,14 +358,15 @@ export function NfcTagForm({
     setValues((current) => ({
       ...current,
       actionType,
-      accessMode:
+      accessMode: preset.accessMode ?? (
         requiresAuth &&
         (current.accessMode === "public" || current.accessMode === "public_confirmation")
           ? "authenticated"
-          : current.accessMode,
+          : current.accessMode
+      ),
       actionConfig: config,
-      category: current.category || "Café com Cultura",
-      environment: current.environment || "Escritório",
+      category: preset.category ?? (current.category || "Café com Cultura"),
+      environment: preset.environment ?? (current.environment || "Escritório"),
     }));
   };
 
@@ -606,14 +627,14 @@ export function NfcTagForm({
                     <Coffee className="h-5 w-5" />
                   </span>
                   <div>
-                    <p className="text-sm font-semibold">Modelos Café com Cultura</p>
+                    <p className="text-sm font-semibold">Modelos prontos para NFC</p>
                     <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
                       Aplique um modelo e continue editando os campos normalmente.
                     </p>
                   </div>
                 </div>
                 <div className="grid gap-2 md:grid-cols-3">
-                  {CAFE_FORM_PRESETS.map((preset) => (
+                  {NFC_PRESETS.map((preset) => (
                     <button
                       key={preset.name}
                       type="button"

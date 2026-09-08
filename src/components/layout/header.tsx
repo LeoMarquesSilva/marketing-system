@@ -22,6 +22,7 @@ const PAGE_META: Record<string, PageMeta> = {
   "/trafego-pago": { label: "Tráfego pago", section: "Performance" },
   "/email-marketing": { label: "E-mail marketing", section: "Relacionamento" },
   "/nfc": { label: "NFC Hub", section: "Automações" },
+  "/nfc/leituras": { label: "Leituras que formam trajetórias", section: "NFC Hub" },
   "/meus-clientes": { label: "Meus clientes", section: "Relacionamento" },
   "/meus-clientes/nps": { label: "Resultados NPS", section: "Relacionamento" },
   "/clima": { label: "Clima", section: "Pessoas" },

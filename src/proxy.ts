@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { loginPathWithReturn } from "@/lib/login-redirect";
 
-const PUBLIC_PATHS = ["/login", "/t", "/nps", "/manuais"];
+const PUBLIC_PATHS = ["/login", "/t", "/nps", "/leituras", "/manuais"];
 const PUBLIC_API_PREFIXES = ["/api/evolution/webhook"];
 
 /** Perfil profissional público (não confundir com /perfil = conta autenticada). */

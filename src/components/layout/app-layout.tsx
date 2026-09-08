@@ -18,6 +18,7 @@ const BARE_LAYOUT_PATHS = [
   "/completar-qualificacao",
   "/t",
   "/nps",
+  "/leituras",
   "/manuais",
   "/briefings",
 ];

@@ -9,6 +9,12 @@ function request(path: string, cookie?: string) {
 }
 
 describe("proxy — retorno após login", () => {
+  it("mantém a experiência pública de leituras sem exigir login", () => {
+    const response = proxy(request("/leituras"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+  });
+
   it("guarda o check-in do Café com Cultura quando não há sessão", () => {
     const response = proxy(request("/cafe-com-cultura?source=nfc"));
     expect(response.status).toBeGreaterThanOrEqual(300);
