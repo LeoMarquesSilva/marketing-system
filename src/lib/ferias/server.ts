@@ -40,13 +40,14 @@ import type {
   PeriodUpdateInput,
   RecessCreateInput,
 } from "@/lib/ferias/validation";
+import { resolveOpenNotificationsForEmployee } from "@/lib/hr/notifications/server";
 export { FeriasHttpError, toApiError } from "@/lib/ferias/errors";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
 const EMPLOYEE_SELECT =
-  "id, user_id, full_name, cpf, email, department, position, admission_date, termination_date, is_active, notes, vios_ci, vacation_exempt";
+  "id, user_id, full_name, cpf, email, department, position, admission_date, termination_date, is_active, notes, vios_ci, vacation_exempt, employment_type, registration_number, birth_date, gender, rg, oab_number, oab_uf";
 const VIOS_SELECT =
   "ci, company, department, full_name, position, email, situation, is_active, matched_employee_id, synced_at";
 const PERIOD_SELECT =
@@ -334,12 +335,26 @@ export async function createEmployee(input: EmployeeCreateInput): Promise<HrEmpl
       is_active: input.isActive ?? true,
       notes: input.notes ?? null,
       created_by: manager.profileId,
+      employment_type: input.employmentType ?? null,
+      registration_number: input.registrationNumber ?? null,
+      birth_date: input.birthDate ?? null,
+      gender: input.gender ?? null,
+      rg: input.rg ?? null,
+      oab_number: input.oabNumber ?? null,
+      oab_uf: input.oabUf ?? null,
     })
     .select(EMPLOYEE_SELECT)
     .single();
 
   if (error) {
     if (error.code === "23505") {
+      if (error.message?.includes("registration_number")) {
+        throw new FeriasHttpError(
+          "Já existe um colaborador com esta matrícula.",
+          409,
+          "DUPLICATE_REGISTRATION_NUMBER"
+        );
+      }
       throw new FeriasHttpError("Já existe um colaborador com este CPF.", 409, "DUPLICATE_CPF");
     }
     failed("Não foi possível cadastrar o colaborador.");
@@ -366,7 +381,7 @@ export async function updateEmployee(
   employeeId: string,
   input: EmployeeUpdateInput
 ): Promise<HrEmployee> {
-  await requireFeriasManager();
+  const manager = await requireFeriasManager();
   const admin = createFeriasAdminClient();
 
   const payload: Record<string, unknown> = {};
@@ -380,6 +395,14 @@ export async function updateEmployee(
   if (input.userId !== undefined) payload.user_id = input.userId;
   if (input.isActive !== undefined) payload.is_active = input.isActive;
   if (input.notes !== undefined) payload.notes = input.notes;
+  if (input.employmentType !== undefined) payload.employment_type = input.employmentType;
+  if (input.registrationNumber !== undefined)
+    payload.registration_number = input.registrationNumber;
+  if (input.birthDate !== undefined) payload.birth_date = input.birthDate;
+  if (input.gender !== undefined) payload.gender = input.gender;
+  if (input.rg !== undefined) payload.rg = input.rg;
+  if (input.oabNumber !== undefined) payload.oab_number = input.oabNumber;
+  if (input.oabUf !== undefined) payload.oab_uf = input.oabUf;
 
   const { data, error } = await admin
     .from("hr_employees")
@@ -390,11 +413,20 @@ export async function updateEmployee(
 
   if (error) {
     if (error.code === "23505") {
+      if (error.message?.includes("registration_number")) {
+        throw new FeriasHttpError(
+          "Já existe um colaborador com esta matrícula.",
+          409,
+          "DUPLICATE_REGISTRATION_NUMBER"
+        );
+      }
       throw new FeriasHttpError("Já existe um colaborador com este CPF.", 409, "DUPLICATE_CPF");
     }
     failed("Não foi possível atualizar o colaborador.");
   }
   if (!data) throw new FeriasHttpError("Colaborador não encontrado.", 404, "NOT_FOUND");
+
+  await resolveOpenNotificationsForEmployee(admin, employeeId, manager.profileId);
 
   const [employee] = await attachAvatars(admin, [data as EmployeeRow]);
   if (input.admissionDate !== undefined) {

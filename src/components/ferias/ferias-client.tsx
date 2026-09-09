@@ -99,6 +99,8 @@ interface FeriasClientProps {
   canManage: boolean;
   scopeAreas: string[] | null;
   initialQuery?: FeriasListQuery;
+  /** Abre a ficha do colaborador automaticamente (ex.: veio do popup de notificação de RH). */
+  initialSelectedEmployeeId?: string | null;
 }
 
 const RECESS_APPLY_STATE_CLASS: Record<RecessApplyState, string> = {
@@ -182,6 +184,7 @@ export function FeriasClient({
   canManage,
   scopeAreas,
   initialQuery = FERIAS_LIST_QUERY_DEFAULTS,
+  initialSelectedEmployeeId = null,
 }: FeriasClientProps) {
   const router = useRouter();
   const [tab, setTab] = useState<TabKey>(initialQuery.tab);
@@ -192,7 +195,9 @@ export function FeriasClient({
   const [balanceFilter, setBalanceFilter] = useState<BalanceFilter>(initialQuery.balance);
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>(initialQuery.activity);
   const [createOpen, setCreateOpen] = useState(false);
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(
+    initialSelectedEmployeeId
+  );
   const [recessDialogOpen, setRecessDialogOpen] = useState(false);
   const [editingRecess, setEditingRecess] = useState<CompanyRecessWithStatus | null>(null);
   const [deleteRecessTarget, setDeleteRecessTarget] = useState<CompanyRecessWithStatus | null>(
@@ -301,6 +306,13 @@ export function FeriasClient({
       terminationDate: values.terminationDate || null,
       userId: values.userId === NO_LINKED_USER ? null : values.userId,
       isActive: values.isActive,
+      employmentType: values.employmentType.trim() || null,
+      registrationNumber: values.registrationNumber.trim() || null,
+      birthDate: values.birthDate || null,
+      gender: values.gender.trim() || null,
+      rg: values.rg.trim() || null,
+      oabNumber: values.oabNumber.trim() || null,
+      oabUf: values.oabUf.trim() || null,
     });
     if (error) return error;
     router.refresh();
@@ -922,6 +934,9 @@ export function FeriasClient({
         users={users}
         occupiedUserIds={occupiedUserIds}
         canManage={canManage}
+        initialEditOpen={
+          selectedEmployeeId !== null && selectedEmployeeId === initialSelectedEmployeeId
+        }
       />
 
       {canManage && <RecessoFormDialog

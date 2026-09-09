@@ -29,6 +29,7 @@ export interface AuthProfile {
   minhas_fotos_tutorial_completed_at?: string | null;
   qualification_required_at?: string | null;
   qualification_completed_at?: string | null;
+  is_hr_notification_recipient?: boolean | null;
   gustavo_content_member?: boolean;
   gustavo_content_member_role?: "owner" | "editor" | null;
 }
@@ -60,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     for (let attempt = 0; attempt < 3; attempt++) {
       const { data, error } = await supabase
         .from("users")
-        .select("id, name, email, department, role, auth_id, is_active, avatar_url, permissions, ferias_view_enabled, must_change_password, content_tutorial_completed_at, meus_clientes_tutorial_completed_at, newsletter_tutorial_completed_at, minhas_fotos_tutorial_completed_at, qualification_required_at, qualification_completed_at")
+        .select("id, name, email, department, role, auth_id, is_active, avatar_url, permissions, ferias_view_enabled, must_change_password, content_tutorial_completed_at, meus_clientes_tutorial_completed_at, newsletter_tutorial_completed_at, minhas_fotos_tutorial_completed_at, qualification_required_at, qualification_completed_at, is_hr_notification_recipient")
         .eq("auth_id", authId)
         .maybeSingle();
       if (data) {

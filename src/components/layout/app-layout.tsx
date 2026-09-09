@@ -8,6 +8,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { ContentCollaboratorTour } from "@/components/conteudo/content-collaborator-tour";
+import { HrPendingNotificationsModal } from "@/components/rh/hr-pending-notifications-modal";
 import { TimerProvider } from "@/contexts/timer-context";
 import { FloatingTimer } from "@/components/timer/floating-timer";
 
@@ -50,6 +51,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <ContentCollaboratorTour />
           </Suspense>
         )}
+        {!isBareLayout && <HrPendingNotificationsModal />}
         {isBareLayout ? (
           children
         ) : (

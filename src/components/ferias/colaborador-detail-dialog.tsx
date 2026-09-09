@@ -55,6 +55,8 @@ interface ColaboradorDetailDialogProps {
   users: LinkableUser[];
   occupiedUserIds?: string[];
   canManage: boolean;
+  /** Abre direto no formulário de edição (ex.: veio do popup de notificação de RH). */
+  initialEditOpen?: boolean;
 }
 
 function SummaryItem({
@@ -90,6 +92,7 @@ export function ColaboradorDetailDialog({
   users,
   occupiedUserIds = [],
   canManage,
+  initialEditOpen = false,
 }: ColaboradorDetailDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -102,6 +105,7 @@ export function ColaboradorDetailDialog({
             users={users}
             occupiedUserIds={occupiedUserIds}
             canManage={canManage}
+            initialEditOpen={canManage && initialEditOpen}
           />
         ) : (
           <>
@@ -121,17 +125,19 @@ function DetailBody({
   users,
   occupiedUserIds,
   canManage,
+  initialEditOpen = false,
 }: {
   employeeId: string;
   users: LinkableUser[];
   occupiedUserIds: string[];
   canManage: boolean;
+  initialEditOpen?: boolean;
 }) {
   const router = useRouter();
   const [detail, setDetail] = useState<EmployeeDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [editOpen, setEditOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(initialEditOpen);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
   const [leaveDefaultKind, setLeaveDefaultKind] = useState<VacationLeaveKind>("ferias");
   const [creditPreset, setCreditPreset] = useState<{
@@ -199,6 +205,13 @@ function DetailBody({
       terminationDate: values.terminationDate || null,
       userId: values.userId === NO_LINKED_USER ? null : values.userId,
       isActive: values.isActive,
+      employmentType: values.employmentType.trim() || null,
+      registrationNumber: values.registrationNumber.trim() || null,
+      birthDate: values.birthDate || null,
+      gender: values.gender.trim() || null,
+      rg: values.rg.trim() || null,
+      oabNumber: values.oabNumber.trim() || null,
+      oabUf: values.oabUf.trim() || null,
     });
     if (err) return err;
     await reloadDetail();

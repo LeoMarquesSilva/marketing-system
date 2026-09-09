@@ -22,6 +22,13 @@ function sampleDetail(overrides?: Partial<EmployeeDetail["employee"]>): Employee
       vios_ci: null,
       vacation_exempt: false,
       avatar_url: null,
+      employment_type: null,
+      registration_number: null,
+      birth_date: null,
+      gender: null,
+      rg: null,
+      oab_number: null,
+      oab_uf: null,
       ...overrides,
     },
     balance: {

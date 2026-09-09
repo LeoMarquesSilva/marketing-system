@@ -36,6 +36,13 @@ export interface EmployeeFormValues {
   terminationDate: string;
   userId: string;
   isActive: boolean;
+  employmentType: string;
+  registrationNumber: string;
+  birthDate: string;
+  gender: string;
+  rg: string;
+  oabNumber: string;
+  oabUf: string;
 }
 
 function toFormValues(employee: HrEmployee | null): EmployeeFormValues {
@@ -49,6 +56,13 @@ function toFormValues(employee: HrEmployee | null): EmployeeFormValues {
     terminationDate: employee?.termination_date ?? "",
     userId: employee?.user_id ?? NO_LINKED_USER,
     isActive: employee?.is_active ?? true,
+    employmentType: employee?.employment_type ?? "",
+    registrationNumber: employee?.registration_number ?? "",
+    birthDate: employee?.birth_date ?? "",
+    gender: employee?.gender ?? "",
+    rg: employee?.rg ?? "",
+    oabNumber: employee?.oab_number ?? "",
+    oabUf: employee?.oab_uf ?? "",
   };
 }
 
@@ -296,6 +310,84 @@ function ColaboradorForm({
             onChange={(value) => set("terminationDate", value)}
             placeholder="Sem desligamento"
           />
+        </div>
+
+        <div className="space-y-1.5 sm:col-span-2">
+          <p className="pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Dados adicionais
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="ferias-vinculo">Vínculo</Label>
+          <Input
+            id="ferias-vinculo"
+            value={values.employmentType}
+            onChange={(event) => set("employmentType", event.target.value)}
+            placeholder="CLT, PJ, Sócio, Estágio..."
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="ferias-matricula">Matrícula de contratação</Label>
+          <Input
+            id="ferias-matricula"
+            value={values.registrationNumber}
+            onChange={(event) => set("registrationNumber", event.target.value)}
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="ferias-nascimento">Data de nascimento</Label>
+          <DatePickerField
+            id="ferias-nascimento"
+            value={values.birthDate}
+            onChange={(value) => set("birthDate", value)}
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="ferias-genero">Gênero</Label>
+          <Select value={values.gender || undefined} onValueChange={(value) => set("gender", value)}>
+            <SelectTrigger id="ferias-genero" className="w-full">
+              <SelectValue placeholder="Selecione" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="F">Feminino</SelectItem>
+              <SelectItem value="M">Masculino</SelectItem>
+              <SelectItem value="Outro">Outro</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="ferias-rg">RG</Label>
+          <Input
+            id="ferias-rg"
+            value={values.rg}
+            onChange={(event) => set("rg", event.target.value)}
+            placeholder="00.000.000-0"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="ferias-oab">OAB (só para advogados)</Label>
+          <div className="flex gap-2">
+            <Input
+              id="ferias-oab"
+              className="flex-1"
+              value={values.oabNumber}
+              onChange={(event) => set("oabNumber", event.target.value)}
+              placeholder="123456"
+            />
+            <Input
+              className="w-16"
+              value={values.oabUf}
+              onChange={(event) => set("oabUf", event.target.value.toUpperCase())}
+              placeholder="SP"
+              maxLength={2}
+            />
+          </div>
         </div>
 
         <div className="space-y-1.5 sm:col-span-2">

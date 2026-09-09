@@ -58,6 +58,10 @@ async function loadPageData(): Promise<PageData> {
 export default async function FeriasPage({ searchParams }: PageProps) {
   const [data, query] = await Promise.all([loadPageData(), searchParams]);
   if (data.forbidden) return <FeriasAcessoNegado />;
+  const colaboradorParam = query.colaborador;
+  const initialSelectedEmployeeId = Array.isArray(colaboradorParam)
+    ? (colaboradorParam[0] ?? null)
+    : (colaboradorParam ?? null);
   return (
     <FeriasClient
       employees={data.employees}
@@ -66,6 +70,7 @@ export default async function FeriasPage({ searchParams }: PageProps) {
       canManage={data.canManage}
       scopeAreas={data.scopeAreas}
       initialQuery={parseFeriasListQuery(query)}
+      initialSelectedEmployeeId={initialSelectedEmployeeId}
     />
   );
 }

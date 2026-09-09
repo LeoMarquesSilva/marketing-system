@@ -36,6 +36,33 @@ export interface HrEmployee {
   vacation_exempt: boolean;
   /** Foto do usuário vinculado (`users.avatar_url` / OneDrive), quando existir. */
   avatar_url: string | null;
+  /** Vínculo empregatício (CLT, PJ, Sócio, Estágio...). */
+  employment_type: string | null;
+  /** Matrícula de contratação. */
+  registration_number: string | null;
+  birth_date: string | null;
+  gender: string | null;
+  rg: string | null;
+  /** Só preenchido para advogados. */
+  oab_number: string | null;
+  oab_uf: string | null;
+}
+
+export type HrOnboardingEventType = "new_employee" | "status_changed";
+
+export interface HrOnboardingNotification {
+  id: string;
+  employee_id: string;
+  event_type: HrOnboardingEventType;
+  previous_is_active: boolean | null;
+  new_is_active: boolean | null;
+  created_at: string;
+  resolved_at: string | null;
+  employee: {
+    full_name: string;
+    department: string | null;
+    position: string | null;
+  } | null;
 }
 
 /** Linha do espelho VIOS sem cadastro correspondente em `hr_employees`. */

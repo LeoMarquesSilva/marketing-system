@@ -25,6 +25,13 @@ export const employeeCreateSchema = z.object({
   userId: z.string().uuid().nullable().optional(),
   isActive: z.boolean().optional(),
   notes: optionalText(1000),
+  employmentType: optionalText(60),
+  registrationNumber: optionalText(60),
+  birthDate: isoDate.nullable().optional(),
+  gender: optionalText(20),
+  rg: optionalText(30),
+  oabNumber: optionalText(30),
+  oabUf: optionalText(2),
 });
 
 export const employeeUpdateSchema = employeeCreateSchema.partial();

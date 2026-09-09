@@ -34,6 +34,13 @@ export interface EmployeePayload {
   terminationDate: string | null;
   userId: string | null;
   isActive: boolean;
+  employmentType: string | null;
+  registrationNumber: string | null;
+  birthDate: string | null;
+  gender: string | null;
+  rg: string | null;
+  oabNumber: string | null;
+  oabUf: string | null;
 }
 
 export function createEmployeeRequest(payload: EmployeePayload) {
