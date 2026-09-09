@@ -23,11 +23,14 @@ const input = {
 };
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  generateObject.mockReset();
   vi.stubEnv("NEXT_OPENAI_API_KEY", "test-key");
   generateObject.mockResolvedValue({ object: output });
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
 
 describe("contrato da geracao", () => {
   it("aceita a chave padrao OPENAI_API_KEY quando a chave legada nao existe", async () => {
@@ -55,6 +58,22 @@ describe("contrato da geracao", () => {
     expect(signal).toBeInstanceOf(AbortSignal);
     controller.abort();
     expect(signal.aborted).toBe(true);
+  });
+
+  it("usa o fallback de escrita quando o modelo principal excede o tempo limite", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const timeout = new Error("The operation was aborted due to timeout");
+    timeout.name = "TimeoutError";
+    generateObject
+      .mockRejectedValueOnce(timeout)
+      .mockResolvedValueOnce({ object: output });
+
+    const draft = await generateEditorialContent(input);
+
+    expect(draft.linkedinPost).toBe("Gancho\n\nDesenvolvimento");
+    expect(generateObject).toHaveBeenCalledTimes(2);
+    expect(generateObject.mock.calls[1][0].model.modelId).toBe("gpt-4.1");
+    expect(warning).toHaveBeenCalledOnce();
   });
 
   it("normaliza hashtags nos ganchos e em todos os campos do Reel", async () => {

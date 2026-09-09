@@ -36,6 +36,10 @@ export const GUSTAVO_CONTENT_MODEL_WRITING =
   process.env.GUSTAVO_CONTENT_MODEL ??
   "gpt-5.6-sol";
 
+/** Fallback rápido quando o modelo principal não conclui a escrita no orçamento da rota. */
+export const GUSTAVO_CONTENT_MODEL_WRITING_FALLBACK =
+  process.env.GUSTAVO_CONTENT_MODEL_WRITING_FALLBACK ?? "gpt-4.1";
+
 /** Modelo usado na revisão editorial e no compliance. */
 export const GUSTAVO_CONTENT_MODEL_REVIEW =
   process.env.GUSTAVO_CONTENT_MODEL_REVIEW ?? GUSTAVO_CONTENT_MODEL;

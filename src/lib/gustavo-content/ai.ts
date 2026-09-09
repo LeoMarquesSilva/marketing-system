@@ -4,6 +4,7 @@ import {
   GUSTAVO_CONTENT_MODEL_REVIEW,
   GUSTAVO_CONTENT_MODEL_SCORE,
   GUSTAVO_CONTENT_MODEL_WRITING,
+  GUSTAVO_CONTENT_MODEL_WRITING_FALLBACK,
 } from "@/lib/gustavo-content/constants";
 import { GustavoContentError } from "@/lib/gustavo-content/errors";
 import {
@@ -62,8 +63,19 @@ function writingModel() {
   return getOpenAI()(GUSTAVO_CONTENT_MODEL_WRITING);
 }
 
+function writingFallbackModel() {
+  return getOpenAI()(GUSTAVO_CONTENT_MODEL_WRITING_FALLBACK);
+}
+
 function reviewModel() {
   return getOpenAI()(GUSTAVO_CONTENT_MODEL_REVIEW);
+}
+
+function isTimeoutError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === "TimeoutError" || /aborted due to timeout|timed? out/i.test(error.message))
+  );
 }
 
 function thesesBlock(theses: GustavoThesis[]): string {
@@ -166,9 +178,7 @@ export async function generateEditorialContent(input: {
   const usesReasoning =
     (GUSTAVO_CONTENT_MODEL_WRITING.startsWith("gpt-5") && !GUSTAVO_CONTENT_MODEL_WRITING.includes("-chat")) ||
     /^o[134](?:-|$)/.test(GUSTAVO_CONTENT_MODEL_WRITING);
-  const result = await generateObject({
-    ...requestLimits(50_000, input.abortSignal),
-    model: writingModel(),
+  const request = {
     schema: contentObjectSchema,
     schemaName: "gustavo_editorial_content",
     system: `${GUSTAVO_EDITOR_SYSTEM}\n\n${EDITORIAL_BRIEF_INSTRUCTIONS}\n\n${LINKEDIN_CONTENT_INSTRUCTIONS}\n\n${REEL_CONTENT_INSTRUCTIONS}`,
@@ -202,12 +212,34 @@ export async function generateEditorialContent(input: {
     ]
       .filter(Boolean)
       .join("\n\n"),
-    ...(usesReasoning
-      ? { providerOptions: { openai: { reasoningEffort: "low" } } }
-      : { temperature: 0.55 }),
     // Modelos de raciocinio compartilham o limite entre raciocinio e JSON final.
     maxOutputTokens: usesReasoning ? 6000 : 4000,
-  });
+  };
+
+  let result;
+  try {
+    result = await generateObject({
+      ...requestLimits(65_000, input.abortSignal),
+      model: writingModel(),
+      ...request,
+      ...(usesReasoning
+        ? { providerOptions: { openai: { reasoningEffort: "low" } } }
+        : { temperature: 0.55 }),
+    });
+  } catch (error) {
+    if (!isTimeoutError(error) || input.abortSignal?.aborted) throw error;
+    console.warn("[gustavo-content] modelo principal excedeu o tempo; usando fallback", {
+      primaryModel: GUSTAVO_CONTENT_MODEL_WRITING,
+      fallbackModel: GUSTAVO_CONTENT_MODEL_WRITING_FALLBACK,
+    });
+    result = await generateObject({
+      ...requestLimits(25_000, input.abortSignal),
+      model: writingFallbackModel(),
+      ...request,
+      temperature: 0.45,
+      maxOutputTokens: 4000,
+    });
+  }
 
   return {
     linkedinPost: assembleLinkedInPost(result.object.linkedin),
