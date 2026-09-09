@@ -75,6 +75,10 @@ interface ColaboradorFormDialogProps {
   occupiedUserIds?: string[];
   /** Pré-seleciona esse usuário ao criar (ex.: vindo de "Novo usuário" em Usuários). */
   initialUserId?: string | null;
+  /** Sobrescreve o título padrão (que fala de férias) para outros contextos, como Usuários. */
+  title?: string;
+  /** Sobrescreve a descrição padrão (que fala de férias) para outros contextos, como Usuários. */
+  description?: string;
   onSubmit: (values: EmployeeFormValues) => Promise<string | null>;
 }
 
@@ -85,16 +89,18 @@ export function ColaboradorFormDialog({
   users,
   occupiedUserIds = [],
   initialUserId = null,
+  title,
+  description,
   onSubmit,
 }: ColaboradorFormDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{employee ? "Editar colaborador" : "Novo colaborador"}</DialogTitle>
+          <DialogTitle>{title ?? (employee ? "Editar colaborador" : "Novo colaborador")}</DialogTitle>
           <DialogDescription>
-            Escolha o colaborador entre os usuários do sistema. Os períodos aquisitivos são gerados
-            a partir da data de admissão.
+            {description ??
+              "Escolha o colaborador entre os usuários do sistema. Os períodos aquisitivos são gerados a partir da data de admissão."}
           </DialogDescription>
         </DialogHeader>
         {open && (

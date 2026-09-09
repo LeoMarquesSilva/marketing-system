@@ -385,6 +385,8 @@ export function UsersTable({
           users={linkableUsers}
           occupiedUserIds={occupiedUserIds}
           initialUserId={hrCreateUserId}
+          title="Ficha do colaborador"
+          description="Dados cadastrais e de RH: cargo, área, vínculo, admissão e documentos."
           onSubmit={handleCreateHrFicha}
         />
       )}
@@ -396,6 +398,8 @@ export function UsersTable({
           employee={hrEditTarget}
           users={linkableUsers}
           occupiedUserIds={occupiedUserIds}
+          title="Ficha do colaborador"
+          description="Dados cadastrais e de RH: cargo, área, vínculo, admissão e documentos."
           onSubmit={handleUpdateHrFicha}
         />
       )}
