@@ -21,14 +21,52 @@ import {
 } from "@/lib/gustavo-content/theses";
 import { cn } from "@/lib/utils";
 
-const FLOW = [
+const METHOD_FLOW = [
   { step: "Notícia", note: "O fato entra" },
   { step: "Fato", note: "O que mudou" },
-  { step: "Problema", note: "A dor empresarial" },
-  { step: "Tese", note: "A opinião do Gustavo" },
-  { step: "Implicação", note: "O que isso muda" },
+  { step: "Problema", note: "O que realmente está em jogo" },
+  { step: "Tese", note: "A leitura do Gustavo" },
+  { step: "Implicação", note: "O que isso muda para quem decide" },
   { step: "Conteúdo", note: "LinkedIn e Reel" },
 ] as const;
+
+const SYSTEM_FLOW = [
+  {
+    title: "Encontramos o que vale atenção",
+    copy: "O ORQESTRAI acompanha notícias e movimentos relevantes para empresários e empresas.",
+  },
+  {
+    title: "Transformamos o fato em uma leitura",
+    copy: "A notícia é conectada aos temas e opiniões que queremos sustentar.",
+  },
+  {
+    title: "Você valida a visão",
+    copy: "Quando um conteúdo exige uma opinião sua, o sistema pergunta antes de escrever.",
+  },
+  {
+    title: "Transformamos em conteúdo",
+    copy: "A partir da visão validada, estruturamos LinkedIn e vídeo.",
+  },
+] as const;
+
+const GUSTAVO_ROLES = [
+  {
+    title: "Visão",
+    copy: "Quando surgir uma pauta que exige posicionamento, precisamos entender o que você pensa.",
+  },
+  {
+    title: "Validação",
+    copy: "O sistema pode pesquisar, organizar e estruturar o conteúdo, mas sua opinião não será criada pela IA.",
+  },
+  {
+    title: "Consistência",
+    copy: "Não precisamos de horas por semana. Sua participação deve ficar concentrada em poucos momentos de validação e gravação.",
+  },
+] as const;
+
+const SUCCESS_TITLES = ["Reconhecimento", "Relevância", "Relacionamento", "Negócio"] as const;
+
+const AUTHORITY_PATH = ["Conteúdo", "Autoridade", "Relacionamento", "Oportunidades"] as const;
 
 const CHAPTERS = [
   { id: "norte", label: "Norte" },
@@ -37,8 +75,10 @@ const CHAPTERS = [
   { id: "metodo", label: "Método" },
   { id: "pilares", label: "Pilares" },
   { id: "canais", label: "Canais" },
+  { id: "gustavo", label: "Gustavo" },
   { id: "regras", label: "Regras" },
   { id: "sucesso", label: "Sucesso" },
+  { id: "pulso", label: "Pulso" },
 ] as const;
 
 export function StrategyPresentation({
@@ -113,7 +153,7 @@ export function StrategyPresentation({
           className="strategy-memo relative overflow-hidden scroll-mt-8 rounded-[1.75rem] px-6 py-8 sm:px-9 sm:py-10"
         >
           <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#347796]">
-            <span>Carta · Estratégia · Doc main</span>
+            <span>Estratégia de posicionamento</span>
             <span className="font-mono font-medium normal-case tracking-normal text-[#6f858d]">
               Revisado {updatedLabel}
             </span>
@@ -129,26 +169,6 @@ export function StrategyPresentation({
             <p className="mt-2 text-base leading-7 text-[#294d5a]">{strategy.editorial_promise}</p>
           </div>
         </article>
-
-        <OperatingPulse pulse={pulse} missingCount={missingPillars.length} />
-
-        <section className="grid gap-4 rounded-[1.5rem] bg-[#04202f] px-5 py-6 text-white sm:grid-cols-3 sm:px-7">
-          <FeedsChip
-            index="01"
-            title="Score do radar"
-            copy="O ICP e os pilares pesam o que entra na mesa."
-          />
-          <FeedsChip
-            index="02"
-            title="Ângulos e tese"
-            copy="A IA só escolhe ângulo a partir desta direção."
-          />
-          <FeedsChip
-            index="03"
-            title="Rascunho"
-            copy="LinkedIn e Reel nascem daqui — teses e voz entram depois."
-          />
-        </section>
 
         <section className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
           <article
@@ -199,12 +219,12 @@ export function StrategyPresentation({
             A notícia inicia o raciocínio. Ela não encerra o conteúdo.
           </h4>
           <ol className="mt-7 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-            {FLOW.map((item, index) => (
+            {METHOD_FLOW.map((item, index) => (
               <li key={item.step} className="relative rounded-xl bg-[#04202f]/[0.045] px-3 py-4">
                 <span className="font-mono text-[10px] text-[#347796]">0{index + 1}</span>
                 <p className="mt-4 text-sm font-semibold text-[#04202f]">{item.step}</p>
                 <p className="mt-1 text-xs leading-5 text-[#6f858d]">{item.note}</p>
-                {index < FLOW.length - 1 && (
+                {index < METHOD_FLOW.length - 1 && (
                   <ArrowRight className="absolute -right-3 top-1/2 z-10 hidden size-4 -translate-y-1/2 text-[#47cdd0] lg:block" />
                 )}
               </li>
@@ -217,7 +237,7 @@ export function StrategyPresentation({
             <div className="max-w-2xl">
               <ChapterKicker number="05" label="Arquitetura editorial" />
               <h4 className="editorial-display mt-3 text-2xl font-semibold text-[#04202f]">
-                O que escolhemos sustentar — e as teses que já sustentam
+                O que escolhemos sustentar e as teses que já sustentam
               </h4>
             </div>
             <Link
@@ -308,67 +328,139 @@ export function StrategyPresentation({
           </div>
         </section>
 
-        <section id="canais" className="scroll-mt-8 grid gap-4 md:grid-cols-2">
-          {strategy.channel_roles.map((channel, index) => (
-            <article
-              key={`${channel.channel}-${index}`}
-              className={
-                index % 2 === 0
-                  ? "rounded-[1.5rem] bg-[#347796] p-7 text-white"
-                  : "rounded-[1.5rem] bg-[#dbeeed] p-7 text-[#04202f]"
-              }
-            >
-              <p className={index % 2 === 0 ? "text-xs text-[#bceff0]" : "text-xs text-[#347796]"}>
-                O papel do canal
-              </p>
-              <h5 className="editorial-display mt-2 text-2xl font-semibold">{channel.channel}</h5>
-              <p
-                className={
-                  index % 2 === 0 ? "mt-4 leading-7 text-white/85" : "mt-4 leading-7 text-[#294d5a]"
-                }
-              >
-                {channel.role}
-              </p>
-              <p
+        <section id="canais" className="scroll-mt-8 space-y-5">
+          <div>
+            <ChapterKicker number="06" label="Papel dos canais" />
+            <h4 className="editorial-display mt-3 text-2xl font-semibold text-[#04202f]">
+              Cada canal constrói uma parte diferente da autoridade
+            </h4>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            {strategy.channel_roles.map((channel, index) => (
+              <article
+                key={`${channel.channel}-${index}`}
                 className={
                   index % 2 === 0
-                    ? "mt-6 border-t border-white/15 pt-4 text-sm text-white/65"
-                    : "mt-6 border-t border-[#04202f]/10 pt-4 text-sm text-[#56707a]"
+                    ? "rounded-[1.5rem] bg-[#347796] p-7 text-white"
+                    : "rounded-[1.5rem] bg-[#dbeeed] p-7 text-[#04202f]"
                 }
               >
-                <strong>Por quê:</strong> {channel.reason}
-              </p>
-            </article>
-          ))}
+                <p
+                  className={
+                    index % 2 === 0 ? "text-xs text-[#bceff0]" : "text-xs text-[#347796]"
+                  }
+                >
+                  {index === 0 ? "Construir autoridade" : "Construir familiaridade"}
+                </p>
+                <h5 className="editorial-display mt-2 text-2xl font-semibold">{channel.channel}</h5>
+                <p
+                  className={
+                    index % 2 === 0
+                      ? "mt-4 leading-7 text-white/85"
+                      : "mt-4 leading-7 text-[#294d5a]"
+                  }
+                >
+                  {channel.role}
+                </p>
+                <p
+                  className={
+                    index % 2 === 0
+                      ? "mt-6 border-t border-white/15 pt-4 text-sm text-white/65"
+                      : "mt-6 border-t border-[#04202f]/10 pt-4 text-sm text-[#56707a]"
+                  }
+                >
+                  <strong>Por quê:</strong> {channel.reason}
+                </p>
+              </article>
+            ))}
+          </div>
+          <p className="border-l-2 border-[#47cdd0] py-1 pl-5 text-base font-semibold leading-7 text-[#294d5a]">
+            No LinkedIn queremos que a pessoa reconheça sua capacidade de análise. No Instagram
+            queremos que ela reconheça você.
+          </p>
         </section>
 
         <section
-          id="regras"
-          className="scroll-mt-8 grid gap-6 rounded-[1.5rem] bg-[#04202f] p-6 text-white sm:p-8 lg:grid-cols-2"
+          aria-label="Como o ORQESTRAI transforma estratégia em conteúdo"
+          className="grid gap-5 rounded-[1.5rem] bg-[#04202f] px-5 py-6 text-white sm:grid-cols-2 sm:px-7 xl:grid-cols-4"
         >
-          <StrategyList title="Regras de decisão" items={strategy.editorial_principles} positive />
-          <StrategyList title="O que conscientemente evitamos" items={strategy.avoidances} />
+          {SYSTEM_FLOW.map((item, index) => (
+            <FeedsChip
+              key={item.title}
+              index={`0${index + 1}`}
+              title={item.title}
+              copy={item.copy}
+            />
+          ))}
+        </section>
+
+        <section id="gustavo" className="scroll-mt-8 space-y-5">
+          <div className="max-w-3xl">
+            <ChapterKicker number="07" label="O papel do Gustavo" />
+            <h4 className="editorial-display mt-3 text-2xl font-semibold text-[#04202f]">
+              O sistema reduz o trabalho operacional. A autoridade continua vindo de você.
+            </h4>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            {GUSTAVO_ROLES.map((role, index) => (
+              <article key={role.title} className="rounded-[1.35rem] bg-white/80 p-6">
+                <span className="font-mono text-[10px] text-[#347796]">0{index + 1}</span>
+                <h5 className="mt-4 text-lg font-semibold text-[#04202f]">{role.title}</h5>
+                <p className="mt-2 text-sm leading-6 text-[#56707a]">{role.copy}</p>
+              </article>
+            ))}
+          </div>
+          <div className="rounded-[1.35rem] bg-[#dbeeed] px-6 py-6 sm:px-8">
+            <p className="editorial-display max-w-3xl text-xl font-semibold leading-8 text-[#04202f]">
+              A IA pode pesquisar, organizar e escrever. Ela não pode decidir o que o Gustavo pensa.
+            </p>
+          </div>
+        </section>
+
+        <section id="regras" className="scroll-mt-8 space-y-4">
+          <ChapterKicker number="08" label="Princípios editoriais" />
+          <div className="grid gap-6 rounded-[1.5rem] bg-[#04202f] p-6 text-white sm:p-8 lg:grid-cols-2">
+            <StrategyList title="Regras de decisão" items={strategy.editorial_principles} positive />
+            <StrategyList title="O que conscientemente evitamos" items={strategy.avoidances} />
+          </div>
         </section>
 
         <section
           id="sucesso"
           className="scroll-mt-8 rounded-[1.5rem] border border-[#347796]/15 bg-white/70 p-6 sm:p-8"
         >
-          <ChapterKicker number="08" label="Definição de sucesso" />
+          <ChapterKicker number="09" label="Definição de sucesso" />
           <h4 className="editorial-display mt-3 text-2xl font-semibold text-[#04202f]">
-            O resultado não é apenas publicar mais
+            O resultado não é publicar mais
           </h4>
-          <div className="mt-6 grid gap-x-8 gap-y-4 md:grid-cols-2">
-            {strategy.success_signals.map((signal) => (
+          <div className="mt-6 grid gap-x-8 gap-y-5 md:grid-cols-2">
+            {strategy.success_signals.map((signal, index) => (
               <div key={signal} className="flex gap-3 text-sm leading-6 text-[#294d5a]">
                 <span className="mt-1 flex size-5 shrink-0 items-center justify-center rounded-full bg-[#47cdd0]/20">
                   <Check className="size-3 text-[#285f7a]" aria-hidden />
                 </span>
-                {signal}
+                <div>
+                  <p className="font-semibold text-[#04202f]">
+                    {SUCCESS_TITLES[index] ?? `Resultado ${index + 1}`}
+                  </p>
+                  <p className="mt-1 text-[#56707a]">{signal}</p>
+                </div>
               </div>
             ))}
           </div>
+          <ol className="mt-7 flex flex-col gap-2 border-t border-[#04202f]/8 pt-6 sm:flex-row sm:items-center sm:gap-3">
+            {AUTHORITY_PATH.map((item, index) => (
+              <li key={item} className="flex items-center gap-3">
+                <span className="text-sm font-semibold text-[#285f7a]">{item}</span>
+                {index < AUTHORITY_PATH.length - 1 && (
+                  <ArrowRight className="size-4 rotate-90 text-[#47cdd0] sm:rotate-0" aria-hidden />
+                )}
+              </li>
+            ))}
+          </ol>
         </section>
+
+        <OperatingPulse pulse={pulse} missingCount={missingPillars.length} />
       </div>
     </div>
   );
@@ -381,21 +473,31 @@ function OperatingPulse({
   pulse: StrategyOperatingPulse;
   missingCount: number;
 }) {
+  const isBuildingFoundation =
+    pulse.validatedTheses === 0 && pulse.pendingTheses === 0 && pulse.voiceSamples === 0;
+
   return (
-    <aside className="rounded-[1.5rem] bg-[#e4f5f5] px-5 py-6 sm:px-7">
+    <aside
+      id="pulso"
+      className="scroll-mt-8 rounded-[1.5rem] bg-[#e4f5f5] px-5 py-6 sm:px-7"
+    >
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="editorial-kicker font-mono text-[10px] uppercase text-[#347796]">
-            Pulso operacional
-          </p>
+          <ChapterKicker number="10" label="Pulso operacional" />
           <h4 className="editorial-display mt-2 text-2xl font-semibold text-[#04202f]">
             Como a estratégia está viva nesta semana
           </h4>
         </div>
         <p className="max-w-sm text-xs leading-5 text-[#4f6872]">
-          Cadência 2 LinkedIn + 1 Reel. Teses e voz são o que impedem a IA de inventar opinião.
+          Cadência inicial: 2 conteúdos no LinkedIn + 1 Reel por semana. Teses e amostras de voz
+          ajudam o ORQESTRAI a estruturar os conteúdos sem inventar opiniões.
         </p>
       </div>
+      {isBuildingFoundation && (
+        <p className="mt-5 text-sm font-medium text-[#36535f]">
+          Estamos construindo a base inicial da estratégia.
+        </p>
+      )}
       <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <Cadence
           label="LinkedIn"
@@ -411,14 +513,16 @@ function OperatingPulse({
         <PulseStat label="Teses pendentes" value={pulse.pendingTheses} href="/conteudo/gustavo/teses" />
         <PulseStat label="Amostras de voz" value={pulse.voiceSamples} href="/conteudo/gustavo/voz" />
         <PulseStat
-          label="Aguardando o Gustavo"
+          label="Pautas que precisam da sua visão"
           value={pulse.waitingGustavo}
           href="/conteudo/gustavo/producao"
         />
       </div>
       {missingCount > 0 && (
         <p className="mt-5 text-sm text-[#4f6872]">
-          {missingCount === 1 ? "1 pilar sem tese." : `${missingCount} pilares sem tese.`}{" "}
+          {missingCount === 1
+            ? "1 pilar ainda precisa da primeira tese."
+            : `${missingCount} pilares ainda precisam das primeiras teses.`}{" "}
           <Link href="/conteudo/gustavo/teses" className="font-semibold text-[#347796] hover:underline">
             Completar a base
           </Link>

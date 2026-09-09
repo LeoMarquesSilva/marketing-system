@@ -29,6 +29,7 @@ export function GustavoContentShell({
 }) {
   const pathname = usePathname();
   const isWorkspace = pathname.startsWith("/conteudo/gustavo/producao/");
+  const isStrategy = pathname === "/conteudo/gustavo/estrategia";
   const firstName = actorName.split(" ")[0] ?? actorName;
   const roleLabel = isAdmin ? "Admin" : memberRole === "owner" ? "Gustavo" : "Editor";
 
@@ -39,7 +40,7 @@ export function GustavoContentShell({
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl border-l-2 border-[#47cdd0] pl-5">
               <p className={cn("editorial-kicker font-mono text-[11px] font-semibold uppercase text-[#347796]", isWorkspace && "hidden")}>
-                Mesa editorial · thought leadership
+                {isStrategy ? "Estratégia de posicionamento" : "Mesa editorial · thought leadership"}
               </p>
               <h2 className={cn("editorial-display font-semibold text-[#04202f]", isWorkspace ? "text-xl leading-tight" : "mt-3 text-[2.35rem] leading-[0.96] sm:text-[3rem]")}>
                 Posicionamento Gustavo
