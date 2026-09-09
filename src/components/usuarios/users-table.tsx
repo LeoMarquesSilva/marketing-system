@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import NextLink from "next/link";
 import {
   Table,
   TableBody,
@@ -39,8 +38,9 @@ import { UserAccessDialog } from "./user-access-dialog";
 import { cn } from "@/lib/utils";
 import { userMatchesSearch } from "@/lib/user-search";
 import { ColaboradorFormDialog, type EmployeeFormValues, NO_LINKED_USER } from "@/components/ferias/colaborador-form-dialog";
+import { ColaboradorDetailDialog } from "@/components/ferias/colaborador-detail-dialog";
 import { createEmployeeRequest } from "@/lib/ferias/client";
-import type { LinkableUser } from "@/lib/ferias/types";
+import type { HrEmployee, LinkableUser } from "@/lib/ferias/types";
 
 function getInitials(name: string) {
   return name
@@ -77,6 +77,7 @@ export function UsersTable({
   const [hrFilter, setHrFilter] = useState("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [hrCreateUserId, setHrCreateUserId] = useState<string | null>(null);
+  const [hrViewEmployeeId, setHrViewEmployeeId] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteUserTarget, setDeleteUserTarget] = useState<User | null>(null);
@@ -156,6 +157,19 @@ export function UsersTable({
     }
   }
 
+  function applyHrEmployeeUpdate(employee: HrEmployee) {
+    const { id, user_id, position, employment_type, department, admission_date } = employee;
+    if (!user_id) return;
+    setUsers((prev) =>
+      prev.map((u) =>
+        u.id === user_id
+          ? { ...u, hrEmployee: { id, user_id, position, employment_type, department, admission_date } }
+          : u
+      )
+    );
+    setOccupiedUserIds((prev) => (prev.includes(user_id) ? prev : [...prev, user_id]));
+  }
+
   async function handleCreateHrFicha(values: EmployeeFormValues): Promise<string | null> {
     const { data, error: err } = await createEmployeeRequest({
       fullName: values.fullName.trim(),
@@ -176,19 +190,7 @@ export function UsersTable({
       oabUf: values.oabUf.trim() || null,
     });
     if (err) return err;
-    if (data?.employee) {
-      const { id, user_id, position, employment_type, department, admission_date } = data.employee;
-      if (user_id) {
-        setUsers((prev) =>
-          prev.map((u) =>
-            u.id === user_id
-              ? { ...u, hrEmployee: { id, user_id, position, employment_type, department, admission_date } }
-              : u
-          )
-        );
-        setOccupiedUserIds((prev) => (prev.includes(user_id) ? prev : [...prev, user_id]));
-      }
-    }
+    if (data?.employee) applyHrEmployeeUpdate(data.employee);
     setHrCreateUserId(null);
     return null;
   }
@@ -365,6 +367,18 @@ export function UsersTable({
           occupiedUserIds={occupiedUserIds}
           initialUserId={hrCreateUserId}
           onSubmit={handleCreateHrFicha}
+        />
+      )}
+
+      {canManageHr && (
+        <ColaboradorDetailDialog
+          open={!!hrViewEmployeeId}
+          onOpenChange={(open) => !open && setHrViewEmployeeId(null)}
+          employeeId={hrViewEmployeeId}
+          users={linkableUsers}
+          occupiedUserIds={occupiedUserIds}
+          canManage
+          onUpdated={applyHrEmployeeUpdate}
         />
       )}
 
@@ -561,11 +575,9 @@ export function UsersTable({
                             size="icon"
                             className="h-8 w-8 text-muted-foreground"
                             title="Ver ficha de RH"
-                            asChild
+                            onClick={() => setHrViewEmployeeId(user.hrEmployee!.id)}
                           >
-                            <NextLink href={`/rh/ferias?colaborador=${user.hrEmployee.id}`}>
-                              <IdCard className="h-4 w-4" />
-                            </NextLink>
+                            <IdCard className="h-4 w-4" />
                           </Button>
                         ) : (
                           <Button
