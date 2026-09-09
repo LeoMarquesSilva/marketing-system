@@ -3,6 +3,7 @@ import { getContentCutoffDate } from "@/lib/content-utils";
 import {
   GUSTAVO_PLANNER_ASSIGNEE_NAME,
   GUSTAVO_PLANNER_REQUESTING_AREA,
+  GUSTAVO_CONTENT_GENERATION_TIMEOUT_MS,
   HISTORY_WINDOW_DAYS,
   DEDUPE_WINDOW_DAYS,
   type GustavoContentStatus,
@@ -486,7 +487,7 @@ async function generateItemDraft(
     previous
   );
 
-  const abortSignal = AbortSignal.timeout(95_000);
+  const abortSignal = AbortSignal.timeout(GUSTAVO_CONTENT_GENERATION_TIMEOUT_MS);
   async function writeAndReview(
     reviewFeedback: string[] | null,
     previousDraft?: Awaited<ReturnType<typeof generateEditorialContent>>

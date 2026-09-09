@@ -15,6 +15,9 @@ describe("modelos por etapa", () => {
     expect(models.GUSTAVO_CONTENT_MODEL_WRITING_FALLBACK).toBe("gpt-4.1");
     expect(models.GUSTAVO_CONTENT_MODEL_SCORE).toBe("gpt-4.1-mini");
     expect(models.GUSTAVO_CONTENT_MODEL_REVIEW).toBe("gpt-4.1-mini");
+    expect(models.GUSTAVO_CONTENT_WRITING_TIMEOUT_MS).toBe(120_000);
+    expect(models.GUSTAVO_CONTENT_WRITING_FALLBACK_TIMEOUT_MS).toBe(90_000);
+    expect(models.GUSTAVO_CONTENT_GENERATION_TIMEOUT_MS).toBe(270_000);
   });
 
   it("preserva a configuracao compartilhada explicita", async () => {

@@ -5,6 +5,8 @@ import {
   GUSTAVO_CONTENT_MODEL_SCORE,
   GUSTAVO_CONTENT_MODEL_WRITING,
   GUSTAVO_CONTENT_MODEL_WRITING_FALLBACK,
+  GUSTAVO_CONTENT_WRITING_FALLBACK_TIMEOUT_MS,
+  GUSTAVO_CONTENT_WRITING_TIMEOUT_MS,
 } from "@/lib/gustavo-content/constants";
 import { GustavoContentError } from "@/lib/gustavo-content/errors";
 import {
@@ -219,7 +221,7 @@ export async function generateEditorialContent(input: {
   let result;
   try {
     result = await generateObject({
-      ...requestLimits(65_000, input.abortSignal),
+      ...requestLimits(GUSTAVO_CONTENT_WRITING_TIMEOUT_MS, input.abortSignal),
       model: writingModel(),
       ...request,
       ...(usesReasoning
@@ -233,7 +235,7 @@ export async function generateEditorialContent(input: {
       fallbackModel: GUSTAVO_CONTENT_MODEL_WRITING_FALLBACK,
     });
     result = await generateObject({
-      ...requestLimits(25_000, input.abortSignal),
+      ...requestLimits(GUSTAVO_CONTENT_WRITING_FALLBACK_TIMEOUT_MS, input.abortSignal),
       model: writingFallbackModel(),
       ...request,
       temperature: 0.45,

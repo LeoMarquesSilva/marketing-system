@@ -4,7 +4,7 @@ vi.mock("@/lib/gustavo-content/server", async (original) => ({
   ...await original<typeof import("@/lib/gustavo-content/server")>(), requireGustavoContentAccess: mocks.access,
 }));
 vi.mock("@/lib/gustavo-content/items", () => ({ selectAngle: mocks.select, generateItemContent: mocks.generate }));
-import { PATCH } from "./route";
+import { maxDuration, PATCH } from "./route";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -14,6 +14,10 @@ beforeEach(() => {
 });
 
 describe("validacao de acoes da pauta", () => {
+  it("reserva cinco minutos para a geracao completa", () => {
+    expect(maxDuration).toBe(300);
+  });
+
   it.each([
     null, [], { action: "select_angle" }, { action: "select_angle", angleIndex: -1 },
     { action: "select_angle", angleIndex: 1.5 }, { action: "generate", mode: "invalid" },
