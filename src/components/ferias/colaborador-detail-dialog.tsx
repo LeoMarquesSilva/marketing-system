@@ -41,7 +41,6 @@ import {
 } from "@/lib/ferias/client";
 import {
   type EmployeeDetail,
-  type HrEmployee,
   type LinkableUser,
   type VacationLeave,
   type VacationLeaveKind,
@@ -58,8 +57,6 @@ interface ColaboradorDetailDialogProps {
   canManage: boolean;
   /** Abre direto no formulário de edição (ex.: veio do popup de notificação de RH). */
   initialEditOpen?: boolean;
-  /** Notifica quem abriu o modal quando a ficha é salva (ex.: Usuários atualiza a linha). */
-  onUpdated?: (employee: HrEmployee) => void;
 }
 
 function SummaryItem({
@@ -96,7 +93,6 @@ export function ColaboradorDetailDialog({
   occupiedUserIds = [],
   canManage,
   initialEditOpen = false,
-  onUpdated,
 }: ColaboradorDetailDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -110,7 +106,6 @@ export function ColaboradorDetailDialog({
             occupiedUserIds={occupiedUserIds}
             canManage={canManage}
             initialEditOpen={canManage && initialEditOpen}
-            onUpdated={onUpdated}
           />
         ) : (
           <>
@@ -131,14 +126,12 @@ function DetailBody({
   occupiedUserIds,
   canManage,
   initialEditOpen = false,
-  onUpdated,
 }: {
   employeeId: string;
   users: LinkableUser[];
   occupiedUserIds: string[];
   canManage: boolean;
   initialEditOpen?: boolean;
-  onUpdated?: (employee: HrEmployee) => void;
 }) {
   const router = useRouter();
   const [detail, setDetail] = useState<EmployeeDetail | null>(null);
@@ -202,7 +195,7 @@ function DetailBody({
 
   async function handleEmployeeSubmit(values: EmployeeFormValues): Promise<string | null> {
     if (!detail) return "Colaborador não carregado.";
-    const { data, error: err } = await updateEmployeeRequest(detail.employee.id, {
+    const { error: err } = await updateEmployeeRequest(detail.employee.id, {
       fullName: values.fullName.trim(),
       cpf: values.cpf.trim() || null,
       email: values.email.trim() || null,
@@ -221,7 +214,6 @@ function DetailBody({
       oabUf: values.oabUf.trim() || null,
     });
     if (err) return err;
-    if (data?.employee) onUpdated?.(data.employee);
     await reloadDetail();
     return null;
   }

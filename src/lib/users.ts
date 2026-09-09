@@ -1,15 +1,6 @@
 import { supabase as browserSupabase } from "@/utils/supabase/client";
 import type { UserAuthActivity } from "@/lib/users-auth-activity";
-
-/** Resumo da ficha de RH (`hr_employees`) vinculada a este usuário, quando existir. */
-export interface HrEmployeeSummary {
-  id: string;
-  user_id: string;
-  position: string | null;
-  employment_type: string | null;
-  department: string | null;
-  admission_date: string;
-}
+import type { HrEmployee } from "@/lib/ferias/types";
 
 export interface User {
   id: string;
@@ -35,7 +26,7 @@ export interface User {
   /** Áreas em `email_area_managers` — gestor oficial do Meus Clientes. */
   managedLegalAreas?: string[];
   /** Ficha de RH vinculada (`hr_employees.user_id`); null quando não existe ainda. */
-  hrEmployee?: HrEmployeeSummary | null;
+  hrEmployee?: HrEmployee | null;
 }
 
 const USER_LIST_SELECT =

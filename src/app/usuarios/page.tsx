@@ -8,8 +8,7 @@ import {
 import { listAreaManagers } from "@/lib/email-area-managers-server";
 import { listLinkableUsers } from "@/lib/ferias/server";
 import { UsersTable } from "@/components/usuarios/users-table";
-import type { LinkableUser } from "@/lib/ferias/types";
-import type { HrEmployeeSummary } from "@/lib/users";
+import type { HrEmployee, LinkableUser } from "@/lib/ferias/types";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +27,7 @@ export default async function UsuariosPage() {
   // igual pra quem só tem a permissão de /usuarios.
   const [hrByUserId, linkableUsers] = canManageHr
     ? await Promise.all([fetchHrEmployeesByUserId(), listLinkableUsers()])
-    : [{} as Record<string, HrEmployeeSummary>, [] as LinkableUser[]];
+    : [{} as Record<string, HrEmployee>, [] as LinkableUser[]];
 
   const managedAreasByUserId = new Map<string, string[]>();
   for (const manager of areaManagers) {

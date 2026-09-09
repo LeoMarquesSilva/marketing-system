@@ -1,8 +1,12 @@
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/utils/supabase/server";
 import type { UserAuthActivity } from "@/lib/users-auth-activity";
-import type { HrEmployeeSummary, User } from "@/lib/users";
+import type { User } from "@/lib/users";
+import type { HrEmployee } from "@/lib/ferias/types";
 import { hasHrAccess } from "@/lib/rh/access";
+
+const HR_EMPLOYEE_SELECT =
+  "id, user_id, full_name, cpf, email, department, position, admission_date, termination_date, is_active, notes, vios_ci, vacation_exempt, employment_type, registration_number, birth_date, gender, rg, oab_number, oab_uf";
 
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
@@ -43,11 +47,11 @@ export async function fetchUsersServer(): Promise<User[]> {
 }
 
 /** Fichas de RH (`hr_employees`) já vinculadas a um login, indexadas por `user_id`. */
-export async function fetchHrEmployeesByUserId(): Promise<Record<string, HrEmployeeSummary>> {
+export async function fetchHrEmployeesByUserId(): Promise<Record<string, HrEmployee>> {
   const db = await getServerDb();
   const { data, error } = await db
     .from("hr_employees")
-    .select("id, user_id, position, employment_type, department, admission_date")
+    .select(HR_EMPLOYEE_SELECT)
     .not("user_id", "is", null);
 
   if (error) {
@@ -55,9 +59,9 @@ export async function fetchHrEmployeesByUserId(): Promise<Record<string, HrEmplo
     return {};
   }
 
-  const result: Record<string, HrEmployeeSummary> = {};
-  for (const row of (data ?? []) as HrEmployeeSummary[]) {
-    if (row.user_id) result[row.user_id] = row;
+  const result: Record<string, HrEmployee> = {};
+  for (const row of (data ?? []) as Omit<HrEmployee, "avatar_url">[]) {
+    if (row.user_id) result[row.user_id] = { ...row, avatar_url: null };
   }
   return result;
 }

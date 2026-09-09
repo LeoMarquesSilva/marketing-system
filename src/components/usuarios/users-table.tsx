@@ -38,8 +38,7 @@ import { UserAccessDialog } from "./user-access-dialog";
 import { cn } from "@/lib/utils";
 import { userMatchesSearch } from "@/lib/user-search";
 import { ColaboradorFormDialog, type EmployeeFormValues, NO_LINKED_USER } from "@/components/ferias/colaborador-form-dialog";
-import { ColaboradorDetailDialog } from "@/components/ferias/colaborador-detail-dialog";
-import { createEmployeeRequest } from "@/lib/ferias/client";
+import { createEmployeeRequest, updateEmployeeRequest } from "@/lib/ferias/client";
 import type { HrEmployee, LinkableUser } from "@/lib/ferias/types";
 
 function getInitials(name: string) {
@@ -77,7 +76,7 @@ export function UsersTable({
   const [hrFilter, setHrFilter] = useState("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [hrCreateUserId, setHrCreateUserId] = useState<string | null>(null);
-  const [hrViewEmployeeId, setHrViewEmployeeId] = useState<string | null>(null);
+  const [hrEditTarget, setHrEditTarget] = useState<HrEmployee | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteUserTarget, setDeleteUserTarget] = useState<User | null>(null);
@@ -158,15 +157,9 @@ export function UsersTable({
   }
 
   function applyHrEmployeeUpdate(employee: HrEmployee) {
-    const { id, user_id, position, employment_type, department, admission_date } = employee;
+    const { user_id } = employee;
     if (!user_id) return;
-    setUsers((prev) =>
-      prev.map((u) =>
-        u.id === user_id
-          ? { ...u, hrEmployee: { id, user_id, position, employment_type, department, admission_date } }
-          : u
-      )
-    );
+    setUsers((prev) => prev.map((u) => (u.id === user_id ? { ...u, hrEmployee: employee } : u)));
     setOccupiedUserIds((prev) => (prev.includes(user_id) ? prev : [...prev, user_id]));
   }
 
@@ -192,6 +185,32 @@ export function UsersTable({
     if (err) return err;
     if (data?.employee) applyHrEmployeeUpdate(data.employee);
     setHrCreateUserId(null);
+    return null;
+  }
+
+  async function handleUpdateHrFicha(values: EmployeeFormValues): Promise<string | null> {
+    if (!hrEditTarget) return "Colaborador não carregado.";
+    const { data, error: err } = await updateEmployeeRequest(hrEditTarget.id, {
+      fullName: values.fullName.trim(),
+      cpf: values.cpf.trim() || null,
+      email: values.email.trim() || null,
+      department: values.department.trim() || null,
+      position: values.position.trim() || null,
+      admissionDate: values.admissionDate,
+      terminationDate: values.terminationDate || null,
+      userId: values.userId === NO_LINKED_USER ? null : values.userId,
+      isActive: values.isActive,
+      employmentType: values.employmentType.trim() || null,
+      registrationNumber: values.registrationNumber.trim() || null,
+      birthDate: values.birthDate || null,
+      gender: values.gender.trim() || null,
+      rg: values.rg.trim() || null,
+      oabNumber: values.oabNumber.trim() || null,
+      oabUf: values.oabUf.trim() || null,
+    });
+    if (err) return err;
+    if (data?.employee) applyHrEmployeeUpdate(data.employee);
+    setHrEditTarget(null);
     return null;
   }
 
@@ -371,14 +390,13 @@ export function UsersTable({
       )}
 
       {canManageHr && (
-        <ColaboradorDetailDialog
-          open={!!hrViewEmployeeId}
-          onOpenChange={(open) => !open && setHrViewEmployeeId(null)}
-          employeeId={hrViewEmployeeId}
+        <ColaboradorFormDialog
+          open={!!hrEditTarget}
+          onOpenChange={(open) => !open && setHrEditTarget(null)}
+          employee={hrEditTarget}
           users={linkableUsers}
           occupiedUserIds={occupiedUserIds}
-          canManage
-          onUpdated={applyHrEmployeeUpdate}
+          onSubmit={handleUpdateHrFicha}
         />
       )}
 
@@ -575,7 +593,7 @@ export function UsersTable({
                             size="icon"
                             className="h-8 w-8 text-muted-foreground"
                             title="Ver ficha de RH"
-                            onClick={() => setHrViewEmployeeId(user.hrEmployee!.id)}
+                            onClick={() => setHrEditTarget(user.hrEmployee!)}
                           >
                             <IdCard className="h-4 w-4" />
                           </Button>
