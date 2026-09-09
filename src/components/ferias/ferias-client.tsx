@@ -48,11 +48,6 @@ import {
 } from "@/components/ui/table";
 import { VacationSituationCells } from "@/components/ferias/vacation-debt-tags";
 import { EmployeeAvatar } from "@/components/ferias/employee-avatar";
-import {
-  ColaboradorFormDialog,
-  NO_LINKED_USER,
-  type EmployeeFormValues,
-} from "@/components/ferias/colaborador-form-dialog";
 import { ColaboradorDetailDialog } from "@/components/ferias/colaborador-detail-dialog";
 import {
   RecessoFormDialog,
@@ -60,7 +55,6 @@ import {
 } from "@/components/ferias/recesso-form-dialog";
 import {
   applyRecessRequest,
-  createEmployeeRequest,
   deleteRecessRequest,
   upsertRecessRequest,
 } from "@/lib/ferias/client";
@@ -84,18 +78,17 @@ import {
 import type {
   CompanyRecessWithStatus,
   EmployeeWithBalance,
-  LinkableUser,
   RecessApplyState,
 } from "@/lib/ferias/types";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
 
 type TabKey = FeriasListTab;
 
 interface FeriasClientProps {
   employees: EmployeeWithBalance[];
   recess: CompanyRecessWithStatus[];
-  users: LinkableUser[];
   canManage: boolean;
   scopeAreas: string[] | null;
   initialQuery?: FeriasListQuery;
@@ -180,7 +173,6 @@ function KpiCard({
 export function FeriasClient({
   employees,
   recess,
-  users,
   canManage,
   scopeAreas,
   initialQuery = FERIAS_LIST_QUERY_DEFAULTS,
@@ -194,7 +186,6 @@ export function FeriasClient({
   const [departmentFilter, setDepartmentFilter] = useState<string>(initialQuery.department);
   const [balanceFilter, setBalanceFilter] = useState<BalanceFilter>(initialQuery.balance);
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>(initialQuery.activity);
-  const [createOpen, setCreateOpen] = useState(false);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(
     initialSelectedEmployeeId
   );
@@ -212,7 +203,6 @@ export function FeriasClient({
   const [recessSuccess, setRecessSuccess] = useState<string | null>(null);
 
   const realtimePaused =
-    createOpen ||
     selectedEmployeeId !== null ||
     recessDialogOpen ||
     deleteRecessTarget !== null ||
@@ -229,14 +219,6 @@ export function FeriasClient({
   });
 
   const kpis = useMemo(() => computeFeriasKpis(employees), [employees]);
-
-  const occupiedUserIds = useMemo(
-    () =>
-      employees
-        .map((item) => item.employee.user_id)
-        .filter((id): id is string => Boolean(id)),
-    [employees]
-  );
 
   const departments = useMemo(() => listEmployeeDepartments(employees), [employees]);
 
@@ -294,30 +276,6 @@ export function FeriasClient({
     activityFilter,
     tab,
   ]);
-
-  async function handleCreate(values: EmployeeFormValues): Promise<string | null> {
-    const { error } = await createEmployeeRequest({
-      fullName: values.fullName.trim(),
-      cpf: values.cpf.trim() || null,
-      email: values.email.trim() || null,
-      department: values.department.trim() || null,
-      position: values.position.trim() || null,
-      admissionDate: values.admissionDate,
-      terminationDate: values.terminationDate || null,
-      userId: values.userId === NO_LINKED_USER ? null : values.userId,
-      isActive: values.isActive,
-      employmentType: values.employmentType.trim() || null,
-      registrationNumber: values.registrationNumber.trim() || null,
-      birthDate: values.birthDate || null,
-      gender: values.gender.trim() || null,
-      rg: values.rg.trim() || null,
-      oabNumber: values.oabNumber.trim() || null,
-      oabUf: values.oabUf.trim() || null,
-    });
-    if (error) return error;
-    router.refresh();
-    return null;
-  }
 
   async function handleRecessSubmit(values: RecessFormValues): Promise<string | null> {
     const { error } = await upsertRecessRequest({
@@ -470,9 +428,11 @@ export function FeriasClient({
                 {realtimeStatus === "connected" ? "Tempo real ativo" : "Tempo real indisponível"}
               </div>
               {tab === "colaboradores" ? (
-                <Button onClick={() => setCreateOpen(true)} className="shrink-0">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Novo colaborador
+                <Button variant="outline" className="shrink-0" asChild>
+                  <Link href="/usuarios">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Cadastrar colaborador em Usuários
+                  </Link>
                 </Button>
               ) : (
                 <Button
@@ -916,27 +876,13 @@ export function FeriasClient({
         </div>
       )}
 
-      {canManage && <ColaboradorFormDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        employee={null}
-        users={users}
-        occupiedUserIds={occupiedUserIds}
-        onSubmit={handleCreate}
-      />}
-
       <ColaboradorDetailDialog
         open={!!selectedEmployeeId}
         onOpenChange={(open) => {
           if (!open) setSelectedEmployeeId(null);
         }}
         employeeId={selectedEmployeeId}
-        users={users}
-        occupiedUserIds={occupiedUserIds}
         canManage={canManage}
-        initialEditOpen={
-          selectedEmployeeId !== null && selectedEmployeeId === initialSelectedEmployeeId
-        }
       />
 
       {canManage && <RecessoFormDialog

@@ -2,6 +2,7 @@ import type {
   CompanyRecess,
   EmployeeDetail,
   HrEmployee,
+  LinkableUser,
   VacationLeave,
   VacationLeaveKind,
   VacationPeriod,
@@ -59,6 +60,12 @@ export function updateEmployeeRequest(id: string, payload: Partial<EmployeePaylo
 
 export function fetchEmployeeDetailRequest(id: string) {
   return request<EmployeeDetail>(`/api/ferias/employees/${id}`);
+}
+
+export function fetchLinkableUsersRequest() {
+  return request<{ users: LinkableUser[]; occupiedUserIds: string[] }>(
+    "/api/ferias/linkable-users"
+  );
 }
 
 export interface LeavePayload {

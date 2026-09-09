@@ -4,16 +4,11 @@ import { parseFeriasListQuery } from "@/lib/ferias/filters";
 import {
   FeriasHttpError,
   listEmployeesWithBalance,
-  listLinkableUsers,
   listRecessWithApplicationStatus,
   requireFeriasAccess,
 } from "@/lib/ferias/server";
 import { isFeriasEditor } from "@/lib/ferias/access";
-import type {
-  CompanyRecessWithStatus,
-  EmployeeWithBalance,
-  LinkableUser,
-} from "@/lib/ferias/types";
+import type { CompanyRecessWithStatus, EmployeeWithBalance } from "@/lib/ferias/types";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +22,6 @@ type PageData =
       forbidden: false;
       employees: EmployeeWithBalance[];
       recess: CompanyRecessWithStatus[];
-      users: LinkableUser[];
       canManage: boolean;
       scopeAreas: string[] | null;
     };
@@ -36,16 +30,14 @@ async function loadPageData(): Promise<PageData> {
   try {
     const actor = await requireFeriasAccess();
     const canManage = isFeriasEditor(actor.access);
-    const [employees, recess, users] = await Promise.all([
+    const [employees, recess] = await Promise.all([
       listEmployeesWithBalance(undefined, actor),
       listRecessWithApplicationStatus(actor),
-      canManage ? listLinkableUsers() : Promise.resolve([]),
     ]);
     return {
       forbidden: false,
       employees,
       recess,
-      users,
       canManage,
       scopeAreas: actor.access.areas,
     };
@@ -66,7 +58,6 @@ export default async function FeriasPage({ searchParams }: PageProps) {
     <FeriasClient
       employees={data.employees}
       recess={data.recess}
-      users={data.users}
       canManage={data.canManage}
       scopeAreas={data.scopeAreas}
       initialQuery={parseFeriasListQuery(query)}

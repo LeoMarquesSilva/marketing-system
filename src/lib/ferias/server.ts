@@ -807,6 +807,23 @@ export async function listLinkableUsers(): Promise<LinkableUser[]> {
   return ((data ?? []) as LinkableUser[]).filter((user) => !isItDepartment(user.department));
 }
 
+/** Usuários vinculáveis + quais já têm ficha — usado por diálogos fora de /rh/ferias (ex.: notificações). */
+export async function listLinkableUsersWithOccupancy(): Promise<{
+  users: LinkableUser[];
+  occupiedUserIds: string[];
+}> {
+  const [users, admin] = [await listLinkableUsers(), createFeriasAdminClient()];
+  const { data, error } = await admin
+    .from("hr_employees")
+    .select("user_id")
+    .not("user_id", "is", null);
+  if (error) failed("Não foi possível carregar os vínculos de ficha.");
+  const occupiedUserIds = ((data ?? []) as { user_id: string | null }[])
+    .map((row) => row.user_id)
+    .filter((id): id is string => Boolean(id));
+  return { users, occupiedUserIds };
+}
+
 type ViosRow = {
   ci: string;
   company: string | null;

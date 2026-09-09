@@ -18,11 +18,6 @@ import { EmployeeAvatar } from "@/components/ferias/employee-avatar";
 import { LeaveLaunchesSection } from "@/components/ferias/leave-launches-section";
 import { InformarColaboradorDialog } from "@/components/ferias/informar-colaborador-dialog";
 import {
-  ColaboradorFormDialog,
-  NO_LINKED_USER,
-  type EmployeeFormValues,
-} from "@/components/ferias/colaborador-form-dialog";
-import {
   RegistrarFeriasDialog,
   type LeaveFormValues,
 } from "@/components/ferias/registrar-ferias-dialog";
@@ -35,13 +30,11 @@ import {
   createLeaveRequest,
   deleteLeaveRequest,
   fetchEmployeeDetailRequest,
-  updateEmployeeRequest,
   updateLeaveRequest,
   updatePeriodRequest,
 } from "@/lib/ferias/client";
 import {
   type EmployeeDetail,
-  type LinkableUser,
   type VacationLeave,
   type VacationLeaveKind,
   type VacationPeriod,
@@ -52,11 +45,7 @@ interface ColaboradorDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   employeeId: string | null;
-  users: LinkableUser[];
-  occupiedUserIds?: string[];
   canManage: boolean;
-  /** Abre direto no formulário de edição (ex.: veio do popup de notificação de RH). */
-  initialEditOpen?: boolean;
 }
 
 function SummaryItem({
@@ -89,24 +78,14 @@ export function ColaboradorDetailDialog({
   open,
   onOpenChange,
   employeeId,
-  users,
-  occupiedUserIds = [],
   canManage,
-  initialEditOpen = false,
 }: ColaboradorDetailDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[90vh] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
         {/* Remonta a ficha a cada colaborador para resetar o estado sem setState no effect. */}
         {open && employeeId ? (
-          <DetailBody
-            key={employeeId}
-            employeeId={employeeId}
-            users={users}
-            occupiedUserIds={occupiedUserIds}
-            canManage={canManage}
-            initialEditOpen={canManage && initialEditOpen}
-          />
+          <DetailBody key={employeeId} employeeId={employeeId} canManage={canManage} />
         ) : (
           <>
             <DialogHeader className="px-6 py-5 pr-12 text-left">
@@ -122,22 +101,15 @@ export function ColaboradorDetailDialog({
 
 function DetailBody({
   employeeId,
-  users,
-  occupiedUserIds,
   canManage,
-  initialEditOpen = false,
 }: {
   employeeId: string;
-  users: LinkableUser[];
-  occupiedUserIds: string[];
   canManage: boolean;
-  initialEditOpen?: boolean;
 }) {
   const router = useRouter();
   const [detail, setDetail] = useState<EmployeeDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [editOpen, setEditOpen] = useState(initialEditOpen);
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
   const [leaveDefaultKind, setLeaveDefaultKind] = useState<VacationLeaveKind>("ferias");
   const [creditPreset, setCreditPreset] = useState<{
@@ -191,31 +163,6 @@ function DetailBody({
     }
     setDetail(data);
     router.refresh();
-  }
-
-  async function handleEmployeeSubmit(values: EmployeeFormValues): Promise<string | null> {
-    if (!detail) return "Colaborador não carregado.";
-    const { error: err } = await updateEmployeeRequest(detail.employee.id, {
-      fullName: values.fullName.trim(),
-      cpf: values.cpf.trim() || null,
-      email: values.email.trim() || null,
-      department: values.department.trim() || null,
-      position: values.position.trim() || null,
-      admissionDate: values.admissionDate,
-      terminationDate: values.terminationDate || null,
-      userId: values.userId === NO_LINKED_USER ? null : values.userId,
-      isActive: values.isActive,
-      employmentType: values.employmentType.trim() || null,
-      registrationNumber: values.registrationNumber.trim() || null,
-      birthDate: values.birthDate || null,
-      gender: values.gender.trim() || null,
-      rg: values.rg.trim() || null,
-      oabNumber: values.oabNumber.trim() || null,
-      oabUf: values.oabUf.trim() || null,
-    });
-    if (err) return err;
-    await reloadDetail();
-    return null;
   }
 
   async function handlePeriodSubmit(values: PeriodFormValues): Promise<string | null> {
@@ -305,24 +252,18 @@ function DetailBody({
                 Informar colaborador
               </Button>
               {canManage && (
-                <>
-                  <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
-                    <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                    Editar
-                  </Button>
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      setEditingLeave(null);
-                      setCreditPreset(null);
-                      setLeaveDefaultKind("ferias");
-                      setLeaveDialogOpen(true);
-                    }}
-                  >
-                    <Plus className="mr-1.5 h-3.5 w-3.5" />
-                    Registrar
-                  </Button>
-                </>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setEditingLeave(null);
+                    setCreditPreset(null);
+                    setLeaveDefaultKind("ferias");
+                    setLeaveDialogOpen(true);
+                  }}
+                >
+                  <Plus className="mr-1.5 h-3.5 w-3.5" />
+                  Registrar
+                </Button>
               )}
             </div>
           </div>
@@ -519,15 +460,6 @@ function DetailBody({
 
       {employee && canManage && (
         <>
-          <ColaboradorFormDialog
-            open={editOpen}
-            onOpenChange={setEditOpen}
-            employee={employee}
-            users={users}
-            occupiedUserIds={occupiedUserIds}
-            onSubmit={handleEmployeeSubmit}
-          />
-
           <RegistrarFeriasDialog
             open={leaveDialogOpen}
             onOpenChange={(nextOpen) => {

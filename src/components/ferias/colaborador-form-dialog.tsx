@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -163,6 +163,41 @@ function ColaboradorForm({
   }, [users, occupiedUserIds, employee?.user_id]);
 
   const selectedUser = selectableUsers.find((user) => user.id === values.userId) ?? null;
+
+  // Se o colaborador já preencheu Qualificações (autoatendimento de advogados),
+  // aproveita CPF/RG/OAB/nascimento/gênero de lá em vez de pedir pra RH digitar
+  // de novo — só completa o que ainda estiver em branco na ficha.
+  useEffect(() => {
+    const userId = values.userId;
+    if (!userId || userId === NO_LINKED_USER) return;
+    let cancelled = false;
+    fetch(`/api/rh/qualificacoes/${userId}`, { credentials: "include" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { qualification?: Record<string, unknown> | null } | null) => {
+        if (cancelled || !data?.qualification) return;
+        const q = data.qualification;
+        setValues((prev) => {
+          if (prev.userId !== userId) return prev;
+          return {
+            ...prev,
+            cpf: prev.cpf || (q.cpf as string | null) || "",
+            rg: prev.rg || (q.rg as string | null) || "",
+            oabNumber: prev.oabNumber || (q.oab_number as string | null) || "",
+            oabUf: prev.oabUf || (q.oab_uf as string | null) || "",
+            birthDate: prev.birthDate || (q.birth_date as string | null) || "",
+            gender:
+              prev.gender ||
+              (q.treatment_gender === "f" ? "F" : q.treatment_gender === "m" ? "M" : ""),
+          };
+        });
+      })
+      .catch(() => {
+        // Prefill é um bônus — se falhar, a RH preenche manualmente.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [values.userId]);
 
   function set<K extends keyof EmployeeFormValues>(key: K, value: EmployeeFormValues[K]) {
     setValues((prev) => ({ ...prev, [key]: value }));

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useHrPendingNotifications } from "@/hooks/use-hr-pending-notifications";
 import { HrNotificationsList } from "@/components/rh/hr-notifications-list";
+import { FichaColaboradorDialog } from "@/components/rh/ficha-colaborador-dialog";
 
 /**
  * Popup exibido no login para Andressa/Catharina (flag dedicada) e admins
@@ -22,42 +22,48 @@ import { HrNotificationsList } from "@/components/rh/hr-notifications-list";
  * acessível a qualquer momento pelo sininho no menu de perfil.
  */
 export function HrPendingNotificationsModal() {
-  const { canReceive, notifications } = useHrPendingNotifications();
-  const router = useRouter();
+  const { canReceive, notifications, refetch } = useHrPendingNotifications();
   const [dismissed, setDismissed] = useState(false);
+  const [editEmployeeId, setEditEmployeeId] = useState<string | null>(null);
 
   if (!canReceive || dismissed || notifications.length === 0) return null;
 
-  function goToFicha(employeeId: string) {
-    setDismissed(true);
-    router.push(`/rh/ferias?colaborador=${employeeId}`);
-  }
-
   return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) setDismissed(true);
-      }}
-    >
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Atualizações de colaboradores (VIOS)</DialogTitle>
-          <DialogDescription>
-            {notifications.length === 1
-              ? "Uma ficha precisa ser atualizada."
-              : `${notifications.length} fichas precisam ser atualizadas.`}
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog
+        open={!editEmployeeId}
+        onOpenChange={(open) => {
+          if (!open) setDismissed(true);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Atualizações de colaboradores (VIOS)</DialogTitle>
+            <DialogDescription>
+              {notifications.length === 1
+                ? "Uma ficha precisa ser atualizada."
+                : `${notifications.length} fichas precisam ser atualizadas.`}
+            </DialogDescription>
+          </DialogHeader>
 
-        <HrNotificationsList notifications={notifications} onAction={goToFicha} />
+          <HrNotificationsList notifications={notifications} onAction={setEditEmployeeId} />
 
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => setDismissed(true)}>
-            Fechar
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDismissed(true)}>
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <FichaColaboradorDialog
+        employeeId={editEmployeeId}
+        onOpenChange={(open) => !open && setEditEmployeeId(null)}
+        onSaved={() => {
+          setEditEmployeeId(null);
+          void refetch();
+        }}
+      />
+    </>
   );
 }

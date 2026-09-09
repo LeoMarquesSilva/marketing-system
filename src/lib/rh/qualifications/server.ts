@@ -133,6 +133,20 @@ export async function getMyQualification(): Promise<HrQualification | null> {
   return (data as HrQualification | null) ?? null;
 }
 
+/** RH consulta a qualificação já preenchida de outro colaborador (ex.: prefill da ficha em Usuários). */
+export async function getQualificationByUserId(userId: string): Promise<HrQualification | null> {
+  await requireHrManager();
+  const admin = createRhAdminClient();
+  const { data, error } = await admin
+    .from("hr_qualifications")
+    .select(QUALIFICATION_SELECT)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) throw new RhHttpError("Falha ao carregar qualificação.", 500, "QUERY_FAILED");
+  return (data as HrQualification | null) ?? null;
+}
+
 export async function upsertMyQualification(
   input: QualificationUpsertInput
 ): Promise<HrQualification> {
