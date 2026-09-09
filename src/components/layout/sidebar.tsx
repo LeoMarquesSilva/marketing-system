@@ -315,7 +315,7 @@ function getNavItems(
       return allowed.includes(i.href);
     });
 
-    if (profileHasRhAccess(profile) || allowed.includes("/rh") || allowed.includes("/ferias")) {
+    if (profileHasRhAccess(profile) || allowed.includes("/rh")) {
       items = [...items, rhNavGroup];
     } else if (profileHasFeriasView(profile)) {
       items = [...items, feriasViewerNavGroup];

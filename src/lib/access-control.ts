@@ -29,6 +29,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/conteudo/roteiros", label: "Conteúdo para Post" },
   { key: "/conteudo/boletim", label: "Newsletter" },
   { key: "/conteudo/reels", label: "Roteiros de Reels" },
+  { key: "/conteudo/cronograma", label: "Cronograma de Conteúdo", alwaysAllowed: true },
   { key: "/clima", label: "Clima" },
   { key: "/instagram-insights", label: "Instagram Insights" },
   { key: "/linkedin-insights", label: "LinkedIn Insights" },
@@ -73,6 +74,7 @@ export const ALWAYS_ALLOWED_PATHS = [
   "/briefings",
   "/minhas-fotos",
   "/cafe-com-cultura",
+  "/conteudo/cronograma",
   MEUS_CLIENTES_KEY,
 ];
 
@@ -190,18 +192,14 @@ export function canAccessPath(
   if (isFeriasRoute) {
     if (isAdminRole(profile)) return true;
     const permissions = profile?.permissions ?? [];
-    return (
-      permissions.includes("/rh") ||
-      permissions.includes("/ferias") ||
-      profile?.ferias_view_enabled === true
-    );
+    return permissions.includes("/rh") || profile?.ferias_view_enabled === true;
   }
 
   const isOtherRhRoute = pathname.startsWith("/rh/");
   if (isOtherRhRoute) {
     if (isAdminRole(profile)) return true;
     const permissions = profile?.permissions ?? [];
-    return permissions.includes("/rh") || permissions.includes("/ferias");
+    return permissions.includes("/rh");
   }
 
   const manualOnlyKey = MANUAL_ONLY_KEYS.find(

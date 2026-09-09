@@ -1,7 +1,8 @@
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/utils/supabase/server";
 import type { UserAuthActivity } from "@/lib/users-auth-activity";
-import type { User } from "@/lib/users";
+import type { HrEmployeeSummary, User } from "@/lib/users";
+import { hasHrAccess } from "@/lib/rh/access";
 
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
@@ -39,6 +40,45 @@ export async function fetchUsersServer(): Promise<User[]> {
   }
 
   return (data ?? []).map((u) => ({ ...u, is_active: u.is_active ?? true })) as User[];
+}
+
+/** Fichas de RH (`hr_employees`) já vinculadas a um login, indexadas por `user_id`. */
+export async function fetchHrEmployeesByUserId(): Promise<Record<string, HrEmployeeSummary>> {
+  const db = await getServerDb();
+  const { data, error } = await db
+    .from("hr_employees")
+    .select("id, user_id, position, employment_type, department, admission_date")
+    .not("user_id", "is", null);
+
+  if (error) {
+    console.error("Erro ao buscar fichas de RH:", error);
+    return {};
+  }
+
+  const result: Record<string, HrEmployeeSummary> = {};
+  for (const row of (data ?? []) as HrEmployeeSummary[]) {
+    if (row.user_id) result[row.user_id] = row;
+  }
+  return result;
+}
+
+/** O usuário logado (via cookies de sessão) tem acesso ao módulo de RH? */
+export async function resolveViewerHasHrAccess(): Promise<boolean> {
+  const ssr = await createServerClient();
+  const {
+    data: { user },
+  } = await ssr.auth.getUser();
+  if (!user) return false;
+
+  const db = await getServerDb();
+  const { data } = await db
+    .from("users")
+    .select("role, permissions")
+    .eq("auth_id", user.id)
+    .maybeSingle();
+  if (!data) return false;
+
+  return hasHrAccess(data.role as string | null, data.permissions as string[] | null);
 }
 
 /** Dados de login do Supabase Auth, indexados pelo id da tabela `users`. */

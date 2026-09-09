@@ -1,13 +1,11 @@
 /**
  * Predicado compartilhado de acesso ao módulo RH (Férias + Qualificações).
  *
- * Chave canônica: `/rh`. Aceita `/ferias` durante o rollout para quem ainda
- * tenha a permissão antiga salva em `users.permissions`.
+ * Chave canônica: `/rh`. A chave legada `/ferias` foi migrada e removida —
+ * quem ainda tinha só ela já foi atualizado para `/rh` no banco.
  */
 
 export const RH_PERMISSION_KEY = "/rh";
-/** Compatibilidade com permissões legadas do módulo de Férias. */
-export const FERIAS_LEGACY_PERMISSION_KEY = "/ferias";
 
 export function hasHrAccess(
   role: string | null | undefined,
@@ -15,5 +13,5 @@ export function hasHrAccess(
 ): boolean {
   if ((role ?? "").toLowerCase() === "admin") return true;
   const list = permissions ?? [];
-  return list.includes(RH_PERMISSION_KEY) || list.includes(FERIAS_LEGACY_PERMISSION_KEY);
+  return list.includes(RH_PERMISSION_KEY);
 }

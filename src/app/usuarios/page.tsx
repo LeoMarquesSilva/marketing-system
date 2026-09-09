@@ -1,18 +1,34 @@
 import { fetchAreas } from "@/lib/areas";
-import { fetchUsersAuthActivity, fetchUsersServer } from "@/lib/users-server";
+import {
+  fetchHrEmployeesByUserId,
+  fetchUsersAuthActivity,
+  fetchUsersServer,
+  resolveViewerHasHrAccess,
+} from "@/lib/users-server";
 import { listAreaManagers } from "@/lib/email-area-managers-server";
+import { listLinkableUsers } from "@/lib/ferias/server";
 import { UsersTable } from "@/components/usuarios/users-table";
+import type { LinkableUser } from "@/lib/ferias/types";
+import type { HrEmployeeSummary } from "@/lib/users";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
 export default async function UsuariosPage() {
-  const [users, areas, authActivity, areaManagers] = await Promise.all([
+  const [users, areas, authActivity, areaManagers, canManageHr] = await Promise.all([
     fetchUsersServer(),
     fetchAreas(),
     fetchUsersAuthActivity(),
     listAreaManagers(),
+    resolveViewerHasHrAccess(),
   ]);
+
+  // Ficha de RH (cargo/vínculo/admissão) e a lista de usuários vinculáveis só
+  // fazem sentido pra quem tem acesso ao módulo de RH — Usuários continua
+  // igual pra quem só tem a permissão de /usuarios.
+  const [hrByUserId, linkableUsers] = canManageHr
+    ? await Promise.all([fetchHrEmployeesByUserId(), listLinkableUsers()])
+    : [{} as Record<string, HrEmployeeSummary>, [] as LinkableUser[]];
 
   const managedAreasByUserId = new Map<string, string[]>();
   for (const manager of areaManagers) {
@@ -25,7 +41,10 @@ export default async function UsuariosPage() {
     ...user,
     auth_activity: user.auth_id ? authActivity[user.id] ?? null : null,
     managedLegalAreas: managedAreasByUserId.get(user.id) ?? [],
+    hrEmployee: hrByUserId[user.id] ?? null,
   }));
+
+  const occupiedUserIds = Object.keys(hrByUserId);
 
   return (
     <div className="space-y-6">
@@ -40,7 +59,13 @@ export default async function UsuariosPage() {
         </p>
       </div>
 
-      <UsersTable initialUsers={usersWithAuthActivity} initialAreas={areas} />
+      <UsersTable
+        initialUsers={usersWithAuthActivity}
+        initialAreas={areas}
+        canManageHr={canManageHr}
+        linkableUsers={linkableUsers}
+        occupiedUserIds={occupiedUserIds}
+      />
     </div>
   );
 }

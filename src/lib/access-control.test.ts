@@ -74,10 +74,10 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(rh, "/planner")).toBe(false);
   });
 
-  it("permissão legada /ferias ainda libera rotas de RH", () => {
+  it("chave legada /ferias sozinha não libera mais rotas de RH (migrada para /rh)", () => {
     const legado = { role: null, permissions: ["/ferias"] };
-    expect(canAccessPath(legado, "/rh/ferias")).toBe(true);
-    expect(canAccessPath(legado, "/ferias")).toBe(true);
+    expect(canAccessPath(legado, "/rh/ferias")).toBe(false);
+    expect(canAccessPath(legado, "/ferias")).toBe(false);
   });
 
   it("viewer de férias acessa somente Férias, não Qualificações", () => {

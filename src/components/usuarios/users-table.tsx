@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import NextLink from "next/link";
 import {
   Table,
   TableBody,
@@ -28,7 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Loader2, Pencil, Trash2, UserX, UserCheck, KeyRound, Search, X } from "lucide-react";
+import { Plus, Loader2, Pencil, Trash2, UserX, UserCheck, KeyRound, Search, X, IdCard } from "lucide-react";
 import type { User } from "@/lib/users";
 import { createUser, updateUser, deleteUser, toggleUserActive } from "@/lib/users";
 import { formatAuthDateTime, formatAuthRelative, formatLastAccess } from "@/lib/users-auth-activity";
@@ -37,6 +38,9 @@ import { UserFormDialog, type UserFormValues } from "./user-form-dialog";
 import { UserAccessDialog } from "./user-access-dialog";
 import { cn } from "@/lib/utils";
 import { userMatchesSearch } from "@/lib/user-search";
+import { ColaboradorFormDialog, type EmployeeFormValues, NO_LINKED_USER } from "@/components/ferias/colaborador-form-dialog";
+import { createEmployeeRequest } from "@/lib/ferias/client";
+import type { LinkableUser } from "@/lib/ferias/types";
 
 function getInitials(name: string) {
   return name
@@ -50,16 +54,29 @@ function getInitials(name: string) {
 interface UsersTableProps {
   initialUsers: User[];
   initialAreas: Area[];
+  /** Só quem tem acesso ao módulo de RH vê/edita a ficha (cargo, vínculo...) aqui. */
+  canManageHr?: boolean;
+  linkableUsers?: LinkableUser[];
+  occupiedUserIds?: string[];
 }
 
-export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
+export function UsersTable({
+  initialUsers,
+  initialAreas,
+  canManageHr = false,
+  linkableUsers = [],
+  occupiedUserIds: initialOccupiedUserIds = [],
+}: UsersTableProps) {
   const [users, setUsers] = useState(initialUsers);
   const [areas, setAreas] = useState(initialAreas);
+  const [occupiedUserIds, setOccupiedUserIds] = useState(initialOccupiedUserIds);
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [accessFilter, setAccessFilter] = useState("all");
+  const [hrFilter, setHrFilter] = useState("all");
   const [createOpen, setCreateOpen] = useState(false);
+  const [hrCreateUserId, setHrCreateUserId] = useState<string | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteUserTarget, setDeleteUserTarget] = useState<User | null>(null);
@@ -90,18 +107,28 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
       const hasLogin = Boolean(u.auth_id);
       if (accessFilter === "com" && !hasLogin) return false;
       if (accessFilter === "sem" && hasLogin) return false;
+      if (canManageHr) {
+        const hasHrFicha = Boolean(u.hrEmployee);
+        if (hrFilter === "completo" && !hasHrFicha) return false;
+        if (hrFilter === "pendente" && hasHrFicha) return false;
+      }
       return true;
     });
-  }, [users, search, deptFilter, statusFilter, accessFilter]);
+  }, [users, search, deptFilter, statusFilter, accessFilter, hrFilter, canManageHr]);
 
   const hasActiveFilters =
-    search.trim() !== "" || deptFilter !== "all" || statusFilter !== "all" || accessFilter !== "all";
+    search.trim() !== "" ||
+    deptFilter !== "all" ||
+    statusFilter !== "all" ||
+    accessFilter !== "all" ||
+    hrFilter !== "all";
 
   function clearFilters() {
     setSearch("");
     setDeptFilter("all");
     setStatusFilter("all");
     setAccessFilter("all");
+    setHrFilter("all");
   }
 
   function handleAccessUpdated(id: string, patch: Partial<User>) {
@@ -124,7 +151,46 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
     if (data) {
       setUsers((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
       setCreateOpen(false);
+      // Encadeia direto na ficha de RH — evita o cadastro em duas telas separadas.
+      if (canManageHr) setHrCreateUserId(data.id);
     }
+  }
+
+  async function handleCreateHrFicha(values: EmployeeFormValues): Promise<string | null> {
+    const { data, error: err } = await createEmployeeRequest({
+      fullName: values.fullName.trim(),
+      cpf: values.cpf.trim() || null,
+      email: values.email.trim() || null,
+      department: values.department.trim() || null,
+      position: values.position.trim() || null,
+      admissionDate: values.admissionDate,
+      terminationDate: values.terminationDate || null,
+      userId: values.userId === NO_LINKED_USER ? null : values.userId,
+      isActive: values.isActive,
+      employmentType: values.employmentType.trim() || null,
+      registrationNumber: values.registrationNumber.trim() || null,
+      birthDate: values.birthDate || null,
+      gender: values.gender.trim() || null,
+      rg: values.rg.trim() || null,
+      oabNumber: values.oabNumber.trim() || null,
+      oabUf: values.oabUf.trim() || null,
+    });
+    if (err) return err;
+    if (data?.employee) {
+      const { id, user_id, position, employment_type, department, admission_date } = data.employee;
+      if (user_id) {
+        setUsers((prev) =>
+          prev.map((u) =>
+            u.id === user_id
+              ? { ...u, hrEmployee: { id, user_id, position, employment_type, department, admission_date } }
+              : u
+          )
+        );
+        setOccupiedUserIds((prev) => (prev.includes(user_id) ? prev : [...prev, user_id]));
+      }
+    }
+    setHrCreateUserId(null);
+    return null;
   }
 
   async function handleUpdate(values: UserFormValues) {
@@ -243,6 +309,18 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
               <SelectItem value="sem">Sem login</SelectItem>
             </SelectContent>
           </Select>
+          {canManageHr && (
+            <Select value={hrFilter} onValueChange={setHrFilter}>
+              <SelectTrigger className="h-9 w-[150px] text-xs">
+                <SelectValue placeholder="Ficha RH" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Ficha RH: todos</SelectItem>
+                <SelectItem value="completo">Com ficha</SelectItem>
+                <SelectItem value="pendente">Sem ficha</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
           {hasActiveFilters && (
             <Button variant="ghost" size="sm" className="h-9 gap-1.5 text-xs" onClick={clearFilters}>
               <X className="h-3.5 w-3.5" />
@@ -277,6 +355,18 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
         user={accessUser}
         onUpdated={handleAccessUpdated}
       />
+
+      {canManageHr && (
+        <ColaboradorFormDialog
+          open={!!hrCreateUserId}
+          onOpenChange={(open) => !open && setHrCreateUserId(null)}
+          employee={null}
+          users={linkableUsers}
+          occupiedUserIds={occupiedUserIds}
+          initialUserId={hrCreateUserId}
+          onSubmit={handleCreateHrFicha}
+        />
+      )}
 
       <UserFormDialog
         open={editOpen}
@@ -346,16 +436,21 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
               <TableHead>Usuário</TableHead>
               <TableHead>E-mail</TableHead>
               <TableHead>Departamento</TableHead>
+              {canManageHr && <TableHead>Cargo</TableHead>}
+              {canManageHr && <TableHead>Vínculo</TableHead>}
               <TableHead>Gestor de área</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Último acesso</TableHead>
-              <TableHead className="w-[160px] text-right">Ações</TableHead>
+              <TableHead className="w-[190px] text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredUsers.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
+                <TableCell
+                  colSpan={canManageHr ? 9 : 7}
+                  className="py-10 text-center text-sm text-muted-foreground"
+                >
                   Nenhum usuário encontrado com esses filtros.
                 </TableCell>
               </TableRow>
@@ -381,7 +476,26 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
                   <TableCell className="text-muted-foreground">
                     {user.email || "—"}
                   </TableCell>
-                  <TableCell>{user.department}</TableCell>
+                  <TableCell>
+                    <div className="space-y-0.5">
+                      <span>{user.hrEmployee?.department || user.department}</span>
+                      {canManageHr && !user.hrEmployee && (
+                        <span className="block text-[11px] font-medium text-amber-600">
+                          Sem ficha RH
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
+                  {canManageHr && (
+                    <TableCell className="text-muted-foreground">
+                      {user.hrEmployee?.position || "—"}
+                    </TableCell>
+                  )}
+                  {canManageHr && (
+                    <TableCell className="text-muted-foreground">
+                      {user.hrEmployee?.employment_type || "—"}
+                    </TableCell>
+                  )}
                   <TableCell>
                     {(user.managedLegalAreas ?? []).length > 0 ? (
                       <div className="flex flex-wrap gap-1">
@@ -440,6 +554,31 @@ export function UsersTable({ initialUsers, initialAreas }: UsersTableProps) {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
+                      {canManageHr && (
+                        user.hrEmployee ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground"
+                            title="Ver ficha de RH"
+                            asChild
+                          >
+                            <NextLink href={`/rh/ferias?colaborador=${user.hrEmployee.id}`}>
+                              <IdCard className="h-4 w-4" />
+                            </NextLink>
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-amber-600"
+                            onClick={() => setHrCreateUserId(user.id)}
+                            title="Criar ficha de RH"
+                          >
+                            <IdCard className="h-4 w-4" />
+                          </Button>
+                        )
+                      )}
                       <Button
                         variant="ghost"
                         size="icon"

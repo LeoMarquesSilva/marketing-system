@@ -73,6 +73,8 @@ interface ColaboradorFormDialogProps {
   users: LinkableUser[];
   /** Usuários já cadastrados em férias — sumidos do seletor ao criar. */
   occupiedUserIds?: string[];
+  /** Pré-seleciona esse usuário ao criar (ex.: vindo de "Novo usuário" em Usuários). */
+  initialUserId?: string | null;
   onSubmit: (values: EmployeeFormValues) => Promise<string | null>;
 }
 
@@ -82,6 +84,7 @@ export function ColaboradorFormDialog({
   employee,
   users,
   occupiedUserIds = [],
+  initialUserId = null,
   onSubmit,
 }: ColaboradorFormDialogProps) {
   return (
@@ -96,10 +99,11 @@ export function ColaboradorFormDialog({
         </DialogHeader>
         {open && (
           <ColaboradorForm
-            key={employee?.id ?? "novo"}
+            key={employee?.id ?? initialUserId ?? "novo"}
             employee={employee}
             users={users}
             occupiedUserIds={occupiedUserIds}
+            initialUserId={initialUserId}
             onSubmit={onSubmit}
             onCancel={() => onOpenChange(false)}
             onSaved={() => onOpenChange(false)}
@@ -114,6 +118,7 @@ function ColaboradorForm({
   employee,
   users,
   occupiedUserIds,
+  initialUserId = null,
   onSubmit,
   onCancel,
   onSaved,
@@ -121,12 +126,25 @@ function ColaboradorForm({
   employee: HrEmployee | null;
   users: LinkableUser[];
   occupiedUserIds: string[];
+  initialUserId?: string | null;
   onSubmit: (values: EmployeeFormValues) => Promise<string | null>;
   onCancel: () => void;
   onSaved: () => void;
 }) {
   const isCreate = !employee;
-  const [values, setValues] = useState<EmployeeFormValues>(() => toFormValues(employee));
+  const [values, setValues] = useState<EmployeeFormValues>(() => {
+    const base = toFormValues(employee);
+    if (employee || !initialUserId) return base;
+    const preset = users.find((user) => user.id === initialUserId);
+    if (!preset) return base;
+    return {
+      ...base,
+      userId: preset.id,
+      fullName: preset.name,
+      email: preset.email ?? "",
+      department: preset.department ?? base.department,
+    };
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
