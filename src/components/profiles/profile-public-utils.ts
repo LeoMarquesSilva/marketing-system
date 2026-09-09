@@ -11,7 +11,7 @@ import {
   type PublicProfessionalProfile,
 } from "@/lib/profiles/types";
 
-export const FIRM_WEBSITE_URL = "https://bismarchipires.com.br";
+export const FIRM_WEBSITE_URL = "https://www.bismarchipires.com.br/";
 export const FIRM_LOGO_SRC = "/LOGO%20HORIZONTAL%20AZUL.png";
 export const FIRM_LOGO_ALT = "Bismarchi | Pires";
 
