@@ -44,4 +44,20 @@ describe("ReadingExperience", () => {
     expect(html).toContain("Indicação em preparação");
     expect(html).toContain("Ricardo Viscardi Pires");
   });
+
+  it("não repete cargo e área quando os dois rótulos são iguais", () => {
+    const html = renderToStaticMarkup(
+      <ReadingExperience
+        items={[
+          recommendation({
+            publicName: "Gustavo Bismarchi",
+            role: "Sócio",
+            practiceArea: "Sócio",
+          }),
+        ]}
+      />
+    );
+
+    expect(html).not.toContain("Sócio<br/><span>Sócio</span>");
+  });
 });

@@ -23,6 +23,10 @@ function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 }
 
+function labelsMatch(first: string, second: string) {
+  return first.trim().localeCompare(second.trim(), "pt-BR", { sensitivity: "base" }) === 0;
+}
+
 function Portrait({ item, className }: { item: ReadingRecommendation; className: string }) {
   if (item.photoUrl) {
     // eslint-disable-next-line @next/next/no-img-element
@@ -122,7 +126,12 @@ export function ReadingExperience({ items }: { items: ReadingRecommendation[] })
               <div className={styles.portraitFrame}><Portrait item={selected} className={styles.storyPortrait} /><span /></div>
               <p className={styles.eyebrow}>A indicação de</p>
               <h2>{selected.publicName}</h2>
-              <p className={styles.role}>{selected.role}<br /><span>{selected.practiceArea}</span></p>
+              <p className={styles.role}>
+                {selected.role}
+                {!labelsMatch(selected.role, selected.practiceArea) && (
+                  <><br /><span>{selected.practiceArea}</span></>
+                )}
+              </p>
             </div>
 
             <article className={styles.storyArticle}>
