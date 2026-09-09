@@ -1,4 +1,6 @@
-const DEFAULT_NFC_PUBLIC_BASE_URL = "https://marketing-system-xi.vercel.app";
+import { PUBLIC_APP_ORIGIN } from "@/lib/public-origin";
+
+const DEFAULT_NFC_PUBLIC_BASE_URL = PUBLIC_APP_ORIGIN;
 
 export type NfcScanSource = "nfc" | "qr";
 

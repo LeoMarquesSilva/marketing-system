@@ -2,7 +2,7 @@
 
 ## Fluxo
 
-- URL permanente da etiqueta: `https://marketing-system-xi.vercel.app/cafe-com-cultura`.
+- URL permanente da etiqueta: `https://orqestrai.com.br/cafe-com-cultura`.
 - O colaborador precisa estar autenticado no ORQESTRAI; a presença é sempre vinculada à própria sessão.
 - A edição padrão acontece na última sexta-feira do mês, com check-in das 09h às 12h no fuso `America/Sao_Paulo`.
 - O cron mantém a edição atual e a próxima criadas e sincroniza as justificativas do RESPONSUM.

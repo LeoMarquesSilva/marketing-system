@@ -250,7 +250,7 @@ describe("URL pública do perfil", () => {
 
   it("usa a origem de produção por padrão", () => {
     expect(buildPublicProfileUrl("leticia-rodrigues")).toBe(
-      "https://marketing-system-xi.vercel.app/perfil/leticia-rodrigues"
+      "https://orqestrai.com.br/perfil/leticia-rodrigues"
     );
   });
 });

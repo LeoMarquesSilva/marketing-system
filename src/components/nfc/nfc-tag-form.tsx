@@ -43,6 +43,7 @@ import type {
 } from "@/lib/nfc/types";
 import type { ProfessionalProfileListItem } from "@/lib/profiles/types";
 import type { User } from "@/lib/users";
+import { PUBLIC_APP_ORIGIN } from "@/lib/public-origin";
 
 const ENVIRONMENTS = ["Escritório", "Casa", "Evento", "Equipamento", "Material comercial", "Estoque"];
 const CATEGORIES = ["Sala", "Equipamento", "Marketing", "Visitante", "Estoque", "Manutenção", "Evento", "Automação pessoal", "Outro"];
@@ -108,7 +109,7 @@ const NFC_PRESETS: Array<{
     config: {
       title: "Café com Cultura",
       description: "Confirme sua presença no encontro deste mês.",
-      destinationUrl: "https://marketing-system-xi.vercel.app/cafe-com-cultura",
+      destinationUrl: `${PUBLIC_APP_ORIGIN}/cafe-com-cultura`,
       loadingMessage: "Preparando seu check-in…",
       sensitive: true,
     },
@@ -150,7 +151,7 @@ const NFC_PRESETS: Array<{
     config: {
       title: "Leituras que formam trajetórias",
       description: "Conheça as histórias e os motivos por trás de cada escolha.",
-      destinationUrl: "https://marketing-system-xi.vercel.app/leituras",
+      destinationUrl: `${PUBLIC_APP_ORIGIN}/leituras`,
       loadingMessage: "Abrindo as indicações…",
       openImmediately: true,
     },

@@ -14,6 +14,7 @@ import type {
   ProfileLocale,
   ProfileSectionKey,
 } from "@/lib/profiles/types";
+import { PUBLIC_APP_ORIGIN } from "@/lib/public-origin";
 import type { ProfileUpdateInput } from "@/lib/profiles/validation";
 
 export interface EditorLocalizationState {
@@ -291,6 +292,6 @@ export function createEmptyEntry(): EditorEntryState {
 
 /** URL pública final, mostrada enquanto o slug é editado. */
 export function buildPublicProfileUrl(slug: string, origin?: string): string {
-  const base = (origin ?? "https://marketing-system-xi.vercel.app").replace(/\/+$/, "");
+  const base = (origin ?? PUBLIC_APP_ORIGIN).replace(/\/+$/, "");
   return `${base}/perfil/${slug.trim()}`;
 }

@@ -74,7 +74,7 @@ describe("URLs NFC/QR de cartão", () => {
     ];
 
     expect(buildDirectProfileNfcRedirectUrl(PROFILE_ID, null, candidates, {})).toBe(
-      "https://marketing-system-xi.vercel.app/t/nfc_tokenABC1234567890?source=nfc"
+      "https://orqestrai.com.br/t/nfc_tokenABC1234567890?source=nfc"
     );
     expect(buildDirectProfileNfcRedirectUrl(PROFILE_ID, "nfc", candidates, {})).toBeNull();
     expect(buildDirectProfileNfcRedirectUrl(PROFILE_ID, "qr", candidates, {})).toBeNull();
@@ -118,19 +118,19 @@ describe("URLs NFC/QR de cartão", () => {
 
   it("monta URL de NFC programado com source=nfc", () => {
     expect(getNfcPublicUrl("nfc_tokenABC1234567890", {}, { source: "nfc" })).toBe(
-      "https://marketing-system-xi.vercel.app/t/nfc_tokenABC1234567890?source=nfc"
+      "https://orqestrai.com.br/t/nfc_tokenABC1234567890?source=nfc"
     );
   });
 
   it("monta URL de QR com source=qr", () => {
     expect(getNfcPublicUrl("nfc_tokenABC1234567890", {}, { source: "qr" })).toBe(
-      "https://marketing-system-xi.vercel.app/t/nfc_tokenABC1234567890?source=qr"
+      "https://orqestrai.com.br/t/nfc_tokenABC1234567890?source=qr"
     );
   });
 
   it("mantém a base oficial fora do ambiente local", () => {
     expect(getNfcPublicUrl("nfc_abc", {})).toBe(
-      "https://marketing-system-xi.vercel.app/t/nfc_abc"
+      "https://orqestrai.com.br/t/nfc_abc"
     );
     expect(getNfcPublicUrl("nfc_abc", {})).not.toContain("localhost");
   });

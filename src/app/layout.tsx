@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/contexts/auth-context";
 import { ContentTourProvider } from "@/contexts/content-tour-context";
 import { AppLayout } from "@/components/layout/app-layout";
+import { PUBLIC_APP_ORIGIN } from "@/lib/public-origin";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -23,6 +24,7 @@ const baloo = Baloo_Bhaijaan_2({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(PUBLIC_APP_ORIGIN),
   icons: {
     icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
     shortcut: "/icon.svg",

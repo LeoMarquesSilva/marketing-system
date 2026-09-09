@@ -4,7 +4,7 @@ import { getNfcPublicUrl } from "@/lib/nfc/public-url";
 describe("getNfcPublicUrl", () => {
   it("usa a URL oficial quando nenhuma variável está configurada", () => {
     expect(getNfcPublicUrl("token_123", {})).toBe(
-      "https://marketing-system-xi.vercel.app/t/token_123"
+      "https://orqestrai.com.br/t/token_123"
     );
   });
 
@@ -19,17 +19,17 @@ describe("getNfcPublicUrl", () => {
   it("não usa o host da requisição como origem permanente", () => {
     expect(
       getNfcPublicUrl("abc", {
-        NEXT_PUBLIC_APP_URL: "https://marketing-system-xi.vercel.app/",
+        NEXT_PUBLIC_APP_URL: "https://preview.example.com/",
       })
     ).not.toContain("localhost");
   });
 
   it("anexa source=nfc ou source=qr quando solicitado", () => {
     expect(getNfcPublicUrl("token_123", {}, { source: "nfc" })).toBe(
-      "https://marketing-system-xi.vercel.app/t/token_123?source=nfc"
+      "https://orqestrai.com.br/t/token_123?source=nfc"
     );
     expect(getNfcPublicUrl("token_123", {}, { source: "qr" })).toBe(
-      "https://marketing-system-xi.vercel.app/t/token_123?source=qr"
+      "https://orqestrai.com.br/t/token_123?source=qr"
     );
   });
 });
