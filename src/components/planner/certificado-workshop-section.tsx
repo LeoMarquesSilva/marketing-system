@@ -38,12 +38,24 @@ function getInitials(name: string): string {
     .toUpperCase();
 }
 
+/** Parte local do e-mail (antes do @), usada pra casar apesar do domínio ter mudado (bpplaw.com.br → bismarchipires.com.br). */
+function emailLocalPart(email: string): string {
+  return email.trim().toLowerCase().split("@")[0] ?? "";
+}
+
 /** Casa cada entrada da presença (nome ou e-mail vindo do SharePoint) com o cadastro do ORQESTRAI. */
-function resolveAttendee(raw: string, byEmail: Map<string, User>, byName: Map<string, User>): { user: User | null; label: string } {
+function resolveAttendee(
+  raw: string,
+  byEmail: Map<string, User>,
+  byLocalPart: Map<string, User>,
+  byName: Map<string, User>
+): { user: User | null; label: string } {
   const trimmed = raw.trim();
-  const match = trimmed.includes("@")
-    ? byEmail.get(trimmed.toLowerCase())
-    : byName.get(trimmed.toLowerCase());
+  if (trimmed.includes("@")) {
+    const match = byEmail.get(trimmed.toLowerCase()) ?? byLocalPart.get(emailLocalPart(trimmed));
+    return match ? { user: match, label: match.name } : { user: null, label: trimmed };
+  }
+  const match = byName.get(trimmed.toLowerCase());
   return match ? { user: match, label: match.name } : { user: null, label: trimmed };
 }
 
@@ -81,14 +93,20 @@ export function CertificadoWorkshopSection({ requestId, info, rawDescription, on
     };
   }, [attendeeNames]);
 
-  const { byEmail, byName } = useMemo(() => {
+  const { byEmail, byLocalPart, byName } = useMemo(() => {
     const emailMap = new Map<string, User>();
+    const localPartMap = new Map<string, User>();
     const nameMap = new Map<string, User>();
     for (const user of userDirectory) {
-      if (user.email) emailMap.set(user.email.trim().toLowerCase(), user);
+      if (user.email) {
+        const email = user.email.trim().toLowerCase();
+        emailMap.set(email, user);
+        const localPart = emailLocalPart(email);
+        if (localPart && !localPartMap.has(localPart)) localPartMap.set(localPart, user);
+      }
       nameMap.set(user.name.trim().toLowerCase(), user);
     }
-    return { byEmail: emailMap, byName: nameMap };
+    return { byEmail: emailMap, byLocalPart: localPartMap, byName: nameMap };
   }, [userDirectory]);
 
   const handleSyncPresenca = async () => {
@@ -208,7 +226,7 @@ export function CertificadoWorkshopSection({ requestId, info, rawDescription, on
         {info.presenca?.status === "preenchida" && info.presenca.nomes.length > 0 && (
           <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {info.presenca.nomes.map((raw) => {
-              const { user, label } = resolveAttendee(raw, byEmail, byName);
+              const { user, label } = resolveAttendee(raw, byEmail, byLocalPart, byName);
               return (
                 <li
                   key={raw}
