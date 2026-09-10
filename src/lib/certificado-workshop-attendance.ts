@@ -1,23 +1,45 @@
 import "server-only";
 
-import { selectResponsumServiceKey } from "@/lib/cafe-cultura/responsum-domain";
-
 // A lista de presença dos workshops de certificado é sincronizada por uma
 // Edge Function que já roda no projeto do Responsum ("ticket-bp"), lendo o
 // SharePoint via Microsoft Graph e gravando o resultado de volta na própria
 // `description` do card (bloco "Presença:"). Este módulo só dispara essa
 // function para um ticket específico, sob demanda, pelo botão do modal.
+//
+// A function autentica o chamador comparando o header Authorization com o
+// SUPABASE_ANON_KEY do PRÓPRIO projeto ticket-bp (ver isAuthorized no
+// index.ts dela). Esse projeto já migrou para o novo sistema de chaves do
+// Supabase, então o valor atual desse env var é a chave "publishable"
+// (sb_publishable_...), não mais o JWT legado de "anon" — por isso buscamos
+// especificamente a chave do tipo "publishable" via API de management.
 const RESPONSUM_PROJECT_REF = "jhgbrbarfpvgdaaznldj";
 const PRESENCA_FUNCTION_URL = `https://${RESPONSUM_PROJECT_REF}.supabase.co/functions/v1/orquestrai-certificados-presenca`;
 
-let cachedServiceKey: Promise<string> | null = null;
+interface SupabaseApiKeyRecord {
+  name?: string;
+  type?: string;
+  api_key?: string;
+  key?: string;
+}
 
-async function getResponsumServiceRoleKey(): Promise<string> {
-  const fromEnv = process.env.RESPONSUM_SUPABASE_SERVICE_KEY?.trim();
+function selectPublishableKey(records: unknown): string | null {
+  if (!Array.isArray(records)) return null;
+  for (const candidate of records as SupabaseApiKeyRecord[]) {
+    if (candidate.type !== "publishable") continue;
+    const value = typeof candidate.api_key === "string" ? candidate.api_key : candidate.key;
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+let cachedAuthKey: Promise<string> | null = null;
+
+async function getResponsumFunctionAuthKey(): Promise<string> {
+  const fromEnv = process.env.RESPONSUM_PRESENCA_FUNCTION_KEY?.trim();
   if (fromEnv) return fromEnv;
-  if (cachedServiceKey) return cachedServiceKey;
+  if (cachedAuthKey) return cachedAuthKey;
 
-  cachedServiceKey = (async () => {
+  cachedAuthKey = (async () => {
     const managementToken = process.env.SUPABASE_MANAGEMENT_ACCESS_TOKEN?.trim();
     if (!managementToken) {
       throw new Error("A integração com o RESPONSUM ainda não está configurada.");
@@ -29,16 +51,16 @@ async function getResponsumServiceRoleKey(): Promise<string> {
     if (!response.ok) {
       throw new Error("Não foi possível autorizar a integração com o RESPONSUM.");
     }
-    const serviceKey = selectResponsumServiceKey(await response.json());
-    if (!serviceKey) {
-      throw new Error("A chave de serviço do RESPONSUM não foi encontrada.");
+    const key = selectPublishableKey(await response.json());
+    if (!key) {
+      throw new Error("A chave de autenticação do RESPONSUM não foi encontrada.");
     }
-    return serviceKey;
+    return key;
   })().catch((error) => {
-    cachedServiceKey = null;
+    cachedAuthKey = null;
     throw error;
   });
-  return cachedServiceKey;
+  return cachedAuthKey;
 }
 
 export interface TriggerPresencaResult {
@@ -51,12 +73,12 @@ export interface TriggerPresencaResult {
 
 /** Dispara a sincronização de presença do SharePoint para um ticket específico. */
 export async function triggerPresencaSyncForTicket(ticketId: string): Promise<TriggerPresencaResult> {
-  const serviceKey = await getResponsumServiceRoleKey();
+  const authKey = await getResponsumFunctionAuthKey();
   const response = await fetch(PRESENCA_FUNCTION_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${serviceKey}`,
+      Authorization: `Bearer ${authKey}`,
     },
     body: JSON.stringify({ ticketId }),
   });
