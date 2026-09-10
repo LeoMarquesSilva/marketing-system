@@ -1,11 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ContentScheduleResponse } from "@/lib/content-schedule/types";
 import {
   AreaMark,
   CollaboratorAvatar,
   mapContentScheduleResponse,
   reconcileSelectedScheduleSlot,
+  restoreScheduleDetailsFocus,
   SlotRow,
 } from "./content-schedule-client";
 
@@ -64,6 +65,30 @@ describe("integração dos detalhes do cronograma", () => {
     const payload = mapContentScheduleResponse(response());
 
     expect(reconcileSelectedScheduleSlot(payload.slots[0], [])).toBeNull();
+  });
+
+  it("restaura foco no card que abriu os detalhes quando ele continua no DOM", () => {
+    const focusCard = vi.fn();
+    const focusFallback = vi.fn();
+
+    expect(restoreScheduleDetailsFocus(
+      { isConnected: true, focus: focusCard },
+      { isConnected: true, focus: focusFallback }
+    )).toBe(true);
+    expect(focusCard).toHaveBeenCalledOnce();
+    expect(focusFallback).not.toHaveBeenCalled();
+  });
+
+  it("usa fallback seguro quando o card do popover saiu do DOM", () => {
+    const focusCard = vi.fn();
+    const focusFallback = vi.fn();
+
+    expect(restoreScheduleDetailsFocus(
+      { isConnected: false, focus: focusCard },
+      { isConnected: true, focus: focusFallback }
+    )).toBe(true);
+    expect(focusCard).not.toHaveBeenCalled();
+    expect(focusFallback).toHaveBeenCalledOnce();
   });
 });
 

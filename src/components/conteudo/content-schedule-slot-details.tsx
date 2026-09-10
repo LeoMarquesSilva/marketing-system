@@ -1,8 +1,10 @@
 "use client";
 
 import {
+  AlertCircle,
   BarChart3,
   CalendarDays,
+  CheckCircle2,
   CircleUserRound,
   ExternalLink,
   FileText,
@@ -17,8 +19,14 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui/select";
 import { normalizeScheduleArea } from "@/lib/content-schedule/domain";
-import { CollaboratorAvatar } from "./content-schedule-visuals";
+import { CollaboratorAvatar, CollaboratorMark } from "./content-schedule-visuals";
 import type {
   ScheduleCollaborator,
   ScheduleSlotView,
@@ -31,6 +39,11 @@ const STATUS_LABELS: Record<ScheduleStatus, string> = {
   linked: "Com conteúdo",
   published: "Publicado",
   cancelled: "Cancelado",
+};
+
+export type ScheduleAssignmentFeedback = {
+  type: "error" | "success";
+  message: string;
 };
 
 function fullDate(value: string) {
@@ -83,6 +96,7 @@ export function ContentScheduleSlotDetails({
   canAssign,
   saving,
   onAssign,
+  assignmentFeedback = null,
 }: {
   slot: ScheduleSlotView | null;
   open: boolean;
@@ -91,6 +105,7 @@ export function ContentScheduleSlotDetails({
   canAssign: boolean;
   saving: boolean;
   onAssign: (collaboratorId: string) => void;
+  assignmentFeedback?: ScheduleAssignmentFeedback | null;
 }) {
   const availableCollaborators = slot
     ? collaborators.filter((person) => !person.area || normalizeScheduleArea(person.area) === normalizeScheduleArea(slot.area))
@@ -108,6 +123,15 @@ export function ContentScheduleSlotDetails({
           </SheetHeader>
 
           <div className="flex-1 overflow-y-auto px-5 sm:px-6">
+            {assignmentFeedback ? (
+              <div
+                role={assignmentFeedback.type === "error" ? "alert" : "status"}
+                className={`mt-5 flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${assignmentFeedback.type === "error" ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}
+              >
+                {assignmentFeedback.type === "error" ? <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden /> : <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden />}
+                <span>{assignmentFeedback.message}</span>
+              </div>
+            ) : null}
             <DetailSection title="Planejamento" icon={CalendarDays}>
               <dl className="grid grid-cols-2 gap-4 text-sm">
                 <div>
@@ -154,19 +178,38 @@ export function ContentScheduleSlotDetails({
                   O responsável não pode ser trocado após o vínculo do conteúdo.
                 </p>
               ) : canAssign ? (
-                <label className="block space-y-1.5 text-sm font-medium text-slate-700">
-                  Trocar responsável
-                  <select
-                    aria-label="Trocar responsável"
+                <div className="space-y-1.5">
+                  <span className="text-sm font-medium text-slate-700">Trocar responsável</span>
+                  <Select
                     value={slot.collaboratorId ?? "unassigned"}
-                    onChange={(event) => onAssign(event.target.value)}
+                    onValueChange={onAssign}
                     disabled={saving}
-                    className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none focus-visible:ring-2 focus-visible:ring-slate-500 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <option value="unassigned">Sem responsável</option>
-                    {availableCollaborators.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
-                  </select>
-                </label>
+                    <SelectTrigger className="w-full" aria-label="Trocar responsável">
+                      {slot.collaborator ? (
+                        <CollaboratorMark person={slot.collaborator} />
+                      ) : (
+                        <span className="flex items-center gap-2 text-slate-500">
+                          <span className="flex size-7 items-center justify-center rounded-full bg-slate-100"><CircleUserRound className="size-4" aria-hidden /></span>
+                          Sem responsável
+                        </span>
+                      )}
+                    </SelectTrigger>
+                    <SelectContent align="start" className="min-w-[260px]">
+                      <SelectItem value="unassigned">
+                        <span className="flex items-center gap-2">
+                          <span className="flex size-7 items-center justify-center rounded-full border border-dashed border-slate-300 bg-white"><CircleUserRound className="size-4 text-slate-400" aria-hidden /></span>
+                          Sem responsável
+                        </span>
+                      </SelectItem>
+                      {availableCollaborators.map((person) => (
+                        <SelectItem value={person.id} key={person.id} className="py-2">
+                          <CollaboratorMark person={person} />
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               ) : null}
             </DetailSection>
 

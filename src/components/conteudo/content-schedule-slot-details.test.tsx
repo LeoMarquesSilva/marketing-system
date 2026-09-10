@@ -11,11 +11,20 @@ vi.mock("@/components/ui/sheet", () => ({
   SheetTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
 }));
 
+vi.mock("@/components/ui/select", () => ({
+  Select: ({ children, disabled }: { children: ReactNode; disabled?: boolean }) => <div data-select-disabled={disabled}>{children}</div>,
+  SelectContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  SelectItem: ({ children, value }: { children: ReactNode; value: string }) => <div data-select-item={value}>{children}</div>,
+  SelectTrigger: ({ children, ...props }: { children: ReactNode; "aria-label"?: string }) => <button {...props}>{children}</button>,
+  SelectValue: () => <span>Valor selecionado</span>,
+}));
+
 import { ContentScheduleSlotDetails } from "./content-schedule-slot-details";
 
 const collaborators = [
   { id: "person-1", name: "Marina Oliveira", area: "Tributário", avatarUrl: "/marina.jpg" },
-  { id: "person-2", name: "Rafael Lima", area: "Tributário" },
+  { id: "person-2", name: "Rafael Lima", area: "Tributário", avatarUrl: "/rafael.jpg" },
+  { id: "person-3", name: "Carlos Souza", area: "Cível", avatarUrl: "/carlos.jpg" },
 ];
 
 function slot(overrides: Partial<ScheduleSlotView> = {}): ScheduleSlotView {
@@ -38,7 +47,11 @@ function slot(overrides: Partial<ScheduleSlotView> = {}): ScheduleSlotView {
 
 function renderDetails(
   selectedSlot: ScheduleSlotView,
-  options: { canAssign?: boolean; saving?: boolean } = {}
+  options: {
+    canAssign?: boolean;
+    saving?: boolean;
+    assignmentFeedback?: { type: "error" | "success"; message: string } | null;
+  } = {}
 ) {
   return renderToStaticMarkup(
     <ContentScheduleSlotDetails
@@ -49,6 +62,7 @@ function renderDetails(
       canAssign={options.canAssign ?? false}
       saving={options.saving ?? false}
       onAssign={() => undefined}
+      assignmentFeedback={options.assignmentFeedback ?? null}
     />
   );
 }
@@ -85,13 +99,22 @@ describe("ContentScheduleSlotDetails", () => {
     expect(html).toContain("Em andamento");
   });
 
-  it("oferece seletor habilitado para trocar responsável em slot sem conteúdo", () => {
+  it("oferece seletor shadcn habilitado com avatar e nome por opção da área", () => {
     const html = renderDetails(slot(), { canAssign: true });
-    const trigger = html.match(/<select[^>]*aria-label="Trocar responsável"[^>]*>/)?.[0] ?? "";
+    const trigger = html.match(/<button[^>]*aria-label="Trocar responsável"[^>]*>/)?.[0] ?? "";
 
     expect(trigger).not.toBe("");
-    expect(trigger).not.toMatch(/\sdisabled(?:=|\s|>)/);
+    expect(html).toContain('data-select-disabled="false"');
+    expect(html).toContain('data-select-item="person-2"');
+    expect(html).toMatch(/data-select-item="person-2"[\s\S]*?data-slot="avatar-fallback"[\s\S]*?RL/);
     expect(html).toContain("Rafael Lima");
+    expect(html).not.toContain("Carlos Souza");
+  });
+
+  it("mantém o seletor bloqueado enquanto salva a troca", () => {
+    const html = renderDetails(slot(), { canAssign: true, saving: true });
+
+    expect(html).toContain('data-select-disabled="true"');
   });
 
   it("explica o bloqueio da troca de responsável após o vínculo do conteúdo", () => {
@@ -129,5 +152,25 @@ describe("ContentScheduleSlotDetails", () => {
     expect(html).toContain("1,2 mil alcance");
     expect(html).toContain("87 curtidas");
     expect(html).toContain("6 comentários");
+  });
+
+  it("anuncia erro de atribuição dentro do painel", () => {
+    const html = renderDetails(slot(), {
+      canAssign: true,
+      assignmentFeedback: { type: "error", message: "Não foi possível atualizar o responsável." },
+    });
+
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Não foi possível atualizar o responsável.");
+  });
+
+  it("anuncia sucesso de atribuição dentro do painel", () => {
+    const html = renderDetails(slot(), {
+      canAssign: true,
+      assignmentFeedback: { type: "success", message: "Responsável atualizado." },
+    });
+
+    expect(html).toContain('role="status"');
+    expect(html).toContain("Responsável atualizado.");
   });
 });

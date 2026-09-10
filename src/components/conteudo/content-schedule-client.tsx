@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import {
   AlertCircle,
   BarChart3,
@@ -45,7 +46,10 @@ import { normalizeScheduleArea } from "@/lib/content-schedule/domain";
 import { AreaIcon } from "@/lib/area-icons";
 import { ContentScheduleCalendar } from "./content-schedule-calendar";
 import { ContentScheduleAssigneeReview } from "./content-schedule-assignee-review";
-import { ContentScheduleSlotDetails } from "./content-schedule-slot-details";
+import {
+  ContentScheduleSlotDetails,
+  type ScheduleAssignmentFeedback,
+} from "./content-schedule-slot-details";
 import { AreaMark, CollaboratorAvatar, CollaboratorMark } from "./content-schedule-visuals";
 import type {
   ScheduleCollaborator,
@@ -187,7 +191,25 @@ export function reconcileSelectedScheduleSlot(
   return slots.find((slot) => slot.id === selectedSlot.id) ?? null;
 }
 
+type ScheduleFocusTarget = {
+  isConnected: boolean;
+  focus: () => void;
+};
+
+export function restoreScheduleDetailsFocus(
+  returnTarget: ScheduleFocusTarget | null,
+  fallbackTarget: ScheduleFocusTarget | null
+): boolean {
+  const target = returnTarget?.isConnected ? returnTarget : fallbackTarget?.isConnected ? fallbackTarget : null;
+  if (!target) return false;
+  target.focus();
+  return true;
+}
+
 export function ContentScheduleClient() {
+  const scheduleRootRef = useRef<HTMLElement | null>(null);
+  const detailsReturnFocusRef = useRef<HTMLElement | null>(null);
+  const detailsWereOpenRef = useRef(false);
   const [month, setMonth] = useState(currentMonth);
   const [view, setView] = useState<"calendar" | "list" | "assignees">("calendar");
   const [data, setData] = useState<SchedulePayload | null>(null);
@@ -202,7 +224,25 @@ export function ContentScheduleClient() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ScheduleSlot | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<ScheduleSlot | null>(null);
+  const [assignmentFeedback, setAssignmentFeedback] = useState<ScheduleAssignmentFeedback | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+
+  const restoreDetailsFocus = useCallback(() => {
+    const returnTarget = detailsReturnFocusRef.current;
+    detailsReturnFocusRef.current = null;
+    if (typeof window === "undefined") return;
+    window.requestAnimationFrame(() => {
+      restoreScheduleDetailsFocus(returnTarget, scheduleRootRef.current);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (detailsWereOpenRef.current && !selectedSlot) {
+      setAssignmentFeedback(null);
+      restoreDetailsFocus();
+    }
+    detailsWereOpenRef.current = Boolean(selectedSlot);
+  }, [selectedSlot, restoreDetailsFocus]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -254,6 +294,8 @@ export function ContentScheduleClient() {
   async function assign(slot: ScheduleSlot, collaboratorId: string) {
     setSavingId(slot.id);
     setNotice(null);
+    setError(null);
+    setAssignmentFeedback(null);
     try {
       const response = await fetch(`/api/content-schedule/${slot.id}`, {
         method: "PATCH",
@@ -262,17 +304,37 @@ export function ContentScheduleClient() {
       });
       if (!response.ok) throw new Error(await readError(response));
       setNotice("Responsável atualizado.");
+      setAssignmentFeedback({ type: "success", message: "Responsável atualizado." });
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Não foi possível atualizar o responsável.");
+      const message = cause instanceof Error ? cause.message : "Não foi possível atualizar o responsável.";
+      setError(message);
+      setAssignmentFeedback({ type: "error", message });
     } finally { setSavingId(null); }
+  }
+
+  function rememberScheduleDetailsTrigger(event: ReactMouseEvent<HTMLDivElement>) {
+    if (!(event.target instanceof Element)) return;
+    const trigger = event.target.closest<HTMLElement>('button[aria-label^="Abrir detalhes"]');
+    if (trigger) detailsReturnFocusRef.current = trigger;
+  }
+
+  function openScheduleSlot(slot: ScheduleSlot) {
+    setAssignmentFeedback(null);
+    setSelectedSlot(slot);
+  }
+
+  function handleDetailsOpenChange(open: boolean) {
+    if (open) return;
+    setAssignmentFeedback(null);
+    setSelectedSlot(null);
   }
 
   const assignable = (slot: ScheduleSlot) => Boolean(data?.access.canManage || data?.access.assignableAreas === null || data?.access.assignableAreas.some((item) => normalizeScheduleArea(item) === normalizeScheduleArea(slot.area)));
   const canReviewAssignees = Boolean(data && (data.access.canManage || data.access.assignableAreas === null || data.access.assignableAreas.length > 0));
 
   return (
-    <main className="mx-auto w-full max-w-[1600px] space-y-5 p-4 sm:p-6">
+    <main ref={scheduleRootRef} tabIndex={-1} className="mx-auto w-full max-w-[1600px] space-y-5 p-4 outline-none sm:p-6">
       <section className="flex flex-col gap-4 border-b border-[#dce9eb] pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-2xl">
           <p className="text-xs font-semibold uppercase text-[#347796]">Escala editorial</p>
@@ -319,7 +381,9 @@ export function ContentScheduleClient() {
         </div>
 
         {loading ? <LoadingState /> : filtered.length === 0 ? <EmptyState hasFilters={Boolean(query || area !== "all" || format !== "all" || person !== "all" || status !== "all")} /> : view === "calendar" ? (
-          <ContentScheduleCalendar month={month} slots={filtered} onSelectSlot={setSelectedSlot} />
+          <div onClickCapture={rememberScheduleDetailsTrigger}>
+            <ContentScheduleCalendar month={month} slots={filtered} onSelectSlot={openScheduleSlot} />
+          </div>
         ) : (
           <div className="divide-y divide-[#dce9eb]">
             {groups.map(([groupArea, slots]) => (
@@ -348,11 +412,12 @@ export function ContentScheduleClient() {
       <ContentScheduleSlotDetails
         slot={selectedSlot}
         open={Boolean(selectedSlot)}
-        onOpenChange={(open) => { if (!open) setSelectedSlot(null); }}
+        onOpenChange={handleDetailsOpenChange}
         collaborators={data?.collaborators ?? []}
         canAssign={selectedSlot ? assignable(selectedSlot) : false}
         saving={Boolean(selectedSlot && savingId === selectedSlot.id)}
         onAssign={(collaboratorId) => { if (selectedSlot) void assign(selectedSlot, collaboratorId); }}
+        assignmentFeedback={assignmentFeedback}
       />
     </main>
   );
