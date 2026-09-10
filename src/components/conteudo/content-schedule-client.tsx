@@ -45,6 +45,7 @@ import { normalizeScheduleArea } from "@/lib/content-schedule/domain";
 import { AreaIcon } from "@/lib/area-icons";
 import { ContentScheduleCalendar } from "./content-schedule-calendar";
 import { ContentScheduleAssigneeReview } from "./content-schedule-assignee-review";
+import { ContentScheduleSlotDetails } from "./content-schedule-slot-details";
 import { AreaMark, CollaboratorAvatar, CollaboratorMark } from "./content-schedule-visuals";
 import type {
   ScheduleCollaborator,
@@ -124,6 +125,68 @@ async function readError(response: Response) {
   return body?.error || body?.message || "Não foi possível concluir a operação.";
 }
 
+export function mapContentScheduleResponse(payload: ContentScheduleResponse): SchedulePayload {
+  return {
+    areas: payload.areas,
+    collaborators: payload.collaborators.map((item) => ({
+      id: item.id,
+      name: item.name,
+      area: normalizeScheduleArea(item.department),
+      avatarUrl: item.avatar_url,
+    })),
+    access: payload.access,
+    slots: payload.slots.map((slot) => ({
+      id: slot.id,
+      area: slot.area,
+      date: slot.due_date,
+      format: slot.format,
+      status: slot.cancelled ? "cancelled" : slot.publication ? "published" : (slot.content_roteiro_id || slot.reel_studio_id) ? "linked" : slot.collaborator_id ? "assigned" : "open",
+      collaboratorId: slot.collaborator_id,
+      collaborator: slot.collaborator_id ? {
+        id: slot.collaborator_id,
+        name: slot.collaborator_name ?? "Colaborador",
+        avatarUrl: slot.collaborator_avatar_url,
+      } : null,
+      content: slot.reel_studio_id
+        ? { id: slot.reel_studio_id, title: slot.reel_title ?? "Roteiro de Reel vinculado", url: "/conteudo/reels" }
+        : slot.content_roteiro_id
+          ? { id: slot.content_roteiro_id, title: slot.content_title ?? "Conteúdo vinculado" }
+          : null,
+      publication: slot.publication ? {
+        id: slot.publication.id,
+        permalink: slot.publication.permalink,
+        publishedAt: slot.publication.published_at,
+        likes: slot.publication.likes,
+        comments: slot.publication.comments,
+        reach: slot.publication.reach,
+      } : null,
+      imported: Boolean(slot.source_name || slot.source_status),
+      sourceName: slot.source_name,
+      sourceStatus: slot.source_status,
+      unmatchedAssigneeName: !slot.collaborator_id ? slot.source_name : null,
+      viosTask: slot.vios_task,
+    })),
+    pendingLinks: payload.pendingLinks.map((item) => ({
+      id: item.id,
+      label: item.source_title,
+      reason: item.reason,
+      collaboratorName: item.collaborator_name,
+      collaboratorId: item.collaborator_id,
+      date: item.event_date,
+      format: item.format,
+      area: item.area,
+    })),
+  };
+}
+
+export function reconcileSelectedScheduleSlot(
+  selectedSlot: ScheduleSlot | null,
+  slots: ScheduleSlot[]
+): ScheduleSlot | null {
+  if (!selectedSlot) return null;
+  return slots.find((slot) => slot.id === selectedSlot.id) ?? null;
+}
+
 export function ContentScheduleClient() {
   const [month, setMonth] = useState(currentMonth);
   const [view, setView] = useState<"calendar" | "list" | "assignees">("calendar");
@@ -138,6 +201,7 @@ export function ContentScheduleClient() {
   const [query, setQuery] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ScheduleSlot | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<ScheduleSlot | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -147,31 +211,9 @@ export function ContentScheduleClient() {
       const response = await fetch(`/api/content-schedule?month=${encodeURIComponent(month)}`, { cache: "no-store" });
       if (!response.ok) throw new Error(await readError(response));
       const payload = await response.json() as ContentScheduleResponse;
-      setData({
-        areas: payload.areas,
-        collaborators: payload.collaborators.map((item) => ({ id: item.id, name: item.name, area: normalizeScheduleArea(item.department), avatarUrl: item.avatar_url })),
-        access: payload.access,
-        slots: payload.slots.map((slot) => ({
-          id: slot.id,
-          area: slot.area,
-          date: slot.due_date,
-          format: slot.format,
-          status: slot.cancelled ? "cancelled" : slot.publication ? "published" : (slot.content_roteiro_id || slot.reel_studio_id) ? "linked" : slot.collaborator_id ? "assigned" : "open",
-          collaboratorId: slot.collaborator_id,
-          collaborator: slot.collaborator_id ? { id: slot.collaborator_id, name: slot.collaborator_name ?? "Colaborador", avatarUrl: slot.collaborator_avatar_url } : null,
-          content: slot.reel_studio_id
-            ? { id: slot.reel_studio_id, title: slot.reel_title ?? "Roteiro de Reel vinculado", url: "/conteudo/reels" }
-            : slot.content_roteiro_id
-              ? { id: slot.content_roteiro_id, title: slot.content_title ?? "Conteúdo vinculado" }
-              : null,
-          publication: slot.publication ? { id: slot.publication.id, permalink: slot.publication.permalink, publishedAt: slot.publication.published_at, likes: slot.publication.likes, comments: slot.publication.comments, reach: slot.publication.reach } : null,
-          imported: Boolean(slot.source_name || slot.source_status),
-          sourceName: slot.source_name,
-          sourceStatus: slot.source_status,
-          unmatchedAssigneeName: !slot.collaborator_id ? slot.source_name : null,
-        })),
-        pendingLinks: payload.pendingLinks.map((item) => ({ id: item.id, label: item.source_title, reason: item.reason, collaboratorName: item.collaborator_name, collaboratorId: item.collaborator_id, date: item.event_date, format: item.format, area: item.area })),
-      });
+      const nextData = mapContentScheduleResponse(payload);
+      setData(nextData);
+      setSelectedSlot((current) => reconcileSelectedScheduleSlot(current, nextData.slots));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível carregar o cronograma.");
     } finally {
@@ -277,7 +319,7 @@ export function ContentScheduleClient() {
         </div>
 
         {loading ? <LoadingState /> : filtered.length === 0 ? <EmptyState hasFilters={Boolean(query || area !== "all" || format !== "all" || person !== "all" || status !== "all")} /> : view === "calendar" ? (
-          <ContentScheduleCalendar month={month} slots={filtered} />
+          <ContentScheduleCalendar month={month} slots={filtered} onSelectSlot={setSelectedSlot} />
         ) : (
           <div className="divide-y divide-[#dce9eb]">
             {groups.map(([groupArea, slots]) => (
@@ -303,6 +345,15 @@ export function ContentScheduleClient() {
       </section>
 
       {data && <SlotDialog open={dialogOpen} onOpenChange={setDialogOpen} editing={editing} areas={data.areas} collaborators={data.collaborators} onSaved={async (message) => { setNotice(message); setDialogOpen(false); await load(); }} />}
+      <ContentScheduleSlotDetails
+        slot={selectedSlot}
+        open={Boolean(selectedSlot)}
+        onOpenChange={(open) => { if (!open) setSelectedSlot(null); }}
+        collaborators={data?.collaborators ?? []}
+        canAssign={selectedSlot ? assignable(selectedSlot) : false}
+        saving={Boolean(selectedSlot && savingId === selectedSlot.id)}
+        onAssign={(collaboratorId) => { if (selectedSlot) void assign(selectedSlot, collaboratorId); }}
+      />
     </main>
   );
 }

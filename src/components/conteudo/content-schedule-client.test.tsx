@@ -1,6 +1,71 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { AreaMark, CollaboratorAvatar, SlotRow } from "./content-schedule-client";
+import type { ContentScheduleResponse } from "@/lib/content-schedule/types";
+import {
+  AreaMark,
+  CollaboratorAvatar,
+  mapContentScheduleResponse,
+  reconcileSelectedScheduleSlot,
+  SlotRow,
+} from "./content-schedule-client";
+
+function response(): ContentScheduleResponse {
+  return {
+    areas: ["Tributário"],
+    access: { canManage: false, assignableAreas: ["Tributário"], userId: "manager-1" },
+    collaborators: [{ id: "person-1", name: "Marina Oliveira", department: "Tributário", avatar_url: null }],
+    pendingLinks: [],
+    slots: [{
+      id: "slot-1",
+      area: "Tributário",
+      due_date: "2026-09-18",
+      format: "post",
+      collaborator_id: "person-1",
+      collaborator_name: "Marina Oliveira",
+      collaborator_avatar_url: null,
+      source_key: "source-1",
+      source_name: "Marina O.",
+      source_status: "Em produção",
+      source_notes: null,
+      cancelled: false,
+      content_roteiro_id: "content-1",
+      content_title: "Planejamento tributário",
+      reel_studio_id: null,
+      reel_title: null,
+      instagram_post_id: null,
+      publication: null,
+      vios_task: { id: "vios-task-1", ci: "12345", status: "Em andamento", title: "Revisar enquadramento" },
+      created_at: "2026-09-01T12:00:00.000Z",
+      updated_at: "2026-09-10T12:00:00.000Z",
+    }],
+  };
+}
+
+describe("integração dos detalhes do cronograma", () => {
+  it("mapeia a tarefa VIOS retornada pela API para o slot exibido", () => {
+    const payload = mapContentScheduleResponse(response());
+
+    expect(payload.slots[0].viosTask).toEqual({
+      id: "vios-task-1",
+      ci: "12345",
+      status: "Em andamento",
+      title: "Revisar enquadramento",
+    });
+  });
+
+  it("mantém o painel no mesmo ID com os dados recarregados", () => {
+    const payload = mapContentScheduleResponse(response());
+    const stale = { ...payload.slots[0], collaborator: null };
+
+    expect(reconcileSelectedScheduleSlot(stale, payload.slots)).toBe(payload.slots[0]);
+  });
+
+  it("fecha o painel quando o slot selecionado não existe após recarregar", () => {
+    const payload = mapContentScheduleResponse(response());
+
+    expect(reconcileSelectedScheduleSlot(payload.slots[0], [])).toBeNull();
+  });
+});
 
 describe("SlotRow", () => {
   it("exibe publicação e métricas de histórico mesmo sem conteúdo vinculado", () => {
