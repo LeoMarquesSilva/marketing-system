@@ -55,6 +55,8 @@ import { fetchChecklistForRequest, REEL_LEONARDO_NAME, REEL_LEONARDO_STAGE, comp
 import { isReelRequest } from "@/lib/planner-posts";
 import { LEONARDO_USER_ID } from "@/lib/planner-visibility";
 import { IdentityBriefingCardSection } from "@/components/briefings/identity-briefing-card-section";
+import { CertificadoWorkshopSection } from "@/components/planner/certificado-workshop-section";
+import { parseCertificadoWorkshopDescription } from "@/lib/certificado-workshop";
 
 const PRIORITY_OPTIONS: { value: RequestPriority; label: string; className: string }[] = [
   { value: "urgente", label: "Urgente", className: "text-red-600 dark:text-red-400" },
@@ -203,6 +205,10 @@ export function KanbanCardDetail({
 
   if (!request) return null;
 
+  const certificadoWorkshopInfo =
+    request.request_type === "Certificados"
+      ? parseCertificadoWorkshopDescription(request.description)
+      : null;
   const isReel = isReelRequest(request);
   const reelChecklistProgress = isReel ? getReelChecklistProgress(checklistItems) : null;
   const workflowLabel =
@@ -441,7 +447,7 @@ export function KanbanCardDetail({
                   </span>
                 )}
               </DialogTitle>
-            {request.description && (
+            {request.description && !certificadoWorkshopInfo && (
               <p className={cn(
                 "mt-1.5 text-sm text-muted-foreground/90 leading-relaxed whitespace-pre-wrap break-words",
                 !descriptionExpanded && "line-clamp-2"
@@ -449,7 +455,7 @@ export function KanbanCardDetail({
                 {request.description}
               </p>
             )}
-            {request.description && request.description.length > 120 && (
+            {request.description && !certificadoWorkshopInfo && request.description.length > 120 && (
               <button
                 type="button"
                 onClick={() => setDescriptionExpanded((v) => !v)}
@@ -556,6 +562,15 @@ export function KanbanCardDetail({
               requestId={request.id}
               status={request.identity_briefing_status}
               submittedAt={request.identity_briefing_submitted_at}
+            />
+          )}
+
+          {certificadoWorkshopInfo && request.description && (
+            <CertificadoWorkshopSection
+              requestId={request.id}
+              info={certificadoWorkshopInfo}
+              rawDescription={request.description}
+              onSynced={onRefresh}
             />
           )}
 
