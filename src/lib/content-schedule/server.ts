@@ -356,16 +356,23 @@ export async function getContentSchedule(month = currentSaoPauloMonth()): Promis
   const directPostIds = [...new Set(rows.map((row) => row.instagram_post_id).filter(Boolean))] as string[];
   const [usersResult, roteirosResult, reelsResult] = await Promise.all([
     userIds.length ? db.from("users").select("id,name,avatar_url").in("id", userIds) : Promise.resolve({ data: [], error: null }),
-    roteiroIds.length ? db.from("content_roteiros").select("id,title,marketing_request_id").in("id", roteiroIds) : Promise.resolve({ data: [], error: null }),
+    roteiroIds.length ? db.from("content_roteiros").select("id,title,marketing_request_id,vios_task_id").in("id", roteiroIds) : Promise.resolve({ data: [], error: null }),
     reelIds.length ? db.from("reel_studio_items").select("id,title").in("id", reelIds) : Promise.resolve({ data: [], error: null }),
   ]);
   if (usersResult.error || roteirosResult.error || reelsResult.error) throw new ContentScheduleHttpError("Não foi possível completar os dados do cronograma.");
 
   const requestIds = [...new Set((roteirosResult.data ?? []).map((r) => r.marketing_request_id).filter(Boolean))] as string[];
-  const requestResult = requestIds.length
-    ? await db.from("marketing_requests").select("id,ig_media_id").in("id", requestIds)
-    : { data: [], error: null };
+  const viosTaskIds = [...new Set((roteirosResult.data ?? []).map((r) => r.vios_task_id).filter(Boolean))] as string[];
+  const [requestResult, viosResult] = await Promise.all([
+    requestIds.length
+      ? db.from("marketing_requests").select("id,ig_media_id").in("id", requestIds)
+      : Promise.resolve({ data: [], error: null }),
+    viosTaskIds.length
+      ? db.from("vios_tasks").select("id,vios_id,status,tarefa").in("id", viosTaskIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
   if (requestResult.error) throw new ContentScheduleHttpError("Não foi possível carregar os vínculos de publicação.");
+  if (viosResult.error) throw new ContentScheduleHttpError("Não foi possível carregar as tarefas VIOS.");
   const igMediaIds = [...new Set((requestResult.data ?? []).map((r) => r.ig_media_id).filter(Boolean))] as string[];
   const postResult = directPostIds.length || igMediaIds.length
     ? await db.from("instagram_posts").select("id,ig_media_id,permalink,published_at,caption,likes,comments,reach,views")
@@ -376,6 +383,7 @@ export async function getContentSchedule(month = currentSaoPauloMonth()): Promis
   const users = new Map((usersResult.data ?? []).map((v) => [v.id, v]));
   const roteiros = new Map((roteirosResult.data ?? []).map((v) => [v.id, v]));
   const reels = new Map((reelsResult.data ?? []).map((v) => [v.id, v]));
+  const viosTasks = new Map((viosResult.data ?? []).map((v) => [v.id, v]));
   const requests = new Map((requestResult.data ?? []).map((v) => [v.id, v]));
   const postsById = new Map((postResult.data ?? []).map((v) => [v.id, v]));
   const postsByMedia = new Map((postResult.data ?? []).map((v) => [v.ig_media_id, v]));
@@ -384,6 +392,7 @@ export async function getContentSchedule(month = currentSaoPauloMonth()): Promis
     const person = row.collaborator_id ? users.get(row.collaborator_id) : null;
     const roteiro = row.content_roteiro_id ? roteiros.get(row.content_roteiro_id) : null;
     const request = row.format === "post" && roteiro?.marketing_request_id ? requests.get(roteiro.marketing_request_id) : null;
+    const viosTask = roteiro?.vios_task_id ? viosTasks.get(roteiro.vios_task_id) : null;
     const publication = (row.instagram_post_id ? postsById.get(row.instagram_post_id) : null) ??
       (request?.ig_media_id ? postsByMedia.get(request.ig_media_id) : null) ?? null;
     return {
@@ -393,6 +402,12 @@ export async function getContentSchedule(month = currentSaoPauloMonth()): Promis
       content_title: roteiro?.title ?? null,
       reel_title: row.reel_studio_id ? reels.get(row.reel_studio_id)?.title ?? null : null,
       publication,
+      vios_task: viosTask ? {
+        id: viosTask.id,
+        ci: String(viosTask.vios_id),
+        status: viosTask.status ?? null,
+        title: viosTask.tarefa ?? null,
+      } : null,
     } as ContentScheduleSlot;
   });
 

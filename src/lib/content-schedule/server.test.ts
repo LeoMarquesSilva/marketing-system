@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ createClient: vi.fn() }));
+const mocks = vi.hoisted(() => ({ createClient: vi.fn(), createSsrClient: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@supabase/supabase-js", () => ({ createClient: mocks.createClient }));
-vi.mock("@/utils/supabase/server", () => ({ createClient: vi.fn() }));
+vi.mock("@/utils/supabase/server", () => ({ createClient: mocks.createSsrClient }));
 
 type Query = { table: string; operation: string; payload?: Record<string, unknown>; filters: [string, string, unknown][] };
 type Result = { data: unknown; error: { code?: string; message?: string } | null };
@@ -17,7 +17,12 @@ function database(answer: (query: Query) => Result) {
       update: (payload: Record<string, unknown>) => { query.operation = "update"; query.payload = payload; return chain; },
       insert: (payload: Record<string, unknown>) => { query.operation = "insert"; query.payload = payload; return chain; },
       eq: (key: string, value: unknown) => { query.filters.push(["eq", key, value]); return chain; },
+      in: (key: string, value: unknown) => { query.filters.push(["in", key, value]); return chain; },
+      gte: (key: string, value: unknown) => { query.filters.push(["gte", key, value]); return chain; },
+      lt: (key: string, value: unknown) => { query.filters.push(["lt", key, value]); return chain; },
       is: (key: string, value: unknown) => { query.filters.push(["is", key, value]); return chain; },
+      order: () => chain,
+      or: () => chain,
       maybeSingle: () => chain,
       single: () => chain,
       then: (resolve: (value: Result) => unknown, reject?: (error: unknown) => unknown) => {
@@ -37,6 +42,47 @@ describe("content schedule server integration rules", () => {
     vi.resetModules();
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-key-not-a-secret");
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
+    mocks.createSsrClient.mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "auth-user" } } }) },
+    });
+  });
+
+  it("expõe a tarefa VIOS do roteiro em lote e mantém nulo no slot sem roteiro", async () => {
+    const db = database((query) => {
+      if (query.table === "users" && query.filters.some((filter) => filter[1] === "auth_id")) {
+        return { data: { id: "profile", role: "admin", department: "Marketing", permissions: [], is_active: true }, error: null };
+      }
+      if (query.table === "hr_employees") return { data: null, error: null };
+      if (query.table === "users") return { data: [], error: null };
+      if (query.table === "content_schedule_slots") return { data: [
+        { id: "linked", area: "Cível", due_date: "2026-09-10", format: "post", collaborator_id: null, source_key: "linked", source_name: null, source_status: null, source_notes: null, cancelled: false, content_roteiro_id: "roteiro", reel_studio_id: null, instagram_post_id: null, created_at: "2026-09-01", updated_at: "2026-09-01" },
+        { id: "empty", area: "Cível", due_date: "2026-09-11", format: "post", collaborator_id: null, source_key: "empty", source_name: null, source_status: null, source_notes: null, cancelled: false, content_roteiro_id: null, reel_studio_id: null, instagram_post_id: null, created_at: "2026-09-01", updated_at: "2026-09-01" },
+      ], error: null };
+      if (query.table === "content_roteiros") return { data: [
+        { id: "roteiro", title: "Conteúdo", marketing_request_id: null, vios_task_id: "vios-row-id" },
+      ], error: null };
+      if (query.table === "vios_tasks") return { data: [
+        { id: "vios-row-id", vios_id: 12345, status: "Em andamento", tarefa: "Preparar conteúdo" },
+      ], error: null };
+      return { data: [], error: null };
+    });
+    mocks.createClient.mockReturnValue(db);
+    const { getContentSchedule } = await import("./server");
+
+    const result = await getContentSchedule("2026-09");
+    const linkedSlot = result.slots.find((slot) => slot.id === "linked")!;
+    const emptySlot = result.slots.find((slot) => slot.id === "empty")!;
+
+    expect(linkedSlot.vios_task).toEqual({
+      id: "vios-row-id",
+      ci: "12345",
+      status: "Em andamento",
+      title: "Preparar conteúdo",
+    });
+    expect(emptySlot.vios_task).toBeNull();
+    const viosCalls = db.calls.filter((query) => query.table === "vios_tasks");
+    expect(viosCalls).toHaveLength(1);
+    expect(viosCalls[0].filters).toContainEqual(["in", "id", ["vios-row-id"]]);
   });
 
   it("registra a data civil de São Paulo e mantém pendências Post separadas de Reel", async () => {
