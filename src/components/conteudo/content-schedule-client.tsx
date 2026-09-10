@@ -206,11 +206,39 @@ export function restoreScheduleDetailsFocus(
   return true;
 }
 
+export type ScheduleAssignmentOperation = {
+  generation: number;
+  slotId: string;
+  month: string;
+};
+
+export function isCurrentScheduleAssignmentOperation(
+  activeOperation: ScheduleAssignmentOperation | null,
+  candidateOperation: ScheduleAssignmentOperation,
+  visibleMonth: string
+): boolean {
+  return activeOperation?.generation === candidateOperation.generation
+    && activeOperation.slotId === candidateOperation.slotId
+    && activeOperation.month === candidateOperation.month
+    && candidateOperation.month === visibleMonth;
+}
+
+export function isCurrentScheduleLoadOperation(
+  activeGeneration: number,
+  candidateGeneration: number
+): boolean {
+  return activeGeneration === candidateGeneration;
+}
+
 export function ContentScheduleClient() {
   const scheduleRootRef = useRef<HTMLElement | null>(null);
   const detailsReturnFocusRef = useRef<HTMLElement | null>(null);
   const detailsWereOpenRef = useRef(false);
+  const assignmentGenerationRef = useRef(0);
+  const activeAssignmentOperationRef = useRef<ScheduleAssignmentOperation | null>(null);
+  const loadGenerationRef = useRef(0);
   const [month, setMonth] = useState(currentMonth);
+  const visibleMonthRef = useRef(month);
   const [view, setView] = useState<"calendar" | "list" | "assignees">("calendar");
   const [data, setData] = useState<SchedulePayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -227,6 +255,12 @@ export function ContentScheduleClient() {
   const [assignmentFeedback, setAssignmentFeedback] = useState<ScheduleAssignmentFeedback | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
 
+  const invalidateAssignmentOperation = useCallback(() => {
+    assignmentGenerationRef.current += 1;
+    activeAssignmentOperationRef.current = null;
+    setSavingId(null);
+  }, []);
+
   const restoreDetailsFocus = useCallback(() => {
     const returnTarget = detailsReturnFocusRef.current;
     detailsReturnFocusRef.current = null;
@@ -239,25 +273,30 @@ export function ContentScheduleClient() {
   useEffect(() => {
     if (detailsWereOpenRef.current && !selectedSlot) {
       setAssignmentFeedback(null);
+      invalidateAssignmentOperation();
       restoreDetailsFocus();
     }
     detailsWereOpenRef.current = Boolean(selectedSlot);
-  }, [selectedSlot, restoreDetailsFocus]);
+  }, [selectedSlot, invalidateAssignmentOperation, restoreDetailsFocus]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (shouldApply: () => boolean = () => true) => {
+    const loadGeneration = loadGenerationRef.current + 1;
+    loadGenerationRef.current = loadGeneration;
+    const ownsLoad = () => isCurrentScheduleLoadOperation(loadGenerationRef.current, loadGeneration);
     setLoading(true);
     setError(null);
     try {
       const response = await fetch(`/api/content-schedule?month=${encodeURIComponent(month)}`, { cache: "no-store" });
       if (!response.ok) throw new Error(await readError(response));
       const payload = await response.json() as ContentScheduleResponse;
+      if (!ownsLoad() || !shouldApply()) return;
       const nextData = mapContentScheduleResponse(payload);
       setData(nextData);
       setSelectedSlot((current) => reconcileSelectedScheduleSlot(current, nextData.slots));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Não foi possível carregar o cronograma.");
+      if (ownsLoad() && shouldApply()) setError(cause instanceof Error ? cause.message : "Não foi possível carregar o cronograma.");
     } finally {
-      setLoading(false);
+      if (ownsLoad()) setLoading(false);
     }
   }, [month]);
 
@@ -292,6 +331,14 @@ export function ContentScheduleClient() {
   }, [data]);
 
   async function assign(slot: ScheduleSlot, collaboratorId: string) {
+    const operation: ScheduleAssignmentOperation = {
+      generation: assignmentGenerationRef.current + 1,
+      slotId: slot.id,
+      month: visibleMonthRef.current,
+    };
+    assignmentGenerationRef.current = operation.generation;
+    activeAssignmentOperationRef.current = operation;
+    const isCurrent = () => isCurrentScheduleAssignmentOperation(activeAssignmentOperationRef.current, operation, visibleMonthRef.current);
     setSavingId(slot.id);
     setNotice(null);
     setError(null);
@@ -303,14 +350,21 @@ export function ContentScheduleClient() {
         body: JSON.stringify({ collaborator_id: collaboratorId === "unassigned" ? null : collaboratorId }),
       });
       if (!response.ok) throw new Error(await readError(response));
+      if (!isCurrent()) return;
       setNotice("Responsável atualizado.");
       setAssignmentFeedback({ type: "success", message: "Responsável atualizado." });
-      await load();
+      await load(isCurrent);
     } catch (cause) {
+      if (!isCurrent()) return;
       const message = cause instanceof Error ? cause.message : "Não foi possível atualizar o responsável.";
       setError(message);
       setAssignmentFeedback({ type: "error", message });
-    } finally { setSavingId(null); }
+    } finally {
+      if (isCurrent()) {
+        activeAssignmentOperationRef.current = null;
+        setSavingId(null);
+      }
+    }
   }
 
   function rememberScheduleDetailsTrigger(event: ReactMouseEvent<HTMLDivElement>) {
@@ -320,14 +374,31 @@ export function ContentScheduleClient() {
   }
 
   function openScheduleSlot(slot: ScheduleSlot) {
+    invalidateAssignmentOperation();
+    setNotice(null);
+    setError(null);
     setAssignmentFeedback(null);
     setSelectedSlot(slot);
   }
 
   function handleDetailsOpenChange(open: boolean) {
     if (open) return;
+    invalidateAssignmentOperation();
+    setNotice(null);
+    setError(null);
     setAssignmentFeedback(null);
     setSelectedSlot(null);
+  }
+
+  function changeMonth(amount: number) {
+    const nextMonth = shiftMonth(visibleMonthRef.current, amount);
+    visibleMonthRef.current = nextMonth;
+    invalidateAssignmentOperation();
+    setNotice(null);
+    setError(null);
+    setAssignmentFeedback(null);
+    setSelectedSlot(null);
+    setMonth(nextMonth);
   }
 
   const assignable = (slot: ScheduleSlot) => Boolean(data?.access.canManage || data?.access.assignableAreas === null || data?.access.assignableAreas.some((item) => normalizeScheduleArea(item) === normalizeScheduleArea(slot.area)));
@@ -342,9 +413,9 @@ export function ContentScheduleClient() {
           <p className="mt-1 text-sm text-slate-600">Distribua as datas definidas pelo Marketing. Os temas aparecem aqui automaticamente quando forem escolhidos no fluxo de conteúdo.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="icon" aria-label="Mês anterior" onClick={() => setMonth((value) => shiftMonth(value, -1))}><ChevronLeft /></Button>
+          <Button variant="outline" size="icon" aria-label="Mês anterior" onClick={() => changeMonth(-1)}><ChevronLeft /></Button>
           <div className="min-w-48 text-center font-semibold capitalize text-slate-900">{monthLabel(month)}</div>
-          <Button variant="outline" size="icon" aria-label="Próximo mês" onClick={() => setMonth((value) => shiftMonth(value, 1))}><ChevronRight /></Button>
+          <Button variant="outline" size="icon" aria-label="Próximo mês" onClick={() => changeMonth(1)}><ChevronRight /></Button>
           {data?.access.canManage && <Button className="ml-auto bg-[#347796] text-white hover:bg-[#285f7a]" onClick={() => { setEditing(null); setDialogOpen(true); }}><Plus /> Nova data</Button>}
         </div>
       </section>

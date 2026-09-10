@@ -4,6 +4,8 @@ import type { ContentScheduleResponse } from "@/lib/content-schedule/types";
 import {
   AreaMark,
   CollaboratorAvatar,
+  isCurrentScheduleAssignmentOperation,
+  isCurrentScheduleLoadOperation,
   mapContentScheduleResponse,
   reconcileSelectedScheduleSlot,
   restoreScheduleDetailsFocus,
@@ -89,6 +91,47 @@ describe("integração dos detalhes do cronograma", () => {
     )).toBe(true);
     expect(focusCard).not.toHaveBeenCalled();
     expect(focusFallback).toHaveBeenCalledOnce();
+  });
+
+  it("descarta resposta da sessão A depois que o painel abre o slot B ou reabre A", () => {
+    const staleOperation = { generation: 1, slotId: "slot-a", month: "2026-09" };
+
+    expect(isCurrentScheduleAssignmentOperation(
+      { generation: 2, slotId: "slot-b", month: "2026-09" },
+      staleOperation,
+      "2026-09"
+    )).toBe(false);
+    expect(isCurrentScheduleAssignmentOperation(
+      { generation: 3, slotId: "slot-a", month: "2026-09" },
+      staleOperation,
+      "2026-09"
+    )).toBe(false);
+  });
+
+  it("mantém apenas a atribuição mais recente quando outra começa antes da primeira terminar", () => {
+    const firstOperation = { generation: 4, slotId: "slot-a", month: "2026-09" };
+    const secondOperation = { generation: 5, slotId: "slot-a", month: "2026-09" };
+
+    expect(isCurrentScheduleAssignmentOperation(secondOperation, firstOperation, "2026-09")).toBe(false);
+    expect(isCurrentScheduleAssignmentOperation(secondOperation, secondOperation, "2026-09")).toBe(true);
+  });
+
+  it("descarta resposta de atribuição quando o mês visível muda durante o PATCH", () => {
+    const septemberOperation = { generation: 6, slotId: "slot-a", month: "2026-09" };
+
+    expect(isCurrentScheduleAssignmentOperation(
+      septemberOperation,
+      septemberOperation,
+      "2026-10"
+    )).toBe(false);
+  });
+
+  it("permite somente ao reload mais recente aplicar dados e finalizar loading", () => {
+    const firstReload = 8;
+    const secondReload = 9;
+
+    expect(isCurrentScheduleLoadOperation(secondReload, firstReload)).toBe(false);
+    expect(isCurrentScheduleLoadOperation(secondReload, secondReload)).toBe(true);
   });
 });
 
