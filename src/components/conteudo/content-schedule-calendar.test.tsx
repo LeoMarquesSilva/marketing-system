@@ -1,6 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { buildCalendarDays, ContentScheduleCalendar } from "./content-schedule-calendar";
+import {
+  buildCalendarDays,
+  buildCalendarDaySlots,
+  ContentScheduleCalendar,
+} from "./content-schedule-calendar";
 
 const denseDaySlots = Array.from({ length: 5 }, (_, index) => ({
   id: `slot-${index + 1}`,
@@ -55,15 +59,25 @@ describe("ContentScheduleCalendar", () => {
     expect(html).toContain("Nome da planilha sem vínculo");
   });
 
-  it("limita o dia a três cards e oferece o overflow em um botão", () => {
+  it("entrega todos os slots do dia ao overflow sem aumentar a célula", () => {
+    const layout = buildCalendarDaySlots(denseDaySlots);
+
+    expect(layout.cellSlots.map((slot) => slot.id)).toEqual(["slot-1", "slot-2", "slot-3"]);
+    expect(layout.overflowSlots.map((slot) => slot.id)).toEqual([
+      "slot-1",
+      "slot-2",
+      "slot-3",
+      "slot-4",
+      "slot-5",
+    ]);
+  });
+
+  it("oferece o overflow do dia em um botão", () => {
     const html = renderDenseDay();
 
     expect(html).toContain('type="button"');
     expect(html).toContain("+ 2 neste dia");
     expect(html).toMatch(/<button[^>]*type="button"[^>]*>\+ 2 neste dia<\/button>/);
-    for (const slot of denseDaySlots) {
-      expect(html).toContain(slot.collaborator.name);
-    }
   });
 
   it("identifica nos cards a ação acessível de abrir detalhes", () => {

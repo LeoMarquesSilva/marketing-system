@@ -42,6 +42,13 @@ export function buildCalendarDays(month: string): CalendarDay[] {
   return days;
 }
 
+export function buildCalendarDaySlots(slots: ScheduleSlotView[]) {
+  return {
+    cellSlots: slots.slice(0, 3),
+    overflowSlots: slots,
+  };
+}
+
 function dayLabel(date: string) {
   return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "long", weekday: "long" })
     .format(new Date(`${date}T12:00:00`));
@@ -124,7 +131,11 @@ function CalendarDayOverflow({
           + {slots.length - 3} neste dia
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-72 p-2" forceMount>
+      <PopoverContent
+        align="start"
+        aria-label={`Todos os conteúdos de ${dayLabel(date)}`}
+        className="w-72 p-2"
+      >
         <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">
           {dayLabel(date)}
         </div>
@@ -162,6 +173,7 @@ export function ContentScheduleCalendar({
         <div className="grid grid-cols-7 bg-[#dce9eb] gap-px">
           {days.map((day) => {
             const daySlots = byDate.get(day.date) ?? [];
+            const { cellSlots, overflowSlots } = buildCalendarDaySlots(daySlots);
             return (
               <section key={day.date} aria-label={dayLabel(day.date)} className={cn("min-h-36 bg-white p-2", !day.inCurrentMonth && "bg-slate-50/80 text-slate-400")}>
                 <div className="mb-2 flex items-center justify-between">
@@ -169,13 +181,13 @@ export function ContentScheduleCalendar({
                   {daySlots.length ? <span className="font-mono text-[10px] text-slate-400">{daySlots.length}</span> : null}
                 </div>
                 <div className="space-y-1.5">
-                  {daySlots.slice(0, 3).map((slot) => (
+                  {cellSlots.map((slot) => (
                     <CalendarSlotCard key={slot.id} slot={slot} onSelect={onSelectSlot} />
                   ))}
                   {daySlots.length > 3 ? (
                     <CalendarDayOverflow
                       date={day.date}
-                      slots={daySlots}
+                      slots={overflowSlots}
                       onSelectSlot={onSelectSlot}
                     />
                   ) : null}
