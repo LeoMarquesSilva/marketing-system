@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Award,
-  Check,
   ChevronDown,
   ChevronUp,
   Clock,
@@ -17,6 +16,8 @@ import {
   UserCheck,
   Users,
 } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { fetchActiveUsers, type User } from "@/lib/users";
 import type { CertificadoWorkshopInfo } from "@/lib/certificado-workshop";
 
 interface CertificadoWorkshopSectionProps {
@@ -24,6 +25,26 @@ interface CertificadoWorkshopSectionProps {
   info: CertificadoWorkshopInfo;
   rawDescription: string;
   onSynced?: () => void;
+}
+
+function getInitials(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .map((part) => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}
+
+/** Casa cada entrada da presença (nome ou e-mail vindo do SharePoint) com o cadastro do ORQESTRAI. */
+function resolveAttendee(raw: string, byEmail: Map<string, User>, byName: Map<string, User>): { user: User | null; label: string } {
+  const trimmed = raw.trim();
+  const match = trimmed.includes("@")
+    ? byEmail.get(trimmed.toLowerCase())
+    : byName.get(trimmed.toLowerCase());
+  return match ? { user: match, label: match.name } : { user: null, label: trimmed };
 }
 
 const sectionClass =
@@ -46,6 +67,29 @@ export function CertificadoWorkshopSection({ requestId, info, rawDescription, on
   const [showRaw, setShowRaw] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [userDirectory, setUserDirectory] = useState<User[]>([]);
+
+  const attendeeNames = info.presenca?.nomes;
+  useEffect(() => {
+    if (!attendeeNames || attendeeNames.length === 0) return;
+    let cancelled = false;
+    fetchActiveUsers().then((users) => {
+      if (!cancelled) setUserDirectory(users);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [attendeeNames]);
+
+  const { byEmail, byName } = useMemo(() => {
+    const emailMap = new Map<string, User>();
+    const nameMap = new Map<string, User>();
+    for (const user of userDirectory) {
+      if (user.email) emailMap.set(user.email.trim().toLowerCase(), user);
+      nameMap.set(user.name.trim().toLowerCase(), user);
+    }
+    return { byEmail: emailMap, byName: nameMap };
+  }, [userDirectory]);
 
   const handleSyncPresenca = async () => {
     setSyncing(true);
@@ -162,16 +206,26 @@ export function CertificadoWorkshopSection({ requestId, info, rawDescription, on
         )}
 
         {info.presenca?.status === "preenchida" && info.presenca.nomes.length > 0 && (
-          <ul className="flex flex-wrap gap-1.5">
-            {info.presenca.nomes.map((nome) => (
-              <li
-                key={nome}
-                className="inline-flex items-center gap-1 rounded-full border border-emerald-300/60 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-950/30 dark:text-emerald-300"
-              >
-                <Check className="h-3 w-3 shrink-0" aria-hidden />
-                {nome}
-              </li>
-            ))}
+          <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+            {info.presenca.nomes.map((raw) => {
+              const { user, label } = resolveAttendee(raw, byEmail, byName);
+              return (
+                <li
+                  key={raw}
+                  className="flex items-center gap-2 rounded-full border border-emerald-300/60 bg-emerald-50 py-1 pl-1 pr-3 dark:border-emerald-500/30 dark:bg-emerald-950/30"
+                >
+                  <Avatar className="h-6 w-6 shrink-0 border border-white/70 dark:border-white/10">
+                    {user?.avatar_url && <AvatarImage src={user.avatar_url} alt={label} />}
+                    <AvatarFallback className="bg-emerald-600/10 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300">
+                      {getInitials(label)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="min-w-0 truncate text-xs font-medium text-emerald-900 dark:text-emerald-200" title={label}>
+                    {label}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
