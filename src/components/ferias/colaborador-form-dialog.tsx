@@ -26,6 +26,16 @@ import type { HrEmployee, LinkableUser } from "@/lib/ferias/types";
 
 export const NO_LINKED_USER = "none";
 
+export const EMPLOYMENT_TYPE_OPTIONS = [
+  "PRESTADOR",
+  "CLT",
+  "SÓCIO DE SERVIÇO",
+  "ESTAGIÁRIO",
+  "ASSISTENTE",
+  "SÓCIO PATRIMONIAL",
+  "SÓCIO COTISTA",
+] as const;
+
 export interface EmployeeFormValues {
   fullName: string;
   cpf: string;
@@ -379,12 +389,21 @@ function ColaboradorForm({
 
         <div className="space-y-1.5">
           <Label htmlFor="ferias-vinculo">Vínculo</Label>
-          <Input
-            id="ferias-vinculo"
-            value={values.employmentType}
-            onChange={(event) => set("employmentType", event.target.value)}
-            placeholder="CLT, PJ, Sócio, Estágio..."
-          />
+          <Select
+            value={values.employmentType || undefined}
+            onValueChange={(value) => set("employmentType", value)}
+          >
+            <SelectTrigger id="ferias-vinculo" className="w-full">
+              <SelectValue placeholder="Selecione" />
+            </SelectTrigger>
+            <SelectContent>
+              {EMPLOYMENT_TYPE_OPTIONS.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="space-y-1.5">
