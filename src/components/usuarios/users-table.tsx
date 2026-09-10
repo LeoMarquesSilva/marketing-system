@@ -41,6 +41,14 @@ import { ColaboradorFormDialog, type EmployeeFormValues, NO_LINKED_USER } from "
 import { createEmployeeRequest, updateEmployeeRequest } from "@/lib/ferias/client";
 import type { HrEmployee, LinkableUser } from "@/lib/ferias/types";
 
+type StatusFilterValue = "ativo" | "inativo" | "all";
+
+const STATUS_FILTER_OPTIONS: { value: StatusFilterValue; label: string }[] = [
+  { value: "ativo", label: "Ativos" },
+  { value: "inativo", label: "Ex-colaboradores" },
+  { value: "all", label: "Todos" },
+];
+
 function getInitials(name: string) {
   return name
     .split(" ")
@@ -71,7 +79,8 @@ export function UsersTable({
   const [occupiedUserIds, setOccupiedUserIds] = useState(initialOccupiedUserIds);
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
+  // Some ex-colaboradores por padrão; "Todos"/"Ex-colaboradores" ficam a um clique.
+  const [statusFilter, setStatusFilter] = useState<StatusFilterValue>("ativo");
   const [accessFilter, setAccessFilter] = useState("all");
   const [hrFilter, setHrFilter] = useState("all");
   const [createOpen, setCreateOpen] = useState(false);
@@ -119,14 +128,14 @@ export function UsersTable({
   const hasActiveFilters =
     search.trim() !== "" ||
     deptFilter !== "all" ||
-    statusFilter !== "all" ||
+    statusFilter !== "ativo" ||
     accessFilter !== "all" ||
     hrFilter !== "all";
 
   function clearFilters() {
     setSearch("");
     setDeptFilter("all");
-    setStatusFilter("all");
+    setStatusFilter("ativo");
     setAccessFilter("all");
     setHrFilter("all");
   }
@@ -310,16 +319,23 @@ export function UsersTable({
               ))}
             </SelectContent>
           </Select>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="h-9 w-[140px] text-xs">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Status: todos</SelectItem>
-              <SelectItem value="ativo">Ativos</SelectItem>
-              <SelectItem value="inativo">Ex-colaboradores</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-0.5 rounded-lg border bg-muted/40 p-0.5">
+            {STATUS_FILTER_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setStatusFilter(option.value)}
+                className={cn(
+                  "rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  statusFilter === option.value
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
           <Select value={accessFilter} onValueChange={setAccessFilter}>
             <SelectTrigger className="h-9 w-[150px] text-xs">
               <SelectValue placeholder="Acesso" />
