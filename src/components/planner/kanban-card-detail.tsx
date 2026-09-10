@@ -443,7 +443,7 @@ export function KanbanCardDetail({
               </DialogTitle>
             {request.description && (
               <p className={cn(
-                "mt-1.5 text-sm text-muted-foreground/90 leading-relaxed",
+                "mt-1.5 text-sm text-muted-foreground/90 leading-relaxed whitespace-pre-wrap break-words",
                 !descriptionExpanded && "line-clamp-2"
               )}>
                 {request.description}
