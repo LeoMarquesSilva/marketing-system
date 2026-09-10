@@ -46,6 +46,7 @@ import {
 } from "@/lib/content-areas";
 import type { RoteiroItem } from "@/components/conteudo/roteiro-card";
 import { ReelStudioClient } from "@/components/conteudo/reel-studio-client";
+import { ContentSimilarityWarning } from "@/components/conteudo/content-similarity-warning";
 
 const DURATIONS = [45, 60, 75, 90] as const;
 const DEFAULT_AUDIENCE = "Empresários, sócios e gestores que tomam decisões de negócio";
@@ -282,6 +283,10 @@ function ReelScriptGenerator() {
   const { profile } = useAuth();
   const [form, setForm] = useState<ReelForm>(INITIAL_FORM);
   const [script, setScript] = useState<ReelScript | null>(null);
+  const [generation, setGeneration] = useState<{ key: string; sourceId: string; title: string; area: string } | null>(null);
+  const [committing, setCommitting] = useState(false);
+  const [commitNotice, setCommitNotice] = useState<string | null>(null);
+  const [committed, setCommitted] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -383,6 +388,9 @@ function ReelScriptGenerator() {
       }
 
       setScript(data.script as ReelScript);
+      setGeneration({ key: crypto.randomUUID(), sourceId: selectedNewsId, title: form.tema, area: selectedArea });
+      setCommitted(false);
+      setCommitNotice(null);
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -401,11 +409,32 @@ function ReelScriptGenerator() {
     window.setTimeout(() => setCopied(false), 1800);
   };
 
+  const commitScript = async () => {
+    if (!script || !generation) return;
+    setCommitting(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/content-reels/commit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ generation_key: generation.key, source_content_id: generation.sourceId || null, title: generation.title, area: generation.area, script: script.roteiro_completo }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Não foi possível salvar o roteiro.");
+      setCommitted(true);
+      setCommitNotice(data.message ?? "Roteiro salvo no estúdio. Cronograma atualizado.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Não foi possível salvar o roteiro.");
+    } finally {
+      setCommitting(false);
+    }
+  };
+
   const downloadWord = () => {
     if (!script) return;
     const html = buildReelWordHtml({
-      title: form.tema,
-      area: selectedArea,
+      title: generation?.title ?? form.tema,
+      area: generation?.area ?? selectedArea,
       audience: form.publico_alvo,
       desiredDuration: form.duracao_desejada_segundos,
       script,
@@ -414,7 +443,7 @@ function ReelScriptGenerator() {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `reel-${reelWordSlug(form.tema)}.doc`;
+    anchor.download = `reel-${reelWordSlug(generation?.title ?? form.tema)}.doc`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -479,6 +508,7 @@ function ReelScriptGenerator() {
 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
         <section className="space-y-8" aria-label="Dados do roteiro">
+          <ContentSimilarityWarning contentId={selectedNewsId} />
           <section className="border-b border-black/[0.08] pb-8" aria-label="Direção do roteiro">
             <div className="mb-5">
               <p className="text-xs font-semibold text-[#347796]">02 / DEFINA A CONVERSA</p>
@@ -696,6 +726,7 @@ function ReelScriptGenerator() {
         </aside>
       </div>
 
+      {commitNotice && <p className="text-sm text-[#347796]" role="status">{commitNotice}</p>}
       {script && (
         <motion.section
           initial={{ opacity: 0, y: 14 }}
@@ -710,7 +741,7 @@ function ReelScriptGenerator() {
                 <Clapperboard className="h-5 w-5" aria-hidden />
               </span>
               <div className="min-w-0">
-                <h3 className="truncate text-lg font-semibold text-foreground">{form.tema}</h3>
+                <h3 className="truncate text-lg font-semibold text-foreground">{generation?.title ?? form.tema}</h3>
                 <p className="mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground">
                   <Clock3 className="h-3.5 w-3.5" aria-hidden />
                   Estimativa de {script.duracao_estimada_segundos} segundos
@@ -718,6 +749,10 @@ function ReelScriptGenerator() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
+              <Button type="button" size="sm" onClick={commitScript} disabled={committing || committed || generating} className="gap-2">
+                {committing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                {committed ? "Roteiro em produção" : "Usar este roteiro"}
+              </Button>
               <Button type="button" variant="outline" size="sm" onClick={copyScript} className="gap-2">
                 {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
                 {copied ? "Copiado" : "Copiar roteiro"}

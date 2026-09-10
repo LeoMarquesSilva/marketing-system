@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { getServerDb } from "@/lib/users-server";
+import { canSeeContentRoteiro } from "@/lib/content-areas";
+import { autoLinkContentSchedule } from "@/lib/content-schedule/server";
 import {
   getAuthenticatedContentUser,
   resolveAreaFilter,
@@ -22,6 +25,15 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
+    const contentId = searchParams.get("contentId");
+    if (contentId) {
+      const db = await getServerDb();
+      const { data: item, error } = await db.from("content_roteiros").select("*").eq("id", contentId).maybeSingle();
+      if (error) throw new Error("Não foi possível consultar o conteúdo.");
+      if (!item) return NextResponse.json([], { status: 200 });
+      if (!canSeeContentRoteiro(auth.profile, { area: item.area, createdById: item.created_by_id })) return NextResponse.json({ error: "Sem permissão para este conteúdo." }, { status: 403 });
+      return NextResponse.json([item]);
+    }
     const status = searchParams.get("status") ?? undefined;
     const topic_id = searchParams.get("topic_id") ?? undefined;
     const area = searchParams.get("area") ?? undefined;
@@ -57,14 +69,10 @@ export async function PATCH(request: Request) {
       id,
       action,
       status,
-      approved_by_id,
-      approved_by_name,
       has_alterations,
       alterations_notes,
       sent_for_manager_review,
       post,
-      edited_by_id,
-      edited_by_name,
     } = body as {
       id?: string;
       action?: string;
@@ -83,14 +91,26 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "id é obrigatório." }, { status: 400 });
     }
 
+    if (!auth.profile) return NextResponse.json({ error: "Perfil não encontrado." }, { status: 403 });
+    const db = await getServerDb();
+    const [{ data: current, error: currentError }, { data: activeProfile }] = await Promise.all([
+      db.from("content_roteiros").select("id, area, created_by_id, approved_by_id, approved_by_name, approved_at, status").eq("id", id).maybeSingle(),
+      db.from("users").select("is_active").eq("id", auth.profile.id).maybeSingle(),
+    ]);
+    if (currentError) throw new Error("Não foi possível consultar o conteúdo.");
+    if (!current) return NextResponse.json({ error: "Conteúdo não encontrado." }, { status: 404 });
+    if (!activeProfile || activeProfile.is_active === false || !canSeeContentRoteiro(auth.profile, { area: current.area, createdById: current.created_by_id })) {
+      return NextResponse.json({ error: "Sem permissão para este conteúdo." }, { status: 403 });
+    }
+
     // Confirmação de edição do colaborador ("ficar com este texto").
     if (action === "edit") {
       if (typeof post !== "string" || !post.trim()) {
         return NextResponse.json({ error: "post é obrigatório." }, { status: 400 });
       }
       const { has_alterations: altered } = await saveRoteiroEdit(id, post, {
-        id: edited_by_id ?? auth.profile?.id ?? null,
-        name: edited_by_name ?? auth.profile?.name ?? null,
+        id: auth.profile.id,
+        name: auth.profile.name,
       });
       return NextResponse.json({ success: true, has_alterations: altered });
     }
@@ -146,15 +166,8 @@ export async function PATCH(request: Request) {
       );
     }
 
-    if (status === "aprovado" && (!approved_by_id || !approved_by_name)) {
-      return NextResponse.json(
-        { error: "approved_by_id e approved_by_name são obrigatórios ao aprovar." },
-        { status: 400 }
-      );
-    }
-
-    const approverId = approved_by_id ?? auth.profile?.id ?? "";
-    const approverName = approved_by_name ?? auth.profile?.name ?? "";
+    const approverId = current.approved_by_id ?? auth.profile.id;
+    const approverName = current.approved_by_name ?? auth.profile.name;
 
     const approvalData =
       status === "aprovado" || status === "em_revisao"
@@ -174,7 +187,7 @@ export async function PATCH(request: Request) {
         ? post
         : undefined;
 
-    await updateRoteiroStatus(
+    const persistedApproval = await updateRoteiroStatus(
       id,
       status as
         | "aguardando_aprovacao"
@@ -185,6 +198,16 @@ export async function PATCH(request: Request) {
       approvalData,
       postOverride
     );
+    if (status === "em_revisao" || status === "aprovado") {
+      if (!persistedApproval) throw new Error("Não foi possível confirmar a aprovação.");
+      await autoLinkContentSchedule({
+        collaboratorId: persistedApproval.approved_by_id,
+        area: current.area,
+        format: "post",
+        contentRoteiroId: current.id,
+        eventDate: persistedApproval.approved_at,
+      });
+    }
     return NextResponse.json({ success: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro ao atualizar conteúdo de post.";

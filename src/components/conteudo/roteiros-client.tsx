@@ -7,6 +7,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { isTourDemoStep, useContentTour } from "@/contexts/content-tour-context";
 import { ContentTourRoteiroDemo } from "@/components/conteudo/content-tour-roteiro-demo";
 import { ManualLinkCard } from "@/components/conteudo/manual-link-card";
+import { ContentSimilarityWarning } from "@/components/conteudo/content-similarity-warning";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -200,6 +201,8 @@ export function RoteirosClient() {
     setError(null);
     try {
       const params = new URLSearchParams();
+      const requestedContentId = new URLSearchParams(window.location.search).get("contentId");
+      if (requestedContentId) params.set("contentId", requestedContentId);
       if (statusFilter) params.set("status", statusFilter);
       if (areaFilter) params.set("area", areaFilter);
       if (topicFilter) params.set("topic_id", topicFilter);
@@ -207,6 +210,7 @@ export function RoteirosClient() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Erro ao carregar conteúdos de post");
       setRoteiros(Array.isArray(data) ? data : []);
+      if (requestedContentId && Array.isArray(data) && data[0]?.id === requestedContentId) setSelectedRoteiro(data[0]);
       setLastLoadedAt(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro desconhecido");
@@ -974,6 +978,7 @@ export function RoteirosClient() {
 
           {/* Corpo */}
           <div className="flex-1 overflow-auto bg-muted/20 px-5 py-5 space-y-5 sm:px-6">
+            <ContentSimilarityWarning contentId={selectedRoteiro?.id} />
             {selectedRoteiro?.content_snippet && (
               <div className="rounded-xl border bg-card p-4">
                 <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">

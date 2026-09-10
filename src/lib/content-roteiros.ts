@@ -498,6 +498,12 @@ export interface ApprovalData {
   post?: string;
 }
 
+export interface PersistedRoteiroApproval {
+  approved_by_id: string;
+  approved_by_name: string;
+  approved_at: string;
+}
+
 export type RoteiroStatus =
   | "aguardando_aprovacao"
   | "em_revisao"
@@ -511,14 +517,11 @@ export async function updateRoteiroStatus(
   status: RoteiroStatus,
   approvalData?: ApprovalData,
   postOverride?: string
-): Promise<void> {
+): Promise<PersistedRoteiroApproval | null> {
   const supabase = getSupabaseAdmin();
   const updates: Record<string, unknown> = { status };
 
   if (status === "aprovado" && approvalData) {
-    updates.approved_by_id = approvalData.approved_by_id;
-    updates.approved_by_name = approvalData.approved_by_name;
-    updates.approved_at = new Date().toISOString();
     updates.has_alterations = approvalData.has_alterations ?? false;
     updates.alterations_notes = approvalData.alterations_notes ?? null;
     updates.sent_for_manager_review = approvalData.sent_for_manager_review ?? false;
@@ -529,9 +532,7 @@ export async function updateRoteiroStatus(
 
   // Colaborador validou e enviou ao revisor (VIOS): registra quem validou.
   if (status === "em_revisao" && approvalData) {
-    updates.approved_by_id = approvalData.approved_by_id;
-    updates.approved_by_name = approvalData.approved_by_name;
-    updates.approved_at = new Date().toISOString();
+    // A identidade/data são reivindicadas atomicamente abaixo.
   }
 
   // Colaborador marcou que o revisor aprovou.
@@ -550,6 +551,34 @@ export async function updateRoteiroStatus(
     .eq("id", id);
 
   if (error) throw new Error(error.message);
+
+  if ((status === "aprovado" || status === "em_revisao") && approvalData) {
+    // Primeiro aprovador vence. Reaprovações e chamadas concorrentes nunca
+    // substituem a pessoa/data que originaram a produção e o slot.
+    const { error: claimError } = await supabase
+      .from("content_roteiros")
+      .update({
+        approved_by_id: approvalData.approved_by_id,
+        approved_by_name: approvalData.approved_by_name,
+        approved_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .is("approved_by_id", null);
+    if (claimError) throw new Error(claimError.message);
+
+    const { data: persisted, error: persistedError } = await supabase
+      .from("content_roteiros")
+      .select("approved_by_id, approved_by_name, approved_at")
+      .eq("id", id)
+      .single();
+    if (persistedError) throw new Error(persistedError.message);
+    if (!persisted?.approved_by_id || !persisted.approved_by_name || !persisted.approved_at) {
+      throw new Error("Não foi possível confirmar os dados da aprovação.");
+    }
+    return persisted as PersistedRoteiroApproval;
+  }
+
+  return null;
 }
 
 /**

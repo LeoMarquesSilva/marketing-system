@@ -26,6 +26,7 @@ import {
   Mail,
   Contact,
   Clapperboard,
+  CalendarRange,
   MoreHorizontal,
   RadioTower,
   ScrollText,
@@ -98,6 +99,7 @@ const baseNavItems: NavLeaf[] = [
   { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteudo para Post" },
   { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
   { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
+  { href: "/conteudo/cronograma", icon: CalendarRange, label: "Cronograma" },
   { href: "/clima", icon: Heart, label: "Clima" },
   { href: "/instagram-insights", icon: Instagram, label: "Instagram Insights" },
   { href: "/linkedin-insights", icon: Linkedin, label: "LinkedIn Insights" },
@@ -121,6 +123,7 @@ const collaboratorNavItems: NavLeaf[] = [
   { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteudo para Post" },
   { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
   { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
+  { href: "/conteudo/cronograma", icon: CalendarRange, label: "Cronograma" },
 ];
 
 const meusClientesNavItem: NavLeaf = {
@@ -173,6 +176,7 @@ const CONTENT_GROUP: CollapsibleGroupSpec = {
     "/conteudo/roteiros",
     "/conteudo/boletim",
     "/conteudo/reels",
+    "/conteudo/cronograma",
     "/conteudo/gustavo",
   ],
 };
@@ -308,7 +312,7 @@ function getNavItems(
   if (allowed) {
     const leafCatalog: NavLeaf[] = [...baseNavItems, meusClientesNavItem, ...adminNavItems];
     let items: NavEntry[] = leafCatalog.filter((i) => {
-      if (i.href === "/minhas-fotos" || i.href === "/meus-clientes") return true;
+      if (i.href === "/minhas-fotos" || i.href === "/meus-clientes" || i.href === "/conteudo/cronograma") return true;
       if (i.href === "/fotos-colaboradores") {
         return isCollaboratorPhotosManager(profile);
       }
@@ -329,6 +333,7 @@ function getNavItems(
         { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteudo para Post" },
         { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
         { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
+        { href: "/conteudo/cronograma", icon: CalendarRange, label: "Cronograma" },
         ...items.filter(
           (i) =>
             isNavGroup(i) ||
