@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { AlertTriangle, CheckCircle2, FileText, Film } from "lucide-react";
 import { AreaIcon, getAreaIconStyle } from "@/lib/area-icons";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { CollaboratorAvatar } from "./content-schedule-visuals";
 import type { ScheduleSlotView } from "./content-schedule-ui-types";
@@ -40,32 +42,49 @@ export function buildCalendarDays(month: string): CalendarDay[] {
   return days;
 }
 
+export function buildCalendarDaySlots(slots: ScheduleSlotView[]) {
+  return {
+    cellSlots: slots.slice(0, 3),
+    overflowSlots: slots,
+  };
+}
+
 function dayLabel(date: string) {
   return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "long", weekday: "long" })
     .format(new Date(`${date}T12:00:00`));
 }
 
-function CalendarSlotCard({ slot }: { slot: ScheduleSlotView }) {
+function CalendarSlotCard({
+  slot,
+  onSelect,
+}: {
+  slot: ScheduleSlotView;
+  onSelect: (slot: ScheduleSlotView) => void;
+}) {
   const missing = !slot.collaboratorId && !slot.collaborator;
   const personName = slot.collaborator?.name || slot.unmatchedAssigneeName || "A definir";
+  const formatLabel = slot.format === "reel" ? "Reel" : "Post";
   return (
-    <article className={cn(
-      "group relative overflow-hidden rounded-md border bg-white px-2 py-2 shadow-[0_1px_0_rgba(24,63,80,.04)] transition-colors",
-      missing ? "border-amber-200 hover:border-amber-300" : "border-[#dce9eb] hover:border-[#9fdadd]",
-      slot.status === "cancelled" && "opacity-45"
-    )}>
-      <span className={cn("absolute inset-y-0 left-0 w-0.5", slot.format === "reel" ? "bg-[#48466e]" : "bg-[#47cdd0]")} />
-      <div className="flex min-w-0 items-center gap-1.5 pl-1">
+    <button
+      type="button"
+      aria-label={`Abrir detalhes de ${personName}, ${slot.area}, ${formatLabel}`}
+      onClick={() => onSelect(slot)}
+      className={cn(
+        "group w-full overflow-hidden rounded-md bg-slate-50 px-2 py-2 text-left shadow-[0_1px_0_rgba(24,63,80,.04)] transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#285f7a] focus-visible:ring-offset-2",
+        slot.status === "cancelled" && "opacity-45"
+      )}
+    >
+      <div className="flex min-w-0 items-center gap-1.5">
         <span className={cn("flex size-5 shrink-0 items-center justify-center rounded", getAreaIconStyle(slot.area))} title={slot.area}>
           <AreaIcon area={slot.area} className="size-3" />
         </span>
         <span className="truncate text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">{slot.area}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1 text-[10px] font-semibold text-slate-500">
           {slot.format === "reel" ? <Film className="size-3" /> : <FileText className="size-3" />}
-          {slot.format === "reel" ? "Reel" : "Post"}
+          {formatLabel}
         </span>
       </div>
-      <div className="mt-1.5 flex min-w-0 items-center gap-1.5 pl-1">
+      <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
         {slot.collaborator ? (
           <CollaboratorAvatar person={slot.collaborator} className="size-6 shrink-0" />
         ) : (
@@ -73,19 +92,72 @@ function CalendarSlotCard({ slot }: { slot: ScheduleSlotView }) {
             <AlertTriangle className="size-3.5 text-amber-700" />
           </span>
         )}
-        <span className={cn("truncate text-xs font-medium", missing ? "text-amber-900" : "text-slate-800")}>{personName}</span>
+        <span className="truncate text-xs font-medium text-slate-800">{personName}</span>
         {slot.status === "published" ? <CheckCircle2 className="ml-auto size-3.5 shrink-0 text-emerald-600" /> : null}
       </div>
       {missing && slot.unmatchedAssigneeName ? (
-        <p className="mt-1 truncate pl-8 text-[10px] text-amber-700">Nome da planilha sem vínculo</p>
+        <span className="mt-1 block truncate pl-8 text-[10px] text-slate-500">Nome da planilha sem vínculo</span>
       ) : slot.content ? (
-        <p className="mt-1 truncate pl-8 text-[10px] text-slate-500">{slot.content.title}</p>
+        <span className="mt-1 block truncate pl-8 text-[10px] text-slate-500">{slot.content.title}</span>
       ) : null}
-    </article>
+    </button>
   );
 }
 
-export function ContentScheduleCalendar({ month, slots }: { month: string; slots: ScheduleSlotView[] }) {
+function CalendarDayOverflow({
+  date,
+  slots,
+  onSelectSlot,
+}: {
+  date: string;
+  slots: ScheduleSlotView[];
+  onSelectSlot: (slot: ScheduleSlotView) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const handleSelect = (slot: ScheduleSlotView) => {
+    setOpen(false);
+    onSelectSlot(slot);
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Ver todos os ${slots.length} conteúdos de ${dayLabel(date)}`}
+          className="w-full rounded px-1 py-1 text-left text-[10px] font-semibold text-[#285f7a] transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#285f7a] focus-visible:ring-offset-1"
+        >
+          + {slots.length - 3} neste dia
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        aria-label={`Todos os conteúdos de ${dayLabel(date)}`}
+        className="w-72 p-2"
+      >
+        <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+          {dayLabel(date)}
+        </div>
+        <div className="max-h-80 space-y-1.5 overflow-y-auto">
+          {slots.map((slot) => (
+            <CalendarSlotCard key={slot.id} slot={slot} onSelect={handleSelect} />
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+export function ContentScheduleCalendar({
+  month,
+  slots,
+  onSelectSlot,
+}: {
+  month: string;
+  slots: ScheduleSlotView[];
+  onSelectSlot: (slot: ScheduleSlotView) => void;
+}) {
   const days = buildCalendarDays(month);
   const byDate = new Map<string, ScheduleSlotView[]>();
   for (const slot of slots) byDate.set(slot.date.slice(0, 10), [...(byDate.get(slot.date.slice(0, 10)) ?? []), slot]);
@@ -101,6 +173,7 @@ export function ContentScheduleCalendar({ month, slots }: { month: string; slots
         <div className="grid grid-cols-7 bg-[#dce9eb] gap-px">
           {days.map((day) => {
             const daySlots = byDate.get(day.date) ?? [];
+            const { cellSlots, overflowSlots } = buildCalendarDaySlots(daySlots);
             return (
               <section key={day.date} aria-label={dayLabel(day.date)} className={cn("min-h-36 bg-white p-2", !day.inCurrentMonth && "bg-slate-50/80 text-slate-400")}>
                 <div className="mb-2 flex items-center justify-between">
@@ -108,8 +181,16 @@ export function ContentScheduleCalendar({ month, slots }: { month: string; slots
                   {daySlots.length ? <span className="font-mono text-[10px] text-slate-400">{daySlots.length}</span> : null}
                 </div>
                 <div className="space-y-1.5">
-                  {daySlots.slice(0, 3).map((slot) => <CalendarSlotCard key={slot.id} slot={slot} />)}
-                  {daySlots.length > 3 ? <p className="px-1 text-[10px] font-medium text-[#285f7a]">+ {daySlots.length - 3} neste dia</p> : null}
+                  {cellSlots.map((slot) => (
+                    <CalendarSlotCard key={slot.id} slot={slot} onSelect={onSelectSlot} />
+                  ))}
+                  {daySlots.length > 3 ? (
+                    <CalendarDayOverflow
+                      date={day.date}
+                      slots={overflowSlots}
+                      onSelectSlot={onSelectSlot}
+                    />
+                  ) : null}
                 </div>
               </section>
             );
@@ -126,7 +207,11 @@ export function ContentScheduleCalendar({ month, slots }: { month: string; slots
                 <span className="block font-mono text-xl font-semibold text-[#183f50]">{Number(date.slice(-2))}</span>
                 <span className="block text-[10px] uppercase text-slate-500">{new Intl.DateTimeFormat("pt-BR", { weekday: "short" }).format(new Date(`${date}T12:00:00`)).replace(".", "")}</span>
               </time>
-              <div className="space-y-2">{daySlots.map((slot) => <CalendarSlotCard key={slot.id} slot={slot} />)}</div>
+              <div className="space-y-2">
+                {daySlots.map((slot) => (
+                  <CalendarSlotCard key={slot.id} slot={slot} onSelect={onSelectSlot} />
+                ))}
+              </div>
             </section>
           ))}
         </div>

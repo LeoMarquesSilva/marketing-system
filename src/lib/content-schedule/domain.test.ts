@@ -70,6 +70,22 @@ describe("findAutomaticSlotMatch", () => {
     expect(normalizeScheduleArea("Distressed Deals")).toBe("special situations");
   });
 
+  it.each(["post", "reel"] as const)(
+    "vincula %s de Recuperação de Crédito somente à área canônica correspondente",
+    (format) => {
+      const recoveryEvent = {
+        ...event,
+        area: "Recuperação de Crédito",
+        format,
+      };
+
+      expect(findAutomaticSlotMatch(recoveryEvent, [
+        slot({ id: "civil", area: "Cível", format }),
+        slot({ id: "recovery", area: "Recuperação de Crédito", format }),
+      ])).toEqual({ status: "matched", slotId: "recovery", distanceDays: 1 });
+    }
+  );
+
   it("rejeita data civil inválida em vez de aceitar rollover do Date.parse", () => {
     expect(findAutomaticSlotMatch({ ...event, date: "2026-02-30" }, [slot({ date: "2026-03-02" })]))
       .toEqual({ status: "not_found" });

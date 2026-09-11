@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import {
   AlertCircle,
   BarChart3,
@@ -45,6 +46,10 @@ import { normalizeScheduleArea } from "@/lib/content-schedule/domain";
 import { AreaIcon } from "@/lib/area-icons";
 import { ContentScheduleCalendar } from "./content-schedule-calendar";
 import { ContentScheduleAssigneeReview } from "./content-schedule-assignee-review";
+import {
+  ContentScheduleSlotDetails,
+  type ScheduleAssignmentFeedback,
+} from "./content-schedule-slot-details";
 import { AreaMark, CollaboratorAvatar, CollaboratorMark } from "./content-schedule-visuals";
 import type {
   ScheduleCollaborator,
@@ -124,8 +129,158 @@ async function readError(response: Response) {
   return body?.error || body?.message || "Não foi possível concluir a operação.";
 }
 
+export function mapContentScheduleResponse(payload: ContentScheduleResponse): SchedulePayload {
+  return {
+    areas: payload.areas,
+    collaborators: payload.collaborators.map((item) => ({
+      id: item.id,
+      name: item.name,
+      area: normalizeScheduleArea(item.department),
+      avatarUrl: item.avatar_url,
+    })),
+    access: payload.access,
+    slots: payload.slots.map((slot) => ({
+      id: slot.id,
+      area: slot.area,
+      date: slot.due_date,
+      format: slot.format,
+      status: slot.cancelled ? "cancelled" : slot.publication ? "published" : (slot.content_roteiro_id || slot.reel_studio_id) ? "linked" : slot.collaborator_id ? "assigned" : "open",
+      collaboratorId: slot.collaborator_id,
+      collaborator: slot.collaborator_id ? {
+        id: slot.collaborator_id,
+        name: slot.collaborator_name ?? "Colaborador",
+        avatarUrl: slot.collaborator_avatar_url,
+      } : null,
+      content: slot.reel_studio_id
+        ? { id: slot.reel_studio_id, title: slot.reel_title ?? "Roteiro de Reel vinculado", url: "/conteudo/reels" }
+        : slot.content_roteiro_id
+          ? { id: slot.content_roteiro_id, title: slot.content_title ?? "Conteúdo vinculado" }
+          : null,
+      publication: slot.publication ? {
+        id: slot.publication.id,
+        permalink: slot.publication.permalink,
+        publishedAt: slot.publication.published_at,
+        likes: slot.publication.likes,
+        comments: slot.publication.comments,
+        reach: slot.publication.reach,
+      } : null,
+      imported: Boolean(slot.source_name || slot.source_status),
+      sourceName: slot.source_name,
+      sourceStatus: slot.source_status,
+      unmatchedAssigneeName: !slot.collaborator_id ? slot.source_name : null,
+      viosTask: slot.vios_task,
+    })),
+    pendingLinks: payload.pendingLinks.map((item) => ({
+      id: item.id,
+      label: item.source_title,
+      reason: item.reason,
+      collaboratorName: item.collaborator_name,
+      collaboratorId: item.collaborator_id,
+      date: item.event_date,
+      format: item.format,
+      area: item.area,
+    })),
+  };
+}
+
+export function reconcileSelectedScheduleSlot(
+  selectedSlot: ScheduleSlot | null,
+  slots: ScheduleSlot[]
+): ScheduleSlot | null {
+  if (!selectedSlot) return null;
+  return slots.find((slot) => slot.id === selectedSlot.id) ?? null;
+}
+
+type ScheduleFocusTarget = {
+  isConnected: boolean;
+  focus: () => void;
+};
+
+export function restoreScheduleDetailsFocus(
+  returnTarget: ScheduleFocusTarget | null,
+  fallbackTarget: ScheduleFocusTarget | null
+): boolean {
+  const target = returnTarget?.isConnected ? returnTarget : fallbackTarget?.isConnected ? fallbackTarget : null;
+  if (!target) return false;
+  target.focus();
+  return true;
+}
+
+export type ScheduleAssignmentOperation = {
+  generation: number;
+  slotId: string;
+  month: string;
+};
+
+export function isCurrentScheduleAssignmentOperation(
+  activeOperation: ScheduleAssignmentOperation | null,
+  candidateOperation: ScheduleAssignmentOperation,
+  visibleMonth: string
+): boolean {
+  return activeOperation?.generation === candidateOperation.generation
+    && activeOperation.slotId === candidateOperation.slotId
+    && activeOperation.month === candidateOperation.month
+    && candidateOperation.month === visibleMonth;
+}
+
+export function shouldRefreshScheduleAfterAssignment(
+  operation: ScheduleAssignmentOperation,
+  visibleMonth: string
+): boolean {
+  return operation.month === visibleMonth;
+}
+
+export function isCurrentScheduleLoadOperation(
+  activeGeneration: number,
+  candidateGeneration: number
+): boolean {
+  return activeGeneration === candidateGeneration;
+}
+
+type ScheduleLoadPolicy = {
+  shouldApply?: () => boolean;
+  shouldReportError?: () => boolean;
+};
+
+export async function runScheduleLoad({
+  month,
+  ownsLoad,
+  shouldApply = () => true,
+  shouldReportError = () => true,
+  onData,
+  onError,
+  onLoading,
+}: ScheduleLoadPolicy & {
+  month: string;
+  ownsLoad: () => boolean;
+  onData: (data: SchedulePayload) => void;
+  onError: (error: string | null) => void;
+  onLoading: (loading: boolean) => void;
+}) {
+  onLoading(true);
+  if (shouldReportError()) onError(null);
+  try {
+    const response = await fetch(`/api/content-schedule?month=${encodeURIComponent(month)}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(await readError(response));
+    const payload = await response.json() as ContentScheduleResponse;
+    if (!ownsLoad() || !shouldApply()) return;
+    onData(mapContentScheduleResponse(payload));
+  } catch (cause) {
+    if (ownsLoad() && shouldReportError()) onError(cause instanceof Error ? cause.message : "Não foi possível carregar o cronograma.");
+  } finally {
+    if (ownsLoad()) onLoading(false);
+  }
+}
+
 export function ContentScheduleClient() {
+  const scheduleRootRef = useRef<HTMLElement | null>(null);
+  const detailsReturnFocusRef = useRef<HTMLElement | null>(null);
+  const detailsWereOpenRef = useRef(false);
+  const assignmentGenerationRef = useRef(0);
+  const activeAssignmentOperationRef = useRef<ScheduleAssignmentOperation | null>(null);
+  const loadGenerationRef = useRef(0);
   const [month, setMonth] = useState(currentMonth);
+  const visibleMonthRef = useRef(month);
   const [view, setView] = useState<"calendar" | "list" | "assignees">("calendar");
   const [data, setData] = useState<SchedulePayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -138,45 +293,49 @@ export function ContentScheduleClient() {
   const [query, setQuery] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ScheduleSlot | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<ScheduleSlot | null>(null);
+  const [assignmentFeedback, setAssignmentFeedback] = useState<ScheduleAssignmentFeedback | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(`/api/content-schedule?month=${encodeURIComponent(month)}`, { cache: "no-store" });
-      if (!response.ok) throw new Error(await readError(response));
-      const payload = await response.json() as ContentScheduleResponse;
-      setData({
-        areas: payload.areas,
-        collaborators: payload.collaborators.map((item) => ({ id: item.id, name: item.name, area: normalizeScheduleArea(item.department), avatarUrl: item.avatar_url })),
-        access: payload.access,
-        slots: payload.slots.map((slot) => ({
-          id: slot.id,
-          area: slot.area,
-          date: slot.due_date,
-          format: slot.format,
-          status: slot.cancelled ? "cancelled" : slot.publication ? "published" : (slot.content_roteiro_id || slot.reel_studio_id) ? "linked" : slot.collaborator_id ? "assigned" : "open",
-          collaboratorId: slot.collaborator_id,
-          collaborator: slot.collaborator_id ? { id: slot.collaborator_id, name: slot.collaborator_name ?? "Colaborador", avatarUrl: slot.collaborator_avatar_url } : null,
-          content: slot.reel_studio_id
-            ? { id: slot.reel_studio_id, title: slot.reel_title ?? "Roteiro de Reel vinculado", url: "/conteudo/reels" }
-            : slot.content_roteiro_id
-              ? { id: slot.content_roteiro_id, title: slot.content_title ?? "Conteúdo vinculado" }
-              : null,
-          publication: slot.publication ? { id: slot.publication.id, permalink: slot.publication.permalink, publishedAt: slot.publication.published_at, likes: slot.publication.likes, comments: slot.publication.comments, reach: slot.publication.reach } : null,
-          imported: Boolean(slot.source_name || slot.source_status),
-          sourceName: slot.source_name,
-          sourceStatus: slot.source_status,
-          unmatchedAssigneeName: !slot.collaborator_id ? slot.source_name : null,
-        })),
-        pendingLinks: payload.pendingLinks.map((item) => ({ id: item.id, label: item.source_title, reason: item.reason, collaboratorName: item.collaborator_name, collaboratorId: item.collaborator_id, date: item.event_date, format: item.format, area: item.area })),
-      });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Não foi possível carregar o cronograma.");
-    } finally {
-      setLoading(false);
+  const invalidateAssignmentOperation = useCallback(() => {
+    assignmentGenerationRef.current += 1;
+    activeAssignmentOperationRef.current = null;
+    setSavingId(null);
+  }, []);
+
+  const restoreDetailsFocus = useCallback(() => {
+    const returnTarget = detailsReturnFocusRef.current;
+    detailsReturnFocusRef.current = null;
+    if (typeof window === "undefined") return;
+    window.requestAnimationFrame(() => {
+      restoreScheduleDetailsFocus(returnTarget, scheduleRootRef.current);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (detailsWereOpenRef.current && !selectedSlot) {
+      setAssignmentFeedback(null);
+      invalidateAssignmentOperation();
+      restoreDetailsFocus();
     }
+    detailsWereOpenRef.current = Boolean(selectedSlot);
+  }, [selectedSlot, invalidateAssignmentOperation, restoreDetailsFocus]);
+
+  const load = useCallback(async (policy: ScheduleLoadPolicy = {}) => {
+    const loadGeneration = loadGenerationRef.current + 1;
+    loadGenerationRef.current = loadGeneration;
+    const ownsLoad = () => isCurrentScheduleLoadOperation(loadGenerationRef.current, loadGeneration);
+    await runScheduleLoad({
+      month,
+      ownsLoad,
+      ...policy,
+      onData: (nextData) => {
+        setData(nextData);
+        setSelectedSlot((current) => reconcileSelectedScheduleSlot(current, nextData.slots));
+      },
+      onError: setError,
+      onLoading: setLoading,
+    });
   }, [month]);
 
   useEffect(() => { void load(); }, [load]);
@@ -210,8 +369,19 @@ export function ContentScheduleClient() {
   }, [data]);
 
   async function assign(slot: ScheduleSlot, collaboratorId: string) {
+    const operation: ScheduleAssignmentOperation = {
+      generation: assignmentGenerationRef.current + 1,
+      slotId: slot.id,
+      month: visibleMonthRef.current,
+    };
+    assignmentGenerationRef.current = operation.generation;
+    activeAssignmentOperationRef.current = operation;
+    const isCurrent = () => isCurrentScheduleAssignmentOperation(activeAssignmentOperationRef.current, operation, visibleMonthRef.current);
+    const shouldRefresh = () => shouldRefreshScheduleAfterAssignment(operation, visibleMonthRef.current);
     setSavingId(slot.id);
     setNotice(null);
+    setError(null);
+    setAssignmentFeedback(null);
     try {
       const response = await fetch(`/api/content-schedule/${slot.id}`, {
         method: "PATCH",
@@ -219,18 +389,64 @@ export function ContentScheduleClient() {
         body: JSON.stringify({ collaborator_id: collaboratorId === "unassigned" ? null : collaboratorId }),
       });
       if (!response.ok) throw new Error(await readError(response));
-      setNotice("Responsável atualizado.");
-      await load();
+      if (!shouldRefresh()) return;
+      if (isCurrent()) {
+        setNotice("Responsável atualizado.");
+        setAssignmentFeedback({ type: "success", message: "Responsável atualizado." });
+      }
+      await load({ shouldApply: shouldRefresh, shouldReportError: isCurrent });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Não foi possível atualizar o responsável.");
-    } finally { setSavingId(null); }
+      if (!isCurrent()) return;
+      const message = cause instanceof Error ? cause.message : "Não foi possível atualizar o responsável.";
+      setError(message);
+      setAssignmentFeedback({ type: "error", message });
+    } finally {
+      if (isCurrent()) {
+        activeAssignmentOperationRef.current = null;
+        setSavingId(null);
+      }
+    }
+  }
+
+  function rememberScheduleDetailsTrigger(event: ReactMouseEvent<HTMLDivElement>) {
+    if (!(event.target instanceof Element)) return;
+    const trigger = event.target.closest<HTMLElement>('button[aria-label^="Abrir detalhes"]');
+    if (trigger) detailsReturnFocusRef.current = trigger;
+  }
+
+  function openScheduleSlot(slot: ScheduleSlot) {
+    invalidateAssignmentOperation();
+    setNotice(null);
+    setError(null);
+    setAssignmentFeedback(null);
+    setSelectedSlot(slot);
+  }
+
+  function handleDetailsOpenChange(open: boolean) {
+    if (open) return;
+    invalidateAssignmentOperation();
+    setNotice(null);
+    setError(null);
+    setAssignmentFeedback(null);
+    setSelectedSlot(null);
+  }
+
+  function changeMonth(amount: number) {
+    const nextMonth = shiftMonth(visibleMonthRef.current, amount);
+    visibleMonthRef.current = nextMonth;
+    invalidateAssignmentOperation();
+    setNotice(null);
+    setError(null);
+    setAssignmentFeedback(null);
+    setSelectedSlot(null);
+    setMonth(nextMonth);
   }
 
   const assignable = (slot: ScheduleSlot) => Boolean(data?.access.canManage || data?.access.assignableAreas === null || data?.access.assignableAreas.some((item) => normalizeScheduleArea(item) === normalizeScheduleArea(slot.area)));
   const canReviewAssignees = Boolean(data && (data.access.canManage || data.access.assignableAreas === null || data.access.assignableAreas.length > 0));
 
   return (
-    <main className="mx-auto w-full max-w-[1600px] space-y-5 p-4 sm:p-6">
+    <main ref={scheduleRootRef} tabIndex={-1} className="mx-auto w-full max-w-[1600px] space-y-5 p-4 outline-none sm:p-6">
       <section className="flex flex-col gap-4 border-b border-[#dce9eb] pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-2xl">
           <p className="text-xs font-semibold uppercase text-[#347796]">Escala editorial</p>
@@ -238,9 +454,9 @@ export function ContentScheduleClient() {
           <p className="mt-1 text-sm text-slate-600">Distribua as datas definidas pelo Marketing. Os temas aparecem aqui automaticamente quando forem escolhidos no fluxo de conteúdo.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="icon" aria-label="Mês anterior" onClick={() => setMonth((value) => shiftMonth(value, -1))}><ChevronLeft /></Button>
+          <Button variant="outline" size="icon" aria-label="Mês anterior" onClick={() => changeMonth(-1)}><ChevronLeft /></Button>
           <div className="min-w-48 text-center font-semibold capitalize text-slate-900">{monthLabel(month)}</div>
-          <Button variant="outline" size="icon" aria-label="Próximo mês" onClick={() => setMonth((value) => shiftMonth(value, 1))}><ChevronRight /></Button>
+          <Button variant="outline" size="icon" aria-label="Próximo mês" onClick={() => changeMonth(1)}><ChevronRight /></Button>
           {data?.access.canManage && <Button className="ml-auto bg-[#347796] text-white hover:bg-[#285f7a]" onClick={() => { setEditing(null); setDialogOpen(true); }}><Plus /> Nova data</Button>}
         </div>
       </section>
@@ -277,7 +493,9 @@ export function ContentScheduleClient() {
         </div>
 
         {loading ? <LoadingState /> : filtered.length === 0 ? <EmptyState hasFilters={Boolean(query || area !== "all" || format !== "all" || person !== "all" || status !== "all")} /> : view === "calendar" ? (
-          <ContentScheduleCalendar month={month} slots={filtered} />
+          <div onClickCapture={rememberScheduleDetailsTrigger}>
+            <ContentScheduleCalendar month={month} slots={filtered} onSelectSlot={openScheduleSlot} />
+          </div>
         ) : (
           <div className="divide-y divide-[#dce9eb]">
             {groups.map(([groupArea, slots]) => (
@@ -303,6 +521,16 @@ export function ContentScheduleClient() {
       </section>
 
       {data && <SlotDialog open={dialogOpen} onOpenChange={setDialogOpen} editing={editing} areas={data.areas} collaborators={data.collaborators} onSaved={async (message) => { setNotice(message); setDialogOpen(false); await load(); }} />}
+      <ContentScheduleSlotDetails
+        slot={selectedSlot}
+        open={Boolean(selectedSlot)}
+        onOpenChange={handleDetailsOpenChange}
+        collaborators={data?.collaborators ?? []}
+        canAssign={selectedSlot ? assignable(selectedSlot) : false}
+        saving={Boolean(selectedSlot && savingId === selectedSlot.id)}
+        onAssign={(collaboratorId) => { if (selectedSlot) void assign(selectedSlot, collaboratorId); }}
+        assignmentFeedback={assignmentFeedback}
+      />
     </main>
   );
 }

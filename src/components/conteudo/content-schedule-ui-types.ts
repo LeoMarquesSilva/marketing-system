@@ -33,4 +33,5 @@ export type ScheduleSlotView = {
   sourceStatus?: string | null;
   imported?: boolean;
   unmatchedAssigneeName?: string | null;
+  viosTask?: { id: string; ci: string; status: string | null; title: string | null } | null;
 };

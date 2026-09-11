@@ -13,6 +13,13 @@ export interface ContentSchedulePublication {
   views: number | null;
 }
 
+export interface ContentScheduleViosTask {
+  id: string;
+  ci: string;
+  status: string | null;
+  title: string | null;
+}
+
 export interface ContentScheduleSlot {
   id: string;
   area: string;
@@ -32,6 +39,7 @@ export interface ContentScheduleSlot {
   reel_title: string | null;
   instagram_post_id: string | null;
   publication: ContentSchedulePublication | null;
+  vios_task: ContentScheduleViosTask | null;
   created_at: string;
   updated_at: string;
 }
