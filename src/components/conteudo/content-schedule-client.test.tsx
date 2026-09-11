@@ -9,6 +9,7 @@ import {
   mapContentScheduleResponse,
   reconcileSelectedScheduleSlot,
   restoreScheduleDetailsFocus,
+  shouldRefreshScheduleAfterAssignment,
   SlotRow,
 } from "./content-schedule-client";
 
@@ -124,6 +125,23 @@ describe("integração dos detalhes do cronograma", () => {
       septemberOperation,
       "2026-10"
     )).toBe(false);
+  });
+
+  it("recarrega o mesmo mês mesmo quando a sessão já não pode publicar feedback", () => {
+    const completedOperation = { generation: 7, slotId: "slot-a", month: "2026-09" };
+
+    expect(isCurrentScheduleAssignmentOperation(
+      null,
+      completedOperation,
+      "2026-09"
+    )).toBe(false);
+    expect(shouldRefreshScheduleAfterAssignment(completedOperation, "2026-09")).toBe(true);
+  });
+
+  it("não recarrega o calendário quando o mês mudou após a atribuição", () => {
+    const septemberOperation = { generation: 7, slotId: "slot-a", month: "2026-09" };
+
+    expect(shouldRefreshScheduleAfterAssignment(septemberOperation, "2026-10")).toBe(false);
   });
 
   it("permite somente ao reload mais recente aplicar dados e finalizar loading", () => {

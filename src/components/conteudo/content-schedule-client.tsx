@@ -223,6 +223,13 @@ export function isCurrentScheduleAssignmentOperation(
     && candidateOperation.month === visibleMonth;
 }
 
+export function shouldRefreshScheduleAfterAssignment(
+  operation: ScheduleAssignmentOperation,
+  visibleMonth: string
+): boolean {
+  return operation.month === visibleMonth;
+}
+
 export function isCurrentScheduleLoadOperation(
   activeGeneration: number,
   candidateGeneration: number
@@ -339,6 +346,7 @@ export function ContentScheduleClient() {
     assignmentGenerationRef.current = operation.generation;
     activeAssignmentOperationRef.current = operation;
     const isCurrent = () => isCurrentScheduleAssignmentOperation(activeAssignmentOperationRef.current, operation, visibleMonthRef.current);
+    const shouldRefresh = () => shouldRefreshScheduleAfterAssignment(operation, visibleMonthRef.current);
     setSavingId(slot.id);
     setNotice(null);
     setError(null);
@@ -350,10 +358,12 @@ export function ContentScheduleClient() {
         body: JSON.stringify({ collaborator_id: collaboratorId === "unassigned" ? null : collaboratorId }),
       });
       if (!response.ok) throw new Error(await readError(response));
-      if (!isCurrent()) return;
-      setNotice("Responsável atualizado.");
-      setAssignmentFeedback({ type: "success", message: "Responsável atualizado." });
-      await load(isCurrent);
+      if (!shouldRefresh()) return;
+      if (isCurrent()) {
+        setNotice("Responsável atualizado.");
+        setAssignmentFeedback({ type: "success", message: "Responsável atualizado." });
+      }
+      await load(shouldRefresh);
     } catch (cause) {
       if (!isCurrent()) return;
       const message = cause instanceof Error ? cause.message : "Não foi possível atualizar o responsável.";
