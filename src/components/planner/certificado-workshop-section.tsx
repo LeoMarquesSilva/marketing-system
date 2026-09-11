@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Award,
-  Check,
   ChevronDown,
   ChevronUp,
   Clock,
@@ -11,12 +10,14 @@ import {
   ExternalLink,
   Loader2,
   Mail,
-  MapPin,
   RefreshCw,
   Ticket as TicketIcon,
   UserCheck,
-  Users,
 } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { AreaIcon, getAreaIconStyle } from "@/lib/area-icons";
+import { cn } from "@/lib/utils";
+import { fetchActiveUsers, type User } from "@/lib/users";
 import type { CertificadoWorkshopInfo } from "@/lib/certificado-workshop";
 
 interface CertificadoWorkshopSectionProps {
@@ -24,6 +25,62 @@ interface CertificadoWorkshopSectionProps {
   info: CertificadoWorkshopInfo;
   rawDescription: string;
   onSynced?: () => void;
+}
+
+function getInitials(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .map((part) => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+}
+
+/** Parte local do e-mail (antes do @), usada pra casar apesar do domínio ter mudado (bpplaw.com.br → bismarchipires.com.br). */
+function emailLocalPart(email: string): string {
+  return email.trim().toLowerCase().split("@")[0] ?? "";
+}
+
+interface UserDirectoryLookup {
+  byEmail: Map<string, User>;
+  byLocalPart: Map<string, User>;
+  byName: Map<string, User>;
+}
+
+/** Casa um nome e/ou e-mail (vindo do Responsum/SharePoint) com o cadastro do ORQESTRAI. */
+function resolvePerson(
+  { email, name }: { email?: string; name?: string },
+  { byEmail, byLocalPart, byName }: UserDirectoryLookup
+): { user: User | null; label: string } {
+  const trimmedEmail = email?.trim().toLowerCase();
+  if (trimmedEmail) {
+    const match = byEmail.get(trimmedEmail) ?? byLocalPart.get(emailLocalPart(trimmedEmail));
+    if (match) return { user: match, label: match.name };
+  }
+  const trimmedName = name?.trim();
+  if (trimmedName) {
+    const match = byName.get(trimmedName.toLowerCase());
+    if (match) return { user: match, label: match.name };
+  }
+  return { user: null, label: trimmedName ?? trimmedEmail ?? "" };
+}
+
+/** Casa uma entrada da presença (nome OU e-mail, vindo do SharePoint) com o cadastro do ORQESTRAI. */
+function resolveAttendee(raw: string, lookup: UserDirectoryLookup): { user: User | null; label: string } {
+  const trimmed = raw.trim();
+  return trimmed.includes("@")
+    ? resolvePerson({ email: trimmed }, lookup)
+    : resolvePerson({ name: trimmed }, lookup);
+}
+
+/** Quebra "Fulano, Beltrana e Ciclano" em nomes individuais. */
+function splitNames(raw: string): string[] {
+  return raw
+    .split(/\s*,\s*|\s+e\s+|\s*\/\s*|\s+&\s+/)
+    .map((name) => name.trim())
+    .filter(Boolean);
 }
 
 const sectionClass =
@@ -46,6 +103,43 @@ export function CertificadoWorkshopSection({ requestId, info, rawDescription, on
   const [showRaw, setShowRaw] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [userDirectory, setUserDirectory] = useState<User[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchActiveUsers().then((users) => {
+      if (!cancelled) setUserDirectory(users);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const lookup = useMemo<UserDirectoryLookup>(() => {
+    const byEmail = new Map<string, User>();
+    const byLocalPart = new Map<string, User>();
+    const byName = new Map<string, User>();
+    for (const user of userDirectory) {
+      if (user.email) {
+        const email = user.email.trim().toLowerCase();
+        byEmail.set(email, user);
+        const localPart = emailLocalPart(email);
+        if (localPart && !byLocalPart.has(localPart)) byLocalPart.set(localPart, user);
+      }
+      byName.set(user.name.trim().toLowerCase(), user);
+    }
+    return { byEmail, byLocalPart, byName };
+  }, [userDirectory]);
+
+  const responsavel = useMemo(
+    () => resolvePerson({ email: info.responsavelEmail, name: info.responsavelNome }, lookup),
+    [info.responsavelEmail, info.responsavelNome, lookup]
+  );
+
+  const facilitadores = useMemo(
+    () => (info.facilitadores ? splitNames(info.facilitadores).map((name) => resolvePerson({ name }, lookup)) : []),
+    [info.facilitadores, lookup]
+  );
 
   const handleSyncPresenca = async () => {
     setSyncing(true);
@@ -83,27 +177,46 @@ export function CertificadoWorkshopSection({ requestId, info, rawDescription, on
       <div className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
         {(info.responsavelNome || info.responsavelEmail) && (
           <Field label="Responsável (gerente da área)">
-            <div className="flex flex-col gap-0.5">
-              {info.responsavelNome && <span>{info.responsavelNome}</span>}
-              {info.responsavelEmail && (
-                <a
-                  href={`mailto:${info.responsavelEmail}`}
-                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                >
-                  <Mail className="h-3 w-3 shrink-0" aria-hidden />
-                  {info.responsavelEmail}
-                </a>
-              )}
+            <div className="flex items-center gap-2">
+              <Avatar className="h-7 w-7 shrink-0 border border-border/60">
+                {responsavel.user?.avatar_url && (
+                  <AvatarImage src={responsavel.user.avatar_url} alt={responsavel.label} />
+                )}
+                <AvatarFallback className="bg-primary/10 text-[10px] font-semibold text-primary">
+                  {getInitials(responsavel.label || "?")}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="truncate">{responsavel.label || info.responsavelNome}</span>
+                {info.responsavelEmail && (
+                  <a
+                    href={`mailto:${info.responsavelEmail}`}
+                    className="inline-flex items-center gap-1 truncate text-xs text-primary hover:underline"
+                  >
+                    <Mail className="h-3 w-3 shrink-0" aria-hidden />
+                    {info.responsavelEmail}
+                  </a>
+                )}
+              </div>
             </div>
           </Field>
         )}
 
-        {info.facilitadores && (
+        {facilitadores.length > 0 && (
           <Field label="Facilitador(es)">
-            <span className="inline-flex items-center gap-1.5">
-              <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-              {info.facilitadores}
-            </span>
+            <div className="flex flex-col gap-1.5">
+              {facilitadores.map(({ user, label }) => (
+                <div key={label} className="flex items-center gap-2">
+                  <Avatar className="h-6 w-6 shrink-0 border border-border/60">
+                    {user?.avatar_url && <AvatarImage src={user.avatar_url} alt={label} />}
+                    <AvatarFallback className="bg-primary/10 text-[9px] font-semibold text-primary">
+                      {getInitials(label)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="truncate">{label}</span>
+                </div>
+              ))}
+            </div>
           </Field>
         )}
 
@@ -118,8 +231,10 @@ export function CertificadoWorkshopSection({ requestId, info, rawDescription, on
 
         {info.area && (
           <Field label="Área">
-            <span className="inline-flex items-center gap-1.5">
-              <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+            <span className="inline-flex items-center gap-2">
+              <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-md ring-1", getAreaIconStyle(info.area))}>
+                <AreaIcon area={info.area} className="size-3.5" aria-hidden />
+              </span>
               {info.area}
             </span>
           </Field>
@@ -162,16 +277,26 @@ export function CertificadoWorkshopSection({ requestId, info, rawDescription, on
         )}
 
         {info.presenca?.status === "preenchida" && info.presenca.nomes.length > 0 && (
-          <ul className="flex flex-wrap gap-1.5">
-            {info.presenca.nomes.map((nome) => (
-              <li
-                key={nome}
-                className="inline-flex items-center gap-1 rounded-full border border-emerald-300/60 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-950/30 dark:text-emerald-300"
-              >
-                <Check className="h-3 w-3 shrink-0" aria-hidden />
-                {nome}
-              </li>
-            ))}
+          <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+            {info.presenca.nomes.map((raw) => {
+              const { user, label } = resolveAttendee(raw, lookup);
+              return (
+                <li
+                  key={raw}
+                  className="flex items-center gap-2 rounded-full border border-emerald-300/60 bg-emerald-50 py-1 pl-1 pr-3 dark:border-emerald-500/30 dark:bg-emerald-950/30"
+                >
+                  <Avatar className="h-6 w-6 shrink-0 border border-white/70 dark:border-white/10">
+                    {user?.avatar_url && <AvatarImage src={user.avatar_url} alt={label} />}
+                    <AvatarFallback className="bg-emerald-600/10 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-400/10 dark:text-emerald-300">
+                      {getInitials(label)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="min-w-0 truncate text-xs font-medium text-emerald-900 dark:text-emerald-200" title={label}>
+                    {label}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
