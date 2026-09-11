@@ -238,7 +238,9 @@ export function UsersTable({
     }
     if (data) {
       setUsers((prev) =>
-        prev.map((u) => (u.id === data.id ? data : u)).sort((a, b) => a.name.localeCompare(b.name))
+        prev
+          .map((u) => (u.id === data.id ? { ...u, ...data } : u))
+          .sort((a, b) => a.name.localeCompare(b.name))
       );
       setEditOpen(false);
       setEditingUser(null);
@@ -281,7 +283,9 @@ export function UsersTable({
     }
     if (data) {
       setUsers((prev) =>
-        prev.map((u) => (u.id === data.id ? data : u)).sort((a, b) => a.name.localeCompare(b.name))
+        prev
+          .map((u) => (u.id === data.id ? { ...u, ...data } : u))
+          .sort((a, b) => a.name.localeCompare(b.name))
       );
     }
   }
