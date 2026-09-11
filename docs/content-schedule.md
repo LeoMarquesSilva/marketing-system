@@ -45,6 +45,10 @@ Depois da aplicação, `Special Situations` ficou com 0 slots e `Recuperação d
 
 `Recuperação de Crédito` também passou a ser uma área canônica do módulo Conteúdo. Ela aparece nos seletores de Posts e Reels, é reconhecida na classificação e no mapeamento do departamento homônimo, e pode ser vinculada automaticamente somente aos slots da mesma área e formato.
 
+## Ajuste de gravação — 11/09/2026
+
+A migração `20260911163029_move_september_reels_to_23.sql` moveu de 16/09 para 23/09/2026 os cinco Reels de setembro: Cível, Operações Legais, Reestruturação, Societário e Contratos e Trabalhista. A alteração preservou os demais dados dos slots.
+
 ## Segurança e entrega
 
 As tabelas `content_schedule_slots` e `content_schedule_links` usam RLS e não permitem acesso direto por `anon`/`authenticated`. As APIs autenticadas recalculam permissões no servidor.
