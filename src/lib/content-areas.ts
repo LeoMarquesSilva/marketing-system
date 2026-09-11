@@ -3,6 +3,7 @@ export const LEGAL_AREAS = [
   "Cível",
   "Trabalhista",
   "Reestruturação",
+  "Recuperação de Crédito",
   "Societário e Contratos",
   "Operações Legais (Legal Ops)",
 ] as const;
@@ -15,6 +16,7 @@ const DEPARTMENT_TO_LEGAL_AREAS: Record<string, LegalArea[]> = {
   Trabalhista: ["Trabalhista"],
   Reestruturação: ["Reestruturação"],
   Insolvência: ["Reestruturação"],
+  "Recuperação de Crédito": ["Recuperação de Crédito"],
   "Societário e Contratos": ["Societário e Contratos"],
   Contratos: ["Societário e Contratos"],
   "Operações Legais": ["Operações Legais (Legal Ops)"],
@@ -121,6 +123,8 @@ export const AREA_COLORS: Record<string, string> = {
   Trabalhista: "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200/60",
   Reestruturação:
     "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-200/60",
+  "Recuperação de Crédito":
+    "bg-orange-100 text-orange-800 dark:bg-orange-950/60 dark:text-orange-300 border-orange-200/60",
   "Societário e Contratos":
     "bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 border-sky-200/60",
   "Operações Legais (Legal Ops)":
@@ -142,6 +146,7 @@ export const AREA_DOT_COLORS: Record<string, string> = {
   Cível: "bg-violet-500",
   Trabalhista: "bg-amber-500",
   Reestruturação: "bg-rose-500",
+  "Recuperação de Crédito": "bg-orange-500",
   "Societário e Contratos": "bg-sky-500",
   "Operações Legais (Legal Ops)": "bg-emerald-500",
   "Distressed Deals": "bg-orange-500",

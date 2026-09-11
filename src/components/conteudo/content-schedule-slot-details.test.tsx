@@ -82,6 +82,17 @@ describe("ContentScheduleSlotDetails", () => {
     expect(html).toContain("Não vinculado ao VIOS");
   });
 
+  it("explica que Reel não possui tarefa VIOS própria", () => {
+    const html = renderDetails(slot({
+      format: "reel",
+      status: "linked",
+      content: { id: "reel-1", title: "Cobrança extrajudicial em vídeo" },
+    }));
+
+    expect(html).toContain("Sem tarefa VIOS associada ao Reel");
+    expect(html).not.toContain("Não vinculado ao VIOS");
+  });
+
   it("mostra CI, título e situação da tarefa VIOS vinculada", () => {
     const html = renderDetails(slot({
       status: "linked",
@@ -131,6 +142,13 @@ describe("ContentScheduleSlotDetails", () => {
     const html = renderDetails(slot(), { canAssign: false });
 
     expect(html).toContain("Marina Oliveira");
+    expect(html).not.toContain('aria-label="Trocar responsável"');
+  });
+
+  it("não permite trocar o responsável de slot cancelado", () => {
+    const html = renderDetails(slot({ status: "cancelled" }), { canAssign: true });
+
+    expect(html).toContain("Cancelado");
     expect(html).not.toContain('aria-label="Trocar responsável"');
   });
 

@@ -19,7 +19,7 @@ import {
 } from "./content-classification";
 import { buildRssQueryWithRecency } from "./content-rss";
 import { BROWSER_UA, fetchArticleContent } from "./content-extraction";
-import { getDepartmentsForLegalArea } from "./content-areas";
+import { getDepartmentsForLegalArea, LEGAL_AREAS } from "./content-areas";
 import {
   buildAreaPerformanceContext,
   fetchPerformancePostsWindow,
@@ -31,14 +31,6 @@ const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
 const supabaseServiceKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-
-const LEGAL_AREAS = [
-  "Cível",
-  "Trabalhista",
-  "Reestruturação",
-  "Societário e Contratos",
-  "Operações Legais (Legal Ops)",
-] as const;
 
 const CAROUSEL_PROMPT = `Você é redator jurídico de um escritório de advocacia.
 

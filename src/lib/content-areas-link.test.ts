@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { canCreateRoteiroFromLink } from "@/lib/content-areas";
+import {
+  canCreateRoteiroFromLink,
+  getDepartmentsForLegalArea,
+  getLegalAreasForDepartment,
+} from "@/lib/content-areas";
 
 describe("canCreateRoteiroFromLink", () => {
   it("libera marketing, admin e designer", () => {
@@ -13,6 +17,18 @@ describe("canCreateRoteiroFromLink", () => {
       canCreateRoteiroFromLink({ department: "Operações Legais", role: null })
     ).toBe(true);
     expect(canCreateRoteiroFromLink({ department: "Trabalhista", role: null })).toBe(true);
+  });
+
+  it("mantém Recuperação de Crédito como área canônica própria do departamento", () => {
+    expect(getLegalAreasForDepartment("Recuperação de Crédito")).toEqual([
+      "Recuperação de Crédito",
+    ]);
+    expect(getDepartmentsForLegalArea("Recuperação de Crédito")).toEqual([
+      "Recuperação de Crédito",
+    ]);
+    expect(
+      canCreateRoteiroFromLink({ department: "Recuperação de Crédito", role: null })
+    ).toBe(true);
   });
 
   it("bloqueia perfil sem área de conteúdo", () => {

@@ -110,6 +110,7 @@ export function ContentScheduleSlotDetails({
   const availableCollaborators = slot
     ? collaborators.filter((person) => !person.area || normalizeScheduleArea(person.area) === normalizeScheduleArea(slot.area))
     : [];
+  const canEditAssignment = canAssign && slot?.status !== "cancelled";
 
   return (
     <Sheet open={open && Boolean(slot)} onOpenChange={onOpenChange}>
@@ -173,11 +174,11 @@ export function ContentScheduleSlotDetails({
                 <p className="text-sm text-slate-500">{slot.unmatchedAssigneeName || "A definir"}</p>
               )}
 
-              {canAssign && slot.content ? (
+              {canEditAssignment && slot.content ? (
                 <p className="rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-600">
                   O responsável não pode ser trocado após o vínculo do conteúdo.
                 </p>
-              ) : canAssign ? (
+              ) : canEditAssignment ? (
                 <div className="space-y-1.5">
                   <span className="text-sm font-medium text-slate-700">Trocar responsável</span>
                   <Select
@@ -231,7 +232,15 @@ export function ContentScheduleSlotDetails({
                   <p className="font-medium text-slate-800">{slot.viosTask.title || "Tarefa sem título"}</p>
                   <p className="text-slate-500">{slot.viosTask.status || "Sem situação informada"}</p>
                 </div>
-              ) : <p className="text-sm text-slate-500">Não vinculado ao VIOS</p>}
+              ) : (
+                <p className="text-sm text-slate-500">
+                  {!slot.content
+                    ? "Tema ainda não escolhido"
+                    : slot.format === "reel"
+                      ? "Sem tarefa VIOS associada ao Reel"
+                      : "Não vinculado ao VIOS"}
+                </p>
+              )}
             </DetailSection>
 
             <DetailSection title="Publicação e métricas" icon={BarChart3}>

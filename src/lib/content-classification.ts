@@ -6,6 +6,7 @@ const TOPIC_AREA_TO_LEGAL: Record<string, LegalArea> = {
   Trabalhista: "Trabalhista",
   Reestruturação: "Reestruturação",
   Insolvência: "Reestruturação",
+  "Recuperação de Crédito": "Recuperação de Crédito",
   "Societário e Contratos": "Societário e Contratos",
   Contratos: "Societário e Contratos",
   "Operações Legais": "Operações Legais (Legal Ops)",
@@ -160,6 +161,7 @@ export const CLASSIFY_PROMPT = `Você é um classificador jurídico especializad
 - Cível — contratos civis, responsabilidade civil, família, sucessões, indenizações, direito do consumidor.
 - Trabalhista — CLT, relações de trabalho, demissões, rescisões, acidentes de trabalho, sindicatos.
 - Reestruturação — falência, recuperação judicial, RJ, concurso de credores, massa falida, crise financeira de empresas, insolvência.
+- Recuperação de Crédito — cobrança, execução e recuperação de créditos, inadimplência, garantias, renegociação de dívidas e localização de ativos. Não confundir com recuperação judicial ou falência, que pertencem a Reestruturação.
 - Societário e Contratos — M&A, fusões, aquisições, joint ventures, governança corporativa, acordo de acionistas, contratos comerciais entre empresas.
 - Operações Legais (Legal Ops) — SOMENTE gestão operacional de departamentos jurídicos e escritórios: legal tech, software jurídico, automação de contratos (CLM), IA aplicada ao jurídico, legal design, métricas/BI jurídico, eficiência de processos internos, eBilling, matter management, transformação digital do jurídico (CLOC). NÃO é crime, polícia, compliance penal nem auditoria de governo.
 
@@ -167,8 +169,9 @@ REGRAS CRÍTICAS:
 1. "Operação" policial, PF, Polícia Civil, lavagem de dinheiro criminal, tráfico, prisão → NÃO é Legal Ops. Classifique em Cível ou ignore o tema se for notícia criminal/policial pura.
 2. Tribunal de Contas (TCE), prestação de contas de governo, política estadual → NÃO é Legal Ops.
 3. Legal Ops exige contexto de gestão/tecnologia/processos do departamento jurídico ou escritório — não basta mencionar "legal" ou "compliance" genérico.
-4. GPA, recuperação judicial, credores → Reestruturação ou Societário e Contratos, nunca Legal Ops.
-5. Na dúvida entre Legal Ops e outra área, escolha a outra área.
+4. Recuperação judicial, falência e concurso de credores → Reestruturação; cobrança e recuperação de valores devidos → Recuperação de Crédito.
+5. GPA, recuperação judicial, credores → Reestruturação ou Societário e Contratos, nunca Legal Ops.
+6. Na dúvida entre Legal Ops e outra área, escolha a outra área.
 
 GATE DE RELEVÂNCIA (faça ANTES de classificar):
 Se a notícia NÃO serve como base para um post jurídico educativo de um escritório de advocacia empresarial — por exemplo: nota puramente policial/criminal, política partidária, esporte, celebridades, fofoca, conteúdo regional sem tese jurídica, ou tema sem qualquer ângulo jurídico empresarial — responda EXATAMENTE com a palavra "IRRELEVANTE". Não invente um enquadramento jurídico para notícias que não têm.
@@ -198,6 +201,13 @@ export function buildClassifyPrompt(
 export function parseClassifiedArea(raw: string): LegalArea {
   const trimmed = raw.trim().replace(/^["']|["']$/g, "");
   const lower = trimmed.toLowerCase();
+
+  // "Recuperação" isoladamente é ambígua. A modalidade judicial pertence
+  // sempre a Reestruturação, nunca à área de cobrança de créditos.
+  if (/recuperação\s+(?:extra)?judicial/.test(lower)) {
+    return "Reestruturação";
+  }
+
   const alias = LEGAL_AREA_ALIASES[lower];
   if (alias) return alias;
 

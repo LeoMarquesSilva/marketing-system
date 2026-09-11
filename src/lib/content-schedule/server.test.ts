@@ -85,6 +85,36 @@ describe("content schedule server integration rules", () => {
     expect(viosCalls[0].filters).toContainEqual(["in", "id", ["vios-row-id"]]);
   });
 
+  it("não herda a tarefa VIOS do Post no Reel derivado", async () => {
+    const db = database((query) => {
+      if (query.table === "users" && query.filters.some((filter) => filter[1] === "auth_id")) {
+        return { data: { id: "profile", role: "admin", department: "Marketing", permissions: [], is_active: true }, error: null };
+      }
+      if (query.table === "hr_employees") return { data: null, error: null };
+      if (query.table === "users") return { data: [], error: null };
+      if (query.table === "content_schedule_slots") return { data: [
+        { id: "derived-reel", area: "Recuperação de Crédito", due_date: "2026-10-14", format: "reel", collaborator_id: null, source_key: "derived-reel", source_name: null, source_status: null, source_notes: null, cancelled: false, content_roteiro_id: "source-post", reel_studio_id: "reel", instagram_post_id: null, created_at: "2026-09-01", updated_at: "2026-09-01" },
+      ], error: null };
+      if (query.table === "content_roteiros") return { data: [
+        { id: "source-post", title: "Post de origem", marketing_request_id: null, vios_task_id: "post-vios" },
+      ], error: null };
+      if (query.table === "reel_studio_items") return { data: [
+        { id: "reel", title: "Reel derivado" },
+      ], error: null };
+      if (query.table === "vios_tasks") return { data: [
+        { id: "post-vios", vios_id: 9876, status: "Concluído", tarefa: "Produzir Post" },
+      ], error: null };
+      return { data: [], error: null };
+    });
+    mocks.createClient.mockReturnValue(db);
+    const { getContentSchedule } = await import("./server");
+
+    const result = await getContentSchedule("2026-10");
+
+    expect(result.slots[0].vios_task).toBeNull();
+    expect(db.calls.filter((query) => query.table === "vios_tasks")).toHaveLength(0);
+  });
+
   it("registra a data civil de São Paulo e mantém pendências Post separadas de Reel", async () => {
     const db = database((query) => ({ data: query.table === "content_roteiros" ? source : query.table === "content_schedule_slots" ? [] : null, error: null }));
     mocks.createClient.mockReturnValue(db);

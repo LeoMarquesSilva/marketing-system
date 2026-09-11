@@ -362,7 +362,16 @@ export async function getContentSchedule(month = currentSaoPauloMonth()): Promis
   if (usersResult.error || roteirosResult.error || reelsResult.error) throw new ContentScheduleHttpError("Não foi possível completar os dados do cronograma.");
 
   const requestIds = [...new Set((roteirosResult.data ?? []).map((r) => r.marketing_request_id).filter(Boolean))] as string[];
-  const viosTaskIds = [...new Set((roteirosResult.data ?? []).map((r) => r.vios_task_id).filter(Boolean))] as string[];
+  const postRoteiroIds = new Set(
+    rows
+      .filter((row) => row.format === "post")
+      .map((row) => row.content_roteiro_id)
+      .filter(Boolean) as string[]
+  );
+  const viosTaskIds = [...new Set((roteirosResult.data ?? [])
+    .filter((roteiro) => postRoteiroIds.has(roteiro.id))
+    .map((roteiro) => roteiro.vios_task_id)
+    .filter(Boolean))] as string[];
   const [requestResult, viosResult] = await Promise.all([
     requestIds.length
       ? db.from("marketing_requests").select("id,ig_media_id").in("id", requestIds)
@@ -392,7 +401,9 @@ export async function getContentSchedule(month = currentSaoPauloMonth()): Promis
     const person = row.collaborator_id ? users.get(row.collaborator_id) : null;
     const roteiro = row.content_roteiro_id ? roteiros.get(row.content_roteiro_id) : null;
     const request = row.format === "post" && roteiro?.marketing_request_id ? requests.get(roteiro.marketing_request_id) : null;
-    const viosTask = roteiro?.vios_task_id ? viosTasks.get(roteiro.vios_task_id) : null;
+    const viosTask = row.format === "post" && roteiro?.vios_task_id
+      ? viosTasks.get(roteiro.vios_task_id)
+      : null;
     const publication = (row.instagram_post_id ? postsById.get(row.instagram_post_id) : null) ??
       (request?.ig_media_id ? postsByMedia.get(request.ig_media_id) : null) ?? null;
     return {
