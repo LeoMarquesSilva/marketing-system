@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ContentScheduleResponse } from "@/lib/content-schedule/types";
 import {
   AreaMark,
@@ -9,9 +9,103 @@ import {
   mapContentScheduleResponse,
   reconcileSelectedScheduleSlot,
   restoreScheduleDetailsFocus,
+  runScheduleLoad,
+  type ScheduleAssignmentOperation,
   shouldRefreshScheduleAfterAssignment,
   SlotRow,
 } from "./content-schedule-client";
+
+afterEach(() => vi.restoreAllMocks());
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => { resolve = complete; });
+  return { promise, resolve };
+}
+
+describe("reload assíncrono do cronograma", () => {
+  function setup() {
+    const request = deferred<Response>();
+    vi.spyOn(globalThis, "fetch").mockReturnValue(request.promise);
+    const state = { data: null as ReturnType<typeof mapContentScheduleResponse> | null, error: null as string | null, loading: false };
+    const options = {
+      month: "2026-09",
+      ownsLoad: () => true,
+      onData: (data: ReturnType<typeof mapContentScheduleResponse>) => { state.data = data; },
+      onError: (error: string | null) => { state.error = error; },
+      onLoading: (loading: boolean) => { state.loading = loading; },
+    };
+    return { request, state, options };
+  }
+
+  it("aplica dados de A no mesmo mês mesmo quando B abre durante o GET", async () => {
+    const { request, state, options } = setup();
+    const operation = { generation: 1, slotId: "slot-a", month: "2026-09" };
+    let activeOperation: ScheduleAssignmentOperation | null = operation;
+    const pending = runScheduleLoad({
+      ...options,
+      shouldApply: () => shouldRefreshScheduleAfterAssignment(operation, "2026-09"),
+      shouldReportError: () => isCurrentScheduleAssignmentOperation(activeOperation, operation, "2026-09"),
+    });
+    activeOperation = { generation: 2, slotId: "slot-b", month: "2026-09" };
+    request.resolve(Response.json(response()));
+    await pending;
+
+    expect(state.data?.slots[0].collaborator?.name).toBe("Marina Oliveira");
+    expect(state.error).toBeNull();
+    expect(state.loading).toBe(false);
+  });
+
+  it.each([null, { generation: 2, slotId: "slot-b", month: "2026-09" }])(
+    "não publica erro do GET de A depois que a sessão muda para %j",
+    async (nextOperation) => {
+      const { request, state, options } = setup();
+      const operation = { generation: 1, slotId: "slot-a", month: "2026-09" };
+      let activeOperation: ScheduleAssignmentOperation | null = operation;
+      const pending = runScheduleLoad({
+        ...options,
+        shouldApply: () => shouldRefreshScheduleAfterAssignment(operation, "2026-09"),
+        shouldReportError: () => isCurrentScheduleAssignmentOperation(activeOperation, operation, "2026-09"),
+      });
+      activeOperation = nextOperation;
+      request.resolve(Response.json({ error: "Falha antiga de A" }, { status: 500 }));
+      await pending;
+
+      expect(state.error).toBeNull();
+      expect(state.data).toBeNull();
+      expect(state.loading).toBe(false);
+    }
+  );
+
+  it.each([true, false])("loads regulares aplicam dados ou reportam erro (sucesso=%s)", async (success) => {
+    const { request, state, options } = setup();
+    const pending = runScheduleLoad(options);
+    request.resolve(success
+      ? Response.json(response())
+      : Response.json({ error: "Erro do mês atual" }, { status: 500 }));
+    await pending;
+
+    expect(state.data?.slots[0].id ?? null).toBe(success ? "slot-1" : null);
+    expect(state.error).toBe(success ? null : "Erro do mês atual");
+    expect(state.loading).toBe(false);
+  });
+
+  it.each([true, false])("reload antigo preserva dados, erro e loading do novo dono (sucesso=%s)", async (success) => {
+    const { request, state, options } = setup();
+    let generation = 1;
+    const pending = runScheduleLoad({ ...options, ownsLoad: () => isCurrentScheduleLoadOperation(generation, 1) });
+    generation = 2;
+    state.error = "Erro da nova operação";
+    request.resolve(success
+      ? Response.json(response())
+      : Response.json({ error: "Erro antigo" }, { status: 500 }));
+    await pending;
+
+    expect(state.data).toBeNull();
+    expect(state.error).toBe("Erro da nova operação");
+    expect(state.loading).toBe(true);
+  });
+});
 
 function response(): ContentScheduleResponse {
   return {

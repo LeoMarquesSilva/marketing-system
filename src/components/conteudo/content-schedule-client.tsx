@@ -237,6 +237,41 @@ export function isCurrentScheduleLoadOperation(
   return activeGeneration === candidateGeneration;
 }
 
+type ScheduleLoadPolicy = {
+  shouldApply?: () => boolean;
+  shouldReportError?: () => boolean;
+};
+
+export async function runScheduleLoad({
+  month,
+  ownsLoad,
+  shouldApply = () => true,
+  shouldReportError = () => true,
+  onData,
+  onError,
+  onLoading,
+}: ScheduleLoadPolicy & {
+  month: string;
+  ownsLoad: () => boolean;
+  onData: (data: SchedulePayload) => void;
+  onError: (error: string | null) => void;
+  onLoading: (loading: boolean) => void;
+}) {
+  onLoading(true);
+  if (shouldReportError()) onError(null);
+  try {
+    const response = await fetch(`/api/content-schedule?month=${encodeURIComponent(month)}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(await readError(response));
+    const payload = await response.json() as ContentScheduleResponse;
+    if (!ownsLoad() || !shouldApply()) return;
+    onData(mapContentScheduleResponse(payload));
+  } catch (cause) {
+    if (ownsLoad() && shouldReportError()) onError(cause instanceof Error ? cause.message : "Não foi possível carregar o cronograma.");
+  } finally {
+    if (ownsLoad()) onLoading(false);
+  }
+}
+
 export function ContentScheduleClient() {
   const scheduleRootRef = useRef<HTMLElement | null>(null);
   const detailsReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -286,25 +321,21 @@ export function ContentScheduleClient() {
     detailsWereOpenRef.current = Boolean(selectedSlot);
   }, [selectedSlot, invalidateAssignmentOperation, restoreDetailsFocus]);
 
-  const load = useCallback(async (shouldApply: () => boolean = () => true) => {
+  const load = useCallback(async (policy: ScheduleLoadPolicy = {}) => {
     const loadGeneration = loadGenerationRef.current + 1;
     loadGenerationRef.current = loadGeneration;
     const ownsLoad = () => isCurrentScheduleLoadOperation(loadGenerationRef.current, loadGeneration);
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(`/api/content-schedule?month=${encodeURIComponent(month)}`, { cache: "no-store" });
-      if (!response.ok) throw new Error(await readError(response));
-      const payload = await response.json() as ContentScheduleResponse;
-      if (!ownsLoad() || !shouldApply()) return;
-      const nextData = mapContentScheduleResponse(payload);
-      setData(nextData);
-      setSelectedSlot((current) => reconcileSelectedScheduleSlot(current, nextData.slots));
-    } catch (cause) {
-      if (ownsLoad() && shouldApply()) setError(cause instanceof Error ? cause.message : "Não foi possível carregar o cronograma.");
-    } finally {
-      if (ownsLoad()) setLoading(false);
-    }
+    await runScheduleLoad({
+      month,
+      ownsLoad,
+      ...policy,
+      onData: (nextData) => {
+        setData(nextData);
+        setSelectedSlot((current) => reconcileSelectedScheduleSlot(current, nextData.slots));
+      },
+      onError: setError,
+      onLoading: setLoading,
+    });
   }, [month]);
 
   useEffect(() => { void load(); }, [load]);
@@ -363,7 +394,7 @@ export function ContentScheduleClient() {
         setNotice("Responsável atualizado.");
         setAssignmentFeedback({ type: "success", message: "Responsável atualizado." });
       }
-      await load(shouldRefresh);
+      await load({ shouldApply: shouldRefresh, shouldReportError: isCurrent });
     } catch (cause) {
       if (!isCurrent()) return;
       const message = cause instanceof Error ? cause.message : "Não foi possível atualizar o responsável.";
