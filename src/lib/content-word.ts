@@ -5,6 +5,7 @@
  */
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { PUBLIC_APP_ORIGIN } from "@/lib/public-origin";
 
 export interface SlideBody {
   type: "bullet" | "text";
@@ -163,4 +164,74 @@ export function roteiroWordSlug(title: string): string {
       .slice(0, 50)
       .toLowerCase() || "conteudo"
   );
+}
+
+export const CONTENT_ROTEIRO_WORD_PATH = "/api/content-roteiros/word";
+
+/** Caminho same-origin para o Word — usa o host em que o usuário está logado. */
+export function contentRoteiroWordHref(id: string): string {
+  return `${CONTENT_ROTEIRO_WORD_PATH}?id=${encodeURIComponent(id)}`;
+}
+
+/** URL canônica gravada no card do Planner (sempre o domínio público). */
+export function contentRoteiroWordPublicUrl(id: string): string {
+  return `${PUBLIC_APP_ORIGIN.replace(/\/$/, "")}${contentRoteiroWordHref(id)}`;
+}
+
+/** Extrai o id do roteiro de um link Word, mesmo se o host estiver errado (Vercel, www, etc.). */
+export function parseContentRoteiroWordId(link: string | null | undefined): string | null {
+  if (!link?.trim()) return null;
+  try {
+    const url = new URL(link.trim(), PUBLIC_APP_ORIGIN);
+    const path = url.pathname.replace(/\/+$/, "");
+    if (!path.endsWith(CONTENT_ROTEIRO_WORD_PATH)) return null;
+    const id = url.searchParams.get("id")?.trim();
+    return id || null;
+  } catch {
+    return null;
+  }
+}
+
+function filenameFromContentDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const utf = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf?.[1]) {
+    try {
+      return decodeURIComponent(utf[1]);
+    } catch {
+      return utf[1];
+    }
+  }
+  const quoted = header.match(/filename="([^"]+)"/i);
+  if (quoted?.[1]) return quoted[1];
+  const plain = header.match(/filename=([^;]+)/i);
+  return plain?.[1]?.trim().replace(/^["']|["']$/g, "") || null;
+}
+
+/** Baixa o Word no domínio atual, com a sessão do Planner — evita 401 por host antigo. */
+export async function downloadContentRoteiroWord(id: string): Promise<void> {
+  const response = await fetch(contentRoteiroWordHref(id), { credentials: "same-origin" });
+  if (!response.ok) {
+    const message = (await response.text()).trim();
+    if (response.status === 401) {
+      throw new Error("Faça login para baixar o Word deste post.");
+    }
+    if (response.status === 404) {
+      throw new Error("Conteúdo de post não encontrado.");
+    }
+    throw new Error(message || "Não foi possível baixar o Word.");
+  }
+
+  const blob = await response.blob();
+  const filename =
+    filenameFromContentDisposition(response.headers.get("content-disposition")) ??
+    `post-${id.slice(0, 8)}.doc`;
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
 }

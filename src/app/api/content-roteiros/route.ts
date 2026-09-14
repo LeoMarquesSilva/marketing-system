@@ -141,13 +141,9 @@ export async function PATCH(request: Request) {
 
     // Envio ao marketing: cria card no Planner.
     if (action === "send_mkt") {
-      const origin =
-        request.headers.get("origin") ??
-        (request.headers.get("host") ? `https://${request.headers.get("host")}` : undefined);
       const result = await sendRoteiroToMarketing(
         id,
         { id: auth.profile?.id ?? null, name: auth.profile?.name ?? null },
-        origin
       );
       return NextResponse.json({ success: true, ...result });
     }

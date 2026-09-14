@@ -44,7 +44,8 @@ import {
   deleteComment,
   type RequestComment,
 } from "@/lib/request-comments";
-import { Play, Pause, Square, MessageSquare, Edit3, AlertCircle, CheckCircle2, Flag, CalendarX2, Clock, Calendar, CalendarCheck, Layers, Circle, ChevronDown, ChevronUp, Link2, Trash2, FileText, RotateCcw, Video } from "lucide-react";
+import { Play, Pause, Square, MessageSquare, Edit3, AlertCircle, CheckCircle2, Flag, CalendarX2, Clock, Calendar, CalendarCheck, Layers, Circle, ChevronDown, ChevronUp, Link2, Trash2, FileText, RotateCcw, Video, Download } from "lucide-react";
+import { downloadContentRoteiroWord, parseContentRoteiroWordId } from "@/lib/content-word";
 import { fetchViosTasksByMarketingRequestId, filterLeonardoFromResponsaveis, formatViosProrrogacaoLabel, isViosTaskProrrogada, type ViosTask } from "@/lib/vios-tasks";
 import { ViosProrrogacaoBadge } from "@/components/vios/vios-prorrogacao-badge";
 import { DatePickerField } from "@/components/ui/date-picker-field";
@@ -72,6 +73,55 @@ function getInitials(name: string) {
     .slice(0, 2)
     .join("")
     .toUpperCase();
+}
+
+const sourceLinkButtonClass =
+  "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 dark:bg-primary/20 text-sm font-medium text-primary hover:bg-primary/20 dark:hover:bg-primary/30 border border-primary/20 disabled:opacity-50";
+
+function SourceLinkAction({
+  link,
+  downloading,
+  error,
+  onDownloadWord,
+}: {
+  link: string;
+  downloading: boolean;
+  error: string | null;
+  onDownloadWord: (wordId: string) => void;
+}) {
+  const wordId = parseContentRoteiroWordId(link);
+  if (wordId) {
+    return (
+      <div className="space-y-1">
+        <button
+          type="button"
+          onClick={() => onDownloadWord(wordId)}
+          disabled={downloading}
+          className={sourceLinkButtonClass}
+        >
+          <Download className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          {downloading ? "Baixando…" : "Baixar Word"}
+        </button>
+        {error ? (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <a
+      href={link}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={sourceLinkButtonClass}
+    >
+      <Link2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      Abrir link
+    </a>
+  );
 }
 
 interface KanbanCardDetailProps {
@@ -121,6 +171,8 @@ export function KanbanCardDetail({
   const [isSavingArtLink, setIsSavingArtLink] = useState(false);
   const [sourceLinkDraft, setSourceLinkDraft] = useState("");
   const [isSavingSourceLink, setIsSavingSourceLink] = useState(false);
+  const [isDownloadingWord, setIsDownloadingWord] = useState(false);
+  const [wordDownloadError, setWordDownloadError] = useState<string | null>(null);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [deletingEntryId, setDeletingEntryId] = useState<string | null>(null);
   const [isRevertingToDisponivel, setIsRevertingToDisponivel] = useState(false);
@@ -146,6 +198,8 @@ export function KanbanCardDetail({
     }
     setArtLinkDraft(request.art_link ?? "");
     setSourceLinkDraft(request.link ?? "");
+    setWordDownloadError(null);
+    setIsDownloadingWord(false);
     const load = async () => {
       const [entries, commentsList, log, linkedVios, checklist] = await Promise.all([
         fetchTimeEntriesForRequest(request.id),
@@ -369,6 +423,20 @@ export function KanbanCardDetail({
     await updateMarketingRequest(request.id, { link: next || null });
     setIsSavingSourceLink(false);
     onRefresh?.();
+  };
+
+  const handleDownloadWord = async (wordId: string) => {
+    setIsDownloadingWord(true);
+    setWordDownloadError(null);
+    try {
+      await downloadContentRoteiroWord(wordId);
+    } catch (error) {
+      setWordDownloadError(
+        error instanceof Error ? error.message : "Não foi possível baixar o Word."
+      );
+    } finally {
+      setIsDownloadingWord(false);
+    }
   };
 
   const handleDeleteComment = async (commentId: string) => {
@@ -656,28 +724,22 @@ export function KanbanCardDetail({
                           className="flex h-9 w-full rounded-xl border border-input bg-white/80 dark:bg-background/50 px-3 py-1 text-sm text-foreground shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50"
                         />
                         {request.link && (
-                          <a
-                            href={request.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 dark:bg-primary/20 text-sm font-medium text-primary hover:bg-primary/20 dark:hover:bg-primary/30 border border-primary/20"
-                          >
-                            <Link2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                            Abrir link
-                          </a>
+                          <SourceLinkAction
+                            link={request.link}
+                            downloading={isDownloadingWord}
+                            error={wordDownloadError}
+                            onDownloadWord={handleDownloadWord}
+                          />
                         )}
                       </div>
-                    ) : (
-                      <a
-                        href={request.link!}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 dark:bg-primary/20 text-sm font-medium text-primary hover:bg-primary/20 dark:hover:bg-primary/30 border border-primary/20"
-                      >
-                        <Link2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                        Abrir link
-                      </a>
-                    )}
+                    ) : request.link ? (
+                      <SourceLinkAction
+                        link={request.link}
+                        downloading={isDownloadingWord}
+                        error={wordDownloadError}
+                        onDownloadWord={handleDownloadWord}
+                      />
+                    ) : null}
                   </div>
                 )}
                 {request.referencias && (

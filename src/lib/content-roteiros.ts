@@ -26,6 +26,7 @@ import {
   type AreaPerformanceContext,
 } from "./content-performance";
 import type { InstagramPost } from "./instagram-posts";
+import { contentRoteiroWordPublicUrl } from "./content-word";
 
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
@@ -602,7 +603,6 @@ function formatDateYMD(d: Date): string {
 export async function sendRoteiroToMarketing(
   id: string,
   sender: { id?: string | null; name?: string | null },
-  origin?: string
 ): Promise<{ marketing_request_id: string }> {
   const supabase = getSupabaseAdmin();
 
@@ -637,10 +637,9 @@ export async function sendRoteiroToMarketing(
   // Prazo: 2 dias úteis às 14:00.
   const deadline = formatDateYMD(addBusinessDays(new Date(), 2));
 
-  // Link do card aponta para o documento Word (gerado sob demanda).
-  const wordLink = origin
-    ? `${origin.replace(/\/$/, "")}/api/content-roteiros/word?id=${id}`
-    : null;
+  // Sempre o domínio público: Origin/Host da requisição pode ser o host da
+  // Vercel, e o cookie de login em orqestrai.com.br não acompanha esse link.
+  const wordLink = contentRoteiroWordPublicUrl(id);
 
   const { data: created, error: insertErr } = await supabase
     .from("marketing_requests")
