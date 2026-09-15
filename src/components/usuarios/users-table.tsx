@@ -28,9 +28,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Loader2, Pencil, Trash2, UserX, UserCheck, KeyRound, Search, X, IdCard } from "lucide-react";
+import { Plus, Loader2, Trash2, UserX, UserCheck, KeyRound, Search, X, IdCard } from "lucide-react";
 import type { User } from "@/lib/users";
-import { createUser, updateUser, deleteUser, toggleUserActive } from "@/lib/users";
+import { createUser, deleteUser, toggleUserActive } from "@/lib/users";
 import { formatAuthDateTime, formatAuthRelative, formatLastAccess } from "@/lib/users-auth-activity";
 import type { Area } from "@/lib/areas";
 import { UserFormDialog, type UserFormValues } from "./user-form-dialog";
@@ -86,8 +86,6 @@ export function UsersTable({
   const [createOpen, setCreateOpen] = useState(false);
   const [hrCreateUserId, setHrCreateUserId] = useState<string | null>(null);
   const [hrEditTarget, setHrEditTarget] = useState<HrEmployee | null>(null);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [editOpen, setEditOpen] = useState(false);
   const [deleteUserTarget, setDeleteUserTarget] = useState<User | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
@@ -168,7 +166,17 @@ export function UsersTable({
   function applyHrEmployeeUpdate(employee: HrEmployee) {
     const { user_id } = employee;
     if (!user_id) return;
-    setUsers((prev) => prev.map((u) => (u.id === user_id ? { ...u, hrEmployee: employee } : u)));
+    setUsers((prev) =>
+      prev.map((u) =>
+        u.id === user_id
+          ? {
+              ...u,
+              department: employee.department?.trim() || u.department,
+              hrEmployee: employee,
+            }
+          : u
+      )
+    );
     setOccupiedUserIds((prev) => (prev.includes(user_id) ? prev : [...prev, user_id]));
   }
 
@@ -223,30 +231,6 @@ export function UsersTable({
     return null;
   }
 
-  async function handleUpdate(values: UserFormValues) {
-    if (!editingUser) return;
-    setError(null);
-    const { data, error: err } = await updateUser(editingUser.id, {
-      name: values.name,
-      email: values.email || null,
-      department: values.department,
-      avatar_url: values.avatar_url?.trim() || null,
-    });
-    if (err) {
-      setError(err);
-      return;
-    }
-    if (data) {
-      setUsers((prev) =>
-        prev
-          .map((u) => (u.id === data.id ? { ...u, ...data } : u))
-          .sort((a, b) => a.name.localeCompare(b.name))
-      );
-      setEditOpen(false);
-      setEditingUser(null);
-    }
-  }
-
   async function handleDelete() {
     if (!deleteUserTarget) return;
     setDeleteLoading(true);
@@ -258,12 +242,6 @@ export function UsersTable({
     } else {
       setError(err);
     }
-  }
-
-  function openEdit(user: User) {
-    setError(null);
-    setEditingUser(user);
-    setEditOpen(true);
   }
 
   async function handleToggleActive(user: User, skipConfirm = false) {
@@ -423,20 +401,6 @@ export function UsersTable({
           onSubmit={handleUpdateHrFicha}
         />
       )}
-
-      <UserFormDialog
-        open={editOpen}
-        onOpenChange={(open) => {
-          setEditOpen(open);
-          if (!open) setEditingUser(null);
-        }}
-        areas={areas}
-        onAreasChange={setAreas}
-        editingUser={editingUser}
-        onSubmit={handleUpdate}
-        submitLabel="Salvar"
-        error={error}
-      />
 
       <Dialog open={!!deactivateTarget} onOpenChange={(open) => !open && setDeactivateTarget(null)}>
         <DialogContent>
@@ -644,15 +608,6 @@ export function UsersTable({
                         title="Gerenciar acesso, permissões e gestor de área"
                       >
                         <KeyRound className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => openEdit(user)}
-                        title="Editar"
-                      >
-                        <Pencil className="h-4 w-4" />
                       </Button>
                       <Button
                         variant="ghost"

@@ -22,6 +22,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { EmployeeAvatar } from "@/components/ferias/employee-avatar";
+import { resolveCanonicalAreaLabel } from "@/lib/ferias/filters";
+import {
+  listHrDepartmentOptions,
+  listHrPositionOptions,
+} from "@/lib/ferias/hr-form-options";
 import type { HrEmployee, LinkableUser } from "@/lib/ferias/types";
 
 export const NO_LINKED_USER = "none";
@@ -55,12 +60,16 @@ export interface EmployeeFormValues {
   oabUf: string;
 }
 
+function resolveFormDepartment(value: string | null | undefined): string {
+  return resolveCanonicalAreaLabel(value) ?? value?.trim() ?? "";
+}
+
 function toFormValues(employee: HrEmployee | null): EmployeeFormValues {
   return {
     fullName: employee?.full_name ?? "",
     cpf: employee?.cpf ?? "",
     email: employee?.email ?? "",
-    department: employee?.department ?? "",
+    department: resolveFormDepartment(employee?.department),
     position: employee?.position ?? "",
     admissionDate: employee?.admission_date ?? "",
     terminationDate: employee?.termination_date ?? "",
@@ -158,7 +167,7 @@ function ColaboradorForm({
       userId: preset.id,
       fullName: preset.name,
       email: preset.email ?? "",
-      department: preset.department ?? base.department,
+      department: resolveFormDepartment(preset.department) || base.department,
     };
   });
   const [saving, setSaving] = useState(false);
@@ -173,6 +182,21 @@ function ColaboradorForm({
   }, [users, occupiedUserIds, employee?.user_id]);
 
   const selectedUser = selectableUsers.find((user) => user.id === values.userId) ?? null;
+  /** Só escolhe colaborador ao criar ficha nova sem pessoa pré-definida, ou ao vincular ficha legada. */
+  const canPickCollaborator =
+    (isCreate && !initialUserId) || (!isCreate && values.userId === NO_LINKED_USER);
+  const identityName =
+    selectedUser?.name ?? (values.fullName || employee?.full_name || "Colaborador");
+  const identityArea = values.department || selectedUser?.department || null;
+  const identityAvatar = selectedUser?.avatar_url ?? employee?.avatar_url ?? null;
+  const departmentOptions = useMemo(
+    () => listHrDepartmentOptions(values.department),
+    [values.department]
+  );
+  const positionOptions = useMemo(
+    () => listHrPositionOptions(values.position),
+    [values.position]
+  );
 
   // Se o colaborador já preencheu Qualificações (autoatendimento de advogados),
   // aproveita CPF/RG/OAB/nascimento/gênero de lá em vez de pedir pra RH digitar
@@ -221,7 +245,7 @@ function ColaboradorForm({
       userId: user.id,
       fullName: user.name,
       email: user.email ?? "",
-      department: user.department ?? prev.department,
+      department: resolveFormDepartment(user.department) || prev.department,
     }));
   }
 
@@ -252,60 +276,87 @@ function ColaboradorForm({
     <>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5 sm:col-span-2">
-          <Label htmlFor="ferias-colaborador">Colaborador</Label>
-          <Select
-            value={values.userId === NO_LINKED_USER ? undefined : values.userId}
-            onValueChange={handleSelectUser}
-          >
-            <SelectTrigger id="ferias-colaborador" className="h-auto min-h-10 w-full py-2">
-              <SelectValue placeholder="Selecione o colaborador">
-                {selectedUser ? (
-                  <span className="flex items-center gap-2 text-left">
-                    <EmployeeAvatar
-                      name={selectedUser.name}
-                      avatarUrl={selectedUser.avatar_url}
-                      className="h-7 w-7"
-                    />
-                    <span className="min-w-0">
-                      <span className="block font-medium">{selectedUser.name}</span>
-                      <span className="block text-xs text-muted-foreground">
-                        {selectedUser.department ?? "Sem área"}
+          {canPickCollaborator ? (
+            <>
+              <Label htmlFor="ferias-colaborador">
+                {isCreate ? "Colaborador" : "Vincular login"}
+              </Label>
+              <Select
+                value={values.userId === NO_LINKED_USER ? undefined : values.userId}
+                onValueChange={handleSelectUser}
+              >
+                <SelectTrigger id="ferias-colaborador" className="h-auto min-h-10 w-full py-2">
+                  <SelectValue
+                    placeholder={isCreate ? "Selecione o colaborador" : "Opcional — vincular usuário"}
+                  >
+                    {selectedUser ? (
+                      <span className="flex items-center gap-2 text-left">
+                        <EmployeeAvatar
+                          name={selectedUser.name}
+                          avatarUrl={selectedUser.avatar_url}
+                          className="h-7 w-7"
+                        />
+                        <span className="min-w-0">
+                          <span className="block font-medium">{selectedUser.name}</span>
+                          <span className="block text-xs text-muted-foreground">
+                            {resolveFormDepartment(selectedUser.department) || "Sem área"}
+                          </span>
+                        </span>
                       </span>
-                    </span>
-                  </span>
-                ) : employee && values.userId === NO_LINKED_USER ? (
-                  employee.full_name
-                ) : null}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {selectableUsers.length === 0 ? (
-                <div className="px-2 py-3 text-sm text-muted-foreground">
-                  Nenhum colaborador disponível para cadastrar.
-                </div>
+                    ) : null}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {selectableUsers.length === 0 ? (
+                    <div className="px-2 py-3 text-sm text-muted-foreground">
+                      Nenhum colaborador disponível para cadastrar.
+                    </div>
+                  ) : (
+                    selectableUsers.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        <span className="flex items-center gap-2">
+                          <EmployeeAvatar
+                            name={user.name}
+                            avatarUrl={user.avatar_url}
+                            className="h-6 w-6"
+                          />
+                          <span>
+                            {user.name}
+                            {user.department
+                              ? ` — ${resolveFormDepartment(user.department) || user.department}`
+                              : ""}
+                          </span>
+                        </span>
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              {isCreate ? (
+                <p className="text-xs text-muted-foreground">
+                  Lista dos usuários do sistema, exceto T.I. e quem já tem ficha.
+                </p>
               ) : (
-                selectableUsers.map((user) => (
-                  <SelectItem key={user.id} value={user.id}>
-                    <span className="flex items-center gap-2">
-                      <EmployeeAvatar
-                        name={user.name}
-                        avatarUrl={user.avatar_url}
-                        className="h-6 w-6"
-                      />
-                      <span>
-                        {user.name}
-                        {user.department ? ` — ${user.department}` : ""}
-                      </span>
-                    </span>
-                  </SelectItem>
-                ))
+                <p className="text-xs text-muted-foreground">
+                  Ficha sem login. Vincule um usuário do sistema se quiser.
+                </p>
               )}
-            </SelectContent>
-          </Select>
-          {isCreate && (
-            <p className="text-xs text-muted-foreground">
-              Lista dos usuários do sistema, exceto T.I. e quem já está neste módulo.
-            </p>
+            </>
+          ) : (
+            <div className="flex items-center gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5">
+              <EmployeeAvatar
+                name={identityName}
+                avatarUrl={identityAvatar}
+                className="h-10 w-10"
+              />
+              <div className="min-w-0">
+                <p className="truncate font-medium text-slate-900">{identityName}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {identityArea || "Área a definir"}
+                  {values.email ? ` · ${values.email}` : ""}
+                </p>
+              </div>
+            </div>
           )}
         </div>
 
@@ -331,35 +382,55 @@ function ColaboradorForm({
           />
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="ferias-email">E-mail</Label>
-          <Input
-            id="ferias-email"
-            type="email"
-            value={values.email}
-            onChange={(event) => set("email", event.target.value)}
-            placeholder="nome@bismarchipires.com.br"
-          />
-        </div>
+        {canPickCollaborator || values.userId === NO_LINKED_USER ? (
+          <div className="space-y-1.5">
+            <Label htmlFor="ferias-email">E-mail</Label>
+            <Input
+              id="ferias-email"
+              type="email"
+              value={values.email}
+              onChange={(event) => set("email", event.target.value)}
+              placeholder="nome@bismarchipires.com.br"
+            />
+          </div>
+        ) : null}
 
         <div className="space-y-1.5">
           <Label htmlFor="ferias-area">Área</Label>
-          <Input
-            id="ferias-area"
-            value={values.department}
-            onChange={(event) => set("department", event.target.value)}
-            placeholder="Operações Legais"
-          />
+          <Select
+            value={values.department || undefined}
+            onValueChange={(value) => set("department", value)}
+          >
+            <SelectTrigger id="ferias-area" className="w-full">
+              <SelectValue placeholder="Selecione a área" />
+            </SelectTrigger>
+            <SelectContent>
+              {departmentOptions.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="space-y-1.5">
           <Label htmlFor="ferias-cargo">Cargo</Label>
-          <Input
-            id="ferias-cargo"
-            value={values.position}
-            onChange={(event) => set("position", event.target.value)}
-            placeholder="Gerente"
-          />
+          <Select
+            value={values.position || undefined}
+            onValueChange={(value) => set("position", value)}
+          >
+            <SelectTrigger id="ferias-cargo" className="w-full">
+              <SelectValue placeholder="Selecione o cargo" />
+            </SelectTrigger>
+            <SelectContent>
+              {positionOptions.map((option) => (
+                <SelectItem key={option} value={option}>
+                  {option}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="space-y-1.5">

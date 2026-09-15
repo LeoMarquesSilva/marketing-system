@@ -363,6 +363,11 @@ export async function createEmployee(input: EmployeeCreateInput): Promise<HrEmpl
   await syncEmployeePeriods(admin, data.id as string, data.admission_date as string);
   // Se já houver espelho VIOS com o mesmo e-mail, vincula e aplica Situação.
   await admin.rpc("sync_hr_employees_from_vios");
+  await syncLinkedUserDepartment(
+    admin,
+    (data.user_id as string | null) ?? null,
+    (data.department as string | null) ?? null
+  );
 
   const { data: refreshed, error: refreshError } = await admin
     .from("hr_employees")
@@ -427,6 +432,11 @@ export async function updateEmployee(
   if (!data) throw new FeriasHttpError("Colaborador não encontrado.", 404, "NOT_FOUND");
 
   await resolveOpenNotificationsForEmployee(admin, employeeId, manager.profileId);
+  await syncLinkedUserDepartment(
+    admin,
+    (data.user_id as string | null) ?? null,
+    (data.department as string | null) ?? null
+  );
 
   const [employee] = await attachAvatars(admin, [data as EmployeeRow]);
   if (input.admissionDate !== undefined) {
@@ -793,6 +803,23 @@ function isItDepartment(department: string | null | undefined): boolean {
     .toLowerCase()
     .replace(/\s+/g, "");
   return normalized === "t.i" || normalized === "ti" || normalized === "tecnologia" || normalized === "tecnologiainformacao";
+}
+
+/**
+ * A ficha RH é a fonte da área. Espelha em `users.department` para o login
+ * vinculado não ficar com valor antigo (ex.: Cível vs Recuperação de Crédito).
+ */
+async function syncLinkedUserDepartment(
+  admin: SupabaseClient,
+  userId: string | null,
+  department: string | null
+): Promise<void> {
+  if (!userId || !department?.trim()) return;
+  const { error } = await admin
+    .from("users")
+    .update({ department: department.trim() })
+    .eq("id", userId);
+  if (error) failed("Não foi possível sincronizar a área do usuário vinculado.");
 }
 
 export async function listLinkableUsers(): Promise<LinkableUser[]> {
