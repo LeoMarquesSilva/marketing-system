@@ -10,8 +10,6 @@ import {
   normalizeWhatsappTags,
   refreshConversationAvatar,
   refreshConversationPushName,
-  refreshMissingConversationAvatars,
-  refreshMissingConversationPushNames,
   syncConversationMessages,
   updateWhatsappConversationCrm,
   updateWhatsappConversationTags,
@@ -51,9 +49,9 @@ export async function GET(request: Request) {
         return NextResponse.json({ ok: true });
       }
 
-      const syncOnly = searchParams.get("syncOnly") === "1";
       const refreshAvatar = searchParams.get("refreshAvatar") === "1";
-      const syncHistory = searchParams.get("syncHistory") !== "0";
+      const refreshMetadata = searchParams.get("refreshMetadata") === "1";
+      const syncHistory = searchParams.get("syncHistory") === "1";
 
       if (syncHistory && isEvolutionConfigured()) {
         try {
@@ -63,12 +61,12 @@ export async function GET(request: Request) {
         }
       }
 
-      const [avatarUrl, pushName] = syncOnly
-        ? [null, null]
-        : await Promise.all([
-            refreshAvatar ? refreshConversationAvatar(conversationId) : Promise.resolve(null),
-            refreshConversationPushName(conversationId),
-          ]);
+      const [avatarUrl, pushName] = await Promise.all([
+        refreshAvatar ? refreshConversationAvatar(conversationId) : Promise.resolve(null),
+        refreshMetadata
+          ? refreshConversationPushName(conversationId)
+          : Promise.resolve(null),
+      ]);
 
       const messages = await fetchWhatsappMessages(conversationId);
       await markConversationRead(conversationId);
@@ -83,8 +81,6 @@ export async function GET(request: Request) {
     }
 
     const conversations = await fetchWhatsappConversations();
-    void refreshMissingConversationAvatars(8);
-    void refreshMissingConversationPushNames(8);
     return NextResponse.json({
       configured: isEvolutionConfigured(),
       conversations,

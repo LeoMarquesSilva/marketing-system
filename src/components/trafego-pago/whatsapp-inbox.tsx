@@ -62,6 +62,8 @@ type Conversation = WhatsappConversation;
 type Message = WhatsappMessage;
 type ReplyTarget = WhatsappReplyTarget;
 
+const RECONCILIATION_INTERVAL_MS = 10 * 60_000;
+
 function markReadSilently(conversationId: string) {
   authFetch(
     `/api/evolution/conversations?conversationId=${conversationId}&markReadOnly=1`
@@ -203,11 +205,16 @@ export function WhatsappInbox() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const selectedIdRef = useRef<string | null>(null);
+  const conversationsRef = useRef<Conversation[]>([]);
   const avatarRefreshRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
+
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
 
   useEffect(() => {
     let cancelled = false;
@@ -274,9 +281,13 @@ export function WhatsappInbox() {
     if (!silent) setLoadingMessages(true);
     try {
       const params = new URLSearchParams({ conversationId });
+      params.set("syncHistory", silent ? "0" : "1");
       const shouldRefreshAvatar =
         !silent && !avatarRefreshRef.current.has(conversationId);
-      if (shouldRefreshAvatar) params.set("refreshAvatar", "1");
+      if (shouldRefreshAvatar) {
+        params.set("refreshAvatar", "1");
+        params.set("refreshMetadata", "1");
+      }
 
       const res = await authFetch(`/api/evolution/conversations?${params.toString()}`);
       const json = await res.json();
@@ -451,7 +462,7 @@ export function WhatsappInbox() {
       const res = await authFetch("/api/evolution/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ limit: 50 }),
+        body: JSON.stringify({ limit: 150 }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Erro ao sincronizar.");
@@ -459,12 +470,13 @@ export function WhatsappInbox() {
         `${json.stored ?? 0} mensagem(ns) importada(s) de ${json.fetched ?? 0} encontrada(s).`
       );
       await loadConversations(true);
+      if (selectedId) await loadMessages(selectedId, true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao sincronizar.");
     } finally {
       setSyncing(false);
     }
-  }, [loadConversations]);
+  }, [loadConversations, loadMessages, selectedId]);
 
   useEffect(() => {
     if (!user) return;
@@ -473,20 +485,17 @@ export function WhatsappInbox() {
     loadTagSuggestions();
     loadEvolutionStatus();
 
-    const pollMs = realtimeStatus === "connected" ? 30_000 : 15_000;
     const pollId = setInterval(() => {
-      loadConversations(true);
-      if (realtimeStatus !== "connected") loadEvolutionStatus();
-    }, pollMs);
+      void loadConversations(true);
+    }, RECONCILIATION_INTERVAL_MS);
 
     return () => clearInterval(pollId);
-  }, [user, loadConversations, loadTagSuggestions, loadEvolutionStatus, realtimeStatus]);
+  }, [user, loadConversations, loadTagSuggestions, loadEvolutionStatus]);
 
   useEffect(() => {
     if (!user) return;
 
-    let convTimer: ReturnType<typeof setTimeout> | null = null;
-    let msgTimer: ReturnType<typeof setTimeout> | null = null;
+    let unknownConversationTimer: ReturnType<typeof setTimeout> | null = null;
     let connectTimer: ReturnType<typeof setTimeout> | null = null;
 
     connectTimer = setTimeout(() => {
@@ -502,13 +511,8 @@ export function WhatsappInbox() {
           const row = payload.new as Conversation | undefined;
           if (!row?.id) return;
           const isOpen = row.id === selectedIdRef.current;
-
-          if (isOpen) {
-            const preview = row.last_message_preview ?? "";
-            if (preview && preview !== lastPreviewRef.current) {
-              lastPreviewRef.current = preview;
-              void loadMessages(row.id, true);
-            }
+          if (isOpen && row.last_message_preview) {
+            lastPreviewRef.current = row.last_message_preview;
           }
 
           setConversations((prev) => {
@@ -541,8 +545,6 @@ export function WhatsappInbox() {
             });
           });
 
-          if (convTimer) clearTimeout(convTimer);
-          convTimer = setTimeout(() => loadConversations(true), 1500);
         }
       )
       .on(
@@ -586,19 +588,24 @@ export function WhatsappInbox() {
             lastPreviewRef.current = incoming.body?.slice(0, 280) ?? "";
             if (!incoming.from_me) markReadSilently(conversationId);
           } else if (!incoming.from_me) {
+            const conversationExists = conversationsRef.current.some(
+              (conversation) => conversation.id === conversationId
+            );
             setConversations((prev) => {
-              const exists = prev.some((c) => c.id === conversationId);
               const next = bumpConversationPreview(prev, conversationId, {
                 incrementUnread: true,
                 last_message_at: incoming.message_timestamp,
                 last_message_preview: incoming.body?.slice(0, 280) ?? undefined,
               });
-              if (exists) return next;
-              void loadConversations(true);
               return next;
             });
-            if (msgTimer) clearTimeout(msgTimer);
-            msgTimer = setTimeout(() => loadConversations(true), 1500);
+            if (!conversationExists) {
+              if (unknownConversationTimer) clearTimeout(unknownConversationTimer);
+              unknownConversationTimer = setTimeout(
+                () => void loadConversations(true),
+                1500
+              );
+            }
           } else {
             setConversations((prev) =>
               bumpConversationPreview(prev, conversationId, {
@@ -634,11 +641,10 @@ export function WhatsappInbox() {
 
     return () => {
       if (connectTimer) clearTimeout(connectTimer);
-      if (convTimer) clearTimeout(convTimer);
-      if (msgTimer) clearTimeout(msgTimer);
+      if (unknownConversationTimer) clearTimeout(unknownConversationTimer);
       supabase.removeChannel(channel);
     };
-  }, [user, loadConversations, loadMessages]);
+  }, [user, loadConversations]);
 
   useEffect(() => {
     if (selectedId) loadMessages(selectedId);
@@ -650,12 +656,11 @@ export function WhatsappInbox() {
 
   useEffect(() => {
     if (!selectedId) return;
-    const pollMs = realtimeStatus === "connected" ? 30_000 : 8_000;
     const pollId = setInterval(() => {
       void loadMessages(selectedId, true);
-    }, pollMs);
+    }, RECONCILIATION_INTERVAL_MS);
     return () => clearInterval(pollId);
-  }, [selectedId, loadMessages, realtimeStatus]);
+  }, [selectedId, loadMessages]);
 
   useEffect(() => {
     if (!selectedId || !draftMessage.trim()) {
@@ -744,7 +749,7 @@ export function WhatsappInbox() {
             <>
               <WifiOff className="h-4 w-4 text-amber-500" />
               <span className="text-amber-700 dark:text-amber-400">
-                Tempo real indisponível · polling 15s
+                Tempo real indisponível · reconciliação a cada 10 min
               </span>
             </>
           )}
