@@ -3,7 +3,10 @@ import {
   aggregateNpsCampaignInsights,
   expectedInsightFieldCount,
   extractHeuristicThemes,
+  isNpsKeepImprovingAsk,
+  isNpsNotPainText,
   isNpsPraiseOnly,
+  isNpsPracticeShare,
   isNpsTextNoise,
   npsInsightMentionWeight,
   npsInsightProgress,
@@ -37,12 +40,32 @@ describe("isNpsPraiseOnly", () => {
     expect(isNpsPraiseOnly("parceria que vem crescendo ano a ano")).toBe(true);
   });
 
-  it("não trata pedido real nem melhoria contínua como elogio", () => {
-    expect(isNpsPraiseOnly("Sempre adotar o conceito de melhoria contínua.")).toBe(false);
+  it("não trata pedido real como elogio", () => {
     expect(isNpsPraiseOnly("Uma vez ao mês dizer como está indo o processo")).toBe(false);
     expect(isNpsPraiseOnly("disponibilidade restrita da equipe")).toBe(false);
     expect(isNpsPraiseOnly("abrir uma filial em Curitiba")).toBe(false);
     expect(isNpsPraiseOnly("reter talentos e reduzir o turnover")).toBe(false);
+  });
+});
+
+describe("platitudes e relatos que não são dor", () => {
+  it("trata melhoria contínua como platitude, não pedido", () => {
+    expect(isNpsKeepImprovingAsk("Sempre adotar o conceito de melhoria contínua.")).toBe(true);
+    expect(isNpsNotPainText("Sempre adotar o conceito de melhoria contínua.")).toBe(true);
+    expect(isNpsNotPainText("Continuar com a dedicação e atenção de toda sua equipe")).toBe(true);
+  });
+
+  it("reconhece prática compartilhada de terceiro", () => {
+    expect(
+      isNpsPracticeShare(
+        "Vou aproveitar para compartilhar uma prática que vi o pessoal de uma Legal AI brasileira apresentar num grupo recente"
+      )
+    ).toBe(true);
+    expect(
+      isNpsNotPainText(
+        "o ponto crítico que fica claro quando a IA ajuda a redigir a peça final é a rastreabilidade"
+      )
+    ).toBe(true);
   });
 });
 
@@ -59,21 +82,53 @@ describe("extractHeuristicThemes", () => {
     expect(hits.every((h) => h.polarity === "strength")).toBe(true);
   });
 
-  it("marca melhoria contínua no pedido do Nelson", () => {
+  it("não extrai tema de platitude de melhoria contínua", () => {
+    expect(
+      extractHeuristicThemes("Sempre adotar o conceito de melhoria contínua.", "improvement", 10)
+    ).toEqual([]);
+  });
+
+  it("extrai comunicação e disponibilidade quando o texto pede e a nota é baixa", () => {
     const hits = extractHeuristicThemes(
-      "Sempre adotar o conceito de melhoria contínua.",
+      "Notamos iniciativas para otimizar a comunicação e a disponibilidade entre as partes, cuja continuidade será fundamental.",
       "improvement",
-      10
+      9,
+      { scoreAvailability: 6, scoreCommunication: 7 }
     );
-    expect(hits.map((h) => h.id)).toContain("evolucao");
+    expect(hits.map((h) => h.id).sort()).toEqual(["comunicacao", "disponibilidade"]);
+    expect(hits.every((h) => h.polarity === "pain")).toBe(true);
+  });
+
+  it("separa sobrecarga (dor) de competência técnica (não vai para Dores)", () => {
+    const hits = extractHeuristicThemes(
+      "Escritório capacitado, com competência técnica, mas sobrecarga de trabalho, com disponibilidade mais restrita de tempo. Comunicação de alto nível!",
+      "improvement",
+      9,
+      { scoreAvailability: 7, scoreCommunication: 9 }
+    );
+    expect(hits.map((h) => h.id)).toEqual(["disponibilidade"]);
     expect(hits[0]?.polarity).toBe("pain");
+  });
+
+  it("manda relação de confiança para força, não para dor", () => {
+    const hits = extractHeuristicThemes(
+      "O estabelecimento de uma relação de confiança perene",
+      "improvement",
+      10,
+      { scoreAvailability: 8, scoreCommunication: 8 }
+    );
+    expect(hits).toEqual([
+      expect.objectContaining({ id: "relacionamento", polarity: "strength" }),
+    ]);
   });
 
   it("não extrai tema de elogio no campo Melhoria", () => {
     expect(
       extractHeuristicThemes("Estou muito satisfeito. Parabéns a toda equipe.", "improvement", 10)
     ).toEqual([]);
-    expect(extractHeuristicThemes("Relação perfeita", "improvement", 10)).toEqual([]);
+    expect(extractHeuristicThemes("Relação perfeita", "improvement", 10)).toEqual([
+      expect.objectContaining({ id: "relacionamento", polarity: "strength" }),
+    ]);
   });
 });
 
@@ -96,6 +151,19 @@ describe("npsInsightMentionWeight", () => {
         field: "reason",
         polarity: "pain",
         isNoise: false,
+      })
+    ).toBe(3);
+  });
+
+  it("nota baixa de disponibilidade pesa 3 mesmo em Promotor", () => {
+    expect(
+      npsInsightMentionWeight({
+        scoreRecommend: 9,
+        field: "improvement",
+        polarity: "pain",
+        isNoise: false,
+        themeId: "disponibilidade",
+        scoreAvailability: 6,
       })
     ).toBe(3);
   });
@@ -129,7 +197,7 @@ describe("aggregateNpsCampaignInsights", () => {
         responseId: "nelson",
         field: "improvement",
         themes: [
-          { id: "evolucao", polarity: "pain", quote: "melhoria contínua" },
+          { id: "comunicacao", polarity: "pain", quote: "Uma vez ao mês dizer como está indo o processo" },
         ],
       }),
     ]);
@@ -137,30 +205,45 @@ describe("aggregateNpsCampaignInsights", () => {
     expect(insights.strengths.map((t) => t.id)).toEqual(
       expect.arrayContaining(["organizacao", "tecnica"])
     );
-    expect(insights.pains.map((t) => t.id)).toContain("evolucao");
-    expect(insights.pains.find((t) => t.id === "evolucao")?.maxWeight).toBe(2);
+    expect(insights.pains.map((t) => t.id)).toContain("comunicacao");
+    expect(insights.pains.find((t) => t.id === "comunicacao")?.maxWeight).toBe(2);
   });
 
-  it("não coloca elogio da Melhoria em Dores, mesmo se veio classificado como dor", () => {
+  it("não coloca platitude, elogio nem prática compartilhada em Dores", () => {
     const insights = aggregateNpsCampaignInsights([
       row({
-        responseId: "elogio",
         field: "improvement",
         themes: [
-          { id: "evolucao", polarity: "pain", quote: "Estou muito satisfeito. Parabéns a toda equipe." },
-          { id: "relacionamento", polarity: "pain", quote: "Relação perfeita" },
+          { id: "evolucao", polarity: "pain", quote: "Sempre adotar o conceito de melhoria contínua." },
+          { id: "inovacao", polarity: "pain", quote: "Vou aproveitar para compartilhar uma prática que vi o pessoal de uma Legal AI" },
+          { id: "tecnica", polarity: "pain", quote: "quando a IA ajuda a redigir a peça final é a rastreabilidade" },
+          { id: "relacionamento", polarity: "pain", quote: "O estabelecimento de uma relação de confiança perene" },
         ],
       }),
       row({
         responseId: "pedido",
         field: "improvement",
-        themes: [{ id: "comunicacao", polarity: "pain", quote: "Uma vez ao mês dizer como está indo o processo" }],
+        scoreAvailability: 6,
+        scoreCommunication: 7,
+        themes: [
+          {
+            id: "comunicacao",
+            polarity: "pain",
+            quote: "otimizar a comunicação e a disponibilidade entre as partes",
+          },
+          {
+            id: "disponibilidade",
+            polarity: "pain",
+            quote: "otimizar a comunicação e a disponibilidade entre as partes",
+          },
+        ],
       }),
     ]);
 
-    expect(insights.pains.map((t) => t.id)).toEqual(["comunicacao"]);
+    expect(insights.pains.map((t) => t.id).sort()).toEqual(["comunicacao", "disponibilidade"]);
     expect(insights.pains.find((t) => t.id === "evolucao")).toBeUndefined();
-    expect(insights.pains.find((t) => t.id === "relacionamento")).toBeUndefined();
+    expect(insights.pains.find((t) => t.id === "inovacao")).toBeUndefined();
+    expect(insights.strengths.map((t) => t.id)).toContain("relacionamento");
   });
 
   it("ordena dores por intensidade: um Detrator acima de vários Promotores", () => {
@@ -171,7 +254,7 @@ describe("aggregateNpsCampaignInsights", () => {
         groupName: `Grupo ${i}`,
         scoreRecommend: 10,
         field: "improvement",
-        themes: [{ id: "evolucao", polarity: "pain", quote: "melhoria contínua" }],
+        themes: [{ id: "comunicacao", polarity: "pain", quote: "Uma vez ao mês dizer como está indo o processo" }],
       })
     );
     const detractor = row({
@@ -186,7 +269,7 @@ describe("aggregateNpsCampaignInsights", () => {
     const insights = aggregateNpsCampaignInsights([...promoterAsks, detractor]);
     expect(insights.pains[0]?.id).toBe("agilidade");
     expect(insights.pains[0]?.maxWeight).toBe(3);
-    expect(insights.pains[1]?.id).toBe("evolucao");
+    expect(insights.pains[1]?.id).toBe("comunicacao");
   });
 
   it("conta campos pendentes só quando há texto", () => {

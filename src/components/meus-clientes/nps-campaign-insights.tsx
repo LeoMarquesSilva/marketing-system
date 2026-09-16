@@ -178,8 +178,7 @@ export function NpsCampaignInsightsBoard({
             Temas da campanha
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Forças e pedidos ordenados por intensidade. Clique no tema para filtrar
-            os comentários — o texto original continua abaixo.
+            Forças e pedidos. Comunicação e disponibilidade entram quando a nota foi baixa ou o cliente pediu. Elogio e “melhoria contínua” não são dor.
           </p>
         </div>
       </div>
@@ -200,7 +199,7 @@ export function NpsCampaignInsightsBoard({
           </div>
           <ThemeList
             title="Dores e pedidos"
-            hint="Pedidos e críticas. Elogio no campo Melhoria não entra."
+            hint="Pedidos e críticas — comunicação e disponibilidade entram quando a nota foi baixa."
             ranks={insights.pains}
             list="pains"
             active={filter}

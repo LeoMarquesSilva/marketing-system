@@ -9,7 +9,10 @@ import {
   isHeuristicActionable,
   isNpsInsightThemeId,
   isNpsKeepImprovingAsk,
+  isNpsNotPainText,
   isNpsPraiseOnly,
+  isNpsPracticeShare,
+  isNpsRelationshipPraise,
   isNpsTextNoise,
   NPS_INSIGHT_THEME_IDS,
   NPS_INSIGHT_THEME_LABELS,
@@ -46,6 +49,10 @@ export interface ClassifyNpsTextsInput {
   respondentName: string;
   groupName: string;
   scoreRecommend: number;
+  scoreAvailability?: number;
+  scoreCommunication?: number;
+  scoreInnovation?: number;
+  scoreTechnical?: number;
   reason: string | null;
   improvement: string | null;
 }
@@ -66,14 +73,28 @@ function heuristicField(
   text: string
 ): ClassifiedNpsField {
   const isNoise =
-    isNpsTextNoise(text) || (field === "improvement" && isNpsPraiseOnly(text));
-  const themes = isNoise ? [] : extractHeuristicThemes(text, field, input.scoreRecommend);
+    isNpsTextNoise(text) ||
+    (field === "improvement" && (isNpsKeepImprovingAsk(text) || isNpsPracticeShare(text))) ||
+    (field === "improvement" && isNpsPraiseOnly(text) && !isNpsRelationshipPraise(text));
+  const scores = {
+    scoreAvailability: input.scoreAvailability,
+    scoreCommunication: input.scoreCommunication,
+    scoreInnovation: input.scoreInnovation,
+    scoreTechnical: input.scoreTechnical,
+  };
+  const themes = isNoise
+    ? []
+    : extractHeuristicThemes(text, field, input.scoreRecommend, scores);
   return {
     responseId: input.responseId,
     clientGroupId: input.clientGroupId,
     respondentName: input.respondentName,
     groupName: input.groupName,
     scoreRecommend: input.scoreRecommend,
+    scoreAvailability: input.scoreAvailability,
+    scoreCommunication: input.scoreCommunication,
+    scoreInnovation: input.scoreInnovation,
+    scoreTechnical: input.scoreTechnical,
     field,
     isNoise,
     themes,
@@ -103,7 +124,13 @@ function sanitizeThemes(
   themes: Array<{ id: string; polarity: string; quote: string }>,
   fallbackText: string,
   field: NpsInsightField,
-  scoreRecommend: number
+  scoreRecommend: number,
+  scores?: Partial<{
+    scoreAvailability: number;
+    scoreCommunication: number;
+    scoreInnovation: number;
+    scoreTechnical: number;
+  }>
 ): NpsInsightThemeHit[] {
   const cleaned: NpsInsightThemeHit[] = [];
   for (const theme of themes) {
@@ -112,15 +139,24 @@ function sanitizeThemes(
     if (polarity !== "strength" && polarity !== "pain" && polarity !== "neutral") continue;
     const quote = (theme.quote || fallbackText).trim().slice(0, 280);
     if (!quote) continue;
-    if (field === "improvement" && isNpsPraiseOnly(fallbackText)) continue;
-    if (field === "improvement" && isNpsPraiseOnly(quote) && !isNpsKeepImprovingAsk(quote)) {
+    if (field === "improvement" && isNpsNotPainText(quote) && polarity !== "strength") {
+      if (isNpsRelationshipPraise(quote)) {
+        cleaned.push({ id: theme.id === "relacionamento" ? theme.id : "relacionamento", polarity: "strength", quote });
+      }
       continue;
     }
+    if (field === "improvement" && isNpsPraiseOnly(fallbackText) && !isNpsRelationshipPraise(fallbackText)) continue;
+    if (field === "improvement" && isNpsKeepImprovingAsk(fallbackText)) continue;
+    if (field === "improvement" && isNpsPracticeShare(fallbackText)) continue;
     cleaned.push({ id: theme.id, polarity, quote });
   }
   if (cleaned.length === 0 && !isNpsTextNoise(fallbackText)) {
-    if (field === "improvement" && isNpsPraiseOnly(fallbackText)) return [];
-    return extractHeuristicThemes(fallbackText, field, scoreRecommend);
+    if (field === "improvement" && isNpsKeepImprovingAsk(fallbackText)) return [];
+    if (field === "improvement" && isNpsPracticeShare(fallbackText)) return [];
+    if (field === "improvement" && isNpsPraiseOnly(fallbackText) && !isNpsRelationshipPraise(fallbackText)) {
+      return [];
+    }
+    return extractHeuristicThemes(fallbackText, field, scoreRecommend, scores);
   }
   return cleaned;
 }
@@ -137,7 +173,14 @@ async function classifyWithLlm(input: ClassifyNpsTextsInput): Promise<Classified
   const onlyNoise = pending.every((p) => isNpsTextNoise(p.text));
   if (onlyNoise) return heuristicClassify(input);
 
-  const toClassify = pending.filter((p) => !isNpsTextNoise(p.text));
+  const toClassify = pending.filter((p) => {
+    if (isNpsTextNoise(p.text)) return false;
+    if (p.field === "improvement" && (isNpsKeepImprovingAsk(p.text) || isNpsPracticeShare(p.text))) {
+      return false;
+    }
+    return true;
+  });
+  if (toClassify.length === 0) return heuristicClassify(input);
   const bucket = classifyNpsScore(input.scoreRecommend);
   const taxonomy = NPS_INSIGHT_THEME_IDS.map(
     (id) => `- ${id}: ${NPS_INSIGHT_THEME_LABELS[id]}`
@@ -156,17 +199,21 @@ async function classifyWithLlm(input: ClassifyNpsTextsInput): Promise<Classified
       "Use SOMENTE os ids de tema da taxonomia. Não invente tema.",
       "Motivo (reason) explica a nota: polarity strength (elogio) ou pain (crítica).",
       "Melhoria (improvement):",
-      "- is_noise=true se for SÓ elogio, parabéns, satisfação, 'nada a acrescentar', sem pedido.",
-      "- Elogio NÃO é dor. Não use polarity pain para 'parabéns', 'satisfeito', 'relação perfeita'.",
-      "- polarity pain só quando houver pedido, crítica ou sugestão concreta.",
-      "- 'Melhoria contínua' / 'continuar evoluindo' NÃO é ruído — tema evolucao, polarity pain.",
+      "- is_noise=true se for SÓ elogio, parabéns, satisfação, 'nada a acrescentar', 'melhoria contínua', 'continuar com a dedicação', sem pedido concreto.",
+      "- Elogio NÃO é dor. 'relação de confiança perene' é strength (relacionamento), nunca pain.",
+      "- Compartilhar prática de terceiro (Legal AI, Markdown, case de outro escritório) é is_noise=true. Não é dor nem inovação do BP.",
+      "- polarity pain só com pedido, crítica ou sugestão concreta ao BP (retorno mensal, disponibilidade restrita, sobrecarga, filial, retenção, cobrança).",
+      "- Um texto pode ter FORÇA e DOR: elogie técnica e extraia disponibilidade/comunicação como pain se o cliente pediu ou a nota dessas dimensões for baixa (<=7).",
+      "- Se disponibilidade <=7, procure tema disponibilidade (pain) quando o texto falar de tempo, sobrecarga, acesso ou otimizar disponibilidade.",
+      "- Se comunicação <=7, procure tema comunicacao (pain) quando o texto falar de comunicação, retorno, status do processo ou 'dizer como está indo'.",
       "quote deve ser trecho literal DESTE campo, não do outro.",
       "engajamento_socio só se o texto citar sócio.",
       "Temas:",
       taxonomy,
     ].join("\n"),
     prompt: [
-      `Faixa NPS: ${bucket} (nota ${input.scoreRecommend})`,
+      `Faixa NPS: ${bucket} (recomendação ${input.scoreRecommend})`,
+      `Notas: disponibilidade ${input.scoreAvailability ?? "—"}, comunicação ${input.scoreCommunication ?? "—"}, inovação ${input.scoreInnovation ?? "—"}, técnica ${input.scoreTechnical ?? "—"}.`,
       ...toClassify.map((p) => `CAMPO ${p.field}:\n${p.text}`),
     ].join("\n\n"),
   });
@@ -177,20 +224,32 @@ async function classifyWithLlm(input: ClassifyNpsTextsInput): Promise<Classified
       item.field === "reason" ? input.reason : input.improvement;
     if (!sourceText) continue;
     const isNoise =
-      item.is_noise ||
       isNpsTextNoise(sourceText) ||
-      (item.field === "improvement" && isNpsPraiseOnly(sourceText));
+      (item.field === "improvement" && isNpsKeepImprovingAsk(sourceText)) ||
+      (item.field === "improvement" && isNpsPracticeShare(sourceText)) ||
+      (item.field === "improvement" &&
+        (item.is_noise || isNpsPraiseOnly(sourceText)) &&
+        !isNpsRelationshipPraise(sourceText));
     byField.set(item.field, {
       responseId: input.responseId,
       clientGroupId: input.clientGroupId,
       respondentName: input.respondentName,
       groupName: input.groupName,
       scoreRecommend: input.scoreRecommend,
+      scoreAvailability: input.scoreAvailability,
+      scoreCommunication: input.scoreCommunication,
+      scoreInnovation: input.scoreInnovation,
+      scoreTechnical: input.scoreTechnical,
       field: item.field,
       isNoise,
       themes: isNoise
         ? []
-        : sanitizeThemes(item.themes, sourceText, item.field, input.scoreRecommend),
+        : sanitizeThemes(item.themes, sourceText, item.field, input.scoreRecommend, {
+            scoreAvailability: input.scoreAvailability,
+            scoreCommunication: input.scoreCommunication,
+            scoreInnovation: input.scoreInnovation,
+            scoreTechnical: input.scoreTechnical,
+          }),
       actionable: isNoise ? false : item.actionable,
       suggestedAction: isNoise ? null : item.suggested_action,
       mentionsPartner: item.mentions_partner,

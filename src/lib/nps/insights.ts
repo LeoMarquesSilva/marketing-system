@@ -2,7 +2,7 @@
 
 import { classifyNpsScore, type NpsBucket } from "@/lib/nps/scoring";
 
-export const NPS_INSIGHT_TAXONOMY_VERSION = 2;
+export const NPS_INSIGHT_TAXONOMY_VERSION = 3;
 
 export const NPS_INSIGHT_THEME_IDS = [
   "tecnica",
@@ -80,9 +80,6 @@ const ASK_NEEDLES = [
   "falt",
   "senti",
   "melhorar",
-  "melhoria continua",
-  "sempre adotar",
-  "continuar com",
   "uma vez ao mes",
   "filial",
   "reter",
@@ -90,8 +87,6 @@ const ASK_NEEDLES = [
   "rotatividade",
   "restrita",
   "otimizar",
-  "adotar",
-  "rastreab",
   "honorario",
   "cobranca",
   "prazo",
@@ -100,6 +95,8 @@ const ASK_NEEDLES = [
   "mais experiencia",
   "sobrecarga",
   "retenc",
+  "perdendo",
+  "nao perder",
 ];
 
 const PRAISE_NEEDLES = [
@@ -116,7 +113,24 @@ const PRAISE_NEEDLES = [
   "parceria",
   "obrigad",
   "agrade",
+  "confianca perene",
+  "relacao de confianca",
+  "relacao perfeita",
 ];
+
+const PRACTICE_SHARE_NEEDLES = [
+  "compartilhar uma pratica",
+  "vi o pessoal",
+  "grupo recente",
+  "legal ai",
+  "arquivo markdown",
+  "markdown por cliente",
+  "quando a ia ajuda",
+  "redigir a peca",
+  "primeiro unicornio",
+];
+
+const WEAK_DIMENSION_MAX = 7;
 
 function foldedText(text: string): string {
   return foldPt(text).replace(/[?!.,;:😉]+/g, " ").replace(/\s+/g, " ").trim();
@@ -139,11 +153,39 @@ export function isNpsKeepImprovingAsk(text: string): boolean {
   const folded = foldedText(text);
   return (
     folded.includes("melhoria continua") ||
-    folded.includes("sempre adotar") ||
+    folded.includes("sempre adotar o conceito") ||
     folded.includes("continuar com a dedicacao") ||
     folded.includes("continuar evolu") ||
     folded.includes("evoluind")
   );
+}
+
+/** Relato de prática de terceiro / ferramenta — não é pedido ao escritório. */
+export function isNpsPracticeShare(text: string | null | undefined): boolean {
+  if (text == null) return false;
+  const folded = foldedText(text);
+  return PRACTICE_SHARE_NEEDLES.some((n) => folded.includes(n));
+}
+
+export function isNpsRelationshipPraise(text: string | null | undefined): boolean {
+  if (text == null) return false;
+  const folded = foldedText(text);
+  if (folded.includes("falta") || folded.includes("nao ha confianca")) return false;
+  return (
+    folded.includes("confianca perene") ||
+    folded.includes("relacao de confianca") ||
+    folded.includes("estabelecimento de uma relacao") ||
+    folded.includes("relacao perfeita")
+  );
+}
+
+export function isNpsImprovementAsk(text: string | null | undefined): boolean {
+  if (text == null || isNpsTextNoise(text)) return false;
+  if (isNpsKeepImprovingAsk(text)) return false;
+  if (isNpsPracticeShare(text)) return false;
+  if (isNpsPraiseOnly(text)) return false;
+  const folded = foldedText(text);
+  return ASK_NEEDLES.some((n) => folded.includes(n));
 }
 
 /** Melhoria que é só elogio, sem pedido — não entra em Dores. */
@@ -151,6 +193,7 @@ export function isNpsPraiseOnly(text: string | null | undefined): boolean {
   if (text == null || isNpsTextNoise(text)) return true;
   const folded = foldedText(text);
   if (isNpsKeepImprovingAsk(text)) return false;
+  if (isNpsPracticeShare(text)) return false;
   if (folded.includes("infeliz")) return false;
   if (ASK_NEEDLES.some((n) => folded.includes(n))) return false;
   if (folded.includes("impar") && !folded.includes("imparcial")) return true;
@@ -160,10 +203,26 @@ export function isNpsPraiseOnly(text: string | null | undefined): boolean {
   return false;
 }
 
+/** Não deve ir para Dores: elogio, platitude de evoluir, ou prática compartilhada. */
+export function isNpsNotPainText(text: string | null | undefined): boolean {
+  if (text == null || isNpsTextNoise(text)) return true;
+  if (isNpsKeepImprovingAsk(text)) return true;
+  if (isNpsPracticeShare(text)) return true;
+  if (isNpsRelationshipPraise(text)) return true;
+  return isNpsPraiseOnly(text);
+}
+
 export interface NpsInsightThemeHit {
   id: NpsInsightThemeId;
   polarity: NpsInsightPolarity;
   quote: string;
+}
+
+export interface NpsInsightScoreContext {
+  scoreAvailability: number;
+  scoreCommunication: number;
+  scoreInnovation: number;
+  scoreTechnical: number;
 }
 
 export interface NpsInsightFieldRow {
@@ -172,6 +231,10 @@ export interface NpsInsightFieldRow {
   respondentName: string;
   groupName: string;
   scoreRecommend: number;
+  scoreAvailability?: number;
+  scoreCommunication?: number;
+  scoreInnovation?: number;
+  scoreTechnical?: number;
   field: NpsInsightField;
   isNoise: boolean;
   themes: NpsInsightThemeHit[];
@@ -246,9 +309,24 @@ export function npsInsightMentionWeight(options: {
   field: NpsInsightField;
   polarity: NpsInsightPolarity;
   isNoise: boolean;
+  themeId?: NpsInsightThemeId;
+  scoreAvailability?: number;
+  scoreCommunication?: number;
 }): number {
   if (options.isNoise) return 0;
   const bucket = classifyNpsScore(options.scoreRecommend);
+  const weakAvailability =
+    options.themeId === "disponibilidade" &&
+    options.scoreAvailability != null &&
+    options.scoreAvailability <= WEAK_DIMENSION_MAX;
+  const weakCommunication =
+    options.themeId === "comunicacao" &&
+    options.scoreCommunication != null &&
+    options.scoreCommunication <= WEAK_DIMENSION_MAX;
+
+  if (options.polarity === "pain" && (weakAvailability || weakCommunication)) {
+    return 3;
+  }
 
   if (options.field === "improvement") {
     if (bucket === "detractor") return 3;
@@ -352,11 +430,22 @@ export function aggregateNpsCampaignInsights(
         field: row.field,
         polarity: hit.polarity,
         isNoise: false,
+        themeId: hit.id,
+        scoreAvailability: row.scoreAvailability,
+        scoreCommunication: row.scoreCommunication,
       });
+      if (isNpsNotPainText(hit.quote) && hit.polarity !== "strength") {
+        if (isNpsRelationshipPraise(hit.quote)) {
+          pushRank(strengths, { ...hit, polarity: "strength" }, row, weight || 1);
+        }
+        continue;
+      }
       if (row.field === "improvement") {
-        if (isNpsPraiseOnly(hit.quote)) continue;
-        const keepImproving = hit.id === "evolucao" && isNpsKeepImprovingAsk(hit.quote);
-        if (hit.polarity === "pain" || keepImproving) {
+        if (hit.polarity === "strength") {
+          pushRank(strengths, hit, row, weight);
+          continue;
+        }
+        if (hit.polarity === "pain" && (isNpsImprovementAsk(hit.quote) || isWeakDimensionPain(hit, row))) {
           pushRank(pains, hit, row, weight);
         }
         continue;
@@ -379,15 +468,62 @@ export function aggregateNpsCampaignInsights(
 
 const THEME_KEYWORDS: Array<{ id: NpsInsightThemeId; needles: string[] }> = [
   { id: "tecnica", needles: ["conhecimento tecnico", "nivel tecnico", "competencia tecnica", "tecnico"] },
-  { id: "disponibilidade", needles: ["disponibilidade", "disponivel", "acessivel"] },
-  { id: "comunicacao", needles: ["comunicacao", "apresentacao", "retorno", "clareza"] },
+  {
+    id: "disponibilidade",
+    needles: [
+      "disponibilidade",
+      "disponivel",
+      "acessivel",
+      "sobrecarga",
+      "restrita de tempo",
+    ],
+  },
+  {
+    id: "comunicacao",
+    needles: [
+      "comunicacao",
+      "apresentacao",
+      "retorno",
+      "clareza",
+      "dizer como",
+      "uma vez ao mes",
+      "status do processo",
+    ],
+  },
   { id: "inovacao", needles: ["inovacao", "inovador", "solucoes inovadoras"] },
   { id: "agilidade", needles: ["agilidade", "rapidez", "prazo", "celere", "providencias"] },
   { id: "organizacao", needles: ["organizacao", "eficacia", "organizado"] },
   { id: "engajamento_socio", needles: ["socio da area", "do socio", "e do socio", "o socio"] },
   { id: "relacionamento", needles: ["relacionamento", "parceria", "confianca", "trato", "atendimento", "acolhimento"] },
   { id: "honorarios", needles: ["honorario", "preco", "fatura", "cobranca"] },
-  { id: "evolucao", needles: ["melhoria continua", "melhorar", "aprimorar", "evoluir", "evolucao"] },
+  { id: "evolucao", needles: ["aprimorar", "evoluir", "evolucao"] },
+];
+
+const PAIN_THEME_NEEDLES: Array<{ id: NpsInsightThemeId; needles: string[] }> = [
+  {
+    id: "disponibilidade",
+    needles: [
+      "disponibilidade mais restrita",
+      "disponibilidade restrita",
+      "otimizar a comunicacao e a disponibilidade",
+      "otimizar a disponibilidade",
+      "sobrecarga",
+      "restrita de tempo",
+    ],
+  },
+  {
+    id: "comunicacao",
+    needles: [
+      "otimizar a comunicacao",
+      "otimizar a comunicacao e a disponibilidade",
+      "uma vez ao mes",
+      "dizer como",
+      "status do processo",
+    ],
+  },
+  { id: "honorarios", needles: ["cobranca", "honorario", "estrategias de cobranca"] },
+  { id: "agilidade", needles: ["agilidade e mais assertividade", "demora", "prazo"] },
+  { id: "tecnica", needles: ["mais experiencia"] },
 ];
 
 const NEGATIVE_NEEDLES = [
@@ -400,42 +536,94 @@ const NEGATIVE_NEEDLES = [
   "problema",
   "dificil",
   "ausencia",
+  "sobrecarga",
+  "restrita",
 ];
+
+function isWeakDimensionPain(hit: NpsInsightThemeHit, row: NpsInsightFieldRow): boolean {
+  if (hit.id === "disponibilidade" && row.scoreAvailability != null) {
+    return row.scoreAvailability <= WEAK_DIMENSION_MAX;
+  }
+  if (hit.id === "comunicacao" && row.scoreCommunication != null) {
+    return row.scoreCommunication <= WEAK_DIMENSION_MAX;
+  }
+  return false;
+}
+
+function themeHasPainCue(id: NpsInsightThemeId, folded: string): boolean {
+  const spec = PAIN_THEME_NEEDLES.find((item) => item.id === id);
+  return Boolean(spec?.needles.some((n) => folded.includes(n)));
+}
 
 export function extractHeuristicThemes(
   text: string,
   field: NpsInsightField,
-  scoreRecommend: number
+  scoreRecommend: number,
+  scores?: Partial<NpsInsightScoreContext>
 ): NpsInsightThemeHit[] {
+  if (field === "improvement" && (isNpsKeepImprovingAsk(text) || isNpsPracticeShare(text))) {
+    return [];
+  }
+  if (field === "improvement" && isNpsRelationshipPraise(text)) {
+    return [{ id: "relacionamento", polarity: "strength", quote: text.trim().slice(0, 280) }];
+  }
   if (field === "improvement" && isNpsPraiseOnly(text)) return [];
 
   const folded = foldPt(text);
   const bucket = classifyNpsScore(scoreRecommend);
   const negative = NEGATIVE_NEEDLES.some((n) => folded.includes(n));
-  let polarity: NpsInsightPolarity;
-  if (field === "improvement") {
-    polarity = "pain";
-  } else if (negative || bucket === "detractor") {
-    polarity = "pain";
-  } else if (bucket === "promoter") {
-    polarity = "strength";
-  } else {
-    polarity = "neutral";
-  }
-
+  const quote = text.trim().slice(0, 280);
   const hits: NpsInsightThemeHit[] = [];
+  const seen = new Set<NpsInsightThemeId>();
+
+  const push = (id: NpsInsightThemeId, polarity: NpsInsightPolarity) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    hits.push({ id, polarity, quote });
+  };
+
   for (const theme of THEME_KEYWORDS) {
-    if (theme.needles.some((n) => folded.includes(n))) {
-      hits.push({ id: theme.id, polarity, quote: text.trim().slice(0, 280) });
+    if (!theme.needles.some((n) => folded.includes(n))) continue;
+    const painCue = themeHasPainCue(theme.id, folded);
+    const weak =
+      (theme.id === "disponibilidade" && (scores?.scoreAvailability ?? 10) <= WEAK_DIMENSION_MAX) ||
+      (theme.id === "comunicacao" && (scores?.scoreCommunication ?? 10) <= WEAK_DIMENSION_MAX);
+
+    if (field === "improvement") {
+      if (painCue || weak) push(theme.id, "pain");
+      continue;
+    }
+    if (painCue || negative || bucket === "detractor") {
+      push(theme.id, "pain");
+    } else if (bucket === "promoter") {
+      push(theme.id, "strength");
     }
   }
 
-  if (hits.length === 0 && field === "improvement" && isNpsKeepImprovingAsk(text)) {
-    hits.push({ id: "evolucao", polarity: "pain", quote: text.trim().slice(0, 280) });
+  if (field === "improvement") {
+    if ((scores?.scoreAvailability ?? 10) <= WEAK_DIMENSION_MAX && folded.includes("disponib")) {
+      push("disponibilidade", "pain");
+    }
+    if (
+      (scores?.scoreCommunication ?? 10) <= WEAK_DIMENSION_MAX &&
+      (folded.includes("comunic") || folded.includes("dizer como") || folded.includes("uma vez ao mes"))
+    ) {
+      push("comunicacao", "pain");
+    }
+    if (hits.length === 0 && isNpsImprovementAsk(text)) {
+      if (folded.includes("filial")) push("outro", "pain");
+      else if (folded.includes("turnover") || folded.includes("rotatividade") || folded.includes("plano de carreira")) {
+        push("outro", "pain");
+      } else {
+        push("outro", "pain");
+      }
+    }
   }
 
-  if (hits.length === 0 && field === "reason" && polarity !== "neutral") {
-    hits.push({ id: "outro", polarity, quote: text.trim().slice(0, 280) });
+  if (hits.length === 0 && field === "reason") {
+    const polarity: NpsInsightPolarity =
+      negative || bucket === "detractor" ? "pain" : bucket === "promoter" ? "strength" : "neutral";
+    if (polarity !== "neutral") push("outro", polarity);
   }
 
   return hits;
@@ -443,8 +631,8 @@ export function extractHeuristicThemes(
 
 export function isHeuristicActionable(text: string, field: NpsInsightField): boolean {
   if (field !== "improvement") return false;
+  if (isNpsNotPainText(text)) return false;
   const folded = foldPt(text);
-  if (folded.includes("melhoria continua")) return false;
   return [
     "prazo",
     "socio",
@@ -453,5 +641,7 @@ export function isHeuristicActionable(text: string, field: NpsInsightField): boo
     "preco",
     "comunic",
     "disponib",
+    "dizer como",
+    "uma vez ao mes",
   ].some((n) => folded.includes(n));
 }

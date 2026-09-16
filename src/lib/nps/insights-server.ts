@@ -70,7 +70,7 @@ export async function classifyNpsResponseInsights(responseId: string): Promise<v
     const { data, error } = await admin
       .from("nps_responses")
       .select(
-        "id, campaign_id, client_group_id, respondent_name, score_recommend, reason, improvement"
+        "id, campaign_id, client_group_id, respondent_name, score_recommend, score_availability, score_communication, score_innovation, score_technical, reason, improvement"
       )
       .eq("id", responseId)
       .maybeSingle();
@@ -99,6 +99,10 @@ export async function classifyNpsResponseInsights(responseId: string): Promise<v
       respondentName: (data.respondent_name as string) ?? "",
       groupName: "",
       scoreRecommend: Number(data.score_recommend),
+      scoreAvailability: Number(data.score_availability),
+      scoreCommunication: Number(data.score_communication),
+      scoreInnovation: Number(data.score_innovation),
+      scoreTechnical: Number(data.score_technical),
       reason: needReason ? reason : null,
       improvement: needImprovement ? improvement : null,
     });
@@ -181,6 +185,10 @@ export async function loadNpsCampaignInsights(options: {
         respondentName: response.respondentName,
         groupName: response.groupName,
         scoreRecommend: response.scoreRecommend,
+        scoreAvailability: response.scoreAvailability,
+        scoreCommunication: response.scoreCommunication,
+        scoreInnovation: response.scoreInnovation,
+        scoreTechnical: response.scoreTechnical,
         field: raw.field as NpsInsightField,
         isNoise: raw.is_noise,
         themes: parseThemes(raw.themes),
