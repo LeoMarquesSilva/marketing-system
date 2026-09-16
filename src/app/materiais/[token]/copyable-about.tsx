@@ -4,11 +4,11 @@ import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 
 const ABOUT_PARAGRAPHS = [
-  "O Bismarchi Pires Sociedade de Advogados nasceu com o propósito de impulsionar a economia brasileira, oferecendo soluções jurídicas estratégicas e inovadoras em casos de alta complexidade empresarial.",
-  "Com sede em Campinas/SP e atuação nacional, o escritório reúne mais de 60 profissionais altamente qualificados, em áreas como Reestruturação de Empresas, Direito Empresarial, Societário, Contratos Empresariais, M&A, Tributário, Trabalhista Empresarial, dentre outras.",
-  "São mais de 8 mil processos distribuídos em cerca de 200 clientes ativos na base do escritório, representando mais de R$ 6 bilhões sob gestão jurídica.",
-  "O Núcleo de Legal Operations do escritório é um dos maiores diferenciais mercadológicos, aliando tecnologia, segurança e inteligência de dados à prática jurídica, garantindo precisão, eficiência e previsibilidade nos resultados.",
-  "Desde 2018 o escritório figura entre os mais admirados do país, consolidando sua excelência técnica e reputação nacional.",
+  "O Bismarchi | Pires Sociedade de Advogados é um escritório empresarial com sede em Campinas/SP e atuação nacional, especializado na condução de demandas jurídicas de alta complexidade.",
+  "Com uma equipe de mais de 60 profissionais, atua de forma multidisciplinar em áreas como Reestruturação de Empresas, Direito Empresarial, Societário, Contratos Empresariais, M&A, Tributário e Trabalhista Empresarial.",
+  "Atualmente, o escritório acompanha mais de 8 mil processos de aproximadamente 200 clientes ativos, representando mais de R$ 6 bilhões sob gestão jurídica.",
+  "A atuação jurídica é apoiada por uma estrutura própria de tecnologia, dados e Operações Legais, desenvolvida para ampliar o controle das operações, a eficiência dos processos e a qualidade das informações utilizadas na tomada de decisão.",
+  "Desde 2018, o Bismarchi | Pires figura entre os escritórios reconhecidos pelos principais rankings jurídicos do país, consolidando uma atuação marcada por excelência técnica, visão empresarial e inovação.",
 ] as const;
 
 const ABOUT_TEXT = ABOUT_PARAGRAPHS.join("\n\n");
