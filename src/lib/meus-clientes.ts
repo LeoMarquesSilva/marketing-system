@@ -7,9 +7,13 @@
  */
 
 import type { EmailCompany, EmailContact, EmailGroupResponsible, EmailPerson } from "./email-marketing";
-import { personNameKey } from "./email-marketing-normalize";
+import {
+  companyNameKey,
+  inviteTwinMatches,
+  isPersonNamePrefix,
+  personNameKey,
+} from "./email-marketing-normalize";
 import { clientProfileIsIncomplete, contactToClientProfile, listClientMissingFieldLabels, personToClientProfile } from "./email-marketing-enrichment";
-import { companyNameKey } from "./email-marketing-normalize";
 import { departmentToSioeArea, normalizeLegalArea } from "./legal-areas";
 
 /** Grupos do próprio escritório — não aparecem em Meus Clientes. */
@@ -838,32 +842,44 @@ export function buildClientGroupKeysForAreaFilter(
   return matching;
 }
 
-function contactDedupKeys(contacts: EmailContact[]): {
-  emails: Set<string>;
-  nameKeys: Set<string>;
-} {
-  const emails = new Set<string>();
-  const nameKeys = new Set<string>();
-  for (const contact of contacts) {
-    if (contact.email) emails.add(contact.email.trim().toLowerCase());
-    const key = personNameKey(contact.name);
-    if (key) nameKeys.add(key);
-  }
-  return { emails, nameKeys };
-}
-
-/** Remove pessoas SIOE que já existem como contato RD/SIOE (e-mail ou nome). */
+/** Remove pessoas SIOE que já existem como contato RD/SIOE (e-mail, nome ou prefixo). */
 export function filterPeopleNotInContacts(
   groupPeople: EmailPerson[],
   groupContacts: EmailContact[]
 ): EmailPerson[] {
-  const { emails, nameKeys } = contactDedupKeys(groupContacts);
-  return groupPeople.filter((person) => {
+  const emails = new Set<string>();
+  const nameKeys = new Set<string>();
+  for (const contact of groupContacts) {
+    const email = contact.email?.trim().toLowerCase();
+    if (email) emails.add(email);
+    const nameKey = personNameKey(contact.name);
+    if (nameKey) nameKeys.add(nameKey);
+  }
+
+  const unmatched: EmailPerson[] = [];
+  for (const person of groupPeople) {
     const email = person.email?.trim().toLowerCase();
-    if (email && emails.has(email)) return false;
+    if (email && emails.has(email)) continue;
     const nameKey = personNameKey(person.name);
-    if (nameKey && nameKeys.has(nameKey)) return false;
-    return true;
+    if (nameKey && nameKeys.has(nameKey)) continue;
+    unmatched.push(person);
+  }
+
+  if (unmatched.length === 0 || groupContacts.length === 0) return unmatched;
+
+  const alreadyPaired = new Set<string>();
+  for (const contact of groupContacts) {
+    if (groupPeople.some((person) => inviteTwinMatches(contact, person))) {
+      alreadyPaired.add(contact.id);
+    }
+  }
+
+  return unmatched.filter((person) => {
+    const prefixed = groupContacts.filter(
+      (contact) =>
+        !alreadyPaired.has(contact.id) && isPersonNamePrefix(person.name, contact.name)
+    );
+    return prefixed.length !== 1;
   });
 }
 
@@ -874,6 +890,31 @@ export function mergeGroupMembers(
   return {
     contacts: groupContacts,
     people: filterPeopleNotInContacts(groupPeople, groupContacts),
+  };
+}
+
+export type GroupMemberStatusFilter = "all" | "pending" | "complete";
+
+/**
+ * Deduplica RD × SIOE primeiro e só então aplica o filtro de pendentes/completos.
+ * Sem isso, esconder o contato completo no filtro “Pendentes” faz a pessoa SIOE
+ * duplicada reaparecer como se ainda faltasse classificar NPS.
+ */
+export function visibleGroupMembers(
+  groupContacts: EmailContact[],
+  groupPeople: EmailPerson[],
+  statusFilter: GroupMemberStatusFilter = "all"
+): { contacts: EmailContact[]; people: EmailPerson[] } {
+  const { contacts, people } = mergeGroupMembers(groupContacts, groupPeople);
+  if (statusFilter === "all") return { contacts, people };
+  const keepPending = statusFilter === "pending";
+  return {
+    contacts: contacts.filter(
+      (contact) => clientProfileIsIncomplete(contactToClientProfile(contact)) === keepPending
+    ),
+    people: people.filter(
+      (person) => clientProfileIsIncomplete(personToClientProfile(person)) === keepPending
+    ),
   };
 }
 

@@ -55,6 +55,7 @@ import {
   countGroupPendingMembers,
   groupHasNoContacts,
   mergeGroupMembers,
+  visibleGroupMembers,
 } from "@/lib/meus-clientes";
 import { AreaIcon, getAreaIconStyle } from "@/lib/area-icons";
 import { getPartyInviteTipoDescription, getPartyInviteTipoLabel } from "@/lib/party-invite-types";
@@ -482,6 +483,7 @@ export function GroupSection({
   compact,
   searchQuery,
   inviteFilter = "all",
+  statusFilter = "all",
   partyTipoFilter = "all",
   tourGroupSample,
   tourContactEdit,
@@ -518,6 +520,7 @@ export function GroupSection({
   compact?: boolean;
   searchQuery?: string;
   inviteFilter?: InviteFilter;
+  statusFilter?: StatusFilter;
   partyTipoFilter?: PartyInviteTipo | "all";
   tourGroupSample?: boolean;
   tourContactEdit?: boolean;
@@ -539,12 +542,17 @@ export function GroupSection({
   userNameById?: Map<string, string>;
   userAvatarById?: Map<string, string | null>;
 }) {
-  const { contacts: mergedContacts, people: mergedPeople } = mergeGroupMembers(
+  const { contacts: allContacts, people: allPeople } = mergeGroupMembers(
     groupContacts,
     group.groupPeople
   );
-  const noContacts = groupHasNoContacts(mergedPeople, mergedContacts);
-  const pendingCount = noContacts ? 1 : countGroupPendingMembers(mergedPeople, mergedContacts);
+  const { contacts: mergedContacts, people: mergedPeople } = visibleGroupMembers(
+    groupContacts,
+    group.groupPeople,
+    statusFilter
+  );
+  const noContacts = groupHasNoContacts(allPeople, allContacts);
+  const pendingCount = noContacts ? 1 : countGroupPendingMembers(allPeople, allContacts);
 
   const groupAreas = useMemo(() => {
     const set = new Set<string>();

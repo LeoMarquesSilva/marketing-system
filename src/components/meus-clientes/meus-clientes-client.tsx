@@ -67,7 +67,6 @@ import {
   resolveUserMeusClientesAreas,
   resolveClientGroupAreas,
   resolveNpsCollectionArea,
-  filterPeopleNotInContacts,
   getAreaParent,
   groupHasNoContacts,
   groupIsPending,
@@ -123,7 +122,6 @@ import {
   StatusToggle,
   contactSearchHaystack,
   formatSyncDate,
-  isContactPending,
   parseSelectKey,
 } from "./meus-clientes-ui";
 
@@ -784,9 +782,13 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
       if (groupHasNoContacts(groupPeople, groupContacts)) {
         return filterStatus === "pending";
       }
+      const { contacts: mergedContacts, people: mergedPeople } = mergeGroupMembers(
+        groupContacts,
+        groupPeople
+      );
       const profiles = [
-        ...groupPeople.map(personToClientProfile),
-        ...groupContacts.map(contactToClientProfile),
+        ...mergedPeople.map(personToClientProfile),
+        ...mergedContacts.map(contactToClientProfile),
       ];
       const hasPending = profiles.some((p) => listClientMissingFieldLabels(p).length > 0);
       return filterStatus === "pending" ? hasPending : !hasPending;
@@ -1288,24 +1290,6 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
     return counts;
   }, [companies, people, allAreasList, personAreas, responsibles, collectorDepartmentByGroupId]);
 
-  const displayContactsByGroup = useMemo(() => {
-    const map = new Map<string, EmailContact[]>();
-    for (const [key, list] of contactsByGroup) {
-      if (filterStatus === "all") {
-        map.set(key, list);
-        continue;
-      }
-      map.set(
-        key,
-        list.filter((c) => {
-          const pending = isContactPending(c);
-          return filterStatus === "pending" ? pending : !pending;
-        })
-      );
-    }
-    return map;
-  }, [contactsByGroup, filterStatus]);
-
   const summaryTotals = useMemo(() => {
     // companies/contacts/people já vêm filtrados pelo escopo do usuário na API.
     const totals = computeEnrichmentTotals(companies, contacts, people);
@@ -1317,9 +1301,9 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
     const scopedContacts = contacts.filter((c) =>
       scopedGroupKeys.has(resolveContactGroupKey(c, companiesById))
     );
-    const scopedPeopleDeduped = filterPeopleNotInContacts(
-      people.filter((p) => scopedGroupKeys.has(resolveGroupKey(p))),
-      scopedContacts
+    const scopedPeopleDeduped = groups.flatMap(
+      (group) =>
+        mergeGroupMembers(contactsByGroup.get(group.key) ?? [], group.groupPeople).people
     );
     const profiles = [
       ...scopedPeopleDeduped.map(personToClientProfile),
@@ -1332,7 +1316,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
     const incompleto = profileIncompleto + emptyGroups;
     const total = profiles.length + emptyGroups;
     return { total, incompleto, completo: total - incompleto };
-  }, [people, contacts, groups, companiesById, contactsByGroup]);
+  }, [contacts, groups, companiesById, contactsByGroup]);
 
   const hasActiveFilters = Boolean(
     filterArea ||
@@ -1350,7 +1334,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
   const expandAllPending = () => {
     const next: Record<string, boolean> = { ...groupOpen };
     for (const g of displayGroups) {
-      const gc = displayContactsByGroup.get(g.key) ?? [];
+      const gc = contactsByGroup.get(g.key) ?? [];
       if (groupIsPending(g.groupPeople, gc)) next[g.key] = true;
     }
     setGroupOpen(next);
@@ -1952,7 +1936,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
           )}
 
           {displayGroups.some((g) => {
-            const gc = displayContactsByGroup.get(g.key) ?? [];
+            const gc = contactsByGroup.get(g.key) ?? [];
             return groupIsPending(g.groupPeople, gc);
           }) && (
             <Button variant="ghost" size="sm" onClick={expandAllPending}>
@@ -2011,7 +1995,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
               <GroupSection
                 key={group.key}
                 group={group}
-                groupContacts={displayContactsByGroup.get(group.key) ?? []}
+                groupContacts={contactsByGroup.get(group.key) ?? []}
                 personAreas={personAreas}
                 clienteAtividadeIndex={clienteAtividade}
                 open={groupOpen[group.key] ?? false}
@@ -2023,6 +2007,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
                 compact={compactMode}
                 searchQuery={search}
                 inviteFilter={filterInvite}
+                statusFilter={filterStatus}
                 partyTipoFilter={effectivePartyTipoFilter}
                 tourGroupSample={index === 0}
                 tourContactEdit={
@@ -2106,7 +2091,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
                   openGroupStatus(g);
                 }}
                 onGenerateNpsLink={(g) => {
-                  const groupContacts = displayContactsByGroup.get(g.key) ?? [];
+                  const groupContacts = contactsByGroup.get(g.key) ?? [];
                   const { contacts: mergedC, people: mergedP } = mergeGroupMembers(
                     groupContacts,
                     g.groupPeople

@@ -122,6 +122,59 @@ export function personNameKey(value: string | null | undefined): string {
     .toLowerCase();
 }
 
+/** Mesma pessoa no grupo: e-mail igual ou nome equivalente (RD × SIOE). */
+export function inviteTwinMatches(
+  a: { name?: string | null; email?: string | null },
+  b: { name?: string | null; email?: string | null }
+): boolean {
+  const emailA = a.email?.trim().toLowerCase();
+  const emailB = b.email?.trim().toLowerCase();
+  if (emailA && emailB && emailA === emailB) return true;
+  const nameA = personNameKey(a.name);
+  const nameB = personNameKey(b.name);
+  return Boolean(nameA && nameA === nameB);
+}
+
+/** "Elaine Louzada" casa com "Elaine Louzada Castilho"; exige ao menos dois tokens. */
+export function isPersonNamePrefix(
+  a: string | null | undefined,
+  b: string | null | undefined
+): boolean {
+  const tokensA = personNameKey(a).split(" ").filter(Boolean);
+  const tokensB = personNameKey(b).split(" ").filter(Boolean);
+  if (tokensA.length < 2 || tokensB.length < 2) return false;
+  const [shorter, longer] =
+    tokensA.length <= tokensB.length ? [tokensA, tokensB] : [tokensB, tokensA];
+  if (shorter.length === longer.length) return false;
+  return shorter.every((token, index) => longer[index] === token);
+}
+
+type InviteTwinIdentity = { id: string; name?: string | null; email?: string | null };
+
+/**
+ * Gêmeos no mesmo grupo: e-mail/nome exato; senão prefixo único, desde que o
+ * outro lado ainda não tenha um par exato (evita juntar Valter Ribeiro e Filho).
+ */
+export function findInviteTwinsInGroup<T extends InviteTwinIdentity>(
+  source: InviteTwinIdentity,
+  candidates: T[],
+  counterpartPool: InviteTwinIdentity[] = []
+): T[] {
+  const others = candidates.filter((item) => item.id !== source.id);
+  const exact = others.filter((item) => inviteTwinMatches(source, item));
+  if (exact.length > 0) return exact;
+
+  const alreadyPaired = new Set(
+    others
+      .filter((item) => counterpartPool.some((row) => inviteTwinMatches(item, row)))
+      .map((item) => item.id)
+  );
+  const prefixed = others.filter(
+    (item) => !alreadyPaired.has(item.id) && isPersonNamePrefix(source.name, item.name)
+  );
+  return prefixed.length === 1 ? prefixed : [];
+}
+
 export function normalizeCompanyName(value: string | null | undefined): string | null {
   const fixed = fixMojibake(value);
   if (!fixed) return null;

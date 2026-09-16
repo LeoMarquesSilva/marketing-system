@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAuthenticatedUser } from "@/lib/api-auth";
 import { fetchNpsResults, NpsHttpError } from "@/lib/nps/server";
+import { emptyNpsCampaignInsights } from "@/lib/nps/insights";
+import { loadNpsCampaignInsights } from "@/lib/nps/insights-server";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +17,14 @@ export async function GET(request: Request) {
       campaignId,
     });
 
-    return NextResponse.json(results);
+    let insights = emptyNpsCampaignInsights();
+    try {
+      insights = await loadNpsCampaignInsights({ responses: results.responses });
+    } catch (err) {
+      console.error("[nps-insights] resultados seguem sem o bloco de temas.", err);
+    }
+
+    return NextResponse.json({ ...results, insights });
   } catch (err) {
     if (err instanceof NpsHttpError) {
       return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });

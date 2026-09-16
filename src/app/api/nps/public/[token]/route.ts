@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { resolvePublicSurvey, submitSurveyResponse } from "@/lib/nps/server";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +40,15 @@ export async function POST(request: Request, context: RouteContext) {
         { status: result.status }
       );
     }
+
+    after(() => {
+      void import("@/lib/nps/insights-server")
+        .then((mod) => mod.classifyNpsResponseInsights(result.responseId))
+        .catch((err) => {
+          console.error("[nps-insights] pós-envio (pesquisa segue salva).", err);
+        });
+    });
+
     return NextResponse.json({ success: true, responseId: result.responseId });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Erro ao enviar resposta.";

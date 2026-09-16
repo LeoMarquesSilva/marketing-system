@@ -9,6 +9,7 @@ import {
   groupHasNoContacts,
   groupIsPending,
   mergeGroupMembers,
+  visibleGroupMembers,
   expandRootArea,
   filterOutInternalClientGroups,
   getAreaParent,
@@ -187,6 +188,71 @@ describe("RD × SIOE deduplication", () => {
     const { contacts, people } = mergeGroupMembers(metalcastyContacts, metalcastyPeople);
     expect(contacts).toHaveLength(2);
     expect(people).toHaveLength(1);
+  });
+
+  it("filtro pendentes não ressuscita pessoa SIOE já classificada no contato RD", () => {
+    const contacts = [
+      {
+        id: "c-cara",
+        name: "Guilherme Amador Cará",
+        email: "guilherme@example.com",
+        phone: "11999999999",
+        cargo: "Sócio(a) / Proprietário(a)",
+        npsEligible: false,
+        partyInvite: false,
+        invitesClassifiedByUserId: "user-1",
+      },
+    ] as EmailContact[];
+    const people = [
+      {
+        id: "p-cara",
+        name: "Guilherme Amador Cará",
+        email: null,
+        phone: null,
+        cargo: null,
+        npsEligible: false,
+        partyInvite: false,
+        invitesClassifiedByUserId: null,
+      },
+      {
+        id: "p-outro",
+        name: "Adriano Aparecido Ferreira da Silva",
+        email: null,
+        phone: null,
+        cargo: null,
+        npsEligible: false,
+        partyInvite: false,
+        invitesClassifiedByUserId: "user-1",
+      },
+    ] as EmailPerson[];
+
+    expect(countGroupPendingMembers(people, contacts)).toBe(1);
+    const pending = visibleGroupMembers(contacts, people, "pending");
+    expect(pending.contacts).toHaveLength(0);
+    expect(pending.people.map((p) => p.id)).toEqual(["p-outro"]);
+    const all = visibleGroupMembers(contacts, people, "all");
+    expect(all.contacts.map((c) => c.id)).toEqual(["c-cara"]);
+    expect(all.people.map((p) => p.id)).toEqual(["p-outro"]);
+  });
+
+  it("casa Elaine Louzada com Elaine Louzada Castilho e não junta Valter Ribeiro com Filho", () => {
+    const spel = filterPeopleNotInContacts(
+      [
+        { id: "p-elaine", name: "Elaine Louzada Castilho" },
+        { id: "p-ademar", name: "Ademar Louzada" },
+      ] as EmailPerson[],
+      [{ id: "c-elaine", name: "Elaine Louzada", email: "elaine@example.com" }] as EmailContact[]
+    );
+    expect(spel.map((p) => p.id)).toEqual(["p-ademar"]);
+
+    const cometais = filterPeopleNotInContacts(
+      [
+        { id: "p-valter", name: "Valter Ribeiro" },
+        { id: "p-filho", name: "Valter Ribeiro Filho" },
+      ] as EmailPerson[],
+      [{ id: "c-filho", name: "Valter Ribeiro Filho", email: "valter@example.com" }] as EmailContact[]
+    );
+    expect(cometais.map((p) => p.id)).toEqual(["p-valter"]);
   });
 });
 
