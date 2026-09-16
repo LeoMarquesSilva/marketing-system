@@ -21,6 +21,7 @@ const BARE_LAYOUT_PATHS = [
   "/nps",
   "/leituras",
   "/manuais",
+  "/materiais",
   "/briefings",
 ];
 

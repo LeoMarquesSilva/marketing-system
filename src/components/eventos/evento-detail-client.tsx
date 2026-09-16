@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ClipboardList, CheckSquare, Wallet, Truck, Users, Megaphone, Paperclip, ChartLine, History, Pencil, Copy, Loader2 } from "lucide-react";
+import { ArrowLeft, ClipboardList, CheckSquare, Wallet, Truck, Users, Megaphone, Paperclip, ChartLine, History, Pencil, Copy, Loader2, MousePointerClick } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EventoFormDialog } from "@/components/eventos/evento-form-dialog";
@@ -15,6 +15,7 @@ import { EventoFornecedoresTab } from "@/components/eventos/evento-fornecedores-
 import { EventoConvidadosTab } from "@/components/eventos/evento-convidados-tab";
 import { EventoComunicacaoTab } from "@/components/eventos/evento-comunicacao-tab";
 import { EventoArquivosTab } from "@/components/eventos/evento-arquivos-tab";
+import { EventoRastreamentoTab } from "@/components/eventos/evento-rastreamento-tab";
 import {
   EVENT_FILES_BUCKET,
   removeFromBucket,
@@ -53,6 +54,7 @@ import {
   upsertEventPostmortem,
   insertSupplierQuote,
   updateEventTask,
+  updateEventAttachmentVisibility,
   type EventAttachment,
   type EventBudgetItem,
   type EventCommunication,
@@ -67,6 +69,7 @@ import {
   type EventTemplate,
   type OrgEvent,
 } from "@/lib/eventos";
+import type { EventPublicCampaignSummary } from "@/lib/event-public";
 import type { User } from "@/lib/users";
 import { cn } from "@/lib/utils";
 
@@ -78,6 +81,7 @@ type TabId =
   | "convidados"
   | "comunicacao"
   | "arquivos"
+  | "rastreamento"
   | "pos_evento"
   | "historico";
 
@@ -93,6 +97,7 @@ interface EventoDetailClientProps {
   initialAttachments: EventAttachment[];
   initialPostmortem: EventPostmortem | null;
   initialHistory: EventHistoryItem[];
+  initialPublicCampaign: EventPublicCampaignSummary;
   templates: EventTemplate[];
   users: User[];
   designers: User[];
@@ -110,6 +115,7 @@ export function EventoDetailClient({
   initialAttachments,
   initialPostmortem,
   initialHistory,
+  initialPublicCampaign,
   templates,
   users,
   designers,
@@ -399,7 +405,7 @@ export function EventoDetailClient({
     setIsBusy(false);
   }
 
-  async function handleAddAttachment(input: { title: string; url: string; fileType?: string }) {
+  async function handleAddAttachment(input: { title: string; url: string; fileType?: string; isPublic: boolean }) {
     setIsBusy(true);
     const created = await upsertEventAttachment({
       eventId: event.id,
@@ -407,6 +413,7 @@ export function EventoDetailClient({
       url: input.url,
       fileType: input.fileType ?? "arquivo_geral",
       provider: "external_link",
+      isPublic: input.isPublic,
     });
     if (created) {
       await reloadAttachments();
@@ -416,7 +423,7 @@ export function EventoDetailClient({
     setIsBusy(false);
   }
 
-  async function handleUploadAttachment(file: File, input: { title: string; fileType: string }) {
+  async function handleUploadAttachment(file: File, input: { title: string; fileType: string; isPublic: boolean }) {
     setIsBusy(true);
     try {
       const { publicUrl, path: storagePath } = await uploadEventFile(event.id, "arquivos", file);
@@ -427,6 +434,7 @@ export function EventoDetailClient({
         fileType: input.fileType,
         provider: "supabase_storage",
         storagePath,
+        isPublic: input.isPublic,
       });
       if (created) {
         await reloadAttachments();
@@ -459,6 +467,24 @@ export function EventoDetailClient({
       await reloadAttachments();
       await registerHistory("arquivo", "Arquivo removido", { attachmentId: id });
       setActionFeedback({ type: "success", text: "Arquivo removido." });
+    }
+    setIsBusy(false);
+  }
+
+  async function handleToggleAttachmentPublic(id: string, isPublic: boolean) {
+    setIsBusy(true);
+    const ok = await updateEventAttachmentVisibility(id, isPublic);
+    if (ok) {
+      await reloadAttachments();
+      await registerHistory(
+        "arquivo",
+        isPublic ? "Arquivo adicionado ao compartilhamento público" : "Arquivo removido do compartilhamento público",
+        { attachmentId: id }
+      );
+      setActionFeedback({
+        type: "success",
+        text: isPublic ? "Arquivo disponível no link público." : "Arquivo agora é somente interno.",
+      });
     }
     setIsBusy(false);
   }
@@ -497,6 +523,7 @@ export function EventoDetailClient({
     { id: "convidados", label: "Convidados", icon: <Users className="h-4 w-4" /> },
     { id: "comunicacao", label: "Comunicação", icon: <Megaphone className="h-4 w-4" /> },
     { id: "arquivos", label: "Arquivos", icon: <Paperclip className="h-4 w-4" /> },
+    { id: "rastreamento", label: "Rastreamento", icon: <MousePointerClick className="h-4 w-4" /> },
     { id: "pos_evento", label: "Pós-evento", icon: <ChartLine className="h-4 w-4" /> },
     { id: "historico", label: "Histórico", icon: <History className="h-4 w-4" /> },
   ];
@@ -661,8 +688,12 @@ export function EventoDetailClient({
           attachments={attachments}
           onAddAttachment={handleAddAttachment}
           onUploadFile={handleUploadAttachment}
+          onToggleAttachmentPublic={handleToggleAttachmentPublic}
           onDeleteAttachment={handleDeleteAttachment}
         />
+      )}
+      {tab === "rastreamento" && (
+        <EventoRastreamentoTab campaign={initialPublicCampaign} />
       )}
       {tab === "pos_evento" && <EventoPosEventoTab postmortem={postmortem} onSave={handleSavePostmortem} />}
       {tab === "historico" && <EventoHistoricoTab items={history} />}

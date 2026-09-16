@@ -1,4 +1,5 @@
 import { createClient } from "@/utils/supabase/server";
+import { fetchEventPublicCampaignSummary } from "@/lib/event-public";
 import {
   fetchAvailableYears,
   fetchEventAttachments,
@@ -59,6 +60,7 @@ export async function fetchEventoDetailData(id: string) {
     postmortem,
     history,
     templates,
+    publicCampaign,
   ] = await Promise.all([
     fetchEventById(id, supabase),
     fetchEventTasks(id, supabase),
@@ -72,6 +74,7 @@ export async function fetchEventoDetailData(id: string) {
     fetchEventPostmortem(id, supabase),
     fetchEventHistory(id, supabase),
     fetchEventTemplates(supabase),
+    fetchEventPublicCampaignSummary(id, supabase),
   ]);
   return {
     event,
@@ -86,5 +89,6 @@ export async function fetchEventoDetailData(id: string) {
     postmortem,
     history,
     templates,
+    publicCampaign,
   };
 }

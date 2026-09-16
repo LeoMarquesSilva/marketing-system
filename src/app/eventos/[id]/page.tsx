@@ -11,7 +11,7 @@ interface PageProps {
 
 export default async function EventoDetailPage({ params }: PageProps) {
   const { id } = await params;
-  const [{ event, tasks, budgetItems, linkedSuppliers, catalogSuppliers, quotes, invites, communications, attachments, postmortem, history, templates }, users, designers] = await Promise.all([
+  const [{ event, tasks, budgetItems, linkedSuppliers, catalogSuppliers, quotes, invites, communications, attachments, postmortem, history, templates, publicCampaign }, users, designers] = await Promise.all([
     fetchEventoDetailData(id),
     fetchActiveUsers(),
     fetchDesigners(),
@@ -35,6 +35,7 @@ export default async function EventoDetailPage({ params }: PageProps) {
       initialAttachments={attachments}
       initialPostmortem={postmortem}
       initialHistory={history}
+      initialPublicCampaign={publicCampaign}
       templates={templates}
       users={users}
       designers={designers}

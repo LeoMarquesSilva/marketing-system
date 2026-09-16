@@ -201,6 +201,7 @@ export interface EventAttachment {
   url: string;
   storagePath: string | null;
   provider: string;
+  isPublic: boolean;
   uploadedByUserId: string | null;
   createdAt: string;
 }
@@ -657,6 +658,7 @@ type AttachmentRow = {
   url: string;
   storage_path: string | null;
   provider: string;
+  is_public: boolean;
   uploaded_by_user_id: string | null;
   created_at: string;
 };
@@ -879,6 +881,7 @@ function rowToAttachment(row: AttachmentRow): EventAttachment {
     url: row.url,
     storagePath: row.storage_path,
     provider: row.provider,
+    isPublic: row.is_public ?? false,
     uploadedByUserId: row.uploaded_by_user_id,
     createdAt: row.created_at,
   };
@@ -1984,6 +1987,7 @@ export async function upsertEventAttachment(
     url: input.url,
     storage_path: input.storagePath ?? null,
     provider: input.provider ?? "external_link",
+    is_public: input.isPublic ?? false,
     uploaded_by_user_id: input.uploadedByUserId ?? null,
   };
   if (input.id) {
@@ -1998,6 +2002,17 @@ export async function upsertEventAttachment(
 
 export async function deleteEventAttachment(id: string): Promise<boolean> {
   const { error } = await supabase.from("event_attachments").delete().eq("id", id);
+  return !error;
+}
+
+export async function updateEventAttachmentVisibility(
+  id: string,
+  isPublic: boolean
+): Promise<boolean> {
+  const { error } = await supabase
+    .from("event_attachments")
+    .update({ is_public: isPublic })
+    .eq("id", id);
   return !error;
 }
 
