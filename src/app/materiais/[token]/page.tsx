@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Download, File, FileImage, FileText, Video } from "lucide-react";
 import { fetchPublicEventShare } from "@/lib/event-public";
 import { createClient } from "@/utils/supabase/server";
+import { CopyableAbout } from "./copyable-about";
 
 export const dynamic = "force-dynamic";
 
@@ -109,6 +110,8 @@ export default async function EventMaterialsPage({
             )}
           </div>
         </section>
+
+        <CopyableAbout />
 
         <footer className="flex flex-col gap-2 border-t border-[#10263b]/15 pt-5 text-xs text-[#10263b]/45 sm:flex-row sm:items-center sm:justify-between">
           <span>Bismarchi | Pires Sociedade de Advogados</span>
