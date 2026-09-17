@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -50,6 +50,11 @@ import { NPS_QUESTIONS } from "@/lib/nps/questions";
 import { cn } from "@/lib/utils";
 import { AreaIcon, getAreaIconStyle } from "@/lib/area-icons";
 import { FilterUserAvatar } from "@/components/meus-clientes/meus-clientes-ui";
+import {
+  NpsCampaignInsightsBoard,
+  type NpsInsightThemeFilter,
+} from "@/components/meus-clientes/nps-campaign-insights";
+import type { NpsCampaignInsights } from "@/lib/nps/insights";
 
 const RECOMMEND_QUESTION =
   NPS_QUESTIONS.find((q) => q.id === "score_recommend")?.label ??
@@ -77,6 +82,7 @@ interface ResultsPayload {
   groups: GroupResult[];
   responses: Array<NpsResponseRow & { groupName: string }>;
   outreach: NpsOutreachProgress;
+  insights?: NpsCampaignInsights;
 }
 
 interface ResponseRow extends NpsResponseRow {
@@ -658,10 +664,17 @@ export function NpsResultsClient() {
   const [responseFilter, setResponseFilter] = useState<ResponseFilter>("all");
   const [responseQuery, setResponseQuery] = useState("");
   const [groupFilter, setGroupFilter] = useState<string>("all");
+  const [themeFilter, setThemeFilter] = useState<NpsInsightThemeFilter>(null);
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillNonce, setBackfillNonce] = useState(0);
+  const dataRef = useRef(data);
+  dataRef.current = data;
 
-  const load = useCallback(async (id?: string) => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async (id?: string, options?: { keepFilters?: boolean }) => {
+    if (!options?.keepFilters) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const qs = id ? `?campaignId=${encodeURIComponent(id)}` : "";
       const res = await fetch(`/api/nps/results${qs}`);
@@ -676,19 +689,64 @@ export function NpsResultsClient() {
       }
       setData(json as ResultsPayload);
       setCampaignId((json as ResultsPayload).campaign.id);
-      setGroupFilter("all");
-      setResponseFilter("all");
-      setResponseQuery("");
+      if (!options?.keepFilters) {
+        setGroupFilter("all");
+        setResponseFilter("all");
+        setResponseQuery("");
+        setThemeFilter(null);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar.");
+      if (!options?.keepFilters) {
+        setError(err instanceof Error ? err.message : "Erro ao carregar.");
+      }
     } finally {
-      setLoading(false);
+      if (!options?.keepFilters) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!campaignId) return;
+    const snapshot = dataRef.current?.insights;
+    const pendingAtStart = snapshot?.pendingCount ?? 0;
+    if (pendingAtStart <= 0) return;
+    if (snapshot?.unavailable && backfillNonce === 0) return;
+    let cancelled = false;
+    setBackfilling(true);
+    void (async () => {
+      let left = pendingAtStart;
+      let attempts = 0;
+      while (!cancelled && left > 0 && attempts < 8) {
+        try {
+          const res = await fetch("/api/nps/insights/backfill", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ campaignId }),
+          });
+          const json = (await res.json()) as {
+            pending?: number;
+            unavailable?: boolean;
+          };
+          if (json.unavailable) {
+            if (!cancelled) await load(campaignId, { keepFilters: true });
+            break;
+          }
+          left = typeof json.pending === "number" ? json.pending : 0;
+          attempts += 1;
+          if (!cancelled) await load(campaignId, { keepFilters: true });
+        } catch {
+          break;
+        }
+      }
+      if (!cancelled) setBackfilling(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [campaignId, backfillNonce, load]);
 
   async function handleCreateCampaign() {
     const name = newCampaignName.trim();
@@ -757,6 +815,10 @@ export function NpsResultsClient() {
       const bucket = classifyNpsScore(r.scoreRecommend);
       if (responseFilter !== "all" && bucket !== responseFilter) return false;
       if (groupFilter !== "all" && r.clientGroupId !== groupFilter) return false;
+      if (themeFilter && data.insights) {
+        const rank = data.insights[themeFilter.list].find((t) => t.id === themeFilter.themeId);
+        if (rank && !rank.responseIds.includes(r.id)) return false;
+      }
       if (!q) return true;
       return (
         r.respondentName.toLowerCase().includes(q) ||
@@ -765,7 +827,7 @@ export function NpsResultsClient() {
         (r.improvement ?? "").toLowerCase().includes(q)
       );
     });
-  }, [data, responseFilter, groupFilter, responseQuery]);
+  }, [data, responseFilter, groupFilter, responseQuery, themeFilter]);
 
   const commentsOnlyCount = useMemo(() => {
     if (!data) return 0;
@@ -1097,6 +1159,16 @@ export function NpsResultsClient() {
             </div>
           )}
 
+          {data.insights && (
+            <NpsCampaignInsightsBoard
+              insights={data.insights}
+              pending={backfilling}
+              filter={themeFilter}
+              onFilterChange={setThemeFilter}
+              onRetry={() => setBackfillNonce((n) => n + 1)}
+            />
+          )}
+
           <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
             <div className="space-y-3 border-b px-4 py-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1113,6 +1185,12 @@ export function NpsResultsClient() {
                   </h2>
                   <p className="text-xs text-muted-foreground">
                     Filtre por tipo, grupo ou busque no texto dos comentários
+                    {themeFilter && data.insights
+                      ? ` · tema: ${
+                          data.insights[themeFilter.list].find((t) => t.id === themeFilter.themeId)
+                            ?.label ?? themeFilter.themeId
+                        }`
+                      : ""}
                   </p>
                 </div>
               </div>
@@ -1165,6 +1243,16 @@ export function NpsResultsClient() {
                     ))}
                   </SelectContent>
                 </Select>
+
+                {themeFilter && (
+                  <button
+                    type="button"
+                    onClick={() => setThemeFilter(null)}
+                    className="inline-flex items-center rounded-full border border-[#347796] bg-[#347796] px-3 py-1 text-xs font-medium text-white"
+                  >
+                    Limpar tema
+                  </button>
+                )}
               </div>
             </div>
 

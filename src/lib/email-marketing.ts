@@ -12,6 +12,7 @@ import {
   normalizePersonName,
   normalizeTags,
   companyNameKey,
+  findInviteTwinsInGroup,
   resolveCanonicalCompanyName,
 } from "@/lib/email-marketing-normalize";
 import { normalizeLegalArea, normalizeLegalAreas } from "@/lib/legal-areas";
@@ -463,6 +464,65 @@ export async function fetchEmailAreaManagers(): Promise<EmailAreaManagerRow[]> {
     });
 }
 
+interface InviteClassificationTwin {
+  kind: "contact" | "person";
+  id: string;
+  name: string | null;
+  email: string | null;
+  clientGroupId: string | null;
+  npsEligible: boolean;
+  partyInvite: boolean;
+  partyInviteTipo: PartyInviteTipo | null;
+  invitesClassifiedByUserId: string | null;
+}
+
+/** Espelha NPS/Festa no cadastro RD e na pessoa SIOE do mesmo grupo. */
+async function syncInviteClassificationTwins(source: InviteClassificationTwin): Promise<void> {
+  if (!source.clientGroupId) return;
+  const invitePayload = {
+    nps_eligible: source.npsEligible,
+    party_invite: source.partyInvite,
+    party_invite_tipo: source.partyInviteTipo,
+    invites_classified_by_user_id: source.invitesClassifiedByUserId,
+  };
+
+  const [{ data: peopleRows, error: peopleError }, { data: contactRows, error: contactError }] =
+    await Promise.all([
+      supabase
+        .from("email_people")
+        .select("id, name, email")
+        .eq("client_group_id", source.clientGroupId),
+      supabase
+        .from("email_contacts")
+        .select("id, name, email")
+        .eq("client_group_id", source.clientGroupId),
+    ]);
+  if (peopleError) throw new Error(peopleError.message);
+  if (contactError) throw new Error(contactError.message);
+
+  const people = (peopleRows ?? []).map((row) => ({
+    id: row.id as string,
+    name: row.name as string | null,
+    email: (row.email as string | null) ?? null,
+  }));
+  const contacts = (contactRows ?? []).map((row) => ({
+    id: row.id as string,
+    name: row.name as string | null,
+    email: (row.email as string | null) ?? null,
+  }));
+
+  const twins =
+    source.kind === "contact"
+      ? findInviteTwinsInGroup(source, people, contacts)
+      : findInviteTwinsInGroup(source, contacts, people);
+  const ids = twins.map((row) => row.id).filter((id) => id !== source.id);
+  if (ids.length === 0) return;
+
+  const table = source.kind === "contact" ? "email_people" : "email_contacts";
+  const { error: updateError } = await supabase.from(table).update(invitePayload).in("id", ids);
+  if (updateError) throw new Error(updateError.message);
+}
+
 export interface UpdateEmailPersonInput {
   name?: string;
   email?: string | null;
@@ -507,6 +567,23 @@ export async function updateEmailPerson(id: string, patch: UpdateEmailPersonInpu
   const person = mapPerson(data);
   if (person.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(person.email)) {
     await promotePersonToContact(person);
+  }
+  if (
+    patch.npsEligible !== undefined ||
+    patch.partyInvite !== undefined ||
+    patch.invitesClassifiedByUserId
+  ) {
+    await syncInviteClassificationTwins({
+      kind: "person",
+      id: person.id,
+      name: person.name,
+      email: person.email,
+      clientGroupId: person.clientGroupId,
+      npsEligible: person.npsEligible,
+      partyInvite: person.partyInvite,
+      partyInviteTipo: person.partyInviteTipo,
+      invitesClassifiedByUserId: person.invitesClassifiedByUserId,
+    });
   }
 }
 
@@ -716,6 +793,31 @@ export async function updateEmailContact(
   }
   const { error } = await supabase.from("email_contacts").update(payload).eq("id", id);
   if (error) throw new Error(error.message);
+
+  if (
+    patch.npsEligible !== undefined ||
+    patch.partyInvite !== undefined ||
+    patch.invitesClassifiedByUserId
+  ) {
+    const { data } = await supabase
+      .from("email_contacts")
+      .select("id, name, email, client_group_id, nps_eligible, party_invite, party_invite_tipo, invites_classified_by_user_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (data) {
+      await syncInviteClassificationTwins({
+        kind: "contact",
+        id: data.id as string,
+        name: (data.name as string | null) ?? null,
+        email: (data.email as string | null) ?? null,
+        clientGroupId: (data.client_group_id as string | null) ?? null,
+        npsEligible: Boolean(data.nps_eligible),
+        partyInvite: Boolean(data.party_invite),
+        partyInviteTipo: parsePartyInviteTipo(data.party_invite_tipo),
+        invitesClassifiedByUserId: (data.invites_classified_by_user_id as string | null) ?? null,
+      });
+    }
+  }
 }
 
 export async function deleteEmailContact(id: string): Promise<void> {
