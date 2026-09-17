@@ -331,7 +331,7 @@ function buildTableSheet(input: TableSheetInput): WorkSheet {
         col.format
       );
     }
-    if (totalsRow != null) {
+    if (totals && totalsRow != null) {
       const totalValue = c === 0 ? "Total" : (totals[col.key] ?? "");
       writeCell(
         ws,
