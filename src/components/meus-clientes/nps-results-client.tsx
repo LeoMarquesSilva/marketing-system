@@ -122,6 +122,151 @@ function pct(part: number, total: number): number {
   return Math.round((part / total) * 100);
 }
 
+const COMPOSITION_COLORS = {
+  promoter: "#10b981",
+  passive: "#fbbf24",
+  detractor: "#ef4444",
+} as const;
+
+interface CompositionSlice {
+  key: "promoter" | "passive" | "detractor";
+  name: string;
+  value: number;
+  percent: number;
+  color: string;
+}
+
+function joinListPt(items: Array<string | null>): string {
+  const list = items.filter((item): item is string => Boolean(item));
+  if (list.length === 0) return "";
+  if (list.length === 1) return list[0];
+  if (list.length === 2) return `${list[0]} e ${list[1]}`;
+  return `${list.slice(0, -1).join(", ")} e ${list[list.length - 1]}`;
+}
+
+function notaPhrase(count: number, score: number): string | null {
+  if (count <= 0) return null;
+  return `${count} ${count === 1 ? "nota" : "notas"} ${score}`;
+}
+
+function compositionCaption(options: {
+  summary: NpsScoreSummary;
+  responses: Array<{ scoreRecommend: number }>;
+  groupCount: number;
+  sentGroups: number;
+}): string {
+  const { summary, responses, groupCount, sentGroups } = options;
+  let tens = 0;
+  let nines = 0;
+  let eights = 0;
+  let sevens = 0;
+  for (const response of responses) {
+    if (response.scoreRecommend === 10) tens += 1;
+    else if (response.scoreRecommend === 9) nines += 1;
+    else if (response.scoreRecommend === 8) eights += 1;
+    else if (response.scoreRecommend === 7) sevens += 1;
+  }
+
+  const parts: string[] = [];
+  if (summary.promoters > 0) {
+    const word = summary.promoters === 1 ? "promotor" : "promotores";
+    const detail =
+      tens + nines === summary.promoters ? joinListPt([notaPhrase(tens, 10), notaPhrase(nines, 9)]) : "";
+    parts.push(detail ? `${summary.promoters} ${word} (${detail})` : `${summary.promoters} ${word}`);
+  }
+  if (summary.passives > 0) {
+    const word = summary.passives === 1 ? "neutro" : "neutros";
+    const detail =
+      eights + sevens === summary.passives
+        ? joinListPt([notaPhrase(eights, 8), notaPhrase(sevens, 7)])
+        : "";
+    parts.push(detail ? `${summary.passives} ${word} (${detail})` : `${summary.passives} ${word}`);
+  }
+  if (summary.detractors === 0) {
+    parts.push("Nenhum detrator");
+  } else {
+    const word = summary.detractors === 1 ? "detrator" : "detratores";
+    parts.push(`${summary.detractors} ${word}`);
+  }
+
+  let text = `${parts.join(". ")}.`;
+  if (groupCount > 0) {
+    const groupWord = groupCount === 1 ? "grupo" : "grupos";
+    text += ` ${groupCount} ${groupWord}`;
+    if (sentGroups > 0) {
+      text += ` — ${pct(groupCount, sentGroups)}% dos que receberam o link`;
+    }
+    text += ".";
+  }
+  return text;
+}
+
+function RecommendationComposition({
+  total,
+  slices,
+  caption,
+}: {
+  total: number;
+  slices: CompositionSlice[];
+  caption: string;
+}) {
+  return (
+    <div className="rounded-xl border bg-card p-4 shadow-sm lg:col-span-3">
+      <div className="mb-2">
+        <h2 className="text-sm font-semibold">Composição da recomendação</h2>
+        <p className="text-xs text-muted-foreground">Promotores, neutros e detratores da campanha</p>
+      </div>
+      <div className="relative mx-auto h-[220px] w-full max-w-[280px]">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={slices}
+              dataKey="value"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              innerRadius={68}
+              outerRadius={96}
+              paddingAngle={slices.length > 1 ? 3 : 0}
+              startAngle={90}
+              endAngle={-270}
+              stroke="#fff"
+              strokeWidth={2}
+            >
+              {slices.map((slice) => (
+                <Cell key={slice.key} fill={slice.color} />
+              ))}
+            </Pie>
+            <Tooltip
+              formatter={(value, name) => [`${value}`, String(name)]}
+              contentStyle={{
+                borderRadius: 12,
+                border: "1px solid #e2e8f0",
+                fontSize: 12,
+              }}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <p className="text-3xl font-bold tabular-nums tracking-tight">{total}</p>
+          <p className="text-[11px] text-muted-foreground">Total</p>
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        {slices.map((slice) => (
+          <span key={slice.key} className="inline-flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: slice.color }} />
+            {slice.name} {slice.percent}%
+          </span>
+        ))}
+      </div>
+      {caption ? (
+        <p className="mt-3 text-center text-xs leading-relaxed text-muted-foreground">{caption}</p>
+      ) : null}
+    </div>
+  );
+}
+
 type OutreachMetric = keyof Pick<
   NpsOutreachAreaBreakdown,
   "eligiblePeople" | "eligibleGroups" | "sentGroups" | "respondedPeople"
@@ -802,40 +947,48 @@ export function NpsResultsClient() {
       });
   }, [data]);
 
-  const compositionSlices = useMemo(() => {
+  const compositionSlices = useMemo((): CompositionSlice[] => {
     if (!data || data.summary.total <= 0) return [];
-    const slices = [
-      {
+    const { promoters, passives, detractors, total } = data.summary;
+    const slices: CompositionSlice[] = [];
+    if (promoters > 0) {
+      slices.push({
         key: "promoter",
-        label: "Promotor (9–10)",
-        value: data.summary.promoters,
-        fill: "#059669",
-      },
-      {
+        name: "Promotor (9–10)",
+        value: promoters,
+        percent: pct(promoters, total),
+        color: COMPOSITION_COLORS.promoter,
+      });
+    }
+    if (passives > 0) {
+      slices.push({
         key: "passive",
-        label: "Neutro (7–8)",
-        value: data.summary.passives,
-        fill: "#d97706",
-      },
-      {
+        name: "Neutro (7–8)",
+        value: passives,
+        percent: pct(passives, total),
+        color: COMPOSITION_COLORS.passive,
+      });
+    }
+    if (detractors > 0) {
+      slices.push({
         key: "detractor",
-        label: "Detrator (0–6)",
-        value: data.summary.detractors,
-        fill: "#dc2626",
-      },
-    ];
-    return slices.filter((slice) => slice.value > 0);
+        name: "Detrator (0–6)",
+        value: detractors,
+        percent: pct(detractors, total),
+        color: COMPOSITION_COLORS.detractor,
+      });
+    }
+    return slices;
   }, [data]);
 
-  const recommendBreakdown = useMemo(() => {
-    if (!data) return { tens: 0, nines: 0 };
-    let tens = 0;
-    let nines = 0;
-    for (const response of data.responses) {
-      if (response.scoreRecommend === 10) tens += 1;
-      else if (response.scoreRecommend === 9) nines += 1;
-    }
-    return { tens, nines };
+  const compositionText = useMemo(() => {
+    if (!data || data.summary.total <= 0) return "";
+    return compositionCaption({
+      summary: data.summary,
+      responses: data.responses,
+      groupCount: data.groups.length,
+      sentGroups: data.outreach.sentGroups,
+    });
   }, [data]);
 
   const filteredResponses = useMemo(() => {
@@ -1026,77 +1179,11 @@ export function NpsResultsClient() {
 
           <div className="grid gap-4 lg:grid-cols-5">
             {compositionSlices.length > 0 && data && (
-              <div className="rounded-xl border bg-card p-4 shadow-sm lg:col-span-3">
-                <div className="mb-2">
-                  <h2 className="text-sm font-semibold">Composição da recomendação</h2>
-                  <p className="text-xs text-muted-foreground">
-                    Promotores, neutros e detratores da campanha
-                  </p>
-                </div>
-                <div className="relative mx-auto h-[240px] w-full max-w-sm">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={compositionSlices}
-                        dataKey="value"
-                        nameKey="label"
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={68}
-                        outerRadius={96}
-                        paddingAngle={compositionSlices.length > 1 ? 2 : 0}
-                        strokeWidth={0}
-                      >
-                        {compositionSlices.map((slice) => (
-                          <Cell key={slice.key} fill={slice.fill} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(value, name) => [`${value}`, String(name)]}
-                        contentStyle={{
-                          borderRadius: 12,
-                          border: "1px solid #e2e8f0",
-                          fontSize: 12,
-                        }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                    <p className="text-3xl font-bold tabular-nums leading-none">
-                      {data.summary.total}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">Total</p>
-                  </div>
-                </div>
-                <div className="mt-2 flex flex-wrap justify-center gap-4 text-xs text-muted-foreground">
-                  {compositionSlices.map((slice) => (
-                    <span key={slice.key} className="inline-flex items-center gap-1.5">
-                      <span
-                        className="h-2 w-2 rounded-full"
-                        style={{ backgroundColor: slice.fill }}
-                      />
-                      {slice.label} {pct(slice.value, data.summary.total)}%
-                    </span>
-                  ))}
-                </div>
-                <p className="mt-3 text-center text-xs text-muted-foreground">
-                  {data.summary.promoters} promotor
-                  {data.summary.promoters === 1 ? "" : "es"}
-                  {data.summary.promoters > 0
-                    ? ` (${recommendBreakdown.tens} nota${recommendBreakdown.tens === 1 ? "" : "s"} 10 e ${recommendBreakdown.nines} nota${recommendBreakdown.nines === 1 ? "" : "s"} 9)`
-                    : ""}
-                  . {data.summary.passives} neutro
-                  {data.summary.passives === 1 ? "" : "s"}.{" "}
-                  {data.summary.detractors === 0
-                    ? "Nenhum detrator."
-                    : `${data.summary.detractors} detrator${data.summary.detractors === 1 ? "" : "es"}.`}{" "}
-                  {rankedGroups.length} grupo
-                  {rankedGroups.length === 1 ? "" : "s"}
-                  {data.outreach.sentGroups > 0
-                    ? ` — ${pct(rankedGroups.length, data.outreach.sentGroups)}% dos que receberam o link.`
-                    : "."}
-                </p>
-              </div>
+              <RecommendationComposition
+                total={data.summary.total}
+                slices={compositionSlices}
+                caption={compositionText}
+              />
             )}
 
             {rankedGroups.length > 0 && (
