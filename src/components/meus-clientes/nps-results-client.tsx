@@ -17,16 +17,7 @@ import {
   UserCheck,
   Users,
 } from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -110,13 +101,6 @@ function bucketBadgeClass(bucket: NpsBucket): string {
   if (bucket === "promoter") return "border-emerald-200 bg-emerald-50 text-emerald-800";
   if (bucket === "passive") return "border-amber-200 bg-amber-50 text-amber-800";
   return "border-red-200 bg-red-50 text-red-800";
-}
-
-function scoreColor(score: number | null): string {
-  if (score == null) return "#94a3b8";
-  if (score >= 50) return "#059669";
-  if (score >= 0) return "#d97706";
-  return "#dc2626";
 }
 
 function avgTone(value: number | null): string {
@@ -818,17 +802,41 @@ export function NpsResultsClient() {
       });
   }, [data]);
 
-  const chartData = useMemo(
-    () =>
-      rankedGroups.map((g) => ({
-        name: g.groupName.replace(/^Grupo\s+/i, ""),
-        fullName: g.groupName,
-        nps: g.summary.nps ?? 0,
-        respostas: g.responseCount,
-        fill: scoreColor(g.summary.nps),
-      })),
-    [rankedGroups]
-  );
+  const compositionSlices = useMemo(() => {
+    if (!data || data.summary.total <= 0) return [];
+    const slices = [
+      {
+        key: "promoter",
+        label: "Promotor (9–10)",
+        value: data.summary.promoters,
+        fill: "#059669",
+      },
+      {
+        key: "passive",
+        label: "Neutro (7–8)",
+        value: data.summary.passives,
+        fill: "#d97706",
+      },
+      {
+        key: "detractor",
+        label: "Detrator (0–6)",
+        value: data.summary.detractors,
+        fill: "#dc2626",
+      },
+    ];
+    return slices.filter((slice) => slice.value > 0);
+  }, [data]);
+
+  const recommendBreakdown = useMemo(() => {
+    if (!data) return { tens: 0, nines: 0 };
+    let tens = 0;
+    let nines = 0;
+    for (const response of data.responses) {
+      if (response.scoreRecommend === 10) tens += 1;
+      else if (response.scoreRecommend === 9) nines += 1;
+    }
+    return { tens, nines };
+  }, [data]);
 
   const filteredResponses = useMemo(() => {
     if (!data) return [];
@@ -1017,54 +1025,77 @@ export function NpsResultsClient() {
           </div>
 
           <div className="grid gap-4 lg:grid-cols-5">
-            {chartData.length > 0 && (
+            {compositionSlices.length > 0 && data && (
               <div className="rounded-xl border bg-card p-4 shadow-sm lg:col-span-3">
-                <div className="mb-4 flex items-center justify-between gap-2">
-                  <div>
-                    <h2 className="text-sm font-semibold">NPS por grupo</h2>
-                    <p className="text-xs text-muted-foreground">
-                      Barras coloridas por faixa de score
-                    </p>
-                  </div>
+                <div className="mb-2">
+                  <h2 className="text-sm font-semibold">Composição da recomendação</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Promotores, neutros e detratores da campanha
+                  </p>
                 </div>
-                <div className="h-[300px] w-full">
+                <div className="relative mx-auto h-[240px] w-full max-w-sm">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={chartData}
-                      margin={{ left: 4, right: 8, top: 8, bottom: 8 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                      <XAxis
-                        dataKey="name"
-                        tick={{ fontSize: 11 }}
-                        interval={0}
-                        angle={-18}
-                        textAnchor="end"
-                        height={64}
-                      />
-                      <YAxis domain={[-100, 100]} tick={{ fontSize: 11 }} width={42} />
+                    <PieChart>
+                      <Pie
+                        data={compositionSlices}
+                        dataKey="value"
+                        nameKey="label"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={68}
+                        outerRadius={96}
+                        paddingAngle={compositionSlices.length > 1 ? 2 : 0}
+                        strokeWidth={0}
+                      >
+                        {compositionSlices.map((slice) => (
+                          <Cell key={slice.key} fill={slice.fill} />
+                        ))}
+                      </Pie>
                       <Tooltip
-                        formatter={(value) => [`${value}`, "NPS"]}
-                        labelFormatter={(_, payload) => {
-                          const item = payload?.[0]?.payload as
-                            | { fullName?: string }
-                            | undefined;
-                          return item?.fullName ?? "";
-                        }}
+                        formatter={(value, name) => [`${value}`, String(name)]}
                         contentStyle={{
                           borderRadius: 12,
                           border: "1px solid #e2e8f0",
                           fontSize: 12,
                         }}
                       />
-                      <Bar dataKey="nps" radius={[6, 6, 0, 0]}>
-                        {chartData.map((entry) => (
-                          <Cell key={entry.fullName} fill={entry.fill} />
-                        ))}
-                      </Bar>
-                    </BarChart>
+                    </PieChart>
                   </ResponsiveContainer>
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                    <p className="text-3xl font-bold tabular-nums leading-none">
+                      {data.summary.total}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">Total</p>
+                  </div>
                 </div>
+                <div className="mt-2 flex flex-wrap justify-center gap-4 text-xs text-muted-foreground">
+                  {compositionSlices.map((slice) => (
+                    <span key={slice.key} className="inline-flex items-center gap-1.5">
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: slice.fill }}
+                      />
+                      {slice.label} {pct(slice.value, data.summary.total)}%
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-3 text-center text-xs text-muted-foreground">
+                  {data.summary.promoters} promotor
+                  {data.summary.promoters === 1 ? "" : "es"}
+                  {data.summary.promoters > 0
+                    ? ` (${recommendBreakdown.tens} nota${recommendBreakdown.tens === 1 ? "" : "s"} 10 e ${recommendBreakdown.nines} nota${recommendBreakdown.nines === 1 ? "" : "s"} 9)`
+                    : ""}
+                  . {data.summary.passives} neutro
+                  {data.summary.passives === 1 ? "" : "s"}.{" "}
+                  {data.summary.detractors === 0
+                    ? "Nenhum detrator."
+                    : `${data.summary.detractors} detrator${data.summary.detractors === 1 ? "" : "es"}.`}{" "}
+                  {rankedGroups.length} grupo
+                  {rankedGroups.length === 1 ? "" : "s"}
+                  {data.outreach.sentGroups > 0
+                    ? ` — ${pct(rankedGroups.length, data.outreach.sentGroups)}% dos que receberam o link.`
+                    : "."}
+                </p>
               </div>
             )}
 
