@@ -27,11 +27,6 @@ import {
   resolveUserMeusClientesAreas,
 } from "@/lib/meus-clientes";
 import {
-  isClientGroupInactiveForOutreach,
-  mapClientGroupGestorStatus,
-} from "@/lib/client-group-gestor-status";
-import { fetchSioeClienteAtividadeIndex } from "@/lib/sioe-cliente-atividade-server";
-import {
   buildEligibleRespondents,
   computeNpsOutreachProgress,
   markOutreachPeopleResponses,
@@ -206,7 +201,6 @@ async function loadNpsOutreachProgress(options: {
     { data: sentRows },
     { data: companyRows },
     { data: responsibleRows },
-    clienteAtividade,
   ] = await Promise.all([
     admin
       .from("email_contacts")
@@ -226,7 +220,6 @@ async function loadNpsOutreachProgress(options: {
       .not("sent_at", "is", null),
     admin.from("email_companies").select("client_group_id, legal_areas").not("client_group_id", "is", null),
     admin.from("email_group_responsibles").select("client_group_id, area"),
-    fetchSioeClienteAtividadeIndex(),
   ]);
 
   const internalGroupIds = new Set(
@@ -235,22 +228,8 @@ async function loadNpsOutreachProgress(options: {
       .map((row) => row.id as string)
   );
 
-  const inactiveGroupIds = new Set(
-    (groupRows ?? [])
-      .filter((row) =>
-        isClientGroupInactiveForOutreach(
-          {
-            name: (row.name as string | null) ?? "",
-            gestorAtividade: mapClientGroupGestorStatus(row as Record<string, unknown>).gestorAtividade,
-          },
-          clienteAtividade
-        )
-      )
-      .map((row) => row.id as string)
-  );
-
   const inScope = (groupId: string | null | undefined): groupId is string => {
-    if (!groupId || internalGroupIds.has(groupId) || inactiveGroupIds.has(groupId)) return false;
+    if (!groupId || internalGroupIds.has(groupId)) return false;
     if (options.allowedGroupIds && !options.allowedGroupIds.has(groupId)) return false;
     return true;
   };

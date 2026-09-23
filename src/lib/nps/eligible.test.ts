@@ -220,19 +220,19 @@ describe("computeNpsOutreachProgress", () => {
     expect(progress).toEqual({
       eligiblePeople: 5,
       eligibleGroups: 2,
-      sentGroups: 1,
+      sentGroups: 2,
       respondedPeople: 1,
       byArea: [],
     });
   });
 
-  it("não conta envio de grupo sem elegível", () => {
+  it("conta envio mesmo quando o grupo não tem elegível", () => {
     const progress = computeNpsOutreachProgress({
       eligibleCountByGroupId: new Map([["g1", 2]]),
       sentGroupIds: ["g2"],
       respondedPeople: 0,
     });
-    expect(progress.sentGroups).toBe(0);
+    expect(progress.sentGroups).toBe(1);
     expect(progress.eligibleGroups).toBe(1);
     expect(progress.byArea).toEqual([]);
   });

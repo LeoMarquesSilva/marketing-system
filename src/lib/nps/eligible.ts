@@ -237,10 +237,7 @@ export function computeNpsOutreachProgress(options: {
   }
 
   const sentSet = new Set(options.sentGroupIds);
-  let sentGroups = 0;
-  for (const groupId of sentSet) {
-    if ((eligible.get(groupId) ?? 0) > 0) sentGroups += 1;
-  }
+  const sentGroups = sentSet.size;
 
   let respondedPeople = 0;
   if (options.respondedPeople != null) {
@@ -283,7 +280,6 @@ export function computeNpsOutreachProgress(options: {
       });
     }
     for (const groupId of sentSet) {
-      if ((eligible.get(groupId) ?? 0) <= 0) continue;
       rowFor(groupId).sentGroups += 1;
     }
     for (const [groupId, count] of responded) {

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   averageScore,
+  classifyClientScore,
   classifyNpsScore,
+  clientClassLabel,
   computeDimensionAverages,
+  computeFinalScore,
   computeNpsSummary,
 } from "@/lib/nps/scoring";
 
@@ -78,5 +81,41 @@ describe("averageScore / computeDimensionAverages", () => {
     expect(dims.communication).toBe(8);
     expect(dims.innovation).toBe(7);
     expect(dims.technical).toBe(9);
+  });
+});
+
+describe("computeFinalScore / classifyClientScore", () => {
+  it("média das cinco escalas com 1 casa", () => {
+    expect(
+      computeFinalScore({
+        recommend: 10,
+        availability: 9,
+        communication: 9,
+        innovation: 10,
+        technical: 10,
+      })
+    ).toBe(9.6);
+  });
+
+  it("null se faltar alguma dimensão", () => {
+    expect(
+      computeFinalScore({
+        recommend: 10,
+        availability: null,
+        communication: 9,
+        innovation: 10,
+        technical: 10,
+      })
+    ).toBeNull();
+  });
+
+  it("classifica faixas para ranquear clientes", () => {
+    expect(classifyClientScore(9.6)).toBe("excelente");
+    expect(classifyClientScore(9.4)).toBe("forte");
+    expect(classifyClientScore(9)).toBe("forte");
+    expect(classifyClientScore(8.2)).toBe("atencao");
+    expect(classifyClientScore(6.9)).toBe("critico");
+    expect(classifyClientScore(null)).toBeNull();
+    expect(clientClassLabel("atencao")).toBe("Atenção");
   });
 });

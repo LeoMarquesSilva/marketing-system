@@ -41,8 +41,12 @@ import {
 import type { NpsCampaign, NpsResponseRow } from "@/lib/nps/types";
 import type { NpsOutreachAreaBreakdown, NpsOutreachAreaGroup, NpsOutreachProgress } from "@/lib/nps/eligible";
 import {
+  classifyClientScore,
   classifyNpsScore,
+  clientClassLabel,
+  computeFinalScore,
   type NpsBucket,
+  type NpsClientClass,
   type NpsDimensionAverages,
   type NpsScoreSummary,
 } from "@/lib/nps/scoring";
@@ -120,6 +124,13 @@ function avgTone(value: number | null): string {
   if (value >= 9) return "text-emerald-700";
   if (value >= 7) return "text-amber-700";
   return "text-red-700";
+}
+
+function clientClassBadgeClass(clientClass: NpsClientClass): string {
+  if (clientClass === "excelente") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (clientClass === "forte") return "border-sky-200 bg-sky-50 text-sky-800";
+  if (clientClass === "atencao") return "border-amber-200 bg-amber-50 text-amber-800";
+  return "border-red-200 bg-red-50 text-red-800";
 }
 
 function pct(part: number, total: number): number {
@@ -417,8 +428,7 @@ function NpsOutreachBoard({ outreach }: { outreach: NpsOutreachProgress }) {
       metric: "respondedPeople",
       label: "Respondidos",
       value: outreach.respondedPeople,
-      total: outreach.sentGroups,
-      hint: "pessoas que já responderam nos grupos enviados",
+      hint: "respostas da campanha",
       icon: Users,
     },
   ];
@@ -788,12 +798,24 @@ export function NpsResultsClient() {
 
   const rankedGroups = useMemo(() => {
     if (!data) return [];
-    return [...data.groups].sort((a, b) => {
-      const aNps = a.summary.nps ?? -999;
-      const bNps = b.summary.nps ?? -999;
-      if (bNps !== aNps) return bNps - aNps;
-      return b.responseCount - a.responseCount;
-    });
+    return [...data.groups]
+      .map((g) => {
+        const finalScore = computeFinalScore(g.dimensions);
+        return {
+          ...g,
+          finalScore,
+          clientClass: classifyClientScore(finalScore),
+        };
+      })
+      .sort((a, b) => {
+        const aScore = a.finalScore ?? -1;
+        const bScore = b.finalScore ?? -1;
+        if (bScore !== aScore) return bScore - aScore;
+        const aNps = a.summary.nps ?? -999;
+        const bNps = b.summary.nps ?? -999;
+        if (bNps !== aNps) return bNps - aNps;
+        return b.responseCount - a.responseCount;
+      });
   }, [data]);
 
   const chartData = useMemo(
@@ -1050,11 +1072,12 @@ export function NpsResultsClient() {
               <div className="rounded-xl border bg-card shadow-sm overflow-hidden lg:col-span-2">
                 <div className="border-b px-4 py-3">
                   <h2 className="text-sm font-semibold">Ranking</h2>
-                  <p className="text-xs text-muted-foreground">Ordenado pelo NPS do grupo</p>
+                  <p className="text-xs text-muted-foreground">
+                    Ordenado pela nota final (média das cinco escalas)
+                  </p>
                 </div>
                 <ol className="max-h-[320px] divide-y overflow-y-auto">
                   {rankedGroups.map((g, index) => {
-                    const tone = npsTone(g.summary.nps);
                     return (
                       <li
                         key={g.clientGroupId}
@@ -1066,23 +1089,26 @@ export function NpsResultsClient() {
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium">{g.groupName}</p>
                           <p className="text-[11px] text-muted-foreground">
+                            NPS {g.summary.nps ?? "—"}
+                            {" · "}
                             {g.responseCount} resposta{g.responseCount === 1 ? "" : "s"}
-                            {g.summary.promoters > 0
-                              ? ` · ${g.summary.promoters} promotor${g.summary.promoters === 1 ? "" : "es"}`
-                              : ""}
                           </p>
                         </div>
-                        <span
-                          className={cn(
-                            "text-base font-bold tabular-nums",
-                            tone === "good" && "text-emerald-700",
-                            tone === "mid" && "text-amber-700",
-                            tone === "bad" && "text-red-700",
-                            tone === "empty" && "text-muted-foreground"
+                        <div className="shrink-0 text-right">
+                          <p className={cn("text-base font-bold tabular-nums", avgTone(g.finalScore))}>
+                            {g.finalScore?.toFixed(1) ?? "—"}
+                          </p>
+                          {g.clientClass && (
+                            <span
+                              className={cn(
+                                "mt-0.5 inline-flex rounded-full border px-1.5 py-px text-[10px] font-medium",
+                                clientClassBadgeClass(g.clientClass)
+                              )}
+                            >
+                              {clientClassLabel(g.clientClass)}
+                            </span>
                           )}
-                        >
-                          {g.summary.nps ?? "—"}
-                        </span>
+                        </div>
                       </li>
                     );
                   })}
@@ -1095,6 +1121,10 @@ export function NpsResultsClient() {
             <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
               <div className="border-b px-4 py-3">
                 <h2 className="text-sm font-semibold">Detalhe por grupo</h2>
+                <p className="text-xs text-muted-foreground">
+                  Nota final = média das cinco escalas (0 a 10). Excelente ≥ 9,5 · Forte ≥ 9,0 ·
+                  Atenção ≥ 7,0 · Crítico &lt; 7,0
+                </p>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -1102,9 +1132,11 @@ export function NpsResultsClient() {
                     <tr>
                       <th className="px-4 py-2.5 font-medium">#</th>
                       <th className="px-4 py-2.5 font-medium">Grupo</th>
+                      <th className="px-4 py-2.5 font-medium">Nota</th>
                       <th className="px-4 py-2.5 font-medium">NPS</th>
                       <th className="px-4 py-2.5 font-medium">Respostas</th>
                       <th className="px-4 py-2.5 font-medium">P / N / D</th>
+                      <th className="px-4 py-2.5 font-medium">Rec.</th>
                       <th className="px-4 py-2.5 font-medium">Disp.</th>
                       <th className="px-4 py-2.5 font-medium">Comun.</th>
                       <th className="px-4 py-2.5 font-medium">Inov.</th>
@@ -1120,6 +1152,23 @@ export function NpsResultsClient() {
                             {index + 1}
                           </td>
                           <td className="px-4 py-2.5 font-medium">{g.groupName}</td>
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <span className={cn("tabular-nums font-semibold", avgTone(g.finalScore))}>
+                                {g.finalScore?.toFixed(1) ?? "—"}
+                              </span>
+                              {g.clientClass && (
+                                <span
+                                  className={cn(
+                                    "inline-flex rounded-full border px-1.5 py-px text-[10px] font-medium",
+                                    clientClassBadgeClass(g.clientClass)
+                                  )}
+                                >
+                                  {clientClassLabel(g.clientClass)}
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td
                             className={cn(
                               "px-4 py-2.5 tabular-nums font-semibold",
@@ -1137,6 +1186,9 @@ export function NpsResultsClient() {
                             <span className="text-amber-700">{g.summary.passives}</span>
                             {" / "}
                             <span className="text-red-700">{g.summary.detractors}</span>
+                          </td>
+                          <td className="px-4 py-2.5 tabular-nums">
+                            {g.dimensions.recommend?.toFixed(1) ?? "—"}
                           </td>
                           <td className="px-4 py-2.5 tabular-nums">
                             {g.dimensions.availability?.toFixed(1) ?? "—"}

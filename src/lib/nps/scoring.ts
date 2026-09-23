@@ -68,3 +68,36 @@ export function computeDimensionAverages(responses: Array<{
     technical: averageScore(responses.map((r) => r.score_technical)),
   };
 }
+
+/**
+ * Média das cinco escalas (0–10). Serve para ranquear grupos quando o NPS
+ * clássico satura em 100 (todos promotores).
+ */
+export function computeFinalScore(dimensions: NpsDimensionAverages): number | null {
+  const values = [
+    dimensions.recommend,
+    dimensions.availability,
+    dimensions.communication,
+    dimensions.innovation,
+    dimensions.technical,
+  ];
+  if (values.some((value) => value == null)) return null;
+  return averageScore(values as number[]);
+}
+
+export type NpsClientClass = "excelente" | "forte" | "atencao" | "critico";
+
+export function classifyClientScore(score: number | null): NpsClientClass | null {
+  if (score == null) return null;
+  if (score >= 9.5) return "excelente";
+  if (score >= 9) return "forte";
+  if (score >= 7) return "atencao";
+  return "critico";
+}
+
+export function clientClassLabel(clientClass: NpsClientClass): string {
+  if (clientClass === "excelente") return "Excelente";
+  if (clientClass === "forte") return "Forte";
+  if (clientClass === "atencao") return "Atenção";
+  return "Crítico";
+}
