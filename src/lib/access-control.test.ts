@@ -4,6 +4,7 @@ import {
   canAccessPath,
   canEditPartyInvite,
   hasCafeCulturaAccess,
+  hasOperacoesLegaisAccess,
   isManualOnlyKey,
   normalizePermissionsInput,
   resolveAllowedSections,
@@ -15,6 +16,23 @@ describe("access-control permissions catalog", () => {
     expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/rh");
     expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/ferias");
     expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/cafe-cultura");
+    expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/operacoes-legais");
+  });
+
+  it("inclui Operações Legais só no preset Administrador", () => {
+    expect(ACCESS_PRESETS.Administrador).toContain("/operacoes-legais");
+    expect(isManualOnlyKey("/operacoes-legais")).toBe(true);
+  });
+
+  it("libera Operações Legais somente para admin", () => {
+    expect(hasOperacoesLegaisAccess({ role: "admin" })).toBe(true);
+    expect(canAccessPath({ role: "admin" }, "/operacoes-legais")).toBe(true);
+    expect(canAccessPath({ role: "admin" }, "/operacoes-legais/vistagem")).toBe(true);
+    expect(hasOperacoesLegaisAccess({ role: null, permissions: ["/operacoes-legais"] })).toBe(false);
+    expect(canAccessPath({ role: null, permissions: ["/operacoes-legais"] }, "/operacoes-legais")).toBe(
+      false
+    );
+    expect(canAccessPath({ role: "designer", permissions: null }, "/operacoes-legais")).toBe(false);
   });
 
   it("libera Meus Clientes para qualquer autenticado", () => {

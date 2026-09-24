@@ -137,6 +137,16 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       return resolvePostLoginPathFromProfile(profile);
     }
 
+    // Operações Legais: só admin (mesmo no modo legado).
+    if (
+      profile &&
+      !isPublic &&
+      (pathname === "/operacoes-legais" || pathname.startsWith("/operacoes-legais/")) &&
+      !canAccessPath(profile, pathname)
+    ) {
+      return resolvePostLoginPathFromProfile(profile);
+    }
+
     return null;
   })();
 

@@ -37,6 +37,7 @@ import {
   TrendingUp,
   Layers,
   Rocket,
+  Scale,
   Shield,
   Coffee,
   PenLine,
@@ -50,6 +51,7 @@ import {
   isCollaboratorPhotosManager,
   isAdminRole,
   hasCafeCulturaAccess,
+  hasOperacoesLegaisAccess,
 } from "@/lib/access-control";
 import { canAccessGustavoContent } from "@/lib/gustavo-content/access";
 import { hasHrAccess } from "@/lib/rh/access";
@@ -106,6 +108,7 @@ const baseNavItems: NavLeaf[] = [
   { href: "/ga4-insights", icon: Globe, label: "Analytics (GA4)" },
   { href: "/trafego-pago", icon: Megaphone, label: "Trafego Pago" },
   { href: "/vios-tarefas", icon: ClipboardList, label: "Tarefas VIOS" },
+  { href: "/operacoes-legais", icon: Scale, label: "Operações Legais" },
   { href: "/eventos", icon: CalendarDays, label: "Eventos" },
   { href: "/cafe-cultura", icon: Coffee, label: "Café com Cultura" },
   { href: "/email-marketing", icon: Mail, label: "E-mail Marketing" },
@@ -316,6 +319,9 @@ function getNavItems(
       if (i.href === "/fotos-colaboradores") {
         return isCollaboratorPhotosManager(profile);
       }
+      if (i.href === "/operacoes-legais") {
+        return hasOperacoesLegaisAccess(profile);
+      }
       return allowed.includes(i.href);
     });
 
@@ -363,6 +369,7 @@ function getNavItems(
         ...baseNavItems.filter((i) => {
           if (i.href === "/nfc") return isAdmin;
           if (i.href === "/cafe-cultura") return hasCafeCulturaAccess(profile);
+          if (i.href === "/operacoes-legais") return hasOperacoesLegaisAccess(profile);
           if (i.href === "/minhas-fotos") return true;
           return i.href !== "/fotos-colaboradores" || isCollaboratorPhotosManager(profile);
         }),

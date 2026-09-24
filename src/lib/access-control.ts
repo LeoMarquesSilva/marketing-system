@@ -36,6 +36,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/ga4-insights", label: "Analytics (GA4)" },
   { key: "/trafego-pago", label: "Tráfego Pago" },
   { key: "/vios-tarefas", label: "Tarefas VIOS" },
+  { key: "/operacoes-legais", label: "Operações Legais", admin: true, manualOnly: true },
   { key: "/eventos", label: "Eventos" },
   { key: "/cafe-cultura", label: "Café com Cultura", manualOnly: true },
   { key: "/email-marketing", label: "E-mail Marketing" },
@@ -54,6 +55,7 @@ const VALID_PERMISSION_KEYS = new Set(ALL_KEYS);
 /** Chaves liberadas apenas manualmente (por usuário), nunca via preset em lote. */
 export const MEUS_CLIENTES_KEY = "/meus-clientes";
 export const CAFE_CULTURA_KEY = "/cafe-cultura";
+export const OPERACOES_LEGAIS_KEY = "/operacoes-legais";
 export const MANUAL_ONLY_KEYS = ACCESS_SECTIONS.filter((s) => s.manualOnly).map((s) => s.key);
 
 const NON_ADMIN_KEYS = ACCESS_SECTIONS.filter(
@@ -139,6 +141,11 @@ export function hasCafeCulturaAccess(profile: AccessProfile | null | undefined):
   return Boolean(profile.permissions?.includes(CAFE_CULTURA_KEY));
 }
 
+/** Operações Legais: por enquanto só admin. Depois libera para o departamento. */
+export function hasOperacoesLegaisAccess(profile: AccessProfile | null | undefined): boolean {
+  return isAdminRole(profile);
+}
+
 export function isManualOnlyKey(key: string): boolean {
   return MANUAL_ONLY_KEYS.includes(key);
 }
@@ -181,6 +188,12 @@ export function canAccessPath(
 ): boolean {
   if (ALWAYS_ALLOWED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return true;
+  }
+
+  const isOperacoesLegaisRoute =
+    pathname === OPERACOES_LEGAIS_KEY || pathname.startsWith(`${OPERACOES_LEGAIS_KEY}/`);
+  if (isOperacoesLegaisRoute) {
+    return hasOperacoesLegaisAccess(profile);
   }
 
   const isFeriasRoute =
