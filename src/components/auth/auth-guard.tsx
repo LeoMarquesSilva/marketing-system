@@ -28,6 +28,7 @@ const COLLABORATOR_PATHS = [
   "/conteudo",
   "/perfil",
   "/minhas-fotos",
+  "/fotos-eventos",
   "/cafe-com-cultura",
   "/meus-clientes",
 ];

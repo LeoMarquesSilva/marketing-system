@@ -29,6 +29,7 @@ const PAGE_META: Record<string, PageMeta> = {
   "/clima": { label: "Clima", section: "Pessoas" },
   "/fotos-colaboradores": { label: "Fotos dos colaboradores", section: "Pessoas" },
   "/minhas-fotos": { label: "Minhas fotos", section: "Conta" },
+  "/fotos-eventos": { label: "Fotos de eventos", section: "Pessoas" },
   "/usuarios": { label: "Usuários", section: "Pessoas" },
   "/vios-tarefas": { label: "Tarefas VIOS", section: "Operação" },
   "/eventos": { label: "Eventos", section: "Eventos" },

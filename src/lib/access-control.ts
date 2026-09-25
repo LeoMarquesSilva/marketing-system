@@ -75,6 +75,7 @@ export const ALWAYS_ALLOWED_PATHS = [
   "/alterar-senha",
   "/briefings",
   "/minhas-fotos",
+  "/fotos-eventos",
   "/cafe-com-cultura",
   "/conteudo/cronograma",
   MEUS_CLIENTES_KEY,

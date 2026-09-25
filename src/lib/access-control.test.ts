@@ -128,6 +128,12 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(colaborador, "/fotos-colaboradores")).toBe(false);
   });
 
+  it("qualquer autenticado vê os álbuns de Fotos de eventos", () => {
+    const colaborador = { role: null, permissions: ["/conteudo/roteiros"] };
+    expect(canAccessPath(colaborador, "/fotos-eventos")).toBe(true);
+    expect(canAccessPath(colaborador, "/fotos-eventos/cafe-com-cultura-setembro-2026")).toBe(true);
+  });
+
   it("qualquer autenticado pode abrir um briefing que será autorizado pelo banco", () => {
     const colaborador = { role: null, permissions: ["/conteudo/roteiros"] };
     expect(canAccessPath(colaborador, "/briefings/identidade-visual/pedido-1")).toBe(true);

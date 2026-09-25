@@ -40,6 +40,7 @@ import {
   Scale,
   Shield,
   Coffee,
+  PartyPopper,
   PenLine,
   type LucideIcon,
 } from "lucide-react";
@@ -114,6 +115,7 @@ const baseNavItems: NavLeaf[] = [
   { href: "/email-marketing", icon: Mail, label: "E-mail Marketing" },
   { href: "/nfc", icon: RadioTower, label: "NFC Hub" },
   { href: "/minhas-fotos", icon: Images, label: "Minhas fotos" },
+  { href: "/fotos-eventos", icon: PartyPopper, label: "Fotos de eventos" },
   { href: "/fotos-colaboradores", icon: Camera, label: "Fotos Colaboradores" },
   { href: "/usuarios", icon: Users, label: "Usuarios" },
   { href: "/custos-projetos", icon: Wallet, label: "Custos de Projetos" },
@@ -122,6 +124,7 @@ const baseNavItems: NavLeaf[] = [
 const collaboratorNavItems: NavLeaf[] = [
   { href: "/conteudo/inicio", icon: Instagram, label: "Inicio" },
   { href: "/minhas-fotos", icon: Images, label: "Minhas fotos" },
+  { href: "/fotos-eventos", icon: PartyPopper, label: "Fotos de eventos" },
   { href: "/meus-clientes", icon: Contact, label: "Meus Clientes" },
   { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteudo para Post" },
   { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
@@ -188,7 +191,7 @@ const PHOTOS_GROUP: CollapsibleGroupSpec = {
   key: "__fotos",
   icon: Images,
   label: "Fotos",
-  hrefs: ["/minhas-fotos", "/fotos-colaboradores"],
+  hrefs: ["/minhas-fotos", "/fotos-eventos", "/fotos-colaboradores"],
 };
 
 const MARKETING_GROUP: CollapsibleGroupSpec = {
@@ -315,7 +318,7 @@ function getNavItems(
   if (allowed) {
     const leafCatalog: NavLeaf[] = [...baseNavItems, meusClientesNavItem, ...adminNavItems];
     let items: NavEntry[] = leafCatalog.filter((i) => {
-      if (i.href === "/minhas-fotos" || i.href === "/meus-clientes" || i.href === "/conteudo/cronograma") return true;
+      if (i.href === "/minhas-fotos" || i.href === "/fotos-eventos" || i.href === "/meus-clientes" || i.href === "/conteudo/cronograma") return true;
       if (i.href === "/fotos-colaboradores") {
         return isCollaboratorPhotosManager(profile);
       }
