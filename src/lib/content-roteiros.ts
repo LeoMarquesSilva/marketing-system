@@ -454,6 +454,7 @@ export async function fetchUserViosTasks(userId: string): Promise<UserViosTaskOp
     .from("vios_tasks")
     .select("id, vios_id, tarefa, area_processo, data_limite, status, marketing_request_id")
     .eq("assignee_id", userId)
+    .eq("is_cancelled", false)
     .in("status", ["pendente", "em_andamento"])
     .order("data_limite", { ascending: true, nullsFirst: false })
     .limit(100);

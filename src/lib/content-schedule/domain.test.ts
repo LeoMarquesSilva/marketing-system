@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   canAssignContentScheduleArea,
+  canManageContentScheduleAssignments,
   canReadContentScheduleSlot,
   findAutomaticSlotMatch,
   findContentSimilarityWarnings,
+  findViosCandidatesForSlot,
   normalizeScheduleArea,
+  reconcileAutomaticViosLinks,
+  resolveContentScheduleAreaFilterLabel,
+  resolveContentScheduleAreaLabel,
   resolveContentScheduleAccess,
   type ContentScheduleSlot,
   type SchedulableContentEvent,
@@ -103,6 +108,80 @@ describe("findAutomaticSlotMatch", () => {
   });
 });
 
+describe("vínculo VIOS com o cronograma", () => {
+  const viosSlot = {
+    id: "slot-1",
+    date: "2026-09-18",
+    area: "Reestruturação",
+    collaboratorId: "person-1",
+    cancelled: false,
+    viosTaskId: null,
+  };
+  const viosTask = {
+    id: "task-1",
+    ci: "1001",
+    date: "2026-09-18",
+    area: "Insolvência",
+    assigneeId: "person-1",
+    label: "PROTOCOLO",
+    cancelled: false,
+  };
+
+  it("prioriza o par inequívoco com mesma identidade", () => {
+    expect(reconcileAutomaticViosLinks(
+      [viosTask, { ...viosTask, id: "task-2", ci: "1002", assigneeId: "person-2" }],
+      [viosSlot, { ...viosSlot, id: "slot-2", collaboratorId: "person-2" }]
+    ).matches).toEqual([
+      { taskId: "task-1", slotId: "slot-1", strategy: "identity" },
+      { taskId: "task-2", slotId: "slot-2", strategy: "identity" },
+    ]);
+  });
+
+  it("vincula grupo 1:1 sem identidade e preserva ambiguidades", () => {
+    expect(reconcileAutomaticViosLinks(
+      [{ ...viosTask, assigneeId: null }],
+      [{ ...viosSlot, collaboratorId: null }]
+    ).matches).toEqual([
+      { taskId: "task-1", slotId: "slot-1", strategy: "group" },
+    ]);
+
+    const ambiguous = reconcileAutomaticViosLinks(
+      [{ ...viosTask, assigneeId: null }],
+      [
+        { ...viosSlot, collaboratorId: null },
+        { ...viosSlot, id: "slot-2", collaboratorId: null },
+      ]
+    );
+    expect(ambiguous.matches).toEqual([]);
+    expect(ambiguous.ambiguousTaskIds).toEqual(["task-1"]);
+  });
+
+  it("não usa REVISAR, cancelada, outra data ou identidade conflitante", () => {
+    for (const task of [
+      { ...viosTask, label: "REVISAR" },
+      { ...viosTask, cancelled: true },
+      { ...viosTask, date: "2026-09-19" },
+      { ...viosTask, assigneeId: "person-2" },
+    ]) {
+      expect(reconcileAutomaticViosLinks([task], [viosSlot]).matches).toEqual([]);
+    }
+  });
+
+  it("ordena candidatos manuais por data exata e identidade", () => {
+    const candidates = findViosCandidatesForSlot(viosSlot, [
+      { ...viosTask, id: "near", ci: "1003", date: "2026-09-19" },
+      { ...viosTask, id: "exact-other", ci: "1002", assigneeId: "person-2" },
+      { ...viosTask, id: "exact-person", ci: "1001" },
+      { ...viosTask, id: "far", date: "2026-10-10" },
+    ]);
+    expect(candidates.map((item) => item.id)).toEqual([
+      "exact-person",
+      "exact-other",
+      "near",
+    ]);
+  });
+});
+
 describe("findContentSimilarityWarnings", () => {
   const input = {
     sourceUrl: "https://example.com/article/?utm_source=newsletter",
@@ -193,6 +272,19 @@ describe("content schedule access", () => {
     expect(canAssignContentScheduleArea(custom, "Societário e Contratos")).toBe(true);
   });
 
+  it("usa o agrupamento canônico de Férias para acesso e filtros de colaboradores", () => {
+    const custom = resolveContentScheduleAccess({
+      ...base,
+      accessMode: "custom",
+      areaScope: ["Operações Legais"],
+    });
+
+    expect(canAssignContentScheduleArea(custom, "Marketing")).toBe(true);
+    expect(resolveContentScheduleAreaLabel("Marketing")).toBe("Operações Legais");
+    expect(resolveContentScheduleAreaLabel("Insolvência")).toBe("Reestruturação");
+    expect(resolveContentScheduleAreaFilterLabel("Distressed Deals")).toBeNull();
+  });
+
   it("não transforma permissão RH em administração global de marketing", () => {
     const rh = resolveContentScheduleAccess({ ...base, permissions: ["/rh"] });
     expect(rh.manageAll).toBe(false);
@@ -218,5 +310,19 @@ describe("content schedule access", () => {
     expect(canReadContentScheduleSlot(access, slot())).toBe(true);
     expect(canReadContentScheduleSlot(access, slot({ collaboratorId: "person-2" }))).toBe(false);
     expect(canReadContentScheduleSlot(resolveContentScheduleAccess({ ...base, isActive: false }), slot())).toBe(false);
+  });
+
+  it("limita gestor às áreas da gestão, inclusive quando há tarefa própria fora do escopo", () => {
+    const manager = resolveContentScheduleAccess({
+      ...base,
+      position: "Gerente",
+      department: "Cível",
+    });
+
+    expect(canManageContentScheduleAssignments(manager)).toBe(true);
+    expect(canReadContentScheduleSlot(manager, slot({ area: "Cível", collaboratorId: "person-2" }))).toBe(true);
+    expect(canReadContentScheduleSlot(manager, slot({ area: "Trabalhista", collaboratorId: "person-1" }))).toBe(false);
+    expect(canAssignContentScheduleArea(manager, "Cível")).toBe(true);
+    expect(canAssignContentScheduleArea(manager, "Trabalhista")).toBe(false);
   });
 });

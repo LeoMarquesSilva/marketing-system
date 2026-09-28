@@ -6,6 +6,9 @@ export const COLLABORATOR_PHOTOS_BUCKET = "MARKETING-SYSTEM-FOTOS";
 export const PROJECT_ASSETS_BUCKET = "MARKETING-SYSTEM-PROJETOS";
 export const EVENT_FILES_BUCKET = "MARKETING-SYSTEM-EVENTOS";
 export const EMAIL_MARKETING_BUCKET = "MARKETING-SYSTEM-EMAILS";
+/** Bucket PRIVADO dos vídeos do NFC Hub (a página pública recebe URL assinada). */
+export const NFC_VIDEOS_BUCKET = "MARKETING-SYSTEM-NFC-VIDEOS";
+export const NFC_VIDEO_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 
 export function publicStorageObjectUrl(
   bucket: string,
@@ -132,7 +135,11 @@ function formatBytesMb(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatReelUploadError(err: unknown, fileSize: number): string {
+function formatReelUploadError(
+  err: unknown,
+  fileSize: number,
+  bucketNote = "O bucket MARKETING-SYSTEM-EVENTOS já aceita até 1 GB."
+): string {
   const msg = err instanceof Error ? err.message : String(err);
   if (msg.includes("mime type") || msg.includes("Invalid")) {
     return `Formato não permitido. Use MP4, MOV ou WebM.`;
@@ -141,7 +148,7 @@ function formatReelUploadError(err: unknown, fileSize: number): string {
     return (
       `O vídeo (${formatBytesMb(fileSize)}) excede o limite global do Storage do projeto. ` +
       `Aumente em Supabase → Storage → Settings → "Global file size limit" (recomendado: 500 MB ou 1 GB). ` +
-      `O bucket MARKETING-SYSTEM-EVENTOS já aceita até 1 GB.`
+      bucketNote
     );
   }
   if (msg.includes("Not authenticated") || msg.includes("JWT")) {
@@ -244,6 +251,29 @@ export async function uploadReelVideo(
   const publicUrl = publicStorageObjectUrl(EVENT_FILES_BUCKET, path);
   if (!publicUrl) throw new Error("Não foi possível montar a URL pública do vídeo.");
   return { path, publicUrl };
+}
+
+/**
+ * Upload retomável do vídeo de uma etiqueta NFC (bucket privado).
+ * Devolve só o caminho: o link de reprodução é assinado no servidor a cada leitura.
+ */
+export async function uploadNfcVideo(
+  file: File,
+  options?: ReelVideoUploadOptions
+): Promise<{ path: string }> {
+  if (file.size > NFC_VIDEO_MAX_BYTES) {
+    throw new Error(`O vídeo excede o limite de ${formatBytesMb(NFC_VIDEO_MAX_BYTES)}.`);
+  }
+  const folder = crypto.randomUUID();
+  const path = `tags/${folder}/${Date.now()}-${sanitizeFileName(file.name)}`;
+  try {
+    await uploadViaTus(NFC_VIDEOS_BUCKET, path, file, resolveVideoContentType(file), options?.onProgress);
+  } catch (err) {
+    throw new Error(
+      formatReelUploadError(err, file.size, "O bucket de vídeos NFC já aceita até 2 GB.")
+    );
+  }
+  return { path };
 }
 
 function resolveVideoContentType(file: File): string {

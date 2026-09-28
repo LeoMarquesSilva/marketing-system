@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+} from "react";
 import {
   AlertCircle,
   BarChart3,
@@ -13,12 +16,14 @@ import {
   ExternalLink,
   FileText,
   Film,
+  HelpCircle,
   List,
   Loader2,
   Plus,
   RefreshCw,
   Search,
   Send,
+  ShieldCheck,
   UsersRound,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -42,10 +47,16 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { ContentScheduleResponse } from "@/lib/content-schedule/types";
-import { normalizeScheduleArea } from "@/lib/content-schedule/domain";
+import {
+  collaboratorMatchesScheduleArea,
+  normalizeScheduleArea,
+  resolveContentScheduleAreaFilterLabel,
+  resolveContentScheduleAreaLabel,
+} from "@/lib/content-schedule/domain";
 import { AreaIcon } from "@/lib/area-icons";
 import { ContentScheduleCalendar } from "./content-schedule-calendar";
 import { ContentScheduleAssigneeReview } from "./content-schedule-assignee-review";
+import { ContentScheduleManagerTour } from "./content-schedule-manager-tour";
 import {
   ContentScheduleSlotDetails,
   type ScheduleAssignmentFeedback,
@@ -61,6 +72,7 @@ import type {
 export { AreaMark, CollaboratorAvatar } from "./content-schedule-visuals";
 
 type Format = ScheduleFormat;
+type ScheduleView = "calendar" | "list" | "assignees";
 type Collaborator = ScheduleCollaborator;
 type ScheduleSlot = ScheduleSlotView;
 type PendingLink = {
@@ -92,8 +104,11 @@ const STATUS_LABELS: Record<ScheduleStatus, string> = {
 };
 
 function currentMonth() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+  }).format(new Date());
 }
 
 function shiftMonth(month: string, amount: number) {
@@ -130,18 +145,31 @@ async function readError(response: Response) {
 }
 
 export function mapContentScheduleResponse(payload: ContentScheduleResponse): SchedulePayload {
+  const mapViosTask = (task: ContentScheduleResponse["slots"][number]["vios_task"]) => task ? ({
+    id: task.id,
+    ci: task.ci,
+    status: task.status,
+    title: task.title,
+    dueDate: task.due_date,
+    area: task.area,
+    assigneeId: task.assignee_id,
+    assigneeName: task.assignee_name,
+  }) : null;
   return {
-    areas: payload.areas,
+    areas: [...new Set(payload.areas
+      .map(resolveContentScheduleAreaFilterLabel)
+      .filter((item): item is string => Boolean(item)))]
+      .sort((left, right) => left.localeCompare(right, "pt-BR")),
     collaborators: payload.collaborators.map((item) => ({
       id: item.id,
       name: item.name,
-      area: normalizeScheduleArea(item.department),
+      area: resolveContentScheduleAreaLabel(item.department),
       avatarUrl: item.avatar_url,
     })),
     access: payload.access,
     slots: payload.slots.map((slot) => ({
       id: slot.id,
-      area: slot.area,
+      area: resolveContentScheduleAreaLabel(slot.area) ?? slot.area,
       date: slot.due_date,
       format: slot.format,
       status: slot.cancelled ? "cancelled" : slot.publication ? "published" : (slot.content_roteiro_id || slot.reel_studio_id) ? "linked" : slot.collaborator_id ? "assigned" : "open",
@@ -168,7 +196,18 @@ export function mapContentScheduleResponse(payload: ContentScheduleResponse): Sc
       sourceName: slot.source_name,
       sourceStatus: slot.source_status,
       unmatchedAssigneeName: !slot.collaborator_id ? slot.source_name : null,
-      viosTask: slot.vios_task,
+      viosTask: mapViosTask(slot.vios_task),
+      viosCandidates: slot.vios_candidates.map((candidate) => ({
+        id: candidate.id,
+        ci: candidate.ci,
+        status: candidate.status,
+        title: candidate.title,
+        dueDate: candidate.due_date,
+        area: candidate.area,
+        assigneeId: candidate.assignee_id,
+        assigneeName: candidate.assignee_name,
+      })),
+      viosLinkOrigin: slot.vios_link_origin,
     })),
     pendingLinks: payload.pendingLinks.map((item) => ({
       id: item.id,
@@ -281,7 +320,7 @@ export function ContentScheduleClient() {
   const loadGenerationRef = useRef(0);
   const [month, setMonth] = useState(currentMonth);
   const visibleMonthRef = useRef(month);
-  const [view, setView] = useState<"calendar" | "list" | "assignees">("calendar");
+  const [view, setView] = useState<ScheduleView>("calendar");
   const [data, setData] = useState<SchedulePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -296,6 +335,8 @@ export function ContentScheduleClient() {
   const [selectedSlot, setSelectedSlot] = useState<ScheduleSlot | null>(null);
   const [assignmentFeedback, setAssignmentFeedback] = useState<ScheduleAssignmentFeedback | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [viosSavingId, setViosSavingId] = useState<string | null>(null);
+  const [managerTourRunId, setManagerTourRunId] = useState(0);
 
   const invalidateAssignmentOperation = useCallback(() => {
     assignmentGenerationRef.current += 1;
@@ -345,7 +386,7 @@ export function ContentScheduleClient() {
     return (data?.slots ?? []).filter((slot) => {
       const slotStatus = deriveStatus(slot);
       const haystack = `${slot.area} ${slot.collaborator?.name ?? ""} ${slot.unmatchedAssigneeName ?? ""} ${slot.content?.title ?? ""}`.toLocaleLowerCase("pt-BR");
-      return (area === "all" || slot.area === area)
+      return (area === "all" || collaboratorMatchesScheduleArea(slot.area, area))
         && (format === "all" || slot.format === format)
         && (person === "all" || slot.collaboratorId === person || (person === "unassigned" && !slot.collaboratorId))
         && (status === "all" || slotStatus === status)
@@ -355,7 +396,10 @@ export function ContentScheduleClient() {
 
   const groups = useMemo(() => {
     const grouped = new Map<string, ScheduleSlot[]>();
-    for (const slot of filtered) grouped.set(slot.area, [...(grouped.get(slot.area) ?? []), slot]);
+    for (const slot of filtered) {
+      const label = resolveContentScheduleAreaLabel(slot.area) ?? slot.area;
+      grouped.set(label, [...(grouped.get(label) ?? []), slot]);
+    }
     return [...grouped.entries()].sort(([a], [b]) => a.localeCompare(b, "pt-BR"));
   }, [filtered]);
   const totals = useMemo(() => {
@@ -408,6 +452,41 @@ export function ContentScheduleClient() {
     }
   }
 
+  async function changeViosLink(slot: ScheduleSlot, viosTaskId: string | null) {
+    const changingManualLink = Boolean(
+      slot.viosTask &&
+      slot.viosLinkOrigin === "manual" &&
+      slot.viosTask.id !== viosTaskId
+    );
+    if (
+      changingManualLink &&
+      !window.confirm("Este vínculo VIOS foi revisado manualmente. Confirma a troca ou desvinculação?")
+    ) return;
+    setViosSavingId(slot.id);
+    setNotice(null);
+    setError(null);
+    setAssignmentFeedback(null);
+    try {
+      const response = await fetch(`/api/content-schedule/${slot.id}/vios`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vios_task_id: viosTaskId,
+          ...(changingManualLink ? { confirm: true } : {}),
+        }),
+      });
+      if (!response.ok) throw new Error(await readError(response));
+      setNotice(viosTaskId ? "Tarefa VIOS vinculada." : "Tarefa VIOS desvinculada.");
+      await load();
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "Não foi possível atualizar o vínculo VIOS.";
+      setError(message);
+      setAssignmentFeedback({ type: "error", message });
+    } finally {
+      setViosSavingId(null);
+    }
+  }
+
   function rememberScheduleDetailsTrigger(event: ReactMouseEvent<HTMLDivElement>) {
     if (!(event.target instanceof Element)) return;
     const trigger = event.target.closest<HTMLElement>('button[aria-label^="Abrir detalhes"]');
@@ -439,32 +518,109 @@ export function ContentScheduleClient() {
     setError(null);
     setAssignmentFeedback(null);
     setSelectedSlot(null);
+    setData(null);
     setMonth(nextMonth);
   }
 
-  const assignable = (slot: ScheduleSlot) => Boolean(data?.access.canManage || data?.access.assignableAreas === null || data?.access.assignableAreas.some((item) => normalizeScheduleArea(item) === normalizeScheduleArea(slot.area)));
-  const canReviewAssignees = Boolean(data && (data.access.canManage || data.access.assignableAreas === null || data.access.assignableAreas.length > 0));
+  const assignable = (slot: ScheduleSlot) => Boolean(
+    data?.access.canManage ||
+    data?.access.assignableAreas === null ||
+    data?.access.assignableAreas.some((item) =>
+      collaboratorMatchesScheduleArea(slot.area, item)
+    )
+  );
+  const canReviewAssignees = Boolean(data?.access.canManage);
+  const managerAreas = data && !data.access.canManage &&
+    (data.access.assignableAreas === null || data.access.assignableAreas.length > 0)
+    ? data.access.assignableAreas
+    : undefined;
+  const isManagerView = managerAreas !== undefined;
+
+  function handleViewTabKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const views: ScheduleView[] = canReviewAssignees
+      ? ["calendar", "list", "assignees"]
+      : ["calendar", "list"];
+    const currentIndex = views.indexOf(view);
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? views.length - 1
+        : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + views.length) % views.length;
+    const nextView = views[nextIndex];
+    setView(nextView);
+    window.requestAnimationFrame(() => {
+      document.getElementById(`schedule-tab-${nextView}`)?.focus();
+    });
+  }
 
   return (
     <main ref={scheduleRootRef} tabIndex={-1} className="mx-auto w-full max-w-[1600px] space-y-5 p-4 outline-none sm:p-6">
-      <section className="flex flex-col gap-4 border-b border-[#dce9eb] pb-5 lg:flex-row lg:items-end lg:justify-between">
+      <section className="relative overflow-hidden rounded-2xl border border-[#d7e8eb] bg-gradient-to-br from-white via-white to-[#eef8f8] px-5 py-5 shadow-[0_12px_32px_rgba(24,63,80,0.06)] sm:px-6 lg:flex lg:items-end lg:justify-between lg:gap-8">
+        <div className="pointer-events-none absolute -right-16 -top-24 size-64 rounded-full bg-[#47cdd0]/10 blur-3xl" aria-hidden />
         <div className="max-w-2xl">
-          <p className="text-xs font-semibold uppercase text-[#347796]">Escala editorial</p>
-          <h2 className="mt-1 text-2xl font-semibold text-slate-950">Quem produz, quando entrega</h2>
-          <p className="mt-1 text-sm text-slate-600">Distribua as datas definidas pelo Marketing. Os temas aparecem aqui automaticamente quando forem escolhidos no fluxo de conteúdo.</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#347796]">
+            {isManagerView ? "Gestão da equipe" : "Planejamento editorial"}
+          </p>
+          <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">
+            {isManagerView ? "Cronograma da sua equipe" : "Cronograma de Marketing"}
+          </h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            {isManagerView
+              ? "Confira as datas da sua área e defina o responsável por cada entrega. O Marketing acompanha as alterações."
+              : "Visualize as entregas do mês, organize os responsáveis e acompanhe cada conteúdo até a publicação."}
+          </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="relative mt-5 flex flex-wrap items-center gap-2 lg:mt-0">
+          {isManagerView && (
+            <Button
+              type="button"
+              variant="outline"
+              className="border-[#b9dadd] bg-white text-[#285f7a] shadow-sm hover:bg-[#e8f8f8]"
+              onClick={() => setManagerTourRunId((value) => value + 1)}
+            >
+              <HelpCircle className="size-4" />
+              Ver guia
+            </Button>
+          )}
           <Button variant="outline" size="icon" aria-label="Mês anterior" onClick={() => changeMonth(-1)}><ChevronLeft /></Button>
-          <div className="min-w-48 text-center font-semibold capitalize text-slate-900">{monthLabel(month)}</div>
+          <div className="min-w-44 rounded-lg border border-[#dce9eb] bg-white px-4 py-2 text-center text-sm font-semibold capitalize text-slate-900 shadow-sm">{monthLabel(month)}</div>
           <Button variant="outline" size="icon" aria-label="Próximo mês" onClick={() => changeMonth(1)}><ChevronRight /></Button>
           {data?.access.canManage && <Button className="ml-auto bg-[#347796] text-white hover:bg-[#285f7a]" onClick={() => { setEditing(null); setDialogOpen(true); }}><Plus /> Nova data</Button>}
         </div>
       </section>
 
+      {managerAreas !== undefined && (
+        <section data-tour="schedule-manager-scope" className="flex flex-col gap-4 rounded-xl border border-sky-200/80 bg-gradient-to-r from-sky-50 to-cyan-50/60 px-4 py-4 text-sm text-sky-950 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-white text-[#347796] shadow-sm ring-1 ring-sky-200">
+              <ShieldCheck className="size-4" />
+            </span>
+            <div>
+              <p className="font-semibold">Visão do gestor</p>
+              <p className="mt-0.5 max-w-2xl leading-5 text-sky-800">
+                Você vê somente as entregas da sua gestão e pode ajustar o responsável antes do vínculo do conteúdo.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-sky-700">
+                <span>1. Confira a data</span>
+                <span>2. Abra a entrega</span>
+                <span>3. Escolha o responsável</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {managerAreas === null
+              ? <Badge variant="outline" className="border-sky-200 bg-white text-sky-800">Todas as áreas autorizadas</Badge>
+              : managerAreas.map((managedArea) => <AreaMark key={managedArea} area={managedArea} compact />)}
+          </div>
+        </section>
+      )}
+
       {notice && <div role="status" className="flex items-center justify-between rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"><span className="flex items-center gap-2"><CheckCircle2 className="size-4" />{notice}</span><button onClick={() => setNotice(null)} className="underline">Fechar</button></div>}
       {error && <div role="alert" className="flex items-start justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800"><span className="flex gap-2"><AlertCircle className="mt-0.5 size-4 shrink-0" />{error}</span><Button variant="outline" size="sm" onClick={() => void load()}><RefreshCw /> Tentar novamente</Button></div>}
 
-      <section aria-label="Resumo do mês" className="grid grid-cols-2 border-y border-l border-[#dce9eb] bg-white shadow-sm lg:grid-cols-4">
+      <section data-tour="schedule-summary" aria-label="Resumo do mês" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Summary label="Datas previstas" value={totals.planned} icon={CalendarDays} />
         <Summary label="Com responsável" value={totals.assigned} icon={CircleUserRound} />
         <Summary label="Com conteúdo" value={totals.linked} icon={FileText} />
@@ -473,18 +629,18 @@ export function ContentScheduleClient() {
 
       {(data?.access.canManage && (data.pendingLinks?.length ?? 0) > 0) && <PendingLinks items={data.pendingLinks ?? []} slots={data.slots} onResolved={async () => { setNotice("Vínculo corrigido."); await load(); }} />}
 
-      <section className="rounded-lg border border-[#dce9eb] bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#dce9eb] bg-[#f8fbfb] p-3">
-          <div className="inline-flex rounded-md border border-[#dce9eb] bg-white p-1 shadow-sm" role="tablist" aria-label="Visão do cronograma">
-            <Button role="tab" aria-selected={view === "calendar"} variant="ghost" size="sm" className={cn(view === "calendar" && "bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")} onClick={() => setView("calendar")}><CalendarDays />Calendário</Button>
-            <Button role="tab" aria-selected={view === "list"} variant="ghost" size="sm" className={cn(view === "list" && "bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")} onClick={() => setView("list")}><List />Lista</Button>
-            {canReviewAssignees && <Button role="tab" aria-selected={view === "assignees"} variant="ghost" size="sm" className={cn(view === "assignees" && "bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")} onClick={() => setView("assignees")}><UsersRound />Responsáveis</Button>}
+      <section className="overflow-hidden rounded-2xl border border-[#dce9eb] bg-white shadow-[0_10px_30px_rgba(24,63,80,0.06)]">
+        <div data-tour="schedule-views" className="flex flex-wrap items-center justify-between gap-3 border-b border-[#dce9eb] bg-[#f8fbfb] p-3 sm:px-4">
+          <div className="inline-flex rounded-lg border border-[#dce9eb] bg-white p-1 shadow-sm" role="tablist" aria-label="Visão do cronograma" onKeyDown={handleViewTabKeyDown}>
+            <Button id="schedule-tab-calendar" aria-controls="schedule-panel-calendar" role="tab" tabIndex={view === "calendar" ? 0 : -1} aria-selected={view === "calendar"} variant="ghost" size="sm" className={cn(view === "calendar" && "bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")} onClick={() => setView("calendar")}><CalendarDays />Calendário</Button>
+            <Button id="schedule-tab-list" aria-controls="schedule-panel-list" role="tab" tabIndex={view === "list" ? 0 : -1} aria-selected={view === "list"} variant="ghost" size="sm" className={cn(view === "list" && "bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")} onClick={() => setView("list")}><List />Lista</Button>
+            {canReviewAssignees && <Button id="schedule-tab-assignees" aria-controls="schedule-panel-assignees" role="tab" tabIndex={view === "assignees" ? 0 : -1} aria-selected={view === "assignees"} variant="ghost" size="sm" className={cn(view === "assignees" && "bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")} onClick={() => setView("assignees")}><UsersRound />Responsáveis</Button>}
           </div>
           <p className="text-xs text-slate-500">A entrada padrão é o calendário; use a lista para ajustes pontuais.</p>
         </div>
 
-        {view !== "assignees" && <>
-        <div className="grid gap-2 border-b border-[#dce9eb] p-3 sm:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_repeat(4,minmax(140px,180px))]">
+        {view !== "assignees" && <div role="tabpanel" id={`schedule-panel-${view}`} aria-labelledby={`schedule-tab-${view}`}>
+        <div data-tour="schedule-filters" className="grid gap-2 border-b border-[#dce9eb] p-3 sm:grid-cols-2 sm:p-4 xl:grid-cols-[minmax(220px,1fr)_repeat(4,minmax(140px,180px))]">
           <div className="relative sm:col-span-2 xl:col-span-1"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar pessoa ou conteúdo" className="pl-9" aria-label="Buscar no cronograma" /></div>
           <AreaSelect value={area} onChange={setArea} areas={data?.areas ?? []} allLabel="Todas as áreas" />
           <Filter value={format} onChange={setFormat} label="Todos os formatos" options={[{ value: "post", label: "Post" }, { value: "reel", label: "Reel" }]} />
@@ -492,7 +648,8 @@ export function ContentScheduleClient() {
           <Filter value={status} onChange={setStatus} label="Todas as situações" options={Object.entries(STATUS_LABELS).map(([value, label]) => ({ value, label }))} />
         </div>
 
-        {loading ? <LoadingState /> : filtered.length === 0 ? <EmptyState hasFilters={Boolean(query || area !== "all" || format !== "all" || person !== "all" || status !== "all")} /> : view === "calendar" ? (
+        <div data-tour="schedule-workspace">
+        {loading ? <LoadingState /> : error && !data ? null : filtered.length === 0 ? <EmptyState hasFilters={Boolean(query || area !== "all" || format !== "all" || person !== "all" || status !== "all")} /> : view === "calendar" ? (
           <div onClickCapture={rememberScheduleDetailsTrigger}>
             <ContentScheduleCalendar month={month} slots={filtered} onSelectSlot={openScheduleSlot} />
           </div>
@@ -505,18 +662,21 @@ export function ContentScheduleClient() {
                   <span className="rounded-full border border-[#dce9eb] bg-white px-2.5 py-1 text-xs font-medium tabular-nums text-slate-600">{slots.length} {slots.length === 1 ? "data" : "datas"}</span>
                 </div>
                 <div className="hidden grid-cols-[120px_100px_minmax(210px,0.8fr)_minmax(260px,1.3fr)_160px] border-y border-[#e8f0f2] px-4 py-2 text-xs font-semibold text-slate-500 lg:grid"><span>Data</span><span>Formato</span><span>Responsável</span><span>Conteúdo vinculado</span><span>Situação</span></div>
-                <div className="divide-y divide-[#e8f0f2]">{slots.sort((a, b) => a.date.localeCompare(b.date)).map((slot) => <SlotRow key={slot.id} slot={slot} collaborators={(data?.collaborators ?? []).filter((item) => !item.area || normalizeScheduleArea(item.area) === normalizeScheduleArea(slot.area))} canAssign={assignable(slot) && !slot.content} canManage={data?.access.canManage ?? false} saving={savingId === slot.id} onAssign={(id) => void assign(slot, id)} onEdit={() => { setEditing(slot); setDialogOpen(true); }} />)}</div>
+                <div className="divide-y divide-[#e8f0f2]">{slots.sort((a, b) => a.date.localeCompare(b.date)).map((slot) => <SlotRow key={slot.id} slot={slot} collaborators={(data?.collaborators ?? []).filter((item) => !item.area || collaboratorMatchesScheduleArea(item.area, slot.area))} canAssign={assignable(slot) && !slot.content} canManage={data?.access.canManage ?? false} saving={savingId === slot.id} onAssign={(id) => void assign(slot, id)} onEdit={() => { setEditing(slot); setDialogOpen(true); }} />)}</div>
               </section>
             ))}
           </div>
         )}
-        </>}
+        </div>
+        </div>}
 
         {view === "assignees" && canReviewAssignees && (
-          <ContentScheduleAssigneeReview
-            year={Number(month.slice(0, 4))}
-            onUpdated={async (message) => { setNotice(message); await load(); }}
-          />
+          <div role="tabpanel" id="schedule-panel-assignees" aria-labelledby="schedule-tab-assignees">
+            <ContentScheduleAssigneeReview
+              year={Number(month.slice(0, 4))}
+              onUpdated={async (message) => { setNotice(message); await load(); }}
+            />
+          </div>
         )}
       </section>
 
@@ -529,14 +689,18 @@ export function ContentScheduleClient() {
         canAssign={selectedSlot ? assignable(selectedSlot) : false}
         saving={Boolean(selectedSlot && savingId === selectedSlot.id)}
         onAssign={(collaboratorId) => { if (selectedSlot) void assign(selectedSlot, collaboratorId); }}
+        canManageVios={data?.access.canManage ?? false}
+        viosSaving={Boolean(selectedSlot && viosSavingId === selectedSlot.id)}
+        onViosChange={(viosTaskId) => { if (selectedSlot) void changeViosLink(selectedSlot, viosTaskId); }}
         assignmentFeedback={assignmentFeedback}
       />
+      <ContentScheduleManagerTour managerMode={isManagerView && !loading} runId={managerTourRunId} />
     </main>
   );
 }
 
 function Summary({ label, value, icon: Icon }: { label: string; value: number; icon: typeof CalendarDays }) {
-  return <div className="flex min-h-24 items-center gap-3 border-b border-r border-[#dce9eb] px-4 py-3 lg:border-b-0"><span className="flex size-10 items-center justify-center rounded-md bg-[#e8f8f8] text-[#347796]"><Icon className="size-5" /></span><div><strong className="font-mono text-2xl text-slate-950">{value}</strong><p className="text-xs text-slate-500">{label}</p></div></div>;
+  return <div className="flex min-h-24 items-center gap-3 rounded-xl border border-[#dce9eb] bg-white px-4 py-3 shadow-sm transition-transform duration-200 hover:-translate-y-0.5"><span className="flex size-11 items-center justify-center rounded-xl bg-[#e8f8f8] text-[#347796] ring-1 ring-[#47cdd0]/15"><Icon className="size-5" /></span><div><strong className="font-mono text-2xl text-slate-950">{value}</strong><p className="text-xs font-medium text-slate-500">{label}</p></div></div>;
 }
 
 function Filter({ value, onChange, label, options }: { value: string; onChange: (value: string) => void; label: string; options: { value: string; label: string }[] }) {
@@ -590,12 +754,129 @@ function StatusBadge({ status }: { status: ScheduleStatus }) {
   return <Badge variant="outline" className={cn(status === "published" && "border-emerald-200 bg-emerald-50 text-emerald-700", status === "linked" && "border-sky-200 bg-sky-50 text-sky-700", status === "assigned" && "border-[#47cdd0]/40 bg-[#e8f8f8] text-[#285f7a]", status === "open" && "border-amber-200 bg-amber-50 text-amber-800")}>{STATUS_LABELS[status]}</Badge>;
 }
 
+export function getVisiblePendingLinks<T>(items: T[], expanded: boolean): T[] {
+  return expanded ? items : items.slice(0, 5);
+}
+
 function PendingLinks({ items, slots, onResolved }: { items: PendingLink[]; slots: ScheduleSlot[]; onResolved: () => Promise<void> }) {
   const [selection, setSelection] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  async function resolve(item: PendingLink) { const slotId = selection[item.id]; if (!slotId) return; setSaving(item.id); setError(null); try { const response = await fetch(`/api/content-schedule/links/${item.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slot_id: slotId }) }); if (!response.ok) throw new Error(await readError(response)); await onResolved(); } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível corrigir o vínculo."); } finally { setSaving(null); } }
-  return <section className="rounded-md border border-amber-200 bg-amber-50/70"><div className="flex items-start gap-3 border-b border-amber-200 px-4 py-3"><AlertCircle className="mt-0.5 size-5 text-amber-700" /><div><h3 className="font-semibold text-amber-950">{items.length} {items.length === 1 ? "vínculo precisa" : "vínculos precisam"} de conferência</h3><p className="text-sm text-amber-800">A automação não conseguiu escolher uma data com segurança. Confira antes de vincular.</p></div></div>{error && <p role="alert" className="border-b border-amber-200 px-4 py-2 text-sm text-red-700">{error}</p>}<div className="divide-y divide-amber-200">{items.slice(0, 5).map((item) => { const candidates = slots.filter((slot) => !slot.content && deriveStatus(slot) !== "cancelled" && slot.format === item.format && (!item.area || normalizeScheduleArea(slot.area) === normalizeScheduleArea(item.area)) && (!item.collaboratorId || slot.collaboratorId === item.collaboratorId)); return <div key={item.id} className="grid gap-2 px-4 py-3 sm:grid-cols-[minmax(180px,1fr)_minmax(220px,1fr)_auto] sm:items-center"><div><p className="text-sm font-medium text-amber-950">{item.label || item.collaboratorName || "Conteúdo sem vínculo definido"}</p><p className="text-xs text-amber-800">{item.reason === "no_slot" ? "Nenhuma vaga automática foi encontrada" : item.reason === "race_lost" ? "A vaga foi ocupada durante o vínculo" : "Mais de uma data pode receber este conteúdo"}</p></div><Select value={selection[item.id]} onValueChange={(value) => setSelection((current) => ({ ...current, [item.id]: value }))}><SelectTrigger className="w-full bg-white"><SelectValue placeholder={candidates.length ? "Escolher data" : "Sem data compatível"} /></SelectTrigger><SelectContent>{candidates.map((slot) => <SelectItem key={slot.id} value={slot.id}><span className="flex items-center gap-2"><AreaMark area={slot.area} compact /><span className="font-mono text-xs">{shortDate(slot.date)}</span></span></SelectItem>)}</SelectContent></Select><Button variant="outline" disabled={!selection[item.id] || saving === item.id} onClick={() => void resolve(item)}>{saving === item.id ? <Loader2 className="animate-spin" /> : <Send />}Vincular</Button></div>; })}</div></section>;
+  const [expanded, setExpanded] = useState(false);
+  const visibleItems = getVisiblePendingLinks(items, expanded);
+
+  async function resolve(item: PendingLink, createSlot = false) {
+    const slotId = selection[item.id];
+    if (!slotId && !createSlot) return;
+    setSaving(item.id);
+    setError(null);
+    try {
+      const response = await fetch(`/api/content-schedule/links/${item.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(createSlot ? { create_slot: true } : { slot_id: slotId }),
+      });
+      if (!response.ok) throw new Error(await readError(response));
+      await onResolved();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível corrigir o vínculo.");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  return (
+    <section className="rounded-md border border-amber-200 bg-amber-50/70">
+      <div className="flex items-start gap-3 border-b border-amber-200 px-4 py-3">
+        <AlertCircle className="mt-0.5 size-5 text-amber-700" />
+        <div>
+          <h3 className="font-semibold text-amber-950">
+            {items.length} {items.length === 1 ? "vínculo precisa" : "vínculos precisam"} de conferência
+          </h3>
+          <p className="text-sm text-amber-800">
+            A automação não conseguiu escolher uma data com segurança. Confira antes de vincular.
+          </p>
+        </div>
+      </div>
+      {error && <p role="alert" className="border-b border-amber-200 px-4 py-2 text-sm text-red-700">{error}</p>}
+      <div className="divide-y divide-amber-200">
+        {visibleItems.map((item) => {
+          const candidates = slots.filter((slot) =>
+            !slot.content &&
+            deriveStatus(slot) !== "cancelled" &&
+            slot.format === item.format &&
+            (!item.area || normalizeScheduleArea(slot.area) === normalizeScheduleArea(item.area)) &&
+            (!item.collaboratorId || slot.collaboratorId === item.collaboratorId)
+          );
+          return (
+            <div key={item.id} className="grid gap-2 px-4 py-3 sm:grid-cols-[minmax(180px,1fr)_minmax(220px,1fr)_auto] sm:items-center">
+              <div>
+                <p className="text-sm font-medium text-amber-950">
+                  {item.label || item.collaboratorName || "Conteúdo sem vínculo definido"}
+                </p>
+                <p className="text-xs text-amber-800">
+                  {item.reason === "no_slot"
+                    ? "Nenhuma vaga automática foi encontrada"
+                    : item.reason === "race_lost"
+                      ? "A vaga foi ocupada durante o vínculo"
+                      : "Mais de uma data pode receber este conteúdo"}
+                  {item.date ? ` · referência ${shortDate(item.date)}` : ""}
+                </p>
+                {item.collaboratorName && (
+                  <p className="mt-0.5 text-xs text-amber-900">
+                    Responsável esperado: <span className="font-semibold">{item.collaboratorName}</span>
+                  </p>
+                )}
+              </div>
+              <Select
+                value={selection[item.id]}
+                disabled={candidates.length === 0}
+                onValueChange={(value) =>
+                  setSelection((current) => ({ ...current, [item.id]: value }))
+                }
+              >
+                <SelectTrigger className="w-full bg-white">
+                  <SelectValue placeholder={candidates.length ? "Escolher data" : "Sem data compatível neste mês"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {candidates.map((slot) => (
+                    <SelectItem key={slot.id} value={slot.id}>
+                      <span className="flex items-center gap-2">
+                        <AreaMark area={slot.area} compact />
+                        <span className="font-mono text-xs">{shortDate(slot.date)}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                disabled={(candidates.length > 0 && !selection[item.id]) || saving === item.id}
+                onClick={() => void resolve(item, candidates.length === 0)}
+              >
+                {saving === item.id ? <Loader2 className="animate-spin" /> : <Send />}
+                {candidates.length === 0 ? "Criar data e vincular" : "Vincular"}
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+      {items.length > 5 && (
+        <div className="border-t border-amber-200 px-4 py-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-amber-900 hover:bg-amber-100 hover:text-amber-950"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((current) => !current)}
+          >
+            {expanded ? "Mostrar menos" : `Ver todas as ${items.length} pendências`}
+          </Button>
+        </div>
+      )}
+    </section>
+  );
 }
 
 function LoadingState() { return <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-sm text-slate-500"><Loader2 className="size-6 animate-spin text-[#347796]" /><span>Carregando cronograma…</span></div>; }
@@ -604,9 +885,53 @@ function EmptyState({ hasFilters }: { hasFilters: boolean }) { return <div class
 function SlotDialog({ open, onOpenChange, editing, areas, collaborators, onSaved }: { open: boolean; onOpenChange: (open: boolean) => void; editing: ScheduleSlot | null; areas: string[]; collaborators: Collaborator[]; onSaved: (message: string) => Promise<void> }) {
   const locked = Boolean(editing?.content);
   const [date, setDate] = useState(""); const [area, setArea] = useState(""); const [format, setFormat] = useState<Format>("post"); const [collaboratorId, setCollaboratorId] = useState("unassigned"); const [cancelled, setCancelled] = useState(false); const [saving, setSaving] = useState(false); const [error, setError] = useState<string | null>(null); const [publicationId, setPublicationId] = useState("none"); const [posts, setPosts] = useState<{ id: string; caption: string | null; published_at: string | null }[]>([]);
-  useEffect(() => { if (!open) return; setDate(editing?.date.slice(0, 10) ?? ""); setArea(editing?.area ?? areas[0] ?? ""); setFormat(editing?.format ?? "post"); setCollaboratorId(editing?.collaboratorId ?? "unassigned"); setCancelled(editing?.status === "cancelled"); setPublicationId("none"); setError(null); }, [open, editing, areas]);
-  useEffect(() => { if (!open || !editing || !area) return; const controller = new AbortController(); const base = new Date(`${editing.date.slice(0, 10)}T12:00:00`); const from = new Date(base); from.setDate(from.getDate() - 120); const to = new Date(base); to.setDate(to.getDate() + 120); const params = new URLSearchParams({ area, from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) }); void fetch(`/api/instagram/posts?${params}`, { signal: controller.signal }).then((response) => response.ok ? response.json() : null).then((payload: { posts?: { id: string; caption: string | null; published_at: string | null }[] } | null) => setPosts(payload?.posts ?? [])).catch(() => undefined); return () => controller.abort(); }, [open, editing, area]);
+  const [loadingPosts, setLoadingPosts] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setDate(editing?.date.slice(0, 10) ?? "");
+    setArea(editing?.area ?? areas[0] ?? "");
+    setFormat(editing?.format ?? "post");
+    setCollaboratorId(editing?.collaboratorId ?? "unassigned");
+    setCancelled(editing?.status === "cancelled");
+    setPublicationId("none");
+    setPosts([]);
+    setLoadingPosts(false);
+    setError(null);
+  }, [open, editing, areas]);
+  useEffect(() => {
+    if (!open || !editing || !area || !date) return;
+    const controller = new AbortController();
+    const base = new Date(`${date}T12:00:00`);
+    if (Number.isNaN(base.valueOf())) {
+      setPosts([]);
+      return;
+    }
+    const from = new Date(base);
+    from.setDate(from.getDate() - 120);
+    const to = new Date(base);
+    to.setDate(to.getDate() + 120);
+    const params = new URLSearchParams({
+      area,
+      from: from.toISOString().slice(0, 10),
+      to: to.toISOString().slice(0, 10),
+    });
+    setPosts([]);
+    setPublicationId("none");
+    setLoadingPosts(true);
+    void fetch(`/api/instagram/posts?${params}`, { signal: controller.signal })
+      .then(async (response) => response.ok ? response.json() : null)
+      .then((payload: { posts?: { id: string; caption: string | null; published_at: string | null }[] } | null) => {
+        if (!controller.signal.aborted) setPosts(payload?.posts ?? []);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingPosts(false);
+      });
+    return () => controller.abort();
+  }, [open, editing, area, date]);
   async function save() { setSaving(true); setError(null); try { const fields = { due_date: date, area, format, collaborator_id: collaboratorId === "unassigned" ? null : collaboratorId }; const response = await fetch(editing ? `/api/content-schedule/${editing.id}` : "/api/content-schedule", { method: editing ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editing ? (locked ? { due_date: date, cancelled } : { ...fields, cancelled }) : { slots: [fields] }) }); if (!response.ok) throw new Error(await readError(response)); if (editing && publicationId !== "none") { const linkResponse = await fetch(`/api/content-schedule/${editing.id}/publication`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ instagram_post_id: publicationId }) }); if (!linkResponse.ok) throw new Error(await readError(linkResponse)); } await onSaved(editing ? "Data atualizada." : "Nova data adicionada ao cronograma."); } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível salvar."); } finally { setSaving(false); } }
-  const areaCollaborators = collaborators.filter((item) => !item.area || normalizeScheduleArea(item.area) === normalizeScheduleArea(area));
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90dvh] overflow-y-auto"><DialogHeader><DialogTitle>{editing ? "Editar data" : "Adicionar data ao cronograma"}</DialogTitle><DialogDescription>{locked ? "O conteúdo já foi vinculado. A data, o cancelamento e a publicação real ainda podem ser atualizados." : "Defina a área, a entrega e o formato. O tema será vinculado automaticamente pelo fluxo de conteúdo."}</DialogDescription></DialogHeader>{error && <p role="alert" className="rounded-md bg-red-50 p-2 text-sm text-red-700">{error}</p>}<div className="grid gap-4 py-2 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="schedule-date">Data</Label><Input id="schedule-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} /></div><div className="space-y-2"><Label>Formato</Label><Select value={format} disabled={locked} onValueChange={(value) => setFormat(value as Format)}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="post"><span className="flex items-center gap-2"><FileText className="size-4 text-[#347796]" />Post</span></SelectItem><SelectItem value="reel"><span className="flex items-center gap-2"><Film className="size-4 text-[#48466e]" />Reel</span></SelectItem></SelectContent></Select></div><div className="space-y-2 sm:col-span-2"><Label>Área</Label><AreaSelect value={area} disabled={locked} onChange={setArea} areas={areas} /></div><div className="space-y-2 sm:col-span-2"><Label>Responsável (opcional)</Label><CollaboratorSelect value={collaboratorId} disabled={locked} onChange={setCollaboratorId} collaborators={areaCollaborators} allowUnassigned /></div>{editing && <div className="space-y-2 sm:col-span-2"><Label>Publicação real do Instagram (opcional)</Label><Select value={publicationId} onValueChange={setPublicationId}><SelectTrigger className="w-full"><SelectValue placeholder="Manter publicação atual" /></SelectTrigger><SelectContent><SelectItem value="none">Manter publicação atual</SelectItem>{posts.map((post) => <SelectItem key={post.id} value={post.id}>{post.published_at ? new Date(post.published_at).toLocaleDateString("pt-BR") : "Sem data"} · {(post.caption || "Publicação sem legenda").slice(0, 70)}</SelectItem>)}</SelectContent></Select></div>}{editing && <label className="flex min-h-11 items-center gap-3 rounded-md border border-[#dce9eb] px-3 text-sm sm:col-span-2"><input type="checkbox" checked={cancelled} onChange={(event) => setCancelled(event.target.checked)} className="size-4 accent-[#347796]" />Marcar esta data como cancelada</label>}</div><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Voltar</Button><Button onClick={() => void save()} disabled={saving || !date || !area} className="bg-[#347796] text-white hover:bg-[#285f7a]">{saving && <Loader2 className="animate-spin" />}{editing ? "Salvar alterações" : "Adicionar data"}</Button></DialogFooter></DialogContent></Dialog>;
+  const areaCollaborators = collaborators.filter((item) =>
+    !item.area || collaboratorMatchesScheduleArea(item.area, area)
+  );
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90dvh] overflow-y-auto"><DialogHeader><DialogTitle>{editing ? "Editar data" : "Adicionar data ao cronograma"}</DialogTitle><DialogDescription>{locked ? "O conteúdo já foi vinculado. A data, o cancelamento e a publicação real ainda podem ser atualizados." : "Defina a área, a entrega e o formato. O tema será vinculado automaticamente pelo fluxo de conteúdo."}</DialogDescription></DialogHeader>{error && <p role="alert" className="rounded-md bg-red-50 p-2 text-sm text-red-700">{error}</p>}<div className="grid gap-4 py-2 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="schedule-date">Data</Label><Input id="schedule-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} /></div><div className="space-y-2"><Label>Formato</Label><Select value={format} disabled={locked} onValueChange={(value) => setFormat(value as Format)}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="post"><span className="flex items-center gap-2"><FileText className="size-4 text-[#347796]" />Post</span></SelectItem><SelectItem value="reel"><span className="flex items-center gap-2"><Film className="size-4 text-[#48466e]" />Reel</span></SelectItem></SelectContent></Select></div><div className="space-y-2 sm:col-span-2"><Label>Área</Label><AreaSelect value={area} disabled={locked} onChange={setArea} areas={areas} /></div><div className="space-y-2 sm:col-span-2"><Label>Responsável (opcional)</Label><CollaboratorSelect value={collaboratorId} disabled={locked} onChange={setCollaboratorId} collaborators={areaCollaborators} allowUnassigned /></div>{editing && <div className="space-y-2 sm:col-span-2"><Label>Publicação real do Instagram (opcional)</Label><Select value={publicationId} onValueChange={setPublicationId} disabled={loadingPosts}><SelectTrigger className="w-full"><SelectValue placeholder={loadingPosts ? "Carregando publicações…" : "Manter publicação atual"} /></SelectTrigger><SelectContent><SelectItem value="none">Manter publicação atual</SelectItem>{posts.map((post) => <SelectItem key={post.id} value={post.id}>{post.published_at ? new Date(post.published_at).toLocaleDateString("pt-BR") : "Sem data"} · {(post.caption || "Publicação sem legenda").slice(0, 70)}</SelectItem>)}</SelectContent></Select></div>}{editing && <label className="flex min-h-11 items-center gap-3 rounded-md border border-[#dce9eb] px-3 text-sm sm:col-span-2"><input type="checkbox" checked={cancelled} onChange={(event) => setCancelled(event.target.checked)} className="size-4 accent-[#347796]" />Marcar esta data como cancelada</label>}</div><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Voltar</Button><Button onClick={() => void save()} disabled={saving || !date || !area} className="bg-[#347796] text-white hover:bg-[#285f7a]">{saving && <Loader2 className="animate-spin" />}{editing ? "Salvar alterações" : "Adicionar data"}</Button></DialogFooter></DialogContent></Dialog>;
 }

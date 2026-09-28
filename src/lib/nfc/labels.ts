@@ -10,6 +10,7 @@ export const NFC_ACTION_LABELS = {
   sequence: "Sequência",
   asset_loan: "Retirada e devolução",
   professional_profile: "Perfil profissional",
+  video: "Vídeo",
 } satisfies Record<NfcActionType, string>;
 
 export function getNfcActionLabel(actionType: string): string {

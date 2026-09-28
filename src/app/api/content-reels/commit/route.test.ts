@@ -56,6 +56,20 @@ describe("confirmar uso de Reel", () => {
     for (const [event] of autoLink.mock.calls) expect(event).toMatchObject({ reelStudioId: "saved-reel", collaboratorId: "user-1", eventDate: "2026-09-09T12:00:00Z" });
   });
 
+  it("mantém sucesso quando o Reel foi salvo e o cronograma falha", async () => {
+    dbFactory.mockResolvedValue(database());
+    autoLink.mockRejectedValue(new Error("cronograma indisponível"));
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      itemId: "saved-reel",
+      link: null,
+      scheduleWarning: expect.stringContaining("roteiro foi salvo"),
+    });
+  });
+
   it("não assume produção de outra pessoa ao repetir uma chave existente", async () => {
     dbFactory.mockResolvedValue(database("another-user"));
     expect((await POST(request())).status).toBe(403);

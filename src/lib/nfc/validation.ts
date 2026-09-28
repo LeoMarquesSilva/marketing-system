@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { NFC_ACCESS_MODES, NFC_ACTION_TYPES } from "@/lib/nfc/types";
 
+/** Caminho de vídeo NFC no bucket privado: tags/<id>/<arquivo> (sem "..", sem subpastas). */
+export const NFC_VIDEO_PATH_PATTERN = /^tags\/[a-zA-Z0-9-]+\/[a-zA-Z0-9._-]+$/;
+
 const nullableShortText = z.string().trim().max(240).nullable().optional();
 
 const formFieldSchema = z.object({
@@ -72,10 +75,19 @@ export const nfcActionConfigSchema = z
     checkoutMessage: z.string().trim().max(500).optional(),
     returnMessage: z.string().trim().max(500).optional(),
     profileId: z.string().uuid().optional(),
+    videoPath: z
+      .string()
+      .trim()
+      .max(300)
+      .regex(NFC_VIDEO_PATH_PATTERN)
+      .optional(),
+    videoFileName: z.string().trim().max(200).optional(),
+    videoSizeBytes: z.number().int().min(0).optional(),
   })
   .strict();
 
-export const nfcTagInputSchema = z
+/** Formato base da etiqueta, sem regras cruzadas (o Zod 4 não permite .omit() após refinamentos). */
+const nfcTagBaseSchema = z
   .object({
     name: z.string().trim().min(2).max(120),
     code: z.string().trim().max(30).regex(/^NFC-[A-Z0-9-]+$/).optional(),
@@ -91,41 +103,56 @@ export const nfcTagInputSchema = z
     cooldownSeconds: z.number().int().min(0).max(86400),
     notes: z.string().trim().max(2000).nullable().optional(),
     allowedUserIds: z.array(z.string().uuid()).max(200).optional(),
-  })
-  .superRefine((input, ctx) => {
-    if (input.actionType === "url" && !input.actionConfig.destinationUrl) {
-      ctx.addIssue({ code: "custom", path: ["actionConfig", "destinationUrl"], message: "Informe a URL de destino." });
-    }
-    if ((input.actionType === "webhook" || input.actionType === "whatsapp") && !input.actionConfig.workflowKey) {
-      ctx.addIssue({ code: "custom", path: ["actionConfig", "workflowKey"], message: "Informe a chave do workflow." });
-    }
-    if (input.actionType === "form" && !input.actionConfig.fields?.length) {
-      ctx.addIssue({ code: "custom", path: ["actionConfig", "fields"], message: "Adicione ao menos um campo." });
-    }
-    if (input.actionType === "professional_profile" && !input.actionConfig.profileId) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["actionConfig", "profileId"],
-        message: "Selecione um perfil profissional.",
-      });
-    }
-    const requiresDirectory =
-      input.actionType === "asset_loan" ||
-      input.actionConfig.fields?.some((field) => field.type === "user_select");
-    if (
-      requiresDirectory &&
-      (input.accessMode === "public" || input.accessMode === "public_confirmation")
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["accessMode"],
-        message: "A seleção de colaboradores exige acesso autenticado.",
-      });
-    }
-    if (input.accessMode === "selected_users" && !input.allowedUserIds?.length) {
-      ctx.addIssue({ code: "custom", path: ["allowedUserIds"], message: "Selecione ao menos um usuário." });
-    }
   });
+
+type NfcTagBaseInput = z.infer<typeof nfcTagBaseSchema>;
+
+/** Regras que dependem de mais de um campo; valem para criar e para editar. */
+function refineNfcTagInput(
+  input: Omit<NfcTagBaseInput, "code"> & { code?: string },
+  ctx: z.RefinementCtx
+): void {
+  if (input.actionType === "url" && !input.actionConfig.destinationUrl) {
+    ctx.addIssue({ code: "custom", path: ["actionConfig", "destinationUrl"], message: "Informe a URL de destino." });
+  }
+  if ((input.actionType === "webhook" || input.actionType === "whatsapp") && !input.actionConfig.workflowKey) {
+    ctx.addIssue({ code: "custom", path: ["actionConfig", "workflowKey"], message: "Informe a chave do workflow." });
+  }
+  if (input.actionType === "form" && !input.actionConfig.fields?.length) {
+    ctx.addIssue({ code: "custom", path: ["actionConfig", "fields"], message: "Adicione ao menos um campo." });
+  }
+  if (input.actionType === "professional_profile" && !input.actionConfig.profileId) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["actionConfig", "profileId"],
+      message: "Selecione um perfil profissional.",
+    });
+  }
+  if (input.actionType === "video" && !input.actionConfig.videoPath) {
+    ctx.addIssue({ code: "custom", path: ["actionConfig", "videoPath"], message: "Envie o vídeo da etiqueta." });
+  }
+  const requiresDirectory =
+    input.actionType === "asset_loan" ||
+    input.actionConfig.fields?.some((field) => field.type === "user_select");
+  if (
+    requiresDirectory &&
+    (input.accessMode === "public" || input.accessMode === "public_confirmation")
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["accessMode"],
+      message: "A seleção de colaboradores exige acesso autenticado.",
+    });
+  }
+  if (input.accessMode === "selected_users" && !input.allowedUserIds?.length) {
+    ctx.addIssue({ code: "custom", path: ["allowedUserIds"], message: "Selecione ao menos um usuário." });
+  }
+}
+
+export const nfcTagInputSchema = nfcTagBaseSchema.superRefine(refineNfcTagInput);
+
+/** Edição: o código interno é imutável, então não entra no payload. */
+export const nfcTagUpdateSchema = nfcTagBaseSchema.omit({ code: true }).superRefine(refineNfcTagInput);
 
 export const nfcExecutionInputSchema = z.object({
   scanId: z.string().uuid(),

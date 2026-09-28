@@ -194,17 +194,24 @@ export async function PATCH(request: Request) {
       approvalData,
       postOverride
     );
+    let scheduleLink: Awaited<ReturnType<typeof autoLinkContentSchedule>> | null = null;
+    let scheduleWarning: string | null = null;
     if (status === "em_revisao" || status === "aprovado") {
       if (!persistedApproval) throw new Error("Não foi possível confirmar a aprovação.");
-      await autoLinkContentSchedule({
-        collaboratorId: persistedApproval.approved_by_id,
-        area: current.area,
-        format: "post",
-        contentRoteiroId: current.id,
-        eventDate: persistedApproval.approved_at,
-      });
+      try {
+        scheduleLink = await autoLinkContentSchedule({
+          collaboratorId: persistedApproval.approved_by_id,
+          area: current.area,
+          format: "post",
+          contentRoteiroId: current.id,
+          eventDate: persistedApproval.approved_at,
+        });
+      } catch (scheduleError) {
+        console.error("[content-roteiros] aprovação salva; falha no vínculo do cronograma", scheduleError);
+        scheduleWarning = "A aprovação foi salva, mas não foi possível atualizar o cronograma. O Marketing precisa conferir o vínculo.";
+      }
     }
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, scheduleLink, scheduleWarning });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro ao atualizar conteúdo de post.";
     return NextResponse.json({ error: msg }, { status: 500 });

@@ -1,0 +1,528 @@
+{
+  "generatedAt": "2026-09-04T15:14:51.545Z",
+  "note": "Avaliacao exploratoria com tres pautas sinteticas; sem escrita no banco.",
+  "results": [
+    {
+      "model": "gpt-4.1-mini",
+      "case": "opiniao",
+      "elapsedMs": 9576,
+      "usage": {
+        "input_tokens": 2084,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 612,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 2696
+      },
+      "draft": {
+        "linkedinPost": "Alongar prazos da dívida pode dar alívio imediato, mas não corrige o déficit operacional.\n\nRenegociar dívidas é uma ferramenta importante para ganhar fôlego financeiro, mas não deve ser confundida com a reestruturação do negócio.\n\nSe a empresa mantém déficit de caixa operacional, alongar vencimentos apenas posterga o problema sem atacar sua raiz.\n\nA recuperação empresarial sustentável depende de medidas que melhorem a geração de caixa e a eficiência operacional, não apenas de ajustes no passivo.\n\nExecutivos precisam avaliar cuidadosamente se a renegociação da dívida está acompanhada de um plano claro para corrigir o desempenho operacional.\n\nGanhar tempo com a dívida é válido, mas sem corrigir a operação, a empresa permanece vulnerável e a recuperação fica comprometida.\n\n#reestruturação #liquidez #gestãofinanceira",
+        "alternativeHooks": [
+          "Alongar dívida não é sinônimo de recuperação financeira sustentável.",
+          "Desfocar a operação enquanto renegocia dívidas pode custar a saúde da empresa.",
+          "Renegociar dívida sem melhorar caixa operacional é apenas um paliativo temporário."
+        ],
+        "reel": {
+          "duration": "60 segundos",
+          "hook": "Alongar dívida não resolve déficit operacional: entenda o risco dessa decisão.",
+          "talkingPoints": [
+            "Renegociar dívida pode aliviar a pressão imediata de caixa.",
+            "Porém, se a operação continuar deficitária, o problema financeiro persiste.",
+            "A reestruturação exige foco na geração de caixa e eficiência operacional.",
+            "Só alongar a dívida pode postergar a crise, não evitar sua evolução.",
+            "Executivos devem olhar além do passivo e agir na raiz dos déficits."
+          ],
+          "closing": "Alongar prazos ajuda no curto prazo, mas sem corrigir a operação, a empresa segue vulnerável.",
+          "recordingNote": "Fale de forma clara e didática, enfatizando a diferença entre renegociação de dívida e reestruturação operacional."
+        },
+        "editorialBrief": {
+          "centralThesis": "Renegociar dívida não reestrutura sozinho um negócio deficitário.",
+          "icp": "CEOs, CFOs e sócios de empresas com dificuldades de liquidez.",
+          "businessDecision": "Decidir entre alongar dívidas ou implementar medidas para corrigir o déficit operacional.",
+          "supportingFacts": [
+            "Empresa fictícia alongou vencimentos da dívida.",
+            "A empresa mantém déficit de caixa operacional após a renegociação.",
+            "Não há informações sobre valores, datas ou resultados da renegociação."
+          ],
+          "practicalConsequence": "Executivos devem entender que ganhar tempo com a dívida não resolve problemas operacionais e que a recuperação exige ação sobre a geração de caixa.",
+          "limits": [
+            "Não é possível avaliar o sucesso da renegociação sem dados sobre valores e resultados.",
+            "Não se pode afirmar que a empresa está em recuperação apenas pelo alongamento da dívida."
+          ]
+        },
+        "angleAlignment": {
+          "aligned": true,
+          "note": "O ângulo escolhido está alinhado com a opinião fictícia validada do Gustavo, que enfatiza a distinção entre renegociar dívida e reestruturar o negócio."
+        }
+      }
+    },
+    {
+      "model": "gpt-4.1-mini",
+      "case": "factual",
+      "elapsedMs": 11442,
+      "usage": {
+        "input_tokens": 2096,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 809,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 2905
+      },
+      "draft": {
+        "linkedinPost": "A venda de ativos pode aliviar dívidas, mas não comprova a sustentabilidade financeira da empresa.\n\nA decisão de vender um imóvel ocioso por R$ 80 milhões gerou um alívio imediato na dívida total de R$ 240 milhões, reduzindo o montante a ser pago.\n\nApesar da redução, a operação não elimina a necessidade de avaliar a capacidade da empresa em manter o pagamento regular das obrigações financeiras.\n\nSem dados sobre fluxo de caixa, margens ou perfil dos juros e vencimentos, é prematuro concluir que a empresa está financeiramente equilibrada.\n\nManter as linhas de produção operando indica continuidade operacional, mas não garante sustentabilidade financeira a médio e longo prazo.\n\nExecutivos devem distinguir entre liquidez pontual obtida pela venda de ativos e a capacidade de geração de caixa recorrente para evitar decisões que comprometam a continuidade da empresa.\n\nA análise da venda de ativos como ferramenta para reestruturação deve considerar não apenas o alívio imediato da dívida, mas principalmente a capacidade sustentável da empresa de honrar seus compromissos financeiros futuros.\n\n#reestruturação #liquidez #continuidadeempresarial",
+        "alternativeHooks": [
+          "Reduzir dívida vendendo ativos: solução imediata, mas quais os riscos para a continuidade?",
+          "Venda de imóvel ocioso alivia dívida, mas e a capacidade de pagamento recorrente?",
+          "Liquidez pontual via venda de ativos não substitui fluxo de caixa sustentável."
+        ],
+        "reel": {
+          "duration": "60 segundos",
+          "hook": "Venda de ativos pode aliviar dívidas, mas não garante saúde financeira da empresa.",
+          "talkingPoints": [
+            "Empresa vendeu imóvel ocioso por R$ 80 milhões para amortizar parte da dívida de R$ 240 milhões.",
+            "Essa operação gera liquidez imediata, reduzindo o endividamento no curto prazo.",
+            "No entanto, não há informações sobre fluxo de caixa ou capacidade de pagamento recorrente.",
+            "Manter as linhas de produção indica continuidade operacional, mas não assegura equilíbrio financeiro.",
+            "Executivos precisam avaliar se a empresa gera caixa suficiente para pagar dívidas no futuro, além da venda pontual de ativos."
+          ],
+          "closing": "A venda de ativos é uma ferramenta, não uma solução definitiva para a saúde financeira. Avalie sempre a capacidade de pagamento sustentável.",
+          "recordingNote": "Fale de forma clara e pausada, destacando a diferença entre liquidez pontual e capacidade financeira recorrente."
+        },
+        "editorialBrief": {
+          "centralThesis": "A venda de um ativo ocioso gera liquidez imediata para amortização de dívida, mas não demonstra a capacidade da empresa de manter o pagamento recorrente de suas obrigações financeiras.",
+          "icp": "CEOs, CFOs e sócios de empresas que enfrentam dificuldades de liquidez.",
+          "businessDecision": "Decidir sobre a venda de ativos para reduzir dívida versus a necessidade de assegurar fluxo de caixa operacional sustentável para continuidade do negócio.",
+          "supportingFacts": [
+            "A indústria vendeu um imóvel ocioso por R$ 80 milhões, destinado a amortizar parte da dívida total de R$ 240 milhões.",
+            "As linhas de produção da empresa continuam operando normalmente, sem dados disponíveis sobre margem, fluxo de caixa, juros ou vencimentos da dívida.",
+            "A venda não liquida a totalidade da dívida, indicando que parte significativa das obrigações permanece ativa."
+          ],
+          "practicalConsequence": "Executivos devem entender que a redução pontual de dívida via venda de ativos não substitui a avaliação da capacidade da empresa de gerar caixa suficiente para honrar compromissos futuros.",
+          "limits": [
+            "Não é possível afirmar a saúde financeira geral da empresa sem informações sobre fluxo de caixa, margens e perfil da dívida.",
+            "Não se pode concluir que a operação garante a continuidade da empresa apenas com base na venda do imóvel e amortização parcial da dívida."
+          ]
+        },
+        "angleAlignment": {
+          "aligned": true,
+          "note": "O ângulo escolhido destaca corretamente a distinção entre liquidez pontual e capacidade recorrente de pagamento, alinhado com a análise factual disponível."
+        }
+      }
+    },
+    {
+      "model": "gpt-4.1-mini",
+      "case": "fonte-limitada",
+      "elapsedMs": 8844,
+      "usage": {
+        "input_tokens": 2016,
+        "input_tokens_details": {
+          "cache_write_tokens": 0,
+          "cached_tokens": 0
+        },
+        "output_tokens": 632,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 2648
+      },
+      "draft": {
+        "linkedinPost": "O início de negociações com credores não é, por si só, um diagnóstico de crise financeira.\n\nO anúncio de que uma empresa está negociando com seus credores deve ser interpretado com cautela. Sem informações adicionais, não é possível afirmar que a empresa enfrenta insolvência ou uma situação financeira grave.\n\nNegociações podem ser estratégias proativas para ajustar prazos, melhorar fluxo de caixa ou reorganizar dívidas, sem necessariamente indicar falência iminente.\n\nExecutivos e sócios devem buscar dados complementares antes de tirar conclusões sobre a saúde financeira da empresa, evitando decisões baseadas em interpretações precipitadas.\n\nCompreender o contexto completo das negociações é fundamental para decisões empresariais acertadas e para evitar conclusões equivocadas que podem impactar a gestão e a confiança dos stakeholders.\n\n#negociação #liquidez #gestãofinanceira",
+        "alternativeHooks": [
+          "Negociar com credores é um passo comum e nem sempre sinaliza insolvência.",
+          "Sem dados adicionais, não é possível diagnosticar crise apenas pelo início de negociações com credores.",
+          "Apenas anunciar negociações com credores não revela a real situação financeira da empresa."
+        ],
+        "reel": {
+          "duration": "60 segundos",
+          "hook": "Negociar com credores não significa, automaticamente, que a empresa está insolvente.",
+          "talkingPoints": [
+            "Negociações podem ser parte de uma gestão financeira preventiva.",
+            "Sem informações completas, não dá para avaliar a gravidade da situação.",
+            "Executivos devem evitar conclusões precipitadas baseadas só nesse anúncio."
+          ],
+          "closing": "É essencial buscar mais informações para uma avaliação precisa antes de tomar decisões estratégicas.",
+          "recordingNote": "Tom sóbrio e direto, com ritmo pausado para facilitar compreensão, evitando jargões técnicos."
+        },
+        "editorialBrief": {
+          "centralThesis": "O simples anúncio de que uma empresa iniciou negociações com credores não permite concluir sobre sua situação financeira ou insolvência.",
+          "icp": "CEOs, CFOs e sócios de empresas enfrentando dificuldades de liquidez.",
+          "businessDecision": "Avaliar corretamente o significado e as implicações das negociações com credores antes de tomar decisões estratégicas.",
+          "supportingFacts": [
+            "Uma negociação isolada com credores pode ser parte de uma estratégia preventiva de gestão de caixa.",
+            "Não há informações adicionais que indiquem a gravidade da situação financeira da empresa.",
+            "Negociações podem ocorrer em diferentes contextos, não necessariamente sinalizando insolvência iminente."
+          ],
+          "practicalConsequence": "Executivos devem evitar diagnósticos precipitados sobre a saúde financeira da empresa apenas com base no início de negociações com credores, buscando informações complementares para decisões mais assertivas.",
+          "limits": [
+            "Não se pode afirmar que a empresa está insolvente apenas porque iniciou negociações com credores.",
+            "Não é possível avaliar a gravidade da situação financeira sem dados adicionais.",
+            "Não se deve presumir o resultado ou o sucesso dessas negociações sem evidências."
+          ]
+        },
+        "angleAlignment": {
+          "aligned": true,
+          "note": "O ângulo escolhido enfatiza a necessidade de cautela ao interpretar negociações isoladas, alinhado com a análise factual disponível."
+        }
+      }
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "case": "opiniao",
+      "elapsedMs": 20658,
+      "usage": {
+        "input_tokens": 2082,
+        "input_tokens_details": {
+          "cache_write_tokens": 2079,
+          "cached_tokens": 0
+        },
+        "output_tokens": 852,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 2934
+      },
+      "draft": {
+        "linkedinPost": "Alongar a dívida resolve o calendário financeiro. Não resolve, por si só, o negócio.\n\nEm uma empresa com déficit de caixa operacional, a renegociação dos vencimentos pode ser necessária. Ela reduz a pressão imediata e evita que a dívida vença antes que a companhia tenha capacidade de enfrentá-la.\n\nMas esse alívio não deve ser confundido com recuperação. Se a operação continua consumindo caixa, o problema apenas ganha um novo prazo.\n\nA pergunta central não é apenas quanto da dívida foi alongada ou por quanto tempo. É o que a empresa fará, nesse intervalo, para mudar sua geração de caixa operacional.\n\nRenegociar passivos pode comprar tempo. Reestruturar o negócio exige usar esse tempo para corrigir a operação, ajustar decisões e recuperar capacidade de pagamento.\n\nSem essa conexão entre dívida e operação, a empresa pode chegar ao próximo vencimento com um passivo reorganizado e a mesma fragilidade econômica.\n\nEm reestruturação, prazo é um recurso. Ele só preserva valor quando é convertido em mudança operacional.\n\n#reestruturaçãoempresarial #gestãodecaixa",
+        "alternativeHooks": [
+          "A renegociação pode afastar o vencimento. O déficit operacional continua vencendo todos os dias.",
+          "O maior risco de uma dívida alongada é acreditar que o problema ficou para depois.",
+          "Quando a operação não gera caixa, o novo prazo da dívida precisa virar plano de execução."
+        ],
+        "reel": {
+          "duration": "55 a 65 segundos",
+          "hook": "Alongar a dívida não significa que a empresa foi reestruturada.",
+          "talkingPoints": [
+            "A renegociação pode ser indispensável quando há pressão de liquidez: ela reduz a urgência dos vencimentos e cria fôlego financeiro.",
+            "Mas há uma distinção importante: dívida é passivo financeiro; operação é a fonte que precisa gerar caixa para pagar esse passivo.",
+            "Se a empresa continua com déficit de caixa operacional depois do alongamento, ela ganhou tempo, não resolveu a causa da crise.",
+            "Por isso, CEOs e CFOs precisam olhar além das novas condições da dívida: qual medida operacional será executada durante esse prazo para alterar a geração de caixa?",
+            "O risco é chegar ao próximo vencimento com a dívida reorganizada, mas com a mesma incapacidade econômica de cumprir os compromissos."
+          ],
+          "closing": "Prazo comprado só gera recuperação quando se transforma em correção da operação.",
+          "recordingNote": "Fale em tom analítico e faça uma pausa após “ela ganhou tempo, não resolveu a causa da crise”. Evite tratar o cenário fictício como caso real."
+        },
+        "editorialBrief": {
+          "centralThesis": "Renegociar a dívida pode criar tempo, mas não reestrutura sozinho um negócio que permanece deficitário na operação; a geração de caixa operacional deve ser o centro da análise.",
+          "icp": "CEOs, CFOs e sócios de empresas sob pressão de liquidez e com necessidade de renegociar passivos financeiros.",
+          "businessDecision": "Definir se a renegociação da dívida será acompanhada de medidas operacionais capazes de corrigir o déficit de caixa.",
+          "supportingFacts": [
+            "Fato do cenário fictício: a empresa alongou os vencimentos de sua dívida.",
+            "Fato do cenário fictício: a empresa manteve déficit de caixa operacional após o alongamento.",
+            "Interpretação de Gustavo validada para este teste: o alongamento compra tempo, mas a recuperação depende da geração de caixa operacional."
+          ],
+          "practicalConsequence": "A empresa precisa tratar a renegociação como uma etapa de estabilização financeira e usar o prazo adicional para executar correções operacionais mensuráveis.",
+          "limits": [
+            "Não há valores, datas, composição da dívida ou resultado da renegociação informados.",
+            "Não é possível afirmar se a renegociação foi adequada, suficiente ou bem-sucedida.",
+            "Não é possível identificar as causas do déficit operacional nem prescrever medidas específicas para este caso fictício."
+          ]
+        },
+        "angleAlignment": {
+          "aligned": true,
+          "note": "O ângulo está diretamente alinhado à opinião validada: renegociar dívida não equivale a reestruturar um negócio deficitário, e a análise deve começar pela geração de caixa operacional."
+        }
+      }
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "case": "factual",
+      "elapsedMs": 17805,
+      "usage": {
+        "input_tokens": 2094,
+        "input_tokens_details": {
+          "cache_write_tokens": 531,
+          "cached_tokens": 1560
+        },
+        "output_tokens": 1152,
+        "output_tokens_details": {
+          "reasoning_tokens": 48
+        },
+        "total_tokens": 3246
+      },
+      "draft": {
+        "linkedinPost": "Reduzir R$ 80 milhões de uma dívida de R$ 240 milhões é relevante. Mas não basta para concluir que a empresa voltou a ter capacidade de pagamento.\n\nNo cenário, a indústria vendeu um imóvel ocioso, destinou os recursos à amortização da dívida e manteve as linhas de produção em operação. Há uma decisão empresarial compreensível: transformar um ativo sem função operacional em liquidez, sem sacrificar a atividade produtiva.\n\nEssa operação reduz o passivo e pode aliviar a pressão financeira no curto prazo. Também pode melhorar a posição da empresa em conversas com credores, desde que esteja inserida em uma lógica mais ampla de gestão da dívida.\n\nMas a venda é um evento pontual. A dívida remanescente continua existindo — neste caso, R$ 160 milhões antes de considerar juros, encargos e outras variações que não foram informadas.\n\nA pergunta decisiva não é apenas quanto foi amortizado. É se a operação da empresa gera caixa recorrente para pagar juros, cumprir vencimentos e preservar o capital de giro depois que o recurso extraordinário se encerra.\n\nSem dados de margem, fluxo de caixa, custo da dívida e calendário de vencimentos, não há base para afirmar que a venda resolveu o problema financeiro. Ela pode ter comprado tempo. A sustentabilidade desse tempo depende da operação e da estrutura da dívida remanescente.\n\nEm reestruturação, alienar um ativo ocioso pode preservar valor. Confundir liquidez pontual com capacidade recorrente de pagamento, porém, distorce a avaliação da continuidade empresarial.\n\n#reestruturaçãoempresarial #gestãodedívida #liquidez",
+        "alternativeHooks": [
+          "Vender um ativo ocioso pode proteger a operação. Não significa, automaticamente, resolver a dívida.",
+          "Uma amortização extraordinária melhora o caixa hoje. A continuidade depende do caixa que entra amanhã.",
+          "O imóvel foi vendido sem interromper a produção. A análise financeira começa justamente depois dessa venda."
+        ],
+        "reel": {
+          "duration": "55 a 65 segundos",
+          "hook": "Vender um ativo para pagar dívida pode ser uma boa decisão. Mas não prova, por si só, que a empresa recuperou sua capacidade de pagamento.",
+          "talkingPoints": [
+            "No cenário, uma indústria vende um imóvel ocioso por R$ 80 milhões e usa o valor para amortizar parte de uma dívida de R$ 240 milhões.",
+            "O ponto positivo é claro: ela transforma um ativo que não sustenta a produção em liquidez e mantém as linhas operando.",
+            "Isso reduz a dívida e pode aliviar a pressão financeira no curto prazo.",
+            "Mas a venda acontece uma vez. Depois dela, permanece uma dívida relevante — R$ 160 milhões, sem considerar informações que não foram fornecidas sobre juros e encargos.",
+            "A avaliação de continuidade depende de outra pergunta: a operação gera caixa recorrente para pagar juros, vencimentos e capital de giro?",
+            "Sem dados de margem, fluxo de caixa e cronograma da dívida, não é possível dizer que o problema foi resolvido. É possível dizer apenas que a empresa ganhou uma fonte pontual de liquidez."
+          ],
+          "closing": "Venda de ativo pode ser parte da solução. A capacidade de pagamento, porém, é medida pela geração recorrente de caixa.",
+          "recordingNote": "Falar em tom analítico e calmo. Fazer uma breve pausa após “a venda acontece uma vez” e enfatizar o contraste entre liquidez pontual e caixa recorrente."
+        },
+        "editorialBrief": {
+          "centralThesis": "A venda de um ativo ocioso pode gerar liquidez imediata e reduzir a dívida, mas, sem informações sobre geração de caixa, custo financeiro e vencimentos, não demonstra por si só capacidade recorrente de pagamento.",
+          "icp": "CEOs, CFOs e sócios de empresas com pressão de liquidez e necessidade de administrar dívida sem interromper a operação.",
+          "businessDecision": "Definir se a venda de um ativo não operacional é apenas uma medida pontual de caixa ou parte de um plano capaz de sustentar o serviço da dívida ao longo do tempo.",
+          "supportingFacts": [
+            "Fato do cenário: a indústria vendeu um imóvel ocioso por R$ 80 milhões e destinou o valor à amortização de parte de uma dívida de R$ 240 milhões.",
+            "Fato do cenário: as linhas de produção permanecem operando após a alienação do imóvel.",
+            "Limite factual: não há dados sobre margem, fluxo de caixa, juros ou vencimentos da dívida; por isso, não é possível concluir se a operação melhorou de forma duradoura a capacidade de pagamento."
+          ],
+          "practicalConsequence": "A redução nominal da dívida é relevante, mas a avaliação de continuidade exige verificar se a operação gera caixa suficiente para cumprir as obrigações remanescentes nos seus respectivos vencimentos.",
+          "limits": [
+            "Não é possível afirmar que a empresa se tornou solvente ou financeiramente saudável.",
+            "Não é possível afirmar que a venda resolveu o problema de liquidez.",
+            "Não é possível estimar a capacidade de pagamento da dívida remanescente sem dados de caixa, juros, margem e cronograma de vencimentos."
+          ]
+        },
+        "angleAlignment": {
+          "aligned": true,
+          "note": "O ângulo está alinhado ao modo factual: a venda do ativo pode ser apresentada como fonte de liquidez pontual, sem afirmar que ela comprova capacidade recorrente de pagamento."
+        }
+      }
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "case": "fonte-limitada",
+      "elapsedMs": 16406,
+      "usage": {
+        "input_tokens": 2014,
+        "input_tokens_details": {
+          "cache_write_tokens": 451,
+          "cached_tokens": 1560
+        },
+        "output_tokens": 911,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        },
+        "total_tokens": 2925
+      },
+      "draft": {
+        "linkedinPost": "Negociar com credores não é, por si só, uma prova de insolvência.\n\nUma empresa pode abrir essa conversa por razões muito diferentes: concentrar vencimentos, ajustar o custo da dívida, rever garantias, preservar caixa ou antecipar uma pressão que ainda é administrável.\n\nA negociação pode ser um sinal de disciplina financeira. Também pode revelar uma deterioração mais profunda. A informação isolada não permite distinguir uma situação da outra.\n\nPara avaliar a gravidade, a pergunta relevante não é apenas se há credores à mesa. É preciso entender o calendário de vencimentos, a disponibilidade de caixa, a capacidade de geração operacional, as garantias envolvidas e o grau de dependência de cada fonte de financiamento.\n\nSem esses elementos, transformar uma negociação em diagnóstico de insolvência é um erro de análise. E, para quem administra a empresa, esse erro pode levar a decisões precipitadas ou a uma comunicação inadequada com mercado, fornecedores e investidores.\n\nA leitura mais útil é objetiva: a negociação merece atenção porque envolve passivos e liquidez; mas sua abertura, sozinha, não define a condição financeira da companhia.\n\nEm reestruturação, o fato relevante não é apenas negociar a dívida, mas saber se a empresa ainda tem tempo, caixa e alternativas para negociar bem.\n\n#reestruturaçãoempresarial #liquidez #dívida",
+        "alternativeHooks": [
+          "Uma conversa com credores pode ser prevenção. Pode ser crise. Sem dados, não é possível chamar de insolvência.",
+          "O mercado costuma reagir ao anúncio de uma negociação. A gestão precisa reagir aos números que explicam essa negociação.",
+          "A pergunta não é se a empresa falou com credores. É o que seus vencimentos e seu caixa dizem sobre essa conversa."
+        ],
+        "reel": {
+          "duration": "45 a 60 segundos",
+          "hook": "Empresa começou a negociar com credores. Isso significa insolvência? Não necessariamente.",
+          "talkingPoints": [
+            "A negociação, isoladamente, não permite medir a gravidade financeira de uma empresa.",
+            "Ela pode ocorrer para alongar prazos, ajustar condições da dívida, rever garantias ou preservar caixa de forma preventiva.",
+            "Também pode ocorrer em um contexto de maior estresse. Mas essa conclusão exige dados que não estão no anúncio.",
+            "Para analisar o caso, observe quatro pontos: vencimentos próximos, caixa disponível, geração operacional e condições exigidas pelos credores.",
+            "Sem esse quadro, o anúncio é um sinal para investigar — não um diagnóstico de insolvência."
+          ],
+          "closing": "Negociar cedo pode ampliar alternativas. O que define a situação é a qualidade da liquidez e da estrutura de dívida, não apenas a existência da negociação.",
+          "recordingNote": "Falar em tom analítico e calmo. Faça uma breve pausa após “não necessariamente” e enumere os quatro pontos de avaliação de forma objetiva."
+        },
+        "editorialBrief": {
+          "centralThesis": "A informação isolada de que uma empresa iniciou negociações com credores não permite concluir insolvência nem medir a gravidade de sua situação financeira.",
+          "icp": "CEOs, CFOs e sócios de empresas sob pressão de liquidez ou com obrigações financeiras relevantes.",
+          "businessDecision": "Definir se a negociação com credores deve ser tratada como medida preventiva de gestão de passivos ou como resposta a uma crise de solvência.",
+          "supportingFacts": [
+            "Fato da fonte: a única informação disponível é que a empresa iniciou negociações com credores.",
+            "Interpretação analítica: empresas podem negociar prazos, garantias, encargos ou condições de pagamento antes de um evento de inadimplência.",
+            "Interpretação analítica: sem informações sobre caixa, vencimentos, dívida, operações e adesão dos credores, não há base para diagnosticar insolvência.],"
+          ],
+          "practicalConsequence": "A abertura de uma negociação deve acionar análise de liquidez e de estrutura de dívida, não conclusões automáticas sobre a continuidade da empresa.",
+          "limits": [
+            "Não há dados sobre valor, perfil ou vencimento da dívida.",
+            "Não há informação sobre inadimplência, geração de caixa, ativos, garantias ou desempenho operacional.",
+            "Não é possível afirmar que a empresa está insolvente, que enfrentará recuperação judicial ou que obterá acordo com credores."
+          ]
+        },
+        "angleAlignment": {
+          "aligned": true,
+          "note": "O ângulo selecionado é compatível com o modo factual: a tese se limita a apontar a insuficiência de evidências para diagnosticar insolvência."
+        }
+      }
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "case": "opiniao",
+      "elapsedMs": 14529,
+      "usage": {
+        "input_tokens": 2082,
+        "input_tokens_details": {
+          "cache_write_tokens": 2079,
+          "cached_tokens": 0
+        },
+        "output_tokens": 1030,
+        "output_tokens_details": {
+          "reasoning_tokens": 88
+        },
+        "total_tokens": 3112
+      },
+      "draft": {
+        "linkedinPost": "Alongar a dívida pode resolver o próximo vencimento. Não resolve, sozinho, o déficit que virá depois dele.\n\nEm uma situação de pressão de caixa, renegociar prazos pode ser necessário. A medida reduz a pressão imediata e compra tempo para a empresa reorganizar suas decisões.\n\nMas há uma distinção importante: renegociar a dívida não é o mesmo que reestruturar o negócio. Se a operação continua consumindo caixa, o passivo pode voltar a se tornar insustentável, ainda que com outro calendário de pagamentos.\n\nPor isso, eu olharia primeiro para a geração de caixa operacional. É preciso entender por que a empresa permanece deficitária e quais medidas podem alterar essa dinâmica.\n\nO prazo adicional só cria valor quando é usado para enfrentar a origem do desequilíbrio. Isso pode envolver revisão de custos, margens, portfólio, capital de giro, ativos e governança — conforme o diagnóstico de cada empresa.\n\nDívida e operação precisam ser tratadas de forma coordenada. Sem correção operacional, o alongamento tende a deslocar o problema no tempo, não necessariamente a resolvê-lo.\n\nTempo comprado não deve ser confundido com recuperação. A utilidade da renegociação depende do que a empresa faz com a janela obtida.\n\n#reestruturaçãoempresarial #liquidez #gestãodecaixa",
+        "alternativeHooks": [
+          "Uma renegociação pode melhorar o calendário da dívida enquanto a empresa continua economicamente pressionada.",
+          "O vencimento foi adiado, mas a operação ainda consome caixa. É nesse ponto que começa a discussão sobre reestruturação.",
+          "Há uma diferença decisiva entre ganhar prazo com credores e recuperar a capacidade de gerar caixa."
+        ],
+        "reel": {
+          "duration": "50 a 65 segundos",
+          "hook": "Alongar a dívida pode aliviar o próximo vencimento. Mas isso não significa que o negócio foi reestruturado.",
+          "talkingPoints": [
+            "Apresentar o cenário hipotético: a empresa renegocia os vencimentos, mas mantém déficit de caixa operacional.",
+            "Explicar que o alongamento pode ser necessário para reduzir a pressão imediata e criar uma janela de ação.",
+            "Destacar a diferença central: renegociar o passivo altera o calendário financeiro; reestruturar exige enfrentar a causa do consumo de caixa.",
+            "Indicar a prioridade de análise: geração de caixa operacional e fatores como custos, margens, capital de giro, portfólio e ativos, conforme o diagnóstico.",
+            "Reforçar que dívida e operação devem ser tratadas de maneira coordenada para evitar apenas o adiamento do problema."
+          ],
+          "closing": "Renegociar compra tempo. Reestruturar é usar esse tempo para recuperar a capacidade de geração de caixa.",
+          "recordingNote": "Gravar em tom executivo e didático, com uma pausa após a distinção entre renegociação da dívida e reestruturação do negócio. Não citar empresas, números ou resultados, pois o cenário é inteiramente fictício."
+        },
+        "editorialBrief": {
+          "centralThesis": "Renegociar a dívida pode aliviar os vencimentos, mas não reestrutura, por si só, um negócio que continua com déficit operacional; a prioridade deve ser recuperar a geração de caixa da operação.",
+          "icp": "CEOs, CFOs e sócios de empresas com dificuldades de liquidez.",
+          "businessDecision": "Definir se o tempo obtido com a renegociação será acompanhado de medidas para corrigir a operação e recuperar a geração de caixa.",
+          "supportingFacts": [
+            "Premissa do cenário fictício: a empresa alongou os vencimentos da dívida.",
+            "Premissa do cenário fictício: mesmo após o alongamento, a operação continuou com déficit de caixa.",
+            "Interpretação de Gustavo: o novo prazo pode aliviar a pressão financeira, mas a reestruturação depende de enfrentar a causa do consumo recorrente de caixa."
+          ],
+          "practicalConsequence": "O alongamento da dívida deve ser tratado como uma janela para ajustar a operação, e não como evidência de que a empresa já foi reestruturada.",
+          "limits": [
+            "Não há fonte pública ou caso real a ser atribuído a uma empresa.",
+            "Não há valores, datas ou informações sobre as condições e o resultado da renegociação.",
+            "Não é possível afirmar se o alongamento foi suficiente, sustentável ou aceito pelos credores.",
+            "Não é possível apontar as causas específicas do déficit operacional."
+          ]
+        },
+        "angleAlignment": {
+          "aligned": true,
+          "note": "O ângulo selecionado coincide diretamente com a resposta fornecida por Gustavo: dívida renegociada e operação reestruturada são questões relacionadas, mas distintas."
+        }
+      }
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "case": "factual",
+      "elapsedMs": 16170,
+      "usage": {
+        "input_tokens": 2094,
+        "input_tokens_details": {
+          "cache_write_tokens": 531,
+          "cached_tokens": 1560
+        },
+        "output_tokens": 1197,
+        "output_tokens_details": {
+          "reasoning_tokens": 70
+        },
+        "total_tokens": 3291
+      },
+      "draft": {
+        "linkedinPost": "Reduzir uma dívida de R$ 240 milhões em R$ 80 milhões muda o balanço. Não responde, por si só, se a empresa conseguirá pagar os R$ 160 milhões restantes.\n\nNo cenário fictício, a indústria vende um imóvel ocioso e destina integralmente os recursos à amortização da dívida. Como as linhas de produção continuam operando, a medida preserva os ativos diretamente ligados à atividade produtiva.\n\nA transação produz dois efeitos objetivos: converte um ativo sem uso em liquidez e reduz o endividamento. Isso pode aliviar pressões financeiras imediatas e abrir espaço para uma negociação mais organizada com credores.\n\nMas liquidez pontual não é o mesmo que capacidade recorrente de pagamento. Depois da venda, permanece uma dívida de R$ 160 milhões, cuja sustentabilidade dependerá da geração operacional de caixa e das condições financeiras contratadas.\n\nSem informações sobre margens, fluxo de caixa, juros e vencimentos, não é possível concluir que a estrutura financeira foi estabilizada. A amortização pode ser relevante, mas sua suficiência depende do tamanho e do calendário das obrigações remanescentes.\n\nEm uma avaliação de continuidade, a pergunta central não termina no valor obtido com a venda. É preciso verificar se o negócio que permaneceu consegue gerar caixa em volume e prazo compatíveis com a dívida restante.\n\nA venda de um ativo ocioso pode criar fôlego e preservar a operação. A recuperação da capacidade de pagamento, porém, exige que esse fôlego seja acompanhado por geração recorrente de caixa e por uma dívida adequadamente estruturada.\n\n#reestruturaçãoempresarial #liquidez",
+        "alternativeHooks": [
+          "Uma venda de ativos pode aliviar o caixa sem resolver o desequilíbrio que produziu a pressão financeira.",
+          "O ativo ocioso pode financiar uma amortização relevante. A continuidade da empresa, porém, será definida pelo caixa gerado depois da venda.",
+          "Preservar as linhas de produção é importante, mas a dívida remanescente ainda precisa caber na geração de caixa da operação."
+        ],
+        "reel": {
+          "duration": "55 a 65 segundos",
+          "hook": "Vender um ativo ocioso e reduzir a dívida pode gerar fôlego. Mas isso não prova que a empresa recuperou sua capacidade de pagamento.",
+          "talkingPoints": [
+            "Cenário fictício: uma indústria vende um imóvel sem uso por R$ 80 milhões e utiliza os recursos para amortizar uma dívida de R$ 240 milhões.",
+            "A medida preserva as linhas de produção e transforma um ativo ocioso em liquidez imediata.",
+            "Depois da operação, porém, ainda restam R$ 160 milhões em dívida.",
+            "Para avaliar a continuidade, não basta observar a redução nominal do endividamento.",
+            "É necessário conhecer a geração operacional de caixa, as margens, os juros e o calendário de vencimentos.",
+            "A venda pode aliviar a pressão e ajudar na negociação com credores, mas sua suficiência depende de a operação conseguir sustentar as obrigações restantes."
+          ],
+          "closing": "Liquidez pontual compra tempo. A continuidade depende do que a empresa consegue gerar de caixa durante esse tempo.",
+          "recordingNote": "Falar em tom analítico e pausado. Destacar verbalmente o contraste entre “R$ 80 milhões de liquidez imediata” e “R$ 160 milhões de dívida remanescente”. Evitar apresentar a venda como solução definitiva."
+        },
+        "editorialBrief": {
+          "centralThesis": "Em um cenário de reestruturação, vender um ativo ocioso pode gerar liquidez imediata e reduzir o endividamento, mas, isoladamente, não demonstra que a empresa recuperou sua capacidade recorrente de pagar a dívida remanescente.",
+          "icp": "CEOs, CFOs e sócios de empresas com pressão de liquidez ou necessidade de reorganizar o endividamento.",
+          "businessDecision": "Decidir se a venda de um ativo não operacional é suficiente para estabilizar a estrutura financeira ou se deve integrar um plano mais amplo de reestruturação da dívida e do fluxo de caixa.",
+          "supportingFacts": [
+            "Premissa do cenário fictício: um imóvel ocioso é vendido por R$ 80 milhões, com os recursos destinados à amortização de uma dívida de R$ 240 milhões.",
+            "Premissa do cenário fictício: as linhas de produção permanecem em operação após a venda do imóvel.",
+            "Leitura factual: a operação reduz parte da dívida, mas não há informações sobre margem, geração de caixa, juros ou vencimentos que permitam avaliar a capacidade de pagamento do saldo remanescente."
+          ],
+          "practicalConsequence": "A venda pode proporcionar fôlego financeiro, mas a continuidade depende de verificar se a operação gera caixa suficiente e se o perfil da dívida restante é compatível com essa geração.",
+          "limits": [
+            "O cenário é fictício e não possui fontes externas indicadas.",
+            "Não é possível concluir que a empresa se tornou solvente ou financeiramente sustentável.",
+            "Não é possível avaliar a suficiência dos R$ 80 milhões sem dados sobre juros, vencimentos, garantias, margens e fluxo de caixa.",
+            "Não se pode afirmar que a venda resolve a crise ou elimina a necessidade de outras medidas de reestruturação."
+          ]
+        },
+        "angleAlignment": {
+          "aligned": true,
+          "note": "O ângulo selecionado é compatível com o modo factual: distingue corretamente a obtenção de liquidez pontual da capacidade recorrente de pagamento, sem atribuir uma opinião pessoal a Gustavo."
+        }
+      }
+    },
+    {
+      "model": "gpt-5.6-sol",
+      "case": "fonte-limitada",
+      "elapsedMs": 20493,
+      "usage": {
+        "input_tokens": 2014,
+        "input_tokens_details": {
+          "cache_write_tokens": 451,
+          "cached_tokens": 1560
+        },
+        "output_tokens": 996,
+        "output_tokens_details": {
+          "reasoning_tokens": 57
+        },
+        "total_tokens": 3010
+      },
+      "draft": {
+        "linkedinPost": "Uma empresa começou a negociar com credores. Esse fato, sozinho, não revela se existe uma crise de solvência.\n\nNegociações podem ocorrer por diferentes razões: reorganização de vencimentos, prevenção de pressão sobre o caixa, adequação de garantias ou tratamento de uma dificuldade financeira mais ampla. Sem informações adicionais, escolher uma dessas hipóteses seria especulação.\n\nO diagnóstico exige dados. Entre eles, disponibilidade e projeção de caixa, perfil dos vencimentos, capacidade de geração operacional, composição dos ativos, garantias concedidas e condições discutidas com os credores.\n\nTambém é necessário distinguir liquidez de solvência. Uma empresa pode enfrentar descasamentos temporários entre recebimentos e pagamentos sem que isso, por si só, signifique incapacidade estrutural de cumprir suas obrigações.\n\nPara CEOs, CFOs e sócios, a negociação deve ser entendida como um sinal que demanda apuração — não como uma conclusão pronta. O ponto decisivo é identificar por que ela começou e se as medidas consideradas preservam caixa, operação e valor.\n\nEm reestruturação empresarial, a qualidade da decisão depende de separar sinais de diagnósticos. Negociar com credores é um fato; a gravidade da situação somente pode ser avaliada com evidências financeiras e operacionais.\n\n#reestruturaçãoempresarial #liquidez",
+        "alternativeHooks": [
+          "A abertura de uma negociação com credores pode indicar prudência financeira ou pressão de caixa. Sem dados, não é possível distinguir uma situação da outra.",
+          "Negociar vencimentos não é sinônimo de insolvência. O diagnóstico começa onde o anúncio termina: nos números e nas condições da dívida.",
+          "O sinal é relevante, mas insuficiente: uma conversa com credores não informa, por si só, a capacidade de continuidade da empresa."
+        ],
+        "reel": {
+          "duration": "50 a 65 segundos",
+          "hook": "Uma empresa iniciou negociações com credores. Isso significa que ela está insolvente? Não necessariamente.",
+          "talkingPoints": [
+            "A negociação é um sinal relevante, mas não constitui um diagnóstico financeiro.",
+            "Ela pode ter diferentes objetivos: ajustar vencimentos, preservar liquidez, rever garantias ou enfrentar uma dificuldade mais ampla.",
+            "Sem dados sobre caixa, geração operacional, vencimentos e condições da dívida, não é possível medir a gravidade da situação.",
+            "Também é importante separar uma pressão temporária de liquidez de uma incapacidade estrutural de pagar as obrigações.",
+            "Para os executivos, a pergunta útil não é apenas se existe negociação, mas por que ela começou e qual problema financeiro precisa resolver."
+          ],
+          "closing": "Negociar com credores é um fato. Concluir insolvência exige evidências que esse fato isolado não fornece.",
+          "recordingNote": "Tom sóbrio e analítico. Fazer uma breve pausa após a pergunta inicial e enfatizar a diferença entre sinal e diagnóstico. Evitar citar casos, números ou causas não disponíveis."
+        },
+        "editorialBrief": {
+          "centralThesis": "O início de negociações com credores, isoladamente, não permite concluir que uma empresa esteja insolvente nem dimensionar a gravidade de sua situação financeira.",
+          "icp": "CEOs, CFOs e sócios de empresas com dificuldades de liquidez ou exposição relevante a dívidas.",
+          "businessDecision": "Definir se a negociação exige apenas ajustes pontuais nas obrigações ou se deve integrar um diagnóstico mais amplo de liquidez, endividamento e continuidade empresarial.",
+          "supportingFacts": [
+            "Fato da fonte: não há matéria, documentos, números ou datas disponíveis para análise.",
+            "Fato da fonte: a única informação apresentada é que uma empresa iniciou negociações com credores.",
+            "Interpretação factual: sem dados sobre caixa, vencimentos, ativos, geração operacional e condições propostas, não é possível caracterizar insolvência nem medir a gravidade financeira."
+          ],
+          "practicalConsequence": "Executivos não devem tratar a existência de uma negociação como diagnóstico. A avaliação depende dos indicadores financeiros, da estrutura da dívida, das razões da abordagem aos credores e do impacto das medidas consideradas sobre a continuidade da empresa.",
+          "limits": [
+            "Não é possível afirmar que a empresa esteja insolvente ou em recuperação.",
+            "Não é possível concluir que houve inadimplemento, falta de caixa ou deterioração operacional.",
+            "Não é possível avaliar a probabilidade de acordo, a suficiência das medidas ou o impacto sobre credores e operação."
+          ]
+        },
+        "angleAlignment": {
+          "aligned": true,
+          "note": "O ângulo é compatível com o modo factual: limita-se a apontar que uma negociação isolada não constitui evidência suficiente para diagnosticar insolvência."
+        }
+      }
+    }
+  ]
+}

@@ -50,6 +50,7 @@ function renderDetails(
   options: {
     canAssign?: boolean;
     saving?: boolean;
+    canManageVios?: boolean;
     assignmentFeedback?: { type: "error" | "success"; message: string } | null;
   } = {}
 ) {
@@ -62,6 +63,7 @@ function renderDetails(
       canAssign={options.canAssign ?? false}
       saving={options.saving ?? false}
       onAssign={() => undefined}
+      canManageVios={options.canManageVios}
       assignmentFeedback={options.assignmentFeedback ?? null}
     />
   );
@@ -72,25 +74,24 @@ describe("ContentScheduleSlotDetails", () => {
     expect(renderDetails(slot())).toContain("Tema ainda não escolhido");
   });
 
-  it("expõe o estado vazio do VIOS quando há conteúdo sem tarefa vinculada", () => {
+  it("expõe a pendência VIOS quando há conteúdo sem tarefa vinculada", () => {
     const html = renderDetails(slot({
       status: "linked",
       content: { id: "content-1", title: "Planejamento tributário" },
     }));
 
     expect(html).toContain("Planejamento tributário");
-    expect(html).toContain("Não vinculado ao VIOS");
+    expect(html).toContain("Vínculo VIOS pendente");
   });
 
-  it("explica que Reel não possui tarefa VIOS própria", () => {
+  it("permite que Reel também receba vínculo VIOS direto", () => {
     const html = renderDetails(slot({
       format: "reel",
       status: "linked",
       content: { id: "reel-1", title: "Cobrança extrajudicial em vídeo" },
     }));
 
-    expect(html).toContain("Sem tarefa VIOS associada ao Reel");
-    expect(html).not.toContain("Não vinculado ao VIOS");
+    expect(html).toContain("Vínculo VIOS pendente");
   });
 
   it("mostra CI, título e situação da tarefa VIOS vinculada", () => {
@@ -102,12 +103,36 @@ describe("ContentScheduleSlotDetails", () => {
         ci: "12345",
         title: "Revisar enquadramento",
         status: "Em andamento",
+        dueDate: "2026-09-18",
+        area: "Tributário",
+        assigneeId: "person-1",
+        assigneeName: "Marina Oliveira",
       },
     }));
 
     expect(html).toContain("CI 12345");
     expect(html).toContain("Revisar enquadramento");
     expect(html).toContain("Em andamento");
+  });
+
+  it("mostra pendência e candidatos PROTOCOLO ao Marketing mesmo sem conteúdo", () => {
+    const html = renderDetails(slot({
+      viosCandidates: [{
+        id: "vios-candidate",
+        ci: "99881",
+        status: "pendente",
+        title: "MATERIAL MARKETING",
+        dueDate: "2026-09-18",
+        area: "Tributário",
+        assigneeId: "person-1",
+        assigneeName: "Marina Oliveira",
+      }],
+    }), { canManageVios: true });
+
+    expect(html).toContain("Vínculo VIOS pendente");
+    expect(html).toContain('aria-label="Selecionar tarefa VIOS"');
+    expect(html).toContain("CI 99881");
+    expect(html).toContain("Marina Oliveira");
   });
 
   it("oferece seletor shadcn habilitado com avatar e nome por opção da área", () => {

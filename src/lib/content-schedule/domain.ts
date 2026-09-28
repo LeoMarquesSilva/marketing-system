@@ -1,4 +1,9 @@
 import { resolveFeriasAccess, type FeriasAccessMode } from "@/lib/ferias/access";
+import {
+  departmentMatchesAreaFilter,
+  resolveCanonicalAreaLabel,
+  resolveAreaFilterLabel,
+} from "@/lib/ferias/filters";
 
 export type ContentFormat = "post" | "reel";
 
@@ -32,6 +37,38 @@ export type SlotMatchResult =
   | { status: "not_found" };
 
 const DAY_MS = 86_400_000;
+
+export interface SchedulableViosTask {
+  id: string;
+  date: string | null;
+  area: string | null;
+  assigneeId: string | null;
+  label: string | null;
+  cancelled: boolean;
+  linkedSlotId?: string | null;
+  ci?: string;
+}
+
+export interface ViosScheduleSlot {
+  id: string;
+  date: string;
+  area: string;
+  collaboratorId: string | null;
+  cancelled: boolean;
+  viosTaskId: string | null;
+}
+
+export interface ViosScheduleMatch {
+  taskId: string;
+  slotId: string;
+  strategy: "identity" | "group";
+}
+
+export interface ViosScheduleReconciliation {
+  matches: ViosScheduleMatch[];
+  ambiguousTaskIds: string[];
+  unmatchedTaskIds: string[];
+}
 
 function civilDay(date: string): number | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
@@ -72,6 +109,156 @@ export function normalizeScheduleArea(value: string | null | undefined): string 
     return "special situations";
   }
   return key;
+}
+
+/** Rótulo oficial para exibição e agrupamento na interface. */
+export function resolveContentScheduleAreaLabel(
+  value: string | null | undefined
+): string | null {
+  return resolveCanonicalAreaLabel(value);
+}
+
+/** Rótulo oficial disponível no filtro; `null` representa uma área oculta. */
+export function resolveContentScheduleAreaFilterLabel(
+  value: string | null | undefined
+): string | null {
+  return resolveAreaFilterLabel(value);
+}
+
+/** Correspondência oficial entre departamento de colaborador e filtro de área. */
+export function collaboratorMatchesScheduleArea(
+  department: string | null | undefined,
+  area: string
+): boolean {
+  return departmentMatchesAreaFilter(department, area);
+}
+
+export function isProtocolViosTask(label: string | null | undefined): boolean {
+  return (label ?? "").trim().toLocaleUpperCase("pt-BR") === "PROTOCOLO";
+}
+
+export function viosAreaMatchesScheduleArea(
+  viosArea: string | null | undefined,
+  scheduleArea: string
+): boolean {
+  return departmentMatchesAreaFilter(viosArea, scheduleArea);
+}
+
+function isEligibleViosTask(task: SchedulableViosTask): boolean {
+  return Boolean(
+    !task.cancelled &&
+    isProtocolViosTask(task.label) &&
+    task.date &&
+    civilDay(task.date) !== null &&
+    task.area?.trim()
+  );
+}
+
+function baseViosSlotCandidates(
+  task: SchedulableViosTask,
+  slots: readonly ViosScheduleSlot[]
+): ViosScheduleSlot[] {
+  if (!isEligibleViosTask(task) || !task.date) return [];
+  return slots.filter((slot) =>
+    !slot.cancelled &&
+    slot.viosTaskId === null &&
+    slot.date === task.date &&
+    viosAreaMatchesScheduleArea(task.area, slot.area) &&
+    !(task.assigneeId && slot.collaboratorId && task.assigneeId !== slot.collaboratorId)
+  );
+}
+
+/**
+ * Planeja vínculos anuais sem efeitos colaterais. Primeiro resolve pares
+ * inequívocos por identidade e depois grupos 1:1 de data + área.
+ */
+export function reconcileAutomaticViosLinks(
+  tasks: readonly SchedulableViosTask[],
+  slots: readonly ViosScheduleSlot[]
+): ViosScheduleReconciliation {
+  const eligibleTasks = tasks.filter((task) => isEligibleViosTask(task) && !task.linkedSlotId);
+  const availableSlots = slots.filter((slot) => !slot.cancelled && slot.viosTaskId === null);
+  const matches: ViosScheduleMatch[] = [];
+  const matchedTasks = new Set<string>();
+  const matchedSlots = new Set<string>();
+
+  const matchUnique = (strategy: "identity" | "group") => {
+    const remainingTasks = eligibleTasks.filter((task) => !matchedTasks.has(task.id));
+    const remainingSlots = availableSlots.filter((slot) => !matchedSlots.has(slot.id));
+    const candidatesByTask = new Map<string, ViosScheduleSlot[]>();
+    for (const task of remainingTasks) {
+      let candidates = baseViosSlotCandidates(task, remainingSlots);
+      if (strategy === "identity") {
+        if (!task.assigneeId) continue;
+        candidates = candidates.filter((slot) => slot.collaboratorId === task.assigneeId);
+      }
+      candidatesByTask.set(task.id, candidates);
+    }
+
+    const taskIdsBySlot = new Map<string, string[]>();
+    for (const [taskId, candidates] of candidatesByTask) {
+      for (const candidate of candidates) {
+        taskIdsBySlot.set(candidate.id, [...(taskIdsBySlot.get(candidate.id) ?? []), taskId]);
+      }
+    }
+    for (const task of remainingTasks) {
+      const candidates = candidatesByTask.get(task.id) ?? [];
+      if (candidates.length !== 1) continue;
+      const [candidate] = candidates;
+      if ((taskIdsBySlot.get(candidate.id) ?? []).length !== 1) continue;
+      matchedTasks.add(task.id);
+      matchedSlots.add(candidate.id);
+      matches.push({ taskId: task.id, slotId: candidate.id, strategy });
+    }
+  };
+
+  matchUnique("identity");
+  matchUnique("group");
+
+  const unmatched = eligibleTasks.filter((task) => !matchedTasks.has(task.id));
+  const finalSlots = availableSlots.filter((slot) => !matchedSlots.has(slot.id));
+  const ambiguousTaskIds: string[] = [];
+  const unmatchedTaskIds: string[] = [];
+  for (const task of unmatched) {
+    const candidates = baseViosSlotCandidates(task, finalSlots);
+    if (candidates.length > 1 || candidates.some((slot) =>
+      unmatched.some((other) =>
+        other.id !== task.id && baseViosSlotCandidates(other, finalSlots).some((item) => item.id === slot.id)
+      )
+    )) ambiguousTaskIds.push(task.id);
+    else unmatchedTaskIds.push(task.id);
+  }
+  return { matches, ambiguousTaskIds, unmatchedTaskIds };
+}
+
+/** Candidatos para decisão humana: mesma área e até 14 dias. */
+export function findViosCandidatesForSlot(
+  slot: ViosScheduleSlot,
+  tasks: readonly SchedulableViosTask[]
+): SchedulableViosTask[] {
+  const slotDay = civilDay(slot.date);
+  if (slotDay === null || slot.cancelled) return [];
+  return tasks
+    .filter((task) => {
+      const taskDay = task.date ? civilDay(task.date) : null;
+      return isEligibleViosTask(task) &&
+        taskDay !== null &&
+        Math.abs(taskDay - slotDay) <= 14 &&
+        viosAreaMatchesScheduleArea(task.area, slot.area) &&
+        (!task.linkedSlotId || task.linkedSlotId === slot.id);
+    })
+    .sort((left, right) => {
+      const leftDay = civilDay(left.date!)!;
+      const rightDay = civilDay(right.date!)!;
+      const leftExact = leftDay === slotDay ? 0 : 1;
+      const rightExact = rightDay === slotDay ? 0 : 1;
+      const leftPerson = left.assigneeId && left.assigneeId === slot.collaboratorId ? 0 : 1;
+      const rightPerson = right.assigneeId && right.assigneeId === slot.collaboratorId ? 0 : 1;
+      return leftExact - rightExact ||
+        leftPerson - rightPerson ||
+        Math.abs(leftDay - slotDay) - Math.abs(rightDay - slotDay) ||
+        (left.ci ?? left.id).localeCompare(right.ci ?? right.id);
+    });
 }
 
 /**
@@ -273,15 +460,21 @@ export function resolveContentScheduleAccess(input: ContentScheduleAccessInput):
 
 export function canAssignContentScheduleArea(access: ContentScheduleAccess, area: string): boolean {
   if (access.manageAll || access.manageableAreas === null) return true;
-  return access.manageableAreas.some(
-    (allowed) => normalizeScheduleArea(area) === normalizeScheduleArea(allowed)
-  );
+  return access.manageableAreas.some((allowed) => departmentMatchesAreaFilter(area, allowed));
+}
+
+export function canManageContentScheduleAssignments(access: ContentScheduleAccess): boolean {
+  return access.manageAll ||
+    access.manageableAreas === null ||
+    access.manageableAreas.length > 0;
 }
 
 export function canReadContentScheduleSlot(
   access: ContentScheduleAccess,
   slot: Pick<ContentScheduleSlot, "area" | "collaboratorId">
 ): boolean {
-  return canAssignContentScheduleArea(access, slot.area) ||
-    (access.canReadOwn && access.ownCollaboratorId === slot.collaboratorId);
+  if (canManageContentScheduleAssignments(access)) {
+    return canAssignContentScheduleArea(access, slot.area);
+  }
+  return access.canReadOwn && access.ownCollaboratorId === slot.collaboratorId;
 }

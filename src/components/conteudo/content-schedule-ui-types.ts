@@ -19,6 +19,17 @@ export type SchedulePublication = {
   reach?: number | null;
 };
 
+export type ScheduleViosTask = {
+  id: string;
+  ci: string;
+  status: string | null;
+  title: string | null;
+  dueDate: string | null;
+  area: string | null;
+  assigneeId: string | null;
+  assigneeName: string | null;
+};
+
 export type ScheduleSlotView = {
   id: string;
   area: string;
@@ -33,5 +44,7 @@ export type ScheduleSlotView = {
   sourceStatus?: string | null;
   imported?: boolean;
   unmatchedAssigneeName?: string | null;
-  viosTask?: { id: string; ci: string; status: string | null; title: string | null } | null;
+  viosTask?: ScheduleViosTask | null;
+  viosCandidates?: ScheduleViosTask[];
+  viosLinkOrigin?: "automatic" | "manual" | null;
 };

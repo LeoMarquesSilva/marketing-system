@@ -1,0 +1,803 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sistema de Marketing — Escopo funcional para orçamento</title>
+  <style>
+    @page { size: A4; margin: 18mm 17mm 18mm 17mm; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: #1c1c1c;
+      background: #ffffff;
+      font-family: Aptos, "Segoe UI", Arial, sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.48;
+    }
+    .cover {
+      min-height: 250mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      page-break-after: always;
+      padding: 16mm 8mm 9mm;
+      border-top: 9px solid #47cdd0;
+      background: #ffffff;
+    }
+    .wordmark {
+      margin-bottom: 25mm;
+      color: #04202f;
+      font-size: 24pt;
+      font-weight: 800;
+      letter-spacing: 3px;
+    }
+    .wordmark span { color: #47cdd0; }
+    .eyebrow {
+      color: #266f72;
+      font-size: 9pt;
+      font-weight: 700;
+      letter-spacing: 1.4px;
+      text-transform: uppercase;
+    }
+    .cover h1 {
+      margin: 6mm 0 4mm;
+      max-width: 150mm;
+      color: #04202f;
+      font-size: 31pt;
+      line-height: 1.08;
+      letter-spacing: -0.8px;
+    }
+    .cover .subtitle {
+      max-width: 142mm;
+      color: #475569;
+      font-size: 14pt;
+      line-height: 1.4;
+    }
+    .cover-meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8mm;
+      padding-top: 7mm;
+      border-top: 1px solid #cbd5e1;
+      color: #475569;
+      font-size: 9.5pt;
+    }
+    .cover-meta strong { display: block; color: #04202f; margin-bottom: 1mm; }
+    main { max-width: 176mm; margin: 0 auto; }
+    h1, h2, h3, h4 { color: #04202f; page-break-after: avoid; }
+    h2 {
+      margin: 0 0 5mm;
+      padding-bottom: 2.5mm;
+      border-bottom: 2px solid #47cdd0;
+      font-size: 20pt;
+      line-height: 1.2;
+    }
+    h3 { margin: 7mm 0 3mm; font-size: 14pt; line-height: 1.25; }
+    h4 { margin: 5mm 0 2mm; font-size: 11.5pt; }
+    p { margin: 0 0 3mm; }
+    ul, ol { margin: 1.5mm 0 4mm 6mm; padding-left: 5mm; }
+    li { margin-bottom: 1.3mm; }
+    .section { page-break-before: always; }
+    .lead {
+      color: #334155;
+      font-size: 12pt;
+      line-height: 1.55;
+      margin-bottom: 5mm;
+    }
+    .callout {
+      margin: 5mm 0;
+      padding: 4mm 5mm;
+      border-left: 4px solid #47cdd0;
+      background: #f2fbfb;
+      color: #163944;
+    }
+    .warning {
+      border-left-color: #d99b2b;
+      background: #fff9eb;
+      color: #5d4211;
+    }
+    .scope-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4mm;
+      margin: 5mm 0;
+    }
+    .scope-card {
+      padding: 4mm;
+      border: 1px solid #cbd5e1;
+      border-radius: 2mm;
+      page-break-inside: avoid;
+    }
+    .scope-card strong {
+      display: block;
+      margin-bottom: 1.5mm;
+      color: #04202f;
+      font-size: 11pt;
+    }
+    .scope-card p { margin: 0; color: #475569; font-size: 9.5pt; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 4mm 0 6mm;
+      font-size: 9pt;
+      page-break-inside: auto;
+    }
+    tr { page-break-inside: avoid; }
+    th {
+      padding: 2.4mm;
+      border: 1px solid #9aa9b7;
+      color: #ffffff;
+      background: #04202f;
+      text-align: left;
+      vertical-align: top;
+    }
+    td {
+      padding: 2.3mm;
+      border: 1px solid #cbd5e1;
+      vertical-align: top;
+    }
+    tbody tr:nth-child(even) td { background: #f8fafc; }
+    .priority {
+      display: inline-block;
+      min-width: 21mm;
+      padding: 0.8mm 1.8mm;
+      border-radius: 9mm;
+      text-align: center;
+      font-size: 8pt;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      text-transform: uppercase;
+    }
+    .essential { color: #0d4b4e; background: #d8f6f5; }
+    .desirable { color: #59430e; background: #fff0bf; }
+    .excluded { color: #5c6674; background: #e9eef3; }
+    .module-head {
+      margin: 7mm 0 4mm;
+      padding: 4mm 5mm;
+      border: 1px solid #b7dfe0;
+      background: #f2fbfb;
+      page-break-inside: avoid;
+    }
+    .module-head h3 { margin: 0 0 1.5mm; }
+    .module-head p { margin: 0; color: #3f5562; }
+    .req-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .req-list li {
+      display: grid;
+      grid-template-columns: 22mm 1fr;
+      gap: 3mm;
+      margin: 0;
+      padding: 2.3mm 0;
+      border-bottom: 1px solid #e2e8f0;
+      page-break-inside: avoid;
+    }
+    .req-id {
+      color: #266f72;
+      font-family: Consolas, monospace;
+      font-size: 8.5pt;
+      font-weight: 700;
+    }
+    .req-text strong { color: #1f3440; }
+    .small { color: #64748b; font-size: 8.5pt; }
+    .number {
+      color: #266f72;
+      font-size: 22pt;
+      font-weight: 750;
+      line-height: 1;
+    }
+    .metric-label { color: #64748b; font-size: 8.5pt; }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 3mm;
+      margin: 5mm 0;
+    }
+    .metric {
+      padding: 3.5mm;
+      border-top: 3px solid #47cdd0;
+      background: #f8fafc;
+      page-break-inside: avoid;
+    }
+    .footer-note {
+      margin-top: 8mm;
+      padding-top: 3mm;
+      border-top: 1px solid #cbd5e1;
+      color: #64748b;
+      font-size: 8.5pt;
+    }
+    .checklist li { margin-bottom: 2.2mm; }
+    .checkbox {
+      display: inline-block;
+      width: 4mm;
+      height: 4mm;
+      margin-right: 2mm;
+      border: 1px solid #64748b;
+      vertical-align: -0.6mm;
+    }
+    .signature {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12mm;
+      margin-top: 14mm;
+    }
+    .signature div { padding-top: 8mm; border-top: 1px solid #64748b; color: #475569; }
+    @media print {
+      a { color: inherit; text-decoration: none; }
+      .section { page-break-before: always; }
+    }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <div>
+      <div class="wordmark">SISTEMA DE <span>MARKETING</span></div>
+      <div class="eyebrow">Documento de apoio para reunião</div>
+      <h1>Escopo inicial para conversa e orçamento</h1>
+      <p class="subtitle">
+        Requisitos prioritários para uma plataforma integrada de Marketing, Pessoas,
+        Eventos e ativos corporativos.
+      </p>
+    </div>
+    <div class="cover-meta">
+      <div>
+        <strong>Finalidade</strong>
+        Apresentação das necessidades e levantamento de orçamento
+      </div>
+      <div>
+        <strong>Data-base</strong>
+        17 de setembro de 2026
+      </div>
+      <div>
+        <strong>Versão</strong>
+        1.0 — escopo inicial para reunião
+      </div>
+      <div>
+        <strong>Classificação</strong>
+        Confidencial — uso na reunião de orçamento
+      </div>
+    </div>
+  </section>
+
+  <main>
+    <section>
+      <h2>1. Objetivo do documento</h2>
+      <p class="lead">
+        Organizamos neste documento os principais pontos que gostaríamos de contemplar em um
+        Sistema de Marketing. A intenção desta conversa é apresentar nossas necessidades, conhecer
+        a visão da empresa sobre a melhor forma de atendê-las e entender uma estimativa de
+        investimento, prazo, manutenção e evolução.
+      </p>
+      <div class="callout">
+        <strong>Sobre a conversa.</strong> Os itens abaixo representam uma visão inicial e não
+        pretendem definir a solução técnica. Gostaríamos que a empresa avaliasse os pontos,
+        apresentasse suas recomendações e indicasse o que faria sentido priorizar em cada etapa.
+      </div>
+
+      <h3>1.1 Resultado esperado</h3>
+      <ul>
+        <li>Centralizar solicitações, calendários, mensagens, métricas, informações de colaboradores e demais rotinas relacionadas.</li>
+        <li>Garantir histórico, rastreabilidade e permissões adequadas para cada perfil de usuário.</li>
+        <li>Permitir evolução modular e facilidade de manutenção ao longo do tempo.</li>
+        <li>Compreender o investimento inicial, os custos mensais, o prazo, a equipe envolvida e o suporte oferecido.</li>
+      </ul>
+
+      <h3>1.2 Regra de priorização</h3>
+      <div class="scope-grid">
+        <div class="scope-card">
+          <strong><span class="priority essential">Essencial</span></strong>
+          <p>Deve fazer parte do orçamento-base para que a solução atenda às necessidades prioritárias.</p>
+        </div>
+        <div class="scope-card">
+          <strong><span class="priority desirable">Desejável</span></strong>
+          <p>Deve ser estimado separadamente como opção ou fase futura, sem bloquear a implantação do núcleo.</p>
+        </div>
+      </div>
+
+      <h3>1.3 Escopo prioritário</h3>
+      <ol>
+        <li>Tráfego pago, CRM de leads via WhatsApp e Instagram Insights.</li>
+        <li>Planner do Marketing e cronograma editorial de posts.</li>
+        <li>RH, férias, qualificações e dados de colaboradores.</li>
+        <li>E-mail marketing.</li>
+        <li>Eventos.</li>
+        <li>Fotos corporativas dos colaboradores.</li>
+      </ol>
+    </section>
+
+    <section class="section">
+      <h2>2. Requisitos transversais da plataforma</h2>
+      <p>
+        Os itens abaixo se aplicam a todos os módulos e devem estar incluídos no orçamento-base,
+        independentemente da tecnologia ou arquitetura recomendada pela empresa.
+      </p>
+      <ul class="req-list">
+        <li><span class="req-id">CORE-01</span><span class="req-text"><strong>Aplicação web responsiva.</strong> Uso adequado em desktop e celular, sem depender de aplicativo nativo na primeira fase.</span></li>
+        <li><span class="req-id">CORE-02</span><span class="req-text"><strong>Autenticação e ciclo de usuário.</strong> Login seguro, recuperação de acesso, ativação/inativação e troca obrigatória de senha quando aplicável.</span></li>
+        <li><span class="req-id">CORE-03</span><span class="req-text"><strong>Permissões granulares.</strong> Perfis de administrador, Marketing, RH, gestor e colaborador, com acesso por módulo, ação e escopo de área.</span></li>
+        <li><span class="req-id">CORE-04</span><span class="req-text"><strong>Auditoria.</strong> Registro de criação, alteração, exclusão, responsável, data e valores relevantes antes/depois.</span></li>
+        <li><span class="req-id">CORE-05</span><span class="req-text"><strong>Notificações.</strong> Alertas internos e, quando previsto, por e-mail, com leitura, pendência e direcionamento para o item relacionado.</span></li>
+        <li><span class="req-id">CORE-06</span><span class="req-text"><strong>Busca, filtros e exportações.</strong> Filtros persistentes, paginação e exportação em CSV/XLSX/PDF nas telas gerenciais relevantes.</span></li>
+        <li><span class="req-id">CORE-07</span><span class="req-text"><strong>Arquivos.</strong> Upload seguro, validação de tipo e tamanho, armazenamento, visualização, download e exclusão controlada.</span></li>
+        <li><span class="req-id">CORE-08</span><span class="req-text"><strong>Proteção de dados.</strong> Criptografia em trânsito, segregação de acesso, backups, restauração testada, política de retenção e atendimento à LGPD.</span></li>
+        <li><span class="req-id">CORE-09</span><span class="req-text"><strong>Observabilidade.</strong> Logs de aplicação e integrações, monitoramento de falhas, alertas e forma objetiva de diagnosticar sincronizações.</span></li>
+        <li><span class="req-id">CORE-10</span><span class="req-text"><strong>Propriedade e portabilidade.</strong> Entrega do código-fonte, documentação, credenciais sob titularidade da contratante e exportação integral dos dados.</span></li>
+        <li><span class="req-id">CORE-11</span><span class="req-text"><strong>Qualidade.</strong> Ambiente de homologação, testes automatizados dos fluxos críticos, revisão de segurança e critérios de aceite reproduzíveis.</span></li>
+        <li><span class="req-id">CORE-12</span><span class="req-text"><strong>Disponibilidade.</strong> Informar SLA proposto, janela de manutenção, RPO, RTO, limites de uso e plano de contingência.</span></li>
+      </ul>
+
+      <h3>2.1 Regras organizacionais que deverão ser consideradas</h3>
+      <ul>
+        <li>Usuários podem ter acesso diferente por módulo, e gestores podem enxergar apenas as áreas sob sua responsabilidade.</li>
+        <li>Áreas devem usar uma classificação única em toda a solução, evitando divergência entre relatórios, filtros e cadastros.</li>
+        <li>Marketing, Comercial, Financeiro, Facilities, Administrativo, Recepção, Limpeza e RH são consolidados em <strong>Operações Legais</strong> nos agrupamentos gerenciais.</li>
+        <li>Insolvência é consolidada em <strong>Reestruturação</strong>; “Distressed Deals” não aparece como filtro isolado.</li>
+        <li>Dados de RH e qualificações exigem proteção adicional e não podem ser liberados apenas porque o usuário acessa módulos de Marketing.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>3. Tráfego pago, WhatsApp e Instagram Insights</h2>
+
+      <div class="module-head">
+        <h3>3.1 Objetivo</h3>
+        <p>
+          Reunir investimento e performance de mídia paga, acompanhar publicações e audiência
+          orgânica do Instagram e permitir que leads originados nos anúncios sejam atendidos e
+          qualificados sem perda de contexto.
+        </p>
+      </div>
+
+      <h3>3.2 Escopo essencial — Meta Ads</h3>
+      <ul class="req-list">
+        <li><span class="req-id">MKT-ADS-01</span><span class="req-text"><strong>Integração oficial com Meta.</strong> Conectar conta de anúncios e consultar campanhas, conjuntos e anúncios, respeitando autenticação, renovação de tokens e limites da API.</span></li>
+        <li><span class="req-id">MKT-ADS-02</span><span class="req-text"><strong>Indicadores.</strong> Investimento, impressões, alcance, frequência, cliques, cliques em link, CTR, CPC, CPM, conversas iniciadas, respostas e custo por conversa.</span></li>
+        <li><span class="req-id">MKT-ADS-03</span><span class="req-text"><strong>Hierarquia e filtros.</strong> Navegação conta → campanha → conjunto → anúncio, com período, status, ordenação e identificação de ativos/pausados.</span></li>
+        <li><span class="req-id">MKT-ADS-04</span><span class="req-text"><strong>Criativos.</strong> Pré-visualização segura de imagem ou vídeo e link para o anúncio/origem quando disponível.</span></li>
+        <li><span class="req-id">MKT-ADS-05</span><span class="req-text"><strong>Atualização.</strong> Sincronização manual e automática, indicação da última coleta, latência esperada e mensagens claras em caso de erro ou token expirado.</span></li>
+      </ul>
+
+      <h3>3.3 Escopo essencial — CRM de leads no WhatsApp</h3>
+      <ul class="req-list">
+        <li><span class="req-id">MKT-WA-01</span><span class="req-text"><strong>Integração Evolution API.</strong> Receber webhooks, manter estado da conexão e reconciliar conversas para evitar perda ou duplicidade.</span></li>
+        <li><span class="req-id">MKT-WA-02</span><span class="req-text"><strong>Inbox em tempo real.</strong> Lista de conversas, contador de não lidas, leitura, busca e atualização sem recarregar toda a página.</span></li>
+        <li><span class="req-id">MKT-WA-03</span><span class="req-text"><strong>Atendimento.</strong> Envio e recebimento de texto, imagem, documento e áudio, transcrição de áudio, resposta contextual, reações e confirmação de status quando a API oferecer suporte.</span></li>
+        <li><span class="req-id">MKT-WA-04</span><span class="req-text"><strong>Fila operacional.</strong> Visualização em lista ou Kanban com estados mínimos: Não respondido, Em atendimento, Aguardando cliente e Resolvido.</span></li>
+        <li><span class="req-id">MKT-WA-05</span><span class="req-text"><strong>Funil comercial.</strong> Pipeline independente da fila de atendimento, com etapas mínimas: Lead recebido, Qualificação, Reunião, Proposta e Fechado.</span></li>
+        <li><span class="req-id">MKT-WA-06</span><span class="req-text"><strong>Qualificação.</strong> Responsável, etiquetas, origem, cidade/estado, dados estruturados do lead, observações e movimentação com histórico.</span></li>
+        <li><span class="req-id">MKT-WA-07</span><span class="req-text"><strong>Atribuição ao anúncio.</strong> Exibir campanha, conjunto, anúncio, texto, aplicativo de origem e URL quando o contato tiver vindo da Meta.</span></li>
+        <li><span class="req-id">MKT-WA-08</span><span class="req-text"><strong>Filtros.</strong> Separar mídia paga, site, colaboradores, grupos e demais origens, além de não lidas, status, responsável e tags.</span></li>
+      </ul>
+
+      <h3>3.4 Escopo essencial — Instagram Insights</h3>
+      <ul class="req-list">
+        <li><span class="req-id">MKT-IG-01</span><span class="req-text"><strong>Sincronização da conta.</strong> Posts, Reels, carrosséis, stories, dados de conta e audiência por meio da API oficial da Meta.</span></li>
+        <li><span class="req-id">MKT-IG-02</span><span class="req-text"><strong>Histórico persistente.</strong> Armazenar snapshots e stories para análise posterior, mesmo quando a API deixar de disponibilizar o conteúdo temporário.</span></li>
+        <li><span class="req-id">MKT-IG-03</span><span class="req-text"><strong>Visão geral.</strong> Seguidores, alcance, visualizações, engajamento, volume de posts, comparação com período anterior e acompanhamento de metas mensais/anuais.</span></li>
+        <li><span class="req-id">MKT-IG-04</span><span class="req-text"><strong>Conta e audiência.</strong> Evolução diária e demografia por idade, gênero, país e cidade conforme disponibilidade da API.</span></li>
+        <li><span class="req-id">MKT-IG-05</span><span class="req-text"><strong>Análise editorial.</strong> Performance por formato, rankings, melhores horários, mapa dia/horário, temas de legenda e sugestões baseadas no histórico.</span></li>
+        <li><span class="req-id">MKT-IG-06</span><span class="req-text"><strong>Análise por área.</strong> Associar postagem à área, solicitante e tags; consolidar indicadores por área e identificar pendências de classificação.</span></li>
+        <li><span class="req-id">MKT-IG-07</span><span class="req-text"><strong>Postagens.</strong> Filtros por período, área, formato, tags, responsável e status de vínculo; ordenação por alcance, engajamento, visitas, cliques, seguidores e tempo de exibição.</span></li>
+        <li><span class="req-id">MKT-IG-08</span><span class="req-text"><strong>Relatórios.</strong> Exportar recortes selecionados com indicadores e identificação do período/filtros utilizados.</span></li>
+      </ul>
+
+      <h3>3.5 Desejáveis para orçamento separado</h3>
+      <ul>
+        <li><span class="priority desirable">Desejável</span> Persistência diária das métricas de Meta Ads para auditoria, tendências e reconstrução histórica, além da consulta de dados em tempo real.</li>
+        <li><span class="priority desirable">Desejável</span> Funil unificado do investimento até lead, reunião, proposta e fechamento, com cálculo de CPL e custo por oportunidade.</li>
+        <li><span class="priority desirable">Desejável</span> Alertas automáticos de anomalia, queda de desempenho, orçamento acelerado, token próximo do vencimento e campanha sem conversão.</li>
+        <li><span class="priority desirable">Desejável</span> Assistente de respostas e recomendações por IA, sempre explicável e revisável, sem envio ou alteração automática de campanhas.</li>
+        <li><span class="priority desirable">Desejável</span> Metas por campanha/área e painel executivo de retorno sobre investimento.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>4. Planner do Marketing e cronograma editorial</h2>
+
+      <div class="module-head">
+        <h3>4.1 Objetivo</h3>
+        <p>
+          Centralizar entrada, priorização, execução, aprovação e histórico das demandas de Marketing,
+          conectando o trabalho diário ao calendário de posts e à publicação efetiva nas redes.
+        </p>
+      </div>
+
+      <h3>4.2 Escopo essencial — solicitações e Kanban</h3>
+      <ul class="req-list">
+        <li><span class="req-id">PLN-01</span><span class="req-text"><strong>Cadastro de demanda.</strong> Solicitante, área, tipo, título, briefing, prioridade, data do pedido, prazo, responsável, links e anexos.</span></li>
+        <li><span class="req-id">PLN-02</span><span class="req-text"><strong>Kanban configurável.</strong> Colunas, ordem, visibilidade, SLA e regras de movimentação administráveis sem alteração de código.</span></li>
+        <li><span class="req-id">PLN-03</span><span class="req-text"><strong>Responsabilidade.</strong> Distribuição para membros da equipe, avatares, visualização por responsável e limites de acesso conforme perfil/área.</span></li>
+        <li><span class="req-id">PLN-04</span><span class="req-text"><strong>Colaboração.</strong> Comentários, pedidos de alteração, menções/notificações, anexos e contagem de pendências no cartão.</span></li>
+        <li><span class="req-id">PLN-05</span><span class="req-text"><strong>Checklist.</strong> Itens obrigatórios ou livres, progresso visível e possibilidade de modelos por tipo de solicitação.</span></li>
+        <li><span class="req-id">PLN-06</span><span class="req-text"><strong>Apontamento de tempo.</strong> Iniciar/parar ou lançar tempo manualmente, com totais por solicitação, responsável e período.</span></li>
+        <li><span class="req-id">PLN-07</span><span class="req-text"><strong>Conclusão.</strong> Tipos de conclusão, data entregue, histórico de concluídos e reabertura controlada.</span></li>
+        <li><span class="req-id">PLN-08</span><span class="req-text"><strong>Rastreabilidade.</strong> Log de movimentações e alterações, data da mudança de etapa e autor da ação.</span></li>
+        <li><span class="req-id">PLN-09</span><span class="req-text"><strong>Tempo real.</strong> Atualização dos cartões e metadados entre usuários, com alternativa manual quando o canal em tempo real estiver indisponível.</span></li>
+        <li><span class="req-id">PLN-10</span><span class="req-text"><strong>Integrações internas.</strong> Receber tarefas criadas a partir de Eventos e permitir associação com conteúdo e publicações.</span></li>
+      </ul>
+
+      <h3>4.3 Escopo essencial — cronograma de posts</h3>
+      <ul class="req-list">
+        <li><span class="req-id">CAL-01</span><span class="req-text"><strong>Calendário editorial.</strong> Visão mensal no desktop, agenda no celular e visão em lista para ajustes.</span></li>
+        <li><span class="req-id">CAL-02</span><span class="req-text"><strong>Slots planejados.</strong> Data, área, formato, situação, responsável e origem/importação. Formatos iniciais: Post e Reel.</span></li>
+        <li><span class="req-id">CAL-03</span><span class="req-text"><strong>Distribuição.</strong> Marketing e gestores autorizados atribuem colaboradores ativos e compatíveis com a área.</span></li>
+        <li><span class="req-id">CAL-04</span><span class="req-text"><strong>Detalhe integrado.</strong> Exibir tema/conteúdo, tarefa operacional associada, publicação do Instagram, link e métricas disponíveis.</span></li>
+        <li><span class="req-id">CAL-05</span><span class="req-text"><strong>Vínculo seguro.</strong> Associar conteúdo aprovado ao slot correto por pessoa, área, formato e proximidade de data; ambiguidades viram pendência para revisão humana.</span></li>
+        <li><span class="req-id">CAL-06</span><span class="req-text"><strong>Proteção do histórico.</strong> Impedir troca indevida de responsável após vínculo do conteúdo; preservar atribuições e publicações passadas.</span></li>
+        <li><span class="req-id">CAL-07</span><span class="req-text"><strong>Comprovação de publicação.</strong> Considerar publicado apenas quando houver vínculo real com a postagem do Instagram, sem inferir por status manual.</span></li>
+        <li><span class="req-id">CAL-08</span><span class="req-text"><strong>Alertas.</strong> Notificar atribuição, pendência de vínculo e repetição provável de tema, sem bloquear automaticamente a decisão editorial.</span></li>
+        <li><span class="req-id">CAL-09</span><span class="req-text"><strong>Importação idempotente.</strong> Importar cronogramas legados sem duplicar registros e sem sobrescrever ajustes já feitos no sistema.</span></li>
+      </ul>
+
+      <h3>4.4 Desejáveis para orçamento separado</h3>
+      <ul>
+        <li><span class="priority desirable">Desejável</span> Aprovação formal em múltiplas etapas, com prazo e substituto do aprovador.</li>
+        <li><span class="priority desirable">Desejável</span> Capacidade da equipe, distribuição de carga e previsão de gargalos.</li>
+        <li><span class="priority desirable">Desejável</span> Modelos de briefing por tipo de peça e geração automática de tarefas/checklists.</li>
+        <li><span class="priority desirable">Desejável</span> Publicação direta em redes sociais, condicionada à viabilidade e às permissões das APIs.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>5. RH e colaboradores</h2>
+
+      <div class="module-head">
+        <h3>5.1 Objetivo</h3>
+        <p>
+          Disponibilizar ao RH uma visão confiável de colaboradores, férias, recessos e qualificações,
+          com autoatendimento controlado e acesso gerencial apenas ao que cada perfil pode consultar.
+        </p>
+      </div>
+
+      <h3>5.2 Escopo essencial — cadastro e férias</h3>
+      <ul class="req-list">
+        <li><span class="req-id">RH-01</span><span class="req-text"><strong>Ficha do colaborador.</strong> Vínculo com usuário, nome, e-mail, área, cargo, admissão, desligamento, situação, liderança e fotografia.</span></li>
+        <li><span class="req-id">RH-02</span><span class="req-text"><strong>Períodos aquisitivos.</strong> Início, fim, prazo concessivo, dias de direito e redução por faltas quando aplicável.</span></li>
+        <li><span class="req-id">RH-03</span><span class="req-text"><strong>Lançamentos.</strong> Férias, recesso, abono e compensações, com datas, quantidade de dias e validações de saldo/sobreposição.</span></li>
+        <li><span class="req-id">RH-04</span><span class="req-text"><strong>Cálculo e situação.</strong> Dias adquiridos, gozados, programados, pendentes, sem alocação, saldo positivo/negativo e vencimento.</span></li>
+        <li><span class="req-id">RH-05</span><span class="req-text"><strong>Painel de alertas.</strong> Dias pendentes, férias vencidas, vencimento em até 90 dias, pessoas em férias e programação futura.</span></li>
+        <li><span class="req-id">RH-06</span><span class="req-text"><strong>Filtros.</strong> Nome, cargo, área canônica, ativos/inativos, status do prazo, sinal do saldo e situação atual/programada.</span></li>
+        <li><span class="req-id">RH-07</span><span class="req-text"><strong>Recesso coletivo.</strong> Calendário, elegibilidade por vínculo, aplicação em lote, reaplicação após mudança e identificação de fichas desatualizadas.</span></li>
+        <li><span class="req-id">RH-08</span><span class="req-text"><strong>Escopo gerencial.</strong> RH administra; gestores autorizados consultam apenas as áreas definidas; demais usuários não acessam dados sensíveis.</span></li>
+        <li><span class="req-id">RH-09</span><span class="req-text"><strong>Integração de cadastro.</strong> Sincronizar ou importar colaboradores de sistema corporativo, apontar não encontrados e permitir conciliação sem duplicidade.</span></li>
+      </ul>
+
+      <h3>5.3 Escopo essencial — qualificações</h3>
+      <ul class="req-list">
+        <li><span class="req-id">RH-Q-01</span><span class="req-text"><strong>Autoatendimento.</strong> Formulário protegido para o colaborador preencher ou atualizar seus dados de qualificação.</span></li>
+        <li><span class="req-id">RH-Q-02</span><span class="req-text"><strong>Dados jurídicos e pessoais.</strong> Campos como CPF, RG, OAB, cidade e UF, com máscaras e validações adequadas.</span></li>
+        <li><span class="req-id">RH-Q-03</span><span class="req-text"><strong>Obrigatoriedade direcionada.</strong> RH seleciona pessoas ou áreas, ativa a pendência e acompanha completo/pendente.</span></li>
+        <li><span class="req-id">RH-Q-04</span><span class="req-text"><strong>Auditoria e exportação.</strong> Histórico das ativações, consulta detalhada e exportação filtrada.</span></li>
+      </ul>
+
+      <h3>5.4 Desejáveis para orçamento separado</h3>
+      <ul>
+        <li><span class="priority desirable">Desejável</span> Fluxo de solicitação e aprovação de férias pelo próprio colaborador e gestor.</li>
+        <li><span class="priority desirable">Desejável</span> Calendário compartilhado e integração com Microsoft 365/Google Calendar.</li>
+        <li><span class="priority desirable">Desejável</span> Documentos, admissões e onboarding com checklist por cargo.</li>
+        <li><span class="priority desirable">Desejável</span> Assinatura eletrônica e integrações com folha/ponto, cotadas por conector.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>6. E-mail marketing</h2>
+
+      <div class="module-head">
+        <h3>6.1 Objetivo</h3>
+        <p>
+          Manter base própria de contatos e empresas, criar segmentações, montar campanhas,
+          agendar envios e acompanhar entregabilidade e engajamento sem perder o histórico legado.
+        </p>
+      </div>
+
+      <h3>6.2 Escopo essencial</h3>
+      <ul class="req-list">
+        <li><span class="req-id">EM-01</span><span class="req-text"><strong>Base de contatos.</strong> Nome, e-mail, telefone, empresa, cargo, cidade, estado, origem, campos customizados, status de inscrição e consentimento quando aplicável.</span></li>
+        <li><span class="req-id">EM-02</span><span class="req-text"><strong>Empresas e grupos.</strong> Organizar pessoas por empresa/grupo de clientes, área jurídica e responsável, preservando relacionamentos de origem.</span></li>
+        <li><span class="req-id">EM-03</span><span class="req-text"><strong>Importação e enriquecimento.</strong> CSV/XLSX, atualização sem duplicidade e conectores para sistemas de origem; apresentar prévia e resumo do processamento.</span></li>
+        <li><span class="req-id">EM-04</span><span class="req-text"><strong>Listas e segmentos.</strong> Critérios por campos de contato, empresa, área, responsável, localização e status, com contagem antes de salvar/enviar.</span></li>
+        <li><span class="req-id">EM-05</span><span class="req-text"><strong>Campanhas.</strong> Rascunho, assunto, preheader, remetente, reply-to, público, modelo, conteúdo, teste, agendamento, envio e cancelamento de agendamento.</span></li>
+        <li><span class="req-id">EM-06</span><span class="req-text"><strong>Editor.</strong> Modelos responsivos, HTML livre e construtor visual para newsletter, com imagens, artigos, botões, links e pré-visualização.</span></li>
+        <li><span class="req-id">EM-07</span><span class="req-text"><strong>Personalização.</strong> Merge tags como primeiro nome, empresa, cargo, grupo e localização, com prévia e valor de fallback.</span></li>
+        <li><span class="req-id">EM-08</span><span class="req-text"><strong>Envio confiável.</strong> Processamento em lotes, idempotência, retomada após falha, limite do provedor e prevenção de envio duplicado.</span></li>
+        <li><span class="req-id">EM-09</span><span class="req-text"><strong>Entregabilidade.</strong> Domínio próprio, SPF, DKIM, DMARC, status do provedor, webhook assinado e tratamento de bounce/complaint.</span></li>
+        <li><span class="req-id">EM-10</span><span class="req-text"><strong>Descadastro.</strong> Link individual e descadastro em um clique, lista de supressão e bloqueio de futuros envios ao contato.</span></li>
+        <li><span class="req-id">EM-11</span><span class="req-text"><strong>Métricas.</strong> Destinatários, enviados, entregues, aberturas, cliques, bounces, reclamações, falhas e detalhamento por destinatário.</span></li>
+        <li><span class="req-id">EM-12</span><span class="req-text"><strong>Histórico legado.</strong> Importar e consultar campanhas/e-mails anteriores do RD Station em modo somente leitura, quando disponível.</span></li>
+      </ul>
+
+      <h3>6.3 Desejáveis para orçamento separado</h3>
+      <ul>
+        <li><span class="priority desirable">Desejável</span> Automação por gatilhos e jornadas com espera, condição e ramificação.</li>
+        <li><span class="priority desirable">Desejável</span> Teste A/B de assunto, remetente e conteúdo.</li>
+        <li><span class="priority desirable">Desejável</span> Centro de preferências por tema e frequência.</li>
+        <li><span class="priority desirable">Desejável</span> Pontuação de engajamento e recomendação de melhor horário de envio.</li>
+      </ul>
+
+      <div class="warning callout">
+        <strong>Custos externos.</strong> A proposta deve separar desenvolvimento do custo do
+        provedor transacional, volume de envios, armazenamento de imagens, domínio e serviços de
+        validação/enriquecimento. Aberturas podem ser afetadas por mecanismos de privacidade dos
+        clientes de e-mail; a solução não deve apresentá-las como precisão absoluta.
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>7. Eventos</h2>
+
+      <div class="module-head">
+        <h3>7.1 Objetivo</h3>
+        <p>
+          Planejar eventos e campanhas recorrentes, controlar tarefas, orçamento, fornecedores,
+          convidados, materiais, comunicação, presença e aprendizado pós-evento.
+        </p>
+      </div>
+
+      <h3>7.2 Escopo essencial</h3>
+      <ul class="req-list">
+        <li><span class="req-id">EV-01</span><span class="req-text"><strong>Portfólio anual.</strong> Visão por cards e calendário, filtros por ano, mês, tipo, status e busca.</span></li>
+        <li><span class="req-id">EV-02</span><span class="req-text"><strong>Cadastro.</strong> Nome, tipo, status, data/período, local, equipe organizadora, responsável, objetivo, observações e série recorrente.</span></li>
+        <li><span class="req-id">EV-03</span><span class="req-text"><strong>Templates.</strong> Modelos de evento e tarefas-padrão para acelerar novas edições.</span></li>
+        <li><span class="req-id">EV-04</span><span class="req-text"><strong>Tarefas.</strong> Responsável, prazo, fase, status e envio opcional da tarefa ao Planner de Marketing.</span></li>
+        <li><span class="req-id">EV-05</span><span class="req-text"><strong>Orçamento.</strong> Categoria, valor previsto, valor realizado, vencimento, pagamento, responsável e consolidação previsto versus realizado.</span></li>
+        <li><span class="req-id">EV-06</span><span class="req-text"><strong>Prestadores.</strong> Catálogo, vínculo ao evento, categoria, propostas, anexos, valor final, decisão e status de aprovação.</span></li>
+        <li><span class="req-id">EV-07</span><span class="req-text"><strong>Convidados e colaboradores.</strong> Convidados internos/externos, tipo, contato, expectativa de participação, presença real, importação e exportação.</span></li>
+        <li><span class="req-id">EV-08</span><span class="req-text"><strong>Comunicação.</strong> Plano por canal, título, conteúdo, data planejada, responsável e status.</span></li>
+        <li><span class="req-id">EV-09</span><span class="req-text"><strong>Arquivos e compartilhamento.</strong> Upload de briefing, peças, listas, contratos e fotos; escolha do que pode ser disponibilizado em link público controlado.</span></li>
+        <li><span class="req-id">EV-10</span><span class="req-text"><strong>Rastreamento.</strong> Links identificáveis por campanha/canal e contagem de cliques sem armazenar dados pessoais desnecessários.</span></li>
+        <li><span class="req-id">EV-11</span><span class="req-text"><strong>Pós-evento.</strong> Resultado, aprendizados, avaliação, números principais, pendências e próximos passos.</span></li>
+        <li><span class="req-id">EV-12</span><span class="req-text"><strong>Histórico e recorrência.</strong> Auditoria das ações, comparação entre edições e duplicação segura para o ano seguinte.</span></li>
+        <li><span class="req-id">EV-13</span><span class="req-text"><strong>Previsão interanual.</strong> Projetar o orçamento de novas edições com base no realizado, previsto ou verba aprovada das edições anteriores, incluindo custo por participante quando houver dados.</span></li>
+        <li><span class="req-id">EV-14</span><span class="req-text"><strong>Alertas.</strong> Evento próximo sem fornecedor aprovado, ausência de orçamento, estouro, tarefa atrasada, pagamento pendente e pós-evento não preenchido.</span></li>
+        <li><span class="req-id">EV-15</span><span class="req-text"><strong>Segregação financeira.</strong> Separar permissões para consultar e editar orçamento, pagamentos e comprovantes das permissões operacionais do evento.</span></li>
+      </ul>
+
+      <h3>7.3 Desejáveis para orçamento separado</h3>
+      <ul>
+        <li><span class="priority desirable">Desejável</span> Página de inscrição, confirmação e QR Code/check-in.</li>
+        <li><span class="priority desirable">Desejável</span> Disparo de convites e lembretes integrado ao e-mail marketing.</li>
+        <li><span class="priority desirable">Desejável</span> Pesquisa de satisfação e consolidação de ROI por evento.</li>
+        <li><span class="priority desirable">Desejável</span> Previsão de orçamento e público com base em edições anteriores.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>8. Fotos corporativas dos colaboradores</h2>
+
+      <div class="module-head">
+        <h3>8.1 Objetivo</h3>
+        <p>
+          Organizar sessões de fotos, disponibilizar as imagens de cada pessoa e permitir que o
+          próprio colaborador defina qual foto deve ser utilizada em cada finalidade institucional.
+        </p>
+      </div>
+
+      <h3>8.2 Escopo essencial</h3>
+      <ul class="req-list">
+        <li><span class="req-id">FOTO-01</span><span class="req-text"><strong>Sessões.</strong> Criar campanhas/sessões de fotos com nome, período e status.</span></li>
+        <li><span class="req-id">FOTO-02</span><span class="req-text"><strong>Gestão por pessoa.</strong> Lista de colaboradores ativos e elegíveis, situação da galeria e pendência de foto oficial.</span></li>
+        <li><span class="req-id">FOTO-03</span><span class="req-text"><strong>Upload e download em lote.</strong> Envio múltiplo de JPEG, PNG, WebP ou GIF, validação de tamanho, progresso, prevenção de registro órfão e download ZIP para produção de peças.</span></li>
+        <li><span class="req-id">FOTO-04</span><span class="req-text"><strong>Galeria privada.</strong> Cada colaborador visualiza somente suas fotos; Marketing e administradores autorizados gerenciam galerias.</span></li>
+        <li><span class="req-id">FOTO-05</span><span class="req-text"><strong>Usos.</strong> Uma foto selecionada por finalidade, inicialmente: Oficial, Posts, Site/materiais e Eventos. A mesma imagem pode servir a mais de um uso.</span></li>
+        <li><span class="req-id">FOTO-06</span><span class="req-text"><strong>Tipos configuráveis.</strong> Marketing pode criar, renomear, ordenar e desativar usos; “Oficial” é reservado e não pode ser eliminado.</span></li>
+        <li><span class="req-id">FOTO-07</span><span class="req-text"><strong>Propagação da foto oficial.</strong> Atualizar avatar e perfil profissional quando o colaborador confirmar a escolha, preservando consistência ao trocar ou excluir.</span></li>
+        <li><span class="req-id">FOTO-08</span><span class="req-text"><strong>Integração com outros sistemas.</strong> API autenticada e com limite de requisições para consultar a foto oficial, com consumidores e logs auditáveis.</span></li>
+        <li><span class="req-id">FOTO-09</span><span class="req-text"><strong>Capacidade.</strong> Exibir uso de armazenamento, definir política de retenção e prever crescimento do acervo original.</span></li>
+      </ul>
+
+      <h3>8.3 Desejáveis para orçamento separado</h3>
+      <ul>
+        <li><span class="priority desirable">Desejável</span> Importação assistida de pastas do Google Drive/OneDrive com conciliação por colaborador.</li>
+        <li><span class="priority desirable">Desejável</span> Recorte automático e versões padronizadas para avatar, site, post e assinatura.</li>
+        <li><span class="priority desirable">Desejável</span> Aviso de autorização de uso de imagem e retenção do aceite.</li>
+        <li><span class="priority desirable">Desejável</span> Distribuição controlada para site institucional e templates de peças.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>9. Integrações e dependências</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Integração</th>
+            <th>Finalidade</th>
+            <th>Pontos que a empresa deverá detalhar</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Meta Graph / Marketing APIs</td>
+            <td>Anúncios, Instagram, posts, stories, métricas e audiência.</td>
+            <td>Processo de aprovação do app, permissões, tokens, limites, histórico disponível e contingência.</td>
+          </tr>
+          <tr>
+            <td>Evolution API / WhatsApp</td>
+            <td>Conversas, mensagens, mídia, estado da instância e webhooks.</td>
+            <td>Hospedagem, compatibilidade de versão, segurança do webhook, reconciliação e limites. Cotar separadamente a alternativa de adoção da WhatsApp Business Platform oficial.</td>
+          </tr>
+          <tr>
+            <td>Provedor de e-mail</td>
+            <td>Envio transacional/em lote, domínios e eventos de entrega.</td>
+            <td>Custo por volume, limites, assinatura de webhook, reputação, supressões e portabilidade.</td>
+          </tr>
+          <tr>
+            <td>Sistema jurídico/corporativo</td>
+            <td>Clientes, grupos, responsáveis, pessoas e colaboradores.</td>
+            <td>Método de integração, frequência, contrato de dados, tratamento de exclusões e conciliação.</td>
+          </tr>
+          <tr>
+            <td>Armazenamento de arquivos</td>
+            <td>Fotos, anexos de demandas, eventos e e-mail.</td>
+            <td>Região, custo por GB/egresso, backup, CDN, URLs assinadas e política de exclusão.</td>
+          </tr>
+          <tr>
+            <td>Calendário e identidade corporativa</td>
+            <td>Futuras agendas, SSO e diretório.</td>
+            <td>Apresentar como opção separada quando não fizer parte do núcleo.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>9.1 Princípios para integrações</h3>
+      <ul>
+        <li>Credenciais e contas de terceiros devem pertencer à contratante.</li>
+        <li>Webhooks precisam de autenticação, idempotência, log sanitizado e reprocessamento controlado.</li>
+        <li>Falha externa não pode corromper dados nem impedir acesso ao histórico já armazenado.</li>
+        <li>A empresa deve informar claramente quais métricas não são fornecidas pela API oficial.</li>
+        <li>Conectores e custos de licença devem ser apresentados individualmente.</li>
+        <li>A proposta deve comparar os riscos e impactos de utilizar a Evolution API ou a plataforma oficial do WhatsApp.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>10. Implantação, importação inicial e aceite</h2>
+
+      <h3>10.1 Importação inicial esperada</h3>
+      <ol>
+        <li>Mapeamento de entidades, campos, relacionamentos, arquivos e identificadores externos.</li>
+        <li>Plano de tratamento de duplicidades, dados inválidos e referências não encontradas.</li>
+        <li>Importação ensaiada em homologação, com relatório de contagens antes/depois.</li>
+        <li>Validação amostral por módulo e aceite dos responsáveis internos.</li>
+        <li>Janela de corte, carga incremental quando necessária e plano de retorno.</li>
+        <li>Preservação de autoria, datas e histórico; registros importados devem ser identificáveis.</li>
+      </ol>
+
+      <h3>10.2 Entregáveis obrigatórios</h3>
+      <ul class="checklist">
+        <li><span class="checkbox"></span>Código-fonte completo e histórico do repositório sob controle da contratante.</li>
+        <li><span class="checkbox"></span>Documentação de arquitetura, banco, permissões, integrações e operação.</li>
+        <li><span class="checkbox"></span>Ambientes separados de desenvolvimento/homologação e produção.</li>
+        <li><span class="checkbox"></span>Automação de deploy e procedimento documentado de rollback.</li>
+        <li><span class="checkbox"></span>Testes dos fluxos críticos e relatório de segurança antes da entrada em produção.</li>
+        <li><span class="checkbox"></span>Materiais de treinamento e sessões para administradores e usuários-chave.</li>
+        <li><span class="checkbox"></span>Plano de suporte, garantia de correções e transição ao fim do contrato.</li>
+      </ul>
+
+      <h3>10.3 Critérios gerais de aceite</h3>
+      <ul>
+        <li>Usuário sem permissão não acessa tela, API, arquivo ou dado restrito, mesmo por URL direta.</li>
+        <li>Operações críticas mantêm histórico de autor, data e alteração.</li>
+        <li>Importações e webhooks repetidos não duplicam registros.</li>
+        <li>Filtros e totais são consistentes entre tela e exportação.</li>
+        <li>Fluxos prioritários funcionam em versões atuais de Chrome e Edge, em desktop e celular.</li>
+        <li>Integrações apresentam estado, última sincronização e erro acionável.</li>
+        <li>Backup e restauração são demonstrados em homologação.</li>
+        <li>A importação inicial atinge contagens e amostras aprovadas pelos responsáveis de cada módulo.</li>
+      </ul>
+
+      <h3>10.4 Fases sugeridas</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Fase</th>
+            <th>Conteúdo</th>
+            <th>Marco de aceite</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>0 — Descoberta</td>
+            <td>Detalhamento, protótipos, arquitetura, integrações e plano de importação inicial.</td>
+            <td>Backlog estimado, protótipo aprovado e riscos registrados.</td>
+          </tr>
+          <tr>
+            <td>1 — Fundação e Planner</td>
+            <td>Usuários, permissões, auditoria, solicitações, Kanban e cronograma editorial.</td>
+            <td>Operação de Marketing executa um ciclo completo em homologação.</td>
+          </tr>
+          <tr>
+            <td>2 — Performance</td>
+            <td>Meta Ads, WhatsApp CRM e Instagram Insights.</td>
+            <td>Dados oficiais sincronizados e lead rastreado da origem ao atendimento.</td>
+          </tr>
+          <tr>
+            <td>3 — Pessoas</td>
+            <td>RH, férias, qualificações e fotos corporativas.</td>
+            <td>Dados importados, acessos segregados e foto oficial propagada.</td>
+          </tr>
+          <tr>
+            <td>4 — Relacionamento</td>
+            <td>E-mail marketing e Eventos.</td>
+            <td>Campanha de teste entregue e evento completo validado.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="small">
+        A ordem é apenas uma referência inicial. A empresa pode propor outra estratégia,
+        desde que apresente dependências, impacto no prazo e critérios de aceite equivalentes.
+      </p>
+    </section>
+
+    <section class="section">
+      <h2>11. Informações esperadas no orçamento</h2>
+      <p>
+        Para apoiar nossa avaliação interna, gostaríamos que o orçamento apresentasse os tópicos abaixo.
+      </p>
+
+      <h3>11.1 Escopo e investimento</h3>
+      <ul class="checklist">
+        <li><span class="checkbox"></span>Preço fechado ou faixa por fase e por módulo.</li>
+        <li><span class="checkbox"></span>Quantidade de horas estimada por perfil profissional.</li>
+        <li><span class="checkbox"></span>Itens essenciais incluídos, parcialmente incluídos ou excluídos.</li>
+        <li><span class="checkbox"></span>Preço separado para cada item desejável.</li>
+        <li><span class="checkbox"></span>Custos mensais de infraestrutura, suporte, licenças e APIs.</li>
+        <li><span class="checkbox"></span>Premissas de volume e valores cobrados quando os limites forem excedidos.</li>
+      </ul>
+
+      <h3>11.2 Prazo e equipe</h3>
+      <ul class="checklist">
+        <li><span class="checkbox"></span>Cronograma por fase, incluindo descoberta, desenvolvimento, homologação e importação inicial.</li>
+        <li><span class="checkbox"></span>Equipe dedicada, senioridade, papéis e disponibilidade.</li>
+        <li><span class="checkbox"></span>Participação esperada da equipe interna e prazos para decisões.</li>
+        <li><span class="checkbox"></span>Principais dependências, riscos e itens que podem alterar prazo ou preço.</li>
+      </ul>
+
+      <h3>11.3 Tecnologia, segurança e continuidade</h3>
+      <ul class="checklist">
+        <li><span class="checkbox"></span>Arquitetura proposta e justificativa das principais escolhas.</li>
+        <li><span class="checkbox"></span>Modelo de hospedagem, monitoramento, backup, SLA, RPO e RTO.</li>
+        <li><span class="checkbox"></span>Práticas de segurança e adequação à LGPD.</li>
+        <li><span class="checkbox"></span>Estratégia de testes, homologação, deploy e rollback.</li>
+        <li><span class="checkbox"></span>Garantia, manutenção evolutiva, tempo de resposta e canais de suporte.</li>
+        <li><span class="checkbox"></span>Condições de propriedade intelectual, acesso ao código e transição ao término do contrato.</li>
+      </ul>
+
+      <h3>11.4 Entendimento da solução</h3>
+      <ul class="checklist">
+        <li><span class="checkbox"></span>Apontar dúvidas, inconsistências ou riscos encontrados neste escopo.</li>
+        <li><span class="checkbox"></span>Indicar o que será solução própria, serviço de terceiro ou customização.</li>
+        <li><span class="checkbox"></span>Apresentar pelo menos um fluxo/protótipo dos módulos Planner e Performance.</li>
+        <li><span class="checkbox"></span>Informar referências de projetos com integrações Meta, WhatsApp, e-mail ou dados sensíveis.</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>12. Pontos para alinhamento na reunião</h2>
+      <ol>
+        <li>Qual parte do escopo a empresa considera de maior risco e por quê?</li>
+        <li>O que seria produto próprio, integração de terceiro ou desenvolvimento sob medida?</li>
+        <li>Como será precificada e executada a importação inicial de dados e arquivos?</li>
+        <li>Quais custos recorrentes não estão incluídos no desenvolvimento?</li>
+        <li>Quem será dono do código, da infraestrutura, das contas e dos dados?</li>
+        <li>Como funcionam garantia, suporte, segurança, backup e uma eventual transição contratual?</li>
+        <li>Qual seria o prazo para colocar Planner + cronograma em produção primeiro?</li>
+        <li>Que limitações das APIs Meta/WhatsApp podem impedir algum requisito?</li>
+      </ol>
+
+      <div class="signature">
+        <div>Responsável interno / data</div>
+        <div>Empresa / data</div>
+      </div>
+
+      <p class="footer-note">
+        Este documento apresenta necessidades iniciais para o Sistema de Marketing. A proposta
+        poderá recomendar ajustes de abordagem, desde que explicite impactos de escopo, prazo,
+        investimento e custos recorrentes.
+      </p>
+    </section>
+  </main>
+</body>
+</html>

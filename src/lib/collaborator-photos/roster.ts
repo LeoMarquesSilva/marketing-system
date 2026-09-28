@@ -4,10 +4,16 @@ import {
   resolveAreaFilterLabel,
 } from "@/lib/ferias/filters";
 
-/** Sócios isentos de férias que devem aparecer na gestão de fotos. */
-export const PHOTO_ROSTER_INCLUDED_VACATION_EXEMPT_IDS = [
+/** Sócios que continuam na área "Sócio" mesmo quando isentos de férias. */
+export const PHOTO_ROSTER_SOCIO_IDS = [
   "3da9c5f0-cf80-4743-aea9-76ec5c80ddb2", // Gustavo Bismarchi Motta
   "1948ec31-133f-402d-9f66-27b6b5eea093", // Ricardo Viscardi Pires
+] as const;
+
+/** Isentos de férias que devem continuar na gestão de fotos. */
+export const PHOTO_ROSTER_INCLUDED_VACATION_EXEMPT_IDS = [
+  ...PHOTO_ROSTER_SOCIO_IDS,
+  "8ad23cbd-9b5c-4c5b-8b4b-2f013347b8c4", // Francisco de Assis Barbosa Campos Zanin
 ] as const;
 
 /** Pessoa da lista de Fotos Colaboradores — mesma base RH de Férias (`hr_employees`). */
@@ -28,15 +34,13 @@ export type PhotoRosterSituation = "ativos" | "inativos" | "all";
 
 export type PhotoGalleryFilter = "all" | "com_fotos" | "sem_fotos";
 
-const PHOTO_ROSTER_INCLUDED_VACATION_EXEMPT_ID_SET = new Set<string>(
-  PHOTO_ROSTER_INCLUDED_VACATION_EXEMPT_IDS
-);
+const PHOTO_ROSTER_SOCIO_ID_SET = new Set<string>(PHOTO_ROSTER_SOCIO_IDS);
 
 /** Área exibida no módulo; os dois sócios permanecem exclusivamente em "Sócio". */
 export function resolvePhotoRosterAreaLabel(
   person: Pick<PhotoRosterPerson, "employeeId" | "department">
 ): string | null {
-  if (PHOTO_ROSTER_INCLUDED_VACATION_EXEMPT_ID_SET.has(person.employeeId)) return "Sócio";
+  if (PHOTO_ROSTER_SOCIO_ID_SET.has(person.employeeId)) return "Sócio";
   return resolveCanonicalAreaLabel(person.department);
 }
 

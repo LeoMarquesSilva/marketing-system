@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { updatePostAssignments } from "@/lib/instagram-posts";
 import type { PostSolicitante } from "@/lib/instagram-posts";
+import { autoLinkInstagramPublicationToSchedule } from "@/lib/content-schedule/server";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +64,13 @@ export async function PATCH(
     }
 
     await updatePostAssignments(id, assignments);
-    return NextResponse.json({ success: true });
+    let scheduleLink = null;
+    try {
+      scheduleLink = await autoLinkInstagramPublicationToSchedule(id);
+    } catch (scheduleError) {
+      console.error("[instagram-posts] vínculos salvos; falha ao atualizar cronograma", scheduleError);
+    }
+    return NextResponse.json({ success: true, scheduleLink });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro ao atualizar post.";
     return NextResponse.json({ error: msg }, { status: 500 });

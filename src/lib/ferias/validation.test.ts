@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   employeeCreateSchema,
+  employeeUpdateSchema,
   leaveCreateSchema,
   periodUpdateSchema,
   recessCreateSchema,
@@ -31,6 +32,18 @@ describe("employeeCreateSchema", () => {
       email: "",
     });
     expect(parsed.email).toBeNull();
+  });
+});
+
+describe("employeeUpdateSchema", () => {
+  it("mantém o pedido de criar usuário junto com a atualização da ficha", () => {
+    const parsed = employeeUpdateSchema.parse({
+      department: "Operações Legais",
+      userId: null,
+      createUserIfMissing: true,
+    });
+    expect(parsed.createUserIfMissing).toBe(true);
+    expect(parsed.userId).toBeNull();
   });
 });
 

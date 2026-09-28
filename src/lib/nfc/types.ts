@@ -8,6 +8,7 @@ export const NFC_ACTION_TYPES = [
   "sequence",
   "asset_loan",
   "professional_profile",
+  "video",
 ] as const;
 
 export const NFC_ACCESS_MODES = [
@@ -78,6 +79,10 @@ export interface NfcActionConfig {
   checkoutMessage?: string;
   returnMessage?: string;
   profileId?: string;
+  /** Ação "video": caminho no bucket privado de vídeos NFC. */
+  videoPath?: string;
+  videoFileName?: string;
+  videoSizeBytes?: number;
 }
 
 export interface NfcTag {
@@ -165,6 +170,8 @@ export interface NfcPublicResolution {
     successMessage?: string;
     assetLabel?: string;
     assetNumberLabel?: string;
+    /** URL assinada e temporária do vídeo (ação "video"). */
+    videoUrl?: string;
     profile?: {
       slug: string;
       displayName: string;

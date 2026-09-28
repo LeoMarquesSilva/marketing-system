@@ -431,6 +431,11 @@ export async function updateEmployee(
   }
   if (!data) throw new FeriasHttpError("Colaborador não encontrado.", 404, "NOT_FOUND");
 
+  if (input.createUserIfMissing && !data.user_id && data.is_active) {
+    const userId = await ensureUserForEmployee(admin, data as EmployeeRow);
+    if (userId) data.user_id = userId;
+  }
+
   await resolveOpenNotificationsForEmployee(admin, employeeId, manager.profileId);
   await syncLinkedUserDepartment(
     admin,
@@ -820,6 +825,60 @@ async function syncLinkedUserDepartment(
     .update({ department: department.trim() })
     .eq("id", userId);
   if (error) failed("Não foi possível sincronizar a área do usuário vinculado.");
+}
+
+/**
+ * Colaborador novo vindo do VIOS só tem ficha (`hr_employees`) e não aparece em
+ * Usuários. Ao preencher a ficha, cria a linha em `users` (igual ao "Novo
+ * usuário" — o acesso/login continua sendo ativado em Usuários) e vincula.
+ * Se já existir um usuário com o mesmo e-mail e sem ficha, reaproveita ele.
+ */
+async function ensureUserForEmployee(
+  admin: SupabaseClient,
+  employee: EmployeeRow
+): Promise<string | null> {
+  const name = employee.full_name?.trim();
+  const department = employee.department?.trim();
+  const email = employee.email?.trim() || null;
+  if (!name || !department) return null;
+
+  let userId: string | null = null;
+  if (email) {
+    const { data: existing, error } = await admin
+      .from("users")
+      .select("id")
+      .ilike("email", email)
+      .limit(1)
+      .maybeSingle();
+    if (error) failed("Não foi possível verificar o usuário do colaborador.");
+    if (existing) {
+      const { data: owner } = await admin
+        .from("hr_employees")
+        .select("id")
+        .eq("user_id", existing.id)
+        .maybeSingle();
+      // Usuário já vinculado a outra ficha: não mexe, evita colar duas pessoas.
+      if (owner) return null;
+      userId = existing.id as string;
+    }
+  }
+
+  if (!userId) {
+    const { data: created, error } = await admin
+      .from("users")
+      .insert({ id: crypto.randomUUID(), name, email, department, is_active: true })
+      .select("id")
+      .single();
+    if (error || !created) failed("Não foi possível criar o usuário do colaborador.");
+    userId = created.id as string;
+  }
+
+  const { error: linkError } = await admin
+    .from("hr_employees")
+    .update({ user_id: userId })
+    .eq("id", employee.id);
+  if (linkError) failed("Não foi possível vincular o usuário à ficha.");
+  return userId;
 }
 
 export async function listLinkableUsers(): Promise<LinkableUser[]> {

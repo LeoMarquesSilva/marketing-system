@@ -95,6 +95,19 @@ describe("PATCH content-roteiros approval scheduling", () => {
     expect(autoLink).toHaveBeenCalledWith(expect.objectContaining({ collaboratorId: "race-winner" }));
   });
 
+  it("mantém sucesso quando a aprovação foi salva e o cronograma falha", async () => {
+    autoLink.mockRejectedValue(new Error("cronograma indisponível"));
+
+    const response = await PATCH(request({ id: "content-1", status: "aprovado" }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      success: true,
+      scheduleLink: null,
+      scheduleWarning: expect.stringContaining("aprovação foi salva"),
+    });
+  });
+
   it("mantém o fluxo send_mkt sem atualizar aprovação nem agendar novamente", async () => {
     sendMkt.mockResolvedValue({ marketing_request_id: "request-1" });
     const response = await PATCH(request({ id: "content-1", action: "send_mkt" }));

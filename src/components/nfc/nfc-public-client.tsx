@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { NfcCollaboratorSelect } from "@/components/nfc/nfc-collaborator-select";
+import { NfcVideoExperience } from "@/components/nfc/nfc-video-experience";
 import type { NfcFormField, NfcPublicResolution } from "@/lib/nfc/types";
 
 type Screen = "loading" | "ready" | "executing" | "success" | "error";
@@ -371,6 +372,11 @@ export function NfcPublicClient({
   }
 
   const action = resolution?.action;
+  if (action?.type === "video" && action.videoUrl && !action.requiresConfirmation) {
+    return (
+      <NfcVideoExperience videoUrl={action.videoUrl} title={action.title} description={action.description} />
+    );
+  }
   return (
     <PublicShell>
       <div>

@@ -1,0 +1,66 @@
+{
+  "generatedAt": "2026-09-04T15:17:27.987Z",
+  "note": "Avaliacao exploratoria com tres pautas sinteticas; sem escrita no banco.",
+  "results": [
+    {
+      "model": "gpt-5.6-sol",
+      "case": "factual",
+      "elapsedMs": 16373,
+      "usage": {
+        "input_tokens": 2155,
+        "input_tokens_details": {
+          "cache_write_tokens": 2152,
+          "cached_tokens": 0
+        },
+        "output_tokens": 1221,
+        "output_tokens_details": {
+          "reasoning_tokens": 62
+        },
+        "total_tokens": 3376
+      },
+      "draft": {
+        "linkedinPost": "Vender um ativo ocioso pode aliviar a dívida sem reduzir a produção. O ponto crítico é não confundir esse alívio com a recuperação da capacidade de pagamento.\n\nNo cenário fictício, uma indústria vendeu por R$ 80 milhões um imóvel que não utilizava. Os recursos foram destinados à amortização de parte de uma dívida de R$ 240 milhões, enquanto as linhas de produção continuaram operando.\n\nA decisão transforma um ativo não operacional em liquidez e reduz parcialmente a exposição financeira. Sob pressão de caixa, isso pode preservar recursos e evitar a venda de ativos essenciais à atividade.\n\nMas a venda é um evento pontual. Ela não informa se a operação gera caixa suficiente para pagar juros, financiar capital de giro e cumprir os próximos vencimentos.\n\nSem dados sobre margem, fluxo de caixa, custo da dívida e cronograma de pagamentos, não é possível concluir que a estrutura financeira se tornou sustentável.\n\nA análise de continuidade exige, portanto, duas perguntas distintas: quanto de pressão imediata foi reduzida e se o negócio consegue sustentar os compromissos remanescentes com geração recorrente de caixa.\n\nA venda de ativos pode abrir espaço para uma reestruturação. A continuidade, porém, depende do que a empresa faz com esse espaço e da capacidade econômica da operação após a transação.\n\n#reestruturaçãoempresarial #liquidez #dívida",
+        "alternativeHooks": [
+          "Liquidez extraordinária reduz pressão imediata. Sustentabilidade financeira exige geração recorrente de caixa.",
+          "Preservar a fábrica e vender o imóvel ocioso pode ser uma decisão racional — desde que o alívio financeiro não seja tratado como solução definitiva.",
+          "A amortização de parte da dívida melhora uma fotografia do caixa. A continuidade depende do filme completo da operação."
+        ],
+        "reel": {
+          "duration": "55 a 65 segundos",
+          "hook": "Uma empresa vende um imóvel ocioso, amortiza parte da dívida e mantém a produção. Isso resolve o problema financeiro? Não necessariamente.",
+          "talkingPoints": [
+            "Apresentar o cenário fictício: imóvel vendido por R$ 80 milhões, recursos destinados à amortização parcial de uma dívida de R$ 240 milhões e linhas de produção mantidas.",
+            "Explicar a lógica empresarial: transformar um ativo sem uso em liquidez sem retirar da empresa um bem essencial à produção.",
+            "Distinguir o efeito imediato: redução parcial da pressão financeira e possível ganho de tempo para reorganizar a estrutura de capital.",
+            "Destacar o limite da informação: não há dados sobre margem, geração de caixa, juros ou vencimentos.",
+            "Separar os dois testes: a venda cria liquidez pontual; a capacidade recorrente de pagamento depende do desempenho operacional e do perfil da dívida.",
+            "Ressaltar que não se deve calcular ou presumir o saldo final da dívida apenas com os valores informados."
+          ],
+          "closing": "Venda de ativo pode gerar fôlego. Continuidade empresarial exige que esse fôlego seja acompanhado por uma operação capaz de sustentar os compromissos remanescentes.",
+          "recordingNote": "Falar em tom analítico, usando o cenário apenas como exemplo. Dar ênfase à diferença entre liquidez pontual e geração recorrente de caixa, sem apresentar a venda como solução definitiva."
+        },
+        "editorialBrief": {
+          "centralThesis": "A venda de um ativo ocioso pode gerar liquidez para amortizar dívida sem interromper a operação, mas esse movimento pontual não demonstra, isoladamente, capacidade recorrente de pagamento.",
+          "icp": "CEOs, CFOs e sócios de empresas com dificuldades de liquidez.",
+          "businessDecision": "Decidir se a venda de um ativo não operacional é adequada para aliviar a pressão financeira e preservar a atividade produtiva.",
+          "supportingFacts": [
+            "Fato do cenário: a indústria fictícia vendeu um imóvel ocioso por R$ 80 milhões, com recursos destinados à amortização de parte de uma dívida de R$ 240 milhões.",
+            "Fato do cenário: as linhas de produção permaneceram em operação após a venda.",
+            "Interpretação de mercado: a alienação cria liquidez pontual, enquanto a avaliação da capacidade recorrente de pagamento depende de informações sobre geração de caixa, margens, juros e vencimentos."
+          ],
+          "practicalConsequence": "A administração e os credores devem analisar separadamente o alívio imediato de caixa e a capacidade futura da operação de cumprir o serviço da dívida.",
+          "limits": [
+            "Não é possível afirmar qual é o saldo atual da dívida.",
+            "Não é possível concluir que a empresa recuperou sua capacidade de pagamento.",
+            "Não há dados para avaliar a suficiência da geração de caixa, o custo financeiro ou a compatibilidade entre os vencimentos e o fluxo operacional.",
+            "Não é possível afirmar que a venda, isoladamente, assegura a continuidade da empresa."
+          ]
+        },
+        "angleAlignment": {
+          "aligned": true,
+          "note": "O ângulo selecionado é compatível com os dados do cenário e permite uma análise factual: a venda proporciona liquidez pontual e preserva as linhas de produção, mas não comprova capacidade recorrente de pagamento."
+        }
+      }
+    }
+  ]
+}

@@ -1,4 +1,7 @@
-import { normalizeScheduleArea } from "./domain";
+import {
+  collaboratorMatchesScheduleArea,
+  normalizeScheduleArea,
+} from "./domain";
 import type { ContentScheduleAssigneeIssue, ContentScheduleAssigneeIssueReason } from "./types";
 
 export interface AssigneeIssueSlotInput {
@@ -71,10 +74,14 @@ export function classifyScheduleAssigneeIssues({ slots, people, today }: {
   return [...groups.entries()].map(([key, grouped]) => {
     const first = grouped[0];
     const matched = people.filter((person) => likelySamePerson(first.sourceName, person.name));
-    const sameArea = matched.filter((person) => normalizeScheduleArea(person.department) === normalizeScheduleArea(first.area));
+    const sameArea = matched.filter((person) =>
+      collaboratorMatchesScheduleArea(person.department, first.area)
+    );
     const activeSameArea = sameArea.filter((person) => person.isActive);
     const inactiveSameArea = sameArea.filter((person) => !person.isActive);
-    const activeOtherArea = matched.filter((person) => person.isActive && normalizeScheduleArea(person.department) !== normalizeScheduleArea(first.area));
+    const activeOtherArea = matched.filter((person) =>
+      person.isActive && !collaboratorMatchesScheduleArea(person.department, first.area)
+    );
 
     let reason: ContentScheduleAssigneeIssueReason;
     let mode: ContentScheduleAssigneeIssue["mode"] = "future_replacement";

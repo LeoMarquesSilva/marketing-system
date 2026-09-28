@@ -34,7 +34,10 @@ export const employeeCreateSchema = z.object({
   oabUf: optionalText(2),
 });
 
-export const employeeUpdateSchema = employeeCreateSchema.partial();
+export const employeeUpdateSchema = employeeCreateSchema.partial().extend({
+  /** Ficha sem login (ex.: colaborador novo do VIOS): cria/vincula a linha em Usuários. */
+  createUserIfMissing: z.boolean().optional(),
+});
 
 export const leaveCreateSchema = z
   .object({

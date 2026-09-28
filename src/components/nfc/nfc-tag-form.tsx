@@ -17,6 +17,7 @@ import {
   Save,
   Trash2,
   Umbrella,
+  Video,
   Webhook,
   Workflow,
 } from "lucide-react";
@@ -33,6 +34,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { NfcToast, type NfcToastValue } from "@/components/nfc/nfc-toast";
+import { NfcVideoField } from "@/components/nfc/nfc-video-field";
 import type {
   NfcAccessMode,
   NfcActionConfig,
@@ -63,6 +65,7 @@ const ACTIONS: Array<{ value: NfcActionType; label: string; description: string;
     description: "Abre a página pública do colaborador.",
     icon: IdCard,
   },
+  { value: "video", label: "Vídeo", description: "Abre um vídeo em tela cheia e já começa a tocar.", icon: Video },
 ];
 
 const NFC_PRESETS: Array<{
@@ -218,6 +221,8 @@ function emptyConfig(type: NfcActionType): NfcActionConfig {
       };
     case "professional_profile":
       return { profileId: undefined };
+    case "video":
+      return { title: "", description: "" };
   }
 }
 
@@ -277,6 +282,7 @@ export function NfcTagForm({
   const [values, setValues] = useState(initial);
   const [selectedUsers, setSelectedUsers] = useState(allowedUserIds);
   const [saving, setSaving] = useState(false);
+  const [videoUploading, setVideoUploading] = useState(false);
   const [toast, setToast] = useState<NfcToastValue | null>(null);
   const [profileSearch, setProfileSearch] = useState("");
   const [profileOptions, setProfileOptions] = useState<ProfessionalProfileListItem[]>([]);
@@ -744,6 +750,14 @@ export function NfcTagForm({
             </div>
           )}
 
+          {values.actionType === "video" && (
+            <NfcVideoField
+              config={values.actionConfig}
+              onChange={setConfig}
+              onUploadingChange={setVideoUploading}
+            />
+          )}
+
           {values.actionType === "professional_profile" && (
             <div className="space-y-3">
               <FieldShell
@@ -916,7 +930,7 @@ export function NfcTagForm({
 
       <div className="sticky bottom-16 z-20 flex items-center justify-end gap-2 rounded-md border border-[#dce9eb] bg-white/95 p-3 shadow-lg backdrop-blur md:bottom-3">
         <Button type="button" variant="outline" onClick={() => router.back()}>Cancelar</Button>
-        <Button type="submit" disabled={saving}>
+        <Button type="submit" disabled={saving || videoUploading}>
           <Save />
           {saving ? "Salvando..." : initialTag ? "Salvar alterações" : "Criar etiqueta"}
         </Button>

@@ -28,6 +28,10 @@ export interface ViosTask {
   imported_at: string;
   created_at: string;
   updated_at: string;
+  /** Cancelada na fonte; fica armazenada apenas para preservar histórico/vínculos. */
+  is_cancelled: boolean;
+  source_status: string | null;
+  source_synced_at: string | null;
   assignee_name?: string | null;
   assignee_avatar_url?: string | null;
   /** Tarefa pareada (PROTOCOLO ↔ REVISAR) no mesmo ci_processo. */
@@ -52,7 +56,7 @@ export interface ViosTaskStats {
 }
 
 const VIOS_TASKS_SELECT =
-  "id, vios_id, ci_processo, area_processo, tarefa, etiquetas_tarefa, descricao, comentarios, historico, data_limite, data_limite_anterior, prorrogada, data_conclusao, hora_conclusao, responsaveis, assignee_id, status, usuario_concluiu, marketing_request_id, imported_at, created_at, updated_at";
+  "id, vios_id, ci_processo, area_processo, tarefa, etiquetas_tarefa, descricao, comentarios, historico, data_limite, data_limite_anterior, prorrogada, data_conclusao, hora_conclusao, responsaveis, assignee_id, status, usuario_concluiu, marketing_request_id, imported_at, created_at, updated_at, is_cancelled, source_status, source_synced_at";
 
 type ViosTaskRow = ViosTask & {
   users?: { name: string; avatar_url: string | null } | { name: string; avatar_url: string | null }[] | null;
@@ -73,6 +77,7 @@ function mapTaskRow(row: ViosTaskRow): ViosTask {
   return {
     ...rest,
     prorrogada: rest.prorrogada === true,
+    is_cancelled: rest.is_cancelled === true,
     assignee_name: assigneeName,
     assignee_avatar_url: assigneeAvatar,
   };
@@ -196,6 +201,7 @@ const MAX_PAIRING_SCORE = 7;
 export function buildViosPairMap(tasks: ViosTask[]): Map<string, string> {
   const byProcess = new Map<string, ViosTask[]>();
   for (const t of tasks) {
+    if (t.is_cancelled) continue;
     if (!t.ci_processo) continue;
     if (t.etiquetas_tarefa !== "PROTOCOLO" && t.etiquetas_tarefa !== "REVISAR") continue;
     const list = byProcess.get(t.ci_processo) ?? [];
@@ -249,6 +255,7 @@ async function enrichTasksWithPairs(tasks: ViosTask[]): Promise<ViosTask[]> {
   const { data } = await supabase
     .from("vios_tasks")
     .select(VIOS_TASKS_SELECT)
+    .eq("is_cancelled", false)
     .in("ci_processo", processIds)
     .in("etiquetas_tarefa", ["PROTOCOLO", "REVISAR"]);
 
@@ -283,6 +290,7 @@ export async function findPairedViosTask(
   const { data } = await supabase
     .from("vios_tasks")
     .select(VIOS_TASKS_SELECT)
+    .eq("is_cancelled", false)
     .eq("ci_processo", task.ci_processo)
     .eq("etiquetas_tarefa", targetEtiqueta);
 
@@ -317,6 +325,9 @@ async function linkViosTaskAndPairToPlanner(
     .single();
 
   if (!task) return { error: "Tarefa não encontrada" };
+  if ((task as ViosTask).is_cancelled) {
+    return { error: "Tarefa cancelada no VIOS" };
+  }
 
   const paired = await findPairedViosTask(task as ViosTask);
   const idsToLink = [viosId];
@@ -463,6 +474,7 @@ export function formatViosAtrasoLabel(task: ViosTask): string | null {
 
 /** Tarefa elegível para criar solicitação no Planner (revisão do gestor concluída). */
 export function canSendToPlanner(task: ViosTask): boolean {
+  if (task.is_cancelled) return false;
   if (task.marketing_request_id) return false;
   return isRevisaoConcluida(task);
 }
@@ -522,7 +534,8 @@ export async function fetchViosTasks(
     .from("vios_tasks")
     .select(`${VIOS_TASKS_SELECT}, users(name, avatar_url)`, {
       count: needsClientPagination ? undefined : "exact",
-    });
+    })
+    .eq("is_cancelled", false);
 
   if (!needsClientPagination) {
     query = query.range(offset, offset + limit - 1);
@@ -618,7 +631,8 @@ export async function fetchViosTaskStats(): Promise<ViosTaskStats> {
     .from("vios_tasks")
     .select(
       "status, data_limite, data_conclusao, marketing_request_id, etiquetas_tarefa, assignee_id, responsaveis"
-    );
+    )
+    .eq("is_cancelled", false);
 
   if (error || !data) {
     return {
@@ -704,6 +718,7 @@ export async function fetchViosTaskEtiquetas(): Promise<string[]> {
   const { data, error } = await supabase
     .from("vios_tasks")
     .select("etiquetas_tarefa, assignee_id, responsaveis")
+    .eq("is_cancelled", false)
     .not("etiquetas_tarefa", "is", null);
 
   if (error) {
@@ -727,6 +742,7 @@ export async function fetchViosTaskAreas(): Promise<string[]> {
   const { data, error } = await supabase
     .from("vios_tasks")
     .select("area_processo, assignee_id, responsaveis")
+    .eq("is_cancelled", false)
     .not("area_processo", "is", null);
 
   if (error) {
@@ -798,12 +814,13 @@ export async function promoteViosTaskToPlanner(
   const { data: task, error: taskErr } = await supabase
     .from("vios_tasks")
     .select(
-      "vios_id, status, marketing_request_id, area_processo, assignee_id, responsaveis, etiquetas_tarefa, descricao, historico, data_conclusao, data_limite"
+      "vios_id, status, marketing_request_id, area_processo, assignee_id, responsaveis, etiquetas_tarefa, descricao, historico, data_conclusao, data_limite, is_cancelled"
     )
     .eq("vios_id", viosId)
     .single();
 
   if (taskErr || !task) return { error: "Tarefa não encontrada" };
+  if (task.is_cancelled) return { error: "Tarefa cancelada no VIOS" };
   if (task.marketing_request_id) return { error: "Tarefa já foi enviada ao Planner" };
 
   const area = normalizeArea(task.area_processo);
@@ -875,11 +892,12 @@ export async function promoteViosTaskToPlannerWithForm(
 ): Promise<{ error: string | null; requestId?: string }> {
   const { data: task, error: taskErr } = await supabase
     .from("vios_tasks")
-    .select("vios_id, marketing_request_id, data_conclusao")
+    .select("vios_id, marketing_request_id, data_conclusao, is_cancelled")
     .eq("vios_id", viosId)
     .single();
 
   if (taskErr || !task) return { error: "Tarefa não encontrada" };
+  if (task.is_cancelled) return { error: "Tarefa cancelada no VIOS" };
   if (task.marketing_request_id) return { error: "Tarefa já foi enviada ao Planner" };
 
   const area = normalizeArea(formData.requesting_area);

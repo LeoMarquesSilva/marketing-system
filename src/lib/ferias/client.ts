@@ -51,7 +51,10 @@ export function createEmployeeRequest(payload: EmployeePayload) {
   });
 }
 
-export function updateEmployeeRequest(id: string, payload: Partial<EmployeePayload>) {
+export function updateEmployeeRequest(
+  id: string,
+  payload: Partial<EmployeePayload> & { createUserIfMissing?: boolean }
+) {
   return request<{ employee: HrEmployee }>(`/api/ferias/employees/${id}`, {
     method: "PATCH",
     body: JSON.stringify(payload),

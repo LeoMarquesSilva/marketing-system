@@ -27,6 +27,7 @@ import {
   ExternalLink,
   RefreshCw,
   AlertCircle,
+  AlertTriangle,
   Search,
   Clock,
   LayoutGrid,
@@ -118,6 +119,7 @@ export function RoteirosClient() {
   const [selectedRoteiro, setSelectedRoteiro] = useState<RoteiroItem | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(true);
 
   const dismissOnboarding = () => setShowOnboarding(false);
@@ -350,8 +352,11 @@ export function RoteirosClient() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    const data = await res.json().catch(() => ({})) as {
+      error?: string;
+      scheduleWarning?: string | null;
+    };
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
       throw new Error(data.error ?? "Erro ao atualizar");
     }
     const patch: Partial<RoteiroItem> = { status };
@@ -359,14 +364,17 @@ export function RoteirosClient() {
     if (selectedRoteiro?.id === id) {
       setSelectedRoteiro((prev) => (prev ? { ...prev, ...patch } : null));
     }
+    return data;
   };
 
   const handleTransition = async (status: string) => {
     if (!selectedRoteiro) return;
     setActionLoading(true);
     setError(null);
+    setWarning(null);
     try {
-      await patchStatus(selectedRoteiro.id, status);
+      const result = await patchStatus(selectedRoteiro.id, status);
+      setWarning(result.scheduleWarning ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao atualizar");
     } finally {
@@ -546,6 +554,12 @@ export function RoteirosClient() {
         <div className="flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
           <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
           <span>{error}</span>
+        </div>
+      )}
+      {warning && (
+        <div role="status" className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{warning}</span>
         </div>
       )}
 

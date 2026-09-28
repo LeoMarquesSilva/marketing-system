@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { likelySamePerson } from "@/lib/content-schedule/assignee-issues";
-import { normalizeScheduleArea } from "@/lib/content-schedule/domain";
+import { collaboratorMatchesScheduleArea } from "@/lib/content-schedule/domain";
 import type {
   ContentScheduleAssigneeIssue,
   ContentScheduleAssigneeReviewResponse,
@@ -59,7 +59,7 @@ export function AssigneeIssueCard({
 }) {
   const reason = REASONS[issue.reason];
   const areaCollaborators = collaborators.filter((person) =>
-    normalizeScheduleArea(person.department) === normalizeScheduleArea(issue.area) &&
+    collaboratorMatchesScheduleArea(person.department, issue.area) &&
     (issue.mode === "future_replacement" || likelySamePerson(issue.sourceName, person.name))
   );
   const selected = areaCollaborators.find((person) => person.id === selectedId);

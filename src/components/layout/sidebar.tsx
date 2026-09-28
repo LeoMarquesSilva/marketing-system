@@ -61,6 +61,7 @@ import { fetchCommentStats } from "@/lib/request-comments";
 import { fetchMarketingRequests } from "@/lib/marketing-requests";
 import { useWhatsappUnreadCount } from "@/hooks/use-whatsapp-unread";
 import { HrNotificationsBell } from "@/components/rh/hr-notifications-bell";
+import { ContentScheduleNotificationsBell } from "@/components/conteudo/content-schedule-notifications-bell";
 
 type SidebarProps = {
   expanded: boolean;
@@ -826,8 +827,9 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
           </nav>
 
           <div className="relative border-t border-white/[0.08] p-3">
-            <div className={cn("mb-1 flex", expanded ? "justify-start pl-1" : "justify-center")}>
+            <div className={cn("mb-1 flex gap-1", expanded ? "justify-start pl-1" : "justify-center")}>
               <HrNotificationsBell />
+              <ContentScheduleNotificationsBell />
             </div>
             <div ref={profileMenuRef} className="relative" data-tour="profile-menu">
               {profile && (

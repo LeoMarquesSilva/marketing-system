@@ -11,6 +11,7 @@ import type { HrEmployee, LinkableUser } from "@/lib/ferias/types";
  * Edição pontual da ficha de um colaborador fora de Usuários/RH-Férias — usada
  * pelo sino/popup de notificações do VIOS, que pode apontar para um colaborador
  * ainda sem login (ficha criada automaticamente pelo sync, sem linha em Usuários).
+ * Ao salvar sem usuário vinculado, o servidor cria a linha em Usuários e vincula.
  * Busca o que precisa sob demanda, ao contrário de Usuários (que já tem tudo
  * carregado) e de RH/Férias (que não edita mais esses dados).
  */
@@ -75,6 +76,7 @@ export function FichaColaboradorDialog({
       rg: values.rg.trim() || null,
       oabNumber: values.oabNumber.trim() || null,
       oabUf: values.oabUf.trim() || null,
+      createUserIfMissing: true,
     });
     if (err) return err;
     if (data?.employee) onSaved?.(data.employee);

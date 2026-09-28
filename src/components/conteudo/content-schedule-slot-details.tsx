@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   AlertCircle,
   BarChart3,
@@ -10,8 +11,10 @@ import {
   FileText,
   Film,
   Link2,
+  Loader2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Sheet,
   SheetContent,
@@ -25,7 +28,7 @@ import {
   SelectItem,
   SelectTrigger,
 } from "@/components/ui/select";
-import { normalizeScheduleArea } from "@/lib/content-schedule/domain";
+import { collaboratorMatchesScheduleArea } from "@/lib/content-schedule/domain";
 import { CollaboratorAvatar, CollaboratorMark } from "./content-schedule-visuals";
 import type {
   ScheduleCollaborator,
@@ -96,6 +99,9 @@ export function ContentScheduleSlotDetails({
   canAssign,
   saving,
   onAssign,
+  canManageVios = false,
+  viosSaving = false,
+  onViosChange = () => undefined,
   assignmentFeedback = null,
 }: {
   slot: ScheduleSlotView | null;
@@ -105,10 +111,19 @@ export function ContentScheduleSlotDetails({
   canAssign: boolean;
   saving: boolean;
   onAssign: (collaboratorId: string) => void;
+  canManageVios?: boolean;
+  viosSaving?: boolean;
+  onViosChange?: (viosTaskId: string | null) => void;
   assignmentFeedback?: ScheduleAssignmentFeedback | null;
 }) {
+  const [viosSelection, setViosSelection] = useState({ slotId: "", taskId: "" });
+  const selectedViosId = slot && viosSelection.slotId === slot.id
+    ? viosSelection.taskId
+    : "";
   const availableCollaborators = slot
-    ? collaborators.filter((person) => !person.area || normalizeScheduleArea(person.area) === normalizeScheduleArea(slot.area))
+    ? collaborators.filter((person) =>
+        !person.area || collaboratorMatchesScheduleArea(person.area, slot.area)
+      )
     : [];
   const canEditAssignment = canAssign && slot?.status !== "cancelled";
 
@@ -227,19 +242,79 @@ export function ContentScheduleSlotDetails({
 
             <DetailSection title="VIOS" icon={Link2}>
               {slot.viosTask ? (
-                <div className="space-y-1 text-sm">
-                  <p className="font-mono font-semibold text-slate-900">CI {slot.viosTask.ci}</p>
-                  <p className="font-medium text-slate-800">{slot.viosTask.title || "Tarefa sem título"}</p>
-                  <p className="text-slate-500">{slot.viosTask.status || "Sem situação informada"}</p>
+                <div className="space-y-3 text-sm">
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-mono font-semibold text-slate-900">CI {slot.viosTask.ci}</p>
+                      {slot.viosLinkOrigin ? (
+                        <Badge variant="outline" className="text-[10px]">
+                          {slot.viosLinkOrigin === "manual" ? "Revisado manualmente" : "Vinculado automaticamente"}
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <p className="font-medium text-slate-800">{slot.viosTask.title || "Tarefa sem título"}</p>
+                    <p className="text-slate-500">{slot.viosTask.status || "Sem situação informada"}</p>
+                    {slot.viosTask.assigneeName ? <p className="text-xs text-slate-500">Responsável: {slot.viosTask.assigneeName}</p> : null}
+                  </div>
+                  {canManageVios ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={viosSaving}
+                      onClick={() => onViosChange(null)}
+                    >
+                      {viosSaving ? <Loader2 className="animate-spin" /> : <Link2 />}
+                      Desvincular
+                    </Button>
+                  ) : null}
                 </div>
               ) : (
-                <p className="text-sm text-slate-500">
-                  {!slot.content
-                    ? "Tema ainda não escolhido"
-                    : slot.format === "reel"
-                      ? "Sem tarefa VIOS associada ao Reel"
-                      : "Não vinculado ao VIOS"}
-                </p>
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-amber-700">Vínculo VIOS pendente</p>
+                  {canManageVios && (slot.viosCandidates?.length ?? 0) > 0 ? (
+                    <>
+                      <Select
+                        value={selectedViosId}
+                        onValueChange={(taskId) => setViosSelection({ slotId: slot.id, taskId })}
+                        disabled={viosSaving}
+                      >
+                        <SelectTrigger className="w-full" aria-label="Selecionar tarefa VIOS">
+                          <span className="truncate">
+                            {selectedViosId
+                              ? `CI ${slot.viosCandidates?.find((task) => task.id === selectedViosId)?.ci ?? ""}`
+                              : "Escolher tarefa PROTOCOLO"}
+                          </span>
+                        </SelectTrigger>
+                        <SelectContent align="start" className="min-w-[320px]">
+                          {(slot.viosCandidates ?? []).map((task) => (
+                            <SelectItem key={task.id} value={task.id}>
+                              <span className="flex flex-col">
+                                <span className="font-mono text-xs">CI {task.ci} · {task.dueDate ? fullDate(task.dueDate) : "sem data"}</span>
+                                <span className="text-xs text-slate-500">{task.assigneeName || "Sem responsável identificado"}</span>
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={!selectedViosId || viosSaving}
+                        onClick={() => onViosChange(selectedViosId)}
+                      >
+                        {viosSaving ? <Loader2 className="animate-spin" /> : <Link2 />}
+                        Vincular tarefa
+                      </Button>
+                    </>
+                  ) : (
+                    <p className="text-sm text-slate-500">
+                      {canManageVios
+                        ? "Nenhuma tarefa PROTOCOLO compatível foi encontrada na janela de 14 dias."
+                        : "A associação será revisada pelo Marketing."}
+                    </p>
+                  )}
+                </div>
               )}
             </DetailSection>
 

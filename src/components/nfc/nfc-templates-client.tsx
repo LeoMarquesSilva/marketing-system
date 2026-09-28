@@ -9,6 +9,7 @@ import {
   IdCard,
   MessageCircle,
   Umbrella,
+  Video,
   Webhook,
   Workflow,
 } from "lucide-react";
@@ -28,6 +29,7 @@ const ICONS: Record<NfcActionType, typeof Globe2> = {
   sequence: Workflow,
   asset_loan: Umbrella,
   professional_profile: IdCard,
+  video: Video,
 };
 
 export function NfcTemplatesClient({ templates }: { templates: NfcTemplate[] }) {

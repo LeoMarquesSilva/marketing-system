@@ -1,0 +1,434 @@
+[
+  {
+    "name": "MIDIAN BARBOSA DA SILVA",
+    "area": "CÍVEL",
+    "role": "ADVOGADO(A) PLENO",
+    "joinedOn": "2024-07-23",
+    "phone": "19 99985-6793",
+    "email": "midian.barbosa@bismarchipires.com.br"
+  },
+  {
+    "name": "GIOVANI PINA DE FREITAS",
+    "area": "CÍVEL",
+    "role": "ADVOGADO(A) SÊNIOR",
+    "joinedOn": "2024-09-23",
+    "phone": "(19) 98267-8762",
+    "email": "giovani.pina@bismarchipires.com.br"
+  },
+  {
+    "name": "MARIA CAROLINE DA CUNHA THOMÉ",
+    "area": "CÍVEL",
+    "role": "SUPERVISOR(A)",
+    "joinedOn": "2024-01-08",
+    "phone": "(19) 99435-2126",
+    "email": "caroline.thome@bismarchipires.com.br"
+  },
+  {
+    "name": "GIANCARLO MURTA ZOTINI",
+    "area": "CÍVEL",
+    "role": "SÓCIO DE ÁREA",
+    "joinedOn": "2020-10-13",
+    "phone": "(19) 98216-8374",
+    "email": "giancarlo@bismarchipires.com.br"
+  },
+  {
+    "name": "CAIO AUGUSTO DE ALCÂNTARA CÉSAR SILVA",
+    "area": "CONTRATOS E SOCIETÁRIO",
+    "role": "ASSISTENTE JURIDICO",
+    "joinedOn": "2025-07-08",
+    "phone": "(11) 974465663",
+    "email": "caio.silva@bismarchipires.com.br"
+  },
+  {
+    "name": "HENRIQUE FRANCO NASCIMENTO",
+    "area": "CONTRATOS E SOCIETÁRIO",
+    "role": "COORDENADOR(A)",
+    "joinedOn": "2026-02-10",
+    "phone": "(19) 971717755",
+    "email": "henrique.nascimento@bismarchipires.com.br"
+  },
+  {
+    "name": "LETICIA SANTANA RODRIGUES",
+    "area": "CONTRATOS E SOCIETÁRIO",
+    "role": "ADVOGADO(A) JUNIOR",
+    "joinedOn": "2024-07-03",
+    "phone": "(19) 99341-1284",
+    "email": "leticia.rodrigues@bismarchipires.com.br"
+  },
+  {
+    "name": "WAGNER JOSE PENEREIRO ARMANI",
+    "area": "CONTRATOS E SOCIETÁRIO",
+    "role": "SÓCIO DE ÁREA",
+    "joinedOn": "2025-01-13",
+    "phone": "(19) 997513770",
+    "email": "wagner.armani@bismarchipires.com.br"
+  },
+  {
+    "name": "ISADORA GODOY CONTE",
+    "area": "OPERAÇÕES LEGAIS",
+    "role": "ADVOGADO(A) PLENO",
+    "joinedOn": "2023-07-13",
+    "phone": "(19) 99243-9720",
+    "email": "isadora.conte@bismarchipires.com.br"
+  },
+  {
+    "name": "ANDRESSA DA SILVA",
+    "area": "OPERAÇÕES LEGAIS",
+    "role": "ASSISTENTE ADMINISTRATIVO",
+    "joinedOn": "2017-03-01",
+    "phone": "(19) 98867-1739",
+    "email": "andressa@bismarchipires.com.br"
+  },
+  {
+    "name": "VINICIUS SCHMOCKEL MARQUES",
+    "area": "OPERAÇÕES LEGAIS",
+    "role": "ANALISTA DE PROCESSOS GERENCIAIS",
+    "joinedOn": "2025-03-31",
+    "phone": "17 99186-3161",
+    "email": "vinicius.marques@bismarchipires.com.br"
+  },
+  {
+    "name": "CRISTIANA PEREIRA DA COSTA",
+    "area": "OPERAÇÕES LEGAIS",
+    "role": "AUXILIAR DE LIMPEZA",
+    "joinedOn": "2025-06-02",
+    "phone": "(19) 991187938",
+    "email": "cristiana.costa@bismarchipires.com.br"
+  },
+  {
+    "name": "GRAZIANE MAUCH DE BRITO",
+    "area": "OPERAÇÕES LEGAIS",
+    "role": "ASSISTENTE FINACEIRO PLENO",
+    "joinedOn": "2025-03-24",
+    "phone": "(19) 982291415",
+    "email": "graziane.brito@bismarchipires.com.br"
+  },
+  {
+    "name": "SAMUEL WILLIAN SILVA",
+    "area": "OPERAÇÕES LEGAIS",
+    "role": "COORDENADOR(A)",
+    "joinedOn": "2021-03-19",
+    "phone": "(35) 99236-6669",
+    "email": "samuel@bismarchipires.com.br"
+  },
+  {
+    "name": "JULIANA HERCULANO BANGART PIRES",
+    "area": "OPERAÇÕES LEGAIS",
+    "role": "COORDENADOR(A)",
+    "joinedOn": "2025-10-06",
+    "phone": "19 98848-3065",
+    "email": "juliana.pires@bismarchipires.com.br"
+  },
+  {
+    "name": "FELIPE SOARES DE CAMARGO",
+    "area": "OPERAÇÕES LEGAIS",
+    "role": "GERENTE",
+    "joinedOn": "2020-08-05",
+    "phone": "(19) 99968-4279",
+    "email": "felipe@bismarchipires.com.br"
+  },
+  {
+    "name": "LETICIA MARIA DOS SANTOS",
+    "area": "OPERAÇÕES LEGAIS",
+    "role": "ASSISTENTE ADMINISTRATIVO(A)",
+    "joinedOn": "2022-03-02",
+    "phone": "(19) 97402-0760",
+    "email": "recepcao@bismarchipires.com.br"
+  },
+  {
+    "name": "MARIA HELOIZA GOIS PONCE",
+    "area": "OPERAÇÕES LEGAIS",
+    "role": "SUPERVISOR(A)",
+    "joinedOn": "2025-05-12",
+    "phone": "19 98828-7845",
+    "email": "mariaponce@bismarchipires.com.br"
+  },
+  {
+    "name": "LEONARDO MARQUES SILVA",
+    "area": "OPERAÇÕES LEGAIS",
+    "role": "ANALISTA DE DESENVOLVIMENTO DE SOLUÇÕES",
+    "joinedOn": "2023-12-11",
+    "phone": "(35) 98875-4584",
+    "email": "leonardo.marques@bismarchipires.com.br"
+  },
+  {
+    "name": "MARIA JULIA PEREIRA",
+    "area": "OPERAÇÕES LEGAIS",
+    "role": "ESTAGIARIO(A)",
+    "joinedOn": "2025-12-01",
+    "phone": "(19) 992856598",
+    "email": "maria.pereira@bismarchipires.com.br"
+  },
+  {
+    "name": "MARINA SILVA PINELLI",
+    "area": "OPERAÇÕES LEGAIS",
+    "role": "ESTAGIARIO(A)",
+    "joinedOn": "2025-12-09",
+    "phone": "(19) 982950847",
+    "email": "marina.pinelli@bismarchipires.com.br"
+  },
+  {
+    "name": "NATALIA BORGES BREVE",
+    "area": "OPERAÇÕES LEGAIS",
+    "role": "ESTAGIARIO(A)",
+    "joinedOn": "2025-12-01",
+    "phone": "(19) 997256968",
+    "email": "natalia.breve@bismarchipires.com.br"
+  },
+  {
+    "name": "VALENTINA IACOVACCI",
+    "area": "OPERAÇÕES LEGAIS",
+    "role": "ESTAGIARIO(A) MARKETING",
+    "joinedOn": "2025-04-03",
+    "phone": "(19) 98744-7244",
+    "email": "valentina.iacovacci@bismarchipires.com.br"
+  },
+  {
+    "name": "LUCCA MARTINELLI DOS SANTOS MATTOS",
+    "area": "RECUPERAÇÃO CRÉDITO",
+    "role": "ADVOGADO(A) PLENO",
+    "joinedOn": "2026-04-01",
+    "phone": "(19) 99589-0944",
+    "email": "lucca.mattos@bismarchipires.com.br"
+  },
+  {
+    "name": "GIOVANNA PEREIRA DE SOUZA",
+    "area": "OPERAÇÕES LEGAIS",
+    "role": "ADVOGADO(A) JUNIOR",
+    "joinedOn": "2026-04-29",
+    "phone": "19992754161",
+    "email": "giovanna.souza@bismarchipires.com.br"
+  },
+  {
+    "name": "RAISSA ALNI MINARI",
+    "area": "RECUPERAÇÃO CRÉDITO",
+    "role": "ADVOGADO(A) JUNIOR",
+    "joinedOn": "2026-05-18",
+    "phone": "(19) 9.8722-0301",
+    "email": "raissa.minari@bismarchipires.com.br"
+  },
+  {
+    "name": "ANA NUNES GALVAO",
+    "area": "RECUPERAÇÃO CRÉDITO",
+    "role": "ADVOGADO(A) JUNIOR",
+    "joinedOn": "2026-07-06",
+    "phone": "(19) 998192211",
+    "email": "ana.galvao@bismarchipires.com.br"
+  },
+  {
+    "name": "MANUELA LUTKE",
+    "area": "REESTRUTURAÇÃO",
+    "role": "ADVOGADO(A) JUNIOR",
+    "joinedOn": "2025-01-21",
+    "phone": "(19)983951415",
+    "email": "manuela.lutke@bismarchipires.com.br"
+  },
+  {
+    "name": "ANA CLARA BORBA TAVARES",
+    "area": "REESTRUTURAÇÃO",
+    "role": "COORDENADOR(A)",
+    "joinedOn": "2022-04-25",
+    "phone": "(19) 99134-0662",
+    "email": "ana.tavares@bismarchipires.com.br"
+  },
+  {
+    "name": "FERNANDA ANDRADE CAMOLESI",
+    "area": "REESTRUTURAÇÃO",
+    "role": "ADVOGADO(A) JUNIOR",
+    "joinedOn": "2023-11-14",
+    "phone": "(12) 98887-0178",
+    "email": "fernanda.camolesi@bismarchipires.com.br"
+  },
+  {
+    "name": "LEONARDO LOUREIRO BASSO",
+    "area": "REESTRUTURAÇÃO",
+    "role": "GERENTE",
+    "joinedOn": "2019-06-03",
+    "phone": "(19) 99375-5462",
+    "email": "leonardo@bismarchipires.com.br"
+  },
+  {
+    "name": "GABRIELA BOSSI LEME",
+    "area": "REESTRUTURAÇÃO",
+    "role": "ADVOGADO(A) PLENO",
+    "joinedOn": "2024-06-18",
+    "phone": "(19) 99346-1943",
+    "email": "gabriela.leme@bismarchipires.com.br"
+  },
+  {
+    "name": "LAVÍNIA FERRAZ CRISPIM",
+    "area": "REESTRUTURAÇÃO",
+    "role": "ESPECIALISTA EM GESTÃO OPERACIONAL",
+    "joinedOn": "2024-04-23",
+    "phone": "(19) 99202-8726",
+    "email": "lavinia.ferraz@bismarchipires.com.br"
+  },
+  {
+    "name": "LUCAS SEBINEL MIRANDA",
+    "area": "REESTRUTURAÇÃO",
+    "role": "ADVOGADO(A) PLENO",
+    "joinedOn": "2020-11-30",
+    "phone": "(11) 96852-8335",
+    "email": "lucas@bismarchipires.com.br"
+  },
+  {
+    "name": "PEDRO VITTALE ROSSI",
+    "area": "REESTRUTURAÇÃO",
+    "role": "ADVOGADO(A) PLENO",
+    "joinedOn": "2024-06-04",
+    "phone": "(11) 96378-7627",
+    "email": "pedro.rossi@bismarchipires.com.br"
+  },
+  {
+    "name": "LIGIA GILBERTI LOPES",
+    "area": "REESTRUTURAÇÃO",
+    "role": "COORDENADOR(A) COMERCIAL",
+    "joinedOn": "2020-06-22",
+    "phone": "(19) 99894-7272",
+    "email": "ligia@bismarchipires.com.br"
+  },
+  {
+    "name": "VINICIUS CANTO HECKSHER",
+    "area": "REESTRUTURAÇÃO",
+    "role": "ESTAGIARIO(A)",
+    "joinedOn": "2026-04-23",
+    "phone": "(19) 997049119",
+    "email": "vinicius.hecksher@bismarchipires.com.br"
+  },
+  {
+    "name": "THAYNA RODRIGUES CABALIN",
+    "area": "REESTRUTURAÇÃO",
+    "role": "ADVOGADO(A) PLENO",
+    "joinedOn": "2025-06-04",
+    "phone": "19 99353-2501",
+    "email": "thayna.cabalin@bismarchipires.com.br"
+  },
+  {
+    "name": "GUSTAVO BISMARCHI MOTTA",
+    "area": "SÓCIO",
+    "role": "SÓCIO PATRIMONIAL",
+    "joinedOn": null,
+    "phone": "19 9 8100-4389",
+    "email": "gustavo@bismarchipires.com.br"
+  },
+  {
+    "name": "RICARDO VISCARDI PIRES",
+    "area": "SÓCIO",
+    "role": "SÓCIO PATRIMONIAL",
+    "joinedOn": "2016-08-04",
+    "phone": "19 9 9269-9250",
+    "email": "ricardo@bismarchipires.com.br"
+  },
+  {
+    "name": "LAURA PUENTE FERREIRA GOMES",
+    "area": "REESTRUTURAÇÃO",
+    "role": "ESTAGIARIO(A)",
+    "joinedOn": "2026-01-22",
+    "phone": "(11) 97501-5296",
+    "email": "laura.gomes@bismarchipires.com.br"
+  },
+  {
+    "name": "MARIANA MANUEL ARAUJO",
+    "area": "REESTRUTURAÇÃO",
+    "role": "ADVOGADO(A) PLENO",
+    "joinedOn": "2025-01-27",
+    "phone": "(19) 9400-5773",
+    "email": "mariana.araujo@bismarchipires.com.br"
+  },
+  {
+    "name": "DANIEL PRESSATTO FERNANDES",
+    "area": "TRABALHISTA",
+    "role": "SÓCIO DE ÁREA",
+    "joinedOn": "2021-06-21",
+    "phone": "(19) 98169-1340",
+    "email": "daniel@bismarchipires.com.br"
+  },
+  {
+    "name": "RENATO ROSSETTI VALLIM DE CASTRO",
+    "area": "RECUPERAÇÃO CRÉDITO",
+    "role": "SÓCIO DE ÁREA",
+    "joinedOn": "2020-03-02",
+    "phone": "(19) 99771-5609",
+    "email": "renato@bismarchipires.com.br"
+  },
+  {
+    "name": "GABRIELLA BORIM ASSUMPÇÃO",
+    "area": "REESTRUTURAÇÃO",
+    "role": "ADVOGADO(A) PLENO",
+    "joinedOn": "2026-04-22",
+    "phone": "(19) 997771478",
+    "email": "gabriella.assumpcao@bismarchipires.com.br"
+  },
+  {
+    "name": "JULIA ANTONINI MOREL",
+    "area": "REESTRUTURAÇÃO",
+    "role": "ESTAGIARIO(A)",
+    "joinedOn": "2026-04-27",
+    "phone": "(19) 98822-8023",
+    "email": "julia.morel@bismarchipires.com.br"
+  },
+  {
+    "name": "CAROLINE SIMEL ABDALLA",
+    "area": "TRABALHISTA",
+    "role": "SUPERVISOR(A)",
+    "joinedOn": "2020-09-04",
+    "phone": "(19) 98823-7971",
+    "email": "carolineabdalla@bismarchipires.com.br"
+  },
+  {
+    "name": "PAMELA KLAVA SENNA PATRICIO",
+    "area": "TRABALHISTA",
+    "role": "ADVOGADO(A) PLENO",
+    "joinedOn": "2021-04-13",
+    "phone": "(19) 98377-2875",
+    "email": "pamela@bismarchipires.com.br"
+  },
+  {
+    "name": "FERNANDA VOLTARELLI ARNONI",
+    "area": "TRABALHISTA",
+    "role": "ADVOGADO(A) PLENO",
+    "joinedOn": "2021-11-29",
+    "phone": "(19) 99715-6757",
+    "email": "fernanda.arnoni@bismarchipires.com.br"
+  },
+  {
+    "name": "MANOELA BRISIGHELLO ANGOTTI",
+    "area": "TRABALHISTA",
+    "role": "ESTAGIARIO(A)",
+    "joinedOn": "2025-05-14",
+    "phone": "19 98135-3951",
+    "email": "manoela.angotti@bismarchipires.com.br"
+  },
+  {
+    "name": "LORENA LOURENÇO MIRANDA",
+    "area": "TRABALHISTA",
+    "role": "ADVOGADO(A) JUNIOR",
+    "joinedOn": "2021-10-25",
+    "phone": "(15)99175-9920",
+    "email": "lorena.miranda@bismarchipires.com.br"
+  },
+  {
+    "name": "LETICIA ZAMARION JULIO",
+    "area": "TRABALHISTA",
+    "role": "ADVOGADO(A) JUNIOR",
+    "joinedOn": "2025-07-28",
+    "phone": "19 98209-7685",
+    "email": "leticia.julio@bismarchipires.com.br"
+  },
+  {
+    "name": "DANIELA LAGOEIRO DOS SANTOS",
+    "area": "REESTRUTURAÇÃO",
+    "role": "ADVOGADO(A) JUNIOR",
+    "joinedOn": "2026-07-27",
+    "phone": "(19) 983938912",
+    "email": "daniela.santos@bismarchipires.com.br"
+  },
+  {
+    "name": "VANESSA LANZA SELLANI",
+    "area": "TRABALHISTA",
+    "role": "ADVOGADO(A) JUNIOR",
+    "joinedOn": "2026-08-13",
+    "phone": "(19) 983938913",
+    "email": "vanessa.sellani@bismarchipires.com.br"
+  }
+]

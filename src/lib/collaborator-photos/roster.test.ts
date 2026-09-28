@@ -4,6 +4,7 @@ import {
   filterPhotoRoster,
   listPhotoRosterAreas,
   PHOTO_ROSTER_INCLUDED_VACATION_EXEMPT_IDS,
+  PHOTO_ROSTER_SOCIO_IDS,
   resolvePhotoRosterAreaLabel,
   type PhotoRosterPerson,
 } from "@/lib/collaborator-photos/roster";
@@ -93,11 +94,28 @@ describe("computePhotoRosterStats", () => {
 });
 
 describe("PHOTO_ROSTER_INCLUDED_VACATION_EXEMPT_IDS", () => {
-  it("inclui Gustavo Bismarchi e Ricardo Pires na gestão de fotos", () => {
-    expect(PHOTO_ROSTER_INCLUDED_VACATION_EXEMPT_IDS).toEqual([
+  it("inclui sócios e Francisco Zanin na gestão de fotos", () => {
+    expect(PHOTO_ROSTER_SOCIO_IDS).toEqual([
       "3da9c5f0-cf80-4743-aea9-76ec5c80ddb2",
       "1948ec31-133f-402d-9f66-27b6b5eea093",
     ]);
+    expect(PHOTO_ROSTER_INCLUDED_VACATION_EXEMPT_IDS).toEqual([
+      "3da9c5f0-cf80-4743-aea9-76ec5c80ddb2",
+      "1948ec31-133f-402d-9f66-27b6b5eea093",
+      "8ad23cbd-9b5c-4c5b-8b4b-2f013347b8c4",
+    ]);
+  });
+
+  it("mantém Francisco Zanin na área Tributário, sem virar Sócio", () => {
+    const francisco: PhotoRosterPerson = {
+      ...people[0],
+      employeeId: "8ad23cbd-9b5c-4c5b-8b4b-2f013347b8c4",
+      name: "Francisco de Assis Barbosa Campos Zanin",
+      department: "Tributário",
+    };
+
+    expect(resolvePhotoRosterAreaLabel(francisco)).toBe("Tributário");
+    expect(listPhotoRosterAreas([francisco])).toEqual(["Tributário"]);
   });
 
   it("busca Insolvência pelo nome canônico Reestruturação", () => {

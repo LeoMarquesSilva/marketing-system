@@ -27,6 +27,10 @@
       "schedule": "0 4 * * 0"
     },
     {
+      "path": "/api/cron/vios-sync-sioe",
+      "schedule": "0 16 * * *"
+    },
+    {
       "path": "/api/cron/ga4-sync",
       "schedule": "0 10 * * *"
     },

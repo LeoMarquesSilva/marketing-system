@@ -5,6 +5,7 @@ import {
   nfcAssetUpdateSchema,
   nfcExecutionInputSchema,
   nfcTagInputSchema,
+  nfcTagUpdateSchema,
 } from "@/lib/nfc/validation";
 
 const baseTag = {
@@ -148,6 +149,40 @@ describe("NFC tag validation", () => {
       ...baseTag,
       actionType: "professional_profile",
       actionConfig: { profileId: "7e3bd4e6-156a-4bdf-bc0f-61a0f08a9134" },
+    });
+    expect(valid.success).toBe(true);
+  });
+
+  it("edição valida sem o código e mantém as regras cruzadas", () => {
+    expect(nfcTagUpdateSchema.safeParse({ ...baseTag, actionType: "video", actionConfig: {} }).success).toBe(false);
+    expect(
+      nfcTagUpdateSchema.safeParse({
+        ...baseTag,
+        actionType: "video",
+        actionConfig: { videoPath: "tags/1d4876c8-47b6-4a0f-9dee-a0f28fafaee4/1790627553189-video_ricardo.mp4" },
+      }).success
+    ).toBe(true);
+  });
+
+  it("exige vídeo enviado e caminho seguro para a ação video", () => {
+    const missing = nfcTagInputSchema.safeParse({ ...baseTag, actionType: "video", actionConfig: {} });
+    expect(missing.success).toBe(false);
+
+    const traversal = nfcTagInputSchema.safeParse({
+      ...baseTag,
+      actionType: "video",
+      actionConfig: { videoPath: "tags/../outro-bucket/x.mp4" },
+    });
+    expect(traversal.success).toBe(false);
+
+    const valid = nfcTagInputSchema.safeParse({
+      ...baseTag,
+      actionType: "video",
+      actionConfig: {
+        videoPath: "tags/7e3bd4e6-156a-4bdf-bc0f-61a0f08a9134/1790000000000-parabens-ricardo.mp4",
+        videoFileName: "Parabéns Ricardo.mp4",
+        videoSizeBytes: 1_600_000_000,
+      },
     });
     expect(valid.success).toBe(true);
   });

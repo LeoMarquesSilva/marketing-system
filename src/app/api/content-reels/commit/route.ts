@@ -52,8 +52,19 @@ export async function POST(request: Request) {
     if (item.created_by_id !== auth.profile.id) return NextResponse.json({ error: "Roteiro de outro colaborador." }, { status: 403 });
     const { error: assigneeError } = await db.from("reel_studio_assignees").upsert({ reel_id: item.id, user_id: auth.profile.id, user_name: auth.profile.name }, { onConflict: "reel_id,user_id", ignoreDuplicates: true });
     if (assigneeError) throw new Error("Roteiro salvo. Tente novamente para concluir a atribuição.");
-    const link = await autoLinkContentSchedule({ collaboratorId: auth.profile.id, area: item.area, format: "reel", contentRoteiroId: item.source_content_id ?? undefined, reelStudioId: item.id, eventDate: item.created_at });
-    return NextResponse.json({ itemId: item.id, link, message: "Roteiro salvo no estúdio. A associação ao cronograma foi processada; eventuais pendências ficam com o Marketing." });
+    try {
+      const link = await autoLinkContentSchedule({ collaboratorId: auth.profile.id, area: item.area, format: "reel", contentRoteiroId: item.source_content_id ?? undefined, reelStudioId: item.id, eventDate: item.created_at });
+      return NextResponse.json({ itemId: item.id, link, scheduleWarning: null, message: "Roteiro salvo no estúdio. A associação ao cronograma foi processada; eventuais pendências ficam com o Marketing." });
+    } catch (scheduleError) {
+      console.error("[content-reels] roteiro salvo; falha no vínculo do cronograma", scheduleError);
+      const scheduleWarning = "O roteiro foi salvo, mas não foi possível atualizar o cronograma. O Marketing precisa conferir o vínculo.";
+      return NextResponse.json({
+        itemId: item.id,
+        link: null,
+        scheduleWarning,
+        message: scheduleWarning,
+      });
+    }
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Não foi possível usar o roteiro." }, { status: 500 });
   }

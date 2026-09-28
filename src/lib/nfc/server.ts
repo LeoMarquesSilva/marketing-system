@@ -28,6 +28,8 @@ import {
   nfcAssetCreateSchema,
   nfcAssetUpdateSchema,
   nfcTagInputSchema,
+  nfcTagUpdateSchema,
+  NFC_VIDEO_PATH_PATTERN,
 } from "@/lib/nfc/validation";
 import { parseNfcScanSource } from "@/lib/nfc/public-url";
 import {
@@ -328,7 +330,7 @@ export async function getNfcTag(id: string): Promise<{
 
 export async function updateNfcTag(id: string, rawInput: unknown): Promise<NfcTag> {
   const manager = await requireNfcManager();
-  const parsed = nfcTagInputSchema.omit({ code: true }).safeParse(rawInput);
+  const parsed = nfcTagUpdateSchema.safeParse(rawInput);
   if (!parsed.success) {
     throw new NfcHttpError(parsed.error.issues[0]?.message ?? "Dados inválidos.", 400, "VALIDATION_ERROR");
   }
@@ -984,6 +986,21 @@ function toPublicAction(tag: NfcTag): NfcPublicResolution["action"] {
   };
 }
 
+export const NFC_VIDEOS_BUCKET = "MARKETING-SYSTEM-NFC-VIDEOS";
+/** Validade do link do vídeo: cobre assistir de novo sem reaproximar a etiqueta. */
+const NFC_VIDEO_SIGNED_URL_SECONDS = 6 * 60 * 60;
+
+/** Gera URL assinada do vídeo privado da etiqueta; null se o arquivo não existir. */
+async function signNfcVideoUrl(admin: SupabaseClient, tag: NfcTag): Promise<string | null> {
+  const path = tag.action_config?.videoPath;
+  if (!path || !NFC_VIDEO_PATH_PATTERN.test(path)) return null;
+  const { data, error } = await admin.storage
+    .from(NFC_VIDEOS_BUCKET)
+    .createSignedUrl(path, NFC_VIDEO_SIGNED_URL_SECONDS);
+  if (error || !data?.signedUrl) return null;
+  return data.signedUrl;
+}
+
 async function toProfessionalProfilePublicAction(
   admin: SupabaseClient,
   tag: NfcTag
@@ -1139,6 +1156,14 @@ export async function resolvePublicNfcTag(input: ResolvePublicInput): Promise<Nf
       return { state: resolved.state, message: resolved.message };
     }
     action = resolved.action;
+  }
+  if (tag.action_type === "video" && action) {
+    const videoUrl = await signNfcVideoUrl(admin, tag);
+    if (!videoUrl) {
+      await insertScan(admin, tag, input.request, identity, input.anonymousSessionId, "inactive", "VIDEO_UNAVAILABLE");
+      return { state: "inactive", message: "O vídeo desta etiqueta ainda não está disponível." };
+    }
+    action = { ...action, videoUrl };
   }
 
   const scanId = await insertScan(

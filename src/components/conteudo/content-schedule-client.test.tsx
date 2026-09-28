@@ -4,6 +4,7 @@ import type { ContentScheduleResponse } from "@/lib/content-schedule/types";
 import {
   AreaMark,
   CollaboratorAvatar,
+  getVisiblePendingLinks,
   isCurrentScheduleAssignmentOperation,
   isCurrentScheduleLoadOperation,
   mapContentScheduleResponse,
@@ -107,6 +108,15 @@ describe("reload assíncrono do cronograma", () => {
   });
 });
 
+describe("pendências de vínculo", () => {
+  it("limita a prévia, mas torna todas as pendências acessíveis ao expandir", () => {
+    const pending = Array.from({ length: 7 }, (_, index) => `pending-${index + 1}`);
+
+    expect(getVisiblePendingLinks(pending, false)).toEqual(pending.slice(0, 5));
+    expect(getVisiblePendingLinks(pending, true)).toEqual(pending);
+  });
+});
+
 function response(): ContentScheduleResponse {
   return {
     areas: ["Tributário"],
@@ -132,7 +142,21 @@ function response(): ContentScheduleResponse {
       reel_title: null,
       instagram_post_id: null,
       publication: null,
-      vios_task: { id: "vios-task-1", ci: "12345", status: "Em andamento", title: "Revisar enquadramento" },
+      vios_task_id: "vios-task-1",
+      vios_link_origin: "automatic",
+      vios_linked_at: "2026-09-10T12:00:00.000Z",
+      vios_linked_by: null,
+      vios_task: {
+        id: "vios-task-1",
+        ci: "12345",
+        status: "Em andamento",
+        title: "Revisar enquadramento",
+        due_date: "2026-09-18",
+        area: "Tributário",
+        assignee_id: "person-1",
+        assignee_name: "Marina Oliveira",
+      },
+      vios_candidates: [],
       created_at: "2026-09-01T12:00:00.000Z",
       updated_at: "2026-09-10T12:00:00.000Z",
     }],
@@ -148,7 +172,24 @@ describe("integração dos detalhes do cronograma", () => {
       ci: "12345",
       status: "Em andamento",
       title: "Revisar enquadramento",
+      dueDate: "2026-09-18",
+      area: "Tributário",
+      assigneeId: "person-1",
+      assigneeName: "Marina Oliveira",
     });
+  });
+
+  it("canoniza áreas na exibição e remove Distressed Deals das opções de filtro", () => {
+    const raw = response();
+    raw.areas = ["Marketing", "Insolvência", "Distressed Deals"];
+    raw.collaborators[0].department = "Marketing";
+    raw.slots[0].area = "Insolvência";
+
+    const payload = mapContentScheduleResponse(raw);
+
+    expect(payload.areas).toEqual(["Operações Legais", "Reestruturação"]);
+    expect(payload.collaborators[0].area).toBe("Operações Legais");
+    expect(payload.slots[0].area).toBe("Reestruturação");
   });
 
   it("mantém o painel no mesmo ID com os dados recarregados", () => {

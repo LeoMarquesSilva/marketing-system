@@ -18,6 +18,10 @@ export interface ContentScheduleViosTask {
   ci: string;
   status: string | null;
   title: string | null;
+  due_date: string | null;
+  area: string | null;
+  assignee_id: string | null;
+  assignee_name: string | null;
 }
 
 export interface ContentScheduleSlot {
@@ -39,7 +43,12 @@ export interface ContentScheduleSlot {
   reel_title: string | null;
   instagram_post_id: string | null;
   publication: ContentSchedulePublication | null;
+  vios_task_id: string | null;
+  vios_link_origin: "automatic" | "manual" | null;
+  vios_linked_at: string | null;
+  vios_linked_by: string | null;
   vios_task: ContentScheduleViosTask | null;
+  vios_candidates: ContentScheduleViosTask[];
   created_at: string;
   updated_at: string;
 }
@@ -119,4 +128,21 @@ export interface ContentScheduleWarning {
   publishedAt?: string;
   url?: string;
   collaboratorName?: string;
+}
+
+export interface ContentScheduleAssignmentNotification {
+  id: string;
+  slot_id: string;
+  changed_by_name: string;
+  previous_collaborator_name: string;
+  new_collaborator_name: string;
+  area: string;
+  due_date: string;
+  format: ContentScheduleFormat;
+  source_name: string | null;
+  source_status: string | null;
+  source_notes: string | null;
+  vios_ci: string | null;
+  vios_title: string | null;
+  created_at: string;
 }
