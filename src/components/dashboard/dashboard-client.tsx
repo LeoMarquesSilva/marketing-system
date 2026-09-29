@@ -6,6 +6,7 @@ import { ChartByArea } from "@/components/dashboard/chart-by-area";
 import { ChartByStatus } from "@/components/dashboard/chart-by-status";
 import { ChartByType } from "@/components/dashboard/chart-by-type";
 import { ChartTimesheet } from "@/components/dashboard/chart-timesheet";
+import { SlaByType } from "@/components/dashboard/sla-by-type";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import { Button } from "@/components/ui/button";
 import {
@@ -490,6 +491,10 @@ export function DashboardClient({ requests }: DashboardClientProps) {
 
       <div className="min-w-0">
         <ChartByType data={dataByType} />
+      </div>
+
+      <div className="min-w-0">
+        <SlaByType requests={normalizedRequests} periodLabel={periodLabel} />
       </div>
 
       <div className="min-w-0">
