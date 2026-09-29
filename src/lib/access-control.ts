@@ -135,6 +135,19 @@ export function isAdminRole(profile: AccessProfile | null | undefined): boolean 
   return (profile?.role ?? "").toLowerCase() === "admin";
 }
 
+/** Usuários não-admin que podem excluir solicitações (tarefas) no Planner. */
+const DELETE_REQUESTS_USER_IDS = new Set([
+  "73b4ed1a-6adf-4f61-9f5d-3fcce646d6b7", // Valentina Iacovacci
+]);
+
+export function canDeleteMarketingRequests(
+  profile: AccessProfile | null | undefined
+): boolean {
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  return Boolean(profile.id && DELETE_REQUESTS_USER_IDS.has(profile.id));
+}
+
 /** Painel do Café com Cultura: admin ou liberação manual em Usuários. */
 export function hasCafeCulturaAccess(profile: AccessProfile | null | undefined): boolean {
   if (!profile) return false;

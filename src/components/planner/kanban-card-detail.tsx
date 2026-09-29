@@ -33,6 +33,7 @@ import {
   type TimeEntry,
 } from "@/lib/time-entries";
 import { useAuth } from "@/contexts/auth-context";
+import { canDeleteMarketingRequests } from "@/lib/access-control";
 import { useTimer } from "@/contexts/timer-context";
 import { useStopwatch } from "@/hooks/use-stopwatch";
 import { fetchActivityLog, type ActivityLogEntry } from "@/lib/activity-log";
@@ -150,6 +151,7 @@ export function KanbanCardDetail({
   const [isMarkingComplete, setIsMarkingComplete] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
   const isAdmin = profile?.role === "admin";
+  const canDeleteRequest = canDeleteMarketingRequests(profile);
   const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
   const [comments, setComments] = useState<RequestComment[]>([]);
   const [commentBody, setCommentBody] = useState("");
@@ -1311,8 +1313,8 @@ export function KanbanCardDetail({
               </section>
             )}
 
-          {/* Excluir solicitação (admin) */}
-          {isAdmin && (
+          {/* Excluir solicitação (admin ou liberação individual) */}
+          {canDeleteRequest && (
             <section className={sectionClass}>
               <Button
                 variant="outline"
