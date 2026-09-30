@@ -206,53 +206,54 @@ export function EventoDetailClient({
     await reloadHistory();
   }
 
-  async function handleAddTask() {
+  async function handleAddTask(draft?: import("@/lib/event-task-list").EventTaskDraft): Promise<boolean> {
+    const title = (draft?.title ?? newTaskTitle).trim();
+    if (!title || isBusy) return false;
     setIsBusy(true);
-    const title = newTaskTitle.trim();
-    if (!title) {
-      setIsBusy(false);
-      return;
-    }
-    const created = await insertEventTask({
-      eventId: event.id,
-      title,
-      description: null,
-      assigneeId: null,
-      dueDate: null,
-      status: "pendente",
-      phase: null,
-      sortOrder: tasks.length,
-      marketingRequestId: null,
-    });
-    if (created) {
+    try {
+      const created = await insertEventTask({
+        eventId: event.id, title,
+        description: draft?.description ?? null,
+        assigneeId: draft?.assigneeId ?? null,
+        dueDate: draft?.dueDate ?? null,
+        status: draft?.status ?? "pendente",
+        phase: draft?.phase ?? null,
+        sortOrder: Math.max(-1, ...tasks.map((task) => task.sortOrder)) + 1,
+        marketingRequestId: null,
+      });
+      if (!created) return false;
       setTasks((prev) => [...prev, created]);
-      setNewTaskTitle("");
+      if (!draft) setNewTaskTitle("");
       await registerHistory("tarefa", `Tarefa criada: ${created.title}`);
       setActionFeedback({ type: "success", text: "Tarefa criada com sucesso." });
-    }
-    setIsBusy(false);
+      return true;
+    } finally { setIsBusy(false); }
   }
 
   async function handleTaskFieldUpdate(taskId: string, partial: Record<string, unknown>) {
+    if (isBusy) return false;
     setIsBusy(true);
-    const ok = await updateEventTask(taskId, partial as Parameters<typeof updateEventTask>[1]);
-    if (ok) {
+    try {
+      const ok = await updateEventTask(taskId, partial as Parameters<typeof updateEventTask>[1]);
+      if (!ok) return false;
       await reloadTasks();
       await registerHistory("tarefa", "Tarefa atualizada", { taskId, partial });
       setActionFeedback({ type: "success", text: "Tarefa atualizada." });
-    }
-    setIsBusy(false);
+      return true;
+    } finally { setIsBusy(false); }
   }
 
   async function handleDeleteTask(taskId: string) {
+    if (isBusy) return false;
     setIsBusy(true);
-    const ok = await deleteEventTask(taskId);
-    if (ok) {
+    try {
+      const ok = await deleteEventTask(taskId);
+      if (!ok) return false;
       setTasks((prev) => prev.filter((t) => t.id !== taskId));
       await registerHistory("tarefa", "Tarefa removida", { taskId });
       setActionFeedback({ type: "success", text: "Tarefa removida." });
-    }
-    setIsBusy(false);
+      return true;
+    } finally { setIsBusy(false); }
   }
 
   async function handleDeleteBudget(id: string) {
@@ -634,6 +635,7 @@ export function EventoDetailClient({
           onUpdateTask={handleTaskFieldUpdate}
           onDeleteTask={handleDeleteTask}
           onSendPlanner={(task) => setPlannerTask(task)}
+          isBusy={isBusy}
         />
       )}
       {tab === "orcamento" && (
