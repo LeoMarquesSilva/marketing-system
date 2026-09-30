@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, ClipboardList, CheckSquare, Wallet, Truck, Users, Megaphone, Paperclip, ChartLine, History, Pencil, Copy, Loader2, MousePointerClick } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -176,9 +176,20 @@ export function EventoDetailClient({
     const next = await fetchEventById(event.id);
     if (next) setEvent(next);
   }
-  async function reloadTasks() {
+  const reloadTasks = useCallback(async () => {
     setTasks(await fetchEventTasks(event.id));
-  }
+  }, [event.id]);
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get("tab");
+    if (requestedTab === "planner" || requestedTab === "tarefas") setTab("tarefas");
+    else if (requestedTab === "arquivos") setTab("arquivos");
+  }, []);
+  useEffect(() => {
+    const refresh = () => { if (!isBusy && document.visibilityState === "visible") void reloadTasks(); };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => { window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); };
+  }, [reloadTasks, isBusy]);
   async function reloadBudget() {
     setBudgetItems(await fetchEventBudgetItems(event.id));
   }
@@ -224,7 +235,7 @@ export function EventoDetailClient({
       if (!created) return false;
       setTasks((prev) => [...prev, created]);
       if (!draft) setNewTaskTitle("");
-      await registerHistory("tarefa", `Tarefa criada: ${created.title}`);
+      await registerHistory("tarefa", `Tarefa criada: ${created.title}`).catch(() => undefined);
       setActionFeedback({ type: "success", text: "Tarefa criada com sucesso." });
       return true;
     } finally { setIsBusy(false); }
@@ -236,8 +247,8 @@ export function EventoDetailClient({
     try {
       const ok = await updateEventTask(taskId, partial as Parameters<typeof updateEventTask>[1]);
       if (!ok) return false;
-      await reloadTasks();
-      await registerHistory("tarefa", "Tarefa atualizada", { taskId, partial });
+      setTasks(previous => previous.map(task => task.id === taskId ? { ...task, ...partial, assigneeName: partial.assigneeId !== undefined ? users.find(user => user.id === partial.assigneeId)?.name ?? null : task.assigneeName } : task));
+      await registerHistory("tarefa", "Tarefa atualizada", { taskId, partial }).catch(() => undefined);
       setActionFeedback({ type: "success", text: "Tarefa atualizada." });
       return true;
     } finally { setIsBusy(false); }
@@ -250,7 +261,7 @@ export function EventoDetailClient({
       const ok = await deleteEventTask(taskId);
       if (!ok) return false;
       setTasks((prev) => prev.filter((t) => t.id !== taskId));
-      await registerHistory("tarefa", "Tarefa removida", { taskId });
+      await registerHistory("tarefa", "Tarefa removida", { taskId }).catch(() => undefined);
       setActionFeedback({ type: "success", text: "Tarefa removida." });
       return true;
     } finally { setIsBusy(false); }
@@ -518,7 +529,7 @@ export function EventoDetailClient({
 
   const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
     { id: "resumo", label: "Resumo", icon: <ClipboardList className="h-4 w-4" /> },
-    { id: "tarefas", label: "Tarefas", icon: <CheckSquare className="h-4 w-4" /> },
+    { id: "tarefas", label: "Planner", icon: <CheckSquare className="h-4 w-4" /> },
     { id: "orcamento", label: "Orçamento", icon: <Wallet className="h-4 w-4" /> },
     { id: "fornecedores", label: "Prestadores", icon: <Truck className="h-4 w-4" /> },
     { id: "convidados", label: "Convidados", icon: <Users className="h-4 w-4" /> },
@@ -636,6 +647,9 @@ export function EventoDetailClient({
           onDeleteTask={handleDeleteTask}
           onSendPlanner={(task) => setPlannerTask(task)}
           isBusy={isBusy}
+          onRefresh={reloadTasks}
+          attachments={attachments}
+          eventDates={event.eventDate ? [{ date: event.eventDate, name: event.name, id: event.id }] : []}
         />
       )}
       {tab === "orcamento" && (

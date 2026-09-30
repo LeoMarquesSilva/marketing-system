@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EventTask } from "./eventos";
-import { filterEventTasks, groupEventTasks } from "./event-task-list";
+import { filterEventTasks, groupEventTasks, eventCalendarDays, shiftEventMonth } from "./event-task-list";
 
 const task = (partial: Partial<EventTask>): EventTask => ({
   id: "t1", eventId: "e1", title: "Conferir contrato", description: null,
@@ -9,6 +9,21 @@ const task = (partial: Partial<EventTask>): EventTask => ({
 });
 
 describe("lista de tarefas do evento", () => {
+  it("combina etapa com os demais filtros sem descartar tarefas sem etapa", () => {
+    const tasks = [task({ phase: "pre_evento", assigneeId: "u1" }), task({ id: "other", phase: "dia_evento", assigneeId: "u1" }), task({ id: "none" })];
+    expect(filterEventTasks(tasks, { search: "contrato", status: "pendente", assignee: "u1", phase: "pre_evento" }, "2026-09-30").map(t => t.id)).toEqual(["t1"]);
+    expect(filterEventTasks(tasks, { search: "", status: "all", assignee: "all", phase: "sem_etapa" }, "2026-09-30").map(t => t.id)).toEqual(["none"]);
+  });
+  it("mantém datas civis, fevereiro bissexto e semanas completas no calendário", () => {
+    const leap = eventCalendarDays("2028-02");
+    expect(leap.filter(Boolean)).toHaveLength(29);
+    expect(leap[2]).toBe("2028-02-01");
+    expect(leap).toContain("2028-02-29");
+    expect(leap.length % 7).toBe(0);
+    expect(eventCalendarDays("2026-02").filter(Boolean)).toHaveLength(28);
+    expect(shiftEventMonth("2026-12", 1)).toBe("2027-01");
+    expect(shiftEventMonth("2026-01", -1)).toBe("2025-12");
+  });
   it("encontra participantes e cardápio na descrição, ignorando acentos", () => {
     const tasks = [task({ description: "Degustação às 12h com Ana no buffet" }), task({ id: "t2" })];
     expect(filterEventTasks(tasks, { search: "degustacao", status: "all", assignee: "all" }, "2026-09-30").map((t) => t.id)).toEqual(["t1"]);
