@@ -1497,6 +1497,38 @@ export async function fetchEventTasks(
   return (data ?? []).map((r) => rowToTask(r as TaskRow & { users?: TaskRow["users"] | TaskRow["users"][] | null }));
 }
 
+/** Uses the signed-in client/RLS; never creates marketing requests or copies tasks. */
+export async function fetchEventPlannerSnapshot(client?: SupabaseClient): Promise<{
+  events: OrgEvent[]; tasks: EventTask[]; attachments: EventAttachment[];
+}> {
+  const db = client ?? supabase;
+  const events: OrgEvent[] = [];
+  for (let start = 0; ; start += 500) {
+    const { data, error } = await db.from("events").select(EVENT_SELECT).order("id").range(start, start + 499);
+    if (error) throw new Error("Não foi possível carregar os eventos.");
+    events.push(...(data ?? []).map(row => rowToEvent(row as EventRow)).filter(event => !isStandaloneModuleEvent(event)));
+    if ((data?.length ?? 0) < 500) break;
+  }
+  const tasks: EventTask[] = [];
+  const attachments: EventAttachment[] = [];
+  for (let batch = 0; batch < events.length; batch += 100) {
+    const ids = events.slice(batch, batch + 100).map(event => event.id);
+    for (let start = 0; ; start += 500) {
+      const { data, error } = await db.from("event_tasks").select(TASK_SELECT).in("event_id", ids).order("id").range(start, start + 499);
+      if (error) throw new Error("Não foi possível carregar as tarefas dos eventos.");
+      tasks.push(...(data ?? []).map(row => rowToTask(row as TaskRow & { users?: TaskRow["users"] | TaskRow["users"][] | null })));
+      if ((data?.length ?? 0) < 500) break;
+    }
+    for (let start = 0; ; start += 500) {
+      const { data, error } = await db.from("event_attachments").select("*").in("event_id", ids).not("related_id", "is", null).order("id").range(start, start + 499);
+      if (error) throw new Error("Não foi possível carregar os anexos das tarefas.");
+      attachments.push(...(data ?? []).map(row => rowToAttachment(row as AttachmentRow)));
+      if ((data?.length ?? 0) < 500) break;
+    }
+  }
+  return { events, tasks, attachments };
+}
+
 export async function insertEventTask(
   input: Omit<EventTask, "id" | "createdAt" | "updatedAt" | "assigneeName" | "assigneeAvatar">
 ): Promise<EventTask | null> {
@@ -1541,21 +1573,21 @@ export async function updateEventTask(
   if (partial.sortOrder != null) payload.sort_order = partial.sortOrder;
   if (partial.marketingRequestId !== undefined) payload.marketing_request_id = partial.marketingRequestId;
 
-  const { error } = await supabase.from("event_tasks").update(payload).eq("id", id);
+  const { data, error } = await supabase.from("event_tasks").update(payload).eq("id", id).select("id").maybeSingle();
   if (error) {
     console.error("Erro ao atualizar tarefa:", error);
     return false;
   }
-  return true;
+  return Boolean(data);
 }
 
 export async function deleteEventTask(id: string): Promise<boolean> {
-  const { error } = await supabase.from("event_tasks").delete().eq("id", id);
+  const { data, error } = await supabase.from("event_tasks").delete().eq("id", id).select("id").maybeSingle();
   if (error) {
     console.error("Erro ao deletar tarefa:", error);
     return false;
   }
-  return true;
+  return Boolean(data);
 }
 
 export async function fetchEventBudgetItems(

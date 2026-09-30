@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -9,15 +10,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import { UserSelectSearch } from "@/components/solicitacoes/user-select-search";
-import { EVENT_TASK_STATUS_LABEL, type EventTask, type EventTaskStatus, type EventTaskPhase } from "@/lib/eventos";
+import { EVENT_TASK_STATUS_LABEL, type EventTask, type EventTaskStatus, type EventTaskPhase, type EventAttachment } from "@/lib/eventos";
 import { TASK_PHASES, type EventTaskDraft } from "@/lib/event-task-list";
 import type { User } from "@/lib/users";
 
-export function EventoTaskEditor({ task, users, onClose, onSave }: {
+export function EventoTaskEditor({ task, users, onClose, onSave, attachments = [] }: {
   task: EventTask | null;
   users: User[];
   onClose: () => void;
   onSave: (draft: EventTaskDraft) => Promise<boolean>;
+  attachments?: EventAttachment[];
 }) {
   const [draft, setDraft] = useState<EventTaskDraft>({ title: task?.title ?? "", description: task?.description ?? "", assigneeId: task?.assigneeId ?? null, dueDate: task?.dueDate ?? null, status: task?.status ?? "pendente", phase: task ? task.phase : "pre_evento" });
   const [saving, setSaving] = useState(false);
@@ -52,6 +54,7 @@ export function EventoTaskEditor({ task, users, onClose, onSave }: {
               <div className="space-y-2"><Label htmlFor="event-task-status">Status</Label><select id="event-task-status" className={selectClass} value={draft.status} onChange={(e) => change("status", e.target.value as EventTaskStatus)}>{Object.entries(EVENT_TASK_STATUS_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
             </div>
           </fieldset>
+          {task && <div className="space-y-2 border-t pt-3"><p className="text-sm font-semibold">Anexos da tarefa</p>{attachments.filter(file => file.relatedId === task.id && file.eventId === task.eventId).map(file => <a key={file.id} href={file.url} target="_blank" rel="noopener noreferrer" className="block break-words text-sm text-primary underline">{file.title}</a>)}<Link href={"/eventos/" + task.eventId + "?tab=arquivos"} className="block text-xs text-primary underline">Gerenciar arquivos no evento</Link></div>}
           {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
           <DialogFooter><Button type="button" variant="outline" disabled={saving} onClick={onClose}>Cancelar</Button><Button type="submit" disabled={saving || !draft.title.trim()}>{saving && <Loader2 className="h-4 w-4 animate-spin" />}Salvar tarefa</Button></DialogFooter>
         </form>

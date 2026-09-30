@@ -14,6 +14,8 @@ import type { AppSettings } from "@/lib/app-settings";
 import { Button } from "@/components/ui/button";
 import { LayoutGrid, CheckCircle2, PlusCircle, Share2, Wifi, WifiOff, UserPlus } from "lucide-react";
 import { PostsTab } from "@/components/planner/posts-tab";
+import { EventosPlannerTab } from "@/components/planner/eventos-planner-tab";
+import { canAccessPath } from "@/lib/access-control";
 import { PostAvailableDetailDialog } from "@/components/planner/post-available-detail-dialog";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -46,8 +48,9 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
   const { profile } = useAuth();
   const enabledTabs = appSettings.plannerTabs;
   const firstTab = enabledTabs[0] ?? "kanban";
-  const [selectedTab, setActiveTab] = useState<"kanban" | "concluidos" | "posts">(firstTab);
-  const activeTab = enabledTabs.includes(selectedTab) ? selectedTab : firstTab;
+  const [selectedTab, setActiveTab] = useState<"kanban" | "concluidos" | "posts" | "eventos">(firstTab);
+  const canViewEvents = Boolean(profile && canAccessPath(profile, "/eventos"));
+  const activeTab = selectedTab === "eventos" ? canViewEvents ? "eventos" : firstTab : enabledTabs.includes(selectedTab) ? selectedTab : firstTab;
 
   const isAdmin = (profile?.role ?? "").toLowerCase() === "admin";
 
@@ -251,8 +254,9 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
               </button>
             );
           })}
+          {canViewEvents && <button type="button" onClick={() => setActiveTab("eventos")} className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === "eventos" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>Eventos</button>}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        {activeTab !== "eventos" && <div className="flex flex-wrap items-center gap-2">
           <div
             className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium ${
               realtimeStatus === "connected"
@@ -276,7 +280,7 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
             <PlusCircle className="h-4 w-4 mr-2" />
             Nova Solicitação
           </Button>
-        </div>
+        </div>}
       </div>
 
       {activeTab === "kanban" && (
@@ -313,6 +317,7 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
           onRefresh={handleRefresh}
         />
       )}
+      {activeTab === "eventos" && <EventosPlannerTab users={users} />}
 
       <KanbanCardDetail
         request={selectedRequest}
