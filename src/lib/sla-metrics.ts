@@ -10,6 +10,9 @@
  *
  * O SLA sugerido usa o P80 (80% das peças ficaram dentro dele), que é mais
  * realista que a média e não é distorcido por uma peça atípica.
+ *
+ * Como os pedidos chegam em lote, o prazo proposto (sla-policy.ts) é medido
+ * também nas semanas cheias: as 25% semanas com mais horas de produção pedidas.
  */
 
 import type { MarketingRequest } from "@/lib/marketing-requests";
@@ -46,6 +49,7 @@ export interface SlaStat {
   mediana: number | null;
   p80: number | null;
   media: number | null;
+  maximo: number | null;
 }
 
 export interface SlaRequestDetail {
@@ -98,12 +102,13 @@ export function percentile(values: number[], p: number): number | null {
 }
 
 function stat(values: number[]): SlaStat {
-  if (values.length === 0) return { amostra: 0, mediana: null, p80: null, media: null };
+  if (values.length === 0) return { amostra: 0, mediana: null, p80: null, media: null, maximo: null };
   return {
     amostra: values.length,
     mediana: percentile(values, 0.5),
     p80: percentile(values, 0.8),
     media: values.reduce((a, b) => a + b, 0) / values.length,
+    maximo: Math.max(...values),
   };
 }
 
@@ -265,13 +270,212 @@ export function computeSlaReport(
         primeiraVersaoDias: roundUpDays(firstVersion.p80),
         conclusaoDias: roundUpDays(done.p80),
       },
-      // O SLA combina esforço e prazo, então vale a menor das duas amostras.
-      confianca: confidenceFor(Math.min(effort.amostra, firstVersion.amostra)),
+      confianca: confidenceFor(effort.amostra),
     };
   });
 
   rows.sort((a, b) => b.concluidas - a.concluidas);
   return { rows, details };
+}
+
+export interface ArrivalStats {
+  /** Solicitações por dia em que chegou alguma (mediana). */
+  typicalPerDay: number | null;
+  peak: number;
+  /** % dos dias com chegada que receberam 4 ou mais de uma vez. */
+  pctBatchDays: number | null;
+}
+
+export const BATCH_THRESHOLD = 4;
+
+export function computeArrivalStats(requests: MarketingRequest[]): ArrivalStats {
+  const byDay = new Map<string, number>();
+  for (const request of requests) {
+    if (!request.requested_at) continue;
+    const key = toLocalDate(request.requested_at);
+    byDay.set(key, (byDay.get(key) ?? 0) + 1);
+  }
+  const counts = [...byDay.values()];
+  if (counts.length === 0) return { typicalPerDay: null, peak: 0, pctBatchDays: null };
+  return {
+    typicalPerDay: percentile(counts, 0.5),
+    peak: Math.max(...counts),
+    pctBatchDays: counts.filter((n) => n >= BATCH_THRESHOLD).length / counts.length,
+  };
+}
+
+/** Segunda-feira (YYYY-MM-DD) da semana da data, no fuso de São Paulo. */
+export function weekKey(iso: string): string {
+  const date = new Date(`${toLocalDate(iso)}T12:00:00Z`);
+  const offset = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - offset);
+  return date.toISOString().slice(0, 10);
+}
+
+/** Semanas no quartil mais pesado de horas pedidas contam como "semana cheia". */
+const BUSY_WEEK_PERCENTILE = 0.75;
+
+export interface WeeklyLoad {
+  weeks: number;
+  busyWeeks: Set<string>;
+  /** Horas de produção pedidas a partir das quais a semana é cheia. */
+  busyThresholdHours: number;
+  typicalRequests: number;
+  typicalHours: number;
+  busyRequestsMin: number;
+  busyRequestsMax: number;
+  maxHours: number;
+  /** Horas apontadas no timesheet por semana. */
+  loggedTypical: number | null;
+  loggedStrong: number | null;
+  loggedMax: number | null;
+  /** Média de pedidos por tipo numa semana cheia, do maior para o menor. */
+  busyMix: { type: string; perWeek: number }[];
+}
+
+/**
+ * Carga semanal: horas de produção pedidas por semana de chegada. A hora de cada
+ * pedido é a apontada nele ou, se ainda não tem apontamento, a média do tipo.
+ * Semanas antes do primeiro registro no sistema ficam de fora (planilha antiga).
+ */
+export function computeWeeklyLoad(
+  requests: MarketingRequest[],
+  report: SlaReport,
+  timeEntries: SlaTimeEntry[],
+  stageChanges: SlaStageChange[]
+): WeeklyLoad | null {
+  const traces = [...timeEntries.map((e) => e.started_at), ...stageChanges.map((c) => c.created_at)];
+  if (traces.length === 0) return null;
+  const systemStart = weekKey(traces.reduce((min, t) => (t < min ? t : min)));
+
+  const effort = new Map<string, number>();
+  for (const entry of timeEntries) {
+    if (!entry.ended_at) continue;
+    const ms = new Date(entry.ended_at).getTime() - new Date(entry.started_at).getTime();
+    if (ms > 0) effort.set(entry.request_id, (effort.get(entry.request_id) ?? 0) + ms / 3_600_000);
+  }
+  const averageByType = new Map<string, number>();
+  for (const row of report.rows) {
+    if (row.esforcoHoras.media != null) averageByType.set(row.type, row.esforcoHoras.media);
+  }
+  const fallback = percentile([...effort.values()], 0.5) ?? 1;
+
+  const weeks = new Map<string, { requests: number; hours: number; types: Map<string, number> }>();
+  const requestIds = new Set<string>();
+  for (const request of requests) {
+    if (!request.requested_at) continue;
+    const key = weekKey(request.requested_at);
+    if (key < systemStart) continue;
+    requestIds.add(request.id);
+    const type = request.request_type || "Sem tipo";
+    const hours = effort.get(request.id) ?? averageByType.get(type) ?? fallback;
+    const week = weeks.get(key) ?? { requests: 0, hours: 0, types: new Map<string, number>() };
+    week.requests++;
+    week.hours += hours;
+    week.types.set(type, (week.types.get(type) ?? 0) + 1);
+    weeks.set(key, week);
+  }
+  if (weeks.size === 0) return null;
+
+  const hoursPerWeek = [...weeks.values()].map((w) => w.hours);
+  const busyThresholdHours = percentile(hoursPerWeek, BUSY_WEEK_PERCENTILE) ?? 0;
+  const busy = [...weeks.entries()].filter(([, w]) => w.hours >= busyThresholdHours);
+
+  const mix = new Map<string, number>();
+  for (const [, week] of busy) {
+    for (const [type, n] of week.types) mix.set(type, (mix.get(type) ?? 0) + n);
+  }
+
+  const loggedByWeek = new Map<string, number>();
+  for (const entry of timeEntries) {
+    if (!entry.ended_at || !requestIds.has(entry.request_id)) continue;
+    const ms = new Date(entry.ended_at).getTime() - new Date(entry.started_at).getTime();
+    if (!(ms > 0)) continue;
+    const key = weekKey(entry.started_at);
+    loggedByWeek.set(key, (loggedByWeek.get(key) ?? 0) + ms / 3_600_000);
+  }
+  const logged = [...loggedByWeek.values()];
+  const busyCounts = busy.map(([, w]) => w.requests);
+
+  return {
+    weeks: weeks.size,
+    busyWeeks: new Set(busy.map(([key]) => key)),
+    busyThresholdHours,
+    typicalRequests: percentile([...weeks.values()].map((w) => w.requests), 0.5) ?? 0,
+    typicalHours: percentile(hoursPerWeek, 0.5) ?? 0,
+    busyRequestsMin: Math.min(...busyCounts),
+    busyRequestsMax: Math.max(...busyCounts),
+    maxHours: Math.max(...hoursPerWeek),
+    loggedTypical: percentile(logged, 0.5),
+    loggedStrong: percentile(logged, 0.8),
+    loggedMax: logged.length ? Math.max(...logged) : null,
+    busyMix: [...mix.entries()]
+      .map(([type, n]) => ({ type, perWeek: n / busy.length }))
+      .sort((a, b) => b.perWeek - a.perWeek),
+  };
+}
+
+export interface SlaPolicy {
+  type: string;
+  /** Prazo da 1ª versão, em dias úteis. */
+  firstVersionDays: number;
+  /** Prazo de cada rodada de ajuste, em dias úteis. */
+  adjustmentDays: number;
+  note?: string;
+}
+
+export interface SlaHitRate {
+  hit: number;
+  total: number;
+}
+
+export interface SlaPolicyResult {
+  type: string;
+  policy: SlaPolicy | null;
+  stats: SlaTypeRow;
+  /** Dias úteis em que 80% das peças saíram (1ª versão) só nas semanas cheias. */
+  busyFirstVersionP80: number | null;
+  all: SlaHitRate;
+  busy: SlaHitRate;
+}
+
+/** Quantas peças do período teriam cumprido o prazo proposto, no geral e nas semanas cheias. */
+export function evaluateSlaPolicy(
+  report: SlaReport,
+  busyWeeks: Set<string>,
+  policies: SlaPolicy[]
+): { rows: SlaPolicyResult[]; all: SlaHitRate; busy: SlaHitRate } {
+  const byType = new Map(policies.map((p) => [p.type, p]));
+  const totalAll: SlaHitRate = { hit: 0, total: 0 };
+  const totalBusy: SlaHitRate = { hit: 0, total: 0 };
+
+  const rows = report.rows.map((stats) => {
+    const policy = byType.get(stats.type) ?? null;
+    const items = report.details.filter((d) => d.type === stats.type && d.firstVersionBusinessDays != null);
+    const busyItems = items.filter((d) => busyWeeks.has(weekKey(d.requestedAt)));
+    const count = (list: SlaRequestDetail[]): SlaHitRate => ({
+      hit: policy ? list.filter((d) => (d.firstVersionBusinessDays ?? Infinity) <= policy.firstVersionDays).length : 0,
+      total: list.length,
+    });
+    const all = count(items);
+    const busy = count(busyItems);
+    if (policy) {
+      totalAll.hit += all.hit;
+      totalAll.total += all.total;
+      totalBusy.hit += busy.hit;
+      totalBusy.total += busy.total;
+    }
+    return {
+      type: stats.type,
+      policy,
+      stats,
+      busyFirstVersionP80: percentile(busyItems.map((d) => d.firstVersionBusinessDays as number), 0.8),
+      all,
+      busy,
+    };
+  });
+
+  return { rows, all: totalAll, busy: totalBusy };
 }
 
 /** "1h 30min", "45min". */

@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { MarketingRequest } from "@/lib/marketing-requests";
-import { businessDaysBetween, computeSlaReport, percentile } from "@/lib/sla-metrics";
+import {
+  businessDaysBetween,
+  computeArrivalStats,
+  computeSlaReport,
+  computeWeeklyLoad,
+  evaluateSlaPolicy,
+  percentile,
+  weekKey,
+} from "@/lib/sla-metrics";
 
 function req(overrides: Partial<MarketingRequest>): MarketingRequest {
   return {
@@ -99,5 +107,63 @@ describe("computeSlaReport", () => {
     );
     expect(details[0].firstVersionBusinessDays).toBe(2);
     expect(rows[0].ajustesMedia).toBeNull();
+  });
+});
+
+describe("carga semanal e SLA proposto", () => {
+  it("agrupa pela segunda-feira da semana em São Paulo", () => {
+    expect(weekKey("2026-09-24T15:00:00Z")).toBe("2026-09-21"); // quinta
+    expect(weekKey("2026-09-28T02:00:00Z")).toBe("2026-09-21"); // domingo à noite em SP
+  });
+
+  it("mede chegadas em lote por dia", () => {
+    const stats = computeArrivalStats([
+      ...["a", "b", "c", "d"].map((id) => req({ id, requested_at: "2026-09-21T13:00:00Z" })),
+      req({ id: "e", requested_at: "2026-09-22T13:00:00Z" }),
+    ]);
+    expect(stats.peak).toBe(4);
+    expect(stats.pctBatchDays).toBe(0.5);
+  });
+
+  it("marca como cheias as semanas com mais horas pedidas e ignora semanas antes do sistema", () => {
+    const requests = [
+      req({ id: "legado", requested_at: "2025-10-06T00:00:00+00:00" }),
+      req({ id: "leve", requested_at: "2026-09-07T13:00:00Z" }),
+      req({ id: "media", requested_at: "2026-09-14T13:00:00Z" }),
+      req({ id: "p1", requested_at: "2026-09-21T13:00:00Z" }),
+      req({ id: "p2", requested_at: "2026-09-22T13:00:00Z" }),
+    ];
+    const entries = [
+      { request_id: "leve", started_at: "2026-09-07T14:00:00Z", ended_at: "2026-09-07T15:00:00Z" },
+      { request_id: "media", started_at: "2026-09-14T14:00:00Z", ended_at: "2026-09-14T16:00:00Z" },
+      { request_id: "p1", started_at: "2026-09-21T14:00:00Z", ended_at: "2026-09-21T17:00:00Z" },
+      { request_id: "p2", started_at: "2026-09-22T14:00:00Z", ended_at: "2026-09-22T17:00:00Z" },
+    ];
+    const report = computeSlaReport(requests, entries, []);
+    const load = computeWeeklyLoad(requests, report, entries, [])!;
+    expect(load.weeks).toBe(3);
+    expect(load.busyWeeks).toEqual(new Set(["2026-09-21"]));
+    expect(load.maxHours).toBe(6);
+    expect(load.busyMix[0]).toEqual({ type: "PPT", perWeek: 2 });
+  });
+
+  it("conta quantas peças cumpririam o prazo proposto", () => {
+    const report = computeSlaReport(
+      [
+        req({ id: "rapida", stage_changed_at: "2026-09-22T18:00:00Z" }), // 1 dia útil
+        req({ id: "lenta", stage_changed_at: "2026-09-25T18:00:00Z" }), // 4 dias úteis
+      ],
+      [
+        { request_id: "rapida", started_at: "2026-09-21T14:00:00Z", ended_at: "2026-09-21T15:00:00Z" },
+        { request_id: "lenta", started_at: "2026-09-21T14:00:00Z", ended_at: "2026-09-21T15:00:00Z" },
+      ],
+      []
+    );
+    const result = evaluateSlaPolicy(report, new Set(["2026-09-21"]), [
+      { type: "PPT", firstVersionDays: 2, adjustmentDays: 1 },
+    ]);
+    expect(result.all).toEqual({ hit: 1, total: 2 });
+    expect(result.busy).toEqual({ hit: 1, total: 2 });
+    expect(result.rows[0].busyFirstVersionP80).toBeCloseTo(3.4);
   });
 });
