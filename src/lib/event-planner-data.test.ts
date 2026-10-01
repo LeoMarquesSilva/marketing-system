@@ -30,6 +30,8 @@ describe("Planner compartilhado dos eventos", () => {
     expect(await deleteEventTask("missing")).toBe(false);
     result.mockResolvedValue({ data: { id: "task1" }, error: null });
     expect(await updateEventTask("task1", { status: "em_andamento" })).toBe(true);
+    expect(await updateEventTask("task1", { assigneeIds: ["u1", "u2"] })).toBe(true);
+    expect(builder.update).toHaveBeenLastCalledWith({ assignee_id: "u1", assignee_ids: ["u1", "u2"] });
   });
   it("pagina dados com o cliente autenticado sem criar cópias ou incluir eventos de módulo separado", async () => {
     const events = Array.from({ length: 501 }, (_, index) => ({ id: `e${index}`, name: "Evento de teste", year: 2026, event_series: index === 500 ? { slug: "cafe-com-cultura" } : null }));

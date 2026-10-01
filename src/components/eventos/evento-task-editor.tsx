@@ -9,9 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { DatePickerField } from "@/components/ui/date-picker-field";
-import { UserSelectSearch } from "@/components/solicitacoes/user-select-search";
+import { EventTaskAssignees } from "@/components/eventos/event-task-assignees";
 import { EVENT_TASK_STATUS_LABEL, type EventTask, type EventTaskStatus, type EventTaskPhase, type EventAttachment } from "@/lib/eventos";
-import { TASK_PHASES, type EventTaskDraft } from "@/lib/event-task-list";
+import { TASK_PHASES, taskAssigneeIds, type EventTaskDraft } from "@/lib/event-task-list";
 import type { User } from "@/lib/users";
 
 export function EventoTaskEditor({ task, users, onClose, onSave, attachments = [], initialStatus = "pendente" }: {
@@ -22,7 +22,7 @@ export function EventoTaskEditor({ task, users, onClose, onSave, attachments = [
   onSave: (draft: EventTaskDraft) => Promise<boolean>;
   attachments?: EventAttachment[];
 }) {
-  const [draft, setDraft] = useState<EventTaskDraft>({ title: task?.title ?? "", description: task?.description ?? "", assigneeId: task?.assigneeId ?? null, dueDate: task?.dueDate ?? null, status: task?.status ?? initialStatus, phase: task ? task.phase : "pre_evento" });
+  const [draft, setDraft] = useState<EventTaskDraft>({ title: task?.title ?? "", description: task?.description ?? "", assigneeId: task?.assigneeId ?? null, assigneeIds: task ? taskAssigneeIds(task) : [], dueDate: task?.dueDate ?? null, status: task?.status ?? initialStatus, phase: task ? task.phase : "pre_evento" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   function change<K extends keyof EventTaskDraft>(key: K, value: EventTaskDraft[K]) { setDraft((current) => ({ ...current, [key]: value })); }
@@ -49,7 +49,7 @@ export function EventoTaskEditor({ task, users, onClose, onSave, attachments = [
             <div className="space-y-2"><Label htmlFor="event-task-title">Título</Label><Input id="event-task-title" autoFocus required maxLength={500} value={draft.title} onChange={(e) => change("title", e.target.value)} placeholder="Ex.: Realizar degustação do buffet" /></div>
             <div className="space-y-2"><Label htmlFor="event-task-description">Detalhes e acompanhamento</Label><Textarea id="event-task-description" rows={7} value={draft.description ?? ""} onChange={(e) => change("description", e.target.value)} placeholder="Objetivo, horário, local, participantes, roteiro e resultado esperado…" /><p className="text-xs text-muted-foreground">Em visitas e degustações, registre também o horário, o local e quem participa.</p></div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2"><Label>Responsável</Label><UserSelectSearch users={users} value={draft.assigneeId ?? ""} onValueChange={(v) => change("assigneeId", v || null)} allowClear disabled={saving} placeholder="Selecionar responsável" /></div>
+              <div className="space-y-2"><Label>Responsáveis</Label><EventTaskAssignees users={users} value={draft.assigneeIds} onChange={(ids) => setDraft(current => ({ ...current, assigneeIds: ids, assigneeId: ids[0] ?? null }))} disabled={saving} /><p className="text-xs text-muted-foreground">Selecione quantas pessoas precisar. A primeira aparece como responsável principal em integrações antigas.</p></div>
               <div className="space-y-2"><Label htmlFor="event-task-date">Data ou prazo</Label><DatePickerField id="event-task-date" value={draft.dueDate ?? ""} onChange={(v) => change("dueDate", v || null)} disabled={saving} /></div>
               <div className="space-y-2"><Label htmlFor="event-task-phase">Etapa</Label><select id="event-task-phase" className={selectClass} value={draft.phase ?? "sem_etapa"} onChange={(e) => change("phase", e.target.value === "sem_etapa" ? null : e.target.value as EventTaskPhase)}>{TASK_PHASES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}</select></div>
               <div className="space-y-2"><Label htmlFor="event-task-status">Status</Label><select id="event-task-status" className={selectClass} value={draft.status} onChange={(e) => change("status", e.target.value as EventTaskStatus)}>{Object.entries(EVENT_TASK_STATUS_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>

@@ -2,10 +2,10 @@
 
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { CalendarDays, GripVertical, MoreHorizontal, Paperclip, Plus, UserRound } from "lucide-react";
+import { CalendarDays, GripVertical, MoreHorizontal, Paperclip, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/eventos/event-menu";
-import { EventPerson } from "./event-person";
+import { EventTaskPeople } from "./event-task-people";
 import { EVENT_TASK_STATUS_LABEL, type EventTask, type EventTaskStatus, type EventAttachment } from "@/lib/eventos";
 import { TASK_PHASES, taskDateLabel } from "@/lib/event-task-list";
 import { cn } from "@/lib/utils";
@@ -32,7 +32,7 @@ function TaskCard({ task, disabled, today, eventName, attachments, onOpen, onMov
     {eventName && <p className="mt-2 text-xs font-medium text-primary">{eventName}</p>}
     <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-3">
       <span className={cn("inline-flex items-center gap-1.5 rounded px-1.5 py-1 text-[11px]", late ? "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300" : "bg-muted/70 text-muted-foreground")}><CalendarDays className="size-3" />{taskDateLabel(task.dueDate)}{late && " · atrasada"}</span>
-      <div className="flex items-center gap-2">{files.length > 0 && <span title={`${files.length} anexos`} className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Paperclip className="size-3" />{files.length}</span>}{task.assigneeName ? <EventPerson name={task.assigneeName} avatar={task.assigneeAvatar} compact /> : <span title="Sem responsável" className="flex size-7 items-center justify-center rounded-full border border-dashed text-muted-foreground"><UserRound className="size-3.5" /><span className="sr-only">Sem responsável</span></span>}</div>
+      <div className="flex items-center gap-2">{files.length > 0 && <span title={`${files.length} anexos`} className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Paperclip className="size-3" />{files.length}</span>}<EventTaskPeople task={task} compact /></div>
     </div>
   </article>;
 }

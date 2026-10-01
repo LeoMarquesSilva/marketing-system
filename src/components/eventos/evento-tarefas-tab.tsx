@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { CalendarDays, Check, ChevronDown, ListChecks, Pencil, Plus, Search, Send, Trash2, SlidersHorizontal, Columns3, RefreshCw } from "lucide-react";
-import { EventPerson } from "./event-person";
+import { EventTaskPeople } from "./event-task-people";
 import { EventoTaskBoard } from "@/components/eventos/evento-task-board";
 import { EventoTaskCalendar } from "@/components/eventos/evento-task-calendar";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EventoTaskEditor } from "@/components/eventos/evento-task-editor";
 import { EVENT_TASK_STATUS_LABEL, type EventTask, type EventTaskStatus, type EventAttachment } from "@/lib/eventos";
-import { TASK_PHASES, filterEventTasks, groupEventTasks, taskDateLabel, type EventTaskDraft, type TaskFilters } from "@/lib/event-task-list";
+import { TASK_PHASES, filterEventTasks, groupEventTasks, taskAssigneeIds, taskDateLabel, type EventTaskDraft, type TaskFilters } from "@/lib/event-task-list";
 import type { User } from "@/lib/users";
 import { cn } from "@/lib/utils";
 
@@ -41,15 +41,18 @@ export function EventoTarefasTab({ tasks, users, newTaskTitle, setNewTaskTitle, 
   const [error, setError] = useState("");
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const resolvedTasks = tasks.map(task => {
-    const user = users.find(user => user.id === task.assigneeId);
-    return { ...task, assigneeName: user?.name ?? task.assigneeName, assigneeAvatar: user?.avatar_url ?? task.assigneeAvatar };
+    const assignees = taskAssigneeIds(task).map(id => {
+      const user = users.find(user => user.id === id);
+      return { id, name: user?.name ?? (id === task.assigneeId ? task.assigneeName : null) ?? "Pessoa indisponível", avatar: user?.avatar_url ?? (id === task.assigneeId ? task.assigneeAvatar : null) ?? null };
+    });
+    return { ...task, assignees, assigneeName: assignees[0]?.name ?? null, assigneeAvatar: assignees[0]?.avatar ?? null };
   });
   const visible = filterEventTasks(resolvedTasks, filters, today);
   const activeFilters = [filters.status !== "all", filters.assignee !== "all", Boolean(filters.phase && filters.phase !== "all")].filter(Boolean).length;
   const completed = tasks.filter((task) => task.status === "concluida").length;
   const overdue = tasks.filter((task) => task.status !== "concluida" && task.dueDate && task.dueDate < today).length;
   const progress = tasks.length ? Math.round(completed / tasks.length * 100) : 0;
-  const assigned = Array.from(new Set(tasks.map((task) => task.assigneeId).filter((id): id is string => Boolean(id))));
+  const assigned = Array.from(new Set(tasks.flatMap(taskAssigneeIds)));
   const selectClass = "h-10 min-w-0 rounded-md border border-input bg-background px-3 text-sm";
 
   async function move(task: EventTask, status: EventTaskStatus) {
@@ -142,7 +145,7 @@ export function EventoTarefasTab({ tasks, users, newTaskTitle, setNewTaskTitle, 
                       {eventNames?.[task.eventId] && <p className="text-xs text-primary">{eventNames[task.eventId]}</p>}
                       <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
                         <span className={cn("inline-flex items-center gap-1", late && "text-red-600")}><CalendarDays className="h-3.5 w-3.5" />{taskDateLabel(task.dueDate)}{late && " · atrasada"}</span>
-                        <EventPerson name={task.assigneeName || "Sem responsável"} avatar={task.assigneeAvatar} className="[&_span]:text-xs [&_[data-slot=avatar]]:size-6" />
+                        <EventTaskPeople task={task} />
                         <span className={cn("rounded-full px-2 py-0.5", done ? "bg-emerald-50 text-emerald-700" : task.status === "em_andamento" ? "bg-blue-50 text-blue-700" : "bg-muted")}>{EVENT_TASK_STATUS_LABEL[task.status]}</span>
                       </div>
                     </div>
