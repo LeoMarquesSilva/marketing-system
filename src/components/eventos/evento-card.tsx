@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { AlertTriangle, CalendarDays, ChevronRight, Gift, Wallet } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronRight, MapPin, Wallet } from "lucide-react";
+import { EventPerson } from "./event-person";
+import type { User } from "@/lib/users";
 import { Badge } from "@/components/ui/badge";
 import {
   EVENT_STAGE_LABEL,
@@ -31,7 +33,7 @@ function formatDate(iso: string | null): string {
   }
 }
 
-export function EventoCard({ event }: { event: EventWithStats }) {
+export function EventoCard({ event, owner }: { event: EventWithStats; owner?: User }) {
   const alerts = [
     event.alerts.noApprovedSupplier && "Sem fornecedor aprovado",
     event.alerts.noBudget && "Sem orçamento",
@@ -47,26 +49,26 @@ export function EventoCard({ event }: { event: EventWithStats }) {
     <Link
       href={`/eventos/${event.id}`}
       className={cn(
-        "group relative flex flex-col rounded-lg border border-border/60 bg-card p-4",
+        "group relative flex flex-col rounded-xl border border-border/70 bg-card p-5",
         "shadow-sm transition-all duration-150 cursor-pointer",
-        "hover:border-violet-300 hover:shadow-md hover:-translate-y-0.5",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+        "hover:border-primary/40 hover:shadow-md",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
       )}
     >
       <ChevronRight
         className={cn(
           "absolute right-4 top-4 h-4 w-4 text-muted-foreground/70 transition-all duration-150",
-          "group-hover:text-violet-500 group-hover:translate-x-0.5"
+          "group-hover:text-primary group-hover:translate-x-0.5"
         )}
       />
 
       <div className="pr-6">
         <div className="flex flex-wrap items-center gap-1.5">
-          <h3 className="font-semibold text-foreground leading-snug group-hover:text-violet-700 transition-colors">
+          <h3 className="font-semibold text-foreground leading-snug group-hover:text-primary transition-colors">
             {event.name}
           </h3>
         </div>
-        {event.monthLabel && <p className="text-xs text-muted-foreground mt-0.5">{event.monthLabel}</p>}
+
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
@@ -94,21 +96,16 @@ export function EventoCard({ event }: { event: EventWithStats }) {
           : formatDate(getEventDisplayDate(event))}
       </div>
 
-      {event.giftsNotes && (
-        <div className="mt-1.5 flex items-start gap-1.5 text-xs text-muted-foreground">
-          <Gift className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <span className="line-clamp-1">{event.giftsNotes}</span>
-        </div>
-      )}
-
+      <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"><MapPin className="size-3.5 shrink-0" /><span className="truncate">{event.location || "Local a definir"}</span></div>
+      {owner && <div className="mt-4"><EventPerson name={owner.name} avatar={owner.avatar_url} className="[&_span]:text-xs [&_[data-slot=avatar]]:size-7" /></div>}
       <div className="mt-3 grid grid-cols-2 gap-3 border-t border-border/50 pt-3">
         <div>
           <p className="text-[11px] text-muted-foreground mb-1">
-            Tarefas · {event.tasksCompleted}/{event.tasksTotal}
+            Planner · {event.tasksCompleted}/{event.tasksTotal}
           </p>
           <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
             <div
-              className={cn("h-full rounded-full", event.tasksOverdue > 0 ? "bg-red-500" : "bg-violet-500")}
+              className={cn("h-full rounded-full", event.tasksOverdue > 0 ? "bg-red-500" : "bg-primary")}
               style={{ width: `${taskProgress}%` }}
             />
           </div>

@@ -169,7 +169,7 @@ export function PlanejamentoClient({ initialForecast, years }: PlanejamentoClien
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-xl font-bold tracking-tight text-foreground">
-            Planejamento e previsão
+            Planejamento anual
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
             Histórico de cada série ano a ano e a projeção de custo para o próximo.
@@ -198,7 +198,7 @@ export function PlanejamentoClient({ initialForecast, years }: PlanejamentoClien
 
       <EventosSubNav />
 
-      <section className="rounded-lg border border-border/60 bg-gradient-to-br from-muted/40 to-muted/10 p-5 sm:p-6">
+      <section className="rounded-xl border border-border/70 bg-card p-5">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <SummaryCard
             icon={<Wallet2 className="h-4 w-4" />}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { EventPerson } from "./event-person";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,6 +42,7 @@ export function EventoComunicacaoTab({
   onDeleteCommunication: (id: string) => void;
   isLoading?: boolean;
 }) {
+  const [adding, setAdding] = useState(false);
   const [channel, setChannel] = useState<EventCommunicationChannel>("email");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -72,8 +74,9 @@ export function EventoComunicacaoTab({
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold tracking-tight">Comunicação do evento</h2><p className="mt-1 text-xs text-muted-foreground">Organize os canais, as mensagens e os responsáveis.</p></div><Button aria-expanded={adding} onClick={() => setAdding(value => !value)}><Plus className="size-4" />{adding ? "Fechar formulário" : "Nova comunicação"}</Button></div>
       <div className="rounded-xl border border-border/60 bg-card p-4">
-        <div className="grid gap-2 md:grid-cols-4">
+        {adding && <div><div className="grid gap-2 md:grid-cols-4">
           <select
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
             value={channel}
@@ -122,7 +125,7 @@ export function EventoComunicacaoTab({
             Adicionar item
           </Button>
         </div>
-        <div className="grid gap-2 md:grid-cols-4 mt-2">
+        </div>}<div className="grid gap-2 md:grid-cols-4 mt-2">
           <Input placeholder="Buscar comunicação..." value={search} onChange={(e) => setSearch(e.target.value)} />
           <select
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
@@ -183,7 +186,7 @@ export function EventoComunicacaoTab({
                 <TableRow key={c.id}>
                   <TableCell>{COMMUNICATION_CHANNEL_LABEL[c.channel]}</TableCell>
                   <TableCell>{c.title}</TableCell>
-                  <TableCell>{c.responsibleUserName || "—"}</TableCell>
+                  <TableCell>{c.responsibleUserName ? <EventPerson name={c.responsibleUserName} avatar={users.find(user => user.id === c.responsibleUserId)?.avatar_url} /> : "Sem responsável"}</TableCell>
                   <TableCell>{formatDateBR(c.plannedDate)}</TableCell>
                   <TableCell>{formatDateBR(c.publishedDate)}</TableCell>
                   <TableCell>{c.status}</TableCell>

@@ -29,21 +29,8 @@ export function EventoOrcamentoTab({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">
-          Previsto: <strong>{formatBrl(planned)}</strong>
-          {" · "}
-          Cotado: <strong>{formatBrl(quoted)}</strong>
-          {" · "}
-          Realizado: <strong>{formatBrl(actual)}</strong>
-          {" · "}
-          Diferença: <strong>{formatBrl(actual - planned)}</strong>
-        </div>
-        <Button onClick={onCreate}>
-          <Plus className="h-4 w-4 mr-1" />
-          Linha de orçamento
-        </Button>
-      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold tracking-tight">Orçamento do evento</h2><p className="mt-1 text-xs text-muted-foreground">Acompanhe propostas, custos e pagamentos em cada item.</p></div><Button onClick={onCreate}><Plus className="size-4" />Adicionar despesa</Button></div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[["Previsto", planned], ["Cotado", quoted], ["Realizado", actual], ["Diferença (realizado − previsto)", actual - planned]].map(([label, value]) => <div key={label} className="rounded-xl border border-border/70 bg-card p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-lg font-semibold tabular-nums">{formatBrl(Number(value))}</p></div>)}</div>
 
       <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
         <Table>
@@ -69,7 +56,7 @@ export function EventoOrcamentoTab({
             ) : (
               budgetItems.map((item) => (
                 <TableRow key={item.id}>
-                  <TableCell className="capitalize text-sm">{item.category}</TableCell>
+                  <TableCell className="text-sm"><span className="font-medium capitalize">{item.category}</span>{item.description && <p className="mt-1 max-w-64 whitespace-normal text-xs leading-5 text-muted-foreground">{item.description}</p>}</TableCell>
                   <TableCell className="text-sm">{item.vendorName || "—"}</TableCell>
                   <TableCell className="text-sm">{formatBrl(item.amountPlanned)}</TableCell>
                   <TableCell className="text-sm">{item.amountQuoted != null ? formatBrl(item.amountQuoted) : "—"}</TableCell>
@@ -82,7 +69,7 @@ export function EventoOrcamentoTab({
                           href={item.invoiceLink}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-violet-600 hover:underline"
+                          className="inline-flex items-center gap-1 text-primary hover:underline"
                         >
                           <ExternalLink className="h-3 w-3" />
                           NF
@@ -95,7 +82,7 @@ export function EventoOrcamentoTab({
                           href={item.receiptLink}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-violet-600 hover:underline"
+                          className="inline-flex items-center gap-1 text-primary hover:underline"
                         >
                           <ExternalLink className="h-3 w-3" />
                           Comprovante
@@ -107,10 +94,10 @@ export function EventoOrcamentoTab({
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
-                      <Button size="icon" variant="ghost" onClick={() => onEdit(item)}>
+                      <Button size="icon" variant="ghost" aria-label={`Editar ${item.category}`} onClick={() => onEdit(item)}>
                         <Pencil className="h-4 w-4" />
                       </Button>
-                      <Button size="icon" variant="ghost" onClick={() => onDelete(item.id)}>
+                      <Button size="icon" variant="ghost" aria-label={`Excluir ${item.category}`} onClick={() => onDelete(item.id)}>
                         <Trash2 className="h-4 w-4 text-red-500" />
                       </Button>
                     </div>

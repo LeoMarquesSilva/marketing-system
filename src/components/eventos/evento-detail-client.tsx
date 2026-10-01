@@ -1,9 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft, ClipboardList, CheckSquare, Wallet, Truck, Users, Megaphone, Paperclip, ChartLine, History, Pencil, Copy, Loader2, MousePointerClick } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/contexts/auth-context";
+import { canAccessPath } from "@/lib/access-control";
+import { EventLinkedAlbums } from "./event-linked-albums";
+import { useRouter, useSearchParams } from "next/navigation";
+import { EventWorkspaceHeader } from "./event-workspace-header";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/eventos/event-menu";
+import { ClipboardList, CheckSquare, Wallet, Truck, Users, Megaphone, Paperclip, ChartLine, History, Loader2, MousePointerClick, ChevronDown, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EventoFormDialog } from "@/components/eventos/evento-form-dialog";
 import { EventoBudgetDialog } from "@/components/eventos/evento-budget-dialog";
@@ -24,8 +28,6 @@ import {
 import { EventoPosEventoTab } from "@/components/eventos/evento-pos-evento-tab";
 import { EventoHistoricoTab } from "@/components/eventos/evento-historico-tab";
 import {
-  EVENT_STATUS_LABEL,
-  EVENT_STATUS_STYLE,
   addEventHistory,
   deleteEventAttachment,
   deleteEventBudgetItem,
@@ -120,6 +122,7 @@ export function EventoDetailClient({
   users,
   designers,
 }: EventoDetailClientProps) {
+  const { profile } = useAuth();
   const [event, setEvent] = useState(initialEvent);
   const [tasks, setTasks] = useState(initialTasks);
   const [budgetItems, setBudgetItems] = useState(initialBudgetItems);
@@ -132,7 +135,17 @@ export function EventoDetailClient({
   const [postmortem, setPostmortem] = useState(initialPostmortem);
   const [history, setHistory] = useState(initialHistory);
 
-  const [tab, setTab] = useState<TabId>("resumo");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const tabIds: TabId[] = ["resumo", "tarefas", "orcamento", "fornecedores", "convidados", "comunicacao", "arquivos", "rastreamento", "pos_evento", "historico"];
+  const tab: TabId = requestedTab === "planner" ? "tarefas" : tabIds.includes(requestedTab as TabId) ? requestedTab as TabId : "resumo";
+  function setTab(next: TabId, taskId?: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", next === "tarefas" ? "planner" : next);
+    if (taskId) params.set("task", taskId); else params.delete("task");
+    router.replace(`/eventos/${event.id}?${params}`, { scroll: false });
+  }
   const [editOpen, setEditOpen] = useState(false);
   const [budgetDialogOpen, setBudgetDialogOpen] = useState(false);
   const [editingBudget, setEditingBudget] = useState<EventBudgetItem | null>(null);
@@ -179,11 +192,6 @@ export function EventoDetailClient({
   const reloadTasks = useCallback(async () => {
     setTasks(await fetchEventTasks(event.id));
   }, [event.id]);
-  useEffect(() => {
-    const requestedTab = new URLSearchParams(window.location.search).get("tab");
-    if (requestedTab === "planner" || requestedTab === "tarefas") setTab("tarefas");
-    else if (requestedTab === "arquivos") setTab("arquivos");
-  }, []);
   useEffect(() => {
     const refresh = () => { if (!isBusy && document.visibilityState === "visible") void reloadTasks(); };
     window.addEventListener("focus", refresh);
@@ -247,7 +255,7 @@ export function EventoDetailClient({
     try {
       const ok = await updateEventTask(taskId, partial as Parameters<typeof updateEventTask>[1]);
       if (!ok) return false;
-      setTasks(previous => previous.map(task => task.id === taskId ? { ...task, ...partial, assigneeName: partial.assigneeId !== undefined ? users.find(user => user.id === partial.assigneeId)?.name ?? null : task.assigneeName } : task));
+      setTasks(previous => previous.map(task => task.id === taskId ? { ...task, ...partial, assigneeName: partial.assigneeId !== undefined ? users.find(user => user.id === partial.assigneeId)?.name ?? null : task.assigneeName, assigneeAvatar: partial.assigneeId !== undefined ? users.find(user => user.id === partial.assigneeId)?.avatar_url ?? null : task.assigneeAvatar } : task));
       await registerHistory("tarefa", "Tarefa atualizada", { taskId, partial }).catch(() => undefined);
       setActionFeedback({ type: "success", text: "Tarefa atualizada." });
       return true;
@@ -528,7 +536,7 @@ export function EventoDetailClient({
   }
 
   const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
-    { id: "resumo", label: "Resumo", icon: <ClipboardList className="h-4 w-4" /> },
+    { id: "resumo", label: "Visão geral", icon: <ClipboardList className="h-4 w-4" /> },
     { id: "tarefas", label: "Planner", icon: <CheckSquare className="h-4 w-4" /> },
     { id: "orcamento", label: "Orçamento", icon: <Wallet className="h-4 w-4" /> },
     { id: "fornecedores", label: "Prestadores", icon: <Truck className="h-4 w-4" /> },
@@ -541,53 +549,28 @@ export function EventoDetailClient({
   ];
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <Link href="/eventos" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-2">
-            <ArrowLeft className="h-4 w-4" />
-            Voltar à visão geral
-          </Link>
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-xl font-bold tracking-tight">{event.name}</h2>
-            <Badge variant="outline" className={cn(EVENT_STATUS_STYLE[event.status])}>
-              {EVENT_STATUS_LABEL[event.status]}
-            </Badge>
-            <span className="text-sm text-muted-foreground">{event.year}</span>
-            <span className="text-xs text-muted-foreground">Templates ativos: {templates.length}</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setEditOpen(true)}>
-            <Pencil className="h-4 w-4 mr-1" />
-            Editar evento
-          </Button>
-          <Button variant="outline" onClick={handleDuplicateEvent} disabled={duplicating}>
-            <Copy className="h-4 w-4 mr-1" />
-            {duplicating ? "Duplicando..." : "Duplicar p/ próximo ano"}
-          </Button>
-        </div>
-      </div>
+    <div className="min-w-0 space-y-5">
+      <EventWorkspaceHeader event={event} tasks={tasks} users={users} onEdit={() => setEditOpen(true)} onDuplicate={() => void handleDuplicateEvent()} duplicating={duplicating} />
       {duplicateResult && <p className="text-sm text-muted-foreground">{duplicateResult}</p>}
       {actionFeedback && (
         <div
           className={cn(
-            "rounded-xl border p-3 text-sm",
+            "flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm",
             actionFeedback.type === "success"
               ? "border-emerald-200 bg-emerald-50 text-emerald-800"
               : "border-red-200 bg-red-50 text-red-800"
           )}
         >
-          {actionFeedback.text}
+          <span role="status">{actionFeedback.text}</span><Button variant="ghost" size="icon" className="size-7" aria-label="Fechar aviso" onClick={() => setActionFeedback(null)}><X className="size-3.5" /></Button>
         </div>
       )}
       {isBusy && (
-        <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm text-violet-800 inline-flex items-center gap-2">
+        <div className="rounded-lg bg-muted px-3 py-2 text-xs text-primary inline-flex items-center gap-2">
           <Loader2 className="h-4 w-4 animate-spin" />
           Atualizando dados do evento...
         </div>
       )}
-      {alertMessages.length > 0 && (
+      {tab === "resumo" && alertMessages.length > 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
           <p className="text-xs font-semibold text-amber-700 mb-1">Alertas</p>
           <ul className="text-sm text-amber-800 space-y-0.5">
@@ -598,47 +581,17 @@ export function EventoDetailClient({
         </div>
       )}
 
-      <div className="flex gap-1 border-b border-border/60 overflow-auto">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={cn(
-              "inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap",
-              tab === t.id ? "border-violet-500 text-violet-700" : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {t.icon}
-            {t.label}
-          </button>
-        ))}
-      </div>
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-lg border border-border/60 bg-card p-3 text-xs text-muted-foreground">
-          <p className="font-semibold text-foreground">Prestadores</p>
-          <p>{linkedSuppliers.length} vinculado(s)</p>
-        </div>
-        <div className="rounded-lg border border-border/60 bg-card p-3 text-xs text-muted-foreground">
-          <p className="font-semibold text-foreground">Convidados</p>
-          <p>{invites.length} cadastrado(s)</p>
-        </div>
-        <div className="rounded-lg border border-border/60 bg-card p-3 text-xs text-muted-foreground">
-          <p className="font-semibold text-foreground">Comunicações</p>
-          <p>{communications.length} planejada(s)</p>
-        </div>
-        <div className="rounded-lg border border-border/60 bg-card p-3 text-xs text-muted-foreground">
-          <p className="font-semibold text-foreground">Histórico</p>
-          <p>{history.length} registro(s)</p>
-        </div>
-      </div>
-
+      <nav aria-label="Seções do evento" className="flex flex-wrap items-center gap-1 border-b border-border/70">
+        {tabs.filter(t => ["resumo", "tarefas", "orcamento", "fornecedores", "convidados", "arquivos"].includes(t.id)).map(t => <button key={t.id} type="button" aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)} className={cn("inline-flex min-h-11 items-center gap-2 border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-primary", tab === t.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground")}>{t.icon}{t.label}{t.id === "tarefas" && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{tasks.filter(task => task.status !== "concluida").length}</span>}</button>)}
+        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className={cn("min-h-11", ["comunicacao", "rastreamento", "pos_evento", "historico"].includes(tab) && "text-primary bg-primary/5")}>{["comunicacao", "rastreamento", "pos_evento", "historico"].includes(tab) ? tabs.find(t => t.id === tab)?.label : "Mais"}<ChevronDown className="size-3.5" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end">{tabs.filter(t => ["comunicacao", "rastreamento", "pos_evento", "historico"].includes(t.id)).map(t => <DropdownMenuItem key={t.id} onSelect={() => setTab(t.id)}>{t.icon}{t.label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
+      </nav>
       {tab === "resumo" && (
-        <EventoResumoTab event={event} budgetPlannedTotal={budgetTotals.planned} budgetActualTotal={budgetTotals.actual} />
+        <EventoResumoTab event={event} tasks={tasks} users={users} attachments={attachments} supplierCount={linkedSuppliers.length} inviteCount={invites.length} onNavigate={setTab} budgetPlannedTotal={budgetTotals.planned} budgetActualTotal={budgetTotals.actual} />
       )}
       {tab === "tarefas" && (
         <EventoTarefasTab
           tasks={tasks}
+          initialTaskId={searchParams.get("task")}
           users={users}
           newTaskTitle={newTaskTitle}
           setNewTaskTitle={setNewTaskTitle}
@@ -700,13 +653,13 @@ export function EventoDetailClient({
         />
       )}
       {tab === "arquivos" && (
-        <EventoArquivosTab
+        <div className="space-y-5"><EventoArquivosTab
           attachments={attachments}
           onAddAttachment={handleAddAttachment}
           onUploadFile={handleUploadAttachment}
           onToggleAttachmentPublic={handleToggleAttachmentPublic}
           onDeleteAttachment={handleDeleteAttachment}
-        />
+        />{profile && canAccessPath(profile, "/fotos-eventos") && <EventLinkedAlbums key={event.id} eventId={event.id} />}</div>
       )}
       {tab === "rastreamento" && (
         <EventoRastreamentoTab campaign={initialPublicCampaign} />

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ExternalLink, Globe2, Loader2, Lock, Plus, Trash2, Upload } from "lucide-react";
+import { ExternalLink, FileText, ImageIcon, Globe2, Loader2, Lock, Plus, Search, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -11,14 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { FILE_TYPE_LABEL, FILE_TYPE_OPTIONS, type EventAttachment } from "@/lib/eventos";
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -39,6 +31,9 @@ export function EventoArquivosTab({
   onToggleAttachmentPublic: (id: string, isPublic: boolean) => void;
   onDeleteAttachment: (id: string) => void;
 }) {
+  const [adding, setAdding] = useState(false);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all");
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
   const [fileType, setFileType] = useState("arquivo_geral");
@@ -63,15 +58,17 @@ export function EventoArquivosTab({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-border/60 bg-card p-4 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold tracking-tight">Arquivos e documentos</h2><p className="mt-1 text-xs text-muted-foreground">Propostas, contratos, cardápios e registros deste evento.</p></div><Button onClick={() => setAdding(value => !value)} aria-expanded={adding}><Plus className="size-4" />{adding ? "Fechar formulário" : "Adicionar arquivo"}</Button></div>
+      {adding && <div className="rounded-xl border border-border/60 bg-card p-4 space-y-3">
         <div className="grid gap-2 md:grid-cols-2">
           <Input
+            aria-label="Título do arquivo"
             placeholder="Título do arquivo (opcional no upload)"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
           <Select value={fileType} onValueChange={setFileType}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectTrigger aria-label="Tipo de arquivo"><SelectValue /></SelectTrigger>
             <SelectContent>
               {FILE_TYPE_OPTIONS.map((t) => (
                 <SelectItem key={t} value={t}>{FILE_TYPE_LABEL[t]}</SelectItem>
@@ -120,6 +117,7 @@ export function EventoArquivosTab({
           </Button>
           <span className="text-xs text-muted-foreground text-center px-1">ou</span>
           <Input
+            aria-label="URL do arquivo"
             placeholder="URL do arquivo (link externo)"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
@@ -144,71 +142,26 @@ export function EventoArquivosTab({
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          O upload guarda o arquivo no storage do sistema (contratos, orçamentos, fotos, vídeos).
+          Envie documentos, fotos e vídeos do evento.
           Para links externos (OneDrive, Drive), informe título e URL.
         </p>
+      </div>}
+      <div className="flex flex-wrap gap-2"><div className="relative min-w-0 flex-1"><Search className="absolute left-3 top-3 size-4 text-muted-foreground" /><Input aria-label="Buscar arquivos" placeholder="Buscar documento ou foto…" value={search} onChange={e => setSearch(e.target.value)} className="pl-9" /></div><select aria-label="Filtrar arquivos por tipo" className="h-10 rounded-md border bg-card px-3 text-sm" value={filter} onChange={e => setFilter(e.target.value)}><option value="all">Todos os tipos</option>{FILE_TYPE_OPTIONS.map(type => <option key={type} value={type}>{FILE_TYPE_LABEL[type]}</option>)}</select></div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {attachments.filter(a => (filter === "all" || a.fileType === filter) && a.title.toLocaleLowerCase("pt-BR").includes(search.toLocaleLowerCase("pt-BR"))).map(a => {
+          const isImage = /\.(png|jpe?g|webp|gif)(?:[?#]|$)/i.test(a.url);
+          return <article key={a.id} className="overflow-hidden rounded-xl border border-border/70 bg-card">
+            <a href={a.url} target="_blank" rel="noreferrer" aria-label={`Abrir ${a.title}`} className="flex h-36 items-center justify-center overflow-hidden border-b border-border/50 bg-muted/50 hover:bg-muted">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {isImage ? <img src={a.url} alt={a.title} loading="lazy" className="h-full w-full object-contain" /> : <div className="flex flex-col items-center gap-2 text-primary"><FileText className="size-9 stroke-[1.2]" /><span className="text-[10px] font-semibold uppercase tracking-widest">{FILE_TYPE_LABEL[a.fileType as keyof typeof FILE_TYPE_LABEL] ?? a.fileType}</span></div>}
+            </a>
+            <div className="p-4"><p className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{isImage ? <ImageIcon className="mr-1 inline size-3" /> : null}{FILE_TYPE_LABEL[a.fileType as keyof typeof FILE_TYPE_LABEL] ?? a.fileType} · {PROVIDER_LABEL[a.provider] ?? a.provider}</p><h3 className="line-clamp-2 min-h-10 text-sm font-medium leading-5">{a.title}</h3><p className="mt-2 text-xs text-muted-foreground">{new Date(a.createdAt).toLocaleDateString("pt-BR")}</p>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2"><Button type="button" size="sm" variant="ghost" className="h-auto px-0 text-[11px]" onClick={() => onToggleAttachmentPublic(a.id, !a.isPublic)} title={a.isPublic ? "Remover do link compartilhável" : "Adicionar ao link compartilhável"}>{a.isPublic ? <Globe2 className="size-3.5" /> : <Lock className="size-3.5" />}{a.isPublic ? "No link compartilhável" : "Fora do link compartilhável"}</Button><div className="flex gap-1"><Button asChild size="icon" variant="ghost" className="size-8"><a href={a.url} target="_blank" rel="noreferrer" aria-label={`Abrir ${a.title}`}><ExternalLink className="size-3.5" /></a></Button><Button size="icon" variant="ghost" className="size-8" aria-label={`Excluir ${a.title}`} onClick={() => onDeleteAttachment(a.id)}><Trash2 className="size-3.5 text-destructive" /></Button></div></div>
+            </div>
+          </article>;
+        })}
       </div>
-      <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Título</TableHead>
-              <TableHead>Tipo</TableHead>
-              <TableHead>Origem</TableHead>
-              <TableHead>Compartilhamento</TableHead>
-              <TableHead>Data</TableHead>
-              <TableHead className="w-[100px]" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {attachments.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                  Nenhum arquivo cadastrado.
-                </TableCell>
-              </TableRow>
-            ) : (
-              attachments.map((a) => (
-                <TableRow key={a.id}>
-                  <TableCell>{a.title}</TableCell>
-                  <TableCell>{FILE_TYPE_LABEL[a.fileType as keyof typeof FILE_TYPE_LABEL] ?? a.fileType}</TableCell>
-                  <TableCell>{PROVIDER_LABEL[a.provider] ?? a.provider}</TableCell>
-                  <TableCell>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-8 gap-1.5 px-2 text-xs"
-                      onClick={() => onToggleAttachmentPublic(a.id, !a.isPublic)}
-                      title={a.isPublic ? "Remover do link compartilhável" : "Adicionar ao link compartilhável"}
-                    >
-                      {a.isPublic ? (
-                        <Globe2 className="h-3.5 w-3.5 text-emerald-600" />
-                      ) : (
-                        <Lock className="h-3.5 w-3.5 text-muted-foreground" />
-                      )}
-                      {a.isPublic ? "Público" : "Interno"}
-                    </Button>
-                  </TableCell>
-                  <TableCell>{new Date(a.createdAt).toLocaleString("pt-BR")}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <a href={a.url} target="_blank" rel="noreferrer">
-                        <Button size="icon" variant="ghost">
-                          <ExternalLink className="h-4 w-4" />
-                        </Button>
-                      </a>
-                      <Button size="icon" variant="ghost" onClick={() => onDeleteAttachment(a.id)}>
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      {!attachments.some(a => (filter === "all" || a.fileType === filter) && a.title.toLocaleLowerCase("pt-BR").includes(search.toLocaleLowerCase("pt-BR"))) && <div className="rounded-xl border border-dashed px-5 py-12 text-center"><FileText className="mx-auto mb-3 size-7 text-muted-foreground" /><p className="text-sm text-muted-foreground">{attachments.length ? "Nenhum arquivo corresponde à busca." : "Os documentos e as fotos do evento ficam reunidos aqui."}</p>{!attachments.length && <Button variant="link" onClick={() => setAdding(true)}>Adicionar primeiro arquivo</Button>}</div>}
     </div>
   );
 }
