@@ -123,7 +123,7 @@ export function EventosClient({
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-xl font-bold tracking-tight text-foreground">Organização de Eventos</h2>
+          <h2 className="text-xl font-bold tracking-tight text-foreground">Eventos</h2>
           <p className="text-sm text-muted-foreground mt-1">
             Cronograma anual, tarefas por responsável e orçamento por evento.
           </p>
@@ -175,7 +175,7 @@ export function EventosClient({
           <div className="relative min-w-[180px] flex-1 sm:max-w-xs">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar evento..."
+              aria-label="Buscar evento" placeholder="Buscar evento..."
               className="pl-8"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -242,18 +242,18 @@ export function EventosClient({
                 </span>
                 <div className="h-px flex-1 bg-border/60" />
               </div>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 {group.events.map((event) => (
-                  <EventoCard key={event.id} event={event} />
+                  <EventoCard key={event.id} event={event} owner={users.find(user => user.id === event.ownerUserId)} />
                 ))}
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((event) => (
-            <EventoCard key={event.id} event={event} />
+            <EventoCard key={event.id} event={event} owner={users.find(user => user.id === event.ownerUserId)} />
           ))}
         </div>
       )}

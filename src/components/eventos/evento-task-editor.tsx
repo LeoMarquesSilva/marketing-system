@@ -14,14 +14,15 @@ import { EVENT_TASK_STATUS_LABEL, type EventTask, type EventTaskStatus, type Eve
 import { TASK_PHASES, type EventTaskDraft } from "@/lib/event-task-list";
 import type { User } from "@/lib/users";
 
-export function EventoTaskEditor({ task, users, onClose, onSave, attachments = [] }: {
+export function EventoTaskEditor({ task, users, onClose, onSave, attachments = [], initialStatus = "pendente" }: {
+  initialStatus?: EventTaskStatus;
   task: EventTask | null;
   users: User[];
   onClose: () => void;
   onSave: (draft: EventTaskDraft) => Promise<boolean>;
   attachments?: EventAttachment[];
 }) {
-  const [draft, setDraft] = useState<EventTaskDraft>({ title: task?.title ?? "", description: task?.description ?? "", assigneeId: task?.assigneeId ?? null, dueDate: task?.dueDate ?? null, status: task?.status ?? "pendente", phase: task ? task.phase : "pre_evento" });
+  const [draft, setDraft] = useState<EventTaskDraft>({ title: task?.title ?? "", description: task?.description ?? "", assigneeId: task?.assigneeId ?? null, dueDate: task?.dueDate ?? null, status: task?.status ?? initialStatus, phase: task ? task.phase : "pre_evento" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   function change<K extends keyof EventTaskDraft>(key: K, value: EventTaskDraft[K]) { setDraft((current) => ({ ...current, [key]: value })); }
@@ -46,7 +47,7 @@ export function EventoTaskEditor({ task, users, onClose, onSave, attachments = [
         <form onSubmit={save} className="space-y-5">
           <fieldset disabled={saving} className="space-y-5">
             <div className="space-y-2"><Label htmlFor="event-task-title">Título</Label><Input id="event-task-title" autoFocus required maxLength={500} value={draft.title} onChange={(e) => change("title", e.target.value)} placeholder="Ex.: Realizar degustação do buffet" /></div>
-            <div className="space-y-2"><Label htmlFor="event-task-description">Detalhes e acompanhamento</Label><Textarea id="event-task-description" rows={10} value={draft.description ?? ""} onChange={(e) => change("description", e.target.value)} placeholder="Objetivo, horário, local, participantes, roteiro e resultado esperado…" /><p className="text-xs text-muted-foreground">Em visitas e degustações, registre também o horário, o local e quem participa.</p></div>
+            <div className="space-y-2"><Label htmlFor="event-task-description">Detalhes e acompanhamento</Label><Textarea id="event-task-description" rows={7} value={draft.description ?? ""} onChange={(e) => change("description", e.target.value)} placeholder="Objetivo, horário, local, participantes, roteiro e resultado esperado…" /><p className="text-xs text-muted-foreground">Em visitas e degustações, registre também o horário, o local e quem participa.</p></div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2"><Label>Responsável</Label><UserSelectSearch users={users} value={draft.assigneeId ?? ""} onValueChange={(v) => change("assigneeId", v || null)} allowClear disabled={saving} placeholder="Selecionar responsável" /></div>
               <div className="space-y-2"><Label htmlFor="event-task-date">Data ou prazo</Label><DatePickerField id="event-task-date" value={draft.dueDate ?? ""} onChange={(v) => change("dueDate", v || null)} disabled={saving} /></div>

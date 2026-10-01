@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { EventPerson } from "./event-person";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,7 @@ export function EventoConvidadosTab({
   onDeleteManyInvites: (ids: string[]) => void;
   isLoading?: boolean;
 }) {
+  const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [selectedUserId, setSelectedUserId] = useState("");
   const [email, setEmail] = useState("");
@@ -58,8 +60,9 @@ export function EventoConvidadosTab({
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold tracking-tight">Convidados</h2><p className="mt-1 text-xs text-muted-foreground">{invites.length} convidados · {invites.filter(guest => guest.confirmationStatus === "confirmado").length} confirmados · {invites.filter(guest => guest.attended).length} presentes</p></div><Button onClick={() => setAdding(value => !value)} aria-expanded={adding}><Plus className="size-4" />{adding ? "Fechar formulário" : "Novo convidado"}</Button></div>
       <div className="rounded-xl border border-border/60 bg-card p-4">
-        <div className="grid gap-2 md:grid-cols-4">
+        {adding && <div className="grid gap-2 md:grid-cols-4">
           {guestType === "colaborador" ? (
             <UserSelectSearch
               users={users}
@@ -73,12 +76,12 @@ export function EventoConvidadosTab({
               allowClear
             />
           ) : (
-            <Input placeholder="Nome *" value={name} onChange={(e) => setName(e.target.value)} />
+            <Input aria-label="Nome *" placeholder="Nome *" value={name} onChange={(e) => setName(e.target.value)} />
           )}
-          <Input placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <Input aria-label="E-mail" placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} />
           <select
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-            value={guestType}
+            aria-label="Tipo do novo convidado" value={guestType}
             onChange={(e) => {
               setGuestType(e.target.value as GuestType);
               setName("");
@@ -105,11 +108,11 @@ export function EventoConvidadosTab({
             Adicionar convidado
           </Button>
         </div>
-        <div className="grid gap-2 md:grid-cols-4 mt-2">
-          <Input placeholder="Buscar convidado..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        }<div className="grid gap-2 md:grid-cols-4 mt-2">
+          <Input aria-label="Buscar convidado..." placeholder="Buscar convidado..." value={search} onChange={(e) => setSearch(e.target.value)} />
           <select
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-            value={filterType}
+            aria-label="Filtrar tipo de convidado" value={filterType}
             onChange={(e) => setFilterType(e.target.value as GuestType | "__all__")}
           >
             <option value="__all__">Todos os tipos</option>
@@ -124,7 +127,7 @@ export function EventoConvidadosTab({
           </div>
           <select
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-            value={sortBy}
+            aria-label="Ordenar convidados" value={sortBy}
             onChange={(e) => setSortBy(e.target.value as "name_asc" | "name_desc" | "type_asc")}
           >
             <option value="name_asc">Ordenar: nome A-Z</option>
@@ -165,7 +168,8 @@ export function EventoConvidadosTab({
               <TableHead className="w-[40px]">
                 <input
                   type="checkbox"
-                  checked={filteredInvites.length > 0 && selected.length === filteredInvites.length}
+                  aria-label="Selecionar todos os convidados exibidos"
+                  checked={filteredInvites.length > 0 && filteredInvites.every(guest => selected.includes(guest.id))}
                   onChange={(e) =>
                     setSelected(e.target.checked ? filteredInvites.map((i) => i.id) : [])
                   }
@@ -201,6 +205,7 @@ export function EventoConvidadosTab({
                   <TableCell>
                     <input
                       type="checkbox"
+                      aria-label={`Selecionar ${guest.name}`}
                       checked={selected.includes(guest.id)}
                       onChange={(e) => {
                         if (e.target.checked) setSelected((prev) => [...prev, guest.id]);
@@ -208,14 +213,14 @@ export function EventoConvidadosTab({
                       }}
                     />
                   </TableCell>
-                  <TableCell>{guest.name}</TableCell>
+                  <TableCell><EventPerson name={guest.name} avatar={guest.guestType === "colaborador" && guest.email ? users.find(user => user.email?.toLowerCase() === guest.email?.toLowerCase())?.avatar_url : null} /></TableCell>
                   <TableCell>{guest.email || "—"}</TableCell>
                   <TableCell>{GUEST_TYPE_LABEL[guest.guestType]}</TableCell>
-                  <TableCell>{guest.inviteStatus}</TableCell>
-                  <TableCell>{guest.confirmationStatus}</TableCell>
+                  <TableCell><span className="rounded-full bg-muted px-2 py-1 text-xs">{{ nao_enviado: "Não enviado", enviado: "Enviado", erro_envio: "Erro no envio" }[guest.inviteStatus]}</span></TableCell>
+                  <TableCell><span className="rounded-full bg-muted px-2 py-1 text-xs">{{ sem_resposta: "Aguardando resposta", confirmado: "Confirmado", recusado: "Recusado" }[guest.confirmationStatus]}</span></TableCell>
                   <TableCell>{guest.attended == null ? "—" : guest.attended ? "Sim" : "Não"}</TableCell>
                   <TableCell>
-                    <Button size="icon" variant="ghost" onClick={() => onDeleteInvite(guest.id)}>
+                    <Button size="icon" variant="ghost" aria-label={`Remover ${guest.name}`} onClick={() => onDeleteInvite(guest.id)}>
                       <Trash2 className="h-4 w-4 text-red-500" />
                     </Button>
                   </TableCell>

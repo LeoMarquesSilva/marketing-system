@@ -88,7 +88,7 @@ export function PrestadoresClient({ initialSuppliers }: PrestadoresClientProps) 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-bold tracking-tight text-foreground">Organização de Eventos</h2>
+        <h2 className="text-xl font-bold tracking-tight text-foreground">Prestadores de eventos</h2>
         <p className="text-sm text-muted-foreground mt-1">
           Catálogo central de prestadores e fornecedores utilizados nos eventos.
         </p>
@@ -101,7 +101,7 @@ export function PrestadoresClient({ initialSuppliers }: PrestadoresClientProps) 
           <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar prestador..."
+              aria-label="Buscar prestador" placeholder="Buscar prestador..."
               className="pl-8"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -194,8 +194,8 @@ function PrestadorCard({
     <Card className={cn("shadow-sm", !supplier.active && "opacity-60")}>
       <CardHeader className="pb-3">
         <div className="flex items-start gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-violet-200/50 bg-violet-500/10">
-            <Truck className="h-5 w-5 text-violet-600" />
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-primary/15 bg-primary/5">
+            <Truck className="h-5 w-5 text-primary" />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-1.5">
@@ -233,7 +233,7 @@ function PrestadorCard({
                 target="_blank"
                 rel="noreferrer"
                 title={l.label}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border/60 text-muted-foreground hover:text-violet-600 hover:border-violet-300 transition-colors"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border/60 text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
               >
                 <l.icon className="h-3.5 w-3.5" />
               </a>

@@ -61,6 +61,7 @@ export function EventoFornecedoresTab({
   onDeleteQuote: (id: string) => void;
   isLoading?: boolean;
 }) {
+  const [addingQuote, setAddingQuote] = useState(false);
   const [supplierSearch, setSupplierSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [quoteSupplierId, setQuoteSupplierId] = useState("");
@@ -103,7 +104,8 @@ export function EventoFornecedoresTab({
   }, [quotes, quoteSearch, quoteStatusFilter, quoteSort]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      <div><h2 className="text-lg font-semibold tracking-tight">Prestadores e propostas</h2><p className="mt-1 text-xs text-muted-foreground">{linkedSuppliers.length} prestadores vinculados · {quotes.filter(quote => quote.proposalStatus === "aprovada").length} propostas aprovadas</p></div>
       <div className="rounded-xl border border-border/60 bg-card p-4 space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold">Prestadores vinculados</h3>
@@ -117,6 +119,7 @@ export function EventoFornecedoresTab({
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             className="pl-8"
+            aria-label="Vincular prestador cadastrado"
             placeholder="Buscar prestador já cadastrado para vincular a este evento..."
             value={supplierSearch}
             onChange={(e) => setSupplierSearch(e.target.value)}
@@ -150,7 +153,7 @@ export function EventoFornecedoresTab({
         ) : (
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {linkedSuppliers.map(({ usageId, supplier }) => (
-              <div key={usageId} className="rounded-lg border border-border/60 p-3 space-y-1.5">
+              <div key={usageId} className="rounded-xl border border-border/70 bg-muted/20 p-4 space-y-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{supplier.name}</p>
@@ -158,7 +161,7 @@ export function EventoFornecedoresTab({
                       {SUPPLIER_CATEGORY_LABEL[supplier.category as keyof typeof SUPPLIER_CATEGORY_LABEL] ?? supplier.category}
                     </Badge>
                   </div>
-                  <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => onUnlink(usageId)} title="Desvincular">
+                  <Button variant="ghost" size="icon" className="size-8 shrink-0" onClick={() => onUnlink(usageId)} title="Desvincular">
                     <X className="h-3.5 w-3.5" />
                   </Button>
                 </div>
@@ -166,22 +169,22 @@ export function EventoFornecedoresTab({
                 {(supplier.websiteLink || supplier.instagramLink || supplier.portfolioLink || supplier.whatsappLink) && (
                   <div className="flex gap-1.5 pt-0.5">
                     {supplier.websiteLink && (
-                      <a href={supplier.websiteLink} target="_blank" rel="noreferrer" title="Site" className="text-muted-foreground hover:text-violet-600">
+                      <a href={supplier.websiteLink} target="_blank" rel="noreferrer" title="Site" className="text-muted-foreground hover:text-primary">
                         <Globe className="h-3.5 w-3.5" />
                       </a>
                     )}
                     {supplier.instagramLink && (
-                      <a href={supplier.instagramLink} target="_blank" rel="noreferrer" title="Instagram" className="text-muted-foreground hover:text-violet-600">
+                      <a href={supplier.instagramLink} target="_blank" rel="noreferrer" title="Instagram" className="text-muted-foreground hover:text-primary">
                         <Instagram className="h-3.5 w-3.5" />
                       </a>
                     )}
                     {supplier.portfolioLink && (
-                      <a href={supplier.portfolioLink} target="_blank" rel="noreferrer" title="Portfólio" className="text-muted-foreground hover:text-violet-600">
+                      <a href={supplier.portfolioLink} target="_blank" rel="noreferrer" title="Portfólio" className="text-muted-foreground hover:text-primary">
                         <FileText className="h-3.5 w-3.5" />
                       </a>
                     )}
                     {supplier.whatsappLink && (
-                      <a href={supplier.whatsappLink} target="_blank" rel="noreferrer" title="WhatsApp" className="text-muted-foreground hover:text-violet-600">
+                      <a href={supplier.whatsappLink} target="_blank" rel="noreferrer" title="WhatsApp" className="text-muted-foreground hover:text-primary">
                         <MessageCircle className="h-3.5 w-3.5" />
                       </a>
                     )}
@@ -194,11 +197,11 @@ export function EventoFornecedoresTab({
       </div>
 
       <div className="rounded-xl border border-border/60 bg-card p-4 space-y-3">
-        <h3 className="text-sm font-semibold">Comparativo de propostas</h3>
-        <div className="grid gap-2 md:grid-cols-2">
+        <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">Comparativo de propostas</h3><Button size="sm" variant="outline" aria-expanded={addingQuote} onClick={() => setAddingQuote(value => !value)}><Plus className="size-3.5" />{addingQuote ? "Fechar formulário" : "Nova proposta"}</Button></div>
+        {addingQuote && <div className="space-y-3"><div className="grid gap-2 md:grid-cols-2">
           <select
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-            value={quoteSupplierId}
+            aria-label="Fornecedor da proposta" value={quoteSupplierId}
             onChange={(e) => setQuoteSupplierId(e.target.value)}
           >
             <option value="">Fornecedor</option>
@@ -234,7 +237,7 @@ export function EventoFornecedoresTab({
         >
           <Plus className="h-4 w-4 mr-1" />
           Adicionar proposta
-        </Button>
+        </Button></div>}
         <div className="grid gap-2 md:grid-cols-4">
           <Input
             placeholder="Buscar proposta..."
@@ -243,7 +246,7 @@ export function EventoFornecedoresTab({
           />
           <select
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-            value={quoteStatusFilter}
+            aria-label="Filtrar status das propostas" value={quoteStatusFilter}
             onChange={(e) => setQuoteStatusFilter(e.target.value as "__all__" | ProposalStatus)}
           >
             <option value="__all__">Todos os status</option>
@@ -253,7 +256,7 @@ export function EventoFornecedoresTab({
           </select>
           <select
             className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-            value={quoteSort}
+            aria-label="Ordenar propostas" value={quoteSort}
             onChange={(e) => setQuoteSort(e.target.value as "latest" | "highest" | "lowest")}
           >
             <option value="latest">Ordenar: mais recentes</option>
@@ -320,7 +323,7 @@ export function EventoFornecedoresTab({
                         href={q.attachedFileLink}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-xs text-violet-600 hover:underline"
+                        className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
                       >
                         <ExternalLink className="h-3.5 w-3.5" />
                         Abrir
