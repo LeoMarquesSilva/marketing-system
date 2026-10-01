@@ -1066,8 +1066,10 @@ function MarketingTab({ data }: { data: IcpData }) {
               ))}
             </div>
             <div className="space-y-2.5">
-              <p className="text-xs font-medium text-amber-700">Críticas</p>
-              {data.decisor.pains.length === 0 && <p className="text-xs text-muted-foreground">Nenhuma crítica classificada.</p>}
+              <p className="text-xs font-medium text-amber-700">Pontos de atenção</p>
+              {data.decisor.pains.length === 0 && (
+                <p className="text-xs text-muted-foreground">Nenhum ponto de atenção classificado.</p>
+              )}
               {data.decisor.pains.slice(0, 5).map((s) => (
                 <BarRow key={s.label} label={s.label} value={s.count} max={maxTheme} display={String(s.count)} barClassName="bg-amber-500" />
               ))}
