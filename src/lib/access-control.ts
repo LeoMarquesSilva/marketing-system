@@ -56,6 +56,7 @@ const VALID_PERMISSION_KEYS = new Set(ALL_KEYS);
 export const MEUS_CLIENTES_KEY = "/meus-clientes";
 export const CAFE_CULTURA_KEY = "/cafe-cultura";
 export const OPERACOES_LEGAIS_KEY = "/operacoes-legais";
+export const ICP_KEY = "/icp";
 export const MANUAL_ONLY_KEYS = ACCESS_SECTIONS.filter((s) => s.manualOnly).map((s) => s.key);
 
 const NON_ADMIN_KEYS = ACCESS_SECTIONS.filter(
@@ -160,6 +161,11 @@ export function hasOperacoesLegaisAccess(profile: AccessProfile | null | undefin
   return isAdminRole(profile);
 }
 
+/** ICP (receita por cliente): só admin, sem liberação por checkbox. */
+export function hasIcpAccess(profile: AccessProfile | null | undefined): boolean {
+  return isAdminRole(profile);
+}
+
 export function isManualOnlyKey(key: string): boolean {
   return MANUAL_ONLY_KEYS.includes(key);
 }
@@ -208,6 +214,10 @@ export function canAccessPath(
     pathname === OPERACOES_LEGAIS_KEY || pathname.startsWith(`${OPERACOES_LEGAIS_KEY}/`);
   if (isOperacoesLegaisRoute) {
     return hasOperacoesLegaisAccess(profile);
+  }
+
+  if (pathname === ICP_KEY || pathname.startsWith(`${ICP_KEY}/`)) {
+    return hasIcpAccess(profile);
   }
 
   const isFeriasRoute =

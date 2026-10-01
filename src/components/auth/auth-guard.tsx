@@ -148,6 +148,16 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       return resolvePostLoginPathFromProfile(profile);
     }
 
+    // ICP: só admin (mesmo no modo legado).
+    if (
+      profile &&
+      !isPublic &&
+      (pathname === "/icp" || pathname.startsWith("/icp/")) &&
+      !canAccessPath(profile, pathname)
+    ) {
+      return resolvePostLoginPathFromProfile(profile);
+    }
+
     return null;
   })();
 
