@@ -635,6 +635,12 @@ export function EventoDetailClient({
       )}
       {tab === "convidados" && (
         <EventoConvidadosTab
+          eventId={event.id}
+          onImported={async ({ imported, skipped }) => {
+            await reloadInvites();
+            setHistory(await fetchEventHistory(event.id));
+            setActionFeedback({ type: "success", text: `${imported} pessoa(s) adicionada(s).${skipped ? ` ${skipped} já estavam na lista.` : ""}` });
+          }}
           invites={invites}
           users={users}
           onAddInvite={handleAddInvite}
