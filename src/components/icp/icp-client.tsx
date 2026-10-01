@@ -8,6 +8,7 @@ import {
   Check,
   CircleDollarSign,
   Crosshair,
+  Database,
   DoorOpen,
   Factory,
   Layers,
@@ -64,6 +65,57 @@ function monthLabel(iso: string): string {
   return d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }).replace(".", "");
 }
 
+type SourceSystem = "vios" | "rd" | "orq";
+
+type Source = { system: SourceSystem; detail: string };
+
+const SOURCE_SYSTEM: Record<SourceSystem, { label: string; className: string }> = {
+  vios: { label: "VIOS", className: "bg-[#48466e]/10 text-[#48466e]" },
+  rd: { label: "RD Station", className: "bg-slate-100 text-slate-700" },
+  orq: { label: "ORQESTRAI", className: "bg-[#47cdd0]/15 text-[#04202f]" },
+};
+
+/** Fontes usadas em cada bloco da tela. */
+const SRC = {
+  honorarios: { system: "vios", detail: "financeiro · honorários pagos" },
+  atraso: { system: "vios", detail: "financeiro · parcelas vencidas em aberto" },
+  departamento: { system: "vios", detail: "financeiro · departamento que faturou" },
+  processos: { system: "vios", detail: "processos · primeiro processo do grupo" },
+  pessoas: { system: "vios", detail: "cadastro de pessoas · cidade, UF e tipo" },
+  setor: { system: "rd", detail: "campo Setor empresa, via Meus Clientes" },
+  porte: { system: "rd", detail: "campo Número de colaboradores, via Meus Clientes" },
+  npsCargo: { system: "orq", detail: "NPS · cargo de quem respondeu" },
+  npsNota: { system: "orq", detail: "NPS · nota de recomendação" },
+  npsTemas: { system: "orq", detail: "NPS · classificação dos comentários" },
+  linkedin: { system: "orq", detail: "LinkedIn Insights · última importação" },
+  ga4: { system: "orq", detail: "Analytics (GA4) · sessões por cidade" },
+  whatsapp: { system: "orq", detail: "WhatsApp · origem e etapa das conversas" },
+} satisfies Record<string, Source>;
+
+function SourceChip({ source }: { source: Source }) {
+  const system = SOURCE_SYSTEM[source.system];
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs", system.className)}>
+      <span className="font-semibold">{system.label}</span>
+      <span className="opacity-80">· {source.detail}</span>
+    </span>
+  );
+}
+
+function SourceNote({ sources, className }: { sources: Source[]; className?: string }) {
+  return (
+    <div className={cn("flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground", className)}>
+      <span className="inline-flex items-center gap-1">
+        <Database className="h-3.5 w-3.5" />
+        Fonte:
+      </span>
+      {sources.map((s) => (
+        <SourceChip key={`${s.system}-${s.detail}`} source={s} />
+      ))}
+    </div>
+  );
+}
+
 function Panel({
   title,
   description,
@@ -71,6 +123,7 @@ function Panel({
   children,
   className,
   action,
+  sources,
 }: {
   title: string;
   description?: string;
@@ -78,6 +131,7 @@ function Panel({
   children: React.ReactNode;
   className?: string;
   action?: React.ReactNode;
+  sources?: Source[];
 }) {
   return (
     <section className={cn("min-w-0 rounded-xl border bg-card p-4 shadow-sm sm:p-5", className)}>
@@ -92,6 +146,7 @@ function Panel({
         {action}
       </div>
       {children}
+      {sources && sources.length > 0 && <SourceNote sources={sources} className="mt-4 border-t pt-3" />}
     </section>
   );
 }
@@ -144,7 +199,19 @@ function AreaBadge({ area, size = "md" }: { area: string; size?: "sm" | "md" }) 
   );
 }
 
-function Kpi({ label, value, hint, icon: Icon }: { label: string; value: string; hint: string; icon: LucideIcon }) {
+function Kpi({
+  label,
+  value,
+  hint,
+  icon: Icon,
+  source,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  icon: LucideIcon;
+  source: Source;
+}) {
   return (
     <div className="rounded-xl border bg-card px-4 py-3 shadow-sm">
       <div className="flex items-center justify-between gap-2">
@@ -153,6 +220,10 @@ function Kpi({ label, value, hint, icon: Icon }: { label: string; value: string;
       </div>
       <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">{value}</p>
       <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{hint}</p>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Fonte: <span className="font-medium text-foreground/70">{SOURCE_SYSTEM[source.system].label}</span> ·{" "}
+        {source.detail}
+      </p>
     </div>
   );
 }
@@ -255,13 +326,18 @@ function ResumoTab({ data }: { data: IcpData }) {
   const topSector = data.sectors.core[0];
   const topEntry = data.entry.core[0];
 
-  const traits: { icon: LucideIcon; label: string; value: string }[] = [
-    { icon: Factory, label: "Segmento", value: topSector ? topSector.label : "—" },
-    { icon: Users, label: "Porte", value: "50 a 1.000 colaboradores" },
-    { icon: MapPin, label: "Região", value: "Interior de SP e RMC" },
-    { icon: DoorOpen, label: "Entrada", value: topEntry ? topEntry.label : "—" },
-    { icon: CircleDollarSign, label: "Contrato", value: `Mensal · ~${money(coreAvgMonthly)}/mês` },
-    { icon: Layers, label: "Áreas", value: `${coreAvgAreas.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} em média` },
+  const traits: { icon: LucideIcon; label: string; value: string; source: string }[] = [
+    { icon: Factory, label: "Segmento", value: topSector ? topSector.label : "—", source: "RD Station" },
+    { icon: Users, label: "Porte", value: "50 a 1.000 colaboradores", source: "RD Station" },
+    { icon: MapPin, label: "Região", value: "Interior de SP e RMC", source: "VIOS" },
+    { icon: DoorOpen, label: "Entrada", value: topEntry ? topEntry.label : "—", source: "VIOS" },
+    { icon: CircleDollarSign, label: "Contrato", value: `Mensal · ~${money(coreAvgMonthly)}/mês`, source: "VIOS" },
+    {
+      icon: Layers,
+      label: "Áreas",
+      value: `${coreAvgAreas.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} em média`,
+      source: "VIOS",
+    },
   ];
 
   return (
@@ -287,9 +363,14 @@ function ResumoTab({ data }: { data: IcpData }) {
                 {t.label}
               </div>
               <p className="mt-1 text-sm font-medium leading-snug">{t.value}</p>
+              <p className="mt-1 text-xs text-white/50">Fonte: {t.source}</p>
             </div>
           ))}
         </div>
+        <p className="relative mt-4 text-xs leading-relaxed text-white/60">
+          Faturamento, áreas, entrada e região vêm do VIOS. Segmento e porte vêm do RD Station e estão preenchidos para
+          clientes que somam {pct(data.sectors.coverageShare)} da receita. O decisor vem do NPS do ORQESTRAI.
+        </p>
       </section>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -298,12 +379,14 @@ function ResumoTab({ data }: { data: IcpData }) {
           label="Honorários em 12 meses"
           value={money(data.totals.revenue12m)}
           hint={`pagos por ${data.totals.payingGroups} grupos de clientes`}
+          source={SRC.honorarios}
         />
         <Kpi
           icon={Crosshair}
           label="Concentração"
           value={`${data.totals.groupsFor50} grupos`}
           hint={`fazem metade da receita; ${data.totals.groupsFor80} fazem 80%`}
+          source={SRC.honorarios}
         />
         <Kpi
           icon={Layers}
@@ -314,12 +397,14 @@ function ResumoTab({ data }: { data: IcpData }) {
               : "—"
           }
           hint="receita mediana de quem usa 3+ áreas frente a quem usa uma"
+          source={SRC.departamento}
         />
         <Kpi
           icon={MessageSquareHeart}
           label="NPS"
           value={data.decisor.nps != null ? String(data.decisor.nps) : "—"}
           hint={`${data.decisor.responses} respostas; ${data.decisor.ownerResponses} de sócios ou donos`}
+          source={SRC.npsNota}
         />
       </div>
 
@@ -328,6 +413,7 @@ function ResumoTab({ data }: { data: IcpData }) {
           icon={Factory}
           title="Segmento"
           description={`Receita dos grupos A e B com setor no CRM (${data.sectors.coreKnown} grupos)`}
+          sources={[SRC.setor, SRC.honorarios]}
         >
           <div className="space-y-3">
             {data.sectors.core.map((s) => (
@@ -345,7 +431,12 @@ function ResumoTab({ data }: { data: IcpData }) {
           </p>
         </Panel>
 
-        <Panel icon={Building2} title="Porte" description={`Colaboradores dos grupos A e B (${data.sizes.coreKnown} com porte informado)`}>
+        <Panel
+          icon={Building2}
+          title="Porte"
+          description={`Colaboradores dos grupos A e B (${data.sizes.coreKnown} com porte informado)`}
+          sources={[SRC.porte, SRC.pessoas]}
+        >
           <div className="grid grid-cols-4 gap-2">
             {data.sizes.core.map((s) => {
               const max = Math.max(...data.sizes.core.map((x) => x.count), 1);
@@ -372,7 +463,12 @@ function ResumoTab({ data }: { data: IcpData }) {
           </p>
         </Panel>
 
-        <Panel icon={MapPin} title="Região" description="Onde estão os grupos A e B e de onde vem a receita">
+        <Panel
+          icon={MapPin}
+          title="Região"
+          description="Onde estão os grupos A e B e de onde vem a receita"
+          sources={[SRC.pessoas, SRC.honorarios]}
+        >
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {[
               { label: "Interior de SP", value: data.geography.coreInterior },
@@ -401,7 +497,12 @@ function ResumoTab({ data }: { data: IcpData }) {
           <p className="mt-4 text-xs text-muted-foreground">São Paulo concentra {pct(data.geography.spShare)} da receita.</p>
         </Panel>
 
-        <Panel icon={BadgeCheck} title="Decisor" description="Quem respondeu ao NPS em nome do cliente">
+        <Panel
+          icon={BadgeCheck}
+          title="Decisor"
+          description="Quem respondeu ao NPS em nome do cliente"
+          sources={[SRC.npsCargo]}
+        >
           <div className="space-y-3">
             {data.decisor.byRole.map((r) => (
               <BarRow
@@ -449,7 +550,12 @@ function QualificationPanel({ data }: { data: IcpData }) {
   ].filter(Boolean) as string[];
 
   return (
-    <Panel icon={Crosshair} title="Critérios de qualificação" description="Use para priorizar prospecção e avaliar leads novos">
+    <Panel
+      icon={Crosshair}
+      title="Critérios de qualificação"
+      description="Use para priorizar prospecção e avaliar leads novos"
+      sources={[SRC.honorarios, SRC.processos, SRC.pessoas, SRC.setor, SRC.porte, SRC.npsCargo]}
+    >
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-lg bg-emerald-50 p-4">
           <p className="text-sm font-semibold text-emerald-800">Priorizar</p>
@@ -493,6 +599,7 @@ function CarteiraTab({ data }: { data: IcpData }) {
         icon={Crosshair}
         title="Faixas da carteira"
         description="Grupos classificados pelos honorários pagos em 12 meses. A e B formam o ICP."
+        sources={[SRC.honorarios, SRC.departamento, SRC.atraso]}
       >
         <div className="mb-3 flex flex-wrap gap-4 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1.5">
@@ -569,7 +676,12 @@ function CarteiraTab({ data }: { data: IcpData }) {
       </Panel>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Panel icon={Layers} title="Receita por área" description="Honorários pagos em 12 meses, por departamento que faturou">
+        <Panel
+          icon={Layers}
+          title="Receita por área"
+          description="Honorários pagos em 12 meses, por departamento que faturou"
+          sources={[SRC.departamento]}
+        >
           <div className="space-y-3">
             {data.areaRevenue.map((a) => (
               <BarRow
@@ -590,6 +702,7 @@ function CarteiraTab({ data }: { data: IcpData }) {
           icon={Layers}
           title="Quanto mais áreas, maior o cliente"
           description="Receita mediana em 12 meses pelo número de áreas que faturaram para o grupo"
+          sources={[SRC.departamento]}
         >
           <div className="flex h-44 items-end gap-4 border-b pb-2">
             {data.breadth.map((b, i) => (
@@ -617,6 +730,7 @@ function CarteiraTab({ data }: { data: IcpData }) {
         icon={DoorOpen}
         title="Porta de entrada"
         description="Área do primeiro processo de cada grupo no VIOS"
+        sources={[SRC.processos, SRC.honorarios]}
       >
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
           <div className="overflow-x-auto">
@@ -708,6 +822,7 @@ function ClientesTab({ data }: { data: IcpData }) {
       icon={Building2}
       title="Grupos de clientes"
       description="Use os grupos A e B como modelo de prospecção e como cases"
+      sources={[SRC.honorarios, SRC.departamento, SRC.processos, SRC.pessoas, SRC.atraso, SRC.setor, SRC.porte]}
     >
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative w-full max-w-xs">
@@ -749,13 +864,13 @@ function ClientesTab({ data }: { data: IcpData }) {
           <thead>
             <tr className="border-b text-left text-xs text-muted-foreground">
               <th className="pb-2 font-medium">Grupo</th>
-              <th className="pb-2 font-medium">Setor</th>
-              <th className="pb-2 font-medium">Porte</th>
-              <th className="pb-2 font-medium">Cidade</th>
-              <th className="pb-2 font-medium">Entrada</th>
-              <th className="pb-2 font-medium">Áreas que faturaram</th>
-              <th className="pb-2 text-right font-medium">Média mensal</th>
-              <th className="pb-2 text-right font-medium">Atraso</th>
+              <ColumnHeader label="Setor" source="RD" />
+              <ColumnHeader label="Porte" source="RD" />
+              <ColumnHeader label="Cidade" source="VIOS" />
+              <ColumnHeader label="Entrada" source="VIOS" />
+              <ColumnHeader label="Áreas que faturaram" source="VIOS" />
+              <ColumnHeader label="Média mensal" source="VIOS" align="right" />
+              <ColumnHeader label="Atraso" source="VIOS" align="right" />
             </tr>
           </thead>
           <tbody>
@@ -773,6 +888,15 @@ function ClientesTab({ data }: { data: IcpData }) {
         </table>
       </div>
     </Panel>
+  );
+}
+
+function ColumnHeader({ label, source, align }: { label: string; source: string; align?: "right" }) {
+  return (
+    <th className={cn("pb-2 font-medium", align === "right" && "text-right")}>
+      {label}
+      <span className="ml-1 font-normal text-muted-foreground/70">· {source}</span>
+    </th>
   );
 }
 
@@ -866,7 +990,12 @@ function MarketingTab({ data }: { data: IcpData }) {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Panel icon={Linkedin} title="Quem segue a página no LinkedIn" description={`${m.linkedinFollowers.toLocaleString("pt-BR")} seguidores com setor informado`}>
+        <Panel
+          icon={Linkedin}
+          title="Quem segue a página no LinkedIn"
+          description={`${m.linkedinFollowers.toLocaleString("pt-BR")} seguidores com setor informado`}
+          sources={[SRC.linkedin]}
+        >
           <div className="space-y-3">
             <BarRow label="Setor jurídico" value={m.linkedinLegalShare ?? 0} max={1} display={pct(m.linkedinLegalShare)} barClassName="bg-slate-400" />
             <BarRow label="Indústria" value={m.linkedinIndustryShare ?? 0} max={1} display={pct(m.linkedinIndustryShare)} />
@@ -880,7 +1009,12 @@ function MarketingTab({ data }: { data: IcpData }) {
           <p className="mt-4 text-xs text-muted-foreground">O conteúdo precisa mirar o dono e o CFO da indústria.</p>
         </Panel>
 
-        <Panel icon={Globe} title="De onde vêm as visitas ao site" description="Sessões no Google Analytics em 12 meses">
+        <Panel
+          icon={Globe}
+          title="De onde vêm as visitas ao site"
+          description="Sessões no Google Analytics em 12 meses"
+          sources={[SRC.ga4]}
+        >
           <div className="space-y-3">
             {m.ga4TopCities.map((c) => (
               <BarRow
@@ -896,7 +1030,12 @@ function MarketingTab({ data }: { data: IcpData }) {
           <p className="mt-4 text-xs text-muted-foreground">Campinas e São Paulo concentram o tráfego, como a carteira.</p>
         </Panel>
 
-        <Panel icon={MessageCircle} title="Leads de WhatsApp" description={`${m.whatsappTotal} conversas individuais`}>
+        <Panel
+          icon={MessageCircle}
+          title="Leads de WhatsApp"
+          description={`${m.whatsappTotal} conversas individuais`}
+          sources={[SRC.whatsapp]}
+        >
           <div className="space-y-3">
             {m.whatsappBySource.map((s) => (
               <BarRow key={s.label} label={s.label} value={s.count} max={maxSource} display={String(s.count)} barClassName="bg-[#48466e]/60" />
@@ -907,7 +1046,12 @@ function MarketingTab({ data }: { data: IcpData }) {
           </div>
         </Panel>
 
-        <Panel icon={MessageSquareHeart} title="O que o cliente valoriza" description="Temas dos comentários do NPS">
+        <Panel
+          icon={MessageSquareHeart}
+          title="O que o cliente valoriza"
+          description="Temas dos comentários do NPS"
+          sources={[SRC.npsTemas]}
+        >
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2.5">
               <p className="text-xs font-medium text-emerald-700">Pontos fortes</p>
