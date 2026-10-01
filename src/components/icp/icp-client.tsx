@@ -20,6 +20,10 @@ import {
   RefreshCw,
   Search,
   Globe,
+  Handshake,
+  Megaphone,
+  NotebookPen,
+  Package,
   Users,
   X,
   type LucideIcon,
@@ -30,13 +34,14 @@ import { cn } from "@/lib/utils";
 import { AreaIcon, getAreaIconStyle } from "@/lib/area-icons";
 import type { IcpCount, IcpData, IcpGroupRow, IcpTierKey } from "@/lib/icp/compute";
 
-type TabKey = "resumo" | "carteira" | "clientes" | "marketing";
+type TabKey = "resumo" | "carteira" | "clientes" | "marketing" | "comercial";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "resumo", label: "Resumo" },
   { key: "carteira", label: "Carteira" },
   { key: "clientes", label: "Clientes" },
   { key: "marketing", label: "Marketing" },
+  { key: "comercial", label: "Pauta comercial" },
 ];
 
 const TIER_STYLE: Record<IcpTierKey, { bar: string; badge: string }> = {
@@ -311,6 +316,7 @@ export function IcpClient({ data, error }: { data: IcpData | null; error: string
       {tab === "carteira" && <CarteiraTab data={data} />}
       {tab === "clientes" && <ClientesTab data={data} />}
       {tab === "marketing" && <MarketingTab data={data} />}
+      {tab === "comercial" && <ComercialTab />}
     </div>
   );
 }
@@ -1097,6 +1103,72 @@ function MarketingTab({ data }: { data: IcpData }) {
           <li>LinkedIn: último retrato importado. GA4 e WhatsApp: dados sincronizados no ORQESTRAI.</li>
         </ul>
       </details>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------- Pauta comercial */
+
+const COMMERCIAL_AGENDA: { title: string; description: string; icon: LucideIcon; items: string[] }[] = [
+  {
+    title: "Área institucional",
+    description: "Ações de marca e geração de demanda",
+    icon: Megaphone,
+    items: ["E-books", "Workshops", "Premiação por indicação", "Café com Cultura para clientes"],
+  },
+  {
+    title: "Área de relacionamento",
+    description: "Atendimento e acompanhamento dos clientes",
+    icon: Handshake,
+    items: ["Focal point", "Triagem dos leads online", "Triagem do NPS", "Controle de qualidade e satisfação"],
+  },
+  {
+    title: "Produtos",
+    description: "Ofertas que podem ser vendidas",
+    icon: Package,
+    items: ["E-books", "Cursos para profissionais", "Rec branca", "Consultoria"],
+  },
+];
+
+function ComercialTab() {
+  const repeated = new Set(
+    COMMERCIAL_AGENDA.flatMap((g) => g.items).filter((item, i, all) => all.indexOf(item) !== i)
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex gap-3 rounded-xl border border-[#47cdd0]/30 bg-[#47cdd0]/5 px-4 py-3">
+        <NotebookPen className="mt-0.5 h-4 w-4 shrink-0 text-[#04202f]" />
+        <p className="text-sm leading-relaxed text-[#04202f]">
+          Anotações do Rafael (Comercial) para discutir na reunião, organizadas nas três frentes que ele propôs.
+        </p>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        {COMMERCIAL_AGENDA.map((group) => (
+          <Panel key={group.title} icon={group.icon} title={group.title} description={group.description}>
+            <ul className="divide-y">
+              {group.items.map((item) => {
+                const others = repeated.has(item)
+                  ? COMMERCIAL_AGENDA.filter((g) => g.title !== group.title && g.items.includes(item)).map((g) => g.title)
+                  : [];
+                return (
+                  <li key={item} className="flex min-h-11 items-center justify-between gap-3 py-2">
+                    <span className="text-sm font-medium">{item}</span>
+                    {others.length > 0 && (
+                      <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                        também em {others.join(", ")}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </Panel>
+        ))}
+      </div>
+
+      <p className="text-xs text-muted-foreground">Fonte: anotações do Comercial (Rafael), trazidas para a reunião.</p>
     </div>
   );
 }
