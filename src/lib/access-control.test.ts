@@ -4,6 +4,7 @@ import {
   canAccessPath,
   canEditPartyInvite,
   hasCafeCulturaAccess,
+  hasIcpAccess,
   hasOperacoesLegaisAccess,
   isManualOnlyKey,
   normalizePermissionsInput,
@@ -33,6 +34,14 @@ describe("access-control permissions catalog", () => {
       false
     );
     expect(canAccessPath({ role: "designer", permissions: null }, "/operacoes-legais")).toBe(false);
+  });
+
+  it("libera o ICP somente para admin, mesmo no modo legado", () => {
+    expect(hasIcpAccess({ role: "admin" })).toBe(true);
+    expect(canAccessPath({ role: "admin" }, "/icp")).toBe(true);
+    expect(canAccessPath({ role: "designer", permissions: null }, "/icp")).toBe(false);
+    expect(canAccessPath({ role: null, permissions: ["/icp", "/"] }, "/icp")).toBe(false);
+    expect(normalizePermissionsInput(["/icp"])).toBeNull();
   });
 
   it("libera Meus Clientes para qualquer autenticado", () => {

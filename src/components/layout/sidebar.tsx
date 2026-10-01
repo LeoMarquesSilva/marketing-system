@@ -42,6 +42,7 @@ import {
   Coffee,
   PartyPopper,
   PenLine,
+  Crosshair,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -53,6 +54,7 @@ import {
   isAdminRole,
   hasCafeCulturaAccess,
   hasOperacoesLegaisAccess,
+  hasIcpAccess,
 } from "@/lib/access-control";
 import { canAccessGustavoContent } from "@/lib/gustavo-content/access";
 import { hasHrAccess } from "@/lib/rh/access";
@@ -120,6 +122,7 @@ const baseNavItems: NavLeaf[] = [
   { href: "/fotos-colaboradores", icon: Camera, label: "Fotos Colaboradores" },
   { href: "/usuarios", icon: Users, label: "Usuarios" },
   { href: "/custos-projetos", icon: Wallet, label: "Custos de Projetos" },
+  { href: "/icp", icon: Crosshair, label: "Cliente ideal (ICP)" },
 ];
 
 const collaboratorNavItems: NavLeaf[] = [
@@ -206,7 +209,7 @@ const ADMIN_GROUP: CollapsibleGroupSpec = {
   key: "__administracao",
   icon: Shield,
   label: "Administração",
-  hrefs: ["/usuarios", "/custos-projetos", "/admin"],
+  hrefs: ["/usuarios", "/custos-projetos", "/icp", "/admin"],
 };
 
 function collapseIntoGroup(items: NavEntry[], spec: CollapsibleGroupSpec): NavEntry[] {
@@ -326,6 +329,9 @@ function getNavItems(
       if (i.href === "/operacoes-legais") {
         return hasOperacoesLegaisAccess(profile);
       }
+      if (i.href === "/icp") {
+        return hasIcpAccess(profile);
+      }
       return allowed.includes(i.href);
     });
 
@@ -374,6 +380,7 @@ function getNavItems(
           if (i.href === "/nfc") return isAdmin;
           if (i.href === "/cafe-cultura") return hasCafeCulturaAccess(profile);
           if (i.href === "/operacoes-legais") return hasOperacoesLegaisAccess(profile);
+          if (i.href === "/icp") return hasIcpAccess(profile);
           if (i.href === "/minhas-fotos") return true;
           return i.href !== "/fotos-colaboradores" || isCollaboratorPhotosManager(profile);
         }),

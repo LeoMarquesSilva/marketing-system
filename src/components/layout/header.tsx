@@ -35,6 +35,7 @@ const PAGE_META: Record<string, PageMeta> = {
   "/eventos": { label: "Eventos", section: "Eventos" },
   "/cafe-cultura": { label: "Café com Cultura", section: "Pessoas e Cultura" },
   "/custos-projetos": { label: "Custos de projetos", section: "Gestão" },
+  "/icp": { label: "Cliente ideal (ICP)", section: "Gestão" },
   "/perfil": { label: "Meu perfil", section: "Conta" },
   "/admin": { label: "Configurações", section: "Administração" },
 };
