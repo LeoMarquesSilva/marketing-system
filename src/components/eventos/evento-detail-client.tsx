@@ -234,6 +234,7 @@ export function EventoDetailClient({
         eventId: event.id, title,
         description: draft?.description ?? null,
         assigneeId: draft?.assigneeId ?? null,
+        assigneeIds: draft?.assigneeIds ?? [],
         dueDate: draft?.dueDate ?? null,
         status: draft?.status ?? "pendente",
         phase: draft?.phase ?? null,
@@ -255,7 +256,12 @@ export function EventoDetailClient({
     try {
       const ok = await updateEventTask(taskId, partial as Parameters<typeof updateEventTask>[1]);
       if (!ok) return false;
-      setTasks(previous => previous.map(task => task.id === taskId ? { ...task, ...partial, assigneeName: partial.assigneeId !== undefined ? users.find(user => user.id === partial.assigneeId)?.name ?? null : task.assigneeName, assigneeAvatar: partial.assigneeId !== undefined ? users.find(user => user.id === partial.assigneeId)?.avatar_url ?? null : task.assigneeAvatar } : task));
+      setTasks(previous => previous.map(task => {
+        if (task.id !== taskId) return task;
+        const ids = Array.isArray(partial.assigneeIds) ? partial.assigneeIds as string[] : partial.assigneeId !== undefined ? (partial.assigneeId ? [String(partial.assigneeId)] : []) : null;
+        const first = ids?.[0] ?? null;
+        return { ...task, ...partial, ...(ids ? { assigneeIds: ids, assigneeId: first, assigneeName: users.find(user => user.id === first)?.name ?? null, assigneeAvatar: users.find(user => user.id === first)?.avatar_url ?? null } : {}) };
+      }));
       await registerHistory("tarefa", "Tarefa atualizada", { taskId, partial }).catch(() => undefined);
       setActionFeedback({ type: "success", text: "Tarefa atualizada." });
       return true;

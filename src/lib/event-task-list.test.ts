@@ -39,6 +39,12 @@ describe("lista de tarefas do evento", () => {
     expect(filterEventTasks(tasks, { search: "", status: "all", assignee: "unassigned" }, "2026-09-30")).toHaveLength(2);
     expect(groupEventTasks(tasks).map((g) => [g.value, g.tasks.length])).toEqual([["pre_evento", 1], ["sem_etapa", 2]]);
   });
+  it("encontra qualquer responsável selecionado e só marca como sem responsável quando a lista está vazia", () => {
+    const tasks = [task({ id: "team", assigneeId: "u1", assigneeIds: ["u1", "u2"], assignees: [{ id: "u1", name: "Ana", avatar: null }, { id: "u2", name: "Bruna", avatar: null }] }), task({ id: "none" })];
+    expect(filterEventTasks(tasks, { search: "", status: "all", assignee: "u2" }, "2026-09-30").map(t => t.id)).toEqual(["team"]);
+    expect(filterEventTasks(tasks, { search: "Bruna", status: "all", assignee: "all" }, "2026-09-30").map(t => t.id)).toEqual(["team"]);
+    expect(filterEventTasks(tasks, { search: "", status: "all", assignee: "unassigned" }, "2026-09-30").map(t => t.id)).toEqual(["none"]);
+  });
   it("ordena por prazo, deixa sem prazo e concluídas no final sem alterar o original", () => {
     const tasks = [task({ id: "no-date" }), task({ id: "done", dueDate: "2026-09-01", status: "concluida" }), task({ id: "first", dueDate: "2026-10-10" })];
     expect(filterEventTasks(tasks, { search: "", status: "all", assignee: "all" }, "2026-09-30").map((t) => t.id)).toEqual(["first", "no-date", "done"]);

@@ -86,6 +86,8 @@ export interface EventTask {
   title: string;
   description: string | null;
   assigneeId: string | null;
+  assigneeIds?: string[];
+  assignees?: { id: string; name: string; avatar: string | null }[];
   assigneeName?: string | null;
   assigneeAvatar?: string | null;
   dueDate: string | null;
@@ -551,6 +553,7 @@ type TaskRow = {
   title: string;
   description: string | null;
   assignee_id: string | null;
+  assignee_ids?: string[] | null;
   due_date: string | null;
   status: string;
   phase: string | null;
@@ -757,6 +760,7 @@ function rowToTask(row: TaskRow & { users?: TaskRow["users"] | TaskRow["users"][
     title: row.title,
     description: row.description,
     assigneeId: row.assignee_id,
+    assigneeIds: row.assignee_ids?.length ? row.assignee_ids : row.assignee_id ? [row.assignee_id] : [],
     assigneeName: user?.name ?? null,
     assigneeAvatar: user?.avatar_url ?? null,
     dueDate: row.due_date,
@@ -1017,7 +1021,7 @@ export function isStandaloneModuleEvent(event: Pick<OrgEvent, "seriesSlug">): bo
 }
 
 const TASK_SELECT = `
-  id, event_id, title, description, assignee_id, due_date, status, phase,
+  id, event_id, title, description, assignee_id, assignee_ids, due_date, status, phase,
   sort_order, marketing_request_id, created_at, updated_at,
   users:assignee_id (name, avatar_url)
 `;
@@ -1532,13 +1536,15 @@ export async function fetchEventPlannerSnapshot(client?: SupabaseClient): Promis
 export async function insertEventTask(
   input: Omit<EventTask, "id" | "createdAt" | "updatedAt" | "assigneeName" | "assigneeAvatar">
 ): Promise<EventTask | null> {
+  const assigneeIds = [...new Set(input.assigneeIds ?? (input.assigneeId ? [input.assigneeId] : []))];
   const { data, error } = await supabase
     .from("event_tasks")
     .insert({
       event_id: input.eventId,
       title: input.title,
       description: input.description,
-      assignee_id: input.assigneeId,
+      assignee_id: assigneeIds[0] ?? null,
+      assignee_ids: assigneeIds,
       due_date: input.dueDate,
       status: input.status,
       phase: input.phase,
@@ -1560,13 +1566,21 @@ export async function updateEventTask(
     Pick<
       EventTask,
       "title" | "description" | "assigneeId" | "dueDate" | "status" | "phase" | "sortOrder" | "marketingRequestId"
+      | "assigneeIds"
     >
   >
 ): Promise<boolean> {
   const payload: Record<string, unknown> = {};
   if (partial.title != null) payload.title = partial.title;
   if (partial.description !== undefined) payload.description = partial.description;
-  if (partial.assigneeId !== undefined) payload.assignee_id = partial.assigneeId;
+  if (partial.assigneeIds !== undefined) {
+    const ids = [...new Set(partial.assigneeIds)];
+    payload.assignee_ids = ids;
+    payload.assignee_id = ids[0] ?? null;
+  } else if (partial.assigneeId !== undefined) {
+    payload.assignee_id = partial.assigneeId;
+    payload.assignee_ids = partial.assigneeId ? [partial.assigneeId] : [];
+  }
   if (partial.dueDate !== undefined) payload.due_date = partial.dueDate;
   if (partial.status != null) payload.status = partial.status;
   if (partial.phase !== undefined) payload.phase = partial.phase;
