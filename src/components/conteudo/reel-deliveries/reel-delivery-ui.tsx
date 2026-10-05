@@ -98,3 +98,10 @@ export function DecisionLine({ person, decision }: { person: ReelPerson; decisio
     </div>
   );
 }
+
+/** Título da capa ou, enquanto não existe, quem gravou. */
+export function reelDisplayTitle(delivery: { coverTitle: string | null; participants: ReelPerson[] }): string {
+  if (delivery.coverTitle?.trim()) return delivery.coverTitle;
+  const names = delivery.participants.map((p) => p.name.split(" ")[0]);
+  return names.length ? `Reel de ${names.join(" e ")}` : "Reel sem título";
+}

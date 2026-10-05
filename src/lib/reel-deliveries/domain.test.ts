@@ -5,7 +5,10 @@ import {
   contentTypeForFile,
   isDeliveryStoragePath,
   missingForReady,
+  reelCreditLine,
+  reelCreditName,
   reelDecisionSchema,
+  stripDashes,
 } from "./domain";
 
 const ID = "6f1d3c2a-1b2c-4d5e-8f90-123456789abc";
@@ -77,5 +80,27 @@ describe("reelDecisionSchema", () => {
     expect(reelDecisionSchema.safeParse(base).success).toBe(false);
     expect(reelDecisionSchema.safeParse({ ...base, comment: "Cortar o começo" }).success).toBe(true);
     expect(reelDecisionSchema.safeParse({ version_id: ID, decision: "approved" }).success).toBe(true);
+  });
+});
+
+describe("crédito da legenda", () => {
+  it("usa Dr./Dra. só para advogados com gênero cadastrado", () => {
+    expect(reelCreditName({ name: "Maria Caroline da Cunha Thomé", gender: "F", position: "Advogado Pleno", oab: null })).toBe("Dra. Maria Thomé");
+    expect(reelCreditName({ name: "Caio Augusto Silva", gender: "M", position: "Coordenador", oab: "123456" })).toBe("Dr. Caio Silva");
+    expect(reelCreditName({ name: "Ana Souza", gender: null, position: "Advogado Júnior", oab: null })).toBe("Ana Souza");
+    expect(reelCreditName({ name: "Pedro Lima", gender: "M", position: "Estagiário", oab: null })).toBe("Pedro Lima");
+  });
+
+  it("monta a linha com várias pessoas e a área", () => {
+    expect(reelCreditLine([
+      { name: "Ana Souza", gender: "F", position: "Sócio de Área", oab: null },
+      { name: "João Reis", gender: "M", position: "Advogado", oab: null },
+    ], "Trabalhista")).toBe("Por: Dra. Ana Souza e Dr. João Reis | BP - Trabalhista");
+  });
+});
+
+describe("stripDashes", () => {
+  it("troca travessões e mantém hífens de palavras", () => {
+    expect(stripDashes("Risco — e prazo – curto; bem-estar")).toBe("Risco, e prazo, curto; bem-estar");
   });
 });

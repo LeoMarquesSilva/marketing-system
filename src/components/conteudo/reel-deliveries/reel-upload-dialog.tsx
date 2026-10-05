@@ -11,7 +11,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -104,10 +103,10 @@ export function ReelUploadDialog({
   onOpenChange: (open: boolean) => void;
   slots: ReelSlotOption[];
   people: ReelPerson[];
-  onCreated: (id: string) => void;
+  /** Recebe o arquivo para a IA transcrever em segundo plano. */
+  onCreated: (id: string, video: File) => void;
 }) {
   const [slotId, setSlotId] = useState("");
-  const [title, setTitle] = useState("");
   const [participants, setParticipants] = useState<string[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [notes, setNotes] = useState("");
@@ -116,7 +115,7 @@ export function ReelUploadDialog({
 
   useEffect(() => {
     if (!open) {
-      setSlotId(""); setTitle(""); setParticipants([]); setFile(null); setNotes(""); setProgress(null); setError(null);
+      setSlotId(""); setParticipants([]); setFile(null); setNotes(""); setProgress(null); setError(null);
     }
   }, [open]);
 
@@ -141,7 +140,6 @@ export function ReelUploadDialog({
   async function submit() {
     setError(null);
     if (!selectedSlot) return setError("Escolha a data do cronograma.");
-    if (title.trim().length < 3) return setError("Dê um título curto para o reel.");
     if (participants.length === 0) return setError("Inclua quem aparece no vídeo.");
     const check = validateVideo(file);
     if ("error" in check) return setError(check.error);
@@ -156,7 +154,6 @@ export function ReelUploadDialog({
         body: JSON.stringify({
           id,
           slot_id: selectedSlot.id,
-          title: title.trim(),
           participant_ids: participants,
           notes: notes.trim() || null,
           video: { path, file_name: file!.name, size_bytes: file!.size, content_type: check.contentType },
@@ -164,7 +161,7 @@ export function ReelUploadDialog({
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error ?? "Não foi possível salvar o reel.");
-      onCreated(id);
+      onCreated(id, file!);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível enviar o reel.");
       setProgress(null);
@@ -177,7 +174,7 @@ export function ReelUploadDialog({
         <DialogHeader>
           <DialogTitle>Enviar reel para aprovação</DialogTitle>
           <DialogDescription>
-            Quem aparece no vídeo recebe para aprovar. Depois da aprovação, você prepara capa e legenda.
+            Quem aparece no vídeo recebe para aprovar. Enquanto isso, a IA transcreve o vídeo e sugere título, subtítulo e legenda.
           </DialogDescription>
         </DialogHeader>
 
@@ -201,18 +198,6 @@ export function ReelUploadDialog({
                 ))}
               </SelectContent>
             </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="reel-title">Título</Label>
-            <Input
-              id="reel-title"
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="Ex.: Reforma tributária para o agronegócio"
-              maxLength={240}
-              disabled={busy}
-            />
           </div>
 
           <div className="space-y-2">

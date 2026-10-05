@@ -34,9 +34,13 @@ export interface ReelDeliverySummary {
   slotId: string | null;
   area: string;
   dueDate: string | null;
-  title: string;
+  /** Título da capa; nulo até ser escrito ou gerado pela IA. */
+  coverTitle: string | null;
+  coverSubtitle: string | null;
   status: ReelDeliveryStatus;
   caption: string | null;
+  aiStatus: "processing" | "done" | "failed" | null;
+  aiError: string | null;
   hasCover: boolean;
   approvedAt: string | null;
   readyAt: string | null;
@@ -51,6 +55,7 @@ export interface ReelDeliverySummary {
 }
 
 export interface ReelDeliveryDetail extends ReelDeliverySummary {
+  transcript: string | null;
   versions: ReelVersion[];
   decisions: ReelDecision[];
   videoUrl: string | null;

@@ -12,17 +12,22 @@ import {
   MessageSquareWarning,
   RotateCcw,
   Send,
+  Sparkles,
   Trash2,
   UploadCloud,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { AreaMark } from "@/components/conteudo/content-schedule-visuals";
 import { uploadReelDeliveryFile } from "@/lib/storage-buckets";
+import { generateReelCopyFromVideo } from "@/lib/reel-deliveries/audio-client";
 import {
   REEL_CAPTION_MAX_LENGTH,
+  REEL_COVER_SUBTITLE_MAX_LENGTH,
+  REEL_COVER_TITLE_MAX_LENGTH,
   REEL_DELIVERY_COVER_MAX_BYTES,
   canParticipantDecide,
   contentTypeForFile,
@@ -36,6 +41,7 @@ import {
   formatBytes,
   formatReelDate,
   formatReelDateTime,
+  reelDisplayTitle,
 } from "./reel-delivery-ui";
 import { UploadProgress, VideoFileField, validateVideo } from "./reel-upload-dialog";
 import { ReelPeoplePicker } from "./reel-people-picker";
@@ -71,12 +77,17 @@ export function ReelDeliverySheet({
   people,
   onOpenChange,
   onChanged,
+  refreshToken = 0,
+  onVersionUploaded,
 }: {
   deliveryId: string | null;
   viewer: Viewer;
   people: ReelPerson[];
   onOpenChange: (open: boolean) => void;
   onChanged: () => void;
+  /** Muda quando a IA termina em segundo plano, para recarregar o reel aberto. */
+  refreshToken?: number;
+  onVersionUploaded?: (deliveryId: string, video: File) => void;
 }) {
   const [detail, setDetail] = useState<ReelDeliveryDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -106,6 +117,17 @@ export function ReelDeliverySheet({
     setNotice(null);
     if (deliveryId) void load(deliveryId);
   }, [deliveryId, load]);
+
+  useEffect(() => {
+    if (deliveryId && refreshToken > 0) void load(deliveryId);
+  }, [refreshToken, deliveryId, load]);
+
+  // Enquanto a IA trabalha (inclusive aberta em outra aba), acompanha até terminar.
+  useEffect(() => {
+    if (!deliveryId || detail?.id !== deliveryId || detail.aiStatus !== "processing") return;
+    const timer = window.setTimeout(() => void load(deliveryId), 5000);
+    return () => window.clearTimeout(timer);
+  }, [deliveryId, detail, load]);
 
   async function run(key: string, action: () => Promise<{ delivery?: ReelDeliveryDetail }>, success: string) {
     setBusy(key);
@@ -137,7 +159,7 @@ export function ReelDeliverySheet({
                 <span>{formatReelDate(detail.dueDate, "long")}</span>
                 <ReelStatusBadge status={detail.status} />
               </div>
-              <SheetTitle className="text-lg leading-6 text-[#0d1e2e]">{detail.title}</SheetTitle>
+              <SheetTitle className="text-lg leading-6 text-[#0d1e2e]">{reelDisplayTitle(detail)}</SheetTitle>
               <SheetDescription className="sr-only">Vídeo, aprovação, capa e legenda do reel.</SheetDescription>
             </>
           ) : (
@@ -167,10 +189,10 @@ export function ReelDeliverySheet({
           )}
           {detail && (
             <div className="grid gap-6 md:grid-cols-[minmax(0,300px)_minmax(0,1fr)]">
-              <VideoColumn detail={detail} viewer={viewer} busy={busy} run={run} />
+              <VideoColumn detail={detail} viewer={viewer} busy={busy} run={run} onVersionUploaded={onVersionUploaded} />
               <div className="min-w-0 space-y-5">
                 <ApprovalSection key={detail.currentVersion?.id ?? "none"} detail={detail} viewer={viewer} people={people} busy={busy} run={run} />
-                <CoverCaptionSection key={`${detail.id}:${detail.caption ?? ""}`} detail={detail} viewer={viewer} busy={busy} run={run} />
+                <CoverCaptionSection key={[detail.id, detail.coverTitle, detail.coverSubtitle, detail.caption].join("|")} detail={detail} viewer={viewer} busy={busy} run={run} />
                 <HistorySection detail={detail} />
                 {viewer.isManager && (
                   <DeleteSection
@@ -192,7 +214,7 @@ export function ReelDeliverySheet({
 
 type RunFn = (key: string, action: () => Promise<{ delivery?: ReelDeliveryDetail }>, success: string) => Promise<boolean>;
 
-function VideoColumn({ detail, viewer, busy, run }: { detail: ReelDeliveryDetail; viewer: Viewer; busy: string | null; run: RunFn }) {
+function VideoColumn({ detail, viewer, busy, run, onVersionUploaded }: { detail: ReelDeliveryDetail; viewer: Viewer; busy: string | null; run: RunFn; onVersionUploaded?: (deliveryId: string, video: File) => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [notes, setNotes] = useState("");
   const [progress, setProgress] = useState<number | null>(null);
@@ -219,7 +241,12 @@ function VideoColumn({ detail, viewer, busy, run }: { detail: ReelDeliveryDetail
       },
       "Nova versão enviada. A aprovação recomeçou."
     );
-    if (ok) { setFile(null); setNotes(""); }
+    if (ok) {
+      // A IA atualiza a transcrição da nova versão sem apagar o texto já revisado.
+      if (file) onVersionUploaded?.(detail.id, file);
+      setFile(null);
+      setNotes("");
+    }
   }
 
   return (
@@ -400,18 +427,44 @@ function ApprovalSection({ detail, viewer, people, busy, run }: { detail: ReelDe
   );
 }
 
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={!text.trim()}
+      onClick={async () => {
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1800);
+      }}
+    >
+      {copied ? <Check /> : <Copy />}{copied ? "Copiado" : label}
+    </Button>
+  );
+}
+
 function CoverCaptionSection({ detail, viewer, busy, run }: { detail: ReelDeliveryDetail; viewer: Viewer; busy: string | null; run: RunFn }) {
+  const [coverTitle, setCoverTitle] = useState(detail.coverTitle ?? "");
+  const [coverSubtitle, setCoverSubtitle] = useState(detail.coverSubtitle ?? "");
   const [caption, setCaption] = useState(detail.caption ?? "");
   const [coverError, setCoverError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [confirmAi, setConfirmAi] = useState(false);
   const coverInput = useRef<HTMLInputElement>(null);
 
-  const dirty = (detail.caption ?? "") !== caption.trim();
+  const dirty =
+    (detail.coverTitle ?? "") !== coverTitle.trim() ||
+    (detail.coverSubtitle ?? "") !== coverSubtitle.trim() ||
+    (detail.caption ?? "") !== caption.trim();
+  const texts = { cover_title: coverTitle, cover_subtitle: coverSubtitle, caption };
   const missing = missingForReady({ status: detail.status, caption: dirty ? caption : detail.caption, coverPath: detail.hasCover ? "ok" : null });
   const unlocked = detail.status === "approved" || detail.status === "ready" || detail.status === "published";
+  const aiRunning = detail.aiStatus === "processing" || busy === "ai";
+  const hasText = Boolean(detail.coverTitle || detail.coverSubtitle || detail.caption);
 
   if (!viewer.isManager) {
-    if (!detail.coverUrl && !detail.caption) return null;
+    if (!detail.coverUrl && !detail.caption && !detail.coverTitle) return null;
     return (
       <Section title="Capa e legenda" description="Preparadas pelo Marketing para a publicação.">
         <div className="flex flex-col gap-4 sm:flex-row">
@@ -419,7 +472,11 @@ function CoverCaptionSection({ detail, viewer, busy, run }: { detail: ReelDelive
             // eslint-disable-next-line @next/next/no-img-element
             <img src={detail.coverUrl} alt="Capa do reel" className="aspect-[9/16] w-28 shrink-0 rounded-md object-cover ring-1 ring-[#dce9eb]" />
           )}
-          {detail.caption && <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{detail.caption}</p>}
+          <div className="min-w-0 space-y-2">
+            {detail.coverTitle && <p className="font-semibold uppercase leading-snug text-[#0d1e2e]">{detail.coverTitle}</p>}
+            {detail.coverSubtitle && <p className="text-sm text-slate-600">{detail.coverSubtitle}</p>}
+            {detail.caption && <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">{detail.caption}</p>}
+          </div>
         </div>
       </Section>
     );
@@ -442,11 +499,56 @@ function CoverCaptionSection({ detail, viewer, busy, run }: { detail: ReelDelive
     if (coverInput.current) coverInput.current.value = "";
   }
 
+  async function generate() {
+    setConfirmAi(false);
+    await run(
+      "ai",
+      async () => {
+        // Com transcrição salva, só reescreve; sem ela, baixa o vídeo atual e transcreve.
+        let video: Blob | null = null;
+        if (!detail.transcript) {
+          if (!detail.videoUrl) throw new Error("Vídeo indisponível. Atualize a página.");
+          const response = await fetch(detail.videoUrl);
+          if (!response.ok) throw new Error("Não foi possível baixar o vídeo para transcrever.");
+          video = await response.blob();
+        }
+        return generateReelCopyFromVideo(detail.id, video, true);
+      },
+      "Título, subtítulo e legenda gerados pela IA. Revise antes de publicar."
+    );
+  }
+
   return (
     <Section
       title="Capa e legenda"
       description={unlocked ? "Deixe tudo pronto para publicar." : "Libera de vez depois da aprovação, mas você já pode adiantar."}
     >
+      <div className="flex flex-wrap items-center gap-2 rounded-lg bg-[#f4f3fa] p-3 text-sm ring-1 ring-[#48466e]/15">
+        <Sparkles className="size-4 shrink-0 text-[#48466e]" aria-hidden />
+        {aiRunning ? (
+          <span className="flex items-center gap-2 text-[#48466e]"><Loader2 className="size-4 animate-spin" />A IA está transcrevendo o vídeo e escrevendo pelo guia de capas e legendas…</span>
+        ) : confirmAi ? (
+          <>
+            <span className="text-slate-700">Substituir título, subtítulo e legenda atuais?</span>
+            <Button size="sm" onClick={() => void generate()} className="bg-[#48466e] text-white hover:bg-[#3a3859]">Substituir</Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirmAi(false)}>Cancelar</Button>
+          </>
+        ) : (
+          <>
+            <span className="min-w-0 flex-1 text-slate-700">
+              {detail.aiStatus === "failed"
+                ? `A IA não conseguiu: ${detail.aiError ?? "erro desconhecido"}`
+                : detail.aiStatus === "done"
+                  ? "Texto sugerido pela IA a partir da fala do vídeo. Revise antes de publicar."
+                  : "A IA transcreve o vídeo e sugere título, subtítulo e legenda no padrão do escritório."}
+            </span>
+            <Button size="sm" variant="outline" onClick={() => (hasText ? setConfirmAi(true) : void generate())} disabled={busy !== null}>
+              <Sparkles />{hasText ? "Gerar de novo com IA" : "Gerar com IA"}
+            </Button>
+          </>
+        )}
+      </div>
+
       <div className="flex flex-col gap-4 sm:flex-row">
         <div className="w-32 shrink-0 space-y-2">
           <button
@@ -465,7 +567,7 @@ function CoverCaptionSection({ detail, viewer, busy, run }: { detail: ReelDelive
               // eslint-disable-next-line @next/next/no-img-element
               <img src={detail.coverUrl} alt="Capa do reel" className="size-full object-cover" />
             ) : (
-              <span className="flex flex-col items-center gap-1.5 px-2"><ImageUp className="size-5 text-[#347796]" />Enviar capa</span>
+              <span className="flex flex-col items-center gap-1.5 px-2"><ImageUp className="size-5 text-[#347796]" />Enviar arte da capa</span>
             )}
           </button>
           <input ref={coverInput} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(e) => void uploadCover(e.target.files?.[0])} tabIndex={-1} aria-hidden />
@@ -475,44 +577,69 @@ function CoverCaptionSection({ detail, viewer, busy, run }: { detail: ReelDelive
           {coverError && <p role="alert" className="text-xs text-red-700">{coverError}</p>}
         </div>
 
-        <div className="min-w-0 flex-1 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <Label htmlFor={`caption-${detail.id}`}>Legenda</Label>
-            <span className={cn("font-mono text-xs tabular-nums", caption.length > REEL_CAPTION_MAX_LENGTH ? "text-red-700" : "text-slate-500")}>
-              {caption.length}/{REEL_CAPTION_MAX_LENGTH}
-            </span>
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor={`cover-title-${detail.id}`}>Título da capa</Label>
+              <span className="font-mono text-xs tabular-nums text-slate-500">{coverTitle.length}/{REEL_COVER_TITLE_MAX_LENGTH}</span>
+            </div>
+            <Input
+              id={`cover-title-${detail.id}`}
+              value={coverTitle}
+              onChange={(e) => setCoverTitle(e.target.value)}
+              maxLength={REEL_COVER_TITLE_MAX_LENGTH}
+              placeholder="EMPATE ENTRE SÓCIOS PODE TRAVAR A EMPRESA"
+              className="font-semibold"
+              disabled={aiRunning}
+            />
           </div>
-          <Textarea
-            id={`caption-${detail.id}`}
-            value={caption}
-            onChange={(e) => setCaption(e.target.value)}
-            rows={9}
-            maxLength={REEL_CAPTION_MAX_LENGTH}
-            placeholder="Legenda do post no Instagram, com hashtags."
-            className="min-h-48"
-          />
+          <div className="space-y-1.5">
+            <Label htmlFor={`cover-subtitle-${detail.id}`}>Subtítulo da capa</Label>
+            <Input
+              id={`cover-subtitle-${detail.id}`}
+              value={coverSubtitle}
+              onChange={(e) => setCoverSubtitle(e.target.value)}
+              maxLength={REEL_COVER_SUBTITLE_MAX_LENGTH}
+              placeholder="Como o acordo de sócios pode prever saídas para o deadlock societário"
+              disabled={aiRunning}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor={`caption-${detail.id}`}>Legenda</Label>
+              <span className={cn("font-mono text-xs tabular-nums", caption.length > REEL_CAPTION_MAX_LENGTH ? "text-red-700" : "text-slate-500")}>
+                {caption.length}/{REEL_CAPTION_MAX_LENGTH}
+              </span>
+            </div>
+            <Textarea
+              id={`caption-${detail.id}`}
+              value={caption}
+              onChange={(e) => setCaption(e.target.value)}
+              rows={10}
+              maxLength={REEL_CAPTION_MAX_LENGTH}
+              placeholder="Legenda do post no Instagram, com CTA, autoria e hashtags."
+              className="min-h-52"
+              disabled={aiRunning}
+            />
+          </div>
           <div className="flex flex-wrap gap-2">
             <Button
               size="sm"
-              onClick={() => void run("caption", () => sendJson(`/api/reel-deliveries/${detail.id}`, "PATCH", { caption }), "Legenda salva.")}
-              disabled={busy !== null || !dirty}
+              onClick={() => void run("texts", () => sendJson(`/api/reel-deliveries/${detail.id}`, "PATCH", texts), "Capa e legenda salvas.")}
+              disabled={busy !== null || !dirty || aiRunning}
               className="bg-[#347796] text-white hover:bg-[#285f7a]"
             >
-              {busy === "caption" && <Loader2 className="animate-spin" />}Salvar legenda
+              {busy === "texts" && <Loader2 className="animate-spin" />}Salvar
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!caption.trim()}
-              onClick={async () => {
-                await navigator.clipboard.writeText(caption);
-                setCopied(true);
-                window.setTimeout(() => setCopied(false), 1800);
-              }}
-            >
-              {copied ? <Check /> : <Copy />}{copied ? "Copiada" : "Copiar"}
-            </Button>
+            <CopyButton text={[coverTitle, coverSubtitle].filter((t) => t.trim()).join("\n")} label="Copiar capa" />
+            <CopyButton text={caption} label="Copiar legenda" />
           </div>
+          {detail.transcript && (
+            <details className="rounded-md bg-white p-3 text-sm ring-1 ring-[#e6eef0]">
+              <summary className="cursor-pointer font-medium text-[#183f50]">Transcrição do vídeo</summary>
+              <p className="mt-2 whitespace-pre-wrap leading-6 text-slate-600">{detail.transcript}</p>
+            </details>
+          )}
         </div>
       </div>
 
@@ -542,8 +669,8 @@ function CoverCaptionSection({ detail, viewer, busy, run }: { detail: ReelDelive
           <>
             <Button
               size="sm"
-              onClick={() => void run("stage", () => sendJson(`/api/reel-deliveries/${detail.id}`, "PATCH", { status: "ready", ...(dirty ? { caption } : {}) }), "Reel pronto para publicar.")}
-              disabled={busy !== null || missing.length > 0}
+              onClick={() => void run("stage", () => sendJson(`/api/reel-deliveries/${detail.id}`, "PATCH", { status: "ready", ...(dirty ? texts : {}) }), "Reel pronto para publicar.")}
+              disabled={busy !== null || missing.length > 0 || aiRunning}
               className="bg-[#347796] text-white hover:bg-[#285f7a]"
             >
               {busy === "stage" ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}Marcar como pronto para publicar

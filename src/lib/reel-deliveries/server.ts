@@ -2,9 +2,17 @@ import "server-only";
 
 import { createClient as createAdminClient, type SupabaseClient } from "@supabase/supabase-js";
 import { requireContentScheduleActor, type ScheduleActor } from "@/lib/content-schedule/server";
+import { generateObject } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
 import {
+  REEL_AUDIO_MAX_BYTES,
+  REEL_COPY_PROMPT,
   REEL_DELIVERIES_BUCKET,
   canParticipantDecide,
+  reelCopyRequestSchema,
+  reelCopySchema,
+  reelCreditLine,
+  stripDashes,
   isDeliveryStoragePath,
   missingForReady,
   type ReelDecisionValue,
@@ -43,7 +51,9 @@ function adminDb(): SupabaseClient {
 }
 
 type DeliveryRow = {
-  id: string; slot_id: string | null; area: string; due_date: string | null; title: string;
+  id: string; slot_id: string | null; area: string; due_date: string | null; title: string | null;
+  cover_title: string | null; cover_subtitle: string | null;
+  ai_status: "processing" | "done" | "failed" | null; ai_error: string | null;
   status: ReelDeliveryStatus; caption: string | null; cover_path: string | null;
   approved_at: string | null; ready_at: string | null; published_at: string | null; updated_at: string;
 };
@@ -60,7 +70,7 @@ type DecisionRow = {
 type UserRow = { id: string; name: string; avatar_url: string | null; department: string | null };
 
 const DELIVERY_COLUMNS =
-  "id,slot_id,area,due_date,title,status,caption,cover_path,approved_at,ready_at,published_at,updated_at";
+  "id,slot_id,area,due_date,title,cover_title,cover_subtitle,ai_status,ai_error,status,caption,cover_path,approved_at,ready_at,published_at,updated_at";
 
 function isManager(actor: ScheduleActor): boolean {
   return actor.access.manageAll;
@@ -154,9 +164,12 @@ async function loadSummaries(
       slotId: row.slot_id,
       area: row.area,
       dueDate: row.due_date,
-      title: row.title,
+      coverTitle: row.cover_title ?? row.title,
+      coverSubtitle: row.cover_subtitle,
       status: row.status,
       caption: row.caption,
+      aiStatus: row.ai_status,
+      aiError: row.ai_error,
       hasCover: Boolean(row.cover_path),
       approvedAt: row.approved_at,
       readyAt: row.ready_at,
@@ -311,8 +324,11 @@ export async function getReelDelivery(id: string): Promise<ReelDeliveryDetail> {
     row.cover_path ? signedUrl(db, row.cover_path, downloadName(row, "capa", row.cover_path)) : null,
   ]);
 
+  const { data: transcriptRow } = await db.from("reel_deliveries").select("transcript").eq("id", id).maybeSingle();
+
   return {
     ...summary,
+    transcript: (transcriptRow?.transcript as string | null) ?? null,
     versions: versions.map(toVersion),
     decisions: decisions.map(toDecision).reverse(),
     videoUrl,
@@ -379,7 +395,6 @@ export async function createReelDelivery(input: z.infer<typeof createReelDeliver
     slot_id: slot.id,
     area: slot.area,
     due_date: slot.due_date,
-    title: input.title,
     created_by_id: actor.profileId,
     created_by_name: name,
   });
@@ -524,7 +539,9 @@ export async function updateReelDelivery(id: string, input: z.infer<typeof updat
   if (input.cover_path) await assertUploadedObject(db, input.cover_path);
 
   const updates: Record<string, unknown> = {};
-  if (input.title !== undefined) updates.title = input.title;
+  const clean = (value: string | null | undefined) => (value?.trim() ? value.trim() : null);
+  if (input.cover_title !== undefined) updates.cover_title = clean(input.cover_title);
+  if (input.cover_subtitle !== undefined) updates.cover_subtitle = clean(input.cover_subtitle);
   if (input.caption !== undefined) updates.caption = input.caption?.trim() ? input.caption.trim() : null;
   if (input.cover_path !== undefined) updates.cover_path = input.cover_path;
 
@@ -583,6 +600,121 @@ export async function deleteReelDelivery(id: string): Promise<void> {
   const { error } = await db.from("reel_deliveries").delete().eq("id", id);
   if (error) throw new ReelDeliveryHttpError("Não foi possível excluir o reel.");
   if (paths.length) await db.storage.from(REEL_DELIVERIES_BUCKET).remove(paths);
+}
+
+function openAiKey(): string {
+  const key = process.env.NEXT_OPENAI_API_KEY?.trim();
+  if (!key) throw new ReelDeliveryHttpError("A chave de IA não está configurada.", 503);
+  return key;
+}
+
+async function transcribeAudio(db: SupabaseClient, path: string): Promise<string> {
+  const { data: blob, error } = await db.storage.from(REEL_DELIVERIES_BUCKET).download(path);
+  if (error || !blob) throw new ReelDeliveryHttpError("O áudio do vídeo não chegou ao armazenamento.", 400);
+  if (blob.size > REEL_AUDIO_MAX_BYTES) throw new ReelDeliveryHttpError("O áudio é longo demais para transcrever.", 413);
+
+  const form = new FormData();
+  form.append("file", new File([blob], "reel.wav", { type: "audio/wav" }));
+  form.append("model", process.env.OPENAI_TRANSCRIBE_MODEL ?? "whisper-1");
+  form.append("language", "pt");
+  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${openAiKey()}` },
+    body: form,
+  });
+  const json = (await response.json().catch(() => ({}))) as { text?: string; error?: { message?: string } };
+  if (!response.ok) throw new ReelDeliveryHttpError(json.error?.message ?? "A transcrição falhou.", 502);
+  return (json.text ?? "").trim();
+}
+
+async function creditLine(db: SupabaseClient, deliveryId: string, area: string): Promise<string> {
+  const { data: participants } = await db
+    .from("reel_delivery_participants")
+    .select("user_id,user_name")
+    .eq("delivery_id", deliveryId)
+    .order("created_at");
+  const ids = (participants ?? []).map((p) => p.user_id as string);
+  const { data: employees } = ids.length
+    ? await db.from("hr_employees").select("user_id,gender,position,oab_number").in("user_id", ids)
+    : { data: [] };
+  const byUser = new Map((employees ?? []).map((e) => [e.user_id as string, e]));
+  return reelCreditLine(
+    (participants ?? []).map((p) => {
+      const employee = byUser.get(p.user_id as string);
+      return {
+        name: p.user_name as string,
+        gender: (employee?.gender as string | null) ?? null,
+        position: (employee?.position as string | null) ?? null,
+        oab: (employee?.oab_number as string | null) ?? null,
+      };
+    }),
+    area
+  );
+}
+
+/**
+ * Transcreve o áudio extraído no navegador (ou reaproveita a transcrição salva) e
+ * escreve título, subtítulo e legenda pelo guia editorial. Sem `overwrite`, só
+ * preenche o que ainda estiver vazio.
+ */
+export async function generateReelCopy(id: string, input: z.infer<typeof reelCopyRequestSchema>): Promise<void> {
+  const actor = await requireContentScheduleActor();
+  requireManager(actor);
+  const db = adminDb();
+  const row = await loadDeliveryRow(db, id);
+  if (input.audio_path && !(isDeliveryStoragePath(input.audio_path, id) && /\/audio-[^/]+\.wav$/.test(input.audio_path))) {
+    throw new ReelDeliveryHttpError("Caminho do áudio inválido.", 400);
+  }
+
+  await db.from("reel_deliveries")
+    .update({ ai_status: "processing", ai_error: null, ai_updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  try {
+    let transcript: string | null = null;
+    if (input.audio_path) {
+      try {
+        transcript = await transcribeAudio(db, input.audio_path);
+      } finally {
+        await db.storage.from(REEL_DELIVERIES_BUCKET).remove([input.audio_path]);
+      }
+      await db.from("reel_deliveries").update({ transcript: transcript || null }).eq("id", id);
+    } else {
+      const { data } = await db.from("reel_deliveries").select("transcript").eq("id", id).maybeSingle();
+      transcript = (data?.transcript as string | null) ?? null;
+    }
+    if (!transcript || transcript.length < 40) {
+      throw new ReelDeliveryHttpError("Não deu para entender a fala do vídeo. Escreva título e legenda à mão.", 422);
+    }
+
+    const credit = await creditLine(db, id, row.area);
+    const result = await generateObject({
+      model: createOpenAI({ apiKey: openAiKey() })(process.env.OPENAI_REELS_MODEL ?? "gpt-5.6-terra"),
+      schema: reelCopySchema,
+      schemaName: "capa_e_legenda_reel",
+      system: REEL_COPY_PROMPT,
+      prompt: `Área: ${row.area}\nLinha de crédito (use exatamente): ${credit}\n\nTranscrição do vídeo:\n${transcript}`,
+    });
+
+    const fresh = await loadDeliveryRow(db, id);
+    const keep = (current: string | null) => !input.overwrite && Boolean(current?.trim());
+    const { error } = await db.from("reel_deliveries").update({
+      cover_title: keep(fresh.cover_title) ? fresh.cover_title : stripDashes(result.object.titulo.trim()),
+      cover_subtitle: keep(fresh.cover_subtitle) ? fresh.cover_subtitle : stripDashes(result.object.subtitulo.trim()),
+      caption: keep(fresh.caption) ? fresh.caption : stripDashes(result.object.legenda.trim()),
+      ai_status: "done",
+      ai_error: null,
+      ai_updated_at: new Date().toISOString(),
+    }).eq("id", id);
+    if (error) throw new ReelDeliveryHttpError("Não foi possível salvar o texto gerado.");
+  } catch (error) {
+    const message = error instanceof ReelDeliveryHttpError ? error.message : "A IA não conseguiu gerar o texto agora.";
+    console.error("[reel-deliveries/ai]", error);
+    await db.from("reel_deliveries")
+      .update({ ai_status: "failed", ai_error: message, ai_updated_at: new Date().toISOString() })
+      .eq("id", id);
+    throw error instanceof ReelDeliveryHttpError ? error : new ReelDeliveryHttpError(message, 502);
+  }
 }
 
 export function toReelDeliveryApiError(error: unknown): { message: string; status: number } {

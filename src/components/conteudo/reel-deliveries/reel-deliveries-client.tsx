@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, Clapperboard, Film, RefreshCw, UploadCloud } from "lucide-react";
+import { AlertCircle, Clapperboard, Film, RefreshCw, Sparkles, UploadCloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AreaMark } from "@/components/conteudo/content-schedule-visuals";
 import type { ReelDeliveriesResponse, ReelDeliverySummary } from "@/lib/reel-deliveries/types";
+import { generateReelCopyFromVideo } from "@/lib/reel-deliveries/audio-client";
 import { cn } from "@/lib/utils";
-import { ParticipantStack, ReelStatusBadge, formatReelDate } from "./reel-delivery-ui";
+import { ParticipantStack, ReelStatusBadge, formatReelDate, reelDisplayTitle } from "./reel-delivery-ui";
 import { ReelUploadDialog } from "./reel-upload-dialog";
 import { ReelDeliverySheet } from "./reel-delivery-sheet";
 
@@ -47,7 +48,12 @@ function DeliveryCard({ delivery, onOpen, viewerIsManager }: { delivery: ReelDel
           <span className="min-w-0 text-slate-700"><AreaMark area={delivery.area} compact /></span>
           <span className="shrink-0 font-mono text-xs tabular-nums text-slate-500">{formatReelDate(delivery.dueDate)}</span>
         </div>
-        <p className="line-clamp-2 font-semibold leading-snug text-[#0d1e2e]">{delivery.title}</p>
+        <p className={cn("line-clamp-2 leading-snug", delivery.coverTitle ? "font-semibold text-[#0d1e2e]" : "font-medium text-slate-500")}>
+          {reelDisplayTitle(delivery)}
+        </p>
+        {delivery.aiStatus === "processing" && (
+          <p className="flex items-center gap-1.5 text-xs text-[#285f7a]"><Sparkles className="size-3.5" />IA escrevendo capa e legenda…</p>
+        )}
         <ParticipantStack people={delivery.participants} decisions={delivery.currentDecisions} />
         <div className="mt-auto flex w-full flex-wrap items-center justify-between gap-2 pt-1">
           <ReelStatusBadge status={delivery.status} />
@@ -78,6 +84,8 @@ export function ReelDeliveriesClient() {
   const [error, setError] = useState<string | null>(null);
   const [stage, setStage] = useState<StageKey>("approval");
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [refreshToken, setRefreshToken] = useState(0);
+  const [aiNotice, setAiNotice] = useState<string | null>(null);
   const openId = searchParams.get("reel");
 
   const load = useCallback(async () => {
@@ -103,6 +111,15 @@ export function ReelDeliveriesClient() {
     const query = params.toString();
     router.replace(query ? `?${query}` : "?", { scroll: false });
   }, [router, searchParams]);
+
+  // Roda depois do envio sem prender a tela: extrai o áudio, transcreve e escreve capa e legenda.
+  const runCopyInBackground = useCallback((id: string, video: File, overwrite: boolean) => {
+    void generateReelCopyFromVideo(id, video, overwrite)
+      .then(() => setAiNotice(null))
+      .catch((err) => setAiNotice(err instanceof Error ? err.message : "A IA não conseguiu gerar o texto agora."))
+      .finally(() => { void load(); setRefreshToken((value) => value + 1); });
+    window.setTimeout(() => void load(), 1500);
+  }, [load]);
 
   const deliveries = useMemo(() => data?.deliveries ?? [], [data]);
   const awaitingMe = deliveries.filter((d) => d.awaitingMe);
@@ -138,6 +155,13 @@ export function ReelDeliveriesClient() {
         </div>
       )}
 
+      {aiNotice && (
+        <div role="status" className="flex items-start justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <span className="flex gap-2"><Sparkles className="mt-0.5 size-4 shrink-0" />IA: {aiNotice} Você pode escrever à mão ou tentar de novo em Capa e legenda.</span>
+          <button type="button" onClick={() => setAiNotice(null)} className="underline">Fechar</button>
+        </div>
+      )}
+
       {awaitingMe.length > 0 && (
         <section aria-labelledby="awaiting-me" className="rounded-lg bg-[#e8f8f8] p-4 ring-1 ring-[#bfe6e8]">
           <h2 id="awaiting-me" className="text-sm font-semibold text-[#183f50]">
@@ -147,7 +171,7 @@ export function ReelDeliveriesClient() {
             {awaitingMe.map((d) => (
               <li key={d.id}>
                 <Button size="sm" variant="outline" className="bg-white" onClick={() => setOpenId(d.id)}>
-                  <Film />{d.title}
+                  <Film />{reelDisplayTitle(d)}
                 </Button>
               </li>
             ))}
@@ -212,7 +236,7 @@ export function ReelDeliveriesClient() {
           onOpenChange={setUploadOpen}
           slots={data.slots}
           people={data.people}
-          onCreated={(id) => { setUploadOpen(false); setStage("approval"); void load(); setOpenId(id); }}
+          onCreated={(id, video) => { setUploadOpen(false); setStage("approval"); void load(); setOpenId(id); runCopyInBackground(id, video, false); }}
         />
       )}
       {data && (
@@ -222,6 +246,8 @@ export function ReelDeliveriesClient() {
           people={data.people}
           onOpenChange={(open) => { if (!open) setOpenId(null); }}
           onChanged={() => void load()}
+          refreshToken={refreshToken}
+          onVersionUploaded={(id, video) => runCopyInBackground(id, video, false)}
         />
       )}
     </main>

@@ -303,11 +303,11 @@ export function isSupabaseStorageUrl(url: string, bucket?: string): boolean {
 export async function uploadReelDeliveryFile(
   deliveryId: string,
   file: File,
-  kind: "video" | "cover",
+  kind: "video" | "cover" | "audio",
   contentType: string,
   options?: ReelVideoUploadOptions
 ): Promise<{ path: string }> {
-  const prefix = kind === "video" ? "video" : "capa";
+  const prefix = kind === "video" ? "video" : kind === "audio" ? "audio" : "capa";
   const path = `deliveries/${deliveryId}/${prefix}-${Date.now()}-${sanitizeFileName(file.name)}`;
   try {
     if (kind === "video" && file.size > REEL_VIDEO_TUS_THRESHOLD_BYTES) {
