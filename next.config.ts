@@ -12,6 +12,12 @@ const nextConfig: NextConfig = {
       "@radix-ui/react-label",
     ],
   } as NextConfig["experimental"],
+  async redirects() {
+    return [
+      // Nome antigo da página de aprovação de reels.
+      { source: "/conteudo/reels-editados", destination: "/conteudo/aprovacao-reels", permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;
