@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  addBusinessDaysYmd,
   approvalStatusFor,
   canParticipantDecide,
   contentTypeForFile,
@@ -102,5 +103,13 @@ describe("crédito da legenda", () => {
 describe("stripDashes", () => {
   it("troca travessões e mantém hífens de palavras", () => {
     expect(stripDashes("Risco — e prazo – curto; bem-estar")).toBe("Risco, e prazo, curto; bem-estar");
+  });
+});
+
+describe("addBusinessDaysYmd", () => {
+  it("pula fim de semana no SLA da capa", () => {
+    expect(addBusinessDaysYmd("2026-10-05", 2)).toBe("2026-10-07"); // segunda -> quarta
+    expect(addBusinessDaysYmd("2026-10-08", 2)).toBe("2026-10-12"); // quinta -> segunda
+    expect(addBusinessDaysYmd("2026-10-10", 2)).toBe("2026-10-13"); // sábado -> terça
   });
 });

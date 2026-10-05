@@ -198,6 +198,23 @@ export function stripDashes(text: string): string {
   return text.replace(/\s*[—–]\s*/g, ", ").replace(/,\s*,/g, ",");
 }
 
+/** Tipo da tarefa no Planner e SLA da capa (dias úteis). */
+export const REEL_COVER_REQUEST_TYPE = "Capa de Reels";
+export const REEL_COVER_SLA_BUSINESS_DAYS = 2;
+
+/** Soma dias úteis (seg–sex) a uma data civil YYYY-MM-DD. */
+export function addBusinessDaysYmd(from: string, days: number): string {
+  const [year, month, day] = from.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  let added = 0;
+  while (added < days) {
+    date.setUTCDate(date.getUTCDate() + 1);
+    const weekday = date.getUTCDay();
+    if (weekday !== 0 && weekday !== 6) added += 1;
+  }
+  return date.toISOString().slice(0, 10);
+}
+
 export function contentTypeForFile(name: string, type: string | undefined, kind: "video" | "cover"): string | null {
   const allowed: readonly string[] = kind === "video" ? VIDEO_CONTENT_TYPES : COVER_CONTENT_TYPES;
   if (type && allowed.includes(type)) return type;

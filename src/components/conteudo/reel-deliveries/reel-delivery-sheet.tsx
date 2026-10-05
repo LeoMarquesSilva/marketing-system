@@ -7,9 +7,11 @@ import {
   CheckCircle2,
   Copy,
   Download,
+  ExternalLink,
   ImageUp,
   Loader2,
   MessageSquareWarning,
+  Palette,
   RotateCcw,
   Send,
   Sparkles,
@@ -445,6 +447,46 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
+function CoverRequestRow({ detail, busy, run, dirty }: { detail: ReelDeliveryDetail; busy: string | null; run: RunFn; dirty: boolean }) {
+  const request = detail.coverRequest;
+  const open = request && request.stage !== "concluido";
+  const approved = request && ["revisado", "pronto_envio", "concluido"].includes(request.stage ?? "");
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg bg-white p-3 text-sm ring-1 ring-[#dce9eb]">
+      <Palette className="size-4 shrink-0 text-[#347796]" aria-hidden />
+      {request ? (
+        <span className="min-w-0 flex-1 text-slate-700">
+          {approved && request.hasImage
+            ? "Arte aprovada no Planner e aplicada como capa."
+            : request.stage === "revisao" && request.hasImage
+              ? "A arte chegou e está esperando sua aprovação no Planner."
+              : `Capa pedida${request.assigneeName ? ` para ${request.assigneeName.split(" ")[0]}` : ""}, prazo ${formatReelDate(request.deadline)}. ${request.stageLabel}.`}
+        </span>
+      ) : (
+        <span className="min-w-0 flex-1 text-slate-700">
+          {detail.coverTitle
+            ? "Envie título, subtítulo e quem aparece no vídeo para a designer, com prazo de 2 dias úteis."
+            : "Escreva ou gere o título da capa para pedir a arte à designer."}
+        </span>
+      )}
+      {open ? (
+        <Button asChild size="sm" variant="outline"><a href="/planner"><ExternalLink />Abrir no Planner</a></Button>
+      ) : (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => void run("cover-request", () => sendJson(`/api/reel-deliveries/${detail.id}/cover-request`, "POST"), "Tarefa de capa criada no Planner.")}
+          disabled={busy !== null || !detail.coverTitle || dirty}
+          title={dirty ? "Salve o título e o subtítulo antes de pedir a arte." : undefined}
+        >
+          {busy === "cover-request" ? <Loader2 className="animate-spin" /> : <Send />}
+          {request ? "Pedir nova capa" : "Pedir capa para a designer"}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function CoverCaptionSection({ detail, viewer, busy, run }: { detail: ReelDeliveryDetail; viewer: Viewer; busy: string | null; run: RunFn }) {
   const [coverTitle, setCoverTitle] = useState(detail.coverTitle ?? "");
   const [coverSubtitle, setCoverSubtitle] = useState(detail.coverSubtitle ?? "");
@@ -548,6 +590,8 @@ function CoverCaptionSection({ detail, viewer, busy, run }: { detail: ReelDelive
           </>
         )}
       </div>
+
+      <CoverRequestRow detail={detail} busy={busy} run={run} dirty={dirty} />
 
       <div className="flex flex-col gap-4 sm:flex-row">
         <div className="w-32 shrink-0 space-y-2">

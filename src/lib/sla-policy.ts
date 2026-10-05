@@ -31,6 +31,7 @@ export const SLA_TIERS: SlaTier[] = [
       { type: "Onboarding", firstVersionDays: 2, adjustmentDays: 1, note: "Criado pelo fluxo de novo colaborador." },
       { type: "Relatório", firstVersionDays: 2, adjustmentDays: 1 },
       { type: "Apresentação", firstVersionDays: 2, adjustmentDays: 1, note: "Se for um deck completo, tratar como PPT." },
+      { type: "Capa de Reels", firstVersionDays: 2, adjustmentDays: 1, note: "Pedida pela Aprovação de Reels; a imagem aprovada vira a capa." },
     ],
   },
   {

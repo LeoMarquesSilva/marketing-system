@@ -1,13 +1,17 @@
 import "server-only";
 
 import { createClient as createAdminClient, type SupabaseClient } from "@supabase/supabase-js";
-import { requireContentScheduleActor, type ScheduleActor } from "@/lib/content-schedule/server";
+import { currentSaoPauloDate, requireContentScheduleActor, type ScheduleActor } from "@/lib/content-schedule/server";
+import { WORKFLOW_STAGES } from "@/lib/constants";
 import { generateObject } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import {
   REEL_AUDIO_MAX_BYTES,
   REEL_COPY_PROMPT,
+  REEL_COVER_REQUEST_TYPE,
+  REEL_COVER_SLA_BUSINESS_DAYS,
   REEL_DELIVERIES_BUCKET,
+  addBusinessDaysYmd,
   canParticipantDecide,
   reelCopyRequestSchema,
   reelCopySchema,
@@ -23,6 +27,7 @@ import {
   updateReelDeliverySchema,
 } from "./domain";
 import type {
+  ReelCoverRequest,
   ReelDecision,
   ReelDeliveriesResponse,
   ReelDeliveryDetail,
@@ -324,11 +329,13 @@ export async function getReelDelivery(id: string): Promise<ReelDeliveryDetail> {
     row.cover_path ? signedUrl(db, row.cover_path, downloadName(row, "capa", row.cover_path)) : null,
   ]);
 
-  const { data: transcriptRow } = await db.from("reel_deliveries").select("transcript").eq("id", id).maybeSingle();
+  const { data: extraRow } = await db.from("reel_deliveries").select("transcript,cover_request_id").eq("id", id).maybeSingle();
+  const coverRequest = await loadCoverRequest(db, (extraRow?.cover_request_id as string | null) ?? null);
 
   return {
     ...summary,
-    transcript: (transcriptRow?.transcript as string | null) ?? null,
+    transcript: (extraRow?.transcript as string | null) ?? null,
+    coverRequest,
     versions: versions.map(toVersion),
     decisions: decisions.map(toDecision).reverse(),
     videoUrl,
@@ -600,6 +607,107 @@ export async function deleteReelDelivery(id: string): Promise<void> {
   const { error } = await db.from("reel_deliveries").delete().eq("id", id);
   if (error) throw new ReelDeliveryHttpError("Não foi possível excluir o reel.");
   if (paths.length) await db.storage.from(REEL_DELIVERIES_BUCKET).remove(paths);
+}
+
+async function loadCoverRequest(db: SupabaseClient, requestId: string | null): Promise<ReelCoverRequest | null> {
+  if (!requestId) return null;
+  const { data } = await db
+    .from("marketing_requests")
+    .select("id,workflow_stage,assignee,deadline,art_image_path")
+    .eq("id", requestId)
+    .maybeSingle();
+  if (!data) return null;
+  const stage = (data.workflow_stage as string | null) ?? "tarefas";
+  return {
+    id: data.id as string,
+    stage,
+    stageLabel: WORKFLOW_STAGES.find((item) => item.value === stage)?.label ?? stage,
+    assigneeName: (data.assignee as string | null) ?? null,
+    deadline: (data.deadline as string | null) ?? null,
+    hasImage: Boolean(data.art_image_path),
+  };
+}
+
+function brDate(ymd: string | null): string {
+  if (!ymd) return "a definir";
+  const [y, m, d] = ymd.slice(0, 10).split("-");
+  return `${d}/${m}/${y}`;
+}
+
+/**
+ * Cria a tarefa "Capa de Reels" no Planner para a designer, com título, subtítulo
+ * e quem aparece no vídeo. A imagem que ela subir vira a capa quando a tarefa
+ * for aprovada (gatilho apply_reel_cover_from_request).
+ */
+export async function requestReelCover(id: string): Promise<void> {
+  const actor = await requireContentScheduleActor();
+  requireManager(actor);
+  const db = adminDb();
+  const row = await loadDeliveryRow(db, id);
+  if (!row.cover_title?.trim()) {
+    throw new ReelDeliveryHttpError("Escreva ou gere o título da capa antes de pedir a arte.", 409);
+  }
+
+  const { data: current } = await db.from("reel_deliveries").select("cover_request_id").eq("id", id).maybeSingle();
+  const existing = await loadCoverRequest(db, (current?.cover_request_id as string | null) ?? null);
+  if (existing && existing.stage !== "concluido") {
+    throw new ReelDeliveryHttpError("Já existe uma tarefa de capa aberta no Planner para este reel.", 409);
+  }
+
+  const { data: designers } = await db
+    .from("users")
+    .select("id,name")
+    .eq("role", "designer")
+    .or("is_active.eq.true,is_active.is.null")
+    .order("name")
+    .limit(1);
+  const designer = designers?.[0] ?? null;
+
+  const { data: actorRow } = await db.from("users").select("id,name").eq("id", actor.profileId).maybeSingle();
+  const credit = await creditLine(db, id, row.area);
+  const people = credit.replace(/^Por: /, "").replace(/ \| BP - .*$/, "");
+  const description = [
+    "Capa do Reels para o Instagram.",
+    "",
+    `Título: ${row.cover_title.trim()}`,
+    `Subtítulo: ${row.cover_subtitle?.trim() || "(sem subtítulo)"}`,
+    `Quem aparece no vídeo: ${people}`,
+    `Área: ${row.area}`,
+    `Publicação prevista: ${brDate(row.due_date)}`,
+    "",
+    "Suba a arte final como imagem na tarefa, em \"Arte da capa\". Quando a tarefa for aprovada, a imagem vai sozinha para a capa do reel em Aprovação de Reels.",
+  ].join("\n");
+
+  const { data: created, error } = await db
+    .from("marketing_requests")
+    .insert({
+      title: `Capa de Reels: ${row.cover_title.trim()}`,
+      description,
+      requesting_area: row.area,
+      request_type: REEL_COVER_REQUEST_TYPE,
+      status: "pending",
+      workflow_stage: "tarefas",
+      priority: "normal",
+      requested_at: new Date().toISOString(),
+      deadline: addBusinessDaysYmd(currentSaoPauloDate(), REEL_COVER_SLA_BUSINESS_DAYS),
+      assignee: designer?.name ?? null,
+      assignee_id: designer?.id ?? null,
+      solicitante: actorRow?.name ?? null,
+      solicitante_id: actor.profileId,
+      created_by: actorRow?.name ?? null,
+      created_by_id: actor.profileId,
+      nome_advogado: people,
+      reel_delivery_id: id,
+    })
+    .select("id")
+    .single();
+  if (error || !created) throw new ReelDeliveryHttpError("Não foi possível criar a tarefa no Planner.");
+
+  const { error: linkError } = await db.from("reel_deliveries").update({ cover_request_id: created.id }).eq("id", id);
+  if (linkError) {
+    await db.from("marketing_requests").delete().eq("id", created.id);
+    throw new ReelDeliveryHttpError("Não foi possível ligar a tarefa ao reel.");
+  }
 }
 
 function openAiKey(): string {

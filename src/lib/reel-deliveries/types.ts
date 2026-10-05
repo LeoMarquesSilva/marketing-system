@@ -54,8 +54,19 @@ export interface ReelDeliverySummary {
   awaitingMe: boolean;
 }
 
+export interface ReelCoverRequest {
+  id: string;
+  stage: string | null;
+  stageLabel: string;
+  assigneeName: string | null;
+  deadline: string | null;
+  hasImage: boolean;
+}
+
 export interface ReelDeliveryDetail extends ReelDeliverySummary {
   transcript: string | null;
+  /** Tarefa de capa no Planner, quando pedida. */
+  coverRequest: ReelCoverRequest | null;
   versions: ReelVersion[];
   decisions: ReelDecision[];
   videoUrl: string | null;
