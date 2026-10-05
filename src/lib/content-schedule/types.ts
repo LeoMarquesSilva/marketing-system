@@ -32,6 +32,10 @@ export interface ContentScheduleSlot {
   collaborator_id: string | null;
   collaborator_name: string | null;
   collaborator_avatar_url: string | null;
+  /** Segundo responsável, quando a entrega é feita em dupla (ex.: reel gravado junto). */
+  co_collaborator_id: string | null;
+  co_collaborator_name: string | null;
+  co_collaborator_avatar_url: string | null;
   source_key: string;
   source_name: string | null;
   source_status: string | null;

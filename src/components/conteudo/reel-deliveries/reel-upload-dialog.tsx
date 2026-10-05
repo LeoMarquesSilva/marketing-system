@@ -134,7 +134,8 @@ export function ReelUploadDialog({
   function chooseSlot(id: string) {
     setSlotId(id);
     const slot = slots.find((item) => item.id === id);
-    if (slot?.collaborator && participants.length === 0) setParticipants([slot.collaborator.id]);
+    const people = [slot?.collaborator, slot?.coCollaborator].filter((person): person is ReelPerson => Boolean(person));
+    if (people.length && participants.length === 0) setParticipants(people.map((person) => person.id));
   }
 
   async function submit() {
@@ -191,7 +192,9 @@ export function ReelUploadDialog({
                     <SelectLabel>{monthLabel(items[0].dueDate)}</SelectLabel>
                     {items.map((slot) => (
                       <SelectItem key={slot.id} value={slot.id}>
-                        {formatReelDate(slot.dueDate)} · {slot.area} · {slot.collaborator?.name ?? slot.sourceName ?? "Sem responsável"}
+                        {formatReelDate(slot.dueDate)} · {slot.area} · {slot.collaborator
+                          ? [slot.collaborator.name, slot.coCollaborator?.name].filter(Boolean).join(" e ")
+                          : slot.sourceName ?? "Sem responsável"}
                       </SelectItem>
                     ))}
                   </SelectGroup>

@@ -80,6 +80,8 @@ export interface ReelSlotOption {
   area: string;
   dueDate: string;
   collaborator: ReelPerson | null;
+  /** Quem gravou junto, quando a vaga tem dois responsáveis. */
+  coCollaborator: ReelPerson | null;
   sourceName: string | null;
 }
 

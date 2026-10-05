@@ -229,7 +229,7 @@ export async function listReelDeliveries(): Promise<ReelDeliveriesResponse> {
     const used = new Set(deliveryRows.map((r) => r.slot_id).filter(Boolean));
     const { data: slotRows, error: slotError } = await db
       .from("content_schedule_slots")
-      .select("id,area,due_date,collaborator_id,source_name")
+      .select("id,area,due_date,collaborator_id,co_collaborator_id,source_name")
       .eq("format", "reel")
       .eq("cancelled", false)
       .order("due_date", { ascending: true });
@@ -241,6 +241,7 @@ export async function listReelDeliveries(): Promise<ReelDeliveriesResponse> {
         area: slot.area,
         dueDate: slot.due_date,
         collaborator: slot.collaborator_id ? people.get(slot.collaborator_id) ?? null : null,
+        coCollaborator: slot.co_collaborator_id ? people.get(slot.co_collaborator_id) ?? null : null,
         sourceName: slot.source_name,
       }));
   }

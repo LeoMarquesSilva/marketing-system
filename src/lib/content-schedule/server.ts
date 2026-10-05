@@ -59,7 +59,8 @@ export interface ScheduleActor {
 
 type SlotRow = {
   id: string; area: string; due_date: string; format: ContentScheduleFormat;
-  collaborator_id: string | null; source_key: string; source_name: string | null;
+  collaborator_id: string | null; co_collaborator_id?: string | null;
+  source_key: string; source_name: string | null;
   source_status: string | null; source_notes: string | null; cancelled: boolean;
   content_roteiro_id: string | null; reel_studio_id: string | null;
   instagram_post_id: string | null; vios_task_id: string | null;
@@ -579,11 +580,13 @@ export async function getContentSchedule(month = currentSaoPauloMonth()): Promis
     loadCollaborators(db, actor.access),
   ]);
   if (slotError) throw new ContentScheduleHttpError("Não foi possível carregar o cronograma.");
-  const rows = ((rawSlots ?? []) as SlotRow[]).filter((row) => canReadContentScheduleSlot(actor.access, {
-    area: row.area, collaboratorId: row.collaborator_id ?? "",
-  }));
+  const rows = ((rawSlots ?? []) as SlotRow[]).filter((row) =>
+    [row.collaborator_id, row.co_collaborator_id].some((collaboratorId) =>
+      canReadContentScheduleSlot(actor.access, { area: row.area, collaboratorId: collaboratorId ?? "" })
+    )
+  );
 
-  const userIds = [...new Set(rows.map((row) => row.collaborator_id).filter(Boolean))] as string[];
+  const userIds = [...new Set(rows.flatMap((row) => [row.collaborator_id, row.co_collaborator_id]).filter(Boolean))] as string[];
   const roteiroIds = [...new Set(rows.map((row) => row.content_roteiro_id).filter(Boolean))] as string[];
   const reelIds = [...new Set(rows.map((row) => row.reel_studio_id).filter(Boolean))] as string[];
   const directPostIds = [...new Set(rows.map((row) => row.instagram_post_id).filter(Boolean))] as string[];
@@ -659,6 +662,7 @@ export async function getContentSchedule(month = currentSaoPauloMonth()): Promis
 
   const slots: ContentScheduleSlot[] = rows.map((row) => {
     const person = row.collaborator_id ? users.get(row.collaborator_id) : null;
+    const coPerson = row.co_collaborator_id ? users.get(row.co_collaborator_id) : null;
     const roteiro = row.content_roteiro_id ? roteiros.get(row.content_roteiro_id) : null;
     const request = row.format === "post" && roteiro?.marketing_request_id ? requests.get(roteiro.marketing_request_id) : null;
     const effectiveViosTaskId = row.vios_task_id ??
@@ -676,6 +680,9 @@ export async function getContentSchedule(month = currentSaoPauloMonth()): Promis
       area: resolveContentScheduleAreaLabel(row.area) ?? row.area,
       collaborator_name: person?.name ?? null,
       collaborator_avatar_url: person?.avatar_url ?? null,
+      co_collaborator_id: row.co_collaborator_id ?? null,
+      co_collaborator_name: coPerson?.name ?? null,
+      co_collaborator_avatar_url: coPerson?.avatar_url ?? null,
       content_title: roteiro?.title ?? null,
       reel_title: row.reel_studio_id ? reels.get(row.reel_studio_id)?.title ?? null : null,
       publication,
@@ -784,6 +791,7 @@ export async function resolveContentScheduleAssignmentNotification(id: string): 
 
 export interface CreateSlotInput {
   area: string; due_date: string; format: ContentScheduleFormat; collaborator_id?: string | null;
+  co_collaborator_id?: string | null;
   source_key?: string; source_name?: string | null; source_status?: string | null; source_notes?: string | null;
 }
 
@@ -797,6 +805,7 @@ export const createContentScheduleSlotSchema = z.object({
   due_date: isoCivilDateSchema,
   format: z.enum(["post", "reel"]),
   collaborator_id: z.string().uuid().nullable().optional(),
+  co_collaborator_id: z.string().uuid().nullable().optional(),
   source_key: z.string().trim().min(1).max(500).optional(),
   source_name: z.string().trim().max(500).nullable().optional(),
   source_status: z.string().trim().max(200).nullable().optional(),
@@ -808,6 +817,16 @@ function validateDate(value: string): void {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== value) {
     throw new ContentScheduleHttpError("Data inválida.", 400, "INVALID_DATE");
   }
+}
+
+/** O segundo responsável só existe ao lado de um principal e nunca repete a mesma pessoa. */
+export function normalizeSlotPeople(
+  collaboratorId: string | null | undefined,
+  coCollaboratorId: string | null | undefined
+): { collaborator_id: string | null; co_collaborator_id: string | null } {
+  const primary = collaboratorId ?? coCollaboratorId ?? null;
+  const second = collaboratorId && coCollaboratorId && coCollaboratorId !== collaboratorId ? coCollaboratorId : null;
+  return { collaborator_id: primary, co_collaborator_id: second };
 }
 
 async function assertCollaboratorInArea(db: SupabaseClient, collaboratorId: string, area: string): Promise<void> {
@@ -858,8 +877,10 @@ export async function createContentScheduleSlots(inputs: CreateSlotInput[]): Pro
     validateDate(input.due_date);
     if (typeof input.area !== "string" || !input.area.trim() || !["post", "reel"].includes(input.format)) throw new ContentScheduleHttpError("Revise área e formato.", 400);
     if (input.collaborator_id) await assertCollaboratorInArea(db, input.collaborator_id, input.area);
+    if (input.co_collaborator_id) await assertCollaboratorInArea(db, input.co_collaborator_id, input.area);
   }
   const payload = inputs.map((input) => ({ ...input,
+    ...normalizeSlotPeople(input.collaborator_id, input.co_collaborator_id),
     area: resolveContentScheduleAreaLabel(input.area) ?? input.area.trim(),
     source_key: input.source_key?.trim() || `manual:${crypto.randomUUID()}`, created_by: actor.profileId }));
   const { data, error } = await db.from("content_schedule_slots").insert(payload).select("*");
@@ -894,30 +915,44 @@ export async function updateContentScheduleSlot(id: string, input: UpdateSlotInp
   if (input.format !== undefined && !["post", "reel"].includes(input.format)) throw new ContentScheduleHttpError("Formato inválido.", 400);
   if (input.area !== undefined && (typeof input.area !== "string" || !input.area.trim())) throw new ContentScheduleHttpError("Área inválida.", 400);
   if (input.cancelled !== undefined && typeof input.cancelled !== "boolean") throw new ContentScheduleHttpError("Situação inválida.", 400);
-  if (input.collaborator_id !== undefined && input.collaborator_id !== null && typeof input.collaborator_id !== "string") throw new ContentScheduleHttpError("Colaborador inválido.", 400);
+  for (const value of [input.collaborator_id, input.co_collaborator_id]) {
+    if (value !== undefined && value !== null && typeof value !== "string") throw new ContentScheduleHttpError("Colaborador inválido.", 400);
+  }
   const targetArea = input.area?.trim() || current.area;
+  const touchesPeople = input.collaborator_id !== undefined || input.co_collaborator_id !== undefined;
+  const people = normalizeSlotPeople(
+    input.collaborator_id === undefined ? current.collaborator_id : input.collaborator_id,
+    input.co_collaborator_id === undefined ? current.co_collaborator_id : input.co_collaborator_id
+  );
+  const changesPeople = touchesPeople && (
+    people.collaborator_id !== current.collaborator_id ||
+    people.co_collaborator_id !== (current.co_collaborator_id ?? null)
+  );
+  // O segundo responsável pode mudar depois do vínculo; o principal guia os vínculos e fica travado.
   const changesLinkedIdentity = Boolean(current.content_roteiro_id || current.reel_studio_id) && (
     (input.area !== undefined && !sameScheduleArea(input.area, current.area)) ||
     (input.format !== undefined && input.format !== current.format) ||
-    (input.collaborator_id !== undefined && input.collaborator_id !== current.collaborator_id)
+    (touchesPeople && people.collaborator_id !== current.collaborator_id)
   );
   if (changesLinkedIdentity) throw new ContentScheduleHttpError("Uma vaga com conteúdo vinculado não pode trocar de área, formato ou colaborador.", 409, "LINKED_SLOT");
-  if (input.collaborator_id !== undefined && current.cancelled) {
+  // O diálogo do Marketing reenvia os responsáveis ao reativar uma data; só a troca real é barrada.
+  if (current.cancelled && (changesPeople || (touchesPeople && !actor.access.manageAll))) {
     throw new ContentScheduleHttpError("Uma data cancelada não pode receber responsável.", 409, "CANCELLED_SLOT");
   }
   if (!structural && !canAssignContentScheduleArea(actor.access, current.area)) {
     throw new ContentScheduleHttpError("Você não gerencia esta área.", 403, "FORBIDDEN");
   }
   if (input.due_date) validateDate(input.due_date);
-  const targetCollaborator = input.collaborator_id === undefined ? current.collaborator_id : input.collaborator_id;
-  if (targetCollaborator) await assertCollaboratorInArea(db, targetCollaborator, targetArea);
-  if (!actor.access.manageAll && input.collaborator_id !== undefined) {
+  if (people.collaborator_id) await assertCollaboratorInArea(db, people.collaborator_id, targetArea);
+  if (people.co_collaborator_id) await assertCollaboratorInArea(db, people.co_collaborator_id, targetArea);
+  if (!actor.access.manageAll && touchesPeople) {
     const { data: assignmentResult, error: assignmentError } = await db.rpc(
-      "assign_content_schedule_slot",
+      "assign_content_schedule_slot_people",
       {
         p_slot_id: id,
         p_expected_updated_at: current.updated_at,
-        p_collaborator_id: input.collaborator_id,
+        p_collaborator_id: people.collaborator_id,
+        p_co_collaborator_id: people.co_collaborator_id,
         p_changed_by_id: actor.profileId,
         p_recipient_id: actor.profileId === LEONARDO_USER_ID ? null : LEONARDO_USER_ID,
       }
@@ -957,6 +992,7 @@ export async function updateContentScheduleSlot(id: string, input: UpdateSlotInp
   }
   const updates = {
     ...input,
+    ...(touchesPeople ? people : {}),
     ...(input.area
       ? { area: resolveContentScheduleAreaLabel(input.area) ?? input.area.trim() }
       : {}),
@@ -1124,7 +1160,7 @@ export async function autoLinkInstagramPublicationToSchedule(instagramPostId: st
     db.from("content_schedule_slots").select("id").eq("instagram_post_id", instagramPostId).maybeSingle(),
     db.from("content_schedule_slots")
       .select("id,area,due_date,format,collaborator_id,cancelled,instagram_post_id")
-      .in("collaborator_id", collaboratorIds)
+      .or(`collaborator_id.in.(${collaboratorIds.join(",")}),co_collaborator_id.in.(${collaboratorIds.join(",")})`)
       .eq("format", format)
       .gte("due_date", from)
       .lte("due_date", to)
@@ -1276,14 +1312,17 @@ export async function autoLinkContentSchedule(input: AutoLinkContentScheduleInpu
   const sourceColumn = input.format === "post" ? "content_roteiro_id" : "reel_studio_id";
   const from = shiftCivilDate(date, -14);
   const to = shiftCivilDate(date, 14);
-  const { data: slots, error } = await db.from("content_schedule_slots").select("id,due_date,area,format,collaborator_id,cancelled,content_roteiro_id,reel_studio_id")
-    .eq("collaborator_id", input.collaboratorId)
+  const personFilter = `collaborator_id.eq.${input.collaboratorId},co_collaborator_id.eq.${input.collaboratorId}`;
+  const { data: slots, error } = await db.from("content_schedule_slots").select("id,due_date,area,format,collaborator_id,co_collaborator_id,cancelled,content_roteiro_id,reel_studio_id")
+    .or(personFilter)
     .eq("format", input.format)
     .or(`${sourceColumn}.eq.${sourceId},and(due_date.gte.${from},due_date.lte.${to})`);
   if (error) throw new ContentScheduleHttpError("Não foi possível localizar uma vaga.");
+  // Para quem gravou junto, a vaga conta como sua; o principal continua sendo o dono gravado na vaga.
   const match = findAutomaticSlotMatch({ id: sourceId, date, area: input.area, format: input.format, collaboratorId: input.collaboratorId },
     (slots ?? []).map((slot) => ({ id: slot.id, date: slot.due_date, area: slot.area, format: slot.format,
-      collaboratorId: slot.collaborator_id, contentId: slot[sourceColumn], cancelled: slot.cancelled })));
+      collaboratorId: slot.co_collaborator_id === input.collaboratorId ? input.collaboratorId : slot.collaborator_id,
+      contentId: slot[sourceColumn], cancelled: slot.cancelled })));
   if (match.status === "already_linked") {
     await closePendingLink(db, input, sourceId, match.slotId);
     return match;
@@ -1292,17 +1331,18 @@ export async function autoLinkContentSchedule(input: AutoLinkContentScheduleInpu
     const updates: Record<string, string> = { [sourceColumn]: sourceId };
     if (input.contentRoteiroId && input.format === "reel") updates.content_roteiro_id = input.contentRoteiroId;
     const chosen = (slots ?? []).find((slot) => slot.id === match.slotId)!;
-    const { data: won, error: updateError } = await db.from("content_schedule_slots").update(updates)
+    let claim = db.from("content_schedule_slots").update(updates)
       .eq("id", match.slotId).eq("area", chosen.area).eq("format", input.format)
-      .eq("collaborator_id", input.collaboratorId).eq("cancelled", false)
-      .is(sourceColumn, null).select("id").maybeSingle();
+      .eq("collaborator_id", chosen.collaborator_id).eq("cancelled", false);
+    if (chosen.collaborator_id !== input.collaboratorId) claim = claim.eq("co_collaborator_id", input.collaboratorId);
+    const { data: won, error: updateError } = await claim.is(sourceColumn, null).select("id").maybeSingle();
     if (!updateError && won) {
       await closePendingLink(db, input, sourceId, match.slotId);
       return match;
     }
     if (!updateError) {
       const { data: winner, error: winnerError } = await db.from("content_schedule_slots").select("id")
-        .eq("collaborator_id", input.collaboratorId).eq("format", input.format)
+        .or(personFilter).eq("format", input.format)
         .eq(sourceColumn, sourceId).maybeSingle();
       if (winnerError) throw new ContentScheduleHttpError("Não foi possível confirmar o vínculo concorrente.");
       if (winner) {
