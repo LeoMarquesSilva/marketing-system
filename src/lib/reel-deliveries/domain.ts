@@ -198,6 +198,62 @@ export function stripDashes(text: string): string {
   return text.replace(/\s*[—–]\s*/g, ", ").replace(/,\s*,/g, ",");
 }
 
+export interface ReelCoverPerson {
+  name: string;
+  gender: string | null;
+  position: string | null;
+  /** Área já no rótulo oficial; vazia usa a área do reel. */
+  area: string | null;
+}
+
+const ROLE_WORDS: { pattern: RegExp; female: string; male: string }[] = [
+  { pattern: /advogad/i, female: "Advogada", male: "Advogado" },
+  { pattern: /s[oó]ci[oa]/i, female: "Sócia", male: "Sócio" },
+  { pattern: /coordenador/i, female: "Coordenadora", male: "Coordenador" },
+  { pattern: /supervisor/i, female: "Supervisora", male: "Supervisor" },
+  { pattern: /gerente/i, female: "Gerente", male: "Gerente" },
+  { pattern: /estagi/i, female: "Estagiária", male: "Estagiário" },
+  { pattern: /consultor/i, female: "Consultora", male: "Consultor" },
+  { pattern: /analista/i, female: "Analista", male: "Analista" },
+  { pattern: /assistente/i, female: "Assistente", male: "Assistente" },
+];
+
+/**
+ * "Advogada da área de Reestruturação": cargo sem nível (Júnior/Pleno/Sênior),
+ * no gênero cadastrado no RH. Sem gênero, mantém o cargo como está no cadastro.
+ */
+export function reelPersonRole(person: ReelCoverPerson, fallbackArea: string): string {
+  const area = person.area?.trim() || fallbackArea;
+  const position = (person.position ?? "").trim();
+  const gender = (person.gender ?? "").trim().toUpperCase();
+  const word = ROLE_WORDS.find((item) => item.pattern.test(position));
+  const role = word && (gender === "F" || gender === "M")
+    ? (gender === "F" ? word.female : word.male)
+    : position.replace(/\s+(j[uú]nior|pleno|s[eê]nior)\b.*$/i, "").trim();
+  return role ? `${role} da área de ${area}` : `Área de ${area}`;
+}
+
+/** Descrição da tarefa de capa no Planner: o que a designer precisa para a arte. */
+export function buildCoverRequestDescription(input: {
+  coverTitle: string;
+  coverSubtitle: string | null;
+  people: ReelCoverPerson[];
+  area: string;
+}): string {
+  const people = input.people.map((person) => `${person.name}, ${reelPersonRole(person, input.area)}`);
+  return [
+    "Capa do Reels para o Instagram.",
+    "",
+    `Título: ${input.coverTitle.trim()}`,
+    `Subtítulo: ${input.coverSubtitle?.trim() || "(sem subtítulo)"}`,
+    people.length > 1
+      ? `Quem aparece no vídeo:\n${people.map((line) => `• ${line}`).join("\n")}`
+      : `Quem aparece no vídeo: ${people[0] ?? "a definir"}`,
+    "",
+    'Suba a arte final como imagem na tarefa, em "Arte da capa". Quando a tarefa for aprovada, a imagem vai sozinha para a capa do reel em Aprovação de Reels.',
+  ].join("\n");
+}
+
 /** Tipo da tarefa no Planner e SLA da capa (dias úteis). */
 export const REEL_COVER_REQUEST_TYPE = "Capa de Reels";
 export const REEL_COVER_SLA_BUSINESS_DAYS = 2;

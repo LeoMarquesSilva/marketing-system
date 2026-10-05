@@ -2,6 +2,7 @@ import "server-only";
 
 import { createClient as createAdminClient, type SupabaseClient } from "@supabase/supabase-js";
 import { currentSaoPauloDate, requireContentScheduleActor, type ScheduleActor } from "@/lib/content-schedule/server";
+import { resolveContentScheduleAreaLabel } from "@/lib/content-schedule/domain";
 import { WORKFLOW_STAGES } from "@/lib/constants";
 import { generateObject } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -12,7 +13,9 @@ import {
   REEL_COVER_SLA_BUSINESS_DAYS,
   REEL_DELIVERIES_BUCKET,
   addBusinessDaysYmd,
+  buildCoverRequestDescription,
   canParticipantDecide,
+  type ReelCoverPerson,
   reelCopyRequestSchema,
   reelCopySchema,
   reelCreditLine,
@@ -628,10 +631,30 @@ async function loadCoverRequest(db: SupabaseClient, requestId: string | null): P
   };
 }
 
-function brDate(ymd: string | null): string {
-  if (!ymd) return "a definir";
-  const [y, m, d] = ymd.slice(0, 10).split("-");
-  return `${d}/${m}/${y}`;
+/** Quem aparece no vídeo, com nome completo, cargo e área do RH. */
+async function loadCoverPeople(db: SupabaseClient, deliveryId: string): Promise<ReelCoverPerson[]> {
+  const { data: participants } = await db
+    .from("reel_delivery_participants")
+    .select("user_id,user_name")
+    .eq("delivery_id", deliveryId)
+    .order("created_at");
+  const ids = (participants ?? []).map((p) => p.user_id as string);
+  const { data: employees } = ids.length
+    ? await db.from("hr_employees").select("user_id,gender,position,department").in("user_id", ids)
+    : { data: [] };
+  const byUser = new Map((employees ?? []).map((e) => [e.user_id as string, e]));
+  return (participants ?? []).map((p) => {
+    const employee = byUser.get(p.user_id as string);
+    const department = (employee?.department as string | null) ?? null;
+    // "Sócio" é cadastro de sócio, não área: usa a área do reel.
+    const area = department && !/^s[oó]ci/i.test(department.trim()) ? resolveContentScheduleAreaLabel(department) : null;
+    return {
+      name: p.user_name as string,
+      gender: (employee?.gender as string | null) ?? null,
+      position: (employee?.position as string | null) ?? null,
+      area,
+    };
+  });
 }
 
 /**
@@ -664,19 +687,14 @@ export async function requestReelCover(id: string): Promise<void> {
   const designer = designers?.[0] ?? null;
 
   const { data: actorRow } = await db.from("users").select("id,name").eq("id", actor.profileId).maybeSingle();
-  const credit = await creditLine(db, id, row.area);
-  const people = credit.replace(/^Por: /, "").replace(/ \| BP - .*$/, "");
-  const description = [
-    "Capa do Reels para o Instagram.",
-    "",
-    `Título: ${row.cover_title.trim()}`,
-    `Subtítulo: ${row.cover_subtitle?.trim() || "(sem subtítulo)"}`,
-    `Quem aparece no vídeo: ${people}`,
-    `Área: ${row.area}`,
-    `Publicação prevista: ${brDate(row.due_date)}`,
-    "",
-    "Suba a arte final como imagem na tarefa, em \"Arte da capa\". Quando a tarefa for aprovada, a imagem vai sozinha para a capa do reel em Aprovação de Reels.",
-  ].join("\n");
+  const coverPeople = await loadCoverPeople(db, id);
+  const people = coverPeople.map((person) => person.name).join(", ");
+  const description = buildCoverRequestDescription({
+    coverTitle: row.cover_title,
+    coverSubtitle: row.cover_subtitle,
+    people: coverPeople,
+    area: row.area,
+  });
 
   const { data: created, error } = await db
     .from("marketing_requests")

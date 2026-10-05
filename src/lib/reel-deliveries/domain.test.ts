@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   addBusinessDaysYmd,
+  buildCoverRequestDescription,
+  reelPersonRole,
   approvalStatusFor,
   canParticipantDecide,
   contentTypeForFile,
@@ -111,5 +113,25 @@ describe("addBusinessDaysYmd", () => {
     expect(addBusinessDaysYmd("2026-10-05", 2)).toBe("2026-10-07"); // segunda -> quarta
     expect(addBusinessDaysYmd("2026-10-08", 2)).toBe("2026-10-12"); // quinta -> segunda
     expect(addBusinessDaysYmd("2026-10-10", 2)).toBe("2026-10-13"); // sábado -> terça
+  });
+});
+
+describe("cargo na tarefa de capa", () => {
+  it("usa o gênero do RH, tira o nível e fala da área", () => {
+    expect(reelPersonRole({ name: "A", gender: "F", position: "Advogado Pleno", area: "Reestruturação" }, "Cível")).toBe("Advogada da área de Reestruturação");
+    expect(reelPersonRole({ name: "B", gender: "M", position: "Coordenador", area: "Operações Legais" }, "Cível")).toBe("Coordenador da área de Operações Legais");
+    expect(reelPersonRole({ name: "C", gender: "F", position: "Sócio de Área", area: null }, "Trabalhista")).toBe("Sócia da área de Trabalhista");
+    expect(reelPersonRole({ name: "D", gender: null, position: "Advogado Júnior", area: "Cível" }, "Cível")).toBe("Advogado da área de Cível");
+  });
+
+  it("não mostra data prevista e lista nome completo com cargo", () => {
+    const text = buildCoverRequestDescription({
+      coverTitle: "TÍTULO",
+      coverSubtitle: "Sub",
+      area: "Reestruturação",
+      people: [{ name: "Gabriela Bossi Leme", gender: "F", position: "Advogado Pleno", area: "Reestruturação" }],
+    });
+    expect(text).toContain("Quem aparece no vídeo: Gabriela Bossi Leme, Advogada da área de Reestruturação");
+    expect(text).not.toMatch(/Publicação prevista/);
   });
 });
