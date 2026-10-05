@@ -52,7 +52,7 @@ export function HrNotificationsBell({ className }: { className?: string }) {
         </PopoverTrigger>
         <PopoverContent align="start" side="right" className="p-3">
           <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Atualizações de colaboradores (VIOS)
+            Atualizações de colaboradores
           </p>
           <HrNotificationsList
             notifications={notifications}
@@ -60,6 +60,8 @@ export function HrNotificationsBell({ className }: { className?: string }) {
               setOpen(false);
               setEditEmployeeId(employeeId);
             }}
+            onNavigate={() => setOpen(false)}
+            onChanged={() => void refetch()}
           />
         </PopoverContent>
       </Popover>

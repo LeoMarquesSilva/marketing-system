@@ -34,6 +34,7 @@ import {
   Palmtree,
   BriefcaseBusiness,
   IdCard,
+  ClipboardPen,
   ChevronDown,
   TrendingUp,
   Layers,
@@ -159,6 +160,7 @@ const rhNavGroup: NavGroup = {
   children: [
     { href: "/rh/ferias", icon: Palmtree, label: "Ferias" },
     { href: "/rh/qualificacoes", icon: IdCard, label: "Qualificacoes" },
+    { href: "/rh/fichas-cadastrais", icon: ClipboardPen, label: "Fichas cadastrais" },
   ],
 };
 

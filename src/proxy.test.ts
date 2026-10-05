@@ -21,6 +21,12 @@ describe("proxy — retorno após login", () => {
     expect(response.headers.get("location")).toBeNull();
   });
 
+  it("abre a ficha cadastral de admissão sem login", () => {
+    const response = proxy(request("/ficha-cadastral/fc_abcdefghijklmnopqrstuvwx"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+  });
+
   it("guarda o check-in do Café com Cultura quando não há sessão", () => {
     const response = proxy(request("/cafe-com-cultura?source=nfc"));
     expect(response.status).toBeGreaterThanOrEqual(300);

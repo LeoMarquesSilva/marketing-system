@@ -1,0 +1,338 @@
+/*
+ * Identidade do site institucional (bismarchipires.com.br): papel #FCF9F5,
+ * navy #0D1E2E, dourado #9C7434 para rótulos, sans geométrica (Montserrat no
+ * lugar da Gotham), títulos leves em caixa baixa. Os tokens do shadcn são
+ * redefinidos aqui para os campos herdarem a paleta da marca.
+ */
+
+.root {
+  --paper: #fcf9f5;
+  --paper-tint: #f4efe6;
+  --navy: #0d1e2e;
+  --ink: #212529;
+  --ink-soft: #5a6570;
+  --gold: #e1b16d;
+  --gold-deep: #9c7434;
+  --mist: #d9e2ea;
+  --sans: var(--font-fc-sans), "Montserrat", "Gotham", "Segoe UI", system-ui, sans-serif;
+
+  /* tokens do shadcn */
+  --background: #ffffff;
+  --foreground: var(--ink);
+  --card: #ffffff;
+  --card-foreground: var(--ink);
+  --primary: var(--navy);
+  --primary-foreground: #ffffff;
+  --muted: #f5f1ea;
+  --muted-foreground: #66707a;
+  --border: rgba(13, 30, 46, 0.14);
+  --input: rgba(13, 30, 46, 0.18);
+  --ring: rgba(13, 30, 46, 0.45);
+  --destructive: #a63f2e;
+
+  min-height: 100dvh;
+  width: 100%;
+  overflow-x: hidden;
+  color: var(--ink);
+  font-family: var(--sans);
+  background:
+    radial-gradient(60rem 36rem at 8% -8%, #ffffff, rgba(255, 255, 255, 0) 60%),
+    radial-gradient(46rem 32rem at 100% 0%, rgba(225, 177, 109, 0.12), rgba(225, 177, 109, 0) 60%),
+    var(--paper-tint);
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  width: min(100%, 46rem);
+  margin: 0 auto;
+  padding: 0 16px 4rem;
+}
+
+@media (min-width: 640px) {
+  .page {
+    padding: 0 1.5rem 5rem;
+  }
+}
+
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.75rem 0 2.25rem;
+}
+
+.logo {
+  height: 2.1rem;
+  width: auto;
+}
+
+.mastheadTag {
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gold-deep);
+}
+
+.hero {
+  padding-bottom: 1.75rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gold-deep);
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(2rem, 6vw, 2.75rem);
+  font-weight: 200;
+  line-height: 1.08;
+  letter-spacing: 0.01em;
+  text-transform: lowercase;
+  color: var(--navy);
+}
+
+.lede {
+  margin: 1rem 0 0;
+  max-width: 36rem;
+  font-size: 0.98rem;
+  line-height: 1.65;
+  color: var(--ink-soft);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.meta li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.meta svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  color: var(--gold-deep);
+}
+
+.reopen {
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid rgba(156, 116, 52, 0.35);
+  border-radius: 1rem;
+  background: rgba(225, 177, 109, 0.16);
+}
+
+.reopenLabel {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold-deep);
+}
+
+.reopenText {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  white-space: pre-line;
+  color: var(--navy);
+}
+
+.form :global(.fc-section) {
+  border-color: rgba(13, 30, 46, 0.09);
+  box-shadow: 0 1px 2px rgba(13, 30, 46, 0.04), 0 12px 32px -24px rgba(13, 30, 46, 0.25);
+}
+
+.form :global(.fc-section__title) {
+  font-size: 1.2rem;
+  font-weight: 300;
+  text-transform: lowercase;
+  letter-spacing: 0.01em;
+  color: var(--navy);
+}
+
+.form :global(.fc-section__index) {
+  color: var(--gold-deep);
+  letter-spacing: 0.08em;
+}
+
+.form input,
+.form textarea,
+.form button[role="combobox"] {
+  font-family: var(--sans);
+  min-height: 2.75rem;
+  background: #ffffff;
+}
+
+.finish {
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  border-radius: 1rem;
+  background: var(--navy);
+  color: #ffffff;
+}
+
+.consent {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.86);
+  cursor: pointer;
+}
+
+.consent input {
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  min-height: 0;
+  margin-top: 0.15rem;
+  accent-color: var(--gold);
+}
+
+.consent[data-invalid] span {
+  color: #ffd9a8;
+}
+
+.inlineError {
+  margin: 0.85rem 0 0;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #ffd9a8;
+}
+
+.submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  width: 100%;
+  margin-top: 1.25rem;
+  padding: 0.95rem 1.5rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--gold);
+  color: var(--navy);
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.15s ease;
+}
+
+.submit:hover:not(:disabled) {
+  background: #ebc087;
+}
+
+.submit:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.submit:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.submit svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.finePrint {
+  margin: 0.85rem 0 0;
+  text-align: center;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.centered {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  min-height: 40vh;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+.spinner {
+  width: 1.1rem;
+  height: 1.1rem;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.notice {
+  margin-top: 1rem;
+  padding: 2.25rem 1.5rem;
+  border: 1px solid rgba(13, 30, 46, 0.09);
+  border-radius: 1.25rem;
+  background: #ffffff;
+  text-align: center;
+  box-shadow: 0 12px 32px -24px rgba(13, 30, 46, 0.25);
+}
+
+.noticeIcon {
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0.5rem;
+  border-radius: 999px;
+  color: var(--navy);
+  background: var(--mist);
+}
+
+.notice[data-tone="warning"] .noticeIcon {
+  color: var(--gold-deep);
+  background: rgba(225, 177, 109, 0.22);
+}
+
+.notice[data-tone="success"] .noticeIcon {
+  color: #ffffff;
+  background: #3d6b4a;
+}
+
+.noticeTitle {
+  margin: 1rem 0 0;
+  font-size: 1.75rem;
+  font-weight: 200;
+  text-transform: lowercase;
+  color: var(--navy);
+}
+
+.noticeBody {
+  max-width: 30rem;
+  margin: 0.75rem auto 0;
+  font-size: 0.94rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.colophon {
+  margin-top: 3rem;
+  text-align: center;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+}

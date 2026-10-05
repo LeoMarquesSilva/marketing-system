@@ -23,6 +23,7 @@ const BARE_LAYOUT_PATHS = [
   "/manuais",
   "/materiais",
   "/briefings",
+  "/ficha-cadastral",
 ];
 
 function isBareLayoutPath(pathname: string): boolean {

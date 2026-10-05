@@ -1,3 +1,4 @@
+import { formatDietary } from "@/lib/rh/registration/types";
 import type { CafeAdminParticipant } from "./types";
 
 function cell(value: string): string {
@@ -10,7 +11,7 @@ function expectationLabel(value: CafeAdminParticipant["expectationStatus"]): str
 }
 
 export function buildCafeAttendanceCsv(participants: CafeAdminParticipant[]): string {
-  const header = ["Nome", "E-mail", "Área", "Situação", "Justificativa RESPONSUM", "Presença", "Horário"].join(";");
+  const header = ["Nome", "E-mail", "Área", "Situação", "Justificativa RESPONSUM", "Presença", "Horário", "Restrição alimentar"].join(";");
   const rows = participants.map((participant) =>
     [
       participant.name,
@@ -29,6 +30,7 @@ export function buildCafeAttendanceCsv(participants: CafeAdminParticipant[]): st
             timeZone: "America/Sao_Paulo",
           }).format(new Date(participant.checkinAt))
         : "",
+      formatDietary(participant.dietary),
     ]
       .map(cell)
       .join(";")

@@ -4,6 +4,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { buildCafeWindow, getCheckinWindowState } from "./dates";
 import { buildCafeEditionDraft, summarizeCafeParticipants } from "./domain";
 import { isCafeRosterEligible, planCafeRosterSync } from "./roster";
+import { getDietaryByUserIds } from "@/lib/rh/registration/server";
 import type {
   CafeAdminData,
   CafeAdminEdition,
@@ -465,6 +466,10 @@ export async function getCafeAdminData(
       .maybeSingle(),
   ]);
   if (error) throw new CafeCulturaError("Não foi possível carregar as presenças.", 500, "ADMIN_ATTENDANCE_FAILED");
+  const dietaryByUser = await getDietaryByUserIds(
+    admin,
+    (data ?? []).map((row) => String(row.user_id))
+  ).catch(() => new Map());
   const participants = (data ?? []).map((row) => {
     const raw = row.users as unknown;
     const user = (Array.isArray(raw) ? raw[0] : raw) as Record<string, unknown> | null;
@@ -492,6 +497,7 @@ export async function getCafeAdminData(
       checkinSource: (row.checkin_source as CafeCheckinSource | null) ?? null,
       responsumTicketCount: Array.isArray(row.responsum_ticket_ids) ? row.responsum_ticket_ids.length : 0,
       responsumJustifications,
+      dietary: dietaryByUser.get(String(row.user_id)) ?? null,
     };
   });
   const summary = summarizeCafeParticipants(participants);
