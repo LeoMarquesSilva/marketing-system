@@ -36,6 +36,8 @@ export interface ContentScheduleSlot {
   source_name: string | null;
   source_status: string | null;
   source_notes: string | null;
+  /** Data planejada antes de a vaga acompanhar uma remarcação do VIOS. */
+  planned_due_date?: string | null;
   cancelled: boolean;
   content_roteiro_id: string | null;
   content_title: string | null;

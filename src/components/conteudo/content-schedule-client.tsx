@@ -195,6 +195,7 @@ export function mapContentScheduleResponse(payload: ContentScheduleResponse): Sc
       imported: Boolean(slot.source_name || slot.source_status),
       sourceName: slot.source_name,
       sourceStatus: slot.source_status,
+      plannedDate: slot.planned_due_date && slot.planned_due_date !== slot.due_date ? slot.planned_due_date : null,
       unmatchedAssigneeName: !slot.collaborator_id ? slot.source_name : null,
       viosTask: mapViosTask(slot.vios_task),
       viosCandidates: slot.vios_candidates.map((candidate) => ({

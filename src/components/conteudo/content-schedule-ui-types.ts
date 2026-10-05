@@ -42,6 +42,8 @@ export type ScheduleSlotView = {
   publication?: SchedulePublication | null;
   sourceName?: string | null;
   sourceStatus?: string | null;
+  /** Data original quando a vaga acompanhou uma remarcação do VIOS. */
+  plannedDate?: string | null;
   imported?: boolean;
   unmatchedAssigneeName?: string | null;
   viosTask?: ScheduleViosTask | null;

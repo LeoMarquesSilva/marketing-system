@@ -136,6 +136,11 @@ export function ContentScheduleSlotDetails({
             <SheetDescription className="capitalize">
               {fullDate(slot.date)}
             </SheetDescription>
+            {slot.plannedDate ? (
+              <p className="text-xs text-slate-500">
+                Remarcada no VIOS. Data planejada: {publicationDate(`${slot.plannedDate}T12:00:00`)}
+              </p>
+            ) : null}
           </SheetHeader>
 
           <div className="flex-1 overflow-y-auto px-5 sm:px-6">

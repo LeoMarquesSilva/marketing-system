@@ -37,6 +37,8 @@ export type SlotMatchResult =
   | { status: "not_found" };
 
 const DAY_MS = 86_400_000;
+/** Distância máxima para ligar a mesma pessoa a uma data remarcada sem histórico. */
+export const VIOS_NEARBY_DAYS = 14;
 
 export interface SchedulableViosTask {
   id: string;
@@ -47,6 +49,8 @@ export interface SchedulableViosTask {
   cancelled: boolean;
   linkedSlotId?: string | null;
   ci?: string;
+  /** Data antes da última remarcação no VIOS. */
+  previousDate?: string | null;
 }
 
 export interface ViosScheduleSlot {
@@ -61,7 +65,9 @@ export interface ViosScheduleSlot {
 export interface ViosScheduleMatch {
   taskId: string;
   slotId: string;
-  strategy: "identity" | "group";
+  strategy: "identity" | "rescheduled" | "group" | "pair" | "nearby";
+  /** O VIOS manda: data para onde o slot deve ir junto com o vínculo. */
+  moveSlotTo?: string;
 }
 
 export interface ViosScheduleReconciliation {
@@ -169,8 +175,11 @@ function baseViosSlotCandidates(
 }
 
 /**
- * Planeja vínculos anuais sem efeitos colaterais. Primeiro resolve pares
- * inequívocos por identidade e depois grupos 1:1 de data + área.
+ * Planeja vínculos anuais sem efeitos colaterais. O VIOS manda na data: quando
+ * o par vem de uma remarcação ou de uma data próxima, o slot deve ir para a
+ * data da tarefa (`moveSlotTo`). Ordem, da mais segura para a menos:
+ * mesma pessoa no dia; remarcação (data anterior); grupo 1:1 no dia; pares de
+ * tarefas sem responsável no mesmo dia e área; mesma pessoa em até 14 dias.
  */
 export function reconcileAutomaticViosLinks(
   tasks: readonly SchedulableViosTask[],
@@ -181,42 +190,109 @@ export function reconcileAutomaticViosLinks(
   const matches: ViosScheduleMatch[] = [];
   const matchedTasks = new Set<string>();
   const matchedSlots = new Set<string>();
+  const remainingTasks = () => eligibleTasks.filter((task) => !matchedTasks.has(task.id));
+  const remainingSlots = () => availableSlots.filter((slot) => !matchedSlots.has(slot.id));
 
-  const matchUnique = (strategy: "identity" | "group") => {
-    const remainingTasks = eligibleTasks.filter((task) => !matchedTasks.has(task.id));
-    const remainingSlots = availableSlots.filter((slot) => !matchedSlots.has(slot.id));
+  const accept = (task: SchedulableViosTask, slot: ViosScheduleSlot, strategy: ViosScheduleMatch["strategy"]) => {
+    matchedTasks.add(task.id);
+    matchedSlots.add(slot.id);
+    matches.push({
+      taskId: task.id,
+      slotId: slot.id,
+      strategy,
+      ...(task.date && task.date !== slot.date ? { moveSlotTo: task.date } : {}),
+    });
+  };
+
+  const matchUnique = (
+    strategy: ViosScheduleMatch["strategy"],
+    candidatesFor: (task: SchedulableViosTask, pool: ViosScheduleSlot[]) => ViosScheduleSlot[] | null
+  ) => {
+    const pool = remainingSlots();
     const candidatesByTask = new Map<string, ViosScheduleSlot[]>();
-    for (const task of remainingTasks) {
-      let candidates = baseViosSlotCandidates(task, remainingSlots);
-      if (strategy === "identity") {
-        if (!task.assigneeId) continue;
-        candidates = candidates.filter((slot) => slot.collaboratorId === task.assigneeId);
-      }
-      candidatesByTask.set(task.id, candidates);
+    for (const task of remainingTasks()) {
+      const candidates = candidatesFor(task, pool);
+      if (candidates) candidatesByTask.set(task.id, candidates);
     }
-
     const taskIdsBySlot = new Map<string, string[]>();
     for (const [taskId, candidates] of candidatesByTask) {
       for (const candidate of candidates) {
         taskIdsBySlot.set(candidate.id, [...(taskIdsBySlot.get(candidate.id) ?? []), taskId]);
       }
     }
-    for (const task of remainingTasks) {
+    for (const task of remainingTasks()) {
       const candidates = candidatesByTask.get(task.id) ?? [];
       if (candidates.length !== 1) continue;
       const [candidate] = candidates;
       if ((taskIdsBySlot.get(candidate.id) ?? []).length !== 1) continue;
-      matchedTasks.add(task.id);
-      matchedSlots.add(candidate.id);
-      matches.push({ taskId: task.id, slotId: candidate.id, strategy });
+      accept(task, candidate, strategy);
     }
   };
 
-  matchUnique("identity");
-  matchUnique("group");
+  const sameAreaOpen = (task: SchedulableViosTask, slot: ViosScheduleSlot) =>
+    !slot.cancelled &&
+    slot.viosTaskId === null &&
+    viosAreaMatchesScheduleArea(task.area, slot.area) &&
+    !(task.assigneeId && slot.collaboratorId && task.assigneeId !== slot.collaboratorId);
 
-  const unmatched = eligibleTasks.filter((task) => !matchedTasks.has(task.id));
-  const finalSlots = availableSlots.filter((slot) => !matchedSlots.has(slot.id));
+  matchUnique("identity", (task, pool) =>
+    task.assigneeId ? baseViosSlotCandidates(task, pool).filter((slot) => slot.collaboratorId === task.assigneeId) : null
+  );
+
+  matchUnique("rescheduled", (task, pool) => {
+    if (!task.previousDate || task.previousDate === task.date) return null;
+    const candidates = pool.filter((slot) => slot.date === task.previousDate && sameAreaOpen(task, slot));
+    const samePerson = task.assigneeId ? candidates.filter((slot) => slot.collaboratorId === task.assigneeId) : [];
+    return samePerson.length > 0 ? samePerson : candidates;
+  });
+
+  matchUnique("group", (task, pool) => baseViosSlotCandidates(task, pool));
+
+  // Várias tarefas sem responsável no mesmo dia e área são equivalentes entre si:
+  // quando a quantidade bate com as vagas abertas, liga em pares estáveis.
+  {
+    const pool = remainingSlots();
+    const groups = new Map<string, { tasks: SchedulableViosTask[]; slots: ViosScheduleSlot[] }>();
+    const slotOwners = new Map<string, Set<string>>();
+    const withIdentity = new Set<string>();
+    for (const task of remainingTasks()) {
+      const candidates = baseViosSlotCandidates(task, pool);
+      if (candidates.length === 0) continue;
+      const key = candidates.map((slot) => slot.id).sort().join("|");
+      for (const slot of candidates) slotOwners.set(slot.id, (slotOwners.get(slot.id) ?? new Set()).add(key));
+      // Uma tarefa com responsável que não achou par exato torna o grupo incerto.
+      if (task.assigneeId) {
+        withIdentity.add(key);
+        continue;
+      }
+      const group = groups.get(key) ?? { tasks: [], slots: candidates };
+      group.tasks.push(task);
+      groups.set(key, group);
+    }
+    for (const [key, group] of groups) {
+      if (withIdentity.has(key)) continue;
+      if (group.tasks.length < 2 || group.tasks.length !== group.slots.length) continue;
+      if (group.slots.some((slot) => (slotOwners.get(slot.id)?.size ?? 0) !== 1 || !slotOwners.get(slot.id)?.has(key))) continue;
+      const orderedTasks = [...group.tasks].sort((a, b) => (a.ci ?? a.id).localeCompare(b.ci ?? b.id, "pt-BR", { numeric: true }));
+      const orderedSlots = [...group.slots].sort((a, b) => a.id.localeCompare(b.id));
+      orderedTasks.forEach((task, index) => accept(task, orderedSlots[index], "pair"));
+    }
+  }
+
+  matchUnique("nearby", (task, pool) => {
+    const taskDay = task.date ? civilDay(task.date) : null;
+    if (!task.assigneeId || taskDay === null) return null;
+    return pool.filter((slot) => {
+      const slotDay = civilDay(slot.date);
+      return slot.collaboratorId === task.assigneeId &&
+        slotDay !== null &&
+        Math.abs(slotDay - taskDay) <= VIOS_NEARBY_DAYS &&
+        sameAreaOpen(task, slot);
+    });
+  });
+
+  const unmatched = remainingTasks();
+  const finalSlots = remainingSlots();
   const ambiguousTaskIds: string[] = [];
   const unmatchedTaskIds: string[] = [];
   for (const task of unmatched) {

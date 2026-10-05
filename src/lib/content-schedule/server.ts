@@ -65,6 +65,7 @@ type SlotRow = {
   instagram_post_id: string | null; vios_task_id: string | null;
   vios_link_origin: "automatic" | "manual" | null;
   vios_linked_at: string | null; vios_linked_by: string | null;
+  planned_due_date?: string | null;
   created_at: string; updated_at: string;
 };
 
@@ -78,6 +79,7 @@ type ViosTaskRow = {
   assignee_id: string | null;
   etiquetas_tarefa: string | null;
   is_cancelled: boolean | null;
+  data_limite_anterior?: string | null;
 };
 
 function adminDb(): SupabaseClient {
@@ -141,6 +143,7 @@ function toSchedulableViosTask(
     label: row.etiquetas_tarefa,
     cancelled: row.is_cancelled === true,
     linkedSlotId,
+    previousDate: row.data_limite_anterior?.slice(0, 10) ?? null,
   };
 }
 
@@ -160,22 +163,42 @@ function toViosScheduleSlot(row: Pick<
 
 function viosLinkStillCompatible(
   slot: Pick<SlotRow, "due_date" | "area" | "collaborator_id" | "cancelled">,
-  task: ViosTaskRow | null | undefined
+  task: ViosTaskRow | null | undefined,
+  { followTaskDate = false }: { followTaskDate?: boolean } = {}
 ): boolean {
   return Boolean(
     task &&
     !slot.cancelled &&
     task.is_cancelled !== true &&
     task.etiquetas_tarefa?.trim().toLocaleUpperCase("pt-BR") === "PROTOCOLO" &&
-    task.data_limite === slot.due_date &&
+    (followTaskDate || task.data_limite === slot.due_date) &&
     viosAreaMatchesScheduleArea(task.area_processo, slot.area) &&
     !(task.assignee_id && slot.collaborator_id && task.assignee_id !== slot.collaborator_id)
   );
 }
 
+/** Move a vaga para a data da tarefa VIOS, guardando a data planejada original uma única vez. */
+async function moveSlotToViosDate(
+  db: SupabaseClient,
+  slot: Pick<SlotRow, "id" | "due_date" | "vios_task_id" | "planned_due_date">,
+  date: string
+): Promise<boolean> {
+  const { data, error } = await db.from("content_schedule_slots")
+    .update({ due_date: date, planned_due_date: slot.planned_due_date ?? slot.due_date })
+    .eq("id", slot.id)
+    .eq("due_date", slot.due_date)
+    .eq("vios_task_id", slot.vios_task_id as string)
+    .select("id")
+    .maybeSingle();
+  if (error) throw new ContentScheduleHttpError("Não foi possível mover a vaga para a data do VIOS.");
+  return Boolean(data);
+}
+
 export interface ViosScheduleReconciliationResult {
   year: number;
   matched: number;
+  /** Vagas que mudaram de data para acompanhar o VIOS. */
+  moved: number;
   invalidated: number;
   ambiguous: number;
   unmatched: number;
@@ -192,7 +215,7 @@ export async function reconcileViosScheduleYear(
   const start = `${year}-01-01`;
   const end = `${year + 1}-01-01`;
   const { data: slotData, error: slotError } = await db.from("content_schedule_slots")
-    .select("id,due_date,area,collaborator_id,cancelled,vios_task_id,vios_link_origin")
+    .select("id,due_date,area,collaborator_id,cancelled,vios_task_id,vios_link_origin,planned_due_date")
     .gte("due_date", start)
     .lt("due_date", end);
   if (slotError) throw new ContentScheduleHttpError("Não foi possível carregar o cronograma para reconciliar o VIOS.");
@@ -201,13 +224,13 @@ export async function reconcileViosScheduleYear(
 
   const [datedResult, linkedResult] = await Promise.all([
     db.from("vios_tasks")
-      .select("id,vios_id,status,tarefa,data_limite,area_processo,assignee_id,etiquetas_tarefa,is_cancelled")
+      .select("id,vios_id,status,tarefa,data_limite,data_limite_anterior,area_processo,assignee_id,etiquetas_tarefa,is_cancelled")
       .gte("data_limite", start)
       .lt("data_limite", end)
       .eq("etiquetas_tarefa", "PROTOCOLO"),
     linkedIds.length
       ? db.from("vios_tasks")
-          .select("id,vios_id,status,tarefa,data_limite,area_processo,assignee_id,etiquetas_tarefa,is_cancelled")
+          .select("id,vios_id,status,tarefa,data_limite,data_limite_anterior,area_processo,assignee_id,etiquetas_tarefa,is_cancelled")
           .in("id", linkedIds)
       : Promise.resolve({ data: [], error: null }),
   ]);
@@ -224,7 +247,7 @@ export async function reconcileViosScheduleYear(
     if (
       slot.vios_task_id &&
       slot.vios_link_origin === "automatic" &&
-      !viosLinkStillCompatible(slot, taskMap.get(slot.vios_task_id))
+      !viosLinkStillCompatible(slot, taskMap.get(slot.vios_task_id), { followTaskDate: true })
     ) {
       const { data: cleared, error } = await db.from("content_schedule_slots")
         .update({ vios_task_id: null })
@@ -242,6 +265,15 @@ export async function reconcileViosScheduleYear(
     }
   }
 
+  // O VIOS manda na data: vínculo existente acompanha a remarcação da tarefa.
+  let moved = 0;
+  for (const slot of slots) {
+    const task = slot.vios_task_id ? taskMap.get(slot.vios_task_id) : undefined;
+    if (!task || slot.cancelled || !task.data_limite || task.data_limite === slot.due_date) continue;
+    if (!viosLinkStillCompatible(slot, task, { followTaskDate: true })) continue;
+    if (await moveSlotToViosDate(db, slot, task.data_limite)) moved += 1;
+  }
+
   const linkedSlotByTask = new Map(
     slots.filter((slot) => slot.vios_task_id).map((slot) => [slot.vios_task_id as string, slot.id])
   );
@@ -254,13 +286,18 @@ export async function reconcileViosScheduleYear(
 
   let matched = 0;
   let races = 0;
+  const slotById = new Map(slots.map((slot) => [slot.id, slot]));
   for (const match of plan.matches) {
+    const original = slotById.get(match.slotId);
     const { data: won, error } = await db.from("content_schedule_slots")
       .update({
         vios_task_id: match.taskId,
         vios_link_origin: "automatic",
         vios_linked_at: new Date().toISOString(),
         vios_linked_by: null,
+        ...(match.moveSlotTo && original
+          ? { due_date: match.moveSlotTo, planned_due_date: original.planned_due_date ?? original.due_date }
+          : {}),
       })
       .eq("id", match.slotId)
       .eq("cancelled", false)
@@ -273,10 +310,12 @@ export async function reconcileViosScheduleYear(
     }
     if (error) throw new ContentScheduleHttpError("Não foi possível gravar um vínculo VIOS automático.");
     matched += 1;
+    if (match.moveSlotTo) moved += 1;
   }
   return {
     year,
     matched,
+    moved,
     invalidated,
     ambiguous: plan.ambiguousTaskIds.length,
     unmatched: plan.unmatchedTaskIds.length,
