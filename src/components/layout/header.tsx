@@ -17,7 +17,7 @@ const PAGE_META: Record<string, PageMeta> = {
   "/conteudo/boletim": { label: "Newsletter", section: "Conteúdo" },
   "/conteudo/reels": { label: "Roteiros de Reels", section: "Conteúdo" },
   "/conteudo/cronograma": { label: "Cronograma de conteúdo", section: "Conteúdo" },
-  "/conteudo/reels-editados": { label: "Reels editados", section: "Conteúdo" },
+  "/conteudo/aprovacao-reels": { label: "Aprovação de Reels", section: "Conteúdo" },
   "/conteudo/gustavo": { label: "Posicionamento Gustavo", section: "Conteúdo" },
   "/instagram-insights": { label: "Instagram Insights", section: "Performance" },
   "/linkedin-insights": { label: "LinkedIn Insights", section: "Performance" },

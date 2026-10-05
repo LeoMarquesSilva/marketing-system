@@ -49,7 +49,7 @@ export function VideoFileField({
         {file ? <Film className="size-5" /> : <UploadCloud className="size-5" />}
       </span>
       <span className="min-w-0">
-        <span className="block truncate font-medium text-slate-900">{file ? file.name : "Escolher vídeo editado"}</span>
+        <span className="block truncate font-medium text-slate-900">{file ? file.name : "Escolher vídeo"}</span>
         <span className="block text-xs text-slate-500">
           {file ? formatBytes(file.size) : "MP4, MOV ou WebM, até 1 GB"}
         </span>
@@ -67,7 +67,7 @@ export function VideoFileField({
 }
 
 export function validateVideo(file: File | null): { contentType: string } | { error: string } {
-  if (!file) return { error: "Escolha o vídeo editado." };
+  if (!file) return { error: "Escolha o vídeo." };
   const contentType = contentTypeForFile(file.name, file.type, "video");
   if (!contentType) return { error: "Formato não aceito. Use MP4, MOV ou WebM." };
   if (file.size > REEL_DELIVERY_VIDEO_MAX_BYTES) return { error: "O vídeo passa de 1 GB. Exporte numa qualidade menor." };
@@ -175,7 +175,7 @@ export function ReelUploadDialog({
     <Dialog open={open} onOpenChange={(next) => { if (!busy) onOpenChange(next); }}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Enviar reel editado</DialogTitle>
+          <DialogTitle>Enviar reel para aprovação</DialogTitle>
           <DialogDescription>
             Quem aparece no vídeo recebe para aprovar. Depois da aprovação, você prepara capa e legenda.
           </DialogDescription>

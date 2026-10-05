@@ -142,7 +142,7 @@ export function ReelDeliverySheet({
             </>
           ) : (
             <>
-              <SheetTitle>Reel editado</SheetTitle>
+              <SheetTitle>Reel</SheetTitle>
               <SheetDescription>{loading ? "Carregando…" : "Vídeo, aprovação, capa e legenda."}</SheetDescription>
             </>
           )}

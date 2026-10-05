@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-export const REELS_EDITADOS_HREF = "/conteudo/reels-editados";
+export const REELS_APPROVAL_HREF = "/conteudo/aprovacao-reels";
 const REFRESH_MS = 5 * 60 * 1000;
 
 /** Reels que esperam o usuário (aprovar) ou o Marketing (capa e legenda). */

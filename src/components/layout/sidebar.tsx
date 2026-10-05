@@ -63,7 +63,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { fetchCommentStats } from "@/lib/request-comments";
 import { fetchMarketingRequests } from "@/lib/marketing-requests";
 import { useWhatsappUnreadCount } from "@/hooks/use-whatsapp-unread";
-import { REELS_EDITADOS_HREF, useReelDeliveriesPendingCount } from "@/hooks/use-reel-deliveries-pending";
+import { REELS_APPROVAL_HREF, useReelDeliveriesPendingCount } from "@/hooks/use-reel-deliveries-pending";
 import { HrNotificationsBell } from "@/components/rh/hr-notifications-bell";
 import { ContentScheduleNotificationsBell } from "@/components/conteudo/content-schedule-notifications-bell";
 
@@ -108,7 +108,7 @@ const baseNavItems: NavLeaf[] = [
   { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
   { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
   { href: "/conteudo/cronograma", icon: CalendarRange, label: "Cronograma" },
-  { href: REELS_EDITADOS_HREF, icon: Film, label: "Reels editados" },
+  { href: REELS_APPROVAL_HREF, icon: Film, label: "Aprovação de Reels" },
   { href: "/clima", icon: Heart, label: "Clima" },
   { href: "/instagram-insights", icon: Instagram, label: "Instagram Insights" },
   { href: "/linkedin-insights", icon: Linkedin, label: "LinkedIn Insights" },
@@ -137,7 +137,7 @@ const collaboratorNavItems: NavLeaf[] = [
   { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
   { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
   { href: "/conteudo/cronograma", icon: CalendarRange, label: "Cronograma" },
-  { href: REELS_EDITADOS_HREF, icon: Film, label: "Reels editados" },
+  { href: REELS_APPROVAL_HREF, icon: Film, label: "Aprovação de Reels" },
 ];
 
 const meusClientesNavItem: NavLeaf = {
@@ -191,7 +191,7 @@ const CONTENT_GROUP: CollapsibleGroupSpec = {
     "/conteudo/boletim",
     "/conteudo/reels",
     "/conteudo/cronograma",
-    REELS_EDITADOS_HREF,
+    REELS_APPROVAL_HREF,
     "/conteudo/gustavo",
   ],
 };
@@ -327,7 +327,7 @@ function getNavItems(
   if (allowed) {
     const leafCatalog: NavLeaf[] = [...baseNavItems, meusClientesNavItem, ...adminNavItems];
     let items: NavEntry[] = leafCatalog.filter((i) => {
-      if (i.href === "/minhas-fotos" || i.href === "/fotos-eventos" || i.href === "/meus-clientes" || i.href === "/conteudo/cronograma" || i.href === REELS_EDITADOS_HREF) return true;
+      if (i.href === "/minhas-fotos" || i.href === "/fotos-eventos" || i.href === "/meus-clientes" || i.href === "/conteudo/cronograma" || i.href === REELS_APPROVAL_HREF) return true;
       if (i.href === "/fotos-colaboradores") {
         return isCollaboratorPhotosManager(profile);
       }
@@ -355,7 +355,7 @@ function getNavItems(
         { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
         { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
         { href: "/conteudo/cronograma", icon: CalendarRange, label: "Cronograma" },
-        { href: REELS_EDITADOS_HREF, icon: Film, label: "Reels editados" },
+        { href: REELS_APPROVAL_HREF, icon: Film, label: "Aprovação de Reels" },
         ...items.filter(
           (i) =>
             isNavGroup(i) ||
@@ -471,7 +471,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
       ? pendingAlterations
       : href === "/trafego-pago"
         ? whatsappUnread
-        : href === REELS_EDITADOS_HREF
+        : href === REELS_APPROVAL_HREF
           ? reelPending
           : 0;
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);

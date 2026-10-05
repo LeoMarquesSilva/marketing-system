@@ -294,10 +294,10 @@ export function isSupabaseStorageUrl(url: string, bucket?: string): boolean {
   return url.includes("/storage/v1/object/public/");
 }
 
-/** Bucket PRIVADO dos reels editados (vídeo para aprovação e capa). */
+/** Bucket PRIVADO da aprovação de reels (vídeo para aprovação e capa). */
 
 /**
- * Sobe vídeo (retomável, com progresso) ou capa de um reel editado.
+ * Sobe vídeo (retomável, com progresso) ou capa de um reel em aprovação.
  * O caminho fica em deliveries/<id da entrega>/ e é validado de novo no servidor.
  */
 export async function uploadReelDeliveryFile(

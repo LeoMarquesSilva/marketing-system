@@ -121,12 +121,12 @@ export function ReelDeliveriesClient() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="max-w-2xl text-sm leading-6 text-slate-600">
           {isManager
-            ? "Suba o reel editado, acompanhe a aprovação de quem gravou e deixe capa e legenda prontas para publicar."
+            ? "Suba o vídeo pronto, acompanhe a aprovação de quem gravou e deixe capa e legenda prontas para publicar."
             : "Os reels que você gravou chegam aqui depois da edição. Assista e aprove ou peça ajuste."}
         </p>
         {isManager && (
           <Button onClick={() => setUploadOpen(true)} className="bg-[#347796] text-white hover:bg-[#285f7a]">
-            <UploadCloud />Enviar reel editado
+            <UploadCloud />Enviar reel para aprovação
           </Button>
         )}
       </div>
@@ -188,12 +188,12 @@ export function ReelDeliveriesClient() {
               <p className="max-w-sm text-sm text-slate-600">
                 {deliveries.length === 0
                   ? isManager
-                    ? "Nenhum reel editado ainda. Envie o primeiro e ligue à data do cronograma."
+                    ? "Nenhum reel em aprovação ainda. Envie o primeiro e ligue à data do cronograma."
                     : "Nenhum reel seu por aqui ainda. Quando o Marketing enviar a edição, ele aparece nesta página."
                   : current.empty}
               </p>
               {isManager && deliveries.length === 0 && (
-                <Button onClick={() => setUploadOpen(true)} className="mt-2 bg-[#347796] text-white hover:bg-[#285f7a]"><UploadCloud />Enviar reel editado</Button>
+                <Button onClick={() => setUploadOpen(true)} className="mt-2 bg-[#347796] text-white hover:bg-[#285f7a]"><UploadCloud />Enviar reel para aprovação</Button>
               )}
             </div>
           ) : (

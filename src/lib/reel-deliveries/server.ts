@@ -591,5 +591,5 @@ export function toReelDeliveryApiError(error: unknown): { message: string; statu
     const status = Number((error as { status: unknown }).status);
     if (status >= 400 && status < 600) return { message: String((error as { message: unknown }).message), status };
   }
-  return { message: "Erro inesperado nos reels editados.", status: 500 };
+  return { message: "Erro inesperado na aprovação de reels.", status: 500 };
 }
