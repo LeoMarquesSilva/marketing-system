@@ -50,7 +50,7 @@ export class ContentScheduleHttpError extends Error {
   }
 }
 
-interface ScheduleActor {
+export interface ScheduleActor {
   profileId: string;
   department: string | null;
   role: string | null;
@@ -284,7 +284,7 @@ export async function reconcileViosScheduleYear(
   };
 }
 
-async function requireActor(): Promise<ScheduleActor> {
+export async function requireContentScheduleActor(): Promise<ScheduleActor> {
   const ssr = await createSsrClient();
   const { data: { user } } = await ssr.auth.getUser();
   if (!user) throw new ContentScheduleHttpError("Não autenticado.", 401, "UNAUTHENTICATED");
@@ -434,7 +434,7 @@ export async function getContentScheduleAssigneeReview(
   const parsedYear = assigneeReviewYearSchema.safeParse(year);
   if (!parsedYear.success) throw new ContentScheduleHttpError("Ano inválido.", 400, "INVALID_YEAR");
 
-  const actor = await requireActor();
+  const actor = await requireContentScheduleActor();
   ensureAssigneeManager(actor);
   const db = adminDb();
   const start = `${parsedYear.data}-01-01`;
@@ -476,7 +476,7 @@ export async function associateContentScheduleAssignee(
   const parsed = associateContentScheduleAssigneeSchema.safeParse(input);
   if (!parsed.success) throw new ContentScheduleHttpError("Revise a associação do responsável.", 400, "INVALID_INPUT");
 
-  const actor = await requireActor();
+  const actor = await requireContentScheduleActor();
   ensureAssigneeManager(actor);
   if (!canAssignContentScheduleArea(actor.access, parsed.data.area)) {
     throw new ContentScheduleHttpError("Você não gerencia esta área.", 403, "FORBIDDEN");
@@ -532,7 +532,7 @@ export async function associateContentScheduleAssignee(
 }
 
 export async function getContentSchedule(month = currentSaoPauloMonth()): Promise<ContentScheduleResponse> {
-  const actor = await requireActor();
+  const actor = await requireContentScheduleActor();
   const db = adminDb();
   const { start, end } = monthBounds(month);
   const [{ data: rawSlots, error: slotError }, collaborators] = await Promise.all([
@@ -707,7 +707,7 @@ function requireLeonardoNotificationRecipient(actor: ScheduleActor): void {
 }
 
 export async function listContentScheduleAssignmentNotifications(): Promise<ContentScheduleAssignmentNotification[]> {
-  const actor = await requireActor();
+  const actor = await requireContentScheduleActor();
   requireLeonardoNotificationRecipient(actor);
   const { data, error } = await adminDb()
     .from("content_schedule_assignment_notifications")
@@ -725,7 +725,7 @@ export async function listContentScheduleAssignmentNotifications(): Promise<Cont
 }
 
 export async function resolveContentScheduleAssignmentNotification(id: string): Promise<void> {
-  const actor = await requireActor();
+  const actor = await requireContentScheduleActor();
   requireLeonardoNotificationRecipient(actor);
   const { data, error } = await adminDb()
     .from("content_schedule_assignment_notifications")
@@ -811,7 +811,7 @@ async function invalidateAutomaticViosLinkIfNeeded(
 }
 
 export async function createContentScheduleSlots(inputs: CreateSlotInput[]): Promise<SlotRow[]> {
-  const actor = await requireActor(); requireManager(actor);
+  const actor = await requireContentScheduleActor(); requireManager(actor);
   if (!inputs.length || inputs.length > 200) throw new ContentScheduleHttpError("Informe entre 1 e 200 vagas.", 400);
   const db = adminDb();
   for (const input of inputs) {
@@ -845,7 +845,7 @@ export const updateContentScheduleSlotSchema = createContentScheduleSlotSchema
   .refine((value) => Object.keys(value).length > 0, "Nenhuma alteração informada");
 
 export async function updateContentScheduleSlot(id: string, input: UpdateSlotInput): Promise<SlotRow> {
-  const actor = await requireActor();
+  const actor = await requireContentScheduleActor();
   const db = adminDb();
   const { data: current } = await db.from("content_schedule_slots").select("*").eq("id", id).maybeSingle();
   if (!current) throw new ContentScheduleHttpError("Vaga não encontrada.", 404);
@@ -940,7 +940,7 @@ export async function linkContentScheduleViosTask(
 ): Promise<void> {
   const parsed = linkContentScheduleViosSchema.safeParse(input);
   if (!parsed.success) throw new ContentScheduleHttpError("Revise o vínculo VIOS.", 400, "INVALID_INPUT");
-  const actor = await requireActor();
+  const actor = await requireContentScheduleActor();
   requireManager(actor);
   const db = adminDb();
   const { data: slot, error: slotError } = await db.from("content_schedule_slots")
@@ -1008,7 +1008,7 @@ export async function linkContentScheduleViosTask(
 }
 
 export async function linkPublicationToSlot(slotId: string, instagramPostId: string): Promise<void> {
-  const actor = await requireActor(); requireManager(actor);
+  const actor = await requireContentScheduleActor(); requireManager(actor);
   const db = adminDb();
   const [{ data: post }, { data: slot }] = await Promise.all([
     db.from("instagram_posts")
@@ -1137,7 +1137,7 @@ export async function autoLinkInstagramPublicationToSchedule(instagramPostId: st
 }
 
 export async function resolvePendingScheduleLink(linkId: string, slotId: string): Promise<void> {
-  const actor = await requireActor(); requireManager(actor);
+  const actor = await requireContentScheduleActor(); requireManager(actor);
   const db = adminDb();
   const { data: link } = await db.from("content_schedule_links").select("*").eq("id", linkId).eq("status", "pending").maybeSingle();
   if (!link) throw new ContentScheduleHttpError("Pendência não encontrada.", 404);
@@ -1165,7 +1165,7 @@ export async function resolvePendingScheduleLink(linkId: string, slotId: string)
 }
 
 export async function createSlotFromPendingScheduleLink(linkId: string): Promise<string> {
-  const actor = await requireActor();
+  const actor = await requireContentScheduleActor();
   requireManager(actor);
   const { data: slotId, error } = await adminDb().rpc(
     "create_content_schedule_slot_from_link",
@@ -1293,7 +1293,7 @@ export async function autoLinkContentSchedule(input: AutoLinkContentScheduleInpu
 }
 
 export async function getContentSimilarity(contentId: string): Promise<ContentScheduleWarning[]> {
-  const actor = await requireActor();
+  const actor = await requireContentScheduleActor();
   const db = adminDb();
   const { data: source, error: sourceError } = await db.from("content_roteiros").select("id,title,link,post,area,approved_by_id,created_by_id").eq("id", contentId).maybeSingle();
   if (sourceError) throw new ContentScheduleHttpError("Não foi possível analisar esse conteúdo.");

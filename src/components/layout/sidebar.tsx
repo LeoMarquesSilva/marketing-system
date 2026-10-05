@@ -27,6 +27,7 @@ import {
   Contact,
   Clapperboard,
   CalendarRange,
+  Film,
   MoreHorizontal,
   RadioTower,
   ScrollText,
@@ -62,6 +63,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { fetchCommentStats } from "@/lib/request-comments";
 import { fetchMarketingRequests } from "@/lib/marketing-requests";
 import { useWhatsappUnreadCount } from "@/hooks/use-whatsapp-unread";
+import { REELS_EDITADOS_HREF, useReelDeliveriesPendingCount } from "@/hooks/use-reel-deliveries-pending";
 import { HrNotificationsBell } from "@/components/rh/hr-notifications-bell";
 import { ContentScheduleNotificationsBell } from "@/components/conteudo/content-schedule-notifications-bell";
 
@@ -106,6 +108,7 @@ const baseNavItems: NavLeaf[] = [
   { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
   { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
   { href: "/conteudo/cronograma", icon: CalendarRange, label: "Cronograma" },
+  { href: REELS_EDITADOS_HREF, icon: Film, label: "Reels editados" },
   { href: "/clima", icon: Heart, label: "Clima" },
   { href: "/instagram-insights", icon: Instagram, label: "Instagram Insights" },
   { href: "/linkedin-insights", icon: Linkedin, label: "LinkedIn Insights" },
@@ -134,6 +137,7 @@ const collaboratorNavItems: NavLeaf[] = [
   { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
   { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
   { href: "/conteudo/cronograma", icon: CalendarRange, label: "Cronograma" },
+  { href: REELS_EDITADOS_HREF, icon: Film, label: "Reels editados" },
 ];
 
 const meusClientesNavItem: NavLeaf = {
@@ -187,6 +191,7 @@ const CONTENT_GROUP: CollapsibleGroupSpec = {
     "/conteudo/boletim",
     "/conteudo/reels",
     "/conteudo/cronograma",
+    REELS_EDITADOS_HREF,
     "/conteudo/gustavo",
   ],
 };
@@ -322,7 +327,7 @@ function getNavItems(
   if (allowed) {
     const leafCatalog: NavLeaf[] = [...baseNavItems, meusClientesNavItem, ...adminNavItems];
     let items: NavEntry[] = leafCatalog.filter((i) => {
-      if (i.href === "/minhas-fotos" || i.href === "/fotos-eventos" || i.href === "/meus-clientes" || i.href === "/conteudo/cronograma") return true;
+      if (i.href === "/minhas-fotos" || i.href === "/fotos-eventos" || i.href === "/meus-clientes" || i.href === "/conteudo/cronograma" || i.href === REELS_EDITADOS_HREF) return true;
       if (i.href === "/fotos-colaboradores") {
         return isCollaboratorPhotosManager(profile);
       }
@@ -350,6 +355,7 @@ function getNavItems(
         { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
         { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
         { href: "/conteudo/cronograma", icon: CalendarRange, label: "Cronograma" },
+        { href: REELS_EDITADOS_HREF, icon: Film, label: "Reels editados" },
         ...items.filter(
           (i) =>
             isNavGroup(i) ||
@@ -459,6 +465,15 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
 
   const [pendingAlterations, setPendingAlterations] = useState(0);
   const whatsappUnread = useWhatsappUnreadCount();
+  const reelPending = useReelDeliveriesPendingCount(Boolean(profile));
+  const badgeFor = (href: string) =>
+    href === "/planner"
+      ? pendingAlterations
+      : href === "/trafego-pago"
+        ? whatsappUnread
+        : href === REELS_EDITADOS_HREF
+          ? reelPending
+          : 0;
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
@@ -618,6 +633,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
                 const groupActive = item.children.some((child) =>
                   isRouteActive(pathname, child.href)
                 );
+                const groupBadge = item.children.reduce((sum, child) => sum + badgeFor(child.href), 0);
                 return (
                   <div key={item.key} className="flex flex-col gap-0.5">
                     <button
@@ -650,6 +666,9 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
                         )}
                       >
                         <item.icon className="h-[18px] w-[18px]" />
+                        {(!expanded || !groupOpen) && (
+                          <NotificationBadge value={groupBadge} expanded={false} active={groupActive && !groupOpen} />
+                        )}
                       </span>
                       <AnimatePresence initial={false}>
                         {expanded && (
@@ -732,6 +751,9 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
                                   <span className="relative z-10 min-w-0 flex-1 truncate">
                                     {child.label}
                                   </span>
+                                  <span className="relative z-10">
+                                    <NotificationBadge value={badgeFor(child.href)} expanded active={isActive} />
+                                  </span>
                                 </Link>
                               );
                             })}
@@ -744,12 +766,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
               }
 
               const isActive = isRouteActive(pathname, item.href);
-              const badgeValue =
-                item.href === "/planner"
-                  ? pendingAlterations
-                  : item.href === "/trafego-pago"
-                    ? whatsappUnread
-                    : 0;
+              const badgeValue = badgeFor(item.href);
 
               return (
                 <Link
@@ -965,12 +982,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
               <div className="grid grid-cols-2 gap-1.5">
                 {flatNavItems.map((item) => {
                   const isActive = isRouteActive(pathname, item.href);
-                  const badgeValue =
-                    item.href === "/planner"
-                      ? pendingAlterations
-                      : item.href === "/trafego-pago"
-                        ? whatsappUnread
-                        : 0;
+                  const badgeValue = badgeFor(item.href);
                   return (
                     <Link
                       key={item.href}
@@ -1026,12 +1038,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
       >
         {mobileNavItems.map((item) => {
           const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href + "/"));
-          const badgeValue =
-            item.href === "/planner"
-              ? pendingAlterations
-              : item.href === "/trafego-pago"
-                ? whatsappUnread
-                : 0;
+          const badgeValue = badgeFor(item.href);
           return (
             <Link
               key={item.href}

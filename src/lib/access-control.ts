@@ -30,6 +30,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/conteudo/boletim", label: "Newsletter" },
   { key: "/conteudo/reels", label: "Roteiros de Reels" },
   { key: "/conteudo/cronograma", label: "Cronograma de Conteúdo", alwaysAllowed: true },
+  { key: "/conteudo/reels-editados", label: "Reels editados", alwaysAllowed: true },
   { key: "/clima", label: "Clima" },
   { key: "/instagram-insights", label: "Instagram Insights" },
   { key: "/linkedin-insights", label: "LinkedIn Insights" },
@@ -79,6 +80,7 @@ export const ALWAYS_ALLOWED_PATHS = [
   "/fotos-eventos",
   "/cafe-com-cultura",
   "/conteudo/cronograma",
+  "/conteudo/reels-editados",
   MEUS_CLIENTES_KEY,
 ];
 
