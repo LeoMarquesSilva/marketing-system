@@ -30,6 +30,9 @@ import {
   EditorialLoading,
 } from "@/components/gustavo-content/editorial-states";
 
+/** Abre mostrando o que é atual; o acervo antigo fica em "Todo o período". */
+const DEFAULT_PERIOD = "30";
+
 export function RadarBoard({ isAdmin }: { isAdmin: boolean }) {
   const [items, setItems] = useState<GustavoContentItem[]>([]);
   const [topics, setTopics] = useState<GustavoContentTopic[]>([]);
@@ -44,6 +47,7 @@ export function RadarBoard({ isAdmin }: { isAdmin: boolean }) {
   const [thesis, setThesis] = useState("all");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<RadarSort>("recent");
+  const [period, setPeriod] = useState(DEFAULT_PERIOD);
 
   async function load(silent = false) {
     if (!silent) setLoading(true);
@@ -82,10 +86,11 @@ export function RadarBoard({ isAdmin }: { isAdmin: boolean }) {
           channel: channel === "all" ? undefined : channel,
           thesis: thesis === "all" ? undefined : thesis,
           query,
+          maxAgeDays: period === "all" ? undefined : Number(period),
         }),
         sort
       ),
-    [items, status, topicId, channel, thesis, query, sort]
+    [items, status, topicId, channel, thesis, query, sort, period]
   );
 
   async function triggerFetch(source?: "institutional") {
@@ -163,7 +168,7 @@ export function RadarBoard({ isAdmin }: { isAdmin: boolean }) {
       )}
 
       <div className="rounded-[1.25rem] bg-white/75 p-3 shadow-[0_12px_38px_rgba(4,32,47,0.04)]">
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[1.6fr_repeat(5,1fr)_auto]">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[1.6fr_repeat(6,1fr)_auto]">
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -176,6 +181,16 @@ export function RadarBoard({ isAdmin }: { isAdmin: boolean }) {
           <SelectContent>
             <SelectItem value="recent">Mais recentes</SelectItem>
             <SelectItem value="score">Maior nota</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={period} onValueChange={setPeriod}>
+          <SelectTrigger aria-label="Período">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="7">Últimos 7 dias</SelectItem>
+            <SelectItem value="30">Últimos 30 dias</SelectItem>
+            <SelectItem value="all">Todo o período</SelectItem>
           </SelectContent>
         </Select>
         <Select value={status} onValueChange={setStatus}>
@@ -228,7 +243,7 @@ export function RadarBoard({ isAdmin }: { isAdmin: boolean }) {
           variant="ghost"
           size="sm"
           onClick={() => {
-            setSort("recent"); setStatus("all"); setTopicId("all"); setChannel("all"); setThesis("all"); setQuery("");
+            setSort("recent"); setPeriod(DEFAULT_PERIOD); setStatus("all"); setTopicId("all"); setChannel("all"); setThesis("all"); setQuery("");
           }}
           aria-label="Limpar filtros"
         >

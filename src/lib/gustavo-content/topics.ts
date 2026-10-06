@@ -24,7 +24,7 @@ export function validateTopicInput(input: Record<string, unknown>) {
     name,
     rss_query,
     is_active: input.is_active !== false,
-    months_back: Number(input.months_back ?? 4) || 4,
+    months_back: Number(input.months_back ?? 1) || 1,
     item_limit: Number(input.item_limit ?? 40) || 40,
     priority: Number(input.priority ?? 0) || 0,
   };

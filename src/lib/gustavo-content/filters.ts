@@ -9,9 +9,14 @@ export function filterRadarItems(
     thesis?: string;
     query?: string;
     minScore?: number;
-  }
+    /** Só notícias publicadas nos últimos N dias. */
+    maxAgeDays?: number;
+  },
+  now = Date.now()
 ) {
+  const since = filters.maxAgeDays != null ? now - filters.maxAgeDays * DAY_MS : null;
   return items.filter((item) => {
+    if (since != null && newsTime(item) < since) return false;
     if (filters.status && item.status !== filters.status) return false;
     if (filters.topicId && item.topic_id !== filters.topicId) return false;
     if (filters.minScore != null && (item.editorial_score ?? 0) < filters.minScore) return false;

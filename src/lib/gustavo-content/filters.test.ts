@@ -125,6 +125,22 @@ describe("overviewMetrics", () => {
   });
 });
 
+describe("filterRadarItems por período", () => {
+  it("mantém só notícias publicadas dentro da janela", () => {
+    const now = Date.parse("2026-10-06T12:00:00Z");
+    const visible = filterRadarItems(
+      [
+        item({ id: "julho", published_at: "2026-07-20T12:00:00Z", created_at: "2026-10-06T16:33:00Z" }),
+        item({ id: "setembro", published_at: "2026-09-20T12:00:00Z" }),
+        item({ id: "sem-data", published_at: null, created_at: "2026-10-05T12:00:00Z" }),
+      ],
+      { maxAgeDays: 30 },
+      now
+    );
+    expect(visible.map((entry) => entry.id)).toEqual(["setembro", "sem-data"]);
+  });
+});
+
 describe("sortRadarItems", () => {
   const items = [
     item({ id: "antiga-93", editorial_score: 93, created_at: "2026-09-18T12:00:00Z" }),
