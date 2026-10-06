@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getInternalJobSecret } from "@/lib/cron-auth";
+import { runGustavoContentFetchPipeline } from "@/lib/gustavo-content/pipeline";
 import {
   GustavoContentError,
   gustavoContentErrorResponse,
@@ -7,13 +7,13 @@ import {
 } from "@/lib/gustavo-content/server";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 300;
 
-function resolveWorkerBaseUrl(request: Request): string {
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return new URL(request.url).origin;
-}
-
+/**
+ * Busca manual do radar. Roda o pipeline dentro do próprio request: disparar o
+ * worker em fire-and-forget não funciona na Vercel (a função congela ao responder
+ * e o worker nunca chega a rodar).
+ */
 export async function POST(request: Request) {
   try {
     const actor = await requireGustavoContentAccess();
@@ -21,39 +21,16 @@ export async function POST(request: Request) {
       throw new GustavoContentError("Somente admin dispara a busca do radar.", 403);
     }
 
-    const secret = getInternalJobSecret();
-    if (!secret) {
-      return NextResponse.json(
-        { error: "Segredo interno do servidor não configurado." },
-        { status: 503 }
-      );
-    }
-
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    const url = `${resolveWorkerBaseUrl(request)}/api/gustavo-content/fetch-worker`;
-    void fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${secret}`,
-      },
-      body: JSON.stringify({
-        topicIds: body.topicIds,
-        maxCreated: body.maxCreated,
-        trigger: body.source === "institutional" ? "institutional" : "manual",
-        source: body.source === "institutional" ? "institutional" : "rss",
-      }),
-    }).catch((err) => {
-      console.error("[gustavo-content/fetch] falha ao disparar worker", err);
+    const institutional = body.source === "institutional";
+    const result = await runGustavoContentFetchPipeline({
+      topicIds: Array.isArray(body.topicIds) ? body.topicIds.map(String) : undefined,
+      maxCreated: typeof body.maxCreated === "number" ? body.maxCreated : 8,
+      trigger: institutional ? "institutional" : "manual",
+      source: institutional ? "institutional" : "rss",
     });
 
-    return NextResponse.json(
-      {
-        started: true,
-        message: "Busca do radar iniciada. As pautas aparecem em alguns minutos.",
-      },
-      { status: 202 }
-    );
+    return NextResponse.json({ success: true, ...result });
   } catch (err) {
     return gustavoContentErrorResponse(err);
   }

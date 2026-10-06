@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { filterRadarItems, overviewMetrics } from "@/lib/gustavo-content/filters";
+import {
+  filterRadarItems,
+  overviewMetrics,
+  splitRecentRadarItems,
+} from "@/lib/gustavo-content/filters";
 import type { GustavoContentItem } from "@/lib/gustavo-content/types";
 
 function item(partial: Partial<GustavoContentItem>): GustavoContentItem {
@@ -106,5 +110,34 @@ describe("overviewMetrics", () => {
     expect(metrics.suggestions).toBe(1);
     expect(metrics.waitingGustavo).toBe(1);
     expect(metrics.approved).toBe(1);
+  });
+
+  it("prioriza oportunidades da semana sobre notas antigas mais altas", () => {
+    const now = Date.parse("2026-10-06T12:00:00Z");
+    const metrics = overviewMetrics(
+      [
+        item({ id: "antiga", editorial_score: 93, created_at: "2026-09-04T12:00:00Z" }),
+        item({ id: "nova", editorial_score: 82, created_at: "2026-10-06T09:00:00Z" }),
+      ],
+      now
+    );
+    expect(metrics.opportunities.map((entry) => entry.id)).toEqual(["nova", "antiga"]);
+  });
+});
+
+describe("splitRecentRadarItems", () => {
+  it("separa as pautas recentes, mais novas primeiro, e mantém a ordem do restante", () => {
+    const now = Date.parse("2026-10-06T12:00:00Z");
+    const { recent, rest } = splitRecentRadarItems(
+      [
+        item({ id: "a", created_at: "2026-09-18T12:00:00Z" }),
+        item({ id: "b", created_at: "2026-10-05T12:00:00Z" }),
+        item({ id: "c", created_at: "2026-09-04T12:00:00Z" }),
+        item({ id: "d", created_at: "2026-10-06T09:00:00Z" }),
+      ],
+      now
+    );
+    expect(recent.map((entry) => entry.id)).toEqual(["d", "b"]);
+    expect(rest.map((entry) => entry.id)).toEqual(["a", "c"]);
   });
 });

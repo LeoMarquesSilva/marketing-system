@@ -34,8 +34,29 @@ export function filterRadarItems(
   });
 }
 
-export function overviewMetrics(items: GustavoContentItem[]) {
-  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Janela de "novas" no radar: cobre o fim de semana, já que a busca roda só em dia útil. */
+export const RADAR_RECENT_DAYS = 3;
+
+function byScoreDesc(a: GustavoContentItem, b: GustavoContentItem) {
+  return (b.editorial_score ?? 0) - (a.editorial_score ?? 0);
+}
+
+/** Separa o que entrou recentemente (mais novas primeiro) do restante (ordem original, por nota). */
+export function splitRecentRadarItems(items: GustavoContentItem[], now = Date.now()) {
+  const since = now - RADAR_RECENT_DAYS * DAY_MS;
+  const recent: GustavoContentItem[] = [];
+  const rest: GustavoContentItem[] = [];
+  for (const item of items) {
+    (new Date(item.created_at).getTime() >= since ? recent : rest).push(item);
+  }
+  recent.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  return { recent, rest };
+}
+
+export function overviewMetrics(items: GustavoContentItem[], now = Date.now()) {
+  const weekAgo = now - 7 * DAY_MS;
   const thisWeek = items.filter((item) => new Date(item.created_at).getTime() >= weekAgo);
   const linkedinWeek = items.filter(
     (item) => item.linkedin_published_at && new Date(item.linkedin_published_at).getTime() >= weekAgo
@@ -43,6 +64,14 @@ export function overviewMetrics(items: GustavoContentItem[]) {
   const reelWeek = items.filter(
     (item) => item.instagram_published_at && new Date(item.instagram_published_at).getTime() >= weekAgo
   ).length;
+
+  // Prioriza as pautas da semana; só completa com antigas se faltar.
+  const open = items.filter((item) => item.status === "sugestao" || item.status === "radar");
+  const isThisWeek = (item: GustavoContentItem) => new Date(item.created_at).getTime() >= weekAgo;
+  const opportunities = [
+    ...open.filter(isThisWeek).sort(byScoreDesc),
+    ...open.filter((item) => !isThisWeek(item)).sort(byScoreDesc),
+  ].slice(0, 5);
 
   return {
     weekCount: thisWeek.length,
@@ -53,9 +82,6 @@ export function overviewMetrics(items: GustavoContentItem[]) {
       (item) => item.status === "aguardando_opiniao" || item.status === "aguardando_aprovacao"
     ).length,
     approved: items.filter((item) => item.status === "aprovado").length,
-    opportunities: items
-      .filter((item) => item.status === "sugestao" || item.status === "radar")
-      .sort((a, b) => (b.editorial_score ?? 0) - (a.editorial_score ?? 0))
-      .slice(0, 5),
+    opportunities,
   };
 }
