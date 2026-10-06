@@ -142,6 +142,14 @@ describe("sortRadarItems", () => {
     ]);
   });
 
+  it("usa a data da notícia, não a de entrada no radar", () => {
+    const sorted = sortRadarItems([
+      item({ id: "julho-puxada-hoje", published_at: "2026-07-20T12:00:00Z", created_at: "2026-10-06T16:33:00Z" }),
+      item({ id: "outubro-puxada-ontem", published_at: "2026-10-05T12:00:00Z", created_at: "2026-10-05T12:47:00Z" }),
+    ]);
+    expect(sorted.map((entry) => entry.id)).toEqual(["outubro-puxada-ontem", "julho-puxada-hoje"]);
+  });
+
   it("ordena pela nota quando pedido", () => {
     expect(sortRadarItems(items, "score").map((entry) => entry.id)).toEqual([
       "antiga-93",

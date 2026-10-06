@@ -40,13 +40,18 @@ function byScoreDesc(a: GustavoContentItem, b: GustavoContentItem) {
   return (b.editorial_score ?? 0) - (a.editorial_score ?? 0);
 }
 
+/** Data da notícia; sem ela, quando entrou no radar. */
+function newsTime(item: GustavoContentItem) {
+  return new Date(item.published_at ?? item.created_at).getTime();
+}
+
 function byNewest(a: GustavoContentItem, b: GustavoContentItem) {
-  return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  return newsTime(b) - newsTime(a);
 }
 
 export type RadarSort = "recent" | "score";
 
-/** Ordena o radar: por padrão as que entraram por último vêm primeiro; empate desfeito pela nota. */
+/** Ordena o radar: por padrão as notícias mais novas vêm primeiro; empate desfeito pela nota. */
 export function sortRadarItems(items: GustavoContentItem[], sort: RadarSort = "recent") {
   return [...items].sort((a, b) =>
     sort === "recent" ? byNewest(a, b) || byScoreDesc(a, b) : byScoreDesc(a, b) || byNewest(a, b)
