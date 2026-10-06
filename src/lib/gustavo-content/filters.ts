@@ -36,23 +36,21 @@ export function filterRadarItems(
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Janela de "novas" no radar: cobre o fim de semana, já que a busca roda só em dia útil. */
-export const RADAR_RECENT_DAYS = 3;
-
 function byScoreDesc(a: GustavoContentItem, b: GustavoContentItem) {
   return (b.editorial_score ?? 0) - (a.editorial_score ?? 0);
 }
 
-/** Separa o que entrou recentemente (mais novas primeiro) do restante (ordem original, por nota). */
-export function splitRecentRadarItems(items: GustavoContentItem[], now = Date.now()) {
-  const since = now - RADAR_RECENT_DAYS * DAY_MS;
-  const recent: GustavoContentItem[] = [];
-  const rest: GustavoContentItem[] = [];
-  for (const item of items) {
-    (new Date(item.created_at).getTime() >= since ? recent : rest).push(item);
-  }
-  recent.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  return { recent, rest };
+function byNewest(a: GustavoContentItem, b: GustavoContentItem) {
+  return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+}
+
+export type RadarSort = "recent" | "score";
+
+/** Ordena o radar: por padrão as que entraram por último vêm primeiro; empate desfeito pela nota. */
+export function sortRadarItems(items: GustavoContentItem[], sort: RadarSort = "recent") {
+  return [...items].sort((a, b) =>
+    sort === "recent" ? byNewest(a, b) || byScoreDesc(a, b) : byScoreDesc(a, b) || byNewest(a, b)
+  );
 }
 
 export function overviewMetrics(items: GustavoContentItem[], now = Date.now()) {

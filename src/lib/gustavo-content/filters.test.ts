@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   filterRadarItems,
   overviewMetrics,
-  splitRecentRadarItems,
+  sortRadarItems,
 } from "@/lib/gustavo-content/filters";
 import type { GustavoContentItem } from "@/lib/gustavo-content/types";
 
@@ -125,19 +125,29 @@ describe("overviewMetrics", () => {
   });
 });
 
-describe("splitRecentRadarItems", () => {
-  it("separa as pautas recentes, mais novas primeiro, e mantém a ordem do restante", () => {
-    const now = Date.parse("2026-10-06T12:00:00Z");
-    const { recent, rest } = splitRecentRadarItems(
-      [
-        item({ id: "a", created_at: "2026-09-18T12:00:00Z" }),
-        item({ id: "b", created_at: "2026-10-05T12:00:00Z" }),
-        item({ id: "c", created_at: "2026-09-04T12:00:00Z" }),
-        item({ id: "d", created_at: "2026-10-06T09:00:00Z" }),
-      ],
-      now
-    );
-    expect(recent.map((entry) => entry.id)).toEqual(["d", "b"]);
-    expect(rest.map((entry) => entry.id)).toEqual(["a", "c"]);
+describe("sortRadarItems", () => {
+  const items = [
+    item({ id: "antiga-93", editorial_score: 93, created_at: "2026-09-18T12:00:00Z" }),
+    item({ id: "ontem-70", editorial_score: 70, created_at: "2026-10-05T12:00:00Z" }),
+    item({ id: "hoje-60", editorial_score: 60, created_at: "2026-10-06T09:00:00Z" }),
+    item({ id: "hoje-85", editorial_score: 85, created_at: "2026-10-06T09:00:00Z" }),
+  ];
+
+  it("por padrão traz as mais recentes primeiro, desempatando pela nota", () => {
+    expect(sortRadarItems(items).map((entry) => entry.id)).toEqual([
+      "hoje-85",
+      "hoje-60",
+      "ontem-70",
+      "antiga-93",
+    ]);
+  });
+
+  it("ordena pela nota quando pedido", () => {
+    expect(sortRadarItems(items, "score").map((entry) => entry.id)).toEqual([
+      "antiga-93",
+      "hoje-85",
+      "ontem-70",
+      "hoje-60",
+    ]);
   });
 });

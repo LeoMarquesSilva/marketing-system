@@ -7,7 +7,7 @@ import type { GustavoMemberRole } from "@/lib/gustavo-content/access";
 import { NovaPautaButton } from "@/components/gustavo-content/nova-pauta";
 
 const TABS = [
-  { href: "/conteudo/gustavo", label: "Visão geral", exact: true },
+  { href: "/conteudo/gustavo/visao-geral", label: "Visão geral" },
   { href: "/conteudo/gustavo/estrategia", label: "Estratégia" },
   { href: "/conteudo/gustavo/radar", label: "Radar" },
   { href: "/conteudo/gustavo/producao", label: "Produção" },
@@ -65,10 +65,7 @@ export function GustavoContentShell({
             className="flex gap-1 overflow-x-auto rounded-xl bg-[#04202f]/[0.045] p-1.5"
           >
             {TABS.map((tab) => {
-              const exact = "exact" in tab && tab.exact;
-              const active = exact
-                ? pathname === tab.href
-                : pathname === tab.href || pathname.startsWith(`${tab.href}/`);
+              const active = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
               return (
                 <Link
                   key={tab.href}

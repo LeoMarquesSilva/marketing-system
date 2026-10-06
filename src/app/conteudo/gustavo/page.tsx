@@ -1,9 +1,6 @@
-import { GustavoOverview } from "@/components/gustavo-content/gustavo-overview";
-import { requireGustavoContentAccess } from "@/lib/gustavo-content/server";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-export default async function GustavoContentPage() {
-  const actor = await requireGustavoContentAccess();
-  return <GustavoOverview isOwner={actor.memberRole === "owner"} />;
+/** O módulo abre direto no Radar; a visão geral fica em /visao-geral. */
+export default function GustavoContentPage() {
+  redirect("/conteudo/gustavo/radar");
 }

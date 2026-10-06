@@ -18,9 +18,9 @@ import { NewsThumb } from "@/components/gustavo-content/news-thumb";
 import { ScoreBadge } from "@/components/gustavo-content/score-badge";
 import { TopicsAdmin } from "@/components/gustavo-content/topics-admin";
 import {
-  RADAR_RECENT_DAYS,
   filterRadarItems,
-  splitRecentRadarItems,
+  sortRadarItems,
+  type RadarSort,
 } from "@/lib/gustavo-content/filters";
 import { GUSTAVO_CONTENT_STATUS_LABELS } from "@/lib/gustavo-content/constants";
 import type { GustavoContentItem, GustavoContentTopic, GustavoFetchRun } from "@/lib/gustavo-content/types";
@@ -43,6 +43,7 @@ export function RadarBoard({ isAdmin }: { isAdmin: boolean }) {
   const [channel, setChannel] = useState("all");
   const [thesis, setThesis] = useState("all");
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<RadarSort>("recent");
 
   async function load(silent = false) {
     if (!silent) setLoading(true);
@@ -74,16 +75,18 @@ export function RadarBoard({ isAdmin }: { isAdmin: boolean }) {
 
   const visible = useMemo(
     () =>
-      filterRadarItems(items, {
-        status: status === "all" ? undefined : status,
-        topicId: topicId === "all" ? undefined : topicId,
-        channel: channel === "all" ? undefined : channel,
-        thesis: thesis === "all" ? undefined : thesis,
-        query,
-      }),
-    [items, status, topicId, channel, thesis, query]
+      sortRadarItems(
+        filterRadarItems(items, {
+          status: status === "all" ? undefined : status,
+          topicId: topicId === "all" ? undefined : topicId,
+          channel: channel === "all" ? undefined : channel,
+          thesis: thesis === "all" ? undefined : thesis,
+          query,
+        }),
+        sort
+      ),
+    [items, status, topicId, channel, thesis, query, sort]
   );
-  const { recent, rest } = useMemo(() => splitRecentRadarItems(visible), [visible]);
 
   async function triggerFetch(source?: "institutional") {
     setFetching(true);
@@ -160,12 +163,21 @@ export function RadarBoard({ isAdmin }: { isAdmin: boolean }) {
       )}
 
       <div className="rounded-[1.25rem] bg-white/75 p-3 shadow-[0_12px_38px_rgba(4,32,47,0.04)]">
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[1.6fr_repeat(4,1fr)_auto]">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[1.6fr_repeat(5,1fr)_auto]">
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Buscar pauta"
         />
+        <Select value={sort} onValueChange={(value) => setSort(value as RadarSort)}>
+          <SelectTrigger aria-label="Ordenar">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="recent">Mais recentes</SelectItem>
+            <SelectItem value="score">Maior nota</SelectItem>
+          </SelectContent>
+        </Select>
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger>
             <SelectValue placeholder="Status" />
@@ -216,7 +228,7 @@ export function RadarBoard({ isAdmin }: { isAdmin: boolean }) {
           variant="ghost"
           size="sm"
           onClick={() => {
-            setStatus("all"); setTopicId("all"); setChannel("all"); setThesis("all"); setQuery("");
+            setSort("recent"); setStatus("all"); setTopicId("all"); setChannel("all"); setThesis("all"); setQuery("");
           }}
           aria-label="Limpar filtros"
         >
@@ -237,21 +249,10 @@ export function RadarBoard({ isAdmin }: { isAdmin: boolean }) {
       ) : visible.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nenhuma pauta corresponde aos filtros.</p>
       ) : (
-        <div className="space-y-6">
-          {recent.length > 0 && (
-            <RadarSection
-              title="Novas"
-              caption={`entraram nos últimos ${RADAR_RECENT_DAYS} dias · mais recentes primeiro`}
-              items={recent}
-            />
-          )}
-          {rest.length > 0 && (
-            <RadarSection
-              title={recent.length > 0 ? "Demais pautas" : "Pautas"}
-              caption="ordenadas pela nota editorial"
-              items={rest}
-            />
-          )}
+        <div className="overflow-hidden rounded-[1.4rem] bg-white/80 shadow-[0_20px_60px_rgba(4,32,47,0.055)]">
+          {visible.map((item) => (
+            <RadarRow key={item.id} item={item} />
+          ))}
         </div>
       )}
 
@@ -260,68 +261,48 @@ export function RadarBoard({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
-function RadarSection({
-  title,
-  caption,
-  items,
-}: {
-  title: string;
-  caption: string;
-  items: GustavoContentItem[];
-}) {
+function RadarRow({ item }: { item: GustavoContentItem }) {
   return (
-    <section>
-      <div className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 px-1">
-        <h4 className="text-sm font-semibold text-[#04202f]">{title}</h4>
-        <p className="font-mono text-[11px] text-[#7b9098]">
-          {items.length} · {caption}
-        </p>
-      </div>
-      <div className="overflow-hidden rounded-[1.4rem] bg-white/80 shadow-[0_20px_60px_rgba(4,32,47,0.055)]">
-        {items.map((item) => (
-          <article
-            key={item.id}
-            className="group border-b border-[#04202f]/[0.07] p-4 last:border-b-0 sm:p-5"
-          >
-            <div className="flex items-start gap-3">
-              <NewsThumb src={item.image_url} />
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0 max-w-3xl">
-                    <p className="text-[11px] text-muted-foreground">
-                      {item.topic_name ?? item.source}
-                      {item.published_at
-                        ? ` · ${format(new Date(item.published_at), "dd MMM yyyy", { locale: ptBR })}`
-                        : ""}
-                    </p>
-                    <h4 className="mt-1 text-base font-semibold leading-snug text-[#04202f]">
-                      {item.title}
-                    </h4>
-                  </div>
-                  <ScoreBadge score={item.editorial_score} />
-                </div>
-                {item.business_problem && (
-                  <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-[#04202f]/80">
-                    {item.business_problem}
-                  </p>
-                )}
-                <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{item.score_reason}</p>
-              </div>
+    <article
+      className="group border-b border-[#04202f]/[0.07] p-4 last:border-b-0 sm:p-5"
+    >
+      <div className="flex items-start gap-3">
+        <NewsThumb src={item.image_url} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0 max-w-3xl">
+              <p className="text-[11px] text-muted-foreground">
+                {item.topic_name ?? item.source}
+                {item.published_at
+                  ? ` · ${format(new Date(item.published_at), "dd MMM yyyy", { locale: ptBR })}`
+                  : ""}
+                {` · no radar desde ${format(new Date(item.created_at), "dd MMM HH:mm", { locale: ptBR })}`}
+              </p>
+              <h4 className="mt-1 text-base font-semibold leading-snug text-[#04202f]">
+                {item.title}
+              </h4>
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              {item.thesis_title && <span>Tese: {item.thesis_title}</span>}
-              {item.recommended_channels?.linkedin.recommended && <span>LinkedIn</span>}
-              {item.recommended_channels?.instagramReel.recommended && <span>Reel</span>}
-              <Link
-                href={`/conteudo/gustavo/producao/${item.id}`}
-                className="ml-auto inline-flex items-center gap-2 text-sm font-semibold text-[#347796]"
-              >
-                Analisar <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" aria-hidden />
-              </Link>
-            </div>
-          </article>
-        ))}
+            <ScoreBadge score={item.editorial_score} />
+          </div>
+          {item.business_problem && (
+            <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-[#04202f]/80">
+              {item.business_problem}
+            </p>
+          )}
+          <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{item.score_reason}</p>
+        </div>
       </div>
-    </section>
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        {item.thesis_title && <span>Tese: {item.thesis_title}</span>}
+        {item.recommended_channels?.linkedin.recommended && <span>LinkedIn</span>}
+        {item.recommended_channels?.instagramReel.recommended && <span>Reel</span>}
+        <Link
+          href={`/conteudo/gustavo/producao/${item.id}`}
+          className="ml-auto inline-flex items-center gap-2 text-sm font-semibold text-[#347796]"
+        >
+          Analisar <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" aria-hidden />
+        </Link>
+      </div>
+    </article>
   );
 }
