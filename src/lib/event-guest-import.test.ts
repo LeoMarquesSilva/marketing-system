@@ -12,7 +12,7 @@ describe("event guest import", () => {
     const people = [
       { id: "yes", name: "Ana", email: null, partyInvite: true },
       { id: "no", name: "Bia", npsEligible: true, partyInvite: false },
-    ] as EmailPerson[];
+    ] as unknown as EmailPerson[];
     const contacts = [{ id: "contact", name: "Carlos", email: "c@example.com", partyInvite: true }] as EmailContact[];
     expect(clientGuestCandidates(people, contacts).map(item => item.key)).toEqual(["person:yes", "contact:contact"]);
   });
