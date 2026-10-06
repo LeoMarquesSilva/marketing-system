@@ -131,6 +131,9 @@ function response(): ContentScheduleResponse {
       collaborator_id: "person-1",
       collaborator_name: "Marina Oliveira",
       collaborator_avatar_url: null,
+      co_collaborator_id: "person-2",
+      co_collaborator_name: "Rafael Lima",
+      co_collaborator_avatar_url: null,
       source_key: "source-1",
       source_name: "Marina O.",
       source_status: "Em produção",
@@ -164,6 +167,13 @@ function response(): ContentScheduleResponse {
 }
 
 describe("integração dos detalhes do cronograma", () => {
+  it("mapeia a segunda pessoa de um reel gravado em dupla", () => {
+    const payload = mapContentScheduleResponse(response());
+
+    expect(payload.slots[0].coCollaboratorId).toBe("person-2");
+    expect(payload.slots[0].coCollaborator).toEqual({ id: "person-2", name: "Rafael Lima", avatarUrl: null });
+  });
+
   it("mapeia a tarefa VIOS retornada pela API para o slot exibido", () => {
     const payload = mapContentScheduleResponse(response());
 

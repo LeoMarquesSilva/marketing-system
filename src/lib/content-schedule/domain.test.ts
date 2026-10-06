@@ -160,11 +160,49 @@ describe("vínculo VIOS com o cronograma", () => {
     for (const task of [
       { ...viosTask, label: "REVISAR" },
       { ...viosTask, cancelled: true },
-      { ...viosTask, date: "2026-09-19" },
+      { ...viosTask, date: "2026-09-19", assigneeId: null },
       { ...viosTask, assigneeId: "person-2" },
     ]) {
       expect(reconcileAutomaticViosLinks([task], [viosSlot]).matches).toEqual([]);
     }
+  });
+
+  it("acompanha a remarcação do VIOS pela data anterior", () => {
+    expect(reconcileAutomaticViosLinks(
+      [{ ...viosTask, date: "2026-09-25", previousDate: "2026-09-18" }],
+      [viosSlot]
+    ).matches).toEqual([
+      { taskId: "task-1", slotId: "slot-1", strategy: "rescheduled", moveSlotTo: "2026-09-25" },
+    ]);
+  });
+
+  it("liga em pares tarefas sem responsável do mesmo dia e área", () => {
+    const tasks = [
+      { ...viosTask, id: "task-b", ci: "1010", assigneeId: null },
+      { ...viosTask, id: "task-a", ci: "1002", assigneeId: null },
+    ];
+    const slots = [
+      { ...viosSlot, id: "slot-reel", collaboratorId: "person-2" },
+      { ...viosSlot, id: "slot-post", collaboratorId: "person-1" },
+    ];
+    expect(reconcileAutomaticViosLinks(tasks, slots).matches).toEqual([
+      { taskId: "task-a", slotId: "slot-post", strategy: "pair" },
+      { taskId: "task-b", slotId: "slot-reel", strategy: "pair" },
+    ]);
+    // Sobra vaga ou tarefa: não chuta.
+    expect(reconcileAutomaticViosLinks(tasks, [...slots, { ...viosSlot, id: "slot-extra", collaboratorId: null }]).matches).toEqual([]);
+    expect(reconcileAutomaticViosLinks([...tasks, { ...viosTask, id: "task-c", ci: "1020", assigneeId: null }], slots).matches).toEqual([]);
+  });
+
+  it("liga a mesma pessoa em até 14 dias e move a data", () => {
+    expect(reconcileAutomaticViosLinks([{ ...viosTask, date: "2026-09-24" }], [viosSlot]).matches).toEqual([
+      { taskId: "task-1", slotId: "slot-1", strategy: "nearby", moveSlotTo: "2026-09-24" },
+    ]);
+    expect(reconcileAutomaticViosLinks([{ ...viosTask, date: "2026-10-05" }], [viosSlot]).matches).toEqual([]);
+    expect(reconcileAutomaticViosLinks(
+      [{ ...viosTask, date: "2026-09-24" }],
+      [viosSlot, { ...viosSlot, id: "slot-2", date: "2026-09-28" }]
+    ).matches).toEqual([]);
   });
 
   it("ordena candidatos manuais por data exata e identidade", () => {

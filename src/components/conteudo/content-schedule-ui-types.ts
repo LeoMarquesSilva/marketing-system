@@ -38,10 +38,15 @@ export type ScheduleSlotView = {
   status: ScheduleStatus;
   collaboratorId?: string | null;
   collaborator?: ScheduleCollaborator | null;
+  /** Segunda pessoa da entrega (ex.: reel gravado em dupla). */
+  coCollaboratorId?: string | null;
+  coCollaborator?: ScheduleCollaborator | null;
   content?: LinkedScheduleContent | null;
   publication?: SchedulePublication | null;
   sourceName?: string | null;
   sourceStatus?: string | null;
+  /** Data original quando a vaga acompanhou uma remarcação do VIOS. */
+  plannedDate?: string | null;
   imported?: boolean;
   unmatchedAssigneeName?: string | null;
   viosTask?: ScheduleViosTask | null;

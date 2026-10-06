@@ -17,6 +17,7 @@ const PAGE_META: Record<string, PageMeta> = {
   "/conteudo/boletim": { label: "Newsletter", section: "Conteúdo" },
   "/conteudo/reels": { label: "Roteiros de Reels", section: "Conteúdo" },
   "/conteudo/cronograma": { label: "Cronograma de conteúdo", section: "Conteúdo" },
+  "/conteudo/aprovacao-reels": { label: "Aprovação de Reels", section: "Conteúdo" },
   "/conteudo/gustavo": { label: "Posicionamento Gustavo", section: "Conteúdo" },
   "/instagram-insights": { label: "Instagram Insights", section: "Performance" },
   "/linkedin-insights": { label: "LinkedIn Insights", section: "Performance" },
@@ -35,6 +36,7 @@ const PAGE_META: Record<string, PageMeta> = {
   "/eventos": { label: "Eventos", section: "Eventos" },
   "/cafe-cultura": { label: "Café com Cultura", section: "Pessoas e Cultura" },
   "/custos-projetos": { label: "Custos de projetos", section: "Gestão" },
+  "/icp": { label: "Cliente ideal (ICP)", section: "Gestão" },
   "/perfil": { label: "Meu perfil", section: "Conta" },
   "/admin": { label: "Configurações", section: "Administração" },
 };

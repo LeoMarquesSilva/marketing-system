@@ -1,6 +1,7 @@
 /** Buckets Supabase Storage (projeto ORQESTRAI / Pro) e helpers de upload. */
 
 import { supabase } from "@/utils/supabase/client";
+import { REEL_DELIVERIES_BUCKET } from "@/lib/reel-deliveries/domain";
 
 export const COLLABORATOR_PHOTOS_BUCKET = "MARKETING-SYSTEM-FOTOS";
 export const PROJECT_ASSETS_BUCKET = "MARKETING-SYSTEM-PROJETOS";
@@ -291,4 +292,35 @@ export function isSupabaseStorageUrl(url: string, bucket?: string): boolean {
   if (!base || !url.startsWith(base)) return false;
   if (bucket) return url.includes(`/storage/v1/object/public/${bucket}/`);
   return url.includes("/storage/v1/object/public/");
+}
+
+/** Bucket PRIVADO da aprovação de reels (vídeo para aprovação e capa). */
+
+/**
+ * Sobe vídeo (retomável, com progresso) ou capa de um reel em aprovação.
+ * O caminho fica em deliveries/<id da entrega>/ e é validado de novo no servidor.
+ */
+export async function uploadReelDeliveryFile(
+  deliveryId: string,
+  file: File,
+  kind: "video" | "cover" | "audio",
+  contentType: string,
+  options?: ReelVideoUploadOptions
+): Promise<{ path: string }> {
+  const prefix = kind === "video" ? "video" : kind === "audio" ? "audio" : "capa";
+  const path = `deliveries/${deliveryId}/${prefix}-${Date.now()}-${sanitizeFileName(file.name)}`;
+  try {
+    if (kind === "video" && file.size > REEL_VIDEO_TUS_THRESHOLD_BYTES) {
+      await uploadViaTus(REEL_DELIVERIES_BUCKET, path, file, contentType, options?.onProgress);
+    } else {
+      const { error } = await supabase.storage
+        .from(REEL_DELIVERIES_BUCKET)
+        .upload(path, file, { upsert: true, contentType });
+      if (error) throw error;
+      options?.onProgress?.(100);
+    }
+  } catch (err) {
+    throw new Error(formatReelUploadError(err, file.size, "O bucket de reels aceita até 1 GB."));
+  }
+  return { path };
 }

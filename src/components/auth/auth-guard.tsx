@@ -16,7 +16,7 @@ import {
 } from "@/lib/post-login-path";
 import { isQualificationPending } from "@/lib/qualification-requirement";
 
-const PUBLIC_PATHS = ["/login", "/t", "/nps", "/leituras", "/manuais", "/materiais"];
+const PUBLIC_PATHS = ["/login", "/t", "/nps", "/leituras", "/manuais", "/materiais", "/ficha-cadastral"];
 
 /** Perfil profissional público NFC: /perfil/<slug> e /perfil/<slug>/contato. */
 function isPublicProfessionalProfilePath(pathname: string): boolean {
@@ -143,6 +143,16 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       profile &&
       !isPublic &&
       (pathname === "/operacoes-legais" || pathname.startsWith("/operacoes-legais/")) &&
+      !canAccessPath(profile, pathname)
+    ) {
+      return resolvePostLoginPathFromProfile(profile);
+    }
+
+    // ICP: só admin (mesmo no modo legado).
+    if (
+      profile &&
+      !isPublic &&
+      (pathname === "/icp" || pathname.startsWith("/icp/")) &&
       !canAccessPath(profile, pathname)
     ) {
       return resolvePostLoginPathFromProfile(profile);

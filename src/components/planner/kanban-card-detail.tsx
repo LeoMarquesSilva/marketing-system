@@ -45,7 +45,8 @@ import {
   deleteComment,
   type RequestComment,
 } from "@/lib/request-comments";
-import { Play, Pause, Square, MessageSquare, Edit3, AlertCircle, CheckCircle2, Flag, CalendarX2, Clock, Calendar, CalendarCheck, Layers, Circle, ChevronDown, ChevronUp, Link2, Trash2, FileText, RotateCcw, Video, Download } from "lucide-react";
+import { Play, Pause, Square, MessageSquare, Edit3, AlertCircle, CheckCircle2, Flag, CalendarX2, Clock, Calendar, CalendarCheck, Layers, Circle, ChevronDown, ChevronUp, Link2, Trash2, FileText, RotateCcw, Video, Download, Image as ImageIcon } from "lucide-react";
+import { ReelCoverArtField } from "@/components/planner/reel-cover-art-field";
 import { downloadContentRoteiroWord, parseContentRoteiroWordId } from "@/lib/content-word";
 import { fetchViosTasksByMarketingRequestId, filterLeonardoFromResponsaveis, formatViosProrrogacaoLabel, isViosTaskProrrogada, type ViosTask } from "@/lib/vios-tasks";
 import { ViosProrrogacaoBadge } from "@/components/vios/vios-prorrogacao-badge";
@@ -644,8 +645,22 @@ export function KanbanCardDetail({
             />
           )}
 
-          {/* Vídeo do reel ou link da arte */}
-          {isReel && request.art_link ? (
+          {/* Capa de Reels: a arte é uma imagem no sistema; vídeo do reel; ou link da arte */}
+          {request.reel_delivery_id ? (
+            <section aria-labelledby="reel-cover-art-heading" className={sectionClass}>
+              <h4 id="reel-cover-art-heading" className={`${sectionTitleClass} flex items-center gap-2`}>
+                <ImageIcon className="h-4 w-4 shrink-0" aria-hidden />
+                Arte da capa
+              </h4>
+              <ReelCoverArtField
+                requestId={request.id}
+                reelDeliveryId={request.reel_delivery_id}
+                imagePath={request.art_image_path ?? null}
+                canEdit={Boolean(canUseTimesheet || isAdmin)}
+                onUploaded={() => onRefresh?.()}
+              />
+            </section>
+          ) : isReel && request.art_link ? (
             <section aria-labelledby="reel-video-heading" className={sectionClass}>
               <h4 id="reel-video-heading" className={`${sectionTitleClass} flex items-center gap-2`}>
                 <Video className="h-4 w-4 shrink-0" aria-hidden />

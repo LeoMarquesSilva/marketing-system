@@ -62,7 +62,9 @@ function CalendarSlotCard({
   onSelect: (slot: ScheduleSlotView) => void;
 }) {
   const missing = !slot.collaboratorId && !slot.collaborator;
-  const personName = slot.collaborator?.name || slot.unmatchedAssigneeName || "A definir";
+  const personName = slot.collaborator
+    ? [slot.collaborator.name, slot.coCollaborator?.name].filter(Boolean).join(" e ")
+    : slot.unmatchedAssigneeName || "A definir";
   const formatLabel = slot.format === "reel" ? "Reel" : "Post";
   return (
     <button
@@ -86,7 +88,10 @@ function CalendarSlotCard({
       </div>
       <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
         {slot.collaborator ? (
-          <CollaboratorAvatar person={slot.collaborator} className="size-6 shrink-0" />
+          <span className="flex shrink-0 -space-x-2">
+            <CollaboratorAvatar person={slot.collaborator} className="size-6 ring-2 ring-slate-50" />
+            {slot.coCollaborator ? <CollaboratorAvatar person={slot.coCollaborator} className="size-6 ring-2 ring-slate-50" /> : null}
+          </span>
         ) : (
           <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-50 ring-1 ring-amber-200">
             <AlertTriangle className="size-3.5 text-amber-700" />

@@ -32,10 +32,16 @@ export interface ContentScheduleSlot {
   collaborator_id: string | null;
   collaborator_name: string | null;
   collaborator_avatar_url: string | null;
+  /** Segundo responsável, quando a entrega é feita em dupla (ex.: reel gravado junto). */
+  co_collaborator_id: string | null;
+  co_collaborator_name: string | null;
+  co_collaborator_avatar_url: string | null;
   source_key: string;
   source_name: string | null;
   source_status: string | null;
   source_notes: string | null;
+  /** Data planejada antes de a vaga acompanhar uma remarcação do VIOS. */
+  planned_due_date?: string | null;
   cancelled: boolean;
   content_roteiro_id: string | null;
   content_title: string | null;

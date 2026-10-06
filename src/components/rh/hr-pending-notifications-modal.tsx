@@ -38,7 +38,7 @@ export function HrPendingNotificationsModal() {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Atualizações de colaboradores (VIOS)</DialogTitle>
+            <DialogTitle>Atualizações de colaboradores</DialogTitle>
             <DialogDescription>
               {notifications.length === 1
                 ? "Uma ficha precisa ser atualizada."
@@ -46,7 +46,12 @@ export function HrPendingNotificationsModal() {
             </DialogDescription>
           </DialogHeader>
 
-          <HrNotificationsList notifications={notifications} onAction={setEditEmployeeId} />
+          <HrNotificationsList
+            notifications={notifications}
+            onAction={setEditEmployeeId}
+            onNavigate={() => setDismissed(true)}
+            onChanged={() => void refetch()}
+          />
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setDismissed(true)}>

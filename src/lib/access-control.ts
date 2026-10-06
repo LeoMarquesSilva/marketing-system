@@ -30,6 +30,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/conteudo/boletim", label: "Newsletter" },
   { key: "/conteudo/reels", label: "Roteiros de Reels" },
   { key: "/conteudo/cronograma", label: "Cronograma de Conteúdo", alwaysAllowed: true },
+  { key: "/conteudo/aprovacao-reels", label: "Aprovação de Reels", alwaysAllowed: true },
   { key: "/clima", label: "Clima" },
   { key: "/instagram-insights", label: "Instagram Insights" },
   { key: "/linkedin-insights", label: "LinkedIn Insights" },
@@ -45,7 +46,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/fotos-colaboradores", label: "Fotos Colaboradores" },
   { key: "/usuarios", label: "Usuários" },
   { key: "/custos-projetos", label: "Custos de Projetos" },
-  { key: "/rh", label: "RH (Férias e Qualificações)", manualOnly: true },
+  { key: "/rh", label: "RH (Férias, Qualificações e Fichas cadastrais)", manualOnly: true },
   { key: "/admin", label: "Configurações", admin: true },
 ];
 
@@ -56,6 +57,7 @@ const VALID_PERMISSION_KEYS = new Set(ALL_KEYS);
 export const MEUS_CLIENTES_KEY = "/meus-clientes";
 export const CAFE_CULTURA_KEY = "/cafe-cultura";
 export const OPERACOES_LEGAIS_KEY = "/operacoes-legais";
+export const ICP_KEY = "/icp";
 export const MANUAL_ONLY_KEYS = ACCESS_SECTIONS.filter((s) => s.manualOnly).map((s) => s.key);
 
 const NON_ADMIN_KEYS = ACCESS_SECTIONS.filter(
@@ -78,6 +80,7 @@ export const ALWAYS_ALLOWED_PATHS = [
   "/fotos-eventos",
   "/cafe-com-cultura",
   "/conteudo/cronograma",
+  "/conteudo/aprovacao-reels",
   MEUS_CLIENTES_KEY,
 ];
 
@@ -160,6 +163,11 @@ export function hasOperacoesLegaisAccess(profile: AccessProfile | null | undefin
   return isAdminRole(profile);
 }
 
+/** ICP (receita por cliente): só admin, sem liberação por checkbox. */
+export function hasIcpAccess(profile: AccessProfile | null | undefined): boolean {
+  return isAdminRole(profile);
+}
+
 export function isManualOnlyKey(key: string): boolean {
   return MANUAL_ONLY_KEYS.includes(key);
 }
@@ -208,6 +216,10 @@ export function canAccessPath(
     pathname === OPERACOES_LEGAIS_KEY || pathname.startsWith(`${OPERACOES_LEGAIS_KEY}/`);
   if (isOperacoesLegaisRoute) {
     return hasOperacoesLegaisAccess(profile);
+  }
+
+  if (pathname === ICP_KEY || pathname.startsWith(`${ICP_KEY}/`)) {
+    return hasIcpAccess(profile);
   }
 
   const isFeriasRoute =

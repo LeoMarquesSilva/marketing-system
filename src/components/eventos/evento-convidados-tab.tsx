@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EventPerson } from "./event-person";
+import { DietaryBadge, DietarySummary } from "./dietary-summary";
+import type { DietaryInfo } from "@/lib/rh/registration/types";
 import { Building2, ContactRound, Plus, Trash2 } from "lucide-react";
 import { EventGuestImportDialog } from "./event-guest-import-dialog";
 import type { GuestImportSource } from "@/lib/event-guest-import";
@@ -48,6 +50,31 @@ export function EventoConvidadosTab({
   const [filterType, setFilterType] = useState<GuestType | "__all__">("__all__");
   const [selected, setSelected] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<"name_asc" | "name_desc" | "type_asc">("name_asc");
+  const [hrDietary, setHrDietary] = useState<Record<string, DietaryInfo>>({});
+  const colaboradorKey = invites
+    .filter((guest) => guest.guestType === "colaborador")
+    .map((guest) => `${guest.id}:${guest.email ?? ""}`)
+    .join("|");
+
+  // Restrição alimentar dos colaboradores vem da ficha cadastral (RH).
+  useEffect(() => {
+    if (!colaboradorKey) return;
+    let cancelled = false;
+    fetch(`/api/eventos/${eventId}/dietary`, { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { byInviteId?: Record<string, DietaryInfo> } | null) => {
+        if (!cancelled && data?.byInviteId) setHrDietary(data.byInviteId);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId, colaboradorKey]);
+
+  /** Ficha da RH primeiro; senão, o que foi anotado no próprio convite. */
+  const dietaryFor = (guest: EventInvite): DietaryInfo | null =>
+    hrDietary[guest.id] ??
+    (guest.dietaryRestrictions?.trim() ? { restrictions: ["outra"], notes: guest.dietaryRestrictions.trim() } : null);
 
   const filteredInvites = useMemo(() => {
     const base = invites.filter((guest) => {
@@ -73,6 +100,14 @@ export function EventoConvidadosTab({
         <button type="button" onClick={() => setImportSource("clients")} className="flex items-start gap-3 rounded-xl border border-border/60 bg-card p-4 text-left transition-colors hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-primary"><ContactRound className="mt-0.5 size-5 shrink-0 text-primary" /><span><span className="block text-sm font-semibold">Importar de Meus Clientes</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">Pessoas marcadas para a Festa de 10 anos, com empresa e contato.</span></span></button>
       </div>
       {importSource && <EventGuestImportDialog eventId={eventId} source={importSource} invites={invites} onClose={() => setImportSource(null)} onImported={onImported} />}
+      {invites.length > 0 && (
+        <DietarySummary
+          title="Restrições alimentares"
+          people={invites
+            .filter((guest) => guest.confirmationStatus !== "recusado")
+            .map((guest) => ({ key: guest.id, name: guest.name, dietary: dietaryFor(guest) }))}
+        />
+      )}
       <div className="rounded-xl border border-border/60 bg-card p-4">
         {adding && <div className="grid gap-2 md:grid-cols-4">
           {guestType === "colaborador" ? (
@@ -225,7 +260,7 @@ export function EventoConvidadosTab({
                       }}
                     />
                   </TableCell>
-                  <TableCell><EventPerson name={guest.name} avatar={guest.guestType === "colaborador" && guest.email ? users.find(user => user.email?.toLowerCase() === guest.email?.toLowerCase())?.avatar_url : null} />{guest.company && <p className="mt-1 text-xs text-muted-foreground">{guest.company}</p>}</TableCell>
+                  <TableCell><EventPerson name={guest.name} avatar={guest.guestType === "colaborador" && guest.email ? users.find(user => user.email?.toLowerCase() === guest.email?.toLowerCase())?.avatar_url : null} />{guest.company && <p className="mt-1 text-xs text-muted-foreground">{guest.company}</p>}<DietaryBadge dietary={dietaryFor(guest)} className="mt-1" /></TableCell>
                   <TableCell>{guest.email || "—"}</TableCell>
                   <TableCell>{GUEST_TYPE_LABEL[guest.guestType]}</TableCell>
                   <TableCell><span className="rounded-full bg-muted px-2 py-1 text-xs">{{ nao_enviado: "Não enviado", enviado: "Enviado", erro_envio: "Erro no envio" }[guest.inviteStatus]}</span></TableCell>

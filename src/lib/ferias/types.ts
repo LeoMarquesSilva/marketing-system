@@ -48,11 +48,13 @@ export interface HrEmployee {
   oab_uf: string | null;
 }
 
-export type HrOnboardingEventType = "new_employee" | "status_changed";
+export type HrOnboardingEventType = "new_employee" | "status_changed" | "registration_submitted";
 
 export interface HrOnboardingNotification {
   id: string;
-  employee_id: string;
+  /** Nulo em "registration_submitted" (ficha cadastral ainda sem colaborador). */
+  employee_id: string | null;
+  registration_form_id: string | null;
   event_type: HrOnboardingEventType;
   previous_is_active: boolean | null;
   new_is_active: boolean | null;
@@ -63,6 +65,12 @@ export interface HrOnboardingNotification {
     department: string | null;
     position: string | null;
   } | null;
+  registration_form: {
+    invitee_name: string;
+    employment_kind: "clt" | "estagio" | "socio_servico";
+  } | null;
+  /** Ficha cadastral recebida que parece ser deste novo colaborador (só em new_employee). */
+  registration_suggestion: { form_id: string; name: string; reason: "cpf" | "nome" } | null;
 }
 
 /** Linha do espelho VIOS sem cadastro correspondente em `hr_employees`. */

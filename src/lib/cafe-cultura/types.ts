@@ -1,3 +1,4 @@
+import type { DietaryInfo } from "@/lib/rh/registration/types";
 export type CafeExpectationStatus = "confirmed" | "excused_absence" | "excluded";
 export type CafeExpectationSource = "automatic_roster" | "responsum" | "admin";
 export type CafeCheckinSource = "nfc" | "qr" | "admin";
@@ -47,6 +48,8 @@ export interface CafeAdminParticipant {
   checkinSource: CafeCheckinSource | null;
   responsumTicketCount: number;
   responsumJustifications: CafeResponsumJustification[];
+  /** Restrição alimentar da ficha cadastral (RH), quando houver. */
+  dietary?: DietaryInfo | null;
 }
 
 export interface CafeAdminData {

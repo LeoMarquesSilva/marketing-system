@@ -17,11 +17,12 @@ describe("buildCafeAttendanceCsv", () => {
         checkinSource: "nfc",
         responsumTicketCount: 0,
         responsumJustifications: [],
+        dietary: { restrictions: ["vegano", "alergia"], notes: "amendoim" },
       },
     ]);
     expect(csv.startsWith("\uFEFFNome;E-mail;Área;Situação;Justificativa RESPONSUM;Presença;Horário")).toBe(true);
     expect(csv).toContain('"Ana ""Nina"" Souza"');
     expect(csv).toContain('"Societário; Contratos"');
-    expect(csv).toContain("Confirmado;;Presente;09:10");
+    expect(csv).toContain("Confirmado;;Presente;09:10;Vegano, Alergia alimentar (amendoim)");
   });
 });

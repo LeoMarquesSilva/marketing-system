@@ -440,10 +440,10 @@ describe("content schedule server integration rules", () => {
     const candidateLookup = db.calls.find((query) =>
       query.table === "content_schedule_slots" &&
       query.operation === "select" &&
-      query.filters.some((filter) => filter[0] === "in")
+      query.filters.some((filter) => filter[0] === "or")
     );
     expect(candidateLookup?.filters).toEqual(expect.arrayContaining([
-      ["in", "collaborator_id", ["person"]],
+      ["or", "", "collaborator_id.in.(person),co_collaborator_id.in.(person)"],
       ["eq", "format", "post"],
       ["gte", "due_date", "2026-08-28"],
       ["lte", "due_date", "2026-09-25"],
@@ -470,7 +470,7 @@ describe("content schedule server integration rules", () => {
         slotReads += 1;
         return { data: { id: "slot", area: "Cível", format: "post", collaborator_id: slotReads > 1 ? targetId : null, cancelled: false, content_roteiro_id: null, reel_studio_id: null, updated_at: slotReads > 1 ? "v2" : "v1" }, error: null };
       }
-      if (query.table === "rpc:assign_content_schedule_slot") {
+      if (query.table === "rpc:assign_content_schedule_slot_people") {
         return { data: "updated", error: null };
       }
       return { data: null, error: null };
@@ -480,15 +480,83 @@ describe("content schedule server integration rules", () => {
 
     await expect(updateContentScheduleSlot("slot", { collaborator_id: targetId }))
       .resolves.toMatchObject({ collaborator_id: targetId });
-    expect(db.calls.find((query) => query.table === "rpc:assign_content_schedule_slot")?.payload)
+    expect(db.calls.find((query) => query.table === "rpc:assign_content_schedule_slot_people")?.payload)
       .toMatchObject({
         p_slot_id: "slot",
         p_expected_updated_at: "v1",
         p_collaborator_id: targetId,
+        p_co_collaborator_id: null,
         p_changed_by_id: "manager",
         p_recipient_id: "2f08c695-770e-47ce-b4e4-ce27fa414df8",
       });
     expect(db.calls.some((query) => query.operation === "update")).toBe(false);
+  });
+
+  it("normaliza o par de responsáveis: segunda pessoa exige principal e não repete", async () => {
+    const { normalizeSlotPeople } = await import("./server");
+    expect(normalizeSlotPeople("a", "b")).toEqual({ collaborator_id: "a", co_collaborator_id: "b" });
+    expect(normalizeSlotPeople("a", "a")).toEqual({ collaborator_id: "a", co_collaborator_id: null });
+    expect(normalizeSlotPeople(null, "b")).toEqual({ collaborator_id: "b", co_collaborator_id: null });
+    expect(normalizeSlotPeople(null, null)).toEqual({ collaborator_id: null, co_collaborator_id: null });
+  });
+
+  it("gestor adiciona quem gravou junto mantendo o responsável principal", async () => {
+    const primaryId = "11111111-1111-4111-8111-111111111111";
+    const secondId = "22222222-2222-4222-8222-222222222222";
+    let slotReads = 0;
+    const db = database((query) => {
+      if (query.table === "users" && query.filters.some((filter) => filter[1] === "auth_id")) {
+        return { data: { id: "manager", role: null, department: "Cível", permissions: [], is_active: true }, error: null };
+      }
+      if (query.table === "users") return { data: { id: "someone", department: "Cível", is_active: true }, error: null };
+      if (query.table === "hr_employees") {
+        const personLookup = query.filters.some((filter) => filter[1] === "user_id" && [primaryId, secondId].includes(String(filter[2])));
+        return { data: personLookup
+          ? { department: "Cível", is_active: true }
+          : { position: "Gerente", department: "Cível", is_active: true }, error: null };
+      }
+      if (query.table === "content_schedule_slots" && query.operation === "select") {
+        slotReads += 1;
+        return { data: { id: "slot", area: "Cível", format: "reel", collaborator_id: primaryId, co_collaborator_id: slotReads > 1 ? secondId : null, cancelled: false, content_roteiro_id: null, reel_studio_id: "reel", updated_at: slotReads > 1 ? "v2" : "v1" }, error: null };
+      }
+      if (query.table === "rpc:assign_content_schedule_slot_people") return { data: "updated", error: null };
+      return { data: null, error: null };
+    });
+    mocks.createClient.mockReturnValue(db);
+    const { updateContentScheduleSlot } = await import("./server");
+
+    // O reel já está vinculado: o principal fica travado, mas a segunda pessoa pode entrar.
+    await expect(updateContentScheduleSlot("slot", { co_collaborator_id: secondId }))
+      .resolves.toMatchObject({ co_collaborator_id: secondId });
+    expect(db.calls.find((query) => query.table === "rpc:assign_content_schedule_slot_people")?.payload)
+      .toMatchObject({ p_collaborator_id: primaryId, p_co_collaborator_id: secondId, p_expected_updated_at: "v1" });
+  });
+
+  it("liga o reel criado por quem gravou junto à vaga do principal", async () => {
+    const reelEvent = { collaboratorId: "second", area: "Cível", format: "reel" as const, reelStudioId: "reel", eventDate: "2026-09-10T15:00:00Z" };
+    const db = database((query) => {
+      if (query.table === "reel_studio_items") return { data: { id: "reel", area: "Cível", source_content_id: null }, error: null };
+      if (query.table === "reel_studio_assignees") return { data: { user_id: "second" }, error: null };
+      if (query.table === "content_schedule_slots" && query.operation === "select") {
+        return { data: [{ id: "slot", due_date: "2026-09-12", area: "Cível", format: "reel", collaborator_id: "primary", co_collaborator_id: "second", cancelled: false, content_roteiro_id: null, reel_studio_id: null }], error: null };
+      }
+      if (query.table === "content_schedule_slots" && query.operation === "update") return { data: { id: "slot" }, error: null };
+      return { data: null, error: null };
+    });
+    mocks.createClient.mockReturnValue(db);
+    const { autoLinkContentSchedule } = await import("./server");
+
+    expect(await autoLinkContentSchedule(reelEvent)).toMatchObject({ status: "matched", slotId: "slot" });
+    const lookup = db.calls.find((query) => query.table === "content_schedule_slots" && query.operation === "select");
+    expect(lookup?.filters).toContainEqual(["or", "", "collaborator_id.eq.second,co_collaborator_id.eq.second"]);
+    const claim = db.calls.find((query) => query.table === "content_schedule_slots" && query.operation === "update");
+    expect(claim?.payload).toEqual({ reel_studio_id: "reel" });
+    expect(claim?.filters).toEqual(expect.arrayContaining([
+      ["eq", "collaborator_id", "primary"],
+      ["eq", "co_collaborator_id", "second"],
+      ["is", "reel_studio_id", null],
+    ]));
+    expect(db.calls.some((query) => query.table === "content_schedule_links" && query.operation === "insert")).toBe(false);
   });
 
   it("retorna ao gestor somente tarefas e equipe das áreas gerenciadas", async () => {

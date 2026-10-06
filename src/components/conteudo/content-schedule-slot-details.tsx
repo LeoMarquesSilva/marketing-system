@@ -71,6 +71,52 @@ function compactNumber(value: number | null | undefined) {
   return new Intl.NumberFormat("pt-BR", { notation: "compact" }).format(value ?? 0);
 }
 
+function PersonSelect({
+  label,
+  emptyLabel,
+  value,
+  selected,
+  people,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  emptyLabel: string;
+  value: string;
+  selected: ScheduleCollaborator | null;
+  people: ScheduleCollaborator[];
+  disabled: boolean;
+  onChange: (collaboratorId: string) => void;
+}) {
+  return (
+    <Select value={value} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger className="w-full" aria-label={label}>
+        {selected ? (
+          <CollaboratorMark person={selected} />
+        ) : (
+          <span className="flex items-center gap-2 text-slate-500">
+            <span className="flex size-7 items-center justify-center rounded-full bg-slate-100"><CircleUserRound className="size-4" aria-hidden /></span>
+            {emptyLabel}
+          </span>
+        )}
+      </SelectTrigger>
+      <SelectContent align="start" className="min-w-[260px]">
+        <SelectItem value="unassigned">
+          <span className="flex items-center gap-2">
+            <span className="flex size-7 items-center justify-center rounded-full border border-dashed border-slate-300 bg-white"><CircleUserRound className="size-4 text-slate-400" aria-hidden /></span>
+            {emptyLabel}
+          </span>
+        </SelectItem>
+        {people.map((person) => (
+          <SelectItem value={person.id} key={person.id} className="py-2">
+            <CollaboratorMark person={person} />
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function DetailSection({
   title,
   icon: Icon,
@@ -99,6 +145,7 @@ export function ContentScheduleSlotDetails({
   canAssign,
   saving,
   onAssign,
+  onAssignSecond = () => undefined,
   canManageVios = false,
   viosSaving = false,
   onViosChange = () => undefined,
@@ -111,6 +158,7 @@ export function ContentScheduleSlotDetails({
   canAssign: boolean;
   saving: boolean;
   onAssign: (collaboratorId: string) => void;
+  onAssignSecond?: (collaboratorId: string) => void;
   canManageVios?: boolean;
   viosSaving?: boolean;
   onViosChange?: (viosTaskId: string | null) => void;
@@ -136,6 +184,11 @@ export function ContentScheduleSlotDetails({
             <SheetDescription className="capitalize">
               {fullDate(slot.date)}
             </SheetDescription>
+            {slot.plannedDate ? (
+              <p className="text-xs text-slate-500">
+                Remarcada no VIOS. Data planejada: {publicationDate(`${slot.plannedDate}T12:00:00`)}
+              </p>
+            ) : null}
           </SheetHeader>
 
           <div className="flex-1 overflow-y-auto px-5 sm:px-6">
@@ -176,14 +229,18 @@ export function ContentScheduleSlotDetails({
               </dl>
             </DetailSection>
 
-            <DetailSection title="Responsável" icon={CircleUserRound}>
+            <DetailSection title={slot.coCollaborator ? "Responsáveis" : "Responsável"} icon={CircleUserRound}>
               {slot.collaborator ? (
-                <div className="flex items-center gap-3 text-sm">
-                  <CollaboratorAvatar person={slot.collaborator} className="size-9" />
-                  <div>
-                    <p className="font-medium text-slate-900">{slot.collaborator.name}</p>
-                    <p className="text-xs text-slate-500">{slot.collaborator.area || slot.area}</p>
-                  </div>
+                <div className="space-y-3">
+                  {[slot.collaborator, slot.coCollaborator].filter((person): person is ScheduleCollaborator => Boolean(person)).map((person) => (
+                    <div key={person.id} className="flex items-center gap-3 text-sm">
+                      <CollaboratorAvatar person={person} className="size-9" />
+                      <div>
+                        <p className="font-medium text-slate-900">{person.name}</p>
+                        <p className="text-xs text-slate-500">{person.area || slot.area}</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <p className="text-sm text-slate-500">{slot.unmatchedAssigneeName || "A definir"}</p>
@@ -196,35 +253,30 @@ export function ContentScheduleSlotDetails({
               ) : canEditAssignment ? (
                 <div className="space-y-1.5">
                   <span className="text-sm font-medium text-slate-700">Trocar responsável</span>
-                  <Select
+                  <PersonSelect
+                    label="Trocar responsável"
+                    emptyLabel="Sem responsável"
                     value={slot.collaboratorId ?? "unassigned"}
-                    onValueChange={onAssign}
+                    selected={slot.collaborator ?? null}
+                    people={availableCollaborators}
                     disabled={saving}
-                  >
-                    <SelectTrigger className="w-full" aria-label="Trocar responsável">
-                      {slot.collaborator ? (
-                        <CollaboratorMark person={slot.collaborator} />
-                      ) : (
-                        <span className="flex items-center gap-2 text-slate-500">
-                          <span className="flex size-7 items-center justify-center rounded-full bg-slate-100"><CircleUserRound className="size-4" aria-hidden /></span>
-                          Sem responsável
-                        </span>
-                      )}
-                    </SelectTrigger>
-                    <SelectContent align="start" className="min-w-[260px]">
-                      <SelectItem value="unassigned">
-                        <span className="flex items-center gap-2">
-                          <span className="flex size-7 items-center justify-center rounded-full border border-dashed border-slate-300 bg-white"><CircleUserRound className="size-4 text-slate-400" aria-hidden /></span>
-                          Sem responsável
-                        </span>
-                      </SelectItem>
-                      {availableCollaborators.map((person) => (
-                        <SelectItem value={person.id} key={person.id} className="py-2">
-                          <CollaboratorMark person={person} />
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    onChange={onAssign}
+                  />
+                </div>
+              ) : null}
+
+              {canEditAssignment && slot.collaboratorId ? (
+                <div className="space-y-1.5">
+                  <span className="text-sm font-medium text-slate-700">Gravou junto (opcional)</span>
+                  <PersonSelect
+                    label="Segunda pessoa"
+                    emptyLabel="Sem segunda pessoa"
+                    value={slot.coCollaboratorId ?? "unassigned"}
+                    selected={slot.coCollaborator ?? null}
+                    people={availableCollaborators.filter((person) => person.id !== slot.collaboratorId)}
+                    disabled={saving}
+                    onChange={onAssignSecond}
+                  />
                 </div>
               ) : null}
             </DetailSection>

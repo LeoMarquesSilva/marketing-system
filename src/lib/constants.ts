@@ -32,6 +32,7 @@ export const REQUEST_TYPES = [
   "Evento",
   "Relatório",
   "Apresentação",
+  "Capa de Reels",
 ] as const;
 
 /** Inclui Onboarding (criado só via “Novo colaborador”) — filtros e edição */

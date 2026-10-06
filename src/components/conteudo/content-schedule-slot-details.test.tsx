@@ -147,6 +147,33 @@ describe("ContentScheduleSlotDetails", () => {
     expect(html).not.toContain("Carlos Souza");
   });
 
+  it("mostra as duas pessoas e permite escolher quem gravou junto, sem repetir o principal", () => {
+    const html = renderDetails(slot({ coCollaboratorId: "person-2", coCollaborator: collaborators[1] }), { canAssign: true });
+    const second = html.slice(html.indexOf('aria-label="Segunda pessoa"'));
+
+    expect(html).toContain("Responsáveis");
+    expect(html).toContain("Gravou junto (opcional)");
+    expect(second).toContain("Sem segunda pessoa");
+    expect(second).toContain('data-select-item="person-2"');
+    expect(second).not.toContain('data-select-item="person-1"');
+  });
+
+  it("só oferece a segunda pessoa quando há responsável principal", () => {
+    const html = renderDetails(slot({ collaboratorId: null, collaborator: null }), { canAssign: true });
+
+    expect(html).not.toContain('aria-label="Segunda pessoa"');
+  });
+
+  it("mantém a segunda pessoa editável depois do vínculo do conteúdo", () => {
+    const html = renderDetails(slot({
+      status: "linked",
+      content: { id: "content-1", title: "Reel em dupla" },
+    }), { canAssign: true });
+
+    expect(html).not.toContain('aria-label="Trocar responsável"');
+    expect(html).toContain('aria-label="Segunda pessoa"');
+  });
+
   it("mantém o seletor bloqueado enquanto salva a troca", () => {
     const html = renderDetails(slot(), { canAssign: true, saving: true });
 

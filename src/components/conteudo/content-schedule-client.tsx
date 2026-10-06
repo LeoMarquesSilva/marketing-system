@@ -179,6 +179,12 @@ export function mapContentScheduleResponse(payload: ContentScheduleResponse): Sc
         name: slot.collaborator_name ?? "Colaborador",
         avatarUrl: slot.collaborator_avatar_url,
       } : null,
+      coCollaboratorId: slot.co_collaborator_id,
+      coCollaborator: slot.co_collaborator_id ? {
+        id: slot.co_collaborator_id,
+        name: slot.co_collaborator_name ?? "Colaborador",
+        avatarUrl: slot.co_collaborator_avatar_url,
+      } : null,
       content: slot.reel_studio_id
         ? { id: slot.reel_studio_id, title: slot.reel_title ?? "Roteiro de Reel vinculado", url: "/conteudo/reels" }
         : slot.content_roteiro_id
@@ -195,6 +201,7 @@ export function mapContentScheduleResponse(payload: ContentScheduleResponse): Sc
       imported: Boolean(slot.source_name || slot.source_status),
       sourceName: slot.source_name,
       sourceStatus: slot.source_status,
+      plannedDate: slot.planned_due_date && slot.planned_due_date !== slot.due_date ? slot.planned_due_date : null,
       unmatchedAssigneeName: !slot.collaborator_id ? slot.source_name : null,
       viosTask: mapViosTask(slot.vios_task),
       viosCandidates: slot.vios_candidates.map((candidate) => ({
@@ -385,10 +392,10 @@ export function ContentScheduleClient() {
     const term = query.trim().toLocaleLowerCase("pt-BR");
     return (data?.slots ?? []).filter((slot) => {
       const slotStatus = deriveStatus(slot);
-      const haystack = `${slot.area} ${slot.collaborator?.name ?? ""} ${slot.unmatchedAssigneeName ?? ""} ${slot.content?.title ?? ""}`.toLocaleLowerCase("pt-BR");
+      const haystack = `${slot.area} ${slot.collaborator?.name ?? ""} ${slot.coCollaborator?.name ?? ""} ${slot.unmatchedAssigneeName ?? ""} ${slot.content?.title ?? ""}`.toLocaleLowerCase("pt-BR");
       return (area === "all" || collaboratorMatchesScheduleArea(slot.area, area))
         && (format === "all" || slot.format === format)
-        && (person === "all" || slot.collaboratorId === person || (person === "unassigned" && !slot.collaboratorId))
+        && (person === "all" || slot.collaboratorId === person || slot.coCollaboratorId === person || (person === "unassigned" && !slot.collaboratorId))
         && (status === "all" || slotStatus === status)
         && (!term || haystack.includes(term));
     });
@@ -412,7 +419,7 @@ export function ContentScheduleClient() {
     };
   }, [data]);
 
-  async function assign(slot: ScheduleSlot, collaboratorId: string) {
+  async function assign(slot: ScheduleSlot, collaboratorId: string, role: "primary" | "second" = "primary") {
     const operation: ScheduleAssignmentOperation = {
       generation: assignmentGenerationRef.current + 1,
       slotId: slot.id,
@@ -430,7 +437,7 @@ export function ContentScheduleClient() {
       const response = await fetch(`/api/content-schedule/${slot.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collaborator_id: collaboratorId === "unassigned" ? null : collaboratorId }),
+        body: JSON.stringify({ [role === "second" ? "co_collaborator_id" : "collaborator_id"]: collaboratorId === "unassigned" ? null : collaboratorId }),
       });
       if (!response.ok) throw new Error(await readError(response));
       if (!shouldRefresh()) return;
@@ -662,7 +669,7 @@ export function ContentScheduleClient() {
                   <span className="rounded-full border border-[#dce9eb] bg-white px-2.5 py-1 text-xs font-medium tabular-nums text-slate-600">{slots.length} {slots.length === 1 ? "data" : "datas"}</span>
                 </div>
                 <div className="hidden grid-cols-[120px_100px_minmax(210px,0.8fr)_minmax(260px,1.3fr)_160px] border-y border-[#e8f0f2] px-4 py-2 text-xs font-semibold text-slate-500 lg:grid"><span>Data</span><span>Formato</span><span>Responsável</span><span>Conteúdo vinculado</span><span>Situação</span></div>
-                <div className="divide-y divide-[#e8f0f2]">{slots.sort((a, b) => a.date.localeCompare(b.date)).map((slot) => <SlotRow key={slot.id} slot={slot} collaborators={(data?.collaborators ?? []).filter((item) => !item.area || collaboratorMatchesScheduleArea(item.area, slot.area))} canAssign={assignable(slot) && !slot.content} canManage={data?.access.canManage ?? false} saving={savingId === slot.id} onAssign={(id) => void assign(slot, id)} onEdit={() => { setEditing(slot); setDialogOpen(true); }} />)}</div>
+                <div className="divide-y divide-[#e8f0f2]">{slots.sort((a, b) => a.date.localeCompare(b.date)).map((slot) => <SlotRow key={slot.id} slot={slot} collaborators={(data?.collaborators ?? []).filter((item) => !item.area || collaboratorMatchesScheduleArea(item.area, slot.area))} canAssign={assignable(slot)} canManage={data?.access.canManage ?? false} saving={savingId === slot.id} onAssign={(id) => void assign(slot, id)} onAssignSecond={(id) => void assign(slot, id, "second")} onEdit={() => { setEditing(slot); setDialogOpen(true); }} />)}</div>
               </section>
             ))}
           </div>
@@ -689,6 +696,7 @@ export function ContentScheduleClient() {
         canAssign={selectedSlot ? assignable(selectedSlot) : false}
         saving={Boolean(selectedSlot && savingId === selectedSlot.id)}
         onAssign={(collaboratorId) => { if (selectedSlot) void assign(selectedSlot, collaboratorId); }}
+        onAssignSecond={(collaboratorId) => { if (selectedSlot) void assign(selectedSlot, collaboratorId, "second"); }}
         canManageVios={data?.access.canManage ?? false}
         viosSaving={Boolean(selectedSlot && viosSavingId === selectedSlot.id)}
         onViosChange={(viosTaskId) => { if (selectedSlot) void changeViosLink(selectedSlot, viosTaskId); }}
@@ -722,29 +730,38 @@ function AreaSelect({ value, onChange, areas, allLabel, disabled }: { value: str
   );
 }
 
-function CollaboratorSelect({ value, onChange, collaborators, allLabel, allowUnassigned = false, showArea = false, disabled }: { value: string; onChange: (value: string) => void; collaborators: Collaborator[]; allLabel?: string; allowUnassigned?: boolean; showArea?: boolean; disabled?: boolean }) {
+function CollaboratorSelect({ value, onChange, collaborators, allLabel, allowUnassigned = false, showArea = false, disabled, unassignedLabel = "Sem responsável", emptyLabel: emptyText, ariaLabel }: { value: string; onChange: (value: string) => void; collaborators: Collaborator[]; allLabel?: string; allowUnassigned?: boolean; showArea?: boolean; disabled?: boolean; unassignedLabel?: string; emptyLabel?: string; ariaLabel?: string }) {
   const selected = collaborators.find((item) => item.id === value);
-  const emptyLabel = value === "all" ? allLabel : value === "unassigned" ? "Sem responsável" : "Selecionar responsável";
+  const emptyLabel = value === "all" ? allLabel : value === "unassigned" ? emptyText ?? unassignedLabel : "Selecionar responsável";
   return (
     <Select value={value} onValueChange={onChange} disabled={disabled}>
-      <SelectTrigger className="w-full min-w-0" aria-label={allLabel ?? "Responsável"}>
+      <SelectTrigger className="w-full min-w-0" aria-label={ariaLabel ?? allLabel ?? "Responsável"}>
         {selected ? <CollaboratorMark person={selected} showArea={showArea} /> : <span className="flex min-w-0 items-center gap-2 text-muted-foreground"><span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-slate-100"><CircleUserRound className="size-4" /></span><span className="truncate">{emptyLabel}</span></span>}
       </SelectTrigger>
       <SelectContent align="start" className="min-w-[260px]">
         {allLabel ? <SelectItem value="all"><span className="flex items-center gap-2"><span className="flex size-7 items-center justify-center rounded-full bg-slate-100"><CircleUserRound className="size-4" /></span>{allLabel}</span></SelectItem> : null}
-        {allowUnassigned ? <SelectItem value="unassigned"><span className="flex items-center gap-2"><span className="flex size-7 items-center justify-center rounded-full border border-dashed border-slate-300 bg-white"><CircleUserRound className="size-4 text-slate-400" /></span>Sem responsável</span></SelectItem> : null}
+        {allowUnassigned ? <SelectItem value="unassigned"><span className="flex items-center gap-2"><span className="flex size-7 items-center justify-center rounded-full border border-dashed border-slate-300 bg-white"><CircleUserRound className="size-4 text-slate-400" /></span>{unassignedLabel}</span></SelectItem> : null}
         {collaborators.map((item) => <SelectItem value={item.id} key={item.id} className="py-2"><CollaboratorMark person={item} showArea={showArea} /></SelectItem>)}
       </SelectContent>
     </Select>
   );
 }
 
-export function SlotRow({ slot, collaborators, canAssign, canManage, saving, onAssign, onEdit }: { slot: ScheduleSlot; collaborators: Collaborator[]; canAssign: boolean; canManage: boolean; saving: boolean; onAssign: (id: string) => void; onEdit: () => void }) {
+function PersonLine({ person }: { person: Collaborator }) {
+  return <div className="flex min-w-0 items-center gap-2 text-sm"><CollaboratorAvatar person={person} /><span className="truncate font-medium text-slate-700">{person.name}</span></div>;
+}
+
+export function SlotRow({ slot, collaborators, canAssign, canManage, saving, onAssign, onAssignSecond = () => undefined, onEdit }: { slot: ScheduleSlot; collaborators: Collaborator[]; canAssign: boolean; canManage: boolean; saving: boolean; onAssign: (id: string) => void; onAssignSecond?: (id: string) => void; onEdit: () => void }) {
   const state = deriveStatus(slot);
+  const editable = canAssign && state !== "cancelled";
   return <article className={cn("grid gap-3 px-4 py-3 lg:grid-cols-[120px_100px_minmax(210px,0.8fr)_minmax(260px,1.3fr)_160px] lg:items-center", state === "cancelled" && "opacity-55")}>
     <div><span className="text-xs font-medium text-slate-400 lg:hidden">Data · </span><span className="font-mono text-sm font-semibold capitalize text-slate-900">{shortDate(slot.date)}</span></div>
     <div><Badge variant="outline" className={cn("gap-1", slot.format === "reel" ? "border-[#48466e]/25 bg-[#48466e]/8 text-[#48466e]" : "border-[#347796]/25 bg-[#347796]/8 text-[#285f7a]")}>{slot.format === "reel" ? <Film /> : <FileText />}{slot.format === "reel" ? "Reel" : "Post"}</Badge></div>
-    <div>{canAssign && state !== "cancelled" ? <CollaboratorSelect value={slot.collaboratorId ?? "unassigned"} onChange={onAssign} collaborators={collaborators} allowUnassigned disabled={saving} /> : slot.collaborator ? <div className="flex min-w-0 items-center gap-2 text-sm"><CollaboratorAvatar person={slot.collaborator} /><span className="truncate font-medium text-slate-700">{slot.collaborator.name}</span></div> : <div className="flex items-center gap-2 text-sm"><span className="flex size-7 items-center justify-center rounded-full border border-dashed border-slate-300"><CircleUserRound className="size-4 text-slate-400" /></span><span>{slot.unmatchedAssigneeName || "A definir"}</span></div>}{slot.unmatchedAssigneeName && !slot.collaboratorId && <p className="mt-1 text-xs text-amber-700">Nome da planilha sem correspondência</p>}</div>
+    <div className="space-y-1.5">
+      {editable && !slot.content ? <CollaboratorSelect value={slot.collaboratorId ?? "unassigned"} onChange={onAssign} collaborators={collaborators} allowUnassigned disabled={saving} /> : slot.collaborator ? <PersonLine person={slot.collaborator} /> : <div className="flex items-center gap-2 text-sm"><span className="flex size-7 items-center justify-center rounded-full border border-dashed border-slate-300"><CircleUserRound className="size-4 text-slate-400" /></span><span>{slot.unmatchedAssigneeName || "A definir"}</span></div>}
+      {editable && slot.collaboratorId ? <CollaboratorSelect value={slot.coCollaboratorId ?? "unassigned"} onChange={onAssignSecond} collaborators={collaborators.filter((item) => item.id !== slot.collaboratorId)} allowUnassigned unassignedLabel="Sem segunda pessoa" emptyLabel="Gravou junto? Adicionar" ariaLabel="Segunda pessoa" disabled={saving} /> : slot.coCollaborator ? <PersonLine person={slot.coCollaborator} /> : null}
+      {slot.unmatchedAssigneeName && !slot.collaboratorId && <p className="text-xs text-amber-700">Nome da planilha sem correspondência</p>}
+    </div>
     <div>{slot.content ? <a href={slot.content.url ?? `/conteudo/roteiros?contentId=${slot.content.id}`} className="font-medium text-[#285f7a] hover:underline">{slot.content.title}</a> : !slot.publication && <div className="text-sm text-slate-400">Aguardando escolha no módulo de conteúdo</div>}{slot.publication?.permalink && <a href={slot.publication.permalink} target="_blank" rel="noreferrer" className="mt-1 flex w-fit items-center gap-1 text-xs text-slate-500 hover:text-[#347796]">Ver publicação <ExternalLink className="size-3" /></a>}{slot.publication && <p className="mt-1 font-mono text-xs text-slate-500">{number(slot.publication.reach)} alcance · {number(slot.publication.likes)} curtidas · {number(slot.publication.comments)} comentários</p>}{slot.imported && <p className="mt-1 text-xs text-slate-500">Planilha: {slot.sourceStatus || "histórico"}{slot.sourceName ? ` · nome original: ${slot.sourceName}` : ""}</p>}</div>
     <div className="flex items-center justify-between gap-2"><StatusBadge status={state} />{canManage && <Button variant="ghost" size="sm" onClick={onEdit}>Editar</Button>}</div>
   </article>;
@@ -884,7 +901,7 @@ function EmptyState({ hasFilters }: { hasFilters: boolean }) { return <div class
 
 function SlotDialog({ open, onOpenChange, editing, areas, collaborators, onSaved }: { open: boolean; onOpenChange: (open: boolean) => void; editing: ScheduleSlot | null; areas: string[]; collaborators: Collaborator[]; onSaved: (message: string) => Promise<void> }) {
   const locked = Boolean(editing?.content);
-  const [date, setDate] = useState(""); const [area, setArea] = useState(""); const [format, setFormat] = useState<Format>("post"); const [collaboratorId, setCollaboratorId] = useState("unassigned"); const [cancelled, setCancelled] = useState(false); const [saving, setSaving] = useState(false); const [error, setError] = useState<string | null>(null); const [publicationId, setPublicationId] = useState("none"); const [posts, setPosts] = useState<{ id: string; caption: string | null; published_at: string | null }[]>([]);
+  const [date, setDate] = useState(""); const [area, setArea] = useState(""); const [format, setFormat] = useState<Format>("post"); const [collaboratorId, setCollaboratorId] = useState("unassigned"); const [coCollaboratorId, setCoCollaboratorId] = useState("unassigned"); const [cancelled, setCancelled] = useState(false); const [saving, setSaving] = useState(false); const [error, setError] = useState<string | null>(null); const [publicationId, setPublicationId] = useState("none"); const [posts, setPosts] = useState<{ id: string; caption: string | null; published_at: string | null }[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
   useEffect(() => {
     if (!open) return;
@@ -892,6 +909,7 @@ function SlotDialog({ open, onOpenChange, editing, areas, collaborators, onSaved
     setArea(editing?.area ?? areas[0] ?? "");
     setFormat(editing?.format ?? "post");
     setCollaboratorId(editing?.collaboratorId ?? "unassigned");
+    setCoCollaboratorId(editing?.coCollaboratorId ?? "unassigned");
     setCancelled(editing?.status === "cancelled");
     setPublicationId("none");
     setPosts([]);
@@ -929,9 +947,9 @@ function SlotDialog({ open, onOpenChange, editing, areas, collaborators, onSaved
       });
     return () => controller.abort();
   }, [open, editing, area, date]);
-  async function save() { setSaving(true); setError(null); try { const fields = { due_date: date, area, format, collaborator_id: collaboratorId === "unassigned" ? null : collaboratorId }; const response = await fetch(editing ? `/api/content-schedule/${editing.id}` : "/api/content-schedule", { method: editing ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editing ? (locked ? { due_date: date, cancelled } : { ...fields, cancelled }) : { slots: [fields] }) }); if (!response.ok) throw new Error(await readError(response)); if (editing && publicationId !== "none") { const linkResponse = await fetch(`/api/content-schedule/${editing.id}/publication`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ instagram_post_id: publicationId }) }); if (!linkResponse.ok) throw new Error(await readError(linkResponse)); } await onSaved(editing ? "Data atualizada." : "Nova data adicionada ao cronograma."); } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível salvar."); } finally { setSaving(false); } }
+  async function save() { setSaving(true); setError(null); try { const primaryId = collaboratorId === "unassigned" ? null : collaboratorId; const secondId = primaryId && coCollaboratorId !== "unassigned" && coCollaboratorId !== primaryId ? coCollaboratorId : null; const fields = { due_date: date, area, format, collaborator_id: primaryId, co_collaborator_id: secondId }; const response = await fetch(editing ? `/api/content-schedule/${editing.id}` : "/api/content-schedule", { method: editing ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(editing ? (locked ? { due_date: date, cancelled, co_collaborator_id: secondId } : { ...fields, cancelled }) : { slots: [fields] }) }); if (!response.ok) throw new Error(await readError(response)); if (editing && publicationId !== "none") { const linkResponse = await fetch(`/api/content-schedule/${editing.id}/publication`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ instagram_post_id: publicationId }) }); if (!linkResponse.ok) throw new Error(await readError(linkResponse)); } await onSaved(editing ? "Data atualizada." : "Nova data adicionada ao cronograma."); } catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível salvar."); } finally { setSaving(false); } }
   const areaCollaborators = collaborators.filter((item) =>
     !item.area || collaboratorMatchesScheduleArea(item.area, area)
   );
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90dvh] overflow-y-auto"><DialogHeader><DialogTitle>{editing ? "Editar data" : "Adicionar data ao cronograma"}</DialogTitle><DialogDescription>{locked ? "O conteúdo já foi vinculado. A data, o cancelamento e a publicação real ainda podem ser atualizados." : "Defina a área, a entrega e o formato. O tema será vinculado automaticamente pelo fluxo de conteúdo."}</DialogDescription></DialogHeader>{error && <p role="alert" className="rounded-md bg-red-50 p-2 text-sm text-red-700">{error}</p>}<div className="grid gap-4 py-2 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="schedule-date">Data</Label><Input id="schedule-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} /></div><div className="space-y-2"><Label>Formato</Label><Select value={format} disabled={locked} onValueChange={(value) => setFormat(value as Format)}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="post"><span className="flex items-center gap-2"><FileText className="size-4 text-[#347796]" />Post</span></SelectItem><SelectItem value="reel"><span className="flex items-center gap-2"><Film className="size-4 text-[#48466e]" />Reel</span></SelectItem></SelectContent></Select></div><div className="space-y-2 sm:col-span-2"><Label>Área</Label><AreaSelect value={area} disabled={locked} onChange={setArea} areas={areas} /></div><div className="space-y-2 sm:col-span-2"><Label>Responsável (opcional)</Label><CollaboratorSelect value={collaboratorId} disabled={locked} onChange={setCollaboratorId} collaborators={areaCollaborators} allowUnassigned /></div>{editing && <div className="space-y-2 sm:col-span-2"><Label>Publicação real do Instagram (opcional)</Label><Select value={publicationId} onValueChange={setPublicationId} disabled={loadingPosts}><SelectTrigger className="w-full"><SelectValue placeholder={loadingPosts ? "Carregando publicações…" : "Manter publicação atual"} /></SelectTrigger><SelectContent><SelectItem value="none">Manter publicação atual</SelectItem>{posts.map((post) => <SelectItem key={post.id} value={post.id}>{post.published_at ? new Date(post.published_at).toLocaleDateString("pt-BR") : "Sem data"} · {(post.caption || "Publicação sem legenda").slice(0, 70)}</SelectItem>)}</SelectContent></Select></div>}{editing && <label className="flex min-h-11 items-center gap-3 rounded-md border border-[#dce9eb] px-3 text-sm sm:col-span-2"><input type="checkbox" checked={cancelled} onChange={(event) => setCancelled(event.target.checked)} className="size-4 accent-[#347796]" />Marcar esta data como cancelada</label>}</div><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Voltar</Button><Button onClick={() => void save()} disabled={saving || !date || !area} className="bg-[#347796] text-white hover:bg-[#285f7a]">{saving && <Loader2 className="animate-spin" />}{editing ? "Salvar alterações" : "Adicionar data"}</Button></DialogFooter></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90dvh] overflow-y-auto"><DialogHeader><DialogTitle>{editing ? "Editar data" : "Adicionar data ao cronograma"}</DialogTitle><DialogDescription>{locked ? "O conteúdo já foi vinculado. A data, o cancelamento e a publicação real ainda podem ser atualizados." : "Defina a área, a entrega e o formato. O tema será vinculado automaticamente pelo fluxo de conteúdo."}</DialogDescription></DialogHeader>{error && <p role="alert" className="rounded-md bg-red-50 p-2 text-sm text-red-700">{error}</p>}<div className="grid gap-4 py-2 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="schedule-date">Data</Label><Input id="schedule-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} /></div><div className="space-y-2"><Label>Formato</Label><Select value={format} disabled={locked} onValueChange={(value) => setFormat(value as Format)}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="post"><span className="flex items-center gap-2"><FileText className="size-4 text-[#347796]" />Post</span></SelectItem><SelectItem value="reel"><span className="flex items-center gap-2"><Film className="size-4 text-[#48466e]" />Reel</span></SelectItem></SelectContent></Select></div><div className="space-y-2 sm:col-span-2"><Label>Área</Label><AreaSelect value={area} disabled={locked} onChange={setArea} areas={areas} /></div><div className="space-y-2 sm:col-span-2"><Label>Responsável (opcional)</Label><CollaboratorSelect value={collaboratorId} disabled={locked} onChange={setCollaboratorId} collaborators={areaCollaborators} allowUnassigned /></div>{collaboratorId !== "unassigned" && <div className="space-y-2 sm:col-span-2"><Label>Gravou junto (opcional)</Label><CollaboratorSelect value={coCollaboratorId === collaboratorId ? "unassigned" : coCollaboratorId} onChange={setCoCollaboratorId} collaborators={areaCollaborators.filter((item) => item.id !== collaboratorId)} allowUnassigned unassignedLabel="Sem segunda pessoa" ariaLabel="Segunda pessoa" /></div>}{editing && <div className="space-y-2 sm:col-span-2"><Label>Publicação real do Instagram (opcional)</Label><Select value={publicationId} onValueChange={setPublicationId} disabled={loadingPosts}><SelectTrigger className="w-full"><SelectValue placeholder={loadingPosts ? "Carregando publicações…" : "Manter publicação atual"} /></SelectTrigger><SelectContent><SelectItem value="none">Manter publicação atual</SelectItem>{posts.map((post) => <SelectItem key={post.id} value={post.id}>{post.published_at ? new Date(post.published_at).toLocaleDateString("pt-BR") : "Sem data"} · {(post.caption || "Publicação sem legenda").slice(0, 70)}</SelectItem>)}</SelectContent></Select></div>}{editing && <label className="flex min-h-11 items-center gap-3 rounded-md border border-[#dce9eb] px-3 text-sm sm:col-span-2"><input type="checkbox" checked={cancelled} onChange={(event) => setCancelled(event.target.checked)} className="size-4 accent-[#347796]" />Marcar esta data como cancelada</label>}</div><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Voltar</Button><Button onClick={() => void save()} disabled={saving || !date || !area} className="bg-[#347796] text-white hover:bg-[#285f7a]">{saving && <Loader2 className="animate-spin" />}{editing ? "Salvar alterações" : "Adicionar data"}</Button></DialogFooter></DialogContent></Dialog>;
 }

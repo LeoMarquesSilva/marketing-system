@@ -40,6 +40,7 @@ import type {
   CafeExpectationSource,
   CafeExpectationStatus,
 } from "@/lib/cafe-cultura/types";
+import { DietaryBadge, DietarySummary } from "@/components/eventos/dietary-summary";
 import { supabase } from "@/utils/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -121,6 +122,7 @@ function ParticipantIdentity({ participant, compact = false }: { participant: Ca
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold text-foreground">{participant.name}</p>
         <p className="truncate text-xs text-muted-foreground">{[participant.department, participant.email].filter(Boolean).join(" · ") || "Sem área informada"}</p>
+        <DietaryBadge dietary={participant.dietary} className="mt-1" />
       </div>
     </div>
   );
@@ -219,6 +221,12 @@ export function EventoPresencasContent({ data, search, status, presence = "all",
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {cards.map((card) => <button type="button" key={card.label} onClick={() => onOpenGroup?.(card.group)} className={cn("group rounded-2xl border border-border/60 bg-card p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md", card.border)}><div className="flex items-start justify-between gap-2"><span className={cn("flex size-9 items-center justify-center rounded-xl", card.tone)}><card.icon className="size-4" /></span><span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground opacity-0 transition group-hover:opacity-100">Ver lista</span></div><p className="mt-4 text-2xl font-bold tracking-tight">{card.value}</p><p className="mt-1 text-xs leading-4 text-muted-foreground">{card.label}</p></button>)}
       </div>
+      <DietarySummary
+        title="Restrições alimentares dos confirmados"
+        people={data.participants
+          .filter((participant) => participant.expectationStatus === "confirmed")
+          .map((participant) => ({ key: participant.id, name: participant.name, dietary: participant.dietary }))}
+      />
       <div className="hidden overflow-hidden rounded-2xl border border-border/60 bg-card xl:block">
         <div className="grid grid-cols-[minmax(230px,1.05fr)_minmax(160px,.65fr)_minmax(230px,1fr)_minmax(130px,.5fr)_minmax(275px,.95fr)] gap-4 border-b bg-[#f7f8f7] px-4 py-3 text-xs font-semibold text-muted-foreground"><span>Colaborador</span><span>Confirmação</span><span>Justificativa</span><span>Presença</span><span>Ações</span></div>
         {participants.map((participant) => <div key={participant.id} className="grid grid-cols-[minmax(230px,1.05fr)_minmax(160px,.65fr)_minmax(230px,1fr)_minmax(130px,.5fr)_minmax(275px,.95fr)] items-center gap-4 border-b border-border/50 px-4 py-3.5 last:border-0 hover:bg-[#fbfcfb]"><ParticipantIdentity participant={participant} /><div><Badge variant="outline" className={statusStyle(participant.expectationStatus)}>{statusLabel(participant.expectationStatus)}</Badge><p className="mt-1 text-[10px] text-muted-foreground">{sourceLabel(participant.expectationSource)}</p></div><JustificationPreview participant={participant} /><div className="text-xs"><p className={participant.checkinAt ? "font-semibold text-emerald-700" : "text-muted-foreground"}>{participant.checkinAt ? "Presente" : "Não registrada"}</p><p className="mt-0.5 text-muted-foreground">{formatDateTime(participant.checkinAt)}</p></div><ParticipantActions participant={participant} busy={busy} onChange={onParticipantChange} /></div>)}

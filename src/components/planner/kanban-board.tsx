@@ -36,6 +36,7 @@ import {
   updateWorkflowStage,
   updateMarketingRequest,
 } from "@/lib/marketing-requests";
+import { ReelCoverArtField } from "@/components/planner/reel-cover-art-field";
 import { logActivity } from "@/lib/activity-log";
 import { useAuth } from "@/contexts/auth-context";
 import type {
@@ -159,6 +160,8 @@ export function KanbanBoard({
     prevStage: string;
   } | null>(null);
   const [revisaoArtLink, setRevisaoArtLink] = useState("");
+  // Capa de Reels: a designer entrega a imagem no sistema em vez de um link.
+  const [revisaoImagePath, setRevisaoImagePath] = useState<string | null>(null);
   const [isSubmittingRevisao, setIsSubmittingRevisao] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
   const { profile } = useAuth();
@@ -230,6 +233,7 @@ export function KanbanBoard({
       if (targetColumnId === "revisao" && targetRule.showArtLinkDialog) {
         setActiveRequest(null);
         setRevisaoArtLink(request.art_link ?? "");
+        setRevisaoImagePath(request.art_image_path ?? null);
         setPendingMoveToRevisao({ request, prevStage });
         return;
       }
@@ -286,7 +290,7 @@ export function KanbanBoard({
         }
       }
     },
-    [requests, onRefresh, resolveTargetColumn, profile?.id, profile?.name, getStageRule, setRevisaoArtLink]
+    [requests, onRefresh, resolveTargetColumn, profile?.id, profile?.name, getStageRule, setRevisaoArtLink, setRevisaoImagePath]
   );
 
   const handleConfirmMoveToRevisao = useCallback(async () => {
@@ -294,10 +298,10 @@ export function KanbanBoard({
     const { request, prevStage } = pendingMoveToRevisao;
     setIsSubmittingRevisao(true);
     const artLink = revisaoArtLink.trim() || null;
-    const payload: Parameters<typeof updateMarketingRequest>[1] = {
-      workflow_stage: "revisao",
-      art_link: artLink,
-    };
+    const isCoverRequest = Boolean(request.reel_delivery_id);
+    const payload: Parameters<typeof updateMarketingRequest>[1] = isCoverRequest
+      ? { workflow_stage: "revisao" }
+      : { workflow_stage: "revisao", art_link: artLink };
     if (!revisaoRule.keepAssignee) {
       payload.assignee_id = request.solicitante_id ?? undefined;
       payload.assignee = request.solicitante ?? null;
@@ -383,6 +387,21 @@ export function KanbanBoard({
           </DialogHeader>
           {pendingMoveToRevisao && (
             <>
+              {pendingMoveToRevisao.request.reel_delivery_id ? (
+                <div className="space-y-2 pt-2">
+                  <p className="text-sm font-medium text-foreground">
+                    Arte da capa <span className="text-destructive">*</span>
+                  </p>
+                  <ReelCoverArtField
+                    requestId={pendingMoveToRevisao.request.id}
+                    reelDeliveryId={pendingMoveToRevisao.request.reel_delivery_id}
+                    imagePath={revisaoImagePath}
+                    canEdit
+                    onUploaded={setRevisaoImagePath}
+                  />
+                  {moveError && <p className="text-xs font-medium text-destructive">{moveError}</p>}
+                </div>
+              ) : (
               <div className="space-y-2 pt-2">
                 <label htmlFor="revisao-art-link" className="text-sm font-medium text-foreground">
                   Link da arte <span className="text-destructive">*</span>
@@ -405,13 +424,17 @@ export function KanbanBoard({
                   </p>
                 )}
               </div>
+              )}
               <div className="flex gap-2 justify-end pt-4">
                 <Button variant="outline" onClick={handleCancelMoveToRevisao}>
                   Cancelar
                 </Button>
                 <Button
                   onClick={handleConfirmMoveToRevisao}
-                  disabled={isSubmittingRevisao || !revisaoArtLink.trim()}
+                  disabled={
+                    isSubmittingRevisao ||
+                    (pendingMoveToRevisao.request.reel_delivery_id ? !revisaoImagePath : !revisaoArtLink.trim())
+                  }
                 >
                   {isSubmittingRevisao ? "Enviando..." : "Enviar para revisão"}
                 </Button>
