@@ -22,11 +22,11 @@ import { FichaColaboradorDialog } from "@/components/rh/ficha-colaborador-dialog
  * acessível a qualquer momento pelo sininho no menu de perfil.
  */
 export function HrPendingNotificationsModal() {
-  const { canReceive, notifications, refetch } = useHrPendingNotifications();
+  const { canReceive, notifications, orgChartAdjustments, refetch } = useHrPendingNotifications();
   const [dismissed, setDismissed] = useState(false);
   const [editEmployeeId, setEditEmployeeId] = useState<string | null>(null);
 
-  if (!canReceive || dismissed || notifications.length === 0) return null;
+  if (!canReceive || dismissed || (notifications.length === 0 && orgChartAdjustments === 0)) return null;
 
   return (
     <>
@@ -40,14 +40,17 @@ export function HrPendingNotificationsModal() {
           <DialogHeader>
             <DialogTitle>Atualizações de colaboradores</DialogTitle>
             <DialogDescription>
-              {notifications.length === 1
-                ? "Uma ficha precisa ser atualizada."
-                : `${notifications.length} fichas precisam ser atualizadas.`}
+              {notifications.length === 0
+                ? "O organograma precisa de ajuste."
+                : notifications.length === 1
+                  ? "Uma ficha precisa ser atualizada."
+                  : `${notifications.length} fichas precisam ser atualizadas.`}
             </DialogDescription>
           </DialogHeader>
 
           <HrNotificationsList
             notifications={notifications}
+            orgChartAdjustments={orgChartAdjustments}
             onAction={setEditEmployeeId}
             onNavigate={() => setDismissed(true)}
             onChanged={() => void refetch()}

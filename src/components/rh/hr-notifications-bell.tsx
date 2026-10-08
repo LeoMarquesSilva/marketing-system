@@ -14,7 +14,8 @@ import { cn } from "@/lib/utils";
  * momento, não só assim que loga.
  */
 export function HrNotificationsBell({ className }: { className?: string }) {
-  const { canReceive, notifications, refetch } = useHrPendingNotifications();
+  const { canReceive, notifications, orgChartAdjustments, pendingCount, refetch } =
+    useHrPendingNotifications();
   const [open, setOpen] = useState(false);
   const [editEmployeeId, setEditEmployeeId] = useState<string | null>(null);
 
@@ -33,8 +34,8 @@ export function HrNotificationsBell({ className }: { className?: string }) {
           <button
             type="button"
             aria-label={
-              notifications.length > 0
-                ? `Notificações de RH (${notifications.length} pendente${notifications.length > 1 ? "s" : ""})`
+              pendingCount > 0
+                ? `Notificações de RH (${pendingCount} pendente${pendingCount > 1 ? "s" : ""})`
                 : "Notificações de RH"
             }
             className={cn(
@@ -43,9 +44,9 @@ export function HrNotificationsBell({ className }: { className?: string }) {
             )}
           >
             <Bell className="h-4.5 w-4.5 text-white/70 transition-colors group-hover:text-white" />
-            {notifications.length > 0 && (
+            {pendingCount > 0 && (
               <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full border-2 border-[#03070c] bg-red-500 px-0.5 text-[9px] font-semibold leading-none text-white">
-                {notifications.length > 9 ? "9+" : notifications.length}
+                {pendingCount > 9 ? "9+" : pendingCount}
               </span>
             )}
           </button>
@@ -56,6 +57,7 @@ export function HrNotificationsBell({ className }: { className?: string }) {
           </p>
           <HrNotificationsList
             notifications={notifications}
+            orgChartAdjustments={orgChartAdjustments}
             onAction={(employeeId) => {
               setOpen(false);
               setEditEmployeeId(employeeId);

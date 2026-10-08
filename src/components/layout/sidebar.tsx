@@ -35,6 +35,7 @@ import {
   BriefcaseBusiness,
   IdCard,
   ClipboardPen,
+  Network,
   ChevronDown,
   TrendingUp,
   Layers,
@@ -161,6 +162,7 @@ const rhNavGroup: NavGroup = {
     { href: "/rh/ferias", icon: Palmtree, label: "Ferias" },
     { href: "/rh/qualificacoes", icon: IdCard, label: "Qualificacoes" },
     { href: "/rh/fichas-cadastrais", icon: ClipboardPen, label: "Fichas cadastrais" },
+    { href: "/rh/organograma", icon: Network, label: "Organograma" },
   ],
 };
 

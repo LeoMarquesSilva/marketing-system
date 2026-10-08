@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ClipboardCheck, Link2, Loader2, RefreshCw, UserPlus } from "lucide-react";
+import { ClipboardCheck, Link2, Loader2, Network, RefreshCw, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { HrOnboardingNotification } from "@/lib/ferias/types";
 import { registrationActionRequest } from "@/lib/rh/registration/client";
@@ -32,11 +32,14 @@ export function describeHrNotification(notification: HrOnboardingNotification): 
 
 export function HrNotificationsList({
   notifications,
+  orgChartAdjustments = 0,
   onAction,
   onNavigate,
   onChanged,
 }: {
   notifications: HrOnboardingNotification[];
+  /** Ajustes pendentes no organograma (vira um item próprio no topo). */
+  orgChartAdjustments?: number;
   /** Abre a ficha do colaborador (notificações do VIOS). */
   onAction: (employeeId: string) => void;
   /** Chamado antes de sair para a tela de Fichas cadastrais (fecha popover/modal). */
@@ -48,7 +51,7 @@ export function HrNotificationsList({
   const [linking, setLinking] = useState<string | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
 
-  if (notifications.length === 0) {
+  if (notifications.length === 0 && orgChartAdjustments === 0) {
     return (
       <p className="px-1 py-6 text-center text-sm text-muted-foreground">
         Nenhuma atualização pendente.
@@ -78,9 +81,30 @@ export function HrNotificationsList({
     onChanged?.();
   };
 
+  const openOrgChart = () => {
+    onNavigate?.();
+    router.push("/rh/organograma?ajustar=1");
+  };
+
   return (
     <div className="space-y-2">
       {linkError && <p className="px-1 text-xs text-destructive">{linkError}</p>}
+      {orgChartAdjustments > 0 && (
+        <div className="flex items-start justify-between gap-3 rounded-lg border p-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">Organograma</p>
+            <p className="text-xs text-muted-foreground">
+              {orgChartAdjustments === 1
+                ? "Uma pessoa entrou ou saiu e precisa ser ajustada no organograma."
+                : `${orgChartAdjustments} pessoas entraram ou saíram e precisam ser ajustadas no organograma.`}
+            </p>
+          </div>
+          <Button type="button" size="sm" className="shrink-0 gap-1.5" onClick={openOrgChart}>
+            <Network className="h-3.5 w-3.5" />
+            Ajustar
+          </Button>
+        </div>
+      )}
       {notifications.map((notification) => {
         const suggestion = notification.registration_suggestion;
         return (

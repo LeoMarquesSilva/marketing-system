@@ -12,6 +12,8 @@ import type { HrOnboardingNotification } from "@/lib/ferias/types";
 export function useHrPendingNotifications() {
   const { profile } = useAuth();
   const [notifications, setNotifications] = useState<HrOnboardingNotification[]>([]);
+  /** Ajustes pendentes no organograma (colaborador novo sem posição ou que saiu). */
+  const [orgChartAdjustments, setOrgChartAdjustments] = useState(0);
 
   const canReceive =
     !!profile &&
@@ -20,6 +22,7 @@ export function useHrPendingNotifications() {
   const refetch = useCallback(async () => {
     if (!canReceive) {
       setNotifications([]);
+      setOrgChartAdjustments(0);
       return;
     }
     try {
@@ -27,6 +30,7 @@ export function useHrPendingNotifications() {
       if (!response.ok) return;
       const data = await response.json();
       setNotifications(data.notifications ?? []);
+      setOrgChartAdjustments(Number(data.orgChartAdjustments) || 0);
     } catch {
       // Falha pontual de rede: mantém a última lista conhecida.
     }
@@ -37,5 +41,11 @@ export function useHrPendingNotifications() {
     void refetch();
   }, [refetch]);
 
-  return { canReceive, notifications, refetch };
+  return {
+    canReceive,
+    notifications,
+    orgChartAdjustments,
+    pendingCount: notifications.length + (orgChartAdjustments > 0 ? 1 : 0),
+    refetch,
+  };
 }
