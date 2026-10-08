@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { computeIcp, normalizePracticeArea, sectorBucket, sizeBucket, type IcpInput } from "@/lib/icp/compute";
+import {
+  computeIcp,
+  normalizePracticeArea,
+  sizeBuckets,
+  type IcpInput,
+} from "@/lib/icp/compute";
 
 const NOW = new Date("2026-10-01T12:00:00Z");
 
@@ -7,10 +12,13 @@ function baseInput(overrides: Partial<IcpInput> = {}): IcpInput {
   return {
     now: NOW,
     revenue: [],
+    excludedPayers: { count: 0, revenue: 0 },
     processes: [],
     pessoas: [],
     overdue: [],
-    sectors: [],
+    hours: [],
+    personnelCost: [],
+    companies: [],
     nps: [],
     npsThemes: [],
     linkedin: [],
@@ -34,22 +42,6 @@ describe("icp helpers", () => {
     expect(normalizePracticeArea("InsolvÃªncia")).toBe("Insolvência");
     expect(normalizePracticeArea("Special Situations")).toBe("Distressed Deals");
     expect(normalizePracticeArea("Facilities")).toBeNull();
-  });
-
-  it("agrupa setores livres do CRM", () => {
-    expect(sectorBucket("Fabricação de embalagens de material plástico")).toBe("Indústria");
-    expect(sectorBucket("Securitizadora")).toBe("Financeiro e crédito");
-    expect(sectorBucket("TRANSPORTADORA")).toBe("Logística e comex");
-    expect(sectorBucket("Serviços Jurídicos")).toBeNull();
-    expect(sectorBucket("Reclamante")).toBeNull();
-  });
-
-  it("converte faixas de colaboradores em porte", () => {
-    expect(sizeBucket("51 - 200")).toBe("51 a 200");
-    expect(sizeBucket("201-1000")).toBe("200+");
-    expect(sizeBucket("mais de 1000")).toBe("200+");
-    expect(sizeBucket("6-10")).toBe("1 a 10");
-    expect(sizeBucket("N/A")).toBeNull();
   });
 });
 
@@ -95,7 +87,6 @@ describe("computeIcp", () => {
           { grupo: "Grupo Alfa", tipo: "PESSOA JURÍDICA", uf: "SP", cidade: "Campinas", categoria: "Cliente ativo" },
           { grupo: "Grupo Alfa", tipo: "PESSOA FÍSICA", uf: "SP", cidade: "NÃO INFORMADA", categoria: "Contrário ativo" },
         ],
-        sectors: [{ grupo: "grupo alfa", setor: "Fabricação de máquinas e equipamentos", colaboradores: "51-200" }],
       })
     );
 
@@ -104,8 +95,9 @@ describe("computeIcp", () => {
     expect(alfa.activeSince2025).toBe(true);
     expect(alfa.city).toBe("Campinas");
     expect(alfa.hasLegalEntity).toBe(true);
-    expect(alfa.sectorBucket).toBe("Indústria");
-    expect(alfa.sizeBucket).toBe("51 a 200");
+    // Sem CNPJ consultado, o grupo fica sem segmento e porte.
+    expect(alfa.sectorBucket).toBeNull();
+    expect(alfa.registeredSize).toBeNull();
     expect(data.entry.coreViaInsolvency).toBe(1);
     expect(data.newCore).toEqual({ total: 1, viaInsolvency: 1 });
     expect(data.geography.coreInterior).toBe(1);
@@ -145,5 +137,74 @@ describe("computeIcp", () => {
     expect(data.marketing.linkedinIndustryShare).toBeCloseTo(0.1);
     expect(data.marketing.linkedinDecisionShare).toBeCloseTo(0.05);
     expect(data.marketing.whatsappUnqualified).toBe(1);
+  });
+
+  it("calcula custo de entrega, margem e atraso por área com o custo por hora de cada área", () => {
+    const data = computeIcp(
+      baseInput({
+        revenue: [
+          pay("Grupo Alfa", "Insolvência", 100_000),
+          pay("Grupo Alfa", "Trabalhista", 20_000),
+          pay("Grupo Beta", "Tributário", 30_000),
+        ],
+        personnelCost: [
+          { departamento: "Insolvência", valor: 60_000 },
+          { departamento: "Trabalhista", valor: 10_000 },
+          { departamento: "Facilities", valor: 99_000 },
+        ],
+        hours: [
+          { grupo: "Grupo Alfa", area: "Cível | Insolvência", horas: 400 },
+          { grupo: "Grupo Área Insolvência", area: "Insolvência", horas: 200 },
+          { grupo: "Grupo Alfa", area: "Trabalhista", horas: 100 },
+          { grupo: "Grupo Alfa", area: "Trabalhista", horas: 100 },
+          { grupo: "Grupo Beta", area: "Tributário", horas: 50 },
+        ],
+        overdue: [
+          { grupo: "Grupo Alfa", departamento: "Insolvência", valor: 7_000 },
+          { grupo: "Grupo Alfa", departamento: "Financeiro", valor: 1_000 },
+        ],
+      })
+    );
+
+    // Insolvência: 60 mil ÷ 600 h = R$ 100/h; Trabalhista: 10 mil ÷ 200 h = R$ 50/h.
+    const rate = (area: string) => data.delivery.rates.find((r) => r.area === area);
+    expect(rate("Insolvência")).toMatchObject({ rate: 100, fallback: false });
+    expect(rate("Trabalhista")).toMatchObject({ rate: 50, fallback: false });
+    // Tributário não tem custo próprio: usa a média (70 mil ÷ 800 h).
+    expect(rate("Tributário")).toMatchObject({ rate: 87.5, fallback: true });
+    expect(data.delivery.personnelCost).toBe(70_000);
+    expect(data.delivery.hours).toBe(850);
+    expect(data.delivery.clientHours).toBe(650);
+
+    const alfa = data.groups.find((g) => g.grupo === "Grupo Alfa")!;
+    expect(alfa.hours12m).toBe(600);
+    expect(alfa.deliveryCost).toBe(50_000);
+    expect(alfa.overdue).toBe(8_000);
+    expect(alfa.areas).toEqual(["Insolvência", "Trabalhista"]);
+    expect(alfa.byArea["Insolvência"]).toEqual({ revenue: 100_000, hours: 400, cost: 40_000, overdue: 7_000 });
+    expect(alfa.byArea["Outros"]).toEqual({ revenue: 0, hours: 0, cost: 0, overdue: 1_000 });
+  });
+});
+
+describe("sizeBuckets", () => {
+  const group = (grupo: string, revenue: number, area = "Cível") =>
+    computeIcp(baseInput({ revenue: [pay(grupo, area, revenue)] })).groups[0];
+
+  it("separa 10 maiores, 10 em volta da mediana e 10 menores sem repetir grupos", () => {
+    const groups = Array.from({ length: 41 }, (_, i) => group(`G${i + 1}`, (41 - i) * 1_000));
+    const [top, middle, bottom] = sizeBuckets(groups, null);
+    expect(top.groups.map((g) => g.grupo)).toEqual(groups.slice(0, 10).map((g) => g.grupo));
+    expect(bottom.groups.map((g) => g.grupo)).toEqual(groups.slice(31).map((g) => g.grupo));
+    // Mediana = G21 (posição 20); os médios vão de G16 a G25.
+    expect(middle.groups.map((g) => g.grupo)).toEqual(groups.slice(15, 25).map((g) => g.grupo));
+    expect(top.revenue).toBe(groups.slice(0, 10).reduce((acc, g) => acc + g.revenue12m, 0));
+  });
+
+  it("filtra pela área e não repete grupos quando há poucos pagantes", () => {
+    const groups = [group("A", 50_000), group("B", 40_000, "Trabalhista"), group("C", 30_000), group("D", 20_000)];
+    const [top, middle, bottom] = sizeBuckets(groups, "Cível", 2);
+    expect(top.groups.map((g) => g.grupo)).toEqual(["A", "C"]);
+    expect(middle.groups).toEqual([]);
+    expect(bottom.groups.map((g) => g.grupo)).toEqual(["D"]);
   });
 });

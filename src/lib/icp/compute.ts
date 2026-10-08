@@ -4,6 +4,15 @@
  * linhas e este módulo agrega tudo que a tela mostra.
  */
 
+import { cnaeSector, pickReferenceCompany, type IcpCnpjRecord } from "@/lib/icp/cnpj";
+
+/** Empresa do grupo no cadastro do VIOS com o cadastro da Receita já consultado. */
+export interface IcpCompanyRow {
+  grupo: string;
+  categoria: string | null;
+  record: IcpCnpjRecord;
+}
+
 export interface IcpRevenueItem {
   grupo: string;
   departamento: string | null;
@@ -26,15 +35,24 @@ export interface IcpPessoaRow {
   categoria: string | null;
 }
 
+/** Parcela de honorário vencida e em aberto, com o departamento que faturou. */
 export interface IcpOverdueRow {
   grupo: string;
-  valorEmAtraso: number;
+  departamento: string | null;
+  valor: number;
 }
 
-export interface IcpSectorRow {
+/** Horas apontadas no timesheet, já somadas por grupo e área. */
+export interface IcpHoursRow {
   grupo: string;
-  setor: string | null;
-  colaboradores: string | null;
+  area: string | null;
+  horas: number;
+}
+
+/** Custo de pessoal pago no período, por departamento. */
+export interface IcpPersonnelCostRow {
+  departamento: string | null;
+  valor: number;
 }
 
 export interface IcpNpsRow {
@@ -67,10 +85,14 @@ export interface IcpWhatsappLead {
 export interface IcpInput {
   now: Date;
   revenue: IcpRevenueItem[];
+  /** Pagadores que não são clientes no VIOS (parte contrária, fornecedor, sem cadastro), já fora de revenue. */
+  excludedPayers: { count: number; revenue: number };
   processes: IcpProcessRow[];
   pessoas: IcpPessoaRow[];
   overdue: IcpOverdueRow[];
-  sectors: IcpSectorRow[];
+  hours: IcpHoursRow[];
+  personnelCost: IcpPersonnelCostRow[];
+  companies: IcpCompanyRow[];
   nps: IcpNpsRow[];
   npsThemes: IcpNpsTheme[];
   linkedin: IcpDemographicRow[];
@@ -94,6 +116,14 @@ export interface IcpTier {
   overdueRatio: number;
 }
 
+/** Números de um grupo dentro de uma área (ou "Outros"). */
+export interface IcpAreaMetrics {
+  revenue: number;
+  hours: number;
+  cost: number;
+  overdue: number;
+}
+
 export interface IcpGroupRow {
   grupo: string;
   tier: IcpTierKey;
@@ -104,13 +134,44 @@ export interface IcpGroupRow {
   entryArea: string | null;
   firstProcess: string | null;
   activeSince2025: boolean;
+  /** Descrição do CNAE principal da empresa de referência (Receita). */
   sector: string | null;
+  /** Macrossetor do CNAE. */
   sectorBucket: string | null;
-  sizeBucket: string | null;
+  /** Porte da Receita (ME, EPP ou Demais) da empresa de referência. */
+  registeredSize: string | null;
   city: string | null;
   uf: string | null;
+  /** "receita" = sede da empresa de referência; "vios" = cidade mais frequente no cadastro. */
+  regionSource: "receita" | "vios" | null;
+  cnpjs: number;
+  referenceCompany: IcpReferenceCompany | null;
+  decisionMakers: { nome: string; qualificacao: string | null }[];
   hasLegalEntity: boolean;
   overdue: number;
+  hours12m: number;
+  deliveryCost: number;
+  byArea: Record<string, IcpAreaMetrics>;
+}
+
+export interface IcpReferenceCompany {
+  cnpj: string;
+  razaoSocial: string | null;
+  cnae: string | null;
+  cnaeDescricao: string | null;
+  porte: string | null;
+  capitalSocial: number | null;
+  situacao: string | null;
+}
+
+/** Custo por hora de uma área: custo de pessoal do departamento ÷ horas apontadas. */
+export interface IcpHourlyCost {
+  area: string;
+  cost: number;
+  hours: number;
+  rate: number;
+  /** true quando a área não tem custo próprio e usa a média do escritório. */
+  fallback: boolean;
 }
 
 export interface IcpCount {
@@ -136,14 +197,37 @@ export interface IcpData {
     coreGroups: number;
     coreRevenueShare: number;
     breadthMultiplier: number | null;
+    /** Receita de quem não é cliente, deixada fora do ICP. */
+    excludedPayers: number;
+    excludedRevenue: number;
   };
   tiers: IcpTier[];
+  delivery: {
+    personnelCost: number;
+    hours: number;
+    clientHours: number;
+    officeRate: number;
+    rates: IcpHourlyCost[];
+  };
   areaRevenue: IcpShare[];
   breadth: { label: string; groups: number; median: number }[];
   entry: { core: IcpCount[]; rest: IcpCount[]; coreViaInsolvency: number };
   newCore: { total: number; viaInsolvency: number };
   sectors: { core: IcpShare[]; coverageShare: number; coreKnown: number };
-  sizes: { core: IcpCount[]; coreKnown: number; core51plus: number };
+  sizes: {
+    /** Porte da Receita dos grupos A e B, sempre na ordem ME, EPP, Demais. */
+    coreRegistered: IcpCount[];
+    coreRegisteredKnown: number;
+  };
+  cnpjCoverage: {
+    groups: number;
+    withCompany: number;
+    companies: number;
+    coreGroups: number;
+    coreWithCompany: number;
+    /** Data da consulta mais recente ao cadastro da Receita. */
+    fetchedAt: string | null;
+  };
   geography: {
     spShare: number;
     ufShares: IcpShare[];
@@ -151,6 +235,9 @@ export interface IcpData {
     coreCapital: number;
     coreOtherUf: number;
     coreUnknown: number;
+    coreFromReceita: number;
+    /** Cidades mais comuns entre os grupos A e B do interior de SP. */
+    coreTopCities: IcpCount[];
     topCities: IcpShare[];
   };
   legalEntityShare: { core: number; rest: number };
@@ -164,6 +251,9 @@ export interface IcpData {
     byRole: IcpCount[];
     strengths: IcpCount[];
     pains: IcpCount[];
+    /** Quadro de sócios da Receita: grupos A e B com sócio que administra a empresa. */
+    coreWithAdmins: number;
+    adminRoles: IcpCount[];
   };
   marketing: {
     linkedinFollowers: number;
@@ -179,7 +269,7 @@ export interface IcpData {
 }
 
 /** Áreas de prática (os demais departamentos de receita entram como "Outros"). */
-const PRACTICE_AREAS = [
+export const PRACTICE_AREAS = [
   "Insolvência",
   "Cível",
   "Trabalhista",
@@ -229,40 +319,6 @@ export function normalizePracticeArea(raw: string | null | undefined): string | 
   return match ?? null;
 }
 
-/** Agrupa o setor livre do CRM em macrossetores comparáveis. */
-export function sectorBucket(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const s = raw.toLowerCase().trim();
-  if (!s || /jur[íi]dic|reclamante|^n\/a$|^-$|bismarchi|https?:/.test(s)) return null;
-  if (
-    /fabrica|ind[uú]stria|embalage|perfis|fios|tecelagem|metal|sider|ferrament|estamparia|tinta|pap[ée]is|equipamento|charque|frigor|m[áa]quina|pl[áa]stic|t[êe]xt|pvc|aditivo|eletr[ôo]nic|blindagem|decora|aliment|sucos|confeit|bebida/.test(
-      s
-    )
-  )
-    return "Indústria";
-  if (/fundo|securitiz|factoring|banco|cr[ée]dit|pagamento|seguro|investimento/.test(s))
-    return "Financeiro e crédito";
-  if (/com[ée]rcio|varejista|representantes/.test(s)) return "Comércio e distribuição";
-  if (/transport|log[íi]st|aduaneiro/.test(s)) return "Logística e comex";
-  if (/constru|engenharia|imobili|impermeab/.test(s)) return "Construção e imobiliário";
-  if (/hospital|m[ée]dic|odonto|sa[úu]de/.test(s)) return "Saúde";
-  if (/restaurante|hotel|evento|danceteria|educa/.test(s)) return "Serviços ao consumidor";
-  return "Serviços B2B";
-}
-
-/** Converte a faixa de colaboradores do CRM em quatro portes. */
-export function sizeBucket(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const s = raw.toLowerCase();
-  if (s.includes("mais de")) return "200+";
-  const first = Number.parseInt(s.replace(/[^\d].*$/, "").trim() || s.match(/\d+/)?.[0] || "", 10);
-  if (!Number.isFinite(first)) return null;
-  if (first < 11) return "1 a 10";
-  if (first < 51) return "11 a 50";
-  if (first < 201) return "51 a 200";
-  return "200+";
-}
-
 function median(values: number[]): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -292,6 +348,72 @@ function cleanCity(value: string | null): string | null {
   const v = value.trim();
   if (!v || /n[ãa]o informad/i.test(v)) return null;
   return v;
+}
+
+/** Porte da Receita, que segue a receita bruta anual declarada (LC 123/2006). */
+export const REGISTERED_SIZES = ["ME", "EPP", "Demais"] as const;
+export const REGISTERED_SIZE_RANGE: Record<(typeof REGISTERED_SIZES)[number], string> = {
+  ME: "até R$ 360 mil por ano",
+  EPP: "até R$ 4,8 mi por ano",
+  Demais: "não enquadrada como ME ou EPP; em geral, acima de R$ 4,8 mi por ano",
+};
+
+function normalizeRegisteredSize(porte: string | null | undefined): string | null {
+  if (!porte) return null;
+  if (/micro|^me\b|\(me\)/i.test(porte)) return "ME";
+  if (/pequeno|epp/i.test(porte)) return "EPP";
+  if (/demais/i.test(porte)) return "Demais";
+  return null;
+}
+
+const LOWERCASE_WORDS = new Set(["de", "da", "do", "das", "dos", "e"]);
+
+/** "SAO JOSE DO RIO PRETO" → "Sao Jose do Rio Preto" (a Receita grava município em caixa alta). */
+function titleCase(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return value
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w, i) => (i > 0 && LOWERCASE_WORDS.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(" ");
+}
+
+const hasAccent = (value: string) => /[̀-ͯ]/.test(value.normalize("NFD"));
+
+/** Chave de comparação de cidade: sem acento, sem caixa e sem espaços extras. */
+function foldCity(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const DECISION_ROLE = /administra|diretor|presidente|gerente|titular/i;
+
+/**
+ * Sócios com poder de administração (quadro de sócios da Receita), começando pela
+ * empresa de referência. Indica quem assina pela empresa, não necessariamente quem
+ * contrata o jurídico.
+ */
+function decisionMakers(
+  companies: IcpCnpjRecord[],
+  ref: IcpCnpjRecord | null
+): { nome: string; qualificacao: string | null }[] {
+  const ordered = ref ? [ref, ...companies.filter((c) => c.cnpj !== ref.cnpj)] : companies;
+  const seen = new Set<string>();
+  const result: { nome: string; qualificacao: string | null }[] = [];
+  for (const company of ordered) {
+    for (const s of company.socios ?? []) {
+      const key = s.nome.toUpperCase();
+      if (!DECISION_ROLE.test(s.qualificacao ?? "") || seen.has(key)) continue;
+      seen.add(key);
+      result.push({ nome: titleCase(s.nome) ?? s.nome, qualificacao: s.qualificacao });
+      if (result.length >= 4) return result;
+    }
+  }
+  return result;
 }
 
 function isClientCategory(categoria: string | null): boolean {
@@ -327,15 +449,79 @@ export function computeIcp(input: IcpInput): IcpData {
     { revenue: number; retainer: number; areas: Map<string, number> }
   >();
   const areaTotals = new Map<string, number>();
+  const areaKey = (raw: string | null) => normalizePracticeArea(raw) ?? "Outros";
   for (const item of input.revenue) {
     if (!item.grupo || item.valor <= 0 || !inWindow(item.dataPagamento)) continue;
     const entry = byGroup.get(item.grupo) ?? { revenue: 0, retainer: 0, areas: new Map() };
     entry.revenue += item.valor;
     if (/mensa/i.test(item.planoContas ?? "")) entry.retainer += item.valor;
-    const area = normalizePracticeArea(item.departamento) ?? "Outros";
-    if (area !== "Outros") entry.areas.set(area, (entry.areas.get(area) ?? 0) + item.valor);
+    const area = areaKey(item.departamento);
+    entry.areas.set(area, (entry.areas.get(area) ?? 0) + item.valor);
     areaTotals.set(area, (areaTotals.get(area) ?? 0) + item.valor);
     byGroup.set(item.grupo, entry);
+  }
+
+  // Custo de entrega: cada área tem um custo por hora (custo de pessoal do departamento
+  // ÷ todas as horas apontadas na área, inclusive trabalho interno), aplicado às horas
+  // que a área apontou para cada cliente. Áreas sem custo próprio usam a média do escritório.
+  const costByArea = new Map<string, number>();
+  for (const c of input.personnelCost) {
+    const area = normalizePracticeArea(c.departamento);
+    if (!area || c.valor <= 0) continue;
+    costByArea.set(area, (costByArea.get(area) ?? 0) + c.valor);
+  }
+  const hoursByArea = new Map<string, number>();
+  const hoursByGroup = new Map<string, Map<string, number>>();
+  for (const h of input.hours) {
+    if (h.horas <= 0) continue;
+    const area = areaKey(h.area);
+    hoursByArea.set(area, (hoursByArea.get(area) ?? 0) + h.horas);
+    if (!h.grupo) continue;
+    const perArea = hoursByGroup.get(h.grupo) ?? new Map<string, number>();
+    perArea.set(area, (perArea.get(area) ?? 0) + h.horas);
+    hoursByGroup.set(h.grupo, perArea);
+  }
+  const totalHours = [...hoursByArea.values()].reduce((acc, v) => acc + v, 0);
+  const allocatedCost = [...costByArea.entries()]
+    .filter(([area]) => hoursByArea.has(area))
+    .reduce((acc, [, v]) => acc + v, 0);
+  const allocatedHours = [...hoursByArea.entries()]
+    .filter(([area]) => costByArea.has(area))
+    .reduce((acc, [, v]) => acc + v, 0);
+  const officeRate = allocatedHours > 0 ? allocatedCost / allocatedHours : 0;
+  const rates: IcpHourlyCost[] = [...hoursByArea.entries()]
+    .map(([area, hours]) => {
+      const cost = costByArea.get(area);
+      return cost
+        ? { area, cost, hours, rate: cost / hours, fallback: false }
+        : { area, cost: hours * officeRate, hours, rate: officeRate, fallback: true };
+    })
+    .sort((a, b) => (a.area === "Outros" ? 1 : b.area === "Outros" ? -1 : b.hours - a.hours));
+  const rateOf = new Map(rates.map((r) => [r.area, r.rate]));
+
+  const overdueByGroup = new Map<string, Map<string, number>>();
+  for (const o of input.overdue) {
+    if (!o.grupo || o.valor <= 0) continue;
+    const perArea = overdueByGroup.get(o.grupo) ?? new Map<string, number>();
+    const area = areaKey(o.departamento);
+    perArea.set(area, (perArea.get(area) ?? 0) + o.valor);
+    overdueByGroup.set(o.grupo, perArea);
+  }
+
+  function areaMetrics(grupo: string, revenueByArea: Map<string, number>): Record<string, IcpAreaMetrics> {
+    const hours = hoursByGroup.get(grupo) ?? new Map<string, number>();
+    const overdue = overdueByGroup.get(grupo) ?? new Map<string, number>();
+    const result: Record<string, IcpAreaMetrics> = {};
+    for (const area of new Set([...revenueByArea.keys(), ...hours.keys(), ...overdue.keys()])) {
+      const h = hours.get(area) ?? 0;
+      result[area] = {
+        revenue: revenueByArea.get(area) ?? 0,
+        hours: h,
+        cost: h * (rateOf.get(area) ?? officeRate),
+        overdue: overdue.get(area) ?? 0,
+      };
+    }
+    return result;
   }
 
   // Primeiro processo do grupo = porta de entrada.
@@ -356,42 +542,79 @@ export function computeIcp(input: IcpInput): IcpData {
     pessoasByGroup.set(p.grupo, list);
   }
 
-  const overdueByGroup = new Map(input.overdue.map((o) => [o.grupo, o.valorEmAtraso]));
-  const sectorByGroup = new Map<string, IcpSectorRow>();
-  for (const s of input.sectors) {
-    const key = s.grupo.trim().toLowerCase();
-    const prev = sectorByGroup.get(key);
-    sectorByGroup.set(key, {
-      grupo: s.grupo,
-      setor: prev?.setor ?? s.setor,
-      colaboradores: prev?.colaboradores ?? s.colaboradores,
-    });
+  // A Receita grava o município sem acento ("SAO PAULO"); usa a grafia do cadastro do
+  // VIOS quando a cidade aparece lá, para não separar "Sao Paulo" de "São Paulo".
+  const viosCitySpelling = new Map<string, string>();
+  for (const p of input.pessoas) {
+    const city = cleanCity(p.cidade);
+    if (!city) continue;
+    const known = viosCitySpelling.get(foldCity(city));
+    // Prefere a grafia com acento quando o VIOS tem as duas.
+    if (!known || (!hasAccent(known) && hasAccent(city))) viosCitySpelling.set(foldCity(city), titleCase(city)!);
+  }
+  const accentedCity = (municipio: string | null | undefined) => {
+    const city = cleanCity(titleCase(municipio));
+    return city ? (viosCitySpelling.get(foldCity(city)) ?? city) : null;
+  };
+
+  // Empresas do grupo com cadastro da Receita (uma por CNPJ).
+  const companiesByGroup = new Map<string, Map<string, IcpCnpjRecord>>();
+  for (const c of input.companies) {
+    if (!c.grupo || !isClientCategory(c.categoria)) continue;
+    const list = companiesByGroup.get(c.grupo) ?? new Map<string, IcpCnpjRecord>();
+    list.set(c.record.cnpj, c.record);
+    companiesByGroup.set(c.grupo, list);
   }
 
   const groups: IcpGroupRow[] = [...byGroup.entries()]
     .map(([grupo, g]) => {
       const pessoas = pessoasByGroup.get(grupo) ?? [];
-      const sector = sectorByGroup.get(grupo.trim().toLowerCase());
       const first = firstProcess.get(grupo);
-      const sectorLabel = sector?.setor ?? null;
-      const bucket = sectorBucket(sectorLabel);
+      const companies = [...(companiesByGroup.get(grupo)?.values() ?? [])];
+      const ref = pickReferenceCompany(companies);
+      const refSector = cnaeSector(ref?.cnae_principal);
+      const refCity = accentedCity(ref?.municipio);
+      const byArea = areaMetrics(grupo, g.areas);
+      const metrics = Object.values(byArea);
+      const viosCity = mode(pessoas.map((p) => cleanCity(p.cidade)));
+      const viosUf = mode(pessoas.map((p) => (p.uf ?? "").trim().toUpperCase() || null));
       return {
         grupo,
         tier: tierFor(g.revenue),
         revenue12m: g.revenue,
         monthly: g.revenue / 12,
         hasRetainer: g.retainer > 0,
-        areas: [...g.areas.entries()].sort((a, b) => b[1] - a[1]).map(([a]) => a),
+        areas: [...g.areas.entries()]
+          .filter(([a]) => a !== "Outros")
+          .sort((a, b) => b[1] - a[1])
+          .map(([a]) => a),
         entryArea: first?.area ?? null,
         firstProcess: first?.date ?? null,
         activeSince2025: Boolean(first?.date && first.date >= "2025-01-01"),
-        sector: bucket ? sectorLabel : null,
-        sectorBucket: bucket,
-        sizeBucket: sizeBucket(sector?.colaboradores),
-        city: mode(pessoas.map((p) => cleanCity(p.cidade))),
-        uf: mode(pessoas.map((p) => (p.uf ?? "").trim().toUpperCase() || null)),
+        sector: refSector ? ref!.cnae_descricao : null,
+        sectorBucket: refSector,
+        registeredSize: normalizeRegisteredSize(ref?.porte),
+        city: ref?.uf ? refCity : viosCity,
+        uf: ref?.uf ?? viosUf,
+        regionSource: ref?.uf ? "receita" : viosUf || viosCity ? "vios" : null,
+        cnpjs: companies.filter((c) => c.status === "ok").length,
+        referenceCompany: ref
+          ? {
+              cnpj: ref.cnpj,
+              razaoSocial: ref.razao_social,
+              cnae: ref.cnae_principal,
+              cnaeDescricao: ref.cnae_descricao,
+              porte: ref.porte,
+              capitalSocial: ref.capital_social,
+              situacao: ref.situacao_cadastral,
+            }
+          : null,
+        decisionMakers: decisionMakers(companies, ref),
         hasLegalEntity: pessoas.some((p) => isLegalEntityType(p.tipo)),
-        overdue: overdueByGroup.get(grupo) ?? 0,
+        overdue: metrics.reduce((acc, m) => acc + m.overdue, 0),
+        hours12m: metrics.reduce((acc, m) => acc + m.hours, 0),
+        deliveryCost: metrics.reduce((acc, m) => acc + m.cost, 0),
+        byArea,
       } satisfies IcpGroupRow;
     })
     .sort((a, b) => b.revenue12m - a.revenue12m);
@@ -462,7 +685,6 @@ export function computeIcp(input: IcpInput): IcpData {
   }
   const allWithSector = groups.filter((g) => g.sectorBucket);
 
-  const coreSizes = countBy(core, (g) => g.sizeBucket);
   const ufMap = new Map<string, number>();
   const cityMap = new Map<string, number>();
   for (const g of groups) {
@@ -516,8 +738,17 @@ export function computeIcp(input: IcpInput): IcpData {
       coreGroups: core.length,
       coreRevenueShare: share(coreRevenue),
       breadthMultiplier,
+      excludedPayers: input.excludedPayers.count,
+      excludedRevenue: input.excludedPayers.revenue,
     },
     tiers,
+    delivery: {
+      personnelCost: allocatedCost,
+      hours: totalHours,
+      clientHours: groups.reduce((acc, g) => acc + g.hours12m, 0),
+      officeRate,
+      rates,
+    },
     areaRevenue,
     breadth,
     entry: {
@@ -537,12 +768,23 @@ export function computeIcp(input: IcpInput): IcpData {
       coreKnown: coreWithSector.length,
     },
     sizes: {
-      core: ["1 a 10", "11 a 50", "51 a 200", "200+"].map((label) => ({
+      coreRegistered: REGISTERED_SIZES.map((label) => ({
         label,
-        count: coreSizes.find((s) => s.label === label)?.count ?? 0,
+        count: core.filter((g) => g.registeredSize === label).length,
       })),
-      coreKnown: coreSizes.reduce((acc, s) => acc + s.count, 0),
-      core51plus: core.filter((g) => g.sizeBucket === "51 a 200" || g.sizeBucket === "200+").length,
+      coreRegisteredKnown: core.filter((g) => g.registeredSize).length,
+    },
+    cnpjCoverage: {
+      groups: groups.length,
+      withCompany: groups.filter((g) => g.referenceCompany).length,
+      companies: groups.reduce((acc, g) => acc + g.cnpjs, 0),
+      coreGroups: core.length,
+      coreWithCompany: core.filter((g) => g.referenceCompany).length,
+      fetchedAt:
+        input.companies.reduce<string | null>(
+          (latest, c) => (c.record.status === "ok" && (!latest || c.record.fetched_at > latest) ? c.record.fetched_at : latest),
+          null
+        ),
     },
     geography: {
       spShare: share(ufMap.get("SP") ?? 0),
@@ -553,6 +795,11 @@ export function computeIcp(input: IcpInput): IcpData {
       coreCapital: core.filter((g) => g.uf === "SP" && isCapital(g)).length,
       coreOtherUf: core.filter((g) => g.uf && g.uf !== "SP").length,
       coreUnknown: core.filter((g) => !g.uf || (g.uf === "SP" && !g.city)).length,
+      coreFromReceita: core.filter((g) => g.regionSource === "receita").length,
+      coreTopCities: countBy(
+        core.filter((g) => g.uf === "SP" && g.city && !isCapital(g)),
+        (g) => g.city
+      ).slice(0, 5),
       topCities: [...cityMap.entries()]
         .map(([label, value]) => ({ label, value, share: share(value) }))
         .sort((a, b) => b.value - a.value)
@@ -576,6 +823,11 @@ export function computeIcp(input: IcpInput): IcpData {
       byRole: countBy(npsScores, (r) => roleOf(r.cargo)),
       strengths: themeCount("strength"),
       pains: themeCount("pain"),
+      coreWithAdmins: core.filter((g) => g.decisionMakers.length > 0).length,
+      adminRoles: countBy(
+        core.flatMap((g) => g.decisionMakers),
+        (d) => d.qualificacao
+      ),
     },
     marketing: {
       linkedinFollowers: industryTotal,
@@ -597,4 +849,60 @@ export function computeIcp(input: IcpInput): IcpData {
     },
     groups,
   };
+}
+
+export type IcpSizeBucketKey = "maiores" | "medios" | "menores";
+
+export interface IcpSizedGroup extends IcpAreaMetrics {
+  grupo: string;
+  group: IcpGroupRow;
+}
+
+export interface IcpSizeBucket {
+  key: IcpSizeBucketKey;
+  groups: IcpSizedGroup[];
+  revenue: number;
+  hours: number;
+  cost: number;
+  overdue: number;
+}
+
+/** Números do grupo no escritório todo (area null) ou em uma área. */
+export function groupMetrics(group: IcpGroupRow, area: string | null): IcpAreaMetrics {
+  if (area) return group.byArea[area] ?? { revenue: 0, hours: 0, cost: 0, overdue: 0 };
+  return {
+    revenue: group.revenue12m,
+    hours: group.hours12m,
+    cost: group.deliveryCost,
+    overdue: group.overdue,
+  };
+}
+
+/**
+ * Separa os grupos pagantes (no escritório ou na área) em maiores, médios e menores
+ * pela receita de 12 meses. Os médios são os que ficam em volta da mediana; com poucos
+ * grupos, os três blocos nunca repetem o mesmo grupo.
+ */
+export function sizeBuckets(groups: IcpGroupRow[], area: string | null, size = 10): IcpSizeBucket[] {
+  const ranked = groups
+    .map((group) => ({ grupo: group.grupo, group, ...groupMetrics(group, area) }))
+    .filter((g) => g.revenue > 0)
+    .sort((a, b) => b.revenue - a.revenue);
+
+  const top = ranked.slice(0, size);
+  const bottom = ranked.slice(Math.max(top.length, ranked.length - size));
+  const between = ranked.slice(top.length, ranked.length - bottom.length);
+  const center = Math.floor(ranked.length / 2) - top.length;
+  const start = Math.min(Math.max(0, center - Math.floor(size / 2)), Math.max(0, between.length - size));
+  const middle = between.slice(start, start + size);
+
+  const bucket = (key: IcpSizeBucketKey, list: IcpSizedGroup[]): IcpSizeBucket => ({
+    key,
+    groups: list,
+    revenue: list.reduce((acc, g) => acc + g.revenue, 0),
+    hours: list.reduce((acc, g) => acc + g.hours, 0),
+    cost: list.reduce((acc, g) => acc + g.cost, 0),
+    overdue: list.reduce((acc, g) => acc + g.overdue, 0),
+  });
+  return [bucket("maiores", top), bucket("medios", middle), bucket("menores", bottom)];
 }

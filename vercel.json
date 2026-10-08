@@ -37,6 +37,10 @@
     {
       "path": "/api/cron/cafe-cultura-sync",
       "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron/icp-cnpj-sync",
+      "schedule": "0 5 * * 1"
     }
   ]
 }
