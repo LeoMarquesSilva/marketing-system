@@ -10,12 +10,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EventoTaskEditor } from "@/components/eventos/evento-task-editor";
+import type { EventTaskContext } from "./event-task-detail-sections";
 import { EVENT_TASK_STATUS_LABEL, type EventTask, type EventTaskStatus, type EventAttachment } from "@/lib/eventos";
 import { TASK_PHASES, filterEventTasks, groupEventTasks, taskAssigneeIds, taskDateLabel, type EventTaskDraft, type TaskFilters } from "@/lib/event-task-list";
 import type { User } from "@/lib/users";
 import { cn } from "@/lib/utils";
 
-export function EventoTarefasTab({ tasks, users, newTaskTitle, setNewTaskTitle, onAddTask, onUpdateTask, onDeleteTask, onSendPlanner, isBusy = false, eventNames, eventDates, attachments = [], canCreate = true, onRefresh, initialTaskId }: {
+export function EventoTarefasTab({ tasks, users, newTaskTitle, setNewTaskTitle, onAddTask, onUpdateTask, onDeleteTask, onSendPlanner, isBusy = false, eventNames, eventDates, attachments = [], canCreate = true, onRefresh, initialTaskId, taskContext }: {
+  taskContext?: EventTaskContext;
   initialTaskId?: string | null;
   tasks: EventTask[];
   users: User[];
@@ -166,7 +168,7 @@ export function EventoTarefasTab({ tasks, users, newTaskTitle, setNewTaskTitle, 
           })}
         </div>
       </section>)}
-      {editor && <EventoTaskEditor key={editor.task?.id ?? "new"} task={editor.task} initialStatus={editor.status} users={users} attachments={attachments} onClose={() => setEditor(null)} onSave={(draft) => editor.task ? onUpdateTask(editor.task.id, draft) : onAddTask(draft)} />}
+      {editor && <EventoTaskEditor key={editor.task?.id ?? "new"} task={editor.task ? resolvedTasks.find(task => task.id === editor.task?.id) ?? editor.task : null} taskContext={{ ...taskContext, isBusy }} onDuplicate={editor.task && canCreate ? onAddTask : undefined} onRequestDelete={editor.task ? () => { setDeleting(editor.task); setEditor(null); } : undefined} initialStatus={editor.status} users={users} attachments={attachments} onClose={() => setEditor(null)} onSave={(draft) => editor.task ? onUpdateTask(editor.task.id, draft) : onAddTask(draft)} />}
       <Dialog open={Boolean(deleting)} onOpenChange={(open) => { if (!open && !isBusy) setDeleting(null); }}>
         <DialogContent showCloseButton={!isBusy}>
           <DialogHeader><DialogTitle>Excluir tarefa?</DialogTitle><DialogDescription>A tarefa “{deleting?.title}” será removida do evento. Essa ação não pode ser desfeita.</DialogDescription></DialogHeader>

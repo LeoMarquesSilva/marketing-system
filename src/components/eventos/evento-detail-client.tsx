@@ -3,17 +3,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/auth-context";
 import { canAccessPath } from "@/lib/access-control";
+import { normalizeFollowUpResponsibleNames } from "@/lib/event-followup-responsibles";
 import { EventLinkedAlbums } from "./event-linked-albums";
 import { useRouter, useSearchParams } from "next/navigation";
 import { EventWorkspaceHeader } from "./event-workspace-header";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/eventos/event-menu";
-import { ClipboardList, CheckSquare, Wallet, Truck, Users, Megaphone, Paperclip, ChartLine, History, Loader2, MousePointerClick, ChevronDown, X } from "lucide-react";
+import { ClipboardList, CheckSquare, ListChecks, Wallet, Truck, Users, Megaphone, Paperclip, ChartLine, History, Loader2, MousePointerClick, ChevronDown, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EventoFormDialog } from "@/components/eventos/evento-form-dialog";
 import { EventoBudgetDialog } from "@/components/eventos/evento-budget-dialog";
 import { EnviarEventoAoPlannerDialog } from "@/components/eventos/enviar-evento-ao-planner-dialog";
 import { EventoResumoTab } from "@/components/eventos/evento-resumo-tab";
 import { EventoTarefasTab } from "@/components/eventos/evento-tarefas-tab";
+import { EventoChecklistTab } from "@/components/eventos/evento-checklist-tab";
 import { EventoOrcamentoTab } from "@/components/eventos/evento-orcamento-tab";
 import { EventoFornecedoresTab } from "@/components/eventos/evento-fornecedores-tab";
 import { EventoConvidadosTab } from "@/components/eventos/evento-convidados-tab";
@@ -33,6 +35,7 @@ import {
   deleteEventBudgetItem,
   deleteEventCommunication,
   deleteEventInvite,
+  deleteEventHistory,
   deleteEventTask,
   deleteSupplierQuote,
   duplicateEventToNextYear,
@@ -47,8 +50,10 @@ import {
   fetchSuppliersCatalog,
   fetchSupplierQuotes,
   insertEventTask,
+  importEventBudgetChecklist,
   isTaskOverdue,
   linkSupplierToEvent,
+  linkEventAttachmentToTask,
   unlinkSupplierFromEvent,
   upsertEventAttachment,
   upsertEventCommunication,
@@ -56,6 +61,7 @@ import {
   upsertEventPostmortem,
   insertSupplierQuote,
   updateEventTask,
+  updateEventHistoryPayload,
   updateEventAttachmentVisibility,
   type EventAttachment,
   type EventBudgetItem,
@@ -78,6 +84,7 @@ import { cn } from "@/lib/utils";
 type TabId =
   | "resumo"
   | "tarefas"
+  | "checklist"
   | "orcamento"
   | "fornecedores"
   | "convidados"
@@ -138,7 +145,7 @@ export function EventoDetailClient({
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  const tabIds: TabId[] = ["resumo", "tarefas", "orcamento", "fornecedores", "convidados", "comunicacao", "arquivos", "rastreamento", "pos_evento", "historico"];
+  const tabIds: TabId[] = ["resumo", "tarefas", "checklist", "orcamento", "fornecedores", "convidados", "comunicacao", "arquivos", "rastreamento", "pos_evento", "historico"];
   const tab: TabId = requestedTab === "planner" ? "tarefas" : tabIds.includes(requestedTab as TabId) ? requestedTab as TabId : "resumo";
   function setTab(next: TabId, taskId?: string) {
     const params = new URLSearchParams(searchParams.toString());
@@ -233,8 +240,10 @@ export function EventoDetailClient({
       const created = await insertEventTask({
         eventId: event.id, title,
         description: draft?.description ?? null,
+        category: draft?.category ?? null,
         assigneeId: draft?.assigneeId ?? null,
         assigneeIds: draft?.assigneeIds ?? [],
+        externalResponsibleName: draft?.externalResponsibleName ?? null,
         dueDate: draft?.dueDate ?? null,
         status: draft?.status ?? "pendente",
         phase: draft?.phase ?? null,
@@ -244,7 +253,7 @@ export function EventoDetailClient({
       if (!created) return false;
       setTasks((prev) => [...prev, created]);
       if (!draft) setNewTaskTitle("");
-      await registerHistory("tarefa", `Tarefa criada: ${created.title}`).catch(() => undefined);
+      await registerHistory("tarefa", `Tarefa criada: ${created.title}`, { taskId: created.id }).catch(() => undefined);
       setActionFeedback({ type: "success", text: "Tarefa criada com sucesso." });
       return true;
     } finally { setIsBusy(false); }
@@ -260,7 +269,7 @@ export function EventoDetailClient({
         if (task.id !== taskId) return task;
         const ids = Array.isArray(partial.assigneeIds) ? partial.assigneeIds as string[] : partial.assigneeId !== undefined ? (partial.assigneeId ? [String(partial.assigneeId)] : []) : null;
         const first = ids?.[0] ?? null;
-        return { ...task, ...partial, ...(ids ? { assigneeIds: ids, assigneeId: first, assigneeName: users.find(user => user.id === first)?.name ?? null, assigneeAvatar: users.find(user => user.id === first)?.avatar_url ?? null } : {}) };
+        return { ...task, ...partial, updatedAt: new Date().toISOString(), ...(ids ? { assigneeIds: ids, assigneeId: first, assigneeName: users.find(user => user.id === first)?.name ?? null, assigneeAvatar: users.find(user => user.id === first)?.avatar_url ?? null } : {}) };
       }));
       await registerHistory("tarefa", "Tarefa atualizada", { taskId, partial }).catch(() => undefined);
       setActionFeedback({ type: "success", text: "Tarefa atualizada." });
@@ -286,10 +295,97 @@ export function EventoDetailClient({
     const ok = await deleteEventBudgetItem(id);
     if (ok) {
       setBudgetItems((prev) => prev.filter((b) => b.id !== id));
+      setTasks(previous => previous.map(task => task.budgetItemId === id ? { ...task, budgetItemId: null } : task));
       await registerHistory("orcamento", "Linha de orçamento removida", { id });
       setActionFeedback({ type: "success", text: "Linha de orçamento removida." });
     }
     setIsBusy(false);
+  }
+
+  async function handleTaskFollowUp(taskId: string, input: import("./event-task-detail-sections").EventTaskFollowUpInput): Promise<boolean> {
+    const text = input.text.trim();
+    const responsibleNames = normalizeFollowUpResponsibleNames(input.responsibleNames);
+    if (isBusy || !text || text.length > 5000 || !/^\d{4}-\d{2}-\d{2}$/.test(input.date) || responsibleNames.some(name => name.length > 120) || !tasks.some(task => task.id === taskId && task.eventId === event.id)) return false;
+    const payload = { taskId, followUpText: text, followUpDate: input.date, followUpTime: input.time, responsibleNames, responsibleName: responsibleNames[0] ?? null, followUpStatus: input.status };
+    setIsBusy(true);
+    try {
+      const historyId = await addEventHistory(event.id, "tarefa", "Follow-up da tarefa", profile?.id ?? null, payload);
+      if (!historyId) return false;
+      const note: EventHistoryItem = { id: historyId, eventId: event.id, actionType: "tarefa", actionLabel: "Follow-up da tarefa", actorUserId: profile?.id ?? null, actorUserName: profile?.name ?? null, payload, createdAt: new Date().toISOString() };
+      setHistory(previous => [note, ...previous]);
+      const refreshed = await fetchEventHistory(event.id).catch(() => []);
+      if (refreshed.length) setHistory(refreshed);
+      return true;
+    } finally { setIsBusy(false); }
+  }
+
+  async function handleToggleTaskFollowUp(taskId: string, historyId: string, status: "planejado" | "realizado"): Promise<boolean> {
+    const existing = history.find(item => item.id === historyId && item.eventId === event.id && item.payload?.taskId === taskId && typeof item.payload.followUpText === "string");
+    if (isBusy || !existing || !tasks.some(task => task.id === taskId && task.eventId === event.id)) return false;
+    setIsBusy(true);
+    try {
+      const payload = { ...existing.payload, followUpStatus: status };
+      if (!await updateEventHistoryPayload(event.id, historyId, payload)) return false;
+      setHistory(previous => previous.map(item => item.id === historyId ? { ...item, payload } : item));
+      return true;
+    } finally { setIsBusy(false); }
+  }
+
+  async function handleEditTaskFollowUp(taskId: string, historyId: string, input: import("./event-task-detail-sections").EventTaskFollowUpInput): Promise<boolean> {
+    const existing = history.find(item => item.id === historyId && item.eventId === event.id && item.payload?.taskId === taskId && (typeof item.payload.followUpText === "string" || typeof item.payload.observation === "string"));
+    const text = input.text.trim();
+    const responsibleNames = normalizeFollowUpResponsibleNames(input.responsibleNames);
+    if (isBusy || !existing || !tasks.some(task => task.id === taskId && task.eventId === event.id) || !text || text.length > 5000 || responsibleNames.some(name => name.length > 120) || (input.date && !/^\d{4}-\d{2}-\d{2}$/.test(input.date))) return false;
+    const payload = { ...existing.payload, followUpText: text, followUpDate: input.date || null, followUpTime: input.time || null, responsibleNames, responsibleName: responsibleNames[0] ?? null, followUpStatus: input.status };
+    setIsBusy(true);
+    try {
+      if (!await updateEventHistoryPayload(event.id, historyId, payload)) return false;
+      setHistory(previous => previous.map(item => item.id === historyId ? { ...item, payload } : item));
+      return true;
+    } finally { setIsBusy(false); }
+  }
+
+  async function handleDeleteTaskFollowUp(taskId: string, historyId: string): Promise<boolean> {
+    const existing = history.find(item => item.id === historyId && item.eventId === event.id && item.payload?.taskId === taskId && (typeof item.payload.followUpText === "string" || typeof item.payload.observation === "string"));
+    if (isBusy || !existing || !tasks.some(task => task.id === taskId && task.eventId === event.id)) return false;
+    setIsBusy(true);
+    try {
+      if (!await deleteEventHistory(event.id, historyId)) return false;
+      setHistory(previous => previous.filter(item => item.id !== historyId));
+      return true;
+    } finally { setIsBusy(false); }
+  }
+
+  async function handleLinkTaskAttachment(taskId: string, attachmentId: string): Promise<boolean> {
+    const file = attachments.find(item => item.id === attachmentId && item.eventId === event.id && !item.relatedId);
+    if (isBusy || !file || !tasks.some(task => task.id === taskId && task.eventId === event.id)) return false;
+    setIsBusy(true);
+    try {
+      const updated = await linkEventAttachmentToTask(event.id, taskId, file.id);
+      if (!updated) return false;
+      setAttachments(previous => previous.map(item => item.id === updated.id ? updated : item));
+      await registerHistory("arquivo", "Arquivo vinculado à tarefa", { taskId, attachmentId }).catch(() => undefined);
+      return true;
+    } finally { setIsBusy(false); }
+  }
+
+  async function handleImportChecklistBudget(ids: string[]): Promise<boolean> {
+    if (isBusy || !ids.length) return false;
+    const selected = budgetItems.filter(item => item.eventId === event.id && ids.includes(item.id));
+    if (selected.length !== new Set(ids).size) return false;
+    setIsBusy(true);
+    try {
+      const created = await importEventBudgetChecklist(event.id, selected);
+      if (!created) return false;
+      setTasks(previous => [...previous.filter(task => !created.some(item => item.id === task.id)), ...created]);
+      const refreshed = await fetchEventTasks(event.id);
+      // A failed refresh must not erase confirmed tasks or claim an unseen duplicate was loaded.
+      if (refreshed.length) setTasks(refreshed);
+      else if (!created.length) return false;
+      await registerHistory("tarefa", "Itens do orçamento adicionados ao checklist", { taskIds: created.map(task => task.id) }).catch(() => undefined);
+      setActionFeedback({ type: "success", text: created.length ? `${created.length} item(ns) adicionado(s) ao checklist.` : "Os itens selecionados já estão no checklist." });
+      return true;
+    } finally { setIsBusy(false); }
   }
 
   async function handleLinkExistingSupplier(supplierId: string) {
@@ -544,6 +640,7 @@ export function EventoDetailClient({
   const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
     { id: "resumo", label: "Visão geral", icon: <ClipboardList className="h-4 w-4" /> },
     { id: "tarefas", label: "Planner", icon: <CheckSquare className="h-4 w-4" /> },
+    { id: "checklist", label: "Checklist", icon: <ListChecks className="h-4 w-4" /> },
     { id: "orcamento", label: "Orçamento", icon: <Wallet className="h-4 w-4" /> },
     { id: "fornecedores", label: "Prestadores", icon: <Truck className="h-4 w-4" /> },
     { id: "convidados", label: "Convidados", icon: <Users className="h-4 w-4" /> },
@@ -555,7 +652,7 @@ export function EventoDetailClient({
   ];
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="min-w-0 space-y-6 font-sans">
       <EventWorkspaceHeader event={event} tasks={tasks} users={users} onEdit={() => setEditOpen(true)} onDuplicate={() => void handleDuplicateEvent()} duplicating={duplicating} />
       {duplicateResult && <p className="text-sm text-muted-foreground">{duplicateResult}</p>}
       {actionFeedback && (
@@ -587,8 +684,8 @@ export function EventoDetailClient({
         </div>
       )}
 
-      <nav aria-label="Seções do evento" className="flex flex-wrap items-center gap-1 border-b border-border/70">
-        {tabs.filter(t => ["resumo", "tarefas", "orcamento", "fornecedores", "convidados", "arquivos"].includes(t.id)).map(t => <button key={t.id} type="button" aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)} className={cn("inline-flex min-h-11 items-center gap-2 border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-primary", tab === t.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground")}>{t.icon}{t.label}{t.id === "tarefas" && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{tasks.filter(task => task.status !== "concluida").length}</span>}</button>)}
+      <nav aria-label="Seções do evento" className="flex items-center gap-1 overflow-x-auto border-b border-border/70 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {tabs.filter(t => ["resumo", "tarefas", "checklist", "orcamento", "fornecedores", "convidados", "arquivos"].includes(t.id)).map(t => <button key={t.id} type="button" aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)} className={cn("inline-flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-primary", tab === t.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}><span className="hidden sm:inline-flex">{t.icon}</span>{t.label}{t.id === "checklist" && <span className={cn("rounded-md px-1.5 py-0.5 text-xs tabular-nums", tab === t.id ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{tasks.filter(task => task.status !== "concluida").length}</span>}</button>)}
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className={cn("min-h-11", ["comunicacao", "rastreamento", "pos_evento", "historico"].includes(tab) && "text-primary bg-primary/5")}>{["comunicacao", "rastreamento", "pos_evento", "historico"].includes(tab) ? tabs.find(t => t.id === tab)?.label : "Mais"}<ChevronDown className="size-3.5" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end">{tabs.filter(t => ["comunicacao", "rastreamento", "pos_evento", "historico"].includes(t.id)).map(t => <DropdownMenuItem key={t.id} onSelect={() => setTab(t.id)}>{t.icon}{t.label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
       </nav>
       {tab === "resumo" && (
@@ -608,9 +705,11 @@ export function EventoDetailClient({
           isBusy={isBusy}
           onRefresh={reloadTasks}
           attachments={attachments}
+          taskContext={{ event, history, budgetItems, onAddFollowUp: handleTaskFollowUp, onEditFollowUp: handleEditTaskFollowUp, onDeleteFollowUp: handleDeleteTaskFollowUp, onToggleFollowUp: handleToggleTaskFollowUp, onLinkAttachment: handleLinkTaskAttachment }}
           eventDates={event.eventDate ? [{ date: event.eventDate, name: event.name, id: event.id }] : []}
         />
       )}
+      {tab === "checklist" && <EventoChecklistTab eventId={event.id} tasks={tasks} budgetItems={budgetItems} users={users} attachments={attachments} taskContext={{ event, history, onAddFollowUp: handleTaskFollowUp, onEditFollowUp: handleEditTaskFollowUp, onDeleteFollowUp: handleDeleteTaskFollowUp, onToggleFollowUp: handleToggleTaskFollowUp, onLinkAttachment: handleLinkTaskAttachment }} isBusy={isBusy} onAddTask={handleAddTask} onUpdateTask={handleTaskFieldUpdate} onDeleteTask={handleDeleteTask} onImportBudget={handleImportChecklistBudget} onOpenBudget={item => { setEditingBudget(item); setBudgetDialogOpen(true); }} />}
       {tab === "orcamento" && (
         <EventoOrcamentoTab
           budgetItems={budgetItems}

@@ -7,7 +7,7 @@ export const TASK_PHASES: { value: EventTaskPhase | "sem_etapa"; label: string }
   { value: "sem_etapa", label: "Sem etapa" },
 ];
 
-export type EventTaskDraft = Pick<EventTask, "title" | "description" | "assigneeId" | "dueDate" | "status" | "phase"> & { assigneeIds: string[] };
+export type EventTaskDraft = Pick<EventTask, "title" | "description" | "assigneeId" | "dueDate" | "status" | "phase" | "category" | "externalResponsibleName"> & { assigneeIds: string[] };
 export type TaskFilters = {
   search: string;
   status: EventTaskStatus | "all" | "overdue";
@@ -25,11 +25,11 @@ export function filterEventTasks(tasks: EventTask[], filters: TaskFilters, today
   const query = normalize(filters.search.trim());
   return tasks.filter((task) => {
     if (filters.phase && filters.phase !== "all" && (task.phase ?? "sem_etapa") !== filters.phase) return false;
-    if (query && !normalize([task.title, task.description, task.assigneeName, ...(task.assignees?.map(person => person.name) ?? [])].filter(Boolean).join(" ")).includes(query)) return false;
+    if (query && !normalize([task.title, task.description, task.assigneeName, task.externalResponsibleName, ...(task.assignees?.map(person => person.name) ?? [])].filter(Boolean).join(" ")).includes(query)) return false;
     if (filters.status === "overdue" && (task.status === "concluida" || !task.dueDate || task.dueDate >= today)) return false;
     if (filters.status !== "all" && filters.status !== "overdue" && task.status !== filters.status) return false;
     const assigneeIds = taskAssigneeIds(task);
-    if (filters.assignee === "unassigned" && assigneeIds.length) return false;
+    if (filters.assignee === "unassigned" && (assigneeIds.length || task.externalResponsibleName)) return false;
     if (filters.assignee !== "all" && filters.assignee !== "unassigned" && !assigneeIds.includes(filters.assignee)) return false;
     return true;
   }).sort((a, b) => {

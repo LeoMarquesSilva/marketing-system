@@ -85,11 +85,14 @@ export interface EventTask {
   eventId: string;
   title: string;
   description: string | null;
+  category?: string | null;
+  budgetItemId?: string | null;
   assigneeId: string | null;
   assigneeIds?: string[];
   assignees?: { id: string; name: string; avatar: string | null }[];
   assigneeName?: string | null;
   assigneeAvatar?: string | null;
+  externalResponsibleName?: string | null;
   dueDate: string | null;
   status: EventTaskStatus;
   phase: EventTaskPhase | null;
@@ -552,8 +555,11 @@ type TaskRow = {
   event_id: string;
   title: string;
   description: string | null;
+  category?: string | null;
+  budget_item_id?: string | null;
   assignee_id: string | null;
   assignee_ids?: string[] | null;
+  external_responsible_name?: string | null;
   due_date: string | null;
   status: string;
   phase: string | null;
@@ -561,7 +567,7 @@ type TaskRow = {
   marketing_request_id: string | null;
   created_at: string;
   updated_at: string;
-  users?: { name: string; avatar_url: string | null } | null;
+  users?: { name: string; avatar_url: string | null } | { name: string; avatar_url: string | null }[] | null;
 };
 
 type BudgetRow = {
@@ -751,7 +757,7 @@ function rowToEvent(row: EventRow): OrgEvent {
   };
 }
 
-function rowToTask(row: TaskRow & { users?: TaskRow["users"] | TaskRow["users"][] | null }): EventTask {
+function rowToTask(row: TaskRow): EventTask {
   const userRaw = row.users;
   const user = Array.isArray(userRaw) ? userRaw[0] : userRaw;
   return {
@@ -759,10 +765,13 @@ function rowToTask(row: TaskRow & { users?: TaskRow["users"] | TaskRow["users"][
     eventId: row.event_id,
     title: row.title,
     description: row.description,
+    category: row.category ?? null,
+    budgetItemId: row.budget_item_id ?? null,
     assigneeId: row.assignee_id,
     assigneeIds: row.assignee_ids?.length ? row.assignee_ids : row.assignee_id ? [row.assignee_id] : [],
     assigneeName: user?.name ?? null,
     assigneeAvatar: user?.avatar_url ?? null,
+    externalResponsibleName: row.external_responsible_name ?? null,
     dueDate: row.due_date,
     status: row.status as EventTaskStatus,
     phase: (row.phase as EventTaskPhase) ?? null,
@@ -1021,7 +1030,7 @@ export function isStandaloneModuleEvent(event: Pick<OrgEvent, "seriesSlug">): bo
 }
 
 const TASK_SELECT = `
-  id, event_id, title, description, assignee_id, assignee_ids, due_date, status, phase,
+  id, event_id, title, description, category, budget_item_id, assignee_id, assignee_ids, external_responsible_name, due_date, status, phase,
   sort_order, marketing_request_id, created_at, updated_at,
   users:assignee_id (name, avatar_url)
 `;
@@ -1498,7 +1507,7 @@ export async function fetchEventTasks(
     console.error("Erro ao buscar tarefas:", error);
     return [];
   }
-  return (data ?? []).map((r) => rowToTask(r as TaskRow & { users?: TaskRow["users"] | TaskRow["users"][] | null }));
+  return (data ?? []).map((r) => rowToTask(r as TaskRow));
 }
 
 /** Uses the signed-in client/RLS; never creates marketing requests or copies tasks. */
@@ -1520,7 +1529,7 @@ export async function fetchEventPlannerSnapshot(client?: SupabaseClient): Promis
     for (let start = 0; ; start += 500) {
       const { data, error } = await db.from("event_tasks").select(TASK_SELECT).in("event_id", ids).order("id").range(start, start + 499);
       if (error) throw new Error("Não foi possível carregar as tarefas dos eventos.");
-      tasks.push(...(data ?? []).map(row => rowToTask(row as TaskRow & { users?: TaskRow["users"] | TaskRow["users"][] | null })));
+      tasks.push(...(data ?? []).map(row => rowToTask(row as TaskRow)));
       if ((data?.length ?? 0) < 500) break;
     }
     for (let start = 0; ; start += 500) {
@@ -1543,8 +1552,11 @@ export async function insertEventTask(
       event_id: input.eventId,
       title: input.title,
       description: input.description,
+      category: input.category?.trim() || null,
+      budget_item_id: input.budgetItemId ?? null,
       assignee_id: assigneeIds[0] ?? null,
       assignee_ids: assigneeIds,
+      external_responsible_name: input.externalResponsibleName?.trim() || null,
       due_date: input.dueDate,
       status: input.status,
       phase: input.phase,
@@ -1557,7 +1569,7 @@ export async function insertEventTask(
     console.error("Erro ao inserir tarefa:", error);
     return null;
   }
-  return rowToTask(data as TaskRow & { users?: TaskRow["users"] | TaskRow["users"][] | null });
+  return rowToTask(data as TaskRow);
 }
 
 export async function updateEventTask(
@@ -1566,13 +1578,15 @@ export async function updateEventTask(
     Pick<
       EventTask,
       "title" | "description" | "assigneeId" | "dueDate" | "status" | "phase" | "sortOrder" | "marketingRequestId"
-      | "assigneeIds"
+      | "assigneeIds" | "category" | "externalResponsibleName"
     >
   >
 ): Promise<boolean> {
   const payload: Record<string, unknown> = {};
   if (partial.title != null) payload.title = partial.title;
   if (partial.description !== undefined) payload.description = partial.description;
+  if (partial.category !== undefined) payload.category = partial.category?.trim() || null;
+  if (partial.externalResponsibleName !== undefined) payload.external_responsible_name = partial.externalResponsibleName?.trim() || null;
   if (partial.assigneeIds !== undefined) {
     const ids = [...new Set(partial.assigneeIds)];
     payload.assignee_ids = ids;
@@ -1602,6 +1616,27 @@ export async function deleteEventTask(id: string): Promise<boolean> {
     return false;
   }
   return Boolean(data);
+}
+
+/** Ignore an already linked expense without overwriting its task's progress or people. */
+export async function importEventBudgetChecklist(eventId: string, items: EventBudgetItem[]): Promise<EventTask[] | null> {
+  if (!items.length || items.some(item => item.eventId !== eventId)) return null;
+  const unique = [...new Map(items.map(item => [item.id, item])).values()];
+  const { data, error } = await supabase.from("event_tasks").upsert(unique.map(item => ({
+    event_id: eventId,
+    title: (item.description?.trim() || item.vendorName?.trim() || "Despesa sem descrição").slice(0, 500),
+    description: item.notes,
+    category: item.category?.trim() || null,
+    budget_item_id: item.id,
+    assignee_id: null,
+    assignee_ids: [],
+    due_date: item.dueDate,
+    status: "pendente",
+    phase: "pre_evento",
+    sort_order: item.sortOrder,
+  })), { onConflict: "budget_item_id", ignoreDuplicates: true }).select(TASK_SELECT);
+  if (error) { console.error("Erro ao trazer orçamento para o checklist:", error); return null; }
+  return (data ?? []).map(row => rowToTask(row as TaskRow));
 }
 
 export async function fetchEventBudgetItems(
@@ -2046,6 +2081,15 @@ export async function upsertEventAttachment(
   return rowToAttachment(data as AttachmentRow);
 }
 
+export async function linkEventAttachmentToTask(eventId: string, taskId: string, attachmentId: string): Promise<EventAttachment | null> {
+  const { data, error } = await supabase.from("event_attachments")
+    .update({ related_entity: "tarefa", related_id: taskId })
+    .eq("id", attachmentId).eq("event_id", eventId).is("related_id", null)
+    .select("*").single();
+  if (error || !data) return null;
+  return rowToAttachment(data as AttachmentRow);
+}
+
 export async function deleteEventAttachment(id: string): Promise<boolean> {
   const { error } = await supabase.from("event_attachments").delete().eq("id", id);
   return !error;
@@ -2123,15 +2167,25 @@ export async function addEventHistory(
   actionLabel: string,
   actorUserId?: string | null,
   payload?: Record<string, unknown> | null
-): Promise<boolean> {
-  const { error } = await supabase.from("event_history").insert({
+): Promise<string | null> {
+  const { data, error } = await supabase.from("event_history").insert({
     event_id: eventId,
     action_type: actionType,
     action_label: actionLabel,
     actor_user_id: actorUserId ?? null,
     payload: payload ?? null,
-  });
-  return !error;
+  }).select("id").single();
+  return error ? null : data?.id ?? null;
+}
+
+export async function updateEventHistoryPayload(eventId: string, historyId: string, payload: Record<string, unknown>): Promise<boolean> {
+  const { data, error } = await supabase.from("event_history").update({ payload }).eq("event_id", eventId).eq("id", historyId).select("id").maybeSingle();
+  return !error && Boolean(data);
+}
+
+export async function deleteEventHistory(eventId: string, historyId: string): Promise<boolean> {
+  const { data, error } = await supabase.from("event_history").delete().eq("event_id", eventId).eq("id", historyId).eq("action_type", "tarefa").select("id").maybeSingle();
+  return !error && Boolean(data);
 }
 
 export async function fetchEventTemplates(client?: SupabaseClient): Promise<EventTemplate[]> {
@@ -2237,6 +2291,7 @@ export async function duplicateEventToYear(
         event_id: duplicated.id,
         title: t.title,
         description: t.description,
+        category: t.category ?? null,
         due_date: null,
         status: "pendente",
         phase: t.phase,
