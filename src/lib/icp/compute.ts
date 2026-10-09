@@ -148,6 +148,8 @@ export interface IcpGroupRow {
   referenceCompany: IcpReferenceCompany | null;
   decisionMakers: { nome: string; qualificacao: string | null }[];
   hasLegalEntity: boolean;
+  /** Tipo de cliente no cadastro do VIOS: só pessoa física, com empresa, ou sem cadastro. */
+  clientType: "pessoa_fisica" | "pessoa_juridica" | null;
   overdue: number;
   hours12m: number;
   deliveryCost: number;
@@ -228,17 +230,13 @@ export interface IcpData {
     /** Data da consulta mais recente ao cadastro da Receita. */
     fetchedAt: string | null;
   };
+  /** Região dos grupos A e B (os painéis da tela recalculam por faixa a partir de `groups`). */
   geography: {
-    spShare: number;
-    ufShares: IcpShare[];
     coreInterior: number;
     coreCapital: number;
     coreOtherUf: number;
     coreUnknown: number;
     coreFromReceita: number;
-    /** Cidades mais comuns entre os grupos A e B do interior de SP. */
-    coreTopCities: IcpCount[];
-    topCities: IcpShare[];
   };
   legalEntityShare: { core: number; rest: number };
   retainer: { core: number; rest: number; revenueShare: number };
@@ -426,6 +424,24 @@ function isLegalEntityType(tipo: string | null): boolean {
   return /jur/i.test(tipo ?? "");
 }
 
+/** Receita por segmento, em fração da receita dos grupos que têm segmento. */
+export function sectorShares(list: { sectorBucket: string | null; revenue12m: number }[]): IcpShare[] {
+  const total = list.reduce((acc, g) => acc + g.revenue12m, 0);
+  const bySector = new Map<string, number>();
+  for (const g of list) {
+    if (g.sectorBucket) bySector.set(g.sectorBucket, (bySector.get(g.sectorBucket) ?? 0) + g.revenue12m);
+  }
+  return [...bySector.entries()]
+    .map(([label, value]) => ({ label, value, share: total > 0 ? value / total : 0 }))
+    .sort((a, b) => b.value - a.value);
+}
+
+function isIndividualType(tipo: string | null): boolean {
+  return /f[íi]s/i.test(tipo ?? "");
+}
+
+const MIN_REVENUE_ITEM = 1;
+
 function windowStartFor(now: Date): Date {
   return new Date(Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), 1));
 }
@@ -451,7 +467,8 @@ export function computeIcp(input: IcpInput): IcpData {
   const areaTotals = new Map<string, number>();
   const areaKey = (raw: string | null) => normalizePracticeArea(raw) ?? "Outros";
   for (const item of input.revenue) {
-    if (!item.grupo || item.valor <= 0 || !inWindow(item.dataPagamento)) continue;
+    // Itens abaixo de R$ 1 são ajustes de centavos no financeiro, não honorário pago.
+    if (!item.grupo || item.valor < MIN_REVENUE_ITEM || !inWindow(item.dataPagamento)) continue;
     const entry = byGroup.get(item.grupo) ?? { revenue: 0, retainer: 0, areas: new Map() };
     entry.revenue += item.valor;
     if (/mensa/i.test(item.planoContas ?? "")) entry.retainer += item.valor;
@@ -611,6 +628,11 @@ export function computeIcp(input: IcpInput): IcpData {
           : null,
         decisionMakers: decisionMakers(companies, ref),
         hasLegalEntity: pessoas.some((p) => isLegalEntityType(p.tipo)),
+        clientType: !pessoas.length
+          ? null
+          : pessoas.every((p) => isIndividualType(p.tipo))
+            ? "pessoa_fisica"
+            : "pessoa_juridica",
         overdue: metrics.reduce((acc, m) => acc + m.overdue, 0),
         hours12m: metrics.reduce((acc, m) => acc + m.hours, 0),
         deliveryCost: metrics.reduce((acc, m) => acc + m.cost, 0),
@@ -685,13 +707,6 @@ export function computeIcp(input: IcpInput): IcpData {
   }
   const allWithSector = groups.filter((g) => g.sectorBucket);
 
-  const ufMap = new Map<string, number>();
-  const cityMap = new Map<string, number>();
-  for (const g of groups) {
-    const uf = g.uf ?? "Sem UF";
-    ufMap.set(uf, (ufMap.get(uf) ?? 0) + g.revenue12m);
-    if (g.city) cityMap.set(g.city, (cityMap.get(g.city) ?? 0) + g.revenue12m);
-  }
   const isCapital = (g: IcpGroupRow) => /^s[ãa]o paulo$/i.test(g.city ?? "");
 
   // NPS e decisor.
@@ -787,23 +802,11 @@ export function computeIcp(input: IcpInput): IcpData {
         ),
     },
     geography: {
-      spShare: share(ufMap.get("SP") ?? 0),
-      ufShares: [...ufMap.entries()]
-        .map(([label, value]) => ({ label, value, share: share(value) }))
-        .sort((a, b) => b.value - a.value),
       coreInterior: core.filter((g) => g.uf === "SP" && g.city && !isCapital(g)).length,
       coreCapital: core.filter((g) => g.uf === "SP" && isCapital(g)).length,
       coreOtherUf: core.filter((g) => g.uf && g.uf !== "SP").length,
       coreUnknown: core.filter((g) => !g.uf || (g.uf === "SP" && !g.city)).length,
       coreFromReceita: core.filter((g) => g.regionSource === "receita").length,
-      coreTopCities: countBy(
-        core.filter((g) => g.uf === "SP" && g.city && !isCapital(g)),
-        (g) => g.city
-      ).slice(0, 5),
-      topCities: [...cityMap.entries()]
-        .map(([label, value]) => ({ label, value, share: share(value) }))
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 8),
     },
     legalEntityShare: {
       core: core.length ? core.filter((g) => g.hasLegalEntity).length / core.length : 0,
@@ -865,6 +868,12 @@ export interface IcpSizeBucket {
   hours: number;
   cost: number;
   overdue: number;
+  /** Posições no ranking por receita (1 = quem mais pagou); 0 quando o bloco está vazio. */
+  rankFrom: number;
+  rankTo: number;
+  /** Quantos grupos pagantes entraram no ranking e a receita do grupo do meio. */
+  rankedTotal: number;
+  medianRevenue: number;
 }
 
 /** Números do grupo no escritório todo (area null) ou em uma área. */
@@ -895,14 +904,23 @@ export function sizeBuckets(groups: IcpGroupRow[], area: string | null, size = 1
   const center = Math.floor(ranked.length / 2) - top.length;
   const start = Math.min(Math.max(0, center - Math.floor(size / 2)), Math.max(0, between.length - size));
   const middle = between.slice(start, start + size);
+  const medianRevenue = ranked.length ? ranked[Math.floor(ranked.length / 2)].revenue : 0;
 
-  const bucket = (key: IcpSizeBucketKey, list: IcpSizedGroup[]): IcpSizeBucket => ({
+  const bucket = (key: IcpSizeBucketKey, list: IcpSizedGroup[], firstIndex: number): IcpSizeBucket => ({
     key,
     groups: list,
     revenue: list.reduce((acc, g) => acc + g.revenue, 0),
     hours: list.reduce((acc, g) => acc + g.hours, 0),
     cost: list.reduce((acc, g) => acc + g.cost, 0),
     overdue: list.reduce((acc, g) => acc + g.overdue, 0),
+    rankFrom: list.length ? firstIndex + 1 : 0,
+    rankTo: list.length ? firstIndex + list.length : 0,
+    rankedTotal: ranked.length,
+    medianRevenue,
   });
-  return [bucket("maiores", top), bucket("medios", middle), bucket("menores", bottom)];
+  return [
+    bucket("maiores", top, 0),
+    bucket("medios", middle, top.length + start),
+    bucket("menores", bottom, ranked.length - bottom.length),
+  ];
 }

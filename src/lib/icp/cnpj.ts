@@ -28,6 +28,15 @@ export interface IcpCnpjRecord {
   fetched_at: string;
 }
 
+/**
+ * Parte contrária (ou advogado contrário) sem cadastro também como cliente. Não entra
+ * no ICP. Quem é as duas coisas ("Cliente inativo, Contrário ativo") segue como cliente.
+ */
+export function isCounterpartyOnly(categoria: string | null | undefined): boolean {
+  const c = (categoria ?? "").toLowerCase();
+  return /contr[áa]ri/.test(c) && !c.includes("cliente");
+}
+
 export function onlyCnpjDigits(raw: string | null | undefined): string | null {
   const digits = (raw ?? "").replace(/\D/g, "");
   return digits.length === 14 ? digits : null;

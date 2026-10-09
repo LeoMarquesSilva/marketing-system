@@ -184,6 +184,22 @@ describe("computeIcp", () => {
     expect(alfa.byArea["Insolvência"]).toEqual({ revenue: 100_000, hours: 400, cost: 40_000, overdue: 7_000 });
     expect(alfa.byArea["Outros"]).toEqual({ revenue: 0, hours: 0, cost: 0, overdue: 1_000 });
   });
+
+  it("marca grupos só de pessoa física e ignora lançamentos de centavos", () => {
+    const data = computeIcp(
+      baseInput({
+        revenue: [pay("Grupo Física", "Cível", 5_000), pay("Grupo Empresa", "Cível", 5_000), pay("Grupo Centavos", "Cível", 0.01)],
+        pessoas: [
+          { grupo: "Grupo Física", tipo: "PESSOA FÍSICA", uf: "SP", cidade: "Campinas", categoria: "Cliente ativo" },
+          { grupo: "Grupo Empresa", tipo: "PESSOA JURÍDICA", uf: "SP", cidade: "Campinas", categoria: "Cliente ativo" },
+        ],
+      })
+    );
+    const byName = new Map(data.groups.map((g) => [g.grupo, g]));
+    expect(byName.get("Grupo Física")?.clientType).toBe("pessoa_fisica");
+    expect(byName.get("Grupo Empresa")?.clientType).toBe("pessoa_juridica");
+    expect(byName.has("Grupo Centavos")).toBe(false);
+  });
 });
 
 describe("sizeBuckets", () => {
@@ -198,6 +214,11 @@ describe("sizeBuckets", () => {
     // Mediana = G21 (posição 20); os médios vão de G16 a G25.
     expect(middle.groups.map((g) => g.grupo)).toEqual(groups.slice(15, 25).map((g) => g.grupo));
     expect(top.revenue).toBe(groups.slice(0, 10).reduce((acc, g) => acc + g.revenue12m, 0));
+    expect([top.rankFrom, top.rankTo]).toEqual([1, 10]);
+    expect([middle.rankFrom, middle.rankTo]).toEqual([16, 25]);
+    expect([bottom.rankFrom, bottom.rankTo]).toEqual([32, 41]);
+    expect(middle.rankedTotal).toBe(41);
+    expect(middle.medianRevenue).toBe(21_000);
   });
 
   it("filtra pela área e não repete grupos quando há poucos pagantes", () => {

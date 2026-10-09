@@ -2,7 +2,7 @@ import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getSioeClient } from "@/lib/sioe-sync-server";
-import { fetchCnpj, onlyCnpjDigits, type IcpCnpjRecord } from "@/lib/icp/cnpj";
+import { fetchCnpj, isCounterpartyOnly, onlyCnpjDigits, type IcpCnpjRecord } from "@/lib/icp/cnpj";
 
 const PAGE_SIZE = 1000;
 /** Cadastro da Receita muda pouco: renova a cada 6 meses; erros de rede, no dia seguinte. */
@@ -20,7 +20,8 @@ function getMainClient(): SupabaseClient {
 
 /**
  * CNPJs a consultar: empresas de algum grupo de cliente e clientes com CNPJ ainda sem
- * grupo no VIOS/SIOE (a receita deles entra no ICP pelo nome do cliente).
+ * grupo no VIOS/SIOE (a receita deles entra no ICP pelo nome do cliente). Parte
+ * contrária fica de fora, mesmo quando está cadastrada dentro de um grupo.
  */
 export async function listGroupCnpjs(): Promise<Map<string, string>> {
   const sioe = getSioeClient();
@@ -35,6 +36,7 @@ export async function listGroupCnpjs(): Promise<Map<string, string>> {
     if (error) throw new Error(error.message);
     for (const p of data ?? []) {
       const cnpj = onlyCnpjDigits(p.cpf_cnpj);
+      if (isCounterpartyOnly(p.categoria)) continue;
       const grupo = (p.grupo_cliente ?? "").trim();
       const semGrupo = !grupo && /cliente/i.test(p.categoria ?? "");
       const chave = grupo || (semGrupo ? (p.nome ?? "").trim() : "");

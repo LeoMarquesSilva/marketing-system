@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { cnaeSector, onlyCnpjDigits, parseBrasilApi, parseOpenCnpj, pickReferenceCompany, type IcpCnpjRecord } from "@/lib/icp/cnpj";
+import {
+  cnaeSector,
+  isCounterpartyOnly,
+  onlyCnpjDigits,
+  parseBrasilApi,
+  parseOpenCnpj,
+  pickReferenceCompany,
+  type IcpCnpjRecord,
+} from "@/lib/icp/cnpj";
 import { computeIcp, type IcpInput } from "@/lib/icp/compute";
 
 const NOW = new Date("2026-10-01T12:00:00Z");
@@ -130,5 +138,41 @@ describe("cadastro de CNPJ", () => {
       cnpjs: 1,
     });
     expect(alfa.decisionMakers).toEqual([{ nome: "Fulana de Tal", qualificacao: "Sócio-Administrador" }]);
+  });
+
+  it("deixa a parte contrária fora do ICP, mesmo cadastrada dentro do grupo", () => {
+    expect(isCounterpartyOnly("Contrário ativo")).toBe(true);
+    expect(isCounterpartyOnly("Advogado contrário ativo, Contrário inativo")).toBe(true);
+    expect(isCounterpartyOnly("Cliente inativo, Contrário ativo")).toBe(false);
+    expect(isCounterpartyOnly("Cliente ativo")).toBe(false);
+    expect(isCounterpartyOnly(null)).toBe(false);
+
+    const empresa = (cnpj: string, cnae: string) =>
+      record({ cnpj, situacao_cadastral: "ATIVA", cnae_principal: cnae, matriz: true, capital_social: 1_000 });
+    const [alfa] = computeIcp({
+      now: NOW,
+      revenue: [{ grupo: "Grupo Alfa", departamento: "Cível", planoContas: "HONORÁRIOS MENSAIS", valor: 100_000, dataPagamento: "2026-03-10" }],
+      excludedPayers: { count: 0, revenue: 0 },
+      processes: [],
+      pessoas: [{ grupo: "Grupo Alfa", tipo: "PESSOA JURÍDICA", uf: "SP", cidade: "Campinas", categoria: "Contrário ativo" }],
+      overdue: [],
+      hours: [],
+      personnelCost: [],
+      companies: [
+        // A parte contrária tem o maior capital social, mas não pode virar a referência do grupo.
+        { grupo: "Grupo Alfa", categoria: "Contrário ativo", record: { ...empresa("1", "6422100"), capital_social: 9e9 } },
+        { grupo: "Grupo Alfa", categoria: "Cliente ativo", record: empresa("2", "2229399") },
+      ],
+      nps: [],
+      npsThemes: [],
+      linkedin: [],
+      ga4Cities: [],
+      whatsapp: [],
+    }).groups;
+    expect(alfa.referenceCompany?.cnpj).toBe("2");
+    expect(alfa.sectorBucket).toBe("Indústria");
+    expect(alfa.cnpjs).toBe(1);
+    // A cidade da parte contrária também não entra.
+    expect(alfa.city).toBeNull();
   });
 });

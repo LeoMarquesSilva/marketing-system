@@ -1,12 +1,17 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   BadgeCheck,
   Building2,
+  ArrowRight,
+  ChartColumn,
+  ChartPie,
   Check,
+  ChevronDown,
   CircleDollarSign,
+  Crown,
   Clock,
   Crosshair,
   Database,
@@ -15,6 +20,7 @@ import {
   Layers,
   Linkedin,
   Lightbulb,
+  ListOrdered,
   MapPin,
   MessageCircle,
   MessageSquareHeart,
@@ -25,23 +31,25 @@ import {
   Megaphone,
   NotebookPen,
   Package,
+  UserRound,
   Users,
   X,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { InfoTooltip, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { AreaIcon, getAreaIconStyle } from "@/lib/area-icons";
 import {
+  sectorShares,
   sizeBuckets,
   type IcpCount,
   type IcpData,
   type IcpGroupRow,
   type IcpSizeBucket,
   type IcpSizeBucketKey,
+  type IcpTier,
   type IcpTierKey,
 } from "@/lib/icp/compute";
 
@@ -81,6 +89,13 @@ function excludedRevenueNote(data: IcpData): string {
   const { excludedPayers, excludedRevenue } = data.totals;
   if (!excludedPayers) return "";
   return `Não inclui ${money(excludedRevenue)} pagos por ${excludedPayers} pagadores que não são clientes no VIOS (parte contrária, fornecedor ou sem cadastro), em geral honorários de sucumbência e de êxito.`;
+}
+
+/** Por que o grupo não tem segmento: cliente pessoa física (sem CNPJ) ou empresa sem CNPJ no VIOS. */
+function noSectorLabel(clientType: IcpGroupRow["clientType"]): string {
+  if (clientType === "pessoa_fisica") return "Pessoa física";
+  if (clientType === "pessoa_juridica") return "Empresa sem CNPJ no VIOS";
+  return "Sem cadastro no VIOS";
 }
 
 function monthLabel(iso: string): string {
@@ -243,6 +258,14 @@ function AreaBadge({ area, size = "md" }: { area: string; size?: "sm" | "md" }) 
   );
 }
 
+/** Fundo e cor do ícone de cada indicador. */
+const KPI_TONE = {
+  blue: "bg-[#347796]/10 text-[#347796]",
+  teal: "bg-[#47cdd0]/15 text-[#0b7d80]",
+  green: "bg-emerald-50 text-emerald-600",
+  rose: "bg-rose-50 text-rose-600",
+} as const;
+
 function Kpi({
   label,
   value,
@@ -250,6 +273,7 @@ function Kpi({
   icon: Icon,
   source,
   info,
+  tone = "blue",
 }: {
   label: string;
   value: string;
@@ -257,21 +281,25 @@ function Kpi({
   icon: LucideIcon;
   source: Source;
   info?: string;
+  tone?: keyof typeof KPI_TONE;
 }) {
   return (
-    <div className="rounded-xl border bg-card px-4 py-3 shadow-sm">
-      <div className="flex items-center justify-between gap-2">
-        <p className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
-          {label}
-          {info && <InfoTooltip title={label} description={info} />}
-        </p>
-        <Icon className="h-3.5 w-3.5 text-[#347796]" />
+    <div className="flex flex-col rounded-xl border bg-card p-4 shadow-sm">
+      <div className="flex flex-1 items-start gap-3">
+        <span className={cn("inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", KPI_TONE[tone])}>
+          <Icon className="h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-xs font-medium text-muted-foreground">{label}</p>
+            {info && <InfoTooltip title={label} description={info} />}
+          </div>
+          <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">{value}</p>
+          <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{hint}</p>
+        </div>
       </div>
-      <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">{value}</p>
-      <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{hint}</p>
-      <p className="mt-2 text-xs text-muted-foreground">
-        Fonte: <span className="font-medium text-foreground/70">{SOURCE_SYSTEM[source.system].label}</span> ·{" "}
-        {source.detail}
+      <p className="mt-3 border-t pt-2 text-[11px] text-muted-foreground">
+        Fonte: <span className="font-medium text-foreground/70">{SOURCE_SYSTEM[source.system].label}</span> · {source.detail}
       </p>
     </div>
   );
@@ -376,7 +404,6 @@ function ResumoTab({ data }: { data: IcpData }) {
   const coreAvgAreas =
     core.reduce((acc, t) => acc + t.avgAreas * t.groups, 0) / Math.max(1, core.reduce((acc, t) => acc + t.groups, 0));
   const topSector = data.sectors.core[0];
-  const topEntry = data.entry.core[0];
   const coreCount = data.totals.coreGroups;
   const { geography: geo, decisor, cnpjCoverage } = data;
   const regions = [
@@ -385,7 +412,6 @@ function ResumoTab({ data }: { data: IcpData }) {
     { key: "outros", label: "Outros estados", value: geo.coreOtherUf, phrase: "sediada fora de São Paulo" },
   ].sort((a, b) => b.value - a.value);
   const topRegion = regions[0].value > 0 ? regions[0] : null;
-  const topCities = geo.coreTopCities.slice(0, 3).map((c) => c.label);
   const topAdminRole = decisor.adminRoles[0];
   const receitaDate = cnpjCoverage.fetchedAt
     ? new Date(cnpjCoverage.fetchedAt).toLocaleDateString("pt-BR")
@@ -396,50 +422,35 @@ function ResumoTab({ data }: { data: IcpData }) {
       icon: Factory,
       label: "Segmento",
       value: topSector ? topSector.label : "—",
-      hint: topSector ? `${pct(topSector.share)} da receita A e B com segmento` : undefined,
+      hint: topSector ? `${pct(topSector.share)} da receita dos grupos A e B` : undefined,
       source: SRC.cnae,
-    },
-    {
-      icon: Building2,
-      label: "Porte",
-      value: "Em avaliação",
-      hint: "estamos avaliando a fonte do número de colaboradores",
     },
     {
       icon: MapPin,
       label: "Região",
       value: topRegion ? topRegion.label : "—",
-      hint: topRegion
-        ? `${topRegion.value} de ${coreCount} grupos${topRegion.key === "interior" && topCities.length ? `; ${topCities.join(", ")}` : ""}`
-        : undefined,
+      hint: topRegion ? `${topRegion.value} de ${coreCount} grupos` : undefined,
       source: geo.coreFromReceita > coreCount / 2 ? SRC.sede : SRC.pessoas,
     },
     {
       icon: BadgeCheck,
       label: "Decisor",
       value: topAdminRole ? topAdminRole.label : "—",
-      hint: `${decisor.coreWithAdmins} de ${coreCount} grupos com sócio que administra`,
+      hint: `presente em ${decisor.coreWithAdmins} de ${coreCount} grupos`,
       source: SRC.socios,
-    },
-    {
-      icon: DoorOpen,
-      label: "1ª área com processo",
-      value: topEntry ? topEntry.label : "—",
-      hint: "ordem de cadastro, não a contratação",
-      source: SRC.processos,
     },
     {
       icon: CircleDollarSign,
       label: "Contrato",
-      value: `Mensal · ~${money(coreAvgMonthly)}/mês`,
-      hint: `${pct(data.retainer.core)} dos A e B têm honorário mensal`,
+      value: `~${money(coreAvgMonthly)}/mês`,
+      hint: `${pct(data.retainer.core)} têm honorário mensal`,
       source: SRC.honorarios,
     },
     {
       icon: Layers,
       label: "Áreas",
       value: `${coreAvgAreas.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} em média`,
-      hint: "áreas que faturaram em 12 meses",
+      hint: "que faturaram em 12 meses",
       source: SRC.departamento,
     },
   ];
@@ -448,10 +459,7 @@ function ResumoTab({ data }: { data: IcpData }) {
     topSector ? topSector.label : "Empresa",
     topRegion ? `, ${topRegion.phrase}` : "",
     topAdminRole ? ", comandada pelo sócio-administrador" : "",
-    topEntry
-      ? `, cujo primeiro processo costuma ser de ${topEntry.label === "Insolvência" ? "insolvência ou reestruturação" : topEntry.label.toLowerCase()}`
-      : "",
-    ", com honorário mensal e três ou mais áreas.",
+    `, com honorário mensal e cerca de ${Math.max(1, Math.round(coreAvgAreas))} áreas do escritório.`,
   ].join("");
 
   return (
@@ -465,37 +473,56 @@ function ResumoTab({ data }: { data: IcpData }) {
           {pct(data.totals.coreGroups / Math.max(1, data.totals.payingGroups))} da carteira pagante e geram{" "}
           {pct(data.totals.coreRevenueShare)} dos honorários.
         </p>
-        <div className="relative mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+        <div className="relative mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
           {traits.map((t) => (
-            <div key={t.label} className="flex flex-col rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2.5">
+            <div
+              key={t.label}
+              className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2.5"
+              title={t.source ? `Fonte: ${SOURCE_SYSTEM[t.source.system].label} · ${t.source.detail}` : undefined}
+            >
               <div className="flex items-center gap-1.5 text-xs text-white/60">
                 <t.icon className="h-3.5 w-3.5 text-[#47cdd0]" />
                 {t.label}
               </div>
-              <p className="mt-1 text-sm font-medium leading-snug">{t.value}</p>
-              {t.hint && <p className="mt-0.5 text-xs leading-snug text-white/60">{t.hint}</p>}
-              {t.source && (
-                <p className="mt-auto pt-2 text-[11px] leading-snug text-white/45">
-                  Fonte: <span className="text-white/70">{SOURCE_SYSTEM[t.source.system].label}</span> · {t.source.detail}
-                </p>
-              )}
+              <p className="mt-1 text-sm font-semibold leading-snug">{t.value}</p>
+              {t.hint && <p className="mt-0.5 text-xs leading-snug text-white/55">{t.hint}</p>}
             </div>
           ))}
         </div>
-        <div className="relative mt-4 space-y-1 text-xs leading-relaxed text-white/60">
-          <p>
-            <span className="text-white/80">Receita Federal</span>: segmento (CNAE), sede e sócios da empresa de
-            referência de cada grupo, pelos dados abertos do CNPJ (OpenCNPJ, com a BrasilAPI de reserva)
-            {receitaDate ? `, consultados em ${receitaDate}` : ""}. Cobre {cnpjCoverage.coreWithCompany} dos{" "}
-            {cnpjCoverage.coreGroups} grupos A e B e {cnpjCoverage.companies} empresas; grupo sem CNPJ consultado fica sem
-            segmento, e a cidade vem do cadastro do VIOS.
-          </p>
-          <p>
-            <span className="text-white/80">VIOS</span>: honorários, áreas, contrato e primeiro processo.{" "}
-              {excludedRevenueNote(data)}{" "}
-            <span className="text-white/80">ORQESTRAI</span>: NPS. Segmento identificado para clientes que somam{" "}
-            {pct(data.sectors.coverageShare)} da receita.
-          </p>
+        <div className="relative mt-4 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-white/55">
+          <span>Fontes:</span>
+          <span className="text-white/80">Receita Federal</span>
+          <span>·</span>
+          <span className="text-white/80">VIOS</span>
+          <span>·</span>
+          <span className="text-white/80">ORQESTRAI</span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="ml-1 rounded px-1 text-[#47cdd0] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/40"
+              >
+                detalhes
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="max-w-md">
+              <ul className="space-y-1.5 text-xs leading-relaxed text-white/80">
+                <li>
+                  <span className="font-semibold text-white">Receita Federal</span>: segmento (CNAE), sede e sócios da
+                  empresa de referência de cada grupo, pelos dados abertos do CNPJ
+                  {receitaDate ? `, consultados em ${receitaDate}` : ""}. Cobre {cnpjCoverage.coreWithCompany} dos{" "}
+                  {cnpjCoverage.coreGroups} grupos A e B.
+                </li>
+                <li>
+                  <span className="font-semibold text-white">VIOS</span>: honorários, áreas e contrato.{" "}
+                  {excludedRevenueNote(data)}
+                </li>
+                <li>
+                  <span className="font-semibold text-white">ORQESTRAI</span>: NPS.
+                </li>
+              </ul>
+            </TooltipContent>
+          </Tooltip>
         </div>
       </section>
 
@@ -512,8 +539,9 @@ function ResumoTab({ data }: { data: IcpData }) {
           icon={Crosshair}
           label="Concentração"
           value={`${data.totals.groupsFor50} grupos`}
-          hint={`fazem metade da receita; ${data.totals.groupsFor80} fazem 80%`}
+          hint={`os ${data.totals.groupsFor50} maiores fazem 50% da receita; os ${data.totals.groupsFor80} maiores, 80%; os outros ${data.totals.payingGroups - data.totals.groupsFor80}, 20%`}
           source={SRC.honorarios}
+          info={`Os grupos são ordenados do que mais pagou para o que menos pagou em 12 meses, e a receita é somada nessa ordem. Os ${data.totals.groupsFor50} primeiros já somam metade da receita; os ${data.totals.groupsFor80} primeiros (os mesmos ${data.totals.groupsFor50} mais os ${data.totals.groupsFor80 - data.totals.groupsFor50} seguintes) somam 80%. Os ${data.totals.payingGroups - data.totals.groupsFor80} restantes somam os outros 20%.`}
         />
         <Kpi
           icon={Layers}
@@ -536,27 +564,7 @@ function ResumoTab({ data }: { data: IcpData }) {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Panel
-          icon={Factory}
-          title="Segmento"
-          description={`Receita dos grupos A e B por segmento do CNAE (${data.sectors.coreKnown} de ${data.totals.coreGroups} grupos com CNPJ consultado)`}
-          sources={[SRC.cnae, SRC.honorarios]}
-        >
-          <div className="space-y-3">
-            {data.sectors.core.map((s) => (
-              <BarRow
-                key={s.label}
-                label={s.label}
-                value={s.share}
-                max={data.sectors.core[0]?.share ?? 1}
-                display={pct(s.share)}
-              />
-            ))}
-          </div>
-          <p className="mt-4 text-xs text-muted-foreground">
-            O segmento está identificado para clientes que somam {pct(data.sectors.coverageShare)} da receita.
-          </p>
-        </Panel>
+        <SectorPanel data={data} />
 
         <Panel
           icon={Building2}
@@ -572,95 +580,231 @@ function ResumoTab({ data }: { data: IcpData }) {
           </div>
         </Panel>
 
-        <Panel
-          icon={MapPin}
-          title="Região"
-          description={`Sede dos grupos A e B (${data.geography.coreFromReceita} pela Receita) e receita por cidade`}
-          sources={[SRC.sede, SRC.pessoas, SRC.honorarios]}
-        >
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {[
-              { label: "Interior de SP", value: data.geography.coreInterior },
-              { label: "Capital", value: data.geography.coreCapital },
-              { label: "Outros estados", value: data.geography.coreOtherUf },
-              { label: "Sem cidade", value: data.geography.coreUnknown },
-            ].map((g) => (
-              <div key={g.label} className="rounded-lg bg-muted/50 px-3 py-2">
-                <p className="text-xl font-semibold tabular-nums">{g.value}</p>
-                <p className="text-xs text-muted-foreground">{g.label}</p>
-              </div>
-            ))}
-          </div>
-          <div className="mt-4 space-y-2.5">
-            {data.geography.topCities.slice(0, 5).map((c) => (
-              <BarRow
-                key={c.label}
-                label={c.label}
-                value={c.share}
-                max={data.geography.topCities[0]?.share ?? 1}
-                display={pct(c.share, 1)}
-                barClassName="bg-[#3e84a8]"
-              />
-            ))}
-          </div>
-          <p className="mt-4 text-xs text-muted-foreground">
-            São Paulo concentra {pct(data.geography.spShare)} da receita. Cidade da sede da empresa de referência na
-            Receita ({data.cnpjCoverage.withCompany} de {data.cnpjCoverage.groups} grupos); sem CNPJ consultado, a cidade
-            mais frequente no cadastro do VIOS.
-          </p>
-        </Panel>
+        <RegionPanel data={data} />
 
-        <Panel
-          icon={BadgeCheck}
-          title="Decisor"
-          description="Quem administra a empresa na Receita e quem respondeu ao NPS"
-          sources={[SRC.socios, SRC.npsCargo]}
-        >
-          <div className="mb-4 rounded-lg bg-muted/50 px-4 py-3">
-            <p className="text-sm">
-              <span className="font-semibold tabular-nums">{data.decisor.coreWithAdmins}</span>
-              <span className="text-muted-foreground">
-                {" "}
-                de {data.totals.coreGroups} grupos A e B têm sócio com poder de administração no quadro de sócios
-              </span>
-            </p>
-            {data.decisor.adminRoles.length > 0 && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                {data.decisor.adminRoles
-                  .slice(0, 4)
-                  .map((r) => `${r.label}: ${r.count}`)
-                  .join(" · ")}
-              </p>
-            )}
-            <p className="mt-1 text-xs text-muted-foreground">
-              Mostra quem assina pela empresa; quem contrata o jurídico ainda precisa ser confirmado com os responsáveis.
-              Os nomes estão na aba Clientes.
-            </p>
-          </div>
-          <p className="mb-2 text-xs font-medium text-muted-foreground">Cargo de quem respondeu ao NPS</p>
-          <div className="space-y-3">
-            {data.decisor.byRole.map((r) => (
-              <BarRow
-                key={r.label}
-                label={r.label}
-                value={r.count}
-                max={data.decisor.byRole[0]?.count ?? 1}
-                display={String(r.count)}
-                barClassName={r.label === "Sócio ou proprietário" ? "bg-[#347796]" : "bg-[#48466e]/40"}
-              />
-            ))}
-          </div>
-          <p className="mt-4 text-xs text-muted-foreground">
-            Quem contrata e avalia é o dono
-            {data.decisor.ownerAvg != null &&
-              ` (nota média ${data.decisor.ownerAvg.toLocaleString("pt-BR", { maximumFractionDigits: 1 })})`}
-            . Diretoria e financeiro aparecem como interlocutores do dia a dia.
-          </p>
-        </Panel>
+        <DecisorPanel data={data} />
       </div>
 
       <QualificationPanel data={data} />
     </div>
+  );
+}
+
+type TierScope = "all" | "core" | IcpTierKey;
+
+const TIER_SCOPES: { key: TierScope; label: string }[] = [
+  { key: "all", label: "Escritório todo" },
+  { key: "core", label: "ICP (A e B)" },
+  { key: "A", label: "Faixa A" },
+  { key: "B", label: "Faixa B" },
+  { key: "C", label: "Faixa C" },
+  { key: "D", label: "Faixa D" },
+];
+
+function groupsInScope(data: IcpData, scope: TierScope): IcpGroupRow[] {
+  if (scope === "all") return data.groups;
+  if (scope === "core") return data.groups.filter((g) => g.tier === "A" || g.tier === "B");
+  return data.groups.filter((g) => g.tier === scope);
+}
+
+/** "que pagaram honorários em 12 meses", "do ICP (...)" ou "da faixa C (...)". */
+function scopeText(data: IcpData, scope: TierScope): string {
+  if (scope === "all") return "que pagaram honorários em 12 meses";
+  if (scope === "core") return "do ICP (faixas A e B: pagaram R$ 60 mil ou mais em 12 meses)";
+  const tier = data.tiers.find((t) => t.key === scope);
+  return `da faixa ${scope} (${tier?.range ?? ""} em 12 meses)`;
+}
+
+function TierScopeTabs({ value, onChange }: { value: TierScope; onChange: (scope: TierScope) => void }) {
+  return (
+    <div className="mb-4 flex flex-wrap gap-1" role="tablist" aria-label="Grupos considerados">
+      {TIER_SCOPES.map(({ key, label }) => (
+        <button
+          key={key}
+          type="button"
+          role="tab"
+          aria-selected={value === key}
+          onClick={() => onChange(key)}
+          className={cn(
+            "min-h-8 whitespace-nowrap rounded-md border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]",
+            value === key
+              ? "border-[#04202f] bg-[#04202f] text-white"
+              : "bg-card text-muted-foreground hover:border-foreground/25 hover:text-foreground"
+          )}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const isCapitalCity = (city: string | null) => /^s[ãa]o paulo$/i.test((city ?? "").trim());
+
+/** Onde ficam os grupos (sede na Receita ou cidade do VIOS): no escritório todo ou por faixa. */
+function RegionPanel({ data }: { data: IcpData }) {
+  const [scope, setScope] = useState<TierScope>("all");
+  const inScope = groupsInScope(data, scope);
+  const revenue = inScope.reduce((acc, g) => acc + g.revenue12m, 0);
+  const counts = [
+    { label: "Interior de SP", value: inScope.filter((g) => g.uf === "SP" && g.city && !isCapitalCity(g.city)).length },
+    { label: "Capital", value: inScope.filter((g) => g.uf === "SP" && isCapitalCity(g.city)).length },
+    { label: "Outros estados", value: inScope.filter((g) => g.uf && g.uf !== "SP").length },
+    { label: "Sem cidade", value: inScope.filter((g) => !g.uf || (g.uf === "SP" && !g.city)).length },
+  ];
+  const byCity = new Map<string, number>();
+  let spRevenue = 0;
+  for (const g of inScope) {
+    if (g.city) byCity.set(g.city, (byCity.get(g.city) ?? 0) + g.revenue12m);
+    if (g.uf === "SP") spRevenue += g.revenue12m;
+  }
+  const cities = [...byCity.entries()]
+    .map(([label, value]) => ({ label, value, share: revenue > 0 ? value / revenue : 0 }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 5);
+  const fromReceita = inScope.filter((g) => g.regionSource === "receita").length;
+
+  return (
+    <Panel
+      icon={MapPin}
+      title="Região"
+      description={`Onde ficam os ${inScope.length} grupos ${scopeText(data, scope)} e de quais cidades vem a receita`}
+      info="Região é a cidade da sede da empresa de referência do grupo, na Receita Federal. Grupo sem CNPJ consultado usa a cidade mais frequente no cadastro do VIOS."
+      sources={[SRC.sede, SRC.pessoas, SRC.honorarios]}
+    >
+      <TierScopeTabs value={scope} onChange={setScope} />
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {counts.map((c) => (
+          <div key={c.label} className="rounded-lg bg-muted/50 px-3 py-2">
+            <p className="text-xl font-semibold tabular-nums">{c.value}</p>
+            <p className="text-xs text-muted-foreground">{c.label}</p>
+          </div>
+        ))}
+      </div>
+      <p className="mb-2 mt-4 text-xs font-medium text-muted-foreground">Cidades com mais receita</p>
+      <div className="space-y-2.5">
+        {cities.map((c) => (
+          <BarRow
+            key={c.label}
+            label={c.label}
+            hint={money(c.value)}
+            value={c.share}
+            max={cities[0]?.share ?? 1}
+            display={pct(c.share, 1)}
+            barClassName="bg-[#3e84a8]"
+          />
+        ))}
+      </div>
+      <p className="mt-4 text-xs text-muted-foreground">
+        São Paulo (estado) concentra {pct(revenue > 0 ? spRevenue / revenue : null)} da receita.{" "}
+        {fromReceita} de {inScope.length} grupos têm a sede pela Receita; os demais usam a cidade do cadastro do VIOS.
+      </p>
+    </Panel>
+  );
+}
+
+/**
+ * Quem decide: sócios administradores da Receita, filtrados por faixa, e o cargo de quem
+ * respondeu ao NPS (todas as respostas; o NPS não está ligado a um grupo no cálculo).
+ */
+function DecisorPanel({ data }: { data: IcpData }) {
+  const [scope, setScope] = useState<TierScope>("all");
+  const inScope = groupsInScope(data, scope);
+  const withAdmins = inScope.filter((g) => g.decisionMakers.length > 0).length;
+  const withCompany = inScope.filter((g) => g.referenceCompany).length;
+  const roleCounts = new Map<string, number>();
+  for (const d of inScope.flatMap((g) => g.decisionMakers)) {
+    const role = d.qualificacao ?? "Sem qualificação";
+    roleCounts.set(role, (roleCounts.get(role) ?? 0) + 1);
+  }
+  const roles = [...roleCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+  const { decisor } = data;
+
+  return (
+    <Panel
+      icon={BadgeCheck}
+      title="Decisor"
+      description={`Quem administra as empresas dos ${inScope.length} grupos ${scopeText(data, scope)}`}
+      info="Sócios com poder de administração no quadro de sócios (QSA) da Receita Federal. Mostra quem assina pela empresa; quem contrata o jurídico ainda precisa ser confirmado com os responsáveis."
+      sources={[SRC.socios, SRC.npsCargo]}
+    >
+      <TierScopeTabs value={scope} onChange={setScope} />
+      <div className="mb-4 rounded-lg bg-muted/50 px-4 py-3">
+        <p className="text-sm">
+          <span className="font-semibold tabular-nums">{withAdmins}</span>
+          <span className="text-muted-foreground">
+            {" "}
+            de {inScope.length} grupos têm sócio com poder de administração no quadro de sócios
+          </span>
+        </p>
+        {roles.length > 0 && (
+          <p className="mt-1 text-xs text-muted-foreground">{roles.map(([label, count]) => `${label}: ${count}`).join(" · ")}</p>
+        )}
+        <p className="mt-1 text-xs text-muted-foreground">
+          {inScope.length - withCompany > 0
+            ? `${inScope.length - withCompany} grupos não têm empresa consultada na Receita (pessoa física ou sem CNPJ). `
+            : ""}
+          Os nomes estão na aba Clientes.
+        </p>
+      </div>
+      <p className="mb-2 text-xs font-medium text-muted-foreground">
+        Cargo de quem respondeu ao NPS <span className="font-normal">· todas as {decisor.responses} respostas</span>
+      </p>
+      <div className="space-y-3">
+        {decisor.byRole.map((r) => (
+          <BarRow
+            key={r.label}
+            label={r.label}
+            value={r.count}
+            max={decisor.byRole[0]?.count ?? 1}
+            display={String(r.count)}
+            barClassName={r.label === "Sócio ou proprietário" ? "bg-[#347796]" : "bg-[#48466e]/40"}
+          />
+        ))}
+      </div>
+      <p className="mt-4 text-xs text-muted-foreground">
+        Quem contrata e avalia é o dono
+        {decisor.ownerAvg != null &&
+          ` (nota média ${decisor.ownerAvg.toLocaleString("pt-BR", { maximumFractionDigits: 1 })})`}
+        . Diretoria e financeiro aparecem como interlocutores do dia a dia. As respostas do NPS ainda não são separadas
+        por faixa.
+      </p>
+    </Panel>
+  );
+}
+
+/** Segmento dos grupos que pagaram em 12 meses: no escritório todo ou por faixa. */
+function SectorPanel({ data }: { data: IcpData }) {
+  const [scope, setScope] = useState<TierScope>("all");
+  const inScope = groupsInScope(data, scope);
+  const withSector = inScope.filter((g) => g.sectorBucket);
+  const list = sectorShares(withSector);
+  const groups = inScope.length;
+  const known = withSector.length;
+  const individuals = inScope.filter((g) => !g.sectorBucket && g.clientType === "pessoa_fisica").length;
+  const others = groups - known - individuals;
+
+  return (
+    <Panel
+      icon={Factory}
+      title="Segmento"
+      description={`Receita por segmento dos ${groups} grupos ${scopeText(data, scope)}`}
+      info="Segmento é o macrossetor do CNAE principal da empresa de referência de cada grupo, na Receita Federal. A barra mostra quanto da receita dos grupos com segmento vem de cada setor."
+      sources={[SRC.cnae, SRC.honorarios]}
+    >
+      <TierScopeTabs value={scope} onChange={setScope} />
+      <div className="space-y-3">
+        {list.map((s) => (
+          <BarRow key={s.label} label={s.label} value={s.share} max={list[0]?.share ?? 1} display={pct(s.share)} />
+        ))}
+      </div>
+      <p className="mt-4 text-xs text-muted-foreground">
+        {known} de {groups} grupos têm segmento.
+        {individuals > 0 && ` ${individuals} ${individuals === 1 ? "é pessoa física" : "são pessoa física"} e não têm CNPJ.`}
+        {others > 0 &&
+          ` ${others} ${others === 1 ? "é empresa" : "são empresas"} sem CNPJ no VIOS.`}
+      </p>
+    </Panel>
   );
 }
 
@@ -770,17 +914,28 @@ function LabelWithInfo({ label, info, className }: { label: string; info: string
 }
 
 function CarteiraTab({ data }: { data: IcpData }) {
+  const [area, setArea] = useState<string | null>(null);
+  const [selected, setSelected] = useState<IcpSizeBucketKey>("maiores");
+  const listRef = useRef<HTMLElement>(null);
+  const buckets = useMemo(() => sizeBuckets(data.groups, area), [data.groups, area]);
+
   const withHours = data.groups.filter((g) => g.hours12m > 0);
   const revenueWithHours = withHours.reduce((acc, g) => acc + g.revenue12m, 0);
   const costWithHours = withHours.reduce((acc, g) => acc + g.deliveryCost, 0);
   const officeMargin = revenueWithHours > 0 ? (revenueWithHours - costWithHours) / revenueWithHours : null;
   const overdue = data.groups.reduce((acc, g) => acc + g.overdue, 0);
 
+  function seeClients(key: IcpSizeBucketKey) {
+    setSelected(key);
+    listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
           icon={CircleDollarSign}
+          tone="blue"
           label="Receita em 12 meses"
           value={money(data.totals.revenue12m)}
           hint={
@@ -793,6 +948,7 @@ function CarteiraTab({ data }: { data: IcpData }) {
         />
         <Kpi
           icon={Crosshair}
+          tone="teal"
           label="ICP (faixas A e B)"
           value={`${data.totals.coreGroups} grupos`}
           hint={`${pct(data.totals.coreRevenueShare)} da receita`}
@@ -800,7 +956,8 @@ function CarteiraTab({ data }: { data: IcpData }) {
           info={INFO.icp}
         />
         <Kpi
-          icon={Layers}
+          icon={ChartColumn}
+          tone="green"
           label="Margem de contribuição"
           value={pct(officeMargin)}
           hint={`${withHours.length} grupos com horas apontadas`}
@@ -809,6 +966,7 @@ function CarteiraTab({ data }: { data: IcpData }) {
         />
         <Kpi
           icon={Clock}
+          tone="rose"
           label="Em atraso hoje"
           value={money(overdue)}
           hint={`${pct(ratio(overdue, data.totals.revenue12m))} da receita de 12 meses`}
@@ -817,17 +975,128 @@ function CarteiraTab({ data }: { data: IcpData }) {
         />
       </div>
 
-      <TierPanel data={data} />
-      <SizeComparisonPanel data={data} />
-      <AreasPanel data={data} />
-      <EntryPanel data={data} />
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+        <TierPanel data={data} />
+        <RevenueMixPanel data={data} />
+      </div>
+
+      <SizeCardsPanel data={data} area={area} onAreaChange={setArea} buckets={buckets} onSeeClients={seeClients} />
+      <BucketListPanel ref={listRef} buckets={buckets} selected={selected} onSelect={setSelected} showAreas={!area} />
+
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        <AreasPanel data={data} />
+        <BreadthPanel data={data} />
+        <EntryPanel data={data} />
+      </div>
     </div>
+  );
+}
+
+/** Tons das faixas (A mais escuro): uma escala do mesmo azul, validada para daltonismo. */
+const TIER_TONE: Record<IcpTierKey, string> = {
+  A: "#12384a",
+  B: "#347796",
+  C: "#7fb3cb",
+  D: "#cfe3ec",
+};
+
+/** Atraso sobre a receita: verde até 15%, âmbar até 50%, vermelho acima. */
+function overdueTone(ratioValue: number): string {
+  if (ratioValue >= 0.5) return "bg-red-500";
+  if (ratioValue >= 0.15) return "bg-amber-400";
+  return "bg-emerald-500";
+}
+
+function TierPanel({ data }: { data: IcpData }) {
+  return (
+    <Panel
+      icon={Crosshair}
+      title="Faixas da carteira"
+      description="Quantos grupos há em cada faixa de honorários e quanto da receita eles geram"
+      info={INFO.faixa}
+      sources={[SRC.honorarios, SRC.departamento, SRC.atraso]}
+    >
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[600px] text-sm">
+          <thead>
+            <tr className="whitespace-nowrap border-b text-left text-xs text-muted-foreground">
+              <th className="pb-2 font-medium">
+                <LabelWithInfo label="Faixa" info={INFO.faixa} />
+              </th>
+              <th className="w-[32%] pb-2 font-medium">
+                <LabelWithInfo label="Grupos e receita" info={INFO.participacao} />
+              </th>
+              <th className="pb-2 pl-3 text-right font-medium">
+                <LabelWithInfo label="Ticket/mês" info={INFO.ticket} className="justify-end" />
+              </th>
+              <th className="pb-2 pl-3 text-right font-medium">
+                <LabelWithInfo label="Áreas" info={INFO.areasPorCliente} className="justify-end" />
+              </th>
+              <th className="pb-2 pl-3 text-right font-medium">
+                <LabelWithInfo label="Mensal" info={INFO.mensal} className="justify-end" />
+              </th>
+              <th className="pb-2 pl-4 font-medium">
+                <LabelWithInfo label="Atraso" info={INFO.atrasoReceita} />
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.tiers.map((t) => (
+              <tr key={t.key} className="border-b last:border-0">
+                <td className="py-3 pr-3">
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      className={cn(
+                        "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                        TIER_STYLE[t.key].badge
+                      )}
+                    >
+                      {t.key}
+                    </span>
+                    <div className="whitespace-nowrap">
+                      <p className="font-medium">{t.range}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {t.groups} grupos{t.key === "A" || t.key === "B" ? " · ICP" : ""}
+                      </p>
+                    </div>
+                  </div>
+                </td>
+                <td className="space-y-1.5 py-3 pr-4">
+                  <ShareBar value={t.groupShare} label="dos grupos" />
+                  <ShareBar value={t.revenueShare} label="da receita" strong />
+                </td>
+                <td className="whitespace-nowrap py-3 pl-3 text-right tabular-nums">{money(t.avgMonthly)}</td>
+                <td className="py-3 pl-3 text-right tabular-nums">
+                  {t.avgAreas.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}
+                </td>
+                <td className="py-3 pl-3 text-right tabular-nums">{pct(t.retainerShare)}</td>
+                <td className="py-3 pl-4">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn("w-10 text-right tabular-nums", t.overdueRatio >= 0.5 && "font-semibold text-red-700")}
+                    >
+                      {pct(t.overdueRatio)}
+                    </span>
+                    <div className="h-1.5 w-12 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className={cn("h-full rounded-full", overdueTone(t.overdueRatio))}
+                        style={{ width: `${Math.min(100, Math.max(3, t.overdueRatio * 100))}%` }}
+                      />
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
   );
 }
 
 function ShareBar({ value, label, strong }: { value: number; label: string; strong?: boolean }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_92px] items-center gap-2">
+    <div className="grid grid-cols-[minmax(0,1fr)_88px] items-center gap-2 whitespace-nowrap">
       <div className="h-1.5 overflow-hidden rounded-full bg-muted">
         <div
           className={cn("h-full rounded-full", strong ? "bg-[#347796]" : "bg-slate-300")}
@@ -841,85 +1110,77 @@ function ShareBar({ value, label, strong }: { value: number; label: string; stro
   );
 }
 
-function TierPanel({ data }: { data: IcpData }) {
+/** Duas barras 100% empilhadas: quanto cada faixa é dos grupos e quanto é da receita. */
+function RevenueMixPanel({ data }: { data: IcpData }) {
+  const [hovered, setHovered] = useState<IcpTierKey | null>(null);
+  const rows = [
+    { key: "groups", label: "Grupos", total: `${data.totals.payingGroups} grupos`, share: (t: IcpTier) => t.groupShare },
+    { key: "revenue", label: "Receita", total: money(data.totals.revenue12m), share: (t: IcpTier) => t.revenueShare },
+  ];
+  const top = data.tiers.find((t) => t.key === "A");
+
   return (
     <Panel
-      icon={Crosshair}
-      title="Faixas da carteira"
-      description="Quantos grupos há em cada faixa de honorários e quanto da receita eles geram"
-      info={INFO.faixa}
-      sources={[SRC.honorarios, SRC.departamento, SRC.atraso]}
+      icon={ChartPie}
+      title="Distribuição da receita"
+      description="Peso de cada faixa no número de grupos e na receita"
+      info="Cada barra soma 100%. A de cima divide os grupos pagantes pelas faixas; a de baixo divide a receita de 12 meses."
+      sources={[SRC.honorarios]}
     >
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] text-sm">
-          <thead>
-            <tr className="border-b text-left text-xs text-muted-foreground">
-              <th className="pb-2 font-medium">
-                <LabelWithInfo label="Faixa" info={INFO.faixa} />
-              </th>
-              <th className="w-[30%] pb-2 font-medium">
-                <LabelWithInfo label="Grupos e receita" info={INFO.participacao} />
-              </th>
-              <th className="pb-2 text-right font-medium">
-                <LabelWithInfo label="Ticket mensal" info={INFO.ticket} className="justify-end" />
-              </th>
-              <th className="pb-2 text-right font-medium">
-                <LabelWithInfo label="Áreas por cliente" info={INFO.areasPorCliente} className="justify-end" />
-              </th>
-              <th className="pb-2 text-right font-medium">
-                <LabelWithInfo label="Com mensal" info={INFO.mensal} className="justify-end" />
-              </th>
-              <th className="pb-2 text-right font-medium">
-                <LabelWithInfo label="Atraso / receita" info={INFO.atrasoReceita} className="justify-end" />
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.tiers.map((t) => {
-              const core = t.key === "A" || t.key === "B";
-              return (
-                <tr key={t.key} className={cn("border-b last:border-0", core && "bg-[#47cdd0]/[0.06]")}>
-                  <td className="py-3 pl-2 pr-3">
-                    <div className="flex items-center gap-2.5">
-                      <span
-                        className={cn(
-                          "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
-                          TIER_STYLE[t.key].badge
-                        )}
-                      >
-                        {t.key}
-                      </span>
-                      <div>
-                        <p className="font-medium">{t.range}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {t.groups} grupos{core ? " · ICP" : ""}
-                        </p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="space-y-1.5 py-3 pr-4">
-                    <ShareBar value={t.groupShare} label="dos grupos" />
-                    <ShareBar value={t.revenueShare} label="da receita" strong />
-                  </td>
-                  <td className="py-3 text-right tabular-nums">{money(t.avgMonthly)}</td>
-                  <td className="py-3 text-right tabular-nums">
-                    {t.avgAreas.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}
-                  </td>
-                  <td className="py-3 text-right tabular-nums">{pct(t.retainerShare)}</td>
-                  <td
+      <div className="space-y-5">
+        {rows.map((row) => (
+          <div key={row.key}>
+            <div className="mb-1.5 flex items-baseline justify-between text-xs">
+              <span className="font-medium">{row.label}</span>
+              <span className="tabular-nums text-muted-foreground">{row.total}</span>
+            </div>
+            <div className="flex h-9 gap-0.5 overflow-hidden rounded-md">
+              {data.tiers.map((t) => {
+                const share = row.share(t);
+                if (share <= 0) return null;
+                return (
+                  <div
+                    key={t.key}
                     className={cn(
-                      "py-3 pr-2 text-right tabular-nums",
-                      t.overdueRatio >= 0.5 ? "font-semibold text-amber-700" : ""
+                      "flex items-center justify-center text-[11px] font-semibold tabular-nums transition-opacity",
+                      hovered && hovered !== t.key && "opacity-40",
+                      t.key === "A" || t.key === "B" ? "text-white" : "text-[#04202f]"
                     )}
+                    style={{ width: `${share * 100}%`, backgroundColor: TIER_TONE[t.key] }}
+                    title={`Faixa ${t.key} (${t.range}): ${pct(share)} ${row.key === "groups" ? "dos grupos" : "da receita"}`}
+                    onMouseEnter={() => setHovered(t.key)}
+                    onMouseLeave={() => setHovered(null)}
                   >
-                    {pct(t.overdueRatio)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                    {share >= 0.07 ? pct(share) : ""}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
+
+      <ul className="mt-5 grid grid-cols-2 gap-x-4 gap-y-2">
+        {data.tiers.map((t) => (
+          <li
+            key={t.key}
+            className={cn("flex items-center gap-2 text-xs transition-opacity", hovered && hovered !== t.key && "opacity-40")}
+            onMouseEnter={() => setHovered(t.key)}
+            onMouseLeave={() => setHovered(null)}
+          >
+            <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: TIER_TONE[t.key] }} />
+            <span className="font-medium">{t.key}</span>
+            <span className="truncate text-muted-foreground">{t.range}</span>
+          </li>
+        ))}
+      </ul>
+
+      {top && (
+        <p className="mt-5 rounded-lg bg-[#47cdd0]/10 px-4 py-3 text-sm text-[#04202f]">
+          A faixa A tem <span className="font-semibold">{pct(top.groupShare)}</span> dos grupos e gera{" "}
+          <span className="font-semibold">{pct(top.revenueShare)}</span> da receita.
+        </p>
+      )}
     </Panel>
   );
 }
@@ -1051,200 +1312,167 @@ const SIZE_METRIC_SECTIONS: { title: string; rows: MetricRow[] }[] = [
   },
 ];
 
-const ALL_AREAS = "__todas__";
+const SIZE_BUCKET_ICON: Record<IcpSizeBucketKey, { icon: LucideIcon; tone: string }> = {
+  maiores: { icon: Crown, tone: "bg-amber-50 text-amber-600" },
+  medios: { icon: ChartColumn, tone: "bg-[#347796]/10 text-[#347796]" },
+  menores: { icon: UserRound, tone: "bg-[#48466e]/10 text-[#48466e]" },
+};
 
-function SizeComparisonPanel({ data }: { data: IcpData }) {
-  const [area, setArea] = useState<string | null>(null);
-  const [selected, setSelected] = useState<IcpSizeBucketKey>("maiores");
+function AreaFilter({ options, value, onChange }: { options: string[]; value: string | null; onChange: (area: string | null) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrar por área">
+      {[null, ...options].map((a) => {
+        const active = value === a;
+        return (
+          <button
+            key={a ?? "todas"}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(a)}
+            className={cn(
+              "inline-flex min-h-9 items-center gap-2 rounded-lg border py-1 pl-1 pr-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]",
+              active
+                ? "border-[#04202f] bg-[#04202f] text-white"
+                : "bg-card text-muted-foreground hover:border-foreground/25 hover:text-foreground"
+            )}
+          >
+            {a ? (
+              <AreaBadge area={a} size="sm" />
+            ) : (
+              <span
+                className={cn(
+                  "inline-flex h-6 w-6 items-center justify-center rounded-md",
+                  active ? "bg-white/15" : "bg-muted ring-1 ring-border"
+                )}
+              >
+                <Building2 className="h-3.5 w-3.5" />
+              </span>
+            )}
+            {a ?? "Escritório todo"}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SizeCardsPanel({
+  data,
+  area,
+  onAreaChange,
+  buckets,
+  onSeeClients,
+}: {
+  data: IcpData;
+  area: string | null;
+  onAreaChange: (area: string | null) => void;
+  buckets: IcpSizeBucket[];
+  onSeeClients: (key: IcpSizeBucketKey) => void;
+}) {
+  const [showComparison, setShowComparison] = useState(false);
   const areaOptions = data.areaRevenue.filter((a) => a.label !== "Outros").map((a) => a.label);
-  const buckets = useMemo(() => sizeBuckets(data.groups, area), [data.groups, area]);
-  const current = buckets.find((b) => b.key === selected) ?? buckets[0];
-  const { delivery } = data;
 
   return (
     <Panel
       icon={Users}
       title="Maiores, médios e menores clientes"
-      description={`10 que mais pagaram, 10 em volta da mediana e 10 que menos pagaram em 12 meses${area ? ` em ${area}` : " no escritório"}`}
-      info="Compara tamanho, esforço, rentabilidade, risco e perfil dos clientes por faixa de tamanho. Escolha uma área para ver só a receita, as horas e o atraso daquele departamento."
+      description={`Os 10 que mais pagam, os 10 do meio e os 10 que menos pagam em 12 meses${area ? ` em ${area}` : " no escritório"}`}
+      info="Compara tamanho, esforço, rentabilidade e risco dos clientes por faixa de tamanho. Escolha uma área para ver só a receita, as horas e o atraso daquele departamento."
       sources={[SRC.honorarios, SRC.timesheet, SRC.custoPessoal, SRC.atraso, SRC.cnae]}
-      action={
-        <Select value={area ?? ALL_AREAS} onValueChange={(v) => setArea(v === ALL_AREAS ? null : v)}>
-          <SelectTrigger size="sm" className="w-48 text-xs" aria-label="Filtrar por área">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent align="end">
-            <SelectItem value={ALL_AREAS}>Escritório todo</SelectItem>
-            {areaOptions.map((a) => (
-              <SelectItem key={a} value={a}>
-                {a}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      }
     >
-      {/* Comparativo: uma coluna por bloco, métricas agrupadas por tema. */}
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[640px] text-sm">
-          <thead>
-            <tr>
-              <th className="w-[28%]" />
-              {buckets.map((b) => (
-                <th key={b.key} scope="col" className="px-2 pb-2 text-left align-bottom">
-                  <div className="rounded-lg bg-muted/60 px-3 py-2">
-                    <span className="block text-sm font-semibold">{SIZE_BUCKET_LABEL[b.key].title}</span>
-                    <span className="block text-xs font-normal text-muted-foreground">{SIZE_BUCKET_LABEL[b.key].hint}</span>
-                  </div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          {SIZE_METRIC_SECTIONS.map((section) => (
-            <tbody key={section.title}>
-              <tr>
-                <th
-                  colSpan={4}
-                  scope="colgroup"
-                  className="pb-1 pt-4 text-left text-[11px] font-semibold uppercase tracking-wide text-[#347796]"
-                >
-                  {section.title}
-                </th>
-              </tr>
-              {section.rows.map((row) => (
-                <tr key={row.label} className="border-t border-dashed first:border-0">
-                  <th scope="row" className="py-2.5 pr-3 text-left align-top text-xs font-normal text-muted-foreground">
-                    <LabelWithInfo label={row.label} info={row.info} />
-                  </th>
-                  {buckets.map((b) => {
-                    const cell = row.cells(b);
-                    return (
-                      <td key={b.key} className="px-2 py-2.5 align-top">
-                        <div className="px-3">
-                          <span className={cn("font-semibold tabular-nums", cell.warn && "text-amber-700")}>{cell.value}</span>
-                          {cell.sub && <span className="block text-[11px] leading-snug text-muted-foreground">{cell.sub}</span>}
-                          {cell.bar != null && <MiniBar value={cell.bar} warn={cell.warn} />}
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          ))}
-        </table>
-      </div>
+      <AreaFilter options={areaOptions} value={area} onChange={onAreaChange} />
 
-      {/* Lista: um bloco por vez. */}
-      <div className="mt-6 border-t pt-5">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm font-semibold">Quem está em cada bloco</p>
-          <div className="flex rounded-lg border bg-muted/40 p-1" role="tablist" aria-label="Bloco de clientes">
-            {buckets.map((b) => (
+      {buckets[0] && buckets[0].rankedTotal > 0 && (
+        <div className="mt-4 flex items-start gap-2.5 rounded-lg bg-muted/50 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+          <ListOrdered className="mt-0.5 h-4 w-4 shrink-0 text-[#347796]" />
+          <p>
+            <span className="font-medium text-foreground">Como separamos:</span> os{" "}
+            <span className="font-medium text-foreground">{buckets[0].rankedTotal} grupos</span> que pagaram honorários
+            nos últimos 12 meses{area ? ` em ${area}` : ""} são ordenados da maior para a menor receita. Os{" "}
+            <span className="font-medium text-foreground">maiores</span> são os 10 primeiros; os{" "}
+            <span className="font-medium text-foreground">médios</span>, os 10 do meio da lista, em volta da mediana de{" "}
+            {money(buckets[0].medianRevenue)} em 12 meses; os <span className="font-medium text-foreground">menores</span>,
+            os 10 últimos.
+          </p>
+        </div>
+      )}
+
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        {buckets.map((b) => {
+          const n = b.groups.length;
+          const margin = marginOf(b.revenue, b.cost, b.hours);
+          const overdueShare = ratio(b.overdue, b.revenue);
+          const { icon: Icon, tone } = SIZE_BUCKET_ICON[b.key];
+          return (
+            <div key={b.key} className="flex flex-col rounded-xl border p-4">
+              <div className="flex items-start gap-3">
+                <span className={cn("inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", tone)}>
+                  <Icon className="h-5 w-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">{SIZE_BUCKET_LABEL[b.key].title}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {b.rankFrom
+                      ? `posições ${b.rankFrom} a ${b.rankTo} de ${b.rankedTotal}`
+                      : SIZE_BUCKET_LABEL[b.key].hint}
+                  </p>
+                </div>
+              </div>
+
+              <p className="mt-4 text-2xl font-semibold tabular-nums tracking-tight">{money(b.revenue)}</p>
+              <p className="text-xs text-muted-foreground">receita em 12 meses</p>
+
+              <dl className="mt-4 grid grid-cols-3 gap-3 border-t pt-3">
+                <div>
+                  <dt className="text-[11px] text-muted-foreground">Ticket mensal</dt>
+                  <dd className="text-sm font-semibold tabular-nums">{n ? money(b.revenue / n / 12) : "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-[11px] text-muted-foreground">Margem</dt>
+                  <dd className={cn("text-sm font-semibold tabular-nums", margin != null && margin < 0.3 && "text-amber-700")}>
+                    {pct(margin)}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[11px] text-muted-foreground">Em atraso</dt>
+                  <dd
+                    className={cn(
+                      "text-sm font-semibold tabular-nums",
+                      overdueShare != null && overdueShare >= 0.5 && "text-red-700"
+                    )}
+                  >
+                    {money(b.overdue)}
+                  </dd>
+                  <dd className="text-[11px] text-muted-foreground">{pct(overdueShare)} da receita</dd>
+                </div>
+              </dl>
+
               <button
-                key={b.key}
                 type="button"
-                role="tab"
-                aria-selected={current?.key === b.key}
-                onClick={() => setSelected(b.key)}
-                className={cn(
-                  "min-h-8 rounded-md px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]",
-                  current?.key === b.key ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                )}
+                onClick={() => onSeeClients(b.key)}
+                className="mt-4 inline-flex items-center gap-1 self-start rounded-md text-xs font-medium text-[#347796] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
               >
-                {SIZE_BUCKET_LABEL[b.key].title}
+                Ver clientes
+                <ArrowRight className="h-3.5 w-3.5" />
               </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-sm">
-            <thead>
-              <tr className="border-b text-left text-xs text-muted-foreground">
-                <th className="pb-2 font-medium">Grupo</th>
-                <th className="pb-2 text-right font-medium">
-                  <LabelWithInfo label="Receita 12 meses" info={INFO.receita} className="justify-end" />
-                </th>
-                <th className="pb-2 text-right font-medium">
-                  <LabelWithInfo label="Horas" info={INFO.horas} className="justify-end" />
-                </th>
-                <th className="pb-2 text-right font-medium">
-                  <LabelWithInfo label="Receita por hora" info={INFO.receitaHora} className="justify-end" />
-                </th>
-                <th className="pb-2 pl-6 font-medium">
-                  <LabelWithInfo label="Margem" info={INFO.margem} />
-                </th>
-                <th className="pb-2 text-right font-medium">
-                  <LabelWithInfo label="Em atraso" info={INFO.atraso} className="justify-end" />
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {(current?.groups ?? []).map((g, i) => {
-                const margin = marginOf(g.revenue, g.cost, g.hours);
-                const profile = [g.group.sectorBucket].filter(Boolean);
-                return (
-                  <tr key={g.grupo} className="border-b last:border-0 hover:bg-muted/40">
-                    <td className="max-w-[280px] py-2.5 pr-3">
-                      <div className="flex items-baseline gap-2">
-                        <span className="w-4 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{i + 1}</span>
-                        <div className="min-w-0">
-                          <p className="truncate font-medium" title={g.grupo}>
-                            {g.grupo.replace(/^grupo\s+/i, "")}
-                          </p>
-                          <p className="truncate text-xs text-muted-foreground" title={g.group.sector ?? undefined}>
-                            {profile.length ? profile.join(" · ") : "Sem CNPJ consultado"}
-                          </p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-2.5 text-right tabular-nums">
-                      <span className="font-semibold">{money(g.revenue)}</span>
-                      <span className="block text-xs text-muted-foreground">{money(g.revenue / 12)}/mês</span>
-                    </td>
-                    <td className="py-2.5 text-right tabular-nums">{g.hours > 0 ? hoursLabel(g.hours) : "—"}</td>
-                    <td className="py-2.5 text-right tabular-nums">{g.hours > 0 ? money(g.revenue / g.hours) : "—"}</td>
-                    <td className="py-2.5 pl-6" title={g.hours > 0 ? `Custo de entrega: ${money(g.cost)}` : "Sem horas apontadas"}>
-                      {margin == null ? (
-                        <span className="text-xs text-muted-foreground">sem horas</span>
-                      ) : g.hours < 10 ? (
-                        <span className="text-xs text-muted-foreground" title="Menos de 10 horas apontadas: a margem não é confiável">
-                          {pct(margin)} · poucas horas
-                        </span>
-                      ) : (
-                        <>
-                          <span className={cn("tabular-nums", margin < 0.3 && "font-semibold text-amber-700")}>{pct(margin)}</span>
-                          <MiniBar value={Math.max(0, margin)} warn={margin < 0.3} />
-                        </>
-                      )}
-                    </td>
-                    <td className="py-2.5 text-right tabular-nums">
-                      {g.overdue > 0 ? (
-                        <>
-                          <span className={cn(g.overdue > g.revenue * 0.5 && "font-semibold text-amber-700")}>{money(g.overdue)}</span>
-                          <span className="block text-xs text-muted-foreground">{pct(g.overdue / g.revenue)} da receita</span>
-                        </>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {(current?.groups.length ?? 0) === 0 && (
-                <tr>
-                  <td colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
-                    Nenhum cliente neste bloco.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          );
+        })}
       </div>
 
-      <details className="group mt-5 rounded-lg bg-muted/40 px-4 py-3">
+      <button
+        type="button"
+        aria-expanded={showComparison}
+        onClick={() => setShowComparison((v) => !v)}
+        className="mt-4 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-[#347796] hover:bg-[#347796]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
+      >
+        <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showComparison && "rotate-180")} />
+        {showComparison ? "Ocultar comparativo completo" : "Ver comparativo completo (horas, custo, receita por hora e segmento)"}
+      </button>
+
+      {showComparison && <ComparisonTable buckets={buckets} />}
+
+      <details className="group mt-4 rounded-lg bg-muted/40 px-4 py-3">
         <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground">
           <Lightbulb className="h-3.5 w-3.5 text-[#347796]" />
           Custo por hora de cada área e horas consideradas
@@ -1255,13 +1483,13 @@ function SizeComparisonPanel({ data }: { data: IcpData }) {
           <div className="space-y-2 text-xs leading-relaxed text-muted-foreground">
             <p>{INFO.custo} Áreas sem folha própria usam a média do escritório.</p>
             <p>
-              {pct(ratio(delivery.clientHours, delivery.hours))} das {hoursLabel(delivery.hours)} apontadas no período foram
-              para clientes que pagaram honorários; o restante é trabalho interno, prospecção ou clientes sem pagamento em
-              12 meses. Cliente sem hora apontada fica sem margem: honorário de êxito ou hora não lançada.
+              {pct(ratio(data.delivery.clientHours, data.delivery.hours))} das {hoursLabel(data.delivery.hours)} apontadas
+              no período foram para clientes que pagaram honorários; o restante é trabalho interno, prospecção ou clientes
+              sem pagamento em 12 meses. Cliente sem hora apontada fica sem margem: honorário de êxito ou hora não lançada.
             </p>
           </div>
           <ul className="space-y-1.5">
-            {delivery.rates.map((r) => (
+            {data.delivery.rates.map((r) => (
               <li key={r.area} className="flex items-center justify-between gap-3 text-xs">
                 <span className="flex min-w-0 items-center gap-2">
                   {r.area !== "Outros" ? <AreaBadge area={r.area} size="sm" /> : <span className="h-6 w-6 shrink-0" />}
@@ -1280,71 +1508,331 @@ function SizeComparisonPanel({ data }: { data: IcpData }) {
   );
 }
 
+/** Comparativo completo: uma coluna por bloco, métricas agrupadas por tema. */
+function ComparisonTable({ buckets }: { buckets: IcpSizeBucket[] }) {
+  return (
+    <div className="mt-3 overflow-x-auto">
+      <table className="w-full min-w-[640px] text-sm">
+        <thead>
+          <tr>
+            <th className="w-[28%]" />
+            {buckets.map((b) => (
+              <th key={b.key} scope="col" className="px-2 pb-2 text-left align-bottom">
+                <div className="rounded-lg bg-muted/60 px-3 py-2">
+                  <span className="block text-sm font-semibold">{SIZE_BUCKET_LABEL[b.key].title}</span>
+                  <span className="block text-xs font-normal text-muted-foreground">{SIZE_BUCKET_LABEL[b.key].hint}</span>
+                </div>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        {SIZE_METRIC_SECTIONS.map((section) => (
+          <tbody key={section.title}>
+            <tr>
+              <th
+                colSpan={4}
+                scope="colgroup"
+                className="pb-1 pt-4 text-left text-[11px] font-semibold uppercase tracking-wide text-[#347796]"
+              >
+                {section.title}
+              </th>
+            </tr>
+            {section.rows.map((row) => (
+              <tr key={row.label} className="border-t border-dashed first:border-0">
+                <th scope="row" className="py-2.5 pr-3 text-left align-top text-xs font-normal text-muted-foreground">
+                  <LabelWithInfo label={row.label} info={row.info} />
+                </th>
+                {buckets.map((b) => {
+                  const cell = row.cells(b);
+                  return (
+                    <td key={b.key} className="px-2 py-2.5 align-top">
+                      <div className="px-3">
+                        <span className={cn("font-semibold tabular-nums", cell.warn && "text-amber-700")}>{cell.value}</span>
+                        {cell.sub && <span className="block text-[11px] leading-snug text-muted-foreground">{cell.sub}</span>}
+                        {cell.bar != null && <MiniBar value={cell.bar} warn={cell.warn} />}
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        ))}
+      </table>
+    </div>
+  );
+}
+
+function BucketListPanel({
+  ref,
+  buckets,
+  selected,
+  onSelect,
+  showAreas,
+}: {
+  ref: React.Ref<HTMLElement>;
+  buckets: IcpSizeBucket[];
+  selected: IcpSizeBucketKey;
+  onSelect: (key: IcpSizeBucketKey) => void;
+  /** No escritório todo, mostra as áreas que faturaram para cada grupo. */
+  showAreas: boolean;
+}) {
+  const [query, setQuery] = useState("");
+  const current = buckets.find((b) => b.key === selected) ?? buckets[0];
+  const q = query.trim().toLowerCase();
+  const rows = (current?.groups ?? []).filter(
+    (g) => !q || g.grupo.toLowerCase().includes(q) || (g.group.sector ?? "").toLowerCase().includes(q)
+  );
+
+  return (
+    <section ref={ref} className="min-w-0 scroll-mt-24 rounded-xl border bg-card p-4 shadow-sm sm:p-5">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <Users className="h-4 w-4 shrink-0 text-[#347796]" />
+            <h2 className="text-sm font-semibold">Quem está em cada bloco</h2>
+          </div>
+          <p className="mt-0.5 text-xs text-muted-foreground">Receita, horas, receita por hora, margem e atraso de cada grupo</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-lg border bg-muted/40 p-1" role="tablist" aria-label="Bloco de clientes">
+            {buckets.map((b) => (
+              <button
+                key={b.key}
+                type="button"
+                role="tab"
+                aria-selected={current?.key === b.key}
+                onClick={() => onSelect(b.key)}
+                className={cn(
+                  "min-h-8 rounded-md px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]",
+                  current?.key === b.key ? "bg-[#04202f] text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {SIZE_BUCKET_LABEL[b.key].title}
+              </button>
+            ))}
+          </div>
+          <div className="relative w-full sm:w-56">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar grupo ou atividade"
+              className="h-9 pl-8 text-xs"
+              aria-label="Buscar grupo ou atividade"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className={cn("w-full text-sm", showAreas ? "min-w-[960px]" : "min-w-[760px]")}>
+          <thead>
+            <tr className="border-b text-left text-xs text-muted-foreground">
+              <th className="pb-2 font-medium">Grupo</th>
+              {showAreas && (
+                <th className="pb-2 font-medium">
+                  <LabelWithInfo
+                    label="Áreas"
+                    info="Áreas que faturaram honorários para o grupo nos últimos 12 meses, da que mais faturou para a que menos."
+                  />
+                </th>
+              )}
+              <th className="pb-2 text-right font-medium">
+                <LabelWithInfo label="Receita 12 meses" info={INFO.receita} className="justify-end" />
+              </th>
+              <th className="pb-2 text-right font-medium">
+                <LabelWithInfo label="Horas" info={INFO.horas} className="justify-end" />
+              </th>
+              <th className="pb-2 text-right font-medium">
+                <LabelWithInfo label="Receita por hora" info={INFO.receitaHora} className="justify-end" />
+              </th>
+              <th className="pb-2 pl-6 font-medium">
+                <LabelWithInfo label="Margem" info={INFO.margem} />
+              </th>
+              <th className="pb-2 text-right font-medium">
+                <LabelWithInfo label="Em atraso" info={INFO.atraso} className="justify-end" />
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((g) => {
+              const margin = marginOf(g.revenue, g.cost, g.hours);
+              const position = (current?.groups ?? []).indexOf(g) + 1;
+              return (
+                <tr key={g.grupo} className="border-b last:border-0 hover:bg-muted/40">
+                  <td className={cn("min-w-[260px] py-3 pr-4", showAreas ? "w-[32%]" : "w-[40%]")}>
+                    <div className="flex items-start gap-3">
+                      <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold tabular-nums text-muted-foreground">
+                        {position}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium" title={g.grupo}>
+                          {g.grupo.replace(/^grupo\s+/i, "")}
+                        </p>
+                        {g.group.sectorBucket ? (
+                          <div className="mt-1 flex items-start gap-1.5">
+                            <span className="shrink-0 rounded bg-[#347796]/10 px-1.5 py-0.5 text-[11px] font-medium leading-none text-[#04202f]">
+                              {g.group.sectorBucket}
+                            </span>
+                            {g.group.sector && (
+                              <span className="line-clamp-2 text-xs leading-snug text-muted-foreground" title={g.group.sector}>
+                                {g.group.sector}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="mt-0.5 text-xs text-muted-foreground">{noSectorLabel(g.group.clientType)}</p>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  {showAreas && (
+                    <td className="py-3 pr-4 align-top">
+                      {g.group.areas.length ? (
+                        <div className="flex max-w-[230px] flex-wrap gap-1">
+                          {g.group.areas.slice(0, 3).map((a) => (
+                            <span
+                              key={a}
+                              className={cn(
+                                "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1",
+                                getAreaIconStyle(a)
+                              )}
+                            >
+                              <AreaIcon area={a} className="h-3 w-3" />
+                              {a}
+                            </span>
+                          ))}
+                          {g.group.areas.length > 3 && (
+                            <span
+                              className="inline-flex items-center rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground"
+                              title={g.group.areas.slice(3).join(", ")}
+                            >
+                              +{g.group.areas.length - 3}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Outros departamentos</span>
+                      )}
+                    </td>
+                  )}
+                  <td className="py-3 text-right tabular-nums">
+                    <span className="font-semibold">{money(g.revenue)}</span>
+                    <span className="block text-xs text-muted-foreground">{money(g.revenue / 12)}/mês</span>
+                  </td>
+                  <td className="py-3 text-right tabular-nums">{g.hours > 0 ? hoursLabel(g.hours) : "—"}</td>
+                  <td className="py-3 text-right tabular-nums">{g.hours > 0 ? money(g.revenue / g.hours) : "—"}</td>
+                  <td className="py-3 pl-6" title={g.hours > 0 ? `Custo de entrega: ${money(g.cost)}` : "Sem horas apontadas"}>
+                    {margin == null ? (
+                      <span className="text-xs text-muted-foreground">sem horas</span>
+                    ) : g.hours < 10 ? (
+                      <span className="text-xs text-muted-foreground" title="Menos de 10 horas apontadas: a margem não é confiável">
+                        {pct(margin)} · poucas horas
+                      </span>
+                    ) : (
+                      <>
+                        <span className={cn("tabular-nums", margin < 0.3 && "font-semibold text-amber-700")}>{pct(margin)}</span>
+                        <MiniBar value={Math.max(0, margin)} warn={margin < 0.3} />
+                      </>
+                    )}
+                  </td>
+                  <td className="py-3 text-right tabular-nums">
+                    {g.overdue > 0 ? (
+                      <>
+                        <span className={cn(g.overdue > g.revenue * 0.5 && "font-semibold text-red-700")}>{money(g.overdue)}</span>
+                        <span className="block text-xs text-muted-foreground">{pct(g.overdue / g.revenue)} da receita</span>
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={showAreas ? 7 : 6} className="py-8 text-center text-sm text-muted-foreground">
+                  {q ? "Nenhum grupo com essa busca neste bloco." : "Nenhum cliente neste bloco."}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function AreasPanel({ data }: { data: IcpData }) {
   const maxArea = Math.max(...data.areaRevenue.map((a) => a.share), 0.01);
-  const maxBreadth = Math.max(...data.breadth.map((b) => b.median), 1);
-  const multiplier = data.totals.breadthMultiplier;
-
   return (
     <Panel
       icon={Layers}
-      title="Áreas"
-      description="De onde vem a receita e quanto vale um cliente que usa várias áreas"
+      title="Receita por área"
+      description="Honorários de 12 meses pelo departamento que faturou"
+      info={INFO.receitaArea}
       sources={[SRC.departamento]}
     >
-      <div className="grid gap-6 lg:grid-cols-2 lg:divide-x">
-        <div>
-          <p className="mb-3 text-xs font-medium text-muted-foreground">
-            <LabelWithInfo label="Receita por área" info={INFO.receitaArea} />
-          </p>
-          <div className="space-y-3">
-            {data.areaRevenue.map((a) => (
-              <BarRow
-                key={a.label}
-                icon={a.label !== "Outros" ? <AreaBadge area={a.label} size="sm" /> : <span className="h-6 w-6 shrink-0" />}
-                label={a.label}
-                hint={money(a.value)}
-                value={a.share}
-                max={maxArea}
-                display={pct(a.share, 1)}
-                barClassName={a.label === "Outros" ? "bg-slate-300" : "bg-[#347796]"}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div className="flex flex-col lg:pl-6">
-          <p className="mb-3 text-xs font-medium text-muted-foreground">
-            <LabelWithInfo label="Receita mediana por número de áreas" info={INFO.amplitude} />
-          </p>
-          <div className="flex h-52 items-end gap-4 border-b pb-2">
-            {data.breadth.map((b, i) => (
-              <div key={b.label} className="flex h-full flex-1 flex-col items-center justify-end gap-1.5">
-                <span className="text-sm font-semibold tabular-nums">{money(b.median)}</span>
-                <div
-                  className={cn("w-full max-w-20 rounded-t-md", i === 2 ? "bg-[#347796]" : "bg-[#47cdd0]/50")}
-                  style={{ height: `${Math.max(3, (b.median / maxBreadth) * 80)}%` }}
-                />
-              </div>
-            ))}
-          </div>
-          <div className="mt-2 flex gap-4">
-            {data.breadth.map((b) => (
-              <div key={b.label} className="flex-1 text-center">
-                <p className="text-sm font-medium">{b.label}</p>
-                <p className="text-xs text-muted-foreground">{b.groups} grupos</p>
-              </div>
-            ))}
-          </div>
-          {multiplier != null && (
-            <p className="mt-auto rounded-lg bg-[#47cdd0]/10 px-4 py-3 text-sm text-[#04202f]">
-              Quem usa 3 ou mais áreas paga{" "}
-              <span className="font-semibold">{multiplier.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}×</span> o
-              que paga quem usa uma área só.
-            </p>
-          )}
-        </div>
+      <div className="space-y-3">
+        {data.areaRevenue.map((a) => (
+          <BarRow
+            key={a.label}
+            icon={a.label !== "Outros" ? <AreaBadge area={a.label} size="sm" /> : <span className="h-6 w-6 shrink-0" />}
+            label={a.label}
+            hint={money(a.value)}
+            value={a.share}
+            max={maxArea}
+            display={pct(a.share, 1)}
+            barClassName={a.label === "Outros" ? "bg-slate-300" : "bg-[#347796]"}
+          />
+        ))}
       </div>
+    </Panel>
+  );
+}
+
+function BreadthPanel({ data }: { data: IcpData }) {
+  const maxBreadth = Math.max(...data.breadth.map((b) => b.median), 1);
+  const multiplier = data.totals.breadthMultiplier;
+  return (
+    <Panel
+      icon={ChartColumn}
+      title="Receita por número de áreas"
+      description="Receita mediana em 12 meses pelo número de áreas que atendem o grupo"
+      info={INFO.amplitude}
+      sources={[SRC.departamento]}
+    >
+      <div className="flex h-56 items-end gap-4 border-b pb-2">
+        {data.breadth.map((b, i) => (
+          <div key={b.label} className="flex h-full flex-1 flex-col items-center justify-end gap-1.5">
+            <span className="text-sm font-semibold tabular-nums">{money(b.median)}</span>
+            <div
+              className={cn("w-full max-w-20 rounded-t-md", i === data.breadth.length - 1 ? "bg-[#347796]" : "bg-[#47cdd0]/50")}
+              style={{ height: `${Math.max(3, (b.median / maxBreadth) * 80)}%` }}
+              title={`${b.label}: receita mediana de ${money(b.median)} (${b.groups} grupos)`}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 flex gap-4">
+        {data.breadth.map((b) => (
+          <div key={b.label} className="flex-1 text-center">
+            <p className="text-sm font-medium">{b.label}</p>
+            <p className="text-xs text-muted-foreground">{b.groups} grupos</p>
+          </div>
+        ))}
+      </div>
+      {multiplier != null && (
+        <p className="mt-4 flex items-start gap-2 rounded-lg bg-[#47cdd0]/10 px-4 py-3 text-sm text-[#04202f]">
+          <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-[#347796]" />
+          <span>
+            Quem usa 3 ou mais áreas paga{" "}
+            <span className="font-semibold">{multiplier.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}×</span> o que paga
+            quem usa uma área só.
+          </span>
+        </p>
+      )}
     </Panel>
   );
 }
@@ -1358,61 +1846,58 @@ function EntryPanel({ data }: { data: IcpData }) {
     <Panel
       icon={DoorOpen}
       title="1ª área com processo"
-      description="Área do primeiro processo cadastrado de cada grupo, nos grupos do ICP e nos demais"
+      description="Área do primeiro processo cadastrado de cada grupo"
       info={INFO.entrada}
       sources={[SRC.processos, SRC.honorarios]}
+      className="lg:col-span-2 xl:col-span-1"
     >
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[420px] text-sm">
-            <thead>
-              <tr className="border-b text-left text-xs text-muted-foreground">
-                <th className="pb-2 font-medium">Área do 1º processo</th>
-                <th className="pb-2 text-right font-medium">Grupos A e B</th>
-                <th className="pb-2 text-right font-medium">Grupos C e D</th>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b text-left text-xs text-muted-foreground">
+            <th className="pb-2 font-medium">Área</th>
+            <th className="whitespace-nowrap pb-2 pl-3 text-right font-medium">Faixas A e B</th>
+            <th className="whitespace-nowrap pb-2 pl-3 text-right font-medium">Faixas C e D</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entryAreas.map((area) => {
+            const c = countOf(data.entry.core, area);
+            const r = countOf(data.entry.rest, area);
+            return (
+              <tr key={area} className="border-b last:border-0">
+                <td className="py-2">
+                  <span className="flex items-center gap-2 font-medium">
+                    <AreaBadge area={area} size="sm" />
+                    <span className="truncate">{area}</span>
+                  </span>
+                </td>
+                <td className="whitespace-nowrap py-2 pl-3 text-right tabular-nums">
+                  <span className="font-semibold">{c}</span>
+                  <span className="ml-1.5 text-xs text-muted-foreground">{pct(c / coreTotal)}</span>
+                </td>
+                <td className="whitespace-nowrap py-2 pl-3 text-right tabular-nums">
+                  <span>{r}</span>
+                  <span className="ml-1.5 text-xs text-muted-foreground">{pct(r / restTotal)}</span>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {entryAreas.map((area) => {
-                const c = countOf(data.entry.core, area);
-                const r = countOf(data.entry.rest, area);
-                return (
-                  <tr key={area} className="border-b last:border-0">
-                    <td className="py-2">
-                      <span className="flex items-center gap-2 font-medium">
-                        <AreaBadge area={area} size="sm" />
-                        {area}
-                      </span>
-                    </td>
-                    <td className="py-2 text-right tabular-nums">
-                      <span className="font-semibold">{c}</span>
-                      <span className="ml-1.5 text-xs text-muted-foreground">{pct(c / coreTotal)}</span>
-                    </td>
-                    <td className="py-2 text-right tabular-nums">
-                      <span>{r}</span>
-                      <span className="ml-1.5 text-xs text-muted-foreground">{pct(r / restTotal)}</span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+            );
+          })}
+        </tbody>
+      </table>
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="rounded-lg bg-[#47cdd0]/10 px-3 py-3">
+          <p className="text-xl font-semibold tabular-nums text-[#04202f]">
+            {data.entry.coreViaInsolvency}
+            <span className="text-xs font-medium text-muted-foreground"> de {data.totals.coreGroups}</span>
+          </p>
+          <p className="text-xs leading-snug text-[#04202f]/80">grupos A e B têm o 1º processo em Insolvência</p>
         </div>
-        <div className="flex flex-col gap-3">
-          <div className="rounded-lg bg-[#47cdd0]/10 px-4 py-3">
-            <p className="text-2xl font-semibold tabular-nums text-[#04202f]">
-              {data.entry.coreViaInsolvency}
-              <span className="text-sm font-medium text-muted-foreground"> de {data.totals.coreGroups}</span>
-            </p>
-            <p className="text-xs text-[#04202f]/80">grupos A e B têm o primeiro processo em Insolvência</p>
-          </div>
-          <div className="rounded-lg bg-[#47cdd0]/10 px-4 py-3">
-            <p className="text-2xl font-semibold tabular-nums text-[#04202f]">
-              {data.newCore.viaInsolvency}
-              <span className="text-sm font-medium text-muted-foreground"> de {data.newCore.total}</span>
-            </p>
-            <p className="text-xs text-[#04202f]/80">grupos A e B com primeiro processo desde 2025 começaram por Insolvência</p>
-          </div>
+        <div className="rounded-lg bg-[#47cdd0]/10 px-3 py-3">
+          <p className="text-xl font-semibold tabular-nums text-[#04202f]">
+            {data.newCore.viaInsolvency}
+            <span className="text-xs font-medium text-muted-foreground"> de {data.newCore.total}</span>
+          </p>
+          <p className="text-xs leading-snug text-[#04202f]/80">grupos A e B que começaram desde 2025 vieram por Insolvência</p>
         </div>
       </div>
     </Panel>
@@ -1554,7 +2039,7 @@ function GroupRow({ group: g }: { group: IcpGroupRow }) {
         className="max-w-[200px] truncate py-2.5 pr-3 text-muted-foreground"
         title={[g.sector, g.referenceCompany?.razaoSocial].filter(Boolean).join(" · ") || undefined}
       >
-        {g.sectorBucket ?? "—"}
+        {g.sectorBucket ?? noSectorLabel(g.clientType)}
       </td>
       <td className="py-2.5 pr-3 text-muted-foreground">
         {g.city ? `${g.city}${g.uf ? ` · ${g.uf}` : ""}` : (g.uf ?? "—")}
