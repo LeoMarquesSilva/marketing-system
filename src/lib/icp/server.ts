@@ -9,6 +9,7 @@ import {
   computeIcp,
   type IcpData,
   type IcpDemographicRow,
+  type IcpGroupProfile,
   type IcpNpsTheme,
   type IcpRevenueItem,
 } from "@/lib/icp/compute";
@@ -86,6 +87,41 @@ function windowStart(now: Date): string {
   return new Date(Date.UTC(now.getUTCFullYear() - 1, now.getUTCMonth(), 1)).toISOString().slice(0, 10);
 }
 
+/** Logos dos grupos, gravados pelo scripts/icp-linkedin-sync.mjs. */
+const LOGO_BUCKET = "MARKETING-SYSTEM-PROJETOS";
+
+type ProfileRow = {
+  grupo: string;
+  status: string;
+  match_confidence: IcpGroupProfile["confidence"];
+  linkedin_url: string | null;
+  linkedin_name: string | null;
+  employee_range: string | null;
+  employee_min: number | null;
+  linkedin_members: number | null;
+  website: string | null;
+  logo_path: string | null;
+  updated_at: string;
+};
+
+function toProfile(r: ProfileRow): IcpGroupProfile {
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL!.replace(/\/$/, "");
+  return {
+    grupo: r.grupo,
+    employeeRange: r.employee_range,
+    employeeMin: r.employee_min,
+    linkedinMembers: r.linkedin_members,
+    linkedinUrl: r.linkedin_url,
+    linkedinName: r.linkedin_name,
+    website: r.website,
+    // O arquivo é regravado no mesmo caminho: a data evita o logo antigo no cache.
+    logoUrl: r.logo_path
+      ? `${base}/storage/v1/object/public/${LOGO_BUCKET}/${r.logo_path}?v=${Date.parse(r.updated_at)}`
+      : null,
+    confidence: r.match_confidence,
+  };
+}
+
 const toNumber = (v: unknown) => {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : 0;
@@ -112,6 +148,7 @@ async function loadIcpData(): Promise<IcpData> {
     ga4Rows,
     whatsappRows,
     cnpjRecords,
+    profileRows,
   ] = await Promise.all([
     fetchAll<{ cliente_norm: string; grupo_cliente: string | null }>((from, to) =>
       sioe.from("receita_grupo_por_nome_cliente").select("cliente_norm, grupo_cliente").range(from, to)
@@ -223,6 +260,15 @@ async function loadIcpData(): Promise<IcpData> {
           .range(from, to)
     ),
     loadCnpjRecords(main),
+    fetchAll<ProfileRow>((from, to) =>
+      main
+        .from("icp_group_profiles")
+        .select(
+          "grupo, status, match_confidence, linkedin_url, linkedin_name, employee_range, employee_min, linkedin_members, website, logo_path, updated_at"
+        )
+        .order("grupo")
+        .range(from, to)
+    ),
   ]);
 
   const recordByCnpj = new Map(cnpjRecords.map((r) => [r.cnpj, r]));
@@ -355,11 +401,12 @@ async function loadIcpData(): Promise<IcpData> {
     whatsapp: whatsappRows
       .filter((w) => !w.is_group)
       .map((w) => ({ leadSource: w.lead_source, pipelineStage: w.pipeline_stage })),
+    profiles: profileRows.map(toProfile),
   });
 }
 
 /** Resultado em cache por 6 horas; o botão "Recalcular" invalida a tag. */
-export const getIcpData = unstable_cache(loadIcpData, ["icp-data-v10"], {
+export const getIcpData = unstable_cache(loadIcpData, ["icp-data-v11"], {
   revalidate: 60 * 60 * 6,
   tags: [ICP_CACHE_TAG],
 });

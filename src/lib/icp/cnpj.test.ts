@@ -126,6 +126,7 @@ describe("cadastro de CNPJ", () => {
       linkedin: [],
       ga4Cities: [],
       whatsapp: [],
+      profiles: [],
     };
     const [alfa] = computeIcp(input).groups;
     expect(alfa).toMatchObject({
@@ -168,6 +169,7 @@ describe("cadastro de CNPJ", () => {
       linkedin: [],
       ga4Cities: [],
       whatsapp: [],
+      profiles: [],
     }).groups;
     expect(alfa.referenceCompany?.cnpj).toBe("2");
     expect(alfa.sectorBucket).toBe("Indústria");

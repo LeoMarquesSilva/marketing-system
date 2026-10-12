@@ -5,7 +5,10 @@ import { useRouter } from "next/navigation";
 import {
   BadgeCheck,
   Building2,
+  ArrowDown,
   ArrowRight,
+  ArrowUp,
+  ArrowUpDown,
   ChartColumn,
   ChartPie,
   Check,
@@ -16,6 +19,7 @@ import {
   Crosshair,
   Database,
   DoorOpen,
+  Download,
   Factory,
   Layers,
   Linkedin,
@@ -42,10 +46,13 @@ import { InfoTooltip, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger }
 import { cn } from "@/lib/utils";
 import { AreaIcon, getAreaIconStyle } from "@/lib/area-icons";
 import {
+  EMPLOYEE_BANDS,
   sectorShares,
   sizeBuckets,
+  typicalEmployeeRange,
   type IcpCount,
   type IcpData,
+  type IcpEmployeeBand,
   type IcpGroupRow,
   type IcpSizeBucket,
   type IcpSizeBucketKey,
@@ -79,6 +86,13 @@ function money(value: number): string {
   return brl.format(value);
 }
 
+function medianOf(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
 function pct(value: number | null | undefined, digits = 0): string {
   if (value == null || !Number.isFinite(value)) return "—";
   return `${(value * 100).toLocaleString("pt-BR", { maximumFractionDigits: digits, minimumFractionDigits: digits })}%`;
@@ -103,7 +117,7 @@ function monthLabel(iso: string): string {
   return d.toLocaleDateString("pt-BR", { month: "short", year: "2-digit" }).replace(".", "");
 }
 
-type SourceSystem = "vios" | "rf" | "orq";
+type SourceSystem = "vios" | "rf" | "orq" | "li";
 
 type Source = { system: SourceSystem; detail: string };
 
@@ -111,6 +125,7 @@ const SOURCE_SYSTEM: Record<SourceSystem, { label: string; className: string }> 
   vios: { label: "VIOS", className: "bg-[#48466e]/10 text-[#48466e]" },
   orq: { label: "ORQESTRAI", className: "bg-[#47cdd0]/15 text-[#04202f]" },
   rf: { label: "Receita Federal", className: "bg-[#347796]/10 text-[#04202f]" },
+  li: { label: "LinkedIn", className: "bg-[#3e84a8]/10 text-[#04202f]" },
 };
 
 /** Fontes usadas em cada bloco da tela. */
@@ -125,6 +140,7 @@ const SRC = {
   cnae: { system: "rf", detail: "CNAE da empresa de referência do grupo" },
   sede: { system: "rf", detail: "município da sede da empresa de referência" },
   socios: { system: "rf", detail: "quadro de sócios e administradores (QSA)" },
+  colaboradores: { system: "li", detail: "página da empresa · faixa de colaboradores e logo" },
   npsCargo: { system: "orq", detail: "NPS · cargo de quem respondeu" },
   npsNota: { system: "orq", detail: "NPS · nota de recomendação" },
   npsTemas: { system: "orq", detail: "NPS · classificação dos comentários" },
@@ -266,6 +282,106 @@ const KPI_TONE = {
   rose: "bg-rose-50 text-rose-600",
 } as const;
 
+const groupName = (grupo: string) => grupo.replace(/^grupo\s+/i, "");
+
+/** Logo da empresa do grupo (LinkedIn ou site); sem logo, as iniciais do grupo. */
+function CompanyLogo({ group, size = "md" }: { group: IcpGroupRow; size?: "xs" | "sm" | "md" }) {
+  const [failed, setFailed] = useState(false);
+  const name = groupName(group.grupo);
+  const box = { xs: "h-6 w-6 text-[9px]", sm: "h-7 w-7 text-[10px]", md: "h-9 w-9 text-xs" }[size];
+  const logo = group.profile?.logoUrl;
+  if (logo && !failed) {
+    return (
+      <span className={cn("inline-flex shrink-0 items-center justify-center overflow-hidden rounded-md border bg-white", box)}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={logo} alt="" loading="lazy" className="h-full w-full object-contain" onError={() => setFailed(true)} />
+      </span>
+    );
+  }
+  const initials = name
+    .split(/[\s&.-]+/)
+    .filter((w) => /^[\p{L}\d]/u.test(w))
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase();
+  return (
+    <span
+      aria-hidden
+      className={cn("inline-flex shrink-0 items-center justify-center rounded-md bg-[#04202f]/[0.06] font-semibold text-[#04202f]/70", box)}
+    >
+      {initials}
+    </span>
+  );
+}
+
+/** "51-200" → "51 a 200"; "10.001+" → "10.001 ou mais". */
+function employeeRangeText(range: string): string {
+  return range.replace("-", " a ").replace(/\+$/, " ou mais");
+}
+
+/**
+ * Faixa de colaboradores do grupo e o link para a página do LinkedIn. Na variante "inline"
+ * (abaixo do nome do grupo) não mostra nada quando falta a faixa.
+ */
+function EmployeeRange({ group: g, variant = "cell" }: { group: IcpGroupRow; variant?: "cell" | "inline" }) {
+  const profile = g.profile;
+  if (!profile?.employeeRange) {
+    if (variant === "inline") return null;
+    // A página existe mas não declara a faixa: mostra só quantas pessoas se vinculam a ela.
+    if (profile?.linkedinMembers) {
+      return (
+        <a
+          href={profile.linkedinUrl ?? undefined}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          title="A página no LinkedIn não declara a faixa de colaboradores; este é o número de pessoas vinculadas a ela, um piso do total"
+          className="whitespace-nowrap rounded-md text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
+        >
+          {profile.linkedinMembers.toLocaleString("pt-BR")} no LinkedIn
+        </a>
+      );
+    }
+    return (
+      <span
+        className="text-muted-foreground"
+        title={
+          profile?.linkedinUrl
+            ? "A página no LinkedIn não declara a faixa de colaboradores"
+            : profile
+              ? "Sem página da empresa no LinkedIn"
+              : undefined
+        }
+      >
+        {g.clientType === "pessoa_fisica" && !g.referenceCompany ? "Pessoa física" : "—"}
+      </span>
+    );
+  }
+  const details = [
+    profile.linkedinName,
+    profile.linkedinMembers != null ? `${profile.linkedinMembers.toLocaleString("pt-BR")} pessoas vinculadas no LinkedIn` : null,
+    profile.confidence && profile.confidence !== "alta" ? `correspondência ${profile.confidence === "media" ? "média" : "baixa"}` : null,
+  ].filter(Boolean);
+  return (
+    <a
+      href={profile.linkedinUrl ?? undefined}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      title={details.join(" · ")}
+      className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
+    >
+      <Users className="h-3.5 w-3.5 shrink-0 text-[#347796]" />
+      <span className="tabular-nums">
+        {employeeRangeText(profile.employeeRange)}
+        {variant === "inline" && " colaboradores"}
+      </span>
+      {profile.confidence && profile.confidence !== "alta" && <span className="text-[#48466e]/70">?</span>}
+    </a>
+  );
+}
+
 function Kpi({
   label,
   value,
@@ -350,7 +466,11 @@ export function IcpClient({ data, error }: { data: IcpData | null; error: string
     <TooltipProvider delayDuration={150}>
       <div className="flex w-full min-w-0 flex-col gap-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div role="tablist" aria-label="Seções do ICP" className="flex rounded-lg border bg-muted/50 p-1">
+          <div
+            role="tablist"
+            aria-label="Seções do ICP"
+            className="flex max-w-full overflow-x-auto rounded-lg border bg-muted/50 p-1"
+          >
             {TABS.map((t) => (
               <button
                 key={t.key}
@@ -359,7 +479,7 @@ export function IcpClient({ data, error }: { data: IcpData | null; error: string
                 aria-selected={tab === t.key}
                 onClick={() => setTab(t.key)}
                 className={cn(
-                  "min-h-9 rounded-md px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]",
+                  "min-h-9 shrink-0 whitespace-nowrap rounded-md px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]",
                   tab === t.key ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -416,6 +536,13 @@ function ResumoTab({ data }: { data: IcpData }) {
   const receitaDate = cnpjCoverage.fetchedAt
     ? new Date(cnpjCoverage.fetchedAt).toLocaleDateString("pt-BR")
     : null;
+  const coreGroups = data.groups.filter((g) => g.tier === "A" || g.tier === "B");
+  const coreWithEmployees = coreGroups.filter((g) => g.employeeBand);
+  const topBand = EMPLOYEE_BANDS.map((b) => ({
+    ...b,
+    count: coreWithEmployees.filter((g) => g.employeeBand === b.key).length,
+  })).sort((a, b) => b.count - a.count)[0];
+  const typicalBand = topBand && topBand.count > 0 ? topBand : null;
 
   const traits: { icon: LucideIcon; label: string; value: string; hint?: string; source?: Source }[] = [
     {
@@ -424,6 +551,13 @@ function ResumoTab({ data }: { data: IcpData }) {
       value: topSector ? topSector.label : "—",
       hint: topSector ? `${pct(topSector.share)} da receita dos grupos A e B` : undefined,
       source: SRC.cnae,
+    },
+    {
+      icon: Users,
+      label: "Porte",
+      value: typicalBand ? `${typicalBand.label} colaboradores` : "—",
+      hint: typicalBand ? `${typicalBand.count} de ${coreWithEmployees.length} grupos com porte no LinkedIn` : undefined,
+      source: SRC.colaboradores,
     },
     {
       icon: MapPin,
@@ -457,6 +591,7 @@ function ResumoTab({ data }: { data: IcpData }) {
 
   const sentence = [
     topSector ? topSector.label : "Empresa",
+    typicalBand ? ` de ${typicalBand.label.toLowerCase()} colaboradores` : "",
     topRegion ? `, ${topRegion.phrase}` : "",
     topAdminRole ? ", comandada pelo sócio-administrador" : "",
     `, com honorário mensal e cerca de ${Math.max(1, Math.round(coreAvgAreas))} áreas do escritório.`,
@@ -473,7 +608,7 @@ function ResumoTab({ data }: { data: IcpData }) {
           {pct(data.totals.coreGroups / Math.max(1, data.totals.payingGroups))} da carteira pagante e geram{" "}
           {pct(data.totals.coreRevenueShare)} dos honorários.
         </p>
-        <div className="relative mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+        <div className="relative mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
           {traits.map((t) => (
             <div
               key={t.label}
@@ -494,6 +629,8 @@ function ResumoTab({ data }: { data: IcpData }) {
           <span className="text-white/80">Receita Federal</span>
           <span>·</span>
           <span className="text-white/80">VIOS</span>
+          <span>·</span>
+          <span className="text-white/80">LinkedIn</span>
           <span>·</span>
           <span className="text-white/80">ORQESTRAI</span>
           <Tooltip>
@@ -516,6 +653,10 @@ function ResumoTab({ data }: { data: IcpData }) {
                 <li>
                   <span className="font-semibold text-white">VIOS</span>: honorários, áreas e contrato.{" "}
                   {excludedRevenueNote(data)}
+                </li>
+                <li>
+                  <span className="font-semibold text-white">LinkedIn</span>: porte (faixa de colaboradores declarada
+                  na página da empresa) e logo. Cobre {coreWithEmployees.length} dos {coreGroups.length} grupos A e B.
                 </li>
                 <li>
                   <span className="font-semibold text-white">ORQESTRAI</span>: NPS.
@@ -566,24 +707,12 @@ function ResumoTab({ data }: { data: IcpData }) {
       <div className="grid gap-4 lg:grid-cols-2">
         <SectorPanel data={data} />
 
-        <Panel
-          icon={Building2}
-          title="Porte"
-          description="Número de colaboradores das empresas do grupo"
-        >
-          <div className="rounded-lg bg-muted/50 px-4 py-6 text-center">
-            <p className="text-sm font-semibold">Em avaliação</p>
-            <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
-              Estamos avaliando a fonte do número de colaboradores. O porte da Receita (ME, EPP e Demais) segue o
-              faturamento declarado, coloca quase todos os grupos A e B na mesma categoria e por isso não é usado.
-            </p>
-          </div>
-        </Panel>
-
         <RegionPanel data={data} />
-
-        <DecisorPanel data={data} />
       </div>
+
+      <EmployeesPanel data={data} />
+
+      <DecisorPanel data={data} />
 
       <QualificationPanel data={data} />
     </div>
@@ -729,45 +858,153 @@ function DecisorPanel({ data }: { data: IcpData }) {
       sources={[SRC.socios, SRC.npsCargo]}
     >
       <TierScopeTabs value={scope} onChange={setScope} />
-      <div className="mb-4 rounded-lg bg-muted/50 px-4 py-3">
-        <p className="text-sm">
-          <span className="font-semibold tabular-nums">{withAdmins}</span>
-          <span className="text-muted-foreground">
-            {" "}
-            de {inScope.length} grupos têm sócio com poder de administração no quadro de sócios
-          </span>
-        </p>
-        {roles.length > 0 && (
-          <p className="mt-1 text-xs text-muted-foreground">{roles.map(([label, count]) => `${label}: ${count}`).join(" · ")}</p>
-        )}
-        <p className="mt-1 text-xs text-muted-foreground">
-          {inScope.length - withCompany > 0
-            ? `${inScope.length - withCompany} grupos não têm empresa consultada na Receita (pessoa física ou sem CNPJ). `
-            : ""}
-          Os nomes estão na aba Clientes.
-        </p>
+      <div className="grid gap-6 lg:grid-cols-2 lg:gap-10">
+        <div className="min-w-0">
+          <p className="text-sm">
+            <span className="text-2xl font-semibold tabular-nums">{withAdmins}</span>
+            <span className="text-muted-foreground">
+              {" "}
+              de {inScope.length} grupos têm sócio com poder de administração no quadro de sócios
+            </span>
+          </p>
+          {roles.length > 0 && (
+            <>
+              <p className="mb-2 mt-4 text-xs font-medium text-muted-foreground">
+                Qualificação no quadro de sócios <span className="font-normal">· pessoas</span>
+              </p>
+              <div className="space-y-3">
+                {roles.map(([label, count]) => (
+                  <BarRow key={label} label={label} value={count} max={roles[0][1]} display={String(count)} />
+                ))}
+              </div>
+            </>
+          )}
+          <p className="mt-4 text-xs text-muted-foreground">
+            {inScope.length - withCompany > 0
+              ? `${inScope.length - withCompany} grupos não têm empresa consultada na Receita (pessoa física ou sem CNPJ). `
+              : ""}
+            Os nomes estão no detalhe de cada grupo, na aba Clientes.
+          </p>
+        </div>
+        <div className="min-w-0">
+          <p className="mb-2 text-xs font-medium text-muted-foreground">
+            Cargo de quem respondeu ao NPS <span className="font-normal">· todas as {decisor.responses} respostas</span>
+          </p>
+          <div className="space-y-3">
+            {decisor.byRole.map((r) => (
+              <BarRow
+                key={r.label}
+                label={r.label}
+                value={r.count}
+                max={decisor.byRole[0]?.count ?? 1}
+                display={String(r.count)}
+                barClassName={r.label === "Sócio ou proprietário" ? "bg-[#347796]" : "bg-[#48466e]/40"}
+              />
+            ))}
+          </div>
+          <p className="mt-4 text-xs text-muted-foreground">
+            Quem contrata e avalia é o dono
+            {decisor.ownerAvg != null &&
+              ` (nota média ${decisor.ownerAvg.toLocaleString("pt-BR", { maximumFractionDigits: 1 })})`}
+            . Diretoria e financeiro aparecem como interlocutores do dia a dia. As respostas do NPS ainda não são
+            separadas por faixa.
+          </p>
+        </div>
       </div>
-      <p className="mb-2 text-xs font-medium text-muted-foreground">
-        Cargo de quem respondeu ao NPS <span className="font-normal">· todas as {decisor.responses} respostas</span>
-      </p>
-      <div className="space-y-3">
-        {decisor.byRole.map((r) => (
-          <BarRow
-            key={r.label}
-            label={r.label}
-            value={r.count}
-            max={decisor.byRole[0]?.count ?? 1}
-            display={String(r.count)}
-            barClassName={r.label === "Sócio ou proprietário" ? "bg-[#347796]" : "bg-[#48466e]/40"}
-          />
+    </Panel>
+  );
+}
+
+/**
+ * Porte por colaboradores (faixa declarada na página do LinkedIn): uma coluna por faixa, da
+ * menor para a maior empresa, com a parte da receita, o ticket mediano e os logos dos grupos.
+ */
+function EmployeesPanel({ data }: { data: IcpData }) {
+  const [scope, setScope] = useState<TierScope>("all");
+  const inScope = groupsInScope(data, scope);
+  const known = inScope.filter((g) => g.employeeBand);
+  const knownRevenue = known.reduce((acc, g) => acc + g.revenue12m, 0);
+  const bands = EMPLOYEE_BANDS.map((b) => {
+    const groups = known.filter((g) => g.employeeBand === b.key).sort((x, y) => y.revenue12m - x.revenue12m);
+    const revenue = groups.reduce((acc, g) => acc + g.revenue12m, 0);
+    return {
+      ...b,
+      groups,
+      revenue,
+      share: knownRevenue > 0 ? revenue / knownRevenue : 0,
+      ticket: medianOf(groups.map((g) => g.monthly)),
+    };
+  });
+  const maxShare = Math.max(0.01, ...bands.map((b) => b.share));
+  const individuals = inScope.filter((g) => !g.employeeBand && !g.referenceCompany && g.clientType === "pessoa_fisica").length;
+  const withoutRange = inScope.length - known.length - individuals;
+  const LOGOS_PER_BAND = 12;
+  const BAR_MAX_PX = 104;
+
+  return (
+    <Panel
+      icon={Users}
+      title="Porte"
+      description={`Receita por número de colaboradores dos ${inScope.length} grupos ${scopeText(data, scope)}`}
+      info="Faixa de colaboradores que a empresa declara na página dela no LinkedIn, a mesma dos filtros de busca do LinkedIn. A página de cada grupo foi localizada e conferida pelo nome, sede, setor e site. A coluna mostra quanto da receita dos grupos com porte vem de cada faixa; abaixo, quantos grupos há nela e o honorário mensal do grupo do meio da faixa (mediana)."
+      sources={[SRC.colaboradores, SRC.honorarios]}
+    >
+      <TierScopeTabs value={scope} onChange={setScope} />
+      {/* As colunas ficam sempre numa linha só, com a mesma base, para comparar as faixas também no celular. */}
+      <div className="grid grid-cols-5 gap-x-2 sm:gap-x-5">
+        {bands.map((b) => (
+          <div key={b.key} className="min-w-0">
+            <div
+              className="flex h-32 flex-col items-center justify-end border-b"
+              title={`${b.label} colaboradores: ${b.groups.length} grupos, ${money(b.revenue)} (${pct(b.share)} da receita com porte)`}
+            >
+              <span className="mb-1 text-sm font-semibold tabular-nums sm:text-base">{pct(b.share)}</span>
+              <div
+                className="w-full max-w-16 rounded-t-[4px] bg-[#347796]"
+                style={{ height: b.share > 0 ? Math.max(3, (b.share / maxShare) * BAR_MAX_PX) : 0 }}
+              />
+            </div>
+            <p className="mt-2 text-center text-xs font-medium sm:text-left sm:text-sm">
+              {b.label}
+              <span className="hidden font-normal text-muted-foreground lg:inline"> colaboradores</span>
+            </p>
+          </div>
         ))}
       </div>
-      <p className="mt-4 text-xs text-muted-foreground">
-        Quem contrata e avalia é o dono
-        {decisor.ownerAvg != null &&
-          ` (nota média ${decisor.ownerAvg.toLocaleString("pt-BR", { maximumFractionDigits: 1 })})`}
-        . Diretoria e financeiro aparecem como interlocutores do dia a dia. As respostas do NPS ainda não são separadas
-        por faixa.
+      <div className="mt-4 grid gap-x-5 gap-y-5 sm:grid-cols-2 lg:mt-1 lg:grid-cols-5">
+        {bands.map((b) => (
+          <div key={b.key} className="min-w-0">
+            <p className="text-sm font-medium lg:hidden">{b.label} colaboradores</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {b.groups.length === 0
+                ? "nenhum grupo"
+                : `${b.groups.length} ${b.groups.length === 1 ? "grupo" : "grupos"} · ${money(b.revenue)}`}
+            </p>
+            {b.groups.length > 0 && (
+              <p className="text-xs text-muted-foreground">mediana de {money(b.ticket)}/mês</p>
+            )}
+            {b.groups.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap items-center gap-1">
+                {b.groups.slice(0, LOGOS_PER_BAND).map((g) => (
+                  <span key={g.grupo} title={`${groupName(g.grupo)} · ${money(g.revenue12m)} em 12 meses`}>
+                    <CompanyLogo group={g} size="sm" />
+                  </span>
+                ))}
+                {b.groups.length > LOGOS_PER_BAND && (
+                  <span className="pl-1 text-xs tabular-nums text-muted-foreground">+{b.groups.length - LOGOS_PER_BAND}</span>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="mt-5 text-xs text-muted-foreground">
+        {known.length} de {inScope.length} grupos têm porte pelo LinkedIn e somam{" "}
+        {pct(knownRevenue / Math.max(1, inScope.reduce((acc, g) => acc + g.revenue12m, 0)))} da receita; as
+        porcentagens são sobre essa receita.
+        {individuals > 0 && ` ${individuals} ${individuals === 1 ? "é pessoa física" : "são pessoa física"}.`}
+        {withoutRange > 0 &&
+          ` ${withoutRange} ${withoutRange === 1 ? "grupo não tem" : "grupos não têm"} página no LinkedIn com a faixa de colaboradores.`}
       </p>
     </Panel>
   );
@@ -778,7 +1015,21 @@ function SectorPanel({ data }: { data: IcpData }) {
   const [scope, setScope] = useState<TierScope>("all");
   const inScope = groupsInScope(data, scope);
   const withSector = inScope.filter((g) => g.sectorBucket);
-  const list = sectorShares(withSector);
+  const shares = sectorShares(withSector);
+  // Setores com menos de 3% da receita viram uma linha só, para a lista caber num olhar.
+  const tail = shares.filter((s) => s.share < 0.03);
+  const list =
+    tail.length > 1
+      ? [
+          ...shares.filter((s) => s.share >= 0.03),
+          {
+            label: "Outros setores",
+            value: tail.reduce((acc, s) => acc + s.value, 0),
+            share: tail.reduce((acc, s) => acc + s.share, 0),
+            hint: tail.map((s) => s.label).join(", "),
+          },
+        ]
+      : shares;
   const groups = inScope.length;
   const known = withSector.length;
   const individuals = inScope.filter((g) => !g.sectorBucket && g.clientType === "pessoa_fisica").length;
@@ -795,7 +1046,16 @@ function SectorPanel({ data }: { data: IcpData }) {
       <TierScopeTabs value={scope} onChange={setScope} />
       <div className="space-y-3">
         {list.map((s) => (
-          <BarRow key={s.label} label={s.label} value={s.share} max={list[0]?.share ?? 1} display={pct(s.share)} />
+          <div key={s.label} title={"hint" in s ? s.hint : undefined}>
+            <BarRow
+              label={s.label}
+              hint={"hint" in s ? `${tail.length} setores` : money(s.value)}
+              value={s.share}
+              max={Math.max(...list.map((x) => x.share))}
+              display={pct(s.share)}
+              barClassName={"hint" in s ? "bg-slate-300" : undefined}
+            />
+          </div>
         ))}
       </div>
       <p className="mt-4 text-xs text-muted-foreground">
@@ -819,8 +1079,10 @@ function QualificationPanel({ data }: { data: IcpData }) {
     covered += s.share;
   }
   const geo = data.geography;
+  const porte = typicalEmployeeRange(data.groups.filter((g) => g.tier === "A" || g.tier === "B"));
   const yes = [
     "Pessoa jurídica, de preferência grupo com várias empresas",
+    porte ? `${porte.label} colaboradores (${porte.count} de ${porte.known} grupos A e B com porte)` : null,
     mainSectors.length
       ? `${mainSectors.join(", ").replace(/, ([^,]*)$/, " ou $1")} (${pct(covered)} da receita A e B)`
       : null,
@@ -844,7 +1106,7 @@ function QualificationPanel({ data }: { data: IcpData }) {
       icon={Crosshair}
       title="Critérios de qualificação"
       description="Use para priorizar prospecção e avaliar leads novos"
-      sources={[SRC.honorarios, SRC.cnae, SRC.sede, SRC.socios, SRC.processos, SRC.npsCargo]}
+      sources={[SRC.honorarios, SRC.cnae, SRC.sede, SRC.colaboradores, SRC.socios, SRC.processos, SRC.npsCargo]}
     >
       <div className="grid gap-4 md:grid-cols-2">
         <div className="rounded-lg bg-emerald-50 p-4">
@@ -902,6 +1164,12 @@ const INFO = {
   amplitude: "Receita mediana de 12 meses dos grupos, separados pelo número de áreas que faturaram para eles.",
   entrada:
     "Área do primeiro processo cadastrado para o grupo no VIOS. Mostra a ordem de cadastro, não necessariamente a primeira contratação.",
+  porteFaixa:
+    "Como os grupos da faixa se dividem por número de colaboradores (a faixa que a empresa declara na página do LinkedIn), do azul claro (até 10) ao escuro (mais de 500). Só conta quem tem porte.",
+  colaboradores:
+    "Faixa de colaboradores que a empresa declara na página do LinkedIn. \"?\" marca correspondência média entre o grupo e a página; \"no LinkedIn\" aparece quando a página não declara a faixa e mostra só quantas pessoas se vinculam a ela.",
+  mediaMensal: "Honorários pagos em 12 meses divididos por 12.",
+  atrasoGrupo: "Parcelas de honorários vencidas e não pagas hoje, de qualquer data de vencimento.",
 } as const;
 
 function LabelWithInfo({ label, info, className }: { label: string; info: string; className?: string }) {
@@ -1007,6 +1275,54 @@ function overdueTone(ratioValue: number): string {
   return "bg-emerald-500";
 }
 
+/** Escala de um só azul para as faixas de colaboradores: claro = empresa pequena, escuro = grande. */
+const EMPLOYEE_BAND_COLOR: Record<IcpEmployeeBand, string> = {
+  ate10: "#cde4ee",
+  "11a50": "#86b8d0",
+  "51a200": "#4386a8",
+  "201a500": "#1d5878",
+  "500mais": "#05233a",
+};
+
+/** Barra 100% com a divisão dos grupos por faixa de colaboradores (só quem tem porte). */
+function EmployeeMixBar({ groups }: { groups: IcpGroupRow[] }) {
+  const known = groups.filter((g) => g.employeeBand);
+  if (known.length === 0) return <span className="text-muted-foreground">—</span>;
+  const parts = EMPLOYEE_BANDS.map((b) => ({ ...b, count: known.filter((g) => g.employeeBand === b.key).length })).filter(
+    (p) => p.count > 0
+  );
+  return (
+    <div className="w-full max-w-[180px]">
+      <div className="flex h-2.5 gap-[2px] overflow-hidden rounded-[3px]">
+        {parts.map((p) => (
+          <div
+            key={p.key}
+            title={`${p.label} colaboradores: ${p.count} ${p.count === 1 ? "grupo" : "grupos"}`}
+            style={{ width: `${(p.count / known.length) * 100}%`, backgroundColor: EMPLOYEE_BAND_COLOR[p.key] }}
+          />
+        ))}
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {known.length} de {groups.length} com porte
+      </p>
+    </div>
+  );
+}
+
+function EmployeeBandLegend() {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      <span>Colaboradores:</span>
+      {EMPLOYEE_BANDS.map((b) => (
+        <span key={b.key} className="inline-flex items-center gap-1.5">
+          <span className="h-2.5 w-2.5 rounded-[2px]" style={{ backgroundColor: EMPLOYEE_BAND_COLOR[b.key] }} />
+          {b.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function TierPanel({ data }: { data: IcpData }) {
   return (
     <Panel
@@ -1017,14 +1333,17 @@ function TierPanel({ data }: { data: IcpData }) {
       sources={[SRC.honorarios, SRC.departamento, SRC.atraso]}
     >
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[600px] text-sm">
+        <table className="w-full min-w-[700px] text-sm">
           <thead>
             <tr className="whitespace-nowrap border-b text-left text-xs text-muted-foreground">
               <th className="pb-2 font-medium">
                 <LabelWithInfo label="Faixa" info={INFO.faixa} />
               </th>
-              <th className="w-[32%] pb-2 font-medium">
+              <th className="w-[30%] pb-2 font-medium">
                 <LabelWithInfo label="Grupos e receita" info={INFO.participacao} />
+              </th>
+              <th className="pb-2 pl-3 font-medium">
+                <LabelWithInfo label="Porte" info={INFO.porteFaixa} />
               </th>
               <th className="pb-2 pl-3 text-right font-medium">
                 <LabelWithInfo label="Ticket/mês" info={INFO.ticket} className="justify-end" />
@@ -1065,6 +1384,9 @@ function TierPanel({ data }: { data: IcpData }) {
                   <ShareBar value={t.groupShare} label="dos grupos" />
                   <ShareBar value={t.revenueShare} label="da receita" strong />
                 </td>
+                <td className="w-[18%] py-3 pl-3">
+                  <EmployeeMixBar groups={data.groups.filter((g) => g.tier === t.key)} />
+                </td>
                 <td className="whitespace-nowrap py-3 pl-3 text-right tabular-nums">{money(t.avgMonthly)}</td>
                 <td className="py-3 pl-3 text-right tabular-nums">
                   {t.avgAreas.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}
@@ -1089,6 +1411,9 @@ function TierPanel({ data }: { data: IcpData }) {
             ))}
           </tbody>
         </table>
+      </div>
+      <div className="mt-3">
+        <EmployeeBandLegend />
       </div>
     </Panel>
   );
@@ -1663,12 +1988,13 @@ function BucketListPanel({
                 <tr key={g.grupo} className="border-b last:border-0 hover:bg-muted/40">
                   <td className={cn("min-w-[260px] py-3 pr-4", showAreas ? "w-[32%]" : "w-[40%]")}>
                     <div className="flex items-start gap-3">
-                      <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold tabular-nums text-muted-foreground">
+                      <span className="mt-1.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold tabular-nums text-muted-foreground">
                         {position}
                       </span>
+                      <CompanyLogo group={g.group} />
                       <div className="min-w-0">
                         <p className="truncate font-medium" title={g.grupo}>
-                          {g.grupo.replace(/^grupo\s+/i, "")}
+                          {groupName(g.grupo)}
                         </p>
                         {g.group.sectorBucket ? (
                           <div className="mt-1 flex items-start gap-1.5">
@@ -1683,6 +2009,11 @@ function BucketListPanel({
                           </div>
                         ) : (
                           <p className="mt-0.5 text-xs text-muted-foreground">{noSectorLabel(g.group.clientType)}</p>
+                        )}
+                        {g.group.profile?.employeeRange && (
+                          <div className="mt-1 text-xs">
+                            <EmployeeRange group={g.group} variant="inline" />
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1906,41 +2237,151 @@ function EntryPanel({ data }: { data: IcpData }) {
 
 /* ---------------------------------------------------------------- Clientes */
 
+type ClientSortKey = "name" | "employees" | "monthly" | "overdue";
+type BandFilter = IcpEmployeeBand | "sem";
+
+const BAND_FILTERS: { key: BandFilter; label: string }[] = [
+  ...EMPLOYEE_BANDS.map((b) => ({ key: b.key as BandFilter, label: b.label })),
+  { key: "sem", label: "Sem porte" },
+];
+
+const entryAreaLabel = (area: string) => (/insolv/i.test(area) ? "Insolvência" : area);
+
+function formatCnpj(cnpj: string): string {
+  return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+}
+
+function formatDate(iso: string | null): string | null {
+  if (!iso) return null;
+  return new Date(`${iso.slice(0, 10)}T12:00:00`).toLocaleDateString("pt-BR");
+}
+
+function sortValue(g: IcpGroupRow, key: ClientSortKey): number | string | null {
+  if (key === "name") return groupName(g.grupo).toLowerCase();
+  if (key === "employees") return g.profile?.employeeMin ?? g.profile?.linkedinMembers ?? null;
+  if (key === "monthly") return g.monthly;
+  return g.overdue;
+}
+
+function csvCell(value: string | number | null | undefined): string {
+  const text = value == null ? "" : String(value);
+  return /[";\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+/** Baixa a lista filtrada em CSV (separador ";" e BOM, para abrir direto no Excel). */
+function downloadClientsCsv(rows: IcpGroupRow[]) {
+  const header = [
+    "Faixa",
+    "Grupo",
+    "Segmento",
+    "Atividade (CNAE)",
+    "Colaboradores (LinkedIn)",
+    "Pessoas no LinkedIn",
+    "Página no LinkedIn",
+    "Site",
+    "Cidade",
+    "UF",
+    "Empresa de referência",
+    "CNPJ",
+    "Sócios administradores",
+    "Entrada",
+    "Áreas que faturaram",
+    "Receita 12 meses",
+    "Média mensal",
+    "Em atraso",
+  ];
+  const lines = rows.map((g) =>
+    [
+      g.tier,
+      groupName(g.grupo),
+      g.sectorBucket ?? noSectorLabel(g.clientType),
+      g.sector,
+      g.profile?.employeeRange ? employeeRangeText(g.profile.employeeRange) : null,
+      g.profile?.linkedinMembers,
+      g.profile?.linkedinUrl,
+      g.profile?.website,
+      g.city,
+      g.uf,
+      g.referenceCompany?.razaoSocial,
+      g.referenceCompany ? formatCnpj(g.referenceCompany.cnpj) : null,
+      g.decisionMakers.map((d) => d.nome).join(", "),
+      g.entryArea ? entryAreaLabel(g.entryArea) : null,
+      g.areas.join(", "),
+      Math.round(g.revenue12m),
+      Math.round(g.monthly),
+      Math.round(g.overdue),
+    ]
+      .map(csvCell)
+      .join(";")
+  );
+  const blob = new Blob(["﻿" + [header.join(";"), ...lines].join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `icp-clientes-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+const FILTER_CHIP =
+  "inline-flex min-h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]";
+const FILTER_CHIP_ON = "border-[#347796] bg-[#347796]/10 text-[#04202f]";
+const FILTER_CHIP_OFF = "text-muted-foreground hover:text-foreground";
+
 function ClientesTab({ data }: { data: IcpData }) {
   const [query, setQuery] = useState("");
   const [tiers, setTiers] = useState<Set<IcpTierKey>>(new Set(["A", "B"]));
+  const [bands, setBands] = useState<Set<BandFilter>>(new Set());
+  const [sort, setSort] = useState<{ key: ClientSortKey; desc: boolean }>({ key: "monthly", desc: true });
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
+
+  const inTiers = useMemo(() => data.groups.filter((g) => tiers.has(g.tier)), [data.groups, tiers]);
+  const bandOf = (g: IcpGroupRow): BandFilter => g.employeeBand ?? "sem";
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return data.groups.filter(
+    const filtered = inTiers.filter(
       (g) =>
-        tiers.has(g.tier) &&
+        (bands.size === 0 || bands.has(g.employeeBand ?? "sem")) &&
         (!q ||
           g.grupo.toLowerCase().includes(q) ||
           (g.sector ?? "").toLowerCase().includes(q) ||
           (g.sectorBucket ?? "").toLowerCase().includes(q) ||
           (g.referenceCompany?.razaoSocial ?? "").toLowerCase().includes(q) ||
+          (g.profile?.linkedinName ?? "").toLowerCase().includes(q) ||
           (g.city ?? "").toLowerCase().includes(q))
     );
-  }, [data.groups, query, tiers]);
-
-  function toggleTier(key: IcpTierKey) {
-    setTiers((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
+    // Sem valor (porte desconhecido) fica sempre no fim, nos dois sentidos.
+    return [...filtered].sort((a, b) => {
+      const va = sortValue(a, sort.key);
+      const vb = sortValue(b, sort.key);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      const diff = typeof va === "string" ? va.localeCompare(vb as string, "pt-BR") : va - (vb as number);
+      return sort.desc ? -diff : diff;
     });
+  }, [inTiers, bands, query, sort]);
+
+  function toggle<T>(set: Set<T>, key: T): Set<T> {
+    const next = new Set(set);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    return next;
+  }
+
+  function sortBy(key: ClientSortKey) {
+    setSort((prev) => (prev.key === key ? { key, desc: !prev.desc } : { key, desc: key !== "name" }));
   }
 
   return (
     <Panel
       icon={Building2}
       title="Grupos de clientes"
-      description="Use os grupos A e B como modelo de prospecção e como cases"
-      sources={[SRC.honorarios, SRC.departamento, SRC.processos, SRC.pessoas, SRC.atraso, SRC.cnae, SRC.sede, SRC.socios]}
+      description="Use os grupos A e B como modelo de prospecção e como cases. Clique num grupo para ver os detalhes."
+      sources={[SRC.honorarios, SRC.departamento, SRC.processos, SRC.pessoas, SRC.atraso, SRC.cnae, SRC.sede, SRC.socios, SRC.colaboradores]}
     >
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+      <div className="mb-3 flex flex-wrap items-center gap-3">
         <div className="relative w-full max-w-xs">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -1952,46 +2393,98 @@ function ClientesTab({ data }: { data: IcpData }) {
             aria-label="Buscar grupo, setor ou cidade"
           />
         </div>
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrar por faixa">
-          {data.tiers.map((t) => {
-            const active = tiers.has(t.key);
-            return (
-              <button
-                key={t.key}
-                type="button"
-                aria-pressed={active}
-                onClick={() => toggleTier(t.key)}
-                className={cn(
-                  "inline-flex min-h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]",
-                  active ? "border-[#347796] bg-[#347796]/10 text-[#04202f]" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                Faixa {t.key}
-                <span className="tabular-nums text-muted-foreground">{t.groups}</span>
-              </button>
-            );
-          })}
+        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filtrar por faixa de receita">
+          {data.tiers.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              aria-pressed={tiers.has(t.key)}
+              onClick={() => setTiers((prev) => toggle(prev, t.key))}
+              className={cn(FILTER_CHIP, tiers.has(t.key) ? FILTER_CHIP_ON : FILTER_CHIP_OFF)}
+            >
+              Faixa {t.key}
+              <span className="tabular-nums text-muted-foreground">{t.groups}</span>
+            </button>
+          ))}
         </div>
-        <p className="ml-auto text-xs text-muted-foreground">{rows.length} grupos</p>
+        <div className="ml-auto flex items-center gap-3">
+          <p className="text-xs text-muted-foreground">
+            {rows.length} {rows.length === 1 ? "grupo" : "grupos"}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+            onClick={() => downloadClientsCsv(rows)}
+            disabled={rows.length === 0}
+          >
+            <Download className="h-3.5 w-3.5" />
+            Baixar CSV
+          </Button>
+        </div>
+      </div>
+      <div className="mb-4 flex flex-wrap items-center gap-1.5" role="group" aria-label="Filtrar por colaboradores">
+        <span className="mr-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <Users className="h-3.5 w-3.5" />
+          Colaboradores
+        </span>
+        <button
+          type="button"
+          aria-pressed={bands.size === 0}
+          onClick={() => setBands(new Set())}
+          className={cn(FILTER_CHIP, bands.size === 0 ? FILTER_CHIP_ON : FILTER_CHIP_OFF)}
+        >
+          Todos
+        </button>
+        {BAND_FILTERS.map((b) => {
+          const count = inTiers.filter((g) => bandOf(g) === b.key).length;
+          return (
+            <button
+              key={b.key}
+              type="button"
+              aria-pressed={bands.has(b.key)}
+              onClick={() => setBands((prev) => toggle(prev, b.key))}
+              disabled={count === 0 && !bands.has(b.key)}
+              className={cn(FILTER_CHIP, bands.has(b.key) ? FILTER_CHIP_ON : FILTER_CHIP_OFF, "disabled:opacity-40")}
+            >
+              {b.label}
+              <span className="tabular-nums text-muted-foreground">{count}</span>
+            </button>
+          );
+        })}
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[980px] text-sm">
+        <table className="w-full min-w-[940px] text-sm">
           <thead>
             <tr className="border-b text-left text-xs text-muted-foreground">
-              <th className="pb-2 font-medium">Grupo</th>
-              <ColumnHeader label="Segmento" source="Receita" />
-              <ColumnHeader label="Sede" source="Receita/VIOS" />
-              <ColumnHeader label="Sócios administradores" source="Receita" />
-              <ColumnHeader label="Entrada" source="VIOS" />
-              <ColumnHeader label="Áreas que faturaram" source="VIOS" />
-              <ColumnHeader label="Média mensal" source="VIOS" align="right" />
-              <ColumnHeader label="Atraso" source="VIOS" align="right" />
+              <SortHeader label="Grupo" sortKey="name" sort={sort} onSort={sortBy} />
+              <th className="pb-2 pr-3 font-medium">
+                <LabelWithInfo label="Segmento" info={INFO.segmento} />
+              </th>
+              <SortHeader label="Colaboradores" sortKey="employees" sort={sort} onSort={sortBy} info={INFO.colaboradores} />
+              <th className="pb-2 pr-3 font-medium">Sede</th>
+              <th className="pb-2 pr-3 font-medium">
+                <LabelWithInfo
+                  label="Áreas"
+                  info="Áreas que faturaram honorários para o grupo nos últimos 12 meses, da que mais faturou para a que menos."
+                />
+              </th>
+              <SortHeader label="Média mensal" sortKey="monthly" sort={sort} onSort={sortBy} info={INFO.mediaMensal} align="right" />
+              <SortHeader label="Em atraso" sortKey="overdue" sort={sort} onSort={sortBy} info={INFO.atrasoGrupo} align="right" />
+              <th className="w-8 pb-2">
+                <span className="sr-only">Detalhes</span>
+              </th>
             </tr>
           </thead>
           <tbody>
             {rows.map((g) => (
-              <GroupRow key={g.grupo} group={g} />
+              <GroupRow
+                key={g.grupo}
+                group={g}
+                open={openGroup === g.grupo}
+                onToggle={() => setOpenGroup((prev) => (prev === g.grupo ? null : g.grupo))}
+              />
             ))}
             {rows.length === 0 && (
               <tr>
@@ -2007,76 +2500,253 @@ function ClientesTab({ data }: { data: IcpData }) {
   );
 }
 
-function ColumnHeader({ label, source, align }: { label: string; source: string; align?: "right" }) {
+function SortHeader({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  info,
+  align,
+}: {
+  label: string;
+  sortKey: ClientSortKey;
+  sort: { key: ClientSortKey; desc: boolean };
+  onSort: (key: ClientSortKey) => void;
+  info?: string;
+  align?: "right";
+}) {
+  const active = sort.key === sortKey;
+  const Icon = !active ? ArrowUpDown : sort.desc ? ArrowDown : ArrowUp;
   return (
-    <th className={cn("pb-2 font-medium", align === "right" && "text-right")}>
-      {label}
-      <span className="ml-1 font-normal text-muted-foreground/70">· {source}</span>
+    <th
+      className={cn("pb-2 pr-3 font-medium", align === "right" && "pl-3 pr-0 text-right")}
+      aria-sort={active ? (sort.desc ? "descending" : "ascending") : "none"}
+    >
+      <div className={cn("inline-flex items-center gap-1", align === "right" && "justify-end")}>
+        <button
+          type="button"
+          onClick={() => onSort(sortKey)}
+          className={cn(
+            "inline-flex items-center gap-1 rounded-md hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]",
+            active && "text-foreground"
+          )}
+        >
+          {label}
+          <Icon className={cn("h-3 w-3", !active && "opacity-50")} />
+        </button>
+        {info && <InfoTooltip title={label} description={info} />}
+      </div>
     </th>
   );
 }
 
-function GroupRow({ group: g }: { group: IcpGroupRow }) {
+const MAX_AREA_ICONS = 4;
+
+function GroupRow({ group: g, open, onToggle }: { group: IcpGroupRow; open: boolean; onToggle: () => void }) {
+  const extraAreas = g.areas.length - MAX_AREA_ICONS;
   return (
-    <tr className="border-b align-middle last:border-0 hover:bg-muted/40">
-      <td className="py-2.5 pr-3">
-        <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
-              TIER_STYLE[g.tier].badge
+    <>
+      <tr
+        className={cn("cursor-pointer border-b align-middle hover:bg-muted/40", open && "border-b-0 bg-muted/40")}
+        onClick={onToggle}
+      >
+        <td className="py-2.5 pr-3">
+          <div className="flex items-center gap-2">
+            <span
+              className={cn(
+                "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                TIER_STYLE[g.tier].badge
+              )}
+            >
+              {g.tier}
+            </span>
+            <CompanyLogo group={g} size="sm" />
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggle();
+              }}
+              className="truncate rounded-sm text-left font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
+            >
+              {groupName(g.grupo)}
+            </button>
+            {g.hasRetainer && (
+              <span className="shrink-0 rounded-full bg-[#47cdd0]/15 px-2 py-0.5 text-xs font-medium text-[#04202f]">mensal</span>
             )}
-          >
-            {g.tier}
-          </span>
-          <span className="font-medium">{g.grupo.replace(/^grupo\s+/i, "")}</span>
-          {g.hasRetainer && (
-            <span className="rounded-full bg-[#47cdd0]/15 px-2 py-0.5 text-xs font-medium text-[#04202f]">mensal</span>
+          </div>
+        </td>
+        <td className="max-w-[200px] truncate py-2.5 pr-3 text-muted-foreground" title={g.sector ?? undefined}>
+          {g.sectorBucket ?? noSectorLabel(g.clientType)}
+        </td>
+        <td className="py-2.5 pr-3">
+          <EmployeeRange group={g} />
+        </td>
+        <td className="whitespace-nowrap py-2.5 pr-3 text-muted-foreground">
+          {g.city ? `${g.city}${g.uf ? ` · ${g.uf}` : ""}` : (g.uf ?? "—")}
+        </td>
+        <td className="py-2.5 pr-3">
+          <div className="flex items-center gap-1">
+            {g.areas.slice(0, MAX_AREA_ICONS).map((a) => (
+              <AreaBadge key={a} area={a} size="sm" />
+            ))}
+            {extraAreas > 0 && (
+              <span
+                className="inline-flex h-6 items-center rounded-md bg-muted px-1.5 text-[11px] font-medium tabular-nums text-muted-foreground"
+                title={g.areas.slice(MAX_AREA_ICONS).join(", ")}
+              >
+                +{extraAreas}
+              </span>
+            )}
+            {g.areas.length === 0 && <span className="text-muted-foreground">—</span>}
+          </div>
+        </td>
+        <td className="whitespace-nowrap py-2.5 pl-3 text-right font-semibold tabular-nums">{money(g.monthly)}</td>
+        <td
+          className={cn(
+            "whitespace-nowrap py-2.5 pl-3 text-right tabular-nums",
+            g.overdue > g.revenue12m * 0.5 ? "font-medium text-amber-700" : "text-muted-foreground"
           )}
-        </div>
-      </td>
-      <td
-        className="max-w-[200px] truncate py-2.5 pr-3 text-muted-foreground"
-        title={[g.sector, g.referenceCompany?.razaoSocial].filter(Boolean).join(" · ") || undefined}
-      >
-        {g.sectorBucket ?? noSectorLabel(g.clientType)}
-      </td>
-      <td className="py-2.5 pr-3 text-muted-foreground">
-        {g.city ? `${g.city}${g.uf ? ` · ${g.uf}` : ""}` : (g.uf ?? "—")}
-      </td>
-      <td
-        className="max-w-[220px] truncate py-2.5 pr-3 text-muted-foreground"
-        title={g.decisionMakers.map((d) => `${d.nome} (${d.qualificacao ?? "sem qualificação"})`).join("\n") || undefined}
-      >
-        {g.decisionMakers.length
-          ? `${g.decisionMakers[0].nome}${g.decisionMakers.length > 1 ? ` +${g.decisionMakers.length - 1}` : ""}`
-          : "—"}
-      </td>
-      <td className="py-2.5 pr-3">
-        {g.entryArea ? (
-          <span className="flex items-center gap-1.5 text-muted-foreground">
-            <AreaBadge area={/insolv/i.test(g.entryArea) ? "Insolvência" : g.entryArea} size="sm" />
-            <span className="truncate">{/insolv/i.test(g.entryArea) ? "Insolvência" : g.entryArea}</span>
-          </span>
-        ) : (
-          <span className="text-muted-foreground">—</span>
-        )}
-      </td>
-      <td className="py-2.5 pr-3">
-        <div className="flex flex-wrap gap-1">
-          {g.areas.map((a) => (
-            <AreaBadge key={a} area={a} size="sm" />
-          ))}
-        </div>
-      </td>
-      <td className="py-2.5 text-right font-semibold tabular-nums">{money(g.monthly)}</td>
-      <td className={cn("py-2.5 text-right tabular-nums", g.overdue > g.revenue12m * 0.5 ? "text-amber-700" : "text-muted-foreground")}>
-        {g.overdue > 0 ? money(g.overdue) : "—"}
-      </td>
-    </tr>
+        >
+          {g.overdue > 0 ? money(g.overdue) : "—"}
+        </td>
+        <td className="py-2.5 pl-2 text-muted-foreground">
+          <ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} />
+        </td>
+      </tr>
+      {open && (
+        <tr className="border-b bg-muted/40">
+          <td colSpan={8} className="px-3 pb-4">
+            <GroupDetail group={g} />
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
+function DetailBlock({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0 rounded-lg border bg-card p-3">
+      <p className="mb-2 text-xs font-medium text-muted-foreground">{title}</p>
+      {children}
+    </div>
+  );
+}
+
+/** Tudo o que se sabe do grupo: empresa, porte, quem decide, relação com o escritório e números de 12 meses. */
+function GroupDetail({ group: g }: { group: IcpGroupRow }) {
+  const ref = g.referenceCompany;
+  const profile = g.profile;
+  const site = profile?.website?.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
+  const areaRevenue = Object.entries(g.byArea)
+    .filter(([area, m]) => area !== "Outros" && m.revenue > 0)
+    .sort((a, b) => b[1].revenue - a[1].revenue);
+  const linkClass =
+    "flex w-fit max-w-full items-center gap-1 truncate rounded-sm text-[#3e84a8] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]";
+
+  return (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <DetailBlock title="Empresa">
+        <div className="flex items-start gap-3">
+          <CompanyLogo group={g} />
+          <div className="min-w-0 space-y-0.5 text-sm">
+            <p className="font-medium leading-snug">{ref?.razaoSocial ?? groupName(g.grupo)}</p>
+            {ref && <p className="text-xs tabular-nums text-muted-foreground">CNPJ {formatCnpj(ref.cnpj)}</p>}
+            {g.sector && <p className="text-xs leading-snug text-muted-foreground">{g.sector}</p>}
+          </div>
+        </div>
+        <div className="mt-3 space-y-1 text-xs">
+          {profile?.linkedinUrl && (
+            <a href={profile.linkedinUrl} target="_blank" rel="noreferrer" className={linkClass}>
+              <Linkedin className="h-3.5 w-3.5 shrink-0" />
+              {profile.linkedinName ?? "Página no LinkedIn"}
+              {profile.employeeRange && (
+                <span className="text-muted-foreground"> · {employeeRangeText(profile.employeeRange)}</span>
+              )}
+            </a>
+          )}
+          {profile?.website && site && (
+            <a href={profile.website} target="_blank" rel="noreferrer" className={linkClass}>
+              <Globe className="h-3.5 w-3.5 shrink-0" />
+              {site}
+            </a>
+          )}
+          {!profile?.linkedinUrl && !site && <p className="text-muted-foreground">Sem página no LinkedIn nem site.</p>}
+        </div>
+      </DetailBlock>
+
+      <DetailBlock title="Sócios administradores">
+        {g.decisionMakers.length ? (
+          <ul className="space-y-1 text-sm">
+            {g.decisionMakers.slice(0, 6).map((d) => (
+              <li key={d.nome} className="leading-snug">
+                {d.nome}
+                {d.qualificacao && <span className="block text-xs text-muted-foreground">{d.qualificacao}</span>}
+              </li>
+            ))}
+            {g.decisionMakers.length > 6 && (
+              <li className="text-xs text-muted-foreground">e mais {g.decisionMakers.length - 6}</li>
+            )}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {ref ? "Sem sócio com poder de administração no QSA." : "Sem empresa consultada na Receita."}
+          </p>
+        )}
+      </DetailBlock>
+
+      <DetailBlock title="Relação com o escritório">
+        <div className="space-y-2 text-sm">
+          <p>
+            <span className="text-muted-foreground">Entrada: </span>
+            {g.entryArea ? entryAreaLabel(g.entryArea) : "—"}
+            {g.firstProcess && <span className="text-muted-foreground"> · {formatDate(g.firstProcess)}</span>}
+          </p>
+          <p>
+            <span className="text-muted-foreground">Honorário mensal: </span>
+            {g.hasRetainer ? "sim" : "não"}
+          </p>
+          {areaRevenue.length > 0 && (
+            <ul className="space-y-1 pt-1">
+              {areaRevenue.map(([area, m]) => (
+                <li key={area} className="flex items-center gap-2 text-xs">
+                  <AreaBadge area={area} size="sm" />
+                  <span className="min-w-0 flex-1 truncate">{area}</span>
+                  <span className="tabular-nums text-muted-foreground">{money(m.revenue)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </DetailBlock>
+
+      <DetailBlock title="Últimos 12 meses">
+        <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+          <div>
+            <dt className="text-xs text-muted-foreground">Receita</dt>
+            <dd className="font-semibold tabular-nums">{money(g.revenue12m)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Média mensal</dt>
+            <dd className="font-semibold tabular-nums">{money(g.monthly)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Horas</dt>
+            <dd className="tabular-nums">{Math.round(g.hours12m).toLocaleString("pt-BR")} h</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Em atraso</dt>
+            <dd className={cn("tabular-nums", g.overdue > g.revenue12m * 0.5 && "font-medium text-amber-700")}>
+              {g.overdue > 0 ? money(g.overdue) : "—"}
+            </dd>
+          </div>
+        </dl>
+      </DetailBlock>
+    </div>
+  );
+}
 /* --------------------------------------------------------------- Marketing */
 
 function MarketingTab({ data }: { data: IcpData }) {
@@ -2088,7 +2758,7 @@ function MarketingTab({ data }: { data: IcpData }) {
   const steps = [
     {
       title: "Completar o segmento dos grupos sem CNPJ",
-      text: `O segmento já vem da Receita para clientes que somam ${pct(data.sectors.coverageShare)} da receita. Falta cadastrar no VIOS o CNPJ dos demais grupos. A fonte do número de colaboradores está em avaliação.`,
+      text: `O segmento já vem da Receita para clientes que somam ${pct(data.sectors.coverageShare)} da receita. Falta cadastrar no VIOS o CNPJ dos demais grupos. O porte vem da página da empresa no LinkedIn para ${data.groups.filter((g) => g.employeeBand).length} de ${data.groups.length} grupos.`,
     },
     { title: "Pontuar leads com os critérios de ICP", text: "Criar no CRM os campos de setor, porte, gatilho, decisor e potencial de áreas." },
     {
@@ -2220,7 +2890,7 @@ function MarketingTab({ data }: { data: IcpData }) {
           <li>Receita: itens a receber do VIOS com plano de contas de honorários e pagamento registrado nos últimos 12 meses. Reembolsos e outras receitas ficam de fora.</li>
           <li>Clientes agrupados pelo grupo cliente do VIOS, a partir do nome do cliente no título.</li>
           <li>Faixas: A a partir de R$ 200 mil, B de R$ 60 a 200 mil, C de R$ 20 a 60 mil e D abaixo de R$ 20 mil em 12 meses.</li>
-          <li>Segmento (CNAE) e sede vêm do cadastro da Receita Federal, pelo CNPJ das empresas do grupo no VIOS. Porte por colaboradores está em avaliação. Primeira área com processo é a área do primeiro processo do grupo.</li>
+          <li>Segmento (CNAE) e sede vêm do cadastro da Receita Federal, pelo CNPJ das empresas do grupo no VIOS. Porte é a faixa de colaboradores que a empresa declara na página dela no LinkedIn; o logo vem da mesma página ou do site da empresa. Primeira área com processo é a área do primeiro processo do grupo.</li>
           <li>Atraso: parcelas vencidas em aberto no VIOS, inclusive valores antigos e renegociados.</li>
           <li>LinkedIn: último retrato importado. GA4 e WhatsApp: dados sincronizados no ORQESTRAI.</li>
         </ul>

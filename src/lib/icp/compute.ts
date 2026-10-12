@@ -82,6 +82,21 @@ export interface IcpWhatsappLead {
   pipelineStage: string | null;
 }
 
+/** Porte e logo do grupo, pela página da empresa no LinkedIn (tabela icp_group_profiles). */
+export interface IcpGroupProfile {
+  grupo: string;
+  /** Faixa de colaboradores declarada na página ("51-200"). */
+  employeeRange: string | null;
+  employeeMin: number | null;
+  /** Pessoas no LinkedIn que se vinculam à empresa. */
+  linkedinMembers: number | null;
+  linkedinUrl: string | null;
+  linkedinName: string | null;
+  website: string | null;
+  logoUrl: string | null;
+  confidence: "alta" | "media" | "baixa" | null;
+}
+
 export interface IcpInput {
   now: Date;
   revenue: IcpRevenueItem[];
@@ -98,6 +113,7 @@ export interface IcpInput {
   linkedin: IcpDemographicRow[];
   ga4Cities: IcpCitySessions[];
   whatsapp: IcpWhatsappLead[];
+  profiles: IcpGroupProfile[];
 }
 
 export type IcpTierKey = "A" | "B" | "C" | "D";
@@ -140,6 +156,10 @@ export interface IcpGroupRow {
   sectorBucket: string | null;
   /** Porte da Receita (ME, EPP ou Demais) da empresa de referência. */
   registeredSize: string | null;
+  /** Faixa de colaboradores (EMPLOYEE_BANDS) pela página do LinkedIn. */
+  employeeBand: IcpEmployeeBand | null;
+  /** Página do LinkedIn, faixa declarada e logo; null quando o grupo não foi pesquisado. */
+  profile: IcpGroupProfile | null;
   city: string | null;
   uf: string | null;
   /** "receita" = sede da empresa de referência; "vios" = cidade mais frequente no cadastro. */
@@ -355,6 +375,58 @@ export const REGISTERED_SIZE_RANGE: Record<(typeof REGISTERED_SIZES)[number], st
   EPP: "até R$ 4,8 mi por ano",
   Demais: "não enquadrada como ME ou EPP; em geral, acima de R$ 4,8 mi por ano",
 };
+
+/**
+ * Porte por colaboradores, nas faixas do LinkedIn agrupadas: até 10, 11 a 50, 51 a 200,
+ * 201 a 500 e mais de 500.
+ */
+export const EMPLOYEE_BANDS = [
+  { key: "ate10", label: "Até 10", min: 0, max: 10 },
+  { key: "11a50", label: "11 a 50", min: 11, max: 50 },
+  { key: "51a200", label: "51 a 200", min: 51, max: 200 },
+  { key: "201a500", label: "201 a 500", min: 201, max: 500 },
+  { key: "500mais", label: "Mais de 500", min: 501, max: null },
+] as const;
+
+export type IcpEmployeeBand = (typeof EMPLOYEE_BANDS)[number]["key"];
+
+export function employeeBandOf(employeeMin: number | null | undefined): IcpEmployeeBand | null {
+  if (employeeMin == null) return null;
+  return [...EMPLOYEE_BANDS].reverse().find((b) => employeeMin >= b.min)!.key;
+}
+
+/**
+ * Menor sequência de faixas vizinhas que reúne pelo menos `coverage` dos grupos com porte
+ * (em empate, a que reúne mais grupos). Vira o critério de porte do ICP: "De 51 a 500".
+ */
+export function typicalEmployeeRange(
+  groups: { employeeBand: IcpEmployeeBand | null }[],
+  coverage = 0.6
+): { label: string; count: number; known: number } | null {
+  const counts = EMPLOYEE_BANDS.map((b) => groups.filter((g) => g.employeeBand === b.key).length);
+  const known = counts.reduce((acc, c) => acc + c, 0);
+  if (known === 0) return null;
+  for (let size = 1; size <= counts.length; size++) {
+    let best: { start: number; count: number } | null = null;
+    for (let start = 0; start + size <= counts.length; start++) {
+      const count = counts.slice(start, start + size).reduce((acc, c) => acc + c, 0);
+      if (count >= coverage * known && (!best || count > best.count)) best = { start, count };
+    }
+    if (!best) continue;
+    const first = EMPLOYEE_BANDS[best.start];
+    const last = EMPLOYEE_BANDS[best.start + size - 1];
+    const label =
+      last.max == null
+        ? first.min === 0
+          ? "Qualquer porte"
+          : `Mais de ${first.min - 1}`
+        : first.min === 0
+          ? `Até ${last.max}`
+          : `De ${first.min} a ${last.max}`;
+    return { label, count: best.count, known };
+  }
+  return null;
+}
 
 function normalizeRegisteredSize(porte: string | null | undefined): string | null {
   if (!porte) return null;
@@ -574,6 +646,8 @@ export function computeIcp(input: IcpInput): IcpData {
     return city ? (viosCitySpelling.get(foldCity(city)) ?? city) : null;
   };
 
+  const profileByGroup = new Map(input.profiles.map((p) => [p.grupo, p]));
+
   // Empresas do grupo com cadastro da Receita (uma por CNPJ).
   const companiesByGroup = new Map<string, Map<string, IcpCnpjRecord>>();
   for (const c of input.companies) {
@@ -611,6 +685,8 @@ export function computeIcp(input: IcpInput): IcpData {
         sector: refSector ? ref!.cnae_descricao : null,
         sectorBucket: refSector,
         registeredSize: normalizeRegisteredSize(ref?.porte),
+        employeeBand: employeeBandOf(profileByGroup.get(grupo)?.employeeMin),
+        profile: profileByGroup.get(grupo) ?? null,
         city: ref?.uf ? refCity : viosCity,
         uf: ref?.uf ?? viosUf,
         regionSource: ref?.uf ? "receita" : viosUf || viosCity ? "vios" : null,

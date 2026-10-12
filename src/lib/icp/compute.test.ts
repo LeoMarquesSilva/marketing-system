@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   computeIcp,
+  employeeBandOf,
   normalizePracticeArea,
+  typicalEmployeeRange,
   sizeBuckets,
   type IcpInput,
 } from "@/lib/icp/compute";
@@ -24,6 +26,7 @@ function baseInput(overrides: Partial<IcpInput> = {}): IcpInput {
     linkedin: [],
     ga4Cities: [],
     whatsapp: [],
+    profiles: [],
     ...overrides,
   };
 }
@@ -199,6 +202,65 @@ describe("computeIcp", () => {
     expect(byName.get("Grupo Física")?.clientType).toBe("pessoa_fisica");
     expect(byName.get("Grupo Empresa")?.clientType).toBe("pessoa_juridica");
     expect(byName.has("Grupo Centavos")).toBe(false);
+  });
+
+  it("liga o porte do LinkedIn ao grupo pela faixa de colaboradores", () => {
+    const profile = {
+      grupo: "Grupo Spel",
+      employeeRange: "51-200",
+      employeeMin: 51,
+      linkedinMembers: 57,
+      linkedinUrl: "https://www.linkedin.com/company/spel-embalagens",
+      linkedinName: "Spel Embalagens",
+      website: "https://www.spel.com.br",
+      logoUrl: "https://exemplo.supabase.co/logo.png",
+      confidence: "alta" as const,
+    };
+    const data = computeIcp(
+      baseInput({
+        revenue: [pay("Grupo Spel", "Cível", 90_000), pay("Grupo Sem Página", "Cível", 90_000)],
+        profiles: [profile],
+      })
+    );
+    const byName = new Map(data.groups.map((g) => [g.grupo, g]));
+    expect(byName.get("Grupo Spel")).toMatchObject({ employeeBand: "51a200", profile });
+    expect(byName.get("Grupo Sem Página")).toMatchObject({ employeeBand: null, profile: null });
+  });
+});
+
+describe("typicalEmployeeRange", () => {
+  const groups = (spec: Record<string, number>) =>
+    Object.entries(spec).flatMap(([band, n]) =>
+      Array.from({ length: n }, () => ({ employeeBand: band as ReturnType<typeof employeeBandOf> }))
+    );
+
+  it("junta as faixas vizinhas que reúnem a maioria dos grupos", () => {
+    expect(typicalEmployeeRange(groups({ ate10: 2, "11a50": 5, "51a200": 23, "201a500": 12, "500mais": 10 }))).toEqual({
+      label: "De 51 a 500",
+      count: 35,
+      known: 52,
+    });
+  });
+
+  it("usa uma faixa só quando ela já basta e trata as pontas", () => {
+    expect(typicalEmployeeRange(groups({ "51a200": 8, "201a500": 2 }))?.label).toBe("De 51 a 200");
+    expect(typicalEmployeeRange(groups({ "51a200": 2, "201a500": 4, "500mais": 4 }))?.label).toBe("Mais de 200");
+    expect(typicalEmployeeRange(groups({ "201a500": 3, "500mais": 7 }))?.label).toBe("Mais de 500");
+    expect(typicalEmployeeRange(groups({ ate10: 5, "11a50": 4, "500mais": 1 }))?.label).toBe("Até 50");
+    expect(typicalEmployeeRange([{ employeeBand: null }])).toBeNull();
+  });
+});
+
+describe("employeeBandOf", () => {
+  it("agrupa as faixas do LinkedIn pelo mínimo de colaboradores", () => {
+    expect(employeeBandOf(null)).toBeNull();
+    expect(employeeBandOf(0)).toBe("ate10");
+    expect(employeeBandOf(2)).toBe("ate10");
+    expect(employeeBandOf(11)).toBe("11a50");
+    expect(employeeBandOf(51)).toBe("51a200");
+    expect(employeeBandOf(201)).toBe("201a500");
+    expect(employeeBandOf(501)).toBe("500mais");
+    expect(employeeBandOf(10_001)).toBe("500mais");
   });
 });
 
