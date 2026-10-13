@@ -390,7 +390,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
     } catch (err) {
       setToast({
         type: "error",
-        text: err instanceof Error ? err.message : "Erro ao carregar Meus Clientes.",
+        text: err instanceof Error ? err.message : "Erro ao carregar o cadastro de clientes.",
       });
     } finally {
       if (!options?.silent) setLoading(false);
@@ -1374,7 +1374,7 @@ function MeusClientesClientContent({ onRestartTour }: { onRestartTour: () => voi
 
       <div className="flex flex-wrap items-start justify-between gap-3" data-tour="mc-header">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Meus Clientes</h2>
+          <h2 className="text-2xl font-bold tracking-tight">Cadastro de clientes</h2>
           <p className="text-sm text-muted-foreground mt-1">
             Preencha e confirme e-mail, telefone, cargo e sócios dos clientes sob sua responsabilidade.
           </p>

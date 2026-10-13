@@ -6,6 +6,7 @@ import { useState } from "react";
 import { MotionConfig } from "framer-motion";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
+import { NavBadgesProvider } from "@/components/layout/nav-badges";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { ContentCollaboratorTour } from "@/components/conteudo/content-collaborator-tour";
 import { HrPendingNotificationsModal } from "@/components/rh/hr-pending-notifications-modal";
@@ -58,34 +59,36 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           children
         ) : (
           <TimerProvider>
-            <Sidebar
-              expanded={sidebarExpanded}
-              onExpandedChange={handleSidebarExpandedChange}
-            />
-            <div
-              className="relative min-h-screen pl-0 md:pl-[var(--app-sidebar-width)]"
-              style={
-                {
-                  "--app-sidebar-width": "72px",
-                } as React.CSSProperties
-              }
-            >
-              <Header />
-              <main className="relative isolate min-h-[calc(100vh-3.5rem)] overflow-x-hidden p-4 pb-20 md:p-6">
-                <div
-                  className="pointer-events-none fixed bottom-5 right-5 z-0 hidden select-none opacity-[0.055] lg:block"
-                  aria-hidden="true"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="/ORQESTRAI/identidade-visual/logos/orquestrai-symbol-dark.svg"
-                    alt=""
-                    className="h-28 w-28 object-contain"
-                  />
-                </div>
-                <div className="relative z-10">{children}</div>
-              </main>
-            </div>
+            <NavBadgesProvider>
+              <Sidebar
+                expanded={sidebarExpanded}
+                onExpandedChange={handleSidebarExpandedChange}
+              />
+              <div
+                className="relative min-h-screen pl-0 md:pl-[var(--app-sidebar-width)]"
+                style={
+                  {
+                    "--app-sidebar-width": "72px",
+                  } as React.CSSProperties
+                }
+              >
+                <Header />
+                <main className="relative isolate min-h-[calc(100vh-3.5rem)] overflow-x-hidden p-4 pb-20 md:p-6">
+                  <div
+                    className="pointer-events-none fixed bottom-5 right-5 z-0 hidden select-none opacity-[0.055] lg:block"
+                    aria-hidden="true"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src="/ORQESTRAI/identidade-visual/logos/orquestrai-symbol-dark.svg"
+                      alt=""
+                      className="h-28 w-28 object-contain"
+                    />
+                  </div>
+                  <div className="relative z-10">{children}</div>
+                </main>
+              </div>
+            </NavBadgesProvider>
             <FloatingTimer />
           </TimerProvider>
         )}

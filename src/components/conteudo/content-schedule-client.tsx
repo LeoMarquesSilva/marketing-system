@@ -570,9 +570,9 @@ export function ContentScheduleClient() {
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#347796]">
             {isManagerView ? "Gestão da equipe" : "Planejamento editorial"}
           </p>
-          <h1 className="mt-1.5 text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">
-            {isManagerView ? "Cronograma da sua equipe" : "Cronograma de Marketing"}
-          </h1>
+          <h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">
+            {isManagerView ? "Calendário editorial da sua equipe" : "Calendário editorial"}
+          </h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">
             {isManagerView
               ? "Confira as datas da sua área e defina o responsável por cada entrega. O Marketing acompanha as alterações."

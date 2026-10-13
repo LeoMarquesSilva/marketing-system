@@ -12,7 +12,7 @@ export default async function FotosColaboradoresPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-bold tracking-tight text-foreground">Fotos dos Colaboradores</h2>
+        <h2 className="text-xl font-bold tracking-tight text-foreground">Fotos dos colaboradores</h2>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
           Lista de colaboradores do RH / VIOS, incluindo os sócios que participam das sessões. Suba
           as fotos por sessão (ex.: Fotos Corporativas 2026); cada pessoa escolhe os usos em Minhas

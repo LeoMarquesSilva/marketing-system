@@ -63,8 +63,8 @@ export function EventGuestImportDialog({ eventId, source, invites, onClose, onIm
   return <Dialog open onOpenChange={open => { if (!open && !saving) onClose(); }}>
     <DialogContent className="flex max-h-[90dvh] flex-col gap-0 p-0 sm:max-w-2xl" showCloseButton={!saving}>
       <DialogHeader className="border-b p-5 pr-12">
-        <DialogTitle>{office ? "Adicionar pessoas do escritório" : "Importar de Meus Clientes"}</DialogTitle>
-        <DialogDescription>{office ? "Selecione colaboradores ativos do cadastro do escritório, incluindo quem não tem acesso ao sistema." : "Pessoas e contatos marcados para a Festa de 10 anos, conforme seu acesso em Meus Clientes."}</DialogDescription>
+        <DialogTitle>{office ? "Adicionar pessoas do escritório" : "Importar do Cadastro de clientes"}</DialogTitle>
+        <DialogDescription>{office ? "Selecione colaboradores ativos do cadastro do escritório, incluindo quem não tem acesso ao sistema." : "Pessoas e contatos marcados para a Festa de 10 anos, conforme seu acesso no Cadastro de clientes."}</DialogDescription>
       </DialogHeader>
       <div className="space-y-3 border-b px-5 py-4">
         <div className="relative"><Search className="pointer-events-none absolute left-3 top-3 size-4 text-muted-foreground" /><Input aria-label="Buscar pessoas para adicionar" placeholder={office ? "Buscar por nome ou área…" : "Buscar por nome ou empresa…"} value={search} onChange={event => setSearch(event.target.value)} className="pl-9" /></div>
@@ -88,7 +88,7 @@ export function EventGuestImportDialog({ eventId, source, invites, onClose, onIm
               {added && <span className="flex shrink-0 items-center gap-1 text-xs"><Check className="size-3" />Já adicionado</span>}
             </label>;
           })}
-          {!filtered.length && <p className="py-12 text-center text-sm text-muted-foreground">{search ? "Nenhuma pessoa encontrada nesta busca." : office ? "Nenhum colaborador ativo encontrado." : "Nenhuma pessoa marcada para a Festa de 10 anos no seu escopo de Meus Clientes."}</p>}
+          {!filtered.length && <p className="py-12 text-center text-sm text-muted-foreground">{search ? "Nenhuma pessoa encontrada nesta busca." : office ? "Nenhum colaborador ativo encontrado." : "Nenhuma pessoa marcada para a Festa de 10 anos no seu escopo do Cadastro de clientes."}</p>}
         </>}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/20 p-5">

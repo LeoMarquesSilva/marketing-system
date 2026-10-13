@@ -73,13 +73,13 @@ export const CONTENT_TOUR_STEPS: ContentTourStep[] = [
     route: "/conteudo/inicio",
     target: '[data-tour="sidebar-nav"], [data-tour="sidebar-nav-mobile"]',
     title: "Menu lateral",
-    body: "Início traz seu desempenho. Conteúdo para Post é onde você valida notícias e carrosséis da sua área.",
+    body: "Início traz seu desempenho. Em Marketing, o Gerador de conteúdo é onde você valida notícias e carrosséis da sua área.",
   },
   {
     id: "roteiros-header",
     route: "/conteudo/roteiros",
     target: '[data-tour="roteiros-header"]',
-    title: "Conteúdo para Post",
+    title: "Gerador de conteúdo",
     body: "Aqui aparecem as notícias da sua área jurídica. A IA monta um carrossel para você revisar antes de publicar.",
   },
   {
@@ -150,6 +150,6 @@ export const CONTENT_TOUR_STEPS: ContentTourStep[] = [
     route: "/conteudo/inicio",
     target: null,
     title: "Pronto para começar",
-    body: "Abra Conteúdo para Post → A validar sempre que houver novidades. Qualquer dúvida, fale com o marketing.",
+    body: "Abra Gerador de conteúdo → A validar sempre que houver novidades. Qualquer dúvida, fale com o marketing.",
   },
 ];

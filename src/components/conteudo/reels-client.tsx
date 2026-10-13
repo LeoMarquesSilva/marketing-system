@@ -422,7 +422,7 @@ function ReelScriptGenerator() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Não foi possível salvar o roteiro.");
       setCommitted(true);
-      setCommitNotice(data.message ?? "Roteiro salvo no estúdio. Cronograma atualizado.");
+      setCommitNotice(data.message ?? "Roteiro salvo no estúdio. Calendário editorial atualizado.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Não foi possível salvar o roteiro.");
     } finally {

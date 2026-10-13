@@ -1026,12 +1026,12 @@ export function NpsResultsClient() {
             className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            Voltar para Meus Clientes
+            Voltar para Cadastro de clientes
           </Link>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+          <h2 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
             <MessageSquareHeart className="h-6 w-6 text-[#347796]" />
             Resultados NPS
-          </h1>
+          </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Visão consolidada da satisfação por campanha, grupo e comentários.
           </p>

@@ -41,13 +41,13 @@ const COMMON_STEPS: MeusClientesTourStep[] = [
   {
     id: "welcome",
     target: null,
-    title: "Guia do NPS em Meus Clientes",
+    title: "Guia do NPS no Cadastro de clientes",
     body: "Este guia explica o fluxo completo da pesquisa NPS: o gestor da área designa quem vai contatar cada cliente; a pessoa responsável completa os cadastros, marca quem responde o NPS, envia o link, marca “NPS enviado” (essa marcação não pode ser desfeita) e acompanha até o cliente responder.",
   },
   {
     id: "header",
     target: '[data-tour="mc-header"]',
-    title: "Painel Meus Clientes",
+    title: "Cadastro de clientes",
     body: "Aqui você vê os clientes da sua área. Use Ver guia no cabeçalho sempre que quiser rever este passo a passo.",
   },
   {

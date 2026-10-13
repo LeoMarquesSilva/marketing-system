@@ -3,69 +3,18 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
-import {
-  LayoutDashboard,
-  List,
-  Users,
-  Columns3,
-  ClipboardList,
-  CalendarDays,
-  LogOut,
-  Settings,
-  Newspaper,
-  Heart,
-  Images,
-  Instagram,
-  Linkedin,
-  Globe,
-  Megaphone,
-  User,
-  Camera,
-  Wallet,
-  Mail,
-  Contact,
-  Clapperboard,
-  CalendarRange,
-  Film,
-  MoreHorizontal,
-  RadioTower,
-  ScrollText,
-  Palmtree,
-  BriefcaseBusiness,
-  IdCard,
-  ClipboardPen,
-  Network,
-  ChevronDown,
-  TrendingUp,
-  Layers,
-  Rocket,
-  Scale,
-  Shield,
-  Coffee,
-  PartyPopper,
-  PenLine,
-  Crosshair,
-  type LucideIcon,
-} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, LogOut, MoreHorizontal, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
-import { isContentCollaborator } from "@/lib/content-areas";
 import {
-  resolveAllowedSections,
-  isCollaboratorPhotosManager,
-  isAdminRole,
-  hasCafeCulturaAccess,
-  hasOperacoesLegaisAccess,
-  hasIcpAccess,
-} from "@/lib/access-control";
-import { canAccessGustavoContent } from "@/lib/gustavo-content/access";
-import { hasHrAccess } from "@/lib/rh/access";
+  buildNav,
+  findActiveHref,
+  type VisibleNavFeature,
+  type VisibleNavFront,
+} from "@/lib/navigation";
+import { NavBadgePill, sumBadges, useNavBadges } from "@/components/layout/nav-badges";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { fetchCommentStats } from "@/lib/request-comments";
-import { fetchMarketingRequests } from "@/lib/marketing-requests";
-import { useWhatsappUnreadCount } from "@/hooks/use-whatsapp-unread";
-import { REELS_APPROVAL_HREF, useReelDeliveriesPendingCount } from "@/hooks/use-reel-deliveries-pending";
 import { HrNotificationsBell } from "@/components/rh/hr-notifications-bell";
 import { ContentScheduleNotificationsBell } from "@/components/conteudo/content-schedule-notifications-bell";
 
@@ -74,332 +23,22 @@ type SidebarProps = {
   onExpandedChange: (expanded: boolean) => void;
 };
 
-type NavLeaf = {
-  href: string;
-  icon: LucideIcon;
-  label: string;
-};
-
-type NavGroup = {
-  key: string;
-  icon: LucideIcon;
-  label: string;
-  children: NavLeaf[];
-};
-
-type NavEntry = NavLeaf | NavGroup;
-
-function isNavGroup(item: NavEntry): item is NavGroup {
-  return "children" in item && Array.isArray(item.children);
-}
-
-function flattenNav(items: NavEntry[]): NavLeaf[] {
-  return items.flatMap((item) => (isNavGroup(item) ? item.children : [item]));
-}
-
 const SIDEBAR_WIDTH = {
   collapsed: 72,
-  expanded: 260,
+  expanded: 268,
 };
 
-const baseNavItems: NavLeaf[] = [
-  { href: "/", icon: LayoutDashboard, label: "Dashboard" },
-  { href: "/planner", icon: Columns3, label: "Planner" },
-  { href: "/solicitacoes", icon: List, label: "Solicitacoes" },
-  { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteudo para Post" },
-  { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
-  { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
-  { href: "/conteudo/cronograma", icon: CalendarRange, label: "Cronograma" },
-  { href: REELS_APPROVAL_HREF, icon: Film, label: "Aprovação de Reels" },
-  { href: "/clima", icon: Heart, label: "Clima" },
-  { href: "/instagram-insights", icon: Instagram, label: "Instagram Insights" },
-  { href: "/linkedin-insights", icon: Linkedin, label: "LinkedIn Insights" },
-  { href: "/ga4-insights", icon: Globe, label: "Analytics (GA4)" },
-  { href: "/trafego-pago", icon: Megaphone, label: "Trafego Pago" },
-  { href: "/vios-tarefas", icon: ClipboardList, label: "Tarefas VIOS" },
-  { href: "/operacoes-legais", icon: Scale, label: "Operações Legais" },
-  { href: "/eventos", icon: CalendarDays, label: "Eventos" },
-  { href: "/cafe-cultura", icon: Coffee, label: "Café com Cultura" },
-  { href: "/email-marketing", icon: Mail, label: "E-mail Marketing" },
-  { href: "/nfc", icon: RadioTower, label: "NFC Hub" },
-  { href: "/minhas-fotos", icon: Images, label: "Minhas fotos" },
-  { href: "/fotos-eventos", icon: PartyPopper, label: "Fotos de eventos" },
-  { href: "/fotos-colaboradores", icon: Camera, label: "Fotos Colaboradores" },
-  { href: "/usuarios", icon: Users, label: "Usuarios" },
-  { href: "/custos-projetos", icon: Wallet, label: "Custos de Projetos" },
-  { href: "/icp", icon: Crosshair, label: "Cliente ideal (ICP)" },
-];
+/** Frentes abertas/fechadas pela pessoa; vale entre recarregamentos. */
+const FRONTS_STORAGE_KEY = "orquestrai:sidebar-fronts";
 
-const collaboratorNavItems: NavLeaf[] = [
-  { href: "/conteudo/inicio", icon: Instagram, label: "Inicio" },
-  { href: "/minhas-fotos", icon: Images, label: "Minhas fotos" },
-  { href: "/fotos-eventos", icon: PartyPopper, label: "Fotos de eventos" },
-  { href: "/meus-clientes", icon: Contact, label: "Meus Clientes" },
-  { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteudo para Post" },
-  { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
-  { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
-  { href: "/conteudo/cronograma", icon: CalendarRange, label: "Cronograma" },
-  { href: REELS_APPROVAL_HREF, icon: Film, label: "Aprovação de Reels" },
-];
-
-const meusClientesNavItem: NavLeaf = {
-  href: "/meus-clientes",
-  icon: Contact,
-  label: "Meus Clientes",
-};
-
-const gustavoNavItem: NavLeaf = {
-  href: "/conteudo/gustavo",
-  icon: PenLine,
-  label: "Posicionamento Gustavo",
-};
-
-const rhNavGroup: NavGroup = {
-  key: "/rh",
-  icon: BriefcaseBusiness,
-  label: "RH",
-  children: [
-    { href: "/rh/ferias", icon: Palmtree, label: "Ferias" },
-    { href: "/rh/qualificacoes", icon: IdCard, label: "Qualificacoes" },
-    { href: "/rh/fichas-cadastrais", icon: ClipboardPen, label: "Fichas cadastrais" },
-    { href: "/rh/organograma", icon: Network, label: "Organograma" },
-  ],
-};
-
-const feriasViewerNavGroup: NavGroup = {
-  ...rhNavGroup,
-  children: rhNavGroup.children.filter((item) => item.href === "/rh/ferias"),
-};
-
-type CollapsibleGroupSpec = {
-  key: string;
-  icon: LucideIcon;
-  label: string;
-  hrefs: string[];
-};
-
-const METRICS_GROUP: CollapsibleGroupSpec = {
-  key: "__metricas",
-  icon: TrendingUp,
-  label: "Métricas",
-  hrefs: ["/instagram-insights", "/linkedin-insights", "/ga4-insights"],
-};
-
-const CONTENT_GROUP: CollapsibleGroupSpec = {
-  key: "__conteudo",
-  icon: Layers,
-  label: "Conteúdo",
-  hrefs: [
-    "/conteudo/inicio",
-    "/conteudo/roteiros",
-    "/conteudo/boletim",
-    "/conteudo/reels",
-    "/conteudo/cronograma",
-    REELS_APPROVAL_HREF,
-    "/conteudo/gustavo",
-  ],
-};
-
-const PHOTOS_GROUP: CollapsibleGroupSpec = {
-  key: "__fotos",
-  icon: Images,
-  label: "Fotos",
-  hrefs: ["/minhas-fotos", "/fotos-eventos", "/fotos-colaboradores"],
-};
-
-const MARKETING_GROUP: CollapsibleGroupSpec = {
-  key: "__marketing-pago",
-  icon: Rocket,
-  label: "Marketing Pago",
-  hrefs: ["/trafego-pago", "/email-marketing"],
-};
-
-const ADMIN_GROUP: CollapsibleGroupSpec = {
-  key: "__administracao",
-  icon: Shield,
-  label: "Administração",
-  hrefs: ["/usuarios", "/custos-projetos", "/icp", "/admin"],
-};
-
-function collapseIntoGroup(items: NavEntry[], spec: CollapsibleGroupSpec): NavEntry[] {
-  const children = spec.hrefs
-    .map((href) =>
-      items.find((i) => !isNavGroup(i) && i.href === href) as NavLeaf | undefined
-    )
-    .filter((i): i is NavLeaf => Boolean(i));
-  // Só vale colapsar quando sobra mais de 1 item — um grupo com 1 filho só adiciona clique.
-  if (children.length < 2) return items;
-
-  const group: NavGroup = { key: spec.key, icon: spec.icon, label: spec.label, children };
-
-  const result: NavEntry[] = [];
-  let inserted = false;
-  for (const item of items) {
-    if (!isNavGroup(item) && spec.hrefs.includes(item.href)) {
-      if (!inserted) {
-        result.push(group);
-        inserted = true;
-      }
-      continue;
-    }
-    result.push(item);
+function readStoredFronts(): Record<string, boolean> {
+  if (typeof window === "undefined") return {};
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(FRONTS_STORAGE_KEY) ?? "{}");
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, boolean>) : {};
+  } catch {
+    return {};
   }
-  return result;
-}
-
-function applyCollapsibleGroups(items: NavEntry[]): NavEntry[] {
-  return [CONTENT_GROUP, PHOTOS_GROUP, MARKETING_GROUP, METRICS_GROUP, ADMIN_GROUP].reduce(
-    collapseIntoGroup,
-    items
-  );
-}
-
-const adminNavItems: NavLeaf[] = [
-  { href: "/admin", icon: Settings, label: "Configuracoes" },
-];
-
-function withGustavoNav(
-  items: NavEntry[],
-  profile: { role?: string | null; gustavo_content_member?: boolean | null } | null
-): NavEntry[] {
-  if (!canAccessGustavoContent(profile)) return items;
-  if (flattenNav(items).some((i) => i.href === gustavoNavItem.href)) return items;
-
-  const reelsIndex = items.findIndex(
-    (i) => !isNavGroup(i) && i.href === "/conteudo/reels"
-  );
-  if (reelsIndex >= 0) {
-    const copy = [...items];
-    copy.splice(reelsIndex + 1, 0, gustavoNavItem);
-    return copy;
-  }
-
-  const contentIndex = items.findIndex(
-    (i) => !isNavGroup(i) && i.href.startsWith("/conteudo")
-  );
-  if (contentIndex >= 0) {
-    const copy = [...items];
-    copy.splice(contentIndex + 1, 0, gustavoNavItem);
-    return copy;
-  }
-
-  return [items[0], gustavoNavItem, ...items.slice(1)].filter(Boolean) as NavEntry[];
-}
-
-function withMinhasFotos(items: NavEntry[], minhasFotos: NavLeaf): NavEntry[] {
-  const flat = flattenNav(items);
-  if (flat.some((i) => i.href === "/minhas-fotos")) return items;
-  const contentIndex = items.findIndex(
-    (i) => !isNavGroup(i) && i.href.startsWith("/conteudo")
-  );
-  if (contentIndex >= 0) {
-    const copy = [...items];
-    copy.splice(contentIndex + 1, 0, minhasFotos);
-    return copy;
-  }
-  return [items[0], minhasFotos, ...items.slice(1)].filter(Boolean) as NavEntry[];
-}
-
-function profileHasRhAccess(
-  profile: { role?: string | null; permissions?: string[] | null } | null
-): boolean {
-  return hasHrAccess(profile?.role, profile?.permissions);
-}
-
-function profileHasFeriasView(
-  profile: {
-    role?: string | null;
-    permissions?: string[] | null;
-    ferias_view_enabled?: boolean | null;
-  } | null
-): boolean {
-  return profileHasRhAccess(profile) || profile?.ferias_view_enabled === true;
-}
-
-function getNavItems(
-  profile: {
-    id?: string;
-    role?: string | null;
-    department?: string | null;
-    permissions?: string[] | null;
-    ferias_view_enabled?: boolean | null;
-    gustavo_content_member?: boolean | null;
-  } | null
-): NavEntry[] {
-  const minhasFotos: NavLeaf = { href: "/minhas-fotos", icon: Images, label: "Minhas fotos" };
-  const allowed = resolveAllowedSections(profile);
-  if (allowed) {
-    const leafCatalog: NavLeaf[] = [...baseNavItems, meusClientesNavItem, ...adminNavItems];
-    let items: NavEntry[] = leafCatalog.filter((i) => {
-      if (i.href === "/minhas-fotos" || i.href === "/fotos-eventos" || i.href === "/meus-clientes" || i.href === "/conteudo/cronograma" || i.href === REELS_APPROVAL_HREF) return true;
-      if (i.href === "/fotos-colaboradores") {
-        return isCollaboratorPhotosManager(profile);
-      }
-      if (i.href === "/operacoes-legais") {
-        return hasOperacoesLegaisAccess(profile);
-      }
-      if (i.href === "/icp") {
-        return hasIcpAccess(profile);
-      }
-      return allowed.includes(i.href);
-    });
-
-    if (profileHasRhAccess(profile) || allowed.includes("/rh")) {
-      items = [...items, rhNavGroup];
-    } else if (profileHasFeriasView(profile)) {
-      items = [...items, feriasViewerNavGroup];
-    }
-
-    if (allowed.some((k) => k.startsWith("/conteudo"))) {
-      items = [
-        { href: "/conteudo/inicio", icon: Instagram, label: "Inicio" },
-        minhasFotos,
-        meusClientesNavItem,
-        { href: "/conteudo/roteiros", icon: Newspaper, label: "Conteudo para Post" },
-        { href: "/conteudo/boletim", icon: ScrollText, label: "Newsletter" },
-        { href: "/conteudo/reels", icon: Clapperboard, label: "Roteiros de Reels" },
-        { href: "/conteudo/cronograma", icon: CalendarRange, label: "Cronograma" },
-        { href: REELS_APPROVAL_HREF, icon: Film, label: "Aprovação de Reels" },
-        ...items.filter(
-          (i) =>
-            isNavGroup(i) ||
-            (!i.href.startsWith("/conteudo") &&
-              i.href !== "/minhas-fotos" &&
-              i.href !== "/meus-clientes")
-        ),
-      ];
-    } else {
-      items = withMinhasFotos(items, minhasFotos);
-    }
-    return applyCollapsibleGroups(withGustavoNav(items, profile));
-  }
-
-  if (isContentCollaborator(profile)) {
-    const collaboratorItems: NavEntry[] = profileHasFeriasView(profile)
-      ? [...collaboratorNavItems, feriasViewerNavGroup]
-      : collaboratorNavItems;
-    return applyCollapsibleGroups(withGustavoNav(collaboratorItems, profile));
-  }
-
-  const isAdmin = isAdminRole(profile);
-  const canViewFerias = profileHasFeriasView(profile);
-  return applyCollapsibleGroups(
-    withGustavoNav(
-      [
-        ...baseNavItems.filter((i) => {
-          if (i.href === "/nfc") return isAdmin;
-          if (i.href === "/cafe-cultura") return hasCafeCulturaAccess(profile);
-          if (i.href === "/operacoes-legais") return hasOperacoesLegaisAccess(profile);
-          if (i.href === "/icp") return hasIcpAccess(profile);
-          if (i.href === "/minhas-fotos") return true;
-          return i.href !== "/fotos-colaboradores" || isCollaboratorPhotosManager(profile);
-        }),
-        meusClientesNavItem,
-        ...(isAdmin ? [rhNavGroup, ...adminNavItems] : canViewFerias ? [feriasViewerNavGroup] : []),
-      ],
-      profile
-    )
-  );
 }
 
 function getInitials(name: string) {
@@ -411,54 +50,147 @@ function getInitials(name: string) {
     .toUpperCase();
 }
 
-function isRouteActive(pathname: string, href: string) {
-  return pathname === href || (href !== "/" && pathname.startsWith(href));
+/** Rótulos ficam sempre no DOM; o trilho recolhido só os esconde, então ícones não saltam. */
+function revealClass(expanded: boolean) {
+  return expanded
+    ? "opacity-100 transition-opacity delay-75 duration-200"
+    : "opacity-0 transition-opacity duration-75";
 }
 
-function NotificationBadge({
-  value,
-  tone = "cyan",
+function SidebarFeatureLink({
+  feature,
+  active,
   expanded,
-  active = false,
 }: {
-  value: number;
-  tone?: "cyan" | "amber";
+  feature: VisibleNavFeature;
+  active: boolean;
   expanded: boolean;
-  active?: boolean;
 }) {
-  if (value <= 0) return null;
-
-  const label = `${value} ${value === 1 ? "notificação pendente" : "notificações pendentes"}`;
-
-  if (!expanded) {
-    return (
-      <span
-        role="status"
-        aria-label={label}
-        className={cn(
-          "absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2",
-          active ? "border-[#47cdd0]" : "border-[#03070c]",
-          tone === "amber" ? "bg-[#f4c95d]" : active ? "bg-[#04202f]" : "bg-[#47cdd0]"
-        )}
-      />
-    );
-  }
+  const badgeFor = useNavBadges();
+  const badge = sumBadges(feature.pages.map((page) => badgeFor(page.href)));
 
   return (
-    <span
-      role="status"
-      aria-label={label}
+    <Link
+      href={feature.href}
+      aria-current={active ? "page" : undefined}
       className={cn(
-        "relative z-10 ml-auto flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-xs font-semibold leading-none",
-        tone === "amber"
-          ? "bg-[#f4c95d] text-[#1c1c1c]"
-          : active
-            ? "bg-[#04202f] text-white"
-            : "bg-[#47cdd0] text-[#1c1c1c]"
+        "group relative flex h-9 shrink-0 items-center gap-3 overflow-hidden rounded-lg px-3 text-sm font-medium outline-none transition-colors duration-200",
+        active
+          ? "text-[#1c1c1c]"
+          : "text-white/60 hover:bg-white/[0.07] hover:text-white focus-visible:bg-white/[0.07] focus-visible:text-white"
       )}
     >
-      {value > 99 ? "99+" : value}
-    </span>
+      {active && (
+        <motion.span
+          layoutId="sidebar-active-item"
+          className="absolute inset-0 rounded-lg bg-[#47cdd0] shadow-[0_8px_22px_rgba(71,205,208,0.22)]"
+          transition={{ type: "spring", stiffness: 420, damping: 34 }}
+        />
+      )}
+      <span
+        className={cn(
+          "relative z-10 flex h-6 w-6 shrink-0 items-center justify-center",
+          active ? "text-[#1c1c1c]" : "text-white/60 group-hover:text-white"
+        )}
+      >
+        <feature.icon className="h-[18px] w-[18px]" aria-hidden />
+        {!expanded && <NavBadgePill badge={badge} variant="dot" active={active} />}
+      </span>
+      <span className={cn("relative z-10 min-w-0 flex-1 truncate whitespace-nowrap", revealClass(expanded))}>
+        {feature.label}
+      </span>
+      {expanded && <NavBadgePill badge={badge} variant="count" active={active} />}
+    </Link>
+  );
+}
+
+function SidebarFront({
+  front,
+  open,
+  expanded,
+  activeFeatureId,
+  onToggle,
+}: {
+  front: VisibleNavFront;
+  open: boolean;
+  expanded: boolean;
+  activeFeatureId: string | null;
+  onToggle: () => void;
+}) {
+  const badgeFor = useNavBadges();
+  const hiddenBadge = open
+    ? null
+    : sumBadges(front.features.flatMap((feature) => feature.pages.map((page) => badgeFor(page.href))));
+  const listId = `sidebar-front-${front.id}`;
+
+  return (
+    <section className="flex flex-col gap-0.5" aria-label={front.untitled ? undefined : front.label}>
+      {!front.untitled && (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={open}
+          aria-controls={listId}
+          className="group/front relative mt-3 flex h-8 shrink-0 items-center gap-2 overflow-hidden rounded-lg px-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/60"
+        >
+          <span
+            aria-hidden
+            className={cn(
+              "absolute left-[14px] top-1/2 h-px w-5 bg-white/15",
+              expanded ? "opacity-0 transition-opacity duration-75" : "opacity-100 transition-opacity delay-75 duration-200"
+            )}
+          />
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate whitespace-nowrap text-xs font-semibold text-white/50 group-hover/front:text-white/85",
+              revealClass(expanded)
+            )}
+          >
+            {front.label}
+          </span>
+          {hiddenBadge && hiddenBadge.value > 0 && (
+            <span
+              role="status"
+              aria-label={`${hiddenBadge.value} pendências em ${front.label}`}
+              className={cn(
+                "h-1.5 w-1.5 shrink-0 rounded-full",
+                hiddenBadge.tone === "amber" ? "bg-[#f4c95d]" : "bg-[#47cdd0]",
+                revealClass(expanded)
+              )}
+            />
+          )}
+          <ChevronDown
+            aria-hidden
+            className={cn(
+              "h-3.5 w-3.5 shrink-0 text-white/35 transition-transform duration-200 group-hover/front:text-white/70",
+              open ? "rotate-0" : "-rotate-90",
+              revealClass(expanded)
+            )}
+          />
+        </button>
+      )}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            id={listId}
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="flex flex-col gap-0.5 overflow-hidden"
+          >
+            {front.features.map((feature) => (
+              <SidebarFeatureLink
+                key={feature.id}
+                feature={feature}
+                active={feature.id === activeFeatureId}
+                expanded={expanded}
+              />
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </section>
   );
 }
 
@@ -466,51 +198,47 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { profile, signOut } = useAuth();
+  const badgeFor = useNavBadges();
 
-  const [pendingAlterations, setPendingAlterations] = useState(0);
-  const whatsappUnread = useWhatsappUnreadCount();
-  const reelPending = useReelDeliveriesPendingCount(Boolean(profile));
-  const badgeFor = (href: string) =>
-    href === "/planner"
-      ? pendingAlterations
-      : href === "/trafego-pago"
-        ? whatsappUnread
-        : href === REELS_APPROVAL_HREF
-          ? reelPending
-          : 0;
+  const nav = useMemo(() => buildNav(profile), [profile]);
+  const features = useMemo(() => nav.flatMap((front) => front.features), [nav]);
+  const activeHref = findActiveHref(
+    pathname,
+    features.flatMap((feature) => feature.pages.map((page) => page.href))
+  );
+  const activeFeatureId =
+    features.find((feature) => feature.pages.some((page) => page.href === activeHref))?.id ?? null;
+  const activeFrontId =
+    nav.find((front) => front.features.some((feature) => feature.id === activeFeatureId))?.id ?? null;
+  const mobileFeatures = features.slice(0, 4);
+
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const [frontState, setFrontState] = useState<Record<string, boolean>>(readStoredFronts);
   const profileMenuRef = useRef<HTMLDivElement>(null);
-  const navItems = getNavItems(profile);
-  const flatNavItems = flattenNav(navItems);
-  const mobileNavItems = flatNavItems.slice(0, 4);
-  const groupActiveMap: Record<string, boolean> = {};
-  for (const item of navItems) {
-    if (isNavGroup(item)) {
-      groupActiveMap[item.key] = item.children.some((child) =>
-        isRouteActive(pathname, child.href)
-      );
+
+  const isFrontOpen = (front: VisibleNavFront) =>
+    front.untitled ||
+    (frontState[front.id] ?? (front.id === activeFrontId || !front.collapsedByDefault));
+
+  const toggleFront = (front: VisibleNavFront) => {
+    const next = { ...frontState, [front.id]: !isFrontOpen(front) };
+    setFrontState(next);
+    try {
+      window.localStorage.setItem(FRONTS_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // Preferência de layout: sem storage, a frente só não fica lembrada.
+    }
+  };
+
+  // Entrar numa frente fechada a reabre, para a página atual nunca ficar escondida.
+  const [revealedFrontId, setRevealedFrontId] = useState<string | null>(null);
+  if (activeFrontId !== revealedFrontId) {
+    setRevealedFrontId(activeFrontId);
+    if (activeFrontId && frontState[activeFrontId] === false) {
+      setFrontState({ ...frontState, [activeFrontId]: true });
     }
   }
-
-  const toggleGroup = (key: string) => {
-    if (!expanded) {
-      onExpandedChange(true);
-      setOpenGroups((prev) => ({ ...prev, [key]: true }));
-      return;
-    }
-    setOpenGroups((prev) => {
-      const forcedOpen = groupActiveMap[key] ?? pathname.startsWith(key);
-      const currentlyOpen = prev[key] ?? forcedOpen;
-      return { ...prev, [key]: !currentlyOpen };
-    });
-  };
-
-  const isGroupOpen = (key: string) => {
-    if (key in openGroups) return Boolean(openGroups[key]);
-    return groupActiveMap[key] ?? pathname.startsWith(key);
-  };
 
   const handleSignOut = async () => {
     setMobileMenuOpen(false);
@@ -529,28 +257,6 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
     return () => document.removeEventListener("mousedown", onDown);
   }, [profileMenuOpen]);
 
-  useEffect(() => {
-    if (!profile?.id) return;
-    const load = async () => {
-      try {
-        const requests = await fetchMarketingRequests({
-          userId: profile.id,
-          role: profile.role as "designer" | "admin" | "solicitante",
-        });
-        if (requests.length === 0) return;
-        const ids = requests.map((r) => r.id);
-        const { pendingAlterationsCounts } = await fetchCommentStats(ids);
-        const total = Object.values(pendingAlterationsCounts).reduce((sum, n) => sum + n, 0);
-        setPendingAlterations(total);
-      } catch {
-        // Badge opcional: falhas temporarias nao devem derrubar a navegacao.
-      }
-    };
-    load();
-    const interval = setInterval(load, 60_000);
-    return () => clearInterval(interval);
-  }, [profile?.id, profile?.role]);
-
   return (
     <>
       <motion.aside
@@ -568,11 +274,8 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
           "shadow-[1px_0_24px_rgba(3,7,12,0.25)]"
         )}
       >
-        <div className="pointer-events-none absolute inset-0 bg-[#03070c]" />
-        <div className="pointer-events-none absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-[#47cdd0]/40 to-transparent" />
-
         <div className="relative flex h-full min-h-0 flex-col">
-          <div className={cn("flex h-[72px] items-center", expanded ? "px-4" : "justify-center px-3")}>
+          <div className={cn("flex h-[72px] shrink-0 items-center", expanded ? "px-4" : "justify-center px-3")}>
             <Link
               href="/"
               className={cn(
@@ -625,233 +328,22 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
 
           <nav
             className={cn(
-              "relative flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden px-3 pb-3",
+              "relative flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-3 pb-4",
               "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             )}
             aria-label="Navegacao principal"
             data-tour="sidebar-nav"
           >
-            {navItems.map((item) => {
-              if (isNavGroup(item)) {
-                const groupOpen = isGroupOpen(item.key);
-                const groupActive = item.children.some((child) =>
-                  isRouteActive(pathname, child.href)
-                );
-                const groupBadge = item.children.reduce((sum, child) => sum + badgeFor(child.href), 0);
-                return (
-                  <div key={item.key} className="flex flex-col gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => toggleGroup(item.key)}
-                      title={!expanded ? item.label : undefined}
-                      aria-label={item.label}
-                      aria-expanded={groupOpen}
-                      className={cn(
-                        "group relative flex h-11 w-full items-center rounded-xl text-sm font-medium outline-none transition-colors duration-200",
-                        expanded ? "gap-3 px-3" : "justify-center px-0",
-                        groupActive && !groupOpen
-                          ? "text-[#1c1c1c]"
-                          : "text-white/55 hover:bg-white/[0.08] hover:text-white focus-visible:bg-white/[0.08] focus-visible:text-white"
-                      )}
-                    >
-                      {groupActive && !groupOpen && (
-                        <motion.span
-                          layoutId="sidebar-active-item"
-                          className="absolute inset-0 rounded-xl bg-[#47cdd0] shadow-[0_10px_28px_rgba(71,205,208,0.26)]"
-                          transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                        />
-                      )}
-                      <span
-                        className={cn(
-                          "relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-                          groupActive && !groupOpen
-                            ? "text-[#1c1c1c]"
-                            : "text-white/65 group-hover:text-white"
-                        )}
-                      >
-                        <item.icon className="h-[18px] w-[18px]" />
-                        {(!expanded || !groupOpen) && (
-                          <NotificationBadge value={groupBadge} expanded={false} active={groupActive && !groupOpen} />
-                        )}
-                      </span>
-                      <AnimatePresence initial={false}>
-                        {expanded && (
-                          <motion.span
-                            initial={{ opacity: 0, x: -6 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: -6 }}
-                            transition={{ duration: 0.14 }}
-                            className="relative z-10 min-w-0 flex-1 truncate text-left"
-                          >
-                            {item.label}
-                          </motion.span>
-                        )}
-                      </AnimatePresence>
-                      {expanded && (
-                        <ChevronDown
-                          className={cn(
-                            "relative z-10 h-4 w-4 shrink-0 transition-transform duration-200",
-                            groupOpen ? "rotate-0" : "-rotate-90",
-                            groupActive && !groupOpen ? "text-[#1c1c1c]" : "text-white/40"
-                          )}
-                        />
-                      )}
-                      {!expanded && (
-                        <span
-                          className={cn(
-                            "pointer-events-none absolute left-full ml-3 whitespace-nowrap rounded-lg",
-                            "border border-white/10 bg-[#04202f]/95 px-3 py-1.5 text-xs font-medium text-white shadow-xl backdrop-blur-xl",
-                            "z-50 -translate-x-1 scale-95 opacity-0 transition-all duration-150",
-                            "group-hover:translate-x-0 group-hover:scale-100 group-hover:opacity-100"
-                          )}
-                          aria-hidden
-                        >
-                          {item.label}
-                        </span>
-                      )}
-                    </button>
-                    <AnimatePresence initial={false}>
-                      {expanded && groupOpen && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.18 }}
-                          className="overflow-hidden pl-3"
-                        >
-                          <div className="flex flex-col gap-0.5 border-l border-white/10 pl-2">
-                            {item.children.map((child) => {
-                              const isActive = isRouteActive(pathname, child.href);
-                              return (
-                                <Link
-                                  key={child.href}
-                                  href={child.href}
-                                  aria-label={child.label}
-                                  aria-current={isActive ? "page" : undefined}
-                                  className={cn(
-                                    "group relative flex h-10 items-center gap-2.5 rounded-xl px-2.5 text-sm font-medium outline-none transition-colors duration-200",
-                                    isActive
-                                      ? "text-[#1c1c1c]"
-                                      : "text-white/55 hover:bg-white/[0.08] hover:text-white focus-visible:bg-white/[0.08] focus-visible:text-white"
-                                  )}
-                                >
-                                  {isActive && (
-                                    <motion.span
-                                      layoutId="sidebar-active-item"
-                                      className="absolute inset-0 rounded-xl bg-[#47cdd0] shadow-[0_10px_28px_rgba(71,205,208,0.26)]"
-                                      transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                                    />
-                                  )}
-                                  <span
-                                    className={cn(
-                                      "relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
-                                      isActive
-                                        ? "text-[#1c1c1c]"
-                                        : "text-white/65 group-hover:text-white"
-                                    )}
-                                  >
-                                    <child.icon className="h-4 w-4" />
-                                  </span>
-                                  <span className="relative z-10 min-w-0 flex-1 truncate">
-                                    {child.label}
-                                  </span>
-                                  <span className="relative z-10">
-                                    <NotificationBadge value={badgeFor(child.href)} expanded active={isActive} />
-                                  </span>
-                                </Link>
-                              );
-                            })}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                );
-              }
-
-              const isActive = isRouteActive(pathname, item.href);
-              const badgeValue = badgeFor(item.href);
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  title={!expanded ? item.label : undefined}
-                  aria-label={item.label}
-                  aria-current={isActive ? "page" : undefined}
-                  className={cn(
-                    "group relative flex h-11 items-center rounded-xl text-sm font-medium outline-none transition-colors duration-200",
-                    expanded ? "gap-3 px-3" : "justify-center px-0",
-                    isActive
-                      ? "text-[#1c1c1c]"
-                      : "text-white/55 hover:bg-white/[0.08] hover:text-white focus-visible:bg-white/[0.08] focus-visible:text-white"
-                  )}
-                >
-                  {isActive && (
-                    <motion.span
-                      layoutId="sidebar-active-item"
-                      className="absolute inset-0 rounded-xl bg-[#47cdd0] shadow-[0_10px_28px_rgba(71,205,208,0.26)]"
-                      transition={{ type: "spring", stiffness: 420, damping: 34 }}
-                    />
-                  )}
-
-                  <span
-                    className={cn(
-                      "relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-transform duration-200",
-                      !isActive && "group-hover:scale-105",
-                      isActive ? "text-[#1c1c1c]" : "text-white/65 group-hover:text-white"
-                    )}
-                  >
-                    <item.icon className="h-[18px] w-[18px]" />
-                    {!expanded && (
-                      <NotificationBadge
-                        value={badgeValue}
-                        tone={item.href === "/planner" ? "amber" : "cyan"}
-                        expanded={false}
-                        active={isActive}
-                      />
-                    )}
-                  </span>
-
-                  <AnimatePresence initial={false}>
-                    {expanded && (
-                      <motion.span
-                        initial={{ opacity: 0, x: -6 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: -6 }}
-                        transition={{ duration: 0.14 }}
-                        className="relative z-10 min-w-0 flex-1 truncate"
-                      >
-                        {item.label}
-                      </motion.span>
-                    )}
-                  </AnimatePresence>
-
-                  {expanded && (
-                    <NotificationBadge
-                      value={badgeValue}
-                      tone={item.href === "/planner" ? "amber" : "cyan"}
-                      expanded
-                      active={isActive}
-                    />
-                  )}
-
-                  {!expanded && (
-                    <span
-                      className={cn(
-                        "pointer-events-none absolute left-full ml-3 whitespace-nowrap rounded-lg",
-                        "border border-white/10 bg-[#04202f]/95 px-3 py-1.5 text-xs font-medium text-white shadow-xl backdrop-blur-xl",
-                        "z-50 -translate-x-1 scale-95 opacity-0 transition-all duration-150",
-                        "group-hover:translate-x-0 group-hover:scale-100 group-hover:opacity-100"
-                      )}
-                      aria-hidden
-                    >
-                      {item.label}
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
+            {nav.map((front) => (
+              <SidebarFront
+                key={front.id}
+                front={front}
+                open={isFrontOpen(front)}
+                expanded={expanded}
+                activeFeatureId={activeFeatureId}
+                onToggle={() => toggleFront(front)}
+              />
+            ))}
           </nav>
 
           <div className="relative border-t border-white/[0.08] p-3">
@@ -972,7 +464,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 18 }}
               transition={{ duration: 0.18 }}
-              className="fixed bottom-[4.5rem] left-3 right-3 z-50 max-h-[min(70dvh,560px)] overflow-y-auto rounded-lg border border-[#47cdd0]/20 bg-[#04202f] p-3 text-white shadow-[0_24px_64px_rgba(3,7,12,0.38)] md:hidden"
+              className="fixed bottom-[4.5rem] left-3 right-3 z-50 max-h-[min(72dvh,600px)] overflow-y-auto rounded-lg border border-[#47cdd0]/20 bg-[#04202f] p-3 text-white shadow-[0_24px_64px_rgba(3,7,12,0.38)] md:hidden"
             >
               <div className="mb-3 flex items-center justify-between border-b border-white/10 px-1 pb-3">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -983,36 +475,40 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
                 />
                 <span className="text-xs font-medium text-white/55">Navegação</span>
               </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {flatNavItems.map((item) => {
-                  const isActive = isRouteActive(pathname, item.href);
-                  const badgeValue = badgeFor(item.href);
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      aria-current={isActive ? "page" : undefined}
-                      onClick={() => setMobileMenuOpen(false)}
-                      className={cn(
-                        "flex min-h-12 items-center gap-2.5 rounded-md px-3 py-2.5 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#47cdd0]",
-                        isActive
-                          ? "bg-[#47cdd0] text-[#1c1c1c]"
-                          : "bg-white/[0.04] text-white/75 hover:bg-white/[0.09] hover:text-white"
-                      )}
-                    >
-                      <item.icon className="h-[18px] w-[18px] shrink-0" aria-hidden />
-                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                      <NotificationBadge
-                        value={badgeValue}
-                        tone={item.href === "/planner" ? "amber" : "cyan"}
-                        expanded
-                        active={isActive}
-                      />
-                    </Link>
-                  );
-                })}
+              <div className="flex flex-col gap-4">
+                {nav.map((front) => (
+                  <section key={front.id} aria-label={front.untitled ? undefined : front.label}>
+                    {!front.untitled && (
+                      <h2 className="mb-1.5 px-1 text-xs font-semibold text-white/45">{front.label}</h2>
+                    )}
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {front.features.map((feature) => {
+                        const isActive = feature.id === activeFeatureId;
+                        const badge = sumBadges(feature.pages.map((page) => badgeFor(page.href)));
+                        return (
+                          <Link
+                            key={feature.id}
+                            href={feature.href}
+                            aria-current={isActive ? "page" : undefined}
+                            onClick={() => setMobileMenuOpen(false)}
+                            className={cn(
+                              "flex min-h-12 items-center gap-2.5 rounded-md px-3 py-2.5 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#47cdd0]",
+                              isActive
+                                ? "bg-[#47cdd0] text-[#1c1c1c]"
+                                : "bg-white/[0.04] text-white/75 hover:bg-white/[0.09] hover:text-white"
+                            )}
+                          >
+                            <feature.icon className="h-[18px] w-[18px] shrink-0" aria-hidden />
+                            <span className="min-w-0 flex-1 leading-tight">{feature.label}</span>
+                            <NavBadgePill badge={badge} variant="count" active={isActive} />
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-1.5 border-t border-white/10 pt-3">
+              <div className="mt-4 grid grid-cols-2 gap-1.5 border-t border-white/10 pt-3">
                 <Link
                   href="/perfil"
                   onClick={() => setMobileMenuOpen(false)}
@@ -1040,14 +536,14 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
         data-tour="sidebar-nav-mobile"
         aria-label="Navegação principal móvel"
       >
-        {mobileNavItems.map((item) => {
-          const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href + "/"));
-          const badgeValue = badgeFor(item.href);
+        {mobileFeatures.map((feature) => {
+          const isActive = feature.id === activeFeatureId;
+          const badge = sumBadges(feature.pages.map((page) => badgeFor(page.href)));
           return (
             <Link
-              key={item.href}
-              href={item.href}
-              aria-label={item.label}
+              key={feature.id}
+              href={feature.href}
+              aria-label={feature.label}
               aria-current={isActive ? "page" : undefined}
               onClick={() => setMobileMenuOpen(false)}
               className={cn(
@@ -1056,15 +552,12 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
               )}
             >
               <span className="relative flex h-6 w-6 items-center justify-center">
-                <item.icon className="h-5 w-5" />
-                <NotificationBadge
-                  value={badgeValue}
-                  tone={item.href === "/planner" ? "amber" : "cyan"}
-                  expanded={false}
-                  active={isActive}
-                />
+                <feature.icon className="h-5 w-5" />
+                <NavBadgePill badge={badge} variant="dot" active={isActive} />
               </span>
-              <span className="max-w-[64px] truncate text-xs font-medium leading-none">{item.label.split(" ")[0]}</span>
+              <span className="max-w-[72px] truncate text-xs font-medium leading-none">
+                {feature.shortLabel ?? feature.label}
+              </span>
             </Link>
           );
         })}
@@ -1083,7 +576,6 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
         </button>
       </nav>
 
-      <div className="h-16 md:hidden" />
     </>
   );
 }

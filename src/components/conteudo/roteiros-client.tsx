@@ -505,7 +505,7 @@ export function RoteirosClient() {
             Portal de conteúdo
           </p>
           <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">
-            {profile?.name ? `Olá, ${profile.name.split(" ")[0]}` : "Conteúdo para Posts"}
+            {profile?.name ? `Olá, ${profile.name.split(" ")[0]}` : "Gerador de conteúdo"}
           </h2>
           <p className="text-muted-foreground mt-1.5 text-sm max-w-xl">
             {isCollaborator

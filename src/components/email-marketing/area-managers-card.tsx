@@ -128,7 +128,7 @@ export function AreaManagersCard() {
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
           O sócio/gerente vinculado a uma área enxerga <strong>todos os clientes daquela área</strong> em
-          &quot;Meus Clientes&quot; e pode designar quem contata. Para alterar o vínculo de uma
+          o Cadastro de clientes e pode designar quem contata. Para alterar o vínculo de uma
           pessoa, use{" "}
           <Link href="/usuarios" className="underline underline-offset-2">
             Usuários → Acesso

@@ -11,7 +11,7 @@ export default function CustosProjetosPage() {
           <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-[#48466e]/10 text-[#48466e] dark:text-[#8f8bb8]">
             <Wallet className="h-6 w-6" />
           </div>
-          <h2 className="text-3xl font-bold tracking-tight">Custos de Projetos</h2>
+          <h2 className="text-3xl font-bold tracking-tight">Custos de projetos</h2>
         </div>
         <p className="text-muted-foreground max-w-xl">
           Custos mensais e pagamentos por categoria.

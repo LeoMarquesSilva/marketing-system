@@ -20,7 +20,7 @@ export default function TrafegoPagoPage() {
           <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
             <Megaphone className="h-6 w-6" />
           </div>
-          <h2 className="text-3xl font-bold tracking-tight">Tráfego Pago</h2>
+          <h2 className="text-3xl font-bold tracking-tight">Tráfego pago</h2>
         </div>
         <p className="text-muted-foreground text-lg max-w-2xl">
           Acompanhe a performance dos anúncios da Meta e interaja com os leads que chegam no WhatsApp via Evolution API.
