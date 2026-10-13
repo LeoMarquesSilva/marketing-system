@@ -15,6 +15,9 @@ import { Button } from "@/components/ui/button";
 import { LayoutGrid, CheckCircle2, PlusCircle, Share2, Wifi, WifiOff, UserPlus } from "lucide-react";
 import { PostsTab } from "@/components/planner/posts-tab";
 import { PostAvailableDetailDialog } from "@/components/planner/post-available-detail-dialog";
+import { ReelDeliveryPublishDialog } from "@/components/planner/reel-delivery-publish-dialog";
+import type { CalendarItem } from "@/lib/planner-calendar";
+import type { PlannerReel } from "@/lib/reel-deliveries/types";
 import { useAuth } from "@/contexts/auth-context";
 import {
   filterRequestsByKanbanVisibility,
@@ -34,6 +37,10 @@ const TAB_ICONS = {
 
 interface PlannerClientProps {
   initialRequests: MarketingRequest[];
+  /** Reels da Aprovação de Reels (só para o Marketing). */
+  reels: PlannerReel[];
+  /** Áreas do cronograma editorial, usadas no rodízio de posts. */
+  rotationAreas: string[];
   designers: User[];
   users: User[];
   appSettings: AppSettings;
@@ -41,7 +48,7 @@ interface PlannerClientProps {
 
 type RealtimeStatus = "connecting" | "connected" | "unavailable";
 
-export function PlannerClient({ initialRequests, designers, users, appSettings }: PlannerClientProps) {
+export function PlannerClient({ initialRequests, reels, rotationAreas, designers, users, appSettings }: PlannerClientProps) {
   const router = useRouter();
   const { profile } = useAuth();
   const enabledTabs = appSettings.plannerTabs;
@@ -70,6 +77,7 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
   const [detailOpen, setDetailOpen] = useState(false);
   const [postAvailableRequestId, setPostAvailableRequestId] = useState<string | null>(null);
   const [postAvailableOpen, setPostAvailableOpen] = useState(false);
+  const [selectedReelId, setSelectedReelId] = useState<string | null>(null);
   const [newRequestOpen, setNewRequestOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [timeTotals, setTimeTotals] = useState<Record<string, string>>({});
@@ -214,8 +222,12 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
     setDetailOpen(true);
   };
 
-  const handlePostsCardClick = (request: MarketingRequest) => {
-    setPostAvailableRequestId(request.id);
+  const handlePostsItemClick = (item: CalendarItem) => {
+    if (item.kind === "reel") {
+      setSelectedReelId(item.id);
+      return;
+    }
+    setPostAvailableRequestId(item.id);
     setPostAvailableOpen(true);
   };
 
@@ -309,7 +321,9 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
       {activeTab === "posts" && (
         <PostsTab
           requests={requests}
-          onCardClick={handlePostsCardClick}
+          reels={reels}
+          rotationAreas={rotationAreas}
+          onItemClick={handlePostsItemClick}
           onRefresh={handleRefresh}
         />
       )}
@@ -332,6 +346,15 @@ export function PlannerClient({ initialRequests, designers, users, appSettings }
         onOpenChange={(open) => {
           setPostAvailableOpen(open);
           if (!open) setPostAvailableRequestId(null);
+        }}
+        onSuccess={handleRefresh}
+      />
+
+      <ReelDeliveryPublishDialog
+        reel={selectedReelId != null ? reels.find((r) => r.id === selectedReelId) ?? null : null}
+        open={selectedReelId != null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedReelId(null);
         }}
         onSuccess={handleRefresh}
       />

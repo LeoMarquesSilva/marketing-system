@@ -752,6 +752,26 @@ function requireLeonardoNotificationRecipient(actor: ScheduleActor): void {
   }
 }
 
+/**
+ * Áreas com vagas no cronograma editorial (deste ano e do anterior). São as
+ * que entram no rodízio de publicações do Planner.
+ */
+export async function listContentRotationAreas(): Promise<string[]> {
+  const db = adminDb();
+  const since = `${Number(currentSaoPauloDate().slice(0, 4)) - 1}-01-01`;
+  const { data, error } = await db
+    .from("content_schedule_slots")
+    .select("area")
+    .eq("cancelled", false)
+    .gte("due_date", since);
+  if (error) throw new ContentScheduleHttpError("Não foi possível carregar as áreas do cronograma.");
+  return [...new Set(
+    (data ?? [])
+      .map((row) => resolveContentScheduleAreaLabel(row.area as string))
+      .filter((area): area is string => Boolean(area))
+  )].sort((left, right) => left.localeCompare(right, "pt-BR"));
+}
+
 export async function listContentScheduleAssignmentNotifications(): Promise<ContentScheduleAssignmentNotification[]> {
   const actor = await requireContentScheduleActor();
   requireLeonardoNotificationRecipient(actor);

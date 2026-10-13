@@ -1,17 +1,18 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { DndContext, DragEndEvent, DragStartEvent, DragOverlay, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import type { MarketingRequest } from "@/lib/marketing-requests";
-import { updateMarketingRequest } from "@/lib/marketing-requests";
+import type { PlannerReel } from "@/lib/reel-deliveries/types";
 import { format, startOfDay, addDays, startOfWeek, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ScheduleHeader } from "./schedule-header";
-import { ScheduleGrid } from "./schedule-grid";
-import { ScheduleDisponivelCard, ScheduleDisponivelCardOverlay, type DisponivelAgeTier } from "./schedule-disponivel-card";
+import { CALENDAR_DRAG_TYPE, ScheduleGrid } from "./schedule-grid";
+import { ScheduleDisponivelCard, ScheduleItemOverlay, type DisponivelAgeTier } from "./schedule-disponivel-card";
+import { AreaRotationPanel } from "./area-rotation-panel";
+import { ContentTypeTag, PeopleAvatars, RotationHintTag, type RotationHint } from "./calendar-item-parts";
 import {
   Search,
   ExternalLink,
@@ -23,53 +24,79 @@ import {
   Inbox,
   Download,
   Video,
+  X,
 } from "lucide-react";
 import { AreaIcon } from "@/lib/area-icons";
 import { cn } from "@/lib/utils";
+import { isContentBankRequestType } from "@/lib/planner-posts";
 import {
-  isInContentBank,
-  isPostedOnCalendar,
-  isReelRequest,
-  getContentBankDisplayTitle,
-  CONTENT_BANK_REQUEST_TYPES,
-  POST_REQUEST_TYPE,
-  REEL_REQUEST_TYPE,
-} from "@/lib/planner-posts";
+  buildAreaRotation,
+  calendarItemArea,
+  calendarItemBankSince,
+  calendarItemDayKey,
+  calendarItemFilterDate,
+  calendarItemFromReel,
+  calendarItemFromRequest,
+  calendarItemMatchesSearch,
+  calendarItemPeople,
+  calendarItemPostedAt,
+  calendarItemTitle,
+  findAreaRepeats,
+  isCalendarItemInBank,
+  isCalendarItemPosted,
+  isReelItem,
+  rotationAreaOf,
+  sortBankByRotation,
+  withCalendarDay,
+  type AreaRotation,
+  type CalendarItem,
+} from "@/lib/planner-calendar";
+import { publishCalendarItemOn } from "@/lib/planner-calendar-client";
 import { ImportInstagramPostsDialog } from "./import-instagram-posts-dialog";
 import { Button } from "@/components/ui/button";
 
 type ContentFilter = "all" | "posts" | "reels";
 
+/** Reels que ainda não chegaram ao banco: só contam no rodízio. */
+const REEL_IN_PRODUCTION = new Set(["awaiting_approval", "changes_requested", "approved"]);
+
 /** Idade para cor do card: novo (até 14 dias), médio (15–45 dias, amarelo), antigo (>45 dias). */
-function getDisponivelAgeTier(request: MarketingRequest): DisponivelAgeTier {
-  const concluidoAt = request.stage_changed_at ?? request.delivered_at ?? request.requested_at;
-  const days = differenceInDays(new Date(), new Date(concluidoAt));
+function getDisponivelAgeTier(item: CalendarItem): DisponivelAgeTier {
+  const days = differenceInDays(new Date(), new Date(calendarItemBankSince(item)));
   if (days <= 14) return "new";
   if (days <= 45) return "medium";
   return "old";
 }
 
+function bankHint(item: CalendarItem, rotation: AreaRotation, rotationAreas: readonly string[]): RotationHint | null {
+  const area = rotationAreaOf(calendarItemArea(item), rotationAreas);
+  if (!area) return null;
+  if (area === rotation.recommendedArea) return "recommended";
+  if (area === rotation.lastPostedArea) return "last-area";
+  return null;
+}
+
+function formatDay(value: string | null | undefined): string {
+  if (!value) return "—";
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T12:00:00`) : new Date(value);
+  return format(date, "dd/MM/yyyy", { locale: ptBR });
+}
+
 const POSTADO_TAG_CLASS =
   "bg-emerald-100/80 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400";
 
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-}
-
 interface PostCardProps {
-  req: MarketingRequest;
+  item: CalendarItem;
   isPostado: boolean;
+  hint?: RotationHint | null;
   onClick?: () => void;
 }
 
-function PostCard({ req, isPostado, onClick }: PostCardProps) {
-  const isReel = isReelRequest(req);
-  const displayTitle = getContentBankDisplayTitle(req);
+function PostCard({ item, isPostado, hint, onClick }: PostCardProps) {
+  const reel = isReelItem(item);
+  const displayTitle = calendarItemTitle(item);
+  const area = calendarItemArea(item);
+  const request = item.kind === "request" ? item.request : null;
   return (
     <article
       role="button"
@@ -80,8 +107,8 @@ function PostCard({ req, isPostado, onClick }: PostCardProps) {
       }}
       aria-label={
         isPostado
-          ? `${isReel ? "Reel" : "Post"} já postado: ${displayTitle}`
-          : `${isReel ? "Reel" : "Post"} disponível no banco: ${displayTitle}`
+          ? `${reel ? "Reel" : "Post"} já postado: ${displayTitle}`
+          : `${reel ? "Reel" : "Post"} disponível no banco: ${displayTitle}`
       }
       className="group flex flex-col gap-3 rounded-lg p-4 cursor-pointer
         bg-gradient-to-br from-white/90 via-white/70 to-white/50
@@ -94,26 +121,7 @@ function PostCard({ req, isPostado, onClick }: PostCardProps) {
         transition-all duration-200 ease-out"
     >
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <span
-          className={cn(
-            "inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-0.5",
-            isReel
-              ? "bg-violet-100/80 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400"
-              : "bg-sky-100/80 text-sky-700 dark:bg-sky-950/40 dark:text-sky-400"
-          )}
-        >
-          {isReel ? (
-            <>
-              <Video className="h-3 w-3" aria-hidden />
-              Reel
-            </>
-          ) : (
-            <>
-              <Share2 className="h-3 w-3" aria-hidden />
-              Post
-            </>
-          )}
-        </span>
+        <ContentTypeTag reel={reel} />
         {isPostado && (
           <span
             className={`inline-flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-0.5 ${POSTADO_TAG_CLASS}`}
@@ -125,6 +133,7 @@ function PostCard({ req, isPostado, onClick }: PostCardProps) {
             Postado
           </span>
         )}
+        {hint && <RotationHintTag hint={hint} />}
         <ExternalLink
           className="h-3 w-3 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors shrink-0 ml-auto"
           aria-hidden
@@ -135,22 +144,27 @@ function PostCard({ req, isPostado, onClick }: PostCardProps) {
         <h3 className="text-sm font-semibold tracking-tight text-foreground line-clamp-2 leading-snug">
           {displayTitle}
         </h3>
-        {!isReel && req.description && req.title && req.title !== req.description && (
+        {request && !reel && request.description && request.title && request.title !== request.description && (
           <p className="text-[11px] text-muted-foreground/70 line-clamp-2 leading-relaxed">
-            {req.title}
+            {request.title}
+          </p>
+        )}
+        {item.kind === "reel" && item.reel.coverSubtitle && (
+          <p className="text-[11px] text-muted-foreground/70 line-clamp-2 leading-relaxed">
+            {item.reel.coverSubtitle}
           </p>
         )}
       </div>
 
-      {req.art_link && (
+      {request?.art_link && (
         <a
-          href={req.art_link}
+          href={request.art_link}
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}
           className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
         >
-          {isReel ? (
+          {reel ? (
             <>
               <Video className="h-3.5 w-3.5 shrink-0" aria-hidden />
               Ver vídeo
@@ -165,87 +179,67 @@ function PostCard({ req, isPostado, onClick }: PostCardProps) {
       )}
 
       <div className="space-y-1.5 pt-2 border-t border-black/5 dark:border-white/8 mt-auto">
-        {(req.nome_advogado || req.solicitante_user?.name || req.solicitante) && (
-          <div className="flex items-center gap-1.5 min-w-0" title="Advogado">
-              {req.solicitante_user ? (
-                <Avatar className="h-4 w-4 shrink-0 border border-white/50">
-                  <AvatarImage src={req.solicitante_user.avatar_url || undefined} />
-                  <AvatarFallback className="text-[8px] bg-[#04202f]/10 text-[#04202f] dark:bg-white/10 dark:text-white">
-                    {getInitials(req.solicitante_user.name)}
-                  </AvatarFallback>
-                </Avatar>
-              ) : (
-                <Avatar className="h-4 w-4 shrink-0 border border-white/50">
-                  <AvatarFallback className="text-[8px] bg-[#04202f]/10 text-[#04202f] dark:bg-white/10 dark:text-white">
-                    {getInitials(req.nome_advogado || req.solicitante || "")}
-                  </AvatarFallback>
-                </Avatar>
-              )}
-              <span className="text-xs font-medium text-foreground/80 truncate">
-                {req.nome_advogado || req.solicitante_user?.name || req.solicitante}
-              </span>
-          </div>
-        )}
+        <PeopleAvatars people={calendarItemPeople(item)} size="xs" />
         <div className="flex items-center gap-2" title="Área">
           <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#04202f]/8 dark:bg-white/10">
-            <AreaIcon area={req.requesting_area} className="h-3 w-3 text-[#04202f]/60 dark:text-white/50" aria-hidden />
+            <AreaIcon area={area} className="h-3 w-3 text-[#04202f]/60 dark:text-white/50" aria-hidden />
           </span>
-          <span className="truncate text-[11px] text-muted-foreground">
-            {req.requesting_area}
-          </span>
+          <span className="truncate text-[11px] text-muted-foreground">{area}</span>
         </div>
-        <div className="flex flex-col gap-0.5" title="Solicitado e concluído">
-          <span className="text-[11px] text-muted-foreground/90">
-            Solicitado em {format(new Date(req.requested_at), "dd/MM/yyyy", { locale: ptBR })}
-          </span>
-          <span className="text-[11px] font-medium text-foreground/80 flex items-center gap-1">
-            <CalendarCheck className="h-3 w-3 text-emerald-600/70 shrink-0" aria-hidden />
-            Concluído em{" "}
-            {format(
-              new Date(req.stage_changed_at ?? req.delivered_at ?? req.requested_at),
-              "dd/MM/yyyy",
-              { locale: ptBR }
+        {item.kind === "request" ? (
+          <div className="flex flex-col gap-0.5" title="Solicitado e concluído">
+            <span className="text-[11px] text-muted-foreground/90">
+              Solicitado em {formatDay(item.request.requested_at)}
+            </span>
+            <span className="text-[11px] font-medium text-foreground/80 flex items-center gap-1">
+              <CalendarCheck className="h-3 w-3 text-emerald-600/70 shrink-0" aria-hidden />
+              Concluído em {formatDay(calendarItemBankSince(item))}
+            </span>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-0.5" title="Cronograma e publicação">
+            {item.reel.dueDate && (
+              <span className="text-[11px] text-muted-foreground/90">Cronograma: {formatDay(item.reel.dueDate)}</span>
             )}
-          </span>
-        </div>
+            <span className="text-[11px] font-medium text-foreground/80 flex items-center gap-1">
+              <CalendarCheck className="h-3 w-3 text-emerald-600/70 shrink-0" aria-hidden />
+              {isPostado
+                ? `Publicado em ${formatDay(item.reel.publishedAt)}`
+                : `Pronto em ${formatDay(item.reel.readyAt)}`}
+            </span>
+          </div>
+        )}
       </div>
     </article>
   );
 }
 
-export interface PostCardClickOptions {
-  isPostado: boolean;
-}
-
 interface PostsColumnProps {
   title: string;
-  requests: MarketingRequest[];
+  items: CalendarItem[];
   isPostado: boolean;
-  onCardClick?: (request: MarketingRequest, options: PostCardClickOptions) => void;
+  hintFor?: (item: CalendarItem) => RotationHint | null;
+  onItemClick?: (item: CalendarItem) => void;
 }
 
-function PostsColumn({
-  title,
-  requests,
-  isPostado,
-  onCardClick,
-}: PostsColumnProps) {
+function PostsColumn({ title, items, isPostado, hintFor, onItemClick }: PostsColumnProps) {
   return (
     <div className="flex shrink-0 w-72 flex-col rounded-lg border bg-muted/30">
       <div className="flex items-center gap-2 p-3 border-b">
         <Share2 className="h-4 w-4 text-muted-foreground" aria-hidden />
         <h3 className="font-semibold text-sm">{title}</h3>
         <span className="ml-auto text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-          {requests.length}
+          {items.length}
         </span>
       </div>
       <div className="flex flex-col gap-2 p-3 min-h-[120px] overflow-y-auto">
-        {requests.map((req) => (
+        {items.map((item) => (
           <PostCard
-            key={req.id}
-            req={req}
+            key={item.id}
+            item={item}
             isPostado={isPostado}
-            onClick={() => onCardClick?.(req, { isPostado })}
+            hint={hintFor?.(item)}
+            onClick={() => onItemClick?.(item)}
           />
         ))}
       </div>
@@ -253,13 +247,22 @@ function PostsColumn({
   );
 }
 
+/** Movimento já mostrado no calendário enquanto o servidor confirma. */
+interface PendingMove {
+  fromDay: string | null;
+  toDay: string;
+}
+
 interface PostsTabProps {
   requests: MarketingRequest[];
-  onCardClick?: (request: MarketingRequest, options: PostCardClickOptions) => void;
+  reels: PlannerReel[];
+  /** Áreas do cronograma editorial, que entram no rodízio. */
+  rotationAreas: string[];
+  onItemClick?: (item: CalendarItem) => void;
   onRefresh?: () => void;
 }
 
-export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
+export function PostsTab({ requests, reels, rotationAreas, onItemClick, onRefresh }: PostsTabProps) {
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -268,62 +271,95 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
     const start = startOfWeek(new Date(), { weekStartsOn: 1 });
     return startOfDay(start);
   });
-  const [activeDragRequest, setActiveDragRequest] = useState<MarketingRequest | null>(null);
+  const [activeDragItem, setActiveDragItem] = useState<CalendarItem | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [contentFilter, setContentFilter] = useState<ContentFilter>("all");
+  const [pendingMoves, setPendingMoves] = useState<Record<string, PendingMove>>({});
+  const [actionError, setActionError] = useState<string | null>(null);
   const SCHEDULE_DAYS = 7;
   const scheduleRangeEnd = addDays(scheduleRangeStart, SCHEDULE_DAYS - 1);
 
+  const serverItems = useMemo(
+    () => [
+      ...requests
+        .filter((r) => isContentBankRequestType(r.request_type) && r.workflow_stage === "concluido")
+        .map(calendarItemFromRequest),
+      ...reels
+        .filter((r) => r.status === "ready" || r.status === "published")
+        .map(calendarItemFromReel),
+    ],
+    [requests, reels]
+  );
+
+  // Quando o servidor devolve o item em outro dia, o movimento otimista já cumpriu o papel.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Poda movimentos já refletidos pelo servidor.
+    setPendingMoves((prev) => {
+      const ids = Object.keys(prev);
+      if (ids.length === 0) return prev;
+      const next = { ...prev };
+      for (const id of ids) {
+        const item = serverItems.find((candidate) => candidate.id === id);
+        if (!item || calendarItemDayKey(item) !== prev[id].fromDay) delete next[id];
+      }
+      return Object.keys(next).length === ids.length ? prev : next;
+    });
+  }, [serverItems]);
+
   const contentItems = useMemo(
     () =>
-      requests.filter(
-        (r) =>
-          CONTENT_BANK_REQUEST_TYPES.includes(
-            r.request_type as (typeof CONTENT_BANK_REQUEST_TYPES)[number]
-          ) && r.workflow_stage === "concluido"
-      ),
-    [requests]
+      serverItems.map((item) => {
+        const move = pendingMoves[item.id];
+        return move && calendarItemDayKey(item) === move.fromDay ? withCalendarDay(item, move.toDay) : item;
+      }),
+    [serverItems, pendingMoves]
   );
 
   const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    return contentItems.filter((r) => {
+    return contentItems.filter((item) => {
+      const reel = isReelItem(item);
       const matchType =
         contentFilter === "all" ||
-        (contentFilter === "posts" && r.request_type === POST_REQUEST_TYPE) ||
-        (contentFilter === "reels" && r.request_type === REEL_REQUEST_TYPE);
-      const reqDate = new Date(r.delivered_at || r.requested_at);
-      const matchFrom = !dateFrom || reqDate >= new Date(dateFrom);
-      const matchTo = !dateTo || reqDate <= new Date(dateTo + "T23:59:59");
-      const matchSearch =
-        !q ||
-        r.title.toLowerCase().includes(q) ||
-        (r.description ?? "").toLowerCase().includes(q);
-      return matchType && matchFrom && matchTo && matchSearch;
+        (contentFilter === "posts" && !reel) ||
+        (contentFilter === "reels" && reel);
+      const itemDate = new Date(calendarItemFilterDate(item));
+      const matchFrom = !dateFrom || itemDate >= new Date(dateFrom);
+      const matchTo = !dateTo || itemDate <= new Date(dateTo + "T23:59:59");
+      return matchType && matchFrom && matchTo && calendarItemMatchesSearch(item, search);
     });
   }, [contentItems, dateFrom, dateTo, search, contentFilter]);
 
-  const disponivel = useMemo(
+  // O rodízio olha o calendário inteiro, não só o que os filtros mostram.
+  const allPosted = useMemo(() => contentItems.filter(isCalendarItemPosted), [contentItems]);
+  const rotation = useMemo(
     () =>
-      filtered
-        .filter((r) => isInContentBank(r))
-        .sort((a, b) => {
-          const da = a.stage_changed_at ?? a.delivered_at ?? a.requested_at;
-          const db = b.stage_changed_at ?? b.delivered_at ?? b.requested_at;
-          return new Date(db).getTime() - new Date(da).getTime();
-        }),
-    [filtered]
+      buildAreaRotation({
+        rotationAreas,
+        posted: allPosted,
+        bank: contentItems.filter(isCalendarItemInBank),
+        inProductionAreas: reels.filter((r) => REEL_IN_PRODUCTION.has(r.status)).map((r) => r.area),
+        today: format(new Date(), "yyyy-MM-dd"),
+      }),
+    [rotationAreas, allPosted, contentItems, reels]
   );
+  const repeatedIds = useMemo(() => findAreaRepeats(allPosted, rotationAreas), [allPosted, rotationAreas]);
+  const hintFor = useCallback(
+    (item: CalendarItem) => bankHint(item, rotation, rotationAreas),
+    [rotation, rotationAreas]
+  );
+
+  const disponivel = useMemo(() => {
+    const byRecency = filtered
+      .filter(isCalendarItemInBank)
+      .sort((a, b) => new Date(calendarItemBankSince(b)).getTime() - new Date(calendarItemBankSince(a)).getTime());
+    return sortBankByRotation(byRecency, rotation, rotationAreas);
+  }, [filtered, rotation, rotationAreas]);
 
   const postado = useMemo(
     () =>
       filtered
-        .filter((r) => isPostedOnCalendar(r))
-        .sort((a, b) => {
-          const da = a.posted_at ?? a.delivered_at ?? a.requested_at;
-          const db = b.posted_at ?? b.delivered_at ?? b.requested_at;
-          return new Date(db).getTime() - new Date(da).getTime();
-        }),
+        .filter(isCalendarItemPosted)
+        .sort((a, b) => new Date(calendarItemPostedAt(b)!).getTime() - new Date(calendarItemPostedAt(a)!).getTime()),
     [filtered]
   );
 
@@ -332,27 +368,35 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
   );
 
   const handleScheduleDragStart = useCallback((event: DragStartEvent) => {
-    const data = event.active.data?.current as { type?: string; request?: MarketingRequest } | undefined;
-    if (data?.type === "post-disponivel" && data?.request) {
-      setActiveDragRequest(data.request);
-    }
+    const data = event.active.data?.current as { type?: string; item?: CalendarItem } | undefined;
+    if (data?.type === CALENDAR_DRAG_TYPE && data.item) setActiveDragItem(data.item);
   }, []);
 
   const handleScheduleDragEnd = useCallback(
     async (event: DragEndEvent) => {
-      setActiveDragRequest(null);
-      const { active, over } = event;
-      if (!over) return;
-      const dayKey = over.data?.current?.dayKey as string | undefined;
-      const dragData = active.data?.current as { type?: string; request?: MarketingRequest } | undefined;
-      if (dragData?.type !== "post-disponivel" || !dragData?.request?.id || !dayKey) return;
-      const { error } = await updateMarketingRequest(dragData.request.id, {
-        completion_type: "postagem_feita",
-        posted_at: `${dayKey}T12:00:00.000Z`,
-      });
-      if (!error) onRefresh?.();
+      setActiveDragItem(null);
+      const dayKey = event.over?.data?.current?.dayKey as string | undefined;
+      const data = event.active.data?.current as { type?: string; item?: CalendarItem } | undefined;
+      if (data?.type !== CALENDAR_DRAG_TYPE || !data.item || !dayKey) return;
+      const item = data.item;
+      if (calendarItemDayKey(item) === dayKey) return;
+
+      const original = serverItems.find((candidate) => candidate.id === item.id) ?? item;
+      setActionError(null);
+      setPendingMoves((prev) => ({ ...prev, [item.id]: { fromDay: calendarItemDayKey(original), toDay: dayKey } }));
+      const error = await publishCalendarItemOn(item, dayKey);
+      if (error) {
+        setPendingMoves((prev) => {
+          const next = { ...prev };
+          delete next[item.id];
+          return next;
+        });
+        setActionError(error);
+        return;
+      }
+      onRefresh?.();
     },
-    [onRefresh]
+    [onRefresh, serverItems]
   );
 
   return (
@@ -364,7 +408,7 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
             aria-hidden
           />
           <Input
-            placeholder="Buscar título ou descrição..."
+            placeholder="Buscar título, legenda ou pessoa..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-8 h-9 rounded-xl border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.03] text-sm"
@@ -452,6 +496,17 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
         </span>
       </div>
 
+      {actionError && (
+        <div role="alert" className="flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300">
+          <span className="flex-1">{actionError}</span>
+          <button type="button" onClick={() => setActionError(null)} aria-label="Fechar aviso" className="rounded p-0.5 hover:bg-red-100 dark:hover:bg-red-900/40">
+            <X className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
+      )}
+
+      <AreaRotationPanel rotation={rotation} />
+
       {filtered.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <Share2 className="h-10 w-10 text-muted-foreground/20 mb-3" />
@@ -467,15 +522,16 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
         <div className="flex flex-wrap gap-4">
           <PostsColumn
             title="Disponível no banco"
-            requests={disponivel}
+            items={disponivel}
             isPostado={false}
-            onCardClick={onCardClick}
+            hintFor={hintFor}
+            onItemClick={onItemClick}
           />
           <PostsColumn
             title="Postado"
-            requests={postado}
+            items={postado}
             isPostado={true}
-            onCardClick={onCardClick}
+            onItemClick={onItemClick}
           />
         </div>
       )}
@@ -485,9 +541,9 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
           sensors={sensors}
           onDragStart={handleScheduleDragStart}
           onDragEnd={handleScheduleDragEnd}
+          onDragCancel={() => setActiveDragItem(null)}
         >
           <div className="flex flex-col gap-4 w-full">
-            {/* Agenda em largura total */}
             <div className="w-full space-y-4">
               <ScheduleHeader
                 title="Agenda"
@@ -496,40 +552,42 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
                 onPrevRange={() => setScheduleRangeStart((d) => addDays(d, -SCHEDULE_DAYS))}
                 onNextRange={() => setScheduleRangeStart((d) => addDays(d, SCHEDULE_DAYS))}
                 showFilters={false}
-                showPublish={true}
+                showPublish={false}
               />
               <ScheduleGrid
-                posts={postado}
+                items={postado}
                 rangeStart={scheduleRangeStart}
                 rangeEnd={scheduleRangeEnd}
-                onCardClick={onCardClick}
+                repeatedIds={repeatedIds}
+                onItemClick={onItemClick}
               />
             </div>
 
-            {/* Disponível no banco — faixa horizontal abaixo da agenda */}
+            {/* Disponível no banco — faixa horizontal abaixo da agenda, na ordem do rodízio */}
             <aside className="w-full rounded-xl border bg-card p-4 shadow-sm">
-              <div className="flex items-center gap-2 pb-3 border-b border-border">
+              <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-border">
                 <Inbox className="h-4 w-4 text-muted-foreground" aria-hidden />
                 <h3 className="font-semibold text-sm">Disponível no banco</h3>
                 <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
                   {disponivel.length}
                 </span>
                 <p className="text-xs text-muted-foreground ml-2">
-                  Arraste para o dia da postagem no calendário acima.
+                  Na ordem do rodízio. Arraste para o dia da postagem no calendário acima.
                 </p>
               </div>
               <div className="flex gap-3 mt-3 overflow-x-auto pb-2 min-h-[100px]">
                 {disponivel.length === 0 ? (
                   <p className="text-xs text-muted-foreground py-6 text-center w-full">
-                    Nenhum post disponível.
+                    Nada pronto no banco.
                   </p>
                 ) : (
-                  disponivel.map((req) => (
-                    <div key={req.id} className="flex shrink-0 w-[280px]">
+                  disponivel.map((item) => (
+                    <div key={item.id} className="flex shrink-0 w-[300px]">
                       <ScheduleDisponivelCard
-                        request={req}
-                        ageTier={getDisponivelAgeTier(req)}
-                        onClick={() => onCardClick?.(req, { isPostado: false })}
+                        item={item}
+                        ageTier={getDisponivelAgeTier(item)}
+                        hint={hintFor(item)}
+                        onClick={() => onItemClick?.(item)}
                       />
                     </div>
                   ))
@@ -538,9 +596,7 @@ export function PostsTab({ requests, onCardClick, onRefresh }: PostsTabProps) {
             </aside>
           </div>
           <DragOverlay dropAnimation={null} style={{ zIndex: 9999 }}>
-            {activeDragRequest ? (
-              <ScheduleDisponivelCardOverlay request={activeDragRequest} />
-            ) : null}
+            {activeDragItem ? <ScheduleItemOverlay item={activeDragItem} /> : null}
           </DragOverlay>
         </DndContext>
       )}

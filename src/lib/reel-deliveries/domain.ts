@@ -117,7 +117,14 @@ export const updateReelDeliverySchema = z.object({
   caption: z.string().max(REEL_CAPTION_MAX_LENGTH).nullable().optional(),
   cover_path: z.string().min(10).max(400).nullable().optional(),
   status: z.enum(["approved", "ready", "published"]).optional(),
+  /** Dia em que o reel saiu no calendário do Planner; sem ele, "publicado" vale agora. */
+  published_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
+
+/** Mesmo horário que o Planner grava nos posts, para o dia não virar no fuso de São Paulo. */
+export function publishedAtFromDay(day: string): string {
+  return `${day}T12:00:00.000Z`;
+}
 
 export const reelCopyRequestSchema = z.object({
   /** Áudio extraído no navegador, em deliveries/<id>/audio-*.wav. */

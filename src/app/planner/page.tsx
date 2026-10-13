@@ -4,6 +4,8 @@ import { fetchMarketingRequests } from "@/lib/marketing-requests";
 import { fetchMarketingRequestsForAuth } from "@/lib/marketing-requests-server";
 import { fetchActiveUsers, fetchDesigners } from "@/lib/users";
 import { getAppSettingsUncached } from "@/lib/app-settings";
+import { listPlannerReels } from "@/lib/reel-deliveries/server";
+import { listContentRotationAreas } from "@/lib/content-schedule/server";
 import { PlannerClient } from "./planner-client";
 
 export const dynamic = "force-dynamic";
@@ -27,10 +29,25 @@ export default async function PlannerPage() {
     getAppSettingsUncached(),
   ]);
 
-  const requests =
+  const showsPosts = appSettings.plannerTabs.includes("posts");
+  const [requests, reels, rotationAreas] = await Promise.all([
     appSettings.kanbanVisibility === "everyone_all"
-      ? await fetchMarketingRequests({ supabaseClient: await createClient() })
-      : await fetchMarketingRequestsForAuth();
+      ? createClient().then((supabaseClient) => fetchMarketingRequests({ supabaseClient }))
+      : fetchMarketingRequestsForAuth(),
+    // A aba Posts funciona sem reels e sem rodízio se o cronograma estiver fora do ar.
+    showsPosts
+      ? listPlannerReels().catch((error) => {
+          console.error("[planner] reels:", error);
+          return [];
+        })
+      : [],
+    showsPosts
+      ? listContentRotationAreas().catch((error) => {
+          console.error("[planner] áreas do rodízio:", error);
+          return [];
+        })
+      : [],
+  ]);
 
   return (
     <div className="space-y-6">
@@ -45,6 +62,8 @@ export default async function PlannerPage() {
 
       <PlannerClient
         initialRequests={requests}
+        reels={reels}
+        rotationAreas={rotationAreas}
         designers={designers}
         users={users}
         appSettings={appSettings}

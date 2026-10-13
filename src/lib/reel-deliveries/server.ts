@@ -22,6 +22,7 @@ import {
   stripDashes,
   isDeliveryStoragePath,
   missingForReady,
+  publishedAtFromDay,
   type ReelDecisionValue,
   type ReelDeliveryStatus,
   addReelVersionSchema,
@@ -35,6 +36,7 @@ import type {
   ReelDeliveriesResponse,
   ReelDeliveryDetail,
   ReelDeliverySummary,
+  PlannerReel,
   ReelPerson,
   ReelSlotOption,
   ReelVersion,
@@ -252,6 +254,66 @@ export async function listReelDeliveries(): Promise<ReelDeliveriesResponse> {
     slots,
     people: manager ? [...people.values()] : [],
   };
+}
+
+/**
+ * Reels para o calendário de posts do Planner. Os prontos e publicados vêm com
+ * a miniatura da capa; os que ainda estão em aprovação só contam no rodízio de
+ * áreas. Quem não é do Marketing não vê reels no Planner.
+ */
+export async function listPlannerReels(): Promise<PlannerReel[]> {
+  const actor = await requireContentScheduleActor().catch(() => null);
+  if (!actor || !isManager(actor)) return [];
+  const db = adminDb();
+
+  const { data, error } = await db
+    .from("reel_deliveries")
+    .select(DELIVERY_COLUMNS)
+    .order("due_date", { ascending: true, nullsFirst: false });
+  if (error) throw new ReelDeliveryHttpError("Não foi possível carregar os reels.");
+  const rows = (data ?? []) as DeliveryRow[];
+  if (rows.length === 0) return [];
+
+  const { data: participantData, error: participantError } = await db
+    .from("reel_delivery_participants")
+    .select("delivery_id,user_id,user_name")
+    .in("delivery_id", rows.map((row) => row.id))
+    .order("created_at");
+  if (participantError) throw new ReelDeliveryHttpError("Não foi possível carregar quem gravou os reels.");
+  const participants = (participantData ?? []) as ParticipantRow[];
+
+  const userIds = [...new Set(participants.map((p) => p.user_id))];
+  const { data: userData } = userIds.length
+    ? await db.from("users").select("id,name,avatar_url,department").in("id", userIds)
+    : { data: [] };
+  const users = new Map(((userData ?? []) as UserRow[]).map((u) => [u.id, u]));
+
+  const coverPaths = rows
+    .filter((row) => row.cover_path && (row.status === "ready" || row.status === "published"))
+    .map((row) => row.cover_path as string);
+  const { data: signed } = coverPaths.length
+    ? await db.storage.from(REEL_DELIVERIES_BUCKET).createSignedUrls(coverPaths, SIGNED_URL_SECONDS)
+    : { data: [] };
+  const thumbs = new Map((signed ?? []).filter((s) => s.path && s.signedUrl).map((s) => [s.path as string, s.signedUrl]));
+
+  return rows.map((row) => ({
+    id: row.id,
+    area: row.area,
+    dueDate: row.due_date,
+    coverTitle: row.cover_title ?? row.title,
+    coverSubtitle: row.cover_subtitle,
+    caption: row.caption,
+    status: row.status,
+    readyAt: row.ready_at,
+    publishedAt: row.published_at,
+    coverThumbUrl: row.cover_path ? thumbs.get(row.cover_path) ?? null : null,
+    participants: participants
+      .filter((p) => p.delivery_id === row.id)
+      .map((p) => {
+        const user = users.get(p.user_id);
+        return { id: p.user_id, name: user?.name ?? p.user_name, avatarUrl: user?.avatar_url ?? null, area: user?.department ?? null };
+      }),
+  }));
 }
 
 /** Contador do menu: o que espera o usuário (aprovar) ou o Marketing (capa e legenda). */
@@ -548,6 +610,9 @@ export async function updateReelDelivery(id: string, input: z.infer<typeof updat
     throw new ReelDeliveryHttpError("Caminho da capa inválido.", 400);
   }
   if (input.cover_path) await assertUploadedObject(db, input.cover_path);
+  if (input.published_on && input.status !== "published" && row.status !== "published") {
+    throw new ReelDeliveryHttpError("Só dá para mudar a data de um reel publicado.", 409);
+  }
 
   const updates: Record<string, unknown> = {};
   const clean = (value: string | null | undefined) => (value?.trim() ? value.trim() : null);
@@ -569,15 +634,21 @@ export async function updateReelDelivery(id: string, input: z.infer<typeof updat
       throw new ReelDeliveryHttpError("Só dá para voltar para capa e legenda depois de pronto.", 409);
     }
     updates.status = input.status;
-    if (input.status === "ready") updates.ready_at = row.ready_at ?? new Date().toISOString();
+    if (input.status === "ready") {
+      // Volta do calendário para o banco do Planner: deixa de ter dia de publicação.
+      updates.ready_at = row.ready_at ?? new Date().toISOString();
+      updates.published_at = null;
+    }
     if (input.status === "published") {
       updates.ready_at = row.ready_at ?? new Date().toISOString();
-      updates.published_at = new Date().toISOString();
+      updates.published_at = input.published_on ? publishedAtFromDay(input.published_on) : new Date().toISOString();
     }
     if (input.status === "approved") {
       updates.ready_at = null;
       updates.published_at = null;
     }
+  } else if (input.published_on) {
+    updates.published_at = publishedAtFromDay(input.published_on);
   }
 
   if (Object.keys(updates).length > 0) {

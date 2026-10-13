@@ -85,6 +85,23 @@ export interface ReelSlotOption {
   sourceName: string | null;
 }
 
+/** Reel como aparece no Planner: pronto vai para o banco, publicado vai para o calendário. */
+export interface PlannerReel {
+  id: string;
+  area: string;
+  /** Data do reel no cronograma editorial. */
+  dueDate: string | null;
+  coverTitle: string | null;
+  coverSubtitle: string | null;
+  caption: string | null;
+  status: ReelDeliveryStatus;
+  readyAt: string | null;
+  publishedAt: string | null;
+  /** Miniatura assinada da capa (expira em 2 h); só para reels prontos ou publicados. */
+  coverThumbUrl: string | null;
+  participants: ReelPerson[];
+}
+
 export interface ReelDeliveriesResponse {
   viewer: { id: string; isManager: boolean };
   deliveries: ReelDeliverySummary[];
