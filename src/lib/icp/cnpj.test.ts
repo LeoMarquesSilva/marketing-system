@@ -76,6 +76,10 @@ describe("cadastro de CNPJ", () => {
     expect(cnaeSector("6462000")).toBe("Holdings e participações");
     expect(cnaeSector("6422100")).toBe("Financeiro e crédito");
     expect(cnaeSector("0111301")).toBe("Agronegócio");
+    expect(cnaeSector("7112000")).toBe("Serviços empresariais");
+    expect(cnaeSector("6209100")).toBe("Serviços empresariais");
+    expect(cnaeSector("7500100")).toBe("Serviços ao consumidor");
+    expect(cnaeSector("7911200")).toBe("Serviços ao consumidor");
     expect(cnaeSector(null)).toBeNull();
   });
 
@@ -86,6 +90,17 @@ describe("cadastro de CNPJ", () => {
     const baixada = record({ cnpj: "4", situacao_cadastral: "BAIXADA", cnae_principal: "2229399", matriz: true, capital_social: 9e9 });
     expect(pickReferenceCompany([holding, filial, fabrica, baixada])?.cnpj).toBe("3");
     expect(pickReferenceCompany([record({ status: "not_found" })])).toBeNull();
+  });
+
+  it("deixa a empresa de CNAE genérico para trás quando o grupo tem uma operacional", () => {
+    // Caso do Grupo Prifer: a empresa de apoio tem o maior capital, mas a operação é o comércio de sucatas.
+    const apoio = record({ cnpj: "1", situacao_cadastral: "ATIVA", cnae_principal: "8219999", matriz: true, capital_social: 5e6 });
+    const consultoria = record({ cnpj: "2", situacao_cadastral: "ATIVA", cnae_principal: "7020400", matriz: true, capital_social: 4e6 });
+    const sucatas = record({ cnpj: "3", situacao_cadastral: "ATIVA", cnae_principal: "4687703", matriz: true, capital_social: 1e5 });
+    expect(pickReferenceCompany([apoio, consultoria, sucatas])?.cnpj).toBe("3");
+    // Sem outra empresa ativa, a genérica continua sendo a referência (antes da baixada).
+    const baixada = record({ cnpj: "4", situacao_cadastral: "BAIXADA", cnae_principal: "2099199", matriz: true, capital_social: 9e6 });
+    expect(pickReferenceCompany([apoio, baixada])?.cnpj).toBe("1");
   });
 
   it("usa o cadastro da Receita no segmento, na sede (com o acento do VIOS), no porte e nos sócios", () => {

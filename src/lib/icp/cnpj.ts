@@ -215,27 +215,43 @@ export function cnaeSector(cnae: string | null | undefined): string | null {
   if (div <= 47) return "Comércio e distribuição";
   if (div <= 53) return "Logística e comex";
   if (div <= 56) return "Serviços ao consumidor";
-  if (div <= 63) return "Serviços B2B";
+  if (div <= 63) return "Serviços empresariais";
   if (div <= 66) return "Financeiro e crédito";
   if (div === 68) return "Construção e imobiliário";
-  if (div <= 82) return "Serviços B2B";
+  // Veterinária e agências de viagem atendem sobretudo pessoa física.
+  if (div === 75 || div === 79) return "Serviços ao consumidor";
+  if (div <= 82) return "Serviços empresariais";
   if (div === 84) return "Setor público";
   if (div === 85) return "Serviços ao consumidor";
   if (div <= 88) return "Saúde";
   return "Serviços ao consumidor";
 }
 
+/**
+ * CNAEs genéricos, comuns na empresa de apoio ou de participações de um grupo:
+ * consultoria em gestão, intermediação de negócios e apoio administrativo.
+ */
+const GENERIC_CNAES = new Set(["7020400", "7490104", "8211300", "8219999"]);
+
 const isHolding = (r: IcpCnpjRecord) => cnaeSector(r.cnae_principal) === "Holdings e participações";
+const isGeneric = (r: IcpCnpjRecord) => GENERIC_CNAES.has((r.cnae_principal ?? "").replace(/\D/g, ""));
 const isActive = (r: IcpCnpjRecord) => /ativa/i.test(r.situacao_cadastral ?? "");
 
 /**
- * Empresa de referência do grupo: ativa, operacional (não holding), matriz e com o
- * maior capital social, nessa ordem de prioridade.
+ * Empresa de referência do grupo: ativa, operacional (não holding), com CNAE que diz
+ * a atividade (não genérico), matriz e com o maior capital social, nessa ordem de
+ * prioridade.
  */
 export function pickReferenceCompany(records: IcpCnpjRecord[]): IcpCnpjRecord | null {
   const ok = records.filter((r) => r.status === "ok");
   if (ok.length === 0) return null;
-  const score = (r: IcpCnpjRecord) => [isActive(r) ? 1 : 0, isHolding(r) ? 0 : 1, r.matriz ? 1 : 0, r.capital_social ?? 0];
+  const score = (r: IcpCnpjRecord) => [
+    isActive(r) ? 1 : 0,
+    isHolding(r) ? 0 : 1,
+    isGeneric(r) ? 0 : 1,
+    r.matriz ? 1 : 0,
+    r.capital_social ?? 0,
+  ];
   return [...ok].sort((a, b) => {
     const sa = score(a);
     const sb = score(b);
