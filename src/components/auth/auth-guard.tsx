@@ -148,7 +148,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       return resolvePostLoginPathFromProfile(profile);
     }
 
-    // ICP: só admin (mesmo no modo legado).
+    // ICP: admin ou liberação manual (mesmo no modo legado).
     if (
       profile &&
       !isPublic &&

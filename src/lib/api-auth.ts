@@ -1,6 +1,6 @@
 import { createClient as createPublicClient } from "@/utils/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
-import { hasCafeCulturaAccess } from "@/lib/access-control";
+import { hasCafeCulturaAccess, hasIcpAccess } from "@/lib/access-control";
 
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
@@ -70,5 +70,26 @@ export async function requireCafeCulturaAccess(authUserId: string) {
     })
   ) {
     throw new Error("Sem permissão para o Café com Cultura.");
+  }
+}
+
+export async function requireIcpAccess(authUserId: string) {
+  const supabase = getAdminClient();
+  const { data, error } = await supabase
+    .from("users")
+    .select("role, permissions, is_active")
+    .eq("auth_id", authUserId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data || data.is_active === false) {
+    throw new Error("Usuário inativo.");
+  }
+  if (
+    !hasIcpAccess({
+      role: data.role,
+      permissions: (data.permissions as string[] | null) ?? null,
+    })
+  ) {
+    throw new Error("Sem permissão para o ICP.");
   }
 }

@@ -46,6 +46,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/fotos-colaboradores", label: "Fotos Colaboradores" },
   { key: "/usuarios", label: "Usuários" },
   { key: "/custos-projetos", label: "Custos de Projetos" },
+  { key: "/icp", label: "Cliente ideal (ICP)", manualOnly: true },
   { key: "/rh", label: "RH (Férias, Qualificações, Fichas cadastrais e Organograma)", manualOnly: true },
   { key: "/admin", label: "Configurações", admin: true },
 ];
@@ -163,9 +164,14 @@ export function hasOperacoesLegaisAccess(profile: AccessProfile | null | undefin
   return isAdminRole(profile);
 }
 
-/** ICP (receita por cliente): só admin, sem liberação por checkbox. */
+/**
+ * ICP (receita por cliente): admin ou liberação manual em Usuários. A chave
+ * nunca vem do modo legado — sem `/icp` marcado, só admin vê.
+ */
 export function hasIcpAccess(profile: AccessProfile | null | undefined): boolean {
-  return isAdminRole(profile);
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  return Boolean(profile.permissions?.includes(ICP_KEY));
 }
 
 export function isManualOnlyKey(key: string): boolean {

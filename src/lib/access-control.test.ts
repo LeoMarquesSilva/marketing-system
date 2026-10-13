@@ -3,6 +3,7 @@ import {
   ACCESS_PRESETS,
   canAccessPath,
   canEditPartyInvite,
+  firstAllowedPath,
   hasCafeCulturaAccess,
   hasIcpAccess,
   hasOperacoesLegaisAccess,
@@ -36,12 +37,42 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath({ role: "designer", permissions: null }, "/operacoes-legais")).toBe(false);
   });
 
-  it("libera o ICP somente para admin, mesmo no modo legado", () => {
+  it("libera o ICP para admin e para quem tem a chave marcada", () => {
     expect(hasIcpAccess({ role: "admin" })).toBe(true);
     expect(canAccessPath({ role: "admin" }, "/icp")).toBe(true);
+    expect(canAccessPath({ role: null, permissions: ["/icp", "/"] }, "/icp")).toBe(true);
+    expect(normalizePermissionsInput(["/icp"])).toEqual(["/icp"]);
+    expect(isManualOnlyKey("/icp")).toBe(true);
+    expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/icp");
+  });
+
+  it("não libera o ICP pelo modo legado nem por outras chaves", () => {
+    expect(hasIcpAccess(null)).toBe(false);
     expect(canAccessPath({ role: "designer", permissions: null }, "/icp")).toBe(false);
-    expect(canAccessPath({ role: null, permissions: ["/icp", "/"] }, "/icp")).toBe(false);
-    expect(normalizePermissionsInput(["/icp"])).toBeNull();
+    expect(canAccessPath({ role: null, permissions: ["/", "/planner"] }, "/icp")).toBe(false);
+  });
+
+  it("perfil só com ICP cai direto no ICP e não vê o resto", () => {
+    const icpOnly = { role: null, permissions: ["/icp"] };
+    expect(canAccessPath(icpOnly, "/icp")).toBe(true);
+    expect(canAccessPath(icpOnly, "/")).toBe(false);
+    expect(canAccessPath(icpOnly, "/planner")).toBe(false);
+    expect(firstAllowedPath(icpOnly)).toBe("/icp");
+  });
+
+  it("perfil ICP + conteúdo vê ICP, conteúdo e fotos, mas não gerencia a galeria", () => {
+    const perfil = {
+      role: null,
+      permissions: ["/conteudo/roteiros", "/conteudo/boletim", "/conteudo/reels", "/icp"],
+    };
+    expect(canAccessPath(perfil, "/icp")).toBe(true);
+    expect(canAccessPath(perfil, "/conteudo/inicio")).toBe(true);
+    expect(canAccessPath(perfil, "/conteudo/boletim")).toBe(true);
+    expect(canAccessPath(perfil, "/minhas-fotos")).toBe(true);
+    expect(canAccessPath(perfil, "/fotos-eventos")).toBe(true);
+    expect(canAccessPath(perfil, "/fotos-colaboradores")).toBe(false);
+    expect(canAccessPath(perfil, "/planner")).toBe(false);
+    expect(firstAllowedPath(perfil)).toBe("/conteudo/inicio");
   });
 
   it("libera Meus Clientes para qualquer autenticado", () => {

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { requireAdminUser, requireAuthenticatedUser } from "@/lib/api-auth";
+import { requireAuthenticatedUser, requireIcpAccess } from "@/lib/api-auth";
 import { getIcpData } from "@/lib/icp/server";
 import type { IcpData } from "@/lib/icp/compute";
 import { IcpClient } from "@/components/icp/icp-client";
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function IcpPage() {
   try {
     const user = await requireAuthenticatedUser();
-    await requireAdminUser(user.id);
+    await requireIcpAccess(user.id);
   } catch {
     redirect("/");
   }
