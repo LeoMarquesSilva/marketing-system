@@ -30,7 +30,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/conteudo/boletim", label: "Gerador de newsletter" },
   { key: "/conteudo/reels", label: "Gerador de conteúdo (roteiros de Reels)" },
   { key: "/conteudo/cronograma", label: "Calendário editorial", alwaysAllowed: true },
-  { key: "/conteudo/aprovacao-reels", label: "Gerador de conteúdo (aprovação de Reels)", alwaysAllowed: true },
+  { key: "/conteudo/aprovacao-reels", label: "Aprovação de Reels", alwaysAllowed: true },
   { key: "/clima", label: "Clima organizacional" },
   { key: "/instagram-insights", label: "Métricas (Instagram)" },
   { key: "/linkedin-insights", label: "Métricas (LinkedIn)" },

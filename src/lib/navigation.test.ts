@@ -78,6 +78,15 @@ describe("visibilidade por perfil", () => {
     expect(frontIds({ role: null, permissions: null, department: "Trabalhista" })).not.toContain("pessoas");
   });
 
+  it("aprovação de Reels é um item próprio do menu, fora do Gerador de conteúdo", () => {
+    const features = buildNav({ role: null, permissions: null, department: "Trabalhista" }).flatMap((front) => front.features);
+    const reels = features.find((feature) => feature.id === "aprovacao-reels");
+    expect(reels?.href).toBe("/conteudo/aprovacao-reels");
+    const gerador = features.find((feature) => feature.id === "gerador-conteudo");
+    expect(gerador?.pages.map((page) => page.href)).not.toContain("/conteudo/aprovacao-reels");
+    expect(resolveHeaderContext("/conteudo/aprovacao-reels", buildNav({ role: "admin" })).tabs).toEqual([]);
+  });
+
   it("colaborador com férias liberadas ganha só a gestão de férias em Pessoas e Cultura", () => {
     const nav = buildNav({ role: null, permissions: null, department: "Trabalhista", ferias_view_enabled: true });
     const pessoas = nav.find((front) => front.id === "pessoas");

@@ -14,6 +14,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   CalendarRange,
   Camera,
+  Clapperboard,
   Coffee,
   Columns3,
   Contact,
@@ -128,8 +129,15 @@ export const NAV_FRONTS: NavFront[] = [
         pages: [
           { href: "/conteudo/roteiros", label: "Posts" },
           { href: "/conteudo/reels", label: "Roteiros de Reels" },
-          { href: REELS_APPROVAL_HREF, label: "Aprovação de Reels" },
         ],
+      },
+      {
+        // Item próprio: é onde o colaborador aprova o vídeo que gravou, com contador de pendências.
+        id: "aprovacao-reels",
+        label: "Aprovação de Reels",
+        shortLabel: "Reels",
+        icon: Clapperboard,
+        pages: [{ href: REELS_APPROVAL_HREF, label: "Aprovação de Reels" }],
       },
       {
         id: "gerador-newsletter",
