@@ -70,7 +70,7 @@ describe("validarAgendamentos", () => {
           etiqueta: "PRAZO",
           tarefa: "CONTESTAÇÃO",
           tarefaId: "900",
-          data: "2026-10-30",
+          data: "2026-10-28",
           dataFatal: "2026-11-02",
           diasPrazo: 15,
           responsavel: "Advogada Exemplo",

@@ -33,7 +33,10 @@ export function fatalPorDias(dataPublicacao: string, dias: number, ehDiaUtil: (i
   return somarDiasUteis(dataPublicacao, dias, ehDiaUtil);
 }
 
-/** Cadeia do prazo antes da fatal: Enviar D-3, Revisar D-2 e Protocolar D-1 (dias úteis). O VIOS recebe o protocolo. */
+/**
+ * Cadeia do prazo antes da fatal: Enviar D-3, Revisar D-2 e Protocolar D-1 (dias úteis).
+ * O VIOS recebe o Enviar; o fluxo automático dele cria o Revisar e o Protocolar (+1 útil cada).
+ */
 export function datasDoPrazo(fatal: string, ehDiaUtil: (iso: string) => boolean) {
   return {
     fatal,

@@ -56,7 +56,7 @@ function TabelaTarefas({ agendamentos, comEnvio }: { agendamentos: AgendamentoRe
                 {item.dataFatal ? (
                   <>
                     {formatarData(item.data)}
-                    <span className="block font-sans text-xs text-slate-500">protocolo · fatal {formatarData(item.dataFatal)}</span>
+                    <span className="block font-sans text-xs text-slate-500">enviar · fatal {formatarData(item.dataFatal)}</span>
                   </>
                 ) : (
                   formatarData(item.data)
