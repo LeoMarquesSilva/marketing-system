@@ -118,6 +118,7 @@ export interface PublicacaoResumo {
   documentoIds: string[];
   /** Triagem com o SIOE. */
   pastaCi: string | null;
+  pastaVinculo: string | null;
   cliente: string | null;
   grupoCliente: string | null;
   advogadoResponsavel: string | null;
@@ -215,7 +216,10 @@ export interface AgendamentoResumo {
   ordem: number;
   etiqueta: "PRAZO" | "PROVIDENCIA";
   tarefa: string;
+  /** Data da tarefa no VIOS (no Prazo, o protocolo). */
   data: string;
+  dataFatal: string | null;
+  diasPrazo: number | null;
   responsavel: string;
   revisor: string | null;
   observacao: string | null;
@@ -240,7 +244,11 @@ export interface VistagemDetalhe {
   /** Por que não há lista de tarefas (catálogo indisponível ou área sem catálogo). */
   catalogoErro: string | null;
   responsavelSugerido: string | null;
+  /** Auxiliar da pasta no VIOS (sugerido como revisor do Prazo). */
+  revisorSugerido: string | null;
   inconsistencias: InconsistenciaResumo[];
+  /** Feriados (AAAA-MM-DD) para contar os dias úteis do Prazo na tela. */
+  feriados: string[];
   hoje: string;
 }
 

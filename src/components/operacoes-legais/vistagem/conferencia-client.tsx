@@ -52,7 +52,16 @@ function TabelaTarefas({ agendamentos, comEnvio }: { agendamentos: AgendamentoRe
                 <span className="font-medium text-slate-900">{item.tarefa}</span>
                 {item.observacao ? <span className="mt-1 block whitespace-pre-wrap text-xs text-slate-600">{item.observacao}</span> : null}
               </td>
-              <td className="px-3 py-2 font-mono">{formatarData(item.data)}</td>
+              <td className="px-3 py-2 font-mono">
+                {item.dataFatal ? (
+                  <>
+                    {formatarData(item.data)}
+                    <span className="block font-sans text-xs text-slate-500">protocolo · fatal {formatarData(item.dataFatal)}</span>
+                  </>
+                ) : (
+                  formatarData(item.data)
+                )}
+              </td>
               <td className="px-3 py-2">{item.responsavel}</td>
               <td className="px-3 py-2">{item.revisor ?? "—"}</td>
               {comEnvio ? (

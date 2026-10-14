@@ -81,3 +81,15 @@ export async function baixarArquivoSharePoint(siteId: string, itemId: string, to
   if (!resposta.ok) throw new VistagemError(`Falha ao baixar arquivo do SharePoint (${resposta.status}).`, 502);
   return new Uint8Array(await resposta.arrayBuffer());
 }
+
+/** Baixa um arquivo pelo caminho dentro da biblioteca padrão de um site (ex.: relatórios do VIOS). */
+export async function baixarArquivoPorCaminho(site: string, caminho: string): Promise<Uint8Array> {
+  const token = await tokenGraph();
+  const siteInfo = await graphJson<{ id: string }>(`/sites/${site}`, token);
+  const resposta = await fetch(`${GRAPH}/sites/${siteInfo.id}/drive/root:/${encodeURI(caminho)}:/content`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!resposta.ok) throw new VistagemError(`Falha ao baixar ${caminho} do SharePoint (${resposta.status}).`, 502);
+  return new Uint8Array(await resposta.arrayBuffer());
+}

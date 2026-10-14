@@ -6,9 +6,13 @@ import {
   paraDataVios,
   responsavelSugerido,
   tarefasPermitidas,
+  usuarioPorSigla,
   validarAgendamentos,
   type AgendamentoEntrada,
 } from "./agendamento";
+import { criarCalendario } from "./dias-uteis";
+import { carregarFeriados } from "./feriados";
+import { buscarPastasVios } from "./pastas-vios";
 import { VistagemError } from "./errors";
 import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
 import { carregarCatalogoProcessos, catalogoDaArea, consultarFilaSama, enfileirarNoSama, envioSimulado, type CatalogoArea } from "./sama";
@@ -27,11 +31,12 @@ import type {
 } from "./types";
 
 const COLUNAS_AGENDAMENTO =
-  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, responsavel, revisor, observacao, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, envio_erro, enviado_em";
+  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, responsavel, revisor, observacao, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, envio_erro, enviado_em";
 
 type AgendamentoRow = {
   id: string; publicacao_id: string; ordem: number; etiqueta: "PRAZO" | "PROVIDENCIA"; tarefa: string; tarefa_id: string | null;
-  data: string; responsavel: string; revisor: string | null; observacao: string | null; envio_status: EnvioStatus;
+  data: string; data_fatal: string | null; dias_prazo: number | null; responsavel: string; revisor: string | null;
+  observacao: string | null; envio_status: EnvioStatus;
   envio_simulado: boolean | null; sama_agendamento_id: string | null; vios_tarefa_id: string | null; envio_erro: string | null;
   enviado_em: string | null;
 };
@@ -43,6 +48,8 @@ function agendamentoResumo(row: AgendamentoRow): AgendamentoResumo {
     etiqueta: row.etiqueta,
     tarefa: row.tarefa,
     data: row.data,
+    dataFatal: row.data_fatal,
+    diasPrazo: row.dias_prazo,
     responsavel: row.responsavel,
     revisor: row.revisor,
     observacao: row.observacao,
@@ -137,7 +144,12 @@ export async function obterVistagem(id: string): Promise<VistagemDetalhe> {
   if (!catalogo && !catalogoErro) {
     catalogoErro = `Não há lista de tarefas do VIOS para a área "${publicacao.area_processo ?? publicacao.escritorio_responsavel ?? "sem área"}" desta pasta.`;
   }
-  const inconsistencias = await inconsistenciasPorPublicacao([id]);
+  const [inconsistencias, feriados, pastaVios] = await Promise.all([
+    inconsistenciasPorPublicacao([id]),
+    carregarFeriados().catch(() => [] as string[]),
+    publicacao.pasta_ci ? buscarPastasVios([publicacao.pasta_ci]) : Promise.resolve(new Map<string, { vinculo: string | null; auxiliarSigla: string | null }>()),
+  ]);
+  const auxiliar = publicacao.pasta_ci ? pastaVios.get(publicacao.pasta_ci)?.auxiliarSigla ?? null : null;
   return {
     publicacao: publicacaoResumo(publicacao, null),
     agendamentos: agendamentos.get(id) ?? [],
@@ -145,6 +157,8 @@ export async function obterVistagem(id: string): Promise<VistagemDetalhe> {
     catalogo,
     catalogoErro,
     responsavelSugerido: catalogo ? responsavelSugerido(publicacao.advogado_responsavel, catalogo.usuarios)?.nome ?? null : null,
+    revisorSugerido: catalogo ? usuarioPorSigla(auxiliar, catalogo.usuarios)?.nome ?? null : null,
+    feriados,
     hoje: hojeEmSaoPaulo(),
   };
 }
@@ -160,7 +174,12 @@ export async function salvarVistagem(
   const catalogo = catalogoParaPublicacao(await carregarCatalogoProcessos(), publicacao);
   if (!catalogo) throw new VistagemError("Não há lista de tarefas do VIOS para a área desta pasta. Avise a controladoria.", 422);
 
-  const validacao = validarAgendamentos(entrada.agendamentos, { tarefas: catalogo.tarefas, usuarios: catalogo.usuarios });
+  const feriados = await carregarFeriados();
+  const validacao = validarAgendamentos(entrada.agendamentos, {
+    tarefas: catalogo.tarefas,
+    usuarios: catalogo.usuarios,
+    ehDiaUtil: criarCalendario(feriados),
+  });
   if (!validacao.ok) throw new VistagemError(validacao.erros.join(" "));
 
   const db = admin();
@@ -174,6 +193,8 @@ export async function salvarVistagem(
       tarefa: item.tarefa,
       tarefa_id: item.tarefaId,
       data: item.data,
+      data_fatal: item.dataFatal,
+      dias_prazo: item.diasPrazo,
       responsavel: item.responsavel,
       responsavel_id: item.responsavelId,
       revisor: item.revisor,

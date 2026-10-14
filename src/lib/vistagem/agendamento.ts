@@ -1,3 +1,4 @@
+import { somarDiasUteis } from "./dias-uteis";
 import { DEPARA_TAREFAS, type EtiquetaAgendamento, type PastaTipo } from "./vios-depara";
 
 /** Opção do VIOS (tipo de tarefa ou usuário), como o robô do SAMA guarda no catálogo. */
@@ -10,8 +11,12 @@ export interface OpcaoVios {
 export interface AgendamentoEntrada {
   etiqueta: EtiquetaAgendamento;
   tarefa: string;
-  /** AAAA-MM-DD, escolhida no calendário. */
+  /** AAAA-MM-DD, escolhida no calendário (Providência). No Prazo é recalculada a partir da fatal. */
   data: string;
+  /** PRAZO: data fatal escolhida no calendário ou pelos atalhos de dias. */
+  dataFatal?: string | null;
+  /** PRAZO: atalho usado (5/10/15/30/60/90/180 dias úteis), se houver. */
+  diasPrazo?: number | null;
   responsavel: string;
   revisor?: string | null;
   observacao?: string | null;
@@ -21,7 +26,10 @@ export interface AgendamentoValidado {
   etiqueta: EtiquetaAgendamento;
   tarefa: string;
   tarefaId: string;
+  /** Data que vai para a tarefa no VIOS (no Prazo, o protocolo = fatal − 1 dia útil). */
   data: string;
+  dataFatal: string | null;
+  diasPrazo: number | null;
   responsavel: string;
   responsavelId: string;
   revisor: string | null;
@@ -107,7 +115,7 @@ export function avisosDaData(iso: string, hoje: string): string[] {
  */
 export function validarAgendamentos(
   entradas: AgendamentoEntrada[],
-  contexto: { tarefas: Record<EtiquetaAgendamento, OpcaoVios[]>; usuarios: OpcaoVios[] }
+  contexto: { tarefas: Record<EtiquetaAgendamento, OpcaoVios[]>; usuarios: OpcaoVios[]; ehDiaUtil: (iso: string) => boolean }
 ): { ok: true; itens: AgendamentoValidado[] } | { ok: false; erros: string[] } {
   const erros: string[] = [];
   if (!entradas.length) erros.push("Vincule ao menos uma tarefa à publicação.");
@@ -122,19 +130,28 @@ export function validarAgendamentos(
     }
     const tarefa = contexto.tarefas[entrada.etiqueta].find((opcao) => chaveNome(opcao.nome) === chaveNome(entrada.tarefa));
     if (!tarefa) erros.push(`${n}: escolha uma tarefa da lista.`);
-    if (!dataValida(entrada.data)) erros.push(`${n}: escolha a data no calendário.`);
+    const prazo = entrada.etiqueta === "PRAZO";
+    const fatal = prazo && entrada.dataFatal && dataValida(entrada.dataFatal) ? entrada.dataFatal : null;
+    // No Prazo, o VIOS recebe o protocolo: fatal − 1 dia útil (recalculado aqui, não vem da tela).
+    const data = prazo ? (fatal ? somarDiasUteis(fatal, -1, contexto.ehDiaUtil) : "") : entrada.data;
+    if (prazo && !fatal) erros.push(`${n}: escolha a data fatal do prazo.`);
+    if (!prazo && !dataValida(data)) erros.push(`${n}: escolha a data no calendário.`);
     const responsavel = usuarioPorChave.get(chaveNome(entrada.responsavel));
     if (!responsavel) erros.push(`${n}: escolha o responsável na lista de usuários do VIOS.`);
     const revisor = entrada.revisor?.trim() ? usuarioPorChave.get(chaveNome(entrada.revisor)) : null;
     if (entrada.revisor?.trim() && !revisor) erros.push(`${n}: escolha o revisor na lista de usuários do VIOS.`);
+    if (prazo && !entrada.revisor?.trim()) erros.push(`${n}: no Prazo o revisor é obrigatório.`);
     const observacao = entrada.observacao?.trim() || null;
     if (observacao && observacao.length > MAX_OBSERVACAO) erros.push(`${n}: observação com mais de ${MAX_OBSERVACAO} caracteres.`);
-    if (!tarefa || !responsavel || !dataValida(entrada.data)) return null;
+    if (!tarefa || !responsavel || !dataValida(data) || (prazo && !revisor)) return null;
+    const diasPrazo = prazo && Number.isInteger(entrada.diasPrazo) && (entrada.diasPrazo ?? 0) > 0 ? (entrada.diasPrazo as number) : null;
     return {
       etiqueta: entrada.etiqueta,
       tarefa: tarefa.nome,
       tarefaId: tarefa.id,
-      data: entrada.data,
+      data,
+      dataFatal: fatal,
+      diasPrazo,
       responsavel: responsavel.nome,
       responsavelId: responsavel.id,
       revisor: revisor?.nome ?? null,
@@ -161,4 +178,24 @@ export function montarObservacaoVios(
     .filter(Boolean)
     .join(" · ");
   return [referencia, observacao?.trim(), "Vistagem pelo Orquestra."].filter(Boolean).join("\n");
+}
+
+/** Sigla do VIOS a partir do nome (ex.: "Fernanda Voltarelli Arnoni" → "FVA"), com e sem preposições. */
+export function siglasDoNome(nome: string): string[] {
+  const palavras = nome
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\(.*?\)/g, "")
+    .split(/\s+/)
+    .filter(Boolean);
+  const sigla = (lista: string[]) => lista.map((palavra) => palavra[0].toUpperCase()).join("");
+  return [...new Set([sigla(palavras.filter((p) => !/^(de|da|do|das|dos|e)$/i.test(p))), sigla(palavras)])];
+}
+
+/** Usuário do VIOS cuja sigla é a do auxiliar da pasta; null se não houver ou se for ambígua. */
+export function usuarioPorSigla(sigla: string | null, usuarios: OpcaoVios[]): OpcaoVios | null {
+  const alvo = sigla?.trim().toUpperCase();
+  if (!alvo) return null;
+  const candidatos = usuarios.filter((usuario) => siglasDoNome(usuario.nome).includes(alvo));
+  return candidatos.length === 1 ? candidatos[0] : null;
 }

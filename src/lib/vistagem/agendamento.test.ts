@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { criarCalendario } from "./dias-uteis";
 import {
   areaDoCatalogo,
+  siglasDoNome,
+  usuarioPorSigla,
   avisosDaData,
   montarObservacaoVios,
   paraDataVios,
@@ -49,11 +52,15 @@ describe("areaDoCatalogo", () => {
 });
 
 describe("validarAgendamentos", () => {
-  const contexto = { tarefas: { PRAZO: tarefasPermitidas(ETAPAS, "PRAZO"), PROVIDENCIA: tarefasPermitidas(ETAPAS, "PROVIDENCIA") }, usuarios: USUARIOS };
+  const contexto = {
+    tarefas: { PRAZO: tarefasPermitidas(ETAPAS, "PRAZO"), PROVIDENCIA: tarefasPermitidas(ETAPAS, "PROVIDENCIA") },
+    usuarios: USUARIOS,
+    ehDiaUtil: criarCalendario([]),
+  };
 
   it("aceita tarefas da lista e resolve ids", () => {
     const resultado = validarAgendamentos(
-      [{ etiqueta: "PRAZO", tarefa: "contestação", data: "2026-10-30", responsavel: "advogada exemplo", revisor: "Revisor Exemplo", observacao: " ver laudo " }],
+      [{ etiqueta: "PRAZO", tarefa: "contestação", data: "", dataFatal: "2026-11-02", diasPrazo: 15, responsavel: "advogada exemplo", revisor: "Revisor Exemplo", observacao: " ver laudo " }],
       contexto
     );
     expect(resultado).toEqual({
@@ -64,6 +71,8 @@ describe("validarAgendamentos", () => {
           tarefa: "CONTESTAÇÃO",
           tarefaId: "900",
           data: "2026-10-30",
+          dataFatal: "2026-11-02",
+          diasPrazo: 15,
           responsavel: "Advogada Exemplo",
           responsavelId: "4",
           revisor: "Revisor Exemplo",
@@ -76,11 +85,22 @@ describe("validarAgendamentos", () => {
 
   it("recusa tarefa fora da lista, data inválida, responsável desconhecido e lista vazia", () => {
     const resultado = validarAgendamentos(
-      [{ etiqueta: "PRAZO", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-02-30", responsavel: "Fulano" }],
+      [{ etiqueta: "PROVIDENCIA", tarefa: "AGRAVO INVENTADO", data: "2026-02-30", responsavel: "Fulano" }],
       contexto
     );
     expect(resultado.ok).toBe(false);
     if (!resultado.ok) expect(resultado.erros).toHaveLength(3);
+    const semRevisor = validarAgendamentos(
+      [{ etiqueta: "PRAZO", tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo" }],
+      contexto
+    );
+    expect(semRevisor.ok).toBe(false);
+    if (!semRevisor.ok) expect(semRevisor.erros.join(" ")).toMatch(/revisor é obrigatório/);
+    const semFatal = validarAgendamentos(
+      [{ etiqueta: "PRAZO", tarefa: "CONTESTAÇÃO", data: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo" }],
+      contexto
+    );
+    expect(semFatal.ok).toBe(false);
     expect(validarAgendamentos([], contexto).ok).toBe(false);
   });
 });
@@ -105,5 +125,21 @@ describe("auxiliares", () => {
     expect(
       montarObservacaoVios({ dataPublicacao: "2026-10-14", tribunal: "TRT2", numeroProcesso: "0001234-56.2026.5.02.0001", djenIdComunicacao: 123 }, "Prazo de 8 dias")
     ).toBe("Publicação de 14/10/2026 · TRT2 · Processo 0001234-56.2026.5.02.0001 · ID comunicação 123\nPrazo de 8 dias\nVistagem pelo Orquestra.");
+  });
+});
+
+describe("auxiliar pela sigla", () => {
+  const usuarios = [
+    { id: "1", nome: "Fernanda Voltarelli Arnoni" },
+    { id: "2", nome: "Maria Caroline da Cunha Thomé" },
+    { id: "3", nome: "Fabio Vieira Alves" },
+  ];
+  it("monta a sigla com e sem preposições", () => {
+    expect(siglasDoNome("Maria Caroline da Cunha Thomé")).toEqual(["MCCT", "MCDCT"]);
+  });
+  it("acha o usuário pela sigla e recusa sigla ambígua ou desconhecida", () => {
+    expect(usuarioPorSigla("MCDCT", usuarios)?.id).toBe("2");
+    expect(usuarioPorSigla("FVA", usuarios)).toBeNull();
+    expect(usuarioPorSigla("ZZ", usuarios)).toBeNull();
   });
 });

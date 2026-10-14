@@ -7,8 +7,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import { avisosDaData } from "@/lib/vistagem/agendamento";
+import { DIAS_PRAZO, criarCalendario, datasDoPrazo, fatalPorDias } from "@/lib/vistagem/dias-uteis";
 import type { PublicacaoResumo, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
+import { ComboboxBusca } from "./combobox-busca";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { DadosPasta, DadosPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
 
@@ -18,18 +20,38 @@ interface Linha {
   chave: number;
   etiqueta: Etiqueta;
   tarefa: string;
+  /** Providência: data da tarefa no VIOS. */
   data: string;
+  /** Prazo: data fatal (o VIOS recebe o protocolo, fatal − 1 dia útil). */
+  dataFatal: string;
+  diasPrazo: number | null;
   responsavel: string;
   revisor: string;
   observacao: string;
 }
 
 let proximaChave = 1;
-function novaLinha(responsavel = "", base?: Partial<Linha>): Linha {
-  return { chave: proximaChave++, etiqueta: "PRAZO", tarefa: "", data: "", responsavel, revisor: "", observacao: "", ...base };
+function novaLinha(base: Partial<Linha> = {}): Linha {
+  return {
+    chave: proximaChave++,
+    etiqueta: "PRAZO",
+    tarefa: "",
+    data: "",
+    dataFatal: "",
+    diasPrazo: null,
+    responsavel: "",
+    revisor: "",
+    observacao: "",
+    ...base,
+  };
 }
 
 const campo = "h-10 w-full rounded-md border border-input bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]";
+
+function linhaCompleta(linha: Linha): boolean {
+  if (!linha.tarefa || !linha.responsavel) return false;
+  return linha.etiqueta === "PRAZO" ? Boolean(linha.dataFatal && linha.revisor) : Boolean(linha.data);
+}
 
 function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida: (id: string) => void; onVoltar: () => void }) {
   const [detalhe, setDetalhe] = useState<VistagemDetalhe | null>(null);
@@ -54,15 +76,18 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
         setLinhas(
           dados.agendamentos.length
             ? dados.agendamentos.map((item) =>
-                novaLinha(item.responsavel, {
+                novaLinha({
                   etiqueta: item.etiqueta,
                   tarefa: item.tarefa,
-                  data: item.data,
+                  data: item.etiqueta === "PRAZO" ? "" : item.data,
+                  dataFatal: item.dataFatal ?? "",
+                  diasPrazo: item.diasPrazo,
+                  responsavel: item.responsavel,
                   revisor: item.revisor ?? "",
                   observacao: item.observacao ?? "",
                 })
               )
-            : [novaLinha(dados.responsavelSugerido ?? "")]
+            : [novaLinha({ responsavel: dados.responsavelSugerido ?? "", revisor: dados.revisorSugerido ?? "" })]
         );
       })
       .catch((e) => !cancelado && setErro(e instanceof Error ? e.message : "Falha ao carregar a publicação."));
@@ -71,8 +96,19 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
     };
   }, [id, recarga]);
 
+  const ehDiaUtil = useMemo(() => criarCalendario(detalhe?.feriados ?? []), [detalhe?.feriados]);
+
   function alterar(chave: number, mudanca: Partial<Linha>) {
     setLinhas((atuais) => atuais.map((linha) => (linha.chave === chave ? { ...linha, ...mudanca } : linha)));
+  }
+
+  function trocarEtiqueta(linha: Linha, etiqueta: Etiqueta) {
+    // No Prazo o revisor é obrigatório: sugere o auxiliar da pasta se ainda estiver vazio.
+    alterar(linha.chave, {
+      etiqueta,
+      tarefa: "",
+      revisor: etiqueta === "PRAZO" && !linha.revisor ? detalhe?.revisorSugerido ?? "" : linha.revisor,
+    });
   }
 
   async function enviar() {
@@ -84,13 +120,15 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           observacao,
-          agendamentos: linhas.map(({ etiqueta, tarefa, data, responsavel, revisor, observacao: obs }) => ({
-            etiqueta,
-            tarefa,
-            data,
-            responsavel,
-            revisor: revisor || null,
-            observacao: obs || null,
+          agendamentos: linhas.map((linha) => ({
+            etiqueta: linha.etiqueta,
+            tarefa: linha.tarefa,
+            data: linha.etiqueta === "PRAZO" ? "" : linha.data,
+            dataFatal: linha.etiqueta === "PRAZO" ? linha.dataFatal : null,
+            diasPrazo: linha.etiqueta === "PRAZO" ? linha.diasPrazo : null,
+            responsavel: linha.responsavel,
+            revisor: linha.revisor || null,
+            observacao: linha.observacao || null,
           })),
         }),
       });
@@ -113,7 +151,8 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
   }
 
   const { publicacao, catalogo } = detalhe;
-  const completo = linhas.every((linha) => linha.tarefa && linha.data && linha.responsavel);
+  const completo = linhas.every(linhaCompleta);
+  const devolucoes = detalhe.inconsistencias.filter((item) => item.origem === "juridico");
 
   return (
     <div className="space-y-4">
@@ -122,19 +161,12 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
         Voltar à lista
       </Button>
 
-      {detalhe.inconsistencias.some((item) => item.origem === "juridico") ? (
+      {devolucoes.length ? (
         <div className="space-y-2" role="status">
           <p className="text-sm font-medium text-amber-900">Devolvida pela controladoria em {formatarDataHora(publicacao.devolvidoEm)}</p>
-          {detalhe.inconsistencias
-            .filter((item) => item.origem === "juridico")
-            .map((item) => (
-              <CartaoInconsistencia
-                key={item.id}
-                inconsistencia={item}
-                acao="contestar"
-                onAlterada={() => setRecarga((valor) => valor + 1)}
-              />
-            ))}
+          {devolucoes.map((item) => (
+            <CartaoInconsistencia key={item.id} inconsistencia={item} acao="contestar" onAlterada={() => setRecarga((valor) => valor + 1)} />
+          ))}
         </div>
       ) : publicacao.devolucaoMotivo ? (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status">
@@ -170,8 +202,15 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
         ) : (
           <>
             {linhas.map((linha, indice) => {
-              const opcoes = catalogo.tarefas[linha.etiqueta];
-              const avisos = linha.data ? avisosDaData(linha.data, detalhe.hoje) : [];
+              const prazo = linha.etiqueta === "PRAZO";
+              const cadeia = prazo && linha.dataFatal ? datasDoPrazo(linha.dataFatal, ehDiaUtil) : null;
+              const avisos = prazo
+                ? linha.dataFatal
+                  ? avisosDaData(linha.dataFatal, detalhe.hoje).concat(ehDiaUtil(linha.dataFatal) ? [] : ["A data fatal não é dia útil."])
+                  : []
+                : linha.data
+                  ? avisosDaData(linha.data, detalhe.hoje)
+                  : [];
               return (
                 <fieldset key={linha.chave} className="space-y-3 rounded-md border border-[#dce9eb] p-3">
                   <legend className="px-1 text-xs font-semibold uppercase text-slate-500">Tarefa {indice + 1}</legend>
@@ -185,7 +224,7 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
                           variant="ghost"
                           aria-pressed={linha.etiqueta === valor}
                           className={cn(linha.etiqueta === valor && "bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")}
-                          onClick={() => alterar(linha.chave, { etiqueta: valor, tarefa: "" })}
+                          onClick={() => trocarEtiqueta(linha, valor)}
                         >
                           {valor === "PRAZO" ? "Prazo" : "Providência"}
                         </Button>
@@ -206,28 +245,83 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
                     ) : null}
                   </div>
 
-                  <div className="grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(150px,1fr)]">
-                    <label className="space-y-1 text-xs font-medium text-slate-600">
-                      Tarefa
-                      <select className={campo} value={linha.tarefa} onChange={(evento) => alterar(linha.chave, { tarefa: evento.target.value })}>
-                        <option value="">Escolha a tarefa…</option>
-                        {opcoes.map((opcao) => (
-                          <option key={opcao.id} value={opcao.nome}>
-                            {opcao.nome}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="space-y-1 text-xs font-medium text-slate-600">
-                      Data no VIOS
-                      <input
-                        type="date"
-                        className={campo}
-                        value={linha.data}
-                        onChange={(evento) => alterar(linha.chave, { data: evento.target.value })}
-                      />
-                    </label>
+                  <div className="space-y-1 text-xs font-medium text-slate-600">
+                    Tarefa
+                    <ComboboxBusca
+                      opcoes={catalogo.tarefas[linha.etiqueta]}
+                      valor={linha.tarefa}
+                      onChange={(nome) => alterar(linha.chave, { tarefa: nome })}
+                      placeholder="Digite para buscar a tarefa…"
+                      rotulo={`Tarefa ${indice + 1}`}
+                    />
                   </div>
+
+                  {prazo ? (
+                    <div className="space-y-2 rounded-md bg-slate-50/70 p-3">
+                      <div className="grid gap-3 sm:grid-cols-[minmax(150px,200px)_minmax(0,1fr)] sm:items-end">
+                        <label className="space-y-1 text-xs font-medium text-slate-600">
+                          Data fatal
+                          <input
+                            type="date"
+                            className={campo}
+                            value={linha.dataFatal}
+                            onChange={(evento) => alterar(linha.chave, { dataFatal: evento.target.value, diasPrazo: null })}
+                          />
+                        </label>
+                        <div className="space-y-1">
+                          <span className="block text-xs font-medium text-slate-600">
+                            Dias úteis após a publicação{publicacao.dataPublicacao ? ` (${formatarData(publicacao.dataPublicacao)})` : ""}
+                          </span>
+                          <div className="flex flex-wrap gap-1" role="group" aria-label="Prazo em dias úteis">
+                            {DIAS_PRAZO.map((dias) => (
+                              <Button
+                                key={dias}
+                                type="button"
+                                size="xs"
+                                variant="outline"
+                                aria-pressed={linha.diasPrazo === dias}
+                                disabled={!publicacao.dataPublicacao}
+                                className={cn(linha.diasPrazo === dias && "border-[#183f50] bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")}
+                                onClick={() =>
+                                  publicacao.dataPublicacao &&
+                                  alterar(linha.chave, { diasPrazo: dias, dataFatal: fatalPorDias(publicacao.dataPublicacao, dias, ehDiaUtil) })
+                                }
+                              >
+                                {dias}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      {cadeia ? (
+                        <dl className="grid gap-2 text-xs sm:grid-cols-4">
+                          <div>
+                            <dt className="text-slate-500">Enviar</dt>
+                            <dd className="font-mono text-slate-800">{formatarData(cadeia.enviar)}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-slate-500">Revisar</dt>
+                            <dd className="font-mono text-slate-800">{formatarData(cadeia.revisar)}</dd>
+                          </div>
+                          <div>
+                            <dt className="font-medium text-[#285f7a]">Protocolar (vai para o VIOS)</dt>
+                            <dd className="font-mono font-semibold text-[#183f50]">{formatarData(cadeia.protocolar)}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-slate-500">Fatal</dt>
+                            <dd className="font-mono text-slate-800">{formatarData(cadeia.fatal)}</dd>
+                          </div>
+                        </dl>
+                      ) : (
+                        <p className="text-xs text-slate-500">Escolha a data fatal ou um atalho de dias para ver Enviar, Revisar e Protocolar.</p>
+                      )}
+                    </div>
+                  ) : (
+                    <label className="block space-y-1 text-xs font-medium text-slate-600 sm:w-56">
+                      Data no VIOS
+                      <input type="date" className={campo} value={linha.data} onChange={(evento) => alterar(linha.chave, { data: evento.target.value })} />
+                    </label>
+                  )}
                   {avisos.length ? (
                     <p className="flex items-center gap-1 text-xs text-amber-800">
                       <TriangleAlert className="size-3.5" />
@@ -236,28 +330,31 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
                   ) : null}
 
                   <div className="grid gap-3 md:grid-cols-2">
-                    <label className="space-y-1 text-xs font-medium text-slate-600">
+                    <div className="space-y-1 text-xs font-medium text-slate-600">
                       Responsável
-                      <select className={campo} value={linha.responsavel} onChange={(evento) => alterar(linha.chave, { responsavel: evento.target.value })}>
-                        <option value="">Escolha o responsável…</option>
-                        {catalogo.usuarios.map((usuario) => (
-                          <option key={usuario.id} value={usuario.nome}>
-                            {usuario.nome}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="space-y-1 text-xs font-medium text-slate-600">
-                      Revisor (opcional)
-                      <select className={campo} value={linha.revisor} onChange={(evento) => alterar(linha.chave, { revisor: evento.target.value })}>
-                        <option value="">Sem revisor</option>
-                        {catalogo.usuarios.map((usuario) => (
-                          <option key={usuario.id} value={usuario.nome}>
-                            {usuario.nome}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                      <ComboboxBusca
+                        opcoes={catalogo.usuarios}
+                        valor={linha.responsavel}
+                        onChange={(nome) => alterar(linha.chave, { responsavel: nome })}
+                        placeholder="Digite para buscar…"
+                        rotulo={`Responsável da tarefa ${indice + 1}`}
+                      />
+                    </div>
+                    <div className="space-y-1 text-xs font-medium text-slate-600">
+                      {prazo ? "Revisor (obrigatório no Prazo)" : "Revisor (opcional)"}
+                      <ComboboxBusca
+                        opcoes={catalogo.usuarios}
+                        valor={linha.revisor}
+                        onChange={(nome) => alterar(linha.chave, { revisor: nome })}
+                        placeholder={prazo ? "Digite para buscar o revisor…" : "Sem revisor"}
+                        rotulo={`Revisor da tarefa ${indice + 1}`}
+                        permitirVazio
+                        invalido={prazo && !linha.revisor}
+                      />
+                      {prazo && detalhe.revisorSugerido && linha.revisor === detalhe.revisorSugerido ? (
+                        <span className="block font-normal text-slate-500">Auxiliar da pasta no VIOS.</span>
+                      ) : null}
+                    </div>
                   </div>
 
                   <label className="block space-y-1 text-xs font-medium text-slate-600">
@@ -277,7 +374,12 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setLinhas((atuais) => [...atuais, novaLinha(detalhe.responsavelSugerido ?? "")])}
+              onClick={() =>
+                setLinhas((atuais) => [
+                  ...atuais,
+                  novaLinha({ responsavel: detalhe.responsavelSugerido ?? "", revisor: detalhe.revisorSugerido ?? "" }),
+                ])
+              }
               disabled={linhas.length >= 10}
             >
               <Plus />
@@ -302,6 +404,30 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
       </section>
     </div>
   );
+}
+
+interface GrupoFila {
+  nome: string;
+  publicacoes: PublicacaoResumo[];
+  riscos: number;
+}
+
+/** Agrupa a fila por grupo do cliente; grupos e publicações com demanda de risco primeiro. */
+function agruparFila(publicacoes: PublicacaoResumo[]): GrupoFila[] {
+  const grupos = new Map<string, PublicacaoResumo[]>();
+  for (const publicacao of publicacoes) {
+    const nome = publicacao.grupoCliente?.trim() || "Sem grupo";
+    grupos.set(nome, [...(grupos.get(nome) ?? []), publicacao]);
+  }
+  return [...grupos.entries()]
+    .map(([nome, lista]) => ({
+      nome,
+      publicacoes: [...lista].sort(
+        (a, b) => Number(Boolean(b.demandaRisco)) - Number(Boolean(a.demandaRisco)) || (a.dataPublicacao ?? "").localeCompare(b.dataPublicacao ?? "")
+      ),
+      riscos: lista.filter((p) => p.demandaRisco).length,
+    }))
+    .sort((a, b) => Number(b.riscos > 0) - Number(a.riscos > 0) || a.nome.localeCompare(b.nome, "pt-BR"));
 }
 
 function Juridico() {
@@ -333,11 +459,12 @@ function Juridico() {
 
   const escritorios = useMemo(() => Object.entries(porEscritorio).sort((a, b) => a[0].localeCompare(b[0], "pt-BR")), [porEscritorio]);
   const total = escritorios.reduce((soma, [, quantidade]) => soma + quantidade, 0);
+  const grupos = useMemo(() => agruparFila(publicacoes ?? []), [publicacoes]);
 
   function concluida(id: string) {
     const restantes = (publicacoes ?? []).filter((p) => p.id !== id);
     setPublicacoes(restantes);
-    setSelecionada(restantes[0]?.id ?? null);
+    setSelecionada(agruparFila(restantes)[0]?.publicacoes[0]?.id ?? null);
     setAviso("Vistagem enviada para a conferência da controladoria.");
     setPorEscritorio((atual) => {
       const p = (publicacoes ?? []).find((item) => item.id === id);
@@ -376,35 +503,50 @@ function Juridico() {
           ) : publicacoes.length === 0 ? (
             <p className="p-6 text-center text-sm text-slate-600">Nenhuma publicação para vistar.</p>
           ) : (
-            <ul className="max-h-[75vh] divide-y divide-[#dce9eb] overflow-auto">
-              {publicacoes.map((publicacao) => (
-                <li key={publicacao.id}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelecionada(publicacao.id);
-                      setAviso("");
-                    }}
-                    aria-current={publicacao.id === selecionada ? "true" : undefined}
-                    className={cn("w-full space-y-1 px-4 py-3 text-left hover:bg-[#47cdd0]/5", publicacao.id === selecionada && "bg-[#47cdd0]/10")}
-                  >
-                    <span className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-xs font-medium text-slate-900">{publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}</span>
-                      {publicacao.demandaRisco ? (
-                        <span className="rounded-full border border-red-200 bg-red-50 px-1.5 text-[11px] font-medium text-red-700">Risco</span>
-                      ) : null}
-                      {publicacao.devolucaoMotivo ? (
-                        <span className="rounded-full border border-amber-200 bg-amber-50 px-1.5 text-[11px] font-medium text-amber-800">Devolvida</span>
-                      ) : null}
-                    </span>
-                    <span className="block text-xs text-slate-700">{publicacao.grupoCliente ?? publicacao.cliente ?? "—"}</span>
-                    <span className="block text-xs text-slate-500">
-                      {publicacao.escritorioResponsavel} · {publicacao.tribunal} · publ. {formatarData(publicacao.dataPublicacao)}
-                    </span>
-                  </button>
-                </li>
+            <div className="max-h-[75vh] overflow-auto">
+              {grupos.map((grupo) => (
+                <section key={grupo.nome} aria-label={grupo.nome}>
+                  <h3 className="sticky top-0 z-10 flex items-center gap-2 border-b border-[#dce9eb] bg-slate-50 px-4 py-2 text-xs font-semibold text-slate-700">
+                    <span className="truncate">{grupo.nome}</span>
+                    <span className="font-mono font-normal text-slate-500">{grupo.publicacoes.length}</span>
+                    {grupo.riscos ? (
+                      <span className="ml-auto rounded-full border border-red-200 bg-red-50 px-1.5 text-[11px] font-medium text-red-700">
+                        {grupo.riscos} de risco
+                      </span>
+                    ) : null}
+                  </h3>
+                  <ul className="divide-y divide-[#dce9eb]">
+                    {grupo.publicacoes.map((publicacao) => (
+                      <li key={publicacao.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelecionada(publicacao.id);
+                            setAviso("");
+                          }}
+                          aria-current={publicacao.id === selecionada ? "true" : undefined}
+                          className={cn("w-full space-y-1 px-4 py-3 text-left hover:bg-[#47cdd0]/5", publicacao.id === selecionada && "bg-[#47cdd0]/10")}
+                        >
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span className="font-mono text-xs font-medium text-slate-900">{publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}</span>
+                            {publicacao.demandaRisco ? (
+                              <span className="rounded-full border border-red-200 bg-red-50 px-1.5 text-[11px] font-medium text-red-700">Risco</span>
+                            ) : null}
+                            {publicacao.devolucaoMotivo ? (
+                              <span className="rounded-full border border-amber-200 bg-amber-50 px-1.5 text-[11px] font-medium text-amber-800">Devolvida</span>
+                            ) : null}
+                          </span>
+                          <span className="block text-xs text-slate-700">{publicacao.cliente ?? "—"}</span>
+                          <span className="block text-xs text-slate-500">
+                            {publicacao.escritorioResponsavel} · {publicacao.tribunal} · publ. {formatarData(publicacao.dataPublicacao)}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
               ))}
-            </ul>
+            </div>
           )}
         </nav>
 
