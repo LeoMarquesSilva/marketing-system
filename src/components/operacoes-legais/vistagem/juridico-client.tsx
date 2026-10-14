@@ -149,7 +149,7 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
 
         {!catalogo ? (
           <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            Não há lista de tarefas do VIOS para a área desta pasta. Avise a controladoria.
+            {detalhe.catalogoErro ?? "Não há lista de tarefas do VIOS para a área desta pasta."} Avise a controladoria.
           </p>
         ) : (
           <>

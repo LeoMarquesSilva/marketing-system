@@ -123,12 +123,21 @@ export async function listarFilaJuridico(escritorio: string | null): Promise<{ p
 
 /** Publicação com o teor completo, as tarefas já vinculadas e a lista travada da área. */
 export async function obterVistagem(id: string): Promise<VistagemDetalhe> {
-  const [publicacao, areas, agendamentos] = await Promise.all([carregarPublicacao(id), carregarCatalogoProcessos(), agendamentosPorPublicacao([id])]);
-  const catalogo = catalogoParaPublicacao(areas, publicacao);
+  const [publicacao, agendamentos] = await Promise.all([carregarPublicacao(id), agendamentosPorPublicacao([id])]);
+  let catalogoErro: string | null = null;
+  const areas = await carregarCatalogoProcessos().catch((erro: unknown) => {
+    catalogoErro = erro instanceof Error ? erro.message : String(erro);
+    return [] as CatalogoArea[];
+  });
+  const catalogo = areas.length ? catalogoParaPublicacao(areas, publicacao) : null;
+  if (!catalogo && !catalogoErro) {
+    catalogoErro = `Não há lista de tarefas do VIOS para a área "${publicacao.area_processo ?? publicacao.escritorio_responsavel ?? "sem área"}" desta pasta.`;
+  }
   return {
     publicacao: publicacaoResumo(publicacao, null),
     agendamentos: agendamentos.get(id) ?? [],
     catalogo,
+    catalogoErro,
     responsavelSugerido: catalogo ? responsavelSugerido(publicacao.advogado_responsavel, catalogo.usuarios)?.nome ?? null : null,
     hoje: hojeEmSaoPaulo(),
   };
