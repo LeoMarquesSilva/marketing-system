@@ -46,7 +46,7 @@ describe("visibilidade por perfil", () => {
     const hrefs = visibleHrefs({ role: "admin" });
     expect(hrefs).toContain("/");
     expect(hrefs).not.toContain("/conteudo/inicio");
-    for (const href of ["/nfc", "/icp", "/operacoes-legais", "/rh/organograma", "/admin", "/fotos-colaboradores"]) {
+    for (const href of ["/nfc", "/icp", "/operacoes-legais", "/operacoes-legais/vistagem", "/operacoes-legais/vistagem/duplicidades", "/rh/organograma", "/admin", "/fotos-colaboradores"]) {
       expect(hrefs).toContain(href);
     }
   });
@@ -56,7 +56,7 @@ describe("visibilidade por perfil", () => {
     expect(hrefs).toContain("/planner");
     expect(hrefs).toContain("/usuarios");
     expect(hrefs).toContain("/meus-clientes/nps");
-    for (const href of ["/nfc", "/icp", "/operacoes-legais", "/cafe-cultura", "/rh/ferias", "/admin", "/conteudo/inicio"]) {
+    for (const href of ["/nfc", "/icp", "/operacoes-legais", "/operacoes-legais/vistagem", "/operacoes-legais/vistagem/duplicidades", "/cafe-cultura", "/rh/ferias", "/admin", "/conteudo/inicio"]) {
       expect(hrefs).not.toContain(href);
     }
   });

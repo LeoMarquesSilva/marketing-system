@@ -41,6 +41,14 @@
     {
       "path": "/api/cron/icp-cnpj-sync",
       "schedule": "0 5 * * 1"
+    },
+    {
+      "path": "/api/cron/vistagem-kurier",
+      "schedule": "0 10 * * 1-5"
+    },
+    {
+      "path": "/api/cron/vistagem-kurier?tentativa=2",
+      "schedule": "0 12 * * 1-5"
     }
   ]
 }
