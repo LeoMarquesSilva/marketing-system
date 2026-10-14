@@ -22,7 +22,7 @@ interface Linha {
   tarefa: string;
   /** Providência: data da tarefa no VIOS. */
   data: string;
-  /** Prazo: data fatal (o VIOS recebe o protocolo, fatal − 1 dia útil). */
+  /** Prazo: data fatal (o VIOS recebe o Enviar, fatal − 3 dias úteis). */
   dataFatal: string;
   diasPrazo: number | null;
   responsavel: string;
@@ -296,16 +296,16 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
                       {cadeia ? (
                         <dl className="grid gap-2 text-xs sm:grid-cols-4">
                           <div>
-                            <dt className="text-slate-500">Enviar</dt>
-                            <dd className="font-mono text-slate-800">{formatarData(cadeia.enviar)}</dd>
+                            <dt className="font-medium text-[#285f7a]">Enviar (vai para o VIOS)</dt>
+                            <dd className="font-mono font-semibold text-[#183f50]">{formatarData(cadeia.enviar)}</dd>
                           </div>
                           <div>
                             <dt className="text-slate-500">Revisar</dt>
                             <dd className="font-mono text-slate-800">{formatarData(cadeia.revisar)}</dd>
                           </div>
                           <div>
-                            <dt className="font-medium text-[#285f7a]">Protocolar (vai para o VIOS)</dt>
-                            <dd className="font-mono font-semibold text-[#183f50]">{formatarData(cadeia.protocolar)}</dd>
+                            <dt className="text-slate-500">Protocolar</dt>
+                            <dd className="font-mono text-slate-800">{formatarData(cadeia.protocolar)}</dd>
                           </div>
                           <div>
                             <dt className="text-slate-500">Fatal</dt>

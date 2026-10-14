@@ -216,7 +216,7 @@ export interface AgendamentoResumo {
   ordem: number;
   etiqueta: "PRAZO" | "PROVIDENCIA";
   tarefa: string;
-  /** Data da tarefa no VIOS (no Prazo, o protocolo). */
+  /** Data da tarefa no VIOS (no Prazo, o Enviar = fatal − 3 dias úteis). */
   data: string;
   dataFatal: string | null;
   diasPrazo: number | null;

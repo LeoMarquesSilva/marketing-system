@@ -91,7 +91,7 @@ function CartaoCheck({ item, aba, onConcluido }: { item: ConferenciaItem; aba: A
                 <td className="px-3 py-2 font-mono">
                   {formatarData(agendamento.data)}
                   {agendamento.dataFatal ? (
-                    <span className="block font-sans text-xs text-slate-500">protocolo · fatal {formatarData(agendamento.dataFatal)}</span>
+                    <span className="block font-sans text-xs text-slate-500">enviar · fatal {formatarData(agendamento.dataFatal)}</span>
                   ) : null}
                 </td>
                 <td className="px-3 py-2">

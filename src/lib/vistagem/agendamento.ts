@@ -11,7 +11,7 @@ export interface OpcaoVios {
 export interface AgendamentoEntrada {
   etiqueta: EtiquetaAgendamento;
   tarefa: string;
-  /** AAAA-MM-DD, escolhida no calendário (Providência). No Prazo é recalculada a partir da fatal. */
+  /** AAAA-MM-DD, escolhida no calendário (Providência). No Prazo é recalculada a partir da fatal (Enviar). */
   data: string;
   /** PRAZO: data fatal escolhida no calendário ou pelos atalhos de dias. */
   dataFatal?: string | null;
@@ -26,7 +26,7 @@ export interface AgendamentoValidado {
   etiqueta: EtiquetaAgendamento;
   tarefa: string;
   tarefaId: string;
-  /** Data que vai para a tarefa no VIOS (no Prazo, o protocolo = fatal − 1 dia útil). */
+  /** Data que vai para a tarefa no VIOS (no Prazo, o Enviar = fatal − 3 dias úteis). */
   data: string;
   dataFatal: string | null;
   diasPrazo: number | null;
@@ -132,8 +132,9 @@ export function validarAgendamentos(
     if (!tarefa) erros.push(`${n}: escolha uma tarefa da lista.`);
     const prazo = entrada.etiqueta === "PRAZO";
     const fatal = prazo && entrada.dataFatal && dataValida(entrada.dataFatal) ? entrada.dataFatal : null;
-    // No Prazo, o VIOS recebe o protocolo: fatal − 1 dia útil (recalculado aqui, não vem da tela).
-    const data = prazo ? (fatal ? somarDiasUteis(fatal, -1, contexto.ehDiaUtil) : "") : entrada.data;
+    // No Prazo, o VIOS recebe o Enviar (fatal − 3 dias úteis) e cria sozinho o Revisar (+1 útil)
+    // e o Protocolar (+1 útil). Recalculado aqui; não vem da tela.
+    const data = prazo ? (fatal ? somarDiasUteis(fatal, -3, contexto.ehDiaUtil) : "") : entrada.data;
     if (prazo && !fatal) erros.push(`${n}: escolha a data fatal do prazo.`);
     if (!prazo && !dataValida(data)) erros.push(`${n}: escolha a data no calendário.`);
     const responsavel = usuarioPorChave.get(chaveNome(entrada.responsavel));
