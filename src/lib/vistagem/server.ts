@@ -6,6 +6,7 @@ import { montarPublicacoes } from "./captura";
 import { VistagemError } from "./errors";
 import { KurierArquivoInvalidoError, lerNomeArquivoKurier, lerPlanilhaKurier } from "./kurier-arquivo";
 import { baixarArquivoSharePoint, listarArquivosKurierSharePoint } from "./sharepoint";
+import { buscarPastasVios } from "./pastas-vios";
 import { buscarPastaPorCi, buscarPastasPorCnj, carregarAreasDasPessoas } from "./sioe";
 import { ESCRITORIOS, citaAdvogadoDoEscritorio, temDemandaDeRisco, triar, type PastaSioe, type Pendencia } from "./triagem";
 import type {
@@ -80,7 +81,7 @@ function arquivoResumo(row: ArquivoRow): ArquivoKurierResumo {
 }
 
 export const COLUNAS_PUBLICACAO =
-  "id, kurier_arquivo_id, linha_arquivo, numero_processo, numero_processo_original, tribunal, justica, data_divulgacao, data_publicacao, nome_localizado, djen_id_comunicacao, djen_orgao, djen_tipo_comunicacao, djen_intimados, status, motivo_descarte, duplicidade_de, duplicidade_resultado, duplicidade_criterio, documento_ids, duplicidade_revisada_por, duplicidade_revisada_em, pasta_ci, cliente, grupo_cliente, advogado_responsavel, situacao_processo, escritorio_responsavel, demanda_risco, pendencia, pastas_candidatas, triada_em, observacao_vistagem, vistado_por, vistado_em, conferido_por, conferido_em, devolucao_motivo, devolvido_em, checado_em, check_nota, teor";
+  "id, kurier_arquivo_id, linha_arquivo, numero_processo, numero_processo_original, tribunal, justica, data_divulgacao, data_publicacao, nome_localizado, djen_id_comunicacao, djen_orgao, djen_tipo_comunicacao, djen_intimados, status, motivo_descarte, duplicidade_de, duplicidade_resultado, duplicidade_criterio, documento_ids, duplicidade_revisada_por, duplicidade_revisada_em, pasta_ci, pasta_vinculo, cliente, grupo_cliente, advogado_responsavel, situacao_processo, escritorio_responsavel, demanda_risco, pendencia, pastas_candidatas, triada_em, observacao_vistagem, vistado_por, vistado_em, conferido_por, conferido_em, devolucao_motivo, devolvido_em, checado_em, check_nota, teor";
 
 export type PublicacaoRow = {
   id: string; kurier_arquivo_id: string | null; linha_arquivo: number | null; numero_processo: string | null;
@@ -91,7 +92,7 @@ export type PublicacaoRow = {
   duplicidade_de: string | null; duplicidade_resultado: DuplicidadeResultado | null;
   duplicidade_criterio: DuplicidadeCriterio | null; documento_ids: string[] | null;
   duplicidade_revisada_por: string | null; duplicidade_revisada_em: string | null;
-  pasta_ci: string | null; cliente: string | null; grupo_cliente: string | null; advogado_responsavel: string | null;
+  pasta_ci: string | null; pasta_vinculo: string | null; cliente: string | null; grupo_cliente: string | null; advogado_responsavel: string | null;
   situacao_processo: string | null; escritorio_responsavel: string | null; demanda_risco: boolean | null;
   pendencia: Pendencia | null; pastas_candidatas: PastaSioe[] | null; triada_em: string | null;
   observacao_vistagem: string | null; vistado_por: string | null; vistado_em: string | null; conferido_por: string | null;
@@ -122,6 +123,7 @@ export function publicacaoResumo(row: PublicacaoRow, limiteTeor: number | null =
     duplicidadeCriterio: row.duplicidade_criterio,
     documentoIds: row.documento_ids ?? [],
     pastaCi: row.pasta_ci,
+    pastaVinculo: row.pasta_vinculo,
     cliente: row.cliente,
     grupoCliente: row.grupo_cliente,
     advogadoResponsavel: row.advogado_responsavel,
@@ -543,10 +545,15 @@ export async function triarPublicacoes(
   const resumo: TriagemResumo = { triadas: 0, juridico: 0, pendentes: 0, descartadas: 0, porEscritorio: {} };
   if (alvos.length === 0) return resumo;
 
-  const [pastas, areaDoAdvogado] = await Promise.all([
+  const [pastasSioe, areaDoAdvogado] = await Promise.all([
     buscarPastasPorCnj(alvos.map((alvo) => alvo.processo_digitos ?? "")),
     carregarAreasDasPessoas(),
   ]);
+  // O SIOE não traz o vínculo; ele vem do "Processos Lista" (vistagem_pastas_vios).
+  const vinculos = await buscarPastasVios([...pastasSioe.values()].flat().map((pasta) => pasta.ci));
+  const pastas = new Map(
+    [...pastasSioe.entries()].map(([cnj, lista]) => [cnj, lista.map((pasta) => ({ ...pasta, vinculo: pasta.vinculo ?? vinculos.get(pasta.ci)?.vinculo ?? null }))])
+  );
 
   for (const lote of emLotes(alvos, 10)) {
     await Promise.all(

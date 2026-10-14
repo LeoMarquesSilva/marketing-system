@@ -88,7 +88,12 @@ function CartaoCheck({ item, aba, onConcluido }: { item: ConferenciaItem; aba: A
                   <span className="ml-1 text-xs text-slate-500">({agendamento.etiqueta === "PRAZO" ? "Prazo" : "Providência"})</span>
                   {agendamento.observacao ? <span className="mt-1 block whitespace-pre-wrap text-xs text-slate-600">{agendamento.observacao}</span> : null}
                 </td>
-                <td className="px-3 py-2 font-mono">{formatarData(agendamento.data)}</td>
+                <td className="px-3 py-2 font-mono">
+                  {formatarData(agendamento.data)}
+                  {agendamento.dataFatal ? (
+                    <span className="block font-sans text-xs text-slate-500">protocolo · fatal {formatarData(agendamento.dataFatal)}</span>
+                  ) : null}
+                </td>
                 <td className="px-3 py-2">
                   {agendamento.responsavel}
                   {agendamento.revisor ? <span className="block text-xs text-slate-500">Revisor: {agendamento.revisor}</span> : null}

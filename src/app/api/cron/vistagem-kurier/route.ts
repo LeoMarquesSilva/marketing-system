@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedCronRequest } from "@/lib/cron-auth";
 import { atualizarEnvios } from "@/lib/vistagem/juridico-server";
+import { sincronizarPastasVios } from "@/lib/vistagem/pastas-vios";
 import { sincronizarKurierSharePoint } from "@/lib/vistagem/server";
 
 export const dynamic = "force-dynamic";
@@ -12,15 +13,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
   }
   try {
+    // Vínculo e auxiliar das pastas (Processos Lista do VIOS) antes de triar o dia.
+    const pastasVios = await sincronizarPastasVios().catch((erro: unknown) => ({ erro: erro instanceof Error ? erro.message : String(erro) }));
     const resultado = await sincronizarKurierSharePoint();
     // Aproveita a rodada para trazer o andamento das tarefas enviadas ao robô do SAMA.
     const envios = await atualizarEnvios().catch((erro: unknown) => ({ erro: erro instanceof Error ? erro.message : String(erro) }));
     const falhas = resultado.resultados.filter((item) => item.situacao === "erro");
     if (falhas.length || resultado.triagem?.erro) {
       console.error("[cron/vistagem-kurier] falhas", { arquivos: falhas, triagem: resultado.triagem?.erro });
-      return NextResponse.json({ success: false, ...resultado, envios }, { status: 502 });
+      return NextResponse.json({ success: false, ...resultado, envios, pastasVios }, { status: 502 });
     }
-    return NextResponse.json({ success: true, ...resultado, envios, finishedAt: new Date().toISOString() });
+    return NextResponse.json({ success: true, ...resultado, envios, pastasVios, finishedAt: new Date().toISOString() });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao importar a Kurier.";
     console.error("[cron/vistagem-kurier]", message);

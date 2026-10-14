@@ -47,7 +47,11 @@ export function DadosPasta({ publicacao }: { publicacao: PublicacaoResumo }) {
       {publicacao.escritorioResponsavel ? (
         <span className="rounded-full bg-[#183f50] px-2 py-0.5 font-medium text-white">{publicacao.escritorioResponsavel}</span>
       ) : null}
-      {publicacao.pastaCi ? <span className="font-mono text-slate-800">CI {publicacao.pastaCi}</span> : null}
+      {publicacao.pastaCi ? (
+        <span className="font-mono text-slate-800">
+          {publicacao.pastaVinculo ? `${publicacao.pastaVinculo} - ` : ""}CI {publicacao.pastaCi}
+        </span>
+      ) : null}
       {publicacao.grupoCliente ? <span className="font-medium text-slate-800">{publicacao.grupoCliente}</span> : null}
       {publicacao.cliente ? <span>{publicacao.cliente}</span> : null}
       {publicacao.advogadoResponsavel ? <span>Resp.: {publicacao.advogadoResponsavel}</span> : null}
