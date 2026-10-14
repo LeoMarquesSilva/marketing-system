@@ -28,12 +28,12 @@ const TEOR_LISTAGEM = 1500;
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
-function admin(): SupabaseClient {
+export function admin(): SupabaseClient {
   if (!supabaseUrl || !serviceKey) throw new VistagemError("Supabase não configurado no servidor.", 500);
   return createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 }
 
-function falhou(contexto: string, erro: { message: string } | null): never {
+export function falhou(contexto: string, erro: { message: string } | null): never {
   console.error(`[vistagem] ${contexto}:`, erro?.message);
   throw new VistagemError(`Não foi possível ${contexto}.`, 500);
 }
@@ -44,7 +44,7 @@ function emLotes<T>(itens: T[], tamanho = LOTE_INSERCAO): T[][] {
   return lotes;
 }
 
-function hojeEmSaoPaulo(): string {
+export function hojeEmSaoPaulo(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
 }
 
@@ -79,10 +79,10 @@ function arquivoResumo(row: ArquivoRow): ArquivoKurierResumo {
   };
 }
 
-const COLUNAS_PUBLICACAO =
-  "id, kurier_arquivo_id, linha_arquivo, numero_processo, numero_processo_original, tribunal, justica, data_divulgacao, data_publicacao, nome_localizado, djen_id_comunicacao, djen_orgao, djen_tipo_comunicacao, djen_intimados, status, motivo_descarte, duplicidade_de, duplicidade_resultado, duplicidade_criterio, documento_ids, duplicidade_revisada_por, duplicidade_revisada_em, pasta_ci, cliente, grupo_cliente, advogado_responsavel, situacao_processo, escritorio_responsavel, demanda_risco, pendencia, pastas_candidatas, triada_em, teor";
+export const COLUNAS_PUBLICACAO =
+  "id, kurier_arquivo_id, linha_arquivo, numero_processo, numero_processo_original, tribunal, justica, data_divulgacao, data_publicacao, nome_localizado, djen_id_comunicacao, djen_orgao, djen_tipo_comunicacao, djen_intimados, status, motivo_descarte, duplicidade_de, duplicidade_resultado, duplicidade_criterio, documento_ids, duplicidade_revisada_por, duplicidade_revisada_em, pasta_ci, cliente, grupo_cliente, advogado_responsavel, situacao_processo, escritorio_responsavel, demanda_risco, pendencia, pastas_candidatas, triada_em, observacao_vistagem, vistado_por, vistado_em, conferido_por, conferido_em, devolucao_motivo, devolvido_em, teor";
 
-type PublicacaoRow = {
+export type PublicacaoRow = {
   id: string; kurier_arquivo_id: string | null; linha_arquivo: number | null; numero_processo: string | null;
   numero_processo_original: string; tribunal: string | null; justica: PublicacaoResumo["justica"];
   data_divulgacao: string | null; data_publicacao: string | null; nome_localizado: string | null;
@@ -93,10 +93,12 @@ type PublicacaoRow = {
   duplicidade_revisada_por: string | null; duplicidade_revisada_em: string | null;
   pasta_ci: string | null; cliente: string | null; grupo_cliente: string | null; advogado_responsavel: string | null;
   situacao_processo: string | null; escritorio_responsavel: string | null; demanda_risco: boolean | null;
-  pendencia: Pendencia | null; pastas_candidatas: PastaSioe[] | null; triada_em: string | null; teor: string;
+  pendencia: Pendencia | null; pastas_candidatas: PastaSioe[] | null; triada_em: string | null;
+  observacao_vistagem: string | null; vistado_por: string | null; vistado_em: string | null; conferido_por: string | null;
+  conferido_em: string | null; devolucao_motivo: string | null; devolvido_em: string | null; teor: string;
 };
 
-function publicacaoResumo(row: PublicacaoRow, limiteTeor: number | null = TEOR_LISTAGEM): PublicacaoResumo {
+export function publicacaoResumo(row: PublicacaoRow, limiteTeor: number | null = TEOR_LISTAGEM): PublicacaoResumo {
   const resumir = limiteTeor !== null && row.teor.length > limiteTeor;
   return {
     id: row.id,
@@ -128,6 +130,11 @@ function publicacaoResumo(row: PublicacaoRow, limiteTeor: number | null = TEOR_L
     pendencia: row.pendencia,
     pastasCandidatas: row.pastas_candidatas ?? [],
     triadaEm: row.triada_em,
+    observacaoVistagem: row.observacao_vistagem,
+    vistadoEm: row.vistado_em,
+    conferidoEm: row.conferido_em,
+    devolucaoMotivo: row.devolucao_motivo,
+    devolvidoEm: row.devolvido_em,
     teor: resumir ? `${row.teor.slice(0, limiteTeor as number)}…` : row.teor,
     teorResumido: resumir,
   };

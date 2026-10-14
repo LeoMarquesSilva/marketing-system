@@ -46,7 +46,7 @@ describe("visibilidade por perfil", () => {
     const hrefs = visibleHrefs({ role: "admin" });
     expect(hrefs).toContain("/");
     expect(hrefs).not.toContain("/conteudo/inicio");
-    for (const href of ["/nfc", "/icp", "/operacoes-legais", "/operacoes-legais/vistagem", "/operacoes-legais/vistagem/controladoria", "/operacoes-legais/vistagem/duplicidades", "/rh/organograma", "/admin", "/fotos-colaboradores"]) {
+    for (const href of ["/nfc", "/icp", "/operacoes-legais", "/operacoes-legais/vistagem", "/operacoes-legais/vistagem/controladoria", "/operacoes-legais/vistagem/duplicidades", "/operacoes-legais/vistagem/juridico", "/operacoes-legais/vistagem/conferencia", "/rh/organograma", "/admin", "/fotos-colaboradores"]) {
       expect(hrefs).toContain(href);
     }
   });
@@ -56,9 +56,18 @@ describe("visibilidade por perfil", () => {
     expect(hrefs).toContain("/planner");
     expect(hrefs).toContain("/usuarios");
     expect(hrefs).toContain("/meus-clientes/nps");
-    for (const href of ["/nfc", "/icp", "/operacoes-legais", "/operacoes-legais/vistagem", "/operacoes-legais/vistagem/controladoria", "/operacoes-legais/vistagem/duplicidades", "/cafe-cultura", "/rh/ferias", "/admin", "/conteudo/inicio"]) {
+    for (const href of ["/nfc", "/icp", "/operacoes-legais", "/operacoes-legais/vistagem", "/operacoes-legais/vistagem/controladoria", "/operacoes-legais/vistagem/duplicidades", "/operacoes-legais/vistagem/juridico", "/operacoes-legais/vistagem/conferencia", "/cafe-cultura", "/rh/ferias", "/admin", "/conteudo/inicio"]) {
       expect(hrefs).not.toContain(href);
     }
+  });
+
+  it("permissão de Vistagem mostra só o painel de vistagem em Operações Legais", () => {
+    const nav = buildNav({ role: null, permissions: ["/operacoes-legais/vistagem"] });
+    const operacoes = nav.find((front) => front.id === "operacoes-legais");
+    expect(operacoes?.features.map((feature) => feature.id)).toEqual(["vistagem"]);
+    expect(visibleHrefs({ role: null, permissions: ["/operacoes-legais/vistagem"] })).toContain(
+      "/operacoes-legais/vistagem/controladoria"
+    );
   });
 
   it("colaborador de área jurídica sem permissões vê só o fluxo de conteúdo", () => {
