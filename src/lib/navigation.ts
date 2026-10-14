@@ -45,7 +45,9 @@ import {
   hasCafeCulturaAccess,
   hasIcpAccess,
   hasOperacoesLegaisAccess,
+  hasVistagemAccess,
   isAdminRole,
+  isVistagemPath,
   isCollaboratorPhotosManager,
   resolveAllowedSections,
   type AccessProfile,
@@ -305,6 +307,8 @@ export const NAV_FRONTS: NavFront[] = [
           { href: "/operacoes-legais/vistagem", label: "Captura" },
           { href: "/operacoes-legais/vistagem/controladoria", label: "Controladoria" },
           { href: "/operacoes-legais/vistagem/duplicidades", label: "Duplicidades" },
+          { href: "/operacoes-legais/vistagem/juridico", label: "Jurídico" },
+          { href: "/operacoes-legais/vistagem/conferencia", label: "Conferência" },
         ],
       },
     ],
@@ -383,6 +387,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
     return (href) => {
       if (ALWAYS_VISIBLE.has(href)) return true;
       if (href === "/fotos-colaboradores") return isCollaboratorPhotosManager(profile);
+      if (isVistagemPath(href)) return hasVistagemAccess(profile);
       if (href.startsWith("/operacoes-legais")) return hasOperacoesLegaisAccess(profile);
       if (href === "/icp") return hasIcpAccess(profile);
       if (href === "/conteudo/gustavo") return gustavo;
@@ -404,6 +409,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
 
   const isAdmin = isAdminRole(profile);
   return (href) => {
+    if (isVistagemPath(href)) return hasVistagemAccess(profile);
     if (href.startsWith("/operacoes-legais/")) return hasOperacoesLegaisAccess(profile);
     switch (href) {
       case "/conteudo/inicio":

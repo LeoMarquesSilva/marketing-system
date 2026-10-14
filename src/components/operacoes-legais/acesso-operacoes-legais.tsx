@@ -4,13 +4,13 @@ import { useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { LoaderCircle } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
-import { hasOperacoesLegaisAccess } from "@/lib/access-control";
+import { hasVistagemAccess } from "@/lib/access-control";
 
-/** Mostra o conteúdo só para quem tem Operações Legais; os dados são protegidos de novo nas rotas. */
+/** Mostra as telas da Vistagem só para quem tem o painel liberado; os dados são protegidos de novo nas rotas. */
 export function AcessoOperacoesLegais({ children }: { children: ReactNode }) {
   const { user, profile, loading } = useAuth();
   const router = useRouter();
-  const permitido = Boolean(user) && hasOperacoesLegaisAccess(profile);
+  const permitido = Boolean(user) && hasVistagemAccess(profile);
 
   useEffect(() => {
     if (!loading && !permitido) router.replace("/");

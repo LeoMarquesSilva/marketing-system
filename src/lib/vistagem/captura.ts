@@ -1,4 +1,4 @@
-import { chaveDecisao, indicesDePrincipal, normalizarTexto } from "./duplicidade";
+import { chaveDecisao, extrairIdsDocumento, indicesDePrincipal, normalizarTexto } from "./duplicidade";
 import { lerComunicacaoDjen } from "./djen";
 import { normalizarProcesso } from "./processo";
 import { normalizarTribunal } from "./tribunal";
@@ -22,7 +22,8 @@ export function montarPublicacoes(linhas: KurierLinha[]): PublicacaoCapturada[] 
     const processo = normalizarProcesso(linha.numeroProcesso, linha.teor);
     const djen = indice ? null : lerComunicacaoDjen(linha.teor);
     const grupo = `${processo.digitos}|${normalizarTexto(djen?.orgao ?? "")}|${djen?.dataDisponibilizacao ?? linha.dataDivulgacao}`;
-    return { linha, indice, processo, djen, grupo };
+    const documentoIds = indice ? [] : extrairIdsDocumento(djen?.corpo ?? linha.teor);
+    return { linha, indice, processo, djen, grupo, documentoIds };
   });
 
   // Cada cópia do DJEN pode listar só a própria parte; os nomes de todas as
@@ -46,7 +47,16 @@ export function montarPublicacoes(linhas: KurierLinha[]): PublicacaoCapturada[] 
           nomesDasPartes: nomesPorGrupo.get(item.grupo) ?? [],
         })
   );
-  const principais = indicesDePrincipal(chaves);
+  const porTexto = indicesDePrincipal(chaves);
+
+  // Segundo critério: mesmo processo, mesma data e mesmo(s) Id(s) de documento do PJe.
+  const chavesPorId = base.map((item) =>
+    item.processo.digitos && item.documentoIds.length
+      ? `${item.processo.digitos}|${item.djen?.dataDisponibilizacao ?? item.linha.dataDivulgacao}|${item.documentoIds.join(",")}`
+      : null
+  );
+  const porId = indicesDePrincipal(chavesPorId.map((chave, posicao) => (porTexto[posicao] >= 0 ? null : chave)));
+  const principais = porTexto.map((principal, posicao) => (principal >= 0 ? principal : porId[posicao]));
 
   return base.map((item, posicao): PublicacaoCapturada => {
     const principal = principais[posicao];
@@ -67,9 +77,11 @@ export function montarPublicacoes(linhas: KurierLinha[]): PublicacaoCapturada[] 
       teor: item.linha.teor,
       djen: item.djen,
       chaveDecisao: chaves[posicao],
+      documentoIds: item.documentoIds,
       status,
       motivoDescarte: item.indice ? MOTIVO_INDICE : null,
       duplicidadeDeLinha: principal >= 0 ? base[principal].linha.linha : null,
+      duplicidadeCriterio: porTexto[posicao] >= 0 ? "texto" : principal >= 0 ? "id_documento" : null,
     };
   });
 }

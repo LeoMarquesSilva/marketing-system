@@ -25,7 +25,8 @@ function resumoTriagem(triagem: SincronizacaoResultado["triagem"]): string {
   if (!triagem) return "";
   if (triagem.erro) return ` Triagem com o SIOE falhou: ${triagem.erro}`;
   if (!triagem.triadas) return "";
-  return ` Triagem: ${triagem.juridico} para o jurídico, ${triagem.pendentes} pendente(s) na controladoria.`;
+  const descartadas = triagem.descartadas ? `, ${triagem.descartadas} ex-cliente(s) sem o escritório descartada(s)` : "";
+  return ` Triagem: ${triagem.juridico} para o jurídico, ${triagem.pendentes} pendente(s) na controladoria${descartadas}.`;
 }
 
 function SituacaoArquivo({ arquivo }: { arquivo: ArquivoKurierResumo }) {

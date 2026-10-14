@@ -15,6 +15,8 @@ export type PublicacaoStatus =
 
 export type DuplicidadeResultado = "confirmada" | "nao_duplicidade";
 
+export type DuplicidadeCriterio = "texto" | "id_documento";
+
 /** Uma linha da aba "Publicações" do xlsx diário da Kurier. */
 export interface KurierLinha {
   /** Número da linha no Excel (1 = primeira linha da planilha). */
@@ -112,6 +114,8 @@ export interface PublicacaoResumo {
   motivoDescarte: string | null;
   duplicidadeDe: string | null;
   duplicidadeResultado: DuplicidadeResultado | null;
+  duplicidadeCriterio: DuplicidadeCriterio | null;
+  documentoIds: string[];
   /** Triagem com o SIOE. */
   pastaCi: string | null;
   cliente: string | null;
@@ -123,6 +127,12 @@ export interface PublicacaoResumo {
   pendencia: Pendencia | null;
   pastasCandidatas: PastaSioe[];
   triadaEm: string | null;
+  /** Vistagem do jurídico e conferência da controladoria. */
+  observacaoVistagem: string | null;
+  vistadoEm: string | null;
+  conferidoEm: string | null;
+  devolucaoMotivo: string | null;
+  devolvidoEm: string | null;
   teor: string;
   /** true quando `teor` foi encurtado na listagem. */
   teorResumido: boolean;
@@ -140,6 +150,7 @@ export interface TriagemResumo {
   triadas: number;
   juridico: number;
   pendentes: number;
+  descartadas: number;
   porEscritorio: Record<string, number>;
   erro?: string;
 }
@@ -181,8 +192,62 @@ export interface PublicacaoCapturada {
   teor: string;
   djen: DjenDados | null;
   chaveDecisao: string | null;
+  /** Ids de documento do PJe citados no texto. */
+  documentoIds: string[];
   status: Extract<PublicacaoStatus, "captada" | "duplicidade" | "descartada">;
   motivoDescarte: string | null;
   /** Linha da publicação principal quando esta é duplicidade dentro do mesmo arquivo. */
   duplicidadeDeLinha: number | null;
+  /** Como a duplicidade foi reconhecida: mesmo texto ou mesmo Id de documento. */
+  duplicidadeCriterio: DuplicidadeCriterio | null;
+}
+
+// ---------------------------------------------------------------------------
+// Vistagem do jurídico e conferência
+// ---------------------------------------------------------------------------
+
+export type EnvioStatus = "nao_enviado" | "pendente" | "enviado" | "processando" | "concluido" | "erro";
+
+export interface AgendamentoResumo {
+  id: string;
+  ordem: number;
+  etiqueta: "PRAZO" | "PROVIDENCIA";
+  tarefa: string;
+  data: string;
+  responsavel: string;
+  revisor: string | null;
+  observacao: string | null;
+  envioStatus: EnvioStatus;
+  envioSimulado: boolean | null;
+  viosTarefaId: string | null;
+  envioErro: string | null;
+  enviadoEm: string | null;
+}
+
+export interface CatalogoVistagem {
+  area: string;
+  atualizadoEm: string;
+  tarefas: { PRAZO: { id: string; nome: string }[]; PROVIDENCIA: { id: string; nome: string }[] };
+  usuarios: { id: string; nome: string }[];
+}
+
+export interface VistagemDetalhe {
+  publicacao: PublicacaoResumo;
+  agendamentos: AgendamentoResumo[];
+  catalogo: CatalogoVistagem | null;
+  responsavelSugerido: string | null;
+  hoje: string;
+}
+
+export interface ConferenciaItem {
+  publicacao: PublicacaoResumo;
+  agendamentos: AgendamentoResumo[];
+  vistadoPor: string | null;
+  conferidoPor: string | null;
+}
+
+export interface ConferenciaResposta {
+  aConferir: ConferenciaItem[];
+  enviadas: ConferenciaItem[];
+  envioSimulado: boolean;
 }
