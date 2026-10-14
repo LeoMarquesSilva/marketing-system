@@ -12,6 +12,10 @@ const nextConfig: NextConfig = {
       "@radix-ui/react-label",
     ],
   } as NextConfig["experimental"],
+  // Arquivos do modelo de certificado lidos com fs pela rota (fora de /public).
+  outputFileTracingIncludes: {
+    "/api/certificados/modelo/*": ["./src/lib/certificados/assets/**/*"],
+  },
   async redirects() {
     return [
       // Nome antigo da página de aprovação de reels.

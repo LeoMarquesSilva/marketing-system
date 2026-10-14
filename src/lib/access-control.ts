@@ -42,6 +42,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/eventos", label: "Gestão de eventos" },
   { key: "/cafe-cultura", label: "Café com Cultura", manualOnly: true },
   { key: "/email-marketing", label: "E-mail marketing" },
+  { key: "/certificados", label: "Certificados" },
   { key: "/nfc", label: "NFC Hub" },
   { key: "/meus-clientes", label: "Cadastro de clientes e NPS", alwaysAllowed: true },
   { key: "/fotos-colaboradores", label: "Fotos dos colaboradores" },

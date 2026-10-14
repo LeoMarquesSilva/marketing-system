@@ -72,6 +72,76 @@ const LABEL_PATTERN = new RegExp(
   "g"
 );
 
+/** Quebra "Fulano, Beltrana e Ciclano" em nomes individuais. */
+export function splitNames(raw: string): string[] {
+  return raw
+    .split(/\s*,\s*|\s+e\s+|\s*\/\s*|\s+&\s+/)
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+/** O mínimo do cadastro de usuários que serve para casar nomes e e-mails. */
+export interface PersonDirectoryEntry {
+  name: string;
+  email: string | null;
+}
+
+export interface PersonLookup<T extends PersonDirectoryEntry> {
+  byEmail: Map<string, T>;
+  byLocalPart: Map<string, T>;
+  byName: Map<string, T>;
+}
+
+/** Parte local do e-mail (antes do @), usada pra casar apesar do domínio ter mudado (bpplaw.com.br → bismarchipires.com.br). */
+function emailLocalPart(email: string): string {
+  return email.trim().toLowerCase().split("@")[0] ?? "";
+}
+
+export function buildPersonLookup<T extends PersonDirectoryEntry>(users: T[]): PersonLookup<T> {
+  const byEmail = new Map<string, T>();
+  const byLocalPart = new Map<string, T>();
+  const byName = new Map<string, T>();
+  for (const user of users) {
+    if (user.email) {
+      const email = user.email.trim().toLowerCase();
+      byEmail.set(email, user);
+      const localPart = emailLocalPart(email);
+      if (localPart && !byLocalPart.has(localPart)) byLocalPart.set(localPart, user);
+    }
+    byName.set(user.name.trim().toLowerCase(), user);
+  }
+  return { byEmail, byLocalPart, byName };
+}
+
+/** Casa um nome e/ou e-mail (vindo do Responsum/SharePoint) com o cadastro do ORQESTRAI. */
+export function resolvePerson<T extends PersonDirectoryEntry>(
+  { email, name }: { email?: string; name?: string },
+  { byEmail, byLocalPart, byName }: PersonLookup<T>
+): { user: T | null; label: string } {
+  const trimmedEmail = email?.trim().toLowerCase();
+  if (trimmedEmail) {
+    const match = byEmail.get(trimmedEmail) ?? byLocalPart.get(emailLocalPart(trimmedEmail));
+    if (match) return { user: match, label: match.name };
+  }
+  const trimmedName = name?.trim();
+  if (trimmedName) {
+    const match = byName.get(trimmedName.toLowerCase());
+    if (match) return { user: match, label: match.name };
+  }
+  return { user: null, label: trimmedName ?? trimmedEmail ?? "" };
+}
+
+/** Casa uma entrada da presença (nome OU e-mail, vindo do SharePoint) com o cadastro do ORQESTRAI. */
+export function resolveAttendee<T extends PersonDirectoryEntry>(
+  raw: string,
+  lookup: PersonLookup<T>
+): { user: T | null; label: string } {
+  const trimmed = raw.trim();
+  return trimmed.includes("@")
+    ? resolvePerson({ email: trimmed }, lookup)
+    : resolvePerson({ name: trimmed }, lookup);
+}
+
 /**
  * Extrai os campos da nota da automação. Retorna null quando o texto não
  * parece seguir o modelo conhecido (sem "Ticket ID:"/"Tema:"), para não

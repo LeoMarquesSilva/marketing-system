@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Award,
   ChevronDown,
@@ -8,6 +9,7 @@ import {
   Clock,
   ClipboardList,
   ExternalLink,
+  FileBadge,
   Loader2,
   Mail,
   RefreshCw,
@@ -15,10 +17,18 @@ import {
   UserCheck,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useAuth } from "@/contexts/auth-context";
+import { canAccessPath } from "@/lib/access-control";
 import { AreaIcon, getAreaIconStyle } from "@/lib/area-icons";
 import { cn } from "@/lib/utils";
 import { fetchActiveUsers, type User } from "@/lib/users";
-import type { CertificadoWorkshopInfo } from "@/lib/certificado-workshop";
+import {
+  buildPersonLookup,
+  resolveAttendee,
+  resolvePerson,
+  splitNames,
+  type CertificadoWorkshopInfo,
+} from "@/lib/certificado-workshop";
 
 interface CertificadoWorkshopSectionProps {
   requestId: string;
@@ -36,51 +46,6 @@ function getInitials(name: string): string {
     .slice(0, 2)
     .join("")
     .toUpperCase();
-}
-
-/** Parte local do e-mail (antes do @), usada pra casar apesar do domínio ter mudado (bpplaw.com.br → bismarchipires.com.br). */
-function emailLocalPart(email: string): string {
-  return email.trim().toLowerCase().split("@")[0] ?? "";
-}
-
-interface UserDirectoryLookup {
-  byEmail: Map<string, User>;
-  byLocalPart: Map<string, User>;
-  byName: Map<string, User>;
-}
-
-/** Casa um nome e/ou e-mail (vindo do Responsum/SharePoint) com o cadastro do ORQESTRAI. */
-function resolvePerson(
-  { email, name }: { email?: string; name?: string },
-  { byEmail, byLocalPart, byName }: UserDirectoryLookup
-): { user: User | null; label: string } {
-  const trimmedEmail = email?.trim().toLowerCase();
-  if (trimmedEmail) {
-    const match = byEmail.get(trimmedEmail) ?? byLocalPart.get(emailLocalPart(trimmedEmail));
-    if (match) return { user: match, label: match.name };
-  }
-  const trimmedName = name?.trim();
-  if (trimmedName) {
-    const match = byName.get(trimmedName.toLowerCase());
-    if (match) return { user: match, label: match.name };
-  }
-  return { user: null, label: trimmedName ?? trimmedEmail ?? "" };
-}
-
-/** Casa uma entrada da presença (nome OU e-mail, vindo do SharePoint) com o cadastro do ORQESTRAI. */
-function resolveAttendee(raw: string, lookup: UserDirectoryLookup): { user: User | null; label: string } {
-  const trimmed = raw.trim();
-  return trimmed.includes("@")
-    ? resolvePerson({ email: trimmed }, lookup)
-    : resolvePerson({ name: trimmed }, lookup);
-}
-
-/** Quebra "Fulano, Beltrana e Ciclano" em nomes individuais. */
-function splitNames(raw: string): string[] {
-  return raw
-    .split(/\s*,\s*|\s+e\s+|\s*\/\s*|\s+&\s+/)
-    .map((name) => name.trim())
-    .filter(Boolean);
 }
 
 const sectionClass =
@@ -104,6 +69,7 @@ export function CertificadoWorkshopSection({ requestId, info, rawDescription, on
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [userDirectory, setUserDirectory] = useState<User[]>([]);
+  const { profile } = useAuth();
 
   useEffect(() => {
     let cancelled = false;
@@ -115,21 +81,8 @@ export function CertificadoWorkshopSection({ requestId, info, rawDescription, on
     };
   }, []);
 
-  const lookup = useMemo<UserDirectoryLookup>(() => {
-    const byEmail = new Map<string, User>();
-    const byLocalPart = new Map<string, User>();
-    const byName = new Map<string, User>();
-    for (const user of userDirectory) {
-      if (user.email) {
-        const email = user.email.trim().toLowerCase();
-        byEmail.set(email, user);
-        const localPart = emailLocalPart(email);
-        if (localPart && !byLocalPart.has(localPart)) byLocalPart.set(localPart, user);
-      }
-      byName.set(user.name.trim().toLowerCase(), user);
-    }
-    return { byEmail, byLocalPart, byName };
-  }, [userDirectory]);
+  const lookup = useMemo(() => buildPersonLookup(userDirectory), [userDirectory]);
+  const canOpenGenerator = Boolean(profile) && canAccessPath(profile, "/certificados");
 
   const responsavel = useMemo(
     () => resolvePerson({ email: info.responsavelEmail, name: info.responsavelNome }, lookup),
@@ -302,6 +255,15 @@ export function CertificadoWorkshopSection({ requestId, info, rawDescription, on
       </div>
 
       <div className="flex flex-wrap gap-2 border-t border-amber-300/40 pt-3 dark:border-amber-500/20">
+        {canOpenGenerator && (
+          <Link
+            href={`/certificados?card=${encodeURIComponent(requestId)}`}
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            <FileBadge className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            Gerar certificados
+          </Link>
+        )}
         {info.ticketUrl && (
           <a
             href={info.ticketUrl}

@@ -12,6 +12,7 @@
 
 import type { LucideIcon } from "lucide-react";
 import {
+  Award,
   CalendarClock,
   CalendarRange,
   Camera,
@@ -187,6 +188,12 @@ export const NAV_FRONTS: NavFront[] = [
         shortLabel: "E-mail",
         icon: Mail,
         pages: [{ href: "/email-marketing", label: "E-mail marketing" }],
+      },
+      {
+        id: "certificados",
+        label: "Certificados",
+        icon: Award,
+        pages: [{ href: "/certificados", label: "Certificados" }],
       },
       {
         id: "eventos",
