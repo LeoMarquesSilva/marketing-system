@@ -133,6 +133,8 @@ export interface PublicacaoResumo {
   conferidoEm: string | null;
   devolucaoMotivo: string | null;
   devolvidoEm: string | null;
+  checadoEm: string | null;
+  checkNota: string | null;
   teor: string;
   /** true quando `teor` foi encurtado na listagem. */
   teorResumido: boolean;
@@ -238,12 +240,14 @@ export interface VistagemDetalhe {
   /** Por que não há lista de tarefas (catálogo indisponível ou área sem catálogo). */
   catalogoErro: string | null;
   responsavelSugerido: string | null;
+  inconsistencias: InconsistenciaResumo[];
   hoje: string;
 }
 
 export interface ConferenciaItem {
   publicacao: PublicacaoResumo;
   agendamentos: AgendamentoResumo[];
+  inconsistencias: InconsistenciaResumo[];
   vistadoPor: string | null;
   conferidoPor: string | null;
 }
@@ -252,4 +256,31 @@ export interface ConferenciaResposta {
   aConferir: ConferenciaItem[];
   enviadas: ConferenciaItem[];
   envioSimulado: boolean;
+}
+
+export interface InconsistenciaResumo {
+  id: string;
+  origem: "juridico" | "agendamento";
+  tipo: string;
+  subtipo: string | null;
+  descricao: string;
+  criadoPor: string | null;
+  criadoEm: string;
+  contestacao: string | null;
+  contestadoPor: string | null;
+  contestadoEm: string | null;
+  excluidaEm: string | null;
+  excluidaPor: string | null;
+  motivoExclusao: string | null;
+}
+
+export interface InconsistenciaItem {
+  inconsistencia: InconsistenciaResumo;
+  publicacao: PublicacaoResumo;
+}
+
+export interface CheckResposta {
+  aChecar: ConferenciaItem[];
+  revisar: ConferenciaItem[];
+  checadas: ConferenciaItem[];
 }

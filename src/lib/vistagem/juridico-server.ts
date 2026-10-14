@@ -10,6 +10,7 @@ import {
   type AgendamentoEntrada,
 } from "./agendamento";
 import { VistagemError } from "./errors";
+import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
 import { carregarCatalogoProcessos, catalogoDaArea, consultarFilaSama, enfileirarNoSama, envioSimulado, type CatalogoArea } from "./sama";
 import { COLUNAS_PUBLICACAO, admin, falhou, hojeEmSaoPaulo, publicacaoResumo, type PublicacaoRow } from "./server";
 import type {
@@ -17,7 +18,10 @@ import type {
   CatalogoVistagem,
   ConferenciaItem,
   ConferenciaResposta,
+  CheckResposta,
   EnvioStatus,
+  InconsistenciaItem,
+  InconsistenciaResumo,
   PublicacaoResumo,
   VistagemDetalhe,
 } from "./types";
@@ -133,9 +137,11 @@ export async function obterVistagem(id: string): Promise<VistagemDetalhe> {
   if (!catalogo && !catalogoErro) {
     catalogoErro = `Não há lista de tarefas do VIOS para a área "${publicacao.area_processo ?? publicacao.escritorio_responsavel ?? "sem área"}" desta pasta.`;
   }
+  const inconsistencias = await inconsistenciasPorPublicacao([id]);
   return {
     publicacao: publicacaoResumo(publicacao, null),
     agendamentos: agendamentos.get(id) ?? [],
+    inconsistencias: inconsistencias.get(id) ?? [],
     catalogo,
     catalogoErro,
     responsavelSugerido: catalogo ? responsavelSugerido(publicacao.advogado_responsavel, catalogo.usuarios)?.nome ?? null : null,
@@ -206,22 +212,29 @@ async function nomesDosUsuarios(ids: (string | null)[]): Promise<Map<string, str
   return new Map((data ?? []).map((row: { auth_id: string; name: string | null }) => [row.auth_id, row.name ?? ""]));
 }
 
-async function itensDeConferencia(status: string[], limite: number, ordemAscendente: boolean): Promise<ConferenciaItem[]> {
+async function itensDeConferencia(
+  status: string[],
+  limite: number,
+  ordemAscendente: boolean,
+  ordem: "vistado_em" | "conferido_em" | "checado_em" = ordemAscendente ? "vistado_em" : "conferido_em"
+): Promise<ConferenciaItem[]> {
   const { data, error } = await admin()
     .from("vistagem_publicacoes")
     .select(COLUNAS_PUBLICACAO)
     .in("status", status)
-    .order(ordemAscendente ? "vistado_em" : "conferido_em", { ascending: ordemAscendente })
+    .order(ordem, { ascending: ordemAscendente, nullsFirst: false })
     .limit(limite);
   if (error) falhou("carregar a conferência", error);
   const linhas = (data ?? []) as PublicacaoRow[];
-  const [agendamentos, nomes] = await Promise.all([
+  const [agendamentos, nomes, inconsistencias] = await Promise.all([
     agendamentosPorPublicacao(linhas.map((row) => row.id)),
     nomesDosUsuarios(linhas.flatMap((row) => [row.vistado_por, row.conferido_por])),
+    inconsistenciasPorPublicacao(linhas.map((row) => row.id)),
   ]);
   return linhas.map((row) => ({
     publicacao: publicacaoResumo(row, 1500),
     agendamentos: agendamentos.get(row.id) ?? [],
+    inconsistencias: inconsistencias.get(row.id) ?? [],
     vistadoPor: row.vistado_por ? nomes.get(row.vistado_por) ?? null : null,
     conferidoPor: row.conferido_por ? nomes.get(row.conferido_por) ?? null : null,
   }));
@@ -352,16 +365,25 @@ export async function reenviarGravando(id: string): Promise<{ enviadas: number }
 }
 
 /** Não validado: volta para o jurídico com o motivo, mantendo as tarefas para ajuste. */
-export async function devolverVistagem(id: string, motivo: string, authUserId: string): Promise<void> {
-  const texto = motivo.trim();
-  if (!texto) throw new VistagemError("Informe o motivo da devolução.");
+export async function devolverVistagem(id: string, entrada: InconsistenciaEntrada, authUserId: string): Promise<void> {
+  const validacao = validarInconsistencia("juridico", entrada);
+  if (!validacao.ok) throw new VistagemError(validacao.erro);
   const publicacao = await carregarPublicacao(id);
   if (publicacao.status !== "controladoria_vistar") throw new VistagemError("Esta publicação não está aguardando conferência.", 409);
-  const { data: atualizada, error } = await admin()
+  const db = admin();
+  const { error: erroInconsistencia } = await db.from("vistagem_inconsistencias").insert({
+    publicacao_id: id,
+    origem: "juridico",
+    tipo: validacao.valor.tipo,
+    descricao: validacao.valor.descricao,
+    criado_por: authUserId,
+  });
+  if (erroInconsistencia) falhou("registrar a inconsistência", erroInconsistencia);
+  const { data: atualizada, error } = await db
     .from("vistagem_publicacoes")
     .update({
       status: "juridico_vistar",
-      devolucao_motivo: texto.slice(0, 2000),
+      devolucao_motivo: `${validacao.valor.tipo}: ${validacao.valor.descricao}`.slice(0, 2000),
       devolvido_por: authUserId,
       devolvido_em: new Date().toISOString(),
       devolucoes: (publicacao.devolucoes ?? 0) + 1,
@@ -411,4 +433,161 @@ export async function atualizarEnvios(): Promise<{ consultadas: number; concluid
     }
   }
   return resumo;
+}
+
+// ---------------------------------------------------------------------------
+// Inconsistências: contestação do jurídico e exclusão pela controladoria
+// ---------------------------------------------------------------------------
+
+const COLUNAS_INCONSISTENCIA =
+  "id, publicacao_id, origem, tipo, subtipo, descricao, criado_por, criado_em, contestacao, contestado_por, contestado_em, excluida_em, excluida_por, motivo_exclusao";
+
+type InconsistenciaRow = {
+  id: string; publicacao_id: string; origem: "juridico" | "agendamento"; tipo: string; subtipo: string | null; descricao: string;
+  criado_por: string | null; criado_em: string; contestacao: string | null; contestado_por: string | null; contestado_em: string | null;
+  excluida_em: string | null; excluida_por: string | null; motivo_exclusao: string | null;
+};
+
+function inconsistenciaResumo(row: InconsistenciaRow, nomes: Map<string, string>): InconsistenciaResumo {
+  const nome = (id: string | null) => (id ? nomes.get(id) ?? null : null);
+  return {
+    id: row.id,
+    origem: row.origem,
+    tipo: row.tipo,
+    subtipo: row.subtipo,
+    descricao: row.descricao,
+    criadoPor: nome(row.criado_por),
+    criadoEm: row.criado_em,
+    contestacao: row.contestacao,
+    contestadoPor: nome(row.contestado_por),
+    contestadoEm: row.contestado_em,
+    excluidaEm: row.excluida_em,
+    excluidaPor: nome(row.excluida_por),
+    motivoExclusao: row.motivo_exclusao,
+  };
+}
+
+async function resumirInconsistencias(linhas: InconsistenciaRow[]): Promise<InconsistenciaResumo[]> {
+  const nomes = await nomesDosUsuarios(linhas.flatMap((row) => [row.criado_por, row.contestado_por, row.excluida_por]));
+  return linhas.map((row) => inconsistenciaResumo(row, nomes));
+}
+
+async function inconsistenciasPorPublicacao(ids: string[]): Promise<Map<string, InconsistenciaResumo[]>> {
+  const mapa = new Map<string, InconsistenciaResumo[]>();
+  if (!ids.length) return mapa;
+  const { data, error } = await admin()
+    .from("vistagem_inconsistencias")
+    .select(COLUNAS_INCONSISTENCIA)
+    .in("publicacao_id", ids)
+    .order("criado_em", { ascending: false });
+  if (error) falhou("carregar as inconsistências", error);
+  const linhas = (data ?? []) as InconsistenciaRow[];
+  const resumos = await resumirInconsistencias(linhas);
+  linhas.forEach((row, indice) => {
+    const lista = mapa.get(row.publicacao_id) ?? [];
+    lista.push(resumos[indice]);
+    mapa.set(row.publicacao_id, lista);
+  });
+  return mapa;
+}
+
+async function carregarInconsistencia(id: string): Promise<InconsistenciaRow> {
+  const { data, error } = await admin().from("vistagem_inconsistencias").select(COLUNAS_INCONSISTENCIA).eq("id", id).maybeSingle();
+  if (error) falhou("carregar a inconsistência", error);
+  if (!data) throw new VistagemError("Inconsistência não encontrada.", 404);
+  return data as InconsistenciaRow;
+}
+
+/** O jurídico contesta a devolução (ex.: a controladoria devolveu errado). */
+export async function contestarInconsistencia(id: string, texto: string, authUserId: string): Promise<void> {
+  const contestacao = texto.trim();
+  if (!contestacao) throw new VistagemError("Explique por que a devolução não procede.");
+  const atual = await carregarInconsistencia(id);
+  if (atual.excluida_em) throw new VistagemError("Esta inconsistência já foi excluída.", 409);
+  const { error } = await admin()
+    .from("vistagem_inconsistencias")
+    .update({ contestacao: contestacao.slice(0, 2000), contestado_por: authUserId, contestado_em: new Date().toISOString() })
+    .eq("id", id);
+  if (error) falhou("registrar a contestação", error);
+}
+
+/** A controladoria exclui a inconsistência (não conta nos indicadores), com o motivo. */
+export async function excluirInconsistencia(id: string, motivo: string, authUserId: string): Promise<void> {
+  const texto = motivo.trim();
+  if (!texto) throw new VistagemError("Informe o motivo da exclusão.");
+  const atual = await carregarInconsistencia(id);
+  if (atual.excluida_em) throw new VistagemError("Esta inconsistência já foi excluída.", 409);
+  const { error } = await admin()
+    .from("vistagem_inconsistencias")
+    .update({ excluida_em: new Date().toISOString(), excluida_por: authUserId, motivo_exclusao: texto.slice(0, 2000) })
+    .eq("id", id);
+  if (error) falhou("excluir a inconsistência", error);
+}
+
+export async function listarInconsistencias(situacao: "contestadas" | "abertas" | "excluidas"): Promise<InconsistenciaItem[]> {
+  let consulta = admin().from("vistagem_inconsistencias").select(COLUNAS_INCONSISTENCIA).order("criado_em", { ascending: false }).limit(300);
+  if (situacao === "excluidas") consulta = consulta.not("excluida_em", "is", null);
+  else if (situacao === "contestadas") consulta = consulta.is("excluida_em", null).not("contestado_em", "is", null);
+  else consulta = consulta.is("excluida_em", null);
+  const { data, error } = await consulta;
+  if (error) falhou("carregar as inconsistências", error);
+  const linhas = (data ?? []) as InconsistenciaRow[];
+  if (!linhas.length) return [];
+  const ids = [...new Set(linhas.map((row) => row.publicacao_id))];
+  const { data: pubs, error: erroPubs } = await admin().from("vistagem_publicacoes").select(COLUNAS_PUBLICACAO).in("id", ids);
+  if (erroPubs) falhou("carregar as publicações das inconsistências", erroPubs);
+  const porId = new Map(((pubs ?? []) as PublicacaoRow[]).map((row) => [row.id, publicacaoResumo(row, 600)]));
+  const resumos = await resumirInconsistencias(linhas);
+  return linhas
+    .map((row, indice) => ({ inconsistencia: resumos[indice], publicacao: porId.get(row.publicacao_id) }))
+    .filter((item): item is InconsistenciaItem => Boolean(item.publicacao));
+}
+
+// ---------------------------------------------------------------------------
+// Check dos agendamentos
+// ---------------------------------------------------------------------------
+
+/** Publicações com as tarefas gravadas no VIOS aguardando o check, as em revisão e as últimas checadas. */
+export async function listarCheck(): Promise<CheckResposta> {
+  const [aChecar, revisar, checadas] = await Promise.all([
+    itensDeConferencia(["agendado"], 300, true, "conferido_em"),
+    itensDeConferencia(["revisar"], 300, true, "conferido_em"),
+    itensDeConferencia(["checado"], 100, false, "checado_em"),
+  ]);
+  return { aChecar, revisar, checadas };
+}
+
+/** Check OK: a esteira e o agendamento no VIOS estão corretos. */
+export async function checarPublicacao(id: string, nota: string | null, authUserId: string): Promise<void> {
+  const publicacao = await carregarPublicacao(id);
+  if (!["agendado", "revisar"].includes(publicacao.status)) throw new VistagemError("Esta publicação não está aguardando check.", 409);
+  const { data, error } = await admin()
+    .from("vistagem_publicacoes")
+    .update({ status: "checado", check_nota: nota?.trim().slice(0, 2000) || null, checado_por: authUserId, checado_em: new Date().toISOString() })
+    .eq("id", id)
+    .in("status", ["agendado", "revisar"])
+    .select("id")
+    .maybeSingle();
+  if (error) falhou("registrar o check", error);
+  if (!data) throw new VistagemError("A publicação foi alterada por outra pessoa. Recarregue a página.", 409);
+}
+
+/** Erro encontrado no check: registra a inconsistência de agendamento e deixa a publicação em revisão. */
+export async function apontarErroAgendamento(id: string, entrada: InconsistenciaEntrada, authUserId: string): Promise<void> {
+  const validacao = validarInconsistencia("agendamento", entrada);
+  if (!validacao.ok) throw new VistagemError(validacao.erro);
+  const publicacao = await carregarPublicacao(id);
+  if (!["agendado", "revisar"].includes(publicacao.status)) throw new VistagemError("Esta publicação não está aguardando check.", 409);
+  const db = admin();
+  const { error } = await db.from("vistagem_inconsistencias").insert({
+    publicacao_id: id,
+    origem: "agendamento",
+    tipo: validacao.valor.tipo,
+    subtipo: validacao.valor.subtipo,
+    descricao: validacao.valor.descricao,
+    criado_por: authUserId,
+  });
+  if (error) falhou("registrar a inconsistência", error);
+  const { error: erroStatus } = await db.from("vistagem_publicacoes").update({ status: "revisar" }).eq("id", id).in("status", ["agendado", "revisar"]);
+  if (erroStatus) falhou("colocar a publicação em revisão", erroStatus);
 }

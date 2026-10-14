@@ -6,12 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
-import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, EnvioStatus } from "@/lib/vistagem/types";
+import { TIPOS_INCONSISTENCIA_JURIDICO } from "@/lib/vistagem/inconsistencias";
+import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, EnvioStatus, InconsistenciaItem } from "@/lib/vistagem/types";
+import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { linkTarefaVios } from "@/lib/vistagem/vios-links";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { DadosPasta, DadosPublicacao, TeorPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
 
-type Aba = "conferir" | "enviadas";
+type Aba = "conferir" | "enviadas" | "inconsistencias";
 
 interface Integracao {
   nome: string;
@@ -100,6 +102,7 @@ function CartaoConferencia({
   onConcluido?: (id: string, mensagem: string) => void;
 }) {
   const [devolvendo, setDevolvendo] = useState(false);
+  const [tipoInconsistencia, setTipoInconsistencia] = useState("");
   const [motivo, setMotivo] = useState("");
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState("");
@@ -112,7 +115,7 @@ function CartaoConferencia({
       const resposta = await authFetch(`/api/operacoes-legais/vistagem/conferencia/${publicacao.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ acao, motivo }),
+        body: JSON.stringify({ acao, tipo: tipoInconsistencia, descricao: motivo }),
       });
       const corpo = await resposta.json();
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha na conferência.");
@@ -146,6 +149,13 @@ function CartaoConferencia({
         </div>
         <DadosPasta publicacao={{ ...publicacao, pendencia: null }} />
         <DadosPublicacao publicacao={publicacao} />
+        {item.inconsistencias.length ? (
+          <div className="space-y-2">
+            {item.inconsistencias.map((inconsistencia) => (
+              <CartaoInconsistencia key={inconsistencia.id} inconsistencia={inconsistencia} acao={null} />
+            ))}
+          </div>
+        ) : null}
         {publicacao.observacaoVistagem ? (
           <p className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">
             <span className="font-medium">Observação do jurídico: </span>
@@ -169,11 +179,27 @@ function CartaoConferencia({
           {devolvendo ? (
             <div className="space-y-2">
               <label className="block space-y-1 text-xs font-medium text-slate-600">
-                Motivo da devolução (o jurídico vê este texto)
-                <Textarea value={motivo} onChange={(evento) => setMotivo(evento.target.value)} rows={2} maxLength={2000} autoFocus />
+                Inconsistência do jurídico
+                <select
+                  className="h-10 w-full rounded-md border border-input bg-white px-3 text-sm sm:w-72"
+                  value={tipoInconsistencia}
+                  onChange={(evento) => setTipoInconsistencia(evento.target.value)}
+                  autoFocus
+                >
+                  <option value="">Escolha o tipo…</option>
+                  {TIPOS_INCONSISTENCIA_JURIDICO.map((valor) => (
+                    <option key={valor} value={valor}>
+                      {valor}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block space-y-1 text-xs font-medium text-slate-600">
+                O que está errado (o jurídico vê este texto)
+                <Textarea value={motivo} onChange={(evento) => setMotivo(evento.target.value)} rows={2} maxLength={2000} />
               </label>
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={() => agir("devolver")} disabled={ocupado || !motivo.trim()}>
+                <Button size="sm" variant="outline" onClick={() => agir("devolver")} disabled={ocupado || !tipoInconsistencia || !motivo.trim()}>
                   {ocupado ? <LoaderCircle className="animate-spin" /> : <Undo2 />}
                   Devolver ao jurídico
                 </Button>
@@ -198,6 +224,77 @@ function CartaoConferencia({
         </div>
       ) : null}
     </li>
+  );
+}
+
+type SituacaoInconsistencia = "contestadas" | "abertas" | "excluidas";
+
+/** Inconsistências registradas: contestadas pelo jurídico primeiro, com a exclusão pela controladoria. */
+function PainelInconsistencias() {
+  const [situacao, setSituacao] = useState<SituacaoInconsistencia>("contestadas");
+  const [itens, setItens] = useState<InconsistenciaItem[] | null>(null);
+  const [erro, setErro] = useState("");
+
+  const carregar = useCallback(async (alvo: SituacaoInconsistencia) => {
+    setItens(null);
+    setErro("");
+    try {
+      const resposta = await authFetch(`/api/operacoes-legais/vistagem/inconsistencias?situacao=${alvo}`);
+      const corpo = await resposta.json();
+      if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao carregar as inconsistências.");
+      setItens(corpo.inconsistencias);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao carregar as inconsistências.");
+      setItens([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void carregar(situacao);
+  }, [carregar, situacao]);
+
+  return (
+    <div className="space-y-3">
+      <div className="inline-flex rounded-lg border border-[#dce9eb] bg-white p-1" role="group" aria-label="Situação das inconsistências">
+        {(
+          [
+            ["contestadas", "Contestadas pelo jurídico"],
+            ["abertas", "Todas em aberto"],
+            ["excluidas", "Excluídas"],
+          ] as [SituacaoInconsistencia, string][]
+        ).map(([valor, rotulo]) => (
+          <Button
+            key={valor}
+            variant="ghost"
+            size="sm"
+            aria-pressed={situacao === valor}
+            className={cn(situacao === valor && "bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")}
+            onClick={() => setSituacao(valor)}
+          >
+            {rotulo}
+          </Button>
+        ))}
+      </div>
+      {erro ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{erro}</p> : null}
+      {itens === null ? (
+        <div className="flex justify-center p-8"><LoaderCircle className="size-5 animate-spin text-slate-400" aria-label="Carregando" /></div>
+      ) : itens.length === 0 ? (
+        <p className="rounded-lg border border-[#dce9eb] bg-white p-8 text-center text-sm text-slate-600">Nenhuma inconsistência aqui.</p>
+      ) : (
+        <ul className="space-y-3">
+          {itens.map(({ inconsistencia, publicacao }) => (
+            <li key={inconsistencia.id} className="space-y-2 rounded-lg border border-[#dce9eb] bg-white p-4 shadow-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono text-sm font-medium text-slate-900">{publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}</span>
+                {publicacao.escritorioResponsavel ? <span className="text-xs text-slate-500">{publicacao.escritorioResponsavel}</span> : null}
+                <span className="text-xs text-slate-500">publicação {formatarData(publicacao.dataPublicacao)}</span>
+              </div>
+              <CartaoInconsistencia inconsistencia={inconsistencia} acao="excluir" onAlterada={() => void carregar(situacao)} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -255,7 +352,7 @@ function Conferencia() {
     setDados((atual) => (atual ? { ...atual, aConferir: atual.aConferir.filter((item) => item.publicacao.id !== id) } : atual));
   }
 
-  const lista = aba === "conferir" ? dados?.aConferir : dados?.enviadas;
+  const lista = aba === "conferir" ? dados?.aConferir : aba === "enviadas" ? dados?.enviadas : [];
 
   return (
     <div className="space-y-4">
@@ -266,7 +363,7 @@ function Conferencia() {
             <p className="text-sm text-slate-600">Valide para mandar as tarefas ao robô de agendamento do VIOS, ou devolva ao jurídico com o motivo.</p>
           </div>
           <div className="inline-flex rounded-lg border border-[#dce9eb] bg-white p-1" role="group" aria-label="Situação">
-            {(["conferir", "enviadas"] as Aba[]).map((valor) => (
+            {(["conferir", "enviadas", "inconsistencias"] as Aba[]).map((valor) => (
               <Button
                 key={valor}
                 variant="ghost"
@@ -275,8 +372,10 @@ function Conferencia() {
                 className={cn(aba === valor && "bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")}
                 onClick={() => setAba(valor)}
               >
-                {valor === "conferir" ? "A conferir" : "Enviadas ao robô"}
-                <span className="font-mono text-xs opacity-80">{valor === "conferir" ? dados?.aConferir.length ?? "" : dados?.enviadas.length ?? ""}</span>
+                {valor === "conferir" ? "A conferir" : valor === "enviadas" ? "Enviadas ao robô" : "Inconsistências"}
+                {valor !== "inconsistencias" ? (
+                  <span className="font-mono text-xs opacity-80">{valor === "conferir" ? dados?.aConferir.length ?? "" : dados?.enviadas.length ?? ""}</span>
+                ) : null}
               </Button>
             ))}
           </div>
@@ -316,7 +415,9 @@ function Conferencia() {
         </div>
       ) : null}
 
-      {lista === undefined ? (
+      {aba === "inconsistencias" ? (
+        <PainelInconsistencias />
+      ) : lista === undefined ? (
         <div className="flex justify-center p-8"><LoaderCircle className="size-5 animate-spin text-slate-400" aria-label="Carregando" /></div>
       ) : lista.length === 0 ? (
         <p className="rounded-lg border border-[#dce9eb] bg-white p-8 text-center text-sm text-slate-600">

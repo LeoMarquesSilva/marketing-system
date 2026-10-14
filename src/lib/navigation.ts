@@ -309,6 +309,7 @@ export const NAV_FRONTS: NavFront[] = [
           { href: "/operacoes-legais/vistagem/duplicidades", label: "Duplicidades" },
           { href: "/operacoes-legais/vistagem/juridico", label: "Jurídico" },
           { href: "/operacoes-legais/vistagem/conferencia", label: "Conferência" },
+          { href: "/operacoes-legais/vistagem/check", label: "Check" },
         ],
       },
     ],
