@@ -324,6 +324,7 @@ function linhaParaFila(publicacao: PublicacaoComArea, item: AgendamentoRow, simu
       tribunal: publicacao.tribunal,
       numeroProcesso: publicacao.numero_processo,
       djenIdComunicacao: publicacao.djen_id_comunicacao,
+      teor: publicacao.teor,
     },
     item.observacao
   );

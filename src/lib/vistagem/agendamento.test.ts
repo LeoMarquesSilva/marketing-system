@@ -5,6 +5,7 @@ import {
   siglasDoNome,
   usuarioPorSigla,
   avisosDaData,
+  LIMITE_TEOR_VIOS,
   montarObservacaoVios,
   paraDataVios,
   responsavelSugerido,
@@ -125,6 +126,16 @@ describe("auxiliares", () => {
     expect(
       montarObservacaoVios({ dataPublicacao: "2026-10-14", tribunal: "TRT2", numeroProcesso: "0001234-56.2026.5.02.0001", djenIdComunicacao: 123 }, "Prazo de 8 dias")
     ).toBe("Publicação de 14/10/2026 · TRT2 · Processo 0001234-56.2026.5.02.0001 · ID comunicação 123\nPrazo de 8 dias\nVistagem pelo Orquestra.");
+  });
+
+  it("leva o teor inteiro da publicação depois do cabeçalho", () => {
+    const publicacao = { dataPublicacao: "2026-10-14", tribunal: "TJSP", numeroProcesso: "1", djenIdComunicacao: null };
+    expect(montarObservacaoVios({ ...publicacao, teor: "PROCESSO:1 ORGÃO:Vara TEXTO: Intime-se a parte." }, null)).toBe(
+      "Publicação de 14/10/2026 · TJSP · Processo 1\nVistagem pelo Orquestra.\n\nTEOR DA PUBLICAÇÃO\nPROCESSO:1 ORGÃO:Vara\nTEXTO:\nIntime-se a parte."
+    );
+    const enorme = montarObservacaoVios({ ...publicacao, teor: "x".repeat(LIMITE_TEOR_VIOS + 500) }, null);
+    expect(enorme).toContain(`(Teor cortado: 30.000 de 30.500 caracteres. Íntegra no Orquestra.)`);
+    expect(enorme.length).toBeLessThan(LIMITE_TEOR_VIOS + 200);
   });
 });
 

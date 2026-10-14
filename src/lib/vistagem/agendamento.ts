@@ -165,9 +165,32 @@ export function validarAgendamentos(
   return { ok: true, itens: itens as AgendamentoValidado[] };
 }
 
-/** Descrição da tarefa no VIOS: referência da publicação + observação do vistador. */
+/** Teor máximo na descrição do VIOS; acima disso (raro) corta e avisa. */
+export const LIMITE_TEOR_VIOS = 30_000;
+
+const milhar = new Intl.NumberFormat("pt-BR");
+
+/** Teor da Kurier vem numa linha só: separa o TEXTO do cabeçalho (PROCESSO, ORGÃO...) e tira linhas vazias em excesso. */
+function teorParaVios(teor: string | null | undefined): string {
+  const limpo = String(teor ?? "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/\s+TEXTO:\s*/, "\nTEXTO:\n")
+    .trim();
+  if (limpo.length <= LIMITE_TEOR_VIOS) return limpo;
+  return `${limpo.slice(0, LIMITE_TEOR_VIOS).trimEnd()} […]\n(Teor cortado: ${milhar.format(LIMITE_TEOR_VIOS)} de ${milhar.format(limpo.length)} caracteres. Íntegra no Orquestra.)`;
+}
+
+/** Descrição da tarefa no VIOS: referência da publicação + observação do vistador + teor da publicação. */
 export function montarObservacaoVios(
-  publicacao: { dataPublicacao: string | null; tribunal: string | null; numeroProcesso: string | null; djenIdComunicacao: number | null },
+  publicacao: {
+    dataPublicacao: string | null;
+    tribunal: string | null;
+    numeroProcesso: string | null;
+    djenIdComunicacao: number | null;
+    teor?: string | null;
+  },
   observacao: string | null
 ): string {
   const referencia = [
@@ -178,7 +201,9 @@ export function montarObservacaoVios(
   ]
     .filter(Boolean)
     .join(" · ");
-  return [referencia, observacao?.trim(), "Vistagem pelo Orquestra."].filter(Boolean).join("\n");
+  const cabecalho = [referencia, observacao?.trim(), "Vistagem pelo Orquestra."].filter(Boolean).join("\n");
+  const teor = teorParaVios(publicacao.teor);
+  return teor ? `${cabecalho}\n\nTEOR DA PUBLICAÇÃO\n${teor}` : cabecalho;
 }
 
 /** Sigla do VIOS a partir do nome (ex.: "Fernanda Voltarelli Arnoni" → "FVA"), com e sem preposições. */
