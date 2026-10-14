@@ -6,13 +6,18 @@ import { montarPublicacoes } from "./captura";
 import { VistagemError } from "./errors";
 import { KurierArquivoInvalidoError, lerNomeArquivoKurier, lerPlanilhaKurier } from "./kurier-arquivo";
 import { baixarArquivoSharePoint, listarArquivosKurierSharePoint } from "./sharepoint";
+import { buscarPastaPorCi, buscarPastasPorCnj, carregarAreasDasPessoas } from "./sioe";
+import { ESCRITORIOS, temDemandaDeRisco, triar, type PastaSioe, type Pendencia } from "./triagem";
 import type {
   ArquivoKurierResumo,
   DuplicidadeItem,
   DuplicidadeResultado,
+  PendenciasControladoria,
   PublicacaoCapturada,
   PublicacaoResumo,
+  ResolucaoPendencia,
   SincronizacaoResultado,
+  TriagemResumo,
 } from "./types";
 
 const BUCKET = "vistagem-kurier";
@@ -74,7 +79,7 @@ function arquivoResumo(row: ArquivoRow): ArquivoKurierResumo {
 }
 
 const COLUNAS_PUBLICACAO =
-  "id, kurier_arquivo_id, linha_arquivo, numero_processo, numero_processo_original, tribunal, justica, data_divulgacao, data_publicacao, nome_localizado, djen_id_comunicacao, djen_orgao, djen_tipo_comunicacao, djen_intimados, status, motivo_descarte, duplicidade_de, duplicidade_resultado, duplicidade_revisada_por, duplicidade_revisada_em, teor";
+  "id, kurier_arquivo_id, linha_arquivo, numero_processo, numero_processo_original, tribunal, justica, data_divulgacao, data_publicacao, nome_localizado, djen_id_comunicacao, djen_orgao, djen_tipo_comunicacao, djen_intimados, status, motivo_descarte, duplicidade_de, duplicidade_resultado, duplicidade_revisada_por, duplicidade_revisada_em, pasta_ci, cliente, grupo_cliente, advogado_responsavel, situacao_processo, escritorio_responsavel, demanda_risco, pendencia, pastas_candidatas, triada_em, teor";
 
 type PublicacaoRow = {
   id: string; kurier_arquivo_id: string | null; linha_arquivo: number | null; numero_processo: string | null;
@@ -83,7 +88,10 @@ type PublicacaoRow = {
   djen_id_comunicacao: number | null; djen_orgao: string | null; djen_tipo_comunicacao: string | null;
   djen_intimados: string[] | null; status: PublicacaoResumo["status"]; motivo_descarte: string | null;
   duplicidade_de: string | null; duplicidade_resultado: DuplicidadeResultado | null;
-  duplicidade_revisada_por: string | null; duplicidade_revisada_em: string | null; teor: string;
+  duplicidade_revisada_por: string | null; duplicidade_revisada_em: string | null;
+  pasta_ci: string | null; cliente: string | null; grupo_cliente: string | null; advogado_responsavel: string | null;
+  situacao_processo: string | null; escritorio_responsavel: string | null; demanda_risco: boolean | null;
+  pendencia: Pendencia | null; pastas_candidatas: PastaSioe[] | null; triada_em: string | null; teor: string;
 };
 
 function publicacaoResumo(row: PublicacaoRow, limiteTeor: number | null = TEOR_LISTAGEM): PublicacaoResumo {
@@ -106,6 +114,16 @@ function publicacaoResumo(row: PublicacaoRow, limiteTeor: number | null = TEOR_L
     motivoDescarte: row.motivo_descarte,
     duplicidadeDe: row.duplicidade_de,
     duplicidadeResultado: row.duplicidade_resultado,
+    pastaCi: row.pasta_ci,
+    cliente: row.cliente,
+    grupoCliente: row.grupo_cliente,
+    advogadoResponsavel: row.advogado_responsavel,
+    situacaoProcesso: row.situacao_processo,
+    escritorioResponsavel: row.escritorio_responsavel,
+    demandaRisco: row.demanda_risco,
+    pendencia: row.pendencia,
+    pastasCandidatas: row.pastas_candidatas ?? [],
+    triadaEm: row.triada_em,
     teor: resumir ? `${row.teor.slice(0, limiteTeor as number)}…` : row.teor,
     teorResumido: resumir,
   };
@@ -153,6 +171,8 @@ export interface ImportacaoInput {
   origem: "sharepoint" | "upload";
   sharepointItemId?: string;
   enviadoPor?: string;
+  /** Triar logo após importar (a sincronização tria uma vez só, no fim). */
+  triar?: boolean;
 }
 
 /** Principais já gravadas em arquivos anteriores com as mesmas chaves (mesma publicação reenviada). */
@@ -179,7 +199,9 @@ async function principaisAnteriores(db: SupabaseClient, chaves: string[], arquiv
  * publicação e liga as duplicidades à publicação principal. Reenviar o mesmo
  * arquivo não duplica nada; um arquivo que falhou antes é reprocessado.
  */
-export async function importarArquivoKurier(input: ImportacaoInput): Promise<{ arquivo: ArquivoKurierResumo; novo: boolean }> {
+export async function importarArquivoKurier(
+  input: ImportacaoInput
+): Promise<{ arquivo: ArquivoKurierResumo; novo: boolean; triagem?: TriagemResumo }> {
   const meta = lerNomeArquivoKurier(input.nome);
   if (!meta) throw new VistagemError("O nome do arquivo não segue o padrão da Kurier (…_Lote-01_DDMMAAAA.xlsx).");
 
@@ -294,7 +316,8 @@ export async function importarArquivoKurier(input: ImportacaoInput): Promise<{ a
       .select(COLUNAS_ARQUIVO)
       .single<ArquivoRow>();
     if (error || !final) throw new Error(error?.message ?? "arquivo sumiu");
-    return { arquivo: arquivoResumo(final), novo: true };
+    const triagem = input.triar === false ? undefined : await triarSemFalhar({ arquivoId });
+    return { arquivo: arquivoResumo(final), novo: true, triagem };
   } catch (erro) {
     const mensagem =
       erro instanceof KurierArquivoInvalidoError ? erro.message : `Falha ao processar: ${erro instanceof Error ? erro.message : erro}`;
@@ -330,13 +353,21 @@ export async function sincronizarKurierSharePoint(): Promise<SincronizacaoResult
     }
     try {
       const conteudo = await baixarArquivoSharePoint(siteId, arquivo.id, token);
-      const { novo } = await importarArquivoKurier({ nome: arquivo.nome, conteudo, origem: "sharepoint", sharepointItemId: arquivo.id });
+      const { novo } = await importarArquivoKurier({
+        nome: arquivo.nome,
+        conteudo,
+        origem: "sharepoint",
+        sharepointItemId: arquivo.id,
+        triar: false,
+      });
       if (novo) resultado.importados += 1;
       resultado.resultados.push({ nome: arquivo.nome, situacao: novo ? "importado" : "ja_importado" });
     } catch (erro) {
       resultado.resultados.push({ nome: arquivo.nome, situacao: "erro", mensagem: erro instanceof Error ? erro.message : String(erro) });
     }
   }
+  // Tria o que foi importado e tenta de novo as que estavam sem pasta (a pasta pode ter sido aberta no VIOS).
+  resultado.triagem = await triarSemFalhar({ incluirSemPasta: true });
   return resultado;
 }
 
@@ -446,4 +477,179 @@ export async function revisarDuplicidade(id: string, resultado: DuplicidadeResul
     })
     .eq("id", id);
   if (erroUpdate) falhou("salvar a revisão da duplicidade", erroUpdate);
+  if (resultado === "nao_duplicidade") await triarSemFalhar({ ids: [id] });
+}
+
+// ---------------------------------------------------------------------------
+// Triagem com o SIOE
+// ---------------------------------------------------------------------------
+
+function camposDaTriagem(resultado: ReturnType<typeof triar>) {
+  const pasta = resultado.pasta;
+  return {
+    status: resultado.status,
+    pendencia: resultado.pendencia,
+    pasta_ci: pasta?.ci ?? null,
+    pasta_vinculo: pasta?.vinculo ?? null,
+    cliente: pasta?.cliente ?? null,
+    grupo_cliente: pasta?.grupoCliente ?? null,
+    area_processo: pasta?.area ?? null,
+    advogado_responsavel: pasta?.advogadoResponsavel ?? null,
+    situacao_processo: pasta?.situacao ?? null,
+    etiquetas: pasta?.etiquetas ?? null,
+    escritorio_responsavel: resultado.escritorio,
+    demanda_risco: resultado.demandaRisco,
+    pastas_candidatas: resultado.candidatas,
+    triada_em: new Date().toISOString(),
+  };
+}
+
+/**
+ * Cruza as publicações captadas com a base de processos do SIOE: uma pasta só
+ * vai para "juridico_vistar" no escritório do advogado responsável; sem pasta
+ * ou com mais de uma fica em "triagem_pendente" para a controladoria.
+ */
+export async function triarPublicacoes(
+  filtro: { ids?: string[]; arquivoId?: string; incluirSemPasta?: boolean } = {}
+): Promise<TriagemResumo> {
+  const db = admin();
+  let consulta = db.from("vistagem_publicacoes").select("id, processo_digitos").limit(2000);
+  consulta = filtro.incluirSemPasta
+    ? consulta.or("status.eq.captada,and(status.eq.triagem_pendente,pendencia.eq.sem_pasta)")
+    : consulta.eq("status", "captada");
+  if (filtro.ids?.length) consulta = consulta.in("id", filtro.ids);
+  if (filtro.arquivoId) consulta = consulta.eq("kurier_arquivo_id", filtro.arquivoId);
+  const { data, error } = await consulta;
+  if (error) falhou("carregar as publicações para a triagem", error);
+
+  const alvos = (data ?? []) as { id: string; processo_digitos: string | null }[];
+  const resumo: TriagemResumo = { triadas: 0, juridico: 0, pendentes: 0, porEscritorio: {} };
+  if (alvos.length === 0) return resumo;
+
+  const [pastas, areaDoAdvogado] = await Promise.all([
+    buscarPastasPorCnj(alvos.map((alvo) => alvo.processo_digitos ?? "")),
+    carregarAreasDasPessoas(),
+  ]);
+
+  for (const lote of emLotes(alvos, 10)) {
+    await Promise.all(
+      lote.map(async (alvo) => {
+        const resultado = triar(alvo.processo_digitos ? pastas.get(alvo.processo_digitos) ?? [] : [], areaDoAdvogado);
+        const { error: erroUpdate } = await db
+          .from("vistagem_publicacoes")
+          .update(camposDaTriagem(resultado))
+          .eq("id", alvo.id)
+          .in("status", ["captada", "triagem_pendente"]);
+        if (erroUpdate) throw new VistagemError(`Falha ao gravar a triagem: ${erroUpdate.message}`, 500);
+        resumo.triadas += 1;
+        if (resultado.status === "juridico_vistar" && resultado.escritorio) {
+          resumo.juridico += 1;
+          resumo.porEscritorio[resultado.escritorio] = (resumo.porEscritorio[resultado.escritorio] ?? 0) + 1;
+        } else {
+          resumo.pendentes += 1;
+        }
+      })
+    );
+  }
+  return resumo;
+}
+
+/** A triagem não pode derrubar a importação: se o SIOE falhar, as publicações ficam captadas para a próxima rodada. */
+async function triarSemFalhar(filtro: Parameters<typeof triarPublicacoes>[0]): Promise<TriagemResumo> {
+  try {
+    return await triarPublicacoes(filtro);
+  } catch (erro) {
+    const mensagem = erro instanceof Error ? erro.message : String(erro);
+    console.error("[vistagem] triagem falhou", mensagem);
+    return { triadas: 0, juridico: 0, pendentes: 0, porEscritorio: {}, erro: mensagem };
+  }
+}
+
+export async function listarPendenciasControladoria(limite = 300): Promise<PendenciasControladoria> {
+  const db = admin();
+  const [pendentes, exClientes] = await Promise.all([
+    db
+      .from("vistagem_publicacoes")
+      .select(COLUNAS_PUBLICACAO)
+      .eq("status", "triagem_pendente")
+      .order("data_publicacao", { ascending: false })
+      .order("linha_arquivo", { ascending: true })
+      .limit(limite),
+    db
+      .from("vistagem_publicacoes")
+      .select(COLUNAS_PUBLICACAO)
+      .eq("status", "juridico_vistar")
+      .eq("pendencia", "ex_cliente")
+      .order("data_publicacao", { ascending: false })
+      .order("linha_arquivo", { ascending: true })
+      .limit(limite),
+  ]);
+  if (pendentes.error) falhou("carregar as pendências da controladoria", pendentes.error);
+  if (exClientes.error) falhou("carregar as publicações de ex-clientes", exClientes.error);
+  return {
+    pendentes: ((pendentes.data ?? []) as PublicacaoRow[]).map((row) => publicacaoResumo(row)),
+    exClientes: ((exClientes.data ?? []) as PublicacaoRow[]).map((row) => publicacaoResumo(row)),
+  };
+}
+
+/** Prévia de uma pasta do SIOE para a controladoria escolher. */
+export async function consultarPastaSioe(ci: string): Promise<{ pasta: PastaSioe; escritorioSugerido: string | null }> {
+  const pasta = await buscarPastaPorCi(ci);
+  if (!pasta) throw new VistagemError(`CI ${ci} não encontrada no SIOE.`, 404);
+  const resultado = triar([pasta], await carregarAreasDasPessoas());
+  return { pasta, escritorioSugerido: resultado.escritorio };
+}
+
+/**
+ * A controladoria resolve a pendência escolhendo a pasta (CI) e/ou informando
+ * escritório, grupo e demanda de risco; a publicação vai para "juridico_vistar".
+ */
+export async function resolverPendencia(id: string, entrada: ResolucaoPendencia, authUserId: string): Promise<PublicacaoResumo> {
+  const db = admin();
+  const { data: atual, error } = await db
+    .from("vistagem_publicacoes")
+    .select("id, status, pasta_ci, pastas_candidatas")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) falhou("carregar a publicação", error);
+  if (!atual) throw new VistagemError("Publicação não encontrada.", 404);
+  if (atual.status !== "triagem_pendente") throw new VistagemError("Esta publicação não está pendente de triagem.", 409);
+
+  const ci = entrada.ci?.replace(/\D/g, "") || atual.pasta_ci || "";
+  let pasta: PastaSioe | null = null;
+  if (ci) {
+    const candidatas = (atual.pastas_candidatas ?? []) as PastaSioe[];
+    pasta = candidatas.find((candidata) => candidata.ci === ci) ?? (await buscarPastaPorCi(ci));
+    if (!pasta) throw new VistagemError(`CI ${ci} não encontrada no SIOE.`, 404);
+  }
+
+  const automatico = pasta ? triar([pasta], await carregarAreasDasPessoas()) : null;
+  const escritorio = entrada.escritorio?.trim() || automatico?.escritorio || null;
+  const grupo = entrada.grupo?.trim() || pasta?.grupoCliente?.trim() || null;
+  if (!escritorio) throw new VistagemError("Informe o escritório responsável.");
+  if (entrada.escritorio && !(ESCRITORIOS as readonly string[]).includes(escritorio)) {
+    throw new VistagemError("Escritório inválido.");
+  }
+  if (!grupo) throw new VistagemError("Informe o grupo do cliente.");
+
+  const campos = pasta && automatico ? camposDaTriagem(automatico) : {};
+  const { data: final, error: erroUpdate } = await db
+    .from("vistagem_publicacoes")
+    .update({
+      ...campos,
+      status: "juridico_vistar",
+      escritorio_responsavel: escritorio,
+      grupo_cliente: grupo,
+      demanda_risco: entrada.demandaRisco ?? (pasta ? temDemandaDeRisco(pasta) : false),
+      pastas_candidatas: (atual.pastas_candidatas ?? []) as PastaSioe[],
+      triagem_resolvida_por: authUserId,
+      triagem_resolvida_em: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("status", "triagem_pendente")
+    .select(COLUNAS_PUBLICACAO)
+    .maybeSingle();
+  if (erroUpdate) falhou("salvar a resolução da pendência", erroUpdate);
+  if (!final) throw new VistagemError("A publicação foi alterada por outra pessoa. Recarregue a página.", 409);
+  return publicacaoResumo(final as PublicacaoRow);
 }

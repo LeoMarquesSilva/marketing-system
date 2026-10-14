@@ -1,8 +1,11 @@
+import type { PastaSioe, Pendencia } from "./triagem";
+
 /** Situação da publicação no fluxo de vistagem (captura → vistagem → agendamento → revisão). */
 export type PublicacaoStatus =
   | "captada"
   | "duplicidade"
   | "descartada"
+  | "triagem_pendente"
   | "juridico_vistar"
   | "controladoria_vistar"
   | "pronto_para_agendar"
@@ -109,6 +112,17 @@ export interface PublicacaoResumo {
   motivoDescarte: string | null;
   duplicidadeDe: string | null;
   duplicidadeResultado: DuplicidadeResultado | null;
+  /** Triagem com o SIOE. */
+  pastaCi: string | null;
+  cliente: string | null;
+  grupoCliente: string | null;
+  advogadoResponsavel: string | null;
+  situacaoProcesso: string | null;
+  escritorioResponsavel: string | null;
+  demandaRisco: boolean | null;
+  pendencia: Pendencia | null;
+  pastasCandidatas: PastaSioe[];
+  triadaEm: string | null;
   teor: string;
   /** true quando `teor` foi encurtado na listagem. */
   teorResumido: boolean;
@@ -122,10 +136,32 @@ export interface DuplicidadeItem {
   revisadaEm: string | null;
 }
 
+export interface TriagemResumo {
+  triadas: number;
+  juridico: number;
+  pendentes: number;
+  porEscritorio: Record<string, number>;
+  erro?: string;
+}
+
 export interface SincronizacaoResultado {
   verificados: number;
   importados: number;
   resultados: { nome: string; situacao: "importado" | "ja_importado" | "erro"; mensagem?: string }[];
+  triagem?: TriagemResumo;
+}
+
+export interface PendenciasControladoria {
+  pendentes: PublicacaoResumo[];
+  exClientes: PublicacaoResumo[];
+}
+
+/** Resolução de uma pendência: CI escolhida e/ou dados informados pela controladoria. */
+export interface ResolucaoPendencia {
+  ci?: string;
+  escritorio?: string;
+  grupo?: string;
+  demandaRisco?: boolean;
 }
 
 /** Publicação pronta para gravar, ainda sem ids do banco. */
