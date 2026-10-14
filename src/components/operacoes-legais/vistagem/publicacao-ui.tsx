@@ -84,6 +84,15 @@ export function DadosPublicacao({ publicacao }: { publicacao: PublicacaoResumo }
           <dd className="font-mono">{publicacao.djenIdComunicacao}</dd>
         </div>
       ) : null}
+      {publicacao.documentoIds.length ? (
+        <div className="flex gap-1">
+          <dt className="text-slate-500">Id do documento:</dt>
+          <dd className="font-mono">
+            {publicacao.documentoIds.slice(0, 4).join(", ")}
+            {publicacao.documentoIds.length > 4 ? "…" : ""}
+          </dd>
+        </div>
+      ) : null}
       {publicacao.djenOrgao ? (
         <div className="flex gap-1 sm:col-span-2">
           <dt className="text-slate-500">Órgão:</dt>

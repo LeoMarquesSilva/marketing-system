@@ -221,7 +221,7 @@ function Controladoria() {
       const resumo = corpo as TriagemResumo;
       setAviso(
         resumo.triadas
-          ? `${resumo.triadas} publicação(ões) triada(s): ${resumo.juridico} para o jurídico, ${resumo.pendentes} ainda pendente(s).`
+          ? `${resumo.triadas} publicação(ões) triada(s): ${resumo.juridico} para o jurídico, ${resumo.pendentes} ainda pendente(s)${resumo.descartadas ? `, ${resumo.descartadas} descartada(s)` : ""}.`
           : "Nada novo para triar."
       );
       await carregar();
@@ -242,7 +242,7 @@ function Controladoria() {
         <div className="space-y-1">
           <h2 className="text-base font-semibold text-slate-900">Esteira da controladoria</h2>
           <p className="text-sm text-slate-600">
-            Publicações que a triagem com o SIOE não conseguiu mandar sozinha para uma área, e as de ex-clientes, que a controladoria vista.
+            Publicações que a triagem com o SIOE não conseguiu mandar sozinha para uma área, e as de ex-clientes, que a controladoria vista. Ex-cliente sem Ricardo Viscardi Pires ou Gustavo Bismarchi Motta na publicação é descartado automaticamente.
           </p>
         </div>
         <Button variant="outline" onClick={rodarTriagem} disabled={triando}>

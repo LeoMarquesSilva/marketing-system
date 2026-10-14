@@ -7,9 +7,10 @@ import { VistagemError } from "./errors";
 import { KurierArquivoInvalidoError, lerNomeArquivoKurier, lerPlanilhaKurier } from "./kurier-arquivo";
 import { baixarArquivoSharePoint, listarArquivosKurierSharePoint } from "./sharepoint";
 import { buscarPastaPorCi, buscarPastasPorCnj, carregarAreasDasPessoas } from "./sioe";
-import { ESCRITORIOS, temDemandaDeRisco, triar, type PastaSioe, type Pendencia } from "./triagem";
+import { ESCRITORIOS, citaAdvogadoDoEscritorio, temDemandaDeRisco, triar, type PastaSioe, type Pendencia } from "./triagem";
 import type {
   ArquivoKurierResumo,
+  DuplicidadeCriterio,
   DuplicidadeItem,
   DuplicidadeResultado,
   PendenciasControladoria,
@@ -79,7 +80,7 @@ function arquivoResumo(row: ArquivoRow): ArquivoKurierResumo {
 }
 
 const COLUNAS_PUBLICACAO =
-  "id, kurier_arquivo_id, linha_arquivo, numero_processo, numero_processo_original, tribunal, justica, data_divulgacao, data_publicacao, nome_localizado, djen_id_comunicacao, djen_orgao, djen_tipo_comunicacao, djen_intimados, status, motivo_descarte, duplicidade_de, duplicidade_resultado, duplicidade_revisada_por, duplicidade_revisada_em, pasta_ci, cliente, grupo_cliente, advogado_responsavel, situacao_processo, escritorio_responsavel, demanda_risco, pendencia, pastas_candidatas, triada_em, teor";
+  "id, kurier_arquivo_id, linha_arquivo, numero_processo, numero_processo_original, tribunal, justica, data_divulgacao, data_publicacao, nome_localizado, djen_id_comunicacao, djen_orgao, djen_tipo_comunicacao, djen_intimados, status, motivo_descarte, duplicidade_de, duplicidade_resultado, duplicidade_criterio, documento_ids, duplicidade_revisada_por, duplicidade_revisada_em, pasta_ci, cliente, grupo_cliente, advogado_responsavel, situacao_processo, escritorio_responsavel, demanda_risco, pendencia, pastas_candidatas, triada_em, teor";
 
 type PublicacaoRow = {
   id: string; kurier_arquivo_id: string | null; linha_arquivo: number | null; numero_processo: string | null;
@@ -88,6 +89,7 @@ type PublicacaoRow = {
   djen_id_comunicacao: number | null; djen_orgao: string | null; djen_tipo_comunicacao: string | null;
   djen_intimados: string[] | null; status: PublicacaoResumo["status"]; motivo_descarte: string | null;
   duplicidade_de: string | null; duplicidade_resultado: DuplicidadeResultado | null;
+  duplicidade_criterio: DuplicidadeCriterio | null; documento_ids: string[] | null;
   duplicidade_revisada_por: string | null; duplicidade_revisada_em: string | null;
   pasta_ci: string | null; cliente: string | null; grupo_cliente: string | null; advogado_responsavel: string | null;
   situacao_processo: string | null; escritorio_responsavel: string | null; demanda_risco: boolean | null;
@@ -114,6 +116,8 @@ function publicacaoResumo(row: PublicacaoRow, limiteTeor: number | null = TEOR_L
     motivoDescarte: row.motivo_descarte,
     duplicidadeDe: row.duplicidade_de,
     duplicidadeResultado: row.duplicidade_resultado,
+    duplicidadeCriterio: row.duplicidade_criterio,
+    documentoIds: row.documento_ids ?? [],
     pastaCi: row.pasta_ci,
     cliente: row.cliente,
     grupoCliente: row.grupo_cliente,
@@ -156,6 +160,7 @@ function publicacaoParaLinha(p: PublicacaoCapturada, arquivoId: string) {
     djen_partes: p.djen?.partes ?? [],
     djen_advogados: p.djen?.advogados ?? [],
     chave_decisao: p.chaveDecisao,
+    documento_ids: p.documentoIds,
     status: p.status,
     motivo_descarte: p.motivoDescarte,
   };
@@ -295,6 +300,7 @@ export async function importarArquivoKurier(
       .map((p) => ({
         ...publicacaoParaLinha(p, arquivoId),
         status: "duplicidade",
+        duplicidade_criterio: p.duplicidadeCriterio ?? "texto",
         duplicidade_de:
           p.duplicidadeDeLinha !== null ? idPorLinha.get(p.duplicidadeDeLinha) : anteriores.get(p.chaveDecisao as string),
       }));
@@ -489,6 +495,7 @@ function camposDaTriagem(resultado: ReturnType<typeof triar>) {
   return {
     status: resultado.status,
     pendencia: resultado.pendencia,
+    motivo_descarte: resultado.motivoDescarte,
     pasta_ci: pasta?.ci ?? null,
     pasta_vinculo: pasta?.vinculo ?? null,
     cliente: pasta?.cliente ?? null,
@@ -513,7 +520,7 @@ export async function triarPublicacoes(
   filtro: { ids?: string[]; arquivoId?: string; incluirSemPasta?: boolean } = {}
 ): Promise<TriagemResumo> {
   const db = admin();
-  let consulta = db.from("vistagem_publicacoes").select("id, processo_digitos").limit(2000);
+  let consulta = db.from("vistagem_publicacoes").select("id, processo_digitos, teor").limit(2000);
   consulta = filtro.incluirSemPasta
     ? consulta.or("status.eq.captada,and(status.eq.triagem_pendente,pendencia.eq.sem_pasta)")
     : consulta.eq("status", "captada");
@@ -522,8 +529,8 @@ export async function triarPublicacoes(
   const { data, error } = await consulta;
   if (error) falhou("carregar as publicações para a triagem", error);
 
-  const alvos = (data ?? []) as { id: string; processo_digitos: string | null }[];
-  const resumo: TriagemResumo = { triadas: 0, juridico: 0, pendentes: 0, porEscritorio: {} };
+  const alvos = (data ?? []) as { id: string; processo_digitos: string | null; teor: string }[];
+  const resumo: TriagemResumo = { triadas: 0, juridico: 0, pendentes: 0, descartadas: 0, porEscritorio: {} };
   if (alvos.length === 0) return resumo;
 
   const [pastas, areaDoAdvogado] = await Promise.all([
@@ -534,7 +541,9 @@ export async function triarPublicacoes(
   for (const lote of emLotes(alvos, 10)) {
     await Promise.all(
       lote.map(async (alvo) => {
-        const resultado = triar(alvo.processo_digitos ? pastas.get(alvo.processo_digitos) ?? [] : [], areaDoAdvogado);
+        const resultado = triar(alvo.processo_digitos ? pastas.get(alvo.processo_digitos) ?? [] : [], areaDoAdvogado, {
+          citaEscritorio: citaAdvogadoDoEscritorio(alvo.teor),
+        });
         const { error: erroUpdate } = await db
           .from("vistagem_publicacoes")
           .update(camposDaTriagem(resultado))
@@ -545,6 +554,8 @@ export async function triarPublicacoes(
         if (resultado.status === "juridico_vistar" && resultado.escritorio) {
           resumo.juridico += 1;
           resumo.porEscritorio[resultado.escritorio] = (resumo.porEscritorio[resultado.escritorio] ?? 0) + 1;
+        } else if (resultado.status === "descartada") {
+          resumo.descartadas += 1;
         } else {
           resumo.pendentes += 1;
         }
@@ -561,7 +572,7 @@ async function triarSemFalhar(filtro: Parameters<typeof triarPublicacoes>[0]): P
   } catch (erro) {
     const mensagem = erro instanceof Error ? erro.message : String(erro);
     console.error("[vistagem] triagem falhou", mensagem);
-    return { triadas: 0, juridico: 0, pendentes: 0, porEscritorio: {}, erro: mensagem };
+    return { triadas: 0, juridico: 0, pendentes: 0, descartadas: 0, porEscritorio: {}, erro: mensagem };
   }
 }
 
@@ -638,6 +649,7 @@ export async function resolverPendencia(id: string, entrada: ResolucaoPendencia,
     .update({
       ...campos,
       status: "juridico_vistar",
+      motivo_descarte: null,
       escritorio_responsavel: escritorio,
       grupo_cliente: grupo,
       demanda_risco: entrada.demandaRisco ?? (pasta ? temDemandaDeRisco(pasta) : false),

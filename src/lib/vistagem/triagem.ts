@@ -14,8 +14,9 @@ export interface PastaSioe {
 export type Pendencia = "sem_pasta" | "varias_pastas" | "ex_cliente" | "sem_area" | "sem_grupo";
 
 export interface ResultadoTriagem {
-  status: "juridico_vistar" | "triagem_pendente";
+  status: "juridico_vistar" | "triagem_pendente" | "descartada";
   pendencia: Pendencia | null;
+  motivoDescarte: string | null;
   pasta: PastaSioe | null;
   escritorio: string | null;
   demandaRisco: boolean | null;
@@ -23,6 +24,26 @@ export interface ResultadoTriagem {
 }
 
 export const ESCRITORIO_EX_CLIENTE = "Operações Legais";
+
+export const MOTIVO_EX_CLIENTE_SEM_ESCRITORIO =
+  "Ex-cliente sem advogado do escritório na publicação (Ricardo Viscardi Pires / Gustavo Bismarchi Motta).";
+
+/** Advogados do escritório monitorados na Kurier (nome e OAB/SP). */
+const ADVOGADOS_DO_ESCRITORIO = [
+  { nome: "gustavobismarchimotta", oab: "275477" },
+  { nome: "ricardoviscardipires", oab: "353389" },
+];
+
+/**
+ * A publicação cita um advogado do escritório? Compara o nome sem acentos,
+ * espaços e hifens (diários quebram nomes no fim da linha) e aceita também o
+ * número da OAB, que aparece quando o nome vem abreviado.
+ */
+export function citaAdvogadoDoEscritorio(texto: string): boolean {
+  const compacto = texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[\s-]+/g, "");
+  const digitos = texto.replace(/[.\s]/g, "");
+  return ADVOGADOS_DO_ESCRITORIO.some(({ nome, oab }) => compacto.includes(nome) || new RegExp(`(^|\\D)${oab}(\\D|$)`).test(digitos));
+}
 
 /** Escritórios que vistam publicações (áreas das tabelas de pessoas do SIOE). */
 export const ESCRITORIOS = [
@@ -71,10 +92,15 @@ export function escritorioDaAreaDoProcesso(area: string | null): string | null {
  * Decide para onde vai a publicação. A área é a do advogado responsável
  * (tabelas de pessoas do SIOE), com a área do processo como reserva.
  */
-export function triar(candidatas: PastaSioe[], areaDoAdvogado: (nome: string | null) => string | null): ResultadoTriagem {
+export function triar(
+  candidatas: PastaSioe[],
+  areaDoAdvogado: (nome: string | null) => string | null,
+  contexto: { citaEscritorio?: boolean } = {}
+): ResultadoTriagem {
   const pendente = (pendencia: Pendencia, pasta: PastaSioe | null = null): ResultadoTriagem => ({
     status: "triagem_pendente",
     pendencia,
+    motivoDescarte: null,
     pasta,
     escritorio: null,
     demandaRisco: pasta ? temDemandaDeRisco(pasta) : null,
@@ -85,9 +111,12 @@ export function triar(candidatas: PastaSioe[], areaDoAdvogado: (nome: string | n
 
   const exCliente = candidatas.find(ehExCliente);
   if (exCliente) {
+    // Ex-cliente sem advogado do escritório na publicação não precisa de vistagem.
+    const descartar = contexto.citaEscritorio === false;
     return {
-      status: "juridico_vistar",
+      status: descartar ? "descartada" : "juridico_vistar",
       pendencia: "ex_cliente",
+      motivoDescarte: descartar ? MOTIVO_EX_CLIENTE_SEM_ESCRITORIO : null,
       pasta: candidatas.length === 1 ? candidatas[0] : exCliente,
       escritorio: ESCRITORIO_EX_CLIENTE,
       demandaRisco: temDemandaDeRisco(exCliente),
@@ -105,6 +134,7 @@ export function triar(candidatas: PastaSioe[], areaDoAdvogado: (nome: string | n
   return {
     status: "juridico_vistar",
     pendencia: null,
+    motivoDescarte: null,
     pasta,
     escritorio,
     demandaRisco: temDemandaDeRisco(pasta),

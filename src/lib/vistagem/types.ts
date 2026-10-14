@@ -15,6 +15,8 @@ export type PublicacaoStatus =
 
 export type DuplicidadeResultado = "confirmada" | "nao_duplicidade";
 
+export type DuplicidadeCriterio = "texto" | "id_documento";
+
 /** Uma linha da aba "Publicações" do xlsx diário da Kurier. */
 export interface KurierLinha {
   /** Número da linha no Excel (1 = primeira linha da planilha). */
@@ -112,6 +114,8 @@ export interface PublicacaoResumo {
   motivoDescarte: string | null;
   duplicidadeDe: string | null;
   duplicidadeResultado: DuplicidadeResultado | null;
+  duplicidadeCriterio: DuplicidadeCriterio | null;
+  documentoIds: string[];
   /** Triagem com o SIOE. */
   pastaCi: string | null;
   cliente: string | null;
@@ -140,6 +144,7 @@ export interface TriagemResumo {
   triadas: number;
   juridico: number;
   pendentes: number;
+  descartadas: number;
   porEscritorio: Record<string, number>;
   erro?: string;
 }
@@ -181,8 +186,12 @@ export interface PublicacaoCapturada {
   teor: string;
   djen: DjenDados | null;
   chaveDecisao: string | null;
+  /** Ids de documento do PJe citados no texto. */
+  documentoIds: string[];
   status: Extract<PublicacaoStatus, "captada" | "duplicidade" | "descartada">;
   motivoDescarte: string | null;
   /** Linha da publicação principal quando esta é duplicidade dentro do mesmo arquivo. */
   duplicidadeDeLinha: number | null;
+  /** Como a duplicidade foi reconhecida: mesmo texto ou mesmo Id de documento. */
+  duplicidadeCriterio: DuplicidadeCriterio | null;
 }

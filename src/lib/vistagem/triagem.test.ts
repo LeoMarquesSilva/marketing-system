@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { ESCRITORIO_EX_CLIENTE, chavePessoa, escritorioDaAreaDoProcesso, ehExCliente, triar, type PastaSioe } from "./triagem";
+import {
+  ESCRITORIO_EX_CLIENTE,
+  MOTIVO_EX_CLIENTE_SEM_ESCRITORIO,
+  chavePessoa,
+  citaAdvogadoDoEscritorio,
+  escritorioDaAreaDoProcesso,
+  ehExCliente,
+  triar,
+  type PastaSioe,
+} from "./triagem";
 
 function pasta(extra: Partial<PastaSioe> = {}): PastaSioe {
   return {
@@ -83,5 +92,34 @@ describe("regras auxiliares", () => {
     expect(escritorioDaAreaDoProcesso("Insolvência")).toBe("Reestruturação");
     expect(escritorioDaAreaDoProcesso("Recuperação de Crédito")).toBe("Recuperação de Crédito");
     expect(escritorioDaAreaDoProcesso("")).toBeNull();
+  });
+});
+
+describe("ex-cliente sem advogado do escritório", () => {
+  const ex = pasta({ etiquetas: "Carteira Ex-Cliente" });
+
+  it("descarta quando a publicação não cita o escritório", () => {
+    expect(triar([ex], areaDoAdvogado, { citaEscritorio: false })).toMatchObject({
+      status: "descartada",
+      pendencia: "ex_cliente",
+      motivoDescarte: MOTIVO_EX_CLIENTE_SEM_ESCRITORIO,
+    });
+  });
+
+  it("mantém para a controladoria quando cita", () => {
+    expect(triar([ex], areaDoAdvogado, { citaEscritorio: true })).toMatchObject({ status: "juridico_vistar", motivoDescarte: null });
+  });
+
+  it("não descarta clientes ativos que não citam o escritório", () => {
+    expect(triar([pasta()], areaDoAdvogado, { citaEscritorio: false }).status).toBe("juridico_vistar");
+  });
+
+  it("reconhece o nome com quebra de linha, acento ou hífen e a OAB", () => {
+    expect(citaAdvogadoDoEscritorio("ADV: GUSTAVO BISMARCHI MOT-\nTA (OAB 1/SP)")).toBe(true);
+    expect(citaAdvogadoDoEscritorio("Ricardo  Viscardi Pires")).toBe(true);
+    expect(citaAdvogadoDoEscritorio("GUSTAVO B. MOTTA (OAB 275.477/SP)")).toBe(true);
+    expect(citaAdvogadoDoEscritorio("NOME:FULANO Nº OAB:353389 UF:SP")).toBe(true);
+    expect(citaAdvogadoDoEscritorio("ADV: OUTRO ADVOGADO (OAB 1275477/SP)")).toBe(false);
+    expect(citaAdvogadoDoEscritorio("ADV: OUTRO ADVOGADO (OAB 123456/SP)")).toBe(false);
   });
 });

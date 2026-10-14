@@ -48,6 +48,15 @@ export function chaveDecisao(input: {
 }
 
 /**
+ * Ids de documento do PJe citados no texto ("Id. 1c116a7", "Decisão ID ea1b5fa"):
+ * 7 caracteres hexadecimais com pelo menos um dígito.
+ */
+export function extrairIdsDocumento(texto: string): string[] {
+  const ids = [...texto.matchAll(/\bId\.?\s*:?\s*((?=[0-9a-f]*\d)[0-9a-f]{7})\b/gi)].map((m) => m[1].toLowerCase());
+  return [...new Set(ids)].sort();
+}
+
+/**
  * Para cada item, devolve o índice da primeira ocorrência da mesma chave
  * (a publicação principal) ou -1 quando o item é ele mesmo o principal.
  */

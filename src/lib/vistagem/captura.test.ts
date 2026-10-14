@@ -2,6 +2,7 @@ import * as XLSX from "xlsx";
 import { describe, expect, it } from "vitest";
 import { MOTIVO_INDICE, montarPublicacoes } from "./captura";
 import { lerComunicacaoDjen } from "./djen";
+import { extrairIdsDocumento } from "./duplicidade";
 import { KurierArquivoInvalidoError, lerPlanilhaKurier } from "./kurier-arquivo";
 import type { KurierLinha } from "./types";
 
@@ -142,5 +143,30 @@ describe("lerPlanilhaKurier", () => {
 
   it("recusa planilhas sem o cabeçalho da Kurier", () => {
     expect(() => lerPlanilhaKurier(planilha([["A", "B"], ["1", "2"]]))).toThrow(KurierArquivoInvalidoError);
+  });
+});
+
+describe("Id de documento do PJe", () => {
+  it("extrai Ids de 7 hexadecimais com dígito, sem repetir", () => {
+    expect(extrairIdsDocumento("Fica intimado da Decisão ID ea1b5fa (Id. 1c116a7) e Id. 1C116A7; ID COMUNICAÇÃO:755242200; ID decaded")).toEqual([
+      "1c116a7",
+      "ea1b5fa",
+    ]);
+  });
+
+  it("agrupa pelo Id do documento quando o texto muda entre as cópias", () => {
+    const a = comunicacao({ intimado: "ANA EXEMPLO", id: 901 }).replace("ciência da sentença", "ciência da sentença (Id. 1c116a7) ao reclamante");
+    const b = comunicacao({ intimado: "EMPRESA FICTICIA LTDA", id: 902 }).replace("ciência da sentença", "ciência da sentença (Id. 1c116a7) à reclamada");
+    const resultado = montarPublicacoes([linha(3, a), linha(4, b)]);
+    expect(resultado.map((p) => p.status)).toEqual(["captada", "duplicidade"]);
+    expect(resultado[1]).toMatchObject({ duplicidadeDeLinha: 3, duplicidadeCriterio: "id_documento", documentoIds: ["1c116a7"] });
+  });
+
+  it("marca o critério texto quando o despacho é igual", () => {
+    const resultado = montarPublicacoes([
+      linha(3, comunicacao({ intimado: "ANA EXEMPLO", id: 901 })),
+      linha(4, comunicacao({ intimado: "EMPRESA FICTICIA LTDA", id: 902 })),
+    ]);
+    expect(resultado[1].duplicidadeCriterio).toBe("texto");
   });
 });
