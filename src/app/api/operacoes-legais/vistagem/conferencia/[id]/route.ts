@@ -15,11 +15,15 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const authUserId = await exigirAcessoVistagem();
     const { id } = await context.params;
-    const corpo = (await request.json().catch(() => null)) as { acao?: unknown; motivo?: unknown } | null;
+    const corpo = (await request.json().catch(() => null)) as { acao?: unknown; tipo?: unknown; descricao?: unknown } | null;
     if (corpo?.acao === "validar") return NextResponse.json(await validarVistagem(id, authUserId));
     if (corpo?.acao === "reenviar") return NextResponse.json(await reenviarGravando(id));
     if (corpo?.acao === "devolver") {
-      await devolverVistagem(id, typeof corpo.motivo === "string" ? corpo.motivo : "", authUserId);
+      await devolverVistagem(
+        id,
+        { tipo: typeof corpo.tipo === "string" ? corpo.tipo : "", descricao: typeof corpo.descricao === "string" ? corpo.descricao : "" },
+        authUserId
+      );
       return NextResponse.json({ ok: true });
     }
     return NextResponse.json({ error: "Informe acao: validar, devolver ou reenviar." }, { status: 400 });

@@ -46,7 +46,7 @@ describe("visibilidade por perfil", () => {
     const hrefs = visibleHrefs({ role: "admin" });
     expect(hrefs).toContain("/");
     expect(hrefs).not.toContain("/conteudo/inicio");
-    for (const href of ["/nfc", "/icp", "/operacoes-legais", "/operacoes-legais/vistagem", "/operacoes-legais/vistagem/controladoria", "/operacoes-legais/vistagem/duplicidades", "/operacoes-legais/vistagem/juridico", "/operacoes-legais/vistagem/conferencia", "/rh/organograma", "/admin", "/fotos-colaboradores"]) {
+    for (const href of ["/nfc", "/icp", "/operacoes-legais", "/operacoes-legais/vistagem", "/operacoes-legais/vistagem/controladoria", "/operacoes-legais/vistagem/duplicidades", "/operacoes-legais/vistagem/juridico", "/operacoes-legais/vistagem/conferencia", "/operacoes-legais/vistagem/check", "/rh/organograma", "/admin", "/fotos-colaboradores"]) {
       expect(hrefs).toContain(href);
     }
   });
@@ -56,7 +56,7 @@ describe("visibilidade por perfil", () => {
     expect(hrefs).toContain("/planner");
     expect(hrefs).toContain("/usuarios");
     expect(hrefs).toContain("/meus-clientes/nps");
-    for (const href of ["/nfc", "/icp", "/operacoes-legais", "/operacoes-legais/vistagem", "/operacoes-legais/vistagem/controladoria", "/operacoes-legais/vistagem/duplicidades", "/operacoes-legais/vistagem/juridico", "/operacoes-legais/vistagem/conferencia", "/cafe-cultura", "/rh/ferias", "/admin", "/conteudo/inicio"]) {
+    for (const href of ["/nfc", "/icp", "/operacoes-legais", "/operacoes-legais/vistagem", "/operacoes-legais/vistagem/controladoria", "/operacoes-legais/vistagem/duplicidades", "/operacoes-legais/vistagem/juridico", "/operacoes-legais/vistagem/conferencia", "/operacoes-legais/vistagem/check", "/cafe-cultura", "/rh/ferias", "/admin", "/conteudo/inicio"]) {
       expect(hrefs).not.toContain(href);
     }
   });

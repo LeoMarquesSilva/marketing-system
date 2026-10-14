@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { avisosDaData } from "@/lib/vistagem/agendamento";
 import type { PublicacaoResumo, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
+import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { DadosPasta, DadosPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
 
 type Etiqueta = "PRAZO" | "PROVIDENCIA";
@@ -36,6 +37,7 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
   const [observacao, setObservacao] = useState("");
   const [erro, setErro] = useState("");
   const [enviando, setEnviando] = useState(false);
+  const [recarga, setRecarga] = useState(0);
 
   useEffect(() => {
     let cancelado = false;
@@ -67,7 +69,7 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
     return () => {
       cancelado = true;
     };
-  }, [id]);
+  }, [id, recarga]);
 
   function alterar(chave: number, mudanca: Partial<Linha>) {
     setLinhas((atuais) => atuais.map((linha) => (linha.chave === chave ? { ...linha, ...mudanca } : linha)));
@@ -120,7 +122,21 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
         Voltar à lista
       </Button>
 
-      {publicacao.devolucaoMotivo ? (
+      {detalhe.inconsistencias.some((item) => item.origem === "juridico") ? (
+        <div className="space-y-2" role="status">
+          <p className="text-sm font-medium text-amber-900">Devolvida pela controladoria em {formatarDataHora(publicacao.devolvidoEm)}</p>
+          {detalhe.inconsistencias
+            .filter((item) => item.origem === "juridico")
+            .map((item) => (
+              <CartaoInconsistencia
+                key={item.id}
+                inconsistencia={item}
+                acao="contestar"
+                onAlterada={() => setRecarga((valor) => valor + 1)}
+              />
+            ))}
+        </div>
+      ) : publicacao.devolucaoMotivo ? (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="status">
           <p className="font-medium">Devolvida pela controladoria em {formatarDataHora(publicacao.devolvidoEm)}</p>
           <p className="whitespace-pre-wrap">{publicacao.devolucaoMotivo}</p>
