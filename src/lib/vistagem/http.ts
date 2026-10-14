@@ -1,13 +1,13 @@
 import "server-only";
 
 import { NextResponse } from "next/server";
-import { requireAuthenticatedUser, requireOperacoesLegaisAccess } from "@/lib/api-auth";
+import { requireAuthenticatedUser, requireVistagemAccess } from "@/lib/api-auth";
 import { VistagemError } from "./errors";
 
-/** Usuário autenticado com acesso a Operações Legais; devolve o id de auth. */
+/** Usuário autenticado com acesso à Vistagem e agendamento; devolve o id de auth. */
 export async function exigirAcessoVistagem(): Promise<string> {
   const user = await requireAuthenticatedUser();
-  await requireOperacoesLegaisAccess(user.id);
+  await requireVistagemAccess(user.id);
   return user.id;
 }
 

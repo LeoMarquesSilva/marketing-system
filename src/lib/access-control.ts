@@ -38,6 +38,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/trafego-pago", label: "Tráfego pago" },
   { key: "/vios-tarefas", label: "Planner (tarefas do VIOS)" },
   { key: "/operacoes-legais", label: "Operações Legais", admin: true, manualOnly: true },
+  { key: "/operacoes-legais/vistagem", label: "Vistagem e agendamento", manualOnly: true },
   { key: "/eventos", label: "Gestão de eventos" },
   { key: "/cafe-cultura", label: "Café com Cultura", manualOnly: true },
   { key: "/email-marketing", label: "E-mail marketing" },
@@ -58,6 +59,7 @@ const VALID_PERMISSION_KEYS = new Set(ALL_KEYS);
 export const MEUS_CLIENTES_KEY = "/meus-clientes";
 export const CAFE_CULTURA_KEY = "/cafe-cultura";
 export const OPERACOES_LEGAIS_KEY = "/operacoes-legais";
+export const VISTAGEM_KEY = "/operacoes-legais/vistagem";
 export const ICP_KEY = "/icp";
 export const MANUAL_ONLY_KEYS = ACCESS_SECTIONS.filter((s) => s.manualOnly).map((s) => s.key);
 
@@ -164,6 +166,17 @@ export function hasOperacoesLegaisAccess(profile: AccessProfile | null | undefin
   return isAdminRole(profile);
 }
 
+/** Painel de Vistagem e agendamento: admin ou liberação manual em Usuários. */
+export function hasVistagemAccess(profile: AccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  return Boolean(profile.permissions?.includes(VISTAGEM_KEY));
+}
+
+export function isVistagemPath(pathname: string): boolean {
+  return pathname === VISTAGEM_KEY || pathname.startsWith(`${VISTAGEM_KEY}/`);
+}
+
 /**
  * ICP (receita por cliente): admin ou liberação manual em Usuários. A chave
  * nunca vem do modo legado — sem `/icp` marcado, só admin vê.
@@ -216,6 +229,10 @@ export function canAccessPath(
 ): boolean {
   if (ALWAYS_ALLOWED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return true;
+  }
+
+  if (isVistagemPath(pathname)) {
+    return hasVistagemAccess(profile);
   }
 
   const isOperacoesLegaisRoute =

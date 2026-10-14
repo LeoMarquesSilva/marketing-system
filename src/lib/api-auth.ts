@@ -1,6 +1,11 @@
 import { createClient as createPublicClient } from "@/utils/supabase/server";
 import { createClient as createServiceClient } from "@supabase/supabase-js";
-import { hasCafeCulturaAccess, hasIcpAccess, hasOperacoesLegaisAccess } from "@/lib/access-control";
+import {
+  hasCafeCulturaAccess,
+  hasIcpAccess,
+  hasOperacoesLegaisAccess,
+  hasVistagemAccess,
+} from "@/lib/access-control";
 
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
@@ -112,5 +117,26 @@ export async function requireOperacoesLegaisAccess(authUserId: string) {
     })
   ) {
     throw new Error("Sem permissão para Operações Legais.");
+  }
+}
+
+export async function requireVistagemAccess(authUserId: string) {
+  const supabase = getAdminClient();
+  const { data, error } = await supabase
+    .from("users")
+    .select("role, permissions, is_active")
+    .eq("auth_id", authUserId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data || data.is_active === false) {
+    throw new Error("Usuário inativo.");
+  }
+  if (
+    !hasVistagemAccess({
+      role: data.role,
+      permissions: (data.permissions as string[] | null) ?? null,
+    })
+  ) {
+    throw new Error("Sem permissão para Vistagem e agendamento.");
   }
 }

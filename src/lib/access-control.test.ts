@@ -7,6 +7,7 @@ import {
   hasCafeCulturaAccess,
   hasIcpAccess,
   hasOperacoesLegaisAccess,
+  hasVistagemAccess,
   isManualOnlyKey,
   normalizePermissionsInput,
   resolveAllowedSections,
@@ -35,6 +36,25 @@ describe("access-control permissions catalog", () => {
       false
     );
     expect(canAccessPath({ role: "designer", permissions: null }, "/operacoes-legais")).toBe(false);
+  });
+
+  it("libera a Vistagem para admin e para quem tem a chave marcada", () => {
+    expect(isManualOnlyKey("/operacoes-legais/vistagem")).toBe(true);
+    expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/operacoes-legais/vistagem");
+    expect(hasVistagemAccess({ role: "admin" })).toBe(true);
+    const vistador = { role: null, permissions: ["/operacoes-legais/vistagem"] };
+    expect(hasVistagemAccess(vistador)).toBe(true);
+    expect(canAccessPath(vistador, "/operacoes-legais/vistagem")).toBe(true);
+    expect(canAccessPath(vistador, "/operacoes-legais/vistagem/juridico")).toBe(true);
+    expect(canAccessPath(vistador, "/operacoes-legais")).toBe(false);
+    expect(canAccessPath(vistador, "/planner")).toBe(false);
+    expect(firstAllowedPath(vistador)).toBe("/operacoes-legais/vistagem");
+  });
+
+  it("não libera a Vistagem pelo modo legado nem pela chave de Operações Legais", () => {
+    expect(hasVistagemAccess({ role: "designer", permissions: null })).toBe(false);
+    expect(hasVistagemAccess({ role: null, permissions: ["/operacoes-legais"] })).toBe(false);
+    expect(canAccessPath({ role: "designer", permissions: null }, "/operacoes-legais/vistagem")).toBe(false);
   });
 
   it("libera o ICP para admin e para quem tem a chave marcada", () => {

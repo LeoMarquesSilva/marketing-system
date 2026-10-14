@@ -443,8 +443,8 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
             </div>
             <p className="text-[11px] text-muted-foreground">
               Cadastro de clientes e Gestão de NPS ficam liberados para todo usuário com login e
-              ativo. Café com Cultura, ICP e RH só entram se você marcar. Deixe tudo desmarcado para a
-              regra padrão por cargo/área.
+              ativo. Café com Cultura, ICP, RH e Vistagem e agendamento só entram se você marcar.
+              Deixe tudo desmarcado para a regra padrão por cargo/área.
             </p>
             <div className="flex justify-end">
               <Button onClick={savePerms} disabled={savingPerms} size="sm" className="gap-2">
