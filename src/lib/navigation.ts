@@ -12,6 +12,7 @@
 
 import type { LucideIcon } from "lucide-react";
 import {
+  CalendarClock,
   CalendarRange,
   Camera,
   Clapperboard,
@@ -295,6 +296,16 @@ export const NAV_FRONTS: NavFront[] = [
         icon: Scale,
         pages: [{ href: "/operacoes-legais", label: "Operações Legais" }],
       },
+      {
+        id: "vistagem",
+        label: "Vistagem e agendamento",
+        shortLabel: "Vistagem",
+        icon: CalendarClock,
+        pages: [
+          { href: "/operacoes-legais/vistagem", label: "Captura" },
+          { href: "/operacoes-legais/vistagem/duplicidades", label: "Duplicidades" },
+        ],
+      },
     ],
   },
   {
@@ -371,7 +382,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
     return (href) => {
       if (ALWAYS_VISIBLE.has(href)) return true;
       if (href === "/fotos-colaboradores") return isCollaboratorPhotosManager(profile);
-      if (href === "/operacoes-legais") return hasOperacoesLegaisAccess(profile);
+      if (href.startsWith("/operacoes-legais")) return hasOperacoesLegaisAccess(profile);
       if (href === "/icp") return hasIcpAccess(profile);
       if (href === "/conteudo/gustavo") return gustavo;
       if (href === "/rh/ferias") return rhFull || feriasView;
@@ -392,6 +403,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
 
   const isAdmin = isAdminRole(profile);
   return (href) => {
+    if (href.startsWith("/operacoes-legais/")) return hasOperacoesLegaisAccess(profile);
     switch (href) {
       case "/conteudo/inicio":
         return false;

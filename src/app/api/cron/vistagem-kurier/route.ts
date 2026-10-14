@@ -1,0 +1,26 @@
+import { NextResponse } from "next/server";
+import { isAuthorizedCronRequest } from "@/lib/cron-auth";
+import { sincronizarKurierSharePoint } from "@/lib/vistagem/server";
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 300;
+
+/** Importa o xlsx do dia que o Power Automate deixa no SharePoint (~6h35). Na Vercel Hobby o cron roda uma vez por dia com precisão de hora: 10h e 12h UTC (7h–8h e 9h–10h em Brasília). */
+export async function GET(request: Request) {
+  if (!isAuthorizedCronRequest(request)) {
+    return NextResponse.json({ error: "Não autorizado." }, { status: 401 });
+  }
+  try {
+    const resultado = await sincronizarKurierSharePoint();
+    const falhas = resultado.resultados.filter((item) => item.situacao === "erro");
+    if (falhas.length) {
+      console.error("[cron/vistagem-kurier] arquivos com erro", falhas);
+      return NextResponse.json({ success: false, ...resultado }, { status: 502 });
+    }
+    return NextResponse.json({ success: true, ...resultado, finishedAt: new Date().toISOString() });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Erro ao importar a Kurier.";
+    console.error("[cron/vistagem-kurier]", message);
+    return NextResponse.json({ error: "Não foi possível importar os arquivos da Kurier." }, { status: 500 });
+  }
+}
