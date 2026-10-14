@@ -1,9 +1,9 @@
-import { CheckCircle2, Clock3, MessageSquareWarning } from "lucide-react";
+import { CheckCheck, CheckCircle2, Clock3, MessageSquareWarning, Palette } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { CollaboratorAvatar } from "@/components/conteudo/content-schedule-visuals";
 import { REEL_DELIVERY_STATUS_LABELS, type ReelDeliveryStatus } from "@/lib/reel-deliveries/domain";
-import type { ReelDecision, ReelPerson } from "@/lib/reel-deliveries/types";
+import type { ReelCoverRequest, ReelDecision, ReelPerson } from "@/lib/reel-deliveries/types";
 
 const STATUS_TONES: Record<ReelDeliveryStatus, string> = {
   awaiting_approval: "border-amber-200 bg-amber-50 text-amber-800",
@@ -40,15 +40,27 @@ export function formatBytes(bytes: number): string {
   return `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
 }
 
-type PersonState = "approved" | "changes_requested" | "pending";
+type PersonState = "approved" | "changes_requested" | "resolved" | "pending";
+
+function decisionState(decision: ReelDecision | undefined): PersonState {
+  if (!decision) return "pending";
+  if (decision.decision === "changes_requested" && decision.resolvedAt) return "resolved";
+  return decision.decision;
+}
 
 export function personDecisionState(personId: string, decisions: ReelDecision[]): PersonState {
-  return decisions.find((d) => d.userId === personId)?.decision ?? "pending";
+  return decisionState(decisions.find((d) => d.userId === personId));
+}
+
+/** Pedidos de ajuste da versão atual que o Marketing ainda não marcou como feitos. */
+export function openChangeRequests(decisions: ReelDecision[]): ReelDecision[] {
+  return decisions.filter((d) => decisionState(d) === "changes_requested");
 }
 
 const STATE_META: Record<PersonState, { label: string; Icon: typeof Clock3; tone: string }> = {
   approved: { label: "Aprovou", Icon: CheckCircle2, tone: "text-emerald-700" },
   changes_requested: { label: "Pediu ajuste", Icon: MessageSquareWarning, tone: "text-red-700" },
+  resolved: { label: "Ajuste feito", Icon: CheckCheck, tone: "text-emerald-700" },
   pending: { label: "Aguardando", Icon: Clock3, tone: "text-amber-700" },
 };
 
@@ -71,7 +83,7 @@ export function ParticipantStack({ people, decisions }: { people: ReelPerson[]; 
 }
 
 export function DecisionLine({ person, decision }: { person: ReelPerson; decision: ReelDecision | undefined }) {
-  const meta = STATE_META[decision?.decision ?? "pending"];
+  const meta = STATE_META[decisionState(decision)];
   return (
     <div className="flex items-start gap-3 py-2.5">
       <CollaboratorAvatar person={person} className="size-8" />
@@ -94,6 +106,15 @@ export function DecisionLine({ person, decision }: { person: ReelPerson; decisio
             {decision.onBehalf && decision.recordedByName ? ` · registrado por ${decision.recordedByName}` : ""}
           </p>
         )}
+        {decision?.resolvedAt && (
+          <div className="mt-2 rounded-md bg-emerald-50 px-2.5 py-1.5 text-sm leading-5 text-emerald-900 ring-1 ring-emerald-200">
+            <p className="flex items-center gap-1.5 text-xs font-medium">
+              <CheckCheck className="size-3.5 shrink-0" aria-hidden />
+              Ajuste feito{decision.resolvedByName ? ` por ${decision.resolvedByName}` : ""} · {formatReelDateTime(decision.resolvedAt)}
+            </p>
+            {decision.resolutionNote && <p className="mt-1 whitespace-pre-wrap">{decision.resolutionNote}</p>}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -104,4 +125,22 @@ export function reelDisplayTitle(delivery: { coverTitle: string | null; particip
   if (delivery.coverTitle?.trim()) return delivery.coverTitle;
   const names = delivery.participants.map((p) => p.name.split(" ")[0]);
   return names.length ? `Reel de ${names.join(" e ")}` : "Reel sem título";
+}
+
+/** Situação da tarefa de capa no Planner em uma linha. */
+export function coverRequestSummary(request: ReelCoverRequest): { label: string; done: boolean } {
+  const approved = ["revisado", "pronto_envio", "concluido"].includes(request.stage ?? "");
+  if (approved && request.hasImage) return { label: "Capa aprovada e aplicada", done: true };
+  if (request.stage === "revisao" && request.hasImage) return { label: "Capa chegou: aprovar no Planner", done: false };
+  return { label: `Capa no Planner: ${request.stageLabel.toLowerCase()}`, done: false };
+}
+
+export function CoverRequestTag({ request }: { request: ReelCoverRequest }) {
+  const { label, done } = coverRequestSummary(request);
+  return (
+    <p className={cn("flex items-center gap-1.5 text-xs", done ? "text-emerald-700" : "text-[#285f7a]")}>
+      <Palette className="size-3.5 shrink-0" aria-hidden />
+      {label}
+    </p>
+  );
 }

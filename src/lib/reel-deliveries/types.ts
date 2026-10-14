@@ -17,6 +17,10 @@ export interface ReelDecision {
   recordedByName: string | null;
   onBehalf: boolean;
   createdAt: string;
+  /** Pedido de ajuste que o Marketing marcou como feito (vale como aprovação). */
+  resolvedAt: string | null;
+  resolvedByName: string | null;
+  resolutionNote: string | null;
 }
 
 export interface ReelVersion {
@@ -52,6 +56,8 @@ export interface ReelDeliverySummary {
   currentDecisions: ReelDecision[];
   /** O usuário logado aparece no vídeo e ainda não decidiu sobre a versão atual. */
   awaitingMe: boolean;
+  /** Tarefa de capa no Planner, quando pedida. */
+  coverRequest: ReelCoverRequest | null;
 }
 
 export interface ReelCoverRequest {
@@ -61,12 +67,14 @@ export interface ReelCoverRequest {
   assigneeName: string | null;
   deadline: string | null;
   hasImage: boolean;
+  requestedAt: string | null;
+  requestedByName: string | null;
+  /** Recado do Marketing enviado junto com o pedido. */
+  note: string | null;
 }
 
 export interface ReelDeliveryDetail extends ReelDeliverySummary {
   transcript: string | null;
-  /** Tarefa de capa no Planner, quando pedida. */
-  coverRequest: ReelCoverRequest | null;
   versions: ReelVersion[];
   decisions: ReelDecision[];
   videoUrl: string | null;

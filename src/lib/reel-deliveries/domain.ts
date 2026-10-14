@@ -31,6 +31,13 @@ export type ReelDecisionValue = "approved" | "changes_requested";
 export interface ReelDecisionInput {
   userId: string;
   decision: ReelDecisionValue;
+  /** Pedido de ajuste que o Marketing marcou como feito. */
+  resolved?: boolean;
+}
+
+/** Pedido de ajuste ainda sem correção do Marketing. */
+export function isOpenChangeRequest(decision: { decision: ReelDecisionValue; resolved?: boolean }): boolean {
+  return decision.decision === "changes_requested" && !decision.resolved;
 }
 
 /** Espelha `refresh_reel_delivery_status` para a interface antecipar o resultado. */
@@ -42,8 +49,9 @@ export function approvalStatusFor(
   if (!hasVersion) return "awaiting_approval";
   const participants = new Set(participantIds);
   const relevant = decisions.filter((d) => participants.has(d.userId));
-  if (relevant.some((d) => d.decision === "changes_requested")) return "changes_requested";
-  const approved = new Set(relevant.filter((d) => d.decision === "approved").map((d) => d.userId));
+  if (relevant.some(isOpenChangeRequest)) return "changes_requested";
+  // Ajuste feito pelo Marketing vale como aprovação de quem pediu.
+  const approved = new Set(relevant.filter((d) => !isOpenChangeRequest(d)).map((d) => d.userId));
   return participants.size > 0 && approved.size >= participants.size ? "approved" : "awaiting_approval";
 }
 
@@ -109,6 +117,19 @@ export const reelDecisionSchema = z
     message: "Conte o que precisa ser ajustado.",
     path: ["comment"],
   });
+
+/** Marketing marca pedidos de ajuste da versão atual como feitos (sem vídeo novo). */
+export const resolveReelChangesSchema = z.object({
+  version_id: z.string().uuid(),
+  /** Sem lista, resolve todos os pedidos abertos da versão. */
+  user_ids: z.array(z.string().uuid()).min(1).max(8).optional(),
+  note: z.string().trim().max(2000).optional().nullable(),
+});
+
+/** Recado opcional do Marketing para a designer, junto do pedido de capa. */
+export const reelCoverRequestSchema = z.object({
+  note: z.string().trim().max(2000).optional().nullable(),
+});
 
 export const updateReelDeliverySchema = z.object({
   participant_ids: z.array(z.string().uuid()).min(1).max(8).optional(),
@@ -240,14 +261,21 @@ export function reelPersonRole(person: ReelCoverPerson, fallbackArea: string): s
   return role ? `${role} da área de ${area}` : `Área de ${area}`;
 }
 
+const COVER_NOTE_HEADING = "Recado do Marketing:";
+const COVER_REQUEST_FOOTER =
+  'Suba a arte final como imagem na tarefa, em "Arte da capa". Quando a tarefa for aprovada, a imagem vai sozinha para a capa do reel em Aprovação de Reels.';
+
 /** Descrição da tarefa de capa no Planner: o que a designer precisa para a arte. */
 export function buildCoverRequestDescription(input: {
   coverTitle: string;
   coverSubtitle: string | null;
   people: ReelCoverPerson[];
   area: string;
+  /** Recado opcional do Marketing para a designer. */
+  note?: string | null;
 }): string {
   const people = input.people.map((person) => `${person.name}, ${reelPersonRole(person, input.area)}`);
+  const note = input.note?.trim();
   return [
     "Capa do Reels para o Instagram.",
     "",
@@ -256,9 +284,21 @@ export function buildCoverRequestDescription(input: {
     people.length > 1
       ? `Quem aparece no vídeo:\n${people.map((line) => `• ${line}`).join("\n")}`
       : `Quem aparece no vídeo: ${people[0] ?? "a definir"}`,
+    ...(note ? ["", COVER_NOTE_HEADING, note] : []),
     "",
-    'Suba a arte final como imagem na tarefa, em "Arte da capa". Quando a tarefa for aprovada, a imagem vai sozinha para a capa do reel em Aprovação de Reels.',
+    COVER_REQUEST_FOOTER,
   ].join("\n");
+}
+
+/** Recado do Marketing gravado na descrição da tarefa de capa, para mostrar de volta no reel. */
+export function coverRequestNoteFrom(description: string | null | undefined): string | null {
+  if (!description) return null;
+  const start = description.indexOf(`\n${COVER_NOTE_HEADING}\n`);
+  if (start < 0) return null;
+  const body = description.slice(start + COVER_NOTE_HEADING.length + 2);
+  const end = body.lastIndexOf(`\n\n${COVER_REQUEST_FOOTER}`);
+  const note = (end >= 0 ? body.slice(0, end) : body).trim();
+  return note || null;
 }
 
 /** Tipo da tarefa no Planner e SLA da capa (dias úteis). */

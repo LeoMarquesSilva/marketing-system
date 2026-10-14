@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, Clapperboard, Film, RefreshCw, Sparkles, UploadCloud } from "lucide-react";
+import { AlertCircle, Clapperboard, Film, Palette, RefreshCw, Sparkles, UploadCloud } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AreaMark } from "@/components/conteudo/content-schedule-visuals";
 import type { ReelDeliveriesResponse, ReelDeliverySummary } from "@/lib/reel-deliveries/types";
 import { generateReelCopyFromVideo } from "@/lib/reel-deliveries/audio-client";
 import { cn } from "@/lib/utils";
-import { ParticipantStack, ReelStatusBadge, formatReelDate, reelDisplayTitle } from "./reel-delivery-ui";
+import { CoverRequestTag, ParticipantStack, ReelStatusBadge, formatReelDate, openChangeRequests, reelDisplayTitle } from "./reel-delivery-ui";
 import { ReelUploadDialog } from "./reel-upload-dialog";
 import { ReelDeliverySheet } from "./reel-delivery-sheet";
 
@@ -33,7 +33,7 @@ const STAGES: { key: StageKey; label: string; empty: string; match: (d: ReelDeli
 
 function DeliveryCard({ delivery, onOpen, viewerIsManager }: { delivery: ReelDeliverySummary; onOpen: () => void; viewerIsManager: boolean }) {
   const pendingCount = delivery.participants.filter((p) => !delivery.currentDecisions.some((d) => d.userId === p.id)).length;
-  const changes = delivery.currentDecisions.filter((d) => d.decision === "changes_requested");
+  const changes = openChangeRequests(delivery.currentDecisions);
   return (
     <li>
       <button
@@ -55,6 +55,16 @@ function DeliveryCard({ delivery, onOpen, viewerIsManager }: { delivery: ReelDel
           <p className="flex items-center gap-1.5 text-xs text-[#285f7a]"><Sparkles className="size-3.5" />IA escrevendo capa e legenda…</p>
         )}
         <ParticipantStack people={delivery.participants} decisions={delivery.currentDecisions} />
+        {viewerIsManager && delivery.status !== "published" && (
+          delivery.coverRequest ? (
+            <CoverRequestTag request={delivery.coverRequest} />
+          ) : delivery.status === "approved" && !delivery.hasCover ? (
+            <p className="flex items-center gap-1.5 text-xs text-slate-500">
+              <Palette className="size-3.5 shrink-0" aria-hidden />
+              Capa ainda não pedida à designer
+            </p>
+          ) : null
+        )}
         <div className="mt-auto flex w-full flex-wrap items-center justify-between gap-2 pt-1">
           <ReelStatusBadge status={delivery.status} />
           <span className="text-xs text-slate-500">

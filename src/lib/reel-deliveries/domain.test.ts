@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   addBusinessDaysYmd,
   buildCoverRequestDescription,
+  coverRequestNoteFrom,
+  isOpenChangeRequest,
+  resolveReelChangesSchema,
   reelPersonRole,
   approvalStatusFor,
   canParticipantDecide,
@@ -28,6 +31,16 @@ describe("approvalStatusFor", () => {
     expect(
       approvalStatusFor(["a", "b"], [{ userId: "a", decision: "approved" }, { userId: "b", decision: "changes_requested" }], true)
     ).toBe("changes_requested");
+  });
+
+  it("ajuste marcado como feito pelo Marketing conta como aprovação", () => {
+    expect(
+      approvalStatusFor(["a", "b"], [{ userId: "a", decision: "approved" }, { userId: "b", decision: "changes_requested", resolved: true }], true)
+    ).toBe("approved");
+    expect(
+      approvalStatusFor(["a", "b"], [{ userId: "a", decision: "changes_requested", resolved: true }, { userId: "b", decision: "changes_requested" }], true)
+    ).toBe("changes_requested");
+    expect(isOpenChangeRequest({ decision: "changes_requested", resolved: true })).toBe(false);
   });
 
   it("ignora decisões de quem não está mais no vídeo", () => {
@@ -133,5 +146,35 @@ describe("cargo na tarefa de capa", () => {
     });
     expect(text).toContain("Quem aparece no vídeo: Gabriela Bossi Leme, Advogada da área de Reestruturação");
     expect(text).not.toMatch(/Publicação prevista/);
+  });
+});
+
+describe("recado para a designer", () => {
+  const base = {
+    coverTitle: "TÍTULO",
+    coverSubtitle: "Sub",
+    area: "Cível",
+    people: [{ name: "Raíssa Alni Minari", gender: "F", position: "Advogada", area: "Cível" }],
+  };
+
+  it("vai na descrição da tarefa e volta para o reel", () => {
+    const text = buildCoverRequestDescription({ ...base, note: "Usar a foto de perfil nova.\nFundo escuro." });
+    expect(text).toContain("Recado do Marketing:\nUsar a foto de perfil nova.\nFundo escuro.");
+    expect(text.trimEnd().endsWith("capa do reel em Aprovação de Reels.")).toBe(true);
+    expect(coverRequestNoteFrom(text)).toBe("Usar a foto de perfil nova.\nFundo escuro.");
+  });
+
+  it("sem recado, a descrição fica como antes", () => {
+    const text = buildCoverRequestDescription({ ...base, note: "   " });
+    expect(text).not.toContain("Recado do Marketing");
+    expect(coverRequestNoteFrom(text)).toBeNull();
+  });
+});
+
+describe("resolveReelChangesSchema", () => {
+  it("aceita resolver todos os pedidos ou só de algumas pessoas", () => {
+    expect(resolveReelChangesSchema.safeParse({ version_id: ID }).success).toBe(true);
+    expect(resolveReelChangesSchema.safeParse({ version_id: ID, user_ids: [ID], note: "Troquei o nome na legenda." }).success).toBe(true);
+    expect(resolveReelChangesSchema.safeParse({ version_id: ID, user_ids: [] }).success).toBe(false);
   });
 });

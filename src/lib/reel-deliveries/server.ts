@@ -15,6 +15,9 @@ import {
   addBusinessDaysYmd,
   buildCoverRequestDescription,
   canParticipantDecide,
+  coverRequestNoteFrom,
+  reelCoverRequestSchema,
+  resolveReelChangesSchema,
   type ReelCoverPerson,
   reelCopyRequestSchema,
   reelCopySchema,
@@ -66,6 +69,7 @@ type DeliveryRow = {
   ai_status: "processing" | "done" | "failed" | null; ai_error: string | null;
   status: ReelDeliveryStatus; caption: string | null; cover_path: string | null;
   approved_at: string | null; ready_at: string | null; published_at: string | null; updated_at: string;
+  cover_request_id: string | null;
 };
 type ParticipantRow = { delivery_id: string; user_id: string; user_name: string };
 type VersionRow = {
@@ -76,11 +80,14 @@ type DecisionRow = {
   id: string; delivery_id: string; version_id: string; user_id: string; user_name: string;
   decision: ReelDecisionValue; comment: string | null; recorded_by_id: string | null;
   recorded_by_name: string | null; created_at: string;
+  resolved_at: string | null; resolved_by_name: string | null; resolution_note: string | null;
 };
 type UserRow = { id: string; name: string; avatar_url: string | null; department: string | null };
 
 const DELIVERY_COLUMNS =
-  "id,slot_id,area,due_date,title,cover_title,cover_subtitle,ai_status,ai_error,status,caption,cover_path,approved_at,ready_at,published_at,updated_at";
+  "id,slot_id,area,due_date,title,cover_title,cover_subtitle,ai_status,ai_error,status,caption,cover_path,approved_at,ready_at,published_at,updated_at,cover_request_id";
+const DECISION_COLUMNS =
+  "id,delivery_id,version_id,user_id,user_name,decision,comment,recorded_by_id,recorded_by_name,created_at,resolved_at,resolved_by_name,resolution_note";
 
 function isManager(actor: ScheduleActor): boolean {
   return actor.access.manageAll;
@@ -118,6 +125,9 @@ function toDecision(row: DecisionRow): ReelDecision {
     recordedByName: row.recorded_by_name,
     onBehalf: Boolean(row.recorded_by_id && row.recorded_by_id !== row.user_id),
     createdAt: row.created_at,
+    resolvedAt: row.resolved_at,
+    resolvedByName: row.resolved_by_name,
+    resolutionNote: row.resolution_note,
   };
 }
 
@@ -142,16 +152,18 @@ async function loadSummaries(
   const ids = rows.map((r) => r.id);
   if (ids.length === 0) return { summaries: [], versions: [], decisions: [] };
 
-  const [participantsRes, versionsRes, decisionsRes] = await Promise.all([
+  const coverRequestIds = rows.map((r) => r.cover_request_id).filter((v): v is string => Boolean(v));
+  const [participantsRes, versionsRes, decisionsRes, coverRequests] = await Promise.all([
     db.from("reel_delivery_participants").select("delivery_id,user_id,user_name").in("delivery_id", ids),
     db.from("reel_delivery_versions")
       .select("id,delivery_id,version_number,video_path,file_name,size_bytes,notes,uploaded_by_name,created_at")
       .in("delivery_id", ids)
       .order("version_number", { ascending: false }),
     db.from("reel_delivery_decisions")
-      .select("id,delivery_id,version_id,user_id,user_name,decision,comment,recorded_by_id,recorded_by_name,created_at")
+      .select(DECISION_COLUMNS)
       .in("delivery_id", ids)
       .order("created_at", { ascending: true }),
+    loadCoverRequests(db, coverRequestIds),
   ]);
   if (participantsRes.error || versionsRes.error || decisionsRes.error) {
     throw new ReelDeliveryHttpError("Não foi possível carregar os reels.");
@@ -193,6 +205,7 @@ async function loadSummaries(
         Boolean(current) &&
         canParticipantDecide(row.status) &&
         !currentDecisions.some((d) => d.userId === viewerId),
+      coverRequest: row.cover_request_id ? coverRequests.get(row.cover_request_id) ?? null : null,
     } satisfies ReelDeliverySummary;
   });
   return { summaries, versions, decisions };
@@ -316,7 +329,7 @@ export async function listPlannerReels(): Promise<PlannerReel[]> {
   }));
 }
 
-/** Contador do menu: o que espera o usuário (aprovar) ou o Marketing (capa e legenda). */
+/** Contador do menu: o que espera o usuário (aprovar) ou o Marketing (ajustes, capa e legenda). */
 export async function countPendingReelDeliveries(): Promise<number> {
   const actor = await requireContentScheduleActor();
   const db = adminDb();
@@ -324,7 +337,7 @@ export async function countPendingReelDeliveries(): Promise<number> {
     const { count, error } = await db
       .from("reel_deliveries")
       .select("id", { count: "exact", head: true })
-      .eq("status", "approved");
+      .in("status", ["approved", "changes_requested"]);
     if (error) throw new ReelDeliveryHttpError("Não foi possível contar os reels.");
     return count ?? 0;
   }
@@ -395,13 +408,11 @@ export async function getReelDelivery(id: string): Promise<ReelDeliveryDetail> {
     row.cover_path ? signedUrl(db, row.cover_path, downloadName(row, "capa", row.cover_path)) : null,
   ]);
 
-  const { data: extraRow } = await db.from("reel_deliveries").select("transcript,cover_request_id").eq("id", id).maybeSingle();
-  const coverRequest = await loadCoverRequest(db, (extraRow?.cover_request_id as string | null) ?? null);
+  const { data: extraRow } = await db.from("reel_deliveries").select("transcript").eq("id", id).maybeSingle();
 
   return {
     ...summary,
     transcript: (extraRow?.transcript as string | null) ?? null,
-    coverRequest,
     versions: versions.map(toVersion),
     decisions: decisions.map(toDecision).reverse(),
     videoUrl,
@@ -593,10 +604,64 @@ export async function decideReelDelivery(id: string, input: z.infer<typeof reelD
       recorded_by_id: actor.profileId,
       recorded_by_name: targetUserId === actor.profileId ? participant.user_name : await actorName(db, actor),
       created_at: new Date().toISOString(),
+      // Decisão nova da pessoa substitui qualquer "ajuste feito" anterior.
+      resolved_at: null,
+      resolved_by_id: null,
+      resolved_by_name: null,
+      resolution_note: null,
     },
     { onConflict: "version_id,user_id" }
   );
   if (error) throw new ReelDeliveryHttpError("Não foi possível registrar sua decisão.");
+  await refreshStatus(db, id);
+}
+
+/**
+ * O Marketing corrigiu o que foi pedido sem trocar o vídeo (legenda, crédito,
+ * capa) e marca os pedidos como feitos: o pedido fica no histórico e passa a
+ * valer como aprovação de quem pediu. Ajuste no vídeo é com nova versão.
+ */
+export async function resolveReelChanges(id: string, input: z.infer<typeof resolveReelChangesSchema>): Promise<void> {
+  const actor = await requireContentScheduleActor();
+  requireManager(actor);
+  const db = adminDb();
+  const row = await loadDeliveryRow(db, id);
+  if (!canParticipantDecide(row.status)) {
+    throw new ReelDeliveryHttpError("Esse reel já seguiu para publicação.", 409);
+  }
+
+  const { data: current } = await db
+    .from("reel_delivery_versions")
+    .select("id")
+    .eq("delivery_id", id)
+    .order("version_number", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!current || current.id !== input.version_id) {
+    throw new ReelDeliveryHttpError("Chegou uma versão mais nova do vídeo. Atualize a página.", 409);
+  }
+
+  let query = db
+    .from("reel_delivery_decisions")
+    .select("id")
+    .eq("version_id", current.id)
+    .eq("decision", "changes_requested")
+    .is("resolved_at", null);
+  if (input.user_ids) query = query.in("user_id", input.user_ids);
+  const { data: open, error: openError } = await query;
+  if (openError) throw new ReelDeliveryHttpError("Não foi possível carregar os pedidos de ajuste.");
+  if (!open?.length) throw new ReelDeliveryHttpError("Não há pedido de ajuste aberto nesta versão.", 409);
+
+  const { error } = await db
+    .from("reel_delivery_decisions")
+    .update({
+      resolved_at: new Date().toISOString(),
+      resolved_by_id: actor.profileId,
+      resolved_by_name: await actorName(db, actor),
+      resolution_note: input.note?.trim() || null,
+    })
+    .in("id", open.map((decision) => decision.id as string));
+  if (error) throw new ReelDeliveryHttpError("Não foi possível marcar o ajuste como feito.");
   await refreshStatus(db, id);
 }
 
@@ -684,23 +749,37 @@ export async function deleteReelDelivery(id: string): Promise<void> {
   if (paths.length) await db.storage.from(REEL_DELIVERIES_BUCKET).remove(paths);
 }
 
-async function loadCoverRequest(db: SupabaseClient, requestId: string | null): Promise<ReelCoverRequest | null> {
-  if (!requestId) return null;
+/** Tarefas de capa no Planner, por id da solicitação. */
+async function loadCoverRequests(db: SupabaseClient, requestIds: string[]): Promise<Map<string, ReelCoverRequest>> {
+  if (requestIds.length === 0) return new Map();
   const { data } = await db
     .from("marketing_requests")
-    .select("id,workflow_stage,assignee,deadline,art_image_path")
-    .eq("id", requestId)
-    .maybeSingle();
-  if (!data) return null;
-  const stage = (data.workflow_stage as string | null) ?? "tarefas";
-  return {
-    id: data.id as string,
-    stage,
-    stageLabel: WORKFLOW_STAGES.find((item) => item.value === stage)?.label ?? stage,
-    assigneeName: (data.assignee as string | null) ?? null,
-    deadline: (data.deadline as string | null) ?? null,
-    hasImage: Boolean(data.art_image_path),
-  };
+    .select("id,workflow_stage,assignee,deadline,art_image_path,requested_at,solicitante,description")
+    .in("id", [...new Set(requestIds)]);
+  return new Map(
+    (data ?? []).map((request) => {
+      const stage = (request.workflow_stage as string | null) ?? "tarefas";
+      return [
+        request.id as string,
+        {
+          id: request.id as string,
+          stage,
+          stageLabel: WORKFLOW_STAGES.find((item) => item.value === stage)?.label ?? stage,
+          assigneeName: (request.assignee as string | null) ?? null,
+          deadline: (request.deadline as string | null) ?? null,
+          hasImage: Boolean(request.art_image_path),
+          requestedAt: (request.requested_at as string | null) ?? null,
+          requestedByName: (request.solicitante as string | null) ?? null,
+          note: coverRequestNoteFrom(request.description as string | null),
+        },
+      ];
+    })
+  );
+}
+
+async function loadCoverRequest(db: SupabaseClient, requestId: string | null): Promise<ReelCoverRequest | null> {
+  if (!requestId) return null;
+  return (await loadCoverRequests(db, [requestId])).get(requestId) ?? null;
 }
 
 /** Quem aparece no vídeo, com nome completo, cargo e área do RH. */
@@ -734,7 +813,7 @@ async function loadCoverPeople(db: SupabaseClient, deliveryId: string): Promise<
  * e quem aparece no vídeo. A imagem que ela subir vira a capa quando a tarefa
  * for aprovada (gatilho apply_reel_cover_from_request).
  */
-export async function requestReelCover(id: string): Promise<void> {
+export async function requestReelCover(id: string, input: z.infer<typeof reelCoverRequestSchema> = {}): Promise<void> {
   const actor = await requireContentScheduleActor();
   requireManager(actor);
   const db = adminDb();
@@ -743,8 +822,7 @@ export async function requestReelCover(id: string): Promise<void> {
     throw new ReelDeliveryHttpError("Escreva ou gere o título da capa antes de pedir a arte.", 409);
   }
 
-  const { data: current } = await db.from("reel_deliveries").select("cover_request_id").eq("id", id).maybeSingle();
-  const existing = await loadCoverRequest(db, (current?.cover_request_id as string | null) ?? null);
+  const existing = await loadCoverRequest(db, row.cover_request_id);
   if (existing && existing.stage !== "concluido") {
     throw new ReelDeliveryHttpError("Já existe uma tarefa de capa aberta no Planner para este reel.", 409);
   }
@@ -766,6 +844,7 @@ export async function requestReelCover(id: string): Promise<void> {
     coverSubtitle: row.cover_subtitle,
     people: coverPeople,
     area: row.area,
+    note: input.note,
   });
 
   const { data: created, error } = await db

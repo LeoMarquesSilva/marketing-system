@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   Check,
+  CheckCheck,
   CheckCircle2,
   Copy,
   Download,
@@ -40,9 +41,11 @@ import { cn } from "@/lib/utils";
 import {
   DecisionLine,
   ReelStatusBadge,
+  coverRequestSummary,
   formatBytes,
   formatReelDate,
   formatReelDateTime,
+  openChangeRequests,
   reelDisplayTitle,
 } from "./reel-delivery-ui";
 import { UploadProgress, VideoFileField, validateVideo } from "./reel-upload-dialog";
@@ -308,6 +311,23 @@ function ApprovalSection({ detail, viewer, people, busy, run }: { detail: ReelDe
   const canDecide = isParticipant && Boolean(version) && canParticipantDecide(detail.status);
   const [changingMine, setChangingMine] = useState(false);
   const showActions = canDecide && (!myDecision || changingMine);
+  const [fixNote, setFixNote] = useState("");
+  const openChanges = openChangeRequests(detail.currentDecisions);
+  const canResolve = viewer.isManager && Boolean(version) && canParticipantDecide(detail.status) && openChanges.length > 0;
+
+  async function resolveChanges(userIds?: string[]) {
+    if (!version) return;
+    const ok = await run(
+      userIds ? `resolve-${userIds[0]}` : "resolve-all",
+      () => sendJson(`/api/reel-deliveries/${detail.id}/resolve-changes`, "POST", {
+        version_id: version.id,
+        user_ids: userIds,
+        note: fixNote.trim() || null,
+      }),
+      "Ajuste marcado como feito."
+    );
+    if (ok) setFixNote("");
+  }
 
   async function decide(decision: "approved" | "changes_requested", extra?: { on_behalf_of?: string; comment?: string }) {
     if (!version) return;
@@ -366,12 +386,54 @@ function ApprovalSection({ detail, viewer, people, busy, run }: { detail: ReelDe
         </div>
       )}
 
+      {canResolve && (
+        <div className="space-y-3 rounded-lg bg-amber-50 p-4 ring-1 ring-amber-200">
+          <div>
+            <p className="flex items-center gap-2 text-sm font-medium text-amber-900">
+              <MessageSquareWarning className="size-4 shrink-0" aria-hidden />
+              {openChanges.length === 1
+                ? `${openChanges[0].userName.split(" ")[0]} pediu ajuste`
+                : `${openChanges.length} pedidos de ajuste abertos`}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-amber-900/80">
+              Corrigiu na legenda, na capa ou no crédito? Marque como feito: o pedido fica no histórico e conta como aprovação de quem pediu.
+              Se o ajuste foi no vídeo, use “Enviar nova versão” e todas as pessoas aprovam de novo.
+            </p>
+          </div>
+          <Textarea
+            value={fixNote}
+            onChange={(e) => setFixNote(e.target.value)}
+            placeholder="O que foi corrigido? (opcional) Ex.: troquei Mattos por Martinelli no crédito da legenda."
+            rows={2}
+            maxLength={2000}
+            disabled={busy !== null}
+            aria-label="O que foi corrigido"
+            className="bg-white"
+          />
+          <Button onClick={() => void resolveChanges()} disabled={busy !== null} className="bg-[#347796] text-white hover:bg-[#285f7a]">
+            {busy === "resolve-all" ? <Loader2 className="animate-spin" /> : <CheckCheck />}
+            {openChanges.length === 1 ? "Ajuste feito, marcar como concluído" : "Todos os ajustes feitos, marcar como concluídos"}
+          </Button>
+        </div>
+      )}
+
       <div className="divide-y divide-[#e6eef0]">
         {detail.participants.map((person) => {
           const decision = detail.currentDecisions.find((d) => d.userId === person.id);
           return (
             <div key={person.id}>
               <DecisionLine person={person} decision={decision} />
+              {canResolve && openChanges.length > 1 && openChanges.some((d) => d.userId === person.id) && (
+                <button
+                  type="button"
+                  onClick={() => void resolveChanges([person.id])}
+                  disabled={busy !== null}
+                  className="mb-2 ml-11 inline-flex items-center gap-1 text-xs font-medium text-[#285f7a] underline-offset-2 hover:underline disabled:opacity-50"
+                >
+                  {busy === `resolve-${person.id}` ? <Loader2 className="size-3 animate-spin" /> : <CheckCheck className="size-3.5" />}
+                  Só este ajuste foi feito
+                </button>
+              )}
               {person.id === viewer.id && myDecision && canDecide && !changingMine && (
                 <button type="button" onClick={() => setChangingMine(true)} className="mb-2 ml-11 text-xs font-medium text-[#285f7a] underline-offset-2 hover:underline">
                   Mudar minha decisão
@@ -449,39 +511,96 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 
 function CoverRequestRow({ detail, busy, run, dirty }: { detail: ReelDeliveryDetail; busy: string | null; run: RunFn; dirty: boolean }) {
   const request = detail.coverRequest;
-  const open = request && request.stage !== "concluido";
-  const approved = request && ["revisado", "pronto_envio", "concluido"].includes(request.stage ?? "");
+  const open = Boolean(request && request.stage !== "concluido");
+  const [composing, setComposing] = useState(false);
+  const [note, setNote] = useState("");
+  const firstName = (name: string) => name.split(" ")[0];
+
+  async function send() {
+    const ok = await run(
+      "cover-request",
+      () => sendJson(`/api/reel-deliveries/${detail.id}/cover-request`, "POST", { note: note.trim() || null }),
+      "Tarefa de capa criada no Planner."
+    );
+    if (ok) {
+      setComposing(false);
+      setNote("");
+    }
+  }
+
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg bg-white p-3 text-sm ring-1 ring-[#dce9eb]">
-      <Palette className="size-4 shrink-0 text-[#347796]" aria-hidden />
-      {request ? (
-        <span className="min-w-0 flex-1 text-slate-700">
-          {approved && request.hasImage
-            ? "Arte aprovada no Planner e aplicada como capa."
-            : request.stage === "revisao" && request.hasImage
-              ? "A arte chegou e está esperando sua aprovação no Planner."
-              : `Capa pedida${request.assigneeName ? ` para ${request.assigneeName.split(" ")[0]}` : ""}, prazo ${formatReelDate(request.deadline)}. ${request.stageLabel}.`}
-        </span>
-      ) : (
-        <span className="min-w-0 flex-1 text-slate-700">
-          {detail.coverTitle
-            ? "Envie título, subtítulo e quem aparece no vídeo para a designer, com prazo de 2 dias úteis."
-            : "Escreva ou gere o título da capa para pedir a arte à designer."}
-        </span>
-      )}
-      {open ? (
-        <Button asChild size="sm" variant="outline"><a href="/planner"><ExternalLink />Abrir no Planner</a></Button>
-      ) : (
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => void run("cover-request", () => sendJson(`/api/reel-deliveries/${detail.id}/cover-request`, "POST"), "Tarefa de capa criada no Planner.")}
-          disabled={busy !== null || !detail.coverTitle || dirty}
-          title={dirty ? "Salve o título e o subtítulo antes de pedir a arte." : undefined}
-        >
-          {busy === "cover-request" ? <Loader2 className="animate-spin" /> : <Send />}
-          {request ? "Pedir nova capa" : "Pedir capa para a designer"}
-        </Button>
+    <div className="space-y-3 rounded-lg bg-white p-3 text-sm ring-1 ring-[#dce9eb]">
+      <div className="flex flex-wrap items-start gap-2">
+        <Palette className="mt-0.5 size-4 shrink-0 text-[#347796]" aria-hidden />
+        <div className="min-w-0 flex-1 space-y-1">
+          {request ? (
+            <>
+              <p className="font-medium text-slate-800">{coverRequestSummary(request).label}</p>
+              <p className="text-xs text-slate-500">
+                {[
+                  request.requestedAt && `Enviada ao Planner ${formatReelDateTime(request.requestedAt)}`,
+                  request.requestedByName && `por ${firstName(request.requestedByName)}`,
+                  request.assigneeName && `designer: ${firstName(request.assigneeName)}`,
+                  request.deadline && `prazo ${formatReelDate(request.deadline)}`,
+                ].filter(Boolean).join(" · ")}
+              </p>
+              {request.note && (
+                <p className="whitespace-pre-wrap rounded-md bg-[#f8fbfb] px-2.5 py-1.5 text-xs leading-5 text-slate-700 ring-1 ring-[#e6eef0]">
+                  <span className="font-medium text-slate-800">Recado: </span>{request.note}
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="text-slate-700">
+              {detail.coverTitle
+                ? "Capa ainda não enviada à designer. Ela recebe título, subtítulo e quem aparece no vídeo, com prazo de 2 dias úteis."
+                : "Escreva ou gere o título da capa para pedir a arte à designer."}
+            </p>
+          )}
+        </div>
+        {open && request ? (
+          <Button asChild size="sm" variant="outline">
+            <a href={`/planner?tarefa=${request.id}`}><ExternalLink />Abrir tarefa no Planner</a>
+          </Button>
+        ) : (
+          !composing && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setComposing(true)}
+              disabled={busy !== null || !detail.coverTitle || dirty}
+              title={dirty ? "Salve o título e o subtítulo antes de pedir a arte." : undefined}
+            >
+              <Send />
+              {request ? "Pedir nova capa" : "Pedir capa para a designer"}
+            </Button>
+          )
+        )}
+      </div>
+
+      {composing && !open && (
+        <div className="space-y-2 border-t border-[#e6eef0] pt-3">
+          <Label htmlFor={`cover-note-${detail.id}`}>Recado para a designer (opcional)</Label>
+          <Textarea
+            id={`cover-note-${detail.id}`}
+            autoFocus
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={3}
+            maxLength={2000}
+            placeholder="Ex.: usar a foto nova do Henrique; manter o fundo escuro dos últimos reels."
+            disabled={busy !== null}
+          />
+          <p className="text-xs text-slate-500">Vai junto na descrição da tarefa “Capa de Reels”.</p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => void send()} disabled={busy !== null || dirty} className="bg-[#347796] text-white hover:bg-[#285f7a]">
+              {busy === "cover-request" ? <Loader2 className="animate-spin" /> : <Send />}Enviar para o Planner
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setComposing(false); setNote(""); }} disabled={busy !== null}>
+              Cancelar
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );

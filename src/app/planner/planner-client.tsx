@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { KanbanBoard } from "@/components/planner/kanban-board";
 import { ConcluidosTab } from "@/components/planner/concluidos-tab";
 import { KanbanCardDetail } from "@/components/planner/kanban-card-detail";
@@ -73,8 +73,11 @@ export function PlannerClient({ initialRequests, reels, rotationAreas, designers
       }));
   }, [visibleWorkflowStages]);
 
-  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
+  // `?tarefa=<id>` abre direto o card (ex.: link da capa na Aprovação de Reels).
+  const searchParams = useSearchParams();
+  const linkedRequestId = searchParams.get("tarefa");
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(linkedRequestId);
+  const [detailOpen, setDetailOpen] = useState(Boolean(linkedRequestId));
   const [postAvailableRequestId, setPostAvailableRequestId] = useState<string | null>(null);
   const [postAvailableOpen, setPostAvailableOpen] = useState(false);
   const [selectedReelId, setSelectedReelId] = useState<string | null>(null);
@@ -334,6 +337,8 @@ export function PlannerClient({ initialRequests, reels, rotationAreas, designers
         onOpenChange={(open) => {
           setDetailOpen(open);
           if (!open) setSelectedRequestId(null);
+          // Fecha o link direto para o card não reabrir ao atualizar a página.
+          if (!open && linkedRequestId) router.replace("/planner", { scroll: false });
         }}
         onRefresh={handleRefresh}
         designers={designers}
