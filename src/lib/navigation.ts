@@ -303,6 +303,7 @@ export const NAV_FRONTS: NavFront[] = [
         icon: CalendarClock,
         pages: [
           { href: "/operacoes-legais/vistagem", label: "Captura" },
+          { href: "/operacoes-legais/vistagem/controladoria", label: "Controladoria" },
           { href: "/operacoes-legais/vistagem/duplicidades", label: "Duplicidades" },
         ],
       },

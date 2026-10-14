@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
+import type { Pendencia } from "@/lib/vistagem/triagem";
 import type { PublicacaoResumo, PublicacaoStatus } from "@/lib/vistagem/types";
 
 export function formatarData(iso: string | null): string {
@@ -26,7 +27,39 @@ const STATUS: Partial<Record<PublicacaoStatus, { rotulo: string; classe: string 
   captada: { rotulo: "Captada", classe: "border-[#47cdd0]/35 bg-[#e8f8f8] text-[#285f7a]" },
   duplicidade: { rotulo: "Duplicidade", classe: "border-amber-200 bg-amber-50 text-amber-800" },
   descartada: { rotulo: "Descartada", classe: "border-slate-200 bg-slate-100 text-slate-600" },
+  triagem_pendente: { rotulo: "Pendente na controladoria", classe: "border-orange-200 bg-orange-50 text-orange-800" },
+  juridico_vistar: { rotulo: "Jurídico vistar", classe: "border-emerald-200 bg-emerald-50 text-emerald-800" },
 };
+
+export const PENDENCIAS: Record<Pendencia, string> = {
+  sem_pasta: "Sem pasta no VIOS (possível abertura)",
+  varias_pastas: "Mais de uma pasta para o processo",
+  ex_cliente: "Ex-cliente",
+  sem_area: "Sem área definida",
+  sem_grupo: "Sem grupo do cliente",
+};
+
+/** Resultado da triagem com o SIOE: escritório, pasta, grupo, responsável e demanda de risco. */
+export function DadosPasta({ publicacao }: { publicacao: PublicacaoResumo }) {
+  if (!publicacao.pastaCi && !publicacao.escritorioResponsavel && !publicacao.pendencia) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+      {publicacao.escritorioResponsavel ? (
+        <span className="rounded-full bg-[#183f50] px-2 py-0.5 font-medium text-white">{publicacao.escritorioResponsavel}</span>
+      ) : null}
+      {publicacao.pastaCi ? <span className="font-mono text-slate-800">CI {publicacao.pastaCi}</span> : null}
+      {publicacao.grupoCliente ? <span className="font-medium text-slate-800">{publicacao.grupoCliente}</span> : null}
+      {publicacao.cliente ? <span>{publicacao.cliente}</span> : null}
+      {publicacao.advogadoResponsavel ? <span>Resp.: {publicacao.advogadoResponsavel}</span> : null}
+      {publicacao.demandaRisco ? (
+        <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-medium text-red-700">Demanda de risco</span>
+      ) : null}
+      {publicacao.pendencia ? (
+        <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-orange-800">{PENDENCIAS[publicacao.pendencia]}</span>
+      ) : null}
+    </div>
+  );
+}
 
 export function StatusPublicacao({ status }: { status: PublicacaoStatus }) {
   const info = STATUS[status] ?? { rotulo: status, classe: "border-slate-200 bg-white text-slate-700" };

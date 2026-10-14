@@ -8,16 +8,25 @@ import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import type { ArquivoKurierResumo, PublicacaoResumo, SincronizacaoResultado } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
-import { DadosPublicacao, StatusPublicacao, TeorPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
+import { DadosPasta, DadosPublicacao, StatusPublicacao, TeorPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
 
-type Filtro = "todas" | "captada" | "duplicidade" | "descartada";
+type Filtro = "todas" | "juridico_vistar" | "triagem_pendente" | "duplicidade" | "descartada" | "captada";
 
 const FILTROS: { valor: Filtro; rotulo: string }[] = [
   { valor: "todas", rotulo: "Todas" },
-  { valor: "captada", rotulo: "Captadas" },
+  { valor: "juridico_vistar", rotulo: "Jurídico vistar" },
+  { valor: "triagem_pendente", rotulo: "Pendências" },
   { valor: "duplicidade", rotulo: "Duplicidades" },
   { valor: "descartada", rotulo: "Descartadas" },
+  { valor: "captada", rotulo: "Aguardando triagem" },
 ];
+
+function resumoTriagem(triagem: SincronizacaoResultado["triagem"]): string {
+  if (!triagem) return "";
+  if (triagem.erro) return ` Triagem com o SIOE falhou: ${triagem.erro}`;
+  if (!triagem.triadas) return "";
+  return ` Triagem: ${triagem.juridico} para o jurídico, ${triagem.pendentes} pendente(s) na controladoria.`;
+}
 
 function SituacaoArquivo({ arquivo }: { arquivo: ArquivoKurierResumo }) {
   const estilo = {
@@ -36,9 +45,10 @@ function SituacaoArquivo({ arquivo }: { arquivo: ArquivoKurierResumo }) {
 function resumoSincronizacao(resultado: SincronizacaoResultado): string {
   const erros = resultado.resultados.filter((item) => item.situacao === "erro");
   if (erros.length) return `${erros.length} arquivo(s) com erro: ${erros.map((item) => `${item.nome} (${item.mensagem})`).join("; ")}`;
-  if (resultado.importados) return `${resultado.importados} arquivo(s) novo(s) importado(s).`;
-  if (resultado.verificados === 0) return "O arquivo de hoje ainda não chegou na pasta da Kurier.";
-  return "O arquivo de hoje já estava importado.";
+  const triagem = resumoTriagem(resultado.triagem);
+  if (resultado.importados) return `${resultado.importados} arquivo(s) novo(s) importado(s).${triagem}`;
+  if (resultado.verificados === 0) return `O arquivo de hoje ainda não chegou na pasta da Kurier.${triagem}`;
+  return `O arquivo de hoje já estava importado.${triagem}`;
 }
 
 function Captura() {
@@ -99,7 +109,8 @@ function Captura() {
       const corpo = await resposta.json();
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao buscar no SharePoint.");
       const resultado = corpo as SincronizacaoResultado;
-      setAviso({ tipo: resultado.resultados.some((item) => item.situacao === "erro") ? "erro" : "ok", texto: resumoSincronizacao(resultado) });
+      const falhou = resultado.resultados.some((item) => item.situacao === "erro") || Boolean(resultado.triagem?.erro);
+      setAviso({ tipo: falhou ? "erro" : "ok", texto: resumoSincronizacao(resultado) });
       await carregarArquivos();
     } catch (e) {
       setAviso({ tipo: "erro", texto: e instanceof Error ? e.message : "Falha ao buscar no SharePoint." });
@@ -119,7 +130,9 @@ function Captura() {
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao importar o arquivo.");
       setAviso({
         tipo: "ok",
-        texto: corpo.novo ? `${arquivo.name} importado.` : `${arquivo.name} já tinha sido importado; nada foi duplicado.`,
+        texto: corpo.novo
+          ? `${arquivo.name} importado.${resumoTriagem(corpo.triagem)}`
+          : `${arquivo.name} já tinha sido importado; nada foi duplicado.`,
       });
       await carregarArquivos(corpo.arquivo.id);
     } catch (e) {
@@ -131,7 +144,7 @@ function Captura() {
   }
 
   const contagem = useMemo(() => {
-    const total: Record<Filtro, number> = { todas: 0, captada: 0, duplicidade: 0, descartada: 0 };
+    const total: Record<Filtro, number> = { todas: 0, juridico_vistar: 0, triagem_pendente: 0, duplicidade: 0, descartada: 0, captada: 0 };
     for (const p of publicacoes ?? []) {
       total.todas += 1;
       if (p.status in total) total[p.status as Filtro] += 1;
@@ -146,9 +159,21 @@ function Captura() {
       if (filtro !== "todas" && p.status !== filtro) return false;
       if (!texto) return true;
       if (termo.length >= 4 && (p.numeroProcesso ?? p.numeroProcessoOriginal).replace(/\D/g, "").includes(termo)) return true;
-      return [p.tribunal, p.djenOrgao, ...p.djenIntimados].some((campo) => campo?.toLowerCase().includes(texto));
+      return [p.tribunal, p.djenOrgao, p.escritorioResponsavel, p.grupoCliente, p.cliente, p.pastaCi, ...p.djenIntimados].some((campo) =>
+        campo?.toLowerCase().includes(texto)
+      );
     });
   }, [publicacoes, filtro, busca]);
+
+  const porEscritorio = useMemo(() => {
+    const total = new Map<string, number>();
+    for (const p of publicacoes ?? []) {
+      if (p.status === "juridico_vistar" && p.escritorioResponsavel) {
+        total.set(p.escritorioResponsavel, (total.get(p.escritorioResponsavel) ?? 0) + 1);
+      }
+    }
+    return [...total.entries()].sort((a, b) => b[1] - a[1]);
+  }, [publicacoes]);
 
   const arquivoAtual = arquivos?.find((arquivo) => arquivo.id === selecionado) ?? null;
 
@@ -158,7 +183,7 @@ function Captura() {
         <div className="space-y-1">
           <h2 className="text-base font-semibold text-slate-900">Publicações da Kurier</h2>
           <p className="text-sm text-slate-600">
-            O arquivo do dia é buscado sozinho na pasta do SharePoint entre 7h e 8h, com nova tentativa entre 9h e 10h (dias úteis). Duplicidades vão para a aba Duplicidades.
+            O arquivo do dia é buscado sozinho na pasta do SharePoint entre 7h e 8h, com nova tentativa entre 9h e 10h (dias úteis), e triado com a base de processos do SIOE. Pendências vão para a aba Controladoria; duplicidades, para a aba Duplicidades.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -260,7 +285,7 @@ function Captura() {
             </h2>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <div className="inline-flex flex-wrap rounded-lg border border-[#dce9eb] bg-white p-1" role="group" aria-label="Filtrar por situação">
-                {FILTROS.map((item) => (
+                {FILTROS.filter((item) => item.valor !== "captada" || contagem.captada > 0).map((item) => (
                   <Button
                     key={item.valor}
                     variant="ghost"
@@ -278,13 +303,24 @@ function Captura() {
                 <Input
                   value={busca}
                   onChange={(evento) => setBusca(evento.target.value)}
-                  placeholder="Processo, tribunal ou intimado"
+                  placeholder="Processo, CI, grupo, escritório ou intimado"
                   className="pl-9 sm:w-64"
                   aria-label="Buscar publicação"
                 />
               </div>
             </div>
           </div>
+
+          {porEscritorio.length ? (
+            <div className="flex flex-wrap items-center gap-2 border-b border-[#dce9eb] px-4 py-2 text-xs text-slate-600">
+              <span className="font-medium text-slate-700">Para o jurídico:</span>
+              {porEscritorio.map(([escritorio, total]) => (
+                <span key={escritorio} className="rounded-full border border-[#3e84a8]/25 px-2 py-0.5">
+                  {escritorio} <span className="font-mono">{total}</span>
+                </span>
+              ))}
+            </div>
+          ) : null}
 
           {arquivoAtual.status === "erro" ? (
             <p className="m-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{arquivoAtual.erro}</p>
@@ -308,6 +344,7 @@ function Captura() {
                     <StatusPublicacao status={publicacao.status} />
                     <span className="ml-auto text-xs text-slate-500">linha {publicacao.linhaArquivo}</span>
                   </div>
+                  <DadosPasta publicacao={publicacao} />
                   <DadosPublicacao publicacao={publicacao} />
                   <TeorPublicacao key={publicacao.id} publicacao={publicacao} />
                 </li>

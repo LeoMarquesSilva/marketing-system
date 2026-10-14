@@ -2,7 +2,7 @@ import type { ProcessoNormalizado } from "./types";
 
 const CNJ_MASCARADO = /\b\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b/;
 
-function mascarar(digitos: string): string {
+export function mascararCnj(digitos: string): string {
   return `${digitos.slice(0, 7)}-${digitos.slice(7, 9)}.${digitos.slice(9, 13)}.${digitos.slice(13, 14)}.${digitos.slice(14, 16)}.${digitos.slice(16, 20)}`;
 }
 
@@ -10,7 +10,7 @@ function aPartirDe(texto: string): ProcessoNormalizado | null {
   const digitos = texto.replace(/\D/g, "");
   if (digitos.length < 20) return null;
   const sufixo = digitos.slice(20);
-  return { cnj: mascarar(digitos.slice(0, 20)), digitos: digitos.slice(0, 20), sufixo: sufixo || null };
+  return { cnj: mascararCnj(digitos.slice(0, 20)), digitos: digitos.slice(0, 20), sufixo: sufixo || null };
 }
 
 /**
