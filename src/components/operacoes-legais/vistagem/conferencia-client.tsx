@@ -54,10 +54,16 @@ function TabelaTarefas({ agendamentos, comEnvio }: { agendamentos: AgendamentoRe
               <td className="px-3 py-2">{item.revisor ?? "—"}</td>
               {comEnvio ? (
                 <td className="px-3 py-2">
-                  <span className={cn("inline-flex rounded-full border px-2 py-0.5 text-xs font-medium", ENVIO[item.envioStatus].classe)}>
-                    {ENVIO[item.envioStatus].rotulo}
-                    {item.envioSimulado ? " (simulação)" : ""}
-                  </span>
+                  {item.envioStatus === "concluido" && item.envioSimulado ? (
+                    <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800">
+                      Simulada: preenchida no VIOS, não gravada
+                    </span>
+                  ) : (
+                    <span className={cn("inline-flex rounded-full border px-2 py-0.5 text-xs font-medium", ENVIO[item.envioStatus].classe)}>
+                      {ENVIO[item.envioStatus].rotulo}
+                      {item.envioSimulado ? " (simulação)" : ""}
+                    </span>
+                  )}
                   {item.viosTarefaId ? <span className="mt-1 block font-mono text-xs text-slate-600">VIOS {item.viosTarefaId}</span> : null}
                   {item.envioErro ? <span className="mt-1 block text-xs text-red-700">{item.envioErro}</span> : null}
                 </td>
@@ -73,10 +79,12 @@ function TabelaTarefas({ agendamentos, comEnvio }: { agendamentos: AgendamentoRe
 function CartaoConferencia({
   item,
   comEnvio,
+  modoReal,
   onConcluido,
 }: {
   item: ConferenciaItem;
   comEnvio: boolean;
+  modoReal: boolean;
   onConcluido?: (id: string, mensagem: string) => void;
 }) {
   const [devolvendo, setDevolvendo] = useState(false);
@@ -85,7 +93,7 @@ function CartaoConferencia({
   const [erro, setErro] = useState("");
   const { publicacao } = item;
 
-  async function agir(acao: "validar" | "devolver") {
+  async function agir(acao: "validar" | "devolver" | "reenviar") {
     setOcupado(true);
     setErro("");
     try {
@@ -100,7 +108,9 @@ function CartaoConferencia({
         publicacao.id,
         acao === "validar"
           ? `${corpo.enviadas} tarefa(s) enviada(s) ao robô${corpo.simulado ? " em modo simulação" : ""}.`
-          : "Devolvida ao jurídico."
+          : acao === "reenviar"
+            ? `${corpo.enviadas} tarefa(s) reenviada(s) ao robô para gravar no VIOS.`
+            : "Devolvida ao jurídico."
       );
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha na conferência.");
@@ -133,6 +143,15 @@ function CartaoConferencia({
         <TeorPublicacao publicacao={publicacao} />
       </div>
       <TabelaTarefas agendamentos={item.agendamentos} comEnvio={comEnvio} />
+      {comEnvio && modoReal && item.agendamentos.some((a) => a.envioSimulado && (a.envioStatus === "concluido" || a.envioStatus === "erro")) ? (
+        <div className="flex flex-wrap items-center gap-2 border-t border-[#dce9eb] px-4 py-3">
+          <Button size="sm" onClick={() => agir("reenviar")} disabled={ocupado}>
+            {ocupado ? <LoaderCircle className="animate-spin" /> : <Bot />}
+            Reenviar gravando no VIOS
+          </Button>
+          {erro ? <p className="text-sm text-red-700">{erro}</p> : null}
+        </div>
+      ) : null}
       {!comEnvio ? (
         <div className="space-y-2 border-t border-[#dce9eb] px-4 py-3">
           {devolvendo ? (
@@ -192,7 +211,10 @@ function Conferencia() {
   }, []);
 
   useEffect(() => {
-    void carregar();
+    // Traz o andamento do robô antes de listar, para não mostrar "na fila" o que já foi processado.
+    void authFetch("/api/operacoes-legais/vistagem/envios", { method: "POST" })
+      .catch(() => null)
+      .finally(() => void carregar());
     authFetch("/api/operacoes-legais/vistagem/integracoes")
       .then((resposta) => resposta.json())
       .then((corpo) => setIntegracoes(corpo.integracoes ?? []))
@@ -205,8 +227,8 @@ function Conferencia() {
     try {
       const resposta = await authFetch("/api/operacoes-legais/vistagem/envios", { method: "POST" });
       const corpo = await resposta.json();
-      if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao atualizar.");
-      setAviso(`${corpo.consultadas} tarefa(s) consultada(s): ${corpo.concluidas} agendada(s), ${corpo.erros} com erro.`);
+        if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao atualizar.");
+      setAviso(`${corpo.consultadas} tarefa(s) consultada(s): ${corpo.concluidas} concluída(s) pelo robô, ${corpo.erros} com erro.`);
       await carregar();
     } catch (e) {
       setAviso(e instanceof Error ? e.message : "Falha ao atualizar.");
@@ -291,7 +313,13 @@ function Conferencia() {
       ) : (
         <ul className="space-y-4">
           {lista.map((item) => (
-            <CartaoConferencia key={item.publicacao.id} item={item} comEnvio={aba === "enviadas"} onConcluido={concluido} />
+            <CartaoConferencia
+              key={item.publicacao.id}
+              item={item}
+              comEnvio={aba === "enviadas"}
+              modoReal={!dados?.envioSimulado}
+              onConcluido={concluido}
+            />
           ))}
         </ul>
       )}

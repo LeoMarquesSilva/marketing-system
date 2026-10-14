@@ -264,33 +264,8 @@ export async function validarVistagem(id: string, authUserId: string): Promise<{
   if (!marcada) throw new VistagemError("A publicação foi alterada por outra pessoa. Recarregue a página.", 409);
 
   const simular = envioSimulado();
-  const referencia = {
-    dataPublicacao: publicacao.data_publicacao,
-    tribunal: publicacao.tribunal,
-    numeroProcesso: publicacao.numero_processo,
-    djenIdComunicacao: publicacao.djen_id_comunicacao,
-  };
   try {
-    const idsFila = await enfileirarNoSama(
-      agendamentos.map((item) => {
-        const observacao = montarObservacaoVios(referencia, item.observacao);
-        return {
-          tipo: item.etiqueta === "PRAZO" ? "Prazo" : "Providências",
-          tarefa: item.tarefa,
-          tarefa_id: item.tarefa_id,
-          etiqueta_id: item.etiqueta === "PRAZO" ? "1" : "204",
-          observacao,
-          passo_texto: observacao,
-          data: paraDataVios(item.data),
-          pasta: publicacao.numero_processo as string,
-          pasta_tipo: "Processo" as const,
-          ci_pasta: publicacao.pasta_ci,
-          responsavel: item.responsavel,
-          revisor: item.revisor,
-          simular,
-        };
-      })
-    );
+    const idsFila = await enfileirarNoSama(agendamentos.map((item) => linhaParaFila(publicacao, item, simular)));
     const agora = new Date().toISOString();
     await Promise.all(
       agendamentos.map((item, indice) =>
@@ -306,6 +281,74 @@ export async function validarVistagem(id: string, authUserId: string): Promise<{
     await db.from("vistagem_publicacoes").update({ status: "controladoria_vistar", conferido_por: null, conferido_em: null }).eq("id", id);
     throw erro;
   }
+}
+
+function linhaParaFila(publicacao: PublicacaoComArea, item: AgendamentoRow, simular: boolean) {
+  const observacao = montarObservacaoVios(
+    {
+      dataPublicacao: publicacao.data_publicacao,
+      tribunal: publicacao.tribunal,
+      numeroProcesso: publicacao.numero_processo,
+      djenIdComunicacao: publicacao.djen_id_comunicacao,
+    },
+    item.observacao
+  );
+  return {
+    tipo: item.etiqueta === "PRAZO" ? "Prazo" : "Providências",
+    tarefa: item.tarefa,
+    tarefa_id: item.tarefa_id,
+    etiqueta_id: item.etiqueta === "PRAZO" ? "1" : "204",
+    observacao,
+    passo_texto: observacao,
+    data: paraDataVios(item.data),
+    pasta: publicacao.numero_processo as string,
+    pasta_tipo: "Processo" as const,
+    ci_pasta: publicacao.pasta_ci,
+    responsavel: item.responsavel,
+    revisor: item.revisor,
+    simular,
+  };
+}
+
+/**
+ * Com o modo real ligado, reenvia ao robô as tarefas que só passaram em
+ * simulação (conferidas no VIOS, sem gravar), agora para gravar.
+ */
+export async function reenviarGravando(id: string): Promise<{ enviadas: number }> {
+  if (envioSimulado()) throw new VistagemError("O envio ainda está em modo simulação. Ligue VISTAGEM_RPA_MODO=real na Vercel.", 409);
+  const publicacao = await carregarPublicacao(id);
+  if (publicacao.status !== "pronto_para_agendar") throw new VistagemError("Esta publicação não está aguardando agendamento.", 409);
+  const db = admin();
+  const { data, error } = await db
+    .from("vistagem_agendamentos")
+    .select(COLUNAS_AGENDAMENTO)
+    .eq("publicacao_id", id)
+    .eq("envio_simulado", true)
+    .in("envio_status", ["concluido", "erro"])
+    .order("ordem", { ascending: true });
+  if (error) falhou("carregar as tarefas simuladas", error);
+  const simuladas = (data ?? []) as AgendamentoRow[];
+  if (!simuladas.length) throw new VistagemError("Não há tarefas simuladas para reenviar.", 422);
+
+  const idsFila = await enfileirarNoSama(simuladas.map((item) => linhaParaFila(publicacao, item, false)));
+  const agora = new Date().toISOString();
+  await Promise.all(
+    simuladas.map((item, indice) =>
+      db
+        .from("vistagem_agendamentos")
+        .update({
+          envio_status: "pendente",
+          envio_simulado: false,
+          sama_agendamento_id: idsFila[indice],
+          vios_tarefa_id: null,
+          envio_erro: null,
+          enviado_em: agora,
+          envio_atualizado_em: agora,
+        })
+        .eq("id", item.id)
+    )
+  );
+  return { enviadas: idsFila.length };
 }
 
 /** Não validado: volta para o jurídico com o motivo, mantendo as tarefas para ajuste. */
@@ -361,8 +404,9 @@ export async function atualizarEnvios(): Promise<{ consultadas: number; concluid
   }
 
   for (const publicacaoId of publicacoesTocadas) {
-    const { data: todas } = await db.from("vistagem_agendamentos").select("envio_status").eq("publicacao_id", publicacaoId);
-    if ((todas ?? []).length && (todas ?? []).every((row) => row.envio_status === "concluido")) {
+    const { data: todas } = await db.from("vistagem_agendamentos").select("envio_status, envio_simulado").eq("publicacao_id", publicacaoId);
+    // Simulação não grava nada no VIOS: a publicação só vira "agendado" com todas as tarefas gravadas.
+    if ((todas ?? []).length && (todas ?? []).every((row) => row.envio_status === "concluido" && !row.envio_simulado)) {
       await db.from("vistagem_publicacoes").update({ status: "agendado" }).eq("id", publicacaoId).eq("status", "pronto_para_agendar");
     }
   }
