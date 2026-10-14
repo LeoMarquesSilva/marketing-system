@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Bot, Check, CircleAlert, LoaderCircle, RefreshCw, Undo2 } from "lucide-react";
+import { Bot, Check, CircleAlert, ExternalLink, LoaderCircle, RefreshCw, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, EnvioStatus } from "@/lib/vistagem/types";
+import { linkTarefaVios } from "@/lib/vistagem/vios-links";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { DadosPasta, DadosPublicacao, TeorPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
 
@@ -64,7 +65,18 @@ function TabelaTarefas({ agendamentos, comEnvio }: { agendamentos: AgendamentoRe
                       {item.envioSimulado ? " (simulação)" : ""}
                     </span>
                   )}
-                  {item.viosTarefaId ? <span className="mt-1 block font-mono text-xs text-slate-600">VIOS {item.viosTarefaId}</span> : null}
+                  {item.viosTarefaId ? (
+                    <a
+                      href={linkTarefaVios(item.viosTarefaId)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Abrir a tarefa no VIOS (nova aba)"
+                      className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-[#347796] hover:text-[#285f7a] hover:underline"
+                    >
+                      <span className="font-mono tabular-nums">CI {item.viosTarefaId}</span>
+                      <ExternalLink className="size-3" aria-hidden />
+                    </a>
+                  ) : null}
                   {item.envioErro ? <span className="mt-1 block text-xs text-red-700">{item.envioErro}</span> : null}
                 </td>
               ) : null}
