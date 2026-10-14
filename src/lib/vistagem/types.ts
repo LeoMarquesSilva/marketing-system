@@ -235,6 +235,8 @@ export interface VistagemDetalhe {
   publicacao: PublicacaoResumo;
   agendamentos: AgendamentoResumo[];
   catalogo: CatalogoVistagem | null;
+  /** Por que não há lista de tarefas (catálogo indisponível ou área sem catálogo). */
+  catalogoErro: string | null;
   responsavelSugerido: string | null;
   hoje: string;
 }

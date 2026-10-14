@@ -51,6 +51,13 @@ export async function carregarCatalogoProcessos(): Promise<CatalogoArea[]> {
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
     atualizadoEm: row.atualizado_em as string,
   }));
+  // Com a chave pública o RLS do SAMA devolve a lista vazia, sem erro.
+  if (!areas.length) {
+    throw new VistagemError(
+      "O catálogo de tarefas do SAMA veio vazio. Confira se SAMA_SUPABASE_SERVICE_ROLE_KEY é a chave service_role do projeto SAMA (a chave pública não enxerga o catálogo).",
+      502
+    );
+  }
   cacheCatalogo = { carregadoEm: Date.now(), areas };
   return areas;
 }
@@ -123,7 +130,8 @@ export async function verificarSama(): Promise<{ ok: boolean; detalhe: string }>
     const areas = await carregarCatalogoProcessos();
     const { error } = await sama().from("vios_agendamentos").select("id", { count: "exact", head: true });
     if (error) return { ok: false, detalhe: `Fila do robô inacessível: ${error.message}` };
-    return { ok: true, detalhe: `${areas.length} áreas no catálogo do VIOS` };
+    const projeto = new URL(process.env.SAMA_SUPABASE_URL ?? "").hostname.split(".")[0];
+    return { ok: true, detalhe: `${areas.length} áreas no catálogo do VIOS (projeto ${projeto})` };
   } catch (erro) {
     return { ok: false, detalhe: erro instanceof Error ? erro.message : String(erro) };
   }
