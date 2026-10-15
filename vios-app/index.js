@@ -19,8 +19,8 @@ try {
 
 const config = {
   baseUrl: 'https://bp.vios.com.br',
-  usuario: process.env.VIOS_USER || 'vinicius.marques@bismarchipires.com.br',
-  senha: process.env.VIOS_PASS || 'Vinicius123!',
+  usuario: process.env.VIOS_USER,
+  senha: process.env.VIOS_PASS,
   headless: false,
 
   // 🔧 Informe manualmente o período desejado
@@ -33,6 +33,11 @@ const config = {
   // Caminho secundário (Histórico)
   backupPath: `C:\\Users\\bp01\\OneDrive - BPPLAW\\Documentos - Equipe Controladoria\\Núcleo de Cadastro\\Bases Atualizacoes\\Historico\\Tarefas.csv`
 };
+
+if (!config.usuario || !config.senha) {
+  console.error('❌ Defina VIOS_USER e VIOS_PASS em vios-app/.env');
+  process.exit(1);
+}
 
 // 📁 Função para copiar arquivo ao histórico
 async function copiarParaBackup() {
