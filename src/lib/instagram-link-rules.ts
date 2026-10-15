@@ -12,7 +12,8 @@ export function isInstitutionalArea(area: string | null | undefined): boolean {
 }
 
 export function getPostAreas(post: InstagramPost): string[] {
-  if (post.areas?.length) return post.areas;
+  // Há vínculos gravados com a mesma área duas vezes.
+  if (post.areas?.length) return [...new Set(post.areas)];
   if (post.area) return [post.area];
   return [];
 }

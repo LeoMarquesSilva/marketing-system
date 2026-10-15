@@ -124,6 +124,20 @@ describe("visibilidade por perfil", () => {
     expect(visibleHrefs({ role: null, permissions: ["/planner"] })).not.toContain("/icp");
   });
 
+  it("Postagens da equipe aparece para líderes e Marketing, não para colaborador", () => {
+    const lider = { role: null, permissions: ["/conteudo/roteiros"], department: "Trabalhista", ferias_view_enabled: true };
+    expect(visibleHrefs(lider)).toContain("/postagens-equipe");
+    expect(visibleHrefs({ role: null, permissions: null, department: "Cível", ferias_view_enabled: true })).toContain(
+      "/postagens-equipe"
+    );
+    expect(visibleHrefs({ role: "designer", permissions: null, department: "Marketing" })).toContain("/postagens-equipe");
+    expect(visibleHrefs({ role: "admin" })).toContain("/postagens-equipe");
+    expect(visibleHrefs({ role: null, permissions: ["/conteudo/roteiros"], department: "Trabalhista" })).not.toContain(
+      "/postagens-equipe"
+    );
+    expect(visibleHrefs({ role: null, permissions: null, department: "Trabalhista" })).not.toContain("/postagens-equipe");
+  });
+
   it("a funcionalidade aponta para a primeira página liberada", () => {
     const nav = buildNav({ role: null, permissions: ["/vios-tarefas"] });
     const planner = nav.flatMap((front) => front.features).find((feature) => feature.id === "planner");

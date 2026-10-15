@@ -520,10 +520,11 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
             <div>
               <p className="flex items-center gap-1.5 text-sm font-medium">
                 <Palmtree className="h-4 w-4" />
-                Férias — visão por área
+                Liderança por área
               </p>
               <p className="mt-1 text-[11px] text-muted-foreground">
-                Este controle libera somente Férias. A permissão completa de RH acima continua
+                Define as equipes que a pessoa acompanha em Férias (somente leitura), no Calendário
+                editorial e em Postagens da equipe. A permissão completa de RH acima continua
                 permitindo editar e acessar Qualificações.
               </p>
             </div>
@@ -602,7 +603,7 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
                 className="gap-2"
               >
                 {savingFerias && <Loader2 className="h-4 w-4 animate-spin" />}
-                Salvar acesso às férias
+                Salvar liderança por área
               </Button>
             </div>
           </div>

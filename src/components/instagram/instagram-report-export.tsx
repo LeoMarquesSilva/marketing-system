@@ -18,6 +18,7 @@ import {
   downloadInstagramReportExcel,
   downloadInstagramReportText,
   reportFilenameBase,
+  type TeamReportRow,
 } from "@/lib/instagram-report";
 import type { User } from "@/lib/users";
 
@@ -30,6 +31,12 @@ interface InstagramReportExportProps {
   focusArea?: string;
   compact?: boolean;
   dialogTitle?: string;
+  /** Título do relatório gerado (planilha e texto). */
+  reportTitle?: string;
+  /** Integrantes da equipe; habilita a aba Equipe mesmo sem posts. */
+  team?: TeamReportRow[];
+  filenameBase?: string;
+  excelLabel?: string;
 }
 
 export function InstagramReportExport({
@@ -41,6 +48,10 @@ export function InstagramReportExport({
   focusArea,
   compact = false,
   dialogTitle,
+  reportTitle,
+  team,
+  filenameBase: filenameBaseOverride,
+  excelLabel = "Relatório da área",
 }: InstagramReportExportProps) {
   const [exportingExcel, setExportingExcel] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -55,17 +66,20 @@ export function InstagramReportExport({
         accountStats,
         filterDescription,
         focusArea,
+        title: reportTitle,
+        team,
       }),
-    [posts, areas, users, accountStats, filterDescription, focusArea]
+    [posts, areas, users, accountStats, filterDescription, focusArea, reportTitle, team]
   );
 
   const filenameBase = useMemo(
-    () => reportFilenameBase(report, focusArea),
-    [report, focusArea]
+    () => filenameBaseOverride ?? reportFilenameBase(report, focusArea),
+    [filenameBaseOverride, report, focusArea]
   );
+  const disabled = posts.length === 0 && !team?.length;
 
   const handleExcel = async () => {
-    if (posts.length === 0) return;
+    if (disabled) return;
     setExportingExcel(true);
     try {
       await downloadInstagramReportExcel(report, { filenameBase });
@@ -80,7 +94,6 @@ export function InstagramReportExport({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const disabled = posts.length === 0;
   const title =
     dialogTitle ??
     (focusArea ? `Relatório — ${focusArea}` : "Relatório Instagram por área");
@@ -99,7 +112,7 @@ export function InstagramReportExport({
           ) : (
             <FileSpreadsheet className="h-4 w-4 mr-2" />
           )}
-          Relatório da área
+          {excelLabel}
         </Button>
         <Button
           variant="outline"

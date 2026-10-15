@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { isContentCollaborator } from "@/lib/content-areas";
-import { resolveAllowedSections, canAccessPath } from "@/lib/access-control";
+import { resolveAllowedSections, canAccessPath, isTeamPostsPath } from "@/lib/access-control";
 import {
   canAccessGustavoContent,
   isGustavoContentPath,
@@ -118,8 +118,13 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
 
     // Viewers por área podem também ser colaboradores de conteúdo. O acesso
-    // específico a Férias deve prevalecer sobre o redirect legado abaixo.
-    if (profile && isFeriasRoute && canAccessPath(profile, pathname)) {
+    // específico a Férias e às Postagens da equipe deve prevalecer sobre o
+    // redirect legado abaixo.
+    if (
+      profile &&
+      (isFeriasRoute || isTeamPostsPath(pathname)) &&
+      canAccessPath(profile, pathname)
+    ) {
       return null;
     }
 

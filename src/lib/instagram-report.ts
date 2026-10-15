@@ -29,6 +29,23 @@ export interface InstagramReportInput {
   filterDescription?: string;
   /** Quando definido, o relatório foca em uma única área */
   focusArea?: string;
+  /** Título do relatório escrito, quando não é o padrão por área/escritório. */
+  title?: string;
+  /** Integrantes da equipe, inclusive quem não publicou (Postagens da equipe). */
+  team?: TeamReportRow[];
+}
+
+export interface TeamReportRow {
+  name: string;
+  area: string;
+  posts: number;
+  reels: number;
+  reach: number;
+  views: number;
+  engagementActions: number;
+  engagementRate: number;
+  /** Data do último post no recorte (dd/mm/aaaa) ou vazio. */
+  lastPostDate: string;
 }
 
 export function filterPostsByArea(posts: InstagramPost[], areaName: string): InstagramPost[] {
@@ -168,6 +185,8 @@ export interface InstagramReport {
   formatRows: FormatReportRow[];
   topPosts: PostReportRow[];
   postRows: PostReportRow[];
+  teamRows?: TeamReportRow[];
+  title?: string;
   narrative: string;
 }
 
@@ -362,10 +381,36 @@ function buildFormatRows(posts: InstagramPost[]): FormatReportRow[] {
     .sort((a, b) => b.engagementActions - a.engagementActions);
 }
 
+function buildTeamNarrative(rows: TeamReportRow[] | undefined): string[] {
+  if (!rows) return [];
+  const active = rows.filter((row) => row.posts > 0);
+  const idle = rows.filter((row) => row.posts === 0);
+  const lines = [
+    "",
+    "EQUIPE",
+    "-".repeat(30),
+    `Colaboradores que publicaram: ${active.length} de ${rows.length}`,
+  ];
+  for (const row of active) {
+    lines.push(
+      `${row.name} (${row.area}) — ${row.posts} post${row.posts !== 1 ? "s" : ""}` +
+        `${row.reels > 0 ? ` (${row.reels} reel${row.reels !== 1 ? "s" : ""})` : ""}` +
+        ` · alcance ${row.reach.toLocaleString("pt-BR")} · taxa ${row.engagementRate}%` +
+        ` · último em ${row.lastPostDate}`
+    );
+  }
+  if (idle.length > 0) {
+    lines.push(`Sem posts no período: ${idle.map((row) => row.name).join(", ")}`);
+  }
+  return lines;
+}
+
 function buildNarrative(report: Omit<InstagramReport, "narrative">, focusArea?: string): string {
-  const title = focusArea
-    ? `RELATÓRIO INSTAGRAM — ÁREA ${focusArea.toUpperCase()}`
-    : "RELATÓRIO INSTAGRAM — BISMARCHI PIRES";
+  const title = report.title
+    ? report.title.toUpperCase()
+    : focusArea
+      ? `RELATÓRIO INSTAGRAM — ÁREA ${focusArea.toUpperCase()}`
+      : "RELATÓRIO INSTAGRAM — BISMARCHI PIRES";
   const lines: string[] = [
     title,
     "=".repeat(50),
@@ -387,6 +432,7 @@ function buildNarrative(report: Omit<InstagramReport, "narrative">, focusArea?: 
     `Taxa de engajamento: ${report.aggregateEngagementRate}%`,
     `  Fórmula: ${ENGAGEMENT_RATE_FORMULA}`,
     `Curtidas: ${report.totalLikes.toLocaleString("pt-BR")} · Comentários: ${report.totalComments.toLocaleString("pt-BR")} · Salvamentos: ${report.totalSaves.toLocaleString("pt-BR")}`,
+    ...buildTeamNarrative(report.teamRows),
     "",
     "DESTAQUES",
     "-".repeat(30),
@@ -454,7 +500,7 @@ function buildNarrative(report: Omit<InstagramReport, "narrative">, focusArea?: 
 }
 
 export function buildInstagramReport(input: InstagramReportInput): InstagramReport {
-  const { posts, areas, users, accountStats, filterDescription, focusArea } = input;
+  const { posts, areas, users, accountStats, filterDescription, focusArea, title, team } = input;
   const totals = aggregateMetrics(posts);
   const areaDashboards = computeAreaDashboards(posts, areas, users);
   const areaRows = buildAreaRows(areaDashboards, posts, totals);
@@ -500,6 +546,8 @@ export function buildInstagramReport(input: InstagramReportInput): InstagramRepo
     formatRows,
     topPosts,
     postRows,
+    teamRows: team,
+    title,
   };
 
   return {

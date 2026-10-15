@@ -40,9 +40,12 @@ import {
   TrendingUp,
   User,
   Users,
+  UsersRound,
   Wallet,
 } from "lucide-react";
 import {
+  TEAM_POSTS_PATH,
+  canSeeTeamPosts,
   hasCafeCulturaAccess,
   hasIcpAccess,
   hasOperacoesLegaisAccess,
@@ -156,6 +159,14 @@ export const NAV_FRONTS: NavFront[] = [
         shortLabel: "Calendário",
         icon: CalendarRange,
         pages: [{ href: "/conteudo/cronograma", label: "Calendário editorial" }],
+      },
+      {
+        // Coordenadores, gestores e sócios acompanham os posts da própria área.
+        id: "postagens-equipe",
+        label: "Postagens da equipe",
+        shortLabel: "Postagens",
+        icon: UsersRound,
+        pages: [{ href: TEAM_POSTS_PATH, label: "Postagens da equipe" }],
       },
       {
         id: "posicionamento-socios",
@@ -386,6 +397,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
   const feriasView =
     hasHrAccess(profile?.role, profile?.permissions) || profile?.ferias_view_enabled === true;
   const gustavo = canAccessGustavoContent(profile);
+  const teamPosts = canSeeTeamPosts(profile);
   const allowed = resolveAllowedSections(profile);
 
   if (allowed) {
@@ -399,6 +411,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
       if (href.startsWith("/operacoes-legais")) return hasOperacoesLegaisAccess(profile);
       if (href === "/icp") return hasIcpAccess(profile);
       if (href === "/conteudo/gustavo") return gustavo;
+      if (href === TEAM_POSTS_PATH) return teamPosts;
       if (href === "/rh/ferias") return rhFull || feriasView;
       if (RH_RESTRICTED.has(href)) return rhFull;
       if (href.startsWith("/conteudo") && contentAccess) return true;
@@ -411,6 +424,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
       if (COLLABORATOR_PAGES.has(href)) return true;
       if (href === "/rh/ferias") return feriasView;
       if (href === "/conteudo/gustavo") return gustavo;
+      if (href === TEAM_POSTS_PATH) return teamPosts;
       return false;
     };
   }
@@ -434,6 +448,8 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
         return isCollaboratorPhotosManager(profile);
       case "/conteudo/gustavo":
         return gustavo;
+      case TEAM_POSTS_PATH:
+        return teamPosts;
       case "/rh/ferias":
         return isAdmin || feriasView;
       case "/admin":

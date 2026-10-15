@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ACCESS_PRESETS,
   canAccessPath,
+  canSeeTeamPosts,
   canEditPartyInvite,
   firstAllowedPath,
   hasCafeCulturaAccess,
@@ -209,5 +210,16 @@ describe("access-control permissions catalog", () => {
     const admin = { id: "admin-1", role: "admin", permissions: null };
     expect(canAccessPath(admin, "/fotos-colaboradores")).toBe(true);
     expect(canAccessPath(admin, "/minhas-fotos")).toBe(true);
+  });
+
+  it("Postagens da equipe: líder de área e Marketing, nunca colaborador sem liderança", () => {
+    const lider = { role: null, permissions: ["/conteudo/roteiros"], ferias_view_enabled: true };
+    expect(canAccessPath(lider, "/postagens-equipe")).toBe(true);
+    expect(canAccessPath({ role: "admin" }, "/postagens-equipe")).toBe(true);
+    expect(canSeeTeamPosts({ role: "designer", permissions: null })).toBe(true);
+    expect(canSeeTeamPosts({ role: null, permissions: ["/planner"], department: "Marketing" })).toBe(true);
+    expect(canSeeTeamPosts({ role: null, permissions: ["/instagram-insights"] })).toBe(true);
+    expect(canAccessPath({ role: null, permissions: ["/conteudo/roteiros"] }, "/postagens-equipe")).toBe(false);
+    expect(canAccessPath({ role: null, permissions: ["/rh"] }, "/postagens-equipe")).toBe(false);
   });
 });

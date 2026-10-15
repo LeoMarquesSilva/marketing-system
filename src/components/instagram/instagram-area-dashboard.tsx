@@ -139,7 +139,7 @@ function PeriodHint({ periodLabel, count, total }: { periodLabel: string | null;
   );
 }
 
-function PeriodComparisonGrid({ posts, periodRange }: { posts: InstagramPost[]; periodRange: DateRange | null }) {
+export function PeriodComparisonGrid({ posts, periodRange }: { posts: InstagramPost[]; periodRange: DateRange | null }) {
   const comparison = useMemo(
     () =>
       computePeriodComparison(posts, periodRange ? { range: periodRange } : { rangeDays: 30 }),
@@ -207,7 +207,7 @@ function BestHoursMini({ posts }: { posts: InstagramPost[] }) {
   );
 }
 
-function PostListRow({
+export function PostListRow({
   post,
   users,
   areaName,
@@ -313,7 +313,7 @@ function PostListRow({
   );
 }
 
-function TopPostsList({ posts, users, areaName }: { posts: InstagramPost[]; users: User[]; areaName?: string }) {
+export function TopPostsList({ posts, users, areaName }: { posts: InstagramPost[]; users: User[]; areaName?: string }) {
   const topPosts = useMemo(() => computeTopPostsByEngagement(posts, 5), [posts]);
 
   if (topPosts.length === 0) {

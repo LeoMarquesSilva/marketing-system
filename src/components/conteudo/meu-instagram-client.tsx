@@ -14,9 +14,6 @@ import {
   TrendingDown,
   Newspaper,
   ArrowRight,
-  Images,
-  Film,
-  Image as ImageIcon,
 } from "lucide-react";
 import {
   Dialog,
@@ -30,6 +27,11 @@ import type { InstagramPost } from "@/lib/instagram-posts";
 import { computeEngagementActionsFromPost } from "@/lib/instagram-engagement";
 import { resolveInstagramThumbnailSrc } from "@/lib/instagram-thumbnail-client";
 import { Share2 } from "lucide-react";
+import {
+  InstagramMediaCard,
+  InstagramMediaThumb,
+  instagramMediaInfo,
+} from "@/components/instagram/instagram-media-card";
 
 export interface OfficeStats {
   posts: number;
@@ -46,14 +48,6 @@ interface MeuInstagramClientProps {
 
 function nf(n: number) {
   return Math.round(n).toLocaleString("pt-BR");
-}
-
-function mediaInfo(post: InstagramPost): { label: string; icon: typeof Images } {
-  const pt = (post.media_product_type ?? "").toUpperCase();
-  const mt = (post.media_type ?? "").toUpperCase();
-  if (pt === "REELS" || mt === "VIDEO") return { label: "Reel", icon: Film };
-  if (mt === "CAROUSEL_ALBUM") return { label: "Carrossel", icon: Images };
-  return { label: "Imagem", icon: ImageIcon };
 }
 
 /** Card de métrica com comparação à média do escritório. */
@@ -236,7 +230,7 @@ export function MeuInstagramClient({ userName, posts, office }: MeuInstagramClie
               tabIndex={0}
             >
               <div className="flex flex-col gap-4 p-4 sm:flex-row sm:p-5">
-                <PostThumb post={best.post} className="aspect-square w-full sm:h-32 sm:w-32" />
+                <InstagramMediaThumb post={best.post} className="aspect-square w-full sm:h-32 sm:w-32" />
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="mb-1 inline-flex w-fit items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
                     <TrendingUp className="h-3 w-3" />
@@ -277,40 +271,9 @@ export function MeuInstagramClient({ userName, posts, office }: MeuInstagramClie
           <div>
             <h2 className="mb-3 text-sm font-semibold">Seus posts</h2>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-              {visible.map((p) => {
-                const rate = p.reach ? (computeEngagementActionsFromPost(p) / p.reach) * 100 : 0;
-                return (
-                  <article
-                    key={p.id}
-                    className="group flex cursor-pointer flex-col overflow-hidden rounded-lg border bg-card shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
-                    onClick={() => setSelected(p)}
-                    onKeyDown={(e) => e.key === "Enter" && setSelected(p)}
-                    role="button"
-                    tabIndex={0}
-                  >
-                    <PostThumb post={p} className="aspect-square w-full" withBadge />
-                    <div className="flex flex-1 flex-col gap-2 p-3.5">
-                      <p className="text-[11px] text-muted-foreground">
-                        {p.published_at
-                          ? format(new Date(p.published_at), "dd MMM yyyy", { locale: ptBR })
-                          : "—"}
-                        {(p.areas?.[0] || p.area) && <> · {p.areas?.[0] ?? p.area}</>}
-                      </p>
-                      <p className="line-clamp-2 text-sm leading-snug">
-                        {p.caption?.split("\n")[0] || "Post sem legenda"}
-                      </p>
-                      <div className="mt-auto flex flex-wrap items-center gap-3 pt-2">
-                        <Metric icon={Eye} value={p.reach} />
-                        <Metric icon={Heart} value={p.likes} />
-                        <span className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-primary">
-                          <TrendingUp className="h-3.5 w-3.5" />
-                          {rate.toFixed(1)}%
-                        </span>
-                      </div>
-                    </div>
-                  </article>
-                );
-              })}
+              {visible.map((p) => (
+                <InstagramMediaCard key={p.id} post={p} onOpen={() => setSelected(p)} withBadge />
+              ))}
             </div>
             {sorted.length > 9 && (
               <div className="mt-4 flex justify-center">
@@ -331,7 +294,7 @@ export function MeuInstagramClient({ userName, posts, office }: MeuInstagramClie
 function PostDetailModal({ post, onClose }: { post: InstagramPost | null; onClose: () => void }) {
   const rate =
     post && post.reach ? (computeEngagementActionsFromPost(post) / post.reach) * 100 : 0;
-  const info = post ? mediaInfo(post) : null;
+  const info = post ? instagramMediaInfo(post) : null;
   const imageSrc = post ? resolveInstagramThumbnailSrc(post.ig_media_id, post) : null;
   return (
     <Dialog open={!!post} onOpenChange={(o) => !o && onClose()}>
@@ -444,38 +407,3 @@ function MiniStat({
   );
 }
 
-function PostThumb({
-  post,
-  className,
-  withBadge,
-}: {
-  post: InstagramPost;
-  className?: string;
-  withBadge?: boolean;
-}) {
-  const src = resolveInstagramThumbnailSrc(post.ig_media_id, post);
-  const { label, icon: Icon } = mediaInfo(post);
-  return (
-    <div className={cn("relative shrink-0 overflow-hidden bg-primary", className)}>
-      {src ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={src}
-          alt=""
-          loading="lazy"
-          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-        />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#1a2f44] to-[#1c1c1c]">
-          <Instagram className="h-7 w-7 text-white/30" />
-        </div>
-      )}
-      {withBadge && (
-        <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">
-          <Icon className="h-3 w-3" />
-          {label}
-        </span>
-      )}
-    </div>
-  );
-}

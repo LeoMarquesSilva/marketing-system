@@ -421,6 +421,18 @@ function buildSummarySheet(report: InstagramReport): WorkSheet {
     { kind: "row", label: "Curtidas total", value: report.totalLikes, format: "int" },
     { kind: "row", label: "Comentários total", value: report.totalComments, format: "int" },
     { kind: "row", label: "Salvamentos total", value: report.totalSaves, format: "int" },
+    ...(report.teamRows
+      ? ([
+          { kind: "section", label: "Equipe" },
+          { kind: "row", label: "Integrantes", value: report.teamRows.length, format: "int" },
+          {
+            kind: "row",
+            label: "Colaboradores que publicaram",
+            value: report.teamRows.filter((row) => row.posts > 0).length,
+            format: "int",
+          },
+        ] satisfies SummaryItem[])
+      : []),
     { kind: "section", label: "Destaques" },
     { kind: "row", label: "Área com mais posts", value: report.topAreaByPosts },
     { kind: "row", label: "Área com mais ações de engajamento", value: report.topAreaByEngagement },
@@ -434,8 +446,9 @@ function buildSummarySheet(report: InstagramReport): WorkSheet {
   ];
 
   const lastCol = 1;
+  const title = report.title ?? "Relatório Instagram Insights";
   const aoa: (string | number)[][] = [
-    ["Relatório Instagram Insights"],
+    [title],
     [summaryMeta(report)],
     [],
     ["Indicador", "Valor"],
@@ -447,7 +460,7 @@ function buildSummarySheet(report: InstagramReport): WorkSheet {
   ];
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  writeBanner(ws, "Relatório Instagram Insights", summaryMeta(report), lastCol);
+  writeBanner(ws, title, summaryMeta(report), lastCol);
   applyStyle(cellAt(ws, 3, 0), headerStyle);
   applyStyle(cellAt(ws, 3, 1), headerStyle);
 
@@ -509,7 +522,7 @@ export function buildInstagramExcelWorkbook(report: InstagramReport): WorkBook {
 
   const wb = XLSX.utils.book_new();
   wb.Props = {
-    Title: "Relatório Instagram Insights",
+    Title: report.title ?? "Relatório Instagram Insights",
     Subject: subtitle,
     Author: "ORQESTRAI",
     Company: "ORQESTRAI",
@@ -517,6 +530,30 @@ export function buildInstagramExcelWorkbook(report: InstagramReport): WorkBook {
   };
 
   XLSX.utils.book_append_sheet(wb, buildSummarySheet(report), "Resumo");
+  if (report.teamRows) {
+    const teamRows = report.teamRows.map((r) => ({ ...r, lastPostDate: r.lastPostDate || "—" }));
+    XLSX.utils.book_append_sheet(
+      wb,
+      buildTableSheet({
+        title: "Equipe — publicações por colaborador",
+        subtitle,
+        freezeCols: 1,
+        columns: [
+          { header: "Colaborador", key: "name", width: 30 },
+          { header: "Área", key: "area", width: 24 },
+          { header: "Posts", key: "posts", width: 10, format: "int" },
+          { header: "Reels", key: "reels", width: 10, format: "int" },
+          { header: "Alcance", key: "reach", width: 13, format: "int" },
+          { header: "Visualizações", key: "views", width: 14, format: "int" },
+          { header: ENGAGEMENT_ACTIONS_LABEL, key: "engagementActions", width: 16, format: "int" },
+          { header: "Taxa de engajamento (%)", key: "engagementRate", width: 16, format: "pct" },
+          { header: "Último post", key: "lastPostDate", width: 14 },
+        ],
+        rows: teamRows,
+      }),
+      "Equipe"
+    );
+  }
   XLSX.utils.book_append_sheet(
     wb,
     buildTableSheet({

@@ -111,6 +111,28 @@ export interface AccessProfile {
   ferias_view_enabled?: boolean | null;
   /** Membership do módulo Posicionamento Gustavo — nunca inferir por nome. */
   gustavo_content_member?: boolean | null;
+  department?: string | null;
+}
+
+/** Postagens da equipe: desempenho no Instagram dos posts de cada área. */
+export const TEAM_POSTS_PATH = "/postagens-equipe";
+
+export function isTeamPostsPath(pathname: string): boolean {
+  return pathname === TEAM_POSTS_PATH || pathname.startsWith(`${TEAM_POSTS_PATH}/`);
+}
+
+/**
+ * Indicador de menu e rota para Postagens da equipe: Marketing, quem já vê o
+ * Instagram Insights e líderes de área (mesma flag de liderança de Férias).
+ * O recorte por área é refeito no servidor.
+ */
+export function canSeeTeamPosts(profile: AccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  if ((profile.role ?? "").toLowerCase() === "designer") return true;
+  if ((profile.department ?? "").trim().toLowerCase() === "marketing") return true;
+  if (profile.permissions?.includes("/instagram-insights")) return true;
+  return profile.ferias_view_enabled === true;
 }
 
 /** Usuários com acesso à página Fotos Colaboradores (além do catálogo de permissões). */
@@ -244,6 +266,10 @@ export function canAccessPath(
 
   if (pathname === ICP_KEY || pathname.startsWith(`${ICP_KEY}/`)) {
     return hasIcpAccess(profile);
+  }
+
+  if (isTeamPostsPath(pathname)) {
+    return canSeeTeamPosts(profile);
   }
 
   const isFeriasRoute =

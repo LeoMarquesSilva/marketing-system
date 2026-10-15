@@ -161,4 +161,23 @@ describe("buildInstagramExcelWorkbook", () => {
     expect(wb.Sheets["Por Área"].A5?.v).toBe("Nenhum registro no filtro atual.");
     expect(wb.Sheets["Por Área"].A7).toBeUndefined();
   });
+
+  it("adiciona a aba Equipe com quem não publicou e usa o título do relatório", () => {
+    const wb = buildInstagramExcelWorkbook(
+      report({
+        title: "Relatório de postagens da equipe — Trabalhista",
+        teamRows: [
+          { name: "Ana", area: "Trabalhista", posts: 2, reels: 1, reach: 1500, views: 3000, engagementActions: 200, engagementRate: 13.33, lastPostDate: "17/09/2026" },
+          { name: "Bruno", area: "Trabalhista", posts: 0, reels: 0, reach: 0, views: 0, engagementActions: 0, engagementRate: 0, lastPostDate: "" },
+        ],
+      })
+    );
+    expect(wb.SheetNames.slice(0, 2)).toEqual(["Resumo", "Equipe"]);
+    expect(wb.Sheets["Resumo"].A1?.v).toBe("Relatório de postagens da equipe — Trabalhista");
+    const team = wb.Sheets["Equipe"];
+    expect(team.A4?.v).toBe("Colaborador");
+    expect(team.A6?.v).toBe("Bruno");
+    expect(team.C6?.v).toBe(0);
+    expect(team.I6?.v).toBe("—");
+  });
 });
