@@ -3,6 +3,7 @@ import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { chaveNome, type OpcaoVios } from "./agendamento";
 import { VistagemError } from "./errors";
+import type { TipoNaArvore } from "./fluxo-vios";
 
 /**
  * Integração com o SAMA: catálogo de tarefas/usuários do VIOS por área
@@ -60,6 +61,32 @@ export async function carregarCatalogoProcessos(): Promise<CatalogoArea[]> {
   }
   cacheCatalogo = { carregadoEm: Date.now(), areas };
   return areas;
+}
+
+let cacheArvore: { carregadoEm: number; arvore: Map<number, TipoNaArvore> } | null = null;
+
+/** Árvore de tarefas do VIOS (o que cada tipo cria sozinho), por id do tipo de tarefa. */
+export async function carregarArvoreVios(): Promise<Map<number, TipoNaArvore>> {
+  if (cacheArvore && Date.now() - cacheArvore.carregadoEm < CACHE_MS) return cacheArvore.arvore;
+  const { data, error } = await sama()
+    .from("vios_fluxos_tarefas")
+    .select("etapa_id, nome, prazo, cria_na_criacao, cria_na_conclusao")
+    .limit(5000);
+  if (error) throw new VistagemError(`Falha ao carregar o fluxo de tarefas do VIOS no SAMA: ${error.message}`, 502);
+  if (!data?.length) throw new VistagemError("O fluxo de tarefas do VIOS no SAMA está vazio.", 502);
+  const arvore = new Map<number, TipoNaArvore>(
+    data.map((row) => [
+      Number(row.etapa_id),
+      {
+        nome: row.nome as string,
+        prazo: (row.prazo as string | null) ?? null,
+        criacao: ((row.cria_na_criacao ?? []) as number[]).map(Number),
+        conclusao: ((row.cria_na_conclusao ?? []) as number[]).map(Number),
+      },
+    ])
+  );
+  cacheArvore = { carregadoEm: Date.now(), arvore };
+  return arvore;
 }
 
 export function catalogoDaArea(areas: CatalogoArea[], area: string | null): CatalogoArea | null {

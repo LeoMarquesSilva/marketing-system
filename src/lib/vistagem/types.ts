@@ -1,3 +1,4 @@
+import type { FluxoDaTarefa } from "./fluxo-vios";
 import type { PastaSioe, Pendencia } from "./triagem";
 
 /** Situação da publicação no fluxo de vistagem (captura → vistagem → agendamento → revisão). */
@@ -249,6 +250,10 @@ export interface VistagemDetalhe {
   inconsistencias: InconsistenciaResumo[];
   /** Feriados (AAAA-MM-DD) para contar os dias úteis do Prazo na tela. */
   feriados: string[];
+  /** Fluxo automático do VIOS por id do tipo de tarefa (só os que criam algo). */
+  fluxos: Record<string, FluxoDaTarefa>;
+  /** Por que o fluxo do VIOS não pôde ser carregado. */
+  fluxosErro: string | null;
   hoje: string;
 }
 
