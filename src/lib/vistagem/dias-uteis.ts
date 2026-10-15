@@ -12,10 +12,55 @@ export function criarCalendario(feriados: Iterable<string>): (iso: string) => bo
   };
 }
 
+/** Recesso forense: de 20/12 a 20/01 os prazos ficam suspensos (CPC art. 220; CLT art. 775-A). */
+export function noRecessoForense(iso: string): boolean {
+  const mesDia = iso.slice(5, 10);
+  return mesDia >= "12-20" || mesDia <= "01-20";
+}
+
+/**
+ * Calendário para contar a data fatal: dia útil e fora do recesso forense.
+ * As tarefas internas (Enviar, Revisar, Protocolar) seguem só o expediente (criarCalendario).
+ */
+export function criarCalendarioDePrazo(feriados: Iterable<string>): (iso: string) => boolean {
+  const util = criarCalendario(feriados);
+  return (iso) => util(iso) && !noRecessoForense(iso);
+}
+
 function deslocar(iso: string, dias: number): string {
   const data = new Date(`${iso}T12:00:00Z`);
   data.setUTCDate(data.getUTCDate() + dias);
   return data.toISOString().slice(0, 10);
+}
+
+/** Domingo de Páscoa (algoritmo de Meeus/Jones/Butcher), AAAA-MM-DD. */
+export function pascoa(ano: number): string {
+  const a = ano % 19;
+  const b = Math.floor(ano / 100);
+  const c = ano % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mes = Math.floor((h + l - 7 * m + 114) / 31);
+  const dia = ((h + l - 7 * m + 114) % 31) + 1;
+  return `${ano}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+}
+
+/**
+ * Feriados em que o Judiciário fecha no país todo, no mesmo padrão da base do SIOE
+ * (nacionais + Carnaval, Sexta-feira Santa e Corpus Christi). Usado para os anos que
+ * a base ainda não tem.
+ */
+export function feriadosNacionais(ano: number): string[] {
+  const p = pascoa(ano);
+  const fixos = ["01-01", "04-21", "05-01", "09-07", "10-12", "11-02", "11-15", "11-20", "12-25"].map((md) => `${ano}-${md}`);
+  return [...fixos, deslocar(p, -48), deslocar(p, -47), deslocar(p, -2), deslocar(p, 60)].sort();
 }
 
 /** Anda n dias úteis para frente (n > 0) ou para trás (n < 0), sem contar o dia de partida. */
@@ -30,7 +75,7 @@ export function somarDiasUteis(iso: string, n: number, ehDiaUtil: (iso: string) 
   return atual;
 }
 
-/** Data fatal: N dias úteis contados a partir do 1º dia útil após a publicação. */
+/** Data fatal: N dias úteis contados a partir do 1º dia útil após a publicação (use criarCalendarioDePrazo). */
 export function fatalPorDias(dataPublicacao: string, dias: number, ehDiaUtil: (iso: string) => boolean): string {
   return somarDiasUteis(dataPublicacao, dias, ehDiaUtil);
 }

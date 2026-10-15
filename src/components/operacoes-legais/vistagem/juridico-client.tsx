@@ -7,7 +7,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import { avisosDaData } from "@/lib/vistagem/agendamento";
-import { DIAS_PRAZO, criarCalendario, datasDoPrazo, fatalPorDias, somarDiasUteis } from "@/lib/vistagem/dias-uteis";
+import {
+  DIAS_PRAZO,
+  criarCalendario,
+  criarCalendarioDePrazo,
+  datasDoPrazo,
+  fatalPorDias,
+  noRecessoForense,
+  somarDiasUteis,
+} from "@/lib/vistagem/dias-uteis";
 import { CADEIA_PADRAO, PESSOA_FIXA_PROTOCOLAR, cadeiaDoFluxo, type FluxoDaTarefa, type TarefaDoFluxo } from "@/lib/vistagem/fluxo-vios";
 import type { PublicacaoResumo, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
@@ -153,6 +161,8 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
   }, [id, recarga]);
 
   const ehDiaUtil = useMemo(() => criarCalendario(detalhe?.feriados ?? []), [detalhe?.feriados]);
+  // A fatal conta só dias úteis fora do recesso forense; Enviar/Revisar/Protocolar seguem o expediente.
+  const contaPrazo = useMemo(() => criarCalendarioDePrazo(detalhe?.feriados ?? []), [detalhe?.feriados]);
 
   function alterar(chave: number, mudanca: Partial<Linha>) {
     setLinhas((atuais) => atuais.map((linha) => (linha.chave === chave ? { ...linha, ...mudanca } : linha)));
@@ -280,7 +290,11 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
                   : null;
               const avisos = prazo
                 ? linha.dataFatal
-                  ? avisosDaData(linha.dataFatal, detalhe.hoje).concat(ehDiaUtil(linha.dataFatal) ? [] : ["A data fatal não é dia útil."])
+                  ? avisosDaData(linha.dataFatal, detalhe.hoje).concat(
+                      contaPrazo(linha.dataFatal)
+                        ? []
+                        : [noRecessoForense(linha.dataFatal) ? "A data fatal cai no recesso forense (20/12 a 20/01)." : "A data fatal não é dia útil."]
+                    )
                   : []
                 : linha.data
                   ? avisosDaData(linha.data, detalhe.hoje)
@@ -358,7 +372,7 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
                                 className={cn(linha.diasPrazo === dias && "border-[#183f50] bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")}
                                 onClick={() =>
                                   publicacao.dataPublicacao &&
-                                  alterar(linha.chave, { diasPrazo: dias, dataFatal: fatalPorDias(publicacao.dataPublicacao, dias, ehDiaUtil) })
+                                  alterar(linha.chave, { diasPrazo: dias, dataFatal: fatalPorDias(publicacao.dataPublicacao, dias, contaPrazo) })
                                 }
                               >
                                 {dias}

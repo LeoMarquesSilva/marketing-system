@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { criarCalendario, datasDoPrazo, fatalPorDias, somarDiasUteis } from "./dias-uteis";
+import {
+  criarCalendario,
+  criarCalendarioDePrazo,
+  datasDoPrazo,
+  fatalPorDias,
+  feriadosNacionais,
+  noRecessoForense,
+  pascoa,
+  somarDiasUteis,
+} from "./dias-uteis";
 
 const util = criarCalendario(["2026-11-02", "2026-11-20"]);
 
@@ -36,5 +45,42 @@ describe("dias úteis", () => {
 
   it("anda zero dias sem mexer na data", () => {
     expect(somarDiasUteis("2026-10-17", 0, util)).toBe("2026-10-17");
+  });
+});
+
+describe("contagem do prazo", () => {
+  // Base do SIOE de 2026 sem Dia da Bandeira e Dia do Servidor + feriados nacionais calculados de 2027.
+  const FERIADOS = [
+    ...["01-01", "02-16", "02-17", "04-03", "04-21", "05-01", "06-04", "09-07", "10-12", "11-02", "11-15", "11-20", "12-25"].map((md) => `2026-${md}`),
+    ...feriadosNacionais(2027),
+  ];
+  const contaPrazo = criarCalendarioDePrazo(FERIADOS);
+
+  it("calcula a Páscoa e os feriados móveis", () => {
+    expect(pascoa(2026)).toBe("2026-04-05");
+    expect(pascoa(2027)).toBe("2027-03-28");
+    expect(feriadosNacionais(2027)).toEqual(
+      expect.arrayContaining(["2027-02-08", "2027-02-09", "2027-03-26", "2027-05-27", "2027-11-20"])
+    );
+  });
+
+  it("suspende o prazo no recesso forense (20/12 a 20/01)", () => {
+    expect(noRecessoForense("2026-12-19")).toBe(false);
+    expect(noRecessoForense("2026-12-20")).toBe(true);
+    expect(noRecessoForense("2027-01-20")).toBe(true);
+    expect(noRecessoForense("2027-01-21")).toBe(false);
+  });
+
+  it("conta os atalhos a partir da publicação de 14/10/2026", () => {
+    const atalhos = [5, 10, 15, 30, 60, 90, 180].map((dias) => fatalPorDias("2026-10-14", dias, contaPrazo));
+    expect(atalhos).toEqual([
+      "2026-10-21",
+      "2026-10-28", // 28/10 (Dia do Servidor) conta como dia útil
+      "2026-11-05", // pula Finados
+      "2026-11-27", // pula Consciência Negra; 19/11 (Bandeira) conta
+      "2027-02-12", // 45 dias até 18/12, recesso, volta em 21/01, pula Carnaval
+      "2027-03-29",
+      "2027-08-04",
+    ]);
   });
 });
