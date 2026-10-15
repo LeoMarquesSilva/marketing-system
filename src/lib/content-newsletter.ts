@@ -10,6 +10,7 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText } from "ai";
 import { fetchArticleContent } from "@/lib/content-extraction";
+import { OPENAI_DEFAULT_MODEL, openAIGenerationOptions } from "@/lib/openai-models";
 import { getSupabaseAdmin } from "@/lib/content-roteiros";
 
 export const NEWSLETTER_STATUSES = ["rascunho", "em_revisao", "assinado"] as const;
@@ -222,9 +223,9 @@ export async function generateNewsletterSection(
     );
 
   const { text } = await generateText({
-    model: openai("gpt-4.1-mini"),
+    model: openai(OPENAI_DEFAULT_MODEL),
     prompt,
-    temperature: 0.4,
+    ...openAIGenerationOptions(OPENAI_DEFAULT_MODEL, { reasoningEffort: "low", temperature: 0.4 }),
   });
 
   const parsed = parseGeneratedSection(text?.trim() ?? "");
@@ -253,9 +254,9 @@ export async function generateNewsletterIntro(
   );
 
   const { text } = await generateText({
-    model: openai("gpt-4.1-mini"),
+    model: openai(OPENAI_DEFAULT_MODEL),
     prompt,
-    temperature: 0.5,
+    ...openAIGenerationOptions(OPENAI_DEFAULT_MODEL, { reasoningEffort: "low", temperature: 0.5 }),
   });
 
   const parsed = parseGeneratedSection(text?.trim() ?? "");

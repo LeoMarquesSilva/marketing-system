@@ -72,7 +72,10 @@ describe("contrato da geracao", () => {
 
     expect(draft.linkedinPost).toBe("Gancho\n\nDesenvolvimento");
     expect(generateObject).toHaveBeenCalledTimes(2);
-    expect(generateObject.mock.calls[1][0].model.modelId).toBe("gpt-4.1");
+    const fallback = generateObject.mock.calls[1][0];
+    expect(fallback.model.modelId).toBe("gpt-6-luna");
+    expect(fallback.temperature).toBeUndefined();
+    expect(fallback.providerOptions.openai.reasoningEffort).toBe("low");
     expect(warning).toHaveBeenCalledOnce();
   });
 

@@ -2,6 +2,7 @@ import Parser from "rss-parser";
 import { createClient } from "@supabase/supabase-js";
 import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
+import { OPENAI_DEFAULT_MODEL, openAIGenerationOptions } from "./openai-models";
 import type { ContentTopic } from "./content-topics";
 import {
   CONTENT_MAX_AGE_DAYS,
@@ -160,9 +161,9 @@ export async function resolveNewsArea(
   const prompt = buildClassifyPrompt(title, snippet, topicLegalArea);
 
   const { text } = await generateText({
-    model: openai("gpt-4.1-mini"),
+    model: openai(OPENAI_DEFAULT_MODEL),
     prompt,
-    temperature: 0.1,
+    ...openAIGenerationOptions(OPENAI_DEFAULT_MODEL, { reasoningEffort: "none", temperature: 0.1 }),
   });
 
   const rawText = text?.trim() ?? "";
@@ -218,9 +219,9 @@ export async function generateCarousel(
     .replace("{{PERFORMANCE}}", performanceBlock ? `\n${performanceBlock}` : "");
 
   const { text } = await generateText({
-    model: openai("gpt-4.1-mini"),
+    model: openai(OPENAI_DEFAULT_MODEL),
     prompt,
-    temperature: 0.7,
+    ...openAIGenerationOptions(OPENAI_DEFAULT_MODEL, { reasoningEffort: "low", temperature: 0.7 }),
   });
 
   return text?.trim() ?? "";

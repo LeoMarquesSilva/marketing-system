@@ -1,3 +1,5 @@
+import { OPENAI_DEFAULT_MODEL } from "@/lib/openai-models";
+
 export const GUSTAVO_CONTENT_STATUSES = [
   "radar",
   "sugestao",
@@ -24,7 +26,7 @@ export type GustavoContentSource = (typeof GUSTAVO_CONTENT_SOURCES)[number];
 
 /** @deprecated Use as constantes por etapa abaixo. Mantida como fallback comum. */
 export const GUSTAVO_CONTENT_MODEL =
-  process.env.GUSTAVO_CONTENT_MODEL ?? "gpt-4.1-mini";
+  process.env.GUSTAVO_CONTENT_MODEL ?? OPENAI_DEFAULT_MODEL;
 
 /** Modelo usado na triagem/score e na geração de ângulos. */
 export const GUSTAVO_CONTENT_MODEL_SCORE =
@@ -38,7 +40,7 @@ export const GUSTAVO_CONTENT_MODEL_WRITING =
 
 /** Fallback rápido quando o modelo principal não conclui a escrita no orçamento da rota. */
 export const GUSTAVO_CONTENT_MODEL_WRITING_FALLBACK =
-  process.env.GUSTAVO_CONTENT_MODEL_WRITING_FALLBACK ?? "gpt-4.1";
+  process.env.GUSTAVO_CONTENT_MODEL_WRITING_FALLBACK ?? OPENAI_DEFAULT_MODEL;
 
 export const GUSTAVO_CONTENT_WRITING_TIMEOUT_MS = 120_000;
 export const GUSTAVO_CONTENT_WRITING_FALLBACK_TIMEOUT_MS = 90_000;

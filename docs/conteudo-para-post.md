@@ -200,7 +200,8 @@ O fetch público responde **202** e não espera o pipeline. O worker tem
 `SUPABASE_SERVICE_ROLE_KEY`). Cron **espera** o pipeline (a Vercel senão
 mata o job).
 
-Env obrigatório: `NEXT_OPENAI_API_KEY`. Modelo: `gpt-4.1-mini` (Vercel AI
+Env obrigatório: `NEXT_OPENAI_API_KEY`. Modelo: `gpt-6-luna`, definido em
+`src/lib/openai-models.ts` e trocável por `OPENAI_DEFAULT_MODEL` (Vercel AI
 SDK / `@ai-sdk/openai`).
 
 ### 5.2 Passo a passo por tema

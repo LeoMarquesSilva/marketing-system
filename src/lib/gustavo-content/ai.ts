@@ -9,6 +9,7 @@ import {
   GUSTAVO_CONTENT_WRITING_TIMEOUT_MS,
 } from "@/lib/gustavo-content/constants";
 import { GustavoContentError } from "@/lib/gustavo-content/errors";
+import { isOpenAIReasoningModel, openAIGenerationOptions } from "@/lib/openai-models";
 import {
   ANGLES_INSTRUCTIONS,
   COMPLIANCE_INSTRUCTIONS,
@@ -122,7 +123,7 @@ export async function analyzeScore(input: AnalyzeInput) {
       `ESTRATEGIA_DE_POSICIONAMENTO:\n${buildStrategyPrompt(input.strategy)}`,
       `BIBLIOTECA_DE_TESES:\n${thesesBlock(input.theses)}`,
     ].join("\n\n"),
-    temperature: 0.2,
+    ...openAIGenerationOptions(GUSTAVO_CONTENT_MODEL_SCORE, { reasoningEffort: "none", temperature: 0.2 }),
   });
 
   const clamped = clampScoreBreakdown(result.object.breakdown);
@@ -150,7 +151,7 @@ export async function generateAngles(input: AnalyzeInput) {
       `ESTRATEGIA_DE_POSICIONAMENTO:\n${buildStrategyPrompt(input.strategy)}`,
       `BIBLIOTECA_DE_TESES:\n${thesesBlock(input.theses)}`,
     ].join("\n\n"),
-    temperature: 0.35,
+    ...openAIGenerationOptions(GUSTAVO_CONTENT_MODEL_SCORE, { reasoningEffort: "low", temperature: 0.35 }),
   });
   return result.object;
 }
@@ -177,9 +178,7 @@ export async function generateEditorialContent(input: {
   previousDraft?: { linkedinPost: string; editorialBrief: EditorialBrief; reel: unknown };
   abortSignal?: AbortSignal;
 }) {
-  const usesReasoning =
-    (GUSTAVO_CONTENT_MODEL_WRITING.startsWith("gpt-5") && !GUSTAVO_CONTENT_MODEL_WRITING.includes("-chat")) ||
-    /^o[134](?:-|$)/.test(GUSTAVO_CONTENT_MODEL_WRITING);
+  const usesReasoning = isOpenAIReasoningModel(GUSTAVO_CONTENT_MODEL_WRITING);
   const request = {
     schema: contentObjectSchema,
     schemaName: "gustavo_editorial_content",
@@ -224,9 +223,7 @@ export async function generateEditorialContent(input: {
       ...requestLimits(GUSTAVO_CONTENT_WRITING_TIMEOUT_MS, input.abortSignal),
       model: writingModel(),
       ...request,
-      ...(usesReasoning
-        ? { providerOptions: { openai: { reasoningEffort: "low" } } }
-        : { temperature: 0.55 }),
+      ...openAIGenerationOptions(GUSTAVO_CONTENT_MODEL_WRITING, { reasoningEffort: "low", temperature: 0.55 }),
     });
   } catch (error) {
     if (!isTimeoutError(error) || input.abortSignal?.aborted) throw error;
@@ -238,8 +235,8 @@ export async function generateEditorialContent(input: {
       ...requestLimits(GUSTAVO_CONTENT_WRITING_FALLBACK_TIMEOUT_MS, input.abortSignal),
       model: writingFallbackModel(),
       ...request,
-      temperature: 0.45,
-      maxOutputTokens: 4000,
+      ...openAIGenerationOptions(GUSTAVO_CONTENT_MODEL_WRITING_FALLBACK, { reasoningEffort: "low", temperature: 0.45 }),
+      maxOutputTokens: isOpenAIReasoningModel(GUSTAVO_CONTENT_MODEL_WRITING_FALLBACK) ? 6000 : 4000,
     });
   }
 
@@ -281,7 +278,7 @@ export async function reviewEditorialContent(input: {
     schemaName: "gustavo_editorial_review",
     system: `${GUSTAVO_EDITOR_SYSTEM}\n\n${EDITORIAL_REVIEW_INSTRUCTIONS}`,
     prompt: `TESE_CENTRAL: ${input.centralThesis}\n\nLINKEDIN:\n${input.linkedinPost}`,
-    temperature: 0.1,
+    ...openAIGenerationOptions(GUSTAVO_CONTENT_MODEL_REVIEW, { reasoningEffort: "none", temperature: 0.1 }),
   });
   return result.object;
 }
@@ -298,7 +295,7 @@ export async function analyzeCompliance(input: {
     schemaName: "gustavo_compliance",
     system: `${GUSTAVO_EDITOR_SYSTEM}\n\n${COMPLIANCE_INSTRUCTIONS}`,
     prompt: `LINKEDIN:\n${input.linkedinPost}\n\nREEL:\n${input.reelScript}`,
-    temperature: 0.1,
+    ...openAIGenerationOptions(GUSTAVO_CONTENT_MODEL_REVIEW, { reasoningEffort: "none", temperature: 0.1 }),
   });
   return normalizeCompliance(result.object);
 }

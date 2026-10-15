@@ -4,6 +4,7 @@ import { generateObject } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
 import { classifyNpsScore } from "@/lib/nps/scoring";
+import { OPENAI_DEFAULT_MODEL, openAIGenerationOptions } from "@/lib/openai-models";
 import {
   extractHeuristicThemes,
   isHeuristicActionable,
@@ -187,13 +188,14 @@ async function classifyWithLlm(input: ClassifyNpsTextsInput): Promise<Classified
   ).join("\n");
 
   const openai = createOpenAI({ apiKey });
+  const model = process.env.NPS_INSIGHTS_MODEL?.trim() || OPENAI_DEFAULT_MODEL;
   const result = await generateObject({
     abortSignal: AbortSignal.timeout(20_000),
     maxRetries: 1,
-    model: openai(process.env.NPS_INSIGHTS_MODEL?.trim() || "gpt-4.1-mini"),
+    model: openai(model),
     schema: classificationSchema,
     schemaName: "nps_open_text_insights",
-    temperature: 0.1,
+    ...openAIGenerationOptions(model, { reasoningEffort: "none", temperature: 0.1 }),
     system: [
       "Você classifica comentários abertos de NPS de um escritório de advocacia.",
       "Use SOMENTE os ids de tema da taxonomia. Não invente tema.",

@@ -3,6 +3,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { fetchWhatsappMessages } from "@/lib/evolution-whatsapp";
+import { OPENAI_DEFAULT_MODEL, openAIGenerationOptions } from "@/lib/openai-models";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -144,7 +145,7 @@ export async function POST(request: Request) {
 
     const openai = createOpenAI({ apiKey });
     const { text } = await generateText({
-      model: openai("gpt-4.1-mini"),
+      model: openai(OPENAI_DEFAULT_MODEL),
       system: `Você é um assistente de atendimento comercial via WhatsApp para um CRM.
 
 Seu objetivo é sugerir a próxima resposta do atendente com base no contexto real da conversa.
@@ -159,7 +160,7 @@ Regras:
 - Não use emojis em excesso; use no máximo um emoji se fizer sentido.
 - Não envie a mensagem, apenas sugira o texto.`,
       prompt: `${context}\n\nSugira a melhor próxima mensagem para o atendente enviar agora.`,
-      temperature: 0.4,
+      ...openAIGenerationOptions(OPENAI_DEFAULT_MODEL, { reasoningEffort: "none", temperature: 0.4 }),
     });
 
     return NextResponse.json({ suggestion: text.trim() });

@@ -1,6 +1,7 @@
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { requireAuthenticatedUser } from "@/lib/api-auth";
+import { OPENAI_DEFAULT_MODEL, openAIGenerationOptions } from "@/lib/openai-models";
 
 export const maxDuration = 30;
 
@@ -58,9 +59,10 @@ export async function POST(req: Request) {
 ${context ? `\n## Dados da pesquisa (use como referência):\n${context}` : ""}`;
 
     const result = streamText({
-      model: openai("gpt-4.1-mini"),
+      model: openai(OPENAI_DEFAULT_MODEL),
       system: systemPrompt,
       messages: await convertToModelMessages(messages as UIMessage[]),
+      ...openAIGenerationOptions(OPENAI_DEFAULT_MODEL, { reasoningEffort: "none" }),
     });
 
     return result.toUIMessageStreamResponse();
