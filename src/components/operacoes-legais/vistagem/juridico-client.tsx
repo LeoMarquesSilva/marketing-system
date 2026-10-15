@@ -7,7 +7,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import { avisosDaData } from "@/lib/vistagem/agendamento";
-import { DIAS_PRAZO, criarCalendario, datasDoPrazo, fatalPorDias } from "@/lib/vistagem/dias-uteis";
+import { DIAS_PRAZO, criarCalendario, datasDoPrazo, fatalPorDias, somarDiasUteis } from "@/lib/vistagem/dias-uteis";
+import { CADEIA_PADRAO, PESSOA_FIXA_PROTOCOLAR, cadeiaDoFluxo, type FluxoDaTarefa, type TarefaDoFluxo } from "@/lib/vistagem/fluxo-vios";
 import type { PublicacaoResumo, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { ComboboxBusca } from "./combobox-busca";
@@ -22,7 +23,7 @@ interface Linha {
   tarefa: string;
   /** Providência: data da tarefa no VIOS. */
   data: string;
-  /** Prazo: data fatal (o VIOS recebe o Enviar, fatal − 3 dias úteis). */
+  /** Prazo: data fatal (o VIOS recebe o Enviar, calculado pelo fluxo da tarefa). */
   dataFatal: string;
   diasPrazo: number | null;
   responsavel: string;
@@ -51,6 +52,61 @@ const campo = "h-10 w-full rounded-md border border-input bg-white px-3 text-sm 
 function linhaCompleta(linha: Linha): boolean {
   if (!linha.tarefa || !linha.responsavel) return false;
   return linha.etiqueta === "PRAZO" ? Boolean(linha.dataFatal && linha.revisor) : Boolean(linha.data);
+}
+
+/** O que o fluxo automático do VIOS cria junto com a tarefa e quem o robô coloca em cada uma. */
+function FluxoNoVios({
+  fluxo,
+  responsavel,
+  revisor,
+  datas,
+}: {
+  fluxo: FluxoDaTarefa;
+  responsavel: string;
+  revisor: string;
+  datas: { revisar: string | null; protocolar: string | null } | null;
+}) {
+  const quem = (tarefa: TarefaDoFluxo) => {
+    if (tarefa.papel === "revisor") return revisor || "padrão do VIOS (sem revisor)";
+    const pessoa = responsavel || "responsável";
+    return tarefa.papel === "protocolar" ? `${pessoa} + ${PESSOA_FIXA_PROTOCOLAR}` : pessoa;
+  };
+  const dataDe = (tarefa: TarefaDoFluxo) =>
+    tarefa.papel === "revisor" ? datas?.revisar ?? null : tarefa.papel === "protocolar" ? datas?.protocolar ?? null : null;
+  return (
+    <div className="space-y-2 rounded-md border border-[#dce9eb] bg-[#f6fbfb] p-3 text-xs">
+      {fluxo.criacao.length ? (
+        <div className="space-y-1">
+          <p className="font-medium text-slate-700">O VIOS cria junto (o robô coloca os responsáveis):</p>
+          <ul className="space-y-1.5">
+            {fluxo.criacao.map((tarefa) => {
+              const data = dataDe(tarefa);
+              return (
+                <li key={tarefa.id} className="text-slate-700">
+                  <span className="font-medium text-slate-900">{tarefa.nome}</span>
+                  {tarefa.prazo ? <span className="text-slate-500"> · {tarefa.prazo}</span> : null}
+                  {data ? <span className="font-mono"> · {formatarData(data)}</span> : null}
+                  <span> → {quem(tarefa)}</span>
+                  {tarefa.tambemCria.length ? (
+                    <span className="block pl-3 text-slate-500">cria também: {tarefa.tambemCria.join(", ")}</span>
+                  ) : null}
+                  {tarefa.aoConcluir.length ? (
+                    <span className="block pl-3 text-slate-500">ao concluir, cria: {tarefa.aoConcluir.join(", ")}</span>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
+      {fluxo.conclusao.length ? (
+        <p className="text-slate-600">
+          <span className="font-medium text-slate-700">Ao concluir esta tarefa, o VIOS cria:</span>{" "}
+          {fluxo.conclusao.map((tarefa) => tarefa.nome).join(", ")} (com o responsável padrão do VIOS).
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida: (id: string) => void; onVoltar: () => void }) {
@@ -195,6 +251,12 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
           {catalogo ? <span className="text-xs text-slate-500">Lista do VIOS para {catalogo.area}</span> : null}
         </div>
 
+        {detalhe.fluxosErro ? (
+          <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            O fluxo de tarefas do VIOS não carregou ({detalhe.fluxosErro}). As datas do Prazo usam o fluxo padrão e o envio pode ser recusado.
+          </p>
+        ) : null}
+
         {!catalogo ? (
           <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
             {detalhe.catalogoErro ?? "Não há lista de tarefas do VIOS para a área desta pasta."} Avise a controladoria.
@@ -203,7 +265,19 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
           <>
             {linhas.map((linha, indice) => {
               const prazo = linha.etiqueta === "PRAZO";
-              const cadeia = prazo && linha.dataFatal ? datasDoPrazo(linha.dataFatal, ehDiaUtil) : null;
+              const tarefaId = catalogo.tarefas[linha.etiqueta].find((opcao) => opcao.nome === linha.tarefa)?.id ?? null;
+              const fluxo = tarefaId ? detalhe.fluxos[tarefaId] ?? null : null;
+              // Sem tarefa escolhida (ou sem o fluxo carregado) mostra o fluxo padrão; o servidor recalcula ao gravar.
+              const cadeiaFluxo = !tarefaId || detalhe.fluxosErro ? CADEIA_PADRAO : cadeiaDoFluxo(fluxo);
+              const cadeia = prazo && linha.dataFatal ? datasDoPrazo(linha.dataFatal, ehDiaUtil, cadeiaFluxo) : null;
+              const datasDoFluxo = prazo
+                ? cadeia
+                : linha.data && cadeiaFluxo
+                  ? {
+                      revisar: cadeiaFluxo.revisar === null ? null : somarDiasUteis(linha.data, cadeiaFluxo.revisar, ehDiaUtil),
+                      protocolar: somarDiasUteis(linha.data, cadeiaFluxo.protocolar, ehDiaUtil),
+                    }
+                  : null;
               const avisos = prazo
                 ? linha.dataFatal
                   ? avisosDaData(linha.dataFatal, detalhe.hoje).concat(ehDiaUtil(linha.dataFatal) ? [] : ["A data fatal não é dia útil."])
@@ -296,17 +370,21 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
                       {cadeia ? (
                         <dl className="grid gap-2 text-xs sm:grid-cols-4">
                           <div>
-                            <dt className="font-medium text-[#285f7a]">Enviar (vai para o VIOS)</dt>
+                            <dt className="font-medium text-[#285f7a]">{cadeia.protocolar ? "Enviar" : "Tarefa"} (vai para o VIOS)</dt>
                             <dd className="font-mono font-semibold text-[#183f50]">{formatarData(cadeia.enviar)}</dd>
                           </div>
-                          <div>
-                            <dt className="text-slate-500">Revisar</dt>
-                            <dd className="font-mono text-slate-800">{formatarData(cadeia.revisar)}</dd>
-                          </div>
-                          <div>
-                            <dt className="text-slate-500">Protocolar</dt>
-                            <dd className="font-mono text-slate-800">{formatarData(cadeia.protocolar)}</dd>
-                          </div>
+                          {cadeia.revisar ? (
+                            <div>
+                              <dt className="text-slate-500">Revisar</dt>
+                              <dd className="font-mono text-slate-800">{formatarData(cadeia.revisar)}</dd>
+                            </div>
+                          ) : null}
+                          {cadeia.protocolar ? (
+                            <div>
+                              <dt className="text-slate-500">Protocolar</dt>
+                              <dd className="font-mono text-slate-800">{formatarData(cadeia.protocolar)}</dd>
+                            </div>
+                          ) : null}
                           <div>
                             <dt className="text-slate-500">Fatal</dt>
                             <dd className="font-mono text-slate-800">{formatarData(cadeia.fatal)}</dd>
@@ -315,6 +393,11 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
                       ) : (
                         <p className="text-xs text-slate-500">Escolha a data fatal ou um atalho de dias para ver Enviar, Revisar e Protocolar.</p>
                       )}
+                      {tarefaId && !cadeiaFluxo ? (
+                        <p className="text-xs text-slate-600">
+                          O VIOS não cria Revisar nem Protocolar para esta tarefa: ela vai com a data do protocolo (1 dia útil antes da fatal).
+                        </p>
+                      ) : null}
                     </div>
                   ) : (
                     <label className="block space-y-1 text-xs font-medium text-slate-600 sm:w-56">
@@ -356,6 +439,12 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
                       ) : null}
                     </div>
                   </div>
+
+                  {fluxo ? (
+                    <FluxoNoVios fluxo={fluxo} responsavel={linha.responsavel} revisor={linha.revisor} datas={datasDoFluxo} />
+                  ) : tarefaId && !detalhe.fluxosErro ? (
+                    <p className="text-xs text-slate-500">O VIOS não cria outras tarefas junto com esta.</p>
+                  ) : null}
 
                   <label className="block space-y-1 text-xs font-medium text-slate-600">
                     Observação (vai na descrição da tarefa)

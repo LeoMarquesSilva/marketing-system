@@ -24,6 +24,16 @@ describe("dias úteis", () => {
     });
   });
 
+  it("segue o fluxo da tarefa: Protocolar em 4 dias (D-5) ou sem Protocolar", () => {
+    expect(datasDoPrazo("2026-11-23", util, { revisar: 1, protocolar: 4 })).toEqual({
+      fatal: "2026-11-23",
+      enviar: "2026-11-13",
+      revisar: "2026-11-16",
+      protocolar: "2026-11-19",
+    });
+    expect(datasDoPrazo("2026-11-23", util, null)).toEqual({ fatal: "2026-11-23", enviar: "2026-11-19", revisar: null, protocolar: null });
+  });
+
   it("anda zero dias sem mexer na data", () => {
     expect(somarDiasUteis("2026-10-17", 0, util)).toBe("2026-10-17");
   });

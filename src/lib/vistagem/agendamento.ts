@@ -1,4 +1,5 @@
-import { somarDiasUteis } from "./dias-uteis";
+import { datasDoPrazo } from "./dias-uteis";
+import type { CadeiaDoPrazo } from "./fluxo-vios";
 import { DEPARA_TAREFAS, type EtiquetaAgendamento, type PastaTipo } from "./vios-depara";
 
 /** Opção do VIOS (tipo de tarefa ou usuário), como o robô do SAMA guarda no catálogo. */
@@ -26,7 +27,7 @@ export interface AgendamentoValidado {
   etiqueta: EtiquetaAgendamento;
   tarefa: string;
   tarefaId: string;
-  /** Data que vai para a tarefa no VIOS (no Prazo, o Enviar = fatal − 3 dias úteis). */
+  /** Data que vai para a tarefa no VIOS (no Prazo, o Enviar: fatal − 1 − dias do 3. PROTOCOLAR do fluxo). */
   data: string;
   dataFatal: string | null;
   diasPrazo: number | null;
@@ -115,7 +116,13 @@ export function avisosDaData(iso: string, hoje: string): string[] {
  */
 export function validarAgendamentos(
   entradas: AgendamentoEntrada[],
-  contexto: { tarefas: Record<EtiquetaAgendamento, OpcaoVios[]>; usuarios: OpcaoVios[]; ehDiaUtil: (iso: string) => boolean }
+  contexto: {
+    tarefas: Record<EtiquetaAgendamento, OpcaoVios[]>;
+    usuarios: OpcaoVios[];
+    ehDiaUtil: (iso: string) => boolean;
+    /** Cadeia do fluxo do VIOS para o tipo de tarefa (null: o VIOS não cria Protocolar). */
+    cadeiaDaTarefa: (tarefaId: string) => CadeiaDoPrazo | null;
+  }
 ): { ok: true; itens: AgendamentoValidado[] } | { ok: false; erros: string[] } {
   const erros: string[] = [];
   if (!entradas.length) erros.push("Vincule ao menos uma tarefa à publicação.");
@@ -132,9 +139,13 @@ export function validarAgendamentos(
     if (!tarefa) erros.push(`${n}: escolha uma tarefa da lista.`);
     const prazo = entrada.etiqueta === "PRAZO";
     const fatal = prazo && entrada.dataFatal && dataValida(entrada.dataFatal) ? entrada.dataFatal : null;
-    // No Prazo, o VIOS recebe o Enviar (fatal − 3 dias úteis) e cria sozinho o Revisar (+1 útil)
-    // e o Protocolar (+1 útil). Recalculado aqui; não vem da tela.
-    const data = prazo ? (fatal ? somarDiasUteis(fatal, -3, contexto.ehDiaUtil) : "") : entrada.data;
+    // No Prazo, o VIOS recebe o Enviar e cria sozinho o Revisar e o Protocolar conforme o
+    // fluxo do tipo de tarefa. Recalculado aqui; não vem da tela.
+    const data = prazo
+      ? fatal && tarefa
+        ? datasDoPrazo(fatal, contexto.ehDiaUtil, contexto.cadeiaDaTarefa(tarefa.id)).enviar
+        : ""
+      : entrada.data;
     if (prazo && !fatal) erros.push(`${n}: escolha a data fatal do prazo.`);
     if (!prazo && !dataValida(data)) erros.push(`${n}: escolha a data no calendário.`);
     const responsavel = usuarioPorChave.get(chaveNome(entrada.responsavel));

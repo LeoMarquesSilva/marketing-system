@@ -12,10 +12,11 @@ import {
 } from "./agendamento";
 import { criarCalendario } from "./dias-uteis";
 import { carregarFeriados } from "./feriados";
+import { cadeiaDoFluxo, montarFluxo, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
 import { buscarPastasVios } from "./pastas-vios";
 import { VistagemError } from "./errors";
 import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
-import { carregarCatalogoProcessos, catalogoDaArea, consultarFilaSama, enfileirarNoSama, envioSimulado, type CatalogoArea } from "./sama";
+import { carregarArvoreVios, carregarCatalogoProcessos, catalogoDaArea, consultarFilaSama, enfileirarNoSama, envioSimulado, type CatalogoArea } from "./sama";
 import { COLUNAS_PUBLICACAO, admin, falhou, hojeEmSaoPaulo, publicacaoResumo, type PublicacaoRow } from "./server";
 import type {
   AgendamentoResumo,
@@ -91,6 +92,16 @@ async function agendamentosPorPublicacao(ids: string[]): Promise<Map<string, Age
   return mapa;
 }
 
+/** Fluxo do VIOS de cada tarefa da lista (só as que criam algo junto ou depois). */
+function fluxosDoCatalogo(catalogo: CatalogoVistagem, arvore: Map<number, TipoNaArvore>): Record<string, FluxoDaTarefa> {
+  const fluxos: Record<string, FluxoDaTarefa> = {};
+  for (const tarefa of [...catalogo.tarefas.PRAZO, ...catalogo.tarefas.PROVIDENCIA]) {
+    const fluxo = montarFluxo(tarefa.id, arvore);
+    if (fluxo) fluxos[tarefa.id] = fluxo;
+  }
+  return fluxos;
+}
+
 function catalogoParaPublicacao(areas: CatalogoArea[], publicacao: PublicacaoComArea): CatalogoVistagem | null {
   const area = areaDoCatalogo(publicacao.area_processo, publicacao.escritorio_responsavel, areas.map((item) => item.area));
   const catalogo = catalogoDaArea(areas, area);
@@ -144,10 +155,15 @@ export async function obterVistagem(id: string): Promise<VistagemDetalhe> {
   if (!catalogo && !catalogoErro) {
     catalogoErro = `Não há lista de tarefas do VIOS para a área "${publicacao.area_processo ?? publicacao.escritorio_responsavel ?? "sem área"}" desta pasta.`;
   }
-  const [inconsistencias, feriados, pastaVios] = await Promise.all([
+  let fluxosErro: string | null = null;
+  const [inconsistencias, feriados, pastaVios, arvore] = await Promise.all([
     inconsistenciasPorPublicacao([id]),
     carregarFeriados().catch(() => [] as string[]),
     publicacao.pasta_ci ? buscarPastasVios([publicacao.pasta_ci]) : Promise.resolve(new Map<string, { vinculo: string | null; auxiliarSigla: string | null }>()),
+    carregarArvoreVios().catch((erro: unknown) => {
+      fluxosErro = erro instanceof Error ? erro.message : String(erro);
+      return null;
+    }),
   ]);
   const auxiliar = publicacao.pasta_ci ? pastaVios.get(publicacao.pasta_ci)?.auxiliarSigla ?? null : null;
   return {
@@ -159,6 +175,8 @@ export async function obterVistagem(id: string): Promise<VistagemDetalhe> {
     responsavelSugerido: catalogo ? responsavelSugerido(publicacao.advogado_responsavel, catalogo.usuarios)?.nome ?? null : null,
     revisorSugerido: catalogo ? usuarioPorSigla(auxiliar, catalogo.usuarios)?.nome ?? null : null,
     feriados,
+    fluxos: catalogo && arvore ? fluxosDoCatalogo(catalogo, arvore) : {},
+    fluxosErro,
     hoje: hojeEmSaoPaulo(),
   };
 }
@@ -174,11 +192,13 @@ export async function salvarVistagem(
   const catalogo = catalogoParaPublicacao(await carregarCatalogoProcessos(), publicacao);
   if (!catalogo) throw new VistagemError("Não há lista de tarefas do VIOS para a área desta pasta. Avise a controladoria.", 422);
 
-  const feriados = await carregarFeriados();
+  // A data do Prazo depende do fluxo do VIOS (dias do 3. PROTOCOLAR): sem ele, não grava.
+  const [feriados, arvore] = await Promise.all([carregarFeriados(), carregarArvoreVios()]);
   const validacao = validarAgendamentos(entrada.agendamentos, {
     tarefas: catalogo.tarefas,
     usuarios: catalogo.usuarios,
     ehDiaUtil: criarCalendario(feriados),
+    cadeiaDaTarefa: (tarefaId) => cadeiaDoFluxo(montarFluxo(tarefaId, arvore)),
   });
   if (!validacao.ok) throw new VistagemError(validacao.erros.join(" "));
 

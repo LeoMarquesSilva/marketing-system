@@ -1,3 +1,5 @@
+import { CADEIA_PADRAO, type CadeiaDoPrazo } from "./fluxo-vios";
+
 /** Atalhos de prazo (dias úteis contados a partir do 1º dia útil após a publicação). */
 export const DIAS_PRAZO = [5, 10, 15, 30, 60, 90, 180] as const;
 
@@ -33,15 +35,33 @@ export function fatalPorDias(dataPublicacao: string, dias: number, ehDiaUtil: (i
   return somarDiasUteis(dataPublicacao, dias, ehDiaUtil);
 }
 
+export interface DatasDoPrazo {
+  fatal: string;
+  /** Data da tarefa que vai para o VIOS. */
+  enviar: string;
+  /** Null quando o fluxo do VIOS não cria a tarefa. */
+  revisar: string | null;
+  protocolar: string | null;
+}
+
 /**
- * Cadeia do prazo antes da fatal: Enviar D-3, Revisar D-2 e Protocolar D-1 (dias úteis).
- * O VIOS recebe o Enviar; o fluxo automático dele cria o Revisar e o Protocolar (+1 útil cada).
+ * Datas do prazo antes da fatal. O VIOS recebe a data da tarefa (Enviar) e o fluxo
+ * automático cria o Revisar e o Protocolar a N dias úteis dela; o Protocolar tem de
+ * cair 1 dia útil antes da fatal, então Enviar = fatal − 1 − N do Protocolar
+ * (fluxo padrão: Enviar D-3, Revisar D-2, Protocolar D-1; fluxo D-5: Enviar D-5).
+ * Sem Protocolar no fluxo, a tarefa vai com a data do protocolo (fatal − 1).
  */
-export function datasDoPrazo(fatal: string, ehDiaUtil: (iso: string) => boolean) {
+export function datasDoPrazo(
+  fatal: string,
+  ehDiaUtil: (iso: string) => boolean,
+  cadeia: CadeiaDoPrazo | null = CADEIA_PADRAO
+): DatasDoPrazo {
+  if (!cadeia) return { fatal, enviar: somarDiasUteis(fatal, -1, ehDiaUtil), revisar: null, protocolar: null };
+  const enviar = somarDiasUteis(fatal, -(1 + cadeia.protocolar), ehDiaUtil);
   return {
     fatal,
-    protocolar: somarDiasUteis(fatal, -1, ehDiaUtil),
-    revisar: somarDiasUteis(fatal, -2, ehDiaUtil),
-    enviar: somarDiasUteis(fatal, -3, ehDiaUtil),
+    enviar,
+    revisar: cadeia.revisar === null ? null : somarDiasUteis(enviar, cadeia.revisar, ehDiaUtil),
+    protocolar: somarDiasUteis(enviar, cadeia.protocolar, ehDiaUtil),
   };
 }

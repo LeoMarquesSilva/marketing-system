@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { criarCalendario } from "./dias-uteis";
+import { CADEIA_PADRAO } from "./fluxo-vios";
 import {
   areaDoCatalogo,
   siglasDoNome,
@@ -57,6 +58,7 @@ describe("validarAgendamentos", () => {
     tarefas: { PRAZO: tarefasPermitidas(ETAPAS, "PRAZO"), PROVIDENCIA: tarefasPermitidas(ETAPAS, "PROVIDENCIA") },
     usuarios: USUARIOS,
     ehDiaUtil: criarCalendario([]),
+    cadeiaDaTarefa: () => CADEIA_PADRAO,
   };
 
   it("aceita tarefas da lista e resolve ids", () => {
@@ -82,6 +84,18 @@ describe("validarAgendamentos", () => {
         },
       ],
     });
+  });
+
+  it("no Prazo a data do VIOS segue o 3. PROTOCOLAR do fluxo da tarefa", () => {
+    const entrada = [
+      { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo" },
+    ];
+    // fluxo D-5: Protocolar 4 dias úteis depois do Enviar → Enviar = fatal − 5
+    const d5 = validarAgendamentos(entrada, { ...contexto, cadeiaDaTarefa: () => ({ revisar: 1, protocolar: 4 }) });
+    expect(d5.ok && d5.itens[0].data).toBe("2026-10-26");
+    // sem Protocolar no fluxo: vai com a data do protocolo (fatal − 1)
+    const semProtocolar = validarAgendamentos(entrada, { ...contexto, cadeiaDaTarefa: () => null });
+    expect(semProtocolar.ok && semProtocolar.itens[0].data).toBe("2026-10-30");
   });
 
   it("recusa tarefa fora da lista, data inválida, responsável desconhecido e lista vazia", () => {
