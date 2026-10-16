@@ -1,8 +1,8 @@
 /**
  * Referências de looks da festa de 10 anos (cartela "Azul e areia", opção 3 do guia).
- * As fotos ficam em /public/dress-code/10-anos. As sem crédito vieram do PDF oficial;
- * as com crédito são de bancos com licença livre (Unsplash/Pexels), escolhidas para
- * variar etnias, idades e tipos de corpo.
+ * As fotos ficam em /public/dress-code/10-anos. As sem crédito vieram do PDF oficial ou
+ * foram escolhidas pelo Marketing no Pinterest (arquivos "-pin"); as com crédito são de
+ * bancos com licença livre (Unsplash/Pexels), escolhidas para variar etnias e idades.
  */
 
 export interface LookCredit {
@@ -49,21 +49,15 @@ export const PALETA: Swatch[] = [
 
 // Ordem de leitura por linha: intercala fotos do guia e inspirações, variando etnias desde o topo.
 export const LOOKS_ELAS: Look[] = [
+  { src: `${DIR}/elas-conjunto-celeste-plissado-pin.jpg`, width: 941, height: 1672, caption: "Conjunto celeste com saia plissada" },
   {
-    src: `${DIR}/elas-conjunto-celeste-pexels-12904474.jpg`,
+    src: `${DIR}/elas-alfaiataria-marinho-unsplash-PFdDqC-9Bzk.jpg`,
     width: 1100,
     height: 1650,
-    caption: "Conjunto celeste",
-    credit: pexels("J-Scott Photography", "https://www.pexels.com/photo/woman-wearing-white-tube-top-12904474/"),
+    caption: "Alfaiataria marinho",
+    credit: unsplash("sammy swae", "https://unsplash.com/photos/woman-in-a-navy-blue-suit-by-the-ocean-PFdDqC-9Bzk"),
   },
-  { src: `${DIR}/elas-longo-marinho-cetim.jpg`, width: 356, height: 1118, caption: "Longo marinho em cetim" },
-  {
-    src: `${DIR}/elas-off-white-palha-pexels-38221804.jpg`,
-    width: 1100,
-    height: 1649,
-    caption: "Off-white com chapéu de palha",
-    credit: pexels("Giang Đỗ", "https://www.pexels.com/photo/woman-in-white-dress-walking-in-a-floral-garden-38221804/"),
-  },
+  { src: `${DIR}/elas-longo-marinho-frente-unica-pin.jpg`, width: 1100, height: 1956, caption: "Longo marinho frente única" },
   {
     src: `${DIR}/elas-macacao-azul-ceu-pexels-27954789.jpg`,
     width: 1100,
@@ -75,27 +69,7 @@ export const LOOKS_ELAS: Look[] = [
     ),
   },
   { src: `${DIR}/elas-conjunto-celeste.jpg`, width: 296, height: 920, caption: "Conjunto celeste" },
-  {
-    src: `${DIR}/elas-alfaiataria-marinho-unsplash-PFdDqC-9Bzk.jpg`,
-    width: 1100,
-    height: 1650,
-    caption: "Alfaiataria marinho",
-    credit: unsplash("sammy swae", "https://unsplash.com/photos/woman-in-a-navy-blue-suit-by-the-ocean-PFdDqC-9Bzk"),
-  },
-  {
-    src: `${DIR}/elas-vestido-marinho-cetim-pexels-32192276.jpg`,
-    width: 1100,
-    height: 1656,
-    caption: "Vestido marinho em cetim",
-    credit: pexels("Aleksey Mayorov", "https://www.pexels.com/photo/elegant-woman-in-blue-satin-evening-dress-32192276/"),
-  },
-  {
-    src: `${DIR}/elas-midi-bege-pexels-26760653.jpg`,
-    width: 1100,
-    height: 1956,
-    caption: "Midi bege com faixa",
-    credit: pexels("Brian Jiz", "https://www.pexels.com/photo/woman-wearing-a-dress-26760653/"),
-  },
+  { src: `${DIR}/elas-midi-cobalto-pin.jpg`, width: 1080, height: 1920, caption: "Midi cobalto drapeado" },
   {
     src: `${DIR}/elas-longo-azul-ceu-pexels-30158511.jpg`,
     width: 1100,
@@ -103,7 +77,25 @@ export const LOOKS_ELAS: Look[] = [
     caption: "Longo azul-céu",
     credit: pexels("Deji Prince", "https://www.pexels.com/photo/elegant-woman-in-a-garden-setting-30158511/"),
   },
+  { src: `${DIR}/elas-slip-off-white-blazer-pin.jpg`, width: 1080, height: 1920, caption: "Off-white em cetim com blazer" },
+  { src: `${DIR}/elas-longo-marinho-cetim.jpg`, width: 356, height: 1118, caption: "Longo marinho em cetim" },
+  {
+    src: `${DIR}/elas-vestido-marinho-cetim-pexels-32192276.jpg`,
+    width: 1100,
+    height: 1656,
+    caption: "Vestido marinho em cetim",
+    credit: pexels("Aleksey Mayorov", "https://www.pexels.com/photo/elegant-woman-in-blue-satin-evening-dress-32192276/"),
+  },
+  { src: `${DIR}/elas-midi-petroleo-pin.jpg`, width: 720, height: 1280, caption: "Midi petróleo assimétrico" },
+  {
+    src: `${DIR}/elas-midi-bege-pexels-26760653.jpg`,
+    width: 1100,
+    height: 1956,
+    caption: "Midi bege com faixa",
+    credit: pexels("Brian Jiz", "https://www.pexels.com/photo/woman-wearing-a-dress-26760653/"),
+  },
   { src: `${DIR}/elas-conjunto-marinho.jpg`, width: 381, height: 1188, caption: "Conjunto marinho" },
+  { src: `${DIR}/elas-off-white-peplum-pin.jpg`, width: 1024, height: 1820, caption: "Conjunto off-white com peplum" },
   {
     src: `${DIR}/elas-vestido-azul-claro-pexels-4937997.jpg`,
     width: 1100,
@@ -111,23 +103,7 @@ export const LOOKS_ELAS: Look[] = [
     caption: "Vestido azul-claro fluido",
     credit: pexels("Yaroslav Shuraev", "https://www.pexels.com/photo/a-woman-in-blue-dress-4937997/"),
   },
-  {
-    src: `${DIR}/elas-longo-bege-pexels-36742035.jpg`,
-    width: 1100,
-    height: 1375,
-    caption: "Longo bege",
-    credit: pexels("K Studios", "https://www.pexels.com/photo/elegant-woman-strolling-in-lush-green-field-36742035/"),
-  },
-  {
-    src: `${DIR}/elas-conjunto-azul-ceu-pexels-13067028.jpg`,
-    width: 1100,
-    height: 1756,
-    caption: "Conjunto azul-céu com pantalona",
-    credit: pexels(
-      "mehrab zahedbeigi",
-      "https://www.pexels.com/photo/a-woman-in-blue-long-sleeves-and-pants-standing-on-a-concrete-floor-13067028/"
-    ),
-  },
+  { src: `${DIR}/elas-alfaiataria-off-white-pin.jpg`, width: 704, height: 1280, caption: "Alfaiataria off-white" },
   { src: `${DIR}/elas-macacao-marinho.jpg`, width: 174, height: 539, caption: "Macacão marinho" },
 ];
 
