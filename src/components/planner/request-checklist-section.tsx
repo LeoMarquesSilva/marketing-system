@@ -340,6 +340,36 @@ export function RequestChecklistSection({
                     )}
                   </div>
                 )}
+
+                {/* Itens comuns com texto pronto (ex.: texto de cada tela/slide de uma campanha) */}
+                {!fieldConfig && item.content?.trim() && (
+                  <div className="px-3 pb-3 pt-2 border-t border-border/30 space-y-1.5">
+                    <p className="text-sm text-foreground/90 whitespace-pre-wrap break-words leading-relaxed">
+                      {item.content}
+                    </p>
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => void handleCopy(item)}
+                      >
+                        {copiedId === item.id ? (
+                          <>
+                            <Check className="h-3 w-3 mr-1" aria-hidden />
+                            Copiado
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-3 w-3 mr-1" aria-hidden />
+                            Copiar
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             </li>
           );
