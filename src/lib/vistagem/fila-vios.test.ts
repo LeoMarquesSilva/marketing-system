@@ -31,6 +31,7 @@ describe("fila do robô", () => {
     expect(grupo.linha).toMatchObject({ tarefa: "MANIFESTAÇÃO - FLUXO D1", data: "16/10/2026", pasta: "0000952-37.2026.5.17.0141", simular: true });
     expect(grupo.linha.lancamento).toEqual({
       comunicacao_id: "755730632",
+      comunicacoes_equivalentes: [],
       data_publicacao: "15/10/2026",
       tarefas: [
         {
@@ -57,6 +58,14 @@ describe("fila do robô", () => {
     });
     // o VIOS insere o texto da intimação: o teor não vai repetido
     expect(grupo.linha.observacao).not.toContain("TEOR");
+  });
+
+  it("leva os IDs das duplicadas da mesma publicação, sem repetir o próprio", () => {
+    const [grupo] = linhasParaFila({ ...PUBLICACAO, comunicacoes_equivalentes: [755730688, "755730632", "755730688"] }, ITENS.slice(0, 1), {
+      simular: false,
+      modo: "intimacao",
+    });
+    expect(grupo.linha.lancamento?.comunicacoes_equivalentes).toEqual(["755730688"]);
   });
 
   it("sem ID de comunicação vai a data de publicação para o robô escolher", () => {
