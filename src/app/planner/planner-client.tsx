@@ -2,7 +2,8 @@
 
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { KanbanBoard } from "@/components/planner/kanban-board";
+import { KanbanBoard, TitleTagFilter, summarizeTitleTags } from "@/components/planner/kanban-board";
+import { getTitleTag } from "@/lib/planner-title-tag";
 import { ConcluidosTab } from "@/components/planner/concluidos-tab";
 import { KanbanCardDetail } from "@/components/planner/kanban-card-detail";
 import { NewRequestDialog } from "@/components/planner/new-request-dialog";
@@ -110,6 +111,15 @@ export function PlannerClient({ initialRequests, reels, rotationAreas, designers
   useEffect(() => {
     requestsRef.current = requests;
   }, [requests]);
+
+  // Filtro rápido por tag do título ("[OAB]", "[DC]"...) no Kanban e nos Concluídos.
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const titleTags = useMemo(() => summarizeTitleTags(requests), [requests]);
+  const activeTag = titleTags.some((t) => t.tag === selectedTag) ? selectedTag : null;
+  const tagFilteredRequests = useMemo(
+    () => (activeTag ? requests.filter((r) => getTitleTag(r.title)?.tag === activeTag) : requests),
+    [requests, activeTag]
+  );
 
   const loadPlannerMetadata = useCallback(
     async (targetRequests: MarketingRequest[]) => {
@@ -294,9 +304,13 @@ export function PlannerClient({ initialRequests, reels, rotationAreas, designers
         </div>
       </div>
 
+      {(activeTab === "kanban" || activeTab === "concluidos") && (
+        <TitleTagFilter tags={titleTags} activeTag={activeTag} onChange={setSelectedTag} />
+      )}
+
       {activeTab === "kanban" && (
         <KanbanBoard
-          requests={requests}
+          requests={tagFilteredRequests}
           onRefresh={handleRefresh}
           onCardClick={handleCardClick}
           onMarkComplete={handleMarkComplete}
@@ -316,7 +330,7 @@ export function PlannerClient({ initialRequests, reels, rotationAreas, designers
       )}
       {activeTab === "concluidos" && (
         <ConcluidosTab
-          requests={requests}
+          requests={tagFilteredRequests}
           onCardClick={handleCardClick}
           completionTypes={appSettings.completionTypes}
         />

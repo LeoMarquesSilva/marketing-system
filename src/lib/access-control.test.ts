@@ -222,4 +222,10 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath({ role: null, permissions: ["/conteudo/roteiros"] }, "/postagens-equipe")).toBe(false);
     expect(canAccessPath({ role: null, permissions: ["/rh"] }, "/postagens-equipe")).toBe(false);
   });
+
+  it("libera a página de download das peças para qualquer usuário logado", () => {
+    const socio = { role: null, department: "Sócio", permissions: ["/conteudo/inicio", "/meus-clientes"] };
+    expect(canAccessPath(socio, "/entregas/oab")).toBe(true);
+    expect(canAccessPath({ role: "designer", permissions: null }, "/entregas/dc")).toBe(true);
+  });
 });

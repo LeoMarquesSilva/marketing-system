@@ -45,8 +45,9 @@ import {
   deleteComment,
   type RequestComment,
 } from "@/lib/request-comments";
-import { Play, Pause, Square, MessageSquare, Edit3, AlertCircle, CheckCircle2, Flag, CalendarX2, Clock, Calendar, CalendarCheck, Layers, Circle, ChevronDown, ChevronUp, Link2, Trash2, FileText, RotateCcw, Video, Download, Image as ImageIcon } from "lucide-react";
+import { Play, Pause, Square, MessageSquare, Edit3, AlertCircle, CheckCircle2, Flag, CalendarX2, Clock, Calendar, CalendarCheck, Layers, Circle, ChevronDown, ChevronUp, Link2, Trash2, FileText, RotateCcw, Video, Download, Image as ImageIcon, Paperclip } from "lucide-react";
 import { ReelCoverArtField } from "@/components/planner/reel-cover-art-field";
+import { RequestFilesField } from "@/components/planner/request-files-field";
 import { downloadContentRoteiroWord, parseContentRoteiroWordId } from "@/lib/content-word";
 import { fetchViosTasksByMarketingRequestId, filterLeonardoFromResponsaveis, formatViosProrrogacaoLabel, isViosTaskProrrogada, type ViosTask } from "@/lib/vios-tasks";
 import { ViosProrrogacaoBadge } from "@/components/vios/vios-prorrogacao-badge";
@@ -645,6 +646,17 @@ export function KanbanCardDetail({
             />
           )}
 
+          {/* Arquivos finais da arte, enviados direto na tarefa (no lugar do link) */}
+          {!request.reel_delivery_id && !isReel && (
+            <section aria-labelledby="art-files-heading" className={sectionClass}>
+              <h4 id="art-files-heading" className={`${sectionTitleClass} flex items-center gap-2`}>
+                <Paperclip className="h-4 w-4 shrink-0" aria-hidden />
+                Arquivos da arte
+              </h4>
+              <RequestFilesField requestId={request.id} canEdit={Boolean(canUseTimesheet || isAdmin)} />
+            </section>
+          )}
+
           {/* Capa de Reels: a arte é uma imagem no sistema; vídeo do reel; ou link da arte */}
           {request.reel_delivery_id ? (
             <section aria-labelledby="reel-cover-art-heading" className={sectionClass}>
@@ -668,20 +680,16 @@ export function KanbanCardDetail({
               </h4>
               <ReelVideoPreview src={request.art_link} />
             </section>
-          ) : !isReel &&
-            (request.workflow_stage === "revisao" ||
-              request.workflow_stage === "revisado" ||
-              request.workflow_stage === "revisao_autor" ||
-              request.workflow_stage === "concluido" ||
-              request.art_link ||
-              canUseTimesheet ||
-              isAdmin) ? (
+          ) : !isReel && (request.art_link || canUseTimesheet || isAdmin) ? (
             <section aria-labelledby="art-link-heading" className={sectionClass}>
               <h4 id="art-link-heading" className={sectionTitleClass}>
                 <Link2 className="h-4 w-4 shrink-0" aria-hidden /> Link da arte
               </h4>
               {(canUseTimesheet || isAdmin) ? (
                 <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Opcional: com os arquivos enviados acima, não precisa de link.
+                  </p>
                   <input
                     type="url"
                     placeholder="https://..."
@@ -703,9 +711,9 @@ export function KanbanCardDetail({
                     </a>
                   )}
                 </div>
-              ) : request.art_link ? (
+              ) : (
                 <a
-                  href={request.art_link}
+                  href={request.art_link ?? undefined}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 dark:bg-primary/20 text-sm font-medium text-primary hover:bg-primary/20 dark:hover:bg-primary/30 border border-primary/20"
@@ -713,8 +721,6 @@ export function KanbanCardDetail({
                   <Link2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
                   Abrir arte
                 </a>
-              ) : (
-                <p className="text-sm text-muted-foreground italic">Ainda não informado.</p>
               )}
             </section>
           ) : null}

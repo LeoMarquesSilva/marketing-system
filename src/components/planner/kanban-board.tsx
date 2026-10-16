@@ -16,9 +16,15 @@ import {
   CheckCircle,
   Send,
   UserCheck,
+  Check,
+  CheckCircle2,
+  ExternalLink,
   LayoutGrid,
   PlayCircle,
+  Share2,
+  Tag,
   User,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -31,12 +37,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { KanbanColumn, type ColumnId } from "./kanban-column";
 import { KanbanCardOverlay } from "./kanban-card-overlay";
+import { getTitleTag } from "@/lib/planner-title-tag";
+import { plannerTagDeliveryPath, plannerTagDeliveryUrl } from "@/lib/request-files/domain";
 import {
   type MarketingRequest,
   updateWorkflowStage,
   updateMarketingRequest,
 } from "@/lib/marketing-requests";
 import { ReelCoverArtField } from "@/components/planner/reel-cover-art-field";
+import { RequestFilesField } from "@/components/planner/request-files-field";
 import { logActivity } from "@/lib/activity-log";
 import { useAuth } from "@/contexts/auth-context";
 import type {
@@ -113,6 +122,128 @@ function getRequestsForColumn(
   );
 }
 
+export interface TitleTagSummary {
+  tag: string;
+  total: number;
+  completed: number;
+}
+
+/** Tags de título presentes nas solicitações, da mais usada para a menos usada. */
+export function summarizeTitleTags(requests: MarketingRequest[]): TitleTagSummary[] {
+  const map = new Map<string, TitleTagSummary>();
+  for (const req of requests) {
+    const titleTag = getTitleTag(req.title);
+    if (!titleTag) continue;
+    const summary = map.get(titleTag.tag) ?? { tag: titleTag.tag, total: 0, completed: 0 };
+    summary.total += 1;
+    if (req.workflow_stage === "concluido") summary.completed += 1;
+    map.set(titleTag.tag, summary);
+  }
+  return [...map.values()].sort((a, b) => b.total - a.total || a.tag.localeCompare(b.tag, "pt-BR"));
+}
+
+/** Copia o link da página de download das peças da tag (exige login no sistema). */
+function TagDeliveryLink({ tag }: { tag: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copyLink() {
+    await navigator.clipboard.writeText(plannerTagDeliveryUrl(tag));
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2500);
+  }
+
+  return (
+    <span className="flex items-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => void copyLink()}
+        title="Página para baixar as artes e copiar as legendas (com login)"
+        className="flex items-center gap-1.5 rounded-full border border-black/10 bg-black/[0.02] px-3 py-1.5 text-xs font-medium text-foreground/80 transition-colors hover:bg-black/[0.05] hover:text-foreground dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.07]"
+      >
+        {copied ? (
+          <Check className="h-3.5 w-3.5 text-emerald-600" aria-hidden />
+        ) : (
+          <Share2 className="h-3.5 w-3.5" aria-hidden />
+        )}
+        {copied ? "Link copiado" : "Link de download"}
+      </button>
+      <a
+        href={plannerTagDeliveryPath(tag)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="rounded-full p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+        aria-label={`Abrir a página de download de [${tag}]`}
+      >
+        <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+      </a>
+    </span>
+  );
+}
+
+interface TitleTagFilterProps {
+  tags: TitleTagSummary[];
+  activeTag: string | null;
+  onChange: (tag: string | null) => void;
+}
+
+/** Chips de filtro rápido pelas tags do título ("[OAB]", "[DC]"...). Clicar de novo limpa. */
+export function TitleTagFilter({ tags, activeTag, onChange }: TitleTagFilterProps) {
+  if (tags.length === 0) return null;
+  const active = tags.find((t) => t.tag === activeTag) ?? null;
+  const progress = active && active.total > 0 ? Math.round((active.completed / active.total) * 100) : 0;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filtrar por tag do título">
+      <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <Tag className="h-3.5 w-3.5" aria-hidden />
+        Tags
+      </span>
+      {tags.map((t) => {
+        const isActive = t.tag === activeTag;
+        return (
+          <button
+            key={t.tag}
+            type="button"
+            aria-pressed={isActive}
+            onClick={() => onChange(isActive ? null : t.tag)}
+            title={isActive ? "Limpar filtro" : `Mostrar só [${t.tag}] · ${t.completed} de ${t.total} concluídos`}
+            className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#04202f]/40 focus-visible:ring-offset-2 ${
+              isActive
+                ? "border-transparent bg-[#04202f] text-white dark:bg-white dark:text-[#04202f]"
+                : "border-black/10 bg-black/[0.02] text-foreground/80 hover:bg-black/[0.05] hover:text-foreground dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.07]"
+            }`}
+          >
+            <span className="font-semibold tracking-wide">{t.tag}</span>
+            <span className={`tabular-nums ${isActive ? "text-white/70 dark:text-[#04202f]/60" : "text-muted-foreground/70"}`}>
+              {t.completed}/{t.total}
+            </span>
+            {isActive && <X className="h-3 w-3 shrink-0" aria-hidden />}
+          </button>
+        );
+      })}
+      {active && <TagDeliveryLink key={active.tag} tag={active.tag} />}
+      {active && (
+        <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground bg-muted/40 rounded-full px-3 py-1.5">
+          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" aria-hidden />
+          <span className="tabular-nums">
+            {active.completed}/{active.total} concluídos
+          </span>
+          <span
+            className="h-1.5 w-16 overflow-hidden rounded-full bg-black/10 dark:bg-white/15"
+            role="progressbar"
+            aria-label={`Progresso de [${active.tag}]`}
+            aria-valuenow={progress}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <span className="block h-full rounded-full bg-emerald-500" style={{ width: `${progress}%` }} />
+          </span>
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function KanbanBoard({
   requests,
   onRefresh,
@@ -162,6 +293,8 @@ export function KanbanBoard({
   const [revisaoArtLink, setRevisaoArtLink] = useState("");
   // Capa de Reels: a designer entrega a imagem no sistema em vez de um link.
   const [revisaoImagePath, setRevisaoImagePath] = useState<string | null>(null);
+  // Demais tarefas: arquivos da arte enviados na própria tarefa (o link vira opcional).
+  const [revisaoFileCount, setRevisaoFileCount] = useState(0);
   const [isSubmittingRevisao, setIsSubmittingRevisao] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
   const { profile } = useAuth();
@@ -234,6 +367,7 @@ export function KanbanBoard({
         setActiveRequest(null);
         setRevisaoArtLink(request.art_link ?? "");
         setRevisaoImagePath(request.art_image_path ?? null);
+        setRevisaoFileCount(0);
         setPendingMoveToRevisao({ request, prevStage });
         return;
       }
@@ -290,7 +424,7 @@ export function KanbanBoard({
         }
       }
     },
-    [requests, onRefresh, resolveTargetColumn, profile?.id, profile?.name, getStageRule, setRevisaoArtLink, setRevisaoImagePath]
+    [requests, onRefresh, resolveTargetColumn, profile?.id, profile?.name, getStageRule, setRevisaoArtLink, setRevisaoImagePath, setRevisaoFileCount]
   );
 
   const handleConfirmMoveToRevisao = useCallback(async () => {
@@ -382,7 +516,7 @@ export function KanbanBoard({
           <DialogHeader>
             <DialogTitle>Enviar para revisão</DialogTitle>
             <DialogDescription>
-              Informe o link da arte para o revisor acessar. Conforme a configuração do Kanban, o atribuído (designer) pode ser mantido ou trocado pelo solicitante (revisor).
+              Suba os arquivos finais da arte (ou informe um link) para o revisor acessar. Conforme a configuração do Kanban, o atribuído (designer) pode ser mantido ou trocado pelo solicitante (revisor).
             </DialogDescription>
           </DialogHeader>
           {pendingMoveToRevisao && (
@@ -403,8 +537,16 @@ export function KanbanBoard({
                 </div>
               ) : (
               <div className="space-y-2 pt-2">
-                <label htmlFor="revisao-art-link" className="text-sm font-medium text-foreground">
-                  Link da arte <span className="text-destructive">*</span>
+                <p className="text-sm font-medium text-foreground">
+                  Arquivos da arte <span className="text-destructive">*</span>
+                </p>
+                <RequestFilesField
+                  requestId={pendingMoveToRevisao.request.id}
+                  canEdit
+                  onFilesChange={(files) => setRevisaoFileCount(files.length)}
+                />
+                <label htmlFor="revisao-art-link" className="block pt-2 text-sm font-medium text-foreground">
+                  Ou link da arte
                 </label>
                 <input
                   id="revisao-art-link"
@@ -413,10 +555,9 @@ export function KanbanBoard({
                   value={revisaoArtLink}
                   onChange={(e) => setRevisaoArtLink(e.target.value)}
                   className="flex h-10 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  aria-required="true"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Obrigatório para enviar para revisão.
+                  Envie os arquivos ou informe um link para mandar para revisão.
                 </p>
                 {moveError && (
                   <p className="text-xs font-medium text-destructive">
@@ -433,7 +574,9 @@ export function KanbanBoard({
                   onClick={handleConfirmMoveToRevisao}
                   disabled={
                     isSubmittingRevisao ||
-                    (pendingMoveToRevisao.request.reel_delivery_id ? !revisaoImagePath : !revisaoArtLink.trim())
+                    (pendingMoveToRevisao.request.reel_delivery_id
+                      ? !revisaoImagePath
+                      : !revisaoArtLink.trim() && revisaoFileCount === 0)
                   }
                 >
                   {isSubmittingRevisao ? "Enviando..." : "Enviar para revisão"}

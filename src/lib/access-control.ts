@@ -86,6 +86,8 @@ export const ALWAYS_ALLOWED_PATHS = [
   "/conteudo/cronograma",
   "/conteudo/aprovacao-reels",
   MEUS_CLIENTES_KEY,
+  // Peças de campanha do planner para quem vai postar (ex.: sócios).
+  "/entregas",
 ];
 
 /**

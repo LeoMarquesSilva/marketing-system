@@ -20,6 +20,7 @@ import { getDeadlineMoment } from "@/lib/marketing-requests";
 import { useTimer } from "@/contexts/timer-context";
 import { useStopwatch } from "@/hooks/use-stopwatch";
 import { IdentityBriefingStatusBadge } from "@/components/briefings/identity-briefing-status-badge";
+import { getTitleTag } from "@/lib/planner-title-tag";
 
 function getInitials(name: string) {
   return name
@@ -117,6 +118,10 @@ export function KanbanCard({
   const priorityCfg = PRIORITY_CONFIG[priority as RequestPriority] ?? PRIORITY_CONFIG.normal;
   const showPriorityBadge = priority !== "normal";
 
+  // A tag vira badge; o título mostra só o restante (o aria-label mantém o título completo).
+  const titleTag = getTitleTag(request.title);
+  const displayTitle = titleTag?.rest || request.title;
+
   const deadlineDate = request.deadline ? parseISO(request.deadline) : null;
   const deadlineMoment = getDeadlineMoment(request.deadline, request.deadline_time);
   const stage = request.workflow_stage || "tarefas";
@@ -205,16 +210,24 @@ export function KanbanCard({
       />
 
       <div className="space-y-3">
-        {/* Linha de topo: prioridade + tipo */}
+        {/* Linha de topo: tag + prioridade + tipo */}
         <div className="flex items-center justify-between gap-2">
-          {showPriorityBadge ? (
-            <span className={`flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-0.5 ${priorityCfg.className}`}>
-              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${priorityCfg.dotClass}`} aria-hidden />
-              {priorityCfg.label}
-            </span>
-          ) : (
-            <span />
-          )}
+          <div className="flex min-w-0 items-center gap-1.5">
+            {titleTag && (
+              <span
+                className="truncate text-[10px] font-semibold tracking-wide rounded-full px-2 py-0.5 bg-[#04202f]/8 text-[#04202f]/80 dark:bg-white/10 dark:text-white/70"
+                title={`Tag [${titleTag.tag}]`}
+              >
+                {titleTag.tag}
+              </span>
+            )}
+            {showPriorityBadge && (
+              <span className={`flex items-center gap-1 text-[10px] font-semibold rounded-full px-2 py-0.5 ${priorityCfg.className}`}>
+                <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${priorityCfg.dotClass}`} aria-hidden />
+                {priorityCfg.label}
+              </span>
+            )}
+          </div>
           <Badge
             variant="secondary"
             className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${typeColor}`}
@@ -225,7 +238,7 @@ export function KanbanCard({
 
         {/* Título */}
         <h3 className="text-sm font-semibold tracking-tight text-foreground line-clamp-2 leading-snug">
-          {request.title}
+          {displayTitle}
         </h3>
 
         {request.identity_briefing_enabled && (

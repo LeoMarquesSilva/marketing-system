@@ -21,6 +21,13 @@ describe("proxy — retorno após login", () => {
     expect(response.headers.get("location")).toBeNull();
   });
 
+  it("exige login na página de download das peças e volta para ela depois", () => {
+    const response = proxy(request("/entregas/oab"));
+    expect(response.status).toBeGreaterThanOrEqual(300);
+    expect(response.status).toBeLessThan(400);
+    expect(response.headers.get("location")).toContain("/login?next=%2Fentregas%2Foab");
+  });
+
   it("abre as referências de dress code sem login", () => {
     const response = proxy(request("/dress-code"));
     expect(response.status).toBe(200);
