@@ -3,6 +3,7 @@ import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { chaveNome, type OpcaoVios } from "./agendamento";
 import { VistagemError } from "./errors";
+import { cisDoResultado, type LinhaFilaSama, type ModoAgendamento } from "./fila-vios";
 import type { TipoNaArvore } from "./fluxo-vios";
 
 /**
@@ -23,6 +24,15 @@ function sama(): SupabaseClient {
  */
 export function envioSimulado(): boolean {
   return process.env.VISTAGEM_RPA_MODO?.trim().toLowerCase() !== "real";
+}
+
+/**
+ * VISTAGEM_AGENDAMENTO=intimacao: o robô lança as tarefas na publicação (Intimações do
+ * VIOS). Sem ela, cria dentro da pasta, como antes — só ligue depois de implantar o
+ * sama-rpa que entende a coluna `lancamento`.
+ */
+export function modoAgendamento(): ModoAgendamento {
+  return process.env.VISTAGEM_AGENDAMENTO?.trim().toLowerCase() === "intimacao" ? "intimacao" : "pasta";
 }
 
 export interface CatalogoArea {
@@ -94,23 +104,7 @@ export function catalogoDaArea(areas: CatalogoArea[], area: string | null): Cata
   return areas.find((item) => chaveNome(item.area) === chaveNome(area)) ?? null;
 }
 
-export interface LinhaFilaSama {
-  tipo: string;
-  tarefa: string;
-  tarefa_id: string | null;
-  etiqueta_id: string;
-  observacao: string;
-  passo_texto: string;
-  data: string;
-  pasta: string;
-  pasta_tipo: "Processo";
-  ci_pasta: string | null;
-  responsavel: string;
-  revisor: string | null;
-  simular: boolean;
-}
-
-/** Coloca cada tarefa na fila do robô; devolve os ids na mesma ordem. */
+/** Coloca cada linha na fila do robô; devolve os ids na mesma ordem. */
 export async function enfileirarNoSama(linhas: LinhaFilaSama[]): Promise<string[]> {
   const db = sama();
   const ids: string[] = [];
@@ -130,6 +124,8 @@ export interface StatusFilaSama {
   status: "pendente" | "enviado" | "processando" | "concluido" | "erro";
   erro: string | null;
   viosTarefaId: string | null;
+  /** Lançamento pela intimação: CI de cada tarefa, por id do agendamento. */
+  cisPorAgendamento: Map<string, string>;
 }
 
 export async function consultarFilaSama(ids: string[]): Promise<Map<string, StatusFilaSama>> {
@@ -145,6 +141,7 @@ export async function consultarFilaSama(ids: string[]): Promise<Map<string, Stat
         status: row.status as StatusFilaSama["status"],
         erro: (row.erro as string | null) ?? null,
         viosTarefaId: ciVios ? String(ciVios) : null,
+        cisPorAgendamento: cisDoResultado(row.resultado),
       });
     }
   }

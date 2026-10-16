@@ -2,8 +2,6 @@ import "server-only";
 
 import {
   areaDoCatalogo,
-  montarObservacaoVios,
-  paraDataVios,
   responsavelSugerido,
   tarefasPermitidas,
   usuarioPorSigla,
@@ -16,7 +14,17 @@ import { cadeiaDoFluxo, montarFluxo, type FluxoDaTarefa, type TipoNaArvore } fro
 import { buscarPastasVios } from "./pastas-vios";
 import { VistagemError } from "./errors";
 import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
-import { carregarArvoreVios, carregarCatalogoProcessos, catalogoDaArea, consultarFilaSama, enfileirarNoSama, envioSimulado, type CatalogoArea } from "./sama";
+import { linhasParaFila } from "./fila-vios";
+import {
+  carregarArvoreVios,
+  carregarCatalogoProcessos,
+  catalogoDaArea,
+  consultarFilaSama,
+  enfileirarNoSama,
+  envioSimulado,
+  modoAgendamento,
+  type CatalogoArea,
+} from "./sama";
 import { COLUNAS_PUBLICACAO, admin, falhou, hojeEmSaoPaulo, publicacaoResumo, type PublicacaoRow } from "./server";
 import type {
   AgendamentoResumo,
@@ -289,7 +297,7 @@ export async function listarConferencia(): Promise<ConferenciaResposta> {
   return { aConferir, enviadas, envioSimulado: envioSimulado() };
 }
 
-/** Validação da controladoria: cada tarefa vai para a fila do robô do SAMA. */
+/** Validação da controladoria: as tarefas vão para a fila do robô do SAMA (na intimação, todas juntas). */
 export async function validarVistagem(id: string, authUserId: string): Promise<{ enviadas: number; simulado: boolean }> {
   const publicacao = await carregarPublicacao(id);
   if (publicacao.status !== "controladoria_vistar") throw new VistagemError("Esta publicação não está aguardando conferência.", 409);
@@ -319,17 +327,23 @@ export async function validarVistagem(id: string, authUserId: string): Promise<{
 
   const simular = envioSimulado();
   try {
-    const idsFila = await enfileirarNoSama(agendamentos.map((item) => linhaParaFila(publicacao, item, simular)));
+    const filaPorAgendamento = await enfileirarPublicacao(publicacao, agendamentos, simular);
     const agora = new Date().toISOString();
     await Promise.all(
-      agendamentos.map((item, indice) =>
+      agendamentos.map((item) =>
         db
           .from("vistagem_agendamentos")
-          .update({ envio_status: "pendente", envio_simulado: simular, sama_agendamento_id: idsFila[indice], enviado_em: agora, envio_atualizado_em: agora })
+          .update({
+            envio_status: "pendente",
+            envio_simulado: simular,
+            sama_agendamento_id: filaPorAgendamento.get(item.id),
+            enviado_em: agora,
+            envio_atualizado_em: agora,
+          })
           .eq("id", item.id)
       )
     );
-    return { enviadas: idsFila.length, simulado: simular };
+    return { enviadas: agendamentos.length, simulado: simular };
   } catch (erro) {
     // Volta para a conferência se a fila do robô falhou.
     await db.from("vistagem_publicacoes").update({ status: "controladoria_vistar", conferido_por: null, conferido_em: null }).eq("id", id);
@@ -337,32 +351,11 @@ export async function validarVistagem(id: string, authUserId: string): Promise<{
   }
 }
 
-function linhaParaFila(publicacao: PublicacaoComArea, item: AgendamentoRow, simular: boolean) {
-  const observacao = montarObservacaoVios(
-    {
-      dataPublicacao: publicacao.data_publicacao,
-      tribunal: publicacao.tribunal,
-      numeroProcesso: publicacao.numero_processo,
-      djenIdComunicacao: publicacao.djen_id_comunicacao,
-      teor: publicacao.teor,
-    },
-    item.observacao
-  );
-  return {
-    tipo: item.etiqueta === "PRAZO" ? "Prazo" : "Providências",
-    tarefa: item.tarefa,
-    tarefa_id: item.tarefa_id,
-    etiqueta_id: item.etiqueta === "PRAZO" ? "1" : "204",
-    observacao,
-    passo_texto: observacao,
-    data: paraDataVios(item.data),
-    pasta: publicacao.numero_processo as string,
-    pasta_tipo: "Processo" as const,
-    ci_pasta: publicacao.pasta_ci,
-    responsavel: item.responsavel,
-    revisor: item.revisor,
-    simular,
-  };
+/** Põe as tarefas da publicação na fila do robô; devolve o id da linha da fila de cada agendamento. */
+async function enfileirarPublicacao(publicacao: PublicacaoComArea, itens: AgendamentoRow[], simular: boolean): Promise<Map<string, string>> {
+  const grupos = linhasParaFila(publicacao, itens, { simular, modo: modoAgendamento() });
+  const ids = await enfileirarNoSama(grupos.map((grupo) => grupo.linha));
+  return new Map(grupos.flatMap((grupo, indice) => grupo.agendamentos.map((agendamento) => [agendamento, ids[indice]] as const)));
 }
 
 /**
@@ -385,16 +378,16 @@ export async function reenviarGravando(id: string): Promise<{ enviadas: number }
   const simuladas = (data ?? []) as AgendamentoRow[];
   if (!simuladas.length) throw new VistagemError("Não há tarefas simuladas para reenviar.", 422);
 
-  const idsFila = await enfileirarNoSama(simuladas.map((item) => linhaParaFila(publicacao, item, false)));
+  const filaPorAgendamento = await enfileirarPublicacao(publicacao, simuladas, false);
   const agora = new Date().toISOString();
   await Promise.all(
-    simuladas.map((item, indice) =>
+    simuladas.map((item) =>
       db
         .from("vistagem_agendamentos")
         .update({
           envio_status: "pendente",
           envio_simulado: false,
-          sama_agendamento_id: idsFila[indice],
+          sama_agendamento_id: filaPorAgendamento.get(item.id),
           vios_tarefa_id: null,
           envio_erro: null,
           enviado_em: agora,
@@ -403,7 +396,7 @@ export async function reenviarGravando(id: string): Promise<{ enviadas: number }
         .eq("id", item.id)
     )
   );
-  return { enviadas: idsFila.length };
+  return { enviadas: simuladas.length };
 }
 
 /** Não validado: volta para o jurídico com o motivo, mantendo as tarefas para ajuste. */
@@ -461,9 +454,11 @@ export async function atualizarEnvios(): Promise<{ consultadas: number; concluid
     if (atual.status === "concluido") resumo.concluidas += 1;
     if (atual.status === "erro") resumo.erros += 1;
     publicacoesTocadas.add(item.publicacao_id);
+    // Lançamento pela intimação: uma linha da fila para várias tarefas, cada uma com o seu CI.
+    const viosTarefaId = atual.cisPorAgendamento.size ? atual.cisPorAgendamento.get(item.id) ?? null : atual.viosTarefaId;
     await db
       .from("vistagem_agendamentos")
-      .update({ envio_status: atual.status, vios_tarefa_id: atual.viosTarefaId, envio_erro: atual.erro, envio_atualizado_em: agora })
+      .update({ envio_status: atual.status, vios_tarefa_id: viosTarefaId, envio_erro: atual.erro, envio_atualizado_em: agora })
       .eq("id", item.id);
   }
 
