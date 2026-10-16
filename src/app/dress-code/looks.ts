@@ -58,16 +58,6 @@ export const LOOKS_ELAS: Look[] = [
     credit: unsplash("sammy swae", "https://unsplash.com/photos/woman-in-a-navy-blue-suit-by-the-ocean-PFdDqC-9Bzk"),
   },
   { src: `${DIR}/elas-longo-marinho-frente-unica-pin.jpg`, width: 1100, height: 1956, caption: "Longo marinho frente única" },
-  {
-    src: `${DIR}/elas-macacao-azul-ceu-pexels-27954789.jpg`,
-    width: 1100,
-    height: 1650,
-    caption: "Macacão azul-céu",
-    credit: pexels(
-      "pedro furtado",
-      "https://www.pexels.com/photo/a-woman-in-a-blue-jumpsuit-with-a-flower-on-her-head-27954789/"
-    ),
-  },
   { src: `${DIR}/elas-conjunto-celeste.jpg`, width: 296, height: 920, caption: "Conjunto celeste" },
   { src: `${DIR}/elas-midi-cobalto-pin.jpg`, width: 1080, height: 1920, caption: "Midi cobalto drapeado" },
   {
@@ -96,13 +86,6 @@ export const LOOKS_ELAS: Look[] = [
   },
   { src: `${DIR}/elas-conjunto-marinho.jpg`, width: 381, height: 1188, caption: "Conjunto marinho" },
   { src: `${DIR}/elas-off-white-peplum-pin.jpg`, width: 1024, height: 1820, caption: "Conjunto off-white com peplum" },
-  {
-    src: `${DIR}/elas-vestido-azul-claro-pexels-4937997.jpg`,
-    width: 1100,
-    height: 1650,
-    caption: "Vestido azul-claro fluido",
-    credit: pexels("Yaroslav Shuraev", "https://www.pexels.com/photo/a-woman-in-blue-dress-4937997/"),
-  },
   { src: `${DIR}/elas-alfaiataria-off-white-pin.jpg`, width: 704, height: 1280, caption: "Alfaiataria off-white" },
   { src: `${DIR}/elas-macacao-marinho.jpg`, width: 174, height: 539, caption: "Macacão marinho" },
 ];

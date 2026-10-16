@@ -42,11 +42,11 @@ export default function DressCodePage() {
         <header className="flex flex-col items-center text-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/LOGO HORIZONTAL AZUL.png"
-            alt="Bismarchi | Pires Sociedade de Advogados"
-            width={955}
-            height={230}
-            className="h-auto w-48 sm:w-56"
+            src="/dress-code/10-anos/logo-10-anos.png"
+            alt="Bismarchi | Pires Sociedade de Advogados — 10 anos"
+            width={640}
+            height={527}
+            className="h-auto w-44 sm:w-52"
           />
           <p className={`${EYEBROW} mt-10`}>Celebração · 10 anos</p>
           <h1 className="mt-3 font-[family-name:var(--font-dress-display)] text-[clamp(4.5rem,18vw,8.5rem)] leading-[0.85] text-[#cfab68]">
