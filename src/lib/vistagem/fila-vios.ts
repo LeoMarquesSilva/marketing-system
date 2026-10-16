@@ -22,6 +22,11 @@ export interface TarefaDoLancamento {
 
 export interface LancamentoFila {
   comunicacao_id: string | null;
+  /**
+   * IDs de comunicação das duplicadas da mesma publicação (uma por parte intimada). Se o VIOS
+   * não capturou a comunicação exata, o robô usa a intimação de uma destas.
+   */
+  comunicacoes_equivalentes: string[];
   /** DD/MM/AAAA; usada pelo robô quando não há ID de comunicação. */
   data_publicacao: string | null;
   tarefas: TarefaDoLancamento[];
@@ -52,6 +57,8 @@ export interface PublicacaoParaFila {
   djen_id_comunicacao: number | null;
   teor: string | null;
   pasta_ci: string | null;
+  /** IDs de comunicação das outras publicações do mesmo grupo de duplicidade. */
+  comunicacoes_equivalentes?: (number | string)[];
 }
 
 export interface AgendamentoParaFila {
@@ -110,12 +117,14 @@ export function linhasParaFila(
 
   if (!itens.length) return [];
   const cabecalho = montarObservacaoVios(referencia, null);
+  const comunicacao = publicacao.djen_id_comunicacao ? String(publicacao.djen_id_comunicacao) : null;
   return [
     {
       linha: {
         ...base(itens[0], cabecalho),
         lancamento: {
-          comunicacao_id: publicacao.djen_id_comunicacao ? String(publicacao.djen_id_comunicacao) : null,
+          comunicacao_id: comunicacao,
+          comunicacoes_equivalentes: [...new Set((publicacao.comunicacoes_equivalentes ?? []).map(String))].filter((id) => id && id !== comunicacao),
           data_publicacao: publicacao.data_publicacao ? paraDataVios(publicacao.data_publicacao) : null,
           tarefas: itens.map((item) => ({
             chave: item.id,

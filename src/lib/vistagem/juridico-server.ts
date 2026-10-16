@@ -351,9 +351,24 @@ export async function validarVistagem(id: string, authUserId: string): Promise<{
   }
 }
 
+/** IDs de comunicação das outras publicações do mesmo grupo de duplicidade (principal e duplicadas). */
+async function comunicacoesEquivalentes(publicacao: PublicacaoComArea): Promise<string[]> {
+  const principal = publicacao.duplicidade_de ?? publicacao.id;
+  const { data, error } = await admin()
+    .from("vistagem_publicacoes")
+    .select("id, djen_id_comunicacao")
+    .or(`id.eq.${principal},duplicidade_de.eq.${principal}`);
+  if (error) falhou("carregar as duplicadas da publicação", error);
+  return (data ?? [])
+    .filter((row) => row.id !== publicacao.id && row.djen_id_comunicacao)
+    .map((row) => String(row.djen_id_comunicacao));
+}
+
 /** Põe as tarefas da publicação na fila do robô; devolve o id da linha da fila de cada agendamento. */
 async function enfileirarPublicacao(publicacao: PublicacaoComArea, itens: AgendamentoRow[], simular: boolean): Promise<Map<string, string>> {
-  const grupos = linhasParaFila(publicacao, itens, { simular, modo: modoAgendamento() });
+  const modo = modoAgendamento();
+  const equivalentes = modo === "intimacao" ? await comunicacoesEquivalentes(publicacao) : [];
+  const grupos = linhasParaFila({ ...publicacao, comunicacoes_equivalentes: equivalentes }, itens, { simular, modo });
   const ids = await enfileirarNoSama(grupos.map((grupo) => grupo.linha));
   return new Map(grupos.flatMap((grupo, indice) => grupo.agendamentos.map((agendamento) => [agendamento, ids[indice]] as const)));
 }

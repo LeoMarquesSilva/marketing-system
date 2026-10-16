@@ -186,7 +186,19 @@ function CartaoConferencia({
             vistada {item.vistadoPor ? `por ${item.vistadoPor} ` : ""}em {formatarDataHora(publicacao.vistadoEm)}
             {comEnvio && publicacao.conferidoEm ? ` · conferida ${item.conferidoPor ? `por ${item.conferidoPor} ` : ""}em ${formatarDataHora(publicacao.conferidoEm)}` : ""}
           </span>
+          {comEnvio && temErro(item) ? (
+            <Button size="sm" variant="outline" className="ml-auto" onClick={rodarDeNovo} disabled={ocupado}>
+              {ocupado ? <LoaderCircle className="animate-spin" /> : <RotateCcw />}
+              Rodar novamente
+            </Button>
+          ) : null}
         </div>
+        {comEnvio && temErro(item) ? (
+          <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            Erro no robô: {item.agendamentos.find((agendamento) => agendamento.envioStatus === "erro")?.envioErro ?? "sem detalhe"}
+          </p>
+        ) : null}
+        {comEnvio && erro ? <p className="text-sm text-red-700">{erro}</p> : null}
         <DadosPasta publicacao={{ ...publicacao, pendencia: null }} />
         <DadosPublicacao publicacao={publicacao} />
         {item.inconsistencias.length ? (
@@ -210,15 +222,6 @@ function CartaoConferencia({
           <Button size="sm" onClick={() => agir("reenviar")} disabled={ocupado}>
             {ocupado ? <LoaderCircle className="animate-spin" /> : <Bot />}
             Reenviar gravando no VIOS
-          </Button>
-          {erro ? <p className="text-sm text-red-700">{erro}</p> : null}
-        </div>
-      ) : null}
-      {comEnvio && temErro(item) ? (
-        <div className="flex flex-wrap items-center gap-2 border-t border-[#dce9eb] px-4 py-3">
-          <Button size="sm" variant="outline" onClick={rodarDeNovo} disabled={ocupado}>
-            {ocupado ? <LoaderCircle className="animate-spin" /> : <RotateCcw />}
-            Rodar novamente
           </Button>
           {erro ? <p className="text-sm text-red-700">{erro}</p> : null}
         </div>
