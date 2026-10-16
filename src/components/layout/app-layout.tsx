@@ -25,6 +25,7 @@ const BARE_LAYOUT_PATHS = [
   "/materiais",
   "/briefings",
   "/ficha-cadastral",
+  "/dress-code",
 ];
 
 function isBareLayoutPath(pathname: string): boolean {
