@@ -399,6 +399,59 @@ export async function reenviarGravando(id: string): Promise<{ enviadas: number }
   return { enviadas: simuladas.length };
 }
 
+/** Erro depois que o robô clicou em Gravar/lançou: rodar de novo pode duplicar a tarefa no VIOS. */
+const ERRO_DEPOIS_DE_GRAVAR = /^\s*ATENÇÃO/i;
+
+/**
+ * Roda de novo no robô as tarefas da publicação que deram erro (aba Enviadas ao robô).
+ * Se o erro diz que o robô pode ter gravado no VIOS antes de falhar, só roda com confirmação.
+ */
+export async function rodarNovamente(
+  id: string,
+  forcar: boolean
+): Promise<{ enviadas: number; simulado: boolean } | { precisaConfirmar: string }> {
+  const publicacao = await carregarPublicacao(id);
+  if (publicacao.status !== "pronto_para_agendar") throw new VistagemError("Esta publicação não está aguardando agendamento.", 409);
+  if (!publicacao.numero_processo) throw new VistagemError("Publicação sem número de processo: não dá para agendar no VIOS.", 422);
+  const db = admin();
+  const { data, error } = await db
+    .from("vistagem_agendamentos")
+    .select(COLUNAS_AGENDAMENTO)
+    .eq("publicacao_id", id)
+    .eq("envio_status", "erro")
+    .order("ordem", { ascending: true });
+  if (error) falhou("carregar as tarefas com erro", error);
+  const comErro = (data ?? []) as AgendamentoRow[];
+  if (!comErro.length) throw new VistagemError("Não há tarefas com erro para rodar de novo.", 422);
+  if (!forcar && comErro.some((item) => ERRO_DEPOIS_DE_GRAVAR.test(item.envio_erro ?? ""))) {
+    return {
+      precisaConfirmar:
+        "O robô pode ter gravado no VIOS antes do erro. Confira no VIOS se a tarefa já existe: rodar de novo pode duplicá-la. Rodar mesmo assim?",
+    };
+  }
+
+  const simular = envioSimulado();
+  const filaPorAgendamento = await enfileirarPublicacao(publicacao, comErro, simular);
+  const agora = new Date().toISOString();
+  await Promise.all(
+    comErro.map((item) =>
+      db
+        .from("vistagem_agendamentos")
+        .update({
+          envio_status: "pendente",
+          envio_simulado: simular,
+          sama_agendamento_id: filaPorAgendamento.get(item.id),
+          vios_tarefa_id: null,
+          envio_erro: null,
+          enviado_em: agora,
+          envio_atualizado_em: agora,
+        })
+        .eq("id", item.id)
+    )
+  );
+  return { enviadas: comErro.length, simulado: simular };
+}
+
 /** Não validado: volta para o jurídico com o motivo, mantendo as tarefas para ajuste. */
 export async function devolverVistagem(id: string, entrada: InconsistenciaEntrada, authUserId: string): Promise<void> {
   const validacao = validarInconsistencia("juridico", entrada);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Bot, Check, CircleAlert, ExternalLink, LoaderCircle, RefreshCw, Undo2 } from "lucide-react";
+import { Bot, Check, CircleAlert, ExternalLink, LoaderCircle, RefreshCw, RotateCcw, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
@@ -14,6 +14,20 @@ import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { DadosPasta, DadosPublicacao, TeorPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
 
 type Aba = "conferir" | "enviadas" | "inconsistencias";
+
+const temErro = (item: ConferenciaItem) => item.agendamentos.some((agendamento) => agendamento.envioStatus === "erro");
+
+/** Roda de novo no robô as tarefas com erro da publicação; devolve a confirmação pedida pelo servidor, se houver. */
+async function pedirRodarNovamente(id: string, forcar: boolean): Promise<{ enviadas?: number; simulado?: boolean; precisaConfirmar?: string }> {
+  const resposta = await authFetch(`/api/operacoes-legais/vistagem/conferencia/${id}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ acao: "rodar_novamente", forcar }),
+  });
+  const corpo = await resposta.json();
+  if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao rodar de novo.");
+  return corpo;
+}
 
 interface Integracao {
   nome: string;
@@ -117,6 +131,23 @@ function CartaoConferencia({
   const [erro, setErro] = useState("");
   const { publicacao } = item;
 
+  async function rodarDeNovo() {
+    setOcupado(true);
+    setErro("");
+    try {
+      let corpo = await pedirRodarNovamente(publicacao.id, false);
+      if (corpo.precisaConfirmar) {
+        if (!window.confirm(corpo.precisaConfirmar)) return;
+        corpo = await pedirRodarNovamente(publicacao.id, true);
+      }
+      onConcluido?.(publicacao.id, `${corpo.enviadas} tarefa(s) enviada(s) de novo ao robô${corpo.simulado ? " em modo simulação" : ""}.`);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao rodar de novo.");
+    } finally {
+      setOcupado(false);
+    }
+  }
+
   async function agir(acao: "validar" | "devolver" | "reenviar") {
     setOcupado(true);
     setErro("");
@@ -179,6 +210,15 @@ function CartaoConferencia({
           <Button size="sm" onClick={() => agir("reenviar")} disabled={ocupado}>
             {ocupado ? <LoaderCircle className="animate-spin" /> : <Bot />}
             Reenviar gravando no VIOS
+          </Button>
+          {erro ? <p className="text-sm text-red-700">{erro}</p> : null}
+        </div>
+      ) : null}
+      {comEnvio && temErro(item) ? (
+        <div className="flex flex-wrap items-center gap-2 border-t border-[#dce9eb] px-4 py-3">
+          <Button size="sm" variant="outline" onClick={rodarDeNovo} disabled={ocupado}>
+            {ocupado ? <LoaderCircle className="animate-spin" /> : <RotateCcw />}
+            Rodar novamente
           </Button>
           {erro ? <p className="text-sm text-red-700">{erro}</p> : null}
         </div>
@@ -314,6 +354,7 @@ function Conferencia() {
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
   const [atualizando, setAtualizando] = useState(false);
+  const [rodando, setRodando] = useState(false);
 
   const carregar = useCallback(async () => {
     setErro("");
@@ -353,6 +394,38 @@ function Conferencia() {
     } finally {
       setAtualizando(false);
     }
+  }
+
+  const comErro = (dados?.enviadas ?? []).filter(temErro);
+
+  /** Roda de novo todas as publicações com erro; as que podem duplicar no VIOS ficam para o botão do cartão. */
+  async function rodarNovamenteComErro() {
+    setRodando(true);
+    setAviso("");
+    let enviadas = 0;
+    const conferir: string[] = [];
+    const falhas: string[] = [];
+    for (const item of comErro) {
+      const processo = item.publicacao.numeroProcesso ?? item.publicacao.numeroProcessoOriginal ?? item.publicacao.id;
+      try {
+        const corpo = await pedirRodarNovamente(item.publicacao.id, false);
+        if (corpo.precisaConfirmar) conferir.push(processo);
+        else enviadas += corpo.enviadas ?? 0;
+      } catch (e) {
+        falhas.push(`${processo}: ${e instanceof Error ? e.message : "falha"}`);
+      }
+    }
+    setAviso(
+      [
+        `${enviadas} tarefa(s) enviada(s) de novo ao robô.`,
+        conferir.length ? `Confira no VIOS antes de rodar (o robô pode ter gravado): ${conferir.join(", ")} — use o botão do cartão.` : "",
+        falhas.length ? `Não rodou: ${falhas.join("; ")}` : "",
+      ]
+        .filter(Boolean)
+        .join(" ")
+    );
+    await carregar();
+    setRodando(false);
   }
 
   function concluido(id: string, mensagem: string) {
@@ -416,11 +489,17 @@ function Conferencia() {
       {erro ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{erro}</p> : null}
 
       {aba === "enviadas" ? (
-        <div className="flex justify-end">
-          <Button variant="outline" size="sm" onClick={atualizarEnvios} disabled={atualizando}>
+        <div className="flex flex-col items-end gap-2">
+          <Button variant="outline" size="sm" onClick={atualizarEnvios} disabled={atualizando || rodando}>
             {atualizando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
             Atualizar status do robô
           </Button>
+          {comErro.length ? (
+            <Button variant="outline" size="sm" onClick={rodarNovamenteComErro} disabled={rodando || atualizando}>
+              {rodando ? <LoaderCircle className="animate-spin" /> : <RotateCcw />}
+              Rodar novamente os com erro ({comErro.length})
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
