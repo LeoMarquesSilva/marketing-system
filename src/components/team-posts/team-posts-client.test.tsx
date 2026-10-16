@@ -71,10 +71,39 @@ describe("TeamPostsClient", () => {
             { published_at: "2026-08-10T12:00:00.000Z", reach: 1000, engagementActions: 10 },
           ],
           accountStats: null,
+          ready: [
+            {
+              id: "req-1",
+              kind: "post",
+              title: "Carrossel - Caso Viih Tube",
+              area: "Trabalhista",
+              people: ["Bruno Lima"],
+              personIds: ["bruno"],
+              readySince: "2026-09-20T12:00:00.000Z",
+              artUrl: "https://bpplaw2.sharepoint.com/arte",
+              thumbUrl: null,
+            },
+            {
+              id: "reel-1",
+              kind: "reel",
+              title: "Ganhou a ação, mas o dinheiro não entrou",
+              area: "Trabalhista",
+              people: ["Ana Souza"],
+              personIds: ["ana"],
+              readySince: "2026-10-15T09:00:00.000Z",
+              artUrl: null,
+              thumbUrl: "https://example.supabase.co/capa.jpg",
+            },
+          ],
         }}
       />
     );
 
+    expect(html).toContain("Prontos para publicar (2)");
+    expect(html).toContain("Carrossel - Caso Viih Tube");
+    expect(html).toContain("Pronto há 25 dias");
+    expect(html).toContain("Pronto hoje");
+    expect(html).toContain("Ver arte");
     expect(html).toContain("Equipe (2)");
     expect(html).toContain("1 de 2");
     expect(html).toContain("Sem posts no período");
@@ -102,10 +131,12 @@ describe("TeamPostsClient", () => {
           posts: [],
           office: [],
           accountStats: null,
+          ready: [],
         }}
       />
     );
     expect(html).toContain("Todas as minhas áreas");
+    expect(html).toContain("Nada da equipe aguardando publicação agora.");
     expect(html).toContain("Recuperação de Crédito");
     expect(html).toContain("Nenhum colaborador ativo encontrado nesta área.");
     expect(html).toContain("Nenhum post da equipe no período selecionado.");

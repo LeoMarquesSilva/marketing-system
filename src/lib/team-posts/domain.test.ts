@@ -4,6 +4,10 @@ import {
   orderSlideMedia,
   personInAreas,
   pickSlideMediaIds,
+  readyPostTitle,
+  scopeReadyItems,
+  sortReadyItems,
+  type TeamReadyItem,
   resolveTeamAreaOptions,
   resolveTeamPostsAccess,
   scopeTeamPosts,
@@ -200,5 +204,49 @@ describe("mídias do slide", () => {
       "media",
       "alta",
     ]);
+  });
+});
+
+describe("prontos para publicar", () => {
+  function item(overrides: Partial<TeamReadyItem>): TeamReadyItem {
+    return {
+      id: "item",
+      kind: "post",
+      title: "Post",
+      area: "Cível",
+      people: [],
+      personIds: [],
+      readySince: "2026-10-01T10:00:00.000Z",
+      artUrl: null,
+      thumbUrl: null,
+      ...overrides,
+    };
+  }
+
+  it("usa a descrição quando o título é só o tipo do pedido", () => {
+    expect(readyPostTitle({ title: "Post Redes Sociais", description: "Carrossel - Caso X\nmais", request_type: "Post Redes Sociais" }))
+      .toBe("Carrossel - Caso X");
+    expect(readyPostTitle({ title: "Post Redes Sociais", description: "Notícia: Lei nova\nLink", request_type: "Post Redes Sociais" }))
+      .toBe("Lei nova");
+    expect(readyPostTitle({ title: "AGU cobra o Discord", description: "Notícia: outra", request_type: "Post Redes Sociais" }))
+      .toBe("AGU cobra o Discord");
+  });
+
+  it("recorta pela área (com nome legado) ou por alguém da equipe", () => {
+    const items = [
+      item({ id: "area", area: "Contratos" }),
+      item({ id: "pessoa", area: "Operações Legais", personIds: ["ana"] }),
+      item({ id: "fora", area: "Trabalhista", personIds: ["carla"] }),
+    ];
+    expect(scopeReadyItems(items, new Set(["societario e contratos"]), new Set(["ana"])).map((i) => i.id))
+      .toEqual(["area", "pessoa"]);
+    expect(scopeReadyItems(items, null, new Set())).toHaveLength(3);
+  });
+
+  it("ordena pela espera, mais antigo primeiro", () => {
+    expect(sortReadyItems([
+      item({ id: "novo", readySince: "2026-10-14T10:00:00.000Z" }),
+      item({ id: "antigo", readySince: "2026-09-16T10:00:00.000Z" }),
+    ]).map((i) => i.id)).toEqual(["antigo", "novo"]);
   });
 });

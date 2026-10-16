@@ -192,3 +192,49 @@ export function orderSlideMedia(posts: InstagramPost[], ids: readonly string[]):
     .filter((post) => selected.has(post.id))
     .sort((a, b) => (a.published_at ?? "").localeCompare(b.published_at ?? ""));
 }
+
+/** Post ou reel finalizado, no Banco de conteúdo do Planner, aguardando data. */
+export interface TeamReadyItem {
+  id: string;
+  kind: "post" | "reel";
+  title: string;
+  area: string;
+  people: string[];
+  personIds: string[];
+  /** Desde quando está pronto (conclusão da arte ou aprovação do reel). */
+  readySince: string | null;
+  /** Arte no SharePoint (posts). */
+  artUrl: string | null;
+  /** Capa assinada (reels), válida por algumas horas. */
+  thumbUrl: string | null;
+}
+
+/** Pedidos de post costumam vir com o título genérico do tipo; aí vale a descrição. */
+export function readyPostTitle(request: {
+  title: string | null;
+  description: string | null;
+  request_type: string | null;
+}): string {
+  const title = request.title?.trim() ?? "";
+  if (title && title !== request.request_type) return title;
+  const firstLine = request.description?.split("\n")[0]?.replace(/^Notícia:\s*/i, "").trim();
+  return firstLine || title || "Post sem título";
+}
+
+/** Mesmo recorte dos posts publicados: área da equipe ou alguém da equipe envolvido. */
+export function scopeReadyItems(
+  items: TeamReadyItem[],
+  areaKeys: ReadonlySet<string> | null,
+  memberIds: ReadonlySet<string>
+): TeamReadyItem[] {
+  if (areaKeys === null) return items;
+  return items.filter((item) => {
+    const key = teamAreaKey(item.area);
+    return (key !== null && areaKeys.has(key)) || item.personIds.some((id) => memberIds.has(id));
+  });
+}
+
+/** Fila na ordem de espera: quem está pronto há mais tempo primeiro. */
+export function sortReadyItems(items: TeamReadyItem[]): TeamReadyItem[] {
+  return [...items].sort((a, b) => (a.readySince ?? "").localeCompare(b.readySince ?? ""));
+}

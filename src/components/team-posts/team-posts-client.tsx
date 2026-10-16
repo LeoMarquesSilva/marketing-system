@@ -39,6 +39,7 @@ import type { TeamReportRow } from "@/lib/instagram-report";
 import {
   computeTeamMemberStats,
   personInAreas,
+  scopeReadyItems,
   scopeTeamPosts,
   type TeamMemberStats,
 } from "@/lib/team-posts/domain";
@@ -46,6 +47,7 @@ import type { TeamPostsPageData } from "@/lib/team-posts/server";
 import type { User } from "@/lib/users";
 import { cn } from "@/lib/utils";
 import { MediaSlideBlock } from "./media-slide-block";
+import { ReadyQueue } from "./ready-queue";
 
 const ALL_AREAS = "all";
 
@@ -127,7 +129,7 @@ export function TeamPostsClient({ data }: { data: TeamPostsPageData }) {
 }
 
 function TeamPostsDashboard({ data }: { data: ReadyData }) {
-  const { areaOptions, members, posts, office, accountStats, allAreas } = data;
+  const { areaOptions, members, posts, office, accountStats, allAreas, ready } = data;
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>({ kind: "preset", preset: "this_year" });
   const [areaKey, setAreaKey] = useState<string>(ALL_AREAS);
   const [memberId, setMemberId] = useState<string | null>(null);
@@ -152,6 +154,11 @@ function TeamPostsDashboard({ data }: { data: ReadyData }) {
     if (!selectedArea) return posts;
     return scopeTeamPosts(posts, new Set([selectedArea.key]), new Set(scopedMembers.map((m) => m.id)));
   }, [posts, selectedArea, scopedMembers]);
+
+  const readyItems = useMemo(() => {
+    if (!selectedArea) return ready;
+    return scopeReadyItems(ready, new Set([selectedArea.key]), new Set(scopedMembers.map((m) => m.id)));
+  }, [ready, selectedArea, scopedMembers]);
 
   const periodPosts = useMemo(
     () =>
@@ -298,6 +305,8 @@ function TeamPostsDashboard({ data }: { data: ReadyData }) {
           icon={<Users className="h-3.5 w-3.5" />}
         />
       </div>
+
+      <ReadyQueue items={readyItems} />
 
       <MediaSlideBlock
         // Novo recorte (área ou período) refaz a pré-seleção.
