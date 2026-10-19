@@ -13,6 +13,7 @@ import {
   type DeliveryPieceStatus,
 } from "@/lib/request-files/server";
 import { CopyCaptionButton } from "./copy-caption-button";
+import { PostedControl } from "./posted-control";
 
 export const dynamic = "force-dynamic";
 
@@ -117,7 +118,7 @@ function PieceFiles({ piece }: { piece: DeliveryPiece }) {
   );
 }
 
-function PieceCard({ piece }: { piece: DeliveryPiece }) {
+function PieceCard({ piece, tag }: { piece: DeliveryPiece; tag: string }) {
   const status = STATUS[piece.status];
   return (
     <article className="flex flex-col gap-4 rounded-2xl border border-[#10263b]/10 bg-white/80 p-5 shadow-[0_12px_40px_rgba(16,38,59,0.04)]">
@@ -153,6 +154,10 @@ function PieceCard({ piece }: { piece: DeliveryPiece }) {
           <p className="whitespace-pre-wrap text-sm leading-6 text-[#10263b]/75">{piece.caption}</p>
         </div>
       )}
+
+      <div className="mt-auto">
+        <PostedControl requestId={piece.id} tag={tag} postedOn={piece.postedOn} />
+      </div>
     </article>
   );
 }
@@ -215,7 +220,7 @@ export default async function PlannerDeliveryPage({
             Campanha [{delivery.tag}]
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-[#10263b]/65">
-            Baixe a arte de cada peça e copie a legenda na hora de postar. As peças em aprovação ainda podem receber ajustes.
+            Baixe a arte de cada peça, copie a legenda na hora de postar e marque a peça como postada. As peças em aprovação ainda podem receber ajustes.
           </p>
           <div className="mt-8 h-px w-20 bg-[#c79b4a]" />
           <p className="mt-5 text-sm text-[#10263b]/55">
@@ -237,7 +242,7 @@ export default async function PlannerDeliveryPage({
               </div>
               <div className="grid gap-4 md:grid-cols-2">
                 {pieces.map((piece) => (
-                  <PieceCard key={piece.id} piece={piece} />
+                  <PieceCard key={piece.id} piece={piece} tag={delivery.tag} />
                 ))}
               </div>
             </section>

@@ -9,7 +9,6 @@ const SIGNED_URL_SECONDS = 6 * 60 * 60;
 /** A arte só aparece no link depois que a designer manda para aprovação. */
 const STAGES_WITH_FILES = new Set(["revisao", "revisao_autor", "revisado", "pronto_envio", "concluido"]);
 const READY_STAGES = new Set(["revisado", "pronto_envio", "concluido"]);
-const POSTED_COMPLETIONS = new Set(["postagem_feita", "postagem_externa"]);
 
 export type DeliveryPieceStatus = "postada" | "pronta" | "aprovacao" | "producao";
 
@@ -30,6 +29,8 @@ export interface DeliveryPiece {
   name: string;
   deadline: string | null;
   deadlineTime: string | null;
+  /** Data (AAAA-MM-DD) em que quem posta informou a publicação; null = ainda não postada. */
+  postedOn: string | null;
   status: DeliveryPieceStatus;
   caption: string | null;
   files: DeliveryFile[];
@@ -46,7 +47,7 @@ type RequestRow = {
   deadline: string | null;
   deadline_time: string | null;
   workflow_stage: string | null;
-  completion_type: string | null;
+  posted_at: string | null;
 };
 
 type FileRow = {
@@ -59,8 +60,10 @@ type FileRow = {
 };
 
 function pieceStatus(row: RequestRow): DeliveryPieceStatus {
+  // Peças de terceiros (ex.: [OAB]) concluem como "outro canal" sozinhas; só a
+  // data informada por quem posta diz que a peça foi publicada.
+  if (row.posted_at) return "postada";
   const stage = row.workflow_stage ?? "tarefas";
-  if (stage === "concluido" && POSTED_COMPLETIONS.has(row.completion_type ?? "")) return "postada";
   if (READY_STAGES.has(stage)) return "pronta";
   if (stage === "revisao" || stage === "revisao_autor") return "aprovacao";
   return "producao";
@@ -92,7 +95,7 @@ export async function fetchPlannerTagDelivery(db: SupabaseClient, tag: string): 
   const likeTag = tag.replace(/[%_\\]/g, (c) => `\\${c}`);
   const { data: requestData } = await db
     .from("marketing_requests")
-    .select("id, title, deadline, deadline_time, workflow_stage, completion_type")
+    .select("id, title, deadline, deadline_time, workflow_stage, posted_at")
     .ilike("title", `%[${likeTag}]%`);
   const requests = ((requestData ?? []) as RequestRow[]).filter((r) => getTitleTag(r.title)?.tag === tag);
   const ids = requests.map((r) => r.id);
@@ -152,6 +155,7 @@ export async function fetchPlannerTagDelivery(db: SupabaseClient, tag: string): 
         name,
         deadline: row.deadline,
         deadlineTime: row.deadline_time,
+        postedOn: row.posted_at ? row.posted_at.slice(0, 10) : null,
         status: pieceStatus(row),
         caption: captions.get(row.id) ?? null,
         files: filesByRequest.get(row.id) ?? [],
