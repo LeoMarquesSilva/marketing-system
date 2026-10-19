@@ -28,6 +28,13 @@ describe("proxy — retorno após login", () => {
     expect(response.headers.get("location")).toContain("/login?next=%2Fentregas%2Foab");
   });
 
+  it("exige login na atualização da ficha cadastral e volta para ela depois", () => {
+    const response = proxy(request("/minha-ficha"));
+    expect(response.status).toBeGreaterThanOrEqual(300);
+    expect(response.status).toBeLessThan(400);
+    expect(response.headers.get("location")).toContain("/login?next=%2Fminha-ficha");
+  });
+
   it("abre as referências de dress code sem login", () => {
     const response = proxy(request("/dress-code"));
     expect(response.status).toBe(200);

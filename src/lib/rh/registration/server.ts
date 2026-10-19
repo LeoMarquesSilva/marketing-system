@@ -21,6 +21,7 @@ import {
   type RegistrationEmployeeRef,
   type RegistrationKind,
   type RegistrationListItem,
+  type RegistrationOrigin,
   type RegistrationStatus,
 } from "./types";
 import {
@@ -41,7 +42,7 @@ const REOPEN_TTL_DAYS = 14;
 const TOKEN_PATTERN = /^fc_[A-Za-z0-9_-]{20,64}$/;
 
 const FORM_SELECT =
-  "id, token, employment_kind, invitee_name, invitee_personal_email, invitee_phone, expected_admission_date, status, answers, expires_at, reopen_note, submitted_at, consent_at, approved_at, linked_at, applied_at, created_at, employee_id, employee:hr_employees(id, full_name, department, position, is_active)";
+  "id, token, origin, employment_kind, invitee_name, invitee_personal_email, invitee_phone, expected_admission_date, status, answers, expires_at, reopen_note, submitted_at, consent_at, approved_at, linked_at, applied_at, created_at, employee_id, employee:hr_employees(id, full_name, department, position, is_active, employment_type)";
 
 export function createRegistrationAdminClient(): SupabaseClient {
   if (!serviceKey) {
@@ -102,7 +103,9 @@ export async function requireRegistrationManager(): Promise<RegistrationManager>
 
 type FormRow = {
   id: string;
-  token: string;
+  /** Null = sem link público (atualização com login). */
+  token: string | null;
+  origin: RegistrationOrigin;
   employment_kind: RegistrationKind;
   invitee_name: string;
   invitee_personal_email: string | null;
@@ -110,7 +113,7 @@ type FormRow = {
   expected_admission_date: string | null;
   status: RegistrationStatus;
   answers: unknown;
-  expires_at: string;
+  expires_at: string | null;
   reopen_note: string | null;
   submitted_at: string | null;
   consent_at: string | null;
@@ -134,6 +137,7 @@ function toListItem(row: FormRow, candidates: MatchCandidate[]): RegistrationLis
   const canSuggest = !employee && row.status !== "cancelada";
   return {
     id: row.id,
+    origin: row.origin,
     employment_kind: row.employment_kind,
     invitee_name: row.invitee_name,
     invitee_personal_email: row.invitee_personal_email,
@@ -154,7 +158,7 @@ function toListItem(row: FormRow, candidates: MatchCandidate[]): RegistrationLis
           candidates
         )
       : [],
-    public_path: registrationPublicPath(row.token),
+    public_path: row.token ? registrationPublicPath(row.token) : null,
   };
 }
 
@@ -171,11 +175,13 @@ function toDetail(row: FormRow, candidates: MatchCandidate[]): RegistrationDetai
  * Colaboradores que ainda podem receber uma ficha: ativos e sem ficha ativa
  * vinculada. São os candidatos às sugestões de vínculo.
  */
-async function loadMatchCandidates(admin: SupabaseClient): Promise<MatchCandidate[]> {
+async function loadMatchCandidates(
+  admin: SupabaseClient
+): Promise<(MatchCandidate & { employment_type: string | null })[]> {
   const [employeesResult, linkedResult] = await Promise.all([
     admin
       .from("hr_employees")
-      .select("id, full_name, cpf, department, position")
+      .select("id, full_name, cpf, department, position, employment_type")
       .eq("is_active", true),
     admin
       .from("hr_registration_forms")
@@ -187,7 +193,9 @@ async function loadMatchCandidates(admin: SupabaseClient): Promise<MatchCandidat
     throw new RhHttpError("Falha ao carregar colaboradores.", 500, "QUERY_FAILED");
   }
   const linked = new Set((linkedResult.data ?? []).map((row) => row.employee_id as string));
-  return ((employeesResult.data ?? []) as MatchCandidate[]).filter((row) => !linked.has(row.id));
+  return ((employeesResult.data ?? []) as (MatchCandidate & { employment_type: string | null })[]).filter(
+    (row) => !linked.has(row.id)
+  );
 }
 
 async function loadFormRow(admin: SupabaseClient, id: string): Promise<FormRow> {
@@ -214,7 +222,10 @@ export async function listRegistrationForms(): Promise<RegistrationListItem[]> {
   return ((data ?? []) as unknown as FormRow[]).map((row) => toListItem(row, candidates));
 }
 
-/** Colaboradores ativos ainda sem ficha — opções do seletor de vínculo manual. */
+/**
+ * Colaboradores ativos ainda sem ficha — opções do seletor de vínculo manual
+ * e a lista de quem ainda não atualizou a ficha em /minha-ficha.
+ */
 export async function listLinkableEmployees(): Promise<RegistrationEmployeeRef[]> {
   await requireRegistrationManager();
   const candidates = await loadMatchCandidates(createRegistrationAdminClient());
@@ -225,6 +236,7 @@ export async function listLinkableEmployees(): Promise<RegistrationEmployeeRef[]
       department: row.department,
       position: row.position,
       is_active: true,
+      employment_type: row.employment_type,
     }))
     .sort((a, b) => a.full_name.localeCompare(b.full_name, "pt-BR"));
 }
@@ -375,7 +387,8 @@ export async function runRegistrationAction(
         reopen_note: optionalText(body.note, 1000),
         approved_at: null,
         approved_by: null,
-        expires_at: row.expires_at > minExpiry ? row.expires_at : minExpiry,
+        // Sem link público (atualização com login): a pessoa corrige em /minha-ficha, sem prazo.
+        expires_at: !row.token ? null : row.expires_at && row.expires_at > minExpiry ? row.expires_at : minExpiry,
       });
       await resolveSubmittedNotifications(admin, id, manager.profileId);
       break;
@@ -386,6 +399,13 @@ export async function runRegistrationAction(
       break;
     }
     case "regenerate": {
+      if (!row.token) {
+        throw new RhHttpError(
+          "Esta ficha é atualizada pelo próprio colaborador, com login. Não tem link público.",
+          409,
+          "SELF_SERVICE"
+        );
+      }
       if (row.status !== "pendente" && row.status !== "cancelada") {
         throw new RhHttpError("A ficha já foi enviada.", 409, "INVALID_STATUS");
       }
@@ -414,6 +434,13 @@ export async function runRegistrationAction(
       break;
     }
     case "unlink": {
+      if (!row.token) {
+        throw new RhHttpError(
+          "Esta ficha foi enviada pelo próprio colaborador, com login. Cancele em vez de desvincular.",
+          409,
+          "SELF_SERVICE"
+        );
+      }
       await update({ employee_id: null, linked_at: null, linked_by: null, applied_at: null });
       break;
     }
@@ -545,13 +572,13 @@ async function prefillQualification(
 const RATE_LIMIT_PER_MINUTE = 20;
 const rateBucket = new Map<string, { count: number; resetAt: number }>();
 
-function getClientIp(request: Request): string | null {
+export function getClientIp(request: Request): string | null {
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0]?.trim() || null;
   return request.headers.get("x-real-ip");
 }
 
-function hashIp(ip: string | null): string | null {
+export function hashIp(ip: string | null): string | null {
   if (!ip) return null;
   const secret = process.env.NPS_IP_HASH_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "fc-fallback";
   return createHmac("sha256", secret).update(ip).digest("hex");

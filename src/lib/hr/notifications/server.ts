@@ -14,7 +14,7 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabas
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
 const NOTIFICATION_SELECT =
-  "id, employee_id, registration_form_id, event_type, previous_is_active, new_is_active, created_at, resolved_at, employee:hr_employees(full_name, department, position), registration_form:hr_registration_forms(invitee_name, employment_kind)";
+  "id, employee_id, registration_form_id, event_type, previous_is_active, new_is_active, created_at, resolved_at, employee:hr_employees(full_name, department, position), registration_form:hr_registration_forms(invitee_name, employment_kind, origin)";
 
 function createHrNotificationsAdminClient(): SupabaseClient {
   if (!serviceKey) {

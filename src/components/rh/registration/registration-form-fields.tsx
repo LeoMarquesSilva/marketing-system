@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,12 +29,62 @@ import {
   type RegistrationField,
   type RegistrationKind,
 } from "@/lib/rh/registration/types";
-import type { RegistrationErrors } from "@/lib/rh/registration/validation";
+import { OPTIONAL_OAB_KINDS, type RegistrationErrors } from "@/lib/rh/registration/validation";
 import { cn } from "@/lib/utils";
 
 export function registrationFieldId(field: RegistrationField): string {
   return `fc-${field}`;
 }
+
+/** Campos de cada seção, na ordem do formulário (para esconder seções vazias). */
+const SECTION_FIELDS: RegistrationField[][] = [
+  ["fullName", "birthDate", "gender", "parentName", "rg", "rgIssuer", "cpf"],
+  [
+    "nationality",
+    "birthplace",
+    "raceColor",
+    "pis",
+    "ctpsNumber",
+    "voterTitle",
+    "institution",
+    "coursePeriod",
+    "studentRa",
+    "oabNumber",
+    "oabUf",
+  ],
+  ["personalPhone", "personalEmail", "emergencyPhone", "emergencyContactName"],
+  ["bloodType", "dietaryRestrictions", "dietaryNotes"],
+  ["bankName", "bankAgency", "bankAccount", "pixKey"],
+  ["cep", "street", "number", "complement", "district", "city", "state"],
+];
+
+/**
+ * Campos que andam juntos: quem mostra o CEP mostra o endereço que ele
+ * preenche; quem mostra a restrição alimentar mostra o "especifique".
+ */
+const FIELD_COMPANIONS: Partial<Record<RegistrationField, RegistrationField[]>> = {
+  cep: ["street", "number", "complement", "district", "city", "state"],
+  dietaryRestrictions: ["dietaryNotes"],
+  oabNumber: ["oabUf"],
+  oabUf: ["oabNumber"],
+  emergencyPhone: ["emergencyContactName"],
+  bankAccount: ["pixKey"],
+};
+
+export function withCompanionFields(fields: Iterable<RegistrationField>): Set<RegistrationField> {
+  const result = new Set<RegistrationField>(fields);
+  for (const field of [...result]) {
+    for (const companion of FIELD_COMPANIONS[field] ?? []) result.add(companion);
+  }
+  return result;
+}
+
+interface FieldVisibility {
+  visible: ReadonlySet<RegistrationField> | null;
+  missing: ReadonlySet<RegistrationField> | null;
+}
+
+const FieldVisibilityContext = createContext<FieldVisibility>({ visible: null, missing: null });
 
 function maskDigits(value: string, max: number): string {
   return onlyDigits(value).slice(0, max);
@@ -71,11 +121,14 @@ function Field({
   className?: string;
   children: ReactNode;
 }) {
+  const { visible, missing } = useContext(FieldVisibilityContext);
+  if (visible && !visible.has(field)) return null;
   return (
     <div className={cn("min-w-0 space-y-1.5", className)} data-field={field}>
-      <label htmlFor={registrationFieldId(field)} className="block text-sm font-medium text-foreground">
+      <label htmlFor={registrationFieldId(field)} className="flex flex-wrap items-baseline gap-x-1.5 text-sm font-medium text-foreground">
         {label}
-        {optional && <span className="ml-1 font-normal text-muted-foreground">(opcional)</span>}
+        {optional && <span className="font-normal text-muted-foreground">(opcional)</span>}
+        {missing?.has(field) && <MissingMark />}
       </label>
       {children}
       {error ? (
@@ -86,6 +139,14 @@ function Field({
         <p className="text-xs text-muted-foreground">{hint}</p>
       ) : null}
     </div>
+  );
+}
+
+function MissingMark() {
+  return (
+    <span className="fc-missing rounded-full bg-amber-100 px-2 py-px text-[0.68rem] font-semibold uppercase tracking-wide text-amber-900">
+      falta
+    </span>
   );
 }
 
@@ -157,14 +218,29 @@ export function RegistrationFormFields({
   answers,
   errors,
   disabled,
+  visibleFields = null,
+  missingFields = null,
   onChange,
 }: {
   kind: RegistrationKind;
   answers: RegistrationAnswers;
   errors: RegistrationErrors;
   disabled?: boolean;
+  /** Mostra só estes campos (ex.: "só o que falta"); null = ficha inteira. */
+  visibleFields?: ReadonlySet<RegistrationField> | null;
+  /** Campos marcados com "falta" ao lado do rótulo. */
+  missingFields?: ReadonlySet<RegistrationField> | null;
   onChange: <K extends RegistrationField>(field: K, value: RegistrationAnswers[K]) => void;
 }) {
+  const filtering = visibleFields !== null;
+  const sectionShown = SECTION_FIELDS.map(
+    (fields) => !visibleFields || fields.some((field) => visibleFields.has(field))
+  );
+  // Numeração contínua só entre as seções visíveis.
+  const sectionIndex = (position: number) =>
+    sectionShown.slice(0, position + 1).filter(Boolean).length;
+  const showField = (field: RegistrationField) => !visibleFields || visibleFields.has(field);
+  const oabOptional = OPTIONAL_OAB_KINDS.has(kind);
   const [cepState, setCepState] = useState<"idle" | "loading" | "error">("idle");
   const lastCep = useRef(onlyDigits(answers.cep));
   const numberRef = useRef<HTMLInputElement>(null);
@@ -228,309 +304,336 @@ export function RegistrationFormFields({
   const needsDietaryDetail = answers.dietaryRestrictions.some((item) => DIETARY_NEEDS_DETAIL.has(item));
 
   return (
-    <div className="space-y-5">
-      <RegistrationSection index={1} title="Dados pessoais">
-        <Field field="fullName" label="Nome completo" error={errors.fullName} className="sm:col-span-2">
-          {text("fullName", { autoComplete: "name" })}
-        </Field>
-        <Field field="birthDate" label="Data de nascimento" error={errors.birthDate}>
-          <DatePickerField
-            id={registrationFieldId("birthDate")}
-            value={answers.birthDate}
-            onChange={(value) => onChange("birthDate", value)}
-            disabled={disabled}
-            placeholder="dd/mm/aaaa"
-            startYear={1925}
-            endYear={new Date().getFullYear()}
-          />
-        </Field>
-        <Field field="gender" label="Gênero" error={errors.gender}>
-          <OptionSelect
-            field="gender"
-            value={answers.gender}
-            options={GENDER_OPTIONS}
-            invalid={!!errors.gender}
-            disabled={disabled}
-            onChange={(value) => onChange("gender", value)}
-          />
-        </Field>
-        <Field field="parentName" label="Nome da mãe ou do pai" error={errors.parentName} className="sm:col-span-2">
-          {text("parentName")}
-        </Field>
-        <Field field="rg" label="Número do RG" error={errors.rg}>
-          {text("rg", { mask: maskRG })}
-        </Field>
-        <Field field="rgIssuer" label="Órgão emissor / UF" error={errors.rgIssuer}>
-          {text("rgIssuer", { placeholder: "ex.: SSP/SP", mask: (value) => value.toUpperCase() })}
-        </Field>
-        <Field field="cpf" label="CPF" error={errors.cpf}>
-          <CpfInput
-            id={registrationFieldId("cpf")}
-            value={answers.cpf}
-            disabled={disabled}
-            aria-invalid={errors.cpf ? true : undefined}
-            onChange={(value) => onChange("cpf", value)}
-          />
-        </Field>
-      </RegistrationSection>
-
-      <RegistrationSection index={2} title="Dados complementares">
-        <Field field="nationality" label="Nacionalidade" error={errors.nationality}>
-          {text("nationality")}
-        </Field>
-        <Field field="birthplace" label="Naturalidade" hint="Cidade e UF onde você nasceu" error={errors.birthplace}>
-          {text("birthplace", { placeholder: "ex.: Campinas/SP" })}
-        </Field>
-        <Field field="raceColor" label="Raça/cor" hint="Autodeclaração, padrão IBGE" error={errors.raceColor}>
-          <OptionSelect
-            field="raceColor"
-            value={answers.raceColor}
-            options={RACE_COLOR_OPTIONS}
-            invalid={!!errors.raceColor}
-            disabled={disabled}
-            onChange={(value) => onChange("raceColor", value)}
-          />
-        </Field>
-        <Field
-          field="pis"
-          label="PIS"
-          optional={kind !== "clt"}
-          hint={kind === "clt" ? "Aparece na carteira de trabalho digital" : "Se você já tiver"}
-          error={errors.pis}
-        >
-          {text("pis", { mask: maskPIS, inputMode: "numeric" })}
-        </Field>
-
-        {kind === "clt" && (
-          <>
-            <Field
-              field="ctpsNumber"
-              label="Número da carteira de trabalho digital"
-              hint="Na CTPS digital, costuma ser o próprio CPF"
-              error={errors.ctpsNumber}
-            >
-              {text("ctpsNumber")}
+    <FieldVisibilityContext.Provider value={{ visible: visibleFields, missing: missingFields }}>
+      <div className="space-y-5">
+        {sectionShown[0] && (
+          <RegistrationSection index={sectionIndex(0)} title="Dados pessoais">
+            <Field field="fullName" label="Nome completo" error={errors.fullName} className="sm:col-span-2">
+              {text("fullName", { autoComplete: "name" })}
             </Field>
-            <Field field="voterTitle" label="Título de eleitor" error={errors.voterTitle}>
-              {text("voterTitle", { mask: maskVoterTitle, inputMode: "numeric" })}
-            </Field>
-          </>
-        )}
-
-        {kind === "estagio" && (
-          <>
-            <Field field="institution" label="Instituição de ensino" error={errors.institution} className="sm:col-span-2">
-              {text("institution")}
-            </Field>
-            <Field field="coursePeriod" label="Ano/período atual na faculdade" error={errors.coursePeriod}>
-              {text("coursePeriod", { placeholder: "ex.: 5º semestre, 2026" })}
-            </Field>
-            <Field field="studentRa" label="Número do RA" error={errors.studentRa}>
-              {text("studentRa")}
-            </Field>
-          </>
-        )}
-
-        {kind === "socio_servico" && (
-          <>
-            <Field field="oabNumber" label="Número da OAB" error={errors.oabNumber}>
-              {text("oabNumber", { mask: maskOAB, inputMode: "numeric" })}
-            </Field>
-            <Field field="oabUf" label="UF da OAB" error={errors.oabUf}>
-              <OptionSelect
-                field="oabUf"
-                value={answers.oabUf}
-                options={BRAZIL_UF_OPTIONS}
-                placeholder="UF"
-                invalid={!!errors.oabUf}
+            <Field field="birthDate" label="Data de nascimento" error={errors.birthDate}>
+              <DatePickerField
+                id={registrationFieldId("birthDate")}
+                value={answers.birthDate}
+                onChange={(value) => onChange("birthDate", value)}
                 disabled={disabled}
-                onChange={(value) => onChange("oabUf", value)}
+                placeholder="dd/mm/aaaa"
+                startYear={1925}
+                endYear={new Date().getFullYear()}
               />
             </Field>
-          </>
+            <Field field="gender" label="Gênero" error={errors.gender}>
+              <OptionSelect
+                field="gender"
+                value={answers.gender}
+                options={GENDER_OPTIONS}
+                invalid={!!errors.gender}
+                disabled={disabled}
+                onChange={(value) => onChange("gender", value)}
+              />
+            </Field>
+            <Field field="parentName" label="Nome da mãe ou do pai" error={errors.parentName} className="sm:col-span-2">
+              {text("parentName")}
+            </Field>
+            <Field field="rg" label="Número do RG" error={errors.rg}>
+              {text("rg", { mask: maskRG })}
+            </Field>
+            <Field field="rgIssuer" label="Órgão emissor / UF" error={errors.rgIssuer}>
+              {text("rgIssuer", { placeholder: "ex.: SSP/SP", mask: (value) => value.toUpperCase() })}
+            </Field>
+            <Field field="cpf" label="CPF" error={errors.cpf}>
+              <CpfInput
+                id={registrationFieldId("cpf")}
+                value={answers.cpf}
+                disabled={disabled}
+                aria-invalid={errors.cpf ? true : undefined}
+                onChange={(value) => onChange("cpf", value)}
+              />
+            </Field>
+          </RegistrationSection>
         )}
-      </RegistrationSection>
 
-      <RegistrationSection index={3} title="Contato">
-        <Field field="personalPhone" label="Telefone particular" error={errors.personalPhone}>
-          <PhoneInput
-            id={registrationFieldId("personalPhone")}
-            value={answers.personalPhone}
-            disabled={disabled}
-            autoComplete="tel"
-            aria-invalid={errors.personalPhone ? true : undefined}
-            onChange={(value) => onChange("personalPhone", value)}
-          />
-        </Field>
-        <Field field="personalEmail" label="E-mail particular" error={errors.personalEmail}>
-          {text("personalEmail", { autoComplete: "email", inputMode: "email" })}
-        </Field>
-        <Field field="emergencyPhone" label="Telefone de emergência" error={errors.emergencyPhone}>
-          <PhoneInput
-            id={registrationFieldId("emergencyPhone")}
-            value={answers.emergencyPhone}
-            disabled={disabled}
-            aria-invalid={errors.emergencyPhone ? true : undefined}
-            onChange={(value) => onChange("emergencyPhone", value)}
-          />
-        </Field>
-        <Field
-          field="emergencyContactName"
-          label="Contato de emergência"
-          optional
-          hint="Nome e parentesco, ex.: Maria (mãe)"
-          error={errors.emergencyContactName}
-        >
-          {text("emergencyContactName")}
-        </Field>
-      </RegistrationSection>
+        {sectionShown[1] && (
+          <RegistrationSection index={sectionIndex(1)} title="Dados complementares">
+            <Field field="nationality" label="Nacionalidade" error={errors.nationality}>
+              {text("nationality")}
+            </Field>
+            <Field field="birthplace" label="Naturalidade" hint="Cidade e UF onde você nasceu" error={errors.birthplace}>
+              {text("birthplace", { placeholder: "ex.: Campinas/SP" })}
+            </Field>
+            <Field field="raceColor" label="Raça/cor" hint="Autodeclaração, padrão IBGE" error={errors.raceColor}>
+              <OptionSelect
+                field="raceColor"
+                value={answers.raceColor}
+                options={RACE_COLOR_OPTIONS}
+                invalid={!!errors.raceColor}
+                disabled={disabled}
+                onChange={(value) => onChange("raceColor", value)}
+              />
+            </Field>
+            <Field
+              field="pis"
+              label="PIS"
+              optional={kind !== "clt"}
+              hint={kind === "clt" ? "Aparece na carteira de trabalho digital" : "Se você já tiver"}
+              error={errors.pis}
+            >
+              {text("pis", { mask: maskPIS, inputMode: "numeric" })}
+            </Field>
 
-      <RegistrationSection
-        index={4}
-        title="Saúde e alimentação"
-        description="A restrição alimentar é compartilhada com a equipe de eventos para planejar cardápios. O tipo sanguíneo fica só com Pessoas e Cultura."
-      >
-        <Field field="bloodType" label="Tipo sanguíneo" optional error={errors.bloodType}>
-          <OptionSelect
-            field="bloodType"
-            value={answers.bloodType}
-            options={BLOOD_TYPE_OPTIONS}
-            invalid={!!errors.bloodType}
-            disabled={disabled}
-            onChange={(value) => onChange("bloodType", value)}
-          />
-        </Field>
-        <div className="hidden sm:block" />
-        <div className="space-y-2 sm:col-span-2" data-field="dietaryRestrictions">
-          <p id={registrationFieldId("dietaryRestrictions")} className="text-sm font-medium text-foreground" tabIndex={-1}>
-            Restrição alimentar
-          </p>
-          <div className="flex flex-wrap gap-2" role="group" aria-labelledby={registrationFieldId("dietaryRestrictions")}>
-            {DIETARY_OPTIONS.map((option) => {
-              const active = answers.dietaryRestrictions.includes(option.value);
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  disabled={disabled}
-                  aria-pressed={active}
-                  onClick={() => toggleDietary(option.value)}
-                  className={cn(
-                    "fc-chip inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm transition-colors disabled:opacity-60",
-                    active
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border bg-background text-foreground hover:bg-muted"
-                  )}
+            {kind === "clt" && (
+              <>
+                <Field
+                  field="ctpsNumber"
+                  label="Número da carteira de trabalho digital"
+                  hint="Na CTPS digital, costuma ser o próprio CPF"
+                  error={errors.ctpsNumber}
                 >
-                  {active && <Check className="size-3.5" aria-hidden />}
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-          {errors.dietaryRestrictions && (
-            <p className="text-xs font-medium text-destructive" role="alert">
-              {errors.dietaryRestrictions}
-            </p>
-          )}
-        </div>
-        {needsDietaryDetail && (
-          <Field
-            field="dietaryNotes"
-            label="Especifique"
-            hint="Detalhe a alergia, a restrição religiosa ou outra"
-            error={errors.dietaryNotes}
-            className="sm:col-span-2"
-          >
-            <Textarea
-              id={registrationFieldId("dietaryNotes")}
-              value={answers.dietaryNotes}
-              disabled={disabled}
-              rows={2}
-              aria-invalid={errors.dietaryNotes ? true : undefined}
-              onChange={(event) => onChange("dietaryNotes", event.target.value)}
-            />
-          </Field>
-        )}
-      </RegistrationSection>
-
-      <RegistrationSection index={5} title="Dados bancários" description="Conta em seu nome, para pagamento.">
-        <Field field="bankName" label="Banco" error={errors.bankName} className="sm:col-span-2">
-          {text("bankName", { placeholder: "ex.: Itaú, Nubank, Banco do Brasil" })}
-        </Field>
-        <Field field="bankAgency" label="Agência" error={errors.bankAgency}>
-          {text("bankAgency", { inputMode: "numeric" })}
-        </Field>
-        <Field field="bankAccount" label="Número da conta" hint="Com o dígito" error={errors.bankAccount}>
-          {text("bankAccount")}
-        </Field>
-        <Field field="pixKey" label="Chave Pix" optional error={errors.pixKey} className="sm:col-span-2">
-          {text("pixKey")}
-        </Field>
-      </RegistrationSection>
-
-      <RegistrationSection index={6} title="Endereço completo">
-        <Field
-          field="cep"
-          label="CEP"
-          error={errors.cep}
-          hint={
-            cepState === "error"
-              ? "CEP não encontrado. Preencha o endereço manualmente."
-              : "Preenchemos o endereço a partir do CEP"
-          }
-        >
-          <div className="relative">
-            <CepInput
-              id={registrationFieldId("cep")}
-              value={answers.cep}
-              disabled={disabled}
-              aria-invalid={errors.cep ? true : undefined}
-              onChange={(value) => {
-                if (cepState === "error") setCepState("idle");
-                onChange("cep", value);
-              }}
-            />
-            {cepState === "loading" && (
-              <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+                  {text("ctpsNumber")}
+                </Field>
+                <Field field="voterTitle" label="Título de eleitor" error={errors.voterTitle}>
+                  {text("voterTitle", { mask: maskVoterTitle, inputMode: "numeric" })}
+                </Field>
+              </>
             )}
-          </div>
-        </Field>
-        <div className="hidden sm:block" />
-        <Field field="street" label="Rua/Avenida" error={errors.street} className="sm:col-span-2">
-          {text("street", { autoComplete: "address-line1" })}
-        </Field>
-        <Field field="number" label="Número" error={errors.number}>
-          <Input
-            ref={numberRef}
-            id={registrationFieldId("number")}
-            value={answers.number}
-            disabled={disabled}
-            aria-invalid={errors.number ? true : undefined}
-            onChange={(event) => onChange("number", event.target.value)}
-          />
-        </Field>
-        <Field field="complement" label="Complemento" optional error={errors.complement}>
-          {text("complement", { placeholder: "Apto, bloco…" })}
-        </Field>
-        <Field field="district" label="Bairro" error={errors.district}>
-          {text("district")}
-        </Field>
-        <Field field="city" label="Cidade" error={errors.city}>
-          {text("city", { autoComplete: "address-level2" })}
-        </Field>
-        <Field field="state" label="UF" error={errors.state}>
-          <OptionSelect
-            field="state"
-            value={answers.state}
-            options={BRAZIL_UF_OPTIONS}
-            placeholder="UF"
-            invalid={!!errors.state}
-            disabled={disabled}
-            onChange={(value) => onChange("state", value)}
-          />
-        </Field>
-      </RegistrationSection>
-    </div>
+
+            {kind === "estagio" && (
+              <>
+                <Field field="institution" label="Instituição de ensino" error={errors.institution} className="sm:col-span-2">
+                  {text("institution")}
+                </Field>
+                <Field field="coursePeriod" label="Ano/período atual na faculdade" error={errors.coursePeriod}>
+                  {text("coursePeriod", { placeholder: "ex.: 5º semestre, 2026" })}
+                </Field>
+                <Field field="studentRa" label="Número do RA" error={errors.studentRa}>
+                  {text("studentRa")}
+                </Field>
+              </>
+            )}
+
+            {(kind === "socio_servico" || oabOptional) && (
+              <>
+                <Field
+                  field="oabNumber"
+                  label="Número da OAB"
+                  optional={oabOptional}
+                  hint={oabOptional ? "Se você for inscrito na OAB" : undefined}
+                  error={errors.oabNumber}
+                >
+                  {text("oabNumber", { mask: maskOAB, inputMode: "numeric" })}
+                </Field>
+                <Field field="oabUf" label="UF da OAB" optional={oabOptional} error={errors.oabUf}>
+                  <OptionSelect
+                    field="oabUf"
+                    value={answers.oabUf}
+                    options={BRAZIL_UF_OPTIONS}
+                    placeholder="UF"
+                    invalid={!!errors.oabUf}
+                    disabled={disabled}
+                    onChange={(value) => onChange("oabUf", value)}
+                  />
+                </Field>
+              </>
+            )}
+          </RegistrationSection>
+        )}
+
+        {sectionShown[2] && (
+          <RegistrationSection index={sectionIndex(2)} title="Contato">
+            <Field field="personalPhone" label="Telefone particular" error={errors.personalPhone}>
+              <PhoneInput
+                id={registrationFieldId("personalPhone")}
+                value={answers.personalPhone}
+                disabled={disabled}
+                autoComplete="tel"
+                aria-invalid={errors.personalPhone ? true : undefined}
+                onChange={(value) => onChange("personalPhone", value)}
+              />
+            </Field>
+            <Field field="personalEmail" label="E-mail particular" error={errors.personalEmail}>
+              {text("personalEmail", { autoComplete: "email", inputMode: "email" })}
+            </Field>
+            <Field field="emergencyPhone" label="Telefone de emergência" error={errors.emergencyPhone}>
+              <PhoneInput
+                id={registrationFieldId("emergencyPhone")}
+                value={answers.emergencyPhone}
+                disabled={disabled}
+                aria-invalid={errors.emergencyPhone ? true : undefined}
+                onChange={(value) => onChange("emergencyPhone", value)}
+              />
+            </Field>
+            <Field
+              field="emergencyContactName"
+              label="Contato de emergência"
+              optional
+              hint="Nome e parentesco, ex.: Maria (mãe)"
+              error={errors.emergencyContactName}
+            >
+              {text("emergencyContactName")}
+            </Field>
+          </RegistrationSection>
+        )}
+
+        {sectionShown[3] && (
+          <RegistrationSection
+            index={sectionIndex(3)}
+            title="Saúde e alimentação"
+            description="A restrição alimentar é compartilhada com a equipe de eventos para planejar cardápios. O tipo sanguíneo fica só com Pessoas e Cultura."
+          >
+            <Field field="bloodType" label="Tipo sanguíneo" optional error={errors.bloodType}>
+              <OptionSelect
+                field="bloodType"
+                value={answers.bloodType}
+                options={BLOOD_TYPE_OPTIONS}
+                invalid={!!errors.bloodType}
+                disabled={disabled}
+                onChange={(value) => onChange("bloodType", value)}
+              />
+            </Field>
+            {!filtering && <div className="hidden sm:block" />}
+            {showField("dietaryRestrictions") && (
+              <div className="space-y-2 sm:col-span-2" data-field="dietaryRestrictions">
+                <p
+                  id={registrationFieldId("dietaryRestrictions")}
+                  className="flex flex-wrap items-baseline gap-x-1.5 text-sm font-medium text-foreground"
+                  tabIndex={-1}
+                >
+                  Restrição alimentar
+                  {missingFields?.has("dietaryRestrictions") && <MissingMark />}
+                </p>
+                <div className="flex flex-wrap gap-2" role="group" aria-labelledby={registrationFieldId("dietaryRestrictions")}>
+                  {DIETARY_OPTIONS.map((option) => {
+                    const active = answers.dietaryRestrictions.includes(option.value);
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        disabled={disabled}
+                        aria-pressed={active}
+                        onClick={() => toggleDietary(option.value)}
+                        className={cn(
+                          "fc-chip inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm transition-colors disabled:opacity-60",
+                          active
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border bg-background text-foreground hover:bg-muted"
+                        )}
+                      >
+                        {active && <Check className="size-3.5" aria-hidden />}
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {errors.dietaryRestrictions && (
+                  <p className="text-xs font-medium text-destructive" role="alert">
+                    {errors.dietaryRestrictions}
+                  </p>
+                )}
+              </div>
+            )}
+            {needsDietaryDetail && (
+              <Field
+                field="dietaryNotes"
+                label="Especifique"
+                hint="Detalhe a alergia, a restrição religiosa ou outra"
+                error={errors.dietaryNotes}
+                className="sm:col-span-2"
+              >
+                <Textarea
+                  id={registrationFieldId("dietaryNotes")}
+                  value={answers.dietaryNotes}
+                  disabled={disabled}
+                  rows={2}
+                  aria-invalid={errors.dietaryNotes ? true : undefined}
+                  onChange={(event) => onChange("dietaryNotes", event.target.value)}
+                />
+              </Field>
+            )}
+          </RegistrationSection>
+        )}
+
+        {sectionShown[4] && (
+          <RegistrationSection index={sectionIndex(4)} title="Dados bancários" description="Conta em seu nome, para pagamento.">
+            <Field field="bankName" label="Banco" error={errors.bankName} className="sm:col-span-2">
+              {text("bankName", { placeholder: "ex.: Itaú, Nubank, Banco do Brasil" })}
+            </Field>
+            <Field field="bankAgency" label="Agência" error={errors.bankAgency}>
+              {text("bankAgency", { inputMode: "numeric" })}
+            </Field>
+            <Field field="bankAccount" label="Número da conta" hint="Com o dígito" error={errors.bankAccount}>
+              {text("bankAccount")}
+            </Field>
+            <Field field="pixKey" label="Chave Pix" optional error={errors.pixKey} className="sm:col-span-2">
+              {text("pixKey")}
+            </Field>
+          </RegistrationSection>
+        )}
+
+        {sectionShown[5] && (
+          <RegistrationSection index={sectionIndex(5)} title="Endereço completo">
+            <Field
+              field="cep"
+              label="CEP"
+              error={errors.cep}
+              hint={
+                cepState === "error"
+                  ? "CEP não encontrado. Preencha o endereço manualmente."
+                  : "Preenchemos o endereço a partir do CEP"
+              }
+            >
+              <div className="relative">
+                <CepInput
+                  id={registrationFieldId("cep")}
+                  value={answers.cep}
+                  disabled={disabled}
+                  aria-invalid={errors.cep ? true : undefined}
+                  onChange={(value) => {
+                    if (cepState === "error") setCepState("idle");
+                    onChange("cep", value);
+                  }}
+                />
+                {cepState === "loading" && (
+                  <Loader2 className="absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+                )}
+              </div>
+            </Field>
+            {!filtering && <div className="hidden sm:block" />}
+            <Field field="street" label="Rua/Avenida" error={errors.street} className="sm:col-span-2">
+              {text("street", { autoComplete: "address-line1" })}
+            </Field>
+            <Field field="number" label="Número" error={errors.number}>
+              <Input
+                ref={numberRef}
+                id={registrationFieldId("number")}
+                value={answers.number}
+                disabled={disabled}
+                aria-invalid={errors.number ? true : undefined}
+                onChange={(event) => onChange("number", event.target.value)}
+              />
+            </Field>
+            <Field field="complement" label="Complemento" optional error={errors.complement}>
+              {text("complement", { placeholder: "Apto, bloco…" })}
+            </Field>
+            <Field field="district" label="Bairro" error={errors.district}>
+              {text("district")}
+            </Field>
+            <Field field="city" label="Cidade" error={errors.city}>
+              {text("city", { autoComplete: "address-level2" })}
+            </Field>
+            <Field field="state" label="UF" error={errors.state}>
+              <OptionSelect
+                field="state"
+                value={answers.state}
+                options={BRAZIL_UF_OPTIONS}
+                placeholder="UF"
+                invalid={!!errors.state}
+                disabled={disabled}
+                onChange={(value) => onChange("state", value)}
+              />
+            </Field>
+          </RegistrationSection>
+        )}
+      </div>
+    </FieldVisibilityContext.Provider>
   );
 }

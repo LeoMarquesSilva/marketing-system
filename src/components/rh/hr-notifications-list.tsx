@@ -21,6 +21,9 @@ export function describeHrNotification(notification: HrOnboardingNotification): 
     const kind = notification.registration_form
       ? ` (${REGISTRATION_KIND_LABEL[notification.registration_form.employment_kind]})`
       : "";
+    if (notification.registration_form?.origin === "atualizacao") {
+      return `${name} atualizou a própria ficha cadastral${kind}. Revise e aprove.`;
+    }
     return `${name} enviou a ficha cadastral${kind}. Revise e aprove.`;
   }
   if (notification.event_type === "new_employee") {

@@ -32,6 +32,7 @@ const COLLABORATOR_PATHS = [
   "/cafe-com-cultura",
   "/meus-clientes",
   "/entregas",
+  "/minha-ficha",
 ];
 
 /** Rotas que o servidor já protege (redirect se não autenticado/admin). */

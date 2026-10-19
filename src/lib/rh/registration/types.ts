@@ -1,23 +1,67 @@
 /**
- * Ficha cadastral de admissão (CLT, Estágio, Sócio de serviço), respondida
- * pela pessoa por link público antes de existir no VIOS.
+ * Ficha cadastral. Duas origens:
+ * - admissão: respondida pela pessoa por link público antes de existir no VIOS;
+ * - atualização: o colaborador logado completa a própria ficha em /minha-ficha.
  */
 
-export type RegistrationKind = "clt" | "estagio" | "socio_servico";
+/** `geral` = colaborador sem vínculo no VIOS (só os campos comuns). */
+export type RegistrationKind = "clt" | "estagio" | "socio_servico" | "prestador" | "geral";
 export type RegistrationStatus = "pendente" | "recebida" | "aprovada" | "cancelada";
+export type RegistrationOrigin = "admissao" | "atualizacao";
 
 export const REGISTRATION_KIND_LABEL: Record<RegistrationKind, string> = {
   clt: "CLT",
   estagio: "Estágio",
   socio_servico: "Sócio de serviço",
+  prestador: "Prestador de serviço",
+  geral: "Sem vínculo definido",
 };
 
-/** Valor equivalente em `hr_employees.employment_type`. */
-export const REGISTRATION_KIND_EMPLOYMENT_TYPE: Record<RegistrationKind, string> = {
+/** Valor equivalente em `hr_employees.employment_type` (null = não preencher). */
+export const REGISTRATION_KIND_EMPLOYMENT_TYPE: Record<RegistrationKind, string | null> = {
   clt: "CLT",
   estagio: "ESTAGIÁRIO",
   socio_servico: "SÓCIO DE SERVIÇO",
+  prestador: "PRESTADOR",
+  geral: null,
 };
+
+function employmentTypeKey(value: string | null | undefined): string {
+  return (value ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toUpperCase();
+}
+
+/**
+ * Ficha de cada `hr_employees.employment_type`. Assistente segue a CLT e os
+ * sócios (cotista/patrimonial) usam a ficha com OAB do sócio de serviço.
+ */
+const KIND_BY_EMPLOYMENT_TYPE: Record<string, RegistrationKind> = {
+  CLT: "clt",
+  ASSISTENTE: "clt",
+  ESTAGIARIO: "estagio",
+  "SOCIO DE SERVICO": "socio_servico",
+  "SOCIO COTISTA": "socio_servico",
+  "SOCIO PATRIMONIAL": "socio_servico",
+  PRESTADOR: "prestador",
+};
+
+const EMPLOYMENT_TYPE_LABEL: Record<string, string> = {
+  CLT: "CLT",
+  ASSISTENTE: "Assistente",
+  ESTAGIARIO: "Estágio",
+  "SOCIO DE SERVICO": "Sócio de serviço",
+  "SOCIO COTISTA": "Sócio cotista",
+  "SOCIO PATRIMONIAL": "Sócio patrimonial",
+  PRESTADOR: "Prestador de serviço",
+};
+
+export function registrationKindForEmploymentType(value: string | null | undefined): RegistrationKind {
+  return KIND_BY_EMPLOYMENT_TYPE[employmentTypeKey(value)] ?? "geral";
+}
+
+/** Nome do vínculo para mostrar à pessoa ("Sócio cotista", não "Sócio de serviço"). */
+export function employmentTypeLabel(value: string | null | undefined, fallback: RegistrationKind): string {
+  return EMPLOYMENT_TYPE_LABEL[employmentTypeKey(value)] ?? REGISTRATION_KIND_LABEL[fallback];
+}
 
 export const REGISTRATION_STATUS_LABEL: Record<RegistrationStatus, string> = {
   pendente: "Aguardando resposta",
@@ -26,11 +70,22 @@ export const REGISTRATION_STATUS_LABEL: Record<RegistrationStatus, string> = {
   cancelada: "Cancelada",
 };
 
-export const REGISTRATION_KINDS: readonly RegistrationKind[] = ["clt", "estagio", "socio_servico"];
+/** Vínculos que a RH escolhe. `geral` só surge na atualização de quem não tem vínculo no VIOS. */
+export const REGISTRATION_KINDS: readonly RegistrationKind[] = ["clt", "estagio", "socio_servico", "prestador"];
+
+const ALL_REGISTRATION_KINDS: readonly string[] = [...REGISTRATION_KINDS, "geral"];
 
 export function isRegistrationKind(value: unknown): value is RegistrationKind {
-  return typeof value === "string" && (REGISTRATION_KINDS as readonly string[]).includes(value);
+  return typeof value === "string" && ALL_REGISTRATION_KINDS.includes(value);
 }
+
+export const REGISTRATION_ORIGIN_LABEL: Record<RegistrationOrigin, string> = {
+  admissao: "Admissão",
+  atualizacao: "Atualização",
+};
+
+/** Página com login onde o colaborador atualiza a própria ficha. */
+export const SELF_REGISTRATION_PATH = "/minha-ficha";
 
 export interface RegistrationAnswers {
   // Dados pessoais
@@ -81,6 +136,46 @@ export interface RegistrationAnswers {
 }
 
 export type RegistrationField = keyof RegistrationAnswers;
+
+/** Nome curto de cada campo (lista do que falta, avisos). */
+export const REGISTRATION_FIELD_LABEL: Record<RegistrationField, string> = {
+  fullName: "Nome completo",
+  birthDate: "Data de nascimento",
+  gender: "Gênero",
+  parentName: "Nome da mãe ou do pai",
+  rg: "RG",
+  rgIssuer: "Órgão emissor do RG",
+  cpf: "CPF",
+  nationality: "Nacionalidade",
+  birthplace: "Naturalidade",
+  raceColor: "Raça/cor",
+  pis: "PIS",
+  ctpsNumber: "Carteira de trabalho",
+  voterTitle: "Título de eleitor",
+  institution: "Instituição de ensino",
+  coursePeriod: "Período do curso",
+  studentRa: "RA",
+  oabNumber: "Número da OAB",
+  oabUf: "UF da OAB",
+  personalPhone: "Telefone particular",
+  emergencyPhone: "Telefone de emergência",
+  emergencyContactName: "Contato de emergência",
+  personalEmail: "E-mail particular",
+  bloodType: "Tipo sanguíneo",
+  dietaryRestrictions: "Restrição alimentar",
+  dietaryNotes: "Detalhe da restrição",
+  bankName: "Banco",
+  bankAgency: "Agência",
+  bankAccount: "Conta",
+  pixKey: "Chave Pix",
+  cep: "CEP",
+  street: "Rua",
+  number: "Número",
+  complement: "Complemento",
+  district: "Bairro",
+  city: "Cidade",
+  state: "UF",
+};
 
 export function emptyRegistrationAnswers(): RegistrationAnswers {
   return {
@@ -226,6 +321,7 @@ export interface RegistrationEmployeeRef {
   department: string | null;
   position: string | null;
   is_active: boolean;
+  employment_type?: string | null;
 }
 
 export interface RegistrationMatchSuggestion {
@@ -240,13 +336,15 @@ export interface RegistrationMatchSuggestion {
 /** Linha da lista do RH (sem as respostas sensíveis). */
 export interface RegistrationListItem {
   id: string;
+  origin: RegistrationOrigin;
   employment_kind: RegistrationKind;
   invitee_name: string;
   invitee_personal_email: string | null;
   invitee_phone: string | null;
   expected_admission_date: string | null;
   status: RegistrationStatus;
-  expires_at: string;
+  /** Null quando a ficha não tem link público (atualização com login). */
+  expires_at: string | null;
   submitted_at: string | null;
   approved_at: string | null;
   linked_at: string | null;
@@ -256,7 +354,8 @@ export interface RegistrationListItem {
   /** Nome declarado na ficha (pode diferir do convite). */
   declared_name: string | null;
   suggestions: RegistrationMatchSuggestion[];
-  public_path: string;
+  /** Null quando a ficha não tem link público (atualização com login). */
+  public_path: string | null;
 }
 
 export interface RegistrationDetail extends RegistrationListItem {
@@ -269,6 +368,7 @@ export function registrationPublicPath(token: string): string {
   return `/ficha-cadastral/${token}`;
 }
 
-export function isRegistrationExpired(expiresAt: string, now: Date = new Date()): boolean {
+export function isRegistrationExpired(expiresAt: string | null, now: Date = new Date()): boolean {
+  if (!expiresAt) return false;
   return new Date(expiresAt).getTime() <= now.getTime();
 }

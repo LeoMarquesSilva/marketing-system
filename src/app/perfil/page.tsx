@@ -5,9 +5,11 @@ import { useAuth } from "@/contexts/auth-context";
 import { ProfileForm } from "@/components/perfil/profile-form";
 import { ChangePasswordForm } from "@/components/perfil/change-password-form";
 import { QualificacaoForm } from "@/components/rh/qualificacao-form";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { HrQualification } from "@/lib/rh/qualifications/types";
-import { IdCard, ShieldCheck, User } from "lucide-react";
+import { SELF_REGISTRATION_PATH } from "@/lib/rh/registration/types";
+import { ArrowRight, ClipboardList, IdCard, ShieldCheck, User } from "lucide-react";
 import { resolveCanonicalAreaLabel } from "@/lib/ferias/filters";
 import { cn } from "@/lib/utils";
 
@@ -140,6 +142,19 @@ export default function PerfilPage() {
             <ProfileForm profile={profile} />
           </section>
           <aside className="space-y-4">
+            <Link
+              href={SELF_REGISTRATION_PATH}
+              className="group flex items-start gap-3 rounded-xl border border-[#dce9eb] bg-card p-4 text-sm shadow-[0_4px_16px_rgba(3,32,47,0.04)] transition hover:border-[#47cdd0] hover:shadow-[0_8px_24px_rgba(3,32,47,0.08)]"
+            >
+              <ClipboardList className="mt-0.5 h-5 w-5 shrink-0 text-[#258b91]" />
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-foreground">Ficha cadastral</p>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  Documentos, contato de emergência, dados bancários e endereço. Confira e complete o que falta.
+                </p>
+              </div>
+              <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition group-hover:translate-x-0.5 group-hover:text-[#258b91]" />
+            </Link>
             <div className="rounded-xl border border-[#bfeaec] bg-[#eefdfe] p-4 text-sm text-[#174f58]">
               <div className="flex items-start gap-3">
                 <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-[#258b91]" />

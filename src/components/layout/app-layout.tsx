@@ -27,6 +27,7 @@ const BARE_LAYOUT_PATHS = [
   "/ficha-cadastral",
   "/dress-code",
   "/entregas",
+  "/minha-ficha",
 ];
 
 function isBareLayoutPath(pathname: string): boolean {

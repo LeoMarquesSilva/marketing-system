@@ -21,7 +21,13 @@ export const KIND_ONLY_FIELDS: Record<RegistrationKind, RegistrationField[]> = {
   clt: ["ctpsNumber", "voterTitle"],
   estagio: ["institution", "coursePeriod", "studentRa"],
   socio_servico: ["oabNumber", "oabUf"],
+  // OAB opcional: há prestadores e colaboradores sem vínculo que advogam.
+  prestador: ["oabNumber", "oabUf"],
+  geral: ["oabNumber", "oabUf"],
 };
+
+/** Vínculos em que a OAB aparece, mas não é obrigatória. */
+export const OPTIONAL_OAB_KINDS = new Set<RegistrationKind>(["prestador", "geral"]);
 
 const ALL_KIND_ONLY = new Set<RegistrationField>(Object.values(KIND_ONLY_FIELDS).flat());
 
@@ -174,11 +180,14 @@ export function validateRegistrationAnswers(
     required("studentRa", "Informe o número do RA.");
   }
 
+  const oabUfValid = (BRAZIL_UF_OPTIONS as readonly string[]).includes(answers.oabUf);
   if (kind === "socio_servico") {
     required("oabNumber", "Informe o número da OAB.");
-    if (!(BRAZIL_UF_OPTIONS as readonly string[]).includes(answers.oabUf)) {
-      errors.oabUf = "Selecione a UF da OAB.";
-    }
+    if (!oabUfValid) errors.oabUf = "Selecione a UF da OAB.";
+  } else if (OPTIONAL_OAB_KINDS.has(kind) && (answers.oabNumber || answers.oabUf)) {
+    // Opcional, mas se começou precisa do par número + UF.
+    required("oabNumber", "Informe o número da OAB (ou limpe a UF).");
+    if (!oabUfValid) errors.oabUf = "Selecione a UF da OAB.";
   }
 
   const phone = onlyDigits(answers.personalPhone);
@@ -223,4 +232,14 @@ export function validateRegistrationAnswers(
 
 export function firstErrorField(errors: RegistrationErrors): RegistrationField | null {
   return REGISTRATION_FIELD_ORDER.find((field) => errors[field]) ?? null;
+}
+
+/** O que falta (ou está inválido) na ficha, na ordem do formulário. */
+export function missingRegistrationFields(
+  answers: RegistrationAnswers,
+  kind: RegistrationKind,
+  now: Date = new Date()
+): RegistrationField[] {
+  const errors = validateRegistrationAnswers(normalizeRegistrationAnswers(answers, kind), kind, now);
+  return REGISTRATION_FIELD_ORDER.filter((field) => errors[field]);
 }

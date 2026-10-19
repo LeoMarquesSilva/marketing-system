@@ -19,7 +19,7 @@ import {
   validateRegistrationAnswers,
   type RegistrationErrors,
 } from "@/lib/rh/registration/validation";
-import styles from "./ficha-cadastral-public.module.css";
+import styles from "@/components/rh/registration/ficha-publica.module.css";
 
 type Payload =
   | { state: "not_found" | "expired" | "cancelled" | "rate_limited" }

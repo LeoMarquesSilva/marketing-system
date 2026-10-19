@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, ClipboardList, Copy, Loader2, MessageCircle, Plus, Search, Sparkles } from "lucide-react";
+import { Check, ClipboardList, Copy, Loader2, MessageCircle, Plus, Search, Sparkles, UserRoundPen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -26,8 +26,10 @@ import { RegistrationReviewSheet } from "@/components/rh/registration/registrati
 import { RegistrationStatusBadge } from "@/components/rh/registration/registration-status-badge";
 import {
   buildRegistrationMessage,
+  buildSelfUpdateMessage,
   createRegistrationRequest,
   registrationPublicUrl,
+  selfRegistrationUrl,
   whatsappUrl,
 } from "@/lib/rh/registration/client";
 import {
@@ -83,6 +85,7 @@ function formatShortDate(iso: string | null): string {
 function nextStep(item: RegistrationListItem): string {
   if (item.status === "cancelada") return "Cancelada";
   if (item.status === "pendente") {
+    if (!item.public_path) return "Aguardando correção (com login)";
     return isRegistrationExpired(item.expires_at) ? "Gerar novo link" : `Aguardando · link até ${formatShortDate(item.expires_at)}`;
   }
   if (item.status === "recebida") return "Revisar e aprovar";
@@ -115,6 +118,7 @@ export function FichasCadastraisClient({
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get("ficha"));
   const [createOpen, setCreateOpen] = useState(false);
   const [created, setCreated] = useState<RegistrationDetail | null>(null);
+  const [selfUpdateOpen, setSelfUpdateOpen] = useState(false);
 
   const counts = useMemo(
     () => ({
@@ -166,20 +170,27 @@ export function FichasCadastraisClient({
           <h2 className="text-2xl font-bold tracking-tight text-foreground">Fichas cadastrais</h2>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
             Envie o link da ficha para quem está entrando. A pessoa responde sem login; depois que o VIOS
-            sincronizar a admissão, você vincula a ficha ao colaborador e os dados vão para o cadastro.
+            sincronizar a admissão, você vincula a ficha ao colaborador e os dados vão para o cadastro. Quem já
+            está no escritório atualiza a própria ficha com login, em Atualização cadastral.
           </p>
         </div>
-        <Button
-          type="button"
-          className="gap-2"
-          onClick={() => {
-            setCreated(null);
-            setCreateOpen(true);
-          }}
-        >
-          <Plus className="size-4" />
-          Nova ficha
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" className="gap-2" onClick={() => setSelfUpdateOpen(true)}>
+            <UserRoundPen className="size-4" />
+            Atualização cadastral
+          </Button>
+          <Button
+            type="button"
+            className="gap-2"
+            onClick={() => {
+              setCreated(null);
+              setCreateOpen(true);
+            }}
+          >
+            <Plus className="size-4" />
+            Nova ficha
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -261,7 +272,9 @@ export function FichasCadastraisClient({
                     <td className="px-4 py-3">
                       <p className="font-medium text-foreground">{item.declared_name ?? item.invitee_name}</p>
                       <p className="text-xs text-muted-foreground">
-                        Convite {formatShortDate(item.created_at)}
+                        {item.origin === "atualizacao"
+                          ? `Atualização pelo colaborador · ${formatShortDate(item.submitted_at ?? item.created_at)}`
+                          : `Convite ${formatShortDate(item.created_at)}`}
                         {item.expected_admission_date && ` · admissão ${formatShortDate(item.expected_admission_date)}`}
                       </p>
                     </td>
@@ -299,6 +312,8 @@ export function FichasCadastraisClient({
           setCreated(form);
         }}
       />
+
+      <SelfUpdateDialog open={selfUpdateOpen} onOpenChange={setSelfUpdateOpen} pending={employees} />
 
       <RegistrationReviewSheet
         formId={selectedId}
@@ -475,6 +490,97 @@ function CreateRegistrationDialog({
             </form>
           </>
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Campanha de atualização: um link só (com login) para todo o escritório. Os
+ * nomes listados são colaboradores ativos ainda sem ficha vinculada.
+ */
+function SelfUpdateDialog({
+  open,
+  onOpenChange,
+  pending,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  pending: RegistrationEmployeeRef[];
+}) {
+  const [copied, setCopied] = useState<string | null>(null);
+
+  async function copy(key: string, value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(key);
+      window.setTimeout(() => setCopied((current) => (current === key ? null : current)), 1800);
+    } catch {
+      setCopied(null);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Atualização cadastral</DialogTitle>
+          <DialogDescription>
+            Um link só para todo o escritório: cada pessoa entra com o próprio login e vê a ficha do seu vínculo, já
+            preenchida com o que temos, destacando o que falta. O envio aparece aqui como &quot;Para revisar&quot;.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            <Input readOnly value={selfRegistrationUrl()} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
+            <Button type="button" variant="outline" className="shrink-0 gap-1.5" onClick={() => copy("link", selfRegistrationUrl())}>
+              {copied === "link" ? <Check className="size-4" /> : <Copy className="size-4" />}
+              {copied === "link" ? "Copiado" : "Copiar"}
+            </Button>
+          </div>
+          <div className="whitespace-pre-line rounded-lg bg-muted/60 p-3 text-xs leading-5 text-foreground">
+            {buildSelfUpdateMessage()}
+          </div>
+          <Button type="button" variant="secondary" size="sm" className="gap-1.5" onClick={() => copy("msg", buildSelfUpdateMessage())}>
+            {copied === "msg" ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+            {copied === "msg" ? "Mensagem copiada" : "Copiar mensagem para todos"}
+          </Button>
+
+          <div className="space-y-2 border-t pt-4">
+            <p className="text-sm font-medium text-foreground">
+              Ainda sem ficha{" "}
+              <span className="font-normal text-muted-foreground">
+                ({pending.length} {pending.length === 1 ? "colaborador ativo" : "colaboradores ativos"})
+              </span>
+            </p>
+            {pending.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Todo mundo já enviou a ficha.</p>
+            ) : (
+              <ul className="max-h-64 divide-y overflow-y-auto rounded-lg border">
+                {pending.map((employee) => (
+                  <li key={employee.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                    <div className="min-w-0 text-sm">
+                      <p className="truncate font-medium text-foreground">{employee.full_name}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {[employee.department, employee.employment_type ?? "Sem vínculo no VIOS"].filter(Boolean).join(" · ")}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0 gap-1.5"
+                      onClick={() => copy(employee.id, buildSelfUpdateMessage(employee.full_name))}
+                    >
+                      {copied === employee.id ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                      {copied === employee.id ? "Copiada" : "Mensagem"}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );

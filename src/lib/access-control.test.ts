@@ -228,4 +228,12 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(socio, "/entregas/oab")).toBe(true);
     expect(canAccessPath({ role: "designer", permissions: null }, "/entregas/dc")).toBe(true);
   });
+
+  it("libera a atualização da própria ficha cadastral para qualquer usuário logado", () => {
+    const socio = { role: null, department: "Sócio", permissions: ["/conteudo/inicio", "/meus-clientes"] };
+    expect(canAccessPath(socio, "/minha-ficha")).toBe(true);
+    expect(canAccessPath({ role: null, permissions: ["/conteudo/roteiros"] }, "/minha-ficha")).toBe(true);
+    // A tela de revisão continua restrita à RH.
+    expect(canAccessPath(socio, "/rh/fichas-cadastrais")).toBe(false);
+  });
 });

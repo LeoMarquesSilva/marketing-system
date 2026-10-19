@@ -88,6 +88,8 @@ export const ALWAYS_ALLOWED_PATHS = [
   MEUS_CLIENTES_KEY,
   // Peças de campanha do planner para quem vai postar (ex.: sócios).
   "/entregas",
+  // Atualização da própria ficha cadastral (Pessoas e Cultura).
+  "/minha-ficha",
 ];
 
 /**

@@ -52,6 +52,16 @@ export function maskOAB(rawValue: string): string {
   return `${digits.slice(0, digits.length - 3)}.${digits.slice(-3)}`;
 }
 
+/** Telefone: (11) 99999-9999 ou (11) 9999-9999. */
+export function maskPhoneBR(rawValue: string): string {
+  const digits = rawValue.replace(/\D/g, "").slice(0, 11);
+  if (digits.length === 0) return "";
+  if (digits.length <= 2) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+  if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+}
+
 export function formatCPF(digits: string | null | undefined): string {
   if (!digits) return "";
   return maskCPF(digits);

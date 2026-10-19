@@ -67,7 +67,8 @@ export interface HrOnboardingNotification {
   } | null;
   registration_form: {
     invitee_name: string;
-    employment_kind: "clt" | "estagio" | "socio_servico";
+    employment_kind: "clt" | "estagio" | "socio_servico" | "prestador" | "geral";
+    origin?: "admissao" | "atualizacao";
   } | null;
   /** Ficha cadastral recebida que parece ser deste novo colaborador (só em new_employee). */
   registration_suggestion: { form_id: string; name: string; reason: "cpf" | "nome" } | null;

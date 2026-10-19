@@ -38,6 +38,7 @@ import { RegistrationFormFields } from "@/components/rh/registration/registratio
 import { RegistrationStatusBadge } from "@/components/rh/registration/registration-status-badge";
 import {
   buildRegistrationMessage,
+  buildSelfUpdateMessage,
   fetchRegistrationRequest,
   registrationActionRequest,
   registrationPublicUrl,
@@ -47,6 +48,7 @@ import {
   isRegistrationExpired,
   REGISTRATION_KIND_LABEL,
   REGISTRATION_KINDS,
+  SELF_REGISTRATION_PATH,
   type RegistrationAnswers,
   type RegistrationDetail,
   type RegistrationEmployeeRef,
@@ -163,6 +165,13 @@ export function RegistrationReviewSheet({
 
   const submitted = form?.status === "recebida" || form?.status === "aprovada";
   const expired = form ? isRegistrationExpired(form.expires_at) : false;
+  // Sem link público: a própria pessoa atualiza em /minha-ficha, com login.
+  const selfService = form ? !form.public_path : false;
+  const firstName = form?.invitee_name.split(" ")[0] ?? "";
+  const kindOptions =
+    form && !REGISTRATION_KINDS.includes(form.employment_kind)
+      ? [...REGISTRATION_KINDS, form.employment_kind]
+      : REGISTRATION_KINDS;
   const otherEmployees = employees.filter(
     (employee) => !form?.suggestions.some((suggestion) => suggestion.employeeId === employee.id)
   );
@@ -190,14 +199,38 @@ export function RegistrationReviewSheet({
                 <RegistrationStatusBadge status={form.status} expired={expired} />
               </div>
               <SheetDescription>
-                {REGISTRATION_KIND_LABEL[form.employment_kind]} · convite de {formatDate(form.created_at)}
+                {REGISTRATION_KIND_LABEL[form.employment_kind]} ·{" "}
+                {form.origin === "atualizacao"
+                  ? "atualização feita pelo colaborador, com login"
+                  : `convite de ${formatDate(form.created_at)}`}
                 {form.expected_admission_date && ` · admissão prevista ${formatDate(form.expected_admission_date)}`}
                 {form.submitted_at && ` · enviada ${formatDate(form.submitted_at, true)}`}
               </SheetDescription>
             </SheetHeader>
 
             <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
-              {form.status === "pendente" && (
+              {form.status === "pendente" && selfService && (
+                <section className="space-y-3 rounded-xl border border-border/70 bg-card p-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Aguardando {firstName}</h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Esta ficha não tem link público. {firstName} corrige entrando com o próprio login em{" "}
+                      <span className="font-mono">{SELF_REGISTRATION_PATH}</span>; o envio volta para cá.
+                    </p>
+                  </div>
+                  {form.reopen_note && (
+                    <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      Devolvida para correção: “{form.reopen_note}”
+                    </p>
+                  )}
+                  <Button type="button" variant="secondary" size="sm" className="gap-1.5" onClick={() => copy("self-msg", buildSelfUpdateMessage(form.invitee_name))}>
+                    {copied === "self-msg" ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                    {copied === "self-msg" ? "Mensagem copiada" : "Copiar mensagem com o link"}
+                  </Button>
+                </section>
+              )}
+
+              {form.status === "pendente" && !selfService && (
                 <section className="space-y-3 rounded-xl border border-border/70 bg-card p-4">
                   <div>
                     <h3 className="text-sm font-semibold text-foreground">Link da ficha</h3>
@@ -240,7 +273,9 @@ export function RegistrationReviewSheet({
 
               {form.status === "cancelada" && (
                 <p className="rounded-xl border border-border/70 bg-muted/50 p-4 text-sm text-muted-foreground">
-                  Ficha cancelada. O link não funciona mais. Se precisar, reative com um novo link.
+                  {selfService
+                    ? `Ficha cancelada. Se ${firstName} enviar de novo por ${SELF_REGISTRATION_PATH}, uma nova ficha aparece aqui.`
+                    : "Ficha cancelada. O link não funciona mais. Se precisar, reative com um novo link."}
                 </p>
               )}
 
@@ -257,7 +292,7 @@ export function RegistrationReviewSheet({
                           : "Quando o VIOS sincronizar a admissão, vincule a ficha ao colaborador. Os dados só vão para a ficha dele depois do vínculo e da aprovação."}
                       </p>
                     </div>
-                    {form.employee && (
+                    {form.employee && !selfService && (
                       <Button type="button" variant="ghost" size="sm" className="shrink-0 gap-1.5" disabled={!!busy} onClick={() => run("unlink", { action: "unlink" })}>
                         <Unlink className="size-3.5" />
                         Desvincular
@@ -271,7 +306,9 @@ export function RegistrationReviewSheet({
                       <div className="min-w-0 text-sm">
                         <p className="font-medium text-emerald-950">{form.employee.full_name}</p>
                         <p className="text-xs text-emerald-800">
-                          {[form.employee.position, form.employee.department].filter(Boolean).join(" · ") || "Sem cargo/área"}
+                          {[form.employee.position, form.employee.department, form.employee.employment_type]
+                            .filter(Boolean)
+                            .join(" · ") || "Sem cargo/área"}
                         </p>
                       </div>
                     </div>
@@ -325,7 +362,7 @@ export function RegistrationReviewSheet({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {REGISTRATION_KINDS.map((kind) => (
+                          {kindOptions.map((kind) => (
                             <SelectItem key={kind} value={kind}>
                               {REGISTRATION_KIND_LABEL[kind]}
                             </SelectItem>
@@ -361,13 +398,15 @@ export function RegistrationReviewSheet({
                       <XCircle className="size-4" />
                       Cancelar ficha
                     </Button>
-                    <Button type="button" variant="outline" className="gap-1.5" disabled={!!busy} onClick={() => run("regenerate", { action: "regenerate" })}>
-                      {busy === "regenerate" ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                      Gerar novo link
-                    </Button>
+                    {!selfService && (
+                      <Button type="button" variant="outline" className="gap-1.5" disabled={!!busy} onClick={() => run("regenerate", { action: "regenerate" })}>
+                        {busy === "regenerate" ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                        Gerar novo link
+                      </Button>
+                    )}
                   </>
                 )}
-                {form.status === "cancelada" && (
+                {form.status === "cancelada" && !selfService && (
                   <Button type="button" variant="outline" className="gap-1.5" disabled={!!busy} onClick={() => run("regenerate", { action: "regenerate" })}>
                     <RefreshCw className="size-4" />
                     Reativar com novo link
@@ -422,8 +461,9 @@ export function RegistrationReviewSheet({
                 <DialogHeader>
                   <DialogTitle>Devolver para correção</DialogTitle>
                   <DialogDescription>
-                    O mesmo link volta a funcionar com as respostas preenchidas. Diga o que precisa ser ajustado; a
-                    pessoa verá este recado no topo da ficha.
+                    {selfService
+                      ? `${firstName} vê as respostas e este recado no topo da ficha ao entrar em ${SELF_REGISTRATION_PATH} com o próprio login. Diga o que precisa ser ajustado.`
+                      : "O mesmo link volta a funcionar com as respostas preenchidas. Diga o que precisa ser ajustado; a pessoa verá este recado no topo da ficha."}
                   </DialogDescription>
                 </DialogHeader>
                 <Textarea
