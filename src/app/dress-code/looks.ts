@@ -105,13 +105,6 @@ export const LOOKS_ELES: Look[] = [
     caption: "Marinho, bege e azul-claro",
   },
   {
-    src: `${DIR}/eles-camisa-listrada-unsplash-sNiTXjs8ldk.jpg`,
-    width: 1100,
-    height: 1650,
-    caption: "Camisa listrada e calça clara",
-    credit: unsplash("Muzamil Hussain", "https://unsplash.com/photos/man-in-a-striped-shirt-holding-a-jacket-sNiTXjs8ldk"),
-  },
-  {
     src: `${DIR}/eles-blazer-cobalto-pexels-40079139.jpg`,
     width: 1100,
     height: 1650,
@@ -149,19 +142,6 @@ export const LOOKS_ELES: Look[] = [
     width: 523,
     height: 1017,
     caption: "Terno de linho, camisa branca",
-  },
-  {
-    src: `${DIR}/eles-calca-marinho-pexels-18703880.jpg`,
-    width: 1100,
-    height: 1649,
-    caption: "Calça marinho e camisa branca",
-    credit: pexels("Anyana Webb", "https://www.pexels.com/photo/elegant-african-man-standing-on-a-bridge-18703880/"),
-  },
-  {
-    src: `${DIR}/eles-calca-marinho-camisa-branca.jpg`,
-    width: 693,
-    height: 1017,
-    caption: "Calça marinho e camisa branca",
   },
   {
     src: `${DIR}/eles-camisa-listrada-calca-linho.jpg`,
