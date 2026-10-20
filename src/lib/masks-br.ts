@@ -62,6 +62,28 @@ export function maskPhoneBR(rawValue: string): string {
   return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
 }
 
+/** Agência bancária: 0000 ou 0000-0 (dígito pode ser X). */
+export function maskBankAgency(rawValue: string): string {
+  const cleaned = rawValue.toUpperCase().replace(/[^0-9X]/g, "").slice(0, 5);
+  return cleaned.length === 5 ? `${cleaned.slice(0, 4)}-${cleaned.slice(4)}` : cleaned;
+}
+
+/** Conta bancária: número com o último caractere como dígito (ex.: 12345-6; dígito pode ser X). */
+export function maskBankAccount(rawValue: string): string {
+  const cleaned = rawValue.toUpperCase().replace(/[^0-9X]/g, "").slice(0, 14);
+  return cleaned.length >= 2 ? `${cleaned.slice(0, -1)}-${cleaned.slice(-1)}` : cleaned;
+}
+
+/** Nome de pessoa: sem números nem símbolos (mantém acentos, apóstrofo, hífen e ponto). */
+export function maskPersonName(rawValue: string): string {
+  return rawValue.replace(/[^\p{L}\s'’.-]/gu, "").replace(/\s{2,}/g, " ").slice(0, 120);
+}
+
+/** E-mail: minúsculo e sem espaços. */
+export function maskEmail(rawValue: string): string {
+  return rawValue.replace(/\s/g, "").toLowerCase().slice(0, 120);
+}
+
 export function formatCPF(digits: string | null | undefined): string {
   if (!digits) return "";
   return maskCPF(digits);

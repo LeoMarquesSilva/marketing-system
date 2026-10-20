@@ -15,7 +15,6 @@ import styles from "@/components/rh/registration/ficha-publica.module.css";
 import { loginPathWithReturn } from "@/lib/login-redirect";
 import {
   emptyRegistrationAnswers,
-  REGISTRATION_FIELD_LABEL,
   SELF_REGISTRATION_PATH,
   type RegistrationAnswers,
   type RegistrationField,
@@ -26,6 +25,7 @@ import {
   firstErrorField,
   missingRegistrationFields,
   normalizeRegistrationAnswers,
+  resolveHasOab,
   validateRegistrationAnswers,
   type RegistrationErrors,
 } from "@/lib/rh/registration/validation";
@@ -71,9 +71,19 @@ function scrollToField(field: RegistrationField) {
   window.setTimeout(() => element?.focus({ preventScroll: true }), 350);
 }
 
-/** Campos obrigatórios do vínculo: o que falta numa ficha em branco. */
-function requiredFields(kind: RegistrationKind): RegistrationField[] {
-  return missingRegistrationFields({ ...emptyRegistrationAnswers(), nationality: "" }, kind);
+/**
+ * Campos obrigatórios do vínculo: o que falta numa ficha em branco, mais o que
+ * passa a ser exigido pelas respostas (OAB de quem disse "sim", detalhe da
+ * restrição alimentar).
+ */
+function requiredFields(kind: RegistrationKind, answers: RegistrationAnswers): RegistrationField[] {
+  const blank = { ...emptyRegistrationAnswers(), nationality: "" };
+  const conditional = {
+    ...blank,
+    hasOab: resolveHasOab(answers),
+    dietaryRestrictions: answers.dietaryRestrictions,
+  };
+  return [...new Set([...missingRegistrationFields(blank, kind), ...missingRegistrationFields(conditional, kind)])];
 }
 
 async function fetchOwnRegistration(): Promise<Screen> {
@@ -150,7 +160,7 @@ export function MinhaFichaClient() {
   const payload = screen.kind === "form" ? screen.payload : null;
   const kind = payload?.kind ?? null;
 
-  const required = useMemo(() => (kind ? requiredFields(kind) : []), [kind]);
+  const required = useMemo(() => (answers && kind ? requiredFields(kind, answers) : []), [answers, kind]);
   const currentMissing = useMemo(
     () => (answers && kind ? missingRegistrationFields(answers, kind) : []),
     [answers, kind]
@@ -172,11 +182,6 @@ export function MinhaFichaClient() {
   async function handleSignOut() {
     await signOut();
     router.replace(loginPathWithReturn(SELF_REGISTRATION_PATH, ""));
-  }
-
-  function jumpTo(field: RegistrationField) {
-    if (visibleFields && !visibleFields.has(field)) setMode("all");
-    window.setTimeout(() => scrollToField(field), 50);
   }
 
   async function handleSubmit(currentKind: RegistrationKind) {
@@ -286,22 +291,9 @@ export function MinhaFichaClient() {
               <h1 className={styles.title}>{displayName ? `olá, ${displayName.toLowerCase()}` : "olá"}</h1>
               <p className={styles.lede}>
                 {initialMissing.length > 0
-                  ? "Trouxemos o que o escritório já tem sobre você. Confira e complete o que falta: leva poucos minutos. Tenha à mão RG, CPF e os dados da sua conta bancária."
-                  : "Sua ficha está completa. Se algo mudou, como endereço, telefone ou conta bancária, atualize aqui."}
+                  ? "Confira seus dados e complete o que falta."
+                  : "Sua ficha está completa. Se algo mudou, é só atualizar."}
               </p>
-              <ul className={styles.meta}>
-                <li>
-                  <LockKeyhole aria-hidden /> Seus dados ficam visíveis só para você e para Pessoas e Cultura
-                </li>
-              </ul>
-              {profile?.email && (
-                <p className={styles.whoami}>
-                  <span>Conectado como {profile.email}</span>
-                  <button type="button" className={styles.linkButton} onClick={() => void handleSignOut()}>
-                    Não é você? Sair
-                  </button>
-                </p>
-              )}
             </section>
 
             {payload.form?.reopenNote && (
@@ -329,31 +321,23 @@ export function MinhaFichaClient() {
 
             <section className={styles.progress} aria-live="polite">
               <div className={styles.progressHead}>
-                <p className={styles.progressCount}>
-                  {currentMissing.length === 0
-                    ? "tudo preenchido"
-                    : currentMissing.length === 1
-                      ? "falta 1 informação"
-                      : `faltam ${currentMissing.length} informações`}
-                </p>
+                {currentMissing.length === 0 ? (
+                  <p className={styles.progressCount}>
+                    <Check className={styles.progressDone} aria-hidden /> tudo preenchido
+                  </p>
+                ) : (
+                  <p className={styles.progressCount}>
+                    <span className={styles.progressNumber}>{currentMissing.length}</span>
+                    {currentMissing.length === 1 ? "informação para completar" : "informações para completar"}
+                  </p>
+                )}
                 <p className={styles.progressMeta}>
-                  {filledCount} de {required.length} obrigatórias
+                  {filledCount} de {required.length} preenchidas
                 </p>
               </div>
               <div className={styles.bar} role="presentation">
                 <div className={styles.barFill} style={{ width: `${percent}%` }} />
               </div>
-              {currentMissing.length > 0 && (
-                <ul className={styles.missingList} aria-label="O que falta">
-                  {currentMissing.map((field) => (
-                    <li key={field}>
-                      <button type="button" className={styles.missingChip} onClick={() => jumpTo(field)}>
-                        {REGISTRATION_FIELD_LABEL[field]}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
               {initialMissing.length > 0 && (
                 <div className={styles.modeToggle} role="group" aria-label="O que mostrar">
                   <button
@@ -436,7 +420,8 @@ export function MinhaFichaClient() {
                   )}
                 </button>
                 <p className={styles.finePrint}>
-                  A atualização passa pela revisão de Pessoas e Cultura antes de entrar no seu cadastro.
+                  <LockKeyhole aria-hidden /> Só você e Pessoas e Cultura veem estes dados. A atualização passa pela
+                  revisão antes de entrar no seu cadastro.
                 </p>
               </section>
             </form>
@@ -446,6 +431,14 @@ export function MinhaFichaClient() {
                 <ArrowLeft aria-hidden /> Voltar ao sistema
               </Link>
             </div>
+            {profile?.email && (
+              <p className={styles.whoami}>
+                <span>Conectado como {profile.email}</span>
+                <button type="button" className={styles.linkButton} onClick={() => void handleSignOut()}>
+                  Não é você? Sair
+                </button>
+              </p>
+            )}
           </>
         )}
 

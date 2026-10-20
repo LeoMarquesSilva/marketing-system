@@ -1,5 +1,6 @@
 import { isValidCPF, onlyDigits } from "@/lib/masks-br";
 import { BRAZIL_UF_OPTIONS } from "@/lib/rh/qualifications/types";
+import { isBrazilUf, joinUf, splitUf } from "./format";
 import {
   BLOOD_TYPE_OPTIONS,
   coerceRegistrationAnswers,
@@ -16,18 +17,33 @@ import {
 
 export type RegistrationErrors = Partial<Record<RegistrationField, string>>;
 
+const OAB_FIELDS: RegistrationField[] = ["hasOab", "oabNumber", "oabUf"];
+
 /** Campos que só aparecem para um vínculo específico. */
 export const KIND_ONLY_FIELDS: Record<RegistrationKind, RegistrationField[]> = {
   clt: ["ctpsNumber", "voterTitle"],
   estagio: ["institution", "coursePeriod", "studentRa"],
-  socio_servico: ["oabNumber", "oabUf"],
-  // OAB opcional: há prestadores e colaboradores sem vínculo que advogam.
-  prestador: ["oabNumber", "oabUf"],
-  geral: ["oabNumber", "oabUf"],
+  socio_servico: OAB_FIELDS,
+  prestador: OAB_FIELDS,
+  geral: OAB_FIELDS,
 };
 
-/** Vínculos em que a OAB aparece, mas não é obrigatória. */
-export const OPTIONAL_OAB_KINDS = new Set<RegistrationKind>(["prestador", "geral"]);
+/**
+ * Vínculos que perguntam se a pessoa tem OAB. Há sócios de serviço,
+ * prestadores e colaboradores sem vínculo que não advogam: a OAB só é exigida
+ * de quem responde "sim".
+ */
+export const OAB_KINDS = new Set<RegistrationKind>(["socio_servico", "prestador", "geral"]);
+
+/** "sim"/"nao" declarado; fichas antigas (sem a pergunta) contam "sim" se já têm número. */
+export function resolveHasOab(answers: Pick<RegistrationAnswers, "hasOab" | "oabNumber">): string {
+  if (answers.hasOab === "sim" || answers.hasOab === "nao") return answers.hasOab;
+  return answers.oabNumber.trim() ? "sim" : "";
+}
+
+export function isBrazilian(nationality: string): boolean {
+  return /^brasileir/i.test(nationality.trim()) || nationality.trim().toLowerCase() === "brasil";
+}
 
 const ALL_KIND_ONLY = new Set<RegistrationField>(Object.values(KIND_ONLY_FIELDS).flat());
 
@@ -49,6 +65,7 @@ export const REGISTRATION_FIELD_ORDER: RegistrationField[] = [
   "institution",
   "coursePeriod",
   "studentRa",
+  "hasOab",
   "oabNumber",
   "oabUf",
   "personalPhone",
@@ -123,6 +140,21 @@ export function normalizeRegistrationAnswers(
   result.personalEmail = String(result.personalEmail).toLowerCase();
   result.oabUf = String(result.oabUf).toUpperCase();
   result.state = String(result.state).toUpperCase();
+
+  if (OAB_KINDS.has(kind)) {
+    const hasOab = resolveHasOab(result as unknown as RegistrationAnswers);
+    result.hasOab = hasOab;
+    if (hasOab === "nao") {
+      result.oabNumber = "";
+      result.oabUf = "";
+    }
+  }
+
+  // "texto/UF" sempre no mesmo formato, mesmo que tenha chegado de outro jeito.
+  const issuer = splitUf(String(result.rgIssuer), { lenient: true, acronym: true });
+  result.rgIssuer = joinUf(issuer.head.trim().toUpperCase(), issuer.uf);
+  const birthplace = splitUf(String(result.birthplace), { lenient: true });
+  result.birthplace = joinUf(birthplace.head.trim(), birthplace.uf);
   return result as unknown as RegistrationAnswers;
 }
 
@@ -154,13 +186,20 @@ export function validateRegistrationAnswers(
   if (!inOptions(GENDER_OPTIONS, answers.gender)) errors.gender = "Selecione uma opção.";
   required("parentName", "Informe o nome da mãe ou do pai.");
   required("rg", "Informe o número do RG.");
-  required("rgIssuer", "Informe o órgão emissor e a UF (ex.: SSP/SP).");
+  const issuer = splitUf(answers.rgIssuer, { lenient: true, acronym: true });
+  if (!issuer.head.trim()) errors.rgIssuer = "Informe o órgão emissor (ex.: SSP).";
+  else if (!isBrazilUf(issuer.uf)) errors.rgIssuer = "Selecione a UF do órgão emissor.";
 
   if (!answers.cpf) errors.cpf = "Informe o CPF.";
   else if (!isValidCPF(answers.cpf)) errors.cpf = "CPF inválido.";
 
   required("nationality", "Informe a nacionalidade.");
-  required("birthplace", "Informe a naturalidade (cidade/UF onde nasceu).");
+  const birthplace = splitUf(answers.birthplace, { lenient: true });
+  if (!birthplace.head.trim()) errors.birthplace = "Informe a cidade onde você nasceu.";
+  // Quem nasceu fora do Brasil não tem UF.
+  else if (!isBrazilUf(birthplace.uf) && isBrazilian(answers.nationality)) {
+    errors.birthplace = "Selecione a UF onde você nasceu.";
+  }
   if (!inOptions(RACE_COLOR_OPTIONS, answers.raceColor)) errors.raceColor = "Selecione uma opção.";
 
   const pisDigits = onlyDigits(answers.pis);
@@ -180,14 +219,15 @@ export function validateRegistrationAnswers(
     required("studentRa", "Informe o número do RA.");
   }
 
-  const oabUfValid = (BRAZIL_UF_OPTIONS as readonly string[]).includes(answers.oabUf);
-  if (kind === "socio_servico") {
-    required("oabNumber", "Informe o número da OAB.");
-    if (!oabUfValid) errors.oabUf = "Selecione a UF da OAB.";
-  } else if (OPTIONAL_OAB_KINDS.has(kind) && (answers.oabNumber || answers.oabUf)) {
-    // Opcional, mas se começou precisa do par número + UF.
-    required("oabNumber", "Informe o número da OAB (ou limpe a UF).");
-    if (!oabUfValid) errors.oabUf = "Selecione a UF da OAB.";
+  if (OAB_KINDS.has(kind)) {
+    const hasOab = resolveHasOab(answers);
+    if (!hasOab) errors.hasOab = "Responda se você tem inscrição na OAB.";
+    if (hasOab === "sim") {
+      required("oabNumber", "Informe o número da OAB.");
+      if (!(BRAZIL_UF_OPTIONS as readonly string[]).includes(answers.oabUf)) {
+        errors.oabUf = "Selecione a UF da OAB.";
+      }
+    }
   }
 
   const phone = onlyDigits(answers.personalPhone);
@@ -215,8 +255,12 @@ export function validateRegistrationAnswers(
   }
 
   required("bankName", "Informe o banco.");
-  required("bankAgency", "Informe a agência.");
-  required("bankAccount", "Informe o número da conta.");
+  const agency = answers.bankAgency.replace(/[^0-9X]/gi, "");
+  if (!agency) errors.bankAgency = "Informe a agência.";
+  else if (agency.length < 3) errors.bankAgency = "Confira a agência (3 a 5 dígitos).";
+  const account = answers.bankAccount.replace(/[^0-9X]/gi, "");
+  if (!account) errors.bankAccount = "Informe o número da conta.";
+  else if (account.length < 3) errors.bankAccount = "Confira a conta, com o dígito.";
 
   if (onlyDigits(answers.cep).length !== 8) errors.cep = "Informe o CEP (8 dígitos).";
   required("street", "Informe a rua/avenida.");

@@ -259,7 +259,16 @@
   margin: 0.85rem 0 0;
   text-align: center;
   font-size: 0.75rem;
+  line-height: 1.55;
   color: rgba(255, 255, 255, 0.6);
+}
+
+.finePrint svg {
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-right: 0.2rem;
+  vertical-align: -0.1rem;
 }
 
 .centered {
@@ -343,9 +352,10 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 0.35rem 0.75rem;
-  margin: 1.25rem 0 0;
-  font-size: 0.8rem;
+  margin: 1rem 0 0;
+  font-size: 0.78rem;
   color: var(--ink-soft);
 }
 
@@ -379,11 +389,31 @@
 }
 
 .progressCount {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
   margin: 0;
-  font-size: 1.35rem;
+  font-size: 1.05rem;
   font-weight: 300;
   text-transform: lowercase;
   color: var(--navy);
+}
+
+.progressNumber {
+  font-size: 2.4rem;
+  font-weight: 200;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.progressDone {
+  align-self: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0.3rem;
+  border-radius: 999px;
+  color: #ffffff;
+  background: #3d6b4a;
 }
 
 .progressMeta {
@@ -406,31 +436,6 @@
   border-radius: inherit;
   background: var(--gold);
   transition: width 0.3s ease;
-}
-
-.missingList {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin: 0.95rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.missingChip {
-  padding: 0.3rem 0.7rem;
-  border: 1px solid rgba(156, 116, 52, 0.35);
-  border-radius: 999px;
-  background: rgba(225, 177, 109, 0.12);
-  font-family: var(--sans);
-  font-size: 0.78rem;
-  color: var(--navy);
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-}
-
-.missingChip:hover {
-  background: rgba(225, 177, 109, 0.26);
 }
 
 .modeToggle {

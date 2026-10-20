@@ -9,6 +9,13 @@ import { NATIONALITY_OPTIONS } from "@/lib/rh/qualifications/types";
 import { onlyDigits } from "@/lib/masks-br";
 import { suggestRegistrationMatches, type MatchCandidate } from "./matching";
 import {
+  diffQualificationContact,
+  qualificationContactPatch,
+  QUALIFICATION_CONTACT_SELECT,
+  type QualificationContact,
+  type QualificationSyncPreview,
+} from "./qualification-sync";
+import {
   coerceRegistrationAnswers,
   emptyRegistrationAnswers,
   isRegistrationExpired,
@@ -162,12 +169,17 @@ function toListItem(row: FormRow, candidates: MatchCandidate[]): RegistrationLis
   };
 }
 
-function toDetail(row: FormRow, candidates: MatchCandidate[]): RegistrationDetail {
+function toDetail(
+  row: FormRow,
+  candidates: MatchCandidate[],
+  qualificationSync: QualificationSyncPreview | null
+): RegistrationDetail {
   return {
     ...toListItem(row, candidates),
     answers: coerceRegistrationAnswers(row.answers),
     reopen_note: row.reopen_note,
     consent_at: row.consent_at,
+    qualification_sync: qualificationSync,
   };
 }
 
@@ -245,7 +257,38 @@ export async function getRegistrationForm(id: string): Promise<RegistrationDetai
   await requireRegistrationManager();
   const admin = createRegistrationAdminClient();
   const [row, candidates] = await Promise.all([loadFormRow(admin, id), loadMatchCandidates(admin)]);
-  return toDetail(row, candidates);
+  return toDetail(row, candidates, await previewQualificationSync(admin, row));
+}
+
+/** Qualificação jurídica do usuário do colaborador (null = não tem login ou qualificação). */
+async function loadQualificationContact(
+  admin: SupabaseClient,
+  userId: string
+): Promise<(QualificationContact & { id: string }) | null> {
+  const { data, error } = await admin
+    .from("hr_qualifications")
+    .select(`id, ${QUALIFICATION_CONTACT_SELECT}`)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw new RhHttpError("Falha ao carregar a qualificação.", 500, "QUERY_FAILED");
+  return (data as (QualificationContact & { id: string }) | null) ?? null;
+}
+
+/** Para a RH conferir, antes de aprovar, o que muda na qualificação. */
+async function previewQualificationSync(
+  admin: SupabaseClient,
+  row: FormRow
+): Promise<QualificationSyncPreview | null> {
+  if (row.status !== "recebida" || !row.employee_id) return null;
+  const { data: employee } = await admin
+    .from("hr_employees")
+    .select("user_id")
+    .eq("id", row.employee_id)
+    .maybeSingle();
+  if (!employee?.user_id) return null;
+  const qualification = await loadQualificationContact(admin, employee.user_id as string);
+  if (!qualification) return { exists: false, changes: [] };
+  return { exists: true, changes: diffQualificationContact(qualification, coerceRegistrationAnswers(row.answers)) };
 }
 
 export interface CreateRegistrationInput {
@@ -372,9 +415,12 @@ export async function runRegistrationAction(
         throw new RhHttpError("Só fichas recebidas podem ser aprovadas.", 409, "INVALID_STATUS");
       }
       validateOrThrow(row.answers, row.employment_kind);
+      // Aplica antes de aprovar: se a qualificação falhar, a ficha segue recebida e dá para tentar de novo.
+      if (row.employee_id) {
+        await applyToEmployee(admin, row, manager.profileId, { syncQualification: true });
+      }
       await update({ status: "aprovada", approved_at: new Date().toISOString(), approved_by: manager.profileId });
       await resolveSubmittedNotifications(admin, id, manager.profileId);
-      if (row.employee_id) await applyToEmployee(admin, row, manager.profileId);
       break;
     }
     case "reopen": {
@@ -465,13 +511,20 @@ async function resolveSubmittedNotifications(
 
 /**
  * Copia a ficha aprovada para o colaborador vinculado. Só preenche campos
- * vazios — o que a RH já digitou na ficha do colaborador não é sobrescrito.
- * Sócio de serviço também ganha a qualificação jurídica pré-preenchida.
+ * vazios — o que a RH já digitou na ficha do colaborador não é sobrescrito
+ * (CPF, RG e nascimento vêm do VIOS). Sócio de serviço sem qualificação
+ * jurídica ganha uma pré-preenchida.
+ *
+ * Com `syncQualification` (só na aprovação, depois de a RH ver a diferença na
+ * revisão), endereço, contato e RG enviados também atualizam a qualificação
+ * existente. Correções e vínculos de ficha já aprovada não mexem nela: a ficha
+ * pode ser mais antiga que o que a pessoa salvou depois em /qualificacao.
  */
 async function applyToEmployee(
   admin: SupabaseClient,
   row: Pick<FormRow, "id" | "answers" | "employment_kind" | "employee_id">,
-  appliedBy: string
+  appliedBy: string,
+  options: { syncQualification?: boolean } = {}
 ): Promise<void> {
   if (!row.employee_id) return;
   const answers = coerceRegistrationAnswers(row.answers);
@@ -501,8 +554,16 @@ async function applyToEmployee(
     await admin.from("hr_employees").update({ cpf: answers.cpf }).eq("id", employee.id);
   }
 
-  if (row.employment_kind === "socio_servico" && employee.user_id) {
-    await prefillQualification(admin, employee.user_id as string, answers, appliedBy);
+  if (employee.user_id && (options.syncQualification || row.employment_kind === "socio_servico")) {
+    const userId = employee.user_id as string;
+    const qualification = await loadQualificationContact(admin, userId);
+    if (qualification) {
+      if (options.syncQualification) {
+        await syncQualificationContact(admin, qualification, answers, appliedBy);
+      }
+    } else if (row.employment_kind === "socio_servico") {
+      await prefillQualification(admin, userId, answers, appliedBy);
+    }
   }
 
   await admin.from("hr_registration_forms").update({ applied_at: new Date().toISOString() }).eq("id", row.id);
@@ -529,18 +590,35 @@ function nameKey(value: string): string {
   return value.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
 }
 
+/** Leva para a qualificação existente o endereço, o contato e o RG da ficha aprovada. */
+async function syncQualificationContact(
+  admin: SupabaseClient,
+  qualification: QualificationContact & { id: string },
+  answers: RegistrationAnswers,
+  updatedBy: string
+): Promise<void> {
+  const changes = diffQualificationContact(qualification, answers);
+  if (changes.length === 0) return;
+  const { error } = await admin
+    .from("hr_qualifications")
+    .update({ ...qualificationContactPatch(changes), updated_by: updatedBy })
+    .eq("id", qualification.id);
+  if (error) {
+    throw new RhHttpError(
+      "Não foi possível atualizar a qualificação jurídica. A ficha continua recebida; tente aprovar de novo.",
+      500,
+      "QUALIFICATION_UPDATE_FAILED"
+    );
+  }
+}
+
+/** Só para quem ainda não tem qualificação (quem chama confere). */
 async function prefillQualification(
   admin: SupabaseClient,
   userId: string,
   answers: RegistrationAnswers,
   updatedBy: string
 ): Promise<void> {
-  const { data: existing } = await admin
-    .from("hr_qualifications")
-    .select("id")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (existing) return;
   // Estado civil e profissão não estão na ficha: a qualificação segue pendente.
   await admin.from("hr_qualifications").insert({
     user_id: userId,

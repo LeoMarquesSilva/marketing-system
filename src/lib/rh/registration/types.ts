@@ -4,6 +4,8 @@
  * - atualização: o colaborador logado completa a própria ficha em /minha-ficha.
  */
 
+import type { QualificationSyncPreview } from "./qualification-sync";
+
 /** `geral` = colaborador sem vínculo no VIOS (só os campos comuns). */
 export type RegistrationKind = "clt" | "estagio" | "socio_servico" | "prestador" | "geral";
 export type RegistrationStatus = "pendente" | "recebida" | "aprovada" | "cancelada";
@@ -108,7 +110,9 @@ export interface RegistrationAnswers {
   institution: string;
   coursePeriod: string;
   studentRa: string;
-  // Sócio de serviço
+  // Sócios, prestador e sem vínculo: nem todo mundo advoga, então a pessoa diz
+  // se tem inscrição ("sim" | "nao") e só então a OAB é pedida.
+  hasOab: string;
   oabNumber: string;
   oabUf: string;
   // Contato
@@ -155,6 +159,7 @@ export const REGISTRATION_FIELD_LABEL: Record<RegistrationField, string> = {
   institution: "Instituição de ensino",
   coursePeriod: "Período do curso",
   studentRa: "RA",
+  hasOab: "Inscrição na OAB",
   oabNumber: "Número da OAB",
   oabUf: "UF da OAB",
   personalPhone: "Telefone particular",
@@ -195,6 +200,7 @@ export function emptyRegistrationAnswers(): RegistrationAnswers {
     institution: "",
     coursePeriod: "",
     studentRa: "",
+    hasOab: "",
     oabNumber: "",
     oabUf: "",
     personalPhone: "",
@@ -241,6 +247,11 @@ export interface Option {
   value: string;
   label: string;
 }
+
+export const HAS_OAB_OPTIONS: Option[] = [
+  { value: "sim", label: "Sim, tenho OAB" },
+  { value: "nao", label: "Não tenho" },
+];
 
 export const GENDER_OPTIONS: Option[] = [
   { value: "feminino", label: "Feminino" },
@@ -362,6 +373,8 @@ export interface RegistrationDetail extends RegistrationListItem {
   answers: RegistrationAnswers;
   reopen_note: string | null;
   consent_at: string | null;
+  /** O que a aprovação muda na qualificação jurídica. Só em ficha recebida e vinculada. */
+  qualification_sync: QualificationSyncPreview | null;
 }
 
 export function registrationPublicPath(token: string): string {

@@ -143,16 +143,16 @@ describe("missingRegistrationFields", () => {
   });
 
   it("ficha completa não tem pendência", () => {
-    expect(missingRegistrationFields(complete(), "geral", NOW)).toEqual([]);
+    expect(missingRegistrationFields(complete({ hasOab: "nao" }), "geral", NOW)).toEqual([]);
   });
 });
 
 describe("prestador e sem vínculo", () => {
-  it("não exigem CTPS, PIS nem OAB", () => {
-    expect(validateRegistrationAnswers(complete(), "prestador", NOW)).toEqual({});
+  it("não exigem CTPS nem PIS; OAB só de quem tem inscrição", () => {
+    expect(validateRegistrationAnswers(complete({ hasOab: "nao" }), "prestador", NOW)).toEqual({});
   });
 
-  it("aceitam OAB opcional, mas exigem o par número + UF", () => {
+  it("com OAB informada, exigem o par número + UF", () => {
     const partial = normalizeRegistrationAnswers(complete({ oabNumber: "123.456" }), "prestador");
     expect(validateRegistrationAnswers(partial, "prestador", NOW).oabUf).toBeDefined();
     const full = normalizeRegistrationAnswers(complete({ oabNumber: "123.456", oabUf: "SP" }), "geral");
@@ -163,5 +163,58 @@ describe("prestador e sem vínculo", () => {
   it("CLT continua descartando a OAB", () => {
     const answers = normalizeRegistrationAnswers(complete({ oabNumber: "123.456", oabUf: "SP" }), "clt");
     expect(answers.oabNumber).toBe("");
+  });
+});
+
+describe("pergunta da OAB", () => {
+  it("sócio de serviço que não advoga responde 'não' e não precisa de OAB", () => {
+    const answers = normalizeRegistrationAnswers(complete({ hasOab: "nao", oabNumber: "123", oabUf: "SP" }), "socio_servico");
+    expect(answers.oabNumber).toBe("");
+    expect(answers.oabUf).toBe("");
+    expect(validateRegistrationAnswers(answers, "socio_servico", NOW)).toEqual({});
+  });
+
+  it("exige a resposta e, com 'sim', o número e a UF", () => {
+    expect(validateRegistrationAnswers(complete(), "socio_servico", NOW).hasOab).toBeDefined();
+    const errors = validateRegistrationAnswers(complete({ hasOab: "sim" }), "socio_servico", NOW);
+    expect(Object.keys(errors).sort()).toEqual(["oabNumber", "oabUf"]);
+  });
+
+  it("ficha antiga com OAB preenchida conta como 'sim'", () => {
+    const answers = normalizeRegistrationAnswers(complete({ oabNumber: "123.456", oabUf: "SP" }), "socio_servico");
+    expect(answers.hasOab).toBe("sim");
+    expect(validateRegistrationAnswers(answers, "socio_servico", NOW)).toEqual({});
+  });
+
+  it("CLT e estágio não perguntam", () => {
+    const answers = normalizeRegistrationAnswers(complete({ hasOab: "sim" }), "clt");
+    expect(answers.hasOab).toBe("");
+  });
+});
+
+describe("órgão emissor e naturalidade", () => {
+  it("exigem a UF para quem é brasileiro", () => {
+    const errors = validateRegistrationAnswers(complete({ rgIssuer: "SSP", birthplace: "Campinas" }), "geral", NOW);
+    expect(errors.rgIssuer).toBe("Selecione a UF do órgão emissor.");
+    expect(errors.birthplace).toBe("Selecione a UF onde você nasceu.");
+  });
+
+  it("quem nasceu fora do Brasil não precisa de UF na naturalidade", () => {
+    const errors = validateRegistrationAnswers(
+      complete({ nationality: "Portuguesa", birthplace: "Lisboa" }),
+      "geral",
+      NOW
+    );
+    expect(errors.birthplace).toBeUndefined();
+  });
+
+  it("normaliza o que veio digitado de outro jeito", () => {
+    const answers = normalizeRegistrationAnswers(
+      complete({ rgIssuer: "ssp sp", birthplace: "Campinas - SP" }),
+      "geral"
+    );
+    expect(answers.rgIssuer).toBe("SSP/SP");
+    expect(answers.birthplace).toBe("Campinas/SP");
+    expect(normalizeRegistrationAnswers(complete({ rgIssuer: "SSPMG" }), "geral").rgIssuer).toBe("SSP/MG");
   });
 });

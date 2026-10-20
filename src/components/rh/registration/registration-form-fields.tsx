@@ -15,21 +15,37 @@ import { CpfInput } from "@/components/ui/cpf-input";
 import { CepInput } from "@/components/ui/cep-input";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { DatePickerField } from "@/components/ui/date-picker-field";
-import { maskOAB, maskRG, onlyDigits } from "@/lib/masks-br";
+import {
+  isValidCPF,
+  maskBankAccount,
+  maskBankAgency,
+  maskEmail,
+  maskOAB,
+  maskPersonName,
+  maskRG,
+  onlyDigits,
+} from "@/lib/masks-br";
 import { BRAZIL_UF_OPTIONS } from "@/lib/rh/qualifications/types";
+import { joinUf, maskIssuerAcronym, splitUf } from "@/lib/rh/registration/format";
 import {
   BLOOD_TYPE_OPTIONS,
   DIETARY_NEEDS_DETAIL,
   DIETARY_NONE,
   DIETARY_OPTIONS,
   GENDER_OPTIONS,
+  HAS_OAB_OPTIONS,
   RACE_COLOR_OPTIONS,
   type Option,
   type RegistrationAnswers,
   type RegistrationField,
   type RegistrationKind,
 } from "@/lib/rh/registration/types";
-import { OPTIONAL_OAB_KINDS, type RegistrationErrors } from "@/lib/rh/registration/validation";
+import { isBrazilian, OAB_KINDS, resolveHasOab, type RegistrationErrors } from "@/lib/rh/registration/validation";
+import {
+  BankCombobox,
+  CityUfPicker,
+  NationalityCombobox,
+} from "@/components/rh/registration/registration-pickers";
 import { cn } from "@/lib/utils";
 
 export function registrationFieldId(field: RegistrationField): string {
@@ -49,6 +65,7 @@ const SECTION_FIELDS: RegistrationField[][] = [
     "institution",
     "coursePeriod",
     "studentRa",
+    "hasOab",
     "oabNumber",
     "oabUf",
   ],
@@ -65,10 +82,14 @@ const SECTION_FIELDS: RegistrationField[][] = [
 const FIELD_COMPANIONS: Partial<Record<RegistrationField, RegistrationField[]>> = {
   cep: ["street", "number", "complement", "district", "city", "state"],
   dietaryRestrictions: ["dietaryNotes"],
-  oabNumber: ["oabUf"],
-  oabUf: ["oabNumber"],
+  hasOab: ["oabNumber", "oabUf"],
+  oabNumber: ["hasOab", "oabUf"],
+  oabUf: ["hasOab", "oabNumber"],
   emergencyPhone: ["emergencyContactName"],
   bankAccount: ["pixKey"],
+  // UF e cidade do endereço ficam no mesmo seletor.
+  city: ["state"],
+  state: ["city"],
 };
 
 export function withCompanionFields(fields: Iterable<RegistrationField>): Set<RegistrationField> {
@@ -104,12 +125,152 @@ function maskVoterTitle(value: string): string {
   return maskDigits(value, 12).replace(/(\d{4})(?=\d)/g, "$1 ");
 }
 
+/** CTPS: número (e série, na carteira de papel); na digital é o CPF. */
+function maskCtps(value: string): string {
+  return value.replace(/[^\d./\- ]/g, "").slice(0, 20);
+}
+
+/** Cidade: letras, espaços, apóstrofo e hífen (a UF vai no seletor ao lado). */
+function maskCity(value: string): string {
+  return value.replace(/[^\p{L}\s'’.-]/gu, "").replace(/\s{2,}/g, " ").slice(0, 80);
+}
+
+/** RA: letras e números, em maiúsculas. */
+function maskStudentRa(value: string): string {
+  return value.toUpperCase().replace(/[^A-Z0-9.\-/]/g, "").slice(0, 20);
+}
+
+/** Número do endereço: "123", "123A", "S/N". */
+function maskAddressNumber(value: string): string {
+  return value.toUpperCase().replace(/[^A-Z0-9/\- ]/g, "").slice(0, 10);
+}
+
+/**
+ * Texto + UF guardados juntos ("SSP/SP", "Campinas/SP"): campo de texto com o
+ * seletor de UF ao lado. Só a barra separa as partes enquanto a pessoa digita.
+ */
+function UfSplitInput({
+  field,
+  value,
+  placeholder,
+  mask,
+  invalid,
+  disabled,
+  autoCapitalize,
+  onChange,
+}: {
+  field: RegistrationField;
+  value: string;
+  placeholder?: string;
+  mask: (value: string) => string;
+  invalid?: boolean;
+  disabled?: boolean;
+  autoCapitalize?: string;
+  onChange: (value: string) => void;
+}) {
+  const { head, uf } = splitUf(value);
+  return (
+    <div className="flex gap-2">
+      <Input
+        id={registrationFieldId(field)}
+        className="min-w-0 flex-1"
+        value={head}
+        disabled={disabled}
+        placeholder={placeholder}
+        autoComplete="off"
+        autoCapitalize={autoCapitalize}
+        aria-invalid={invalid || undefined}
+        onChange={(event) => onChange(joinUf(mask(event.target.value.replace(/\//g, "")), uf))}
+      />
+      <Select value={uf || undefined} onValueChange={(next) => onChange(joinUf(head, next))} disabled={disabled}>
+        <SelectTrigger className="w-[5.5rem] shrink-0" aria-label="UF" aria-invalid={invalid || undefined}>
+          <SelectValue placeholder="UF" />
+        </SelectTrigger>
+        <SelectContent>
+          {BRAZIL_UF_OPTIONS.map((option) => (
+            <SelectItem key={option} value={option}>
+              {option}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+/** Escolha única em botões (mesmo visual das restrições alimentares). */
+function ChoiceChips({
+  field,
+  label,
+  value,
+  options,
+  error,
+  disabled,
+  onChange,
+}: {
+  field: RegistrationField;
+  label: string;
+  value: string;
+  options: Option[];
+  error?: string;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const { visible, missing } = useContext(FieldVisibilityContext);
+  if (visible && !visible.has(field)) return null;
+  const labelId = `${registrationFieldId(field)}-label`;
+  return (
+    <div className="space-y-2 sm:col-span-2" data-field={field}>
+      <p id={labelId} className="flex flex-wrap items-baseline gap-x-1.5 text-sm font-medium text-foreground">
+        {label}
+        {missing?.has(field) && <MissingMark />}
+      </p>
+      <div
+        id={registrationFieldId(field)}
+        className="flex flex-wrap gap-2"
+        role="radiogroup"
+        aria-labelledby={labelId}
+        tabIndex={-1}
+      >
+        {options.map((option) => {
+          const active = value === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              disabled={disabled}
+              onClick={() => onChange(option.value)}
+              className={cn(
+                "fc-chip inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm transition-colors disabled:opacity-60",
+                active
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-background text-foreground hover:bg-muted"
+              )}
+            >
+              {active && <Check className="size-3.5" aria-hidden />}
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+      {error && (
+        <p className="text-xs font-medium text-destructive" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function Field({
   field,
   label,
   hint,
   error,
   optional,
+  alsoFields,
   className,
   children,
 }: {
@@ -118,17 +279,20 @@ function Field({
   hint?: string;
   error?: string;
   optional?: boolean;
+  /** Outros campos que moram neste mesmo bloco (ex.: a UF ao lado da cidade). */
+  alsoFields?: RegistrationField[];
   className?: string;
   children: ReactNode;
 }) {
   const { visible, missing } = useContext(FieldVisibilityContext);
-  if (visible && !visible.has(field)) return null;
+  const fields = [field, ...(alsoFields ?? [])];
+  if (visible && !fields.some((item) => visible.has(item))) return null;
   return (
     <div className={cn("min-w-0 space-y-1.5", className)} data-field={field}>
       <label htmlFor={registrationFieldId(field)} className="flex flex-wrap items-baseline gap-x-1.5 text-sm font-medium text-foreground">
         {label}
         {optional && <span className="font-normal text-muted-foreground">(opcional)</span>}
-        {missing?.has(field) && <MissingMark />}
+        {fields.some((item) => missing?.has(item)) && <MissingMark />}
       </label>
       {children}
       {error ? (
@@ -240,23 +404,40 @@ export function RegistrationFormFields({
   const sectionIndex = (position: number) =>
     sectionShown.slice(0, position + 1).filter(Boolean).length;
   const showField = (field: RegistrationField) => !visibleFields || visibleFields.has(field);
-  const oabOptional = OPTIONAL_OAB_KINDS.has(kind);
+  const asksOab = OAB_KINDS.has(kind);
+  const hasOab = resolveHasOab(answers);
+  // Nascido no Brasil escolhe UF + cidade da lista do IBGE; estrangeiro digita cidade e país.
+  const bornInBrazil = !answers.nationality.trim() || isBrazilian(answers.nationality);
+  const birthplace = splitUf(answers.birthplace);
   const [cepState, setCepState] = useState<"idle" | "loading" | "error">("idle");
   const lastCep = useRef(onlyDigits(answers.cep));
   const numberRef = useRef<HTMLInputElement>(null);
 
-  const text = (field: RegistrationField, extra?: { mask?: (value: string) => string; placeholder?: string; autoComplete?: string; inputMode?: "numeric" | "text" | "email" }) => (
+  const text = (
+    field: RegistrationField,
+    extra?: {
+      mask?: (value: string) => string;
+      placeholder?: string;
+      autoComplete?: string;
+      autoCapitalize?: string;
+      inputMode?: "numeric" | "text" | "email" | "tel";
+      type?: "text" | "email";
+    }
+  ) => (
     <Input
       id={registrationFieldId(field)}
+      type={extra?.type ?? "text"}
       value={answers[field] as string}
       disabled={disabled}
       placeholder={extra?.placeholder}
       autoComplete={extra?.autoComplete ?? "off"}
+      autoCapitalize={extra?.autoCapitalize}
       inputMode={extra?.inputMode}
       aria-invalid={errors[field] ? true : undefined}
       onChange={(event) => onChange(field, (extra?.mask ? extra.mask(event.target.value) : event.target.value) as never)}
     />
   );
+  const cpfReady = isValidCPF(answers.cpf);
 
   // Endereço automático pelo CEP (mesma rota usada na Qualificação).
   useEffect(() => {
@@ -309,7 +490,7 @@ export function RegistrationFormFields({
         {sectionShown[0] && (
           <RegistrationSection index={sectionIndex(0)} title="Dados pessoais">
             <Field field="fullName" label="Nome completo" error={errors.fullName} className="sm:col-span-2">
-              {text("fullName", { autoComplete: "name" })}
+              {text("fullName", { autoComplete: "name", autoCapitalize: "words", mask: maskPersonName })}
             </Field>
             <Field field="birthDate" label="Data de nascimento" error={errors.birthDate}>
               <DatePickerField
@@ -333,13 +514,22 @@ export function RegistrationFormFields({
               />
             </Field>
             <Field field="parentName" label="Nome da mãe ou do pai" error={errors.parentName} className="sm:col-span-2">
-              {text("parentName")}
+              {text("parentName", { autoCapitalize: "words", mask: maskPersonName })}
             </Field>
             <Field field="rg" label="Número do RG" error={errors.rg}>
-              {text("rg", { mask: maskRG })}
+              {text("rg", { mask: maskRG, placeholder: "00.000.000-0" })}
             </Field>
-            <Field field="rgIssuer" label="Órgão emissor / UF" error={errors.rgIssuer}>
-              {text("rgIssuer", { placeholder: "ex.: SSP/SP", mask: (value) => value.toUpperCase() })}
+            <Field field="rgIssuer" label="Órgão emissor e UF" hint="Sigla do órgão, ex.: SSP, DETRAN" error={errors.rgIssuer}>
+              <UfSplitInput
+                field="rgIssuer"
+                value={answers.rgIssuer}
+                placeholder="SSP"
+                mask={maskIssuerAcronym}
+                invalid={!!errors.rgIssuer}
+                disabled={disabled}
+                autoCapitalize="characters"
+                onChange={(value) => onChange("rgIssuer", value)}
+              />
             </Field>
             <Field field="cpf" label="CPF" error={errors.cpf}>
               <CpfInput
@@ -356,11 +546,31 @@ export function RegistrationFormFields({
         {sectionShown[1] && (
           <RegistrationSection index={sectionIndex(1)} title="Dados complementares">
             <Field field="nationality" label="Nacionalidade" error={errors.nationality}>
-              {text("nationality")}
+              <NationalityCombobox
+                id={registrationFieldId("nationality")}
+                value={answers.nationality}
+                invalid={!!errors.nationality}
+                disabled={disabled}
+                onChange={(value) => onChange("nationality", maskCity(value))}
+              />
             </Field>
-            <Field field="birthplace" label="Naturalidade" hint="Cidade e UF onde você nasceu" error={errors.birthplace}>
-              {text("birthplace", { placeholder: "ex.: Campinas/SP" })}
-            </Field>
+            {bornInBrazil ? (
+              <Field field="birthplace" label="Naturalidade" hint="Estado e cidade onde você nasceu" error={errors.birthplace}>
+                <CityUfPicker
+                  id={registrationFieldId("birthplace")}
+                  ufId={`${registrationFieldId("birthplace")}-uf`}
+                  uf={birthplace.uf}
+                  city={birthplace.head}
+                  invalid={!!errors.birthplace}
+                  disabled={disabled}
+                  onChange={(next) => onChange("birthplace", joinUf(next.city, next.uf))}
+                />
+              </Field>
+            ) : (
+              <Field field="birthplace" label="Naturalidade" hint="Cidade e país onde você nasceu" error={errors.birthplace}>
+                {text("birthplace", { placeholder: "ex.: Lisboa, Portugal", autoCapitalize: "words" })}
+              </Field>
+            )}
             <Field field="raceColor" label="Raça/cor" hint="Autodeclaração, padrão IBGE" error={errors.raceColor}>
               <OptionSelect
                 field="raceColor"
@@ -378,7 +588,7 @@ export function RegistrationFormFields({
               hint={kind === "clt" ? "Aparece na carteira de trabalho digital" : "Se você já tiver"}
               error={errors.pis}
             >
-              {text("pis", { mask: maskPIS, inputMode: "numeric" })}
+              {text("pis", { mask: maskPIS, inputMode: "numeric", placeholder: "000.00000.00-0" })}
             </Field>
 
             {kind === "clt" && (
@@ -389,10 +599,19 @@ export function RegistrationFormFields({
                   hint="Na CTPS digital, costuma ser o próprio CPF"
                   error={errors.ctpsNumber}
                 >
-                  {text("ctpsNumber")}
+                  {text("ctpsNumber", { mask: maskCtps, inputMode: "numeric" })}
+                  {cpfReady && !answers.ctpsNumber && !disabled && (
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-primary underline underline-offset-2"
+                      onClick={() => onChange("ctpsNumber", answers.cpf)}
+                    >
+                      É o mesmo número do meu CPF
+                    </button>
+                  )}
                 </Field>
                 <Field field="voterTitle" label="Título de eleitor" error={errors.voterTitle}>
-                  {text("voterTitle", { mask: maskVoterTitle, inputMode: "numeric" })}
+                  {text("voterTitle", { mask: maskVoterTitle, inputMode: "numeric", placeholder: "0000 0000 0000" })}
                 </Field>
               </>
             )}
@@ -406,23 +625,28 @@ export function RegistrationFormFields({
                   {text("coursePeriod", { placeholder: "ex.: 5º semestre, 2026" })}
                 </Field>
                 <Field field="studentRa" label="Número do RA" error={errors.studentRa}>
-                  {text("studentRa")}
+                  {text("studentRa", { mask: maskStudentRa })}
                 </Field>
               </>
             )}
 
-            {(kind === "socio_servico" || oabOptional) && (
+            {asksOab && (
+              <ChoiceChips
+                field="hasOab"
+                label="Você tem inscrição na OAB?"
+                value={hasOab}
+                options={HAS_OAB_OPTIONS}
+                error={errors.hasOab}
+                disabled={disabled}
+                onChange={(value) => onChange("hasOab", value)}
+              />
+            )}
+            {asksOab && hasOab === "sim" && (
               <>
-                <Field
-                  field="oabNumber"
-                  label="Número da OAB"
-                  optional={oabOptional}
-                  hint={oabOptional ? "Se você for inscrito na OAB" : undefined}
-                  error={errors.oabNumber}
-                >
-                  {text("oabNumber", { mask: maskOAB, inputMode: "numeric" })}
+                <Field field="oabNumber" label="Número da OAB" error={errors.oabNumber}>
+                  {text("oabNumber", { mask: maskOAB, inputMode: "numeric", placeholder: "000.000" })}
                 </Field>
-                <Field field="oabUf" label="UF da OAB" optional={oabOptional} error={errors.oabUf}>
+                <Field field="oabUf" label="UF da OAB" error={errors.oabUf}>
                   <OptionSelect
                     field="oabUf"
                     value={answers.oabUf}
@@ -451,7 +675,14 @@ export function RegistrationFormFields({
               />
             </Field>
             <Field field="personalEmail" label="E-mail particular" error={errors.personalEmail}>
-              {text("personalEmail", { autoComplete: "email", inputMode: "email" })}
+              {text("personalEmail", {
+                autoComplete: "email",
+                inputMode: "email",
+                type: "email",
+                autoCapitalize: "none",
+                placeholder: "voce@email.com",
+                mask: maskEmail,
+              })}
             </Field>
             <Field field="emergencyPhone" label="Telefone de emergência" error={errors.emergencyPhone}>
               <PhoneInput
@@ -555,16 +786,29 @@ export function RegistrationFormFields({
         {sectionShown[4] && (
           <RegistrationSection index={sectionIndex(4)} title="Dados bancários" description="Conta em seu nome, para pagamento.">
             <Field field="bankName" label="Banco" error={errors.bankName} className="sm:col-span-2">
-              {text("bankName", { placeholder: "ex.: Itaú, Nubank, Banco do Brasil" })}
+              <BankCombobox
+                id={registrationFieldId("bankName")}
+                value={answers.bankName}
+                invalid={!!errors.bankName}
+                disabled={disabled}
+                onChange={(value) => onChange("bankName", value)}
+              />
             </Field>
-            <Field field="bankAgency" label="Agência" error={errors.bankAgency}>
-              {text("bankAgency", { inputMode: "numeric" })}
+            <Field field="bankAgency" label="Agência" hint="Com o dígito, se houver" error={errors.bankAgency}>
+              {text("bankAgency", { mask: maskBankAgency, inputMode: "numeric", placeholder: "0000" })}
             </Field>
             <Field field="bankAccount" label="Número da conta" hint="Com o dígito" error={errors.bankAccount}>
-              {text("bankAccount")}
+              {text("bankAccount", { mask: maskBankAccount, inputMode: "numeric", placeholder: "00000-0" })}
             </Field>
-            <Field field="pixKey" label="Chave Pix" optional error={errors.pixKey} className="sm:col-span-2">
-              {text("pixKey")}
+            <Field
+              field="pixKey"
+              label="Chave Pix"
+              optional
+              hint="CPF, e-mail, celular ou chave aleatória"
+              error={errors.pixKey}
+              className="sm:col-span-2"
+            >
+              {text("pixKey", { autoCapitalize: "none" })}
             </Field>
           </RegistrationSection>
         )}
@@ -607,8 +851,10 @@ export function RegistrationFormFields({
                 id={registrationFieldId("number")}
                 value={answers.number}
                 disabled={disabled}
+                placeholder="ex.: 123 ou S/N"
+                autoComplete="off"
                 aria-invalid={errors.number ? true : undefined}
-                onChange={(event) => onChange("number", event.target.value)}
+                onChange={(event) => onChange("number", maskAddressNumber(event.target.value))}
               />
             </Field>
             <Field field="complement" label="Complemento" optional error={errors.complement}>
@@ -617,18 +863,18 @@ export function RegistrationFormFields({
             <Field field="district" label="Bairro" error={errors.district}>
               {text("district")}
             </Field>
-            <Field field="city" label="Cidade" error={errors.city}>
-              {text("city", { autoComplete: "address-level2" })}
-            </Field>
-            <Field field="state" label="UF" error={errors.state}>
-              <OptionSelect
-                field="state"
-                value={answers.state}
-                options={BRAZIL_UF_OPTIONS}
-                placeholder="UF"
-                invalid={!!errors.state}
+            <Field field="city" label="Estado e cidade" alsoFields={["state"]} error={errors.state ?? errors.city}>
+              <CityUfPicker
+                id={registrationFieldId("city")}
+                ufId={registrationFieldId("state")}
+                uf={answers.state}
+                city={answers.city}
+                invalid={!!(errors.city || errors.state)}
                 disabled={disabled}
-                onChange={(value) => onChange("state", value)}
+                onChange={(next) => {
+                  if (next.uf !== answers.state) onChange("state", next.uf);
+                  if (next.city !== answers.city) onChange("city", next.city);
+                }}
               />
             </Field>
           </RegistrationSection>

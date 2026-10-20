@@ -11,7 +11,7 @@ import {
   type RegistrationAnswers,
   type RegistrationKind,
 } from "@/lib/rh/registration/types";
-import { OPTIONAL_OAB_KINDS } from "@/lib/rh/registration/validation";
+import { OAB_KINDS, resolveHasOab } from "@/lib/rh/registration/validation";
 
 function formatBirthDate(iso: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso;
@@ -91,10 +91,16 @@ export function RegistrationAnswersView({
             <Item label="RA" value={answers.studentRa} />
           </>
         )}
-        {(kind === "socio_servico" || OPTIONAL_OAB_KINDS.has(kind)) && (
+        {OAB_KINDS.has(kind) && (
           <Item
             label="OAB"
-            value={answers.oabNumber ? `${answers.oabNumber}${answers.oabUf ? `/${answers.oabUf}` : ""}` : ""}
+            value={
+              answers.oabNumber
+                ? `${answers.oabNumber}${answers.oabUf ? `/${answers.oabUf}` : ""}`
+                : resolveHasOab(answers) === "nao"
+                  ? "Não tem inscrição"
+                  : ""
+            }
           />
         )}
       </Group>

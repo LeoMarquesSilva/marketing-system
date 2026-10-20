@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  ArrowRight,
   Check,
   Copy,
   Link2,
@@ -55,6 +56,7 @@ import {
   type RegistrationField,
   type RegistrationKind,
 } from "@/lib/rh/registration/types";
+import type { QualificationSyncPreview } from "@/lib/rh/registration/qualification-sync";
 import type { RegistrationErrors } from "@/lib/rh/registration/validation";
 
 function formatDate(iso: string | null, withTime = false): string {
@@ -67,6 +69,67 @@ function formatDate(iso: string | null, withTime = false): string {
     ...(withTime ? { hour: "2-digit", minute: "2-digit" } : {}),
     timeZone: "America/Sao_Paulo",
   }).format(date);
+}
+
+/** Antes de aprovar: o que a ficha muda na qualificação jurídica (fonte dos documentos). */
+function QualificationSyncNotice({
+  preview,
+  kind,
+  firstName,
+}: {
+  preview: QualificationSyncPreview;
+  kind: RegistrationKind;
+  firstName: string;
+}) {
+  if (!preview.exists) {
+    if (kind !== "socio_servico") return null;
+    return (
+      <p className="rounded-xl border border-border/70 bg-card px-4 py-3 text-xs text-muted-foreground">
+        {firstName} ainda não tem qualificação jurídica. Ao aprovar, ela é criada com os dados da ficha; estado
+        civil e profissão ficam pendentes.
+      </p>
+    );
+  }
+  if (preview.changes.length === 0) {
+    return (
+      <p className="rounded-xl border border-border/70 bg-card px-4 py-3 text-xs text-muted-foreground">
+        A qualificação jurídica de {firstName} já tem o mesmo endereço, contato e RG da ficha. Aprovar não muda nada
+        nela.
+      </p>
+    );
+  }
+  return (
+    <section className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+      <div>
+        <h3 className="text-sm font-semibold text-foreground">Muda na qualificação jurídica</h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Ao aprovar, {preview.changes.length === 1 ? "este dado" : "estes dados"} da qualificação de {firstName},
+          usada nos documentos, {preview.changes.length === 1 ? "passa" : "passam"} a ser o que veio na ficha. Confira
+          antes; se algo estiver errado, corrija a ficha ou devolva para a pessoa.
+        </p>
+      </div>
+      <dl className="divide-y divide-amber-200/70 overflow-hidden rounded-lg border border-amber-200/70 bg-background">
+        {preview.changes.map((change) => (
+          <div key={change.column} className="grid gap-1 px-3 py-2 sm:grid-cols-[170px_1fr] sm:gap-3">
+            <dt className="text-xs text-muted-foreground sm:pt-0.5">{change.label}</dt>
+            <dd className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
+              {change.current ? (
+                <span className="break-words text-muted-foreground line-through">{change.current}</span>
+              ) : (
+                <span className="text-xs italic text-muted-foreground">vazio</span>
+              )}
+              <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" aria-label="passa a ser" />
+              {change.next ? (
+                <span className="break-words font-medium text-foreground">{change.next}</span>
+              ) : (
+                <span className="text-xs italic text-muted-foreground">vazio</span>
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
 }
 
 function useCopy() {
@@ -352,6 +415,14 @@ export function RegistrationReviewSheet({
                 </section>
               )}
 
+              {form.status === "recebida" && !editing && form.qualification_sync && (
+                <QualificationSyncNotice
+                  preview={form.qualification_sync}
+                  kind={form.employment_kind}
+                  firstName={firstName}
+                />
+              )}
+
               {submitted &&
                 (editing && draft ? (
                   <div className="space-y-3">
@@ -448,7 +519,7 @@ export function RegistrationReviewSheet({
                     {form.status === "recebida" && (
                       <Button type="button" className="gap-1.5" disabled={!!busy} onClick={() => run("approve", { action: "approve" })}>
                         {busy === "approve" ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-                        Aprovar ficha
+                        {form.qualification_sync?.changes.length ? "Aprovar e atualizar qualificação" : "Aprovar ficha"}
                       </Button>
                     )}
                   </>
