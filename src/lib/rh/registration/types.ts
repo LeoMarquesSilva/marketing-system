@@ -65,6 +65,67 @@ export function employmentTypeLabel(value: string | null | undefined, fallback: 
   return EMPLOYMENT_TYPE_LABEL[employmentTypeKey(value)] ?? REGISTRATION_KIND_LABEL[fallback];
 }
 
+/** O vínculo do VIOS manda; a ficha anterior só decide quando o VIOS não tem vínculo. */
+export function resolveRegistrationKind(
+  employmentType: string | null | undefined,
+  formKind: RegistrationKind | null | undefined
+): RegistrationKind {
+  const fromEmployee = registrationKindForEmploymentType(employmentType);
+  if (fromEmployee !== "geral" || !formKind) return fromEmployee;
+  return formKind;
+}
+
+// ─── Colaboradores (visão do RH) ─────────────────────────────────────────────
+
+/** Situação da ficha de quem já está no escritório. */
+export type EmployeeFichaStatus = "sem_envio" | "aguardando" | "devolvida" | "para_revisar" | "aprovada";
+
+export const EMPLOYEE_FICHA_STATUS_LABEL: Record<EmployeeFichaStatus, string> = {
+  sem_envio: "Não enviou",
+  aguardando: "Aguardando resposta",
+  devolvida: "Devolvida para ajuste",
+  para_revisar: "Para revisar",
+  aprovada: "Aprovada",
+};
+
+export function employeeFichaStatus(
+  form: { status: RegistrationStatus; reopen_note?: string | null } | null
+): EmployeeFichaStatus {
+  if (!form || form.status === "cancelada") return "sem_envio";
+  if (form.status === "recebida") return "para_revisar";
+  if (form.status === "aprovada") return "aprovada";
+  return form.reopen_note ? "devolvida" : "aguardando";
+}
+
+/** Linha da aba Colaboradores (sem os dados sensíveis da ficha). */
+export interface EmployeeRegistrationRow {
+  employeeId: string;
+  fullName: string;
+  email: string | null;
+  avatarUrl: string | null;
+  department: string | null;
+  position: string | null;
+  employmentType: string | null;
+  vinculoLabel: string;
+  kind: RegistrationKind;
+  isActive: boolean;
+  admissionDate: string | null;
+  formId: string | null;
+  formOrigin: RegistrationOrigin | null;
+  status: EmployeeFichaStatus;
+  submittedAt: string | null;
+  approvedAt: string | null;
+  requiredCount: number;
+  filledCount: number;
+  missingFields: RegistrationField[];
+}
+
+export interface EmployeeRegistrationDetail {
+  row: EmployeeRegistrationRow;
+  /** Melhor dado conhecido: ficha enviada, qualificação e cadastro do VIOS. */
+  answers: RegistrationAnswers;
+}
+
 export const REGISTRATION_STATUS_LABEL: Record<RegistrationStatus, string> = {
   pendente: "Aguardando resposta",
   recebida: "Recebida",

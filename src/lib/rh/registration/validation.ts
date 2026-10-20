@@ -4,6 +4,7 @@ import { isBrazilUf, joinUf, splitUf } from "./format";
 import {
   BLOOD_TYPE_OPTIONS,
   coerceRegistrationAnswers,
+  emptyRegistrationAnswers,
   DIETARY_NEEDS_DETAIL,
   DIETARY_NONE,
   DIETARY_OPTIONS,
@@ -286,4 +287,35 @@ export function missingRegistrationFields(
 ): RegistrationField[] {
   const errors = validateRegistrationAnswers(normalizeRegistrationAnswers(answers, kind), kind, now);
   return REGISTRATION_FIELD_ORDER.filter((field) => errors[field]);
+}
+
+/**
+ * Campos obrigatórios do vínculo: o que falta numa ficha em branco, mais o que
+ * passa a ser exigido pelas respostas (OAB de quem disse "sim", detalhe da
+ * restrição alimentar). Base do "x de y preenchidas".
+ */
+export function requiredRegistrationFields(
+  kind: RegistrationKind,
+  answers: RegistrationAnswers
+): RegistrationField[] {
+  const blank = { ...emptyRegistrationAnswers(), nationality: "" };
+  const conditional = {
+    ...blank,
+    hasOab: resolveHasOab(answers),
+    dietaryRestrictions: answers.dietaryRestrictions,
+  };
+  const fields = new Set([...missingRegistrationFields(blank, kind), ...missingRegistrationFields(conditional, kind)]);
+  return REGISTRATION_FIELD_ORDER.filter((field) => fields.has(field));
+}
+
+/** Quantos obrigatórios já estão preenchidos (para "x de y"). */
+export function registrationProgress(
+  answers: RegistrationAnswers,
+  kind: RegistrationKind,
+  now: Date = new Date()
+): { required: RegistrationField[]; missing: RegistrationField[]; filled: number } {
+  const missing = missingRegistrationFields(answers, kind, now);
+  const missingSet = new Set(missing);
+  const required = [...new Set([...requiredRegistrationFields(kind, answers), ...missing])];
+  return { required, missing, filled: required.filter((field) => !missingSet.has(field)).length };
 }

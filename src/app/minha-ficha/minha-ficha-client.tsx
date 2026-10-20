@@ -14,7 +14,6 @@ import {
 import styles from "@/components/rh/registration/ficha-publica.module.css";
 import { loginPathWithReturn } from "@/lib/login-redirect";
 import {
-  emptyRegistrationAnswers,
   SELF_REGISTRATION_PATH,
   type RegistrationAnswers,
   type RegistrationField,
@@ -25,7 +24,7 @@ import {
   firstErrorField,
   missingRegistrationFields,
   normalizeRegistrationAnswers,
-  resolveHasOab,
+  registrationProgress,
   validateRegistrationAnswers,
   type RegistrationErrors,
 } from "@/lib/rh/registration/validation";
@@ -69,21 +68,6 @@ function scrollToField(field: RegistrationField) {
   const wrapper = element?.closest("[data-field]") ?? element;
   wrapper?.scrollIntoView({ behavior: "smooth", block: "center" });
   window.setTimeout(() => element?.focus({ preventScroll: true }), 350);
-}
-
-/**
- * Campos obrigatórios do vínculo: o que falta numa ficha em branco, mais o que
- * passa a ser exigido pelas respostas (OAB de quem disse "sim", detalhe da
- * restrição alimentar).
- */
-function requiredFields(kind: RegistrationKind, answers: RegistrationAnswers): RegistrationField[] {
-  const blank = { ...emptyRegistrationAnswers(), nationality: "" };
-  const conditional = {
-    ...blank,
-    hasOab: resolveHasOab(answers),
-    dietaryRestrictions: answers.dietaryRestrictions,
-  };
-  return [...new Set([...missingRegistrationFields(blank, kind), ...missingRegistrationFields(conditional, kind)])];
 }
 
 async function fetchOwnRegistration(): Promise<Screen> {
@@ -160,11 +144,12 @@ export function MinhaFichaClient() {
   const payload = screen.kind === "form" ? screen.payload : null;
   const kind = payload?.kind ?? null;
 
-  const required = useMemo(() => (answers && kind ? requiredFields(kind, answers) : []), [answers, kind]);
-  const currentMissing = useMemo(
-    () => (answers && kind ? missingRegistrationFields(answers, kind) : []),
+  const progress = useMemo(
+    () => (answers && kind ? registrationProgress(answers, kind) : { required: [], missing: [], filled: 0 }),
     [answers, kind]
   );
+  const required = progress.required;
+  const currentMissing = progress.missing;
   const missingSet = useMemo(() => new Set(currentMissing), [currentMissing]);
   // No "só o que falta" a lista fica fixa (o que faltava ao abrir + o que o envio recusou),
   // para o campo não sumir enquanto a pessoa digita.
@@ -176,7 +161,7 @@ export function MinhaFichaClient() {
     [mode, initialMissing, errors]
   );
 
-  const filledCount = required.filter((field) => !missingSet.has(field)).length;
+  const filledCount = progress.filled;
   const percent = required.length ? Math.round((filledCount / required.length) * 100) : 100;
 
   async function handleSignOut() {

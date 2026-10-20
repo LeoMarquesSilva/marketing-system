@@ -1,8 +1,23 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, ClipboardList, Copy, Loader2, MessageCircle, Plus, Search, Sparkles, UserRoundPen } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  CircleCheck,
+  ClipboardCheck,
+  ClipboardList,
+  Copy,
+  Loader2,
+  MessageCircle,
+  Plus,
+  Search,
+  Sparkles,
+  UserPlus,
+  UserRoundPen,
+  Users,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -20,8 +35,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { DatePickerField } from "@/components/ui/date-picker-field";
+import { KpiCard } from "@/components/rh/kpi-card";
+import { ColaboradoresTab } from "@/components/rh/registration/colaboradores-tab";
+import { EmployeeRegistrationSheet } from "@/components/rh/registration/employee-registration-sheet";
 import { RegistrationReviewSheet } from "@/components/rh/registration/registration-review-sheet";
 import { RegistrationStatusBadge } from "@/components/rh/registration/registration-status-badge";
 import {
@@ -36,17 +55,19 @@ import {
   isRegistrationExpired,
   REGISTRATION_KIND_LABEL,
   REGISTRATION_KINDS,
+  type EmployeeRegistrationRow,
   type RegistrationDetail,
   type RegistrationEmployeeRef,
   type RegistrationKind,
   type RegistrationListItem,
-  type RegistrationOrigin,
 } from "@/lib/rh/registration/types";
 import { cn } from "@/lib/utils";
 
-type Filter = "abertas" | "pendente" | "recebida" | "sem_vinculo" | "concluidas" | "todas";
+type Tab = "colaboradores" | "admissoes";
 
-const FILTERS: { value: Filter; label: string }[] = [
+type AdmissionFilter = "abertas" | "pendente" | "recebida" | "sem_vinculo" | "concluidas" | "todas";
+
+const ADMISSION_FILTERS: { value: AdmissionFilter; label: string }[] = [
   { value: "abertas", label: "Em andamento" },
   { value: "pendente", label: "Aguardando resposta" },
   { value: "recebida", label: "Para revisar" },
@@ -55,16 +76,10 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: "todas", label: "Todas" },
 ];
 
-type OriginFilter = "todas" | RegistrationOrigin;
-
-const ORIGIN_FILTERS: { value: OriginFilter; label: string }[] = [
-  { value: "todas", label: "Todas" },
-  { value: "admissao", label: "Admissões" },
-  { value: "atualizacao", label: "Atualizações" },
-];
-
-function parseOrigin(value: string | null): OriginFilter {
-  return value === "admissao" || value === "atualizacao" ? value : "todas";
+/** ?aba=admissoes (e o antigo ?origem=admissao) abre direto nas admissões. */
+function parseTab(params: { get(name: string): string | null }): Tab {
+  if (params.get("aba") === "admissoes" || params.get("origem") === "admissao") return "admissoes";
+  return "colaboradores";
 }
 
 /** Concluída = aprovada e já copiada para a ficha do colaborador. */
@@ -72,7 +87,7 @@ function isDone(item: RegistrationListItem): boolean {
   return item.status === "aprovada" && !!item.employee;
 }
 
-function matchesFilter(item: RegistrationListItem, filter: Filter): boolean {
+function matchesFilter(item: RegistrationListItem, filter: AdmissionFilter): boolean {
   switch (filter) {
     case "abertas":
       return item.status !== "cancelada" && !isDone(item);
@@ -117,74 +132,82 @@ function sortKey(item: RegistrationListItem): number {
 
 export function FichasCadastraisClient({
   initialItems,
-  employees: initialEmployees,
+  initialEmployees,
 }: {
   initialItems: RegistrationListItem[];
-  employees: RegistrationEmployeeRef[];
+  initialEmployees: EmployeeRegistrationRow[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [items, setItems] = useState(initialItems);
-  const [employees, setEmployees] = useState(initialEmployees);
-  const [filter, setFilter] = useState<Filter>("abertas");
-  const [origin, setOrigin] = useState<OriginFilter>(parseOrigin(searchParams.get("origem")));
-  const [search, setSearch] = useState("");
+  const [employeeRows, setEmployeeRows] = useState(initialEmployees);
+  const [tab, setTab] = useState<Tab>(parseTab(searchParams));
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get("ficha"));
+  const [employeeSheetId, setEmployeeSheetId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [created, setCreated] = useState<RegistrationDetail | null>(null);
   const [selfUpdateOpen, setSelfUpdateOpen] = useState(false);
 
-  const originCounts = useMemo(
-    () => ({
-      todas: items.length,
-      admissao: items.filter((item) => item.origin === "admissao").length,
-      atualizacao: items.filter((item) => item.origin === "atualizacao").length,
-    }),
-    [items]
+  const admissions = useMemo(() => items.filter((item) => item.origin === "admissao"), [items]);
+  const activeRows = useMemo(() => employeeRows.filter((row) => row.isActive), [employeeRows]);
+
+  // Para o vínculo manual na revisão: ativos ainda sem ficha.
+  const linkableEmployees = useMemo<RegistrationEmployeeRef[]>(
+    () =>
+      activeRows
+        .filter((row) => !row.formId)
+        .map((row) => ({
+          id: row.employeeId,
+          full_name: row.fullName,
+          department: row.department,
+          position: row.position,
+          is_active: true,
+          employment_type: row.employmentType,
+        })),
+    [activeRows]
   );
 
-  // Cards e lista seguem a aba escolhida (admissões, atualizações ou todas).
-  const scoped = useMemo(
-    () => (origin === "todas" ? items : items.filter((item) => item.origin === origin)),
-    [items, origin]
+  const kpis = useMemo(() => {
+    const complete = activeRows.filter((row) => row.missingFields.length === 0).length;
+    return {
+      active: activeRows.length,
+      inactive: employeeRows.length - activeRows.length,
+      complete,
+      pending: activeRows.length - complete,
+      notSent: activeRows.filter((row) => row.status === "sem_envio").length,
+      toReview: items.filter((item) => item.status === "recebida").length,
+      admissionsOpen: admissions.filter((item) => item.status !== "cancelada" && !isDone(item)).length,
+    };
+  }, [activeRows, employeeRows.length, items, admissions]);
+
+  const pendingEmails = useMemo(
+    () =>
+      activeRows
+        .filter((row) => row.status === "sem_envio")
+        .map((row) => row.email)
+        .filter((value): value is string => !!value),
+    [activeRows]
   );
 
-  const counts = useMemo(
-    () => ({
-      pendente: scoped.filter((item) => item.status === "pendente").length,
-      recebida: scoped.filter((item) => item.status === "recebida").length,
-      semVinculo: scoped.filter((item) => matchesFilter(item, "sem_vinculo")).length,
-      concluidas: scoped.filter(isDone).length,
-    }),
-    [scoped]
-  );
-
-  const visible = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    return scoped
-      .filter((item) => matchesFilter(item, filter))
-      .filter((item) => {
-        if (!term) return true;
-        return [item.invitee_name, item.declared_name, item.invitee_personal_email, item.employee?.full_name]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(term));
-      })
-      .sort((a, b) => sortKey(a) - sortKey(b) || b.created_at.localeCompare(a.created_at));
-  }, [scoped, filter, search]);
+  const refreshEmployees = useCallback(async () => {
+    const response = await fetch("/api/rh/fichas-cadastrais/colaboradores", { cache: "no-store" }).catch(() => null);
+    if (!response?.ok) return;
+    const data = (await response.json().catch(() => ({}))) as { items?: EmployeeRegistrationRow[] };
+    if (data.items) setEmployeeRows(data.items);
+  }, []);
 
   function upsertItem(form: RegistrationDetail) {
     setItems((current) => {
       const exists = current.some((item) => item.id === form.id);
       return exists ? current.map((item) => (item.id === form.id ? form : item)) : [form, ...current];
     });
-    // Vínculo tira o colaborador da lista de vinculáveis (e desvínculo devolve na próxima carga).
-    if (form.employee) {
-      setEmployees((current) => current.filter((employee) => employee.id !== form.employee?.id));
-    }
+    // Aprovar, devolver ou vincular muda a situação do colaborador na outra aba.
+    void refreshEmployees();
   }
 
   function replaceParam(key: string, value: string | null) {
     const params = new URLSearchParams(searchParams.toString());
+    params.delete("origem");
     if (value) params.set(key, value);
     else params.delete(key);
     const query = params.toString();
@@ -196,9 +219,14 @@ export function FichasCadastraisClient({
     replaceParam("ficha", id);
   }
 
-  function chooseOrigin(next: OriginFilter) {
-    setOrigin(next);
-    replaceParam("origem", next === "todas" ? null : next);
+  function chooseTab(next: Tab) {
+    setTab(next);
+    replaceParam("aba", next === "colaboradores" ? null : next);
+  }
+
+  function openEmployee(row: EmployeeRegistrationRow) {
+    if (row.formId) openForm(row.formId);
+    else setEmployeeSheetId(row.employeeId);
   }
 
   return (
@@ -207,9 +235,8 @@ export function FichasCadastraisClient({
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-foreground">Fichas cadastrais</h2>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Admissões: quem está entrando responde a ficha por um link, sem login, e você vincula ao colaborador
-            quando o VIOS sincronizar. Atualizações: quem já está no escritório completa a própria ficha com login.
-            As duas passam pela sua revisão antes de ir para o cadastro.
+            Os dados cadastrais da equipe: quem já atualizou a ficha, o que falta e as admissões em andamento. Tudo
+            passa pela revisão de Pessoas e Cultura antes de ir para o cadastro.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -231,159 +258,76 @@ export function FichasCadastraisClient({
         </div>
       </div>
 
-      <div
-        className="inline-flex w-full gap-1 overflow-x-auto rounded-xl border border-[#dce9eb] bg-card p-1.5 shadow-[0_4px_16px_rgba(3,32,47,0.05)] sm:w-auto"
-        role="group"
-        aria-label="Origem da ficha"
-      >
-        {ORIGIN_FILTERS.map((option) => (
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <KpiCard
+          icon={Users}
+          label="Colaboradores ativos"
+          value={kpis.active}
+          hint={kpis.inactive ? `${kpis.inactive} ex-colaborador${kpis.inactive === 1 ? "" : "es"} na base` : "Base do VIOS"}
+        />
+        <KpiCard
+          icon={CircleCheck}
+          label="Fichas completas"
+          value={kpis.complete}
+          hint={kpis.active ? `${Math.round((kpis.complete / kpis.active) * 100)}% da equipe ativa` : "Nenhum colaborador ativo"}
+        />
+        <KpiCard
+          icon={ClipboardList}
+          label="Com pendências"
+          value={kpis.pending}
+          hint={`${kpis.notSent} ainda não enviaram a ficha`}
+          tone={kpis.pending ? "warning" : "neutral"}
+        />
+        <KpiCard
+          icon={ClipboardCheck}
+          label="Para revisar"
+          value={kpis.toReview}
+          hint="Enviadas, esperando sua aprovação"
+          tone={kpis.toReview ? "warning" : "neutral"}
+        />
+        <KpiCard
+          icon={UserPlus}
+          label="Admissões em andamento"
+          value={kpis.admissionsOpen}
+          hint="Links enviados a quem está entrando"
+        />
+      </div>
+
+      <div className="flex gap-1 border-b">
+        {(
+          [
+            ["colaboradores", "Colaboradores", kpis.active],
+            ["admissoes", "Admissões", kpis.admissionsOpen],
+          ] as Array<[Tab, string, number]>
+        ).map(([key, label, count]) => (
           <button
-            key={option.value}
+            key={key}
             type="button"
-            aria-pressed={origin === option.value}
-            onClick={() => chooseOrigin(option.value)}
+            onClick={() => chooseTab(key)}
             className={cn(
-              "flex h-9 shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-medium outline-none transition-all focus-visible:ring-2 focus-visible:ring-[#47cdd0]",
-              origin === option.value
-                ? "bg-[#04202f] text-white shadow-sm"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+              "-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+              tab === key
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
             )}
           >
-            {option.label}
-            <span
-              className={cn(
-                "rounded-full px-1.5 text-xs tabular-nums",
-                origin === option.value ? "bg-white/15 text-white" : "bg-muted text-muted-foreground"
-              )}
-            >
-              {originCounts[option.value]}
-            </span>
+            {label}
+            <span className="rounded-full bg-muted px-1.5 text-xs tabular-nums text-muted-foreground">{count}</span>
           </button>
         ))}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {[
-          { key: "pendente" as const, label: "Aguardando resposta", value: counts.pendente, tone: "border-amber-200 bg-amber-50/60 text-amber-950" },
-          { key: "recebida" as const, label: "Para revisar", value: counts.recebida, tone: "border-sky-200 bg-sky-50/60 text-sky-950" },
-          { key: "sem_vinculo" as const, label: "Sem colaborador vinculado", value: counts.semVinculo, tone: "border-[#dce9eb] bg-card text-foreground" },
-          { key: "concluidas" as const, label: "Concluídas", value: counts.concluidas, tone: "border-emerald-200 bg-emerald-50/60 text-emerald-950" },
-        ].map((card) => (
-          <button
-            key={card.key}
-            type="button"
-            onClick={() => setFilter(card.key)}
-            className={cn(
-              "rounded-xl border p-4 text-left shadow-sm transition hover:shadow-md",
-              card.tone,
-              filter === card.key && "ring-2 ring-primary/40"
-            )}
-          >
-            <p className="text-xs font-medium opacity-80">{card.label}</p>
-            <p className="mt-1 text-2xl font-bold">{card.value}</p>
-          </button>
-        ))}
-      </div>
-
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input className="pl-9" placeholder="Buscar por nome ou e-mail…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
-        <Select value={filter} onValueChange={(value) => setFilter(value as Filter)}>
-          <SelectTrigger className="w-full sm:w-56">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {FILTERS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {visible.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed p-12 text-center">
-          <ClipboardList className="size-8 text-muted-foreground" />
-          <div>
-            <p className="font-medium text-foreground">
-              {scoped.length > 0
-                ? "Nenhuma ficha neste filtro"
-                : origin === "atualizacao"
-                  ? "Nenhuma atualização recebida ainda"
-                  : origin === "admissao"
-                    ? "Nenhuma admissão ainda"
-                    : "Nenhuma ficha ainda"}
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {scoped.length > 0
-                ? "Troque o filtro ou a busca para ver outras fichas."
-                : origin === "atualizacao"
-                  ? "Envie o link de atualização cadastral para a equipe; cada envio aparece aqui para revisão."
-                  : "Crie uma admissão e envie o link para a pessoa que vai entrar."}
-            </p>
-          </div>
-          {scoped.length === 0 && origin === "atualizacao" && (
-            <Button type="button" variant="outline" className="gap-2" onClick={() => setSelfUpdateOpen(true)}>
-              <UserRoundPen className="size-4" />
-              Enviar atualização cadastral
-            </Button>
-          )}
-        </div>
+      {tab === "colaboradores" ? (
+        <ColaboradoresTab rows={employeeRows} onOpenEmployee={openEmployee} />
       ) : (
-        <div className="overflow-hidden rounded-xl border border-[#dce9eb] bg-card shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead>
-                <tr className="border-b border-[#eef4f5] bg-[#f7fbfc] text-left text-xs font-medium text-muted-foreground">
-                  <th className="px-4 py-3">Pessoa</th>
-                  <th className="px-4 py-3">Vínculo</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Colaborador (VIOS)</th>
-                  <th className="px-4 py-3">Próximo passo</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((item) => (
-                  <tr
-                    key={item.id}
-                    className="cursor-pointer border-b border-[#eef4f5] transition-colors last:border-0 hover:bg-[#f7fbfc]"
-                    onClick={() => openForm(item.id)}
-                  >
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-foreground">{item.declared_name ?? item.invitee_name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {item.origin === "atualizacao"
-                          ? `Atualização pelo colaborador · ${formatShortDate(item.submitted_at ?? item.created_at)}`
-                          : `Convite ${formatShortDate(item.created_at)}`}
-                        {item.expected_admission_date && ` · admissão ${formatShortDate(item.expected_admission_date)}`}
-                      </p>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{REGISTRATION_KIND_LABEL[item.employment_kind]}</td>
-                    <td className="px-4 py-3">
-                      <RegistrationStatusBadge status={item.status} expired={isRegistrationExpired(item.expires_at)} />
-                    </td>
-                    <td className="px-4 py-3">
-                      {item.employee ? (
-                        <span className="text-foreground">{item.employee.full_name}</span>
-                      ) : item.suggestions[0] && item.status !== "pendente" ? (
-                        <span className="inline-flex items-center gap-1 text-sky-800">
-                          <Sparkles className="size-3.5" />
-                          {item.suggestions[0].fullName}?
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{nextStep(item)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <AdmissoesTab
+          items={admissions}
+          onOpen={(id) => openForm(id)}
+          onCreate={() => {
+            setCreated(null);
+            setCreateOpen(true);
+          }}
+        />
       )}
 
       <CreateRegistrationDialog
@@ -396,14 +340,164 @@ export function FichasCadastraisClient({
         }}
       />
 
-      <SelfUpdateDialog open={selfUpdateOpen} onOpenChange={setSelfUpdateOpen} pending={employees} />
+      <SelfUpdateDialog open={selfUpdateOpen} onOpenChange={setSelfUpdateOpen} pendingEmails={pendingEmails} />
+
+      <EmployeeRegistrationSheet employeeId={employeeSheetId} onOpenChange={(open) => !open && setEmployeeSheetId(null)} />
 
       <RegistrationReviewSheet
         formId={selectedId}
-        employees={employees}
+        employees={linkableEmployees}
         onOpenChange={(open) => !open && openForm(null)}
         onChanged={upsertItem}
       />
+    </div>
+  );
+}
+
+/** Links de admissão: quem está entrando responde sem login; a RH vincula ao colaborador do VIOS. */
+function AdmissoesTab({
+  items,
+  onOpen,
+  onCreate,
+}: {
+  items: RegistrationListItem[];
+  onOpen: (id: string) => void;
+  onCreate: () => void;
+}) {
+  const [filter, setFilter] = useState<AdmissionFilter>("abertas");
+  const [search, setSearch] = useState("");
+
+  const counts = useMemo(
+    () =>
+      Object.fromEntries(
+        ADMISSION_FILTERS.map((option) => [option.value, items.filter((item) => matchesFilter(item, option.value)).length])
+      ) as Record<AdmissionFilter, number>,
+    [items]
+  );
+
+  const visible = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return items
+      .filter((item) => matchesFilter(item, filter))
+      .filter((item) => {
+        if (!term) return true;
+        return [item.invitee_name, item.declared_name, item.invitee_personal_email, item.employee?.full_name]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(term));
+      })
+      .sort((a, b) => sortKey(a) - sortKey(b) || b.created_at.localeCompare(a.created_at));
+  }, [items, filter, search]);
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-3">
+        <div className="relative min-w-[200px] sm:max-w-xs">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por nome ou e-mail…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="h-9 pl-9 text-sm"
+          />
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {ADMISSION_FILTERS.map((option) => (
+            <Button
+              key={option.value}
+              type="button"
+              size="sm"
+              variant={filter === option.value ? "default" : "outline"}
+              className="h-8 gap-1.5 rounded-full px-3 text-xs"
+              onClick={() => setFilter(option.value)}
+            >
+              {option.label}
+              <span className="tabular-nums opacity-70">{counts[option.value]}</span>
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+        <div className="overflow-x-auto">
+          <Table className="min-w-[760px] table-fixed">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[28%]">Pessoa</TableHead>
+                <TableHead className="w-[14%]">Vínculo</TableHead>
+                <TableHead className="w-[16%]">Status</TableHead>
+                <TableHead className="w-[20%]">Colaborador (VIOS)</TableHead>
+                <TableHead className="w-[22%]">Próximo passo</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {visible.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="py-12 text-center text-sm text-muted-foreground">
+                    {items.length === 0 ? (
+                      <span className="inline-flex flex-col items-center gap-3">
+                        Nenhuma admissão ainda. Crie uma e envie o link para quem vai entrar.
+                        <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={onCreate}>
+                          <Plus className="size-3.5" />
+                          Nova admissão
+                        </Button>
+                      </span>
+                    ) : (
+                      "Nenhuma admissão neste filtro."
+                    )}
+                  </TableCell>
+                </TableRow>
+              )}
+              {visible.map((item) => (
+                <TableRow
+                  key={item.id}
+                  role="button"
+                  tabIndex={0}
+                  className="cursor-pointer transition-colors hover:bg-muted/40"
+                  onClick={() => onOpen(item.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onOpen(item.id);
+                    }
+                  }}
+                >
+                  <TableCell>
+                    <span className="block truncate font-medium text-foreground">{item.declared_name ?? item.invitee_name}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      Convite {formatShortDate(item.created_at)}
+                      {item.expected_admission_date && ` · admissão ${formatShortDate(item.expected_admission_date)}`}
+                    </span>
+                  </TableCell>
+                  <TableCell className="truncate text-sm text-muted-foreground">
+                    {REGISTRATION_KIND_LABEL[item.employment_kind]}
+                  </TableCell>
+                  <TableCell>
+                    <RegistrationStatusBadge status={item.status} expired={isRegistrationExpired(item.expires_at)} />
+                  </TableCell>
+                  <TableCell className="truncate text-sm">
+                    {item.employee ? (
+                      <span className="text-foreground">{item.employee.full_name}</span>
+                    ) : item.suggestions[0] && item.status !== "pendente" ? (
+                      <span className="inline-flex items-center gap-1 text-sky-800">
+                        <Sparkles className="size-3.5" />
+                        {item.suggestions[0].fullName}?
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    <span className="inline-flex items-center gap-1">
+                      {nextStep(item)}
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[#285f7a]" />
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
     </div>
   );
 }
@@ -579,19 +673,21 @@ function CreateRegistrationDialog({
 }
 
 /**
- * Campanha de atualização: um link só (com login) para todo o escritório. Os
- * nomes listados são colaboradores ativos ainda sem ficha vinculada.
+ * Campanha de atualização: um link só (com login) para toda a equipe. O
+ * acompanhamento de quem já enviou fica na aba Colaboradores.
  */
 function SelfUpdateDialog({
   open,
   onOpenChange,
-  pending,
+  pendingEmails,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  pending: RegistrationEmployeeRef[];
+  /** E-mails corporativos de quem ainda não enviou a ficha. */
+  pendingEmails: string[];
 }) {
   const [copied, setCopied] = useState<string | null>(null);
+  const message = buildSelfUpdateMessage();
 
   async function copy(key: string, value: string) {
     try {
@@ -609,61 +705,59 @@ function SelfUpdateDialog({
         <DialogHeader>
           <DialogTitle>Atualização cadastral</DialogTitle>
           <DialogDescription>
-            Um link só para todo o escritório: cada pessoa entra com o próprio login e vê a ficha do seu vínculo, já
-            preenchida com o que temos, destacando o que falta. O envio aparece aqui como &quot;Para revisar&quot;.
+            Um link para toda a equipe. Cada pessoa entra com o próprio login e vê a ficha do seu vínculo, já com o que
+            temos, marcando o que falta.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
-          <div className="flex gap-2">
-            <Input readOnly value={selfRegistrationUrl()} className="font-mono text-xs" onFocus={(e) => e.currentTarget.select()} />
-            <Button type="button" variant="outline" className="shrink-0 gap-1.5" onClick={() => copy("link", selfRegistrationUrl())}>
-              {copied === "link" ? <Check className="size-4" /> : <Copy className="size-4" />}
-              {copied === "link" ? "Copiado" : "Copiar"}
-            </Button>
-          </div>
-          <div className="whitespace-pre-line rounded-lg bg-muted/60 p-3 text-xs leading-5 text-foreground">
-            {buildSelfUpdateMessage()}
-          </div>
-          <Button type="button" variant="secondary" size="sm" className="gap-1.5" onClick={() => copy("msg", buildSelfUpdateMessage())}>
-            {copied === "msg" ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-            {copied === "msg" ? "Mensagem copiada" : "Copiar mensagem para todos"}
-          </Button>
 
-          <div className="space-y-2 border-t pt-4">
-            <p className="text-sm font-medium text-foreground">
-              Ainda sem ficha{" "}
-              <span className="font-normal text-muted-foreground">
-                ({pending.length} {pending.length === 1 ? "colaborador ativo" : "colaboradores ativos"})
-              </span>
-            </p>
-            {pending.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Todo mundo já enviou a ficha.</p>
-            ) : (
-              <ul className="max-h-64 divide-y overflow-y-auto rounded-lg border">
-                {pending.map((employee) => (
-                  <li key={employee.id} className="flex items-center justify-between gap-3 px-3 py-2">
-                    <div className="min-w-0 text-sm">
-                      <p className="truncate font-medium text-foreground">{employee.full_name}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {[employee.department, employee.employment_type ?? "Sem vínculo no VIOS"].filter(Boolean).join(" · ")}
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="shrink-0 gap-1.5"
-                      onClick={() => copy(employee.id, buildSelfUpdateMessage(employee.full_name))}
-                    >
-                      {copied === employee.id ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                      {copied === employee.id ? "Copiada" : "Mensagem"}
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
+        <div className="space-y-5">
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground">Link</p>
+            <div className="flex gap-2">
+              <Input
+                readOnly
+                value={selfRegistrationUrl()}
+                className="h-9 font-mono text-xs"
+                onFocus={(event) => event.currentTarget.select()}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 shrink-0 gap-1.5"
+                onClick={() => copy("link", selfRegistrationUrl())}
+              >
+                {copied === "link" ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                {copied === "link" ? "Copiado" : "Copiar"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground">Mensagem pronta</p>
+            <div className="whitespace-pre-line rounded-lg border bg-muted/40 p-3 text-xs leading-5 text-foreground">
+              {message}
+            </div>
           </div>
         </div>
+
+        <DialogFooter className="gap-2 sm:justify-between sm:gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-1.5"
+            disabled={pendingEmails.length === 0}
+            onClick={() => copy("emails", pendingEmails.join("; "))}
+            title="Para colar no Outlook (Cco)"
+          >
+            {copied === "emails" ? <Check className="size-4" /> : <Copy className="size-4" />}
+            {copied === "emails" ? "E-mails copiados" : `E-mails de quem não enviou (${pendingEmails.length})`}
+          </Button>
+          <Button type="button" className="gap-1.5" onClick={() => copy("msg", message)}>
+            {copied === "msg" ? <Check className="size-4" /> : <MessageCircle className="size-4" />}
+            {copied === "msg" ? "Mensagem copiada" : "Copiar mensagem"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

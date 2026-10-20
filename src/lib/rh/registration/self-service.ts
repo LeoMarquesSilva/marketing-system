@@ -17,7 +17,7 @@ import {
 } from "./self-prefill";
 import {
   employmentTypeLabel,
-  registrationKindForEmploymentType,
+  resolveRegistrationKind,
   type RegistrationAnswers,
   type RegistrationKind,
   type RegistrationStatus,
@@ -94,11 +94,8 @@ async function loadSelfContext(admin: SupabaseClient): Promise<SelfContext | nul
   return { profileId: profile.id as string, employee, form: (form as SelfFormRow | null) ?? null };
 }
 
-/** O vínculo do VIOS manda; a ficha anterior só decide quando o VIOS não tem vínculo. */
 function resolveKind(employee: EmployeeRow, form: SelfFormRow | null): RegistrationKind {
-  const fromEmployee = registrationKindForEmploymentType(employee.employment_type);
-  if (fromEmployee !== "geral" || !form) return fromEmployee;
-  return form.employment_kind;
+  return resolveRegistrationKind(employee.employment_type, form?.employment_kind);
 }
 
 export type SelfRegistrationState =

@@ -14,14 +14,13 @@ import {
   Search,
   Trash2,
   UserCheck,
-  Users,
   Wifi,
   WifiOff,
   X,
 } from "lucide-react";
 import { useFeriasRealtime } from "@/hooks/use-ferias-realtime";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { KpiCard } from "@/components/rh/kpi-card";
 import {
   Dialog,
   DialogContent,
@@ -135,40 +134,6 @@ function recessApplicationHint(item: CompanyRecessWithStatus): string {
   return `${application.pending} elegível(is) ainda sem lançamento`;
 }
 
-function KpiCard({
-  icon: Icon,
-  label,
-  value,
-  hint,
-  tone = "neutral",
-}: {
-  icon: typeof Users;
-  label: string;
-  value: string | number;
-  hint: string;
-  tone?: "neutral" | "warning" | "danger";
-}) {
-  const toneClass =
-    tone === "danger"
-      ? "text-red-600"
-      : tone === "warning"
-        ? "text-amber-600"
-        : "text-[#285f7a]";
-  return (
-    <Card className="gap-0 py-4">
-      <CardContent className="flex items-start gap-3 px-4">
-        <span className={cn("mt-0.5 rounded-lg bg-[#e8f8f8] p-2.5", toneClass)}>
-          <Icon className="h-4 w-4" />
-        </span>
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-muted-foreground">{label}</p>
-          <p className={cn("mt-0.5 text-2xl font-semibold tracking-tight", toneClass)}>{value}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 export function FeriasClient({
   employees,
