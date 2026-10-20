@@ -51,20 +51,27 @@ export function HrNotificationsBell({ className }: { className?: string }) {
             )}
           </button>
         </PopoverTrigger>
-        <PopoverContent align="start" side="right" className="p-3">
-          <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <PopoverContent
+          align="start"
+          side="right"
+          collisionPadding={12}
+          className="flex max-h-[min(80dvh,36rem)] w-80 flex-col p-3"
+        >
+          <p className="mb-2 shrink-0 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Atualizações de colaboradores
           </p>
-          <HrNotificationsList
-            notifications={notifications}
-            orgChartAdjustments={orgChartAdjustments}
-            onAction={(employeeId) => {
-              setOpen(false);
-              setEditEmployeeId(employeeId);
-            }}
-            onNavigate={() => setOpen(false)}
-            onChanged={() => void refetch()}
-          />
+          <div className="-mx-1 min-h-0 overflow-y-auto px-1">
+            <HrNotificationsList
+              notifications={notifications}
+              orgChartAdjustments={orgChartAdjustments}
+              onAction={(employeeId) => {
+                setOpen(false);
+                setEditEmployeeId(employeeId);
+              }}
+              onNavigate={() => setOpen(false)}
+              onChanged={() => void refetch()}
+            />
+          </div>
         </PopoverContent>
       </Popover>
 

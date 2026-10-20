@@ -75,16 +75,23 @@ async function downloadExport(employeeIds: string[]): Promise<string | null> {
  * Todos os colaboradores com a situação da ficha: quem não enviou, quem está
  * em revisão, o que falta. É também onde o RH exporta os dados cadastrais.
  */
+export function isEmployeeFichaStatus(value: string | null): value is EmployeeFichaStatus {
+  return !!value && (STATUS_ORDER as string[]).includes(value);
+}
+
 export function ColaboradoresTab({
   rows,
+  initialStatus = "all",
   onOpenEmployee,
 }: {
   rows: EmployeeRegistrationRow[];
+  /** Filtro vindo do link (ex.: "Ver todas para revisar" no aviso do RH). */
+  initialStatus?: StatusFilter;
   /** Linha clicada: abre a ficha enviada (se houver) ou o painel do colaborador. */
   onOpenEmployee: (row: EmployeeRegistrationRow) => void;
 }) {
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<StatusFilter>("all");
+  const [status, setStatus] = useState<StatusFilter>(initialStatus);
   const [situation, setSituation] = useState<SituationFilter>("ativos");
   const [fill, setFill] = useState<FillFilter>("all");
   const [vinculo, setVinculo] = useState("all");

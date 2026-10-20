@@ -39,7 +39,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { PhoneInput } from "@/components/ui/phone-input";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import { KpiCard } from "@/components/rh/kpi-card";
-import { ColaboradoresTab } from "@/components/rh/registration/colaboradores-tab";
+import { ColaboradoresTab, isEmployeeFichaStatus } from "@/components/rh/registration/colaboradores-tab";
 import { EmployeeRegistrationSheet } from "@/components/rh/registration/employee-registration-sheet";
 import { RegistrationReviewSheet } from "@/components/rh/registration/registration-review-sheet";
 import { RegistrationStatusBadge } from "@/components/rh/registration/registration-status-badge";
@@ -142,6 +142,15 @@ export function FichasCadastraisClient({
   const [items, setItems] = useState(initialItems);
   const [employeeRows, setEmployeeRows] = useState(initialEmployees);
   const [tab, setTab] = useState<Tab>(parseTab(searchParams));
+  const statusParam = searchParams.get("ficha_status");
+  const initialStatus = isEmployeeFichaStatus(statusParam) ? statusParam : "all";
+  // "Ver todas para revisar" no aviso do RH pode chegar com a tela já aberta:
+  // ao mudar o filtro do link, volta para Colaboradores.
+  const [lastStatusParam, setLastStatusParam] = useState(statusParam);
+  if (lastStatusParam !== statusParam) {
+    setLastStatusParam(statusParam);
+    if (statusParam) setTab("colaboradores");
+  }
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get("ficha"));
   const [employeeSheetId, setEmployeeSheetId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -318,7 +327,12 @@ export function FichasCadastraisClient({
       </div>
 
       {tab === "colaboradores" ? (
-        <ColaboradoresTab rows={employeeRows} onOpenEmployee={openEmployee} />
+        <ColaboradoresTab
+          key={initialStatus}
+          rows={employeeRows}
+          initialStatus={initialStatus}
+          onOpenEmployee={openEmployee}
+        />
       ) : (
         <AdmissoesTab
           items={admissions}
