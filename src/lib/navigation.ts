@@ -274,8 +274,9 @@ export const NAV_FRONTS: NavFront[] = [
       },
       {
         id: "colaboradores",
-        label: "Cadastro de colaboradores",
-        shortLabel: "Equipe",
+        // Fichas de admissão, atualização cadastral e qualificação jurídica.
+        label: "Dados cadastrais",
+        shortLabel: "Cadastro",
         icon: IdCard,
         pages: [
           { href: "/rh/qualificacoes", label: "Qualificações" },

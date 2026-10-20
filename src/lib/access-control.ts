@@ -49,7 +49,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/usuarios", label: "Usuários" },
   { key: "/custos-projetos", label: "Custos de projetos" },
   { key: "/icp", label: "ICP (cliente ideal)", manualOnly: true },
-  { key: "/rh", label: "RH (férias, cadastro de colaboradores e organograma)", manualOnly: true },
+  { key: "/rh", label: "RH (férias, dados cadastrais e organograma)", manualOnly: true },
   { key: "/admin", label: "Configurações", admin: true },
 ];
 

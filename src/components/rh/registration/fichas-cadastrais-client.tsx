@@ -40,6 +40,7 @@ import {
   type RegistrationEmployeeRef,
   type RegistrationKind,
   type RegistrationListItem,
+  type RegistrationOrigin,
 } from "@/lib/rh/registration/types";
 import { cn } from "@/lib/utils";
 
@@ -53,6 +54,18 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: "concluidas", label: "Concluídas" },
   { value: "todas", label: "Todas" },
 ];
+
+type OriginFilter = "todas" | RegistrationOrigin;
+
+const ORIGIN_FILTERS: { value: OriginFilter; label: string }[] = [
+  { value: "todas", label: "Todas" },
+  { value: "admissao", label: "Admissões" },
+  { value: "atualizacao", label: "Atualizações" },
+];
+
+function parseOrigin(value: string | null): OriginFilter {
+  return value === "admissao" || value === "atualizacao" ? value : "todas";
+}
 
 /** Concluída = aprovada e já copiada para a ficha do colaborador. */
 function isDone(item: RegistrationListItem): boolean {
@@ -114,25 +127,41 @@ export function FichasCadastraisClient({
   const [items, setItems] = useState(initialItems);
   const [employees, setEmployees] = useState(initialEmployees);
   const [filter, setFilter] = useState<Filter>("abertas");
+  const [origin, setOrigin] = useState<OriginFilter>(parseOrigin(searchParams.get("origem")));
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get("ficha"));
   const [createOpen, setCreateOpen] = useState(false);
   const [created, setCreated] = useState<RegistrationDetail | null>(null);
   const [selfUpdateOpen, setSelfUpdateOpen] = useState(false);
 
-  const counts = useMemo(
+  const originCounts = useMemo(
     () => ({
-      pendente: items.filter((item) => item.status === "pendente").length,
-      recebida: items.filter((item) => item.status === "recebida").length,
-      semVinculo: items.filter((item) => matchesFilter(item, "sem_vinculo")).length,
-      concluidas: items.filter(isDone).length,
+      todas: items.length,
+      admissao: items.filter((item) => item.origin === "admissao").length,
+      atualizacao: items.filter((item) => item.origin === "atualizacao").length,
     }),
     [items]
   );
 
+  // Cards e lista seguem a aba escolhida (admissões, atualizações ou todas).
+  const scoped = useMemo(
+    () => (origin === "todas" ? items : items.filter((item) => item.origin === origin)),
+    [items, origin]
+  );
+
+  const counts = useMemo(
+    () => ({
+      pendente: scoped.filter((item) => item.status === "pendente").length,
+      recebida: scoped.filter((item) => item.status === "recebida").length,
+      semVinculo: scoped.filter((item) => matchesFilter(item, "sem_vinculo")).length,
+      concluidas: scoped.filter(isDone).length,
+    }),
+    [scoped]
+  );
+
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return items
+    return scoped
       .filter((item) => matchesFilter(item, filter))
       .filter((item) => {
         if (!term) return true;
@@ -141,7 +170,7 @@ export function FichasCadastraisClient({
           .some((value) => String(value).toLowerCase().includes(term));
       })
       .sort((a, b) => sortKey(a) - sortKey(b) || b.created_at.localeCompare(a.created_at));
-  }, [items, filter, search]);
+  }, [scoped, filter, search]);
 
   function upsertItem(form: RegistrationDetail) {
     setItems((current) => {
@@ -154,13 +183,22 @@ export function FichasCadastraisClient({
     }
   }
 
-  function openForm(id: string | null) {
-    setSelectedId(id);
+  function replaceParam(key: string, value: string | null) {
     const params = new URLSearchParams(searchParams.toString());
-    if (id) params.set("ficha", id);
-    else params.delete("ficha");
+    if (value) params.set(key, value);
+    else params.delete(key);
     const query = params.toString();
     router.replace(query ? `?${query}` : "?", { scroll: false });
+  }
+
+  function openForm(id: string | null) {
+    setSelectedId(id);
+    replaceParam("ficha", id);
+  }
+
+  function chooseOrigin(next: OriginFilter) {
+    setOrigin(next);
+    replaceParam("origem", next === "todas" ? null : next);
   }
 
   return (
@@ -169,9 +207,9 @@ export function FichasCadastraisClient({
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-foreground">Fichas cadastrais</h2>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Envie o link da ficha para quem está entrando. A pessoa responde sem login; depois que o VIOS
-            sincronizar a admissão, você vincula a ficha ao colaborador e os dados vão para o cadastro. Quem já
-            está no escritório atualiza a própria ficha com login, em Atualização cadastral.
+            Admissões: quem está entrando responde a ficha por um link, sem login, e você vincula ao colaborador
+            quando o VIOS sincronizar. Atualizações: quem já está no escritório completa a própria ficha com login.
+            As duas passam pela sua revisão antes de ir para o cadastro.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -188,9 +226,40 @@ export function FichasCadastraisClient({
             }}
           >
             <Plus className="size-4" />
-            Nova ficha
+            Nova admissão
           </Button>
         </div>
+      </div>
+
+      <div
+        className="inline-flex w-full gap-1 overflow-x-auto rounded-xl border border-[#dce9eb] bg-card p-1.5 shadow-[0_4px_16px_rgba(3,32,47,0.05)] sm:w-auto"
+        role="group"
+        aria-label="Origem da ficha"
+      >
+        {ORIGIN_FILTERS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={origin === option.value}
+            onClick={() => chooseOrigin(option.value)}
+            className={cn(
+              "flex h-9 shrink-0 items-center gap-2 rounded-lg px-4 text-sm font-medium outline-none transition-all focus-visible:ring-2 focus-visible:ring-[#47cdd0]",
+              origin === option.value
+                ? "bg-[#04202f] text-white shadow-sm"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            )}
+          >
+            {option.label}
+            <span
+              className={cn(
+                "rounded-full px-1.5 text-xs tabular-nums",
+                origin === option.value ? "bg-white/15 text-white" : "bg-muted text-muted-foreground"
+              )}
+            >
+              {originCounts[option.value]}
+            </span>
+          </button>
+        ))}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -240,14 +309,28 @@ export function FichasCadastraisClient({
           <ClipboardList className="size-8 text-muted-foreground" />
           <div>
             <p className="font-medium text-foreground">
-              {items.length === 0 ? "Nenhuma ficha enviada ainda" : "Nenhuma ficha neste filtro"}
+              {scoped.length > 0
+                ? "Nenhuma ficha neste filtro"
+                : origin === "atualizacao"
+                  ? "Nenhuma atualização recebida ainda"
+                  : origin === "admissao"
+                    ? "Nenhuma admissão ainda"
+                    : "Nenhuma ficha ainda"}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              {items.length === 0
-                ? "Crie a primeira ficha e envie o link para a pessoa que vai entrar."
-                : "Troque o filtro ou a busca para ver outras fichas."}
+              {scoped.length > 0
+                ? "Troque o filtro ou a busca para ver outras fichas."
+                : origin === "atualizacao"
+                  ? "Envie o link de atualização cadastral para a equipe; cada envio aparece aqui para revisão."
+                  : "Crie uma admissão e envie o link para a pessoa que vai entrar."}
             </p>
           </div>
+          {scoped.length === 0 && origin === "atualizacao" && (
+            <Button type="button" variant="outline" className="gap-2" onClick={() => setSelfUpdateOpen(true)}>
+              <UserRoundPen className="size-4" />
+              Enviar atualização cadastral
+            </Button>
+          )}
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-[#dce9eb] bg-card shadow-sm">
@@ -393,7 +476,7 @@ function CreateRegistrationDialog({
         {created ? (
           <>
             <DialogHeader>
-              <DialogTitle>Ficha criada</DialogTitle>
+              <DialogTitle>Admissão criada</DialogTitle>
               <DialogDescription>
                 Envie o link para {created.invitee_name.split(" ")[0]}. Ele vale por 30 dias e só funciona até a
                 ficha ser enviada.
@@ -427,7 +510,7 @@ function CreateRegistrationDialog({
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>Nova ficha cadastral</DialogTitle>
+              <DialogTitle>Nova admissão</DialogTitle>
               <DialogDescription>
                 O vínculo define os campos da ficha. Nome, e-mail e telefone já chegam preenchidos para a pessoa
                 confirmar.
