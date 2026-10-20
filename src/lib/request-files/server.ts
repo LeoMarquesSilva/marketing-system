@@ -2,7 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getTitleTag } from "@/lib/planner-title-tag";
-import { REQUEST_FILES_BUCKET, isImageContentType } from "./domain";
+import { REQUEST_FILES_BUCKET, extractPostingSteps, isImageContentType, type PostingStep } from "./domain";
 
 const SIGNED_URL_SECONDS = 6 * 60 * 60;
 
@@ -33,6 +33,10 @@ export interface DeliveryPiece {
   postedOn: string | null;
   status: DeliveryPieceStatus;
   caption: string | null;
+  /** Enquetes, stickers e notas que não estão na arte (ver `extractPostingSteps`). */
+  postingSteps: PostingStep[];
+  /** Link da solicitação (ex.: Sympla), usado no sticker de link. */
+  link: string | null;
   files: DeliveryFile[];
 }
 
@@ -48,6 +52,13 @@ type RequestRow = {
   deadline_time: string | null;
   workflow_stage: string | null;
   posted_at: string | null;
+  link: string | null;
+};
+
+type ChecklistRow = {
+  request_id: string;
+  label: string;
+  content: string | null;
 };
 
 type FileRow = {
@@ -95,12 +106,12 @@ export async function fetchPlannerTagDelivery(db: SupabaseClient, tag: string): 
   const likeTag = tag.replace(/[%_\\]/g, (c) => `\\${c}`);
   const { data: requestData } = await db
     .from("marketing_requests")
-    .select("id, title, deadline, deadline_time, workflow_stage, posted_at")
+    .select("id, title, deadline, deadline_time, workflow_stage, posted_at, link")
     .ilike("title", `%[${likeTag}]%`);
   const requests = ((requestData ?? []) as RequestRow[]).filter((r) => getTitleTag(r.title)?.tag === tag);
   const ids = requests.map((r) => r.id);
 
-  const [{ data: fileData }, { data: captionData }] = ids.length
+  const [{ data: fileData }, { data: checklistData }] = ids.length
     ? await Promise.all([
         db
           .from("marketing_request_files")
@@ -110,9 +121,9 @@ export async function fetchPlannerTagDelivery(db: SupabaseClient, tag: string): 
           .order("created_at"),
         db
           .from("marketing_request_checklist_items")
-          .select("request_id, content")
+          .select("request_id, label, content")
           .in("request_id", ids)
-          .ilike("label", "legenda%"),
+          .order("sort_order"),
       ])
     : [{ data: [] }, { data: [] }];
 
@@ -141,8 +152,13 @@ export async function fetchPlannerTagDelivery(db: SupabaseClient, tag: string): 
   }
 
   const captions = new Map<string, string>();
-  for (const item of (captionData ?? []) as { request_id: string; content: string | null }[]) {
-    if (item.content?.trim() && !captions.has(item.request_id)) captions.set(item.request_id, item.content.trim());
+  const checklistByRequest = new Map<string, ChecklistRow[]>();
+  for (const item of (checklistData ?? []) as ChecklistRow[]) {
+    if (/^legenda/i.test(item.label)) {
+      if (item.content?.trim() && !captions.has(item.request_id)) captions.set(item.request_id, item.content.trim());
+      continue;
+    }
+    checklistByRequest.set(item.request_id, [...(checklistByRequest.get(item.request_id) ?? []), item]);
   }
 
   const pieces = requests
@@ -158,6 +174,8 @@ export async function fetchPlannerTagDelivery(db: SupabaseClient, tag: string): 
         postedOn: row.posted_at ? row.posted_at.slice(0, 10) : null,
         status: pieceStatus(row),
         caption: captions.get(row.id) ?? null,
+        postingSteps: extractPostingSteps(checklistByRequest.get(row.id) ?? []),
+        link: row.link?.trim() || null,
         files: filesByRequest.get(row.id) ?? [],
       };
     })

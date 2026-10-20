@@ -53,6 +53,42 @@ export function sortFilesByName<T extends { name: string }>(files: T[]): T[] {
   return [...files].sort((a, b) => a.name.localeCompare(b.name, "pt-BR", { numeric: true }));
 }
 
+export type PostingStepKind = "enquete" | "sticker" | "nota";
+
+export interface PostingStep {
+  /** Número da tela/slide do item do checklist ("Tela 2 · texto exato" → 2). */
+  screen: number | null;
+  kind: PostingStepKind;
+  text: string;
+  /** Opções da enquete ("[Enquete: A / B]" → ["A", "B"]). */
+  options: string[];
+}
+
+/**
+ * Linhas entre colchetes no texto de cada tela ("[Enquete: A / B]", "[Sticker: …]",
+ * "[Inserir foto real…]") não vão na arte: são o que quem posta faz no Instagram.
+ */
+export function extractPostingSteps(items: { label: string; content: string | null }[]): PostingStep[] {
+  const steps: PostingStep[] = [];
+  for (const item of items) {
+    const screen = Number(item.label.match(/^(?:tela|slide)\s+(\d+)/i)?.[1]) || null;
+    for (const line of (item.content ?? "").split("\n")) {
+      const inner = line.trim().match(/^\[(.+)\]$/)?.[1]?.trim();
+      if (!inner || /^assinatura/i.test(inner)) continue;
+      const typed = inner.match(/^(enquete|sticker)\s*:\s*(.+)$/i);
+      if (!typed) {
+        steps.push({ screen, kind: "nota", text: inner, options: [] });
+        continue;
+      }
+      const kind = typed[1].toLowerCase() as "enquete" | "sticker";
+      const text = typed[2].trim();
+      const options = kind === "enquete" ? text.split("/").map((o) => o.trim()).filter(Boolean) : [];
+      steps.push({ screen, kind, text, options });
+    }
+  }
+  return steps;
+}
+
 /** Página de download (com login) das peças de uma tag: "OAB" → "/entregas/oab". */
 export function plannerTagDeliveryPath(tag: string): string {
   return `/entregas/${encodeURIComponent(tag.toLowerCase())}`;

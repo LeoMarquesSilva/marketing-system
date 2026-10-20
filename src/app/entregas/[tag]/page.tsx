@@ -118,6 +118,72 @@ function PieceFiles({ piece }: { piece: DeliveryPiece }) {
   );
 }
 
+function screenLabel(piece: DeliveryPiece, screen: number | null): string | null {
+  if (screen == null) return null;
+  if (/stor/i.test(piece.format ?? "")) return `Story ${screen}`;
+  if (/carross/i.test(piece.format ?? "")) return `Slide ${screen}`;
+  return `Tela ${screen}`;
+}
+
+/** O que não está na arte: enquete, sticker de link e notas para quem posta. */
+function PostingSteps({ piece }: { piece: DeliveryPiece }) {
+  const hasSticker = piece.postingSteps.some((step) => step.kind === "sticker");
+  return (
+    <div className="space-y-3 rounded-xl border border-[#c79b4a]/40 bg-white p-4">
+      <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[#a87824]">Na hora de postar</span>
+      <ol className="space-y-3">
+        {piece.postingSteps.map((step, index) => {
+          const where = screenLabel(piece, step.screen);
+          return (
+            <li key={index} className="grid grid-cols-[auto_1fr] items-start gap-3 text-sm leading-6 text-[#10263b]/80">
+              <span className="mt-0.5 rounded-md bg-[#10263b] px-2 py-0.5 text-[11px] font-semibold tabular-nums text-[#e3bd74]">
+                {where ?? "Atenção"}
+              </span>
+              {step.kind === "enquete" ? (
+                <div className="space-y-2">
+                  <p>
+                    Adicione o sticker de <strong className="font-semibold text-[#10263b]">enquete</strong> do Instagram com as opções:
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {step.options.map((option) => (
+                      <span
+                        key={option}
+                        className="rounded-full border border-[#10263b]/15 bg-[#f4f1ea] px-3 py-1 text-xs font-semibold text-[#10263b]"
+                      >
+                        {option}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : step.kind === "sticker" ? (
+                <p>
+                  Adicione o sticker de <strong className="font-semibold text-[#10263b]">link</strong> com o texto “{step.text}”
+                  {piece.link ? " apontando para o link abaixo." : "."}
+                </p>
+              ) : (
+                <p>{step.text}</p>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      {hasSticker && piece.link && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#10263b]/10 pt-3">
+          <a
+            href={piece.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="min-w-0 flex-1 truncate text-xs text-[#10263b]/60 underline decoration-[#c79b4a]/60 underline-offset-2 hover:text-[#10263b]"
+          >
+            {piece.link}
+          </a>
+          <CopyCaptionButton text={piece.link} label="Copiar link" copiedLabel="Link copiado" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PieceCard({ piece, tag }: { piece: DeliveryPiece; tag: string }) {
   const status = STATUS[piece.status];
   return (
@@ -144,6 +210,8 @@ function PieceCard({ piece, tag }: { piece: DeliveryPiece; tag: string }) {
       </h3>
 
       <PieceFiles piece={piece} />
+
+      {piece.postingSteps.length > 0 && <PostingSteps piece={piece} />}
 
       {piece.caption && (
         <div className="space-y-3 rounded-xl bg-[#f4f1ea] p-4">
@@ -220,7 +288,7 @@ export default async function PlannerDeliveryPage({
             Campanha [{delivery.tag}]
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-[#10263b]/65">
-            Baixe a arte de cada peça, copie a legenda na hora de postar e marque a peça como postada. As peças em aprovação ainda podem receber ajustes.
+            Baixe a arte de cada peça, adicione a enquete ou o sticker indicado em “Na hora de postar”, copie a legenda e marque a peça como postada. As peças em aprovação ainda podem receber ajustes.
           </p>
           <div className="mt-8 h-px w-20 bg-[#c79b4a]" />
           <p className="mt-5 text-sm text-[#10263b]/55">

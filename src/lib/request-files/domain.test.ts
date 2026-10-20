@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { getTitleTag } from "@/lib/planner-title-tag";
 import {
+  extractPostingSteps,
   formatFileSize,
   plannerTagDeliveryPath,
   plannerTagDeliveryUrl,
@@ -35,6 +36,26 @@ describe("arquivos da arte do planner", () => {
     expect(tagFromDeliveryParam(encodeURIComponent("são paulo"))).toBe("SÃO PAULO");
     expect(tagFromDeliveryParam("%E0%A4%A")).toBeNull();
     expect(tagFromDeliveryParam("x]")).toBeNull();
+  });
+});
+
+describe("instruções para quem posta", () => {
+  it("tira enquete, sticker e notas entre colchetes do texto de cada tela", () => {
+    const steps = extractPostingSteps([
+      { label: "Tela 1 · texto exato", content: "TÍTULO: Qual tema você pretende acompanhar?\n[Enquete: Recuperação judicial / Direito societário]" },
+      { label: "Tela 2 · texto exato", content: "TÍTULO: A programação inclui esses e outros debates.\n[Sticker: Ver programação e inscrição]" },
+      { label: "Tela 3 · texto exato", content: "TÍTULO: Ideias em discussão.\n  [Foto real autorizada]  " },
+      { label: "Legenda para publicação", content: "Texto sem colchetes\n[ASSINATURA OBRIGATÓRIA: evento]" },
+    ]);
+    expect(steps).toEqual([
+      { screen: 1, kind: "enquete", text: "Recuperação judicial / Direito societário", options: ["Recuperação judicial", "Direito societário"] },
+      { screen: 2, kind: "sticker", text: "Ver programação e inscrição", options: [] },
+      { screen: 3, kind: "nota", text: "Foto real autorizada", options: [] },
+    ]);
+  });
+
+  it("não cria instrução para tela sem colchetes", () => {
+    expect(extractPostingSteps([{ label: "Tela 1 · texto exato", content: "É HOJE.\nOs debates começam." }])).toEqual([]);
   });
 });
 
