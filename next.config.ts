@@ -15,6 +15,9 @@ const nextConfig: NextConfig = {
   // Arquivos do modelo de certificado lidos com fs pela rota (fora de /public).
   outputFileTracingIncludes: {
     "/api/certificados/modelo/*": ["./src/lib/certificados/assets/**/*"],
+    // Fontes licenciadas dos modelos do Estúdio de peças.
+    "/api/estudio/fontes/*": ["./src/lib/estudio/assets/fonts/**/*"],
+    "/conteudo/estudio": ["./src/lib/estudio/assets/fonts/**/*"],
   },
   async redirects() {
     return [

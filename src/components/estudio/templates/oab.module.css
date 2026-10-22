@@ -1,0 +1,144 @@
+/* Modelos OAB — medidas em px da prancheta (1080 de largura), tiradas do Illustrator. */
+
+.board {
+  --oab-claro: #edebe3;
+  --oab-branco: #fbf8f4;
+  --oab-ciano: #31b5e1;
+  --oab-escuro: #0b1c2a;
+  --fonte-titulo: "Estudio Neulis", var(--font-estudio-titulo), sans-serif;
+  --fonte-kanit: var(--font-estudio-kanit), sans-serif;
+  --fonte-apoio: "Estudio Century Gothic", var(--font-estudio-apoio), sans-serif;
+  color: var(--oab-claro);
+}
+
+.zone {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.title {
+  font-family: var(--fonte-titulo);
+  font-weight: 700;
+  text-transform: uppercase;
+  line-height: 1.2;
+  letter-spacing: -0.005em;
+  white-space: pre-line;
+  color: var(--oab-claro);
+  margin: 0;
+}
+
+.rule {
+  height: 2px;
+  width: 230px;
+  background: linear-gradient(90deg, rgba(49, 181, 225, 0) 0%, rgba(49, 181, 225, 0.85) 45%, rgba(49, 181, 225, 0) 100%);
+}
+
+.ruleWide {
+  height: 2px;
+  width: 100%;
+  background: linear-gradient(90deg, rgba(49, 181, 225, 0) 0%, rgba(49, 181, 225, 0.55) 25%, rgba(49, 181, 225, 0.35) 70%, rgba(49, 181, 225, 0) 100%);
+}
+
+.body {
+  font-family: var(--fonte-apoio);
+  font-weight: 400;
+  font-size: 26px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--oab-branco);
+  white-space: pre-line;
+  margin: 0;
+}
+
+.kanit {
+  font-family: var(--fonte-kanit);
+  font-weight: 600;
+  color: var(--oab-claro);
+  white-space: pre-line;
+}
+
+/* Pílula com borda em degradê ciano e miolo transparente. */
+.pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-family: var(--fonte-kanit);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--oab-claro);
+  white-space: nowrap;
+  background: rgba(4, 16, 26, 0.35);
+}
+
+/* Elemento de verdade (não ::before) para sair igual no PNG exportado. */
+.pillBorder {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 2px;
+  background: linear-gradient(90deg, #39c2ee 0%, #2a9fc8 45%, #1b6d8f 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.pillIcon {
+  flex: none;
+  color: var(--oab-claro);
+}
+
+.bullet {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background: #39c2ee;
+}
+
+/* Botão branco do Sympla com o selo redondo sobreposto à esquerda. */
+.cta {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 58px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--oab-escuro);
+  font-family: var(--fonte-kanit);
+  font-weight: 600;
+  font-size: 26px;
+  white-space: nowrap;
+}
+
+.ctaSeal {
+  position: absolute;
+  top: 50%;
+  width: 94px;
+  height: 94px;
+  transform: translateY(-50%);
+}
+
+.dots {
+  position: absolute;
+  top: 11px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 8.5px;
+}
+
+.dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(237, 235, 227, 0.32);
+}
+
+.dotActive {
+  background: var(--oab-claro);
+}

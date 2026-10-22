@@ -42,6 +42,7 @@ import {
   Users,
   UsersRound,
   Wallet,
+  Wand2,
 } from "lucide-react";
 import {
   TEAM_POSTS_PATH,
@@ -137,6 +138,14 @@ export const NAV_FRONTS: NavFront[] = [
           { href: "/conteudo/roteiros", label: "Posts" },
           { href: "/conteudo/reels", label: "Roteiros de Reels" },
         ],
+      },
+      {
+        // Peças a partir dos modelos do Illustrator (campos + IA), exportadas em PNG.
+        id: "estudio-pecas",
+        label: "Estúdio de peças",
+        shortLabel: "Estúdio",
+        icon: Wand2,
+        pages: [{ href: "/conteudo/estudio", label: "Estúdio de peças" }],
       },
       {
         // Item próprio: é onde o colaborador aprova o vídeo que gravou, com contador de pendências.
