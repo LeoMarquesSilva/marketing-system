@@ -1,4 +1,12 @@
-import { maskCEP, maskCPF, maskOAB, maskPhoneBR, onlyDigits } from "@/lib/masks-br";
+import {
+  maskBankAccount,
+  maskBankAgency,
+  maskCEP,
+  maskCPF,
+  maskOAB,
+  maskPhoneBR,
+  onlyDigits,
+} from "@/lib/masks-br";
 import { NATIONALITY_OPTIONS } from "@/lib/rh/qualifications/types";
 import {
   coerceRegistrationAnswers,
@@ -40,6 +48,30 @@ export type PrefillEmployee = {
   oab_uf: string | null;
 };
 
+/** Conta de pagamento vinda da folha (`hr_employee_bank_accounts`). */
+export type PrefillPayrollAccount = {
+  bank_code: string;
+  bank_name: string;
+  agency: string;
+  account: string;
+};
+
+export const PAYROLL_ACCOUNT_SELECT = "employee_id, bank_code, bank_name, agency, account";
+
+/** "Santander (033)", "0565", "01043989-0": o mesmo formato dos campos da ficha. */
+export function payrollBankFields(payroll: PrefillPayrollAccount): {
+  bankName: string;
+  bankAgency: string;
+  bankAccount: string;
+} {
+  const code = onlyDigits(payroll.bank_code).replace(/^0+(?=\d{3})/, "").padStart(3, "0");
+  return {
+    bankName: `${payroll.bank_name} (${code})`,
+    bankAgency: maskBankAgency(payroll.agency),
+    bankAccount: maskBankAccount(payroll.account),
+  };
+}
+
 export const PREFILL_QUALIFICATION_SELECT =
   "full_name, birth_date, nationality, treatment_gender, cpf, rg, rg_issuer, oab_number, oab_uf, cep, street, number, complement, district, city, state, personal_phone, personal_email";
 
@@ -60,13 +92,15 @@ function genderFromCode(value: string | null): string {
 
 /**
  * Pré-preenche a ficha com o que o escritório já sabe: a ficha anterior vem
- * primeiro (é a palavra da própria pessoa), depois a qualificação jurídica e
- * por último o cadastro do VIOS. Cada fonte só ocupa campo ainda vazio.
+ * primeiro (é a palavra da própria pessoa), depois a conta da folha (dados
+ * bancários), a qualificação jurídica e por último o cadastro do VIOS. Cada
+ * fonte só ocupa campo ainda vazio.
  */
 export function prefillSelfAnswers(
   previousAnswers: unknown | null,
   qualification: PrefillQualification | null,
-  employee: PrefillEmployee
+  employee: PrefillEmployee,
+  payroll: PrefillPayrollAccount | null = null
 ): RegistrationAnswers {
   const answers: RegistrationAnswers = previousAnswers
     ? coerceRegistrationAnswers(previousAnswers)
@@ -76,6 +110,13 @@ export function prefillSelfAnswers(
     const text = (value ?? "").trim();
     if (text && !String(answers[field] ?? "").trim()) answers[field] = text;
   };
+
+  if (payroll) {
+    const bank = payrollBankFields(payroll);
+    fill("bankName", bank.bankName);
+    fill("bankAgency", bank.bankAgency);
+    fill("bankAccount", bank.bankAccount);
+  }
 
   if (qualification) {
     fill("fullName", qualification.full_name);

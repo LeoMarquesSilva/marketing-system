@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { prefillSelfAnswers, type PrefillEmployee, type PrefillQualification } from "./self-prefill";
+import { payrollBankFields, prefillSelfAnswers, type PrefillEmployee, type PrefillQualification } from "./self-prefill";
 import {
   emptyRegistrationAnswers,
   employmentTypeLabel,
@@ -216,5 +216,31 @@ describe("órgão emissor e naturalidade", () => {
     expect(answers.rgIssuer).toBe("SSP/SP");
     expect(answers.birthplace).toBe("Campinas/SP");
     expect(normalizeRegistrationAnswers(complete({ rgIssuer: "SSPMG" }), "geral").rgIssuer).toBe("SSP/MG");
+  });
+});
+
+describe("conta da folha", () => {
+  const payroll = { bank_code: "0033", bank_name: "Santander", agency: "565", account: "010439890" };
+
+  it("formata como os campos da ficha", () => {
+    expect(payrollBankFields(payroll)).toEqual({
+      bankName: "Santander (033)",
+      bankAgency: "565",
+      bankAccount: "01043989-0",
+    });
+  });
+
+  it("preenche os dados bancários de quem ainda não enviou", () => {
+    const answers = prefillSelfAnswers(null, null, EMPLOYEE, payroll);
+    expect(answers.bankName).toBe("Santander (033)");
+    expect(answers.bankAccount).toBe("01043989-0");
+  });
+
+  it("não passa por cima do que já está na ficha", () => {
+    const previous = { ...emptyRegistrationAnswers(), bankName: "Itaú Unibanco (341)", bankAgency: "1234" };
+    const answers = prefillSelfAnswers(previous, null, EMPLOYEE, payroll);
+    expect(answers.bankName).toBe("Itaú Unibanco (341)");
+    expect(answers.bankAgency).toBe("1234");
+    expect(answers.bankAccount).toBe("01043989-0");
   });
 });

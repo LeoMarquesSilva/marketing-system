@@ -10,9 +10,11 @@ import {
   RhHttpError,
 } from "./server";
 import {
+  PAYROLL_ACCOUNT_SELECT,
   PREFILL_QUALIFICATION_SELECT,
   prefillSelfAnswers,
   type PrefillEmployee,
+  type PrefillPayrollAccount,
   type PrefillQualification,
 } from "./self-prefill";
 import {
@@ -121,15 +123,20 @@ export async function getSelfRegistration(): Promise<SelfRegistrationState> {
   if (!context) return { state: "no_employee" };
   const { employee, form } = context;
 
-  const { data: qualification } = await admin
-    .from("hr_qualifications")
-    .select(PREFILL_QUALIFICATION_SELECT)
-    .eq("user_id", employee.user_id)
-    .maybeSingle();
+  const [{ data: qualification }, { data: payroll }] = await Promise.all([
+    admin.from("hr_qualifications").select(PREFILL_QUALIFICATION_SELECT).eq("user_id", employee.user_id).maybeSingle(),
+    // Conta da folha: quem ainda não enviou já encontra os dados bancários preenchidos.
+    admin.from("hr_employee_bank_accounts").select(PAYROLL_ACCOUNT_SELECT).eq("employee_id", employee.id).maybeSingle(),
+  ]);
 
   const kind = resolveKind(employee, form);
   const answers = normalizeRegistrationAnswers(
-    prefillSelfAnswers(form?.answers ?? null, (qualification as PrefillQualification | null) ?? null, employee),
+    prefillSelfAnswers(
+      form?.answers ?? null,
+      (qualification as PrefillQualification | null) ?? null,
+      employee,
+      (payroll as PrefillPayrollAccount | null) ?? null
+    ),
     kind
   );
 

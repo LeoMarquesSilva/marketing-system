@@ -2,7 +2,13 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createRegistrationAdminClient, requireRegistrationManager, RhHttpError } from "./server";
-import { PREFILL_QUALIFICATION_SELECT, prefillSelfAnswers, type PrefillQualification } from "./self-prefill";
+import {
+  PAYROLL_ACCOUNT_SELECT,
+  PREFILL_QUALIFICATION_SELECT,
+  prefillSelfAnswers,
+  type PrefillPayrollAccount,
+  type PrefillQualification,
+} from "./self-prefill";
 import {
   employeeFichaStatus,
   employmentTypeLabel,
@@ -73,7 +79,7 @@ async function loadRecords(admin: SupabaseClient, employeeIds?: string[]): Promi
   const ids = employees.map((employee) => employee.id);
   const userIds = employees.map((employee) => employee.user_id).filter((id): id is string => !!id);
 
-  const [formsResult, qualificationsResult, usersResult] = await Promise.all([
+  const [formsResult, qualificationsResult, usersResult, payrollResult] = await Promise.all([
     admin
       .from("hr_registration_forms")
       .select("id, employee_id, origin, employment_kind, status, answers, reopen_note, submitted_at, approved_at")
@@ -85,10 +91,17 @@ async function loadRecords(admin: SupabaseClient, employeeIds?: string[]): Promi
     userIds.length
       ? admin.from("users").select("id, avatar_url").in("id", userIds)
       : Promise.resolve({ data: [], error: null }),
+    admin.from("hr_employee_bank_accounts").select(PAYROLL_ACCOUNT_SELECT).in("employee_id", ids),
   ]);
-  if (formsResult.error || qualificationsResult.error) {
+  if (formsResult.error || qualificationsResult.error || payrollResult.error) {
     throw new RhHttpError("Falha ao carregar as fichas.", 500, "QUERY_FAILED");
   }
+  const payrollByEmployee = new Map(
+    ((payrollResult.data ?? []) as (PrefillPayrollAccount & { employee_id: string })[]).map((row) => [
+      row.employee_id,
+      row,
+    ])
+  );
 
   const formByEmployee = new Map(((formsResult.data ?? []) as FormRow[]).map((form) => [form.employee_id, form]));
   const qualificationByUser = new Map(
@@ -102,7 +115,10 @@ async function loadRecords(admin: SupabaseClient, employeeIds?: string[]): Promi
     const form = formByEmployee.get(employee.id) ?? null;
     const qualification = employee.user_id ? qualificationByUser.get(employee.user_id) ?? null : null;
     const kind = resolveRegistrationKind(employee.employment_type, form?.employment_kind);
-    const answers = normalizeRegistrationAnswers(prefillSelfAnswers(form?.answers ?? null, qualification, employee), kind);
+    const answers = normalizeRegistrationAnswers(
+      prefillSelfAnswers(form?.answers ?? null, qualification, employee, payrollByEmployee.get(employee.id) ?? null),
+      kind
+    );
     const progress = registrationProgress(answers, kind);
     const row: EmployeeRegistrationRow = {
       employeeId: employee.id,
