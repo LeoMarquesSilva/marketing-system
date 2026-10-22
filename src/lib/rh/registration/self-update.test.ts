@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { payrollBankFields, prefillSelfAnswers, type PrefillEmployee, type PrefillQualification } from "./self-prefill";
+import {
+  payrollBankFields,
+  personalBankFromDeclared,
+  prefillSelfAnswers,
+  type PrefillEmployee,
+  type PrefillQualification,
+} from "./self-prefill";
 import {
   emptyRegistrationAnswers,
   employmentTypeLabel,
@@ -242,5 +248,21 @@ describe("conta da folha", () => {
     expect(answers.bankName).toBe("Itaú Unibanco (341)");
     expect(answers.bankAgency).toBe("1234");
     expect(answers.bankAccount).toBe("01043989-0");
+  });
+});
+
+describe("conta particular (visão do RH)", () => {
+  const payroll = { bank_code: "033", bank_name: "Santander" };
+
+  it("é o que a pessoa declarou em outro banco", () => {
+    expect(
+      personalBankFromDeclared({ bankName: "Itaú Unibanco (341)", bankAgency: "1234", bankAccount: "12345-6" }, payroll)
+    ).toEqual({ bankName: "Itaú Unibanco (341)", bankAgency: "1234", bankAccount: "12345-6" });
+  });
+
+  it("Santander com conta incompleta não é conta particular", () => {
+    expect(personalBankFromDeclared({ bankName: "Santander (033)", bankAgency: "0565", bankAccount: "43989-0" }, payroll)).toBeNull();
+    expect(personalBankFromDeclared({ bankName: "santander", bankAgency: "0565" }, payroll)).toBeNull();
+    expect(personalBankFromDeclared(null, payroll)).toBeNull();
   });
 });

@@ -103,7 +103,7 @@ export function EmployeeRegistrationSheet({
                 </p>
               </section>
 
-              <RegistrationAnswersView kind={current.row.kind} answers={current.answers} />
+              <RegistrationAnswersView kind={current.row.kind} answers={current.answers} personalBank={current.personalBank} />
             </div>
 
             <div className="flex flex-wrap justify-end gap-2 border-t border-black/[0.07] bg-[#fbfaf7] px-6 py-4">

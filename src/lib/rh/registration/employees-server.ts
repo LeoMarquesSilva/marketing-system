@@ -3,7 +3,8 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createRegistrationAdminClient, requireRegistrationManager, RhHttpError } from "./server";
 import {
-  PAYROLL_ACCOUNT_SELECT,
+  PAYROLL_ACCOUNT_RH_SELECT,
+  personalBankFromDeclared,
   PREFILL_QUALIFICATION_SELECT,
   prefillSelfAnswers,
   type PrefillPayrollAccount,
@@ -15,6 +16,7 @@ import {
   resolveRegistrationKind,
   type EmployeeRegistrationDetail,
   type EmployeeRegistrationRow,
+  type PersonalBankAccount,
   type RegistrationAnswers,
   type RegistrationKind,
   type RegistrationOrigin,
@@ -61,6 +63,8 @@ type FormRow = {
 export interface EmployeeRegistrationRecord {
   row: EmployeeRegistrationRow;
   answers: RegistrationAnswers;
+  /** Conta particular declarada antes da conta da folha (só RH). */
+  personalBank: PersonalBankAccount | null;
 }
 
 async function loadRecords(admin: SupabaseClient, employeeIds?: string[]): Promise<EmployeeRegistrationRecord[]> {
@@ -91,13 +95,13 @@ async function loadRecords(admin: SupabaseClient, employeeIds?: string[]): Promi
     userIds.length
       ? admin.from("users").select("id, avatar_url").in("id", userIds)
       : Promise.resolve({ data: [], error: null }),
-    admin.from("hr_employee_bank_accounts").select(PAYROLL_ACCOUNT_SELECT).in("employee_id", ids),
+    admin.from("hr_employee_bank_accounts").select(PAYROLL_ACCOUNT_RH_SELECT).in("employee_id", ids),
   ]);
   if (formsResult.error || qualificationsResult.error || payrollResult.error) {
     throw new RhHttpError("Falha ao carregar as fichas.", 500, "QUERY_FAILED");
   }
   const payrollByEmployee = new Map(
-    ((payrollResult.data ?? []) as (PrefillPayrollAccount & { employee_id: string })[]).map((row) => [
+    ((payrollResult.data ?? []) as (PrefillPayrollAccount & { employee_id: string; previous_declared: unknown })[]).map((row) => [
       row.employee_id,
       row,
     ])
@@ -141,7 +145,9 @@ async function loadRecords(admin: SupabaseClient, employeeIds?: string[]): Promi
       filledCount: progress.filled,
       missingFields: progress.missing,
     };
-    return { row, answers };
+    const payroll = payrollByEmployee.get(employee.id);
+    const personalBank = payroll ? personalBankFromDeclared(payroll.previous_declared, payroll) : null;
+    return { row, answers, personalBank };
   });
 }
 

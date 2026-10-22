@@ -8,6 +8,7 @@ import {
   GENDER_OPTIONS,
   optionLabel,
   RACE_COLOR_OPTIONS,
+  type PersonalBankAccount,
   type RegistrationAnswers,
   type RegistrationKind,
 } from "@/lib/rh/registration/types";
@@ -46,9 +47,12 @@ function Item({ label, value, wide }: { label: string; value: ReactNode; wide?: 
 export function RegistrationAnswersView({
   kind,
   answers,
+  personalBank = null,
 }: {
   kind: RegistrationKind;
   answers: RegistrationAnswers;
+  /** Conta particular declarada antes da conta da folha (só na visão do RH). */
+  personalBank?: PersonalBankAccount | null;
 }) {
   const dietary = answers.dietaryRestrictions;
   const address = [
@@ -128,10 +132,23 @@ export function RegistrationAnswersView({
       </Group>
 
       <Group title="Dados bancários">
-        <Item label="Banco" value={answers.bankName} wide />
+        <Item label={personalBank ? "Banco (conta da folha)" : "Banco"} value={answers.bankName} wide />
         <Item label="Agência" value={answers.bankAgency} />
         <Item label="Conta" value={answers.bankAccount} />
         <Item label="Chave Pix" value={answers.pixKey} wide />
+        {personalBank && (
+          <Item
+            label="Conta particular (declarada pela pessoa)"
+            value={[
+              personalBank.bankName,
+              personalBank.bankAgency && `agência ${personalBank.bankAgency}`,
+              personalBank.bankAccount && `conta ${personalBank.bankAccount}`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+            wide
+          />
+        )}
       </Group>
 
       <Group title="Endereço">

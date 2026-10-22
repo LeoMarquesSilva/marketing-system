@@ -450,7 +450,7 @@ export function RegistrationReviewSheet({
                     />
                   </div>
                 ) : (
-                  <RegistrationAnswersView kind={form.employment_kind} answers={form.answers} />
+                  <RegistrationAnswersView kind={form.employment_kind} answers={form.answers} personalBank={form.personal_bank} />
                 ))}
 
               {form.consent_at && !editing && (

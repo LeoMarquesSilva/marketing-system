@@ -9,6 +9,7 @@ import {
   REGISTRATION_FIELD_LABEL,
   REGISTRATION_ORIGIN_LABEL,
   type EmployeeRegistrationRow,
+  type PersonalBankAccount,
   type RegistrationAnswers,
 } from "./types";
 import { OAB_KINDS, resolveHasOab } from "./validation";
@@ -22,6 +23,8 @@ import { OAB_KINDS, resolveHasOab } from "./validation";
 export interface ExportRecord {
   row: EmployeeRegistrationRow;
   answers: RegistrationAnswers;
+  /** Conta particular declarada antes da conta da folha. */
+  personalBank?: PersonalBankAccount | null;
 }
 
 export interface ExportColumn {
@@ -122,6 +125,9 @@ export const EXPORT_COLUMNS: ExportColumn[] = [
   { group: "Dados bancários", header: "Agência", width: 10, value: answer("bankAgency") },
   { group: "Dados bancários", header: "Conta", width: 14, value: answer("bankAccount") },
   { group: "Dados bancários", header: "Chave Pix", width: 26, value: answer("pixKey") },
+  { group: "Dados bancários", header: "Banco particular", width: 24, value: (r) => r.personalBank?.bankName ?? "" },
+  { group: "Dados bancários", header: "Agência particular", width: 12, value: (r) => r.personalBank?.bankAgency ?? "" },
+  { group: "Dados bancários", header: "Conta particular", width: 16, value: (r) => r.personalBank?.bankAccount ?? "" },
   // Endereço
   { group: "Endereço", header: "CEP", width: 11, value: answer("cep") },
   { group: "Endereço", header: "Rua", width: 32, value: answer("street") },

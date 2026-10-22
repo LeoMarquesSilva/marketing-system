@@ -11,6 +11,7 @@ import { NATIONALITY_OPTIONS } from "@/lib/rh/qualifications/types";
 import {
   coerceRegistrationAnswers,
   emptyRegistrationAnswers,
+  type PersonalBankAccount,
   type RegistrationAnswers,
   type RegistrationField,
 } from "./types";
@@ -57,6 +58,32 @@ export type PrefillPayrollAccount = {
 };
 
 export const PAYROLL_ACCOUNT_SELECT = "employee_id, bank_code, bank_name, agency, account";
+
+/** Para a visão do RH: inclui o que a pessoa tinha declarado antes da folha. */
+export const PAYROLL_ACCOUNT_RH_SELECT = `${PAYROLL_ACCOUNT_SELECT}, previous_declared`;
+
+/**
+ * Conta particular = o que a pessoa declarou na ficha antes da importação da
+ * folha, quando era de outro banco. Santander com conta incompleta (erro de
+ * digitação da conta da folha) não conta como particular.
+ */
+export function personalBankFromDeclared(
+  previous: unknown,
+  payroll: Pick<PrefillPayrollAccount, "bank_code" | "bank_name">
+): PersonalBankAccount | null {
+  if (!previous || typeof previous !== "object") return null;
+  const source = previous as Record<string, unknown>;
+  const text = (key: string) => (typeof source[key] === "string" ? (source[key] as string).trim() : "");
+  const bankName = text("bankName");
+  if (!bankName) return null;
+  const payrollCode = Number(onlyDigits(payroll.bank_code));
+  const declaredCode = bankName.match(/\((\d{1,3})\)\s*$/)?.[1];
+  const sameBank = declaredCode
+    ? Number(declaredCode) === payrollCode
+    : bankName.toLowerCase().includes(payroll.bank_name.toLowerCase());
+  if (sameBank) return null;
+  return { bankName, bankAgency: text("bankAgency"), bankAccount: text("bankAccount") };
+}
 
 /** "Santander (033)", "0565", "01043989-0": o mesmo formato dos campos da ficha. */
 export function payrollBankFields(payroll: PrefillPayrollAccount): {

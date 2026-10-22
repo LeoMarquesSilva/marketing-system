@@ -8,6 +8,7 @@ import { RhHttpError } from "@/lib/rh/qualifications/server";
 import { NATIONALITY_OPTIONS } from "@/lib/rh/qualifications/types";
 import { onlyDigits } from "@/lib/masks-br";
 import { suggestRegistrationMatches, type MatchCandidate } from "./matching";
+import { PAYROLL_ACCOUNT_RH_SELECT, personalBankFromDeclared, type PrefillPayrollAccount } from "./self-prefill";
 import {
   diffQualificationContact,
   qualificationContactPatch,
@@ -24,6 +25,7 @@ import {
   REGISTRATION_KIND_EMPLOYMENT_TYPE,
   type DietaryInfo,
   type RegistrationAnswers,
+  type PersonalBankAccount,
   type RegistrationDetail,
   type RegistrationEmployeeRef,
   type RegistrationKind,
@@ -172,7 +174,8 @@ function toListItem(row: FormRow, candidates: MatchCandidate[]): RegistrationLis
 function toDetail(
   row: FormRow,
   candidates: MatchCandidate[],
-  qualificationSync: QualificationSyncPreview | null
+  qualificationSync: QualificationSyncPreview | null,
+  personalBank: PersonalBankAccount | null = null
 ): RegistrationDetail {
   return {
     ...toListItem(row, candidates),
@@ -180,7 +183,21 @@ function toDetail(
     reopen_note: row.reopen_note,
     consent_at: row.consent_at,
     qualification_sync: qualificationSync,
+    personal_bank: personalBank,
   };
+}
+
+/** Conta particular que a pessoa tinha declarado antes da conta da folha. */
+async function loadPersonalBank(admin: SupabaseClient, employeeId: string | null): Promise<PersonalBankAccount | null> {
+  if (!employeeId) return null;
+  const { data } = await admin
+    .from("hr_employee_bank_accounts")
+    .select(PAYROLL_ACCOUNT_RH_SELECT)
+    .eq("employee_id", employeeId)
+    .maybeSingle();
+  if (!data) return null;
+  const payroll = data as PrefillPayrollAccount & { previous_declared: unknown };
+  return personalBankFromDeclared(payroll.previous_declared, payroll);
 }
 
 /**
@@ -257,7 +274,11 @@ export async function getRegistrationForm(id: string): Promise<RegistrationDetai
   await requireRegistrationManager();
   const admin = createRegistrationAdminClient();
   const [row, candidates] = await Promise.all([loadFormRow(admin, id), loadMatchCandidates(admin)]);
-  return toDetail(row, candidates, await previewQualificationSync(admin, row));
+  const [qualificationSync, personalBank] = await Promise.all([
+    previewQualificationSync(admin, row),
+    loadPersonalBank(admin, row.employee_id),
+  ]);
+  return toDetail(row, candidates, qualificationSync, personalBank);
 }
 
 /** Qualificação jurídica do usuário do colaborador (null = não tem login ou qualificação). */

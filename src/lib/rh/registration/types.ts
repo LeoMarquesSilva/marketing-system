@@ -124,6 +124,8 @@ export interface EmployeeRegistrationDetail {
   row: EmployeeRegistrationRow;
   /** Melhor dado conhecido: ficha enviada, qualificação e cadastro do VIOS. */
   answers: RegistrationAnswers;
+  /** Conta particular declarada antes da conta da folha (só RH). */
+  personalBank: PersonalBankAccount | null;
 }
 
 export const REGISTRATION_STATUS_LABEL: Record<RegistrationStatus, string> = {
@@ -436,6 +438,15 @@ export interface RegistrationDetail extends RegistrationListItem {
   consent_at: string | null;
   /** O que a aprovação muda na qualificação jurídica. Só em ficha recebida e vinculada. */
   qualification_sync: QualificationSyncPreview | null;
+  /** Conta pessoal que a pessoa tinha declarado antes da conta da folha (só RH). */
+  personal_bank: PersonalBankAccount | null;
+}
+
+/** Conta particular (outro banco que não o da folha), declarada pela pessoa. */
+export interface PersonalBankAccount {
+  bankName: string;
+  bankAgency: string;
+  bankAccount: string;
 }
 
 export function registrationPublicPath(token: string): string {
