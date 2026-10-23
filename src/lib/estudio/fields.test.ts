@@ -41,7 +41,7 @@ describe("campos do Estúdio", () => {
       extra: "ignorado",
     });
     expect(values).toEqual({
-      titulo: "UM TÍTULO ",
+      titulo: "UM TÍTULO",
       apoio: "linha 1\nlinha 2",
       arraste: true,
       lado: "esq",

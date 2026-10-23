@@ -6,8 +6,14 @@
 // Uso:
 //   node scripts/estudio/extrair-fundo.mjs <arquivo.ai> <página> <saída.jpg|png> \
 //     [--apagar x,y,l,a ...] [--original <saída-original.png>] [--largura 1080] [--listar]
+//     [--manter x,y,l,a ...] [--transparente] [--recortar x,y,l,a] [--sem Im1,Fm2]
 //
+// --sem tira imagens/forms pelo nome que o --listar mostra (ex.: a foto da capa),
+// sem mexer nas formas decorativas que ficam na mesma área.
 // --listar mostra a posição de cada texto e form, para escolher as regiões.
+// --manter faz o contrário de --apagar: some tudo o que NÃO estiver inteiro nas regiões
+// (para tirar um elemento solto, como um logo ou um ícone). Com --transparente o PNG sai
+// sem fundo e --recortar corta a saída na região (a escala de --largura vale para ela).
 //
 // As regiões usam a régua do Illustrator: origem no canto superior esquerdo, em pt
 // (nas pranchetas de 1080 px, 1 pt = 1 px). Um item só some se estiver INTEIRO dentro
@@ -32,17 +38,30 @@ function parseArgs(argv) {
   let original = null;
   let width = null;
   let listar = false;
+  let manter = false;
+  let transparente = false;
+  let recortar = null;
+  const sem = new Set();
+  const readZone = (value) => {
+    const [x, y, w, h] = value.split(",").map(Number);
+    return { x, y, w, h };
+  };
   for (let i = 0; i < rest.length; i++) {
     if (rest[i] === "--listar") listar = true;
-    else if (rest[i] === "--apagar") {
-      while (rest[i + 1] && !rest[i + 1].startsWith("--")) {
-        const [x, y, w, h] = rest[++i].split(",").map(Number);
-        zones.push({ x, y, w, h });
-      }
+    else if (rest[i] === "--transparente") transparente = true;
+    else if (rest[i] === "--recortar") recortar = readZone(rest[++i]);
+    else if (rest[i] === "--sem") for (const name of rest[++i].split(",")) sem.add(name.trim());
+    else if (rest[i] === "--apagar" || rest[i] === "--manter") {
+      if (rest[i] === "--manter") manter = true;
+      while (rest[i + 1] && !rest[i + 1].startsWith("--")) zones.push(readZone(rest[++i]));
     } else if (rest[i] === "--original") original = rest[++i];
     else if (rest[i] === "--largura") width = Number(rest[++i]);
   }
-  return { file, page: Number(pageArg), out, zones, original, width, listar };
+  if (manter && rest.includes("--apagar")) {
+    console.error("Use --apagar ou --manter, não os dois.");
+    process.exit(1);
+  }
+  return { file, page: Number(pageArg), out, zones, original, width, listar, manter, transparente, recortar, sem };
 }
 
 // ---------- tokenizador de content stream ----------
@@ -173,10 +192,13 @@ const SHOW_TEXT_OPS = new Set(["Tj", "TJ", "'", '"']);
  * transformações continuam valendo para o que vem depois.
  * `zones` em coordenadas do PDF (origem embaixo); `toTop` converte y para a régua do Illustrator.
  */
-function findRemovals(ops, zones, xobjects, { list = false, toTop = (y) => y } = {}) {
-  const inside = (box) =>
+function findRemovals(ops, zones, xobjects, { list = false, toTop = (y) => y, keep = false, without = new Set() } = {}) {
+  const within = (box) =>
     zones.some((z) => box.x0 >= z.x0 - 0.5 && box.x1 <= z.x1 + 0.5 && box.y0 >= z.y0 - 0.5 && box.y1 <= z.y1 + 0.5);
-  const pointInside = ([x, y]) => zones.some((z) => x >= z.x0 && x <= z.x1 && y >= z.y0 && y <= z.y1);
+  const pointWithin = ([x, y]) => zones.some((z) => x >= z.x0 && x <= z.x1 && y >= z.y0 && y <= z.y1);
+  // "inside" = deve sumir: dentro das regiões (--apagar) ou fora delas (--manter)
+  const inside = (box) => (keep ? !within(box) : within(box));
+  const pointInside = (point) => (keep ? !pointWithin(point) : pointWithin(point));
 
   const removals = [];
   const stack = [];
@@ -243,7 +265,7 @@ function findRemovals(ops, zones, xobjects, { list = false, toTop = (y) => y } =
     }
 
     if (op === "sh") {
-      if (state.clip && inside(state.clip)) { removals.push([ops[k].start, ops[k].end, ""]); removed.degrade++; }
+      if (state.clip ? inside(state.clip) : keep) { removals.push([ops[k].start, ops[k].end, ""]); removed.degrade++; }
       continue;
     }
 
@@ -260,7 +282,9 @@ function findRemovals(ops, zones, xobjects, { list = false, toTop = (y) => y } =
       if (list) {
         console.log(`  ${isImage ? "imagem" : "form"} ${name} (${Math.round(box.x0)},${Math.round(toTop(box.y1))})–(${Math.round(box.x1)},${Math.round(toTop(box.y0))})`);
       }
-      if (inside(box) || (state.clip && inside(state.clip))) {
+      // no --manter, o recorte só decide quando o próprio item também está fora
+      const clipped = state.clip && (keep ? inside(state.clip) && inside(box) : inside(state.clip));
+      if (without.has(name) || inside(box) || clipped) {
         removals.push([ops[k].start, ops[k].end, ""]);
         removed[isImage ? "imagem" : "form"] = (removed[isImage ? "imagem" : "form"] ?? 0) + 1;
       }
@@ -276,7 +300,7 @@ function decodeStream(stream) {
 }
 
 async function main() {
-  const { file, page: pageNumber, out, zones, original, width, listar } = parseArgs(process.argv.slice(2));
+  const { file, page: pageNumber, out, zones, original, width, listar, manter, transparente, recortar, sem } = parseArgs(process.argv.slice(2));
   const src = await PDFDocument.load(fs.readFileSync(file), { updateMetadata: false });
   const doc = await PDFDocument.create();
   const [page] = await doc.copyPages(src, [pageNumber - 1]);
@@ -313,6 +337,8 @@ async function main() {
   const { removals, removed } = findRemovals(ops, pdfZones, xobjects, {
     list: listar,
     toTop: (y) => my0 + pageHeight - y,
+    keep: manter,
+    without: sem,
   });
 
   let cleaned = "";
@@ -332,20 +358,25 @@ async function main() {
   // desenho com pdf.js + @napi-rs/canvas
   const pdfjs = await import(pathToFileURL(require.resolve("pdfjs-dist/legacy/build/pdf.mjs")).href);
   const { createCanvas } = require("@napi-rs/canvas");
-  async function render(bytes, target) {
+  async function render(bytes, target, { clear = false, crop = null } = {}) {
     const pdf = await pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: true }).promise;
     const p = await pdf.getPage(1);
     const base = p.getViewport({ scale: 1 });
-    const scale = width ? width / base.width : 1;
+    const scale = width ? width / (crop ? crop.w : base.width) : 1;
     const vp = p.getViewport({ scale });
-    const canvas = createCanvas(Math.round(vp.width), Math.round(vp.height));
-    await p.render({ canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+    let canvas = createCanvas(Math.round(vp.width), Math.round(vp.height));
+    await p.render({ canvasContext: canvas.getContext("2d"), viewport: vp, background: clear ? "rgba(0,0,0,0)" : undefined }).promise;
+    if (crop) {
+      const cut = createCanvas(Math.round(crop.w * scale), Math.round(crop.h * scale));
+      cut.getContext("2d").drawImage(canvas, -crop.x * scale, -crop.y * scale);
+      canvas = cut;
+    }
     const isJpg = /\.jpe?g$/i.test(target);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, isJpg ? canvas.toBuffer("image/jpeg", 90) : canvas.toBuffer("image/png"));
-    console.log(`→ ${target} (${Math.round(vp.width)}×${Math.round(vp.height)})`);
+    console.log(`→ ${target} (${canvas.width}×${canvas.height})`);
   }
-  await render(cleanedPdf, out);
+  await render(cleanedPdf, out, { clear: transparente, crop: recortar });
   if (original) {
     const origDoc = await PDFDocument.create();
     const [origPage] = await origDoc.copyPages(src, [pageNumber - 1]);

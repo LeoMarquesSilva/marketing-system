@@ -22,7 +22,11 @@ export const SlideArtboard = forwardRef<HTMLDivElement, SlideProps>(function Sli
   const Component = TEMPLATE_COMPONENTS[slide.modelo];
   const { width, height } = slideSize(slide);
   return (
-    <div ref={ref} style={{ width, height, position: "relative", background: "#050e16" }}>
+    // estilos herdados zerados: as miniaturas ficam dentro de <button> (que centraliza texto)
+    <div
+      ref={ref}
+      style={{ width, height, position: "relative", background: "#050e16", textAlign: "left", lineHeight: "normal", letterSpacing: "normal", whiteSpace: "normal", fontStyle: "normal", fontWeight: 400, textTransform: "none" }}
+    >
       {Component ? (
         <Component valores={slide.valores} indice={indice} total={total} tipo={tipo} />
       ) : (

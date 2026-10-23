@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
-import { generateObject } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
-import { STUDIO_AI_SYSTEM_PROMPT, buildStudioPrompt, keepSlideIds, pieceAiSchema } from "@/lib/estudio/ai";
-import { normalizeSlides } from "@/lib/estudio/domain";
+import { buildStudioPrompt, keepSlideIds } from "@/lib/estudio/ai";
+import { runStudioAi, studioAiKey } from "@/lib/estudio/ai-server";
+import { carryOverImages, dropDuplicateSlides, normalizeSlides } from "@/lib/estudio/domain";
 import { isPieceKind, requireStudioUser } from "@/lib/estudio/server";
 import { getCollection, templatesFor } from "@/lib/estudio/templates";
-import { OPENAI_DEFAULT_MODEL, openAIGenerationOptions } from "@/lib/openai-models";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -36,32 +34,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Não há modelos para este tipo de peça." }, { status: 400 });
   }
 
-  const apiKey = process.env.NEXT_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+  const apiKey = studioAiKey();
   if (!apiKey) return NextResponse.json({ error: "A chave de IA não está configurada." }, { status: 500 });
 
   const slides = normalizeSlides(parsed.data.slides, tag, kind);
-  const modelId = process.env.OPENAI_STUDIO_MODEL?.trim() || OPENAI_DEFAULT_MODEL;
 
   try {
-    const result = await generateObject({
-      model: createOpenAI({ apiKey })(modelId),
-      schema: pieceAiSchema(templates, kind),
-      schemaName: "peca_do_estudio",
-      system: STUDIO_AI_SYSTEM_PROMPT,
+    const result = await runStudioAi({
+      apiKey,
+      kind,
+      templates,
       prompt: buildStudioPrompt({ collection, kind, templates, titulo, slides, legenda, pedido }),
-      ...openAIGenerationOptions(modelId, { reasoningEffort: "low", temperature: 0.3 }),
-      maxRetries: 1,
-      abortSignal: AbortSignal.timeout(55_000),
     });
 
-    const nextSlides = keepSlideIds(slides, normalizeSlides(result.object.slides, tag, kind));
+    const nextSlides = carryOverImages(slides, keepSlideIds(slides, dropDuplicateSlides(normalizeSlides(result.slides, tag, kind))));
     if (nextSlides.length === 0) {
       return NextResponse.json({ error: "A IA não devolveu nenhum slide válido. Tente reformular o pedido." }, { status: 502 });
     }
     return NextResponse.json({
       slides: nextSlides,
-      legenda: kind === "stories" ? "" : result.object.legenda,
-      resumo: result.object.resumo,
+      legenda: kind === "stories" ? "" : result.legenda,
+      resumo: result.resumo,
     });
   } catch (error) {
     console.error("[estudio/ajustar] falha", error);

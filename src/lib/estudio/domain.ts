@@ -1,4 +1,5 @@
-import { normalizeValues, valuesToLines, type FieldValues } from "./fields";
+import { imageKeys, normalizeValues, valuesToLines, type FieldValues } from "./fields";
+import { slugifyFileName } from "./images";
 import { POSTING_FIELD_KEYS, getTemplate, templatesFor } from "./templates";
 import { PIECE_MAX_SLIDES, type PieceKind, type StudioSlide, type StudioTemplateDef } from "./types";
 
@@ -17,8 +18,8 @@ export function starterSlides(tag: string, kind: PieceKind): StudioSlide[] {
   if (options.length === 0) return [];
   if (kind === "carrossel") {
     const capa = options.find((t) => t.id.endsWith("-capa")) ?? options[0];
-    const prog = options.find((t) => t.id.endsWith("-programacao"));
-    return [newSlide(capa), ...(prog ? [newSlide(prog)] : [])];
+    const miolo = options.find((t) => t.id.endsWith("-programacao") || t.id.endsWith("-conteudo"));
+    return [newSlide(capa), ...(miolo ? [newSlide(miolo)] : [])];
   }
   if (kind === "feed") {
     const capa = options.find((t) => t.id.endsWith("-capa"));
@@ -50,6 +51,127 @@ export function normalizeSlides(raw: unknown, tag: string, kind: PieceKind): Stu
 export function switchSlideTemplate(slide: StudioSlide, template: StudioTemplateDef): StudioSlide {
   const merged = { ...template.exemplo, ...Object.fromEntries(Object.entries(slide.valores).filter(([k]) => template.campos.some((c) => c.key === k))) };
   return { ...slide, modelo: template.id, valores: normalizeValues(template.campos, merged) };
+}
+
+/**
+ * A IA não vê nem devolve imagens: depois de um ajuste, cada slide recupera as fotos
+ * e logos do slide que estava no mesmo lugar com o mesmo modelo (ou do primeiro slide
+ * desse modelo que tinha a imagem).
+ */
+export function carryOverImages(previous: StudioSlide[], next: StudioSlide[]): StudioSlide[] {
+  return next.map((slide, index) => {
+    const template = getTemplate(slide.modelo);
+    const keys = template ? imageKeys(template.campos) : [];
+    if (keys.length === 0) return slide;
+    const valores = { ...slide.valores };
+    for (const key of keys) {
+      if (valores[key]) continue;
+      const same = previous[index]?.modelo === slide.modelo ? previous[index] : null;
+      const source = same?.valores[key] ? same : previous.find((p) => p.modelo === slide.modelo && p.valores[key]);
+      if (source) valores[key] = source.valores[key];
+    }
+    return { ...slide, valores };
+  });
+}
+
+export interface AuthorProfile {
+  name: string;
+  gender: string | null;
+  position: string | null;
+  department: string | null;
+}
+
+/**
+ * "Por: Dra. Fulana" e o cargo da capa a partir do cadastro do RH. Dr./Dra. e o
+ * feminino/masculino do cargo vêm do gênero cadastrado; sem ele, sai sem tratamento.
+ */
+export function authorCredit(person: AuthorProfile, area: string): { autor: string; cargo: string } {
+  const position = (person.position ?? "").trim();
+  const dept = (person.department ?? "").trim() || area.trim();
+  const g = person.gender === "F" ? "F" : person.gender === "M" ? "M" : null;
+  const where = dept ? ` da área de ${dept}` : "";
+  const roles: { re: RegExp; f: string; m: string; titled: boolean }[] = [
+    { re: /advogad/i, f: "Advogada", m: "Advogado", titled: true },
+    { re: /s[óo]ci/i, f: "Sócia", m: "Sócio", titled: true },
+    { re: /estagi/i, f: "Estagiária", m: "Estagiário", titled: false },
+    { re: /supervis/i, f: "Supervisora", m: "Supervisor", titled: false },
+    { re: /coordena/i, f: "Coordenadora", m: "Coordenador", titled: false },
+  ];
+  const role = roles.find((r) => r.re.test(position));
+  const honorific = role?.titled && g ? (g === "F" ? "Dra. " : "Dr. ") : "";
+  let cargo: string;
+  if (role) cargo = g ? `${g === "F" ? role.f : role.m}${where}` : dept ? `Área de ${dept}` : "";
+  else cargo = position ? `${position}${where}` : dept ? `Área de ${dept}` : "";
+  return { autor: `${honorific}${person.name.trim()}`, cargo };
+}
+
+/** Foto da galeria cujo nome traz o primeiro e o último nome da pessoa. */
+export function matchPhoto(paths: string[], name: string): string | null {
+  const tokens = slugifyFileName(name).split("-").filter((t) => t.length > 1);
+  if (tokens.length === 0) return null;
+  const first = tokens[0];
+  const last = tokens[tokens.length - 1];
+  const hit = paths.find((p) => {
+    const slug = slugifyFileName(p.split("/").pop() ?? "");
+    return slug.includes(first) && (tokens.length === 1 || slug.includes(last));
+  });
+  return hit ?? null;
+}
+
+const normalizeForMatch = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\*\*/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+/**
+ * Frases do miolo de um post do Gerador (sem a capa, os títulos e as marcações de
+ * roteiro), para conferir se a IA não deixou nada de fora.
+ */
+export function approvedSentences(post: string): string[] {
+  const sections = post.split(/\n\s*-{3,}\s*\n/);
+  const body = sections.filter((section, i) => !(i === 0 && /capa/i.test(section.split("\n").slice(0, 3).join(" "))));
+  const lines = body
+    .flatMap((section) => section.split("\n"))
+    // títulos marcados podem mudar de caixa e de forma no slide
+    .filter((line) => !/^\s*(\*\*)?\s*(T[íi]tulo|Subt[íi]tulo)\s*:?/i.test(line))
+    .map((line) =>
+      line
+        .replace(/\*\*(T[íi]tulo|Subt[íi]tulo|Conte[úu]do):?\*\*:?/gi, "")
+        .replace(/^(T[íi]tulo|Subt[íi]tulo|Conte[úu]do):/i, "")
+        .replace(/^[\s·•\-–*]+/, "")
+        .replace(/\*\*/g, "")
+        .trim()
+    )
+    .filter((line) => line && !/^slide\b/i.test(line) && !/^post em carrossel/i.test(line))
+    // título de slide: linha curta sem pontuação final
+    .filter((line) => /[.?!:;)]$/.test(line) || line.length >= 80);
+  return lines.flatMap((line) => line.split(/(?<=[.?!])\s+/)).map((s) => s.trim()).filter((s) => s.length >= 25);
+}
+
+/** Frases do post que não aparecem em nenhum texto dos slides. */
+export function missingSentences(post: string, slides: StudioSlide[]): string[] {
+  const all = normalizeForMatch(slides.map((s) => JSON.stringify(s.valores).replace(/\\n/g, " ")).join(" "));
+  return approvedSentences(post).filter((s) => !all.includes(normalizeForMatch(s)));
+}
+
+/** "Título da matéria - conjur.com.br" → "Título da matéria" */
+export function cleanSourceTitle(title: string): string {
+  return title.replace(/\s+[-–|]\s+[a-z0-9.-]+\.(com|org|net|jus|gov)(\.br)?\s*$/i, "").trim();
+}
+
+/** Tira slides repetidos (mesmo modelo e mesmo conteúdo) — a IA às vezes duplica o último. */
+export function dropDuplicateSlides(slides: StudioSlide[]): StudioSlide[] {
+  const seen = new Set<string>();
+  return slides.filter((slide) => {
+    const key = `${slide.modelo}:${JSON.stringify(slide.valores)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export function moveItem<T>(list: T[], from: number, to: number): T[] {

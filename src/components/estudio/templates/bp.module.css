@@ -1,0 +1,330 @@
+/* Modelos BP (posts.ai) — medidas em px da prancheta 1080×1350, tiradas do Illustrator.
+   Dentro das colunas, 1em = 32px (corpo em Gotham Book 32) e tudo escala junto quando
+   o texto não cabe. */
+
+.board {
+  --bp-ouro: #d5b071;
+  --bp-navy: #0d1e2e;
+  --bp-papel: #fcf8f4;
+  --bp-suave: #f0e8d4;
+  --bp-texto: #0a0a0a;
+  --fonte-titulo: "Estudio Gobold", Impact, "Arial Narrow", sans-serif;
+  --fonte-corpo: "Estudio Gotham", var(--font-estudio-titulo), sans-serif;
+  color: var(--bp-texto);
+  font-family: var(--fonte-corpo);
+}
+
+.escuro {
+  --bp-texto: #ffffff;
+  --bp-suave: rgba(255, 255, 255, 0.17);
+}
+
+.layer {
+  position: absolute;
+  inset: 0;
+  width: 1080px;
+  height: 1350px;
+}
+
+/* ---------- cabeçalho e rodapé ---------- */
+
+.dots {
+  position: absolute;
+  top: 17px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 5.5px;
+}
+
+.dot {
+  width: 42px;
+  height: 8px;
+  border-radius: 999px;
+  background: #efe4cd;
+}
+
+.escuro .dot {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.dot.dotActive {
+  background: var(--bp-ouro);
+}
+
+.headerLine {
+  position: absolute;
+  top: 86px;
+  left: 232px;
+  width: 570px;
+  height: 1.5px;
+  background: linear-gradient(90deg, rgba(213, 176, 113, 0) 0%, rgba(213, 176, 113, 0.45) 35%, rgba(213, 176, 113, 0.45) 65%, rgba(213, 176, 113, 0) 100%);
+}
+
+/* ---------- coluna de conteúdo ---------- */
+
+.column {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  font-size: 32px;
+  line-height: 1.2;
+  overflow: hidden;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--fonte-titulo);
+  font-weight: 400;
+  font-size: 1.96em;
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  text-transform: uppercase;
+  color: var(--bp-ouro);
+  white-space: pre-line;
+}
+
+.titleIcon {
+  display: flex;
+  margin-bottom: 0.7em;
+  color: var(--bp-ouro);
+}
+
+.boxes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9em;
+  margin-top: 1.25em;
+}
+
+.boxWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.label {
+  position: relative;
+  z-index: 1;
+  margin: 0 0 -0.6em 0.8em;
+  padding: 0.12em 0.7em 0.16em;
+  border-radius: 999px;
+  font-size: 0.875em;
+  line-height: 1.3;
+  background: var(--bp-navy);
+  color: #fff;
+}
+
+.escuro .label {
+  background: #5d6874;
+}
+
+.box {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 1.1em;
+  padding: 0.7em 1.1em 0.62em 1.15em;
+  border-radius: 0.88em;
+  background: var(--bp-suave);
+  color: var(--bp-texto);
+}
+
+.withLabel {
+  padding-top: 1.05em;
+}
+
+.contorno {
+  background: var(--bp-papel);
+  border: 2px solid var(--bp-ouro);
+}
+
+.escuro .contorno {
+  background: transparent;
+}
+
+.destaque {
+  background: var(--bp-ouro);
+  color: var(--bp-papel);
+}
+
+.escuro .destaque {
+  background: rgba(213, 176, 113, 0.3);
+  color: #fff;
+}
+
+.boxIcon {
+  flex: none;
+  display: flex;
+  color: var(--bp-ouro);
+}
+
+.destaque .boxIcon {
+  color: var(--bp-papel);
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  white-space: pre-line;
+  text-align: justify;
+  text-align-last: left;
+  hyphens: manual;
+}
+
+.text strong {
+  font-weight: 600;
+}
+
+.list {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45em;
+}
+
+.list li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55em;
+}
+
+.list li .text {
+  white-space: normal;
+}
+
+.marker {
+  flex: none;
+  display: inline-block;
+  width: 0.34em;
+  height: 0.34em;
+  transform: translateY(-0.12em);
+  background: var(--bp-ouro);
+}
+
+.ponto {
+  border-radius: 999px;
+}
+
+.quadrado {
+  background: var(--bp-texto);
+}
+
+.losango {
+  transform: translateY(-0.14em) rotate(45deg);
+}
+
+/* ---------- capa ---------- */
+
+.pillArea {
+  display: inline-flex;
+  align-items: center;
+  height: 1.13em;
+  padding: 0 0.72em 0.04em;
+  border-radius: 999px;
+  background: var(--bp-ouro);
+  color: var(--bp-papel);
+  font-size: 0.875em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.pillKicker {
+  display: inline-flex;
+  align-items: center;
+  height: 1.52em;
+  padding: 0 0.62em;
+  border: 2px solid var(--bp-ouro);
+  border-radius: 999px;
+  font-family: var(--fonte-titulo);
+  font-size: 1.19em;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--bp-ouro);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.coverTitle {
+  margin: 0;
+  font-family: var(--fonte-titulo);
+  font-weight: 400;
+  font-size: 2.094em;
+  line-height: 1.19;
+  /* o Illustrator usa tracking negativo nos títulos das capas */
+  letter-spacing: -0.032em;
+  text-transform: uppercase;
+  color: var(--bp-ouro);
+  white-space: pre-line;
+}
+
+.coverRule {
+  height: 2px;
+  width: 9.7em;
+  background: linear-gradient(90deg, rgba(213, 176, 113, 0) 0%, rgba(213, 176, 113, 0.9) 50%, rgba(213, 176, 113, 0) 100%);
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 1em;
+  line-height: 1.2;
+  color: var(--bp-texto);
+  white-space: pre-line;
+}
+
+.author {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+  transform: translateX(-50%);
+}
+
+.authorName {
+  margin: 0;
+  font-weight: 500;
+  font-size: 23px;
+  line-height: 1.2;
+  color: var(--bp-texto);
+  /* quebra só se não couber nem com a fonte reduzida (FitText) */
+  white-space: normal;
+}
+
+.authorRole {
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 24px;
+  border: 1.5px solid var(--bp-ouro);
+  border-radius: 999px;
+  background: var(--bp-papel);
+  font-size: 15.5px;
+  line-height: 1;
+  color: var(--bp-texto);
+  white-space: nowrap;
+}
+
+.escuro .authorRole {
+  background: #111d2c;
+}
+
+.photo {
+  position: absolute;
+  object-fit: contain;
+  object-position: center bottom;
+}
+
+.clientLogo {
+  display: block;
+  max-width: 12.6em;
+  max-height: 3.3em;
+  object-fit: contain;
+}

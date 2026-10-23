@@ -272,6 +272,7 @@ export function PieceEditor({ piece, onBack }: { piece: StudioPiece; onBack: () 
               <FieldForm
                 fields={currentTemplate.campos}
                 values={current.valores}
+                tag={piece.tag}
                 onChange={(valores) => updateSlide(selected, { ...current, valores })}
               />
             </div>

@@ -44,6 +44,14 @@ export interface StudioCollection {
   nome: string;
   /** Fatos da campanha que a IA pode usar para criar ou completar peças. */
   contexto: string;
+  /**
+   * Como a peça vai para o planner: "tag" cria "[TAG] F06 Feed — Nome" e lista as
+   * tarefas da tag; "posts" usa o título livre e lista as tarefas de post em aberto
+   * (as que o Gerador de conteúdo cria ao mandar o post para o Marketing).
+   */
+  planner: "tag" | "posts";
+  /** Peças podem nascer de um post do Gerador de conteúdo. */
+  importaPosts?: boolean;
 }
 
 export interface StudioSlide {
@@ -60,6 +68,7 @@ export interface StudioPiece {
   slides: StudioSlide[];
   legenda: string;
   request_id: string | null;
+  roteiro_id: string | null;
   created_by_id: string | null;
   created_at: string;
   updated_at: string;

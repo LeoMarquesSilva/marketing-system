@@ -20,6 +20,11 @@ const FONTS_DIR = path.join(process.cwd(), "src/lib/estudio/assets/fonts");
 export const STUDIO_FONT_FILES: Record<string, { family: string; weight: number; candidates: string[] }> = {
   titulo: { family: "Estudio Neulis", weight: 700, candidates: ["NeulisNeue-Bold.otf", "NeulisNeue-Bold.ttf", "NeulisNeue-Bold.woff2"] },
   apoio: { family: "Estudio Century Gothic", weight: 400, candidates: ["CenturyGothic.ttf"] },
+  // Posts do escritório (posts.ai). Sem a Gotham na pasta, o corpo sai em Montserrat.
+  gobold: { family: "Estudio Gobold", weight: 400, candidates: ["Gobold-Regular.otf"] },
+  "gotham-book": { family: "Estudio Gotham", weight: 400, candidates: ["Gotham-Book.otf", "Gotham-Book.ttf"] },
+  "gotham-medium": { family: "Estudio Gotham", weight: 500, candidates: ["Gotham-Medium.otf", "Gotham-Medium.ttf"] },
+  "gotham-bold": { family: "Estudio Gotham", weight: 700, candidates: ["Gotham-Bold.otf", "Gotham-Bold.ttf"] },
 };
 
 export async function studioFontPath(name: string): Promise<string | null> {
@@ -62,7 +67,7 @@ export async function requireStudioUser(): Promise<StudioAuth> {
   return { profile: auth.profile };
 }
 
-const PIECE_COLUMNS = "id, tag, titulo, tipo, slides, legenda, request_id, created_by_id, created_at, updated_at";
+const PIECE_COLUMNS = "id, tag, titulo, tipo, slides, legenda, request_id, roteiro_id, created_by_id, created_at, updated_at";
 const KINDS: PieceKind[] = ["feed", "carrossel", "stories"];
 
 export function isPieceKind(value: unknown): value is PieceKind {
@@ -80,6 +85,7 @@ function toPiece(row: Record<string, unknown>): StudioPiece {
     slides: normalizeSlides(row.slides, tag, tipo),
     legenda: String(row.legenda ?? ""),
     request_id: (row.request_id as string | null) ?? null,
+    roteiro_id: (row.roteiro_id as string | null) ?? null,
     created_by_id: (row.created_by_id as string | null) ?? null,
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
@@ -117,6 +123,8 @@ export interface PieceInput {
   tipo: PieceKind;
   slides: unknown;
   legenda: string;
+  roteiro_id?: string | null;
+  request_id?: string | null;
 }
 
 export async function createPiece(input: PieceInput, createdById: string): Promise<StudioPiece> {
@@ -130,6 +138,8 @@ export async function createPiece(input: PieceInput, createdById: string): Promi
       tipo: input.tipo,
       slides: normalizeSlides(input.slides, input.tag, input.tipo),
       legenda: input.legenda.slice(0, 5000),
+      roteiro_id: input.roteiro_id ?? null,
+      request_id: input.request_id ?? null,
       created_by_id: createdById,
     })
     .select(PIECE_COLUMNS)

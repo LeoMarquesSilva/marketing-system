@@ -2,13 +2,26 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { GalleryHorizontalEnd, Loader2, Plus, RectangleVertical, Square, Trash2, Wand2 } from "lucide-react";
+import { FileInput, GalleryHorizontalEnd, Loader2, Plus, RectangleVertical, Square, Trash2, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { starterSlides } from "@/lib/estudio/domain";
 import { STUDIO_COLLECTIONS, templatesFor } from "@/lib/estudio/templates";
 import { PIECE_KIND_LABEL, type PieceKind, type StudioPiece, type StudioPieceSummary } from "@/lib/estudio/types";
 import { PieceEditor } from "./piece-editor";
+import { PostImportDialog } from "./post-import-dialog";
+
+const TAG_KEY = "estudio:colecao";
+
+function rememberedTag(): string {
+  const fallback = STUDIO_COLLECTIONS[0]?.tag ?? "";
+  try {
+    const saved = window.localStorage.getItem(TAG_KEY);
+    return saved && STUDIO_COLLECTIONS.some((c) => c.tag === saved) ? saved : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 const KIND_ICON: Record<PieceKind, typeof Square> = { feed: Square, carrossel: GalleryHorizontalEnd, stories: RectangleVertical };
 
@@ -23,9 +36,24 @@ export function EstudioClient() {
   const [pieces, setPieces] = useState<StudioPieceSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tag, setTag] = useState(STUDIO_COLLECTIONS[0]?.tag ?? "");
+  const [tag, setTagState] = useState(STUDIO_COLLECTIONS[0]?.tag ?? "");
   const [creating, setCreating] = useState<PieceKind | null>(null);
   const [openPiece, setOpenPiece] = useState<StudioPiece | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+
+  useEffect(() => {
+    // preferência do navegador, lida depois de montar
+    setTagState(rememberedTag());
+  }, []);
+
+  function setTag(next: string) {
+    setTagState(next);
+    try {
+      window.localStorage.setItem(TAG_KEY, next);
+    } catch {
+      // sem armazenamento: só não lembra a escolha
+    }
+  }
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -129,6 +157,19 @@ export function EstudioClient() {
 
       <section className="border-y border-[#47cdd0]/30 bg-[#04202f] px-5 py-6 text-white">
         <p className="text-xs font-semibold text-[#8ae5e6]">NOVA PEÇA · [{tag}] {collection?.nome}</p>
+        {collection?.importaPosts && (
+          <button
+            type="button"
+            onClick={() => setImportOpen(true)}
+            className="mt-4 flex w-full items-center gap-3 border border-[#8ae5e6]/40 bg-[#8ae5e6]/10 px-4 py-3 text-left transition hover:bg-[#8ae5e6]/15"
+          >
+            <FileInput className="h-5 w-5 text-[#8ae5e6]" aria-hidden />
+            <span>
+              <span className="block text-sm font-semibold">Montar a partir de um post do Gerador</span>
+              <span className="block text-xs text-white/60">Escolha o post aprovado e a IA distribui o texto nos slides do escritório.</span>
+            </span>
+          </button>
+        )}
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           {(["feed", "carrossel", "stories"] as PieceKind[]).map((kind) => {
             const Icon = KIND_ICON[kind];
@@ -154,6 +195,8 @@ export function EstudioClient() {
       </section>
 
       {error && <p className="border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</p>}
+
+      {importOpen && <PostImportDialog open onOpenChange={setImportOpen} />}
 
       <section aria-label="Peças salvas" className="space-y-3">
         <h3 className="text-sm font-semibold">Peças salvas</h3>

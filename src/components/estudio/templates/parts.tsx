@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ElementType } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ElementType, type ReactNode } from "react";
 import type { FieldValues, ListItem } from "@/lib/estudio/fields";
 import type { PieceKind } from "@/lib/estudio/types";
 
@@ -82,6 +82,58 @@ export function FitText({
     <Tag ref={ref} className={className} style={{ ...style, lineHeight }}>
       {children}
     </Tag>
+  );
+}
+
+/**
+ * Coluna que reduz a fonte-base (e tudo o que está em em) até o conteúdo caber na
+ * altura dela, sem passar de `minScale`.
+ */
+export function FitColumn({
+  children,
+  base,
+  minScale = 0.72,
+  className,
+  style,
+  deps,
+}: {
+  children: ReactNode;
+  base: number;
+  minScale?: number;
+  className?: string;
+  style?: CSSProperties;
+  deps: unknown;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const fontsVersion = useFontsVersion();
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let scale = 1;
+    el.style.fontSize = `${base}px`;
+    while (scale > minScale && el.scrollHeight > el.clientHeight + 1) {
+      scale = Math.round((scale - 0.02) * 100) / 100;
+      el.style.fontSize = `${base * scale}px`;
+    }
+  }, [deps, base, minScale, fontsVersion]);
+
+  return (
+    <div ref={ref} className={className} style={style}>
+      {children}
+    </div>
+  );
+}
+
+/** Texto com **negrito**. */
+export function RichText({ text }: { text: string }) {
+  const parts = text.split(/(\*\*.+?\*\*)/g).filter(Boolean);
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.startsWith("**") && part.endsWith("**") && part.length > 4 ? <strong key={i}>{part.slice(2, -2)}</strong> : part
+      )}
+    </>
   );
 }
 

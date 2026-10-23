@@ -31,6 +31,13 @@ export interface OptionField extends BaseField {
   padrao: string;
 }
 
+/** Imagem enviada pelo usuário (foto de capa, logo de cliente). A IA não mexe nela. */
+export interface ImageField extends BaseField {
+  kind: "imagem";
+  /** Pasta da galeria da coleção, para reaproveitar o que já foi enviado. */
+  pasta: "fotos" | "logos";
+}
+
 export interface ListField extends BaseField {
   kind: "lista";
   /** Nome de um item ("Palco", "Item"), usado no botão de adicionar. */
@@ -40,7 +47,19 @@ export interface ListField extends BaseField {
   campos: (TextField | OptionField)[];
 }
 
-export type StudioField = TextField | ToggleField | OptionField | ListField;
+export type StudioField = TextField | ToggleField | OptionField | ImageField | ListField;
+
+/** Caminho no bucket ESTUDIO-PECAS: "<TAG>/<pasta>/<arquivo>". */
+export const IMAGE_PATH_RE = /^[A-Za-z0-9_-]{1,24}\/(fotos|logos)\/[A-Za-z0-9._-]{1,140}$/;
+
+export function imageKeys(fields: StudioField[]): string[] {
+  return fields.filter((f) => f.kind === "imagem").map((f) => f.key);
+}
+
+/** Tira a marcação de negrito (**texto**) para o texto puro. */
+export function stripMarkup(text: string): string {
+  return text.replace(/\*\*(.+?)\*\*/g, "$1");
+}
 export type ListItem = Record<string, string>;
 export type FieldValue = string | boolean | ListItem[];
 export type FieldValues = Record<string, FieldValue>;
@@ -56,7 +75,7 @@ export function emptyListItem(field: ListField): ListItem {
 export function defaultValues(fields: StudioField[]): FieldValues {
   const values: FieldValues = {};
   for (const f of fields) {
-    if (f.kind === "texto") values[f.key] = "";
+    if (f.kind === "texto" || f.kind === "imagem") values[f.key] = "";
     else if (f.kind === "alternar") values[f.key] = f.padrao;
     else if (f.kind === "opcao") values[f.key] = f.padrao;
     else values[f.key] = Array.from({ length: f.min }, () => defaultItem(f.campos));
@@ -64,10 +83,18 @@ export function defaultValues(fields: StudioField[]): FieldValues {
   return values;
 }
 
+/** Corta no limite sem partir palavra (texto da IA às vezes passa um pouco). */
+function clip(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const space = cut.lastIndexOf(" ");
+  return (space > max * 0.6 ? cut.slice(0, space) : cut).replace(/[\s,;:–—-]+$/, "");
+}
+
 function normalizeText(field: TextField, raw: unknown): string {
   const text = typeof raw === "string" ? raw : raw == null ? "" : String(raw);
   const clean = field.multilinha ? text.replace(/\r\n?/g, "\n") : text.replace(/\s*\n\s*/g, " ");
-  return clean.slice(0, field.max);
+  return clip(clean, field.max);
 }
 
 function normalizeOption(field: OptionField, raw: unknown): string {
@@ -81,6 +108,7 @@ export function normalizeValues(fields: StudioField[], raw: unknown): FieldValue
   for (const f of fields) {
     const v = source[f.key];
     if (f.kind === "texto") values[f.key] = normalizeText(f, v);
+    else if (f.kind === "imagem") values[f.key] = typeof v === "string" && IMAGE_PATH_RE.test(v) ? v : "";
     else if (f.kind === "alternar") values[f.key] = typeof v === "boolean" ? v : f.padrao;
     else if (f.kind === "opcao") values[f.key] = normalizeOption(f, v);
     else {
@@ -109,10 +137,11 @@ function optionSchema(field: OptionField) {
   return z.enum(values).describe([field.label, field.dica].filter(Boolean).join(". "));
 }
 
-/** Schema dos valores de um modelo para a IA (campo vazio = não usar). */
+/** Schema dos valores de um modelo para a IA (campo vazio = não usar). Imagens ficam de fora. */
 export function aiValuesSchema(fields: StudioField[]) {
   const shape: Record<string, z.ZodType> = {};
   for (const f of fields) {
+    if (f.kind === "imagem") continue;
     if (f.kind === "texto") shape[f.key] = textSchema(f);
     else if (f.kind === "alternar") shape[f.key] = z.boolean().describe([f.label, f.dica].filter(Boolean).join(". "));
     else if (f.kind === "opcao") shape[f.key] = optionSchema(f);
@@ -130,6 +159,7 @@ export function aiValuesSchema(fields: StudioField[]) {
 /** Lista legível dos campos de um modelo, para o prompt da IA. */
 export function describeFields(fields: StudioField[]): string {
   return fields
+    .filter((f) => f.kind !== "imagem")
     .map((f) => {
       if (f.kind === "texto") return `- ${f.key} (texto, até ${f.max}): ${f.label}${f.dica ? ` — ${f.dica}` : ""}`;
       if (f.kind === "alternar") return `- ${f.key} (sim/não): ${f.label}${f.dica ? ` — ${f.dica}` : ""}`;
@@ -145,12 +175,12 @@ export function valuesToLines(fields: StudioField[], values: FieldValues): strin
   const lines: string[] = [];
   for (const f of fields) {
     const v = values[f.key];
-    if (f.kind === "texto" && typeof v === "string" && v.trim()) lines.push(`${f.label}: ${v.trim()}`);
+    if (f.kind === "texto" && typeof v === "string" && v.trim()) lines.push(`${f.label}: ${stripMarkup(v.trim())}`);
     if (f.kind === "lista" && Array.isArray(v)) {
       for (const item of v) {
         const parts = f.campos
           .filter((c) => c.kind === "texto")
-          .map((c) => item[c.key]?.trim())
+          .map((c) => stripMarkup(item[c.key]?.trim() ?? ""))
           .filter(Boolean);
         if (parts.length) lines.push(`${f.item}: ${parts.join(" — ")}`);
       }

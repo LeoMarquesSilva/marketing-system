@@ -1,7 +1,7 @@
 import { supabase } from "@/utils/supabase/client";
 import { getTitleTag } from "@/lib/planner-title-tag";
 import { uploadRequestFile } from "@/lib/request-files/client";
-import { nextPieceCode, plannerChecklist, plannerTitle, slideFileName } from "@/lib/estudio/domain";
+import { nextPieceCode, plannerChecklist, slideFileName } from "@/lib/estudio/domain";
 import type { PieceKind, StudioSlide } from "@/lib/estudio/types";
 
 export interface TagRequest {
@@ -15,16 +15,40 @@ export interface TagRequest {
   requested_at: string;
 }
 
+const REQUEST_COLUMNS = "id, title, workflow_stage, requesting_area, solicitante, solicitante_id, link, requested_at";
+
 /** Solicitações do planner com a tag no título (mais recentes primeiro). */
 export async function fetchTagRequests(tag: string): Promise<TagRequest[]> {
   const like = tag.replace(/[%_\\]/g, (c) => `\\${c}`);
   const { data, error } = await supabase
     .from("marketing_requests")
-    .select("id, title, workflow_stage, requesting_area, solicitante, solicitante_id, link, requested_at")
+    .select(REQUEST_COLUMNS)
     .ilike("title", `%[${like}]%`)
     .order("requested_at", { ascending: false });
   if (error) throw new Error("Não foi possível carregar as solicitações da campanha.");
   return ((data ?? []) as TagRequest[]).filter((r) => getTitleTag(r.title)?.tag === tag);
+}
+
+/**
+ * Tarefas de post em aberto (as que o Gerador cria ao mandar o post ao Marketing),
+ * com a tarefa ligada à peça sempre na lista.
+ */
+export async function fetchOpenPostRequests(linkedId: string | null): Promise<TagRequest[]> {
+  const { data, error } = await supabase
+    .from("marketing_requests")
+    .select(REQUEST_COLUMNS)
+    .eq("request_type", "Post Redes Sociais")
+    .neq("workflow_stage", "concluido")
+    .order("requested_at", { ascending: false })
+    .limit(60);
+  if (error) throw new Error("Não foi possível carregar as tarefas de post.");
+  const list = ((data ?? []) as TagRequest[]).filter((r) => !getTitleTag(r.title) && r.id !== linkedId);
+  if (linkedId) {
+    // primeiro da lista: é dela que uma solicitação nova copia área, solicitante e link
+    const { data: linked } = await supabase.from("marketing_requests").select(REQUEST_COLUMNS).eq("id", linkedId).maybeSingle();
+    if (linked) list.unshift(linked as TagRequest);
+  }
+  return list;
 }
 
 export function suggestCode(requests: TagRequest[], tag: string, kind: PieceKind): string {
@@ -52,12 +76,12 @@ async function uploadAll(requestId: string, kind: PieceKind, files: Blob[], user
  * com o texto de cada slide no checklist) e sobe as artes. A área, o solicitante e
  * o link vêm da solicitação mais recente da mesma tag.
  */
-export async function sendAsNewRequest(input: SendInput & { code: string; name: string; deadline: string | null; requests: TagRequest[] }): Promise<string> {
+export async function sendAsNewRequest(input: SendInput & { title: string; deadline: string | null; requests: TagRequest[] }): Promise<string> {
   const base = input.requests[0];
   const { data, error } = await supabase
     .from("marketing_requests")
     .insert({
-      title: plannerTitle(input.tag, input.code, input.kind, input.name),
+      title: input.title,
       description: `Peça criada no Estúdio de peças (${input.files.length} ${input.files.length === 1 ? "arte" : "artes"}).`,
       requesting_area: base?.requesting_area ?? "Institucional",
       solicitante: base?.solicitante ?? input.user.name,

@@ -96,6 +96,7 @@ const listaCampos: StudioField[] = [
 export const OAB_COLLECTION: StudioCollection = {
   tag: "OAB",
   nome: "3º Congresso OAB Campinas",
+  planner: "tag",
   contexto: `Evento: 3º Congresso de Direito Recuperacional, Falimentar e Empresarial da OAB Campinas (o cabeçalho com esse nome já está fixo no fundo de todas as artes).
 Data: quarta-feira, 28 de outubro de 2026, das 8h às 19h. Local: Expo Boulevard Iguatemi, Av. Senador Darcy Ribeiro, 140, Campinas/SP.
 Agenda: credenciamento das 8h às 8h30; abertura das 8h30 às 9h15; 12 painéis em dois palcos; coffee-break 10h15–10h30 e 16h30–17h; almoço 12h30–14h30; palestra de encerramento 18h30–19h.
@@ -274,8 +275,187 @@ const OAB_TEMPLATES: StudioTemplateDef[] = [
   },
 ];
 
-export const STUDIO_COLLECTIONS: StudioCollection[] = [OAB_COLLECTION];
-export const STUDIO_TEMPLATES: StudioTemplateDef[] = [...OAB_TEMPLATES];
+// ---------- coleção BP (posts do escritório, "posts.ai") ----------
+
+const TEMA: OptionField = {
+  kind: "opcao",
+  key: "tema",
+  label: "Tema",
+  padrao: "claro",
+  opcoes: [
+    { value: "claro", label: "Claro (papel)" },
+    { value: "escuro", label: "Escuro (navy)" },
+  ],
+  dica: "Alterne claro e escuro ao longo do carrossel, em pares, como nas peças do escritório.",
+};
+
+/** Ícones em dourado; "pergunta" e "alerta" são os balões cheios das peças. */
+export const BP_ICONS = [
+  { value: "nenhum", label: "Sem ícone" },
+  { value: "pergunta", label: "Balão com ?" },
+  { value: "alerta", label: "Balão com !" },
+  { value: "check", label: "Confirmação" },
+  { value: "escudo", label: "Escudo" },
+  { value: "calendario", label: "Calendário" },
+  { value: "grafico", label: "Gráfico subindo" },
+  { value: "queda", label: "Gráfico caindo" },
+  { value: "dinheiro", label: "Dinheiro" },
+  { value: "cartao", label: "Cartão" },
+  { value: "loja", label: "Loja" },
+  { value: "predio", label: "Empresa/prédio" },
+  { value: "documento", label: "Documento" },
+  { value: "contrato", label: "Contrato assinado" },
+  { value: "balanca", label: "Balança da justiça" },
+  { value: "martelo", label: "Martelo do juiz" },
+  { value: "telefone", label: "Telefone" },
+  { value: "pessoas", label: "Pessoas" },
+  { value: "acordo", label: "Aperto de mãos" },
+  { value: "engrenagem", label: "Engrenagem" },
+  { value: "alvo", label: "Alvo" },
+  { value: "lampada", label: "Ideia" },
+] as const;
+
+const icone = (key: string, label: string, dica: string): OptionField => ({
+  kind: "opcao",
+  key,
+  label,
+  padrao: "nenhum",
+  opcoes: BP_ICONS.map((i) => ({ value: i.value, label: i.label })),
+  dica,
+});
+
+export const BP_COLLECTION: StudioCollection = {
+  tag: "BP",
+  nome: "Posts do escritório",
+  planner: "posts",
+  importaPosts: true,
+  contexto: `Escritório: Bismarchi | Pires Sociedade de Advogados (10 anos), Instagram @bismarchipires. Os posts explicam decisões, leis e casos para empresários e gestores, a partir de textos escritos pelo Gerador de conteúdo e aprovados pelo advogado autor.
+Estrutura dos carrosséis: capa (área, título em caixa alta, subtítulo, foto e nome do autor) + slides de conteúdo com título em caixa alta e de 1 a 4 caixas de texto + último slide com a conclusão e uma chamada para conversar com um advogado da área.
+Estilo das caixas: "suave" (fundo preenchido) para o texto principal, "contorno" para complemento ou exemplo, "destaque" (dourada) para uma frase-chave; listas com marcador quando o texto for uma enumeração; ícone de balão com ? ou ! quando ajudar a leitura; rótulo curto em cima da caixa para separar ideias ("Não há resposta uniforme:", "Dois anos depois").
+Tom: técnico, claro e direto. Não prometer resultado, não usar "imperdível", não citar o veículo de imprensa.`,
+};
+
+const BP_TEMPLATES: StudioTemplateDef[] = [
+  {
+    id: "bp-capa",
+    tag: "BP",
+    nome: "Capa",
+    descricao: "Capa do carrossel: área, chamada opcional, título, logo do cliente opcional, subtítulo, foto e autor.",
+    formato: "feed",
+    usoEm: ["carrossel"],
+    campos: [
+      TEMA,
+      {
+        kind: "opcao",
+        key: "lado",
+        label: "Foto",
+        padrao: "esquerda",
+        opcoes: [
+          { value: "esquerda", label: "À esquerda" },
+          { value: "direita", label: "À direita (só no tema claro)" },
+        ],
+      },
+      { kind: "imagem", key: "foto", label: "Foto do autor (PNG sem fundo)", pasta: "fotos" },
+      { kind: "texto", key: "area", label: "Área", max: 30, dica: "Pílula dourada com a área do Direito. Ex.: Reestruturação." },
+      { kind: "texto", key: "chamada", label: "Chamada", max: 40, dica: "Pílula de contorno acima do título, em caixa alta. Ex.: CLÁUSULAS IPSO FACTO: Vazio = não usar." },
+      titulo(70, "Manchete em caixa alta, curta e forte, até 3 linhas. Ex.: BLOQUEIO NÃO É PAGAMENTO"),
+      { kind: "imagem", key: "logo", label: "Logo do cliente/empresa (opcional)", pasta: "logos" },
+      { kind: "texto", key: "subtitulo", label: "Subtítulo", max: 150, multilinha: true, dica: "Uma frase de apoio em caixa normal." },
+      { kind: "texto", key: "autor", label: "Autor", max: 60, dica: "Nome como sai depois de 'Por:'. Não troque o que já estiver preenchido." },
+      { kind: "texto", key: "cargo", label: "Cargo", max: 80, dica: "Pílula abaixo do autor. Não troque o que já estiver preenchido." },
+    ],
+    exemplo: {
+      tema: "claro",
+      lado: "direita",
+      foto: "",
+      area: "Reestruturação",
+      chamada: "",
+      titulo: "BLOQUEIO NÃO É PAGAMENTO",
+      logo: "",
+      subtitulo: "Valor tratado antes da recuperação judicial não vai direto ao banco credor",
+      autor: "Dra. Thayná Rodrigues Cabalin",
+      cargo: "Advogada da área de Reestruturação",
+    },
+  },
+  {
+    id: "bp-conteudo",
+    tag: "BP",
+    nome: "Conteúdo",
+    descricao:
+      "Slide de conteúdo: ícone opcional, título em caixa alta e de 1 a 4 caixas de texto (suave, contorno ou destaque), com ícone, rótulo ou marcadores. O último slide do carrossel sai sem 'arraste'.",
+    formato: "feed",
+    usoEm: ["carrossel"],
+    campos: [
+      TEMA,
+      icone("icone", "Ícone acima do título", "Opcional. 'pergunta' em títulos que são perguntas, 'alerta' em avisos."),
+      titulo(80, "Caixa alta, até 2 linhas. Ex.: O QUE DECIDIU O TJGO?"),
+      {
+        kind: "lista",
+        key: "caixas",
+        label: "Caixas de texto",
+        item: "Caixa",
+        min: 1,
+        max: 4,
+        dica: "De 1 a 4 caixas; somadas, até uns 650 caracteres por slide.",
+        campos: [
+          {
+            kind: "opcao",
+            key: "estilo",
+            label: "Estilo",
+            padrao: "suave",
+            opcoes: [
+              { value: "suave", label: "Preenchida" },
+              { value: "contorno", label: "Contorno" },
+              { value: "destaque", label: "Destaque dourado" },
+            ],
+          },
+          icone("icone", "Ícone à esquerda", "Opcional."),
+          {
+            kind: "opcao",
+            key: "marcador",
+            label: "Marcadores",
+            padrao: "nenhum",
+            opcoes: [
+              { value: "nenhum", label: "Texto corrido" },
+              { value: "ponto", label: "Lista com pontos" },
+              { value: "quadrado", label: "Lista com quadrados" },
+              { value: "losango", label: "Lista com losangos" },
+            ],
+            dica: "Com marcador, cada linha do texto (\\n) vira um item.",
+          },
+          { kind: "texto", key: "rotulo", label: "Rótulo em cima da caixa", max: 40, dica: "Opcional. Ex.: Não há resposta uniforme:" },
+          { kind: "texto", key: "texto", label: "Texto", max: 520, multilinha: true, dica: "Use **negrito** para destacar valores e termos." },
+        ],
+      },
+    ],
+    exemplo: {
+      tema: "claro",
+      icone: "nenhum",
+      titulo: "O QUE DECIDIU O TJGO?",
+      caixas: [
+        {
+          estilo: "suave",
+          icone: "nenhum",
+          marcador: "nenhum",
+          rotulo: "",
+          texto:
+            "Em recuperação judicial de produtores rurais em Hidrolândia (GO), o Santander havia bloqueado valores via Sisbajud, em execução individual, antes do deferimento do processamento do pedido.",
+        },
+        {
+          estilo: "contorno",
+          icone: "nenhum",
+          marcador: "nenhum",
+          rotulo: "",
+          texto:
+            "A 7ª Câmara Cível do TJGO manteve a decisão que liberou esses valores: o bloqueio era válido, mas o dinheiro estava apenas indisponível, sem levantamento pelo banco.",
+        },
+      ],
+    },
+  },
+];
+
+export const STUDIO_COLLECTIONS: StudioCollection[] = [BP_COLLECTION, OAB_COLLECTION];
+export const STUDIO_TEMPLATES: StudioTemplateDef[] = [...BP_TEMPLATES, ...OAB_TEMPLATES];
 
 export function getTemplate(id: string): StudioTemplateDef | null {
   return STUDIO_TEMPLATES.find((t) => t.id === id) ?? null;

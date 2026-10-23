@@ -8,7 +8,7 @@ import { studioFontFaceCss } from "@/lib/estudio/server";
  * Enquanto a Neulis não chegar, os títulos usam a Montserrat Bold.
  */
 const kanit = Kanit({ subsets: ["latin"], weight: ["600"], variable: "--font-estudio-kanit", display: "block" });
-const montserrat = Montserrat({ subsets: ["latin"], weight: ["400", "700"], variable: "--font-estudio-titulo", display: "block" });
+const montserrat = Montserrat({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-estudio-titulo", display: "block" });
 
 export const dynamic = "force-dynamic";
 

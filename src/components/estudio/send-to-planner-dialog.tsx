@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { plannerTitle } from "@/lib/estudio/domain";
+import { getCollection } from "@/lib/estudio/templates";
 import type { PieceKind, StudioSlide } from "@/lib/estudio/types";
-import { attachToRequest, fetchTagRequests, sendAsNewRequest, suggestCode, type TagRequest } from "./planner-send";
+import { attachToRequest, fetchOpenPostRequests, fetchTagRequests, sendAsNewRequest, suggestCode, type TagRequest } from "./planner-send";
 
 interface Props {
   open: boolean;
@@ -32,6 +33,8 @@ interface Props {
  */
 export function SendToPlannerDialog({ open, onOpenChange, tag, kind, titulo, slides, legenda, linkedRequestId, user, renderFiles, onSent }: Props) {
   const [initialTarget] = useState(linkedRequestId);
+  // posts do escritório: título livre e as tarefas de post em aberto; campanhas: "[TAG] F06 Feed — Nome"
+  const byTag = getCollection(tag)?.planner !== "posts";
   const [requests, setRequests] = useState<TagRequest[]>([]);
   const [mode, setMode] = useState<"nova" | "existente">(linkedRequestId ? "existente" : "nova");
   const [code, setCode] = useState("");
@@ -44,18 +47,20 @@ export function SendToPlannerDialog({ open, onOpenChange, tag, kind, titulo, sli
 
   useEffect(() => {
     let alive = true;
-    fetchTagRequests(tag)
+    (byTag ? fetchTagRequests(tag) : fetchOpenPostRequests(initialTarget))
       .then((list) => {
         if (!alive) return;
         setRequests(list);
-        setCode(suggestCode(list, tag, kind));
+        if (byTag) setCode(suggestCode(list, tag, kind));
         setTargetId((current) => current || initialTarget || list[0]?.id || "");
       })
       .catch((err) => alive && setError(err instanceof Error ? err.message : "Falha ao carregar o planner."));
     return () => {
       alive = false;
     };
-  }, [tag, kind, initialTarget]);
+  }, [tag, kind, initialTarget, byTag]);
+
+  const newTitle = byTag ? plannerTitle(tag, code.trim().toUpperCase() || "?", kind, name) : name.trim();
 
   async function submit() {
     if (!user) return setError("Faça login de novo para enviar ao planner.");
@@ -66,8 +71,9 @@ export function SendToPlannerDialog({ open, onOpenChange, tag, kind, titulo, sli
       setBusy("Enviando para o planner…");
       let requestId: string;
       if (mode === "nova") {
-        if (!/^[A-Z]\d{2,}$/i.test(code.trim())) throw new Error("Use um código como F06, C04 ou S11.");
-        requestId = await sendAsNewRequest({ tag, kind, slides, legenda, files, user, code: code.trim().toUpperCase(), name, deadline: deadline || null, requests });
+        if (byTag && !/^[A-Z]\d{2,}$/i.test(code.trim())) throw new Error("Use um código como F06, C04 ou S11.");
+        if (!name.trim()) throw new Error("Dê um nome para a tarefa.");
+        requestId = await sendAsNewRequest({ tag, kind, slides, legenda, files, user, title: newTitle, deadline: deadline || null, requests });
       } else {
         if (!targetId) throw new Error("Escolha a solicitação.");
         await attachToRequest(targetId, { kind, files, user });
@@ -88,7 +94,9 @@ export function SendToPlannerDialog({ open, onOpenChange, tag, kind, titulo, sli
         <DialogHeader>
           <DialogTitle>Enviar ao planner</DialogTitle>
           <DialogDescription>
-            As artes vão em PNG para a tarefa e aparecem em /entregas/{tag.toLowerCase()} assim que a tarefa estiver em revisão.
+            {byTag
+              ? `As artes vão em PNG para a tarefa e aparecem em /entregas/${tag.toLowerCase()} assim que a tarefa estiver em revisão.`
+              : "As artes vão em PNG para a tarefa do post no planner, na ordem dos slides."}
           </DialogDescription>
         </DialogHeader>
 
@@ -125,11 +133,13 @@ export function SendToPlannerDialog({ open, onOpenChange, tag, kind, titulo, sli
 
             {mode === "nova" ? (
               <div className="space-y-3">
-                <div className="grid grid-cols-[110px_1fr] gap-3">
-                  <label className="space-y-1.5 text-xs font-medium">
-                    Código
-                    <Input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} maxLength={5} className="h-9 bg-white" />
-                  </label>
+                <div className={cn("grid gap-3", byTag && "grid-cols-[110px_1fr]")}>
+                  {byTag && (
+                    <label className="space-y-1.5 text-xs font-medium">
+                      Código
+                      <Input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} maxLength={5} className="h-9 bg-white" />
+                    </label>
+                  )}
                   <label className="space-y-1.5 text-xs font-medium">
                     Nome da peça
                     <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={90} className="h-9 bg-white" />
@@ -140,7 +150,7 @@ export function SendToPlannerDialog({ open, onOpenChange, tag, kind, titulo, sli
                   <Input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} className="h-9 w-48 bg-white" />
                 </label>
                 <p className="text-xs text-muted-foreground">
-                  Vai criar <span className="font-medium text-foreground">{plannerTitle(tag, code || "?", kind, name)}</span> em revisão, atribuída a você, com o texto de cada slide no checklist.
+                  Vai criar <span className="font-medium text-foreground">{newTitle || "?"}</span> em revisão, atribuída a você, com o texto de cada slide no checklist.
                 </p>
               </div>
             ) : (
