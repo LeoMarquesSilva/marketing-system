@@ -1,14 +1,15 @@
 import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { chaveNome, type OpcaoVios } from "./agendamento";
+import { chaveNome, type EtapaVios, type OpcaoVios } from "./agendamento";
 import { VistagemError } from "./errors";
 import { cisDoResultado, type LinhaFilaSama, type ModoAgendamento } from "./fila-vios";
 import type { TipoNaArvore } from "./fluxo-vios";
 
 /**
  * Integração com o SAMA: catálogo de tarefas/usuários do VIOS por área
- * (vios_catalogo_tarefas, atualizado pelo robô) e a fila vios_agendamentos que o
+ * (vios_catalogo_tarefas) com a etiqueta de cada tipo (vios_tipos_tarefa), ambos
+ * relidos do VIOS pelo robô todo domingo à noite, e a fila vios_agendamentos que o
  * sama-rpa consome a cada 2 minutos para criar a tarefa no VIOS.
  */
 function sama(): SupabaseClient {
@@ -37,25 +38,39 @@ export function modoAgendamento(): ModoAgendamento {
 
 export interface CatalogoArea {
   area: string;
-  etapas: OpcaoVios[];
+  etapas: EtapaVios[];
   usuarios: OpcaoVios[];
   atualizadoEm: string;
 }
 
 let cacheCatalogo: { carregadoEm: number; areas: CatalogoArea[] } | null = null;
+let cacheEtiquetas: { carregadoEm: number; etiquetas: Map<string, number[]> } | null = null;
 const CACHE_MS = 10 * 60 * 1000;
 
-/** Catálogo das pastas de Processo, por área (tarefas que o VIOS aceita e usuários). */
+/** Etiquetas de cada tipo de tarefa do VIOS (ids), por id do tipo. */
+export async function carregarEtiquetasDosTipos(): Promise<Map<string, number[]>> {
+  if (cacheEtiquetas && Date.now() - cacheEtiquetas.carregadoEm < CACHE_MS) return cacheEtiquetas.etiquetas;
+  const { data, error } = await sama().from("vios_tipos_tarefa").select("etapa_id, etiquetas").limit(5000);
+  if (error) throw new VistagemError(`Falha ao carregar as etiquetas dos tipos de tarefa do VIOS no SAMA: ${error.message}`, 502);
+  if (!data?.length) throw new VistagemError("As etiquetas dos tipos de tarefa do VIOS no SAMA (vios_tipos_tarefa) estão vazias.", 502);
+  const etiquetas = new Map(data.map((row) => [String(row.etapa_id), ((row.etiquetas ?? []) as number[]).map(Number)]));
+  cacheEtiquetas = { carregadoEm: Date.now(), etiquetas };
+  return etiquetas;
+}
+
+/** Catálogo das pastas de Processo, por área (tarefas que o VIOS aceita, com as etiquetas, e usuários). */
 export async function carregarCatalogoProcessos(): Promise<CatalogoArea[]> {
   if (cacheCatalogo && Date.now() - cacheCatalogo.carregadoEm < CACHE_MS) return cacheCatalogo.areas;
-  const { data, error } = await sama()
-    .from("vios_catalogo_tarefas")
-    .select("area, etapas, usuarios, atualizado_em")
-    .eq("pasta_tipo", "Processo");
+  const [{ data, error }, etiquetasPorTipo] = await Promise.all([
+    sama().from("vios_catalogo_tarefas").select("area, etapas, usuarios, atualizado_em").eq("pasta_tipo", "Processo"),
+    carregarEtiquetasDosTipos(),
+  ]);
   if (error) throw new VistagemError(`Falha ao carregar o catálogo de tarefas do SAMA: ${error.message}`, 502);
   const areas = (data ?? []).map((row) => ({
     area: row.area as string,
-    etapas: ((row.etapas ?? []) as OpcaoVios[]).filter((etapa) => etapa?.id && etapa?.nome),
+    etapas: ((row.etapas ?? []) as OpcaoVios[])
+      .filter((etapa) => etapa?.id && etapa?.nome)
+      .map((etapa) => ({ id: String(etapa.id), nome: etapa.nome, etiquetas: etiquetasPorTipo.get(String(etapa.id)) ?? [] })),
     // o usuário do robô não é responsável de tarefa
     usuarios: ((row.usuarios ?? []) as OpcaoVios[])
       .filter((usuario) => usuario?.id && usuario?.nome && !/f[eê]nix agendador/i.test(usuario.nome))

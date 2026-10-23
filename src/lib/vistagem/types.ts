@@ -217,6 +217,7 @@ export interface AgendamentoResumo {
   ordem: number;
   etiqueta: "PRAZO" | "PROVIDENCIA";
   tarefa: string;
+  tarefaId: string | null;
   /** Data da tarefa no VIOS (no Prazo, o Enviar = fatal − 3 dias úteis). */
   data: string;
   dataFatal: string | null;
@@ -234,7 +235,8 @@ export interface AgendamentoResumo {
 export interface CatalogoVistagem {
   area: string;
   atualizadoEm: string;
-  tarefas: { PRAZO: { id: string; nome: string }[]; PROVIDENCIA: { id: string; nome: string }[] };
+  /** `nome` é único na lista (nome repetido no VIOS ganha o tipo); `nomeVios` é o nome original. */
+  tarefas: { PRAZO: { id: string; nome: string; nomeVios?: string }[]; PROVIDENCIA: { id: string; nome: string; nomeVios?: string }[] };
   usuarios: { id: string; nome: string }[];
 }
 

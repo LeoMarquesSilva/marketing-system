@@ -33,6 +33,7 @@ export async function POST(request: Request, context: RouteContext) {
       return {
         etiqueta: valor.etiqueta === "PRAZO" ? "PRAZO" : "PROVIDENCIA",
         tarefa: texto(valor.tarefa, 200) ?? "",
+        tarefaId: texto(valor.tarefaId, 20),
         data: texto(valor.data, 10) ?? "",
         dataFatal: texto(valor.dataFatal, 10),
         diasPrazo: typeof valor.diasPrazo === "number" ? valor.diasPrazo : null,

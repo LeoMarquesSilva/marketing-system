@@ -2,6 +2,7 @@ import "server-only";
 
 import {
   areaDoCatalogo,
+  etiquetaDaTarefa,
   responsavelSugerido,
   tarefasPermitidas,
   usuarioPorSigla,
@@ -18,6 +19,7 @@ import { linhasParaFila } from "./fila-vios";
 import {
   carregarArvoreVios,
   carregarCatalogoProcessos,
+  carregarEtiquetasDosTipos,
   catalogoDaArea,
   consultarFilaSama,
   enfileirarNoSama,
@@ -56,6 +58,7 @@ function agendamentoResumo(row: AgendamentoRow): AgendamentoResumo {
     ordem: row.ordem,
     etiqueta: row.etiqueta,
     tarefa: row.tarefa,
+    tarefaId: row.tarefa_id,
     data: row.data,
     dataFatal: row.data_fatal,
     diasPrazo: row.dias_prazo,
@@ -367,8 +370,16 @@ async function comunicacoesEquivalentes(publicacao: PublicacaoComArea): Promise<
 /** Põe as tarefas da publicação na fila do robô; devolve o id da linha da fila de cada agendamento. */
 async function enfileirarPublicacao(publicacao: PublicacaoComArea, itens: AgendamentoRow[], simular: boolean): Promise<Map<string, string>> {
   const modo = modoAgendamento();
-  const equivalentes = modo === "intimacao" ? await comunicacoesEquivalentes(publicacao) : [];
-  const grupos = linhasParaFila({ ...publicacao, comunicacoes_equivalentes: equivalentes }, itens, { simular, modo });
+  const [equivalentes, etiquetasDosTipos] = await Promise.all([
+    modo === "intimacao" ? comunicacoesEquivalentes(publicacao) : Promise.resolve([] as string[]),
+    // sem a tabela, vai a etiqueta padrão da escolha (ENVIAR/PROVIDÊNCIA)
+    carregarEtiquetasDosTipos().catch(() => new Map<string, number[]>()),
+  ]);
+  const comEtiqueta = itens.map((item) => ({
+    ...item,
+    etiqueta_vios: etiquetaDaTarefa(item.etiqueta, item.tarefa_id ? etiquetasDosTipos.get(item.tarefa_id) : undefined),
+  }));
+  const grupos = linhasParaFila({ ...publicacao, comunicacoes_equivalentes: equivalentes }, comEtiqueta, { simular, modo });
   const ids = await enfileirarNoSama(grupos.map((grupo) => grupo.linha));
   return new Map(grupos.flatMap((grupo, indice) => grupo.agendamentos.map((agendamento) => [agendamento, ids[indice]] as const)));
 }

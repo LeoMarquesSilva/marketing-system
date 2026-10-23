@@ -1,6 +1,21 @@
 import { datasDoPrazo } from "./dias-uteis";
 import type { CadeiaDoPrazo } from "./fluxo-vios";
-import { DEPARA_TAREFAS, type EtiquetaAgendamento, type PastaTipo } from "./vios-depara";
+
+/** PRAZO = etiqueta ENVIAR no VIOS; PROVIDENCIA = PROVIDÊNCIA. */
+export type EtiquetaAgendamento = "PRAZO" | "PROVIDENCIA";
+
+/**
+ * Etiquetas do VIOS (tipos_tarefas_x_etiquetas) que entram em cada escolha do jurídico; a
+ * primeira é a padrão. COMPROMISSO (audiência, perícia, leilão, sessão…) tem data única,
+ * como a Providência. As demais (2. REVISAR, 3. PROTOCOLAR…) o fluxo do VIOS cria sozinho.
+ */
+export const ETIQUETAS_VIOS: Record<EtiquetaAgendamento, readonly number[]> = { PRAZO: [1], PROVIDENCIA: [204, 205] };
+
+/** Etiqueta que vai na tarefa do VIOS: a do próprio tipo (ex.: COMPROMISSO na audiência) ou a padrão da escolha. */
+export function etiquetaDaTarefa(etiqueta: EtiquetaAgendamento, etiquetasDoTipo: readonly number[] | undefined): number {
+  const aceitas = ETIQUETAS_VIOS[etiqueta];
+  return etiquetasDoTipo?.find((id) => aceitas.includes(id)) ?? aceitas[0];
+}
 
 /** Opção do VIOS (tipo de tarefa ou usuário), como o robô do SAMA guarda no catálogo. */
 export interface OpcaoVios {
@@ -8,10 +23,22 @@ export interface OpcaoVios {
   nome: string;
 }
 
+/** Tipo de tarefa que o VIOS aceita na área, com as etiquetas configuradas nele (SAMA: vios_tipos_tarefa). */
+export interface EtapaVios extends OpcaoVios {
+  etiquetas: number[];
+}
+
+/** Tarefa da lista do jurídico. `nome` é único na lista; `nomeVios` vem quando o nome ganhou o tipo para desempatar. */
+export interface OpcaoTarefa extends OpcaoVios {
+  nomeVios?: string;
+}
+
 /** O que o jurídico escolhe para cada tarefa vinculada à publicação. */
 export interface AgendamentoEntrada {
   etiqueta: EtiquetaAgendamento;
   tarefa: string;
+  /** Tipo de tarefa do VIOS escolhido na lista (desempata nomes repetidos). */
+  tarefaId?: string | null;
   /** AAAA-MM-DD, escolhida no calendário (Providência). No Prazo é recalculada a partir da fatal (Enviar). */
   data: string;
   /** PRAZO: data fatal escolhida no calendário ou pelos atalhos de dias. */
@@ -52,22 +79,28 @@ export function chaveNome(texto: string | null | undefined): string {
 }
 
 /**
- * Tarefas que o jurídico pode escolher: as do de-para com a etiqueta escolhida
- * que o VIOS aceita na área da pasta (catálogo do SAMA). Nada fora disso é aceito.
+ * Tarefas que o jurídico pode escolher: as que o VIOS aceita na área da pasta (catálogo
+ * do SAMA) e cuja etiqueta no VIOS entra na escolha (ETIQUETAS_VIOS). Nada fora disso é
+ * aceito. Tipos diferentes com o mesmo nome (ex.: APELAÇÃO 36 e 486, com fluxos
+ * diferentes) aparecem os dois, com o número do tipo no nome.
  */
-export function tarefasPermitidas(etapasDaArea: OpcaoVios[], etiqueta: EtiquetaAgendamento, pastaTipo: PastaTipo = "Processo"): OpcaoVios[] {
-  const daEtiqueta = new Set(
-    DEPARA_TAREFAS.filter((item) => item.etiqueta === etiqueta && item.pastas.includes(pastaTipo)).map((item) => chaveNome(item.nome))
-  );
+export function tarefasPermitidas(etapasDaArea: EtapaVios[], etiqueta: EtiquetaAgendamento): OpcaoTarefa[] {
+  const aceitas = ETIQUETAS_VIOS[etiqueta];
   const vistos = new Set<string>();
-  return etapasDaArea
-    .filter((etapa) => {
-      const chave = chaveNome(etapa.nome);
-      if (!daEtiqueta.has(chave) || vistos.has(chave)) return false;
-      vistos.add(chave);
-      return true;
-    })
-    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  const etapas = etapasDaArea.filter((etapa) => {
+    if (!etapa.etiquetas.some((id) => aceitas.includes(id)) || vistos.has(etapa.id)) return false;
+    vistos.add(etapa.id);
+    return true;
+  });
+  const repetidos = new Map<string, number>();
+  for (const etapa of etapas) repetidos.set(chaveNome(etapa.nome), (repetidos.get(chaveNome(etapa.nome)) ?? 0) + 1);
+  return etapas
+    .map((etapa): OpcaoTarefa =>
+      (repetidos.get(chaveNome(etapa.nome)) ?? 0) > 1
+        ? { id: etapa.id, nome: `${etapa.nome} (tipo ${etapa.id})`, nomeVios: etapa.nome }
+        : { id: etapa.id, nome: etapa.nome }
+    )
+    .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { numeric: true }));
 }
 
 /** Área do catálogo do SAMA para a pasta: a área do processo no VIOS ou, sem ela, a do escritório. */
@@ -117,7 +150,7 @@ export function avisosDaData(iso: string, hoje: string): string[] {
 export function validarAgendamentos(
   entradas: AgendamentoEntrada[],
   contexto: {
-    tarefas: Record<EtiquetaAgendamento, OpcaoVios[]>;
+    tarefas: Record<EtiquetaAgendamento, OpcaoTarefa[]>;
     usuarios: OpcaoVios[];
     ehDiaUtil: (iso: string) => boolean;
     /** Cadeia do fluxo do VIOS para o tipo de tarefa (null: o VIOS não cria Protocolar). */
@@ -135,7 +168,10 @@ export function validarAgendamentos(
       erros.push(`${n}: escolha Prazo ou Providência.`);
       return null;
     }
-    const tarefa = contexto.tarefas[entrada.etiqueta].find((opcao) => chaveNome(opcao.nome) === chaveNome(entrada.tarefa));
+    const opcoes = contexto.tarefas[entrada.etiqueta];
+    const tarefa = entrada.tarefaId
+      ? opcoes.find((opcao) => opcao.id === entrada.tarefaId)
+      : opcoes.find((opcao) => chaveNome(opcao.nome) === chaveNome(entrada.tarefa));
     if (!tarefa) erros.push(`${n}: escolha uma tarefa da lista.`);
     const prazo = entrada.etiqueta === "PRAZO";
     const fatal = prazo && entrada.dataFatal && dataValida(entrada.dataFatal) ? entrada.dataFatal : null;
@@ -159,7 +195,7 @@ export function validarAgendamentos(
     const diasPrazo = prazo && Number.isInteger(entrada.diasPrazo) && (entrada.diasPrazo ?? 0) > 0 ? (entrada.diasPrazo as number) : null;
     return {
       etiqueta: entrada.etiqueta,
-      tarefa: tarefa.nome,
+      tarefa: tarefa.nomeVios ?? tarefa.nome,
       tarefaId: tarefa.id,
       data,
       dataFatal: fatal,

@@ -3,6 +3,7 @@ import { criarCalendario } from "./dias-uteis";
 import { CADEIA_PADRAO } from "./fluxo-vios";
 import {
   areaDoCatalogo,
+  etiquetaDaTarefa,
   siglasDoNome,
   usuarioPorSigla,
   avisosDaData,
@@ -12,16 +13,21 @@ import {
   responsavelSugerido,
   tarefasPermitidas,
   validarAgendamentos,
+  type EtapaVios,
   type OpcaoVios,
 } from "./agendamento";
 
-const ETAPAS: OpcaoVios[] = [
-  { id: "321", nome: "1. CIÊNCIA DOS AGENDAMENTOS" },
-  { id: "510", nome: "2. REVISAR" },
-  { id: "314", nome: "2. REVISAR" },
-  { id: "900", nome: "CONTESTAÇÃO" },
-  { id: "901", nome: "AGRAVO DE INSTRUMENTO" },
-  { id: "999", nome: "TAREFA QUE NÃO ESTÁ NO DE-PARA" },
+// etiquetas do VIOS: 1 ENVIAR (Prazo), 204 PROVIDÊNCIA, 205 COMPROMISSO, 2 REVISAR
+const ETAPAS: EtapaVios[] = [
+  { id: "321", nome: "1. CIÊNCIA DOS AGENDAMENTOS", etiquetas: [204] },
+  { id: "54", nome: "AUDIÊNCIA DE INSTRUÇÃO", etiquetas: [205] },
+  { id: "314", nome: "2. REVISAR", etiquetas: [2] },
+  { id: "900", nome: "CONTESTAÇÃO", etiquetas: [1] },
+  { id: "901", nome: "AGRAVO DE INSTRUMENTO", etiquetas: [1] },
+  { id: "36", nome: "APELAÇÃO", etiquetas: [1] },
+  { id: "486", nome: "APELAÇÃO", etiquetas: [1] },
+  { id: "486", nome: "APELAÇÃO", etiquetas: [1] },
+  { id: "999", nome: "TAREFA SEM ETIQUETA", etiquetas: [] },
 ];
 const USUARIOS: OpcaoVios[] = [
   { id: "4", nome: "Advogada Exemplo" },
@@ -29,15 +35,29 @@ const USUARIOS: OpcaoVios[] = [
 ];
 
 describe("tarefasPermitidas", () => {
-  it("separa prazo e providência e corta o que não está no de-para", () => {
-    expect(tarefasPermitidas(ETAPAS, "PRAZO").map((t) => t.nome)).toEqual(["AGRAVO DE INSTRUMENTO", "CONTESTAÇÃO"]);
-    const providencias = tarefasPermitidas(ETAPAS, "PROVIDENCIA").map((t) => t.nome);
-    expect(providencias).toContain("1. CIÊNCIA DOS AGENDAMENTOS");
-    expect(providencias).not.toContain("TAREFA QUE NÃO ESTÁ NO DE-PARA");
+  it("separa prazo e providência pela etiqueta do VIOS e corta as outras", () => {
+    expect(tarefasPermitidas(ETAPAS, "PRAZO").map((t) => t.nome)).toEqual([
+      "AGRAVO DE INSTRUMENTO",
+      "APELAÇÃO (tipo 36)",
+      "APELAÇÃO (tipo 486)",
+      "CONTESTAÇÃO",
+    ]);
+    // compromisso (audiência, perícia…) entra na Providência: data única
+    expect(tarefasPermitidas(ETAPAS, "PROVIDENCIA").map((t) => t.nome)).toEqual(["1. CIÊNCIA DOS AGENDAMENTOS", "AUDIÊNCIA DE INSTRUÇÃO"]);
   });
 
-  it("não repete tarefas com o mesmo nome", () => {
-    expect(tarefasPermitidas(ETAPAS, "PROVIDENCIA").filter((t) => t.nome === "2. REVISAR")).toHaveLength(1);
+  it("a tarefa vai para o VIOS com a etiqueta do próprio tipo", () => {
+    expect(etiquetaDaTarefa("PROVIDENCIA", [205])).toBe(205);
+    expect(etiquetaDaTarefa("PROVIDENCIA", [204])).toBe(204);
+    expect(etiquetaDaTarefa("PROVIDENCIA", undefined)).toBe(204);
+    expect(etiquetaDaTarefa("PRAZO", [1])).toBe(1);
+    expect(etiquetaDaTarefa("PRAZO", [204])).toBe(1);
+  });
+
+  it("mantém os dois tipos com o mesmo nome, com o tipo no nome, e não repete o mesmo tipo", () => {
+    const apelacoes = tarefasPermitidas(ETAPAS, "PRAZO").filter((t) => t.nomeVios === "APELAÇÃO");
+    expect(apelacoes.map((t) => t.id)).toEqual(["36", "486"]);
+    expect(tarefasPermitidas(ETAPAS, "PRAZO").find((t) => t.id === "900")?.nomeVios).toBeUndefined();
   });
 });
 
@@ -84,6 +104,19 @@ describe("validarAgendamentos", () => {
         },
       ],
     });
+  });
+
+  it("escolhe pelo tipo quando o VIOS tem dois com o mesmo nome e grava o nome do VIOS", () => {
+    const resultado = validarAgendamentos(
+      [{ etiqueta: "PRAZO", tarefa: "APELAÇÃO (tipo 486)", tarefaId: "486", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo" }],
+      contexto
+    );
+    expect(resultado.ok && resultado.itens[0]).toMatchObject({ tarefa: "APELAÇÃO", tarefaId: "486" });
+    const tipoForaDaLista = validarAgendamentos(
+      [{ etiqueta: "PRAZO", tarefa: "APELAÇÃO", tarefaId: "314", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo" }],
+      contexto
+    );
+    expect(tipoForaDaLista.ok).toBe(false);
   });
 
   it("no Prazo a data do VIOS segue o 3. PROTOCOLAR do fluxo da tarefa", () => {
