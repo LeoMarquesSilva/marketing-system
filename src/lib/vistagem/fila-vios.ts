@@ -1,4 +1,4 @@
-import { montarObservacaoVios, paraDataVios } from "./agendamento";
+import { ETIQUETAS_VIOS, montarObservacaoVios, paraDataVios } from "./agendamento";
 
 /**
  * Onde o robô do SAMA agenda: na publicação (Intimações › Lançamento, ligada à
@@ -71,9 +71,11 @@ export interface AgendamentoParaFila {
   responsavel: string;
   revisor: string | null;
   observacao: string | null;
+  /** Etiqueta do tipo no VIOS (ex.: 205 COMPROMISSO na audiência); sem ela, a padrão da escolha. */
+  etiqueta_vios?: number | null;
 }
 
-const etiquetaVios = (item: AgendamentoParaFila) => (item.etiqueta === "PRAZO" ? "1" : "204");
+const etiquetaVios = (item: AgendamentoParaFila) => String(item.etiqueta_vios ?? ETIQUETAS_VIOS[item.etiqueta][0]);
 
 /**
  * Linhas da fila do robô para as tarefas de uma publicação, com os agendamentos de cada uma.

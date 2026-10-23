@@ -142,7 +142,8 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
             ? dados.agendamentos.map((item) =>
                 novaLinha({
                   etiqueta: item.etiqueta,
-                  tarefa: item.tarefa,
+                  // a lista mostra o tipo junto quando o VIOS tem dois com o mesmo nome
+                  tarefa: dados.catalogo?.tarefas[item.etiqueta].find((opcao) => opcao.id === item.tarefaId)?.nome ?? item.tarefa,
                   data: item.etiqueta === "PRAZO" ? "" : item.data,
                   dataFatal: item.dataFatal ?? "",
                   diasPrazo: item.diasPrazo,
@@ -189,6 +190,7 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
           agendamentos: linhas.map((linha) => ({
             etiqueta: linha.etiqueta,
             tarefa: linha.tarefa,
+            tarefaId: detalhe?.catalogo?.tarefas[linha.etiqueta].find((opcao) => opcao.nome === linha.tarefa)?.id ?? null,
             data: linha.etiqueta === "PRAZO" ? "" : linha.data,
             dataFatal: linha.etiqueta === "PRAZO" ? linha.dataFatal : null,
             diasPrazo: linha.etiqueta === "PRAZO" ? linha.diasPrazo : null,
