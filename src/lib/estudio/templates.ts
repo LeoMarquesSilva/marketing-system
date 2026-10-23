@@ -341,6 +341,7 @@ const BP_TEMPLATES: StudioTemplateDef[] = [
     tag: "BP",
     nome: "Capa",
     descricao: "Capa do carrossel: área, chamada opcional, título, logo do cliente opcional, subtítulo, foto e autor.",
+    ajustes: ["fotoZoom", "fotoX", "fotoY", "texto", "titulo", "y"],
     formato: "feed",
     usoEm: ["carrossel"],
     campos: [
@@ -381,6 +382,7 @@ const BP_TEMPLATES: StudioTemplateDef[] = [
     id: "bp-conteudo",
     tag: "BP",
     nome: "Conteúdo",
+    ajustes: ["texto", "titulo", "y"],
     descricao:
       "Slide de conteúdo: ícone opcional, título em caixa alta e de 1 a 4 caixas de texto (suave, contorno ou destaque), com ícone, rótulo ou marcadores. O último slide do carrossel sai sem 'arraste'.",
     formato: "feed",

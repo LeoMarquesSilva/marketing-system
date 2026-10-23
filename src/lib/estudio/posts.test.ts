@@ -67,6 +67,28 @@ describe("autor da capa", () => {
   });
 });
 
+describe("ajustes finos", () => {
+  it("guarda só os ajustes que o modelo aceita, dentro dos limites, e descarta os neutros", () => {
+    const [capa, conteudo] = normalizeSlides(
+      [
+        { modelo: "bp-capa", valores: {}, ajustes: { fotoZoom: 9, fotoX: -20, texto: 1, y: "x", inventado: 3 } },
+        { modelo: "bp-conteudo", valores: {}, ajustes: { fotoZoom: 1.2, titulo: 1.1 } },
+      ],
+      "BP",
+      "carrossel"
+    );
+    expect(capa.ajustes).toEqual({ fotoZoom: 1.8, fotoX: -20 });
+    expect(conteudo.ajustes).toEqual({ titulo: 1.1 });
+    expect(normalizeSlides([{ modelo: "bp-conteudo", valores: {}, ajustes: { texto: 1 } }], "BP", "carrossel")[0]).not.toHaveProperty("ajustes");
+  });
+
+  it("depois da IA, o slide no mesmo lugar e com o mesmo modelo mantém os ajustes", () => {
+    const before = normalizeSlides([{ modelo: "bp-capa", valores: {}, ajustes: { fotoZoom: 1.2 } }], "BP", "carrossel");
+    const after = normalizeSlides([{ modelo: "bp-capa", valores: { titulo: "NOVO" } }], "BP", "carrossel");
+    expect(carryOverImages(before, after)[0].ajustes).toEqual({ fotoZoom: 1.2 });
+  });
+});
+
 describe("conferência do texto aprovado", () => {
   const POST = `Post em carrossel
 
@@ -139,6 +161,7 @@ describe("imagens e post", () => {
   it("monta nomes e endereços de imagem", () => {
     expect(slugifyFileName("Thayná Rodrigues Cabalin.PNG")).toBe("thayna-rodrigues-cabalin");
     expect(imageDisplayName("BP/fotos/1730000000000-thayna-rodrigues-cabalin.png")).toBe("thayna rodrigues cabalin");
+    expect(imageDisplayName("BP/fotos/1730000000000-thayna-rodrigues-cabalin-316ff209.png")).toBe("thayna rodrigues cabalin");
     expect(studioImageUrl("BP/fotos/a b.png")).toBe("/api/estudio/imagens/BP/fotos/a%20b.png");
   });
 

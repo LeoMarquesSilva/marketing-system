@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowDown, ArrowLeft, ArrowUp, Copy, Download, Loader2, Send, Sparkles, Trash2, Undo2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Copy, Download, Loader2, PenTool, Send, Sparkles, Trash2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,8 +11,10 @@ import { cn } from "@/lib/utils";
 import { moveItem, newId, newSlide, slideFileName, switchSlideTemplate } from "@/lib/estudio/domain";
 import { getTemplate, templatesFor } from "@/lib/estudio/templates";
 import { ARTBOARD_SIZE, PIECE_FORMAT, PIECE_KIND_LABEL, PIECE_MAX_SLIDES, type StudioPiece, type StudioSlide } from "@/lib/estudio/types";
+import { AdjustPanel } from "./adjust-panel";
 import { FieldForm } from "./field-form";
 import { downloadBlob, renderArtboardPng, zipBlobs } from "./export-png";
+import { renderArtboardSvg } from "./export-svg";
 import { ScaledBox, SlideArtboard, slideSize } from "./slide-artboard";
 import { SendToPlannerDialog } from "./send-to-planner-dialog";
 
@@ -136,6 +138,28 @@ export function PieceEditor({ piece, onBack }: { piece: StudioPiece; onBack: () 
     return blobs;
   }, [slides]);
 
+  /** Um SVG editável por slide (o Illustrator abre direto e salva como .ai). */
+  async function downloadIllustrator() {
+    setExporting(true);
+    try {
+      const files: { name: string; blob: Blob }[] = [];
+      for (let i = 0; i < slides.length; i++) {
+        const node = thumbRefs.current[i];
+        if (!node) throw new Error("A prévia ainda está carregando.");
+        const { width, height } = slideSize(slides[i]);
+        const svg = await renderArtboardSvg(node, width, height);
+        files.push({ name: slideFileName(piece.tipo, i).replace(/\.png$/, ".svg"), blob: new Blob([svg], { type: "image/svg+xml" }) });
+      }
+      const base = (titulo || "peca").normalize("NFD").replace(/\p{Diacritic}/gu, "").replace(/[^\w-]+/g, "-").toLowerCase();
+      if (files.length === 1) downloadBlob(files[0].blob, `${base}.svg`);
+      else downloadBlob(await zipBlobs(files), `${base}-illustrator.zip`);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "Não foi possível gerar o arquivo para o Illustrator.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   async function download() {
     setExporting(true);
     try {
@@ -193,6 +217,9 @@ export function PieceEditor({ piece, onBack }: { piece: StudioPiece; onBack: () 
           <Button variant="outline" onClick={() => void download()} disabled={exporting}>
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             {slides.length > 1 ? "Baixar ZIP" : "Baixar PNG"}
+          </Button>
+          <Button variant="outline" onClick={() => void downloadIllustrator()} disabled={exporting} title="Um SVG editável por slide: abre no Illustrator e salva como .ai">
+            <PenTool className="h-4 w-4" /> Abrir no Illustrator
           </Button>
           <Button onClick={() => setSendOpen(true)}>
             <Send className="h-4 w-4" /> Enviar ao planner
@@ -275,6 +302,16 @@ export function PieceEditor({ piece, onBack }: { piece: StudioPiece; onBack: () 
                 tag={piece.tag}
                 onChange={(valores) => updateSlide(selected, { ...current, valores })}
               />
+              {currentTemplate.ajustes?.length ? (
+                <div className="mt-5">
+                  <AdjustPanel
+                    key={current.id}
+                    keys={currentTemplate.ajustes.filter((k) => !k.startsWith("foto") || Boolean(current.valores.foto))}
+                    value={current.ajustes}
+                    onChange={(ajustes) => updateSlide(selected, { ...current, ajustes })}
+                  />
+                </div>
+              ) : null}
             </div>
           )}
 

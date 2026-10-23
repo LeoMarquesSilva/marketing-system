@@ -32,8 +32,15 @@ export function slugifyFileName(name: string): string {
   );
 }
 
-/** Nome legível da imagem na galeria ("1730000000000-thayna-cabalin.png" → "thayna cabalin"). */
+/**
+ * Nome legível da imagem na galeria ("1730000000000-thayna-cabalin-316ff209.png" →
+ * "thayna cabalin"; o final hexadecimal é o código da foto de origem).
+ */
 export function imageDisplayName(path: string): string {
   const file = path.split("/").pop() ?? path;
-  return file.replace(/^\d+-/, "").replace(/\.[a-z0-9]+$/i, "").replace(/-/g, " ");
+  return file
+    .replace(/^\d+-/, "")
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/-[0-9a-f]{8}$/, "")
+    .replace(/-/g, " ");
 }

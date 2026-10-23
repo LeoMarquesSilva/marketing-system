@@ -2,13 +2,26 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ElementType, type ReactNode } from "react";
 import type { FieldValues, ListItem } from "@/lib/estudio/fields";
-import type { PieceKind } from "@/lib/estudio/types";
+import type { PieceKind, SlideAdjust } from "@/lib/estudio/types";
 
 export interface SlideRenderProps {
   valores: FieldValues;
   indice: number;
   total: number;
   tipo: PieceKind;
+  ajustes?: SlideAdjust;
+}
+
+/** Ajustes com os valores neutros preenchidos. */
+export function adjust(a: SlideAdjust | undefined) {
+  return {
+    texto: a?.texto ?? 1,
+    titulo: a?.titulo ?? 1,
+    y: a?.y ?? 0,
+    fotoZoom: a?.fotoZoom ?? 1,
+    fotoX: a?.fotoX ?? 0,
+    fotoY: a?.fotoY ?? 0,
+  };
 }
 
 export const text = (values: FieldValues, key: string): string => {

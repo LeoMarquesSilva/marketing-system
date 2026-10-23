@@ -17,7 +17,7 @@ const blobToDataUrl = (blob: Blob) =>
 
 const dataUrlCache = new Map<string, Promise<string>>();
 
-function toDataUrl(url: string): Promise<string> {
+export function toDataUrl(url: string): Promise<string> {
   const absolute = new URL(url, window.location.href).href;
   if (absolute.startsWith("data:")) return Promise.resolve(absolute);
   let pending = dataUrlCache.get(absolute);

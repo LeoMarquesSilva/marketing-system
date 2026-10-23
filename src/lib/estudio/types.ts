@@ -37,6 +37,8 @@ export interface StudioTemplateDef {
   campos: StudioField[];
   /** Conteúdo de exemplo, tirado das pranchetas do Illustrator. */
   exemplo: FieldValues;
+  /** Ajustes finos que o desenho do modelo respeita. */
+  ajustes?: AdjustKey[];
 }
 
 export interface StudioCollection {
@@ -54,10 +56,35 @@ export interface StudioCollection {
   importaPosts?: boolean;
 }
 
+/** Ajustes finos feitos à mão no slide (a IA não mexe). */
+export interface SlideAdjust {
+  /** Escala do texto da coluna (corpo, caixas, pílulas). */
+  texto?: number;
+  /** Escala do título, além da do texto. */
+  titulo?: number;
+  /** Desloca o bloco de texto na vertical (px da prancheta). */
+  y?: number;
+  fotoZoom?: number;
+  fotoX?: number;
+  fotoY?: number;
+}
+
+export type AdjustKey = keyof SlideAdjust;
+
+export const ADJUST_LIMITS: Record<AdjustKey, { min: number; max: number; step: number; neutral: number; label: string }> = {
+  texto: { min: 0.8, max: 1.25, step: 0.01, neutral: 1, label: "Tamanho do texto" },
+  titulo: { min: 0.75, max: 1.35, step: 0.01, neutral: 1, label: "Tamanho do título" },
+  y: { min: -250, max: 250, step: 2, neutral: 0, label: "Subir/descer o bloco" },
+  fotoZoom: { min: 0.6, max: 1.8, step: 0.01, neutral: 1, label: "Zoom da foto" },
+  fotoX: { min: -350, max: 350, step: 2, neutral: 0, label: "Foto para os lados" },
+  fotoY: { min: -350, max: 350, step: 2, neutral: 0, label: "Foto para cima/baixo" },
+};
+
 export interface StudioSlide {
   id: string;
   modelo: string;
   valores: FieldValues;
+  ajustes?: SlideAdjust;
 }
 
 export interface StudioPiece {

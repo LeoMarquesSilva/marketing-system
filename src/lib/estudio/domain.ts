@@ -1,7 +1,7 @@
 import { imageKeys, normalizeValues, valuesToLines, type FieldValues } from "./fields";
 import { slugifyFileName } from "./images";
 import { POSTING_FIELD_KEYS, getTemplate, templatesFor } from "./templates";
-import { PIECE_MAX_SLIDES, type PieceKind, type StudioSlide, type StudioTemplateDef } from "./types";
+import { ADJUST_LIMITS, PIECE_MAX_SLIDES, type PieceKind, type SlideAdjust, type StudioSlide, type StudioTemplateDef } from "./types";
 
 export function newId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -38,13 +38,30 @@ export function normalizeSlides(raw: unknown, tag: string, kind: PieceKind): Stu
     const obj = item as Record<string, unknown>;
     const template = typeof obj.modelo === "string" && allowed.has(obj.modelo) ? getTemplate(obj.modelo) : null;
     if (!template) continue;
+    const ajustes = normalizeAdjust(template, obj.ajustes);
     slides.push({
       id: typeof obj.id === "string" && obj.id ? obj.id : newId(),
       modelo: template.id,
       valores: normalizeValues(template.campos, obj.valores),
+      ...(ajustes ? { ajustes } : {}),
     });
   }
   return slides.slice(0, PIECE_MAX_SLIDES[kind]);
+}
+
+/** Só os ajustes que o modelo aceita, dentro dos limites; sem nenhum ajuste, undefined. */
+export function normalizeAdjust(template: StudioTemplateDef, raw: unknown): SlideAdjust | undefined {
+  if (!raw || typeof raw !== "object" || !template.ajustes?.length) return undefined;
+  const source = raw as Record<string, unknown>;
+  const out: SlideAdjust = {};
+  for (const key of template.ajustes) {
+    const v = source[key];
+    if (typeof v !== "number" || !Number.isFinite(v)) continue;
+    const { min, max, neutral } = ADJUST_LIMITS[key];
+    const clamped = Math.min(max, Math.max(min, v));
+    if (Math.abs(clamped - neutral) > 1e-6) out[key] = Math.round(clamped * 1000) / 1000;
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 /** Troca o modelo de um slide aproveitando os campos com o mesmo nome. */
@@ -62,11 +79,13 @@ export function carryOverImages(previous: StudioSlide[], next: StudioSlide[]): S
   return next.map((slide, index) => {
     const template = getTemplate(slide.modelo);
     const keys = template ? imageKeys(template.campos) : [];
+    // ajustes finos ficam com o slide que estava no mesmo lugar com o mesmo modelo
+    const same = previous[index]?.modelo === slide.modelo ? previous[index] : null;
+    if (same?.ajustes && !slide.ajustes) slide = { ...slide, ajustes: same.ajustes };
     if (keys.length === 0) return slide;
     const valores = { ...slide.valores };
     for (const key of keys) {
       if (valores[key]) continue;
-      const same = previous[index]?.modelo === slide.modelo ? previous[index] : null;
       const source = same?.valores[key] ? same : previous.find((p) => p.modelo === slide.modelo && p.valores[key]);
       if (source) valores[key] = source.valores[key];
     }

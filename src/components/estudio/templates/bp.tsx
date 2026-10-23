@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { studioImageUrl } from "@/lib/estudio/images";
 import styles from "./bp.module.css";
-import { FitColumn, FitText, RichText, items, text, type SlideRenderProps } from "./parts";
+import { FitColumn, FitText, RichText, adjust, items, text, type SlideRenderProps } from "./parts";
 
 /*
  * Modelos dos posts do escritório (posts.ai). Fundos, fênix, "arraste", @ e ícones do
@@ -116,7 +116,8 @@ const tone = (dark: boolean) => (dark ? "branco" : "navy");
 
 // ---------- conteúdo ----------
 
-export function BpConteudo({ valores, indice, total }: SlideRenderProps) {
+export function BpConteudo({ valores, indice, total, ajustes }: SlideRenderProps) {
+  const aj = adjust(ajustes);
   const dark = text(valores, "tema") === "escuro";
   const last = total > 1 && indice === total - 1;
   const caixas = items(valores, "caixas").filter((c) => c.texto?.trim());
@@ -134,13 +135,17 @@ export function BpConteudo({ valores, indice, total }: SlideRenderProps) {
         <Img src={`${BG}/arraste-${tone(dark)}.png`} style={{ position: "absolute", left: 830, top: 55, width: 140, height: 65 }} />
       )}
 
-      <FitColumn base={32} className={styles.column} style={{ left: 110, right: 110, top: 140, bottom: 185 }} deps={valores}>
+      <FitColumn base={32 * aj.texto} className={styles.column} style={{ left: 110, right: 110, top: 140 + aj.y, bottom: 185 - aj.y }} deps={[valores, ajustes]}>
         {titleIcon && titleIcon !== "nenhum" && (
           <span className={styles.titleIcon}>
             <BpIcon name={titleIcon} size={titleIcon === "pergunta" || titleIcon === "alerta" ? 158 : 112} />
           </span>
         )}
-        {text(valores, "titulo") && <h2 className={styles.title}>{text(valores, "titulo")}</h2>}
+        {text(valores, "titulo") && (
+          <h2 className={styles.title} style={aj.titulo !== 1 ? { fontSize: `${1.96 * aj.titulo}em` } : undefined}>
+            {text(valores, "titulo")}
+          </h2>
+        )}
         {caixas.length > 0 && (
           <div className={styles.boxes} style={text(valores, "titulo") ? undefined : { marginTop: 0 }}>
             {caixas.map((caixa, i) => (
@@ -228,7 +233,8 @@ const COVER = {
   },
 };
 
-export function BpCapa({ valores, indice, total }: SlideRenderProps) {
+export function BpCapa({ valores, indice, total, ajustes }: SlideRenderProps) {
+  const aj = adjust(ajustes);
   const dark = text(valores, "tema") === "escuro";
   // não há capa escura com foto à direita no posts.ai
   const cover = dark ? COVER["escuro-esquerda"] : text(valores, "lado") === "direita" ? COVER["claro-direita"] : COVER["claro-esquerda"];
@@ -241,13 +247,26 @@ export function BpCapa({ valores, indice, total }: SlideRenderProps) {
   return (
     <Board bg={cover.bg} dark={dark}>
       <Dots indice={indice} total={total} />
-      {foto && <Img src={studioImageUrl(foto)} className={styles.photo} style={{ left: cover.photo.left, top: cover.photo.top, width: cover.photo.width, bottom: 0, height: 1350 - cover.photo.top }} />}
+      {foto && (
+        <Img
+          src={studioImageUrl(foto)}
+          className={styles.photo}
+          style={{
+            left: cover.photo.left,
+            top: cover.photo.top,
+            width: cover.photo.width,
+            height: 1350 - cover.photo.top,
+            transform: `translate(${aj.fotoX}px, ${aj.fotoY}px) scale(${aj.fotoZoom})`,
+            transformOrigin: "center bottom",
+          }}
+        />
+      )}
 
       <FitColumn
-        base={32}
+        base={32 * aj.texto}
         className={styles.column}
-        style={{ ...cover.zone, justifyContent: "flex-start", alignItems: right ? "flex-end" : "flex-start", textAlign: cover.align }}
-        deps={valores}
+        style={{ ...cover.zone, top: cover.zone.top + aj.y, bottom: cover.zone.bottom - aj.y, justifyContent: "flex-start", alignItems: right ? "flex-end" : "flex-start", textAlign: cover.align }}
+        deps={[valores, ajustes]}
       >
         {text(valores, "area") && <span className={styles.pillArea}>{text(valores, "area")}</span>}
         {text(valores, "chamada") && (
@@ -257,7 +276,10 @@ export function BpCapa({ valores, indice, total }: SlideRenderProps) {
         )}
         {logo && right && <Img src={studioImageUrl(logo)} className={styles.clientLogo} style={{ marginTop: "0.9em", objectPosition: "right center" }} />}
         {text(valores, "titulo") && (
-          <h2 className={styles.coverTitle} style={{ marginTop: text(valores, "chamada") ? "0.35em" : logo && right ? "0.5em" : "1.9em" }}>
+          <h2
+            className={styles.coverTitle}
+            style={{ marginTop: text(valores, "chamada") ? "0.35em" : logo && right ? "0.5em" : "1.9em", ...(aj.titulo !== 1 ? { fontSize: `${2.094 * aj.titulo}em` } : {}) }}
+          >
             {text(valores, "titulo")}
           </h2>
         )}
