@@ -7,6 +7,8 @@
  * imagens e as fontes entram como data URL e o SVG resultante é desenhado num canvas.
  */
 
+import { iconsReady } from "./iconify-icon";
+
 const blobToDataUrl = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -93,6 +95,7 @@ function usedFamilies(root: Element): Set<string> {
 }
 
 export async function renderArtboardPng(node: HTMLElement, width: number, height: number): Promise<Blob> {
+  await iconsReady();
   if (document.fonts) await document.fonts.ready;
   const images = Array.from(node.querySelectorAll("img"));
   await Promise.all(images.map((img) => (img.complete ? Promise.resolve() : img.decode().catch(() => undefined))));
@@ -150,6 +153,20 @@ export function downloadBlob(blob: Blob, fileName: string) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** PDF com um slide por página, no tamanho da arte (é o formato de carrossel do LinkedIn). */
+export async function pngsToPdf(pngs: Blob[], title: string): Promise<Blob> {
+  const { PDFDocument } = await import("pdf-lib");
+  const doc = await PDFDocument.create();
+  doc.setTitle(title);
+  for (const png of pngs) {
+    const image = await doc.embedPng(new Uint8Array(await png.arrayBuffer()));
+    const page = doc.addPage([image.width, image.height]);
+    page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+  }
+  const bytes = await doc.save();
+  return new Blob([bytes as BlobPart], { type: "application/pdf" });
 }
 
 export async function zipBlobs(files: { name: string; blob: Blob }[]): Promise<Blob> {

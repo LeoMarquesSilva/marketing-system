@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { emptyListItem, type FieldValues, type ImageField, type ListItem, type OptionField, type StudioField, type TextField } from "@/lib/estudio/fields";
 import { moveItem } from "@/lib/estudio/domain";
 import { imageDisplayName, studioImageUrl } from "@/lib/estudio/images";
+import { IconInput } from "./icon-picker";
 
 const selectClass =
   "h-9 w-full rounded-md border border-input bg-white px-2 text-sm shadow-xs outline-none focus-visible:border-[#47cdd0] focus-visible:ring-[3px] focus-visible:ring-[#47cdd0]/18";
@@ -21,7 +22,8 @@ function Counter({ value, max }: { value: string; max: number }) {
   );
 }
 
-function TextInput({ field, value, onChange }: { field: TextField; value: string; onChange: (v: string) => void }) {
+// data-campo-input: o editor acha o campo quando se clica no elemento da arte (data-campo)
+function TextInput({ field, value, campo, onChange }: { field: TextField; value: string; campo: string; onChange: (v: string) => void }) {
   return (
     <label className="block space-y-1.5">
       <span className="flex items-baseline justify-between gap-2 text-xs font-medium text-foreground">
@@ -35,20 +37,28 @@ function TextInput({ field, value, onChange }: { field: TextField; value: string
           rows={Math.min(4, Math.max(2, Math.ceil(field.max / 60)))}
           placeholder={field.placeholder}
           onChange={(e) => onChange(e.target.value)}
+          data-campo-input={campo}
           className="min-h-0 resize-y bg-white text-sm"
         />
       ) : (
-        <Input value={value} maxLength={field.max} placeholder={field.placeholder} onChange={(e) => onChange(e.target.value)} className="h-9 bg-white text-sm" />
+        <Input
+          value={value}
+          maxLength={field.max}
+          placeholder={field.placeholder}
+          onChange={(e) => onChange(e.target.value)}
+          data-campo-input={campo}
+          className="h-9 bg-white text-sm"
+        />
       )}
     </label>
   );
 }
 
-function OptionInput({ field, value, onChange }: { field: OptionField; value: string; onChange: (v: string) => void }) {
+function OptionInput({ field, value, campo, onChange }: { field: OptionField; value: string; campo: string; onChange: (v: string) => void }) {
   return (
     <label className="block space-y-1.5">
       <span className="text-xs font-medium text-foreground">{field.label}</span>
-      <select className={selectClass} value={value} onChange={(e) => onChange(e.target.value)}>
+      <select className={selectClass} value={value} onChange={(e) => onChange(e.target.value)} data-campo-input={campo}>
         {field.opcoes.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
@@ -127,6 +137,7 @@ function ImageInput({ field, tag, value, onChange }: { field: ImageField; tag: s
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
+              data-campo-input={field.key}
               disabled={busy}
               className="inline-flex items-center gap-1.5 border border-black/[0.12] bg-white px-2.5 py-1 text-xs font-medium hover:border-[#347796]/50 disabled:opacity-50"
             >
@@ -173,9 +184,23 @@ function ImageInput({ field, tag, value, onChange }: { field: ImageField; tag: s
   );
 }
 
-/** Formulário gerado a partir dos campos do modelo. */
-export function FieldForm({ fields, values, tag, onChange }: { fields: StudioField[]; values: FieldValues; tag: string; onChange: (next: FieldValues) => void }) {
-  const set = (key: string, value: FieldValues[string]) => onChange({ ...values, [key]: value });
+/**
+ * Formulário gerado a partir dos campos do modelo. `onChange` recebe o caminho do campo
+ * editado ("titulo", "caixas.1.texto") para o histórico juntar a digitação num passo;
+ * mudanças de estrutura (item novo, reordenar) vêm sem caminho.
+ */
+export function FieldForm({
+  fields,
+  values,
+  tag,
+  onChange,
+}: {
+  fields: StudioField[];
+  values: FieldValues;
+  tag: string;
+  onChange: (next: FieldValues, path?: string) => void;
+}) {
+  const set = (key: string, value: FieldValues[string], path?: string) => onChange({ ...values, [key]: value }, path);
 
   return (
     <div className="space-y-4">
@@ -184,10 +209,13 @@ export function FieldForm({ fields, values, tag, onChange }: { fields: StudioFie
           return <ImageInput key={field.key} field={field} tag={tag} value={String(values[field.key] ?? "")} onChange={(v) => set(field.key, v)} />;
         }
         if (field.kind === "texto") {
-          return <TextInput key={field.key} field={field} value={String(values[field.key] ?? "")} onChange={(v) => set(field.key, v)} />;
+          return <TextInput key={field.key} field={field} campo={field.key} value={String(values[field.key] ?? "")} onChange={(v) => set(field.key, v, field.key)} />;
         }
         if (field.kind === "opcao") {
-          return <OptionInput key={field.key} field={field} value={String(values[field.key] ?? field.padrao)} onChange={(v) => set(field.key, v)} />;
+          return <OptionInput key={field.key} field={field} campo={field.key} value={String(values[field.key] ?? field.padrao)} onChange={(v) => set(field.key, v)} />;
+        }
+        if (field.kind === "icone") {
+          return <IconInput key={field.key} field={field} campo={field.key} value={String(values[field.key] ?? field.padrao)} onChange={(v) => set(field.key, v)} />;
         }
         if (field.kind === "alternar") {
           return (
@@ -203,7 +231,7 @@ export function FieldForm({ fields, values, tag, onChange }: { fields: StudioFie
           );
         }
         const list = (Array.isArray(values[field.key]) ? values[field.key] : []) as ListItem[];
-        const update = (next: ListItem[]) => set(field.key, next);
+        const update = (next: ListItem[], path?: string) => set(field.key, next, path);
         return (
           <fieldset key={field.key} className="space-y-2.5">
             <legend className="mb-1 flex w-full items-center justify-between text-xs font-medium text-foreground">
@@ -230,13 +258,22 @@ export function FieldForm({ fields, values, tag, onChange }: { fields: StudioFie
                     </button>
                   </div>
                 </div>
-                {field.campos.map((sub) =>
-                  sub.kind === "texto" ? (
-                    <TextInput key={sub.key} field={sub} value={item[sub.key] ?? ""} onChange={(v) => update(list.map((it, i) => (i === index ? { ...it, [sub.key]: v } : it)))} />
+                {field.campos.map((sub) => {
+                  const path = `${field.key}.${index}.${sub.key}`;
+                  const change = (v: string, coalesce: boolean) =>
+                    update(
+                      list.map((it, i) => (i === index ? { ...it, [sub.key]: v } : it)),
+                      coalesce ? path : undefined
+                    );
+                  if (sub.kind === "icone") {
+                    return <IconInput key={sub.key} field={sub} campo={path} value={item[sub.key] ?? sub.padrao} onChange={(v) => change(v, false)} />;
+                  }
+                  return sub.kind === "texto" ? (
+                    <TextInput key={sub.key} field={sub} campo={path} value={item[sub.key] ?? ""} onChange={(v) => change(v, true)} />
                   ) : (
-                    <OptionInput key={sub.key} field={sub} value={item[sub.key] ?? sub.padrao} onChange={(v) => update(list.map((it, i) => (i === index ? { ...it, [sub.key]: v } : it)))} />
-                  )
-                )}
+                    <OptionInput key={sub.key} field={sub} campo={path} value={item[sub.key] ?? sub.padrao} onChange={(v) => change(v, false)} />
+                  );
+                })}
               </div>
             ))}
             {list.length < field.max && (

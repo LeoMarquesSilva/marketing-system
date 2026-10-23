@@ -54,6 +54,8 @@ export interface StudioCollection {
   planner: "tag" | "posts";
   /** Peças podem nascer de um post do Gerador de conteúdo. */
   importaPosts?: boolean;
+  /** Perfil do Instagram usado na prévia ("como vai aparecer"). */
+  perfil?: { nome: string; foto?: string };
 }
 
 /** Ajustes finos feitos à mão no slide (a IA não mexe). */
@@ -103,4 +105,6 @@ export interface StudioPiece {
 
 export type StudioPieceSummary = Pick<StudioPiece, "id" | "tag" | "titulo" | "tipo" | "request_id" | "updated_at"> & {
   slides_count: number;
+  /** 1º slide, para a miniatura da lista. */
+  capa: StudioSlide | null;
 };

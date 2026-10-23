@@ -1,4 +1,4 @@
-import type { ListField, OptionField, StudioField, TextField } from "./fields";
+import type { IconField, ListField, OptionField, StudioField, TextField } from "./fields";
 import type { PieceKind, StudioCollection, StudioTemplateDef } from "./types";
 
 /**
@@ -315,8 +315,9 @@ export const BP_ICONS = [
   { value: "lampada", label: "Ideia" },
 ] as const;
 
-const icone = (key: string, label: string, dica: string): OptionField => ({
-  kind: "opcao",
+// atalhos desenhados no código; o campo também aceita qualquer ícone da Iconify
+const icone = (key: string, label: string, dica: string): IconField => ({
+  kind: "icone",
   key,
   label,
   padrao: "nenhum",
@@ -329,6 +330,7 @@ export const BP_COLLECTION: StudioCollection = {
   nome: "Posts do escritório",
   planner: "posts",
   importaPosts: true,
+  perfil: { nome: "bismarchipires", foto: "/estudio/bp/fenix.png" },
   contexto: `Escritório: Bismarchi | Pires Sociedade de Advogados (10 anos), Instagram @bismarchipires. Os posts explicam decisões, leis e casos para empresários e gestores, a partir de textos escritos pelo Gerador de conteúdo e aprovados pelo advogado autor.
 Estrutura dos carrosséis: capa (área, título em caixa alta, subtítulo, foto e nome do autor) + slides de conteúdo com título em caixa alta e de 1 a 4 caixas de texto + último slide com a conclusão e uma chamada para conversar com um advogado da área.
 Estilo das caixas: "suave" (fundo preenchido) para o texto principal, "contorno" para complemento ou exemplo, "destaque" (dourada) para uma frase-chave; listas com marcador quando o texto for uma enumeração; ícone de balão com ? ou ! quando ajudar a leitura; rótulo curto em cima da caixa para separar ideias ("Não há resposta uniforme:", "Dois anos depois").

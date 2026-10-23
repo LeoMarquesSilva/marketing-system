@@ -106,6 +106,7 @@ export async function listPieces(): Promise<StudioPieceSummary[]> {
       request_id: piece.request_id,
       updated_at: piece.updated_at,
       slides_count: piece.slides.length,
+      capa: piece.slides[0] ?? null,
     };
   });
 }

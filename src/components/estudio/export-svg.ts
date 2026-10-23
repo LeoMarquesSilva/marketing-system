@@ -6,6 +6,7 @@
  */
 
 import { toDataUrl } from "./export-png";
+import { iconsReady } from "./iconify-icon";
 
 /** Fonte da tela → nome PostScript que o Illustrator acha instalado na máquina da designer. */
 function illustratorFont(family: string, weight: number): string {
@@ -284,6 +285,7 @@ async function walk(ctx: Ctx, el: Element) {
 }
 
 export async function renderArtboardSvg(node: HTMLElement, width: number, height: number): Promise<string> {
+  await iconsReady();
   if (document.fonts) await document.fonts.ready;
   if (!node.isConnected) throw new Error("A prévia mudou durante a exportação. Tente de novo.");
   const rect = node.getBoundingClientRect();

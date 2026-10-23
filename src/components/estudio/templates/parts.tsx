@@ -66,6 +66,7 @@ export function FitText({
   lineHeight = 1.2,
   className,
   style,
+  campo,
 }: {
   as?: ElementType;
   children: string;
@@ -75,24 +76,29 @@ export function FitText({
   lineHeight?: number;
   className?: string;
   style?: CSSProperties;
+  /** Caminho do campo (data-campo), para o editor achar o campo ao clicar. */
+  campo?: string;
 }) {
   const ref = useRef<HTMLElement>(null);
   const fontsVersion = useFontsVersion();
 
   // O tamanho fica só no DOM (fora do style do React), para o React não desfazer o ajuste.
+  // data-estouro: chegou na fonte mínima e ainda não coube (o editor avisa).
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     let current = size;
     el.style.fontSize = `${current}px`;
-    while (current > min && el.offsetHeight > maxLines * current * lineHeight + 2) {
+    const overflows = () => el.offsetHeight > maxLines * current * lineHeight + 2;
+    while (current > min && overflows()) {
       current -= 1;
       el.style.fontSize = `${current}px`;
     }
+    el.dataset.estouro = overflows() ? "1" : "0";
   }, [children, size, min, maxLines, lineHeight, fontsVersion]);
 
   return (
-    <Tag ref={ref} className={className} style={{ ...style, lineHeight }}>
+    <Tag ref={ref} className={className} style={{ ...style, lineHeight }} data-campo={campo}>
       {children}
     </Tag>
   );
@@ -125,10 +131,12 @@ export function FitColumn({
     if (!el) return;
     let scale = 1;
     el.style.fontSize = `${base}px`;
-    while (scale > minScale && el.scrollHeight > el.clientHeight + 1) {
+    const overflows = () => el.scrollHeight > el.clientHeight + 1;
+    while (scale > minScale && overflows()) {
       scale = Math.round((scale - 0.02) * 100) / 100;
       el.style.fontSize = `${base * scale}px`;
     }
+    el.dataset.estouro = overflows() ? "1" : "0";
   }, [deps, base, minScale, fontsVersion]);
 
   return (

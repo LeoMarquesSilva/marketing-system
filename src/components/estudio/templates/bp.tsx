@@ -24,6 +24,7 @@ import {
   type LucideProps,
 } from "lucide-react";
 import { studioImageUrl } from "@/lib/estudio/images";
+import { IconifyIcon } from "../iconify-icon";
 import styles from "./bp.module.css";
 import { FitColumn, FitText, RichText, adjust, items, text, type SlideRenderProps } from "./parts";
 
@@ -80,6 +81,7 @@ const LINE_ICONS: Record<string, ComponentType<LucideProps>> = {
 export function BpIcon({ name, size }: { name: string; size: number }) {
   if (name === "pergunta") return <Bubble size={size} sign="?" />;
   if (name === "alerta") return <Bubble size={size} sign="!" />;
+  if (name.startsWith("iconify:")) return <IconifyIcon value={name} size={size} stroke={1.5} />;
   const Icon = LINE_ICONS[name];
   return Icon ? <Icon size={size} strokeWidth={1.5} absoluteStrokeWidth={false} /> : null;
 }
@@ -87,9 +89,9 @@ export function BpIcon({ name, size }: { name: string; size: number }) {
 // referência para o teste de que todo ícone da lista tem desenho
 export const BP_ICON_NAMES = ["pergunta", "alerta", ...Object.keys(LINE_ICONS)];
 
-function Img({ src, className, style }: { src: string; className?: string; style?: CSSProperties }) {
+function Img({ src, className, style, campo }: { src: string; className?: string; style?: CSSProperties; campo?: string }) {
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt="" className={className} style={style} draggable={false} />;
+  return <img src={src} alt="" className={className} style={style} draggable={false} data-campo={campo} />;
 }
 
 function Board({ bg, dark, children }: { bg: string; dark: boolean; children: ReactNode }) {
@@ -120,7 +122,10 @@ export function BpConteudo({ valores, indice, total, ajustes }: SlideRenderProps
   const aj = adjust(ajustes);
   const dark = text(valores, "tema") === "escuro";
   const last = total > 1 && indice === total - 1;
-  const caixas = items(valores, "caixas").filter((c) => c.texto?.trim());
+  // guarda a posição original de cada caixa para o data-campo bater com o formulário
+  const caixas = items(valores, "caixas")
+    .map((caixa, index) => ({ caixa, index }))
+    .filter(({ caixa }) => caixa.texto?.trim());
   const titleIcon = text(valores, "icone");
   const bg = `fundo-${dark ? "escuro" : "claro"}-${(indice % 3) + 1}.jpg`;
 
@@ -137,19 +142,27 @@ export function BpConteudo({ valores, indice, total, ajustes }: SlideRenderProps
 
       <FitColumn base={32 * aj.texto} className={styles.column} style={{ left: 110, right: 110, top: 140 + aj.y, bottom: 185 - aj.y }} deps={[valores, ajustes]}>
         {titleIcon && titleIcon !== "nenhum" && (
-          <span className={styles.titleIcon}>
+          <span className={styles.titleIcon} data-campo="icone">
             <BpIcon name={titleIcon} size={titleIcon === "pergunta" || titleIcon === "alerta" ? 158 : 112} />
           </span>
         )}
         {text(valores, "titulo") && (
-          <h2 className={styles.title} style={aj.titulo !== 1 ? { fontSize: `${1.96 * aj.titulo}em` } : undefined}>
+          <h2 className={styles.title} style={aj.titulo !== 1 ? { fontSize: `${1.96 * aj.titulo}em` } : undefined} data-campo="titulo">
             {text(valores, "titulo")}
           </h2>
         )}
         {caixas.length > 0 && (
           <div className={styles.boxes} style={text(valores, "titulo") ? undefined : { marginTop: 0 }}>
-            {caixas.map((caixa, i) => (
-              <Caixa key={i} estilo={caixa.estilo} icone={caixa.icone} marcador={caixa.marcador} rotulo={caixa.rotulo?.trim() ?? ""} texto={caixa.texto.trim()} />
+            {caixas.map(({ caixa, index }) => (
+              <Caixa
+                key={index}
+                campo={`caixas.${index}`}
+                estilo={caixa.estilo}
+                icone={caixa.icone}
+                marcador={caixa.marcador}
+                rotulo={caixa.rotulo?.trim() ?? ""}
+                texto={caixa.texto.trim()}
+              />
             ))}
           </div>
         )}
@@ -167,16 +180,20 @@ export function BpConteudo({ valores, indice, total, ajustes }: SlideRenderProps
   );
 }
 
-function Caixa({ estilo, icone, marcador, rotulo, texto }: { estilo: string; icone: string; marcador: string; rotulo: string; texto: string }) {
+function Caixa({ campo, estilo, icone, marcador, rotulo, texto }: { campo: string; estilo: string; icone: string; marcador: string; rotulo: string; texto: string }) {
   const lines = texto.split("\n").map((l) => l.trim()).filter(Boolean);
   const list = marcador && marcador !== "nenhum";
   const styleClass = estilo === "contorno" ? styles.contorno : estilo === "destaque" ? styles.destaque : "";
   return (
     <div className={styles.boxWrap}>
-      {rotulo && <span className={styles.label}>{rotulo}</span>}
-      <div className={`${styles.box} ${styleClass} ${rotulo ? styles.withLabel : ""}`}>
+      {rotulo && (
+        <span className={styles.label} data-campo={`${campo}.rotulo`}>
+          {rotulo}
+        </span>
+      )}
+      <div className={`${styles.box} ${styleClass} ${rotulo ? styles.withLabel : ""}`} data-campo={`${campo}.texto`}>
         {icone && icone !== "nenhum" && (
-          <span className={styles.boxIcon}>
+          <span className={styles.boxIcon} data-campo={`${campo}.icone`}>
             <BpIcon name={icone} size={icone === "pergunta" || icone === "alerta" ? 118 : 84} />
           </span>
         )}
@@ -251,6 +268,7 @@ export function BpCapa({ valores, indice, total, ajustes }: SlideRenderProps) {
         <Img
           src={studioImageUrl(foto)}
           className={styles.photo}
+          campo="foto"
           style={{
             left: cover.photo.left,
             top: cover.photo.top,
@@ -268,25 +286,30 @@ export function BpCapa({ valores, indice, total, ajustes }: SlideRenderProps) {
         style={{ ...cover.zone, top: cover.zone.top + aj.y, bottom: cover.zone.bottom - aj.y, justifyContent: "flex-start", alignItems: right ? "flex-end" : "flex-start", textAlign: cover.align }}
         deps={[valores, ajustes]}
       >
-        {text(valores, "area") && <span className={styles.pillArea}>{text(valores, "area")}</span>}
+        {text(valores, "area") && (
+          <span className={styles.pillArea} data-campo="area">
+            {text(valores, "area")}
+          </span>
+        )}
         {text(valores, "chamada") && (
-          <span className={styles.pillKicker} style={{ marginTop: "0.7em" }}>
+          <span className={styles.pillKicker} style={{ marginTop: "0.7em" }} data-campo="chamada">
             {text(valores, "chamada")}
           </span>
         )}
-        {logo && right && <Img src={studioImageUrl(logo)} className={styles.clientLogo} style={{ marginTop: "0.9em", objectPosition: "right center" }} />}
+        {logo && right && <Img src={studioImageUrl(logo)} className={styles.clientLogo} style={{ marginTop: "0.9em", objectPosition: "right center" }} campo="logo" />}
         {text(valores, "titulo") && (
           <h2
             className={styles.coverTitle}
+            data-campo="titulo"
             style={{ marginTop: text(valores, "chamada") ? "0.35em" : logo && right ? "0.5em" : "1.9em", ...(aj.titulo !== 1 ? { fontSize: `${2.094 * aj.titulo}em` } : {}) }}
           >
             {text(valores, "titulo")}
           </h2>
         )}
-        {logo && !right && <Img src={studioImageUrl(logo)} className={styles.clientLogo} style={{ marginTop: "0.6em" }} />}
+        {logo && !right && <Img src={studioImageUrl(logo)} className={styles.clientLogo} style={{ marginTop: "0.6em" }} campo="logo" />}
         <span className={styles.coverRule} style={{ marginTop: "1.1em" }} />
         {text(valores, "subtitulo") && (
-          <p className={styles.subtitle} style={{ marginTop: "0.75em", maxWidth: right ? "17.8em" : "12.35em" }}>
+          <p className={styles.subtitle} style={{ marginTop: "0.75em", maxWidth: right ? "17.8em" : "12.35em" }} data-campo="subtitulo">
             {text(valores, "subtitulo")}
           </p>
         )}
@@ -295,11 +318,15 @@ export function BpCapa({ valores, indice, total, ajustes }: SlideRenderProps) {
       {(autor || cargo) && (
         <div className={styles.author} style={{ left: cover.author.axis, top: cover.author.top }}>
           {autor && (
-            <FitText className={styles.authorName} size={23} min={18} maxLines={1} style={{ maxWidth: cover.author.nameMax, textAlign: "center" }}>
+            <FitText className={styles.authorName} size={23} min={18} maxLines={1} style={{ maxWidth: cover.author.nameMax, textAlign: "center" }} campo="autor">
               {`Por: ${autor}`}
             </FitText>
           )}
-          {cargo && <span className={styles.authorRole}>{cargo}</span>}
+          {cargo && (
+            <span className={styles.authorRole} data-campo="cargo">
+              {cargo}
+            </span>
+          )}
         </div>
       )}
     </Board>

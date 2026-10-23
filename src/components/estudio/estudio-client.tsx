@@ -2,13 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FileInput, GalleryHorizontalEnd, Loader2, Plus, RectangleVertical, Square, Trash2, Wand2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { FileInput, GalleryHorizontalEnd, Loader2, Plus, RectangleVertical, Square, Wand2 } from "lucide-react";
 import { starterSlides } from "@/lib/estudio/domain";
 import { STUDIO_COLLECTIONS, templatesFor } from "@/lib/estudio/templates";
 import { PIECE_KIND_LABEL, type PieceKind, type StudioPiece, type StudioPieceSummary } from "@/lib/estudio/types";
 import { PieceEditor } from "./piece-editor";
+import { PieceList } from "./piece-list";
 import { PostImportDialog } from "./post-import-dialog";
 
 const TAG_KEY = "estudio:colecao";
@@ -25,10 +24,6 @@ function rememberedTag(): string {
 
 const KIND_ICON: Record<PieceKind, typeof Square> = { feed: Square, carrossel: GalleryHorizontalEnd, stories: RectangleVertical };
 
-function formatDate(value: string) {
-  return new Date(value).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
-
 export function EstudioClient() {
   const router = useRouter();
   const params = useSearchParams();
@@ -40,6 +35,7 @@ export function EstudioClient() {
   const [creating, setCreating] = useState<PieceKind | null>(null);
   const [openPiece, setOpenPiece] = useState<StudioPiece | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [duplicating, setDuplicating] = useState<string | null>(null);
 
   useEffect(() => {
     // preferência do navegador, lida depois de montar
@@ -117,6 +113,36 @@ export function EstudioClient() {
     if (!window.confirm("Excluir esta peça do Estúdio? A tarefa no planner, se houver, continua.")) return;
     const res = await fetch(`/api/estudio/pecas/${id}`, { method: "DELETE", credentials: "include" });
     if (res.ok) setPieces((list) => list.filter((p) => p.id !== id));
+  }
+
+  /** Cópia da peça (sem o vínculo com o planner e com o post), para fazer uma variação. */
+  async function duplicate(id: string) {
+    setDuplicating(id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/estudio/pecas/${id}`, { credentials: "include", cache: "no-store" });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.error ?? "Peça não encontrada.");
+      const original = body.piece as StudioPiece;
+      const created = await fetch("/api/estudio/pecas", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tag: original.tag,
+          tipo: original.tipo,
+          titulo: `${original.titulo} (cópia)`.slice(0, 120),
+          slides: original.slides,
+          legenda: original.legenda,
+        }),
+      });
+      if (!created.ok) throw new Error("Não foi possível duplicar a peça.");
+      await loadList();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível duplicar a peça.");
+    } finally {
+      setDuplicating(null);
+    }
   }
 
   if (openId) {
@@ -198,37 +224,14 @@ export function EstudioClient() {
 
       {importOpen && <PostImportDialog open onOpenChange={setImportOpen} />}
 
-      <section aria-label="Peças salvas" className="space-y-3">
-        <h3 className="text-sm font-semibold">Peças salvas</h3>
-        {loading ? (
-          <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Carregando…</p>
-        ) : visible.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhuma peça ainda. Comece por um dos tipos acima.</p>
-        ) : (
-          <ul className="divide-y divide-black/[0.06] border border-black/[0.1] bg-white">
-            {visible.map((p) => {
-              const Icon = KIND_ICON[p.tipo];
-              return (
-                <li key={p.id} className="flex items-center gap-3 px-4 py-3">
-                  <Icon className="h-4 w-4 shrink-0 text-[#347796]" aria-hidden />
-                  <button type="button" onClick={() => router.push(`/conteudo/estudio?peca=${p.id}`)} className="min-w-0 flex-1 text-left">
-                    <span className="block truncate text-sm font-medium hover:underline">{p.titulo}</span>
-                    <span className="block text-xs text-muted-foreground">
-                      {PIECE_KIND_LABEL[p.tipo]} · {p.slides_count} {p.slides_count === 1 ? "arte" : "artes"} · editada em {formatDate(p.updated_at)}
-                    </span>
-                  </button>
-                  <span className={cn("text-xs", p.request_id ? "text-emerald-700" : "text-muted-foreground")}>
-                    {p.request_id ? "No planner" : "Rascunho"}
-                  </span>
-                  <Button variant="ghost" size="sm" onClick={() => void remove(p.id)} aria-label={`Excluir ${p.titulo}`}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+      <PieceList
+        pieces={visible}
+        loading={loading}
+        busyId={duplicating}
+        onOpen={(id) => router.push(`/conteudo/estudio?peca=${id}`)}
+        onDuplicate={(id) => void duplicate(id)}
+        onRemove={(id) => void remove(id)}
+      />
     </div>
   );
 }

@@ -31,6 +31,16 @@ export interface OptionField extends BaseField {
   padrao: string;
 }
 
+/**
+ * Ícone: um dos atalhos do modelo (desenhados no código) ou um da Iconify, gravado como
+ * "iconify:lucide:scale". A IA só escolhe entre os atalhos e repete o da Iconify.
+ */
+export interface IconField extends BaseField {
+  kind: "icone";
+  opcoes: { value: string; label: string }[];
+  padrao: string;
+}
+
 /** Imagem enviada pelo usuário (foto de capa, logo de cliente). A IA não mexe nela. */
 export interface ImageField extends BaseField {
   kind: "imagem";
@@ -44,10 +54,21 @@ export interface ListField extends BaseField {
   item: string;
   min: number;
   max: number;
-  campos: (TextField | OptionField)[];
+  campos: (TextField | OptionField | IconField)[];
 }
 
-export type StudioField = TextField | ToggleField | OptionField | ImageField | ListField;
+export type StudioField = TextField | ToggleField | OptionField | IconField | ImageField | ListField;
+
+/** Conjuntos da Iconify com licença que permite uso comercial sem crédito (MIT, Apache, ISC). */
+export const ICONIFY_SETS = ["lucide", "tabler", "mdi", "ph", "material-symbols", "ri", "carbon", "fluent", "iconoir", "heroicons"] as const;
+
+const ICONIFY_RE = /^iconify:([a-z0-9-]{2,24}):([a-z0-9]+(?:-[a-z0-9]+)*)$/;
+
+export function parseIconify(value: string): { prefix: string; name: string } | null {
+  const match = ICONIFY_RE.exec(value);
+  if (!match || match[2].length > 80 || !(ICONIFY_SETS as readonly string[]).includes(match[1])) return null;
+  return { prefix: match[1], name: match[2] };
+}
 
 /** Caminho no bucket ESTUDIO-PECAS: "<TAG>/<pasta>/<arquivo>". */
 export const IMAGE_PATH_RE = /^[A-Za-z0-9_-]{1,24}\/(fotos|logos)\/[A-Za-z0-9._-]{1,140}$/;
@@ -65,7 +86,7 @@ export type FieldValue = string | boolean | ListItem[];
 export type FieldValues = Record<string, FieldValue>;
 
 function defaultItem(campos: ListField["campos"]): ListItem {
-  return Object.fromEntries(campos.map((c) => [c.key, c.kind === "opcao" ? c.padrao : ""]));
+  return Object.fromEntries(campos.map((c) => [c.key, c.kind === "texto" ? "" : c.padrao]));
 }
 
 export function emptyListItem(field: ListField): ListItem {
@@ -77,7 +98,7 @@ export function defaultValues(fields: StudioField[]): FieldValues {
   for (const f of fields) {
     if (f.kind === "texto" || f.kind === "imagem") values[f.key] = "";
     else if (f.kind === "alternar") values[f.key] = f.padrao;
-    else if (f.kind === "opcao") values[f.key] = f.padrao;
+    else if (f.kind === "opcao" || f.kind === "icone") values[f.key] = f.padrao;
     else values[f.key] = Array.from({ length: f.min }, () => defaultItem(f.campos));
   }
   return values;
@@ -101,6 +122,16 @@ function normalizeOption(field: OptionField, raw: unknown): string {
   return field.opcoes.some((o) => o.value === raw) ? (raw as string) : field.padrao;
 }
 
+function normalizeIcon(field: IconField, raw: unknown): string {
+  if (typeof raw !== "string") return field.padrao;
+  return field.opcoes.some((o) => o.value === raw) || parseIconify(raw) ? raw : field.padrao;
+}
+
+function normalizeSub(field: ListField["campos"][number], raw: unknown): string {
+  if (field.kind === "texto") return normalizeText(field, raw);
+  return field.kind === "icone" ? normalizeIcon(field, raw) : normalizeOption(field, raw);
+}
+
 /** Ajusta valores vindos do banco ou da IA ao formato do modelo (tipos, limites, tamanho das listas). */
 export function normalizeValues(fields: StudioField[], raw: unknown): FieldValues {
   const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
@@ -111,12 +142,11 @@ export function normalizeValues(fields: StudioField[], raw: unknown): FieldValue
     else if (f.kind === "imagem") values[f.key] = typeof v === "string" && IMAGE_PATH_RE.test(v) ? v : "";
     else if (f.kind === "alternar") values[f.key] = typeof v === "boolean" ? v : f.padrao;
     else if (f.kind === "opcao") values[f.key] = normalizeOption(f, v);
+    else if (f.kind === "icone") values[f.key] = normalizeIcon(f, v);
     else {
       const items = (Array.isArray(v) ? v : []).slice(0, f.max).map((item) => {
         const obj = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
-        return Object.fromEntries(
-          f.campos.map((c) => [c.key, c.kind === "texto" ? normalizeText(c, obj[c.key]) : normalizeOption(c, obj[c.key])])
-        ) as ListItem;
+        return Object.fromEntries(f.campos.map((c) => [c.key, normalizeSub(c, obj[c.key])])) as ListItem;
       });
       while (items.length < f.min) items.push(defaultItem(f.campos));
       values[f.key] = items;
@@ -137,6 +167,20 @@ function optionSchema(field: OptionField) {
   return z.enum(values).describe([field.label, field.dica].filter(Boolean).join(". "));
 }
 
+const iconChoices = (field: IconField) => field.opcoes.map((o) => o.value).join(" | ");
+
+// texto livre: o ícone da Iconify escolhido à mão precisa poder voltar igual
+function iconSchema(field: IconField) {
+  return z
+    .string()
+    .describe([field.label, field.dica, `um destes: ${iconChoices(field)}`, `se o valor atual começar com "iconify:", repita igual`].filter(Boolean).join(". "));
+}
+
+function subSchema(field: ListField["campos"][number]) {
+  if (field.kind === "texto") return textSchema(field);
+  return field.kind === "icone" ? iconSchema(field) : optionSchema(field);
+}
+
 /** Schema dos valores de um modelo para a IA (campo vazio = não usar). Imagens ficam de fora. */
 export function aiValuesSchema(fields: StudioField[]) {
   const shape: Record<string, z.ZodType> = {};
@@ -145,9 +189,10 @@ export function aiValuesSchema(fields: StudioField[]) {
     if (f.kind === "texto") shape[f.key] = textSchema(f);
     else if (f.kind === "alternar") shape[f.key] = z.boolean().describe([f.label, f.dica].filter(Boolean).join(". "));
     else if (f.kind === "opcao") shape[f.key] = optionSchema(f);
+    else if (f.kind === "icone") shape[f.key] = iconSchema(f);
     else {
       const itemShape: Record<string, z.ZodType> = {};
-      for (const c of f.campos) itemShape[c.key] = c.kind === "texto" ? textSchema(c) : optionSchema(c);
+      for (const c of f.campos) itemShape[c.key] = subSchema(c);
       shape[f.key] = z
         .array(z.object(itemShape))
         .describe(`${f.label}: de ${f.min} a ${f.max} itens. ${f.dica ?? ""}`.trim());
@@ -164,7 +209,10 @@ export function describeFields(fields: StudioField[]): string {
       if (f.kind === "texto") return `- ${f.key} (texto, até ${f.max}): ${f.label}${f.dica ? ` — ${f.dica}` : ""}`;
       if (f.kind === "alternar") return `- ${f.key} (sim/não): ${f.label}${f.dica ? ` — ${f.dica}` : ""}`;
       if (f.kind === "opcao") return `- ${f.key} (${f.opcoes.map((o) => o.value).join(" | ")}): ${f.label}${f.dica ? ` — ${f.dica}` : ""}`;
-      const sub = f.campos.map((c) => (c.kind === "texto" ? `${c.key} (até ${c.max})` : `${c.key} (${c.opcoes.map((o) => o.value).join(" | ")})`));
+      if (f.kind === "icone") return `- ${f.key} (ícone: ${iconChoices(f)}, ou o iconify:… atual): ${f.label}${f.dica ? ` — ${f.dica}` : ""}`;
+      const sub = f.campos.map((c) =>
+        c.kind === "texto" ? `${c.key} (até ${c.max})` : c.kind === "icone" ? `${c.key} (ícone: ${iconChoices(c)})` : `${c.key} (${c.opcoes.map((o) => o.value).join(" | ")})`
+      );
       return `- ${f.key} (lista de ${f.min} a ${f.max} ${f.item.toLowerCase()}s: ${sub.join(", ")}): ${f.label}${f.dica ? ` — ${f.dica}` : ""}`;
     })
     .join("\n");
