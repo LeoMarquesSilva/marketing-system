@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
-import { avisosDaData } from "@/lib/vistagem/agendamento";
+import { ETIQUETAS_AGENDAMENTO, ROTULO_ETIQUETA, avisosDaData, type EtiquetaAgendamento } from "@/lib/vistagem/agendamento";
 import {
   DIAS_PRAZO,
   criarCalendario,
@@ -23,13 +23,13 @@ import { ComboboxBusca } from "./combobox-busca";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { DadosPasta, DadosPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
 
-type Etiqueta = "PRAZO" | "PROVIDENCIA";
+type Etiqueta = EtiquetaAgendamento;
 
 interface Linha {
   chave: number;
   etiqueta: Etiqueta;
   tarefa: string;
-  /** Providência: data da tarefa no VIOS. */
+  /** Providência/Compromisso: data da tarefa no VIOS. */
   data: string;
   /** Prazo: data fatal (o VIOS recebe o Enviar, calculado pelo fluxo da tarefa). */
   dataFatal: string;
@@ -306,7 +306,7 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
                   <legend className="px-1 text-xs font-semibold uppercase text-slate-500">Tarefa {indice + 1}</legend>
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="inline-flex rounded-lg border border-[#dce9eb] p-1" role="group" aria-label="Tipo de tarefa">
-                      {(["PRAZO", "PROVIDENCIA"] as Etiqueta[]).map((valor) => (
+                      {ETIQUETAS_AGENDAMENTO.map((valor) => (
                         <Button
                           key={valor}
                           type="button"
@@ -316,7 +316,7 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
                           className={cn(linha.etiqueta === valor && "bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")}
                           onClick={() => trocarEtiqueta(linha, valor)}
                         >
-                          {valor === "PRAZO" ? "Prazo" : "Providência"}
+                          {ROTULO_ETIQUETA[valor]}
                         </Button>
                       ))}
                     </div>

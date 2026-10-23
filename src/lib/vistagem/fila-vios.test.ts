@@ -24,9 +24,9 @@ describe("fila do robô", () => {
     expect(linhas[1].linha).toMatchObject({ tipo: "Providências", etiqueta_id: "204", data: "19/10/2026" });
   });
 
-  it("leva a etiqueta do tipo no VIOS quando vem (COMPROMISSO na audiência)", () => {
-    const audiencia = { ...ITENS[1], tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefa_id: "54", etiqueta_vios: 205 };
-    expect(linhasParaFila(PUBLICACAO, [audiencia], { simular: false, modo: "pasta" })[0].linha.etiqueta_id).toBe("205");
+  it("compromisso vai com a etiqueta COMPROMISSO do VIOS", () => {
+    const audiencia: AgendamentoParaFila = { ...ITENS[1], etiqueta: "COMPROMISSO", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefa_id: "54" };
+    expect(linhasParaFila(PUBLICACAO, [audiencia], { simular: false, modo: "pasta" })[0].linha).toMatchObject({ tipo: "Compromisso", etiqueta_id: "205" });
     const [grupo] = linhasParaFila(PUBLICACAO, [ITENS[0], audiencia], { simular: false, modo: "intimacao" });
     expect(grupo.linha.lancamento?.tarefas.map((t) => t.etiqueta_id)).toEqual(["1", "205"]);
   });

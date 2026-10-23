@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { exigirAcessoVistagem, respostaDeErro } from "@/lib/vistagem/http";
 import { obterVistagem, salvarVistagem } from "@/lib/vistagem/juridico-server";
-import type { AgendamentoEntrada } from "@/lib/vistagem/agendamento";
+import { ETIQUETAS_AGENDAMENTO, type AgendamentoEntrada } from "@/lib/vistagem/agendamento";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +31,7 @@ export async function POST(request: Request, context: RouteContext) {
     const agendamentos: AgendamentoEntrada[] = lista.map((item) => {
       const valor = (item ?? {}) as Record<string, unknown>;
       return {
-        etiqueta: valor.etiqueta === "PRAZO" ? "PRAZO" : "PROVIDENCIA",
+        etiqueta: ETIQUETAS_AGENDAMENTO.find((etiqueta) => etiqueta === valor.etiqueta) ?? "PROVIDENCIA",
         tarefa: texto(valor.tarefa, 200) ?? "",
         tarefaId: texto(valor.tarefaId, 20),
         data: texto(valor.data, 10) ?? "",

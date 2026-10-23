@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
+import { ROTULO_ETIQUETA } from "@/lib/vistagem/agendamento";
 import { TIPOS_INCONSISTENCIA_JURIDICO } from "@/lib/vistagem/inconsistencias";
 import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, EnvioStatus, InconsistenciaItem } from "@/lib/vistagem/types";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
@@ -61,7 +62,7 @@ function TabelaTarefas({ agendamentos, comEnvio }: { agendamentos: AgendamentoRe
         <tbody className="divide-y divide-[#dce9eb]">
           {agendamentos.map((item) => (
             <tr key={item.id} className="align-top">
-              <td className="px-3 py-2">{item.etiqueta === "PRAZO" ? "Prazo" : "Providência"}</td>
+              <td className="px-3 py-2">{ROTULO_ETIQUETA[item.etiqueta]}</td>
               <td className="px-3 py-2">
                 <span className="font-medium text-slate-900">{item.tarefa}</span>
                 {item.observacao ? <span className="mt-1 block whitespace-pre-wrap text-xs text-slate-600">{item.observacao}</span> : null}

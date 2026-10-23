@@ -48,7 +48,7 @@ let cacheEtiquetas: { carregadoEm: number; etiquetas: Map<string, number[]> } | 
 const CACHE_MS = 10 * 60 * 1000;
 
 /** Etiquetas de cada tipo de tarefa do VIOS (ids), por id do tipo. */
-export async function carregarEtiquetasDosTipos(): Promise<Map<string, number[]>> {
+async function carregarEtiquetasDosTipos(): Promise<Map<string, number[]>> {
   if (cacheEtiquetas && Date.now() - cacheEtiquetas.carregadoEm < CACHE_MS) return cacheEtiquetas.etiquetas;
   const { data, error } = await sama().from("vios_tipos_tarefa").select("etapa_id, etiquetas").limit(5000);
   if (error) throw new VistagemError(`Falha ao carregar as etiquetas dos tipos de tarefa do VIOS no SAMA: ${error.message}`, 502);

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
+import { ROTULO_ETIQUETA } from "@/lib/vistagem/agendamento";
 import { SUBTIPOS_INCONSISTENCIA_AGENDAMENTO, TIPOS_INCONSISTENCIA_AGENDAMENTO } from "@/lib/vistagem/inconsistencias";
 import type { CheckResposta, ConferenciaItem } from "@/lib/vistagem/types";
 import { linkTarefaVios } from "@/lib/vistagem/vios-links";
@@ -85,7 +86,7 @@ function CartaoCheck({ item, aba, onConcluido }: { item: ConferenciaItem; aba: A
               <tr key={agendamento.id} className="align-top">
                 <td className="px-3 py-2">
                   <span className="font-medium text-slate-900">{agendamento.tarefa}</span>
-                  <span className="ml-1 text-xs text-slate-500">({agendamento.etiqueta === "PRAZO" ? "Prazo" : "Providência"})</span>
+                  <span className="ml-1 text-xs text-slate-500">({ROTULO_ETIQUETA[agendamento.etiqueta]})</span>
                   {agendamento.observacao ? <span className="mt-1 block whitespace-pre-wrap text-xs text-slate-600">{agendamento.observacao}</span> : null}
                 </td>
                 <td className="px-3 py-2 font-mono">

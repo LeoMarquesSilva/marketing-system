@@ -1,21 +1,21 @@
 import { datasDoPrazo } from "./dias-uteis";
 import type { CadeiaDoPrazo } from "./fluxo-vios";
 
-/** PRAZO = etiqueta ENVIAR no VIOS; PROVIDENCIA = PROVIDÊNCIA. */
-export type EtiquetaAgendamento = "PRAZO" | "PROVIDENCIA";
+/**
+ * Classe da tarefa, igual à etiqueta do tipo no VIOS: PRAZO = ENVIAR; PROVIDENCIA =
+ * PROVIDÊNCIA; COMPROMISSO = COMPROMISSO (audiência, perícia, leilão, sessão…).
+ */
+export type EtiquetaAgendamento = "PRAZO" | "PROVIDENCIA" | "COMPROMISSO";
+
+export const ETIQUETAS_AGENDAMENTO: readonly EtiquetaAgendamento[] = ["PRAZO", "PROVIDENCIA", "COMPROMISSO"];
+
+export const ROTULO_ETIQUETA: Record<EtiquetaAgendamento, string> = { PRAZO: "Prazo", PROVIDENCIA: "Providência", COMPROMISSO: "Compromisso" };
 
 /**
- * Etiquetas do VIOS (tipos_tarefas_x_etiquetas) que entram em cada escolha do jurídico; a
- * primeira é a padrão. COMPROMISSO (audiência, perícia, leilão, sessão…) tem data única,
- * como a Providência. As demais (2. REVISAR, 3. PROTOCOLAR…) o fluxo do VIOS cria sozinho.
+ * Id da etiqueta no VIOS (tipos_tarefas_x_etiquetas) de cada classe. As demais etiquetas
+ * (2. REVISAR, 3. PROTOCOLAR…) são de tarefas que o fluxo do VIOS cria sozinho.
  */
-export const ETIQUETAS_VIOS: Record<EtiquetaAgendamento, readonly number[]> = { PRAZO: [1], PROVIDENCIA: [204, 205] };
-
-/** Etiqueta que vai na tarefa do VIOS: a do próprio tipo (ex.: COMPROMISSO na audiência) ou a padrão da escolha. */
-export function etiquetaDaTarefa(etiqueta: EtiquetaAgendamento, etiquetasDoTipo: readonly number[] | undefined): number {
-  const aceitas = ETIQUETAS_VIOS[etiqueta];
-  return etiquetasDoTipo?.find((id) => aceitas.includes(id)) ?? aceitas[0];
-}
+export const ETIQUETA_VIOS: Record<EtiquetaAgendamento, number> = { PRAZO: 1, PROVIDENCIA: 204, COMPROMISSO: 205 };
 
 /** Opção do VIOS (tipo de tarefa ou usuário), como o robô do SAMA guarda no catálogo. */
 export interface OpcaoVios {
@@ -39,7 +39,7 @@ export interface AgendamentoEntrada {
   tarefa: string;
   /** Tipo de tarefa do VIOS escolhido na lista (desempata nomes repetidos). */
   tarefaId?: string | null;
-  /** AAAA-MM-DD, escolhida no calendário (Providência). No Prazo é recalculada a partir da fatal (Enviar). */
+  /** AAAA-MM-DD, escolhida no calendário (Providência/Compromisso). No Prazo é recalculada a partir da fatal (Enviar). */
   data: string;
   /** PRAZO: data fatal escolhida no calendário ou pelos atalhos de dias. */
   dataFatal?: string | null;
@@ -80,15 +80,14 @@ export function chaveNome(texto: string | null | undefined): string {
 
 /**
  * Tarefas que o jurídico pode escolher: as que o VIOS aceita na área da pasta (catálogo
- * do SAMA) e cuja etiqueta no VIOS entra na escolha (ETIQUETAS_VIOS). Nada fora disso é
- * aceito. Tipos diferentes com o mesmo nome (ex.: APELAÇÃO 36 e 486, com fluxos
+ * do SAMA) e que têm no VIOS a etiqueta da classe escolhida. Nada fora disso é aceito. Tipos diferentes com o mesmo nome (ex.: APELAÇÃO 36 e 486, com fluxos
  * diferentes) aparecem os dois, com o número do tipo no nome.
  */
 export function tarefasPermitidas(etapasDaArea: EtapaVios[], etiqueta: EtiquetaAgendamento): OpcaoTarefa[] {
-  const aceitas = ETIQUETAS_VIOS[etiqueta];
+  const alvo = ETIQUETA_VIOS[etiqueta];
   const vistos = new Set<string>();
   const etapas = etapasDaArea.filter((etapa) => {
-    if (!etapa.etiquetas.some((id) => aceitas.includes(id)) || vistos.has(etapa.id)) return false;
+    if (!etapa.etiquetas.includes(alvo) || vistos.has(etapa.id)) return false;
     vistos.add(etapa.id);
     return true;
   });
@@ -164,8 +163,8 @@ export function validarAgendamentos(
 
   const itens = entradas.map((entrada, indice): AgendamentoValidado | null => {
     const n = `Tarefa ${indice + 1}`;
-    if (entrada.etiqueta !== "PRAZO" && entrada.etiqueta !== "PROVIDENCIA") {
-      erros.push(`${n}: escolha Prazo ou Providência.`);
+    if (!ETIQUETAS_AGENDAMENTO.includes(entrada.etiqueta)) {
+      erros.push(`${n}: escolha Prazo, Providência ou Compromisso.`);
       return null;
     }
     const opcoes = contexto.tarefas[entrada.etiqueta];

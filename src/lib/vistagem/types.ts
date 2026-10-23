@@ -215,7 +215,7 @@ export type EnvioStatus = "nao_enviado" | "pendente" | "enviado" | "processando"
 export interface AgendamentoResumo {
   id: string;
   ordem: number;
-  etiqueta: "PRAZO" | "PROVIDENCIA";
+  etiqueta: "PRAZO" | "PROVIDENCIA" | "COMPROMISSO";
   tarefa: string;
   tarefaId: string | null;
   /** Data da tarefa no VIOS (no Prazo, o Enviar = fatal − 3 dias úteis). */
@@ -236,7 +236,7 @@ export interface CatalogoVistagem {
   area: string;
   atualizadoEm: string;
   /** `nome` é único na lista (nome repetido no VIOS ganha o tipo); `nomeVios` é o nome original. */
-  tarefas: { PRAZO: { id: string; nome: string; nomeVios?: string }[]; PROVIDENCIA: { id: string; nome: string; nomeVios?: string }[] };
+  tarefas: Record<"PRAZO" | "PROVIDENCIA" | "COMPROMISSO", { id: string; nome: string; nomeVios?: string }[]>;
   usuarios: { id: string; nome: string }[];
 }
 
