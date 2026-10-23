@@ -7,8 +7,9 @@ import { getAuthenticatedContentUser, type UserContentAccess } from "@/lib/conte
 import { isContentManager } from "@/lib/content-areas";
 import { getServerDb } from "@/lib/users-server";
 import { normalizeSlides } from "./domain";
+import { toCollection, toTemplateDef, type CollectionInput, type DynamicTemplateRow } from "./dynamic";
 import { STUDIO_FONT_SLOTS, fontFaceRule, type StudioFontRow } from "./fonts";
-import { getCollection } from "./templates";
+import { getCollection, registerDynamic } from "./templates";
 import type { PieceKind, StudioPiece, StudioPieceSummary } from "./types";
 
 const FONTS_DIR = path.join(process.cwd(), "src/lib/estudio/assets/fonts");
@@ -76,6 +77,41 @@ export async function studioFontFaceCss(): Promise<string> {
   return rules.join("\n");
 }
 
+// ---------- modelos e coleções criados na tela ----------
+
+const DYNAMIC_TTL_MS = 60_000;
+export const TEMPLATE_COLUMNS = "id, tag, nome, descricao, formato, uso, fundo, caixas, ativo";
+export const COLLECTION_COLUMNS = "tag, nome, contexto, planner";
+let dynamicLoad: { at: number; promise: Promise<void> } | null = null;
+
+/** Depois de salvar um modelo ou coleção, a próxima rota recarrega do banco. */
+export function invalidateDynamicTemplates() {
+  dynamicLoad = null;
+}
+
+/**
+ * Põe no registro os modelos e coleções do banco (cache de 1 minuto por instância).
+ * Se o banco falhar, o Estúdio segue só com os modelos do código.
+ */
+export async function ensureDynamicTemplates(): Promise<void> {
+  if (dynamicLoad && Date.now() - dynamicLoad.at < DYNAMIC_TTL_MS) return dynamicLoad.promise;
+  const promise = (async () => {
+    const db = await getServerDb();
+    const [cols, tpls] = await Promise.all([db.from("studio_collections").select(COLLECTION_COLUMNS), db.from("studio_templates").select(TEMPLATE_COLUMNS)]);
+    if (cols.error || tpls.error) {
+      console.error("[estudio/modelos] carga", cols.error ?? tpls.error);
+      dynamicLoad = null;
+      return;
+    }
+    registerDynamic({
+      colecoes: (cols.data ?? []).map((row) => toCollection(row as CollectionInput)),
+      modelos: (tpls.data ?? []).map((row) => toTemplateDef(row as DynamicTemplateRow)),
+    });
+  })();
+  dynamicLoad = { at: Date.now(), promise };
+  return promise;
+}
+
 type StudioAuth = { profile: UserContentAccess } | { error: NextResponse };
 
 /** Estúdio é do Marketing: admin, designer ou departamento Marketing. */
@@ -85,6 +121,8 @@ export async function requireStudioUser(): Promise<StudioAuth> {
   if (!auth.profile || !isContentManager(auth.profile)) {
     return { error: NextResponse.json({ error: "O Estúdio de peças é só para o Marketing." }, { status: 403 }) };
   }
+  // toda rota do Estúdio passa aqui antes de mexer em modelos
+  await ensureDynamicTemplates();
   return { profile: auth.profile };
 }
 

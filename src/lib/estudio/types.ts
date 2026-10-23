@@ -41,6 +41,48 @@ export interface StudioTemplateDef {
   ajustes?: AdjustKey[];
   /** O fundo pode ser trocado: variações do Illustrator (1..n) ou uma imagem com camada por cima. */
   fundos?: { variacoes: number; previa: (n: number, valores: FieldValues) => string };
+  /** Modelo criado na tela Modelos: fundo + caixas, desenhado por templates/dynamic.tsx. */
+  layout?: DynamicLayout;
+  /** Desativado: some da escolha, mas as peças que já usam continuam abrindo. */
+  inativo?: boolean;
+}
+
+export interface DynamicFont {
+  familia: string;
+  peso: number;
+  estilo: "normal" | "italic";
+}
+
+/** Caixa de um modelo criado na tela: posição em px da prancheta (1080 de largura). */
+export interface DynamicBox {
+  key: string;
+  tipo: "texto" | "imagem";
+  label: string;
+  dica?: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  exemplo: string;
+  // texto
+  max?: number;
+  linhas?: number;
+  fonte?: DynamicFont;
+  tamanho?: number;
+  minimo?: number;
+  entrelinha?: number;
+  cor?: string;
+  alinhamento?: "left" | "center" | "right" | "justify";
+  caixaAlta?: boolean;
+  // imagem
+  pasta?: "fotos" | "logos";
+  ajuste?: "cover" | "contain";
+}
+
+export interface DynamicLayout {
+  /** Fundo limpo no bucket: "<TAG>/modelos/<arquivo>". */
+  fundo: string;
+  caixas: DynamicBox[];
 }
 
 export interface StudioCollection {

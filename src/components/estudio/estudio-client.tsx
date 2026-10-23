@@ -2,22 +2,24 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FileInput, GalleryHorizontalEnd, Loader2, Plus, RectangleVertical, Square, Type, Wand2 } from "lucide-react";
+import { FileInput, GalleryHorizontalEnd, LayoutTemplate, Loader2, Plus, RectangleVertical, Square, Type, Wand2 } from "lucide-react";
 import { starterSlides } from "@/lib/estudio/domain";
-import { STUDIO_COLLECTIONS, templatesFor } from "@/lib/estudio/templates";
+import { STUDIO_COLLECTIONS, allCollections, templatesFor } from "@/lib/estudio/templates";
 import { PIECE_KIND_LABEL, type PieceKind, type StudioPiece, type StudioPieceSummary } from "@/lib/estudio/types";
 import { FontsDialog } from "./fonts-dialog";
 import { PieceEditor } from "./piece-editor";
 import { PieceList } from "./piece-list";
 import { PostImportDialog } from "./post-import-dialog";
+import { useStudioRegistry } from "./use-studio-registry";
 
 const TAG_KEY = "estudio:colecao";
 
 function rememberedTag(): string {
   const fallback = STUDIO_COLLECTIONS[0]?.tag ?? "";
+  const collections = allCollections();
   try {
     const saved = window.localStorage.getItem(TAG_KEY);
-    return saved && STUDIO_COLLECTIONS.some((c) => c.tag === saved) ? saved : fallback;
+    return saved && collections.some((c) => c.tag === saved) ? saved : fallback;
   } catch {
     return fallback;
   }
@@ -39,10 +41,12 @@ export function EstudioClient() {
   const [duplicating, setDuplicating] = useState<string | null>(null);
   const [fontsOpen, setFontsOpen] = useState(false);
 
+  const ready = useStudioRegistry();
+
   useEffect(() => {
-    // preferência do navegador, lida depois de montar
-    setTagState(rememberedTag());
-  }, []);
+    // preferência do navegador, lida depois de carregar as coleções criadas na tela
+    if (ready) setTagState(rememberedTag());
+  }, [ready]);
 
   function setTag(next: string) {
     setTagState(next);
@@ -147,18 +151,20 @@ export function EstudioClient() {
     }
   }
 
-  if (openId) {
-    if (!openPiece || openPiece.id !== openId) {
-      return (
-        <div className="flex items-center gap-2 py-20 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" /> Abrindo a peça…
-        </div>
-      );
-    }
+  if (!ready || (openId && (!openPiece || openPiece.id !== openId))) {
+    return (
+      <div className="flex items-center gap-2 py-20 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" /> {openId ? "Abrindo a peça…" : "Carregando o Estúdio…"}
+      </div>
+    );
+  }
+  if (openId && openPiece) {
+    // modelos criados na tela já estão no registro: o editor desenha e normaliza com eles
     return <PieceEditor key={openPiece.id} piece={openPiece} onBack={() => router.push("/conteudo/estudio")} />;
   }
 
-  const collection = STUDIO_COLLECTIONS.find((c) => c.tag === tag);
+  const collections = allCollections();
+  const collection = collections.find((c) => c.tag === tag);
   const visible = pieces.filter((p) => p.tag === tag);
 
   return (
@@ -182,9 +188,16 @@ export function EstudioClient() {
           >
             <Type className="h-4 w-4 text-[#347796]" aria-hidden /> Fontes
           </button>
-          {STUDIO_COLLECTIONS.length > 1 && (
+          <button
+            type="button"
+            onClick={() => router.push("/conteudo/estudio/modelos")}
+            className="inline-flex h-9 items-center gap-1.5 border border-black/[0.12] bg-white px-3 text-sm font-medium hover:border-[#347796]/50"
+          >
+            <LayoutTemplate className="h-4 w-4 text-[#347796]" aria-hidden /> Modelos
+          </button>
+          {collections.length > 1 && (
             <select value={tag} onChange={(e) => setTag(e.target.value)} className="h-9 rounded-md border border-input bg-white px-2 text-sm" aria-label="Coleção de modelos">
-              {STUDIO_COLLECTIONS.map((c) => (
+              {collections.map((c) => (
                 <option key={c.tag} value={c.tag}>[{c.tag}] {c.nome}</option>
               ))}
             </select>

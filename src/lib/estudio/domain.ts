@@ -39,7 +39,7 @@ export function starterSlides(tag: string, kind: PieceKind): StudioSlide[] {
 
 /** Limpa slides vindos do banco ou da IA: só modelos da coleção que servem para o tipo, valores dentro dos limites. */
 export function normalizeSlides(raw: unknown, tag: string, kind: PieceKind): StudioSlide[] {
-  const allowed = new Set(templatesFor(tag, kind).map((t) => t.id));
+  const allowed = new Set(templatesFor(tag, kind, { incluirInativos: true }).map((t) => t.id));
   const list = Array.isArray(raw) ? raw : [];
   const slides: StudioSlide[] = [];
   for (const item of list) {

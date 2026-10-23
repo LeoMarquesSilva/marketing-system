@@ -463,15 +463,44 @@ const BP_TEMPLATES: StudioTemplateDef[] = [
 export const STUDIO_COLLECTIONS: StudioCollection[] = [BP_COLLECTION, OAB_COLLECTION];
 export const STUDIO_TEMPLATES: StudioTemplateDef[] = [...BP_TEMPLATES, ...OAB_TEMPLATES];
 
+// ---------- modelos criados na tela (banco) ----------
+
+/*
+ * Os modelos e coleções do banco entram aqui em memória: o servidor carrega no começo
+ * das rotas do Estúdio (com cache curto) e o navegador ao abrir o Estúdio. Assim
+ * getTemplate/templatesFor continuam síncronos para o resto do código.
+ */
+let dynamicTemplates: StudioTemplateDef[] = [];
+let dynamicCollections: StudioCollection[] = [];
+
+export function registerDynamic(data: { colecoes: StudioCollection[]; modelos: StudioTemplateDef[] }) {
+  const codeTags = new Set(STUDIO_COLLECTIONS.map((c) => c.tag));
+  const codeIds = new Set(STUDIO_TEMPLATES.map((t) => t.id));
+  dynamicCollections = data.colecoes.filter((c) => !codeTags.has(c.tag));
+  dynamicTemplates = data.modelos.filter((t) => !codeIds.has(t.id));
+}
+
+/** Coleções do código e as criadas na tela. */
+export function allCollections(): StudioCollection[] {
+  return [...STUDIO_COLLECTIONS, ...dynamicCollections];
+}
+
+function allTemplates(): StudioTemplateDef[] {
+  return [...STUDIO_TEMPLATES, ...dynamicTemplates];
+}
+
 export function getTemplate(id: string): StudioTemplateDef | null {
-  return STUDIO_TEMPLATES.find((t) => t.id === id) ?? null;
+  return allTemplates().find((t) => t.id === id) ?? null;
 }
 
 export function getCollection(tag: string): StudioCollection | null {
-  return STUDIO_COLLECTIONS.find((c) => c.tag === tag) ?? null;
+  return allCollections().find((c) => c.tag === tag) ?? null;
 }
 
-/** Modelos de uma coleção que servem para o tipo de peça. */
-export function templatesFor(tag: string, kind: PieceKind): StudioTemplateDef[] {
-  return STUDIO_TEMPLATES.filter((t) => t.tag === tag && t.usoEm.includes(kind));
+/**
+ * Modelos de uma coleção que servem para o tipo de peça. Os desativados ficam de fora
+ * da escolha, mas `incluirInativos` mantém os slides das peças que já os usam.
+ */
+export function templatesFor(tag: string, kind: PieceKind, { incluirInativos = false } = {}): StudioTemplateDef[] {
+  return allTemplates().filter((t) => t.tag === tag && t.usoEm.includes(kind) && (incluirInativos || !t.inativo));
 }

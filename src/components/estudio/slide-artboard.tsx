@@ -4,6 +4,7 @@ import { forwardRef, useEffect, useRef, useState, type ReactNode } from "react";
 import { getTemplate } from "@/lib/estudio/templates";
 import { ARTBOARD_SIZE, type PieceKind, type StudioSlide } from "@/lib/estudio/types";
 import { TEMPLATE_COMPONENTS } from "./templates";
+import { DynamicSlide } from "./templates/dynamic";
 
 interface SlideProps {
   slide: StudioSlide;
@@ -20,6 +21,7 @@ export function slideSize(slide: StudioSlide) {
 /** A arte em tamanho real (1080 px). É este nó que vira PNG. */
 export const SlideArtboard = forwardRef<HTMLDivElement, SlideProps>(function SlideArtboard({ slide, indice, total, tipo }, ref) {
   const Component = TEMPLATE_COMPONENTS[slide.modelo];
+  const template = Component ? null : getTemplate(slide.modelo);
   const { width, height } = slideSize(slide);
   return (
     // estilos herdados zerados: as miniaturas ficam dentro de <button> (que centraliza texto)
@@ -29,6 +31,8 @@ export const SlideArtboard = forwardRef<HTMLDivElement, SlideProps>(function Sli
     >
       {Component ? (
         <Component valores={slide.valores} indice={indice} total={total} tipo={tipo} ajustes={slide.ajustes} fundo={slide.fundo} />
+      ) : template?.layout ? (
+        <DynamicSlide layout={template.layout} formato={template.formato} valores={slide.valores} indice={indice} total={total} tipo={tipo} ajustes={slide.ajustes} />
       ) : (
         <div style={{ color: "#fff", padding: 80, fontSize: 32 }}>Modelo não encontrado: {slide.modelo}</div>
       )}
