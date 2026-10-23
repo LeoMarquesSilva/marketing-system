@@ -59,6 +59,14 @@ Vermelho, amber, verde e azul informativo ficam reservados para estados semantic
 - Inputs e selects compartilham altura, borda, foco ciano e fundo branco.
 - Controles de toque devem oferecer alvo de aproximadamente 44 px.
 
+## Modais
+
+- Modal e sempre centralizado na tela: usar `Dialog` (`src/components/ui/dialog.tsx`).
+- Nunca abrir detalhe, edicao ou cadastro em painel lateral (`Sheet`, side screen, drawer pela direita). Decisao do usuario: o padrao e no meio.
+- Estrutura: `max-h-[90dvh]`, `flex flex-col gap-0 p-0`, cabecalho e rodape fixos com borda, so o corpo rola. Largura de `sm:max-w-lg` (confirmacoes) a `sm:max-w-2xl` (detalhe com formulario).
+- Detalhe que tambem edita abre em modo leitura e troca para o formulario no mesmo modal ("Editar"), sem empilhar outro modal.
+- Telas antigas que ainda usam `Sheet` migram para `Dialog` quando forem alteradas.
+
 ## Movimento
 
 - Framer Motion e permitido para sidebar, menus, tours e mudancas de contexto.
@@ -79,6 +87,7 @@ Vermelho, amber, verde e azul informativo ficam reservados para estados semantic
 - Botoes preenchidos com texto branco e contraste AA.
 - Nenhum texto operacional abaixo de 12 px.
 - Nenhum `rounded-2xl` ou `rounded-3xl` em superficies do sistema.
+- Nenhum painel lateral (`Sheet`): modais sao centralizados.
 - Estados de loading, vazio, erro e sucesso presentes.
 - Foco visivel, nomes acessiveis e ordem de teclado coerente.
 - Desktop e mobile verificados visualmente.

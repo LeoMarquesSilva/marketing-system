@@ -1,0 +1,382 @@
+"use client";
+
+import { useMemo, useState, type ReactNode } from "react";
+import {
+  CalendarClock,
+  CheckCheck,
+  CircleDashed,
+  Eye,
+  EyeOff,
+  Hourglass,
+  Loader2,
+  PencilLine,
+  Send,
+  Trash2,
+  type LucideIcon,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { businessDaysToResponse, flowStatus } from "@/lib/rh/boas-praticas/metrics";
+import type { FeedbackInput, FeedbackPerson, GoodPracticeFeedback } from "@/lib/rh/boas-praticas/types";
+import { cn } from "@/lib/utils";
+import { FlowStatusBadge, formatDate, formatDayLabel } from "./feedback-badges";
+import {
+  emptyFeedbackInput,
+  FeedbackForm,
+  feedbackToInput,
+  missingFields,
+  resolvedEmployeeName,
+} from "./feedback-form";
+import { AreaChip, CategoryIcon, PersonAvatar, PersonLine, useFeedbackPeople } from "./feedback-visuals";
+
+/* ----------------------------------------------------------- detalhe */
+
+function TimelineStep({
+  icon: Icon,
+  tone,
+  title,
+  date,
+  last = false,
+  children,
+}: {
+  icon: LucideIcon;
+  tone: "done" | "pending" | "warning" | "muted";
+  title: string;
+  date?: string | null;
+  last?: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <li className="relative flex gap-3 pb-5 last:pb-0">
+      {!last && <span className="absolute left-[15px] top-8 bottom-0 w-px bg-[#dce9eb]" aria-hidden />}
+      <span
+        className={cn(
+          "relative grid size-8 shrink-0 place-items-center rounded-full ring-1 ring-inset",
+          tone === "done" && "bg-[#e8f8f8] text-[#285f7a] ring-[#47cdd0]/40",
+          tone === "pending" && "bg-white text-muted-foreground ring-[#dce9eb] [&_svg]:opacity-70",
+          tone === "warning" && "bg-amber-50 text-amber-700 ring-amber-200",
+          tone === "muted" && "bg-slate-50 text-slate-500 ring-slate-200"
+        )}
+      >
+        <Icon className="size-4" aria-hidden />
+      </span>
+      <div className="min-w-0 flex-1 pt-1">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+          <p className="text-sm font-medium text-foreground">{title}</p>
+          {date && <p className="text-xs tabular-nums text-muted-foreground">{date}</p>}
+        </div>
+        {children && <div className="mt-1.5 text-sm text-muted-foreground">{children}</div>}
+      </div>
+    </li>
+  );
+}
+
+function longDate(iso: string): string {
+  const { weekday } = formatDayLabel(iso);
+  return `${formatDate(iso)} · ${weekday}`;
+}
+
+function FeedbackDetail({
+  item,
+  items,
+  onSelect,
+}: {
+  item: GoodPracticeFeedback;
+  items: GoodPracticeFeedback[];
+  onSelect: (item: GoodPracticeFeedback) => void;
+}) {
+  const { employee, manager } = useFeedbackPeople(item);
+  const days = businessDaysToResponse(item.sent_on, item.responded_on);
+  const history = useMemo(
+    () =>
+      item.is_team
+        ? []
+        : items
+            .filter(
+              (entry) =>
+                entry.id !== item.id &&
+                (item.employee_id ? entry.employee_id === item.employee_id : entry.employee_name === item.employee_name)
+            )
+            .slice(0, 6),
+    [items, item]
+  );
+
+  return (
+    <div className="space-y-6 px-6 py-5">
+      <section className="space-y-2">
+        <p className="flex items-center gap-2 text-sm font-medium text-[#285f7a]">
+          <CategoryIcon category={item.category} className="size-7" />
+          {item.category}
+        </p>
+        <blockquote className="rounded-md border border-[#e6eef0] bg-[#fafcfc] px-4 py-3 text-[15px] leading-6 text-foreground">
+          {item.description}
+        </blockquote>
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-sm font-semibold text-foreground">Linha do tempo</h3>
+        <ol>
+          <TimelineStep icon={CalendarClock} tone="done" title="Ocorrência" date={longDate(item.occurred_on)} />
+          <TimelineStep icon={Send} tone="done" title="Feedback enviado ao gestor" date={longDate(item.sent_on)}>
+            <PersonLine person={manager} subtitle={manager.person?.position ?? undefined} size="sm" className="text-foreground" />
+          </TimelineStep>
+          {item.viewed === true ? (
+            <TimelineStep icon={Eye} tone="done" title="Visualizado no Feedz" date={item.viewed_on ? longDate(item.viewed_on) : null} />
+          ) : item.viewed === false ? (
+            <TimelineStep icon={EyeOff} tone="warning" title="Não visualizado no Feedz" />
+          ) : (
+            <TimelineStep icon={CircleDashed} tone="muted" title="Sem dado do Feedz">
+              Lance a visualização quando sair a exportação do Feedz.
+            </TimelineStep>
+          )}
+          {item.responded_on ? (
+            <TimelineStep icon={CheckCheck} tone="done" title="Retorno do gestor" date={longDate(item.responded_on)} last>
+              <p className="text-xs">
+                {days === null
+                  ? "Data do retorno anterior ao envio — vale conferir."
+                  : days === 0
+                    ? "No mesmo dia útil do envio."
+                    : `${days} ${days === 1 ? "dia útil" : "dias úteis"} após o envio.`}
+              </p>
+              {item.manager_action && (
+                <p className="mt-2 rounded-md bg-[#f2f8f9] px-3 py-2 text-sm leading-5 text-foreground">{item.manager_action}</p>
+              )}
+            </TimelineStep>
+          ) : (
+            <TimelineStep icon={Hourglass} tone="pending" title="Aguardando retorno do gestor" last>
+              {item.manager_action ? (
+                <p className="rounded-md bg-[#f2f8f9] px-3 py-2 text-sm leading-5 text-foreground">{item.manager_action}</p>
+              ) : (
+                "Quando o gestor responder, registre a data e a providência."
+              )}
+            </TimelineStep>
+          )}
+        </ol>
+      </section>
+
+      {history.length > 0 && (
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold text-foreground">Outros feedbacks de {employee.name}</h3>
+          <ul className="divide-y divide-[#eef3f5] rounded-md border border-[#e6eef0]">
+            {history.map((entry) => (
+              <li key={entry.id}>
+                <button
+                  type="button"
+                  onClick={() => onSelect(entry)}
+                  className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-[#f6fafb] focus-visible:bg-[#f6fafb] focus-visible:outline-none"
+                >
+                  <CategoryIcon category={entry.category} className="size-7" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm text-foreground">{entry.description}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {formatDate(entry.sent_on)} · {entry.category}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <p className="text-xs text-muted-foreground">
+        {item.source === "planilha"
+          ? "Importado da planilha de boas práticas."
+          : `Registrado${item.created_by_name ? ` por ${item.created_by_name}` : ""} em ${formatDate(item.created_at)}.`}
+      </p>
+    </div>
+  );
+}
+
+function DetailHeader({ item }: { item: GoodPracticeFeedback }) {
+  const { employee } = useFeedbackPeople(item);
+  return (
+    <DialogHeader className="gap-1 border-b border-[#e6eef0] px-6 py-5 pr-14 text-left">
+      <div className="flex items-start gap-4">
+        <PersonAvatar name={employee.name} person={employee.person} isTeam={employee.isTeam} size="lg" />
+        <div className="min-w-0 space-y-1.5">
+          <DialogTitle className="truncate text-lg">{employee.name}</DialogTitle>
+          <DialogDescription className="mt-0 truncate">
+            {employee.person
+              ? [employee.person.position, employee.person.is_active ? null : "Ex-colaborador"].filter(Boolean).join(" · ") ||
+                employee.person.full_name
+              : employee.isTeam
+                ? "Feedback para a equipe inteira"
+                : "Fora do cadastro do RH"}
+          </DialogDescription>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <AreaChip area={item.area} />
+            <FlowStatusBadge status={flowStatus(item)} />
+          </div>
+        </div>
+      </div>
+    </DialogHeader>
+  );
+}
+
+/* -------------------------------------------------------------- modal */
+
+export function FeedbackDialog({
+  item: initialItem,
+  people,
+  items,
+  onClose,
+  onSaved,
+  onDeleted,
+}: {
+  /** null = novo registro. */
+  item: GoodPracticeFeedback | null;
+  people: FeedbackPerson[];
+  items: GoodPracticeFeedback[];
+  onClose: () => void;
+  onSaved: (item: GoodPracticeFeedback) => void;
+  onDeleted: (id: string) => void;
+}) {
+  const [item, setItem] = useState(initialItem);
+  const [mode, setMode] = useState<"view" | "edit">(initialItem ? "view" : "edit");
+  const [form, setForm] = useState<FeedbackInput>(() => (initialItem ? feedbackToInput(initialItem) : emptyFeedbackInput()));
+  const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function select(next: GoodPracticeFeedback) {
+    setItem(next);
+    setForm(feedbackToInput(next));
+    setMode("view");
+    setConfirmDelete(false);
+    setError(null);
+  }
+
+  async function save() {
+    const missing = missingFields(form);
+    if (missing.length) {
+      const list = missing.length > 1 ? `${missing.slice(0, -1).join(", ")} e ${missing[missing.length - 1]}` : missing[0];
+      setError(`Falta informar ${list}.`);
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const body: FeedbackInput = {
+        ...form,
+        employee_name: resolvedEmployeeName(form),
+        viewed_on: form.viewed === true ? form.viewed_on : "",
+      };
+      const response = await fetch(item ? `/api/rh/boas-praticas/${item.id}` : "/api/rh/boas-praticas", {
+        method: item ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await response.json().catch(() => ({}))) as { item?: GoodPracticeFeedback; error?: string };
+      if (!response.ok || !data.item) throw new Error(data.error ?? "Não foi possível salvar.");
+      onSaved(data.item);
+      select(data.item);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível salvar.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function remove() {
+    if (!item) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/rh/boas-praticas/${item.id}`, { method: "DELETE" });
+      const data = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Não foi possível excluir.");
+      onDeleted(item.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Não foi possível excluir.");
+      setConfirmDelete(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
+      <DialogContent className="flex max-h-[90dvh] flex-col gap-0 p-0 sm:max-w-2xl" showCloseButton={!saving}>
+        {mode === "view" && item ? (
+          <DetailHeader item={item} />
+        ) : (
+          <DialogHeader className="gap-1 border-b border-[#e6eef0] px-6 py-5 pr-14 text-left">
+            <DialogTitle className="text-lg">{item ? "Editar feedback" : "Registrar feedback"}</DialogTitle>
+            <DialogDescription>Fica só no registro do RH. Nada é enviado ao colaborador nem ao gestor a partir daqui.</DialogDescription>
+          </DialogHeader>
+        )}
+
+        {/* key: trocar de modo ou de registro volta a rolagem para o topo. */}
+        <div key={`${mode}-${item?.id ?? "novo"}`} className="min-h-0 flex-1 overflow-y-auto">
+          {mode === "view" && item ? (
+            <FeedbackDetail item={item} items={items} onSelect={select} />
+          ) : (
+            <FeedbackForm form={form} people={people} items={items} onChange={setForm} />
+          )}
+        </div>
+
+        {error && (
+          <p role="alert" className="mx-6 mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-inset ring-red-200">
+            {error}
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e6eef0] bg-[#fafcfc] px-6 py-4">
+          <div>
+            {item &&
+              (confirmDelete ? (
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="destructive" disabled={saving} onClick={() => void remove()}>
+                    {saving && <Loader2 className="size-4 animate-spin" />}
+                    Confirmar exclusão
+                  </Button>
+                  <Button type="button" variant="ghost" disabled={saving} onClick={() => setConfirmDelete(false)}>
+                    Manter
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  aria-label="Excluir feedback"
+                  className="gap-2 px-3 text-red-700 hover:bg-red-50 hover:text-red-800"
+                  disabled={saving}
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2 className="size-4" />
+                  <span className="hidden sm:inline">Excluir</span>
+                </Button>
+              ))}
+          </div>
+          {mode === "view" ? (
+            <Button type="button" className="gap-2" disabled={confirmDelete} onClick={() => setMode("edit")}>
+              <PencilLine className="size-4" />
+              Editar
+            </Button>
+          ) : (
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={saving}
+                onClick={() => {
+                  if (!item) return onClose();
+                  setForm(feedbackToInput(item));
+                  setMode("view");
+                  setError(null);
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button type="button" disabled={saving || confirmDelete} onClick={() => void save()}>
+                {saving && !confirmDelete && <Loader2 className="size-4 animate-spin" />}
+                {item ? "Salvar alterações" : "Registrar feedback"}
+              </Button>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

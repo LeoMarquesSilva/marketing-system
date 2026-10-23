@@ -13,6 +13,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Award,
+  BookCheck,
   CalendarClock,
   CalendarRange,
   Camera,
@@ -299,6 +300,14 @@ export const NAV_FRONTS: NavFront[] = [
         pages: [{ href: "/rh/organograma", label: "Organograma" }],
       },
       {
+        id: "boas-praticas",
+        // Registro dos feedbacks do Manual de Boas Práticas + dashboard (só para o RH).
+        label: "Feedbacks de boas práticas",
+        shortLabel: "Boas práticas",
+        icon: BookCheck,
+        pages: [{ href: "/rh/boas-praticas", label: "Boas práticas" }],
+      },
+      {
         id: "clima",
         label: "Clima organizacional",
         shortLabel: "Clima",
@@ -389,7 +398,12 @@ const ALWAYS_VISIBLE = new Set([
   REELS_APPROVAL_HREF,
 ]);
 
-const RH_RESTRICTED = new Set(["/rh/qualificacoes", "/rh/fichas-cadastrais", "/rh/organograma"]);
+const RH_RESTRICTED = new Set([
+  "/rh/qualificacoes",
+  "/rh/fichas-cadastrais",
+  "/rh/organograma",
+  "/rh/boas-praticas",
+]);
 
 const COLLABORATOR_PAGES = new Set([
   ...ALWAYS_VISIBLE,

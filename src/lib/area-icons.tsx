@@ -13,6 +13,7 @@ import {
   Folder,
   CircleDollarSign,
   Receipt,
+  Handshake,
   type LucideIcon,
   type LucideProps,
 } from "lucide-react";
@@ -32,6 +33,8 @@ export const AREA_ICONS: Record<string, LucideIcon> = {
   Sócio: Crown,
   "Distressed Deals - Special Situations": Zap,
   "Special Situations": Zap,
+  ADD: Zap, // Distressed Deals, como no registro de boas práticas
+  Comercial: Handshake,
   "Operações Legais (Legal Ops)": Settings,
   Geral: Folder,
 };
@@ -51,6 +54,8 @@ export const AREA_ICON_STYLES: Record<string, string> = {
   Sócio: "bg-yellow-100 text-yellow-800 ring-yellow-200/60",
   "Distressed Deals - Special Situations": "bg-orange-100 text-orange-700 ring-orange-200/60",
   "Special Situations": "bg-orange-100 text-orange-700 ring-orange-200/60",
+  ADD: "bg-orange-100 text-orange-700 ring-orange-200/60",
+  Comercial: "bg-cyan-100 text-cyan-800 ring-cyan-200/60",
   "Operações Legais (Legal Ops)": "bg-emerald-100 text-emerald-700 ring-emerald-200/60",
   Geral: "bg-slate-100 text-slate-700 ring-slate-200/60",
   "Cível | Insolvência": "bg-rose-100 text-rose-700 ring-rose-200/60", // legado → Reestruturação
