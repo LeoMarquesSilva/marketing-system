@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Inbox, Plus, Search, SearchX } from "lucide-react";
+import { Camera, Inbox, Plus, Search, SearchX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -61,6 +61,16 @@ function RecordRow({ item, today, onOpen }: { item: GoodPracticeFeedback; today:
           <span className="flex items-center gap-1.5 text-xs font-medium text-[#285f7a]">
             <CategoryGlyph category={item.category} className="size-3.5 shrink-0" />
             <span className="truncate">{item.category}</span>
+            {item.photo_count > 0 && (
+              <span
+                className="ml-1 inline-flex shrink-0 items-center gap-1 rounded-full bg-[#eef3f5] px-1.5 py-0.5 text-muted-foreground"
+                title={`${item.photo_count} ${item.photo_count === 1 ? "foto" : "fotos"}`}
+              >
+                <Camera className="size-3" aria-hidden />
+                <span className="tabular-nums">{item.photo_count}</span>
+                <span className="sr-only">{item.photo_count === 1 ? "foto" : "fotos"}</span>
+              </span>
+            )}
           </span>
           <span className="mt-0.5 line-clamp-2 text-sm leading-5 text-foreground">{item.description}</span>
         </span>

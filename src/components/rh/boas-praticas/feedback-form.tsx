@@ -433,11 +433,14 @@ export function FeedbackForm({
   form,
   people,
   items,
+  photoSlot,
   onChange,
 }: {
   form: FeedbackInput;
   people: FeedbackPerson[];
   items: GoodPracticeFeedback[];
+  /** Campo de fotos (estado fica no modal, que envia as fotos ao salvar). */
+  photoSlot?: ReactNode;
   onChange: (next: FeedbackInput) => void;
 }) {
   const set = <K extends keyof FeedbackInput>(key: K, value: FeedbackInput[K]) => onChange({ ...form, [key]: value });
@@ -526,6 +529,7 @@ export function FeedbackForm({
             onChange={(event) => set("description", event.target.value)}
           />
         </Field>
+        {photoSlot && <Field label="Fotos da ocorrência">{photoSlot}</Field>}
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Data da ocorrência" htmlFor="fb-occurred">
             <DatePickerField id="fb-occurred" value={form.occurred_on} onChange={(value) => set("occurred_on", value)} />

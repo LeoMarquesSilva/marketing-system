@@ -26,6 +26,29 @@ export interface GoodPracticeFeedback {
   created_at: string;
   updated_at: string;
   created_by_name: string | null;
+  photo_count: number;
+}
+
+/** Bucket PRIVADO das fotos das ocorrências (visualização por link assinado). */
+export const FEEDBACK_PHOTOS_BUCKET = "RH-BOAS-PRATICAS";
+export const FEEDBACK_PHOTO_MAX_BYTES = 10 * 1024 * 1024;
+export const FEEDBACK_PHOTOS_MAX = 10;
+export const FEEDBACK_PHOTO_TYPES = ["image/webp", "image/jpeg", "image/png"] as const;
+export type FeedbackPhotoType = (typeof FEEDBACK_PHOTO_TYPES)[number];
+
+export interface FeedbackPhoto {
+  id: string;
+  feedback_id: string;
+  file_name: string;
+  content_type: string;
+  size_bytes: number;
+  width: number | null;
+  height: number | null;
+  /** Quando a foto foi tirada (EXIF), se a câmera gravou. */
+  taken_at: string | null;
+  created_at: string;
+  /** Link assinado, vale 1 hora. */
+  url: string;
 }
 
 /** Colaborador do cadastro, para escolher quem recebeu e quem é o gestor. */

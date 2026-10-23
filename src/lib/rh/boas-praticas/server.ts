@@ -4,13 +4,25 @@ import { createClient as createSupabaseClient, type SupabaseClient } from "@supa
 import { z } from "zod";
 import { resolveEmployeeAvatarUrl } from "@/lib/ferias/filters";
 import { RhHttpError, requireHrManager } from "@/lib/rh/qualifications/server";
-import type { FeedbackInput, FeedbackPerson, GoodPracticeFeedback } from "./types";
+import {
+  FEEDBACK_PHOTO_MAX_BYTES,
+  FEEDBACK_PHOTO_TYPES,
+  FEEDBACK_PHOTOS_BUCKET,
+  FEEDBACK_PHOTOS_MAX,
+  type FeedbackInput,
+  type FeedbackPerson,
+  type FeedbackPhoto,
+  type GoodPracticeFeedback,
+} from "./types";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
 const FEEDBACK_SELECT =
-  "id, occurred_on, sent_on, employee_id, employee_name, is_team, manager_employee_id, manager_name, area, category, description, manager_action, responded_on, viewed, viewed_on, source, created_at, updated_at, creator:users!hr_good_practice_feedbacks_created_by_fkey(name)";
+  "id, occurred_on, sent_on, employee_id, employee_name, is_team, manager_employee_id, manager_name, area, category, description, manager_action, responded_on, viewed, viewed_on, source, created_at, updated_at, creator:users!hr_good_practice_feedbacks_created_by_fkey(name), photos:hr_good_practice_feedback_photos(count)";
+
+const PHOTO_SELECT = "id, feedback_id, storage_path, file_name, content_type, size_bytes, width, height, taken_at, created_at";
+const PHOTO_URL_SECONDS = 60 * 60;
 
 function createFeedbackAdminClient(): SupabaseClient {
   if (!serviceKey) {
@@ -21,11 +33,14 @@ function createFeedbackAdminClient(): SupabaseClient {
   });
 }
 
-type FeedbackRow = Omit<GoodPracticeFeedback, "created_by_name"> & { creator: { name: string } | null };
+type FeedbackRow = Omit<GoodPracticeFeedback, "created_by_name" | "photo_count"> & {
+  creator: { name: string } | null;
+  photos: { count: number }[] | null;
+};
 
 function toFeedback(row: FeedbackRow): GoodPracticeFeedback {
-  const { creator, ...rest } = row;
-  return { ...rest, created_by_name: creator?.name ?? null };
+  const { creator, photos, ...rest } = row;
+  return { ...rest, created_by_name: creator?.name ?? null, photo_count: photos?.[0]?.count ?? 0 };
 }
 
 const isoDate = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida");
@@ -240,9 +255,148 @@ export async function updateFeedback(id: string, input: FeedbackInput): Promise<
 export async function deleteFeedback(id: string): Promise<void> {
   await requireHrManager();
   const db = createFeedbackAdminClient();
+  // As linhas das fotos caem em cascata; os arquivos do bucket saem aqui.
+  const { data: photos } = await db.from("hr_good_practice_feedback_photos").select("storage_path").eq("feedback_id", id);
+  const paths = (photos ?? []).map((photo) => photo.storage_path as string);
+  if (paths.length) {
+    const { error: storageError } = await db.storage.from(FEEDBACK_PHOTOS_BUCKET).remove(paths);
+    if (storageError) console.error("[boas-praticas] fotos do feedback excluído:", storageError);
+  }
   const { error } = await db.from("hr_good_practice_feedbacks").delete().eq("id", id);
   if (error) {
     console.error("[boas-praticas] excluir:", error);
     throw new RhHttpError("Não foi possível excluir o feedback.", 500, "DELETE_FAILED");
   }
+}
+
+/* -------------------------------------------------------------- fotos */
+
+type PhotoRow = Omit<FeedbackPhoto, "url"> & { storage_path: string };
+
+const uuid = z.string().uuid("Identificador inválido.");
+const photoType = z.enum(FEEDBACK_PHOTO_TYPES, { message: "Envie a foto em JPG, PNG ou WebP." });
+const PHOTO_EXTENSION: Record<(typeof FEEDBACK_PHOTO_TYPES)[number], string> = {
+  "image/webp": "webp",
+  "image/jpeg": "jpg",
+  "image/png": "png",
+};
+
+const photoUploadSchema = z.object({
+  content_type: photoType,
+  size_bytes: z.number().int().positive().max(FEEDBACK_PHOTO_MAX_BYTES, "A foto passa de 10 MB."),
+});
+
+const photoRegisterSchema = photoUploadSchema.extend({
+  storage_path: z.string().min(1).max(300),
+  file_name: z.string().trim().min(1).max(255),
+  width: z.number().int().positive().max(20000).nullable(),
+  height: z.number().int().positive().max(20000).nullable(),
+  taken_at: z.string().datetime({ offset: true }).nullable(),
+});
+
+function parsePhotoInput<T>(schema: z.ZodType<T>, input: unknown): T {
+  const parsed = schema.safeParse(input);
+  if (!parsed.success) {
+    throw new RhHttpError(parsed.error.issues[0]?.message ?? "Dados inválidos.", 400, "INVALID_INPUT");
+  }
+  return parsed.data;
+}
+
+async function ensureFeedback(db: SupabaseClient, feedbackId: string): Promise<void> {
+  parsePhotoInput(uuid, feedbackId);
+  const { data, error } = await db.from("hr_good_practice_feedbacks").select("id").eq("id", feedbackId).maybeSingle();
+  if (error) throw new RhHttpError("Falha ao carregar o feedback.", 500, "QUERY_FAILED");
+  if (!data) throw new RhHttpError("Feedback não encontrado.", 404, "NOT_FOUND");
+}
+
+async function withSignedUrls(db: SupabaseClient, rows: PhotoRow[]): Promise<FeedbackPhoto[]> {
+  if (!rows.length) return [];
+  const { data, error } = await db.storage
+    .from(FEEDBACK_PHOTOS_BUCKET)
+    .createSignedUrls(rows.map((row) => row.storage_path), PHOTO_URL_SECONDS);
+  if (error) {
+    console.error("[boas-praticas] links das fotos:", error);
+    throw new RhHttpError("Não foi possível abrir as fotos.", 500, "SIGN_FAILED");
+  }
+  const byPath = new Map((data ?? []).map((entry) => [entry.path, entry.signedUrl]));
+  return rows.flatMap(({ storage_path, ...photo }) => {
+    const signed = byPath.get(storage_path);
+    return signed ? [{ ...photo, url: signed }] : [];
+  });
+}
+
+/** URL assinada para o navegador subir a foto direto no bucket privado. */
+export async function createPhotoUpload(feedbackId: string, input: unknown): Promise<{ path: string; token: string }> {
+  await requireHrManager();
+  const db = createFeedbackAdminClient();
+  await ensureFeedback(db, feedbackId);
+  const value = parsePhotoInput(photoUploadSchema, input);
+  const { count } = await db
+    .from("hr_good_practice_feedback_photos")
+    .select("id", { count: "exact", head: true })
+    .eq("feedback_id", feedbackId);
+  if ((count ?? 0) >= FEEDBACK_PHOTOS_MAX) {
+    throw new RhHttpError(`Cada feedback aceita até ${FEEDBACK_PHOTOS_MAX} fotos.`, 409, "TOO_MANY_PHOTOS");
+  }
+  const path = `${feedbackId}/${crypto.randomUUID()}.${PHOTO_EXTENSION[value.content_type]}`;
+  const { data, error } = await db.storage.from(FEEDBACK_PHOTOS_BUCKET).createSignedUploadUrl(path);
+  if (error || !data) {
+    console.error("[boas-praticas] upload assinado:", error);
+    throw new RhHttpError("Não foi possível preparar o envio da foto.", 500, "UPLOAD_FAILED");
+  }
+  return { path: data.path, token: data.token };
+}
+
+/** Registra a foto já enviada ao bucket. */
+export async function registerPhoto(feedbackId: string, input: unknown): Promise<FeedbackPhoto> {
+  const manager = await requireHrManager();
+  const db = createFeedbackAdminClient();
+  await ensureFeedback(db, feedbackId);
+  const value = parsePhotoInput(photoRegisterSchema, input);
+  if (!value.storage_path.startsWith(`${feedbackId}/`) || value.storage_path.includes("..")) {
+    throw new RhHttpError("Foto de outro feedback.", 400, "INVALID_INPUT");
+  }
+  const { data, error } = await db
+    .from("hr_good_practice_feedback_photos")
+    .insert({ ...value, feedback_id: feedbackId, created_by: manager.profileId })
+    .select(PHOTO_SELECT)
+    .single();
+  if (error || !data) {
+    console.error("[boas-praticas] registra foto:", error);
+    throw new RhHttpError("Não foi possível registrar a foto.", 500, "INSERT_FAILED");
+  }
+  const [photo] = await withSignedUrls(db, [data as PhotoRow]);
+  if (!photo) throw new RhHttpError("A foto não chegou ao armazenamento. Tente de novo.", 500, "UPLOAD_MISSING");
+  return photo;
+}
+
+export async function listPhotos(feedbackId: string): Promise<FeedbackPhoto[]> {
+  await requireHrManager();
+  const db = createFeedbackAdminClient();
+  await ensureFeedback(db, feedbackId);
+  const { data, error } = await db
+    .from("hr_good_practice_feedback_photos")
+    .select(PHOTO_SELECT)
+    .eq("feedback_id", feedbackId)
+    .order("created_at");
+  if (error) throw new RhHttpError("Falha ao carregar as fotos.", 500, "QUERY_FAILED");
+  return withSignedUrls(db, (data ?? []) as PhotoRow[]);
+}
+
+export async function deletePhoto(feedbackId: string, photoId: string): Promise<void> {
+  await requireHrManager();
+  const db = createFeedbackAdminClient();
+  parsePhotoInput(uuid, photoId);
+  const { data, error } = await db
+    .from("hr_good_practice_feedback_photos")
+    .select("storage_path")
+    .eq("id", photoId)
+    .eq("feedback_id", feedbackId)
+    .maybeSingle();
+  if (error) throw new RhHttpError("Falha ao carregar a foto.", 500, "QUERY_FAILED");
+  if (!data) throw new RhHttpError("Foto não encontrada.", 404, "NOT_FOUND");
+  const { error: storageError } = await db.storage.from(FEEDBACK_PHOTOS_BUCKET).remove([data.storage_path as string]);
+  if (storageError) console.error("[boas-praticas] remove arquivo da foto:", storageError);
+  const { error: deleteError } = await db.from("hr_good_practice_feedback_photos").delete().eq("id", photoId);
+  if (deleteError) throw new RhHttpError("Não foi possível excluir a foto.", 500, "DELETE_FAILED");
 }

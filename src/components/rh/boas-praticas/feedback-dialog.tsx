@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   CalendarClock,
   CheckCheck,
@@ -17,7 +17,19 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { businessDaysToResponse, flowStatus } from "@/lib/rh/boas-praticas/metrics";
-import type { FeedbackInput, FeedbackPerson, GoodPracticeFeedback } from "@/lib/rh/boas-praticas/types";
+import {
+  deleteFeedbackPhoto,
+  imageFilesFrom,
+  listFeedbackPhotos,
+  uploadFeedbackPhoto,
+} from "@/lib/rh/boas-praticas/photos-client";
+import {
+  FEEDBACK_PHOTOS_MAX,
+  type FeedbackInput,
+  type FeedbackPerson,
+  type FeedbackPhoto,
+  type GoodPracticeFeedback,
+} from "@/lib/rh/boas-praticas/types";
 import { cn } from "@/lib/utils";
 import { FlowStatusBadge, formatDate, formatDayLabel } from "./feedback-badges";
 import {
@@ -27,6 +39,7 @@ import {
   missingFields,
   resolvedEmployeeName,
 } from "./feedback-form";
+import { PhotoField, PhotoGallery, PhotoViewer, toPendingPhotos, type PendingPhoto } from "./feedback-photos";
 import { AreaChip, CategoryIcon, PersonAvatar, PersonLine, useFeedbackPeople } from "./feedback-visuals";
 
 /* ----------------------------------------------------------- detalhe */
@@ -79,10 +92,12 @@ function longDate(iso: string): string {
 function FeedbackDetail({
   item,
   items,
+  gallery,
   onSelect,
 }: {
   item: GoodPracticeFeedback;
   items: GoodPracticeFeedback[];
+  gallery: ReactNode;
   onSelect: (item: GoodPracticeFeedback) => void;
 }) {
   const { employee, manager } = useFeedbackPeople(item);
@@ -111,6 +126,7 @@ function FeedbackDetail({
         <blockquote className="rounded-md border border-[#e6eef0] bg-[#fafcfc] px-4 py-3 text-[15px] leading-6 text-foreground">
           {item.description}
         </blockquote>
+        {gallery}
       </section>
 
       <section className="space-y-3">
@@ -238,6 +254,62 @@ export function FeedbackDialog({
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Fotos: null = carregando os links. Novas e removidas só valem ao salvar.
+  const [photos, setPhotos] = useState<FeedbackPhoto[] | null>(initialItem?.photo_count ? null : []);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingPhoto[]>([]);
+  const [removed, setRemoved] = useState<string[]>([]);
+  const [viewing, setViewing] = useState<number | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
+  const pendingRef = useRef<PendingPhoto[]>([]);
+
+  useEffect(() => {
+    pendingRef.current = pending;
+  }, [pending]);
+
+  useEffect(() => () => pendingRef.current.forEach((photo) => URL.revokeObjectURL(photo.preview)), []);
+
+  useEffect(() => {
+    if (photos !== null || !item) return;
+    let cancelled = false;
+    listFeedbackPhotos(item.id)
+      .then((list) => {
+        if (!cancelled) setPhotos(list);
+      })
+      .catch((cause) => {
+        if (cancelled) return;
+        setPhotos([]);
+        setPhotoError(cause instanceof Error ? cause.message : "Não foi possível carregar as fotos.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [item, photos]);
+
+  const keptPhotos = (photos ?? []).filter((photo) => !removed.includes(photo.id));
+
+  function clearPendingPhotos() {
+    pending.forEach((photo) => URL.revokeObjectURL(photo.preview));
+    setPending([]);
+    setRemoved([]);
+  }
+
+  function addPhotos(files: File[]) {
+    const room = FEEDBACK_PHOTOS_MAX - keptPhotos.length - pending.length;
+    if (room <= 0) {
+      setError(`Cada feedback aceita até ${FEEDBACK_PHOTOS_MAX} fotos.`);
+      return;
+    }
+    setPending((current) => [...current, ...toPendingPhotos(files.slice(0, room))]);
+    setError(files.length > room ? `Só cabem mais ${room} ${room === 1 ? "foto" : "fotos"} neste feedback.` : null);
+  }
+
+  function removePending(key: string) {
+    setPending((current) => {
+      current.filter((photo) => photo.key === key).forEach((photo) => URL.revokeObjectURL(photo.preview));
+      return current.filter((photo) => photo.key !== key);
+    });
+  }
 
   function select(next: GoodPracticeFeedback) {
     setItem(next);
@@ -245,6 +317,35 @@ export function FeedbackDialog({
     setMode("view");
     setConfirmDelete(false);
     setError(null);
+    setPhotos(next.photo_count ? null : []);
+    setPhotoError(null);
+    setViewing(null);
+    clearPendingPhotos();
+  }
+
+  /** Aplica as fotos removidas e envia as novas, uma por vez. */
+  async function syncPhotos(feedbackId: string): Promise<{ list: FeedbackPhoto[]; failures: string[] }> {
+    let list = keptPhotos;
+    const failures: string[] = [];
+    for (const id of removed) {
+      try {
+        await deleteFeedbackPhoto(feedbackId, id);
+      } catch (cause) {
+        failures.push(cause instanceof Error ? cause.message : "Não foi possível remover uma foto.");
+        const back = (photos ?? []).find((photo) => photo.id === id);
+        if (back) list = [...list, back];
+      }
+    }
+    for (const [index, entry] of pending.entries()) {
+      setProgress(`Enviando foto ${index + 1} de ${pending.length}…`);
+      try {
+        list = [...list, await uploadFeedbackPhoto(feedbackId, entry.file)];
+      } catch (cause) {
+        failures.push(cause instanceof Error ? cause.message : `Não foi possível enviar "${entry.file.name}".`);
+      }
+    }
+    setProgress(null);
+    return { list, failures };
   }
 
   async function save() {
@@ -269,8 +370,16 @@ export function FeedbackDialog({
       });
       const data = (await response.json().catch(() => ({}))) as { item?: GoodPracticeFeedback; error?: string };
       if (!response.ok || !data.item) throw new Error(data.error ?? "Não foi possível salvar.");
-      onSaved(data.item);
-      select(data.item);
+      const { list, failures } = await syncPhotos(data.item.id);
+      const saved = { ...data.item, photo_count: list.length };
+      onSaved(saved);
+      select(saved);
+      setPhotos(list);
+      if (failures.length) {
+        setError(
+          `Feedback salvo, mas ${failures.length === 1 ? "1 alteração de foto falhou" : `${failures.length} alterações de foto falharam`}: ${failures[0]}`
+        );
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Não foi possível salvar.");
     } finally {
@@ -297,7 +406,24 @@ export function FeedbackDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
-      <DialogContent className="flex max-h-[90dvh] flex-col gap-0 p-0 sm:max-w-2xl" showCloseButton={!saving}>
+      <DialogContent
+        className="flex max-h-[90dvh] flex-col gap-0 p-0 sm:max-w-2xl"
+        showCloseButton={!saving}
+        onEscapeKeyDown={(event) => {
+          // No visualizador, Esc volta ao feedback em vez de fechar o modal.
+          if (viewing !== null) {
+            event.preventDefault();
+            setViewing(null);
+          }
+        }}
+        onPaste={(event) => {
+          if (mode !== "edit" || saving) return;
+          const files = imageFilesFrom(event.clipboardData?.items);
+          if (!files.length) return;
+          event.preventDefault();
+          addPhotos(files);
+        }}
+      >
         {mode === "view" && item ? (
           <DetailHeader item={item} />
         ) : (
@@ -308,11 +434,39 @@ export function FeedbackDialog({
         )}
 
         {/* key: trocar de modo ou de registro volta a rolagem para o topo. */}
-        <div key={`${mode}-${item?.id ?? "novo"}`} className="min-h-0 flex-1 overflow-y-auto">
+        <div key={`${mode}-${item?.id ?? "novo"}-${viewing === null ? "ver" : "foto"}`} className="min-h-0 flex-1 overflow-y-auto">
           {mode === "view" && item ? (
-            <FeedbackDetail item={item} items={items} onSelect={select} />
+            viewing !== null && photos?.length ? (
+              <PhotoViewer photos={photos} index={viewing} onIndex={setViewing} onClose={() => setViewing(null)} />
+            ) : (
+              <FeedbackDetail
+                item={item}
+                items={items}
+                onSelect={select}
+                gallery={
+                  item.photo_count || photos?.length ? (
+                    <PhotoGallery photos={photos} loadingCount={item.photo_count} error={photoError} onOpen={setViewing} />
+                  ) : null
+                }
+              />
+            )
           ) : (
-            <FeedbackForm form={form} people={people} items={items} onChange={setForm} />
+            <FeedbackForm
+              form={form}
+              people={people}
+              items={items}
+              onChange={setForm}
+              photoSlot={
+                <PhotoField
+                  existing={keptPhotos}
+                  pending={pending}
+                  loading={photos === null}
+                  onAdd={addPhotos}
+                  onRemoveExisting={(id) => setRemoved((current) => [...current, id])}
+                  onRemovePending={removePending}
+                />
+              }
+            />
           )}
         </div>
 
@@ -365,13 +519,14 @@ export function FeedbackDialog({
                   setForm(feedbackToInput(item));
                   setMode("view");
                   setError(null);
+                  clearPendingPhotos();
                 }}
               >
                 Cancelar
               </Button>
               <Button type="button" disabled={saving || confirmDelete} onClick={() => void save()}>
                 {saving && !confirmDelete && <Loader2 className="size-4 animate-spin" />}
-                {item ? "Salvar alterações" : "Registrar feedback"}
+                {progress ?? (item ? "Salvar alterações" : "Registrar feedback")}
               </Button>
             </div>
           )}
