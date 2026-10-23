@@ -1,157 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, ExternalLink, ImageIcon, ImagePlus, Loader2, Search, X } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { Check, ImageIcon, ImagePlus, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { imageDisplayName, studioImageUrl } from "@/lib/estudio/images";
 import { BACKGROUND_LAYER, type SlideBackground, type StudioSlide, type StudioTemplateDef } from "@/lib/estudio/types";
 import { loadGallery, uploadImage } from "./field-form";
 
-interface PexelsResult {
-  id: number;
-  alt: string;
-  thumb: string;
-  cor: string | null;
-  credito: string;
-  pagina: string;
-}
-
-function PexelsDialog({ tag, open, onOpenChange, onPick }: { tag: string; open: boolean; onOpenChange: (v: boolean) => void; onPick: (fundo: SlideBackground) => void }) {
-  const [query, setQuery] = useState("");
-  const [submitted, setSubmitted] = useState("");
-  const [page, setPage] = useState(1);
-  const [photos, setPhotos] = useState<PexelsResult[]>([]);
-  const [more, setMore] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [importing, setImporting] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!submitted) return;
-    let alive = true;
-    const controller = new AbortController();
-    fetch(`/api/estudio/fundos/pexels?q=${encodeURIComponent(submitted)}&pagina=${page}`, { credentials: "include", signal: controller.signal })
-      .then(async (res) => {
-        const body = await res.json().catch(() => null);
-        if (!res.ok) throw new Error(body?.error ?? "A busca falhou.");
-        if (!alive) return;
-        setPhotos((list) => (page === 1 ? body.photos : [...list, ...body.photos]));
-        setMore(Boolean(body.mais));
-        setError(body.photos.length || page > 1 ? null : "Nenhuma foto com esse termo.");
-      })
-      .catch((err) => alive && err.name !== "AbortError" && setError(err instanceof Error ? err.message : "A busca falhou."))
-      .finally(() => alive && setBusy(false));
-    return () => {
-      alive = false;
-      controller.abort();
-    };
-  }, [submitted, page]);
-
-  function search(e: React.FormEvent) {
-    e.preventDefault();
-    const q = query.trim();
-    if (q.length < 2) return;
-    setBusy(true);
-    setPage(1);
-    setSubmitted(q);
-  }
-
-  async function pick(photo: PexelsResult) {
-    setImporting(photo.id);
-    setError(null);
-    try {
-      const res = await fetch("/api/estudio/fundos/pexels", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tag, id: photo.id }),
-      });
-      const body = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(body?.error ?? "Não foi possível trazer a foto.");
-      void loadGallery(tag, "fundos", true);
-      onPick({ tipo: "imagem", path: body.path, camada: BACKGROUND_LAYER.padrao, credito: body.credito });
-      onOpenChange(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível trazer a foto.");
-    } finally {
-      setImporting(null);
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => importing === null && onOpenChange(v)}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Foto de fundo do Pexels</DialogTitle>
-          <DialogDescription>
-            Fotos grátis para uso comercial. A camada do tema vai por cima para o texto continuar legível; o crédito fica salvo no slide.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={search} className="flex gap-2">
-          <label className="relative flex-1">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-            <Input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Ex.: escritório, contrato, agro, cidade à noite" className="h-9 bg-white pl-8" aria-label="Buscar foto" />
-          </label>
-          <button type="submit" disabled={busy || query.trim().length < 2} className="inline-flex h-9 items-center gap-1.5 bg-[#04202f] px-3 text-sm font-medium text-white disabled:opacity-50">
-            {busy && page === 1 ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />} Buscar
-          </button>
-        </form>
-        {error && <p className="text-sm text-muted-foreground">{error}</p>}
-        {photos.length > 0 && (
-          <div className="max-h-[55vh] overflow-y-auto pr-1">
-            <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-              {photos.map((photo) => (
-                <li key={photo.id} className="group relative">
-                  <button
-                    type="button"
-                    disabled={importing !== null}
-                    onClick={() => void pick(photo)}
-                    className="relative block aspect-[4/5] w-full overflow-hidden disabled:cursor-wait"
-                    style={{ background: photo.cor ?? "#e9edef" }}
-                    title={photo.alt || photo.credito}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={photo.thumb} alt={photo.alt} loading="lazy" className="h-full w-full object-cover transition group-hover:scale-[1.03]" />
-                    <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 pb-1.5 pt-4 text-left text-[10px] text-white opacity-0 transition group-hover:opacity-100">
-                      {photo.credito}
-                    </span>
-                    {importing === photo.id && (
-                      <span className="absolute inset-0 flex items-center justify-center bg-white/60">
-                        <Loader2 className="h-6 w-6 animate-spin text-[#04202f]" />
-                      </span>
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
-            {more && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setBusy(true);
-                  setPage((p) => p + 1);
-                }}
-                className="mx-auto mt-3 flex items-center gap-1.5 text-sm font-medium text-[#347796] hover:text-[#04202f] disabled:opacity-50"
-              >
-                {busy && <Loader2 className="h-4 w-4 animate-spin" />} Mais fotos
-              </button>
-            )}
-          </div>
-        )}
-        <a href="https://www.pexels.com" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-          Fotos fornecidas pelo Pexels <ExternalLink className="h-3 w-3" />
-        </a>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 /**
  * Fundo do slide: automático (muda com a posição), uma das variações do Illustrator
- * ou uma foto (enviada, da galeria ou do Pexels) com a camada do tema por cima.
+ * ou uma foto (enviada ou da galeria) com a camada do tema por cima.
  */
 export function BackgroundPanel({
   tag,
@@ -175,7 +33,6 @@ export function BackgroundPanel({
   const [gallery, setGallery] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pexelsOpen, setPexelsOpen] = useState(false);
   const fundo = slide.fundo;
   const auto = (indice % template.fundos.variacoes) + 1;
 
@@ -185,7 +42,7 @@ export function BackgroundPanel({
     return () => {
       alive = false;
     };
-  }, [tag, pexelsOpen]);
+  }, [tag]);
 
   async function upload(file: File) {
     setBusy(true);
@@ -268,13 +125,6 @@ export function BackgroundPanel({
           >
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />} Enviar foto
           </button>
-          <button
-            type="button"
-            onClick={() => setPexelsOpen(true)}
-            className="inline-flex items-center gap-1.5 border border-black/[0.12] bg-white px-2.5 py-1 text-xs font-medium hover:border-[#347796]/50"
-          >
-            <Search className="h-3.5 w-3.5" /> Buscar no Pexels
-          </button>
         </div>
         {gallery.length > 0 && (
           <select
@@ -309,7 +159,6 @@ export function BackgroundPanel({
           }}
         />
       </div>
-      {pexelsOpen && <PexelsDialog tag={tag} open onOpenChange={setPexelsOpen} onPick={(f) => onChange(f)} />}
     </details>
   );
 }

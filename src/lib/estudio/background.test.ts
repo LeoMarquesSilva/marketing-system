@@ -7,11 +7,11 @@ const conteudo = (fundo: unknown) => normalizeSlides([{ id: "s1", modelo: "bp-co
 describe("fundo do slide", () => {
   it("aceita variação existente e foto da pasta de fundos", () => {
     expect(conteudo({ tipo: "variacao", n: 2 }).fundo).toEqual({ tipo: "variacao", n: 2 });
-    expect(conteudo({ tipo: "imagem", path: "BP/fundos/1-pexels-2-ana.jpg", camada: 0.5, credito: "Foto: Ana (Pexels)" }).fundo).toEqual({
+    expect(conteudo({ tipo: "imagem", path: "BP/fundos/1-escritorio.jpg", camada: 0.5, credito: "Foto: Ana Souza" }).fundo).toEqual({
       tipo: "imagem",
-      path: "BP/fundos/1-pexels-2-ana.jpg",
+      path: "BP/fundos/1-escritorio.jpg",
       camada: 0.5,
-      credito: "Foto: Ana (Pexels)",
+      credito: "Foto: Ana Souza",
     });
   });
 
