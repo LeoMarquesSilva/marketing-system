@@ -1,13 +1,14 @@
 import "server-only";
 
 import {
+  ETIQUETAS_AGENDAMENTO,
   areaDoCatalogo,
-  etiquetaDaTarefa,
   responsavelSugerido,
   tarefasPermitidas,
   usuarioPorSigla,
   validarAgendamentos,
   type AgendamentoEntrada,
+  type EtiquetaAgendamento,
 } from "./agendamento";
 import { criarCalendario } from "./dias-uteis";
 import { carregarFeriados } from "./feriados";
@@ -19,7 +20,6 @@ import { linhasParaFila } from "./fila-vios";
 import {
   carregarArvoreVios,
   carregarCatalogoProcessos,
-  carregarEtiquetasDosTipos,
   catalogoDaArea,
   consultarFilaSama,
   enfileirarNoSama,
@@ -45,7 +45,7 @@ const COLUNAS_AGENDAMENTO =
   "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, responsavel, revisor, observacao, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, envio_erro, enviado_em";
 
 type AgendamentoRow = {
-  id: string; publicacao_id: string; ordem: number; etiqueta: "PRAZO" | "PROVIDENCIA"; tarefa: string; tarefa_id: string | null;
+  id: string; publicacao_id: string; ordem: number; etiqueta: EtiquetaAgendamento; tarefa: string; tarefa_id: string | null;
   data: string; data_fatal: string | null; dias_prazo: number | null; responsavel: string; revisor: string | null;
   observacao: string | null; envio_status: EnvioStatus;
   envio_simulado: boolean | null; sama_agendamento_id: string | null; vios_tarefa_id: string | null; envio_erro: string | null;
@@ -106,7 +106,7 @@ async function agendamentosPorPublicacao(ids: string[]): Promise<Map<string, Age
 /** Fluxo do VIOS de cada tarefa da lista (só as que criam algo junto ou depois). */
 function fluxosDoCatalogo(catalogo: CatalogoVistagem, arvore: Map<number, TipoNaArvore>): Record<string, FluxoDaTarefa> {
   const fluxos: Record<string, FluxoDaTarefa> = {};
-  for (const tarefa of [...catalogo.tarefas.PRAZO, ...catalogo.tarefas.PROVIDENCIA]) {
+  for (const tarefa of ETIQUETAS_AGENDAMENTO.flatMap((etiqueta) => catalogo.tarefas[etiqueta])) {
     const fluxo = montarFluxo(tarefa.id, arvore);
     if (fluxo) fluxos[tarefa.id] = fluxo;
   }
@@ -120,7 +120,11 @@ function catalogoParaPublicacao(areas: CatalogoArea[], publicacao: PublicacaoCom
   return {
     area: catalogo.area,
     atualizadoEm: catalogo.atualizadoEm,
-    tarefas: { PRAZO: tarefasPermitidas(catalogo.etapas, "PRAZO"), PROVIDENCIA: tarefasPermitidas(catalogo.etapas, "PROVIDENCIA") },
+    tarefas: {
+      PRAZO: tarefasPermitidas(catalogo.etapas, "PRAZO"),
+      PROVIDENCIA: tarefasPermitidas(catalogo.etapas, "PROVIDENCIA"),
+      COMPROMISSO: tarefasPermitidas(catalogo.etapas, "COMPROMISSO"),
+    },
     usuarios: catalogo.usuarios,
   };
 }
@@ -370,16 +374,8 @@ async function comunicacoesEquivalentes(publicacao: PublicacaoComArea): Promise<
 /** Põe as tarefas da publicação na fila do robô; devolve o id da linha da fila de cada agendamento. */
 async function enfileirarPublicacao(publicacao: PublicacaoComArea, itens: AgendamentoRow[], simular: boolean): Promise<Map<string, string>> {
   const modo = modoAgendamento();
-  const [equivalentes, etiquetasDosTipos] = await Promise.all([
-    modo === "intimacao" ? comunicacoesEquivalentes(publicacao) : Promise.resolve([] as string[]),
-    // sem a tabela, vai a etiqueta padrão da escolha (ENVIAR/PROVIDÊNCIA)
-    carregarEtiquetasDosTipos().catch(() => new Map<string, number[]>()),
-  ]);
-  const comEtiqueta = itens.map((item) => ({
-    ...item,
-    etiqueta_vios: etiquetaDaTarefa(item.etiqueta, item.tarefa_id ? etiquetasDosTipos.get(item.tarefa_id) : undefined),
-  }));
-  const grupos = linhasParaFila({ ...publicacao, comunicacoes_equivalentes: equivalentes }, comEtiqueta, { simular, modo });
+  const equivalentes = modo === "intimacao" ? await comunicacoesEquivalentes(publicacao) : [];
+  const grupos = linhasParaFila({ ...publicacao, comunicacoes_equivalentes: equivalentes }, itens, { simular, modo });
   const ids = await enfileirarNoSama(grupos.map((grupo) => grupo.linha));
   return new Map(grupos.flatMap((grupo, indice) => grupo.agendamentos.map((agendamento) => [agendamento, ids[indice]] as const)));
 }

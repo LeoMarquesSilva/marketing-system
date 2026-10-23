@@ -3,7 +3,6 @@ import { criarCalendario } from "./dias-uteis";
 import { CADEIA_PADRAO } from "./fluxo-vios";
 import {
   areaDoCatalogo,
-  etiquetaDaTarefa,
   siglasDoNome,
   usuarioPorSigla,
   avisosDaData,
@@ -42,16 +41,8 @@ describe("tarefasPermitidas", () => {
       "APELAÇÃO (tipo 486)",
       "CONTESTAÇÃO",
     ]);
-    // compromisso (audiência, perícia…) entra na Providência: data única
-    expect(tarefasPermitidas(ETAPAS, "PROVIDENCIA").map((t) => t.nome)).toEqual(["1. CIÊNCIA DOS AGENDAMENTOS", "AUDIÊNCIA DE INSTRUÇÃO"]);
-  });
-
-  it("a tarefa vai para o VIOS com a etiqueta do próprio tipo", () => {
-    expect(etiquetaDaTarefa("PROVIDENCIA", [205])).toBe(205);
-    expect(etiquetaDaTarefa("PROVIDENCIA", [204])).toBe(204);
-    expect(etiquetaDaTarefa("PROVIDENCIA", undefined)).toBe(204);
-    expect(etiquetaDaTarefa("PRAZO", [1])).toBe(1);
-    expect(etiquetaDaTarefa("PRAZO", [204])).toBe(1);
+    expect(tarefasPermitidas(ETAPAS, "PROVIDENCIA").map((t) => t.nome)).toEqual(["1. CIÊNCIA DOS AGENDAMENTOS"]);
+    expect(tarefasPermitidas(ETAPAS, "COMPROMISSO").map((t) => t.nome)).toEqual(["AUDIÊNCIA DE INSTRUÇÃO"]);
   });
 
   it("mantém os dois tipos com o mesmo nome, com o tipo no nome, e não repete o mesmo tipo", () => {
@@ -75,7 +66,11 @@ describe("areaDoCatalogo", () => {
 
 describe("validarAgendamentos", () => {
   const contexto = {
-    tarefas: { PRAZO: tarefasPermitidas(ETAPAS, "PRAZO"), PROVIDENCIA: tarefasPermitidas(ETAPAS, "PROVIDENCIA") },
+    tarefas: {
+      PRAZO: tarefasPermitidas(ETAPAS, "PRAZO"),
+      PROVIDENCIA: tarefasPermitidas(ETAPAS, "PROVIDENCIA"),
+      COMPROMISSO: tarefasPermitidas(ETAPAS, "COMPROMISSO"),
+    },
     usuarios: USUARIOS,
     ehDiaUtil: criarCalendario([]),
     cadeiaDaTarefa: () => CADEIA_PADRAO,
@@ -117,6 +112,19 @@ describe("validarAgendamentos", () => {
       contexto
     );
     expect(tipoForaDaLista.ok).toBe(false);
+  });
+
+  it("compromisso usa a data do calendário e não exige revisor", () => {
+    const resultado = validarAgendamentos(
+      [{ etiqueta: "COMPROMISSO", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", data: "2026-11-10", responsavel: "Advogada Exemplo" }],
+      contexto
+    );
+    expect(resultado.ok && resultado.itens[0]).toMatchObject({ etiqueta: "COMPROMISSO", tarefaId: "54", data: "2026-11-10", revisor: null });
+    const naClasseErrada = validarAgendamentos(
+      [{ etiqueta: "PROVIDENCIA", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", data: "2026-11-10", responsavel: "Advogada Exemplo" }],
+      contexto
+    );
+    expect(naClasseErrada.ok).toBe(false);
   });
 
   it("no Prazo a data do VIOS segue o 3. PROTOCOLAR do fluxo da tarefa", () => {

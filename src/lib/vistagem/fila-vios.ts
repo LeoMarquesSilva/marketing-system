@@ -1,4 +1,4 @@
-import { ETIQUETAS_VIOS, montarObservacaoVios, paraDataVios } from "./agendamento";
+import { ETIQUETA_VIOS, montarObservacaoVios, paraDataVios, type EtiquetaAgendamento } from "./agendamento";
 
 /**
  * Onde o robô do SAMA agenda: na publicação (Intimações › Lançamento, ligada à
@@ -63,7 +63,7 @@ export interface PublicacaoParaFila {
 
 export interface AgendamentoParaFila {
   id: string;
-  etiqueta: "PRAZO" | "PROVIDENCIA";
+  etiqueta: EtiquetaAgendamento;
   tarefa: string;
   tarefa_id: string | null;
   /** AAAA-MM-DD */
@@ -71,11 +71,12 @@ export interface AgendamentoParaFila {
   responsavel: string;
   revisor: string | null;
   observacao: string | null;
-  /** Etiqueta do tipo no VIOS (ex.: 205 COMPROMISSO na audiência); sem ela, a padrão da escolha. */
-  etiqueta_vios?: number | null;
 }
 
-const etiquetaVios = (item: AgendamentoParaFila) => String(item.etiqueta_vios ?? ETIQUETAS_VIOS[item.etiqueta][0]);
+const etiquetaVios = (item: AgendamentoParaFila) => String(ETIQUETA_VIOS[item.etiqueta]);
+
+/** Tipo da linha na fila do SAMA (o robô usa a etiqueta_id; o tipo é só o rótulo). */
+const TIPO_NA_FILA: Record<EtiquetaAgendamento, string> = { PRAZO: "Prazo", PROVIDENCIA: "Providências", COMPROMISSO: "Compromisso" };
 
 /**
  * Linhas da fila do robô para as tarefas de uma publicação, com os agendamentos de cada uma.
@@ -95,7 +96,7 @@ export function linhasParaFila(
     djenIdComunicacao: publicacao.djen_id_comunicacao,
   };
   const base = (item: AgendamentoParaFila, observacao: string): LinhaFilaSama => ({
-    tipo: item.etiqueta === "PRAZO" ? "Prazo" : "Providências",
+    tipo: TIPO_NA_FILA[item.etiqueta],
     tarefa: item.tarefa,
     tarefa_id: item.tarefa_id,
     etiqueta_id: etiquetaVios(item),
