@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ElementType, type ReactNode } from "react";
 import type { FieldValues, ListItem } from "@/lib/estudio/fields";
-import type { PieceKind, SlideAdjust } from "@/lib/estudio/types";
+import type { PieceKind, SlideAdjust, SlideBackground } from "@/lib/estudio/types";
 
 export interface SlideRenderProps {
   valores: FieldValues;
@@ -10,6 +10,7 @@ export interface SlideRenderProps {
   total: number;
   tipo: PieceKind;
   ajustes?: SlideAdjust;
+  fundo?: SlideBackground;
 }
 
 /** Ajustes com os valores neutros preenchidos. */

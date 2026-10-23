@@ -385,6 +385,8 @@ const BP_TEMPLATES: StudioTemplateDef[] = [
     tag: "BP",
     nome: "Conteúdo",
     ajustes: ["texto", "titulo", "y"],
+    // os mesmos três fundos do posts.ai, em papel e em navy
+    fundos: { variacoes: 3, previa: (n, valores) => `/estudio/bp/fundo-${valores.tema === "escuro" ? "escuro" : "claro"}-${n}.jpg` },
     descricao:
       "Slide de conteúdo: ícone opcional, título em caixa alta e de 1 a 4 caixas de texto (suave, contorno ou destaque), com ícone, rótulo ou marcadores. O último slide do carrossel sai sem 'arraste'.",
     formato: "feed",

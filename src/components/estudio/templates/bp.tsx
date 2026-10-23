@@ -94,10 +94,10 @@ function Img({ src, className, style, campo }: { src: string; className?: string
   return <img src={src} alt="" className={className} style={style} draggable={false} data-campo={campo} />;
 }
 
-function Board({ bg, dark, children }: { bg: string; dark: boolean; children: ReactNode }) {
+function Board({ bg, dark, backdrop, children }: { bg: string; dark: boolean; backdrop?: ReactNode; children: ReactNode }) {
   return (
     <div className={`${styles.board} ${dark ? styles.escuro : ""}`} style={{ position: "relative", width: 1080, height: 1350, overflow: "hidden", background: dark ? "#101c2c" : "#fcf8f4" }}>
-      <Img src={`${BG}/${bg}`} className={styles.layer} />
+      {backdrop ?? <Img src={`${BG}/${bg}`} className={styles.layer} />}
       {children}
     </div>
   );
@@ -118,7 +118,7 @@ const tone = (dark: boolean) => (dark ? "branco" : "navy");
 
 // ---------- conteúdo ----------
 
-export function BpConteudo({ valores, indice, total, ajustes }: SlideRenderProps) {
+export function BpConteudo({ valores, indice, total, ajustes, fundo }: SlideRenderProps) {
   const aj = adjust(ajustes);
   const dark = text(valores, "tema") === "escuro";
   const last = total > 1 && indice === total - 1;
@@ -127,10 +127,19 @@ export function BpConteudo({ valores, indice, total, ajustes }: SlideRenderProps
     .map((caixa, index) => ({ caixa, index }))
     .filter(({ caixa }) => caixa.texto?.trim());
   const titleIcon = text(valores, "icone");
-  const bg = `fundo-${dark ? "escuro" : "claro"}-${(indice % 3) + 1}.jpg`;
+  const bg = `fundo-${dark ? "escuro" : "claro"}-${fundo?.tipo === "variacao" ? fundo.n : (indice % 3) + 1}.jpg`;
+  // foto de fundo em cover, com o papel/navy por cima para o texto continuar legível
+  const backdrop =
+    fundo?.tipo === "imagem" ? (
+      <>
+        <Img src={studioImageUrl(fundo.path)} className={styles.layer} style={{ objectFit: "cover" }} />
+        {/* transparência na cor (rgba): o SVG para o Illustrator lê assim */}
+        <div className={styles.layer} style={{ background: dark ? `rgba(16, 28, 44, ${fundo.camada})` : `rgba(252, 248, 244, ${fundo.camada})` }} />
+      </>
+    ) : undefined;
 
   return (
-    <Board bg={bg} dark={dark}>
+    <Board bg={bg} dark={dark} backdrop={backdrop}>
       <Dots indice={indice} total={total} />
       <Img src={`${BG}/fenix.png`} style={{ position: "absolute", left: 100, top: 28, width: 110, height: 112 }} />
       <div className={styles.headerLine} />

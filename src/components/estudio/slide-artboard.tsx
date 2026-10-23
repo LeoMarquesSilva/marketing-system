@@ -28,7 +28,7 @@ export const SlideArtboard = forwardRef<HTMLDivElement, SlideProps>(function Sli
       style={{ width, height, position: "relative", background: "#050e16", textAlign: "left", lineHeight: "normal", letterSpacing: "normal", whiteSpace: "normal", fontStyle: "normal", fontWeight: 400, textTransform: "none" }}
     >
       {Component ? (
-        <Component valores={slide.valores} indice={indice} total={total} tipo={tipo} ajustes={slide.ajustes} />
+        <Component valores={slide.valores} indice={indice} total={total} tipo={tipo} ajustes={slide.ajustes} fundo={slide.fundo} />
       ) : (
         <div style={{ color: "#fff", padding: 80, fontSize: 32 }}>Modelo não encontrado: {slide.modelo}</div>
       )}

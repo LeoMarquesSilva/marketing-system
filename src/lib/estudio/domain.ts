@@ -1,7 +1,16 @@
-import { imageKeys, normalizeValues, valuesToLines, type FieldValues } from "./fields";
+import { IMAGE_PATH_RE, imageKeys, normalizeValues, valuesToLines, type FieldValues } from "./fields";
 import { slugifyFileName } from "./images";
 import { POSTING_FIELD_KEYS, getTemplate, templatesFor } from "./templates";
-import { ADJUST_LIMITS, PIECE_MAX_SLIDES, type PieceKind, type SlideAdjust, type StudioSlide, type StudioTemplateDef } from "./types";
+import {
+  ADJUST_LIMITS,
+  BACKGROUND_LAYER,
+  PIECE_MAX_SLIDES,
+  type PieceKind,
+  type SlideAdjust,
+  type SlideBackground,
+  type StudioSlide,
+  type StudioTemplateDef,
+} from "./types";
 
 export function newId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -39,11 +48,13 @@ export function normalizeSlides(raw: unknown, tag: string, kind: PieceKind): Stu
     const template = typeof obj.modelo === "string" && allowed.has(obj.modelo) ? getTemplate(obj.modelo) : null;
     if (!template) continue;
     const ajustes = normalizeAdjust(template, obj.ajustes);
+    const fundo = normalizeBackground(template, obj.fundo);
     slides.push({
       id: typeof obj.id === "string" && obj.id ? obj.id : newId(),
       modelo: template.id,
       valores: normalizeValues(template.campos, obj.valores),
       ...(ajustes ? { ajustes } : {}),
+      ...(fundo ? { fundo } : {}),
     });
   }
   return slides.slice(0, PIECE_MAX_SLIDES[kind]);
@@ -64,10 +75,29 @@ export function normalizeAdjust(template: StudioTemplateDef, raw: unknown): Slid
   return Object.keys(out).length ? out : undefined;
 }
 
+/** Fundo dentro do que o modelo aceita; qualquer outra coisa volta ao automático (undefined). */
+export function normalizeBackground(template: StudioTemplateDef, raw: unknown): SlideBackground | undefined {
+  if (!raw || typeof raw !== "object" || !template.fundos) return undefined;
+  const obj = raw as Record<string, unknown>;
+  if (obj.tipo === "variacao") {
+    const n = Number(obj.n);
+    return Number.isInteger(n) && n >= 1 && n <= template.fundos.variacoes ? { tipo: "variacao", n } : undefined;
+  }
+  if (obj.tipo === "imagem" && typeof obj.path === "string" && IMAGE_PATH_RE.test(obj.path) && obj.path.split("/")[1] === "fundos") {
+    const layer = typeof obj.camada === "number" && Number.isFinite(obj.camada) ? obj.camada : BACKGROUND_LAYER.padrao;
+    const camada = Math.round(Math.min(BACKGROUND_LAYER.max, Math.max(BACKGROUND_LAYER.min, layer)) * 100) / 100;
+    const credito = typeof obj.credito === "string" ? obj.credito.trim().slice(0, 120) : "";
+    return { tipo: "imagem", path: obj.path, camada, ...(credito ? { credito } : {}) };
+  }
+  return undefined;
+}
+
 /** Troca o modelo de um slide aproveitando os campos com o mesmo nome. */
 export function switchSlideTemplate(slide: StudioSlide, template: StudioTemplateDef): StudioSlide {
   const merged = { ...template.exemplo, ...Object.fromEntries(Object.entries(slide.valores).filter(([k]) => template.campos.some((c) => c.key === k))) };
-  return { ...slide, modelo: template.id, valores: normalizeValues(template.campos, merged) };
+  const ajustes = normalizeAdjust(template, slide.ajustes);
+  const fundo = normalizeBackground(template, slide.fundo);
+  return { id: slide.id, modelo: template.id, valores: normalizeValues(template.campos, merged), ...(ajustes ? { ajustes } : {}), ...(fundo ? { fundo } : {}) };
 }
 
 /**
@@ -79,9 +109,10 @@ export function carryOverImages(previous: StudioSlide[], next: StudioSlide[]): S
   return next.map((slide, index) => {
     const template = getTemplate(slide.modelo);
     const keys = template ? imageKeys(template.campos) : [];
-    // ajustes finos ficam com o slide que estava no mesmo lugar com o mesmo modelo
+    // ajustes finos e fundo ficam com o slide que estava no mesmo lugar com o mesmo modelo
     const same = previous[index]?.modelo === slide.modelo ? previous[index] : null;
     if (same?.ajustes && !slide.ajustes) slide = { ...slide, ajustes: same.ajustes };
+    if (same?.fundo && !slide.fundo) slide = { ...slide, fundo: same.fundo };
     if (keys.length === 0) return slide;
     const valores = { ...slide.valores };
     for (const key of keys) {

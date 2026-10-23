@@ -39,6 +39,8 @@ export interface StudioTemplateDef {
   exemplo: FieldValues;
   /** Ajustes finos que o desenho do modelo respeita. */
   ajustes?: AdjustKey[];
+  /** O fundo pode ser trocado: variações do Illustrator (1..n) ou uma imagem com camada por cima. */
+  fundos?: { variacoes: number; previa: (n: number, valores: FieldValues) => string };
 }
 
 export interface StudioCollection {
@@ -82,11 +84,20 @@ export const ADJUST_LIMITS: Record<AdjustKey, { min: number; max: number; step: 
   fotoY: { min: -350, max: 350, step: 2, neutral: 0, label: "Foto para cima/baixo" },
 };
 
+/**
+ * Fundo escolhido à mão. Sem ele o modelo decide (a variação muda com a posição do slide).
+ * Na imagem, `camada` é a opacidade do navy/papel por cima, para o texto continuar legível.
+ */
+export type SlideBackground = { tipo: "variacao"; n: number } | { tipo: "imagem"; path: string; camada: number; credito?: string };
+
+export const BACKGROUND_LAYER = { min: 0, max: 0.95, padrao: 0.82 };
+
 export interface StudioSlide {
   id: string;
   modelo: string;
   valores: FieldValues;
   ajustes?: SlideAdjust;
+  fundo?: SlideBackground;
 }
 
 export interface StudioPiece {

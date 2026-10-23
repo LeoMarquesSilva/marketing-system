@@ -6,7 +6,7 @@ import { getServerDb } from "@/lib/users-server";
 
 export const dynamic = "force-dynamic";
 
-const PASTAS = new Set(["fotos", "logos"]);
+const PASTAS = new Set(["fotos", "logos", "fundos"]);
 
 function readTarget(tag: unknown, pasta: unknown) {
   if (typeof tag !== "string" || !getCollection(tag)) return null;

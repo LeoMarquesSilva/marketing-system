@@ -14,6 +14,7 @@ import { createHistory, historyReducer, type History, type HistoryAction } from 
 import { getCollection, getTemplate, templatesFor } from "@/lib/estudio/templates";
 import { ARTBOARD_SIZE, PIECE_FORMAT, PIECE_KIND_LABEL, PIECE_MAX_SLIDES, type StudioPiece, type StudioSlide } from "@/lib/estudio/types";
 import { AdjustPanel } from "./adjust-panel";
+import { BackgroundPanel } from "./background-panel";
 import { FieldForm } from "./field-form";
 import { downloadBlob, pngsToPdf, renderArtboardPng, zipBlobs } from "./export-png";
 import { renderArtboardSvg } from "./export-svg";
@@ -463,6 +464,19 @@ export function PieceEditor({ piece, onBack }: { piece: StudioPiece; onBack: () 
               keys={currentTemplate.ajustes.filter((k) => !k.startsWith("foto") || Boolean(current.valores.foto))}
               value={current.ajustes}
               onChange={(ajustes) => updateSlide(selected, { ...current, ajustes }, `ajuste:${current.id}`)}
+            />
+          ) : null}
+
+          {current && currentTemplate?.fundos ? (
+            <BackgroundPanel
+              key={`fundo-${current.id}`}
+              tag={piece.tag}
+              template={{ ...currentTemplate, fundos: currentTemplate.fundos }}
+              slide={current}
+              indice={selected}
+              others={slides.filter((s, i) => i !== selected && s.modelo === current.modelo).length}
+              onChange={(fundo, key) => updateSlide(selected, { ...current, fundo }, key)}
+              onApplyAll={() => setSlides((list) => list.map((s) => (s.modelo === current.modelo ? { ...s, fundo: current.fundo } : s)))}
             />
           ) : null}
 

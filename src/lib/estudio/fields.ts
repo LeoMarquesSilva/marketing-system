@@ -71,7 +71,7 @@ export function parseIconify(value: string): { prefix: string; name: string } | 
 }
 
 /** Caminho no bucket ESTUDIO-PECAS: "<TAG>/<pasta>/<arquivo>". */
-export const IMAGE_PATH_RE = /^[A-Za-z0-9_-]{1,24}\/(fotos|logos)\/[A-Za-z0-9._-]{1,140}$/;
+export const IMAGE_PATH_RE = /^[A-Za-z0-9_-]{1,24}\/(fotos|logos|fundos)\/[A-Za-z0-9._-]{1,140}$/;
 
 export function imageKeys(fields: StudioField[]): string[] {
   return fields.filter((f) => f.kind === "imagem").map((f) => f.key);

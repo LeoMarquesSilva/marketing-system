@@ -72,7 +72,7 @@ function OptionInput({ field, value, campo, onChange }: { field: OptionField; va
 /** Galeria da coleção, carregada uma vez por pasta enquanto a página está aberta. */
 const galleryCache = new Map<string, Promise<string[]>>();
 
-function loadGallery(tag: string, pasta: string, fresh = false): Promise<string[]> {
+export function loadGallery(tag: string, pasta: string, fresh = false): Promise<string[]> {
   const key = `${tag}/${pasta}`;
   if (fresh) galleryCache.delete(key);
   let pending = galleryCache.get(key);
@@ -84,6 +84,18 @@ function loadGallery(tag: string, pasta: string, fresh = false): Promise<string[
     pending.catch(() => galleryCache.delete(key));
   }
   return pending;
+}
+
+/** Envia para a galeria da coleção e devolve o caminho no bucket. */
+export async function uploadImage(tag: string, pasta: string, file: File): Promise<string> {
+  const form = new FormData();
+  form.append("arquivo", file);
+  form.append("tag", tag);
+  form.append("pasta", pasta);
+  const res = await fetch("/api/estudio/imagens", { method: "POST", body: form, credentials: "include" });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(body?.error ?? "Não foi possível enviar a imagem.");
+  return body.path as string;
 }
 
 function ImageInput({ field, tag, value, onChange }: { field: ImageField; tag: string; value: string; onChange: (v: string) => void }) {
@@ -104,14 +116,7 @@ function ImageInput({ field, tag, value, onChange }: { field: ImageField; tag: s
     setBusy(true);
     setError(null);
     try {
-      const form = new FormData();
-      form.append("arquivo", file);
-      form.append("tag", tag);
-      form.append("pasta", field.pasta);
-      const res = await fetch("/api/estudio/imagens", { method: "POST", body: form, credentials: "include" });
-      const body = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(body?.error ?? "Não foi possível enviar a imagem.");
-      onChange(body.path);
+      onChange(await uploadImage(tag, field.pasta, file));
       setGallery(await loadGallery(tag, field.pasta, true));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível enviar a imagem.");
