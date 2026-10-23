@@ -7,6 +7,7 @@ import { getAuthenticatedContentUser, type UserContentAccess } from "@/lib/conte
 import { isContentManager } from "@/lib/content-areas";
 import { getServerDb } from "@/lib/users-server";
 import { normalizeSlides } from "./domain";
+import { STUDIO_FONT_SLOTS, fontFaceRule, type StudioFontRow } from "./fonts";
 import { getCollection } from "./templates";
 import type { PieceKind, StudioPiece, StudioPieceSummary } from "./types";
 
@@ -14,23 +15,20 @@ const FONTS_DIR = path.join(process.cwd(), "src/lib/estudio/assets/fonts");
 
 /**
  * Fontes licenciadas dos modelos ficam fora de /public e só saem para quem usa o
- * Estúdio. Enquanto o arquivo de uma fonte não estiver na pasta, a página cai na
- * reserva declarada no CSS (Montserrat para a Neulis).
+ * Estúdio. Cada lugar (STUDIO_FONT_SLOTS) usa o arquivo da pasta ou o enviado na tela
+ * Fontes; sem nenhum, a página cai na reserva declarada no CSS (Montserrat).
  */
-export const STUDIO_FONT_FILES: Record<string, { family: string; weight: number; candidates: string[] }> = {
-  titulo: { family: "Estudio Neulis", weight: 700, candidates: ["NeulisNeue-Bold.otf", "NeulisNeue-Bold.ttf", "NeulisNeue-Bold.woff2"] },
-  apoio: { family: "Estudio Century Gothic", weight: 400, candidates: ["CenturyGothic.ttf"] },
-  // Posts do escritório (posts.ai). Sem a Gotham na pasta, o corpo sai em Montserrat.
-  gobold: { family: "Estudio Gobold", weight: 400, candidates: ["Gobold-Regular.otf"] },
-  "gotham-book": { family: "Estudio Gotham", weight: 400, candidates: ["Gotham-Book.otf", "Gotham-Book.ttf"] },
-  "gotham-medium": { family: "Estudio Gotham", weight: 500, candidates: ["Gotham-Medium.otf", "Gotham-Medium.ttf"] },
-  "gotham-bold": { family: "Estudio Gotham", weight: 700, candidates: ["Gotham-Bold.otf", "Gotham-Bold.ttf"] },
+const STUDIO_FONT_CANDIDATES: Record<string, string[]> = {
+  titulo: ["NeulisNeue-Bold.otf", "NeulisNeue-Bold.ttf", "NeulisNeue-Bold.woff2"],
+  apoio: ["CenturyGothic.ttf"],
+  gobold: ["Gobold-Regular.otf"],
+  "gotham-book": ["Gotham-Book.otf", "Gotham-Book.ttf"],
+  "gotham-medium": ["Gotham-Medium.otf", "Gotham-Medium.ttf"],
+  "gotham-bold": ["Gotham-Bold.otf", "Gotham-Bold.ttf"],
 };
 
 export async function studioFontPath(name: string): Promise<string | null> {
-  const font = STUDIO_FONT_FILES[name];
-  if (!font) return null;
-  for (const candidate of font.candidates) {
+  for (const candidate of STUDIO_FONT_CANDIDATES[name] ?? []) {
     const fullPath = path.join(FONTS_DIR, candidate);
     try {
       await access(fullPath);
@@ -42,15 +40,38 @@ export async function studioFontPath(name: string): Promise<string | null> {
   return null;
 }
 
-/** @font-face só das fontes que existem na pasta (fonte ausente não vira 404 na exportação). */
+const FONT_COLUMNS = "id, familia, peso, estilo, formato, nome_original, postscript, created_at";
+
+/** Fontes enviadas pela tela (vazia se a tabela ainda não existir). */
+export async function listStudioFonts(): Promise<StudioFontRow[]> {
+  const db = await getServerDb();
+  const { data, error } = await db.from("studio_fonts").select(FONT_COLUMNS).order("familia").order("peso");
+  if (error) {
+    console.error("[estudio/fontes] lista", error);
+    return [];
+  }
+  return (data ?? []) as StudioFontRow[];
+}
+
+/** Lugares dos modelos já preenchidos pela pasta do projeto. */
+export async function diskFontSlots(): Promise<Set<string>> {
+  const found = new Set<string>();
+  for (const slot of STUDIO_FONT_SLOTS) if (await studioFontPath(slot.key)) found.add(slot.key);
+  return found;
+}
+
+/**
+ * @font-face das fontes que existem: as da pasta e, depois (para valerem por cima), as
+ * enviadas pela tela. Fonte ausente não vira 404 na exportação.
+ */
 export async function studioFontFaceCss(): Promise<string> {
   const rules: string[] = [];
-  for (const [name, font] of Object.entries(STUDIO_FONT_FILES)) {
-    const file = await studioFontPath(name);
-    if (!file) continue;
-    rules.push(
-      `@font-face{font-family:"${font.family}";src:url("/api/estudio/fontes/${name}");font-weight:${font.weight};font-style:normal;font-display:block;}`
-    );
+  const disk = await diskFontSlots();
+  for (const slot of STUDIO_FONT_SLOTS) {
+    if (disk.has(slot.key)) rules.push(fontFaceRule({ family: slot.family, weight: slot.weight, style: "normal", url: `/api/estudio/fontes/${slot.key}` }));
+  }
+  for (const font of await listStudioFonts()) {
+    rules.push(fontFaceRule({ family: font.familia, weight: font.peso, style: font.estilo, url: `/api/estudio/fontes/db/${font.id}`, format: font.formato }));
   }
   return rules.join("\n");
 }

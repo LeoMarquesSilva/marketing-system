@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ImagePlus, Loader2, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ImagePlus, Loader2, Plus, Scissors, Trash2, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -9,6 +9,7 @@ import { emptyListItem, type FieldValues, type ImageField, type ListItem, type O
 import { moveItem } from "@/lib/estudio/domain";
 import { imageDisplayName, studioImageUrl } from "@/lib/estudio/images";
 import { IconInput } from "./icon-picker";
+import { describeProgress, removeBackground, type RemoveProgress } from "./remove-background";
 
 const selectClass =
   "h-9 w-full rounded-md border border-input bg-white px-2 text-sm shadow-xs outline-none focus-visible:border-[#47cdd0] focus-visible:ring-[3px] focus-visible:ring-[#47cdd0]/18";
@@ -98,11 +99,18 @@ export async function uploadImage(tag: string, pasta: string, file: File): Promi
   return body.path as string;
 }
 
+const CUT_KEY = "estudio:tirar-fundo";
+
 function ImageInput({ field, tag, value, onChange }: { field: ImageField; tag: string; value: string; onChange: (v: string) => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [gallery, setGallery] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<RemoveProgress | null>(null);
+  const [cutting, setCutting] = useState(false);
+  // só fotos de pessoas: o modelo da capa pede PNG sem fundo
+  const canCut = field.pasta === "fotos";
+  const [cut, setCutState] = useState(true);
 
   useEffect(() => {
     let alive = true;
@@ -112,14 +120,61 @@ function ImageInput({ field, tag, value, onChange }: { field: ImageField; tag: s
     };
   }, [tag, field.pasta]);
 
-  async function upload(file: File) {
+  useEffect(() => {
+    // preferência do navegador, lida depois de montar
+    try {
+      setCutState(window.localStorage.getItem(CUT_KEY) !== "0");
+    } catch {
+      // sem armazenamento: fica ligado
+    }
+  }, []);
+
+  function setCut(next: boolean) {
+    setCutState(next);
+    try {
+      window.localStorage.setItem(CUT_KEY, next ? "1" : "0");
+    } catch {
+      // só não lembra a escolha
+    }
+  }
+
+  async function withoutBackground(source: Blob, name: string): Promise<File> {
+    setCutting(true);
+    setProgress(null);
+    try {
+      const png = await removeBackground(source, setProgress);
+      return new File([png], `${name}.png`, { type: "image/png" });
+    } finally {
+      setCutting(false);
+    }
+  }
+
+  async function upload(file: File, recortar: boolean) {
     setBusy(true);
     setError(null);
     try {
-      onChange(await uploadImage(tag, field.pasta, file));
+      const final = recortar ? await withoutBackground(file, file.name.replace(/\.[a-z0-9]+$/i, "")) : file;
+      onChange(await uploadImage(tag, field.pasta, final));
       setGallery(await loadGallery(tag, field.pasta, true));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Não foi possível enviar a imagem.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Recorta a foto que já está no campo (da galeria, com fundo) e salva uma cópia sem fundo. */
+  async function cutCurrent() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(studioImageUrl(value), { credentials: "include" });
+      if (!res.ok) throw new Error("Não foi possível abrir a foto.");
+      const file = await withoutBackground(await res.blob(), `${imageDisplayName(value)} sem fundo`);
+      onChange(await uploadImage(tag, field.pasta, file));
+      setGallery(await loadGallery(tag, field.pasta, true));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível tirar o fundo.");
     } finally {
       setBusy(false);
     }
@@ -149,12 +204,29 @@ function ImageInput({ field, tag, value, onChange }: { field: ImageField; tag: s
               {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
               {value ? "Trocar" : "Enviar"}
             </button>
+            {value && canCut && (
+              <button
+                type="button"
+                onClick={() => void cutCurrent()}
+                disabled={busy}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                title="Salva uma cópia da foto sem o fundo"
+              >
+                <Scissors className="h-3.5 w-3.5" /> Tirar o fundo
+              </button>
+            )}
             {value && (
               <button type="button" onClick={() => onChange("")} className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive">
                 <X className="h-3.5 w-3.5" /> Tirar
               </button>
             )}
           </div>
+          {canCut && (
+            <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <input type="checkbox" checked={cut} onChange={(e) => setCut(e.target.checked)} className="h-3.5 w-3.5 accent-[#04202f]" />
+              Tirar o fundo ao enviar (no navegador, grátis)
+            </label>
+          )}
           {gallery.length > 0 && (
             <select
               value=""
@@ -180,10 +252,15 @@ function ImageInput({ field, tag, value, onChange }: { field: ImageField; tag: s
         onChange={(e) => {
           const file = e.target.files?.[0];
           e.target.value = "";
-          if (file) void upload(file);
+          if (file) void upload(file, canCut && cut && !(file.type === "image/png" && /sem.fundo|recorte/i.test(file.name)));
         }}
       />
-      {field.pasta === "fotos" && !value && <p className="text-[11px] text-muted-foreground">Use PNG sem fundo, com o nome da pessoa no arquivo.</p>}
+      {cutting && (
+        <p className="flex items-center gap-1.5 text-[11px] text-[#347796]">
+          <Loader2 className="h-3 w-3 animate-spin" /> {describeProgress(progress)}
+        </p>
+      )}
+      {canCut && !value && !cutting && <p className="text-[11px] text-muted-foreground">Use uma foto com o nome da pessoa no arquivo.</p>}
       {error && <p className="text-[11px] text-destructive">{error}</p>}
     </div>
   );

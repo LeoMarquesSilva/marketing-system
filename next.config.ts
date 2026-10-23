@@ -16,8 +16,10 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/certificados/modelo/*": ["./src/lib/certificados/assets/**/*"],
     // Fontes licenciadas dos modelos do Estúdio de peças.
+    "/api/estudio/fontes": ["./src/lib/estudio/assets/fonts/**/*"],
     "/api/estudio/fontes/*": ["./src/lib/estudio/assets/fonts/**/*"],
     "/conteudo/estudio": ["./src/lib/estudio/assets/fonts/**/*"],
+    "/conteudo/estudio/*": ["./src/lib/estudio/assets/fonts/**/*"],
   },
   async redirects() {
     return [

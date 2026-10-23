@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FileInput, GalleryHorizontalEnd, Loader2, Plus, RectangleVertical, Square, Wand2 } from "lucide-react";
+import { FileInput, GalleryHorizontalEnd, Loader2, Plus, RectangleVertical, Square, Type, Wand2 } from "lucide-react";
 import { starterSlides } from "@/lib/estudio/domain";
 import { STUDIO_COLLECTIONS, templatesFor } from "@/lib/estudio/templates";
 import { PIECE_KIND_LABEL, type PieceKind, type StudioPiece, type StudioPieceSummary } from "@/lib/estudio/types";
+import { FontsDialog } from "./fonts-dialog";
 import { PieceEditor } from "./piece-editor";
 import { PieceList } from "./piece-list";
 import { PostImportDialog } from "./post-import-dialog";
@@ -36,6 +37,7 @@ export function EstudioClient() {
   const [openPiece, setOpenPiece] = useState<StudioPiece | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [duplicating, setDuplicating] = useState<string | null>(null);
+  const [fontsOpen, setFontsOpen] = useState(false);
 
   useEffect(() => {
     // preferência do navegador, lida depois de montar
@@ -172,14 +174,25 @@ export function EstudioClient() {
             Monte posts, carrosséis e stories a partir dos modelos do Illustrator: edite os campos, peça ajustes à IA, baixe o PNG ou mande para a tarefa do planner.
           </p>
         </div>
-        {STUDIO_COLLECTIONS.length > 1 && (
-          <select value={tag} onChange={(e) => setTag(e.target.value)} className="h-9 rounded-md border border-input bg-white px-2 text-sm" aria-label="Coleção de modelos">
-            {STUDIO_COLLECTIONS.map((c) => (
-              <option key={c.tag} value={c.tag}>[{c.tag}] {c.nome}</option>
-            ))}
-          </select>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setFontsOpen(true)}
+            className="inline-flex h-9 items-center gap-1.5 border border-black/[0.12] bg-white px-3 text-sm font-medium hover:border-[#347796]/50"
+          >
+            <Type className="h-4 w-4 text-[#347796]" aria-hidden /> Fontes
+          </button>
+          {STUDIO_COLLECTIONS.length > 1 && (
+            <select value={tag} onChange={(e) => setTag(e.target.value)} className="h-9 rounded-md border border-input bg-white px-2 text-sm" aria-label="Coleção de modelos">
+              {STUDIO_COLLECTIONS.map((c) => (
+                <option key={c.tag} value={c.tag}>[{c.tag}] {c.nome}</option>
+              ))}
+            </select>
+          )}
+        </div>
       </section>
+
+      {fontsOpen && <FontsDialog open onOpenChange={setFontsOpen} />}
 
       <section className="border-y border-[#47cdd0]/30 bg-[#04202f] px-5 py-6 text-white">
         <p className="text-xs font-semibold text-[#8ae5e6]">NOVA PEÇA · [{tag}] {collection?.nome}</p>
