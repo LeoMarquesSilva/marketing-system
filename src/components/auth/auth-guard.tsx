@@ -4,7 +4,12 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { isContentCollaborator } from "@/lib/content-areas";
-import { resolveAllowedSections, canAccessPath, isTeamPostsPath } from "@/lib/access-control";
+import {
+  resolveAllowedSections,
+  canAccessPath,
+  isOpsPlannerPath,
+  isTeamPostsPath,
+} from "@/lib/access-control";
 import {
   canAccessGustavoContent,
   isGustavoContentPath,
@@ -120,11 +125,11 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
 
     // Viewers por área podem também ser colaboradores de conteúdo. O acesso
-    // específico a Férias e às Postagens da equipe deve prevalecer sobre o
-    // redirect legado abaixo.
+    // específico a Férias, às Postagens da equipe e ao Planner de Operações
+    // Legais deve prevalecer sobre o redirect legado abaixo.
     if (
       profile &&
-      (isFeriasRoute || isTeamPostsPath(pathname)) &&
+      (isFeriasRoute || isTeamPostsPath(pathname) || isOpsPlannerPath(pathname)) &&
       canAccessPath(profile, pathname)
     ) {
       return null;
@@ -145,7 +150,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       return resolvePostLoginPathFromProfile(profile);
     }
 
-    // Operações Legais: só admin; Vistagem: admin ou liberação manual (mesmo no modo legado).
+    // Operações Legais: só admin; Vistagem e Planner: admin, membro ou liberação manual (mesmo no modo legado).
     if (
       profile &&
       !isPublic &&

@@ -1,16 +1,24 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarClock, FileSpreadsheet, LoaderCircle, Scale, StickyNote, Tags } from "lucide-react";
+import { CalendarClock, FileSpreadsheet, LoaderCircle, Scale, SquareKanban, StickyNote, Tags } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { hasOperacoesLegaisAccess } from "@/lib/access-control";
 
-const MODULES = [
+const MODULES: Array<{ title: string; description: string; icon: typeof Scale; href?: string }> = [
+  {
+    title: "Planner de Operações Legais",
+    description: "Espaços das equipes, minhas tarefas, gestão e rotinas recorrentes com alarme.",
+    icon: SquareKanban,
+    href: "/operacoes-legais/planner",
+  },
   {
     title: "Vistagem e agendamento",
     description: "Publicações, prazos e agendamento no VIOS.",
     icon: CalendarClock,
+    href: "/operacoes-legais/vistagem",
   },
   {
     title: "Fechamento Legal Ops",
@@ -27,7 +35,7 @@ const MODULES = [
     description: "Incluir a etiqueta de pasta Demanda de risco no VIOS.",
     icon: Tags,
   },
-] as const;
+];
 
 export function OperacoesLegaisClient() {
   const { user, profile, loading } = useAuth();
@@ -67,23 +75,37 @@ export function OperacoesLegaisClient() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {MODULES.map((item) => (
-          <div
-            key={item.title}
-            className="rounded-2xl border bg-card p-5 shadow-sm"
-          >
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <span className="flex size-10 items-center justify-center rounded-xl bg-muted text-foreground">
-                <item.icon className="size-5" />
-              </span>
-              <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                Em breve
-              </span>
+        {MODULES.map((item) => {
+          const body = (
+            <>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <span className="flex size-10 items-center justify-center rounded-lg bg-muted text-foreground">
+                  <item.icon className="size-5" />
+                </span>
+                {!item.href && (
+                  <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                    Em breve
+                  </span>
+                )}
+              </div>
+              <h3 className="text-base font-semibold tracking-tight">{item.title}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
+            </>
+          );
+          return item.href ? (
+            <Link
+              key={item.title}
+              href={item.href}
+              className="rounded-lg border bg-card p-5 shadow-sm transition-colors hover:border-[#47cdd0]/70"
+            >
+              {body}
+            </Link>
+          ) : (
+            <div key={item.title} className="rounded-lg border bg-card p-5 shadow-sm">
+              {body}
             </div>
-            <h3 className="text-base font-semibold tracking-tight">{item.title}</h3>
-            <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

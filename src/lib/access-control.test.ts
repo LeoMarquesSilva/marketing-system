@@ -8,6 +8,7 @@ import {
   hasCafeCulturaAccess,
   hasIcpAccess,
   hasOperacoesLegaisAccess,
+  hasOpsPlannerAccess,
   hasVistagemAccess,
   isManualOnlyKey,
   normalizePermissionsInput,
@@ -50,6 +51,27 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(vistador, "/operacoes-legais")).toBe(false);
     expect(canAccessPath(vistador, "/planner")).toBe(false);
     expect(firstAllowedPath(vistador)).toBe("/operacoes-legais/vistagem");
+  });
+
+  it("libera o Planner de Operações Legais para admin, membro de espaço ou chave marcada", () => {
+    expect(isManualOnlyKey("/operacoes-legais/planner")).toBe(true);
+    expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/operacoes-legais/planner");
+    expect(hasOpsPlannerAccess({ role: "admin" })).toBe(true);
+    const membro = { role: null, permissions: null, ops_planner_member: true };
+    expect(hasOpsPlannerAccess(membro)).toBe(true);
+    expect(canAccessPath(membro, "/operacoes-legais/planner")).toBe(true);
+    expect(canAccessPath(membro, "/operacoes-legais/planner/espacos/facilities")).toBe(true);
+    // Ser membro do Planner não abre a Visão geral nem a Vistagem.
+    expect(canAccessPath(membro, "/operacoes-legais")).toBe(false);
+    expect(canAccessPath(membro, "/operacoes-legais/vistagem")).toBe(false);
+    const comChave = { role: null, permissions: ["/meus-clientes", "/operacoes-legais/planner"] };
+    expect(canAccessPath(comChave, "/operacoes-legais/planner/gestao")).toBe(true);
+  });
+
+  it("não libera o Planner de Operações Legais pelo modo legado", () => {
+    expect(hasOpsPlannerAccess({ role: "designer", permissions: null, department: "Marketing" })).toBe(false);
+    expect(canAccessPath({ role: null, permissions: ["/operacoes-legais"] }, "/operacoes-legais/planner")).toBe(false);
+    expect(canAccessPath({ role: null, permissions: ["/planner"] }, "/operacoes-legais/planner")).toBe(false);
   });
 
   it("não libera a Vistagem pelo modo legado nem pela chave de Operações Legais", () => {

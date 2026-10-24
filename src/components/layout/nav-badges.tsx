@@ -7,6 +7,9 @@ import { fetchCommentStats } from "@/lib/request-comments";
 import { fetchMarketingRequests } from "@/lib/marketing-requests";
 import { useWhatsappUnreadCount } from "@/hooks/use-whatsapp-unread";
 import { REELS_APPROVAL_HREF, useReelDeliveriesPendingCount } from "@/hooks/use-reel-deliveries-pending";
+import { hasOpsPlannerAccess } from "@/lib/access-control";
+import { authFetch } from "@/lib/auth-fetch";
+import { OPS_PLANNER_PATH } from "@/lib/ops-planner/types";
 
 export type NavBadgeTone = "cyan" | "amber";
 export type NavBadge = { value: number; tone: NavBadgeTone };
@@ -21,6 +24,25 @@ export function NavBadgesProvider({ children }: { children: React.ReactNode }) {
   const [pendingAlterations, setPendingAlterations] = useState(0);
   const whatsappUnread = useWhatsappUnreadCount();
   const reelPending = useReelDeliveriesPendingCount(Boolean(profile));
+  const [opsDue, setOpsDue] = useState(0);
+  const opsPlanner = hasOpsPlannerAccess(profile);
+
+  useEffect(() => {
+    if (!opsPlanner) return;
+    const load = async () => {
+      try {
+        const response = await authFetch("/api/operacoes-legais/planner/badge");
+        if (!response.ok) return;
+        const data = (await response.json()) as { due?: number };
+        setOpsDue(data.due ?? 0);
+      } catch {
+        // Badge opcional: falhas temporarias nao devem derrubar a navegacao.
+      }
+    };
+    load();
+    const interval = setInterval(load, 60_000);
+    return () => clearInterval(interval);
+  }, [opsPlanner]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -49,9 +71,11 @@ export function NavBadgesProvider({ children }: { children: React.ReactNode }) {
       if (href === "/planner") return { value: pendingAlterations, tone: "amber" };
       if (href === "/trafego-pago") return { value: whatsappUnread, tone: "cyan" };
       if (href === REELS_APPROVAL_HREF) return { value: reelPending, tone: "cyan" };
+      // Minhas tarefas: atrasadas + vencendo hoje.
+      if (href === OPS_PLANNER_PATH) return { value: opsPlanner ? opsDue : 0, tone: "amber" };
       return EMPTY_BADGE;
     },
-    [pendingAlterations, whatsappUnread, reelPending]
+    [pendingAlterations, whatsappUnread, reelPending, opsDue, opsPlanner]
   );
 
   return <NavBadgesContext.Provider value={badgeFor}>{children}</NavBadgesContext.Provider>;
