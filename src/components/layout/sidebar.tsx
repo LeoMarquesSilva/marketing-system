@@ -15,8 +15,7 @@ import {
 } from "@/lib/navigation";
 import { NavBadgePill, sumBadges, useNavBadges } from "@/components/layout/nav-badges";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { HrNotificationsBell } from "@/components/rh/hr-notifications-bell";
-import { ContentScheduleNotificationsBell } from "@/components/conteudo/content-schedule-notifications-bell";
+import { NotificationsBell } from "@/components/layout/notifications-bell";
 
 type SidebarProps = {
   expanded: boolean;
@@ -348,8 +347,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
 
           <div className="relative border-t border-white/[0.08] p-3">
             <div className={cn("mb-1 flex gap-1", expanded ? "justify-start pl-1" : "justify-center")}>
-              <HrNotificationsBell />
-              <ContentScheduleNotificationsBell />
+              <NotificationsBell />
             </div>
             <div ref={profileMenuRef} className="relative" data-tour="profile-menu">
               {profile && (

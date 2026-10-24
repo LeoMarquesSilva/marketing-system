@@ -33,6 +33,7 @@ export interface AuthProfile {
   is_hr_notification_recipient?: boolean | null;
   gustavo_content_member?: boolean;
   gustavo_content_member_role?: "owner" | "editor" | null;
+  ops_planner_member?: boolean;
 }
 
 interface AuthContextValue {
@@ -72,13 +73,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setProfile(null);
           return;
         }
-        const { data: membership } = await supabase
-          .from("gustavo_content_members")
-          .select("member_role")
-          .eq("user_id", data.id)
-          .maybeSingle();
+        const [{ data: membership }, { data: opsMemberships }] = await Promise.all([
+          supabase
+            .from("gustavo_content_members")
+            .select("member_role")
+            .eq("user_id", data.id)
+            .maybeSingle(),
+          // RLS: cada um só lê as próprias linhas de ops_space_members.
+          supabase.from("ops_space_members").select("space_id").eq("user_id", data.id).limit(1),
+        ]);
         setProfile({
           ...(data as AuthProfile),
+          ops_planner_member: (opsMemberships?.length ?? 0) > 0,
           gustavo_content_member: Boolean(membership),
           gustavo_content_member_role:
             membership?.member_role === "owner" || membership?.member_role === "editor"

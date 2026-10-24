@@ -46,7 +46,7 @@ describe("visibilidade por perfil", () => {
     const hrefs = visibleHrefs({ role: "admin" });
     expect(hrefs).toContain("/");
     expect(hrefs).not.toContain("/conteudo/inicio");
-    for (const href of ["/nfc", "/icp", "/operacoes-legais", "/operacoes-legais/vistagem", "/operacoes-legais/vistagem/controladoria", "/operacoes-legais/vistagem/duplicidades", "/operacoes-legais/vistagem/juridico", "/operacoes-legais/vistagem/conferencia", "/operacoes-legais/vistagem/check", "/rh/organograma", "/rh/boas-praticas", "/admin", "/fotos-colaboradores"]) {
+    for (const href of ["/nfc", "/icp", "/operacoes-legais", "/operacoes-legais/planner", "/operacoes-legais/planner/gestao", "/operacoes-legais/vistagem", "/operacoes-legais/vistagem/controladoria", "/operacoes-legais/vistagem/duplicidades", "/operacoes-legais/vistagem/juridico", "/operacoes-legais/vistagem/conferencia", "/operacoes-legais/vistagem/check", "/rh/organograma", "/rh/boas-praticas", "/admin", "/fotos-colaboradores"]) {
       expect(hrefs).toContain(href);
     }
   });
@@ -56,7 +56,7 @@ describe("visibilidade por perfil", () => {
     expect(hrefs).toContain("/planner");
     expect(hrefs).toContain("/usuarios");
     expect(hrefs).toContain("/meus-clientes/nps");
-    for (const href of ["/nfc", "/icp", "/operacoes-legais", "/operacoes-legais/vistagem", "/operacoes-legais/vistagem/controladoria", "/operacoes-legais/vistagem/duplicidades", "/operacoes-legais/vistagem/juridico", "/operacoes-legais/vistagem/conferencia", "/operacoes-legais/vistagem/check", "/cafe-cultura", "/rh/ferias", "/rh/boas-praticas", "/admin", "/conteudo/inicio"]) {
+    for (const href of ["/nfc", "/icp", "/operacoes-legais", "/operacoes-legais/planner", "/operacoes-legais/vistagem", "/operacoes-legais/vistagem/controladoria", "/operacoes-legais/vistagem/duplicidades", "/operacoes-legais/vistagem/juridico", "/operacoes-legais/vistagem/conferencia", "/operacoes-legais/vistagem/check", "/cafe-cultura", "/rh/ferias", "/rh/boas-praticas", "/admin", "/conteudo/inicio"]) {
       expect(hrefs).not.toContain(href);
     }
   });
@@ -68,6 +68,20 @@ describe("visibilidade por perfil", () => {
     expect(visibleHrefs({ role: null, permissions: ["/operacoes-legais/vistagem"] })).toContain(
       "/operacoes-legais/vistagem/controladoria"
     );
+  });
+
+  it("membro de espaço do Planner Ops vê o Planner, mas não a Visão geral nem a Vistagem", () => {
+    const profile = { role: null, permissions: null, department: "Facilities", ops_planner_member: true };
+    const nav = buildNav(profile);
+    const operacoes = nav.find((front) => front.id === "operacoes-legais");
+    expect(operacoes?.features.map((feature) => feature.id)).toEqual(["planner-ops"]);
+    expect(operacoes?.features[0].href).toBe("/operacoes-legais/planner");
+    expect(visibleHrefs(profile)).toEqual(
+      expect.arrayContaining(["/operacoes-legais/planner/espacos", "/operacoes-legais/planner/rotinas"])
+    );
+    // Colaborador de área jurídica que também está num espaço continua vendo o Planner Ops.
+    const advogado = { role: null, permissions: null, department: "Trabalhista", ops_planner_member: true };
+    expect(visibleHrefs(advogado)).toContain("/operacoes-legais/planner");
   });
 
   it("colaborador de área jurídica sem permissões vê só o fluxo de conteúdo", () => {
