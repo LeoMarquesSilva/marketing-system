@@ -10,7 +10,7 @@ import {
   type AgendamentoEntrada,
   type EtiquetaAgendamento,
 } from "./agendamento";
-import { criarCalendario } from "./dias-uteis";
+import { criarCalendario, type ContagemPrazo } from "./dias-uteis";
 import { carregarFeriados } from "./feriados";
 import { cadeiaDoFluxo, montarFluxo, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
 import { buscarPastasVios } from "./pastas-vios";
@@ -42,11 +42,12 @@ import type {
 } from "./types";
 
 const COLUNAS_AGENDAMENTO =
-  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, hora, responsavel, revisor, observacao, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, envio_erro, enviado_em";
+  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, hora, responsavel, revisor, observacao, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, envio_erro, enviado_em";
 
 type AgendamentoRow = {
   id: string; publicacao_id: string; ordem: number; etiqueta: EtiquetaAgendamento; tarefa: string; tarefa_id: string | null;
-  data: string; data_fatal: string | null; dias_prazo: number | null; hora: string | null; responsavel: string; revisor: string | null;
+  data: string; data_fatal: string | null; dias_prazo: number | null; contagem_prazo: ContagemPrazo | null; hora: string | null;
+  responsavel: string; revisor: string | null;
   observacao: string | null; envio_status: EnvioStatus;
   envio_simulado: boolean | null; sama_agendamento_id: string | null; vios_tarefa_id: string | null; envio_erro: string | null;
   enviado_em: string | null;
@@ -62,6 +63,7 @@ function agendamentoResumo(row: AgendamentoRow): AgendamentoResumo {
     data: row.data,
     dataFatal: row.data_fatal,
     diasPrazo: row.dias_prazo,
+    contagemPrazo: row.contagem_prazo,
     hora: row.hora,
     responsavel: row.responsavel,
     revisor: row.revisor,
@@ -231,6 +233,7 @@ export async function salvarVistagem(
       data: item.data,
       data_fatal: item.dataFatal,
       dias_prazo: item.diasPrazo,
+      contagem_prazo: item.contagemPrazo,
       hora: item.hora,
       responsavel: item.responsavel,
       responsavel_id: item.responsavelId,

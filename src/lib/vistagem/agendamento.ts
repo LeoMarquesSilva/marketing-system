@@ -1,4 +1,4 @@
-import { datasDoPrazo } from "./dias-uteis";
+import { CONTAGENS_PRAZO, datasDoPrazo, type ContagemPrazo } from "./dias-uteis";
 import type { CadeiaDoPrazo } from "./fluxo-vios";
 
 /**
@@ -43,8 +43,10 @@ export interface AgendamentoEntrada {
   data: string;
   /** PRAZO: data fatal escolhida no calendário ou pelos atalhos de dias. */
   dataFatal?: string | null;
-  /** PRAZO: atalho usado (5/10/15/30/60/90/180 dias úteis), se houver. */
+  /** PRAZO: atalho usado (5/10/15/30/60/90/180 dias), se houver. */
   diasPrazo?: number | null;
+  /** PRAZO com atalho: dias úteis ou corridos, escolhido no modal. */
+  contagemPrazo?: ContagemPrazo | null;
   /** COMPROMISSO: HH:MM da audiência, perícia, sessão… (obrigatório). */
   hora?: string | null;
   responsavel: string;
@@ -60,6 +62,8 @@ export interface AgendamentoValidado {
   data: string;
   dataFatal: string | null;
   diasPrazo: number | null;
+  /** Só com diasPrazo; sem atalho (fatal no calendário), null. */
+  contagemPrazo: ContagemPrazo | null;
   /** COMPROMISSO: HH:MM; nas outras classes, null. */
   hora: string | null;
   responsavel: string;
@@ -203,8 +207,10 @@ export function validarAgendamentos(
     if (prazo && !entrada.revisor?.trim()) erros.push(`${n}: no Prazo o revisor é obrigatório.`);
     const observacao = entrada.observacao?.trim() || null;
     if (observacao && observacao.length > MAX_OBSERVACAO) erros.push(`${n}: observação com mais de ${MAX_OBSERVACAO} caracteres.`);
-    if (!tarefa || !responsavel || !dataValida(data) || (prazo && !revisor) || (compromisso && !hora)) return null;
     const diasPrazo = prazo && Number.isInteger(entrada.diasPrazo) && (entrada.diasPrazo ?? 0) > 0 ? (entrada.diasPrazo as number) : null;
+    const contagemPrazo = diasPrazo ? CONTAGENS_PRAZO.find((contagem) => contagem === entrada.contagemPrazo) ?? null : null;
+    if (diasPrazo && !contagemPrazo) erros.push(`${n}: escolha se o prazo é em dias úteis ou corridos.`);
+    if (!tarefa || !responsavel || !dataValida(data) || (prazo && !revisor) || (compromisso && !hora) || (diasPrazo && !contagemPrazo)) return null;
     return {
       etiqueta: entrada.etiqueta,
       tarefa: tarefa.nomeVios ?? tarefa.nome,
@@ -212,6 +218,7 @@ export function validarAgendamentos(
       data,
       dataFatal: fatal,
       diasPrazo,
+      contagemPrazo,
       hora,
       responsavel: responsavel.nome,
       responsavelId: responsavel.id,

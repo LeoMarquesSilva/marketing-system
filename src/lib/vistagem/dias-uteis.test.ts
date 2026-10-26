@@ -3,7 +3,9 @@ import {
   criarCalendario,
   criarCalendarioDePrazo,
   datasDoPrazo,
+  fatalPorContagem,
   fatalPorDias,
+  fatalPorDiasCorridos,
   feriadosNacionais,
   noRecessoForense,
   pascoa,
@@ -82,5 +84,36 @@ describe("contagem do prazo", () => {
       "2027-03-29",
       "2027-08-04",
     ]);
+  });
+});
+
+describe("dias corridos", () => {
+  const FERIADOS = [...["10-12", "11-02", "11-15", "11-20", "12-25"].map((md) => `2026-${md}`), ...feriadosNacionais(2027)];
+  const contaPrazo = criarCalendarioDePrazo(FERIADOS);
+
+  it("começa no 1º dia útil após a publicação e conta todos os dias", () => {
+    // publicação segunda 19/10: dia 1 = 20/10; 02/11 (Finados) conta → 03/11
+    expect(fatalPorDiasCorridos("2026-10-19", 15, contaPrazo)).toBe("2026-11-03");
+    // publicação sexta 16/10: dia 1 = segunda 19/10 → 23/10
+    expect(fatalPorDiasCorridos("2026-10-16", 5, contaPrazo)).toBe("2026-10-23");
+  });
+
+  it("vencimento em fim de semana ou feriado passa para o próximo dia útil", () => {
+    // 20/10 + 4 = sábado 24/10 → segunda 26/10
+    expect(fatalPorDiasCorridos("2026-10-19", 5, contaPrazo)).toBe("2026-10-26");
+    // dia 1 = sexta 30/10; dia 4 = segunda 02/11 (Finados) → 03/11
+    expect(fatalPorDiasCorridos("2026-10-29", 4, contaPrazo)).toBe("2026-11-03");
+  });
+
+  it("o recesso forense suspende a contagem", () => {
+    // 15 a 19/12 = 5 dias; 20/12 a 20/01 não contam; 21/01 é o 6º → 10º = segunda 25/01/2027
+    expect(fatalPorDiasCorridos("2026-12-14", 10, contaPrazo)).toBe("2027-01-25");
+    // publicada no recesso: começa em 21/01/2027
+    expect(fatalPorDiasCorridos("2026-12-22", 5, contaPrazo)).toBe("2027-01-25");
+  });
+
+  it("fatalPorContagem escolhe a contagem", () => {
+    expect(fatalPorContagem("2026-10-19", 15, "corridos", contaPrazo)).toBe("2026-11-03");
+    expect(fatalPorContagem("2026-10-19", 15, "uteis", contaPrazo)).toBe(fatalPorDias("2026-10-19", 15, contaPrazo));
   });
 });

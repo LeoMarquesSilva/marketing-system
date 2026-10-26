@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { exigirAcessoVistagem, respostaDeErro } from "@/lib/vistagem/http";
 import { obterVistagem, salvarVistagem } from "@/lib/vistagem/juridico-server";
 import { ETIQUETAS_AGENDAMENTO, type AgendamentoEntrada } from "@/lib/vistagem/agendamento";
+import { CONTAGENS_PRAZO } from "@/lib/vistagem/dias-uteis";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,7 @@ export async function POST(request: Request, context: RouteContext) {
         data: texto(valor.data, 10) ?? "",
         dataFatal: texto(valor.dataFatal, 10),
         diasPrazo: typeof valor.diasPrazo === "number" ? valor.diasPrazo : null,
+        contagemPrazo: CONTAGENS_PRAZO.find((contagem) => contagem === valor.contagemPrazo) ?? null,
         hora: texto(valor.hora, 5),
         responsavel: texto(valor.responsavel, 200) ?? "",
         revisor: texto(valor.revisor, 200),
