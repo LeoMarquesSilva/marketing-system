@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, LoaderCircle, Plus, Send, Trash2, TriangleAlert } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, LoaderCircle, Plus, Send, Trash2, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -21,6 +21,7 @@ import {
   type ContagemPrazo,
 } from "@/lib/vistagem/dias-uteis";
 import { CADEIA_PADRAO, PESSOA_FIXA_PROTOCOLAR, cadeiaDoFluxo, type FluxoDaTarefa, type TarefaDoFluxo } from "@/lib/vistagem/fluxo-vios";
+import { ESCRITORIOS } from "@/lib/vistagem/triagem";
 import type { PublicacaoResumo, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { ComboboxBusca } from "./combobox-busca";
@@ -246,7 +247,17 @@ function FluxoNoVios({
   );
 }
 
-function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida: (id: string) => void; onVoltar: () => void }) {
+function EditorVistagem({
+  id,
+  onConcluida,
+  onTransferida,
+  onVoltar,
+}: {
+  id: string;
+  onConcluida: (id: string) => void;
+  onTransferida: (destino: string) => void;
+  onVoltar: () => void;
+}) {
   const [detalhe, setDetalhe] = useState<VistagemDetalhe | null>(null);
   const [linhas, setLinhas] = useState<Linha[]>([]);
   const [observacao, setObservacao] = useState("");
@@ -257,6 +268,7 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
   const [horarioDe, setHorarioDe] = useState<number | null>(null);
   /** Atalho de dias clicado, à espera da escolha entre úteis e corridos. */
   const [contagemDe, setContagemDe] = useState<{ chave: number; dias: number; aberto: boolean } | null>(null);
+  const [transferindo, setTransferindo] = useState(false);
 
   useEffect(() => {
     let cancelado = false;
@@ -380,12 +392,25 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
         </div>
       ) : null}
 
+      {publicacao.transferidoDe ? (
+        <div className="rounded-md border border-[#3e84a8]/25 bg-[#f6fbfb] px-3 py-2 text-sm text-[#183f50]" role="status">
+          <p className="font-medium">
+            Transferida de {publicacao.transferidoDe} em {formatarDataHora(publicacao.transferidoEm)}
+          </p>
+          {publicacao.transferenciaMotivo ? <p className="whitespace-pre-wrap">{publicacao.transferenciaMotivo}</p> : null}
+        </div>
+      ) : null}
+
       <section className="space-y-2 rounded-lg border border-[#dce9eb] bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-sm font-medium text-slate-900">{publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}</span>
           {publicacao.tribunal ? (
             <span className="rounded-full border border-[#3e84a8]/25 px-2 py-0.5 text-xs text-[#315f73]">{publicacao.tribunal}</span>
           ) : null}
+          <Button type="button" variant="outline" size="sm" className="ml-auto" onClick={() => setTransferindo(true)}>
+            <ArrowRightLeft />
+            Transferir área
+          </Button>
         </div>
         <DadosPasta publicacao={{ ...publicacao, pendencia: null }} />
         <DadosPublicacao publicacao={publicacao} />
@@ -687,7 +712,104 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
         }}
         onFechar={() => setContagemDe((atual) => atual && { ...atual, aberto: false })}
       />
+
+      <ModalTransferir
+        aberto={transferindo}
+        publicacaoId={id}
+        escritorioAtual={publicacao.escritorioResponsavel}
+        onTransferida={(destino) => {
+          setTransferindo(false);
+          onTransferida(destino);
+        }}
+        onFechar={() => setTransferindo(false)}
+      />
     </div>
+  );
+}
+
+/** Manda a publicação para a fila de outra área, com o motivo (só no Orquestra; a pasta no VIOS não muda). */
+function ModalTransferir({
+  aberto,
+  publicacaoId,
+  escritorioAtual,
+  onTransferida,
+  onFechar,
+}: {
+  aberto: boolean;
+  publicacaoId: string;
+  escritorioAtual: string | null;
+  onTransferida: (destino: string) => void;
+  onFechar: () => void;
+}) {
+  const [destino, setDestino] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState("");
+  const pronto = Boolean(destino) && Boolean(motivo.trim());
+
+  async function transferir() {
+    setEnviando(true);
+    setErro("");
+    try {
+      const resposta = await authFetch(`/api/operacoes-legais/vistagem/juridico/${publicacaoId}/transferir`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ destino, motivo }),
+      });
+      const corpo = await resposta.json();
+      if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao transferir.");
+      onTransferida(destino);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao transferir.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <Dialog open={aberto} onOpenChange={(abrir) => !abrir && !enviando && onFechar()}>
+      <DialogContent className="sm:max-w-md">
+        <form
+          className="grid gap-4"
+          onSubmit={(evento) => {
+            evento.preventDefault();
+            if (pronto && !enviando) void transferir();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Transferir para outra área</DialogTitle>
+            <DialogDescription>
+              A publicação sai da fila de {escritorioAtual ?? "sem área"} e vai para a da área escolhida. A pasta no VIOS não muda.
+            </DialogDescription>
+          </DialogHeader>
+          <label className="space-y-1 text-xs font-medium text-slate-600">
+            Área de destino
+            <select className={campo} value={destino} onChange={(evento) => setDestino(evento.target.value)} required>
+              <option value="">Escolha a área…</option>
+              {ESCRITORIOS.filter((escritorio) => escritorio !== escritorioAtual).map((escritorio) => (
+                <option key={escritorio} value={escritorio}>
+                  {escritorio}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1 text-xs font-medium text-slate-600">
+            Motivo
+            <Textarea value={motivo} onChange={(evento) => setMotivo(evento.target.value)} maxLength={2000} rows={3} required />
+          </label>
+          {erro ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{erro}</p> : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onFechar} disabled={enviando}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={!pronto || enviando}>
+              {enviando ? <LoaderCircle className="animate-spin" /> : <ArrowRightLeft />}
+              Transferir
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -719,6 +841,8 @@ function Juridico() {
   const [escritorio, setEscritorio] = useState("");
   const [publicacoes, setPublicacoes] = useState<PublicacaoResumo[] | null>(null);
   const [porEscritorio, setPorEscritorio] = useState<Record<string, number>>({});
+  /** Áreas do usuário do jurídico; null é a controladoria (todas). */
+  const [areas, setAreas] = useState<string[] | null>(null);
   const [selecionada, setSelecionada] = useState<string | null>(null);
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
@@ -732,6 +856,7 @@ function Juridico() {
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao carregar a fila.");
       setPublicacoes(corpo.publicacoes);
       setPorEscritorio(corpo.porEscritorio);
+      setAreas(corpo.areas ?? null);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao carregar a fila.");
       setPublicacoes([]);
@@ -745,6 +870,13 @@ function Juridico() {
   const escritorios = useMemo(() => Object.entries(porEscritorio).sort((a, b) => a[0].localeCompare(b[0], "pt-BR")), [porEscritorio]);
   const total = escritorios.reduce((soma, [, quantidade]) => soma + quantidade, 0);
   const grupos = useMemo(() => agruparFila(publicacoes ?? []), [publicacoes]);
+
+  function transferida(destino: string) {
+    // O destino pode ser outra área do próprio usuário: recarrega a fila e as contagens.
+    setSelecionada(null);
+    setAviso(`Publicação transferida para ${destino}.`);
+    void carregar(escritorio);
+  }
 
   function concluida(id: string) {
     const restantes = (publicacoes ?? []).filter((p) => p.id !== id);
@@ -764,6 +896,11 @@ function Juridico() {
         <div className="space-y-1">
           <h2 className="text-base font-semibold text-slate-900">Vistar publicações</h2>
           <p className="text-sm text-slate-600">Vincule a cada publicação as tarefas do VIOS, com data, responsável e observação.</p>
+          {areas ? (
+            <p className="text-xs text-slate-500">
+              {areas.length ? `Suas áreas: ${areas.join(", ")}.` : "Nenhuma área marcada para você. Peça à controladoria para liberar as suas."}
+            </p>
+          ) : null}
         </div>
         <label className="flex items-center gap-2 text-sm text-slate-700">
           Escritório
@@ -820,6 +957,11 @@ function Juridico() {
                             {publicacao.devolucaoMotivo ? (
                               <span className="rounded-full border border-amber-200 bg-amber-50 px-1.5 text-[11px] font-medium text-amber-800">Devolvida</span>
                             ) : null}
+                            {publicacao.transferidoDe ? (
+                              <span className="rounded-full border border-[#3e84a8]/25 bg-[#f6fbfb] px-1.5 text-[11px] font-medium text-[#315f73]">
+                                Transferida
+                              </span>
+                            ) : null}
                           </span>
                           <span className="block text-xs text-slate-700">{publicacao.cliente ?? "—"}</span>
                           <span className="block text-xs text-slate-500">
@@ -837,7 +979,13 @@ function Juridico() {
 
         <div className={cn(!selecionada && "hidden lg:block")}>
           {selecionada ? (
-            <EditorVistagem key={selecionada} id={selecionada} onConcluida={concluida} onVoltar={() => setSelecionada(null)} />
+            <EditorVistagem
+              key={selecionada}
+              id={selecionada}
+              onConcluida={concluida}
+              onTransferida={transferida}
+              onVoltar={() => setSelecionada(null)}
+            />
           ) : (
             <p className="rounded-lg border border-dashed border-[#dce9eb] bg-white p-10 text-center text-sm text-slate-500">
               Escolha uma publicação na lista.

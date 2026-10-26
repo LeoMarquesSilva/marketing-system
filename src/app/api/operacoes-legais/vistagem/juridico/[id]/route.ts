@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { exigirAcessoVistagem, respostaDeErro } from "@/lib/vistagem/http";
+import { exigirPerfilVistagem, respostaDeErro } from "@/lib/vistagem/http";
 import { obterVistagem, salvarVistagem } from "@/lib/vistagem/juridico-server";
 import { ETIQUETAS_AGENDAMENTO, type AgendamentoEntrada } from "@/lib/vistagem/agendamento";
 import { CONTAGENS_PRAZO } from "@/lib/vistagem/dias-uteis";
@@ -10,9 +10,9 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, context: RouteContext) {
   try {
-    await exigirAcessoVistagem();
+    const { areas } = await exigirPerfilVistagem();
     const { id } = await context.params;
-    return NextResponse.json(await obterVistagem(id));
+    return NextResponse.json(await obterVistagem(id, areas));
   } catch (error) {
     return respostaDeErro(error, "Não foi possível carregar a publicação.");
   }
@@ -25,7 +25,7 @@ function texto(valor: unknown, limite = 2000): string | null {
 /** Grava as tarefas vinculadas pelo jurídico e manda para a conferência. */
 export async function POST(request: Request, context: RouteContext) {
   try {
-    const authUserId = await exigirAcessoVistagem();
+    const { authUserId, areas } = await exigirPerfilVistagem();
     const { id } = await context.params;
     const corpo = (await request.json().catch(() => null)) as { agendamentos?: unknown; observacao?: unknown } | null;
     const lista = Array.isArray(corpo?.agendamentos) ? corpo.agendamentos.slice(0, 20) : [];
@@ -45,7 +45,7 @@ export async function POST(request: Request, context: RouteContext) {
         observacao: texto(valor.observacao, 4000),
       };
     });
-    await salvarVistagem(id, { agendamentos, observacao: texto(corpo?.observacao) }, authUserId);
+    await salvarVistagem(id, { agendamentos, observacao: texto(corpo?.observacao) }, authUserId, areas);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return respostaDeErro(error, "Não foi possível salvar a vistagem.");

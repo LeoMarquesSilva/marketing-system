@@ -53,7 +53,7 @@ import {
   hasFacilitiesAccess,
   hasIcpAccess,
   hasOperacoesLegaisAccess,
-  hasVistagemAccess,
+  canSeeVistagemPath,
   isAdminRole,
   isFacilitiesPath,
   isVistagemPath,
@@ -453,7 +453,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
       if (ALWAYS_VISIBLE.has(href)) return true;
       if (href === "/fotos-colaboradores") return isCollaboratorPhotosManager(profile);
       if (isFacilitiesPath(href)) return hasFacilitiesAccess(profile);
-      if (isVistagemPath(href)) return hasVistagemAccess(profile);
+      if (isVistagemPath(href)) return canSeeVistagemPath(profile, href);
       if (href.startsWith("/operacoes-legais")) return hasOperacoesLegaisAccess(profile);
       if (href === "/icp") return hasIcpAccess(profile);
       if (href === "/conteudo/gustavo") return gustavo;
@@ -478,7 +478,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
   const isAdmin = isAdminRole(profile);
   return (href) => {
     if (isFacilitiesPath(href)) return hasFacilitiesAccess(profile);
-    if (isVistagemPath(href)) return hasVistagemAccess(profile);
+    if (isVistagemPath(href)) return canSeeVistagemPath(profile, href);
     if (href.startsWith("/operacoes-legais/")) return hasOperacoesLegaisAccess(profile);
     switch (href) {
       case "/conteudo/inicio":

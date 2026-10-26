@@ -17,6 +17,7 @@ import { buscarPastasVios } from "./pastas-vios";
 import { VistagemError } from "./errors";
 import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
 import { linhasParaFila } from "./fila-vios";
+import { ESCRITORIOS } from "./triagem";
 import {
   carregarArvoreVios,
   carregarCatalogoProcessos,
@@ -136,8 +137,22 @@ function catalogoParaPublicacao(areas: CatalogoArea[], publicacao: PublicacaoCom
 // Jurídico
 // ---------------------------------------------------------------------------
 
-/** Publicações a vistar, por escritório (ou todas), com a contagem de cada escritório. */
-export async function listarFilaJuridico(escritorio: string | null): Promise<{ publicacoes: PublicacaoResumo[]; porEscritorio: Record<string, number> }> {
+/** Áreas (escritórios) do usuário do jurídico; null é a controladoria, que vê todas. */
+export type AreasVistagem = string[] | null;
+
+/** O jurídico só abre e grava publicações das suas áreas. */
+function garantirArea(publicacao: { escritorio_responsavel: string | null }, areas: AreasVistagem): void {
+  if (areas && !areas.includes(publicacao.escritorio_responsavel ?? "")) {
+    throw new VistagemError("Esta publicação não é de uma área sua.", 403);
+  }
+}
+
+/** Publicações a vistar, por escritório (ou todas as do usuário), com a contagem de cada escritório. */
+export async function listarFilaJuridico(
+  escritorio: string | null,
+  areas: AreasVistagem = null
+): Promise<{ publicacoes: PublicacaoResumo[]; porEscritorio: Record<string, number> }> {
+  if (areas && (!areas.length || (escritorio && !areas.includes(escritorio)))) return { publicacoes: [], porEscritorio: {} };
   const db = admin();
   let consulta = db
     .from("vistagem_publicacoes")
@@ -146,11 +161,11 @@ export async function listarFilaJuridico(escritorio: string | null): Promise<{ p
     .order("data_publicacao", { ascending: true })
     .order("linha_arquivo", { ascending: true })
     .limit(500);
+  let contagemConsulta = db.from("vistagem_publicacoes").select("escritorio_responsavel").eq("status", "juridico_vistar").limit(5000);
   if (escritorio) consulta = consulta.eq("escritorio_responsavel", escritorio);
-  const [{ data, error }, contagem] = await Promise.all([
-    consulta,
-    db.from("vistagem_publicacoes").select("escritorio_responsavel").eq("status", "juridico_vistar").limit(5000),
-  ]);
+  else if (areas) consulta = consulta.in("escritorio_responsavel", areas);
+  if (areas) contagemConsulta = contagemConsulta.in("escritorio_responsavel", areas);
+  const [{ data, error }, contagem] = await Promise.all([consulta, contagemConsulta]);
   if (error) falhou("carregar a fila do jurídico", error);
   if (contagem.error) falhou("contar a fila do jurídico", contagem.error);
   const porEscritorio: Record<string, number> = {};
@@ -162,8 +177,9 @@ export async function listarFilaJuridico(escritorio: string | null): Promise<{ p
 }
 
 /** Publicação com o teor completo, as tarefas já vinculadas e a lista travada da área. */
-export async function obterVistagem(id: string): Promise<VistagemDetalhe> {
+export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = null): Promise<VistagemDetalhe> {
   const [publicacao, agendamentos] = await Promise.all([carregarPublicacao(id), agendamentosPorPublicacao([id])]);
+  garantirArea(publicacao, areasDoUsuario);
   let catalogoErro: string | null = null;
   const areas = await carregarCatalogoProcessos().catch((erro: unknown) => {
     catalogoErro = erro instanceof Error ? erro.message : String(erro);
@@ -203,9 +219,11 @@ export async function obterVistagem(id: string): Promise<VistagemDetalhe> {
 export async function salvarVistagem(
   id: string,
   entrada: { agendamentos: AgendamentoEntrada[]; observacao: string | null },
-  authUserId: string
+  authUserId: string,
+  areas: AreasVistagem = null
 ): Promise<void> {
   const publicacao = await carregarPublicacao(id);
+  garantirArea(publicacao, areas);
   if (publicacao.status !== "juridico_vistar") throw new VistagemError("Esta publicação não está aguardando vistagem.", 409);
   const catalogo = catalogoParaPublicacao(await carregarCatalogoProcessos(), publicacao);
   if (!catalogo) throw new VistagemError("Não há lista de tarefas do VIOS para a área desta pasta. Avise a controladoria.", 422);
@@ -299,6 +317,40 @@ async function itensDeConferencia(
     vistadoPor: row.vistado_por ? nomes.get(row.vistado_por) ?? null : null,
     conferidoPor: row.conferido_por ? nomes.get(row.conferido_por) ?? null : null,
   }));
+}
+
+/**
+ * Manda a publicação para a fila de outra área (ex.: Cível ↔ Reestruturação), com o motivo.
+ * Só muda o escritório no Orquestra; a pasta no VIOS fica como está.
+ */
+export async function transferirPublicacao(
+  id: string,
+  entrada: { destino: string; motivo: string },
+  authUserId: string,
+  areas: AreasVistagem = null
+): Promise<void> {
+  const publicacao = await carregarPublicacao(id);
+  garantirArea(publicacao, areas);
+  if (publicacao.status !== "juridico_vistar") throw new VistagemError("Só dá para transferir publicação aguardando vistagem.", 409);
+  const destino = ESCRITORIOS.find((escritorio) => escritorio === entrada.destino);
+  if (!destino) throw new VistagemError("Escolha a área de destino.");
+  if (destino === publicacao.escritorio_responsavel) throw new VistagemError("A publicação já está nessa área.");
+  const motivo = entrada.motivo.trim();
+  if (!motivo) throw new VistagemError("Explique por que a publicação é de outra área.");
+  const { data, error } = await admin()
+    .from("vistagem_publicacoes")
+    .update({
+      escritorio_responsavel: destino,
+      transferido_de: publicacao.escritorio_responsavel,
+      transferido_por: authUserId,
+      transferido_em: new Date().toISOString(),
+      transferencia_motivo: motivo.slice(0, 2000),
+    })
+    .eq("id", id)
+    .eq("status", "juridico_vistar")
+    .select("id");
+  if (error) falhou("transferir a publicação", error);
+  if (!data?.length) throw new VistagemError("A publicação mudou de situação. Atualize a lista.", 409);
 }
 
 export async function listarConferencia(): Promise<ConferenciaResposta> {
@@ -616,10 +668,11 @@ async function carregarInconsistencia(id: string): Promise<InconsistenciaRow> {
 }
 
 /** O jurídico contesta a devolução (ex.: a controladoria devolveu errado). */
-export async function contestarInconsistencia(id: string, texto: string, authUserId: string): Promise<void> {
+export async function contestarInconsistencia(id: string, texto: string, authUserId: string, areas: AreasVistagem = null): Promise<void> {
   const contestacao = texto.trim();
   if (!contestacao) throw new VistagemError("Explique por que a devolução não procede.");
   const atual = await carregarInconsistencia(id);
+  if (areas) garantirArea(await carregarPublicacao(atual.publicacao_id), areas);
   if (atual.excluida_em) throw new VistagemError("Esta inconsistência já foi excluída.", 409);
   const { error } = await admin()
     .from("vistagem_inconsistencias")
