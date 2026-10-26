@@ -64,6 +64,16 @@ describe("visibilidade por perfil", () => {
     }
   });
 
+  it("jurídico da Vistagem vê no menu só a aba Jurídico", () => {
+    const hrefs = visibleHrefs({ role: null, permissions: ["/operacoes-legais/vistagem"], vistagem_papel: "juridico" });
+    expect(hrefs).toContain("/operacoes-legais/vistagem/juridico");
+    for (const href of ["/operacoes-legais/vistagem", "/operacoes-legais/vistagem/controladoria", "/operacoes-legais/vistagem/duplicidades", "/operacoes-legais/vistagem/conferencia", "/operacoes-legais/vistagem/check"]) {
+      expect(hrefs).not.toContain(href);
+    }
+    const controladoria = visibleHrefs({ role: null, permissions: ["/operacoes-legais/vistagem"] });
+    expect(controladoria).toContain("/operacoes-legais/vistagem/check");
+  });
+
   it("fornecedores e contratos só aparecem com a liberação de Facilities", () => {
     expect(visibleHrefs({ role: "designer", permissions: null, department: "Marketing" })).not.toContain(
       "/facilities/fornecedores"

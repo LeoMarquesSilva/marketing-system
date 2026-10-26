@@ -118,6 +118,8 @@ export interface AccessProfile {
   /** Membership do módulo Posicionamento Gustavo — nunca inferir por nome. */
   gustavo_content_member?: boolean | null;
   department?: string | null;
+  /** Papel na Vistagem (controladoria ou juridico); a área é refeita no servidor. */
+  vistagem_papel?: string | null;
 }
 
 /** Postagens da equipe: desempenho no Instagram dos posts de cada área. */
@@ -206,6 +208,25 @@ export function isVistagemPath(pathname: string): boolean {
   return pathname === VISTAGEM_KEY || pathname.startsWith(`${VISTAGEM_KEY}/`);
 }
 
+/** Papel na Vistagem: a controladoria vê todas as abas e áreas; o jurídico, só a aba Jurídico das suas áreas. */
+export type PapelVistagem = "controladoria" | "juridico";
+
+export const VISTAGEM_JURIDICO_PATH = `${VISTAGEM_KEY}/juridico`;
+
+/** Admin e quem tem a Vistagem sem papel marcado são controladoria; sem acesso, null. */
+export function papelVistagem(profile: AccessProfile | null | undefined): PapelVistagem | null {
+  if (!hasVistagemAccess(profile)) return null;
+  if (isAdminRole(profile)) return "controladoria";
+  return profile?.vistagem_papel === "juridico" ? "juridico" : "controladoria";
+}
+
+/** Tela da Vistagem que o perfil pode abrir: o jurídico só abre a aba Jurídico. */
+export function canSeeVistagemPath(profile: AccessProfile | null | undefined, pathname: string): boolean {
+  const papel = papelVistagem(profile);
+  if (papel === "controladoria") return true;
+  return papel === "juridico" && (pathname === VISTAGEM_JURIDICO_PATH || pathname.startsWith(`${VISTAGEM_JURIDICO_PATH}/`));
+}
+
 /**
  * ICP (receita por cliente): admin ou liberação manual em Usuários. A chave
  * nunca vem do modo legado — sem `/icp` marcado, só admin vê.
@@ -275,7 +296,7 @@ export function canAccessPath(
   }
 
   if (isVistagemPath(pathname)) {
-    return hasVistagemAccess(profile);
+    return canSeeVistagemPath(profile, pathname);
   }
 
   const isOperacoesLegaisRoute =
@@ -347,7 +368,9 @@ export function firstAllowedPath(profile: AccessProfile | null | undefined): str
   if (!allowed || allowed.length === 0) return "/";
   // Colaborador de conteúdo cai na home de desempenho.
   if (hasContentAccess(allowed) && !allowed.includes("/")) return CONTENT_HOME_PATH;
-  return allowed.includes("/") ? "/" : allowed[0];
+  const primeiro = allowed.includes("/") ? "/" : allowed[0];
+  // O jurídico não abre a Captura (1ª aba da Vistagem): entra direto na aba Jurídico.
+  return primeiro === VISTAGEM_KEY && papelVistagem(profile) === "juridico" ? VISTAGEM_JURIDICO_PATH : primeiro;
 }
 
 /**
