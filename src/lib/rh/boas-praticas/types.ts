@@ -27,6 +27,31 @@ export interface GoodPracticeFeedback {
   updated_at: string;
   created_by_name: string | null;
   photo_count: number;
+  /** Linha do Feedz ligada a este registro (destinatário + data/hora de envio). */
+  feedz_key: string | null;
+  feedz_sent_at: string | null;
+  feedz_viewed_at: string | null;
+}
+
+/** Vínculo com uma linha do relatório do Feedz (importação ou registro a partir dela). */
+export interface FeedzLinkInput {
+  key: string;
+  sent_at: string;
+  viewed_at: string | null;
+  message: string;
+}
+
+export interface FeedzImportLog {
+  id: string;
+  file_name: string;
+  rows_total: number;
+  rows_linked: number;
+  rows_updated: number;
+  rows_unmatched: number;
+  period_start: string | null;
+  period_end: string | null;
+  created_at: string;
+  created_by_name: string | null;
 }
 
 /** Bucket PRIVADO das fotos das ocorrências (visualização por link assinado). */
@@ -77,6 +102,8 @@ export interface FeedbackInput {
   responded_on: string;
   viewed: boolean | null;
   viewed_on: string;
+  /** Só ao registrar a partir de uma linha do Feedz. */
+  feedz?: FeedzLinkInput | null;
 }
 
 /** Áreas do Registro (mesma grafia das outras telas do RH; Marketing e Comercial à parte). */

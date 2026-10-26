@@ -12,6 +12,7 @@ import {
   type FeedbackInput,
   type FeedbackPerson,
   type FeedbackPhoto,
+  type FeedzImportLog,
   type GoodPracticeFeedback,
 } from "./types";
 
@@ -19,7 +20,7 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabas
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
 const FEEDBACK_SELECT =
-  "id, occurred_on, sent_on, employee_id, employee_name, is_team, manager_employee_id, manager_name, area, category, description, manager_action, responded_on, viewed, viewed_on, source, created_at, updated_at, creator:users!hr_good_practice_feedbacks_created_by_fkey(name), photos:hr_good_practice_feedback_photos(count)";
+  "id, occurred_on, sent_on, employee_id, employee_name, is_team, manager_employee_id, manager_name, area, category, description, manager_action, responded_on, viewed, viewed_on, source, created_at, updated_at, feedz_key, feedz_sent_at, feedz_viewed_at, creator:users!hr_good_practice_feedbacks_created_by_fkey(name), photos:hr_good_practice_feedback_photos(count)";
 
 const PHOTO_SELECT = "id, feedback_id, storage_path, file_name, content_type, size_bytes, width, height, taken_at, created_at";
 const PHOTO_URL_SECONDS = 60 * 60;
@@ -82,6 +83,24 @@ const feedbackSchema = z
       ctx.addIssue({ code: "custom", path: ["viewed_on"], message: "Data de visualização só quando visualizado." });
     }
   });
+
+const feedzLinkSchema = z.object({
+  key: z.string().trim().min(3).max(300),
+  sent_at: z.string().datetime({ offset: true }),
+  viewed_at: z.string().datetime({ offset: true }).nullable(),
+  message: z.string().max(20000),
+});
+
+/** Colunas do vínculo com a linha do Feedz. */
+function feedzColumns(link: z.infer<typeof feedzLinkSchema>) {
+  return {
+    feedz_key: link.key,
+    feedz_sent_at: link.sent_at,
+    feedz_viewed_at: link.viewed_at,
+    feedz_message: link.message,
+    feedz_synced_at: new Date().toISOString(),
+  };
+}
 
 function parseInput(input: unknown) {
   const parsed = feedbackSchema.safeParse(input);
@@ -222,11 +241,23 @@ export async function createFeedback(input: FeedbackInput): Promise<GoodPractice
   const manager = await requireHrManager();
   const db = createFeedbackAdminClient();
   const row = await toRow(db, input);
+  // Registrado a partir de uma linha do relatório do Feedz: guarda o vínculo.
+  const link = input.feedz ? feedzLinkSchema.safeParse(input.feedz) : null;
+  if (link && !link.success) throw new RhHttpError("Linha do Feedz inválida.", 400, "INVALID_INPUT");
   const { data, error } = await db
     .from("hr_good_practice_feedbacks")
-    .insert({ ...row, source: "sistema", created_by: manager.profileId, updated_by: manager.profileId })
+    .insert({
+      ...row,
+      ...(link?.success ? feedzColumns(link.data) : {}),
+      source: "sistema",
+      created_by: manager.profileId,
+      updated_by: manager.profileId,
+    })
     .select("id")
     .single();
+  if (error?.code === "23505") {
+    throw new RhHttpError("Essa linha do Feedz já está ligada a outro registro.", 409, "FEEDZ_TAKEN");
+  }
   if (error || !data) {
     console.error("[boas-praticas] criar:", error);
     throw new RhHttpError("Não foi possível registrar o feedback.", 500, "INSERT_FAILED");
@@ -399,4 +430,138 @@ export async function deletePhoto(feedbackId: string, photoId: string): Promise<
   if (storageError) console.error("[boas-praticas] remove arquivo da foto:", storageError);
   const { error: deleteError } = await db.from("hr_good_practice_feedback_photos").delete().eq("id", photoId);
   if (deleteError) throw new RhHttpError("Não foi possível excluir a foto.", 500, "DELETE_FAILED");
+}
+
+/* ------------------------------------------------------ importação do Feedz */
+
+const IMPORT_SELECT =
+  "id, file_name, rows_total, rows_linked, rows_updated, rows_unmatched, period_start, period_end, created_at, creator:users!hr_good_practice_feedz_imports_created_by_fkey(name)";
+
+type ImportRow = Omit<FeedzImportLog, "created_by_name"> & { creator: { name: string } | null };
+
+function toImportLog(row: ImportRow): FeedzImportLog {
+  const { creator, ...rest } = row;
+  return { ...rest, created_by_name: creator?.name ?? null };
+}
+
+const feedzApplySchema = z.object({
+  file_name: z.string().trim().min(1).max(255),
+  rows_total: z.number().int().min(0).max(5000),
+  rows_unmatched: z.number().int().min(0).max(5000),
+  links: z
+    .array(feedzLinkSchema.extend({ feedback_id: uuid }))
+    .max(5000),
+});
+
+export async function latestFeedzImport(): Promise<FeedzImportLog | null> {
+  await requireHrManager();
+  const db = createFeedbackAdminClient();
+  const { data, error } = await db
+    .from("hr_good_practice_feedz_imports")
+    .select(IMPORT_SELECT)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error("[boas-praticas] última importação:", error);
+    return null;
+  }
+  return data ? toImportLog(data as unknown as ImportRow) : null;
+}
+
+/**
+ * Liga as linhas escolhidas na prévia aos registros e atualiza a
+ * visualização. A mudança é recalculada aqui com a mesma regra da prévia
+ * (nunca rebaixa "visto" para "não visto").
+ */
+export async function applyFeedzImport(input: unknown): Promise<{ items: GoodPracticeFeedback[]; log: FeedzImportLog }> {
+  const manager = await requireHrManager();
+  const db = createFeedbackAdminClient();
+  const value = parsePhotoInput(feedzApplySchema, input);
+  const ids = [...new Set(value.links.map((link) => link.feedback_id))];
+  if (ids.length !== value.links.length) {
+    throw new RhHttpError("Duas linhas do Feedz apontam para o mesmo registro.", 400, "INVALID_INPUT");
+  }
+  const keys = value.links.map((link) => link.key);
+  if (new Set(keys).size !== keys.length) {
+    throw new RhHttpError("A mesma linha do Feedz apareceu duas vezes.", 400, "INVALID_INPUT");
+  }
+
+  const [{ data: targets, error }, { data: holders }] = await Promise.all([
+    ids.length
+      ? db.from("hr_good_practice_feedbacks").select("id, viewed, viewed_on, feedz_key").in("id", ids)
+      : Promise.resolve({ data: [], error: null }),
+    keys.length
+      ? db.from("hr_good_practice_feedbacks").select("id, feedz_key").in("feedz_key", keys)
+      : Promise.resolve({ data: [] }),
+  ]);
+  if (error) throw new RhHttpError("Falha ao carregar os registros.", 500, "QUERY_FAILED");
+  const byId = new Map((targets ?? []).map((row) => [row.id as string, row]));
+  const keyOwner = new Map((holders ?? []).map((row) => [row.feedz_key as string, row.id as string]));
+
+  let updated = 0;
+  const touched: string[] = [];
+  for (const link of value.links) {
+    const target = byId.get(link.feedback_id);
+    if (!target) continue;
+    const owner = keyOwner.get(link.key);
+    if (owner && owner !== link.feedback_id) continue;
+    const viewedOn = link.viewed_at ? link.viewed_at.slice(0, 10) : null;
+    const visibility =
+      link.viewed_at
+        ? target.viewed === true && target.viewed_on === viewedOn
+          ? {}
+          : { viewed: true, viewed_on: viewedOn }
+        : target.viewed === null
+          ? { viewed: false, viewed_on: null }
+          : {};
+    const { error: updateError } = await db
+      .from("hr_good_practice_feedbacks")
+      .update({ ...visibility, ...feedzColumns(link), updated_by: manager.profileId })
+      .eq("id", link.feedback_id);
+    if (updateError) {
+      console.error("[boas-praticas] importação do Feedz:", updateError);
+      continue;
+    }
+    touched.push(link.feedback_id);
+    if (Object.keys(visibility).length) updated += 1;
+  }
+
+  const sentDates = value.links.map((link) => link.sent_at.slice(0, 10)).sort();
+  const { data: logRow, error: logError } = await db
+    .from("hr_good_practice_feedz_imports")
+    .insert({
+      file_name: value.file_name,
+      rows_total: value.rows_total,
+      rows_linked: touched.length,
+      rows_updated: updated,
+      rows_unmatched: value.rows_unmatched,
+      period_start: sentDates[0] ?? null,
+      period_end: sentDates[sentDates.length - 1] ?? null,
+      created_by: manager.profileId,
+    })
+    .select(IMPORT_SELECT)
+    .single();
+  if (logError || !logRow) {
+    console.error("[boas-praticas] histórico da importação:", logError);
+    throw new RhHttpError("A visualização foi atualizada, mas o histórico da importação falhou.", 500, "LOG_FAILED");
+  }
+
+  const items: GoodPracticeFeedback[] = [];
+  if (touched.length) {
+    const { data } = await db.from("hr_good_practice_feedbacks").select(FEEDBACK_SELECT).in("id", touched);
+    for (const row of data ?? []) items.push(toFeedback(row as unknown as FeedbackRow));
+  }
+  return { items, log: toImportLog(logRow as unknown as ImportRow) };
+}
+
+/** Mensagem que foi enviada ao gestor pelo Feedz, quando o registro está ligado a uma linha do relatório. */
+export async function feedzMessage(feedbackId: string): Promise<{ message: string | null }> {
+  await requireHrManager();
+  const db = createFeedbackAdminClient();
+  parsePhotoInput(uuid, feedbackId);
+  const { data, error } = await db.from("hr_good_practice_feedbacks").select("feedz_message").eq("id", feedbackId).maybeSingle();
+  if (error) throw new RhHttpError("Falha ao carregar a mensagem do Feedz.", 500, "QUERY_FAILED");
+  if (!data) throw new RhHttpError("Feedback não encontrado.", 404, "NOT_FOUND");
+  return { message: (data.feedz_message as string | null) ?? null };
 }

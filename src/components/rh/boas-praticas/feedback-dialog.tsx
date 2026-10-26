@@ -7,6 +7,7 @@ import {
   CircleDashed,
   Eye,
   EyeOff,
+  FileText,
   Hourglass,
   Loader2,
   PencilLine,
@@ -31,7 +32,7 @@ import {
   type GoodPracticeFeedback,
 } from "@/lib/rh/boas-praticas/types";
 import { cn } from "@/lib/utils";
-import { FlowStatusBadge, formatDate, formatDayLabel } from "./feedback-badges";
+import { FlowStatusBadge, formatDate, formatDayLabel, formatTimeSP, isoDateSP } from "./feedback-badges";
 import {
   emptyFeedbackInput,
   FeedbackForm,
@@ -89,6 +90,50 @@ function longDate(iso: string): string {
   return `${formatDate(iso)} · ${weekday}`;
 }
 
+/** Mensagem que foi ao gestor pelo Feedz, carregada só quando o RH pede. */
+function FeedzMessage({ feedbackId }: { feedbackId: string }) {
+  const [state, setState] = useState<{ open: boolean; loading: boolean; text: string | null; error: string | null }>({
+    open: false,
+    loading: false,
+    text: null,
+    error: null,
+  });
+
+  async function toggle() {
+    if (state.open) return setState((current) => ({ ...current, open: false }));
+    if (state.text !== null) return setState((current) => ({ ...current, open: true }));
+    setState((current) => ({ ...current, open: true, loading: true, error: null }));
+    try {
+      const response = await fetch(`/api/rh/boas-praticas/${feedbackId}/feedz`);
+      const data = (await response.json().catch(() => ({}))) as { message?: string | null; error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Não foi possível carregar a mensagem.");
+      // O Feedz exporta o texto quebrado a cada ~70 caracteres: vira um parágrafo só.
+      setState({ open: true, loading: false, text: (data.message ?? "").replace(/\s*\n\s*/g, " ").trim(), error: null });
+    } catch (cause) {
+      setState({ open: true, loading: false, text: null, error: cause instanceof Error ? cause.message : "Não foi possível carregar a mensagem." });
+    }
+  }
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => void toggle()}
+        aria-expanded={state.open}
+        className="inline-flex items-center gap-1.5 text-xs font-medium text-[#285f7a] hover:underline focus-visible:underline focus-visible:outline-none"
+      >
+        <FileText className="size-3.5" aria-hidden />
+        {state.open ? "Esconder a mensagem enviada" : "Ver a mensagem enviada pelo Feedz"}
+      </button>
+      {state.open && (
+        <div className="feedz-message mt-2 max-h-56 overflow-y-auto rounded-md bg-[#f2f8f9] px-3 py-2 text-xs leading-5 text-foreground">
+          {state.loading ? "Carregando…" : state.error ?? state.text ?? ""}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FeedbackDetail({
   item,
   items,
@@ -133,16 +178,31 @@ function FeedbackDetail({
         <h3 className="text-sm font-semibold text-foreground">Linha do tempo</h3>
         <ol>
           <TimelineStep icon={CalendarClock} tone="done" title="Ocorrência" date={longDate(item.occurred_on)} />
-          <TimelineStep icon={Send} tone="done" title="Feedback enviado ao gestor" date={longDate(item.sent_on)}>
+          <TimelineStep
+            icon={Send}
+            tone="done"
+            title={item.feedz_sent_at ? "Feedback enviado ao gestor pelo Feedz" : "Feedback enviado ao gestor"}
+            date={item.feedz_sent_at ? `${longDate(item.sent_on)} · ${formatTimeSP(item.feedz_sent_at)}` : longDate(item.sent_on)}
+          >
             <PersonLine person={manager} subtitle={manager.person?.position ?? undefined} size="sm" className="text-foreground" />
+            {item.feedz_key && <FeedzMessage feedbackId={item.id} />}
           </TimelineStep>
           {item.viewed === true ? (
-            <TimelineStep icon={Eye} tone="done" title="Visualizado no Feedz" date={item.viewed_on ? longDate(item.viewed_on) : null} />
+            <TimelineStep
+              icon={Eye}
+              tone="done"
+              title="Visualizado no Feedz"
+              date={
+                item.viewed_on
+                  ? `${longDate(item.viewed_on)}${item.feedz_viewed_at && isoDateSP(item.feedz_viewed_at) === item.viewed_on ? ` · ${formatTimeSP(item.feedz_viewed_at)}` : ""}`
+                  : null
+              }
+            />
           ) : item.viewed === false ? (
             <TimelineStep icon={EyeOff} tone="warning" title="Não visualizado no Feedz" />
           ) : (
             <TimelineStep icon={CircleDashed} tone="muted" title="Sem dado do Feedz">
-              Lance a visualização quando sair a exportação do Feedz.
+              Importe o relatório do Feedz para preencher a visualização.
             </TimelineStep>
           )}
           {item.responded_on ? (
@@ -234,6 +294,7 @@ function DetailHeader({ item }: { item: GoodPracticeFeedback }) {
 
 export function FeedbackDialog({
   item: initialItem,
+  prefill = null,
   people,
   items,
   onClose,
@@ -242,6 +303,8 @@ export function FeedbackDialog({
 }: {
   /** null = novo registro. */
   item: GoodPracticeFeedback | null;
+  /** Novo registro já preenchido (a partir de uma linha do Feedz). */
+  prefill?: FeedbackInput | null;
   people: FeedbackPerson[];
   items: GoodPracticeFeedback[];
   onClose: () => void;
@@ -250,7 +313,9 @@ export function FeedbackDialog({
 }) {
   const [item, setItem] = useState(initialItem);
   const [mode, setMode] = useState<"view" | "edit">(initialItem ? "view" : "edit");
-  const [form, setForm] = useState<FeedbackInput>(() => (initialItem ? feedbackToInput(initialItem) : emptyFeedbackInput()));
+  const [form, setForm] = useState<FeedbackInput>(() =>
+    initialItem ? feedbackToInput(initialItem) : (prefill ?? emptyFeedbackInput())
+  );
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -429,7 +494,11 @@ export function FeedbackDialog({
         ) : (
           <DialogHeader className="gap-1 border-b border-[#e6eef0] px-6 py-5 pr-14 text-left">
             <DialogTitle className="text-lg">{item ? "Editar feedback" : "Registrar feedback"}</DialogTitle>
-            <DialogDescription>Fica só no registro do RH. Nada é enviado ao colaborador nem ao gestor a partir daqui.</DialogDescription>
+            <DialogDescription>
+              {!item && form.feedz
+                ? "Preenchido com a linha do relatório do Feedz: confira o colaborador, escolha a categoria e salve."
+                : "Fica só no registro do RH. Nada é enviado ao colaborador nem ao gestor a partir daqui."}
+            </DialogDescription>
           </DialogHeader>
         )}
 

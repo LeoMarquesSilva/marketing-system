@@ -30,10 +30,11 @@ import {
   MONTH_LABELS,
   MONTH_SHORT,
   type FeedbackPerson,
+  type FeedzImportLog,
   type GoodPracticeFeedback,
 } from "@/lib/rh/boas-praticas/types";
 import { cn } from "@/lib/utils";
-import { BAND_STYLE, BandBadge, dashIfZero, formatDate, formatPercent } from "./feedback-badges";
+import { BAND_STYLE, BandBadge, dashIfZero, formatDate, formatPercent, isoDateSP } from "./feedback-badges";
 import { AreaChip, AreaIconTile, CategoryIcon, PersonAvatar, usePeopleIndex } from "./feedback-visuals";
 
 const BAND_GUIDANCE = {
@@ -241,7 +242,15 @@ function Stat({
   );
 }
 
-function MonthSummaryBand({ summary, month }: { summary: MonthSummary; month: MonthRef }) {
+function MonthSummaryBand({
+  summary,
+  month,
+  lastImport,
+}: {
+  summary: MonthSummary;
+  month: MonthRef;
+  lastImport: FeedzImportLog | null;
+}) {
   const previousLabel = MONTH_LABELS[previousMonth(month).month - 1].toLowerCase();
   const respondedShare = summary.total ? summary.responded / summary.total : 0;
   const alertAreas = summary.areas.filter((row) => row.band === "acionamento" || row.band === "atencao");
@@ -274,7 +283,12 @@ function MonthSummaryBand({ summary, month }: { summary: MonthSummary; month: Mo
           >
             {summary.viewedBase
               ? `${summary.viewed} de ${summary.viewedBase} com dado · ${plural(summary.notViewed, "não visto", "não vistos")}`
-              : "Exportação do Feedz ainda não lançada"}
+              : "Importe o relatório do Feedz"}
+            {lastImport && (
+              <span className="mt-1 block" title={`${lastImport.file_name} · ${lastImport.rows_total} linhas`}>
+                Feedz importado em {formatDate(isoDateSP(lastImport.created_at))}
+              </span>
+            )}
           </Stat>
           <Stat
             icon={MessageSquareReply}
@@ -709,11 +723,13 @@ function RulesNote() {
 export function FeedbackDashboard({
   items,
   month,
+  lastImport,
   onMonthChange,
   onOpenRecords,
 }: {
   items: GoodPracticeFeedback[];
   month: MonthRef;
+  lastImport: FeedzImportLog | null;
   onMonthChange: (month: MonthRef) => void;
   onOpenRecords: () => void;
 }) {
@@ -741,7 +757,7 @@ export function FeedbackDashboard({
             Ver os {summary.total} registros do mês
           </Button>
         </div>
-        <MonthSummaryBand summary={summary} month={month} />
+        <MonthSummaryBand summary={summary} month={month} lastImport={lastImport} />
       </div>
 
       <Group title="Onde aconteceu" description={`Áreas e tipos de feedback de ${monthName.toLowerCase()}, com o mês anterior como referência.`}>

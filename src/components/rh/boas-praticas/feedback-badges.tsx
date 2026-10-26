@@ -81,6 +81,16 @@ export function formatDayLabel(iso: string): { day: string; month: string; weekd
   return { day: String(day).padStart(2, "0"), month: MONTH_ABBR[month - 1], weekday: WEEKDAY[weekday] };
 }
 
+/** Hora (HH:mm) de um instante, no fuso do escritório. */
+export function formatTimeSP(iso: string): string {
+  return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }).format(new Date(iso));
+}
+
+/** Data (AAAA-MM-DD) de um instante, no fuso do escritório. */
+export function isoDateSP(iso: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date(iso));
+}
+
 export function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }

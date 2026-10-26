@@ -34,6 +34,9 @@ function feedback(overrides: Partial<GoodPracticeFeedback>): GoodPracticeFeedbac
     updated_at: "2026-10-01T12:00:00Z",
     created_by_name: null,
     photo_count: 0,
+    feedz_key: null,
+    feedz_sent_at: null,
+    feedz_viewed_at: null,
     ...overrides,
   };
 }
