@@ -40,8 +40,8 @@ import { PhoneInput } from "@/components/ui/phone-input";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import { KpiCard } from "@/components/rh/kpi-card";
 import { ColaboradoresTab, isEmployeeFichaStatus } from "@/components/rh/registration/colaboradores-tab";
-import { EmployeeRegistrationSheet } from "@/components/rh/registration/employee-registration-sheet";
-import { RegistrationReviewSheet } from "@/components/rh/registration/registration-review-sheet";
+import { EmployeeRegistrationDialog } from "@/components/rh/registration/employee-registration-dialog";
+import { RegistrationReviewDialog } from "@/components/rh/registration/registration-review-dialog";
 import { RegistrationStatusBadge } from "@/components/rh/registration/registration-status-badge";
 import {
   buildRegistrationMessage,
@@ -152,7 +152,7 @@ export function FichasCadastraisClient({
     if (statusParam) setTab("colaboradores");
   }
   const [selectedId, setSelectedId] = useState<string | null>(searchParams.get("ficha"));
-  const [employeeSheetId, setEmployeeSheetId] = useState<string | null>(null);
+  const [employeeDialogId, setEmployeeDialogId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [created, setCreated] = useState<RegistrationDetail | null>(null);
   const [selfUpdateOpen, setSelfUpdateOpen] = useState(false);
@@ -235,7 +235,7 @@ export function FichasCadastraisClient({
 
   function openEmployee(row: EmployeeRegistrationRow) {
     if (row.formId) openForm(row.formId);
-    else setEmployeeSheetId(row.employeeId);
+    else setEmployeeDialogId(row.employeeId);
   }
 
   return (
@@ -356,9 +356,9 @@ export function FichasCadastraisClient({
 
       <SelfUpdateDialog open={selfUpdateOpen} onOpenChange={setSelfUpdateOpen} pendingEmails={pendingEmails} />
 
-      <EmployeeRegistrationSheet employeeId={employeeSheetId} onOpenChange={(open) => !open && setEmployeeSheetId(null)} />
+      <EmployeeRegistrationDialog employeeId={employeeDialogId} onOpenChange={(open) => !open && setEmployeeDialogId(null)} />
 
-      <RegistrationReviewSheet
+      <RegistrationReviewDialog
         formId={selectedId}
         employees={linkableEmployees}
         onOpenChange={(open) => !open && openForm(null)}

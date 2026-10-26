@@ -12,12 +12,13 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(request: Request) {
   try {
-    const body = (await request.json().catch(() => ({}))) as { employeeIds?: unknown };
+    const body = (await request.json().catch(() => ({}))) as { employeeIds?: unknown; filters?: unknown };
     const employeeIds = Array.isArray(body.employeeIds)
       ? body.employeeIds.filter((id): id is string => typeof id === "string" && id.length > 0).slice(0, 2000)
       : undefined;
     const records = await loadEmployeeRegistrationsForExport(employeeIds);
-    const data = await buildRegistrationsWorkbook(records);
+    const filters = typeof body.filters === "string" ? body.filters.slice(0, 500) : "";
+    const data = await buildRegistrationsWorkbook(records, new Date(), filters);
     return new NextResponse(data, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

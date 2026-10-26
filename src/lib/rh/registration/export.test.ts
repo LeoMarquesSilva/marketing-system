@@ -22,6 +22,13 @@ const ROW: EmployeeRegistrationRow = {
   requiredCount: 24,
   filledCount: 22,
   missingFields: ["bankName", "bankAgency"],
+  gender: "feminino",
+  raceColor: "",
+  age: 34,
+  residenceCity: "Campinas",
+  residenceState: "SP",
+  dietaryRestrictions: [],
+  oab: "sim",
 };
 
 function column(header: string): number {

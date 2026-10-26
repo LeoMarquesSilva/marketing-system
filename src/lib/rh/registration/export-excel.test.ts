@@ -27,6 +27,13 @@ const ROW: EmployeeRegistrationRow = {
   requiredCount: 26,
   filledCount: 4,
   missingFields: ["parentName"],
+  gender: "feminino",
+  raceColor: "",
+  age: 34,
+  residenceCity: "Campinas",
+  residenceState: "SP",
+  dietaryRestrictions: [],
+  oab: "sim",
 };
 
 describe("buildRegistrationsWorkbook", () => {

@@ -118,6 +118,16 @@ export interface EmployeeRegistrationRow {
   requiredCount: number;
   filledCount: number;
   missingFields: RegistrationField[];
+  /** Perfil (melhor dado conhecido), para os filtros e o perfil da equipe. "" = não informado. */
+  gender: string;
+  raceColor: string;
+  /** Idade em anos completos; null quando não há data de nascimento. */
+  age: number | null;
+  residenceCity: string;
+  residenceState: string;
+  dietaryRestrictions: string[];
+  /** "sim" | "nao" | "" (não informado) | "na" (vínculo sem a pergunta da OAB). */
+  oab: string;
 }
 
 export interface EmployeeRegistrationDetail {

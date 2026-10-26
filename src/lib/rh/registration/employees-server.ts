@@ -22,7 +22,8 @@ import {
   type RegistrationOrigin,
   type RegistrationStatus,
 } from "./types";
-import { normalizeRegistrationAnswers, registrationProgress } from "./validation";
+import { yearsSince } from "./people-filters";
+import { normalizeRegistrationAnswers, OAB_KINDS, registrationProgress, resolveHasOab } from "./validation";
 
 /**
  * Visão do RH sobre a ficha de cada colaborador: quem já enviou, o que falta e
@@ -144,6 +145,13 @@ async function loadRecords(admin: SupabaseClient, employeeIds?: string[]): Promi
       requiredCount: progress.required.length,
       filledCount: progress.filled,
       missingFields: progress.missing,
+      gender: answers.gender,
+      raceColor: answers.raceColor,
+      age: yearsSince(answers.birthDate),
+      residenceCity: answers.city,
+      residenceState: answers.state,
+      dietaryRestrictions: answers.dietaryRestrictions,
+      oab: OAB_KINDS.has(kind) ? resolveHasOab(answers) : "na",
     };
     const payroll = payrollByEmployee.get(employee.id);
     const personalBank = payroll ? personalBankFromDeclared(payroll.previous_declared, payroll) : null;

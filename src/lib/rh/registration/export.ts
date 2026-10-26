@@ -88,6 +88,7 @@ export const EXPORT_COLUMNS: ExportColumn[] = [
   // Dados pessoais
   { group: "Dados pessoais", header: "Nome completo", width: 32, value: answer("fullName") },
   { group: "Dados pessoais", header: "Nascimento", width: 12, value: (r) => formatDateBR(r.answers.birthDate) },
+  { group: "Dados pessoais", header: "Idade", width: 7, value: (r) => (r.row.age === null ? "" : String(r.row.age)) },
   { group: "Dados pessoais", header: "Gênero", width: 14, value: (r) => optionLabel(GENDER_OPTIONS, r.answers.gender) },
   { group: "Dados pessoais", header: "Nome da mãe ou do pai", width: 30, value: answer("parentName") },
   { group: "Dados pessoais", header: "RG", width: 15, value: answer("rg") },

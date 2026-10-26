@@ -3,17 +3,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { Check, Copy, Loader2, Mail, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { EmployeeAvatar } from "@/components/ferias/employee-avatar";
 import { RegistrationAnswersView } from "@/components/rh/registration/registration-answers-view";
 import { EmployeeFichaBadge, FichaProgress } from "@/components/rh/registration/employee-ficha-badge";
 import { buildSelfUpdateMessage, whatsappUrl } from "@/lib/rh/registration/client";
+import { AreaIcon, getAreaIconStyle } from "@/lib/area-icons";
 import { REGISTRATION_FIELD_LABEL, type EmployeeRegistrationDetail } from "@/lib/rh/registration/types";
+import { cn } from "@/lib/utils";
 
 /**
  * Painel do colaborador que ainda não enviou a ficha: o que o escritório já
  * sabe (qualificação e VIOS), o que falta e o convite para atualizar.
  */
-export function EmployeeRegistrationSheet({
+export function EmployeeRegistrationDialog({
   employeeId,
   onOpenChange,
 }: {
@@ -58,34 +61,53 @@ export function EmployeeRegistrationSheet({
   }, [message]);
 
   return (
-    <Sheet open={!!employeeId} onOpenChange={onOpenChange}>
-      <SheetContent className="max-w-[720px]">
+    <Dialog open={!!employeeId} onOpenChange={onOpenChange}>
+      <DialogContent className="flex max-h-[90dvh] flex-col gap-0 p-0 sm:max-w-2xl">
         {!current ? (
           <>
-            <SheetHeader>
-              <SheetTitle>Ficha do colaborador</SheetTitle>
-              <SheetDescription>{error ?? "Carregando…"}</SheetDescription>
-            </SheetHeader>
+            <DialogHeader className="border-b border-[#eef4f5] px-6 pb-4 pr-12 pt-6 text-left">
+              <DialogTitle>Ficha do colaborador</DialogTitle>
+              <DialogDescription>{error ?? "Carregando…"}</DialogDescription>
+            </DialogHeader>
             {!error && (
-              <div className="flex flex-1 items-center justify-center">
+              <div className="flex items-center justify-center py-16">
                 <Loader2 className="size-6 animate-spin text-muted-foreground" />
               </div>
             )}
           </>
         ) : (
           <>
-            <SheetHeader>
-              <div className="flex flex-wrap items-center gap-2">
-                <SheetTitle>{current.row.fullName}</SheetTitle>
-                <EmployeeFichaBadge status={current.row.status} />
+            <DialogHeader className="border-b border-[#eef4f5] px-6 pb-4 pr-12 pt-6 text-left">
+              <div className="flex items-center gap-3">
+                <EmployeeAvatar
+                  name={current.row.fullName}
+                  avatarUrl={current.row.avatarUrl}
+                  className="h-11 w-11"
+                />
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <DialogTitle>{current.row.fullName}</DialogTitle>
+                    <EmployeeFichaBadge status={current.row.status} />
+                  </div>
+                  <DialogDescription className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                    {current.row.department && (
+                      <span
+                        className={cn(
+                          "flex h-4 w-4 shrink-0 items-center justify-center rounded ring-1",
+                          getAreaIconStyle(current.row.department)
+                        )}
+                      >
+                        <AreaIcon area={current.row.department} className="h-2.5 w-2.5" />
+                      </span>
+                    )}
+                    {[current.row.vinculoLabel, current.row.position, current.row.department].filter(Boolean).join(" · ")}
+                  </DialogDescription>
+                </div>
               </div>
-              <SheetDescription>
-                {[current.row.vinculoLabel, current.row.position, current.row.department].filter(Boolean).join(" · ")}
-              </SheetDescription>
-            </SheetHeader>
+            </DialogHeader>
 
-            <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
-              <section className="space-y-3 rounded-xl border border-border/70 bg-card p-4">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+              <section className="space-y-3 rounded-lg border border-border/70 bg-card p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <h3 className="text-sm font-semibold text-foreground">Preenchimento</h3>
                   <FichaProgress filled={current.row.filledCount} required={current.row.requiredCount} />
@@ -132,7 +154,7 @@ export function EmployeeRegistrationSheet({
             </div>
           </>
         )}
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }

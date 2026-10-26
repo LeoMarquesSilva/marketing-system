@@ -33,7 +33,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { RegistrationAnswersView } from "@/components/rh/registration/registration-answers-view";
 import { RegistrationFormFields } from "@/components/rh/registration/registration-form-fields";
 import { RegistrationStatusBadge } from "@/components/rh/registration/registration-status-badge";
@@ -84,7 +83,7 @@ function QualificationSyncNotice({
   if (!preview.exists) {
     if (kind !== "socio_servico") return null;
     return (
-      <p className="rounded-xl border border-border/70 bg-card px-4 py-3 text-xs text-muted-foreground">
+      <p className="rounded-lg border border-border/70 bg-card px-4 py-3 text-xs text-muted-foreground">
         {firstName} ainda não tem qualificação jurídica. Ao aprovar, ela é criada com os dados da ficha; estado
         civil e profissão ficam pendentes.
       </p>
@@ -92,14 +91,14 @@ function QualificationSyncNotice({
   }
   if (preview.changes.length === 0) {
     return (
-      <p className="rounded-xl border border-border/70 bg-card px-4 py-3 text-xs text-muted-foreground">
+      <p className="rounded-lg border border-border/70 bg-card px-4 py-3 text-xs text-muted-foreground">
         A qualificação jurídica de {firstName} já tem o mesmo endereço, contato e RG da ficha. Aprovar não muda nada
         nela.
       </p>
     );
   }
   return (
-    <section className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+    <section className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/60 p-4">
       <div>
         <h3 className="text-sm font-semibold text-foreground">Muda na qualificação jurídica</h3>
         <p className="mt-0.5 text-xs text-muted-foreground">
@@ -146,7 +145,7 @@ function useCopy() {
   return { copied, copy };
 }
 
-export function RegistrationReviewSheet({
+export function RegistrationReviewDialog({
   formId,
   employees,
   onOpenChange,
@@ -240,40 +239,40 @@ export function RegistrationReviewSheet({
   );
 
   return (
-    <Sheet open={!!formId} onOpenChange={onOpenChange}>
-      <SheetContent className="max-w-[760px]">
+    <Dialog open={!!formId} onOpenChange={onOpenChange}>
+      <DialogContent className="flex max-h-[90dvh] flex-col gap-0 p-0 sm:max-w-2xl">
         {!form ? (
           <>
-            <SheetHeader>
-              <SheetTitle>Ficha cadastral</SheetTitle>
-              <SheetDescription>{loadError ?? "Carregando…"}</SheetDescription>
-            </SheetHeader>
+            <DialogHeader className="border-b border-[#eef4f5] px-6 pb-4 pr-12 pt-6 text-left">
+              <DialogTitle>Ficha cadastral</DialogTitle>
+              <DialogDescription>{loadError ?? "Carregando…"}</DialogDescription>
+            </DialogHeader>
             {!loadError && (
-              <div className="flex flex-1 items-center justify-center">
+              <div className="flex items-center justify-center py-16">
                 <Loader2 className="size-6 animate-spin text-muted-foreground" />
               </div>
             )}
           </>
         ) : (
           <>
-            <SheetHeader>
+            <DialogHeader className="border-b border-[#eef4f5] px-6 pb-4 pr-12 pt-6 text-left">
               <div className="flex flex-wrap items-center gap-2">
-                <SheetTitle>{form.declared_name ?? form.invitee_name}</SheetTitle>
+                <DialogTitle>{form.declared_name ?? form.invitee_name}</DialogTitle>
                 <RegistrationStatusBadge status={form.status} expired={expired} />
               </div>
-              <SheetDescription>
+              <DialogDescription>
                 {REGISTRATION_KIND_LABEL[form.employment_kind]} ·{" "}
                 {form.origin === "atualizacao"
                   ? "atualização feita pelo colaborador, com login"
                   : `convite de ${formatDate(form.created_at)}`}
                 {form.expected_admission_date && ` · admissão prevista ${formatDate(form.expected_admission_date)}`}
                 {form.submitted_at && ` · enviada ${formatDate(form.submitted_at, true)}`}
-              </SheetDescription>
-            </SheetHeader>
+              </DialogDescription>
+            </DialogHeader>
 
-            <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
               {form.status === "pendente" && selfService && (
-                <section className="space-y-3 rounded-xl border border-border/70 bg-card p-4">
+                <section className="space-y-3 rounded-lg border border-border/70 bg-card p-4">
                   <div>
                     <h3 className="text-sm font-semibold text-foreground">Aguardando {firstName}</h3>
                     <p className="mt-0.5 text-xs text-muted-foreground">
@@ -294,7 +293,7 @@ export function RegistrationReviewSheet({
               )}
 
               {form.status === "pendente" && !selfService && (
-                <section className="space-y-3 rounded-xl border border-border/70 bg-card p-4">
+                <section className="space-y-3 rounded-lg border border-border/70 bg-card p-4">
                   <div>
                     <h3 className="text-sm font-semibold text-foreground">Link da ficha</h3>
                     <p className="mt-0.5 text-xs text-muted-foreground">
@@ -335,7 +334,7 @@ export function RegistrationReviewSheet({
               )}
 
               {form.status === "cancelada" && (
-                <p className="rounded-xl border border-border/70 bg-muted/50 p-4 text-sm text-muted-foreground">
+                <p className="rounded-lg border border-border/70 bg-muted/50 p-4 text-sm text-muted-foreground">
                   {selfService
                     ? `Ficha cancelada. Se ${firstName} enviar de novo por ${SELF_REGISTRATION_PATH}, uma nova ficha aparece aqui.`
                     : "Ficha cancelada. O link não funciona mais. Se precisar, reative com um novo link."}
@@ -343,7 +342,7 @@ export function RegistrationReviewSheet({
               )}
 
               {submitted && (
-                <section className="space-y-3 rounded-xl border border-border/70 bg-card p-4">
+                <section className="space-y-3 rounded-lg border border-border/70 bg-card p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="text-sm font-semibold text-foreground">Colaborador no VIOS</h3>
@@ -426,7 +425,7 @@ export function RegistrationReviewSheet({
               {submitted &&
                 (editing && draft ? (
                   <div className="space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-muted/60 px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/60 px-4 py-3">
                       <p className="text-sm text-foreground">Corrigindo a ficha</p>
                       <Select value={draftKind} onValueChange={(value) => setDraftKind(value as RegistrationKind)}>
                         <SelectTrigger className="w-48 bg-background">
@@ -563,7 +562,7 @@ export function RegistrationReviewSheet({
             </Dialog>
           </>
         )}
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }

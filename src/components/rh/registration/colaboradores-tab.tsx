@@ -1,9 +1,21 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, ChevronRight, Copy, Download, Loader2, Search, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Download,
+  Loader2,
+  PieChart,
+  Search,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -14,26 +26,41 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmployeeAvatar } from "@/components/ferias/employee-avatar";
 import { EmployeeFichaBadge, FichaProgress } from "@/components/rh/registration/employee-ficha-badge";
+import { AreaIcon, getAreaIconStyle } from "@/lib/area-icons";
 import { searchKey } from "@/lib/rh/registration/combo-search";
 import {
-  EMPLOYEE_FICHA_STATUS_LABEL,
+  applyPeopleFilters,
+  averageAge,
+  countActiveFilters,
+  filterLabel,
+  NOT_INFORMED,
+  PEOPLE_FILTERS,
+  peopleFilterOptions,
+  profileDistribution,
+  STATUS_ORDER,
+  type PeopleFilterKey,
+  type PeopleFilterSelection,
+} from "@/lib/rh/registration/people-filters";
+import {
   REGISTRATION_FIELD_LABEL,
   type EmployeeFichaStatus,
   type EmployeeRegistrationRow,
 } from "@/lib/rh/registration/types";
 import { cn } from "@/lib/utils";
 
-type StatusFilter = "all" | EmployeeFichaStatus;
 type SituationFilter = "ativos" | "inativos" | "all";
-type FillFilter = "all" | "completa" | "pendente";
 
-const STATUS_ORDER: EmployeeFichaStatus[] = ["sem_envio", "aguardando", "devolvida", "para_revisar", "aprovada"];
+/** Recortes do "Perfil da equipe" (como nos painéis de diversidade de RH). */
+const PROFILE_KEYS: { key: PeopleFilterKey; title: string }[] = [
+  { key: "gender", title: "Gênero" },
+  { key: "race", title: "Raça/cor" },
+  { key: "age", title: "Faixa etária" },
+  { key: "tenure", title: "Tempo de casa" },
+];
 
-const FILL_LABEL: Record<FillFilter, string> = {
-  all: "Todo preenchimento",
-  completa: "Completas",
-  pendente: "Com pendências",
-};
+export function isEmployeeFichaStatus(value: string | null): value is EmployeeFichaStatus {
+  return !!value && (STATUS_ORDER as string[]).includes(value);
+}
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -45,15 +72,15 @@ function formatDate(iso: string | null): string {
   }).format(new Date(iso));
 }
 
-function isComplete(row: EmployeeRegistrationRow): boolean {
-  return row.missingFields.length === 0;
+function percent(part: number, total: number): number {
+  return total ? Math.round((part / total) * 100) : 0;
 }
 
-async function downloadExport(employeeIds: string[]): Promise<string | null> {
+async function downloadExport(employeeIds: string[], filters: string): Promise<string | null> {
   const response = await fetch("/api/rh/fichas-cadastrais/exportar", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ employeeIds }),
+    body: JSON.stringify({ employeeIds, filters }),
   });
   if (!response.ok) {
     const data = (await response.json().catch(() => ({}))) as { error?: string };
@@ -71,14 +98,246 @@ async function downloadExport(employeeIds: string[]): Promise<string | null> {
   return null;
 }
 
-/**
- * Todos os colaboradores com a situação da ficha: quem não enviou, quem está
- * em revisão, o que falta. É também onde o RH exporta os dados cadastrais.
- */
-export function isEmployeeFichaStatus(value: string | null): value is EmployeeFichaStatus {
-  return !!value && (STATUS_ORDER as string[]).includes(value);
+/** Botão de filtro com menu de múltipla escolha e contagem por opção. */
+function FilterMenu({
+  filterKey,
+  label,
+  rows,
+  selection,
+  onToggle,
+  onClear,
+}: {
+  filterKey: PeopleFilterKey;
+  label: string;
+  rows: EmployeeRegistrationRow[];
+  selection: PeopleFilterSelection;
+  onToggle: (key: PeopleFilterKey, value: string) => void;
+  onClear: (key: PeopleFilterKey) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const selected = selection[filterKey] ?? [];
+  const options = useMemo(() => peopleFilterOptions(filterKey, rows, selection), [filterKey, rows, selection]);
+  const searchable = options.length > 8;
+  const visible = query
+    ? options.filter((option) => searchKey(option.label).includes(searchKey(query)))
+    : options;
+
+  return (
+    <Popover onOpenChange={(open) => !open && setQuery("")}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className={cn(
+            "h-8 gap-1.5 px-2.5 text-xs font-medium",
+            selected.length > 0 && "border-[#47cdd0] bg-[#e8f8f8] text-[#285f7a] hover:bg-[#dcf4f4]"
+          )}
+        >
+          {label}
+          {selected.length > 0 && (
+            <span className="rounded-full bg-[#347796] px-1.5 text-[11px] font-semibold leading-4 text-white tabular-nums">
+              {selected.length}
+            </span>
+          )}
+          <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 p-1.5">
+        {searchable && (
+          <div className="relative mb-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              autoFocus
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={`Buscar ${label.toLowerCase()}`}
+              className="h-8 pl-8 text-xs"
+            />
+          </div>
+        )}
+        <div className="max-h-72 overflow-y-auto" role="group" aria-label={label}>
+          {visible.length === 0 && <p className="px-2 py-3 text-xs text-muted-foreground">Nada encontrado.</p>}
+          {visible.map((option) => {
+            const active = selected.includes(option.value);
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={active}
+                onClick={() => onToggle(filterKey, option.value)}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+              >
+                <span
+                  className={cn(
+                    "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                    active ? "border-[#347796] bg-[#347796] text-white" : "border-input bg-white"
+                  )}
+                >
+                  {active && <Check className="h-3 w-3" />}
+                </span>
+                {filterKey === "area" && option.value !== NOT_INFORMED && (
+                  <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded ring-1", getAreaIconStyle(option.value))}>
+                    <AreaIcon area={option.value} className="h-3 w-3" />
+                  </span>
+                )}
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 truncate",
+                    option.value === NOT_INFORMED && "text-muted-foreground",
+                    option.count === 0 && !active && "text-muted-foreground"
+                  )}
+                >
+                  {option.label}
+                </span>
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{option.count}</span>
+              </button>
+            );
+          })}
+        </div>
+        {selected.length > 0 && (
+          <div className="mt-1 border-t pt-1">
+            <button
+              type="button"
+              onClick={() => onClear(filterKey)}
+              className="w-full rounded-md px-2 py-1.5 text-left text-xs font-medium text-[#285f7a] hover:bg-muted"
+            >
+              Limpar {label.toLowerCase()}
+            </button>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
 }
 
+/**
+ * Distribuição do que está filtrado (gênero, raça/cor, faixa etária, tempo de
+ * casa). Clicar numa barra filtra a lista por aquele grupo.
+ */
+function TeamProfile({
+  rows,
+  selection,
+  onToggle,
+}: {
+  rows: EmployeeRegistrationRow[];
+  selection: PeopleFilterSelection;
+  onToggle: (key: PeopleFilterKey, value: string) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  const total = rows.length;
+  const women = rows.filter((row) => row.gender === "feminino").length;
+  const blackOrBrown = rows.filter((row) => row.raceColor === "preta" || row.raceColor === "parda").length;
+  const genderMissing = rows.filter((row) => !row.gender).length;
+  const raceMissing = rows.filter((row) => !row.raceColor).length;
+  const age = averageAge(rows);
+
+  const highlights = [
+    `${total} ${total === 1 ? "pessoa" : "pessoas"}`,
+    age !== null ? `idade média ${age} anos` : null,
+    total ? `${percent(women, total)}% mulheres` : null,
+    total ? `${percent(blackOrBrown, total)}% pretas ou pardas` : null,
+  ].filter(Boolean);
+
+  return (
+    <section className="rounded-lg border border-[#dce9eb] bg-card shadow-sm">
+      <header className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="rounded-md bg-[#e8f8f8] p-1.5 text-[#285f7a]">
+            <PieChart className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-foreground">Perfil da equipe</h3>
+            <p className="truncate text-xs text-muted-foreground">{highlights.join(" · ")}</p>
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1 text-xs"
+          aria-expanded={open}
+          onClick={() => setOpen((current) => !current)}
+        >
+          {open ? "Ocultar" : "Mostrar"}
+          <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
+        </Button>
+      </header>
+
+      {open && (
+        <div className="border-t border-[#eef4f5]">
+          <div className="grid divide-y divide-[#eef4f5] sm:grid-cols-2 sm:divide-y-0 xl:grid-cols-4 xl:divide-x">
+            {PROFILE_KEYS.map(({ key, title }) => {
+              const buckets = profileDistribution(key, rows);
+              const selected = selection[key] ?? [];
+              return (
+                <div key={key} className="space-y-2 px-4 py-3.5">
+                  <h4 className="text-xs font-semibold text-muted-foreground">{title}</h4>
+                  {buckets.length === 0 && <p className="text-xs text-muted-foreground">Sem pessoas no recorte.</p>}
+                  <ul className="space-y-1">
+                    {buckets.map((bucket) => {
+                      const active = selected.includes(bucket.value);
+                      const missing = bucket.value === NOT_INFORMED;
+                      return (
+                        <li key={bucket.value}>
+                          <button
+                            type="button"
+                            aria-pressed={active}
+                            onClick={() => onToggle(key, bucket.value)}
+                            title={`Filtrar: ${title} — ${bucket.label}`}
+                            className={cn(
+                              "group w-full rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted/70",
+                              active && "bg-[#e8f8f8] hover:bg-[#dcf4f4]"
+                            )}
+                          >
+                            <span className="flex items-baseline justify-between gap-2 text-xs">
+                              <span className={cn("truncate", missing ? "text-muted-foreground" : "text-foreground", active && "font-semibold text-[#285f7a]")}>
+                                {bucket.label}
+                              </span>
+                              <span className="shrink-0 tabular-nums text-muted-foreground">
+                                {bucket.count} · {bucket.percent}%
+                              </span>
+                            </span>
+                            <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-muted">
+                              <span
+                                className={cn(
+                                  "block h-full rounded-full",
+                                  missing ? "bg-slate-300" : active ? "bg-[#347796]" : "bg-[#3e84a8]/70 group-hover:bg-[#3e84a8]"
+                                )}
+                                style={{ width: `${bucket.percent}%` }}
+                              />
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+          {(genderMissing > 0 || raceMissing > 0) && (
+            <p className="border-t border-[#eef4f5] px-4 py-2.5 text-xs text-muted-foreground">
+              {[
+                genderMissing ? `${genderMissing} sem gênero` : null,
+                raceMissing ? `${raceMissing} sem raça/cor` : null,
+              ]
+                .filter(Boolean)
+                .join(" e ")}{" "}
+              informados: os percentuais mudam conforme as fichas forem atualizadas.
+            </p>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Todos os colaboradores com a situação da ficha, filtros de perfil (gênero,
+ * raça/cor, idade, tempo de casa…) e a planilha do que estiver filtrado.
+ */
 export function ColaboradoresTab({
   rows,
   initialStatus = "all",
@@ -86,71 +345,75 @@ export function ColaboradoresTab({
 }: {
   rows: EmployeeRegistrationRow[];
   /** Filtro vindo do link (ex.: "Ver todas para revisar" no aviso do RH). */
-  initialStatus?: StatusFilter;
+  initialStatus?: "all" | EmployeeFichaStatus;
   /** Linha clicada: abre a ficha enviada (se houver) ou o painel do colaborador. */
   onOpenEmployee: (row: EmployeeRegistrationRow) => void;
 }) {
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<StatusFilter>(initialStatus);
   const [situation, setSituation] = useState<SituationFilter>("ativos");
-  const [fill, setFill] = useState<FillFilter>("all");
-  const [vinculo, setVinculo] = useState("all");
-  const [area, setArea] = useState("all");
+  const [selection, setSelection] = useState<PeopleFilterSelection>(
+    initialStatus === "all" ? {} : { status: [initialStatus] }
+  );
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const bySituation = useMemo(
-    () =>
-      rows.filter((row) =>
-        situation === "all" ? true : situation === "ativos" ? row.isActive : !row.isActive
-      ),
+  const scoped = useMemo(
+    () => rows.filter((row) => (situation === "all" ? true : situation === "ativos" ? row.isActive : !row.isActive)),
     [rows, situation]
   );
 
-  const vinculos = useMemo(
-    () => [...new Set(bySituation.map((row) => row.vinculoLabel))].sort((a, b) => a.localeCompare(b, "pt-BR")),
-    [bySituation]
-  );
-  const areas = useMemo(
-    () =>
-      [...new Set(bySituation.map((row) => row.department).filter((value): value is string => !!value))].sort(
-        (a, b) => a.localeCompare(b, "pt-BR")
-      ),
-    [bySituation]
-  );
-
-  const filtered = useMemo(() => {
+  const searched = useMemo(() => {
     const term = searchKey(search);
-    return bySituation.filter((row) => {
-      if (status !== "all" && row.status !== status) return false;
-      if (fill === "completa" && !isComplete(row)) return false;
-      if (fill === "pendente" && isComplete(row)) return false;
-      if (vinculo !== "all" && row.vinculoLabel !== vinculo) return false;
-      if (area !== "all" && row.department !== area) return false;
-      if (!term) return true;
-      return [row.fullName, row.email, row.position, row.department]
+    if (!term) return scoped;
+    return scoped.filter((row) =>
+      [row.fullName, row.email, row.position, row.department]
         .filter(Boolean)
-        .some((value) => searchKey(String(value)).includes(term));
-    });
-  }, [bySituation, status, fill, vinculo, area, search]);
+        .some((value) => searchKey(String(value)).includes(term))
+    );
+  }, [scoped, search]);
 
-  const statusCounts = useMemo(() => {
-    const counts = Object.fromEntries(STATUS_ORDER.map((key) => [key, 0])) as Record<EmployeeFichaStatus, number>;
-    for (const row of bySituation) counts[row.status] += 1;
-    return counts;
-  }, [bySituation]);
+  const filtered = useMemo(() => applyPeopleFilters(searched, selection), [searched, selection]);
 
-  const hasFilters =
-    !!search || status !== "all" || situation !== "ativos" || fill !== "all" || vinculo !== "all" || area !== "all";
+  const activeCount = countActiveFilters(selection);
+  const hasFilters = activeCount > 0 || !!search || situation !== "ativos";
   const emails = filtered.map((row) => row.email).filter((value): value is string => !!value);
+
+  function toggle(key: PeopleFilterKey, value: string) {
+    setSelection((current) => {
+      const values = current[key] ?? [];
+      const next = values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+      return { ...current, [key]: next };
+    });
+  }
+
+  function clear(key: PeopleFilterKey) {
+    setSelection((current) => ({ ...current, [key]: [] }));
+  }
+
+  function clearAll() {
+    setSelection({});
+    setSearch("");
+    setSituation("ativos");
+  }
+
+  /** "Gênero: Feminino; Área: Cível" — vai no cabeçalho da planilha. */
+  function describeFilters(): string {
+    const parts = PEOPLE_FILTERS.filter((def) => selection[def.key]?.length).map(
+      (def) => `${def.label}: ${(selection[def.key] ?? []).map((value) => filterLabel(def.key, value)).join(", ")}`
+    );
+    if (situation !== "ativos") parts.unshift(situation === "inativos" ? "Ex-colaboradores" : "Ativos e ex-colaboradores");
+    if (search.trim()) parts.push(`Busca: "${search.trim()}"`);
+    return parts.join("; ");
+  }
 
   async function handleExport() {
     setExporting(true);
     setExportError(null);
-    const error = await downloadExport(filtered.map((row) => row.employeeId)).catch(
-      () => "Sem conexão. Tente de novo."
-    );
+    const error = await downloadExport(
+      filtered.map((row) => row.employeeId),
+      describeFilters()
+    ).catch(() => "Sem conexão. Tente de novo.");
     setExporting(false);
     setExportError(error);
   }
@@ -167,7 +430,7 @@ export function ColaboradoresTab({
 
   return (
     <div className="space-y-4">
-      <div className="space-y-3">
+      <div className="space-y-2.5">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -178,19 +441,6 @@ export function ColaboradoresTab({
               className="h-9 pl-9 text-sm"
             />
           </div>
-          <Select value={status} onValueChange={(value) => setStatus(value as StatusFilter)}>
-            <SelectTrigger className="h-9 w-[200px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Ficha: todas</SelectItem>
-              {STATUS_ORDER.map((key) => (
-                <SelectItem key={key} value={key}>
-                  {EMPLOYEE_FICHA_STATUS_LABEL[key]} ({statusCounts[key]})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
           <Select value={situation} onValueChange={(value) => setSituation(value as SituationFilter)}>
             <SelectTrigger className="h-9 w-[160px] text-xs">
               <SelectValue />
@@ -201,24 +451,6 @@ export function ColaboradoresTab({
               <SelectItem value="all">Todos</SelectItem>
             </SelectContent>
           </Select>
-          {hasFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-9 gap-1.5 text-xs"
-              onClick={() => {
-                setSearch("");
-                setStatus("all");
-                setSituation("ativos");
-                setFill("all");
-                setVinculo("all");
-                setArea("all");
-              }}
-            >
-              <X className="h-3.5 w-3.5" />
-              Limpar
-            </Button>
-          )}
           <div className="ml-auto flex flex-wrap gap-2">
             <Button
               type="button"
@@ -246,73 +478,54 @@ export function ColaboradoresTab({
         </div>
         {exportError && <p className="text-sm text-destructive">{exportError}</p>}
 
-        <div className="flex flex-wrap gap-1.5">
-          {(Object.keys(FILL_LABEL) as FillFilter[]).map((key) => (
-            <Button
-              key={key}
-              type="button"
-              size="sm"
-              variant={fill === key ? "default" : "outline"}
-              className="h-8 rounded-full px-3 text-xs"
-              onClick={() => setFill(key)}
-            >
-              {FILL_LABEL[key]}
-            </Button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            Filtrar por
+          </span>
+          {PEOPLE_FILTERS.map((def) => (
+            <FilterMenu
+              key={def.key}
+              filterKey={def.key}
+              label={def.label}
+              rows={searched}
+              selection={selection}
+              onToggle={toggle}
+              onClear={clear}
+            />
           ))}
         </div>
 
-        {vinculos.length > 1 && (
-          <div className="flex flex-wrap gap-1.5">
-            <Button
-              type="button"
-              size="sm"
-              variant={vinculo === "all" ? "default" : "outline"}
-              className="h-8 rounded-full px-3 text-xs"
-              onClick={() => setVinculo("all")}
-            >
-              Todos os vínculos
-            </Button>
-            {vinculos.map((label) => (
-              <Button
-                key={label}
-                type="button"
-                size="sm"
-                variant={vinculo === label ? "default" : "outline"}
-                className="h-8 rounded-full px-3 text-xs"
-                onClick={() => setVinculo(label)}
+        {hasFilters && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {PEOPLE_FILTERS.filter((def) => selection[def.key]?.length).map((def) => (
+              <span
+                key={def.key}
+                className="inline-flex max-w-full items-center gap-1 rounded-full border border-[#bfeaec] bg-[#eefdfe] py-0.5 pl-2.5 pr-1 text-xs text-[#174f58]"
               >
-                {label}
-              </Button>
+                <span className="truncate">
+                  <span className="font-semibold">{def.label}:</span>{" "}
+                  {(selection[def.key] ?? []).map((value) => filterLabel(def.key, value)).join(", ")}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => clear(def.key)}
+                  aria-label={`Remover filtro de ${def.label.toLowerCase()}`}
+                  className="rounded-full p-0.5 hover:bg-[#d9f3f4]"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
             ))}
-          </div>
-        )}
-
-        {areas.length > 1 && (
-          <div className="flex flex-wrap gap-1.5">
-            <Button
-              type="button"
-              size="sm"
-              variant={area === "all" ? "default" : "outline"}
-              className="h-8 rounded-full px-3 text-xs"
-              onClick={() => setArea("all")}
-            >
-              Todas as áreas
+            <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={clearAll}>
+              <X className="h-3.5 w-3.5" />
+              Limpar filtros
             </Button>
-            {areas.map((label) => (
-              <Button
-                key={label}
-                type="button"
-                size="sm"
-                variant={area === label ? "default" : "outline"}
-                className="h-8 rounded-full px-3 text-xs"
-                onClick={() => setArea(label)}
-              >
-                {label}
-              </Button>
-            ))}
           </div>
         )}
       </div>
+
+      <TeamProfile rows={filtered} selection={selection} onToggle={toggle} />
 
       <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
         <div className="overflow-x-auto">
@@ -333,9 +546,16 @@ export function ColaboradoresTab({
               {filtered.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="py-12 text-center text-sm text-muted-foreground">
-                    {rows.length === 0
-                      ? "Nenhum colaborador no cadastro ainda."
-                      : "Nenhum colaborador encontrado com esses filtros."}
+                    {rows.length === 0 ? (
+                      "Nenhum colaborador no cadastro ainda."
+                    ) : (
+                      <span className="inline-flex flex-col items-center gap-2">
+                        Nenhum colaborador com esses filtros.
+                        <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={clearAll}>
+                          Limpar filtros
+                        </Button>
+                      </span>
+                    )}
                   </TableCell>
                 </TableRow>
               )}
@@ -361,8 +581,20 @@ export function ColaboradoresTab({
                       <EmployeeAvatar name={row.fullName} avatarUrl={row.avatarUrl} />
                       <span className="min-w-0">
                         <span className="block truncate font-medium text-foreground">{row.fullName}</span>
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {[row.position, row.department].filter(Boolean).join(" · ") || "Sem cargo informado"}
+                        <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                          {row.department && (
+                            <span
+                              className={cn(
+                                "flex h-4 w-4 shrink-0 items-center justify-center rounded ring-1",
+                                getAreaIconStyle(row.department)
+                              )}
+                            >
+                              <AreaIcon area={row.department} className="h-2.5 w-2.5" />
+                            </span>
+                          )}
+                          <span className="truncate">
+                            {[row.position, row.department].filter(Boolean).join(" · ") || "Sem cargo informado"}
+                          </span>
                         </span>
                       </span>
                     </div>
@@ -396,8 +628,9 @@ export function ColaboradoresTab({
         </div>
       </div>
       <p className="text-xs text-muted-foreground">
-        A planilha leva os {filtered.length} colaboradores desta lista, com todos os dados da ficha. Ela contém dados
-        pessoais e bancários: guarde só onde Pessoas e Cultura tem acesso.
+        A planilha leva os {filtered.length} colaboradores desta lista, com todos os dados da ficha e os filtros usados
+        no cabeçalho. Gênero, raça/cor e dados de saúde são dados sensíveis (LGPD): guarde só onde Pessoas e Cultura tem
+        acesso.
       </p>
     </div>
   );
