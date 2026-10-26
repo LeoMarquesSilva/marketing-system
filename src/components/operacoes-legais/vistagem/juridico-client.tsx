@@ -9,13 +9,16 @@ import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import { ETIQUETAS_AGENDAMENTO, ROTULO_ETIQUETA, avisosDaData, horaValida, type EtiquetaAgendamento } from "@/lib/vistagem/agendamento";
 import {
+  CONTAGENS_PRAZO,
   DIAS_PRAZO,
+  ROTULO_CONTAGEM,
   criarCalendario,
   criarCalendarioDePrazo,
   datasDoPrazo,
-  fatalPorDias,
+  fatalPorContagem,
   noRecessoForense,
   somarDiasUteis,
+  type ContagemPrazo,
 } from "@/lib/vistagem/dias-uteis";
 import { CADEIA_PADRAO, PESSOA_FIXA_PROTOCOLAR, cadeiaDoFluxo, type FluxoDaTarefa, type TarefaDoFluxo } from "@/lib/vistagem/fluxo-vios";
 import type { PublicacaoResumo, VistagemDetalhe } from "@/lib/vistagem/types";
@@ -35,6 +38,8 @@ interface Linha {
   /** Prazo: data fatal (o VIOS recebe o Enviar, calculado pelo fluxo da tarefa). */
   dataFatal: string;
   diasPrazo: number | null;
+  /** Prazo pelo atalho de dias: úteis ou corridos (escolhido no modal). */
+  contagemPrazo: ContagemPrazo | null;
   /** Compromisso: horário HH:MM (Hora tarefa no VIOS). */
   hora: string;
   responsavel: string;
@@ -51,6 +56,7 @@ function novaLinha(base: Partial<Linha> = {}): Linha {
     data: "",
     dataFatal: "",
     diasPrazo: null,
+    contagemPrazo: null,
     hora: "",
     responsavel: "",
     revisor: "",
@@ -128,6 +134,60 @@ function ModalHorario({
   );
 }
 
+/** Ao clicar num atalho de dias, pergunta se o prazo é em dias úteis ou corridos, com a fatal de cada um. */
+function ModalContagem({
+  dias,
+  dataPublicacao,
+  contaPrazo,
+  onEscolher,
+  onFechar,
+}: {
+  dias: number | null;
+  dataPublicacao: string | null;
+  contaPrazo: (iso: string) => boolean;
+  onEscolher: (contagem: ContagemPrazo, fatal: string) => void;
+  onFechar: () => void;
+}) {
+  const fatais = dias && dataPublicacao ? CONTAGENS_PRAZO.map((contagem) => [contagem, fatalPorContagem(dataPublicacao, dias, contagem, contaPrazo)] as const) : [];
+
+  return (
+    <Dialog open={Boolean(dias)} onOpenChange={(aberto) => !aberto && onFechar()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Prazo de {dias} dias</DialogTitle>
+          <DialogDescription>
+            Contados a partir do 1º dia útil após a publicação{dataPublicacao ? ` de ${formatarData(dataPublicacao)}` : ""}. O recesso
+            forense (20/12 a 20/01) suspende a contagem.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {fatais.map(([contagem, fatal], indice) => (
+            <Button
+              key={contagem}
+              type="button"
+              variant="outline"
+              className="h-auto flex-col items-start gap-1 px-4 py-3 text-left"
+              onClick={() => onEscolher(contagem, fatal)}
+              autoFocus={indice === 0}
+            >
+              <span className="text-sm font-semibold capitalize text-slate-900">{ROTULO_CONTAGEM[contagem]}</span>
+              <span className="text-xs font-normal text-slate-600">
+                fatal <span className="font-mono font-semibold text-[#183f50]">{formatarData(fatal)}</span>
+              </span>
+            </Button>
+          ))}
+        </div>
+        <p className="text-xs text-slate-500">Nos dias corridos, vencimento em fim de semana ou feriado passa para o próximo dia útil.</p>
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={onFechar}>
+            Cancelar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /** O que o fluxo automático do VIOS cria junto com a tarefa e quem o robô coloca em cada uma. */
 function FluxoNoVios({
   fluxo,
@@ -192,6 +252,8 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
   const [recarga, setRecarga] = useState(0);
   /** Linha do Compromisso com o modal de data e horário aberto. */
   const [horarioDe, setHorarioDe] = useState<number | null>(null);
+  /** Atalho de dias clicado, à espera da escolha entre úteis e corridos. */
+  const [contagemDe, setContagemDe] = useState<{ chave: number; dias: number } | null>(null);
 
   useEffect(() => {
     let cancelado = false;
@@ -215,6 +277,7 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
                   data: item.etiqueta === "PRAZO" ? "" : item.data,
                   dataFatal: item.dataFatal ?? "",
                   diasPrazo: item.diasPrazo,
+                  contagemPrazo: item.contagemPrazo,
                   hora: item.hora ?? "",
                   responsavel: item.responsavel,
                   revisor: item.revisor ?? "",
@@ -263,6 +326,7 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
             data: linha.etiqueta === "PRAZO" ? "" : linha.data,
             dataFatal: linha.etiqueta === "PRAZO" ? linha.dataFatal : null,
             diasPrazo: linha.etiqueta === "PRAZO" ? linha.diasPrazo : null,
+            contagemPrazo: linha.etiqueta === "PRAZO" && linha.diasPrazo ? linha.contagemPrazo : null,
             hora: linha.etiqueta === "COMPROMISSO" ? linha.hora : null,
             responsavel: linha.responsavel,
             revisor: linha.revisor || null,
@@ -428,14 +492,20 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
                             type="date"
                             className={campo}
                             value={linha.dataFatal}
-                            onChange={(evento) => alterar(linha.chave, { dataFatal: evento.target.value, diasPrazo: null })}
+                            onChange={(evento) => alterar(linha.chave, { dataFatal: evento.target.value, diasPrazo: null, contagemPrazo: null })}
                           />
                         </label>
                         <div className="space-y-1">
                           <span className="block text-xs font-medium text-slate-600">
-                            Dias úteis após a publicação{publicacao.dataPublicacao ? ` (${formatarData(publicacao.dataPublicacao)})` : ""}
+                            Dias após a publicação{publicacao.dataPublicacao ? ` (${formatarData(publicacao.dataPublicacao)})` : ""}
+                            {linha.diasPrazo && linha.contagemPrazo ? (
+                              <span className="font-semibold text-[#183f50]">
+                                {" "}
+                                · {linha.diasPrazo} {ROTULO_CONTAGEM[linha.contagemPrazo]}
+                              </span>
+                            ) : null}
                           </span>
-                          <div className="flex flex-wrap gap-1" role="group" aria-label="Prazo em dias úteis">
+                          <div className="flex flex-wrap gap-1" role="group" aria-label="Prazo em dias">
                             {DIAS_PRAZO.map((dias) => (
                               <Button
                                 key={dias}
@@ -445,10 +515,7 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
                                 aria-pressed={linha.diasPrazo === dias}
                                 disabled={!publicacao.dataPublicacao}
                                 className={cn(linha.diasPrazo === dias && "border-[#183f50] bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")}
-                                onClick={() =>
-                                  publicacao.dataPublicacao &&
-                                  alterar(linha.chave, { diasPrazo: dias, dataFatal: fatalPorDias(publicacao.dataPublicacao, dias, contaPrazo) })
-                                }
+                                onClick={() => publicacao.dataPublicacao && setContagemDe({ chave: linha.chave, dias })}
                               >
                                 {dias}
                               </Button>
@@ -604,6 +671,17 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
           setHorarioDe(null);
         }}
         onFechar={() => setHorarioDe(null)}
+      />
+
+      <ModalContagem
+        dias={contagemDe?.dias ?? null}
+        dataPublicacao={publicacao.dataPublicacao}
+        contaPrazo={contaPrazo}
+        onEscolher={(contagemPrazo, dataFatal) => {
+          if (contagemDe) alterar(contagemDe.chave, { diasPrazo: contagemDe.dias, contagemPrazo, dataFatal });
+          setContagemDe(null);
+        }}
+        onFechar={() => setContagemDe(null)}
       />
     </div>
   );

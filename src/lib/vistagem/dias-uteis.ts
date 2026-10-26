@@ -1,7 +1,14 @@
 import { CADEIA_PADRAO, type CadeiaDoPrazo } from "./fluxo-vios";
 
-/** Atalhos de prazo (dias úteis contados a partir do 1º dia útil após a publicação). */
+/** Atalhos de prazo (dias contados a partir do 1º dia útil após a publicação). */
 export const DIAS_PRAZO = [5, 10, 15, 30, 60, 90, 180] as const;
+
+/** Como o prazo é contado: dias úteis (CPC art. 219) ou corridos (ex.: Lei 11.101, art. 189). */
+export type ContagemPrazo = "uteis" | "corridos";
+
+export const CONTAGENS_PRAZO: readonly ContagemPrazo[] = ["uteis", "corridos"];
+
+export const ROTULO_CONTAGEM: Record<ContagemPrazo, string> = { uteis: "dias úteis", corridos: "dias corridos" };
 
 /** Dia útil: não é sábado, domingo nem feriado (lista AAAA-MM-DD). */
 export function criarCalendario(feriados: Iterable<string>): (iso: string) => boolean {
@@ -78,6 +85,31 @@ export function somarDiasUteis(iso: string, n: number, ehDiaUtil: (iso: string) 
 /** Data fatal: N dias úteis contados a partir do 1º dia útil após a publicação (use criarCalendarioDePrazo). */
 export function fatalPorDias(dataPublicacao: string, dias: number, ehDiaUtil: (iso: string) => boolean): string {
   return somarDiasUteis(dataPublicacao, dias, ehDiaUtil);
+}
+
+/**
+ * Data fatal em dias corridos: a contagem começa no 1º dia útil após a publicação
+ * (CPC art. 224 §3º), conta todos os dias seguintes menos os do recesso forense, que
+ * suspende o prazo, e um vencimento em dia sem expediente passa para o próximo dia útil
+ * (CPC art. 224 §1º). Use criarCalendarioDePrazo.
+ */
+export function fatalPorDiasCorridos(dataPublicacao: string, dias: number, ehDiaDePrazo: (iso: string) => boolean): string {
+  let atual = somarDiasUteis(dataPublicacao, 1, ehDiaDePrazo);
+  for (let restantes = dias - 1; restantes > 0; ) {
+    atual = deslocar(atual, 1);
+    if (!noRecessoForense(atual)) restantes -= 1;
+  }
+  return ehDiaDePrazo(atual) ? atual : somarDiasUteis(atual, 1, ehDiaDePrazo);
+}
+
+/** Data fatal pelo atalho de dias, na contagem escolhida. */
+export function fatalPorContagem(
+  dataPublicacao: string,
+  dias: number,
+  contagem: ContagemPrazo,
+  ehDiaDePrazo: (iso: string) => boolean
+): string {
+  return contagem === "corridos" ? fatalPorDiasCorridos(dataPublicacao, dias, ehDiaDePrazo) : fatalPorDias(dataPublicacao, dias, ehDiaDePrazo);
 }
 
 export interface DatasDoPrazo {

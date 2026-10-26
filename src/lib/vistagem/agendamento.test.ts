@@ -78,7 +78,7 @@ describe("validarAgendamentos", () => {
 
   it("aceita tarefas da lista e resolve ids", () => {
     const resultado = validarAgendamentos(
-      [{ etiqueta: "PRAZO", tarefa: "contestação", data: "", dataFatal: "2026-11-02", diasPrazo: 15, responsavel: "advogada exemplo", revisor: "Revisor Exemplo", observacao: " ver laudo " }],
+      [{ etiqueta: "PRAZO", tarefa: "contestação", data: "", dataFatal: "2026-11-02", diasPrazo: 15, contagemPrazo: "corridos", responsavel: "advogada exemplo", revisor: "Revisor Exemplo", observacao: " ver laudo " }],
       contexto
     );
     expect(resultado).toEqual({
@@ -91,6 +91,7 @@ describe("validarAgendamentos", () => {
           data: "2026-10-28",
           dataFatal: "2026-11-02",
           diasPrazo: 15,
+          contagemPrazo: "corridos",
           hora: null,
           responsavel: "Advogada Exemplo",
           responsavelId: "4",
@@ -126,6 +127,20 @@ describe("validarAgendamentos", () => {
       contexto
     );
     expect(naClasseErrada.ok).toBe(false);
+  });
+
+  it("atalho de dias exige a contagem (úteis ou corridos); fatal no calendário não", () => {
+    const prazo = { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo" };
+    expect(validarAgendamentos([{ ...prazo, diasPrazo: 15 }], contexto)).toEqual({
+      ok: false,
+      erros: ["Tarefa 1: escolha se o prazo é em dias úteis ou corridos."],
+    });
+    expect(validarAgendamentos([{ ...prazo, diasPrazo: 15, contagemPrazo: "uteis" }], contexto)).toMatchObject({ ok: true, itens: [{ contagemPrazo: "uteis" }] });
+    // sem atalho, a contagem que vier é descartada
+    expect(validarAgendamentos([{ ...prazo, contagemPrazo: "corridos" }], contexto)).toMatchObject({
+      ok: true,
+      itens: [{ diasPrazo: null, contagemPrazo: null }],
+    });
   });
 
   it("compromisso exige o horário; nas outras classes ele é ignorado", () => {
