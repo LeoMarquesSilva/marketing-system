@@ -9,6 +9,7 @@ import {
   FEEDBACK_PHOTO_TYPES,
   FEEDBACK_PHOTOS_BUCKET,
   FEEDBACK_PHOTOS_MAX,
+  categoryInfo,
   type FeedbackInput,
   type FeedbackPerson,
   type FeedbackPhoto,
@@ -20,7 +21,7 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabas
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
 const FEEDBACK_SELECT =
-  "id, occurred_on, sent_on, employee_id, employee_name, is_team, manager_employee_id, manager_name, area, category, description, manager_action, responded_on, viewed, viewed_on, source, created_at, updated_at, feedz_key, feedz_sent_at, feedz_viewed_at, creator:users!hr_good_practice_feedbacks_created_by_fkey(name), photos:hr_good_practice_feedback_photos(count)";
+  "id, occurred_on, sent_on, employee_id, employee_name, is_team, manager_employee_id, manager_name, area, category, subtopic, description, manager_action, responded_on, viewed, viewed_on, source, created_at, updated_at, feedz_key, feedz_sent_at, feedz_viewed_at, creator:users!hr_good_practice_feedbacks_created_by_fkey(name), photos:hr_good_practice_feedback_photos(count)";
 
 const PHOTO_SELECT = "id, feedback_id, storage_path, file_name, content_type, size_bytes, width, height, taken_at, created_at";
 const PHOTO_URL_SECONDS = 60 * 60;
@@ -61,7 +62,13 @@ const feedbackSchema = z
     is_team: z.boolean(),
     manager_name: requiredText("o gestor", 160),
     area: requiredText("a área", 80),
-    category: requiredText("a categoria", 160),
+    category: requiredText("a categoria", 160).refine((value) => categoryInfo(value) !== null, "Escolha uma das categorias do manual."),
+    subtopic: z
+      .string()
+      .trim()
+      .max(80)
+      .optional()
+      .transform((value) => value || null),
     description: requiredText("a ocorrência", 4000),
     manager_action: z
       .string()
@@ -81,6 +88,9 @@ const feedbackSchema = z
     }
     if (value.viewed_on && value.viewed !== true) {
       ctx.addIssue({ code: "custom", path: ["viewed_on"], message: "Data de visualização só quando visualizado." });
+    }
+    if (value.subtopic && !categoryInfo(value.category)?.subtopics?.includes(value.subtopic)) {
+      ctx.addIssue({ code: "custom", path: ["subtopic"], message: "Subtema não pertence à categoria." });
     }
   });
 

@@ -26,6 +26,8 @@ import {
 } from "@/lib/rh/boas-praticas/photos-client";
 import {
   FEEDBACK_PHOTOS_MAX,
+  categoryLabel,
+  chapterLabel,
   type FeedbackInput,
   type FeedbackPerson,
   type FeedbackPhoto,
@@ -164,9 +166,13 @@ function FeedbackDetail({
   return (
     <div className="space-y-6 px-6 py-5">
       <section className="space-y-2">
-        <p className="flex items-center gap-2 text-sm font-medium text-[#285f7a]">
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-[#285f7a]">
           <CategoryIcon category={item.category} className="size-7" />
           {item.category}
+          {item.subtopic && <span className="rounded-full bg-[#eef6f8] px-2 py-0.5 text-xs">{item.subtopic}</span>}
+          {chapterLabel(item.category) && (
+            <span className="text-xs font-normal text-muted-foreground">{chapterLabel(item.category)} do manual</span>
+          )}
         </p>
         <blockquote className="rounded-md border border-[#e6eef0] bg-[#fafcfc] px-4 py-3 text-[15px] leading-6 text-foreground">
           {item.description}
@@ -245,7 +251,7 @@ function FeedbackDetail({
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm text-foreground">{entry.description}</span>
                     <span className="block text-xs text-muted-foreground">
-                      {formatDate(entry.sent_on)} · {entry.category}
+                      {formatDate(entry.sent_on)} · {categoryLabel(entry)}
                     </span>
                   </span>
                 </button>

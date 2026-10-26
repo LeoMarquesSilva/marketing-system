@@ -12,7 +12,8 @@ import { filterOptions, searchKey } from "@/lib/rh/registration/combo-search";
 import { businessDaysToResponse, suggestAreaFromDepartment, todayIso } from "@/lib/rh/boas-praticas/metrics";
 import {
   FEEDBACK_AREAS,
-  FEEDBACK_CATEGORIES,
+  FEEDBACK_CATEGORY_INFO,
+  categoryInfo,
   type FeedbackInput,
   type FeedbackPerson,
   type GoodPracticeFeedback,
@@ -32,6 +33,7 @@ export function emptyFeedbackInput(): FeedbackInput {
     manager_name: "",
     area: "",
     category: "",
+    subtopic: "",
     description: "",
     manager_action: "",
     responded_on: "",
@@ -49,6 +51,7 @@ export function feedbackToInput(item: GoodPracticeFeedback): FeedbackInput {
     manager_name: item.manager_name,
     area: item.area,
     category: item.category,
+    subtopic: item.subtopic ?? "",
     description: item.description,
     manager_action: item.manager_action ?? "",
     responded_on: item.responded_on ?? "",
@@ -387,19 +390,30 @@ function AreaPicker({ value, areas, onChange }: { value: string; areas: string[]
   );
 }
 
-function CategoryPicker({ value, categories, onChange }: { value: string; categories: string[]; onChange: (value: string) => void }) {
+/** Categorias = capítulos do Manual de Boas Práticas; subtema só onde a categoria tem. */
+function CategoryPicker({
+  value,
+  subtopic,
+  onChange,
+}: {
+  value: string;
+  subtopic: string;
+  onChange: (category: string, subtopic: string) => void;
+}) {
+  const info = categoryInfo(value);
   return (
     <div className="space-y-2">
       <div className="grid gap-1.5 sm:grid-cols-2" role="radiogroup" aria-label="Categoria">
-        {categories.map((category) => {
-          const selected = value === category;
+        {FEEDBACK_CATEGORY_INFO.map((category) => {
+          const selected = value === category.name;
           return (
             <button
-              key={category}
+              key={category.name}
               type="button"
               role="radio"
               aria-checked={selected}
-              onClick={() => onChange(category)}
+              title={category.hint}
+              onClick={() => onChange(category.name, category.subtopics?.includes(subtopic) ? subtopic : "")}
               className={cn(
                 "flex min-h-11 items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm ring-1 ring-inset transition-colors duration-150",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/60",
@@ -412,15 +426,57 @@ function CategoryPicker({ value, categories, onChange }: { value: string; catego
                   selected ? "bg-[#347796] text-white" : "bg-[#eef6f8] text-[#285f7a]"
                 )}
               >
-                <CategoryGlyph category={category} className="size-4" />
+                <CategoryGlyph category={category.name} className="size-4" />
               </span>
-              <span className="min-w-0 flex-1 leading-5">{category}</span>
-              {selected && <Check className="size-4 shrink-0 text-[#347796]" aria-hidden />}
+              <span className="min-w-0 flex-1 leading-5">{category.name}</span>
+              {selected ? (
+                <Check className="size-4 shrink-0 text-[#347796]" aria-hidden />
+              ) : (
+                category.chapter && <span className="shrink-0 text-xs tabular-nums text-muted-foreground">Cap. {category.chapter}</span>
+              )}
             </button>
           );
         })}
       </div>
-      <CustomOption value={value} known={categories} label="Outra categoria" placeholder="Nome da categoria" onChange={onChange} />
+      {info && (
+        <div className="rounded-md bg-[#f6fafb] px-3 py-2.5 ring-1 ring-inset ring-[#e6eef0]">
+          <p className="text-xs leading-5 text-muted-foreground">
+            <span className="font-medium text-foreground">
+              {info.chapter ? `Capítulo ${info.chapter} do manual` : "Fora da numeração do manual"}:
+            </span>{" "}
+            {info.hint}
+          </p>
+          {info.subtopics && (
+            <div className="mt-2.5 space-y-1.5">
+              <p className="text-xs font-medium text-foreground">Subtema</p>
+              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Subtema">
+                {[...info.subtopics, ""].map((option) => {
+                  const selected = subtopic === option;
+                  return (
+                    <button
+                      key={option || "sem"}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => onChange(value, option)}
+                      className={cn(
+                        "inline-flex min-h-8 items-center rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset transition-colors duration-150",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/60",
+                        selected
+                          ? "bg-[#10293a] text-white ring-[#10293a]"
+                          : "bg-white text-foreground ring-[#dce9eb] hover:ring-[#3e84a8]/40",
+                        !option && !selected && "text-muted-foreground"
+                      )}
+                    >
+                      {option || "Sem subtema"}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -446,7 +502,6 @@ export function FeedbackForm({
   const set = <K extends keyof FeedbackInput>(key: K, value: FeedbackInput[K]) => onChange({ ...form, [key]: value });
 
   const areas = useMemo(() => [...new Set([...FEEDBACK_AREAS, ...items.map((entry) => entry.area)])], [items]);
-  const categories = useMemo(() => [...new Set([...FEEDBACK_CATEGORIES, ...items.map((entry) => entry.category)])], [items]);
   const responseDays = form.responded_on ? businessDaysToResponse(form.sent_on, form.responded_on) : null;
   const teamName = resolvedEmployeeName({ ...form, is_team: true });
 
@@ -518,7 +573,11 @@ export function FeedbackForm({
 
       <FormSection icon={PencilLine} title="O que aconteceu">
         <Field label="Categoria">
-          <CategoryPicker value={form.category} categories={categories} onChange={(value) => set("category", value)} />
+          <CategoryPicker
+            value={form.category}
+            subtopic={form.subtopic}
+            onChange={(category, subtopic) => onChange({ ...form, category, subtopic })}
+          />
         </Field>
         <Field label="Ocorrência" htmlFor="fb-description">
           <Textarea

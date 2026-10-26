@@ -39,6 +39,7 @@ function feedback(overrides: Partial<GoodPracticeFeedback>): GoodPracticeFeedbac
     manager_name: "Paulo Teixeira Rocha",
     area: "Trabalhista",
     category: "Outros",
+    subtopic: null,
     description: "Ocorrência",
     manager_action: null,
     responded_on: null,

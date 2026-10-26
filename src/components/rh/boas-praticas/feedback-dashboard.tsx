@@ -29,6 +29,7 @@ import {
   AREA_BAND_LABEL,
   MONTH_LABELS,
   MONTH_SHORT,
+  chapterLabel,
   type FeedbackPerson,
   type FeedzImportLog,
   type GoodPracticeFeedback,
@@ -433,8 +434,22 @@ function CategoriesPanel({ summary }: { summary: MonthSummary }) {
                 <div className="min-w-0 flex-1">
                   <p className={cn("text-sm", row.sent ? "font-medium text-foreground" : "text-muted-foreground")}>{row.category}</p>
                   <p className="text-xs text-muted-foreground">
+                    {chapterLabel(row.category) && `${chapterLabel(row.category)} · `}
                     {summary.total ? formatPercent(row.share) : "0%"} do mês · ant. {dashIfZero(row.previous)}
                   </p>
+                  {row.subtopics.length > 0 && (
+                    <ul className="mt-1.5 flex flex-wrap gap-1" aria-label={`Subtemas de ${row.category}`}>
+                      {row.subtopics.map((subtopic) => (
+                        <li
+                          key={subtopic.name}
+                          className="inline-flex items-center gap-1 rounded-full bg-[#eef6f8] px-2 py-0.5 text-xs text-[#285f7a]"
+                        >
+                          {subtopic.name}
+                          <span className="font-semibold tabular-nums">{subtopic.sent}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
                 <span className="w-6 text-right text-sm font-semibold tabular-nums text-foreground">{dashIfZero(row.sent)}</span>
                 <span

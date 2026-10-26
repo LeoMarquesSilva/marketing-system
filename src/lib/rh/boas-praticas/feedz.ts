@@ -334,6 +334,7 @@ export function feedzPrefill(row: FeedzRow, people: FeedbackPerson[]): FeedbackI
     manager_name: manager?.full_name ?? row.to,
     area: suggestAreaFromDepartment(employee?.department) ?? "",
     category: "",
+    subtopic: "",
     description: feedzOccurrenceText(row.message),
     manager_action: "",
     responded_on: "",

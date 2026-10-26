@@ -7,6 +7,7 @@ import { resolveCanonicalAreaLabel } from "@/lib/ferias/filters";
 import {
   FEEDBACK_AREAS,
   FEEDBACK_CATEGORIES,
+  categoryInfo,
   type AreaBand,
   type FeedbackFlowStatus,
   type GoodPracticeFeedback,
@@ -122,7 +123,11 @@ export interface CategoryRow {
   sent: number;
   share: number;
   previous: number;
+  /** Subtemas do mês (só nas categorias que têm subtema), do maior para o menor; "Sem subtema" por último. */
+  subtopics: { name: string; sent: number }[];
 }
+
+export const NO_SUBTOPIC = "Sem subtema";
 
 export interface LeaderRow {
   manager: string;
@@ -192,7 +197,12 @@ export function summarizeMonth(items: GoodPracticeFeedback[], ref: MonthRef): Mo
   const categories: CategoryRow[] = categoryNames
     .map((category) => {
       const sent = byCategory.get(category) ?? 0;
-      return { category, sent, share: total ? sent / total : 0, previous: previousByCategory.get(category) ?? 0 };
+      const ofCategory = current.filter((item) => item.category === category);
+      const bySubtopic = categoryInfo(category)?.subtopics ? countBy(ofCategory, (item) => item.subtopic ?? NO_SUBTOPIC) : new Map<string, number>();
+      const subtopics = [...bySubtopic.entries()]
+        .map(([name, count]) => ({ name, sent: count }))
+        .sort((a, b) => Number(a.name === NO_SUBTOPIC) - Number(b.name === NO_SUBTOPIC) || b.sent - a.sent);
+      return { category, sent, share: total ? sent / total : 0, previous: previousByCategory.get(category) ?? 0, subtopics };
     })
     .filter((row) => row.sent > 0 || row.previous > 0)
     .sort((a, b) => b.sent - a.sent || b.previous - a.previous || a.category.localeCompare(b.category, "pt-BR"));
