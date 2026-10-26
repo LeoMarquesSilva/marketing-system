@@ -15,6 +15,8 @@ export interface TarefaDoLancamento {
   etiqueta_id: string;
   /** DD/MM/AAAA */
   data: string;
+  /** HH:MM (Hora tarefa no VIOS); só no Compromisso. */
+  hora: string | null;
   responsavel: string;
   revisor: string | null;
   observacao: string;
@@ -68,6 +70,8 @@ export interface AgendamentoParaFila {
   tarefa_id: string | null;
   /** AAAA-MM-DD */
   data: string;
+  /** HH:MM; só no Compromisso. */
+  hora: string | null;
   responsavel: string;
   revisor: string | null;
   observacao: string | null;
@@ -112,8 +116,15 @@ export function linhasParaFila(
   });
 
   if (opcoes.modo === "pasta") {
+    // A fila da pasta não tem coluna de hora: o horário do Compromisso vai na descrição.
     return itens.map((item) => ({
-      linha: base(item, montarObservacaoVios({ ...referencia, teor: publicacao.teor }, item.observacao)),
+      linha: base(
+        item,
+        montarObservacaoVios(
+          { ...referencia, teor: publicacao.teor },
+          [item.hora ? `Horário: ${item.hora}` : null, item.observacao].filter(Boolean).join("\n") || null
+        )
+      ),
       agendamentos: [item.id],
     }));
   }
@@ -135,6 +146,7 @@ export function linhasParaFila(
             tarefa: item.tarefa,
             etiqueta_id: etiquetaVios(item),
             data: paraDataVios(item.data),
+            hora: item.hora ?? null,
             responsavel: item.responsavel,
             revisor: item.revisor,
             observacao: montarObservacaoVios(referencia, item.observacao),

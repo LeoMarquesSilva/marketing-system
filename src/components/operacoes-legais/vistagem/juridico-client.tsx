@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, LoaderCircle, Plus, Send, Trash2, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
-import { ETIQUETAS_AGENDAMENTO, ROTULO_ETIQUETA, avisosDaData, type EtiquetaAgendamento } from "@/lib/vistagem/agendamento";
+import { ETIQUETAS_AGENDAMENTO, ROTULO_ETIQUETA, avisosDaData, horaValida, type EtiquetaAgendamento } from "@/lib/vistagem/agendamento";
 import {
   DIAS_PRAZO,
   criarCalendario,
@@ -34,6 +35,8 @@ interface Linha {
   /** Prazo: data fatal (o VIOS recebe o Enviar, calculado pelo fluxo da tarefa). */
   dataFatal: string;
   diasPrazo: number | null;
+  /** Compromisso: horário HH:MM (Hora tarefa no VIOS). */
+  hora: string;
   responsavel: string;
   revisor: string;
   observacao: string;
@@ -48,6 +51,7 @@ function novaLinha(base: Partial<Linha> = {}): Linha {
     data: "",
     dataFatal: "",
     diasPrazo: null,
+    hora: "",
     responsavel: "",
     revisor: "",
     observacao: "",
@@ -59,7 +63,69 @@ const campo = "h-10 w-full rounded-md border border-input bg-white px-3 text-sm 
 
 function linhaCompleta(linha: Linha): boolean {
   if (!linha.tarefa || !linha.responsavel) return false;
-  return linha.etiqueta === "PRAZO" ? Boolean(linha.dataFatal && linha.revisor) : Boolean(linha.data);
+  if (linha.etiqueta === "PRAZO") return Boolean(linha.dataFatal && linha.revisor);
+  return Boolean(linha.data) && (linha.etiqueta !== "COMPROMISSO" || horaValida(linha.hora));
+}
+
+/** Pergunta data e horário ao escolher um Compromisso (audiência, perícia, sessão…). Montar com key da linha. */
+function ModalHorario({
+  linha,
+  hoje,
+  onConfirmar,
+  onFechar,
+}: {
+  linha: Linha | null;
+  hoje: string;
+  onConfirmar: (data: string, hora: string) => void;
+  onFechar: () => void;
+}) {
+  const [data, setData] = useState(linha?.data ?? "");
+  const [hora, setHora] = useState(linha?.hora ?? "");
+  const avisos = data ? avisosDaData(data, hoje) : [];
+  const pronto = Boolean(data) && horaValida(hora);
+
+  return (
+    <Dialog open={Boolean(linha)} onOpenChange={(aberto) => !aberto && onFechar()}>
+      <DialogContent className="sm:max-w-md">
+        <form
+          className="grid gap-4"
+          onSubmit={(evento) => {
+            evento.preventDefault();
+            if (pronto) onConfirmar(data, hora);
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Data e horário do compromisso</DialogTitle>
+            <DialogDescription>{linha?.tarefa || "Compromisso"}: o horário vai para a Hora tarefa no VIOS.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-xs font-medium text-slate-600">
+              Data
+              <input type="date" className={campo} value={data} onChange={(evento) => setData(evento.target.value)} required />
+            </label>
+            <label className="space-y-1 text-xs font-medium text-slate-600">
+              Horário
+              <input type="time" className={campo} value={hora} onChange={(evento) => setHora(evento.target.value)} required autoFocus />
+            </label>
+          </div>
+          {avisos.length ? (
+            <p className="flex items-center gap-1 text-xs text-amber-800">
+              <TriangleAlert className="size-3.5" />
+              {avisos.join(" ")}
+            </p>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onFechar}>
+              Depois
+            </Button>
+            <Button type="submit" disabled={!pronto}>
+              Confirmar
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 /** O que o fluxo automático do VIOS cria junto com a tarefa e quem o robô coloca em cada uma. */
@@ -124,6 +190,8 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
   const [erro, setErro] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [recarga, setRecarga] = useState(0);
+  /** Linha do Compromisso com o modal de data e horário aberto. */
+  const [horarioDe, setHorarioDe] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelado = false;
@@ -147,6 +215,7 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
                   data: item.etiqueta === "PRAZO" ? "" : item.data,
                   dataFatal: item.dataFatal ?? "",
                   diasPrazo: item.diasPrazo,
+                  hora: item.hora ?? "",
                   responsavel: item.responsavel,
                   revisor: item.revisor ?? "",
                   observacao: item.observacao ?? "",
@@ -194,6 +263,7 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
             data: linha.etiqueta === "PRAZO" ? "" : linha.data,
             dataFatal: linha.etiqueta === "PRAZO" ? linha.dataFatal : null,
             diasPrazo: linha.etiqueta === "PRAZO" ? linha.diasPrazo : null,
+            hora: linha.etiqueta === "COMPROMISSO" ? linha.hora : null,
             responsavel: linha.responsavel,
             revisor: linha.revisor || null,
             observacao: linha.observacao || null,
@@ -340,7 +410,10 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
                     <ComboboxBusca
                       opcoes={catalogo.tarefas[linha.etiqueta]}
                       valor={linha.tarefa}
-                      onChange={(nome) => alterar(linha.chave, { tarefa: nome })}
+                      onChange={(nome) => {
+                        alterar(linha.chave, { tarefa: nome });
+                        if (nome && linha.etiqueta === "COMPROMISSO") setHorarioDe(linha.chave);
+                      }}
                       placeholder="Digite para buscar a tarefa…"
                       rotulo={`Tarefa ${indice + 1}`}
                     />
@@ -416,10 +489,24 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
                       ) : null}
                     </div>
                   ) : (
-                    <label className="block space-y-1 text-xs font-medium text-slate-600 sm:w-56">
-                      Data no VIOS
-                      <input type="date" className={campo} value={linha.data} onChange={(evento) => alterar(linha.chave, { data: evento.target.value })} />
-                    </label>
+                    <div className="flex flex-wrap items-end gap-3">
+                      <label className="block space-y-1 text-xs font-medium text-slate-600 sm:w-56">
+                        Data no VIOS
+                        <input type="date" className={campo} value={linha.data} onChange={(evento) => alterar(linha.chave, { data: evento.target.value })} />
+                      </label>
+                      {linha.etiqueta === "COMPROMISSO" ? (
+                        <label className="block w-36 space-y-1 text-xs font-medium text-slate-600">
+                          Horário
+                          <input
+                            type="time"
+                            className={cn(campo, !horaValida(linha.hora) && "border-red-300")}
+                            value={linha.hora}
+                            onChange={(evento) => alterar(linha.chave, { hora: evento.target.value })}
+                            aria-invalid={!horaValida(linha.hora)}
+                          />
+                        </label>
+                      ) : null}
+                    </div>
                   )}
                   {avisos.length ? (
                     <p className="flex items-center gap-1 text-xs text-amber-800">
@@ -507,6 +594,17 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
           </>
         )}
       </section>
+
+      <ModalHorario
+        key={horarioDe ?? "fechado"}
+        linha={linhas.find((linha) => linha.chave === horarioDe) ?? null}
+        hoje={detalhe.hoje}
+        onConfirmar={(data, hora) => {
+          if (horarioDe !== null) alterar(horarioDe, { data, hora });
+          setHorarioDe(null);
+        }}
+        onFechar={() => setHorarioDe(null)}
+      />
     </div>
   );
 }

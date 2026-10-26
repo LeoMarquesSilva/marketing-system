@@ -74,7 +74,10 @@ function TabelaTarefas({ agendamentos, comEnvio }: { agendamentos: AgendamentoRe
                     <span className="block font-sans text-xs text-slate-500">enviar · fatal {formatarData(item.dataFatal)}</span>
                   </>
                 ) : (
-                  formatarData(item.data)
+                  <>
+                    {formatarData(item.data)}
+                    {item.hora ? <span className="block">às {item.hora}</span> : null}
+                  </>
                 )}
               </td>
               <td className="px-3 py-2">{item.responsavel}</td>
