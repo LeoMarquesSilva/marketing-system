@@ -138,6 +138,10 @@ export interface PublicacaoResumo {
   devolvidoEm: string | null;
   checadoEm: string | null;
   checkNota: string | null;
+  /** Última transferência para a fila de outra área (escritório de origem, quando e por quê). */
+  transferidoDe: string | null;
+  transferidoEm: string | null;
+  transferenciaMotivo: string | null;
   teor: string;
   /** true quando `teor` foi encurtado na listagem. */
   teorResumido: boolean;

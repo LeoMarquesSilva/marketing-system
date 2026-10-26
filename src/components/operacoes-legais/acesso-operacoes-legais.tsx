@@ -1,20 +1,26 @@
 "use client";
 
 import { useEffect, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { LoaderCircle } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
-import { hasVistagemAccess } from "@/lib/access-control";
+import { VISTAGEM_JURIDICO_PATH, canSeeVistagemPath, hasVistagemAccess } from "@/lib/access-control";
 
-/** Mostra as telas da Vistagem só para quem tem o painel liberado; os dados são protegidos de novo nas rotas. */
+/**
+ * Mostra as telas da Vistagem só para quem tem o painel liberado; o jurídico só abre a
+ * aba Jurídico. Os dados são protegidos de novo nas rotas.
+ */
 export function AcessoOperacoesLegais({ children }: { children: ReactNode }) {
   const { user, profile, loading } = useAuth();
   const router = useRouter();
-  const permitido = Boolean(user) && hasVistagemAccess(profile);
+  const pathname = usePathname();
+  const permitido = Boolean(user) && canSeeVistagemPath(profile, pathname);
+  // Jurídico numa aba da controladoria vai para a própria aba.
+  const destino = Boolean(user) && hasVistagemAccess(profile) ? VISTAGEM_JURIDICO_PATH : "/";
 
   useEffect(() => {
-    if (!loading && !permitido) router.replace("/");
-  }, [loading, permitido, router]);
+    if (!loading && !permitido) router.replace(destino);
+  }, [loading, permitido, destino, router]);
 
   if (loading || !permitido) {
     return (

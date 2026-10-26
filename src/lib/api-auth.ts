@@ -4,7 +4,8 @@ import {
   hasCafeCulturaAccess,
   hasIcpAccess,
   hasOperacoesLegaisAccess,
-  hasVistagemAccess,
+  papelVistagem,
+  type PapelVistagem,
 } from "@/lib/access-control";
 
 const supabaseUrl =
@@ -120,23 +121,30 @@ export async function requireOperacoesLegaisAccess(authUserId: string) {
   }
 }
 
-export async function requireVistagemAccess(authUserId: string) {
+/**
+ * Papel do usuário na Vistagem e as áreas (escritórios) que ele vista; `areas` null
+ * é a controladoria, que vê todas.
+ */
+export async function requireVistagemAccess(
+  authUserId: string
+): Promise<{ papel: PapelVistagem; areas: string[] | null }> {
   const supabase = getAdminClient();
   const { data, error } = await supabase
     .from("users")
-    .select("role, permissions, is_active")
+    .select("role, permissions, is_active, vistagem_papel, vistagem_areas")
     .eq("auth_id", authUserId)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data || data.is_active === false) {
     throw new Error("Usuário inativo.");
   }
-  if (
-    !hasVistagemAccess({
-      role: data.role,
-      permissions: (data.permissions as string[] | null) ?? null,
-    })
-  ) {
+  const papel = papelVistagem({
+    role: data.role,
+    permissions: (data.permissions as string[] | null) ?? null,
+    vistagem_papel: data.vistagem_papel as string | null,
+  });
+  if (!papel) {
     throw new Error("Sem permissão para Vistagem e agendamento.");
   }
+  return { papel, areas: papel === "juridico" ? ((data.vistagem_areas as string[] | null) ?? []) : null };
 }

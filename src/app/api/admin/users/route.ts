@@ -4,6 +4,7 @@ import { createClient as createServerClient } from "@/utils/supabase/server";
 import { normalizePermissionsInput } from "@/lib/access-control";
 import { resolveFeriasAccess, type FeriasAccessMode } from "@/lib/ferias/access";
 import { resolveCanonicalAreaLabel } from "@/lib/ferias/filters";
+import { ESCRITORIOS } from "@/lib/vistagem/triagem";
 import {
   listAreaManagerAreasForUser,
   listKnownAreas,
@@ -278,6 +279,30 @@ export async function POST(request: Request) {
         success: true,
         role: update.role ?? currentRole,
         permissions,
+      });
+    }
+
+    if (action === "set_vistagem_access") {
+      const papel = body.papel === "juridico" ? "juridico" : body.papel === "controladoria" ? "controladoria" : null;
+      if (!papel) {
+        return NextResponse.json({ error: "Escolha o papel na Vistagem." }, { status: 400 });
+      }
+      const pedidas = Array.isArray(body.areas) ? (body.areas as unknown[]) : [];
+      const areas = ESCRITORIOS.filter((escritorio) => pedidas.includes(escritorio));
+      if (papel === "juridico" && areas.length === 0) {
+        return NextResponse.json({ error: "Marque ao menos uma área que a pessoa vista." }, { status: 400 });
+      }
+      const { data: saved, error } = await db
+        .from("users")
+        .update({ vistagem_papel: papel, vistagem_areas: papel === "juridico" ? areas : null })
+        .eq("id", userId)
+        .select("vistagem_papel, vistagem_areas")
+        .single();
+      if (error) throw new Error(error.message);
+      return NextResponse.json({
+        success: true,
+        vistagem_papel: saved.vistagem_papel,
+        vistagem_areas: saved.vistagem_areas,
       });
     }
 
