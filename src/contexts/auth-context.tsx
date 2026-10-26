@@ -47,7 +47,29 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function recordLastSeen() {
+/** Mesmo intervalo que a rota respeita; checar aqui evita invocar a função à toa. */
+const LAST_SEEN_THROTTLE_MS = 30 * 60 * 1000;
+const LAST_SEEN_STORAGE_PREFIX = "orquestrai:last-seen:";
+const lastSeenSentAt = new Map<string, number>();
+
+function readLastSeenSentAt(userId: string): number {
+  const inMemory = lastSeenSentAt.get(userId) ?? 0;
+  try {
+    return Math.max(inMemory, Number(localStorage.getItem(LAST_SEEN_STORAGE_PREFIX + userId)) || 0);
+  } catch {
+    return inMemory;
+  }
+}
+
+function recordLastSeen(userId: string) {
+  const now = Date.now();
+  if (now - readLastSeenSentAt(userId) < LAST_SEEN_THROTTLE_MS) return;
+  lastSeenSentAt.set(userId, now);
+  try {
+    localStorage.setItem(LAST_SEEN_STORAGE_PREFIX + userId, String(now));
+  } catch {
+    // Sem localStorage, o controle em memória ainda evita repetir na mesma aba.
+  }
   fetch("/api/account/last-seen", { method: "POST", credentials: "include" }).catch(() => {});
 }
 
@@ -136,7 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null);
         stopLoading();
         if (session?.user?.id) {
-          recordLastSeen();
+          recordLastSeen(session.user.id);
           fetchProfile(session.user.id).then(() => {});
         } else {
           setProfile(null);
@@ -161,7 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(session?.user ?? null);
       if (session?.user?.id) {
         if (event === "SIGNED_IN" || event === "INITIAL_SESSION") {
-          recordLastSeen();
+          recordLastSeen(session.user.id);
         }
         fetchProfile(session.user.id).then(() => {});
       } else {

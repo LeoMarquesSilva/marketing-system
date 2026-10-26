@@ -1416,22 +1416,24 @@ export interface WhatsappMessage {
 export async function fetchWhatsappUnreadSummary(): Promise<{
   totalUnread: number;
   conversationCount: number;
+  /** Por conversa, para o badge seguir o Realtime sem consultar de novo a cada mensagem. */
+  conversations: { id: string; unreadCount: number }[];
 }> {
   const supabase = getAdminClient();
   const { data, error } = await supabase
     .from("whatsapp_conversations")
-    .select("unread_count")
+    .select("id, unread_count")
     .gt("unread_count", 0);
 
   if (error) throw new Error(error.message);
 
-  const rows = data ?? [];
-  const totalUnread = rows.reduce(
-    (sum, row) => sum + Math.max(0, Number(row.unread_count) || 0),
-    0
-  );
+  const conversations = (data ?? []).map((row) => ({
+    id: String(row.id),
+    unreadCount: Math.max(0, Number(row.unread_count) || 0),
+  }));
+  const totalUnread = conversations.reduce((sum, row) => sum + row.unreadCount, 0);
 
-  return { totalUnread, conversationCount: rows.length };
+  return { totalUnread, conversationCount: conversations.length, conversations };
 }
 
 export async function fetchWhatsappConversations(
@@ -1571,6 +1573,14 @@ function defaultMimetypeForMessage(
   return "audio/ogg; codecs=opus";
 }
 
+/** O link da mídia no WhatsApp venceu: não adianta tentar de novo. */
+export class WhatsappMediaUnavailableError extends Error {
+  constructor() {
+    super("Mídia expirada no WhatsApp: o arquivo não está mais disponível para download.");
+    this.name = "WhatsappMediaUnavailableError";
+  }
+}
+
 export async function fetchEvolutionMessageMedia(dbMessageId: string): Promise<{
   base64: string;
   mimetype: string;
@@ -1608,17 +1618,22 @@ export async function fetchEvolutionMessageMedia(dbMessageId: string): Promise<{
     fromMe: (rawKey.fromMe as boolean | undefined) ?? msg.from_me,
   };
 
-  const data = await evolutionFetch<{
-    base64?: string;
-    mimetype?: string;
-    mediaType?: string;
-  }>(`/chat/getBase64FromMediaMessage/${config.instanceName}`, {
-    method: "POST",
-    body: {
-      message: { key },
-      convertToMp4: isVideo,
-    },
-  });
+  let data: { base64?: string; mimetype?: string; mediaType?: string };
+  try {
+    data = await evolutionFetch(`/chat/getBase64FromMediaMessage/${config.instanceName}`, {
+      method: "POST",
+      body: {
+        message: { key },
+        convertToMp4: isVideo,
+      },
+    });
+  } catch (err) {
+    // A Evolution guarda só o link do arquivo no WhatsApp, que vence em ~2 semanas.
+    if (err instanceof Error && /failed to fetch stream/i.test(err.message)) {
+      throw new WhatsappMediaUnavailableError();
+    }
+    throw err;
+  }
 
   if (!data.base64) {
     throw new Error(

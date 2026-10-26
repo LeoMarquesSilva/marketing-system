@@ -3,6 +3,7 @@ import { createClient } from "@/utils/supabase/server";
 import {
   fetchEvolutionMessageMedia,
   isEvolutionConfigured,
+  WhatsappMediaUnavailableError,
 } from "@/lib/evolution-whatsapp";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +33,9 @@ export async function GET(request: Request) {
     const media = await fetchEvolutionMessageMedia(messageId);
     return NextResponse.json(media);
   } catch (err) {
+    if (err instanceof WhatsappMediaUnavailableError) {
+      return NextResponse.json({ error: err.message, code: "media_expired" }, { status: 410 });
+    }
     const msg = err instanceof Error ? err.message : "Erro ao buscar mídia.";
     console.error("[evolution/messages/media]", msg);
     return NextResponse.json({ error: msg }, { status: 500 });

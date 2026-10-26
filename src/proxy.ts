@@ -44,8 +44,17 @@ export function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
+// Cada execução do proxy conta como CPU na Vercel: só navegações de página
+// passam por aqui. API, arquivos (qualquer caminho com extensão) e prefetches
+// dos links ficam de fora; o AuthGuard do cliente segue protegendo as telas.
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    {
+      source: "/((?!api/|_next/|.*\\..*).*)",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
   ],
 };

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { NavLink } from "@/components/layout/nav-link";
 import { useMemo } from "react";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -44,7 +44,7 @@ export function Header() {
             {tabs.map((tab) => {
               const active = tab.href === activeHref;
               return (
-                <Link
+                <NavLink
                   key={tab.href}
                   href={tab.href}
                   aria-current={active ? "page" : undefined}
@@ -59,7 +59,7 @@ export function Header() {
                   {active && (
                     <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-t-sm bg-[#347796]" aria-hidden />
                   )}
-                </Link>
+                </NavLink>
               );
             })}
           </nav>

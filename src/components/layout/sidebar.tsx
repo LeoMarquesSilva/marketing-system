@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { NavLink } from "@/components/layout/nav-link";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -70,7 +70,7 @@ function SidebarFeatureLink({
   const badge = sumBadges(feature.pages.map((page) => badgeFor(page.href)));
 
   return (
-    <Link
+    <NavLink
       href={feature.href}
       aria-current={active ? "page" : undefined}
       className={cn(
@@ -100,7 +100,7 @@ function SidebarFeatureLink({
         {feature.label}
       </span>
       {expanded && <NavBadgePill badge={badge} variant="count" active={active} />}
-    </Link>
+    </NavLink>
   );
 }
 
@@ -276,7 +276,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
       >
         <div className="relative flex h-full min-h-0 flex-col">
           <div className={cn("flex h-[72px] shrink-0 items-center", expanded ? "px-4" : "justify-center px-3")}>
-            <Link
+            <NavLink
               href="/"
               className={cn(
                 "group flex min-w-0 items-center rounded-xl transition-colors hover:bg-white/8",
@@ -323,7 +323,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
                   </motion.span>
                 )}
               </AnimatePresence>
-            </Link>
+            </NavLink>
           </div>
 
           <nav
@@ -415,7 +415,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
                         <p className="truncate text-[11px] text-white/50">{profile.email}</p>
                       )}
                     </div>
-                    <Link
+                    <NavLink
                       href="/perfil"
                       role="menuitem"
                       onClick={() => setProfileMenuOpen(false)}
@@ -423,7 +423,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
                     >
                       <User className="h-4 w-4" />
                       Meu perfil
-                    </Link>
+                    </NavLink>
                     <button
                       type="button"
                       role="menuitem"
@@ -486,7 +486,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
                         const isActive = feature.id === activeFeatureId;
                         const badge = sumBadges(feature.pages.map((page) => badgeFor(page.href)));
                         return (
-                          <Link
+                          <NavLink
                             key={feature.id}
                             href={feature.href}
                             aria-current={isActive ? "page" : undefined}
@@ -501,7 +501,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
                             <feature.icon className="h-[18px] w-[18px] shrink-0" aria-hidden />
                             <span className="min-w-0 flex-1 leading-tight">{feature.label}</span>
                             <NavBadgePill badge={badge} variant="count" active={isActive} />
-                          </Link>
+                          </NavLink>
                         );
                       })}
                     </div>
@@ -509,14 +509,14 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
                 ))}
               </div>
               <div className="mt-4 grid grid-cols-2 gap-1.5 border-t border-white/10 pt-3">
-                <Link
+                <NavLink
                   href="/perfil"
                   onClick={() => setMobileMenuOpen(false)}
                   className="flex min-h-12 items-center gap-2.5 rounded-md px-3 py-2.5 text-sm font-medium text-white/75 outline-none transition-colors hover:bg-white/[0.09] hover:text-white focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
                 >
                   <User className="h-[18px] w-[18px]" aria-hidden />
                   Meu perfil
-                </Link>
+                </NavLink>
                 <button
                   type="button"
                   onClick={handleSignOut}
@@ -540,7 +540,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
           const isActive = feature.id === activeFeatureId;
           const badge = sumBadges(feature.pages.map((page) => badgeFor(page.href)));
           return (
-            <Link
+            <NavLink
               key={feature.id}
               href={feature.href}
               aria-label={feature.label}
@@ -558,7 +558,7 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
               <span className="max-w-[72px] truncate text-xs font-medium leading-none">
                 {feature.shortLabel ?? feature.label}
               </span>
-            </Link>
+            </NavLink>
           );
         })}
         <button
