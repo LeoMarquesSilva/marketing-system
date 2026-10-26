@@ -14,6 +14,7 @@ import {
   updateWhatsappConversationCrm,
   updateWhatsappConversationTags,
 } from "@/lib/evolution-whatsapp";
+import { clearWhatsappConversationUnread } from "@/lib/whatsapp-attendance";
 
 export const dynamic = "force-dynamic";
 
@@ -156,10 +157,14 @@ export async function PATCH(request: Request) {
           : undefined;
 
       // Ao assumir a conversa, marca o usuário logado (users.id, não o auth_id) como responsável.
+      // `owner_user_id: null` tira o responsável.
+      const rawOwnerId = (body as { owner_user_id?: unknown }).owner_user_id;
       const explicitOwnerId =
-        typeof (body as { owner_user_id?: unknown }).owner_user_id === "string"
-          ? (body as { owner_user_id: string }).owner_user_id.trim() || null
-          : undefined;
+        typeof rawOwnerId === "string"
+          ? rawOwnerId.trim() || null
+          : rawOwnerId === null
+            ? null
+            : undefined;
       let ownerUserId = explicitOwnerId;
       if (explicitOwnerId === undefined && attendanceStatus === "em_atendimento") {
         const { data: appUser } = await supabase
@@ -195,6 +200,11 @@ export async function PATCH(request: Request) {
             : undefined,
         attendance_status: attendanceStatus,
       });
+
+      if (attendanceStatus === "resolvido") {
+        await clearWhatsappConversationUnread(conversationId);
+        conversation = { ...conversation, unread_count: 0 };
+      }
     }
 
     return NextResponse.json({ ok: true, conversation });

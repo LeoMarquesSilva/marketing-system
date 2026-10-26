@@ -57,7 +57,13 @@ export async function GET(request: Request) {
       conv.remote_jid as string,
       conv.phone as string | null
     );
-    if (!url) return new Response("Sem foto de perfil.", { status: 404 });
+    // Contato sem foto: o navegador guarda a resposta e não pede de novo a cada lista.
+    if (!url) {
+      return new Response("Sem foto de perfil.", {
+        status: 404,
+        headers: { "Cache-Control": "private, max-age=21600" },
+      });
+    }
 
     const res = isWhatsappCdnUrl(url)
       ? await fetchCdnImage(url)

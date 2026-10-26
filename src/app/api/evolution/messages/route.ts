@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import {
   isEvolutionConfigured,
@@ -6,8 +6,24 @@ import {
   sendEvolutionReaction,
   sendEvolutionTextMessage,
 } from "@/lib/evolution-whatsapp";
+import {
+  appUserIdForAuth,
+  assignWhatsappConversationIfUnowned,
+} from "@/lib/whatsapp-attendance";
 
 export const dynamic = "force-dynamic";
+
+/** Quem responde primeiro vira responsável (depois da resposta, sem atrasar o envio). */
+function assignSenderAfterResponse(conversationId: string, authId: string) {
+  after(async () => {
+    try {
+      const userId = await appUserIdForAuth(authId);
+      if (userId) await assignWhatsappConversationIfUnowned(conversationId, userId);
+    } catch (err) {
+      console.error("[evolution/messages] atribuir responsável:", err);
+    }
+  });
+}
 
 export async function POST(request: Request) {
   try {
@@ -62,6 +78,7 @@ export async function POST(request: Request) {
 
     if (audioBase64) {
       const message = await sendEvolutionAudioMessage(conversationId, audioBase64);
+      assignSenderAfterResponse(conversationId, user.id);
       return NextResponse.json({ ok: true, message });
     }
 
@@ -101,6 +118,7 @@ export async function POST(request: Request) {
         quotedWaMessageId,
         quotedBody,
       });
+      assignSenderAfterResponse(conversationId, user.id);
       return NextResponse.json({ ok: true, message });
     }
 
@@ -108,6 +126,7 @@ export async function POST(request: Request) {
       quotedWaMessageId,
       quotedBody,
     });
+    assignSenderAfterResponse(conversationId, user.id);
     return NextResponse.json({ ok: true, message });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro ao enviar mensagem.";
