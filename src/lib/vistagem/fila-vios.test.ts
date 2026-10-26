@@ -11,8 +11,8 @@ const PUBLICACAO: PublicacaoParaFila = {
 };
 
 const ITENS: AgendamentoParaFila[] = [
-  { id: "ag-1", etiqueta: "PRAZO", tarefa: "MANIFESTAÇÃO - FLUXO D1", tarefa_id: "136", data: "2026-10-16", responsavel: "Maria Heloiza Gois Ponce", revisor: "Giovanna Pereira de Souza", observacao: "laudo" },
-  { id: "ag-2", etiqueta: "PROVIDENCIA", tarefa: "ACOMPANHAMENTO PROCESSUAL DIÁRIO", tarefa_id: "731", data: "2026-10-19", responsavel: "Giovanna Pereira de Souza", revisor: null, observacao: null },
+  { id: "ag-1", etiqueta: "PRAZO", tarefa: "MANIFESTAÇÃO - FLUXO D1", tarefa_id: "136", data: "2026-10-16", hora: null, responsavel: "Maria Heloiza Gois Ponce", revisor: "Giovanna Pereira de Souza", observacao: "laudo" },
+  { id: "ag-2", etiqueta: "PROVIDENCIA", tarefa: "ACOMPANHAMENTO PROCESSUAL DIÁRIO", tarefa_id: "731", data: "2026-10-19", hora: null, responsavel: "Giovanna Pereira de Souza", revisor: null, observacao: null },
 ];
 
 describe("fila do robô", () => {
@@ -24,11 +24,17 @@ describe("fila do robô", () => {
     expect(linhas[1].linha).toMatchObject({ tipo: "Providências", etiqueta_id: "204", data: "19/10/2026" });
   });
 
-  it("compromisso vai com a etiqueta COMPROMISSO do VIOS", () => {
-    const audiencia: AgendamentoParaFila = { ...ITENS[1], etiqueta: "COMPROMISSO", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefa_id: "54" };
-    expect(linhasParaFila(PUBLICACAO, [audiencia], { simular: false, modo: "pasta" })[0].linha).toMatchObject({ tipo: "Compromisso", etiqueta_id: "205" });
+  it("compromisso vai com a etiqueta COMPROMISSO do VIOS e o horário", () => {
+    const audiencia: AgendamentoParaFila = { ...ITENS[1], etiqueta: "COMPROMISSO", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefa_id: "54", hora: "14:30" };
+    const [naPasta] = linhasParaFila(PUBLICACAO, [audiencia], { simular: false, modo: "pasta" });
+    expect(naPasta.linha).toMatchObject({ tipo: "Compromisso", etiqueta_id: "205" });
+    // a fila da pasta não tem coluna de hora: vai na descrição
+    expect(naPasta.linha.observacao).toContain("\nHorário: 14:30\n");
     const [grupo] = linhasParaFila(PUBLICACAO, [ITENS[0], audiencia], { simular: false, modo: "intimacao" });
-    expect(grupo.linha.lancamento?.tarefas.map((t) => t.etiqueta_id)).toEqual(["1", "205"]);
+    expect(grupo.linha.lancamento?.tarefas.map((t) => [t.etiqueta_id, t.hora])).toEqual([
+      ["1", null],
+      ["205", "14:30"],
+    ]);
   });
 
   it("na intimação: uma linha com todas as tarefas, ligada pelo ID de comunicação", () => {
@@ -47,6 +53,7 @@ describe("fila do robô", () => {
           tarefa: "MANIFESTAÇÃO - FLUXO D1",
           etiqueta_id: "1",
           data: "16/10/2026",
+          hora: null,
           responsavel: "Maria Heloiza Gois Ponce",
           revisor: "Giovanna Pereira de Souza",
           observacao: "Publicação de 15/10/2026 · TRT17 · Processo 0000952-37.2026.5.17.0141 · ID comunicação 755730632\nlaudo\nVistagem pelo Orquestra.",
@@ -57,6 +64,7 @@ describe("fila do robô", () => {
           tarefa: "ACOMPANHAMENTO PROCESSUAL DIÁRIO",
           etiqueta_id: "204",
           data: "19/10/2026",
+          hora: null,
           responsavel: "Giovanna Pereira de Souza",
           revisor: null,
           observacao: "Publicação de 15/10/2026 · TRT17 · Processo 0000952-37.2026.5.17.0141 · ID comunicação 755730632\nVistagem pelo Orquestra.",

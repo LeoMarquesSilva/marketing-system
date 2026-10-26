@@ -91,6 +91,7 @@ describe("validarAgendamentos", () => {
           data: "2026-10-28",
           dataFatal: "2026-11-02",
           diasPrazo: 15,
+          hora: null,
           responsavel: "Advogada Exemplo",
           responsavelId: "4",
           revisor: "Revisor Exemplo",
@@ -116,15 +117,29 @@ describe("validarAgendamentos", () => {
 
   it("compromisso usa a data do calendário e não exige revisor", () => {
     const resultado = validarAgendamentos(
-      [{ etiqueta: "COMPROMISSO", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", data: "2026-11-10", responsavel: "Advogada Exemplo" }],
+      [{ etiqueta: "COMPROMISSO", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", data: "2026-11-10", hora: "14:30", responsavel: "Advogada Exemplo" }],
       contexto
     );
-    expect(resultado.ok && resultado.itens[0]).toMatchObject({ etiqueta: "COMPROMISSO", tarefaId: "54", data: "2026-11-10", revisor: null });
+    expect(resultado.ok && resultado.itens[0]).toMatchObject({ etiqueta: "COMPROMISSO", tarefaId: "54", data: "2026-11-10", hora: "14:30", revisor: null });
     const naClasseErrada = validarAgendamentos(
       [{ etiqueta: "PROVIDENCIA", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", data: "2026-11-10", responsavel: "Advogada Exemplo" }],
       contexto
     );
     expect(naClasseErrada.ok).toBe(false);
+  });
+
+  it("compromisso exige o horário; nas outras classes ele é ignorado", () => {
+    const audiencia = { etiqueta: "COMPROMISSO" as const, tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", data: "2026-11-10", responsavel: "Advogada Exemplo" };
+    for (const hora of [undefined, null, "", "24:00", "9:30", "14h30"]) {
+      const resultado = validarAgendamentos([{ ...audiencia, hora }], contexto);
+      expect(resultado).toEqual({ ok: false, erros: ["Tarefa 1: informe o horário do compromisso."] });
+    }
+    expect(validarAgendamentos([{ ...audiencia, hora: " 09:05 " }], contexto)).toMatchObject({ ok: true, itens: [{ hora: "09:05" }] });
+    const providencia = validarAgendamentos(
+      [{ etiqueta: "PROVIDENCIA", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-11-10", hora: "10:00", responsavel: "Advogada Exemplo" }],
+      contexto
+    );
+    expect(providencia.ok && providencia.itens[0].hora).toBeNull();
   });
 
   it("no Prazo a data do VIOS segue o 3. PROTOCOLAR do fluxo da tarefa", () => {
