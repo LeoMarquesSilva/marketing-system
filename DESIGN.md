@@ -38,7 +38,7 @@ Vermelho, amber, verde e azul informativo ficam reservados para estados semantic
 - Sidebar compacta com 72 px e expandida com 268 px ao receber hover ou foco.
 - Sidebar compacta mostra somente o simbolo; expandida mostra somente o logo horizontal.
 - Header com 64 px: icone da funcionalidade, frente como sobretitulo, nome da funcionalidade no `h1` e logo discreto em telas com espaco.
-- Navegacao organizada por frentes (Marketing, Relacionamento / Comercial, Pessoas e Cultura, Operacoes Legais, Administracao). Cada item da sidebar e uma funcionalidade; frentes abrem e fecham e a escolha fica salva no navegador.
+- Navegacao organizada por frentes (Marketing, Relacionamento / Comercial, Pessoas e Cultura, Operacoes Legais, Facilities, Administracao). Cada item da sidebar e uma funcionalidade; frentes abrem e fecham e a escolha fica salva no navegador.
 - Funcionalidade com mais de uma pagina (ex.: Metricas de redes sociais) mostra as paginas como abas no header. Nomes, frentes e abas vem de `src/lib/navigation.ts`; nao repetir nomes em outro lugar.
 - Conteudo usa `p-4` no mobile e `p-6` no desktop.
 - A marca d'agua pode aparecer no canto, atras do conteudo e com opacidade maxima de 6%.

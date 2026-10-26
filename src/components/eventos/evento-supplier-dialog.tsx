@@ -183,6 +183,10 @@ export function EventoSupplierDialog({
                     <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>
+                        {/* Fornecedor cadastrado em Facilities (ex.: limpeza) mantém a categoria dele. */}
+                        {field.value && !(SUPPLIER_CATEGORIES as readonly string[]).includes(field.value) && (
+                          <SelectItem value={field.value}>{SUPPLIER_CATEGORY_LABEL[field.value] ?? field.value}</SelectItem>
+                        )}
                         {SUPPLIER_CATEGORIES.map((c) => (
                           <SelectItem key={c} value={c}>{SUPPLIER_CATEGORY_LABEL[c]}</SelectItem>
                         ))}
