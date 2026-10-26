@@ -136,12 +136,15 @@ function ModalHorario({
 
 /** Ao clicar num atalho de dias, pergunta se o prazo é em dias úteis ou corridos, com a fatal de cada um. */
 function ModalContagem({
+  aberto,
   dias,
   dataPublicacao,
   contaPrazo,
   onEscolher,
   onFechar,
 }: {
+  aberto: boolean;
+  /** Mantido ao fechar, para o conteúdo não sumir durante a animação de saída. */
   dias: number | null;
   dataPublicacao: string | null;
   contaPrazo: (iso: string) => boolean;
@@ -151,7 +154,7 @@ function ModalContagem({
   const fatais = dias && dataPublicacao ? CONTAGENS_PRAZO.map((contagem) => [contagem, fatalPorContagem(dataPublicacao, dias, contagem, contaPrazo)] as const) : [];
 
   return (
-    <Dialog open={Boolean(dias)} onOpenChange={(aberto) => !aberto && onFechar()}>
+    <Dialog open={aberto} onOpenChange={(abrir) => !abrir && onFechar()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Prazo de {dias} dias</DialogTitle>
@@ -170,7 +173,7 @@ function ModalContagem({
               onClick={() => onEscolher(contagem, fatal)}
               autoFocus={indice === 0}
             >
-              <span className="text-sm font-semibold capitalize text-slate-900">{ROTULO_CONTAGEM[contagem]}</span>
+              <span className="block text-sm font-semibold text-slate-900 first-letter:uppercase">{ROTULO_CONTAGEM[contagem]}</span>
               <span className="text-xs font-normal text-slate-600">
                 fatal <span className="font-mono font-semibold text-[#183f50]">{formatarData(fatal)}</span>
               </span>
@@ -253,7 +256,7 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
   /** Linha do Compromisso com o modal de data e horário aberto. */
   const [horarioDe, setHorarioDe] = useState<number | null>(null);
   /** Atalho de dias clicado, à espera da escolha entre úteis e corridos. */
-  const [contagemDe, setContagemDe] = useState<{ chave: number; dias: number } | null>(null);
+  const [contagemDe, setContagemDe] = useState<{ chave: number; dias: number; aberto: boolean } | null>(null);
 
   useEffect(() => {
     let cancelado = false;
@@ -515,7 +518,7 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
                                 aria-pressed={linha.diasPrazo === dias}
                                 disabled={!publicacao.dataPublicacao}
                                 className={cn(linha.diasPrazo === dias && "border-[#183f50] bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")}
-                                onClick={() => publicacao.dataPublicacao && setContagemDe({ chave: linha.chave, dias })}
+                                onClick={() => publicacao.dataPublicacao && setContagemDe({ chave: linha.chave, dias, aberto: true })}
                               >
                                 {dias}
                               </Button>
@@ -674,14 +677,15 @@ function EditorVistagem({ id, onConcluida, onVoltar }: { id: string; onConcluida
       />
 
       <ModalContagem
+        aberto={Boolean(contagemDe?.aberto)}
         dias={contagemDe?.dias ?? null}
         dataPublicacao={publicacao.dataPublicacao}
         contaPrazo={contaPrazo}
         onEscolher={(contagemPrazo, dataFatal) => {
           if (contagemDe) alterar(contagemDe.chave, { diasPrazo: contagemDe.dias, contagemPrazo, dataFatal });
-          setContagemDe(null);
+          setContagemDe((atual) => atual && { ...atual, aberto: false });
         }}
-        onFechar={() => setContagemDe(null)}
+        onFechar={() => setContagemDe((atual) => atual && { ...atual, aberto: false })}
       />
     </div>
   );
