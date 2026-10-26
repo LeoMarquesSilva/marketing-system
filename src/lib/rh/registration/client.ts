@@ -1,7 +1,9 @@
+import { flaggedItems } from "./history";
 import {
   REGISTRATION_KIND_LABEL,
   SELF_REGISTRATION_PATH,
   type RegistrationDetail,
+  type RegistrationField,
   type RegistrationKind,
   type RegistrationListItem,
 } from "./types";
@@ -90,6 +92,28 @@ export function buildRegistrationMessage(
     `Para fazermos seu cadastro (${REGISTRATION_KIND_LABEL[item.employment_kind]}), preencha sua ficha neste link: ${registrationPublicUrl(item)}`,
     `Leva uns 5 minutos${until ? ` e o link vale até ${until}` : ""}. Qualquer dúvida, é só chamar a equipe de Pessoas e Cultura.`,
   ].join("\n\n");
+}
+
+/** Mensagem de ficha devolvida: o que ajustar e o link (a ficha abre direto no campo). */
+export function buildReopenMessage(input: {
+  name: string;
+  fields: RegistrationField[];
+  note: string | null;
+  url: string;
+}): string {
+  const raw = input.name.trim().split(/\s+/)[0] ?? "";
+  const first = raw ? raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase() : "";
+  const items = flaggedItems(input.fields).map((item) => item.label);
+  return [
+    first ? `Olá, ${first}! Tudo bem?` : "Olá! Tudo bem?",
+    items.length
+      ? `Precisamos de um ajuste na sua ficha cadastral: ${items.join(", ")}.`
+      : "Precisamos de um ajuste na sua ficha cadastral.",
+    input.note ? `Recado de Pessoas e Cultura: ${input.note}` : null,
+    `É só abrir este link, a ficha já vai direto no que precisa corrigir: ${input.url}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 /** Mensagem da campanha de atualização (um link para todos, cada um entra com o próprio login). */

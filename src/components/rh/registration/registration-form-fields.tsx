@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, Loader2 } from "lucide-react";
+import { Check, Flag, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -100,12 +100,41 @@ export function withCompanionFields(fields: Iterable<RegistrationField>): Set<Re
   return result;
 }
 
+/** Pedido de ajuste da RH: campos marcados e, deles, os que a pessoa já mexeu. */
+export interface RegistrationReopenMarks {
+  flagged: ReadonlySet<RegistrationField>;
+  adjusted: ReadonlySet<RegistrationField>;
+}
+
 interface FieldVisibility {
   visible: ReadonlySet<RegistrationField> | null;
   missing: ReadonlySet<RegistrationField> | null;
+  reopen: RegistrationReopenMarks | null;
 }
 
-const FieldVisibilityContext = createContext<FieldVisibility>({ visible: null, missing: null });
+const FieldVisibilityContext = createContext<FieldVisibility>({ visible: null, missing: null, reopen: null });
+
+type FieldMarkKind = "falta" | "ajustar" | "ajustado";
+
+/** Marca ao lado do rótulo; o pedido de ajuste da RH vem antes do "falta". */
+function fieldMark(
+  fields: RegistrationField[],
+  missing: ReadonlySet<RegistrationField> | null,
+  reopen: RegistrationReopenMarks | null
+): FieldMarkKind | null {
+  if (reopen && fields.some((field) => reopen.flagged.has(field))) {
+    return fields.some((field) => reopen.flagged.has(field) && !reopen.adjusted.has(field)) ? "ajustar" : "ajustado";
+  }
+  return fields.some((field) => missing?.has(field)) ? "falta" : null;
+}
+
+function useFieldMark(fields: RegistrationField[]): FieldMarkKind | null {
+  const { missing, reopen } = useContext(FieldVisibilityContext);
+  return fieldMark(fields, missing, reopen);
+}
+
+/** Destaque do bloco pedido pela RH, para a pessoa achar o campo ao rolar. */
+const FLAGGED_BLOCK = "fc-flagged -m-2 rounded-lg bg-amber-50/80 p-2 ring-1 ring-amber-200";
 
 function maskDigits(value: string, max: number): string {
   return onlyDigits(value).slice(0, max);
@@ -216,14 +245,15 @@ function ChoiceChips({
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
-  const { visible, missing } = useContext(FieldVisibilityContext);
+  const { visible } = useContext(FieldVisibilityContext);
+  const mark = useFieldMark([field]);
   if (visible && !visible.has(field)) return null;
   const labelId = `${registrationFieldId(field)}-label`;
   return (
-    <div className="space-y-2 sm:col-span-2" data-field={field}>
+    <div className={cn("space-y-2 sm:col-span-2", mark === "ajustar" && FLAGGED_BLOCK)} data-field={field}>
       <p id={labelId} className="flex flex-wrap items-baseline gap-x-1.5 text-sm font-medium text-foreground">
         {label}
-        {missing?.has(field) && <MissingMark />}
+        <FieldMark kind={mark} />
       </p>
       <div
         id={registrationFieldId(field)}
@@ -284,15 +314,16 @@ function Field({
   className?: string;
   children: ReactNode;
 }) {
-  const { visible, missing } = useContext(FieldVisibilityContext);
+  const { visible } = useContext(FieldVisibilityContext);
   const fields = [field, ...(alsoFields ?? [])];
+  const mark = useFieldMark(fields);
   if (visible && !fields.some((item) => visible.has(item))) return null;
   return (
-    <div className={cn("min-w-0 space-y-1.5", className)} data-field={field}>
+    <div className={cn("min-w-0 space-y-1.5", mark === "ajustar" && FLAGGED_BLOCK, className)} data-field={field}>
       <label htmlFor={registrationFieldId(field)} className="flex flex-wrap items-baseline gap-x-1.5 text-sm font-medium text-foreground">
         {label}
         {optional && <span className="font-normal text-muted-foreground">(opcional)</span>}
-        {fields.some((item) => missing?.has(item)) && <MissingMark />}
+        <FieldMark kind={mark} />
       </label>
       {children}
       {error ? (
@@ -306,12 +337,31 @@ function Field({
   );
 }
 
-function MissingMark() {
-  return (
-    <span className="fc-missing rounded-full bg-amber-100 px-2 py-px text-[0.68rem] font-semibold uppercase tracking-wide text-amber-900">
-      falta
-    </span>
-  );
+function FieldMark({ kind }: { kind: FieldMarkKind | null }) {
+  if (kind === "ajustar") {
+    return (
+      <span className="fc-flag inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-px text-[0.68rem] font-semibold uppercase tracking-wide text-amber-900">
+        <Flag className="size-2.5" aria-hidden />
+        ajustar
+      </span>
+    );
+  }
+  if (kind === "ajustado") {
+    return (
+      <span className="fc-adjusted inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-px text-[0.68rem] font-semibold uppercase tracking-wide text-emerald-800">
+        <Check className="size-2.5" aria-hidden />
+        ajustado
+      </span>
+    );
+  }
+  if (kind === "falta") {
+    return (
+      <span className="fc-missing rounded-full bg-amber-100 px-2 py-px text-[0.68rem] font-semibold uppercase tracking-wide text-amber-900">
+        falta
+      </span>
+    );
+  }
+  return null;
 }
 
 function OptionSelect({
@@ -384,6 +434,7 @@ export function RegistrationFormFields({
   disabled,
   visibleFields = null,
   missingFields = null,
+  reopenMarks = null,
   onChange,
 }: {
   kind: RegistrationKind;
@@ -394,6 +445,8 @@ export function RegistrationFormFields({
   visibleFields?: ReadonlySet<RegistrationField> | null;
   /** Campos marcados com "falta" ao lado do rótulo. */
   missingFields?: ReadonlySet<RegistrationField> | null;
+  /** Campos que a RH pediu para ajustar ("ajustar" até a pessoa mexer, depois "ajustado"). */
+  reopenMarks?: RegistrationReopenMarks | null;
   onChange: <K extends RegistrationField>(field: K, value: RegistrationAnswers[K]) => void;
 }) {
   const filtering = visibleFields !== null;
@@ -483,9 +536,10 @@ export function RegistrationFormFields({
   };
 
   const needsDietaryDetail = answers.dietaryRestrictions.some((item) => DIETARY_NEEDS_DETAIL.has(item));
+  const dietaryMark = fieldMark(["dietaryRestrictions"], missingFields, reopenMarks);
 
   return (
-    <FieldVisibilityContext.Provider value={{ visible: visibleFields, missing: missingFields }}>
+    <FieldVisibilityContext.Provider value={{ visible: visibleFields, missing: missingFields, reopen: reopenMarks }}>
       <div className="space-y-5">
         {sectionShown[0] && (
           <RegistrationSection index={sectionIndex(0)} title="Dados pessoais">
@@ -723,14 +777,14 @@ export function RegistrationFormFields({
             </Field>
             {!filtering && <div className="hidden sm:block" />}
             {showField("dietaryRestrictions") && (
-              <div className="space-y-2 sm:col-span-2" data-field="dietaryRestrictions">
+              <div className={cn("space-y-2 sm:col-span-2", dietaryMark === "ajustar" && FLAGGED_BLOCK)} data-field="dietaryRestrictions">
                 <p
                   id={registrationFieldId("dietaryRestrictions")}
                   className="flex flex-wrap items-baseline gap-x-1.5 text-sm font-medium text-foreground"
                   tabIndex={-1}
                 >
                   Restrição alimentar
-                  {missingFields?.has("dietaryRestrictions") && <MissingMark />}
+                  <FieldMark kind={dietaryMark} />
                 </p>
                 <div className="flex flex-wrap gap-2" role="group" aria-labelledby={registrationFieldId("dietaryRestrictions")}>
                   {DIETARY_OPTIONS.map((option) => {

@@ -154,6 +154,54 @@
   color: var(--navy);
 }
 
+.reopenText + .reopenFields {
+  margin-top: 0.85rem;
+}
+
+.reopenFields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reopenField {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid rgba(156, 116, 52, 0.4);
+  border-radius: 999px;
+  background: #ffffff;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--navy);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.reopenField:hover {
+  background: var(--paper-tint);
+}
+
+.reopenField svg {
+  width: 0.8rem;
+  height: 0.8rem;
+  color: var(--gold-deep);
+}
+
+.reopenField[data-done] {
+  border-color: rgba(13, 30, 46, 0.14);
+  color: var(--ink-soft);
+}
+
+.reopenField[data-done] svg {
+  color: #2f7d5b;
+}
+
 .form :global(.fc-section) {
   border-color: rgba(13, 30, 46, 0.09);
   box-shadow: 0 1px 2px rgba(13, 30, 46, 0.04), 0 12px 32px -24px rgba(13, 30, 46, 0.25);
@@ -480,9 +528,27 @@
   margin: 0;
 }
 
-.form :global(.fc-missing) {
+.form :global(.fc-missing),
+.form :global(.fc-flag) {
   background: rgba(225, 177, 109, 0.22);
   color: var(--gold-deep);
+}
+
+.form :global(.fc-adjusted) {
+  background: rgba(47, 125, 91, 0.1);
+  color: #2f7d5b;
+}
+
+.form :global(.fc-flagged) {
+  background: rgba(225, 177, 109, 0.1);
+  box-shadow: 0 0 0 1px rgba(156, 116, 52, 0.35);
+}
+
+.finishNote {
+  margin: 0.85rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.78);
 }
 
 .actions {

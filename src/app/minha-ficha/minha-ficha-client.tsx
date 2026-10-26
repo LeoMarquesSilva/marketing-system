@@ -12,6 +12,12 @@ import {
   withCompanionFields,
 } from "@/components/rh/registration/registration-form-fields";
 import styles from "@/components/rh/registration/ficha-publica.module.css";
+import {
+  ReopenNotice,
+  UntouchedWarning,
+  useJumpToFirstFlagged,
+  useReopenMarks,
+} from "@/components/rh/registration/reopen-notice";
 import { loginPathWithReturn } from "@/lib/login-redirect";
 import {
   SELF_REGISTRATION_PATH,
@@ -40,6 +46,7 @@ type ReadyPayload = {
     submittedAt: string | null;
     approvedAt: string | null;
     reopenNote: string | null;
+    reopenFields: RegistrationField[];
   } | null;
 };
 
@@ -52,6 +59,8 @@ type Screen =
   | { kind: "form"; payload: ReadyPayload };
 
 type Mode = "missing" | "all";
+
+const NO_FIELDS: RegistrationField[] = [];
 
 function firstName(name: string): string {
   return name.trim().split(/\s+/)[0] ?? "";
@@ -112,7 +121,7 @@ export function MinhaFichaClient() {
       const missing = missingRegistrationFields(next.payload.answers, next.payload.kind);
       setAnswers(next.payload.answers);
       setInitialMissing(missing);
-      setMode(missing.length > 0 ? "missing" : "all");
+      setMode(missing.length > 0 || (next.payload.form?.reopenFields.length ?? 0) > 0 ? "missing" : "all");
       setErrors({});
       setConsent(false);
       setConsentError(false);
@@ -143,6 +152,10 @@ export function MinhaFichaClient() {
 
   const payload = screen.kind === "form" ? screen.payload : null;
   const kind = payload?.kind ?? null;
+  // Campos que a RH marcou ao devolver: aparecem no "só o que falta" e a ficha abre no primeiro.
+  const flagged = payload?.form?.reopenFields ?? NO_FIELDS;
+  const { marks: reopenMarks, pending: pendingFlagged } = useReopenMarks(flagged, payload?.answers ?? null, answers);
+  useJumpToFirstFlagged(flagged, screen.kind === "form", scrollToField);
 
   const progress = useMemo(
     () => (answers && kind ? registrationProgress(answers, kind) : { required: [], missing: [], filled: 0 }),
@@ -156,9 +169,9 @@ export function MinhaFichaClient() {
   const visibleFields = useMemo(
     () =>
       mode === "missing"
-        ? withCompanionFields([...initialMissing, ...(Object.keys(errors) as RegistrationField[])])
+        ? withCompanionFields([...flagged, ...initialMissing, ...(Object.keys(errors) as RegistrationField[])])
         : null,
-    [mode, initialMissing, errors]
+    [mode, flagged, initialMissing, errors]
   );
 
   const filledCount = progress.filled;
@@ -275,18 +288,20 @@ export function MinhaFichaClient() {
               <p className={styles.eyebrow}>Ficha cadastral · {payload.vinculoLabel}</p>
               <h1 className={styles.title}>{displayName ? `olá, ${displayName.toLowerCase()}` : "olá"}</h1>
               <p className={styles.lede}>
-                {initialMissing.length > 0
+                {flagged.length > 0
+                  ? "Ajuste o que Pessoas e Cultura pediu e envie de novo."
+                  : initialMissing.length > 0
                   ? "Confira seus dados e complete o que falta."
                   : "Sua ficha está completa. Se algo mudou, é só atualizar."}
               </p>
             </section>
 
-            {payload.form?.reopenNote && (
-              <section className={styles.reopen} role="note">
-                <p className={styles.reopenLabel}>Pessoas e Cultura pediu um ajuste</p>
-                <p className={styles.reopenText}>{payload.form.reopenNote}</p>
-              </section>
-            )}
+            <ReopenNotice
+              note={payload.form?.reopenNote ?? null}
+              flagged={flagged}
+              pending={pendingFlagged}
+              onJump={scrollToField}
+            />
             {payload.form?.status === "recebida" && payload.form.submittedAt && (
               <section className={styles.status} role="note">
                 <p>
@@ -323,7 +338,7 @@ export function MinhaFichaClient() {
               <div className={styles.bar} role="presentation">
                 <div className={styles.barFill} style={{ width: `${percent}%` }} />
               </div>
-              {initialMissing.length > 0 && (
+              {(initialMissing.length > 0 || flagged.length > 0) && (
                 <div className={styles.modeToggle} role="group" aria-label="O que mostrar">
                   <button
                     type="button"
@@ -331,7 +346,7 @@ export function MinhaFichaClient() {
                     aria-pressed={mode === "missing"}
                     onClick={() => setMode("missing")}
                   >
-                    Só o que falta
+                    {flagged.length > 0 ? "Só o que ajustar" : "Só o que falta"}
                   </button>
                   <button
                     type="button"
@@ -360,6 +375,7 @@ export function MinhaFichaClient() {
                 disabled={submitting}
                 visibleFields={visibleFields}
                 missingFields={missingSet}
+                reopenMarks={reopenMarks}
                 onChange={handleChange}
               />
 
@@ -393,6 +409,7 @@ export function MinhaFichaClient() {
                     {submitError}
                   </p>
                 )}
+                <UntouchedWarning pending={pendingFlagged} />
                 <button type="submit" className={styles.submit} disabled={submitting}>
                   {submitting ? (
                     <>

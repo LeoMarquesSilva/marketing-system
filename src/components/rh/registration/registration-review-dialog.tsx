@@ -22,7 +22,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -36,12 +35,15 @@ import {
 import { RegistrationAnswersView } from "@/components/rh/registration/registration-answers-view";
 import { RegistrationFormFields } from "@/components/rh/registration/registration-form-fields";
 import { RegistrationStatusBadge } from "@/components/rh/registration/registration-status-badge";
+import { RegistrationTimeline } from "@/components/rh/registration/registration-timeline";
 import {
   buildRegistrationMessage,
+  buildReopenMessage,
   buildSelfUpdateMessage,
   fetchRegistrationRequest,
   registrationActionRequest,
   registrationPublicUrl,
+  selfRegistrationUrl,
   whatsappUrl,
 } from "@/lib/rh/registration/client";
 import {
@@ -55,6 +57,7 @@ import {
   type RegistrationField,
   type RegistrationKind,
 } from "@/lib/rh/registration/types";
+import { flaggedItems } from "@/lib/rh/registration/history";
 import type { QualificationSyncPreview } from "@/lib/rh/registration/qualification-sync";
 import type { RegistrationErrors } from "@/lib/rh/registration/validation";
 
@@ -164,7 +167,9 @@ export function RegistrationReviewDialog({
   const [fieldErrors, setFieldErrors] = useState<RegistrationErrors>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [reopenOpen, setReopenOpen] = useState(false);
+  // Devolver: a RH clica nos campos errados e escreve o recado, no próprio modal.
+  const [returning, setReturning] = useState(false);
+  const [returnFields, setReturnFields] = useState<Set<RegistrationField>>(new Set());
   const [reopenNote, setReopenNote] = useState("");
   const [manualEmployeeId, setManualEmployeeId] = useState("");
   const { copied, copy } = useCopy();
@@ -176,6 +181,7 @@ export function RegistrationReviewDialog({
     setForm(null);
     setLoadError(null);
     setEditing(false);
+    setReturning(false);
     setActionError(null);
     setManualEmployeeId("");
     fetchRegistrationRequest(formId).then((result) => {
@@ -225,7 +231,33 @@ export function RegistrationReviewDialog({
     setEditing(true);
   };
 
+  const startReturning = () => {
+    if (!form) return;
+    // Ajustando um pedido já feito: começa com os campos e o recado de antes.
+    const again = form.status === "pendente";
+    setReturnFields(new Set(again ? form.reopen_fields : []));
+    setReopenNote(again ? form.reopen_note ?? "" : "");
+    setEditing(false);
+    setReturning(true);
+  };
+
+  const toggleReturnFields = (fields: RegistrationField[]) => {
+    setReturnFields((current) => {
+      const next = new Set(current);
+      const allSelected = fields.every((field) => next.has(field));
+      for (const field of fields) {
+        if (allSelected) next.delete(field);
+        else next.add(field);
+      }
+      return next;
+    });
+  };
+
+  const returnItems = flaggedItems([...returnFields]);
   const submitted = form?.status === "recebida" || form?.status === "aprovada";
+  // Devolvida: voltou a pendente, mas a pessoa já tinha enviado. As respostas continuam visíveis.
+  const returned = form?.status === "pendente" && !!form?.submitted_at;
+  const hasAnswers = submitted || returned;
   const expired = form ? isRegistrationExpired(form.expires_at) : false;
   // Sem link público: a própria pessoa atualiza em /minha-ficha, com login.
   const selfService = form ? !form.public_path : false;
@@ -271,7 +303,112 @@ export function RegistrationReviewDialog({
             </DialogHeader>
 
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
-              {form.status === "pendente" && selfService && (
+              {returning && (
+                <section className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/60 p-4">
+                  <div>
+                    <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                      <Undo2 className="size-4 text-amber-700" />
+                      Devolver para {firstName}
+                    </h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Clique nos campos que precisam de ajuste, na ficha abaixo. {firstName} abre a ficha direto no
+                      primeiro deles, com o recado no topo.
+                    </p>
+                  </div>
+                  <Textarea
+                    rows={3}
+                    value={reopenNote}
+                    className="bg-background"
+                    placeholder="Recado para a pessoa. Ex.: o número da conta está sem o dígito."
+                    onChange={(event) => setReopenNote(event.target.value)}
+                  />
+                  <p className="text-xs font-medium text-amber-900">
+                    {returnItems.length === 0
+                      ? "Nenhum campo marcado ainda."
+                      : `${returnItems.length === 1 ? "1 campo marcado" : `${returnItems.length} campos marcados`}: ${returnItems
+                          .map((item) => item.label)
+                          .join(", ")}`}
+                  </p>
+                </section>
+              )}
+
+              {!returning && returned && (
+                <section className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/60 p-4">
+                  <div>
+                    <h3 className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                      <Undo2 className="size-4 text-amber-700" />
+                      Devolvida, aguardando {firstName}
+                    </h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {selfService
+                        ? `${firstName} corrige entrando com o próprio login em ${SELF_REGISTRATION_PATH}; a ficha abre direto no primeiro campo marcado.`
+                        : expired
+                          ? "O link expirou. Gere um novo para reenviar."
+                          : `${firstName} corrige pelo mesmo link, válido até ${formatDate(form.expires_at)}; a ficha abre direto no primeiro campo marcado.`}
+                    </p>
+                  </div>
+                  {form.reopen_note && (
+                    <p className="whitespace-pre-line rounded-md bg-background px-3 py-2 text-sm text-foreground">
+                      “{form.reopen_note}”
+                    </p>
+                  )}
+                  {form.reopen_fields.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {flaggedItems(form.reopen_fields).map((item) => (
+                        <span key={item.field} className="rounded-full bg-background px-2 py-0.5 text-xs text-amber-900 ring-1 ring-amber-200">
+                          {item.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {(selfService || !expired) && (
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() =>
+                          copy(
+                            "reopen-msg",
+                            buildReopenMessage({
+                              name: form.invitee_name,
+                              fields: form.reopen_fields,
+                              note: form.reopen_note,
+                              url: selfService ? selfRegistrationUrl() : registrationPublicUrl(form),
+                            })
+                          )
+                        }
+                      >
+                        {copied === "reopen-msg" ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                        {copied === "reopen-msg" ? "Mensagem copiada" : "Copiar mensagem do ajuste"}
+                      </Button>
+                      {form.invitee_phone && (
+                        <Button type="button" variant="secondary" size="sm" className="gap-1.5" asChild>
+                          <a
+                            href={whatsappUrl(
+                              form.invitee_phone,
+                              buildReopenMessage({
+                                name: form.invitee_name,
+                                fields: form.reopen_fields,
+                                note: form.reopen_note,
+                                url: selfService ? selfRegistrationUrl() : registrationPublicUrl(form),
+                              })
+                            )}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <MessageCircle className="size-3.5" />
+                            Enviar pelo WhatsApp
+                          </a>
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {form.status === "pendente" && !returned && selfService && (
                 <section className="space-y-3 rounded-lg border border-border/70 bg-card p-4">
                   <div>
                     <h3 className="text-sm font-semibold text-foreground">Aguardando {firstName}</h3>
@@ -292,7 +429,7 @@ export function RegistrationReviewDialog({
                 </section>
               )}
 
-              {form.status === "pendente" && !selfService && (
+              {form.status === "pendente" && !returned && !selfService && (
                 <section className="space-y-3 rounded-lg border border-border/70 bg-card p-4">
                   <div>
                     <h3 className="text-sm font-semibold text-foreground">Link da ficha</h3>
@@ -341,7 +478,7 @@ export function RegistrationReviewDialog({
                 </p>
               )}
 
-              {submitted && (
+              {hasAnswers && (
                 <section className="space-y-3 rounded-lg border border-border/70 bg-card p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -422,7 +559,7 @@ export function RegistrationReviewDialog({
                 />
               )}
 
-              {submitted &&
+              {hasAnswers &&
                 (editing && draft ? (
                   <div className="space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-muted/60 px-4 py-3">
@@ -449,117 +586,126 @@ export function RegistrationReviewDialog({
                     />
                   </div>
                 ) : (
-                  <RegistrationAnswersView kind={form.employment_kind} answers={form.answers} personalBank={form.personal_bank} />
+                  <RegistrationAnswersView
+                    kind={form.employment_kind}
+                    answers={form.answers}
+                    personalBank={form.personal_bank}
+                    flaggedFields={returned ? form.reopen_fields : undefined}
+                    selection={returning ? { selected: returnFields, onToggle: toggleReturnFields } : null}
+                  />
                 ))}
 
-              {form.consent_at && !editing && (
+              {form.consent_at && !editing && !returning && (
                 <p className="text-xs text-muted-foreground">
                   Declaração de veracidade e autorização LGPD aceita em {formatDate(form.consent_at, true)}.
                 </p>
+              )}
+
+              {!editing && !returning && (
+                <RegistrationTimeline events={form.events} personName={form.declared_name ?? form.invitee_name} />
               )}
             </div>
 
             <div className="space-y-2 border-t border-black/[0.07] bg-[#fbfaf7] px-6 py-4">
               {actionError && <p className="text-sm text-destructive">{actionError}</p>}
               <div className="flex flex-wrap justify-end gap-2">
-                {form.status === "pendente" && (
+                {returning ? (
                   <>
-                    <Button type="button" variant="ghost" className="gap-1.5" disabled={!!busy} onClick={() => run("cancel", { action: "cancel" })}>
-                      <XCircle className="size-4" />
-                      Cancelar ficha
-                    </Button>
-                    {!selfService && (
-                      <Button type="button" variant="outline" className="gap-1.5" disabled={!!busy} onClick={() => run("regenerate", { action: "regenerate" })}>
-                        {busy === "regenerate" ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                        Gerar novo link
-                      </Button>
-                    )}
-                  </>
-                )}
-                {form.status === "cancelada" && !selfService && (
-                  <Button type="button" variant="outline" className="gap-1.5" disabled={!!busy} onClick={() => run("regenerate", { action: "regenerate" })}>
-                    <RefreshCw className="size-4" />
-                    Reativar com novo link
-                  </Button>
-                )}
-                {submitted && editing && (
-                  <>
-                    <Button type="button" variant="ghost" disabled={busy === "save"} onClick={() => setEditing(false)}>
-                      Descartar
+                    <Button type="button" variant="ghost" disabled={busy === "reopen"} onClick={() => setReturning(false)}>
+                      Voltar
                     </Button>
                     <Button
                       type="button"
                       className="gap-1.5"
-                      disabled={busy === "save"}
+                      disabled={(!reopenNote.trim() && returnFields.size === 0) || busy === "reopen"}
                       onClick={async () => {
-                        const ok = await run("save", { action: "save", answers: draft, employmentKind: draftKind });
-                        if (ok) setEditing(false);
+                        const ok = await run("reopen", { action: "reopen", note: reopenNote, fields: [...returnFields] });
+                        if (ok) setReturning(false);
                       }}
                     >
-                      {busy === "save" ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-                      Salvar correções
+                      {busy === "reopen" ? <Loader2 className="size-4 animate-spin" /> : <Undo2 className="size-4" />}
+                      {returned ? "Salvar pedido" : "Devolver"}
                     </Button>
                   </>
-                )}
-                {submitted && !editing && (
+                ) : (
                   <>
-                    <Button type="button" variant="ghost" className="gap-1.5" disabled={!!busy} onClick={() => run("cancel", { action: "cancel" })}>
-                      <XCircle className="size-4" />
-                      Cancelar
-                    </Button>
-                    <Button type="button" variant="outline" className="gap-1.5" disabled={!!busy} onClick={() => { setReopenNote(""); setReopenOpen(true); }}>
-                      <Undo2 className="size-4" />
-                      Devolver para a pessoa
-                    </Button>
-                    <Button type="button" variant="outline" className="gap-1.5" disabled={!!busy} onClick={startEditing}>
-                      <Pencil className="size-4" />
-                      Corrigir
-                    </Button>
-                    {form.status === "recebida" && (
-                      <Button type="button" className="gap-1.5" disabled={!!busy} onClick={() => run("approve", { action: "approve" })}>
-                        {busy === "approve" ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-                        {form.qualification_sync?.changes.length ? "Aprovar e atualizar qualificação" : "Aprovar ficha"}
+                    {form.status === "pendente" && !editing && (
+                      <>
+                        <Button type="button" variant="ghost" className="gap-1.5" disabled={!!busy} onClick={() => run("cancel", { action: "cancel" })}>
+                          <XCircle className="size-4" />
+                          Cancelar ficha
+                        </Button>
+                        {!selfService && (
+                          <Button type="button" variant="outline" className="gap-1.5" disabled={!!busy} onClick={() => run("regenerate", { action: "regenerate" })}>
+                            {busy === "regenerate" ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                            Gerar novo link
+                          </Button>
+                        )}
+                      </>
+                    )}
+                    {form.status === "cancelada" && !selfService && (
+                      <Button type="button" variant="outline" className="gap-1.5" disabled={!!busy} onClick={() => run("regenerate", { action: "regenerate" })}>
+                        <RefreshCw className="size-4" />
+                        Reativar com novo link
                       </Button>
+                    )}
+                    {hasAnswers && editing && (
+                      <>
+                        <Button type="button" variant="ghost" disabled={busy === "save"} onClick={() => setEditing(false)}>
+                          Descartar
+                        </Button>
+                        <Button
+                          type="button"
+                          className="gap-1.5"
+                          disabled={busy === "save"}
+                          onClick={async () => {
+                            const ok = await run("save", { action: "save", answers: draft, employmentKind: draftKind });
+                            if (ok) setEditing(false);
+                          }}
+                        >
+                          {busy === "save" ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                          Salvar correções
+                        </Button>
+                      </>
+                    )}
+                    {returned && !editing && (
+                      <>
+                        <Button type="button" variant="outline" className="gap-1.5" disabled={!!busy} onClick={startReturning}>
+                          <Undo2 className="size-4" />
+                          Alterar pedido
+                        </Button>
+                        <Button type="button" variant="outline" className="gap-1.5" disabled={!!busy} onClick={startEditing}>
+                          <Pencil className="size-4" />
+                          Corrigir
+                        </Button>
+                      </>
+                    )}
+                    {submitted && !editing && (
+                      <>
+                        <Button type="button" variant="ghost" className="gap-1.5" disabled={!!busy} onClick={() => run("cancel", { action: "cancel" })}>
+                          <XCircle className="size-4" />
+                          Cancelar
+                        </Button>
+                        <Button type="button" variant="outline" className="gap-1.5" disabled={!!busy} onClick={startReturning}>
+                          <Undo2 className="size-4" />
+                          Devolver para a pessoa
+                        </Button>
+                        <Button type="button" variant="outline" className="gap-1.5" disabled={!!busy} onClick={startEditing}>
+                          <Pencil className="size-4" />
+                          Corrigir
+                        </Button>
+                        {form.status === "recebida" && (
+                          <Button type="button" className="gap-1.5" disabled={!!busy} onClick={() => run("approve", { action: "approve" })}>
+                            {busy === "approve" ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+                            {form.qualification_sync?.changes.length ? "Aprovar e atualizar qualificação" : "Aprovar ficha"}
+                          </Button>
+                        )}
+                      </>
                     )}
                   </>
                 )}
               </div>
             </div>
-
-            <Dialog open={reopenOpen} onOpenChange={setReopenOpen}>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Devolver para correção</DialogTitle>
-                  <DialogDescription>
-                    {selfService
-                      ? `${firstName} vê as respostas e este recado no topo da ficha ao entrar em ${SELF_REGISTRATION_PATH} com o próprio login. Diga o que precisa ser ajustado.`
-                      : "O mesmo link volta a funcionar com as respostas preenchidas. Diga o que precisa ser ajustado; a pessoa verá este recado no topo da ficha."}
-                  </DialogDescription>
-                </DialogHeader>
-                <Textarea
-                  rows={4}
-                  value={reopenNote}
-                  placeholder="Ex.: o número da conta está incompleto, falta o dígito."
-                  onChange={(event) => setReopenNote(event.target.value)}
-                />
-                <DialogFooter>
-                  <Button type="button" variant="ghost" onClick={() => setReopenOpen(false)}>
-                    Voltar
-                  </Button>
-                  <Button
-                    type="button"
-                    disabled={!reopenNote.trim() || busy === "reopen"}
-                    onClick={async () => {
-                      const ok = await run("reopen", { action: "reopen", note: reopenNote });
-                      if (ok) setReopenOpen(false);
-                    }}
-                  >
-                    {busy === "reopen" && <Loader2 className="size-4 animate-spin" />}
-                    Devolver
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
           </>
         )}
       </DialogContent>
