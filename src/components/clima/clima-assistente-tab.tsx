@@ -7,22 +7,27 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Send, Sparkles } from "lucide-react";
+import { favorability, type ThemeSummary } from "@/lib/clima-metrics";
 import type { Indicator, ActionPlan } from "@/lib/clima-types";
 
 const SUGGESTED_PROMPTS = [
-  "Quais os 3 indicadores mais críticos?",
-  "Sugira ações prioritárias para melhorar o clima",
+  "Quais os 3 temas mais críticos?",
+  "Sugira ações prioritárias para os focos abaixo de 70%",
   "Resuma os planos urgentes e seus responsáveis",
-  "Quais afirmações precisam de atenção imediata?",
+  "Quais afirmações têm muito neutro e o que isso indica?",
 ];
 
 interface ClimaAssistenteTabProps {
   indicadores: Indicator[];
+  themes: ThemeSummary[];
   planosAcao: ActionPlan[];
 }
 
+const round = (n: number) => Math.round(n * 10) / 10;
+
 export function ClimaAssistenteTab({
   indicadores,
+  themes,
   planosAcao,
 }: ClimaAssistenteTabProps) {
   const [input, setInput] = useState("");
@@ -30,21 +35,40 @@ export function ClimaAssistenteTab({
   const contextPayload = useMemo(
     () => ({
       indicadores: indicadores.map((i) => ({
-        id: i.id,
-        name: i.name,
-        question: i.question,
-        statementsCount: i.statements.length,
-        actions: i.actions,
+        dimensao: i.name,
+        pergunta: i.question,
+        acoesGerais: i.actions,
+        temas: themes
+          .filter((t) => t.dimension.id === i.id)
+          .map((t) => ({
+            tema: t.theme.name,
+            favoravel: round(t.favorability.favorable),
+            neutro: round(t.favorability.neutral),
+            desfavoravel: round(t.favorability.unfavorable),
+            afirmacoes: t.statements.map((s) => {
+              const f = favorability(s.scores);
+              return {
+                texto: s.text,
+                favoravel: round(f.favorable),
+                neutro: round(f.neutral),
+                desfavoravel: round(f.unfavorable),
+                pratica: s.practiceType,
+                acoesSugeridas: s.actions,
+              };
+            }),
+          })),
       })),
       planosAcao: planosAcao.map((p) => ({
         id: p.id,
         title: p.title,
         priority: p.priority,
+        status: p.status,
         responsible: p.responsible,
         what: p.what,
+        temas: themes.filter((t) => p.themeIds?.includes(t.theme.id)).map((t) => t.theme.name),
       })),
     }),
-    [indicadores, planosAcao]
+    [indicadores, themes, planosAcao]
   );
 
   const transport = useMemo(

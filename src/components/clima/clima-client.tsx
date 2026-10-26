@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
+import { summarizeThemes } from "@/lib/clima-metrics";
 import {
   insertClimaTodo,
   updateClimaTodo,
@@ -46,7 +47,7 @@ interface ClimaClientProps {
 
 const TABS: { id: ClimaTabId; label: string; icon: React.ReactNode }[] = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard className="h-4 w-4" /> },
-  { id: "indicadores", label: "Indicadores", icon: <BarChart3 className="h-4 w-4" /> },
+  { id: "indicadores", label: "Afirmações", icon: <BarChart3 className="h-4 w-4" /> },
   { id: "planos", label: "Planos de Ação", icon: <Kanban className="h-4 w-4" /> },
   { id: "todos", label: "To-Dos", icon: <CheckSquare className="h-4 w-4" /> },
   { id: "reuniao", label: "Modo Reunião", icon: <Video className="h-4 w-4" /> },
@@ -63,6 +64,7 @@ export function ClimaClient({
 }: ClimaClientProps) {
   const [activeTab, setActiveTab] = useState<ClimaTabId>("dashboard");
   const [todos, setTodos] = useState<ClimaTodo[]>(initialTodos);
+  const themes = useMemo(() => summarizeThemes(indicadores), [indicadores]);
 
   const handleAddTodo = useCallback(async (todo: ClimaTodo) => {
     const created = await insertClimaTodo({
@@ -104,12 +106,13 @@ export function ClimaClient({
     []
   );
 
-  const handleAddTodoFromReuniao = useCallback(
+  const handleCreateTodo = useCallback(
     async (todo: Omit<ClimaTodo, "id" | "createdAt">) => {
       const created = await insertClimaTodo(todo);
       if (created) {
         setTodos((prev) => [created, ...prev]);
       }
+      return created != null;
     },
     []
   );
@@ -146,14 +149,26 @@ export function ClimaClient({
       {activeTab === "dashboard" && (
         <ClimaDashboardTab
           indicadores={indicadores}
+          themes={themes}
           indicadoresQuantitativos={indicadoresQuantitativos}
+          planosAcao={planosAcao}
+          todos={todos}
+          users={users}
+          onCreateTodo={handleCreateTodo}
         />
       )}
       {activeTab === "indicadores" && (
-        <ClimaIndicadoresTab indicadores={indicadores} />
+        <ClimaIndicadoresTab
+          indicadores={indicadores}
+          themes={themes}
+          planosAcao={planosAcao}
+          todos={todos}
+          users={users}
+          onCreateTodo={handleCreateTodo}
+        />
       )}
       {activeTab === "planos" && (
-        <ClimaPlanosTab planosAcao={planosAcao} />
+        <ClimaPlanosTab planosAcao={planosAcao} themes={themes} users={users} />
       )}
       {activeTab === "todos" && (
         <ClimaTodosTab
@@ -162,18 +177,21 @@ export function ClimaClient({
           onRemoveTodo={handleRemoveTodo}
           onUpdateTodo={handleUpdateTodo}
           users={users}
+          planosAcao={planosAcao}
+          themes={themes}
         />
       )}
       {activeTab === "reuniao" && (
         <ClimaReuniaoTab
-          indicadores={indicadores}
+          themes={themes}
           planosAcao={planosAcao}
-          onAddTodo={handleAddTodoFromReuniao}
+          onAddTodo={handleCreateTodo}
         />
       )}
       {activeTab === "assistente" && (
         <ClimaAssistenteTab
           indicadores={indicadores}
+          themes={themes}
           planosAcao={planosAcao}
         />
       )}

@@ -2,7 +2,9 @@
 
 import { useMemo } from "react";
 import { ActionPlanCard } from "./action-plan-card";
+import type { ThemeSummary } from "@/lib/clima-metrics";
 import type { ActionPlan } from "@/lib/clima-types";
+import type { User } from "@/lib/users";
 
 const COLUMNS: { id: ActionPlan["priority"]; title: string }[] = [
   { id: "urgente", title: "Faça Primeiro" },
@@ -13,9 +15,11 @@ const COLUMNS: { id: ActionPlan["priority"]; title: string }[] = [
 
 interface ClimaPlanosTabProps {
   planosAcao: ActionPlan[];
+  themes: ThemeSummary[];
+  users: User[];
 }
 
-export function ClimaPlanosTab({ planosAcao }: ClimaPlanosTabProps) {
+export function ClimaPlanosTab({ planosAcao, themes, users }: ClimaPlanosTabProps) {
   const byColumn = useMemo(() => {
     const map: Record<ActionPlan["priority"], ActionPlan[]> = {
       urgente: [],
@@ -47,7 +51,7 @@ export function ClimaPlanosTab({ planosAcao }: ClimaPlanosTabProps) {
             <h3 className="font-semibold text-foreground mb-4">{col.title}</h3>
             <div className="space-y-3">
               {byColumn[col.id].map((plan) => (
-                <ActionPlanCard key={plan.id} plan={plan} />
+                <ActionPlanCard key={plan.id} plan={plan} themes={themes} users={users} />
               ))}
               {byColumn[col.id].length === 0 && (
                 <p className="text-sm text-muted-foreground py-4">
