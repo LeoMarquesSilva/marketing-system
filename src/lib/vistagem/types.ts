@@ -1,3 +1,4 @@
+import type { ContagemPrazo } from "./dias-uteis";
 import type { FluxoDaTarefa } from "./fluxo-vios";
 import type { PastaSioe, Pendencia } from "./triagem";
 
@@ -222,6 +223,8 @@ export interface AgendamentoResumo {
   data: string;
   dataFatal: string | null;
   diasPrazo: number | null;
+  /** Contagem do atalho de dias (úteis/corridos); null sem atalho. */
+  contagemPrazo: ContagemPrazo | null;
   /** COMPROMISSO: horário HH:MM. */
   hora: string | null;
   responsavel: string;
