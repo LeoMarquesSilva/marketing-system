@@ -250,11 +250,12 @@ function FluxoNoVios({
 function EditorVistagem({
   id,
   onConcluida,
+  onTransferida,
   onVoltar,
 }: {
   id: string;
-  /** A publicação saiu da fila: vistada (sem aviso) ou transferida (com o aviso). */
-  onConcluida: (id: string, aviso?: string) => void;
+  onConcluida: (id: string) => void;
+  onTransferida: (destino: string) => void;
   onVoltar: () => void;
 }) {
   const [detalhe, setDetalhe] = useState<VistagemDetalhe | null>(null);
@@ -718,7 +719,7 @@ function EditorVistagem({
         escritorioAtual={publicacao.escritorioResponsavel}
         onTransferida={(destino) => {
           setTransferindo(false);
-          onConcluida(id, `Publicação transferida para ${destino}.`);
+          onTransferida(destino);
         }}
         onFechar={() => setTransferindo(false)}
       />
@@ -870,11 +871,18 @@ function Juridico() {
   const total = escritorios.reduce((soma, [, quantidade]) => soma + quantidade, 0);
   const grupos = useMemo(() => agruparFila(publicacoes ?? []), [publicacoes]);
 
-  function concluida(id: string, mensagem?: string) {
+  function transferida(destino: string) {
+    // O destino pode ser outra área do próprio usuário: recarrega a fila e as contagens.
+    setSelecionada(null);
+    setAviso(`Publicação transferida para ${destino}.`);
+    void carregar(escritorio);
+  }
+
+  function concluida(id: string) {
     const restantes = (publicacoes ?? []).filter((p) => p.id !== id);
     setPublicacoes(restantes);
     setSelecionada(agruparFila(restantes)[0]?.publicacoes[0]?.id ?? null);
-    setAviso(mensagem ?? "Vistagem enviada para a conferência da controladoria.");
+    setAviso("Vistagem enviada para a conferência da controladoria.");
     setPorEscritorio((atual) => {
       const p = (publicacoes ?? []).find((item) => item.id === id);
       const chave = p?.escritorioResponsavel ?? "Sem escritório";
@@ -971,7 +979,13 @@ function Juridico() {
 
         <div className={cn(!selecionada && "hidden lg:block")}>
           {selecionada ? (
-            <EditorVistagem key={selecionada} id={selecionada} onConcluida={concluida} onVoltar={() => setSelecionada(null)} />
+            <EditorVistagem
+              key={selecionada}
+              id={selecionada}
+              onConcluida={concluida}
+              onTransferida={transferida}
+              onVoltar={() => setSelecionada(null)}
+            />
           ) : (
             <p className="rounded-lg border border-dashed border-[#dce9eb] bg-white p-10 text-center text-sm text-slate-500">
               Escolha uma publicação na lista.
