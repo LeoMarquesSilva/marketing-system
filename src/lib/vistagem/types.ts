@@ -222,6 +222,8 @@ export interface AgendamentoResumo {
   data: string;
   dataFatal: string | null;
   diasPrazo: number | null;
+  /** COMPROMISSO: horário HH:MM. */
+  hora: string | null;
   responsavel: string;
   revisor: string | null;
   observacao: string | null;
