@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { Loader2, Mic, AlertCircle, FileText } from "lucide-react";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
+import { whatsappMediaSrc } from "@/components/trafego-pago/whatsapp-media-bubble";
 
 interface WhatsappAudioPlayerProps {
   messageId: string;
@@ -35,9 +36,7 @@ export function WhatsappAudioPlayer({
       );
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Erro ao carregar áudio.");
-      const mime = typeof json.mimetype === "string" ? json.mimetype : "audio/ogg";
-      const b64 = json.base64 as string;
-      setSrc(`data:${mime};base64,${b64}`);
+      setSrc(whatsappMediaSrc(json, "audio/ogg"));
       void authFetch("/api/evolution/messages/played", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

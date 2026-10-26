@@ -6,6 +6,7 @@ import {
   type MetaWhatsappAttribution,
 } from "@/lib/evolution-meta-attribution";
 import {
+  getWhatsappMediaKind,
   isMetaAdLeadMessage,
   META_AD_LEAD_TAG,
   isSiteLeadMessage,
@@ -20,6 +21,12 @@ import {
   isPlaceholderWhatsappBody,
 } from "@/lib/evolution-message-meta";
 import { normalizeWhatsappTags } from "@/lib/evolution-tags";
+import {
+  requestWhatsappMediaArchive,
+  signWhatsappMediaUrl,
+  WHATSAPP_MEDIA_BUCKET,
+  whatsappDocumentDownloadName,
+} from "@/lib/whatsapp-media-storage";
 
 export { formatConversationLabel, formatPhoneDisplay, jidToPhone } from "@/lib/evolution-display";
 export { normalizeWhatsappTags, WHATSAPP_TAG_PRESETS } from "@/lib/evolution-tags";
@@ -296,6 +303,9 @@ export async function configureEvolutionMarketingWebhook(
         url: webhookUrl,
         headers: secret ? { apikey: secret } : undefined,
         webhookByEvents: false,
+        // Desligado de propósito: com base64 cada webhook de mídia traria o arquivo
+        // inteiro, e uma falha ao ler esse corpo perderia a própria mensagem. A
+        // Edge Function pede o arquivo à Evolution depois, em segundo plano.
         webhookBase64: false,
         events,
       },
@@ -1648,6 +1658,68 @@ export async function fetchEvolutionMessageMedia(dbMessageId: string): Promise<{
   };
 }
 
+export type WhatsappMessageMedia =
+  | { url: string; mimetype: string | null }
+  | { base64: string; mimetype: string; mediaType?: string };
+
+/**
+ * Mídia para a tela, de preferência do Storage por URL assinada. Mensagem que
+ * ainda não tem arquivo guardado (anterior ao webhook guardar) pede à Edge
+ * Function para guardar agora; o base64 pela Evolution, pesado aqui na Vercel,
+ * fica só para quando a função não consegue.
+ */
+export async function resolveWhatsappMessageMedia(
+  dbMessageId: string
+): Promise<WhatsappMessageMedia> {
+  const supabase = getAdminClient();
+  const { data: msg, error } = await supabase
+    .from("whatsapp_messages")
+    .select("message_type, body, media_storage_path, media_mimetype, media_expired_at")
+    .eq("id", dbMessageId)
+    .maybeSingle();
+  if (error || !msg) throw new Error("Mensagem não encontrada.");
+
+  let path = msg.media_storage_path as string | null;
+  let mimetype = msg.media_mimetype as string | null;
+  if (!path) {
+    if (msg.media_expired_at) throw new WhatsappMediaUnavailableError();
+    const archived = await requestWhatsappMediaArchive(dbMessageId);
+    if (archived?.status === "expired") throw new WhatsappMediaUnavailableError();
+    if (archived?.status === "stored") {
+      path = archived.path;
+      mimetype = archived.mimetype;
+    }
+  }
+  if (!path) return fetchEvolutionMessageMedia(dbMessageId);
+
+  const body = msg.body as string | null;
+  const isDocument = getWhatsappMediaKind(msg.message_type as string | null, body) === "document";
+  const url = await signWhatsappMediaUrl(
+    supabase,
+    path,
+    isDocument ? whatsappDocumentDownloadName(body, path) : undefined
+  );
+  return { url, mimetype };
+}
+
+/** Arquivo da mídia no servidor: do Storage se já guardado, senão pela Evolution. */
+async function loadWhatsappMediaBlob(dbMessageId: string): Promise<Blob> {
+  const supabase = getAdminClient();
+  const { data: msg } = await supabase
+    .from("whatsapp_messages")
+    .select("media_storage_path")
+    .eq("id", dbMessageId)
+    .maybeSingle();
+  if (msg?.media_storage_path) {
+    const { data } = await supabase.storage
+      .from(WHATSAPP_MEDIA_BUCKET)
+      .download(msg.media_storage_path as string);
+    if (data) return data;
+  }
+  const media = await fetchEvolutionMessageMedia(dbMessageId);
+  return new Blob([Buffer.from(media.base64, "base64")], { type: media.mimetype });
+}
+
 export async function fetchWhatsappMessages(
   conversationId: string,
   limit = 200
@@ -1692,11 +1764,9 @@ export async function transcribeWhatsappAudioMessage(
   if (fetchError || !existing) throw new Error("Mensagem não encontrada.");
   if (existing.audio_transcript) return existing.audio_transcript as string;
 
-  const media = await fetchEvolutionMessageMedia(messageId);
-  const buffer = Buffer.from(media.base64, "base64");
+  const blob = await loadWhatsappMediaBlob(messageId);
 
   const formData = new FormData();
-  const blob = new Blob([buffer], { type: media.mimetype });
   formData.append("file", blob, "audio.ogg");
   formData.append("model", "whisper-1");
   formData.append("language", "pt");

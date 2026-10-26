@@ -10,6 +10,16 @@ import {
 } from "@/lib/evolution-leads";
 import { cn } from "@/lib/utils";
 
+/** Resposta de /api/evolution/messages/media: URL assinada do Storage ou base64 da Evolution. */
+export function whatsappMediaSrc(
+  json: { url?: unknown; base64?: unknown; mimetype?: unknown },
+  fallbackMime: string
+): string {
+  if (typeof json.url === "string") return json.url;
+  const mime = typeof json.mimetype === "string" ? json.mimetype : fallbackMime;
+  return `data:${mime};base64,${json.base64 as string}`;
+}
+
 interface WhatsappMediaBubbleProps {
   messageId: string;
   messageType?: string | null;
@@ -44,9 +54,7 @@ export function WhatsappMediaBubble({
       const json = await res.json();
       if (res.status === 410) setExpired(true);
       if (!res.ok) throw new Error(json.error ?? "Erro ao carregar mídia.");
-      const mime = typeof json.mimetype === "string" ? json.mimetype : "image/jpeg";
-      const b64 = json.base64 as string;
-      setSrc(`data:${mime};base64,${b64}`);
+      setSrc(whatsappMediaSrc(json, "image/jpeg"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao carregar mídia.");
     } finally {
