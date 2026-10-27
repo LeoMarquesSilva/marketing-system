@@ -8,6 +8,7 @@ import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import type { ArquivoKurierResumo, PublicacaoResumo, SincronizacaoResultado } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
+import { AvisoArquivoDoDia } from "./aviso-arquivo-do-dia";
 import { DadosPasta, DadosPublicacao, StatusPublicacao, TeorPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
 
 type Filtro = "todas" | "juridico_vistar" | "triagem_pendente" | "duplicidade" | "descartada" | "captada";
@@ -361,7 +362,10 @@ function Captura() {
 export function CapturaClient() {
   return (
     <AcessoOperacoesLegais>
-      <Captura />
+      <div className="space-y-4">
+        <AvisoArquivoDoDia />
+        <Captura />
+      </div>
     </AcessoOperacoesLegais>
   );
 }
