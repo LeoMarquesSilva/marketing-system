@@ -337,6 +337,13 @@ Estilo das caixas: "suave" (fundo preenchido) para o texto principal, "contorno"
 Tom: técnico, claro e direto. Não prometer resultado, não usar "imperdível", não citar o veículo de imprensa.`,
 };
 
+/** Até 4 pessoas na capa com equipe; foto e nome vazios = cartão não aparece. */
+const PESSOAS_CAPA = 4;
+const pessoaFields = (n: number): StudioField[] => [
+  { kind: "imagem", key: `foto${n}`, label: `Foto ${n} (com fundo)`, pasta: "retratos" },
+  { kind: "texto", key: `nome${n}`, label: `Nome ${n}`, max: 26, dica: "Nome curto na pílula do cartão. Ex.: Ricardo V. Pires. Vazio = sem pessoa." },
+];
+
 const BP_TEMPLATES: StudioTemplateDef[] = [
   {
     id: "bp-capa",
@@ -456,6 +463,83 @@ const BP_TEMPLATES: StudioTemplateDef[] = [
             "A 7ª Câmara Cível do TJGO manteve a decisão que liberou esses valores: o bloqueio era válido, mas o dinheiro estava apenas indisponível, sem levantamento pelo banco.",
         },
       ],
+    },
+  },
+  {
+    id: "bp-capa-equipe",
+    tag: "BP",
+    nome: "Capa com equipe",
+    descricao:
+      "Capa com duas a quatro pessoas: área, chamada, título e subtítulo em cima e, embaixo, cartões arredondados com a foto (com fundo) e o nome de cada uma, em ordem alfabética. Para participação em eventos, equipe, novos sócios.",
+    ajustes: ["texto", "titulo", "y"],
+    formato: "feed",
+    usoEm: ["carrossel"],
+    campos: [
+      TEMA,
+      { kind: "texto", key: "area", label: "Área", max: 30, dica: "Pílula dourada acima do título. Ex.: Eventos." },
+      { kind: "texto", key: "chamada", label: "Chamada", max: 40, dica: "Pílula de contorno em caixa alta. Ex.: 28 DE OUTUBRO. Vazio = não usar." },
+      titulo(100, "Manchete em caixa alta, até 3 linhas. Ex.: BISMARCHI | PIRES NO 3º CONGRESSO DE DIREITO RECUPERACIONAL, FALIMENTAR E EMPRESARIAL"),
+      { kind: "texto", key: "subtitulo", label: "Subtítulo", max: 220, multilinha: true, dica: "Uma ou duas frases em caixa normal." },
+      ...Array.from({ length: PESSOAS_CAPA }, (_, i) => pessoaFields(i + 1)).flat(),
+    ],
+    exemplo: {
+      tema: "escuro",
+      area: "3º Congresso OAB Campinas",
+      chamada: "28 DE OUTUBRO",
+      titulo: "NOSSOS SÓCIOS ESTARÃO ENTRE OS PALESTRANTES",
+      subtitulo: "Gustavo Bismarchi Motta, Ricardo Viscardi Pires e Wagner Armani participam do 3º Congresso de Direito Recuperacional, Falimentar e Empresarial.",
+      foto1: "",
+      nome1: "Gustavo Bismarchi",
+      foto2: "",
+      nome2: "Ricardo V. Pires",
+      foto3: "",
+      nome3: "Wagner Armani",
+      foto4: "",
+      nome4: "",
+    },
+  },
+  {
+    id: "bp-pessoa",
+    tag: "BP",
+    nome: "Pessoa",
+    descricao:
+      "Slide interno com uma pessoa (sem o logo de 10 anos da capa): foto com fundo numa caixa arredondada de um lado e, do outro, papel, chamada curta, nome e um texto de apoio, alinhados à esquerda. Ex.: o painel de cada sócio num evento.",
+    ajustes: ["fotoZoom", "fotoX", "fotoY", "texto", "titulo", "y"],
+    // os mesmos três fundos dos slides de conteúdo, em papel e em navy
+    fundos: { variacoes: 3, previa: (n, valores) => `/estudio/bp/fundo-${valores.tema === "escuro" ? "escuro" : "claro"}-${n}.jpg` },
+    formato: "feed",
+    usoEm: ["carrossel"],
+    campos: [
+      TEMA,
+      {
+        kind: "opcao",
+        key: "lado",
+        label: "Foto",
+        padrao: "direita",
+        opcoes: [
+          { value: "direita", label: "À direita" },
+          { value: "esquerda", label: "À esquerda" },
+        ],
+        dica: "Alterne o lado entre slides seguidos de pessoas.",
+      },
+      { kind: "imagem", key: "foto", label: "Foto (com fundo, vai na caixa)", pasta: "retratos" },
+      { kind: "texto", key: "area", label: "Papel", max: 30, dica: "Pílula dourada. Ex.: Palestrante, Presidente de mesa." },
+      { kind: "texto", key: "chamada", label: "Chamada", max: 40, dica: "Pílula de contorno em caixa alta. Ex.: 14H30 ÀS 15H30. Vazio = não usar." },
+      titulo(60, "Nome em caixa alta, sem Dr./Dra., até 3 linhas. Ex.: RICARDO VISCARDI PIRES"),
+      { kind: "texto", key: "rotulo", label: "Rótulo", max: 30, dica: "Linha pequena acima do destaque. Ex.: Painel:. Vazio = não usar." },
+      { kind: "texto", key: "painel", label: "Destaque", max: 120, multilinha: true, dica: "Em negrito, abaixo do rótulo. Ex.: “RECUPERAÇÃO JUDICIAL EM DEBATE”. Vazio = não usar." },
+      { kind: "texto", key: "subtitulo", label: "Texto de apoio", max: 240, multilinha: true, dica: "Uma ou duas frases sobre a participação." },
+    ],
+    exemplo: {
+      tema: "claro",
+      lado: "direita",
+      foto: "",
+      area: "Presidente de mesa",
+      chamada: "14H30 ÀS 15H30",
+      titulo: "RICARDO VISCARDI PIRES",
+      rotulo: "Painel:",
+      painel: "“RECUPERAÇÃO JUDICIAL EM DEBATE”",
+      subtitulo: "Ricardo presidirá a mesa do painel dedicado à Recuperação Judicial e também participará do podcast oficial do Congresso.",
     },
   },
 ];

@@ -170,8 +170,11 @@
   min-width: 0;
   margin: 0;
   white-space: pre-line;
-  text-align: justify;
-  text-align-last: left;
+  /*
+   * Alinhado à esquerda, sem justificar: o navegador não hifeniza português (o
+   * Illustrator hifeniza), e o justificado abria buracos entre as palavras nas caixas.
+   */
+  text-align: left;
   hyphens: manual;
 }
 
@@ -314,6 +317,126 @@
 
 .escuro .authorRole {
   background: #111d2c;
+}
+
+/* ---------- pessoa ---------- */
+
+.personBox {
+  position: absolute;
+  overflow: hidden;
+  border: 2px solid rgba(213, 176, 113, 0.75);
+  border-radius: 40px;
+  background: #efe4cd;
+}
+
+.escuro .personBox {
+  background: #1b2a3b;
+}
+
+.personLabel {
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #9c7434;
+}
+
+.escuro .personLabel {
+  color: var(--bp-ouro);
+}
+
+.personPanel {
+  margin: 0;
+  font-size: 0.94em;
+  font-weight: 600;
+  line-height: 1.22;
+  color: var(--bp-navy);
+  white-space: pre-line;
+}
+
+.escuro .personPanel {
+  color: #fff;
+}
+
+/* contorno dourado deslocado atrás da caixa, como as formas das capas */
+.personFrame {
+  position: absolute;
+  border: 1.5px solid rgba(213, 176, 113, 0.6);
+  border-radius: 40px;
+}
+
+/* ---------- capa com equipe ---------- */
+
+.teamRow {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.teamCard {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  border: 1.5px solid rgba(213, 176, 113, 0.55);
+  border-radius: 34px;
+  background: #efe4cd;
+}
+
+.escuro .teamCard {
+  background: #1b2a3b;
+}
+
+.teamPhoto {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 20%;
+}
+
+.teamPlaceholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--bp-ouro);
+}
+
+/* escurece a base da foto para a pílula do nome continuar legível */
+.teamShade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, rgba(13, 30, 46, 0.82) 0%, rgba(13, 30, 46, 0) 42%);
+}
+
+.teamNameRow {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 22px;
+  display: flex;
+  justify-content: center;
+}
+
+.teamPill {
+  display: block;
+  max-width: 100%;
+  padding: 9px 18px 8px;
+  border: 1.5px solid var(--bp-ouro);
+  border-radius: 999px;
+  background: rgba(13, 30, 46, 0.55);
+}
+
+.teamName {
+  display: block;
+  margin: 0;
+  color: #fff;
+  font-weight: 500;
+  text-align: center;
 }
 
 .photo {

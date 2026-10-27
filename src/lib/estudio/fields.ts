@@ -44,8 +44,11 @@ export interface IconField extends BaseField {
 /** Imagem enviada pelo usuário (foto de capa, logo de cliente). A IA não mexe nela. */
 export interface ImageField extends BaseField {
   kind: "imagem";
-  /** Pasta da galeria da coleção, para reaproveitar o que já foi enviado. */
-  pasta: "fotos" | "logos";
+  /**
+   * Pasta da galeria da coleção, para reaproveitar o que já foi enviado: "fotos" são
+   * recortes sem fundo; "retratos", fotos com fundo para cartões.
+   */
+  pasta: "fotos" | "logos" | "retratos";
 }
 
 export interface ListField extends BaseField {
@@ -71,7 +74,7 @@ export function parseIconify(value: string): { prefix: string; name: string } | 
 }
 
 /** Caminho no bucket ESTUDIO-PECAS: "<TAG>/<pasta>/<arquivo>". */
-export const IMAGE_PATH_RE = /^[A-Za-z0-9_-]{1,24}\/(fotos|logos|fundos|modelos)\/[A-Za-z0-9._-]{1,140}$/;
+export const IMAGE_PATH_RE = /^[A-Za-z0-9_-]{1,24}\/(fotos|retratos|logos|fundos|modelos)\/[A-Za-z0-9._-]{1,140}$/;
 
 export function imageKeys(fields: StudioField[]): string[] {
   return fields.filter((f) => f.kind === "imagem").map((f) => f.key);
