@@ -1,16 +1,43 @@
 /**
  * Dados mockados da pesquisa de clima organizacional
  * Extraídos do INDICADORES CLIMA.csv (Miro)
+ *
+ * Scores conferidos com o board em 26/10/2026: a categoria de cada número
+ * vem da cor do segmento na barra, não da ordem em que aparece no CSV.
+ * No board, as imagens de "dão autonomia" e "agem de acordo" estão trocadas;
+ * valem os números digitados ao lado de cada afirmação.
+ *
+ * As afirmações seguem o Trust Index do GPTW, então ficam agrupadas nas
+ * dimensões do modelo (Credibilidade, Respeito, Imparcialidade, Orgulho e
+ * Camaradagem) e em temas dentro de cada uma. `origin` guarda o bloco do
+ * board em que cada afirmação foi respondida.
  */
 
-import type { Indicator, ActionPlan, QuantitativeIndicator } from "./clima-types";
+import type {
+  Indicator,
+  ActionPlan,
+  QuantitativeIndicator,
+  SurveyBlockId,
+} from "./clima-types";
 
+/** Perguntas originais de cada bloco do board */
+export const SURVEY_BLOCKS: Record<SurveyBlockId, string> = {
+  proposito: "Como vai o seu senso de propósito em relação ao que fazemos no escritório?",
+  seguranca: "Como está sua segurança física e emocional?",
+  reconhecimento: "Você se sente reconhecido e valorizado por aqui?",
+};
+
+/* Scores sempre na ordem da legenda Miro: [DT, D, N, C, CT] */
 export const INDICADORES: Indicator[] = [
   {
-    id: "proposito",
-    name: "Indicador de Propósito",
-    question:
-      "Como vai o seu senso de propósito em relação ao que fazemos no escritório?",
+    id: "credibilidade",
+    name: "Credibilidade",
+    question: "A liderança comunica bem, é competente e age com integridade?",
+    themes: [
+      { id: "comunicacao", name: "Comunicação da liderança" },
+      { id: "competencia", name: "Competência da liderança" },
+      { id: "integridade", name: "Integridade da liderança" },
+    ],
     actions: [
       "E-mail automático estratégico",
       "Reunião mensal/semanal",
@@ -19,382 +46,480 @@ export const INDICADORES: Indicator[] = [
       "Análise de demanda",
       "Plano de carreira",
     ],
-    /* Scores na ordem da legenda Miro: [DT, D, N, C, CT] */
     statements: [
       {
         id: "p1",
         text: "Os gestores me mantêm informados sobre mudanças na empresa.",
-        scores: [11.1, 26.7, 0, 37.8, 24.4], // DT, D, N, C, CT
+        scores: [0, 11.1, 26.7, 37.8, 24.4],
+        themeId: "comunicacao",
+        origin: "proposito",
         practiceType: "evitar",
         actions: ["Reunião mensal de feedback", "E-mail automático"],
       },
       {
         id: "p2",
         text: "Os gestores deixam claras suas expectativas.",
-        scores: [8.9, 28.9, 0, 40, 22.2], // DT, D, N, C, CT
+        scores: [0, 8.9, 28.9, 40, 22.2],
+        themeId: "comunicacao",
+        origin: "proposito",
         practiceType: "acelerar",
         actions: ["Feedback e 1:1 mensais", "Alinhamento trimestral"],
       },
       {
         id: "p3",
         text: "É fácil se aproximar dos gestores e falar com eles.",
-        scores: [4.4, 13.3, 28.9, 0, 53.3], // DT, D, N, C, CT
+        scores: [0, 4.4, 13.3, 28.9, 53.3],
+        themeId: "comunicacao",
+        origin: "proposito",
         practiceType: "acelerar",
         actions: ["Atuação mais presente dos gestores na operação"],
       },
       {
-        id: "p4",
-        text: "Os gestores são competentes para tocar o negócio.",
-        scores: [2.2, 0, 40, 0, 57.8], // DT, D, N, C, CT
-        practiceType: "acelerar",
-        actions: ["Cursos, imersões, treinamentos sobre gestão"],
-      },
-      {
         id: "p5",
         text: "Posso fazer qualquer pergunta razoável e obter respostas diretas.",
-        scores: [2.2, 6.7, 44.4, 0, 46.7], // DT, D, N, C, CT
+        scores: [0, 2.2, 6.7, 44.4, 46.7],
+        themeId: "comunicacao",
+        origin: "proposito",
         practiceType: "acelerar",
         actions: ["Cartilha de procedimentos"],
       },
       {
+        id: "p4",
+        text: "Os gestores são competentes para tocar o negócio.",
+        scores: [0, 0, 2.2, 40, 57.8],
+        themeId: "competencia",
+        origin: "proposito",
+        practiceType: "acelerar",
+        actions: ["Cursos, imersões, treinamentos sobre gestão"],
+      },
+      {
         id: "p6",
         text: "Os gestores contratam pessoas que se enquadram bem aqui.",
-        scores: [4.4, 13.3, 40, 0, 42.2], // DT, D, N, C, CT
+        scores: [0, 4.4, 13.3, 40, 42.2],
+        themeId: "competencia",
+        origin: "proposito",
         practiceType: "comecar",
         actions: ["Testes no seletivo", "Conversas com a equipe antes de contratar"],
       },
       {
         id: "p7",
         text: "Os gestores sabem coordenar e distribuir tarefas.",
-        scores: [2.2, 22.2, 0, 42.2, 31.1], // DT, D, N, C, CT
+        scores: [2.2, 2.2, 22.2, 42.2, 31.1],
+        themeId: "competencia",
+        origin: "proposito",
         practiceType: "acelerar",
         actions: ["Análise de demanda"],
       },
       {
         id: "p8",
         text: "Os gestores confiam que as pessoas fazem bom trabalho sem vigiá-las.",
-        scores: [6.7, 15.6, 0, 42.2, 35.6], // DT, D, N, C, CT
+        scores: [0, 6.7, 15.6, 42.2, 35.6],
+        themeId: "competencia",
+        origin: "proposito",
         practiceType: "acelerar",
         actions: ["Gestão mais comunicativa", "Investir em aprendizado"],
       },
       {
         id: "p9",
         text: "Os gestores dão autonomia às pessoas.",
-        scores: [6.7, 6.7, 0, 44.4, 42.2], // DT, D, N, C, CT
+        scores: [0, 6.7, 6.7, 44.4, 42.2],
+        themeId: "competencia",
+        origin: "proposito",
         practiceType: "evitar",
         actions: ["Alinhamento de expectativas", "Evitar feedbacks subjetivos"],
       },
       {
         id: "p10",
         text: "Os gestores têm visão clara de para onde estamos indo.",
-        scores: [6.8, 15.9, 45.5, 31.8, 0], // DT, D, N, C, CT (sum 100%)
+        scores: [0, 6.8, 15.9, 45.5, 31.8],
+        themeId: "competencia",
+        origin: "proposito",
         practiceType: "acelerar",
         actions: ["Metas individuais e de equipe", "Plano de carreira"],
       },
       {
         id: "p11",
         text: "Os gestores cumprem o que prometem.",
-        scores: [2.2, 28.9, 0, 35.6, 26.7], // DT, D, N, C, CT
+        scores: [2.2, 6.7, 28.9, 35.6, 26.7],
+        themeId: "integridade",
+        origin: "proposito",
         practiceType: "evitar",
         actions: ["Plano de carreira", "Evitar criar promessas"],
       },
       {
         id: "p12",
         text: "Os gestores agem de acordo com o que falam.",
-        scores: [2.2, 26.7, 0, 40, 28.9], // DT, D, N, C, CT (sum 97.8%, missing ~2.2)
+        scores: [2.2, 2.2, 26.7, 40, 28.9],
+        themeId: "integridade",
+        origin: "proposito",
         practiceType: "evitar",
         actions: ["Gestão aberta e consciente", "Expor situação e soluções"],
       },
       {
         id: "p13",
         text: "Os gestores só promoveriam reduções de quadro como último recurso.",
-        scores: [11.1, 26.7, 55.6, 0, 6.7], // DT, D, N, C, CT (small dark blue segment ~6.7)
+        scores: [0, 6.7, 11.1, 26.7, 55.6],
+        themeId: "integridade",
+        origin: "proposito",
         practiceType: "acelerar",
       },
       {
         id: "p14",
         text: "Os gestores são honestos e éticos na condução dos negócios.",
-        scores: [6.7, 44.4, 0, 46.7, 2.2], // DT, D, N, C, CT (small dark blue ~2.2)
+        scores: [0, 2.2, 6.7, 44.4, 46.7],
+        themeId: "integridade",
+        origin: "proposito",
         practiceType: "acelerar",
         actions: ["Cartilha de política da área"],
       },
     ],
   },
   {
-    id: "seguranca",
-    name: "Indicador de Segurança",
-    question: "Como está sua segurança física e emocional?",
+    id: "respeito",
+    name: "Respeito",
+    question: "As pessoas se sentem apoiadas, reconhecidas e cuidadas?",
+    themes: [
+      { id: "apoio", name: "Apoio e desenvolvimento" },
+      { id: "cuidado", name: "Cuidado e bem-estar" },
+      { id: "reconhecimento", name: "Reconhecimento" },
+      { id: "equilibrio", name: "Equilíbrio vida/trabalho" },
+    ],
     actions: [
-      "Instalação de câmeras",
+      "Reuniões individuais de feedback",
+      "Caixinha de sugestões",
+      "Workshops de saúde mental",
       "Canal de denúncia",
       "Convênios médicos",
       "Formato híbrido",
       "Day off por performance",
-      "Workshops de saúde mental",
+      "Instalação de câmeras",
     ],
-    /* Scores na ordem da legenda Miro: [DT, D, N, C, CT] */
     statements: [
       {
-        id: "s1",
-        text: "Este é um lugar fisicamente seguro para trabalhar.",
-        scores: [0, 0, 8.9, 26.7, 64.4], // DT, D, N, C, CT
+        id: "p15",
+        text: "A empresa oferece treinamento ou outras formas de desenvolvimento.",
+        scores: [6.7, 22.2, 22.2, 31.1, 17.8],
+        themeId: "apoio",
+        origin: "proposito",
         practiceType: "comecar",
-        actions: ["Instalação de câmeras", "Adaptar local para prevenção"],
+        actions: ["Cursos pagos pelo escritório", "Pagamento total ou parcial de cursos/pós-graduação"],
       },
       {
-        id: "s2",
-        text: "Este é um lugar psicológico e emocionalmente saudável.",
-        scores: [2.2, 24.4, 0, 44.4, 28.9], // DT, D, N, C, CT
+        id: "p16",
+        text: "Recebo os equipamentos e recursos necessários para o meu trabalho.",
+        scores: [0, 0, 15.6, 35.6, 48.9],
+        themeId: "apoio",
+        origin: "proposito",
         practiceType: "comecar",
-        actions: ["Workshops de saúde mental", "Canal de denúncia"],
-      },
-      {
-        id: "s3",
-        text: "Nossas instalações contribuem para um bom ambiente.",
-        scores: [0, 6.7, 0, 42.2, 51.1], // DT, D, N, C, CT
-        practiceType: "acelerar",
-        actions: ["Logística do refeitório"],
-      },
-      {
-        id: "s4",
-        text: "Posso me ausentar do trabalho quando necessário.",
-        scores: [0, 4.4, 0, 37.8, 51.1], // DT, D, N, C, CT
-        practiceType: "evitar",
-        actions: ["Evitar sobrejornada", "Análise de demanda"],
-      },
-      {
-        id: "s5",
-        text: "A liderança me incentiva a equilibrar vida pessoal e profissional.",
-        scores: [0, 15.6, 0, 35.6, 48.9], // DT, D, N, C, CT
-        practiceType: "comecar",
-        actions: ["Day off por performance", "Gifts"],
-      },
-      {
-        id: "s6",
-        text: "A liderança me trata com respeito como profissional e como pessoa.",
-        scores: [0, 4.4, 0, 28.9, 66.7], // DT, D, N, C, CT
-        practiceType: "acelerar",
-        actions: ["Reconhecimento dos funcionários"],
-      },
-      {
-        id: "s7",
-        text: "Meu salário é justo pelo trabalho que executo.",
-        scores: [6.7, 28.9, 28.9, 22.2, 13.3], // DT, D, N, C, CT
-        practiceType: "comecar",
-        actions: ["Análise de mercado salarial", "Avaliação de desempenho"],
-      },
-    ],
-  },
-  {
-    id: "reconhecimento",
-    name: "Indicador de Reconhecimento",
-    question: "Você se sente reconhecido e valorizado por aqui?",
-    actions: [
-      "Reuniões individuais de feedback",
-      "Bonificações",
-      "Plano de carreira",
-      "Avaliação de desempenho trimestral/semestral",
-      "Caixinha de sugestões",
-      "Eventos de confraternização",
-    ],
-    /* Scores na ordem da legenda Miro: [DT, D, N, C, CT] */
-    statements: [
-      {
-        id: "r1",
-        text: "Sinto que o meu trabalho tem um propósito significativo.",
-        scores: [2.2, 2.2, 4.5, 46.7, 44.4], // DT, D, N, C, CT
-        practiceType: "acelerar",
-        actions: ["Reconhecer por mérito", "Promover mais autonomia", "Promover mais desafios"],
-      },
-      {
-        id: "r2",
-        text: "As atividades que realizo no meu trabalho são importantes para mim.",
-        scores: [2.2, 2.2, 4.5, 48.9, 42.2], // DT, D, N, C, CT
-        practiceType: "acelerar",
-        actions: ["Reconhecer por mérito", "Promover mais autonomia", "Promover mais desafios"],
-      },
-      {
-        id: "r3",
-        text: "Sinto-me valorizado(a) pelo trabalho que realizo.",
-        scores: [4.1, 2.6, 20, 44.4, 28.9], // DT, D, N, C, CT
-        practiceType: "comecar",
-        actions: ["Incentivos financeiros", "Projetos mais desafiadores", "Crescimento profissional"],
-      },
-      {
-        id: "r4",
-        text: "Recebo reconhecimento adequado pelo meu desempenho no trabalho.",
-        scores: [6.7, 28.9, 37.8, 24.4, 2.2], // DT, D, N, C, CT
-        practiceType: "comecar",
-        actions: ["Incentivos financeiros", "Projetos mais desafiadores", "Crescimento profissional"],
-      },
-      {
-        id: "r5",
-        text: "Consigo equilibrar bem minhas responsabilidades profissionais e pessoais.",
-        scores: [11.1, 17.8, 46.7, 24.4, 0], // DT, D, N, C, CT
-        practiceType: "acelerar",
-        actions: ["Flexibilidade de horário", "Redução de sobrecarga", "Apoio a saúde mental"],
-      },
-      {
-        id: "r6",
-        text: "A empresa promove um bom equilíbrio entre trabalho e vida pessoal.",
-        scores: [11.4, 20.5, 36.4, 27.3, 4.4], // DT, D, N, C, CT
-        practiceType: "evitar",
-        actions: ["Flexibilidade de horário", "Redução de sobrecarga", "Apoio a saúde mental"],
-      },
-      {
-        id: "r7",
-        text: "Tenho boas relações interpessoais no meu ambiente de trabalho.",
-        scores: [2.2, 0, 0, 35.6, 62.2], // DT, D, N, C, CT
-        practiceType: "acelerar",
-        actions: ["Fomentar a coletividade", "Dia do vôlei, beach tennis, treino (unir equipes)"],
-      },
-      {
-        id: "r8",
-        text: "O ambiente de trabalho é saudável e colaborativo.",
-        scores: [0, 13.3, 0, 35.6, 51.1], // DT, D, N, C, CT
-        practiceType: "acelerar",
-        actions: ["Definir metas/regras para o engajamento", "Promover ambiente de cooperação e trabalho em equipe"],
+        actions: ["Novos computadores para os funcionários novos"],
       },
       {
         id: "r9",
         text: "Os gestores agradecem o bom trabalho e o esforço extra.",
-        scores: [2.3, 4.5, 11.4, 29.5, 52.3], // DT, D, N, C, CT
+        scores: [2.3, 4.5, 11.4, 29.5, 52.3],
+        themeId: "apoio",
+        origin: "proposito",
         practiceType: "comecar",
         actions: ["Caixinha de sugestões anônima"],
       },
       {
         id: "r10",
         text: "Meu superior me encoraja a contribuir com ideias.",
-        scores: [4.4, 8.9, 22.2, 0, 64.4], // DT, D, N, C, CT
+        scores: [0, 4.4, 8.9, 22.2, 64.4],
+        themeId: "apoio",
+        origin: "proposito",
         practiceType: "acelerar",
         actions: ["Reuniões de novas ideias", "Convidar equipe para reuniões com clientes"],
+      },
+      {
+        id: "s1",
+        text: "Este é um lugar fisicamente seguro para trabalhar.",
+        scores: [0, 0, 8.9, 26.7, 64.4],
+        themeId: "cuidado",
+        origin: "seguranca",
+        practiceType: "comecar",
+        actions: ["Instalação de câmeras", "Adaptar local para prevenção"],
+      },
+      {
+        id: "s2",
+        text: "Este é um lugar psicológico e emocionalmente saudável.",
+        scores: [0, 2.2, 24.4, 44.4, 28.9],
+        themeId: "cuidado",
+        origin: "seguranca",
+        practiceType: "comecar",
+        actions: ["Workshops de saúde mental", "Canal de denúncia"],
+      },
+      {
+        id: "s3",
+        text: "Nossas instalações contribuem para um bom ambiente.",
+        scores: [0, 0, 6.7, 42.2, 51.1],
+        themeId: "cuidado",
+        origin: "seguranca",
+        practiceType: "acelerar",
+        actions: ["Logística do refeitório"],
+      },
+      {
+        id: "s4",
+        text: "Posso me ausentar do trabalho quando necessário.",
+        scores: [0, 4.4, 6.7, 37.8, 51.1],
+        themeId: "cuidado",
+        origin: "seguranca",
+        practiceType: "evitar",
+        actions: ["Evitar sobrejornada", "Análise de demanda"],
+      },
+      {
+        id: "s5",
+        text: "A liderança me incentiva a equilibrar vida pessoal e profissional.",
+        scores: [0, 0, 15.6, 35.6, 48.9],
+        themeId: "cuidado",
+        origin: "seguranca",
+        practiceType: "comecar",
+        actions: ["Day off por performance", "Gifts"],
+      },
+      {
+        id: "s6",
+        text: "A liderança me trata com respeito como profissional e como pessoa.",
+        scores: [0, 0, 4.4, 28.9, 66.7],
+        themeId: "cuidado",
+        origin: "seguranca",
+        practiceType: "acelerar",
+        actions: ["Reconhecimento dos funcionários"],
+      },
+      {
+        id: "r3",
+        text: "Sinto-me valorizado(a) pelo trabalho que realizo.",
+        scores: [2.2, 4.4, 20, 44.4, 28.9],
+        themeId: "reconhecimento",
+        origin: "reconhecimento",
+        practiceType: "comecar",
+        actions: ["Incentivos financeiros", "Projetos mais desafiadores", "Crescimento profissional"],
+      },
+      {
+        id: "r4",
+        text: "Recebo reconhecimento adequado pelo meu desempenho no trabalho.",
+        scores: [2.2, 6.7, 28.9, 37.8, 24.4],
+        themeId: "reconhecimento",
+        origin: "reconhecimento",
+        practiceType: "comecar",
+        actions: ["Incentivos financeiros", "Projetos mais desafiadores", "Crescimento profissional"],
+      },
+      {
+        id: "r5",
+        text: "Consigo equilibrar bem minhas responsabilidades profissionais e pessoais.",
+        scores: [0, 11.1, 17.8, 46.7, 24.4],
+        themeId: "equilibrio",
+        origin: "reconhecimento",
+        practiceType: "acelerar",
+        actions: ["Flexibilidade de horário", "Redução de sobrecarga", "Apoio a saúde mental"],
+      },
+      {
+        id: "r6",
+        text: "A empresa promove um bom equilíbrio entre trabalho e vida pessoal.",
+        scores: [4.5, 11.4, 20.5, 36.4, 27.3],
+        themeId: "equilibrio",
+        origin: "reconhecimento",
+        practiceType: "evitar",
+        actions: ["Flexibilidade de horário", "Redução de sobrecarga", "Apoio a saúde mental"],
       },
     ],
   },
   {
-    id: "qualidade-eficiencia",
-    name: "Indicador de Qualidade e Eficiência (Remuneração/Performance)",
-    question: "Como avalia remuneração e meritocracia?",
+    id: "imparcialidade",
+    name: "Imparcialidade",
+    question: "Remuneração, promoções e tratamento são justos para todos?",
+    themes: [
+      { id: "remuneracao", name: "Remuneração e benefícios" },
+      { id: "meritocracia", name: "Meritocracia" },
+      { id: "diversidade", name: "Diversidade e justiça" },
+    ],
     actions: [
       "PLR",
       "Avaliação de desempenho",
-      "Plano de participação nos lucros",
       "VR/Ifood Benefícios",
       "Análise de mercado salarial",
+      "Central de denúncias",
+      "Compliance",
     ],
-    /* Scores na ordem da legenda Miro: [DT, D, N, C, CT] */
     statements: [
       {
-        id: "q1",
-        text: "Meu salário é justo.",
-        scores: [6.7, 13.3, 22.2, 28.9, 28.9],
+        id: "s7",
+        text: "Meu salário é justo pelo trabalho que executo.",
+        scores: [6.7, 28.9, 28.9, 22.2, 13.3],
+        themeId: "remuneracao",
+        origin: "seguranca",
         practiceType: "comecar",
-        actions: ["Análise de mercado", "Plano de PLR"],
+        actions: ["Análise de mercado salarial", "Avaliação de desempenho"],
       },
       {
         id: "q2",
         text: "A quantia que recebo como participação nos resultados é justa.",
-        scores: [26.7, 22.2, 37.8, 2.2, 11.1], // DT, D, N, C, CT
+        scores: [26.7, 22.2, 37.8, 2.2, 11.1],
+        themeId: "remuneracao",
+        origin: "seguranca",
         practiceType: "comecar",
         actions: ["Plano de participação nos lucros"],
       },
       {
         id: "q3",
         text: "Temos benefícios especiais e diferenciados aqui.",
-        scores: [26.7, 31.1, 28.9, 6.7, 6.7], // DT, D, N, C, CT
+        scores: [26.7, 31.1, 28.9, 6.7, 6.7],
+        themeId: "remuneracao",
+        origin: "seguranca",
         practiceType: "acelerar",
         actions: ["VR, Ifood Benefícios"],
       },
       {
         id: "q4",
         text: "Todos têm a oportunidade de receber um reconhecimento especial.",
-        scores: [4.4, 17.8, 15.6, 35.6, 26.7], // DT, D, N, C, CT
+        scores: [4.4, 17.8, 15.6, 35.6, 26.7],
+        themeId: "remuneracao",
+        origin: "seguranca",
         practiceType: "acelerar",
         actions: ["Plano de carreira", "Avaliação de desempenho"],
       },
       {
         id: "q5",
         text: "Eu sou considerado importante independentemente de minha posição.",
-        scores: [2.2, 13.3, 0, 44.4, 40], // DT, D, N, C, CT
+        scores: [0, 2.2, 13.3, 44.4, 40],
+        themeId: "meritocracia",
+        origin: "seguranca",
         practiceType: "acelerar",
         actions: ["Plano de transparência"],
       },
       {
         id: "q6",
         text: "As promoções são dadas às pessoas que realmente mais merecem.",
-        scores: [4.4, 15.6, 26.7, 31.1, 22.2], // DT, D, N, C, CT
+        scores: [4.4, 15.6, 26.7, 31.1, 22.2],
+        themeId: "meritocracia",
+        origin: "seguranca",
         practiceType: "acelerar",
         actions: ["Métricas de desempenho", "Plano de carreira"],
       },
       {
         id: "q7",
         text: "Os gestores evitam o favoritismo.",
-        scores: [4.4, 8.9, 28.9, 31.1, 26.7], // DT, D, N, C, CT
+        scores: [4.4, 8.9, 28.9, 31.1, 26.7],
+        themeId: "meritocracia",
+        origin: "seguranca",
         practiceType: "evitar",
         actions: ["Planilha de feedback anônimo"],
       },
       {
         id: "q8",
         text: "As pessoas evitam 'politicagem' e intrigas.",
-        scores: [4.4, 6.7, 24.4, 37.8, 26.7], // DT, D, N, C, CT
+        scores: [4.4, 6.7, 24.4, 37.8, 26.7],
+        themeId: "meritocracia",
+        origin: "seguranca",
         practiceType: "acelerar",
         actions: ["Canal de denúncia", "Feedback anônimo"],
       },
-    ],
-  },
-  {
-    id: "diversidade",
-    name: "Indicador de Diversidade e Inclusão",
-    question: "O escritório respeita diversidade e inclusão?",
-    actions: [
-      "Central de denúncias",
-      "Compliance",
-      "Eventos de integração",
-      "Happy hour temático",
-    ],
-    /* Scores na ordem da legenda Miro: [DT, D, N, C, CT] */
-    statements: [
       {
         id: "d1",
         text: "As pessoas são bem tratadas independente de cor/etnia.",
-        scores: [0, 0, 0, 15.6, 84.4], // DT, D, N, C, CT
+        scores: [0, 0, 0, 15.6, 84.4],
+        themeId: "diversidade",
+        origin: "seguranca",
         practiceType: "acelerar",
         actions: ["Contratação multiracial", "Eventos de integração"],
       },
       {
         id: "d2",
         text: "As pessoas são bem tratadas independente de idade.",
-        scores: [0, 2.2, 0, 17.8, 80], // DT, D, N, C, CT
+        scores: [0, 0, 2.2, 17.8, 80],
+        themeId: "diversidade",
+        origin: "seguranca",
         practiceType: "acelerar",
         actions: ["Abordar tema em datas importantes"],
       },
       {
         id: "d3",
         text: "As pessoas são bem tratadas independente do sexo.",
-        scores: [2.2, 4.4, 0, 17.8, 75.6], // DT, D, N, C, CT
+        scores: [0, 2.2, 4.4, 17.8, 75.6],
+        themeId: "diversidade",
+        origin: "seguranca",
         practiceType: "acelerar",
         actions: ["Reuniões sobre como as pessoas se sentem"],
       },
       {
         id: "d4",
         text: "As pessoas são bem tratadas independente de orientação sexual.",
-        scores: [0, 0, 0, 20, 80], // DT, D, N, C, CT
+        scores: [0, 0, 0, 20, 80],
+        themeId: "diversidade",
+        origin: "seguranca",
         practiceType: "acelerar",
         actions: ["Central de denúncias", "Compliance"],
       },
       {
         id: "d5",
         text: "Se tratado injustamente, serei ouvido e receberei tratamento justo.",
-        scores: [2.2, 13.3, 6.7, 28.9, 48.9], // DT, D, N, C, CT
+        scores: [2.2, 13.3, 6.7, 28.9, 48.9],
+        themeId: "diversidade",
+        origin: "seguranca",
         practiceType: "comecar",
         actions: ["Reuniões que deem espaço para o colaborador"],
       },
       {
         id: "d6",
         text: "O escritório tem ambiente que respeita diversidade e inclusão.",
-        scores: [0, 4.4, 0, 26.7, 68.9], // DT, D, N, C, CT
+        scores: [0, 0, 4.4, 26.7, 68.9],
+        themeId: "diversidade",
+        origin: "seguranca",
         practiceType: "acelerar",
         actions: ["Eventos sobre inclusão e diversidade"],
+      },
+    ],
+  },
+  {
+    id: "orgulho",
+    name: "Orgulho",
+    question: "O trabalho tem significado para quem o faz?",
+    themes: [{ id: "proposito-trabalho", name: "Propósito do trabalho" }],
+    actions: ["Bonificações", "Avaliação de desempenho trimestral/semestral"],
+    statements: [
+      {
+        id: "r1",
+        text: "Sinto que o meu trabalho tem um propósito significativo.",
+        scores: [2.2, 2.2, 4.4, 46.7, 44.4],
+        themeId: "proposito-trabalho",
+        origin: "reconhecimento",
+        practiceType: "acelerar",
+        actions: ["Reconhecer por mérito", "Promover mais autonomia", "Promover mais desafios"],
+      },
+      {
+        id: "r2",
+        text: "As atividades que realizo no meu trabalho são importantes para mim.",
+        scores: [0, 2.2, 6.7, 48.9, 42.2],
+        themeId: "proposito-trabalho",
+        origin: "reconhecimento",
+        practiceType: "acelerar",
+        actions: ["Reconhecer por mérito", "Promover mais autonomia", "Promover mais desafios"],
+      },
+    ],
+  },
+  {
+    id: "camaradagem",
+    name: "Camaradagem",
+    question: "O ambiente entre colegas é saudável e colaborativo?",
+    themes: [{ id: "relacoes", name: "Relações entre colegas" }],
+    actions: ["Eventos de confraternização", "Eventos de integração", "Happy hour temático"],
+    statements: [
+      {
+        id: "r7",
+        text: "Tenho boas relações interpessoais no meu ambiente de trabalho.",
+        scores: [0, 0, 2.2, 35.6, 62.2],
+        themeId: "relacoes",
+        origin: "reconhecimento",
+        practiceType: "acelerar",
+        actions: ["Fomentar a coletividade", "Dia do vôlei, beach tennis, treino (unir equipes)"],
+      },
+      {
+        id: "r8",
+        text: "O ambiente de trabalho é saudável e colaborativo.",
+        scores: [0, 0, 13.3, 35.6, 51.1],
+        themeId: "relacoes",
+        origin: "reconhecimento",
+        practiceType: "acelerar",
+        actions: ["Definir metas/regras para o engajamento", "Promover ambiente de cooperação e trabalho em equipe"],
       },
     ],
   },
@@ -414,7 +539,8 @@ export const PLANOS_ACAO: ActionPlan[] = [
     priority: "urgente",
     status: "em_andamento",
     responsible: "Emanueli",
-    indicatorId: "proposito",
+    indicatorId: "credibilidade",
+    themeIds: ["comunicacao", "apoio"],
   },
   {
     id: "ap2",
@@ -429,7 +555,8 @@ export const PLANOS_ACAO: ActionPlan[] = [
     priority: "urgente",
     status: "backlog",
     responsible: "Leticia",
-    indicatorId: "seguranca",
+    indicatorId: "respeito",
+    themeIds: ["cuidado"],
   },
   {
     id: "ap3",
@@ -444,7 +571,8 @@ export const PLANOS_ACAO: ActionPlan[] = [
     priority: "urgente",
     status: "em_andamento",
     responsible: "Gabriel",
-    indicatorId: "seguranca",
+    indicatorId: "respeito",
+    themeIds: ["reconhecimento", "cuidado"],
   },
   {
     id: "ap4",
@@ -459,7 +587,8 @@ export const PLANOS_ACAO: ActionPlan[] = [
     priority: "programar",
     status: "backlog",
     responsible: "Caroline e Midian",
-    indicatorId: "diversidade",
+    indicatorId: "imparcialidade",
+    themeIds: ["diversidade", "equilibrio"],
   },
   {
     id: "ap5",
@@ -474,7 +603,8 @@ export const PLANOS_ACAO: ActionPlan[] = [
     priority: "programar",
     status: "backlog",
     responsible: "Gente e Gestão",
-    indicatorId: "reconhecimento",
+    indicatorId: "imparcialidade",
+    themeIds: ["remuneracao", "meritocracia", "cuidado"],
   },
   {
     id: "ap6",
@@ -489,7 +619,8 @@ export const PLANOS_ACAO: ActionPlan[] = [
     priority: "programar",
     status: "backlog",
     responsible: "Gestores",
-    indicatorId: "proposito",
+    indicatorId: "credibilidade",
+    themeIds: ["comunicacao", "competencia"],
   },
 ];
 

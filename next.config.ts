@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Pasta de build alternativa para rodar um segundo `next dev` na mesma pasta
+  // (o primeiro trava .next/dev/lock). Padrão continua .next.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   // lucide-react, recharts e date-fns já são otimizados por padrão no Next.js 16.
   // Radix: usar experimental.optimizePackageImports (tipagem pode não incluir; cast abaixo).
   experimental: {

@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { archiveMessagesMedia, mediaKindOf, transcribeMessagesAudio } from "./media.ts";
 
 const MESSAGE_EVENTS = new Set([
   "MESSAGES_UPSERT",
@@ -37,6 +38,8 @@ interface ParsedMessage {
   reactionEmoji?: string | null;
   isGroup: boolean;
   participantPhone: string | null;
+  /** `message` cru do payload: a Evolution baixa a mídia a partir dele. */
+  rawMessage?: Record<string, unknown> | null;
 }
 
 const CONV_SELECT =
@@ -517,6 +520,7 @@ function parseSingleMessage(
     quotedBody,
     isGroup,
     participantPhone,
+    rawMessage: message ?? null,
   };
 }
 
@@ -607,7 +611,14 @@ async function applySiteLeadPatch(
   await supabase.from("whatsapp_conversations").update(patch).eq("id", conversationId);
 }
 
-async function upsertMessages(messages: ParsedMessage[]): Promise<number> {
+/**
+ * `mediaQueue` recebe, por id, as mensagens com mídia ainda não guardada no
+ * Storage, com o `message` do payload.
+ */
+async function upsertMessages(
+  messages: ParsedMessage[],
+  mediaQueue: Map<string, Record<string, unknown> | null>
+): Promise<number> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, serviceKey);
@@ -631,7 +642,7 @@ async function upsertMessages(messages: ParsedMessage[]): Promise<number> {
 
     const { data: existingMsg } = await supabase
       .from("whatsapp_messages")
-      .select("id, body")
+      .select("id, body, media_storage_path, media_expired_at")
       .eq("instance_name", msg.instanceName)
       .eq("wa_message_id", msg.waMessageId)
       .maybeSingle();
@@ -649,6 +660,14 @@ async function upsertMessages(messages: ParsedMessage[]): Promise<number> {
             quoted_body: msg.quotedBody ?? null,
           })
           .eq("id", existingMsg.id);
+      }
+      // Mídia enviada pelo sistema: a Vercel já gravou a linha e o SEND_MESSAGE chega depois.
+      if (
+        !existingMsg.media_storage_path &&
+        !existingMsg.media_expired_at &&
+        mediaKindOf(msg.messageType, msg.body)
+      ) {
+        mediaQueue.set(existingMsg.id as string, msg.rawMessage ?? null);
       }
       continue;
     }
@@ -714,7 +733,7 @@ async function upsertMessages(messages: ParsedMessage[]): Promise<number> {
         .eq("id", conversationId);
     }
 
-    const { error: msgError } = await supabase.from("whatsapp_messages").upsert(
+    const { data: savedRows, error: msgError } = await supabase.from("whatsapp_messages").upsert(
       {
         conversation_id: conversationId,
         wa_message_id: msg.waMessageId,
@@ -738,7 +757,7 @@ async function upsertMessages(messages: ParsedMessage[]): Promise<number> {
         },
       },
       { onConflict: "instance_name,wa_message_id", ignoreDuplicates: true }
-    );
+    ).select("id");
 
     if (msgError) {
       console.error(
@@ -749,6 +768,10 @@ async function upsertMessages(messages: ParsedMessage[]): Promise<number> {
       continue;
     }
     inserted += 1;
+    const savedId = (savedRows?.[0] as { id?: string } | undefined)?.id;
+    if (savedId && mediaKindOf(msg.messageType, msg.body)) {
+      mediaQueue.set(savedId, msg.rawMessage ?? null);
+    }
 
     const existingLastAt = existingConv?.last_message_at
       ? new Date(existingConv.last_message_at as string).getTime()
@@ -919,7 +942,7 @@ Deno.serve(async (req: Request) => {
         ok: true,
         endpoint: "evolution-webhook",
         target: "supabase",
-        version: 12,
+        version: 14,
         events: [...MESSAGE_EVENTS],
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -955,6 +978,22 @@ Deno.serve(async (req: Request) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
+    // Chamadas internas (rota de mídia da Vercel e backfills), não da Evolution:
+    // archive_media guarda no Storage a mídia de mensagens que ainda não têm
+    // arquivo; transcribe_audio transcreve áudios já guardados e sem texto.
+    if (payload.action === "archive_media" || payload.action === "transcribe_audio") {
+      const messageIds = (Array.isArray(payload.messageIds) ? payload.messageIds : [])
+        .filter((id): id is string => typeof id === "string" && id.length > 0)
+        .slice(0, 10);
+      const results =
+        payload.action === "archive_media"
+          ? await archiveMessagesMedia(supabase, messageIds)
+          : await transcribeMessagesAudio(supabase, messageIds);
+      return new Response(JSON.stringify({ ok: true, results }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (eventRaw === "CONNECTION_UPDATE") {
       await processConnectionUpdate(supabase, payload);
       await insertWebhookAuditLog(supabase, {
@@ -985,7 +1024,17 @@ Deno.serve(async (req: Request) => {
     }
 
     const messages = parseWebhookPayload(payload);
-    const stored = await upsertMessages(messages);
+    const mediaQueue = new Map<string, Record<string, unknown> | null>();
+    const stored = await upsertMessages(messages, mediaQueue);
+    if (mediaQueue.size > 0) {
+      // Em segundo plano: a Evolution recebe o 200 sem esperar o download.
+      EdgeRuntime.waitUntil(
+        archiveMessagesMedia(supabase, [...mediaQueue.keys()], {
+          attempts: 3,
+          contents: mediaQueue,
+        })
+      );
+    }
     await insertWebhookAuditLog(supabase, {
       event: eventRaw || "MESSAGES_UPSERT",
       received: messages.length,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Download, FileText, Loader2 } from "lucide-react";
 import { authFetch } from "@/lib/auth-fetch";
 import {
@@ -9,6 +9,16 @@ import {
   type WhatsappMediaKind,
 } from "@/lib/evolution-leads";
 import { cn } from "@/lib/utils";
+
+/** Resposta de /api/evolution/messages/media: URL assinada do Storage ou base64 da Evolution. */
+export function whatsappMediaSrc(
+  json: { url?: unknown; base64?: unknown; mimetype?: unknown },
+  fallbackMime: string
+): string {
+  if (typeof json.url === "string") return json.url;
+  const mime = typeof json.mimetype === "string" ? json.mimetype : fallbackMime;
+  return `data:${mime};base64,${json.base64 as string}`;
+}
 
 interface WhatsappMediaBubbleProps {
   messageId: string;
@@ -29,9 +39,12 @@ export function WhatsappMediaBubble({
   const [src, setSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Link vencido no WhatsApp: não oferece "tentar de novo". */
+  const [expired, setExpired] = useState(false);
+  const autoLoadedFor = useRef<string | null>(null);
 
   const load = useCallback(async () => {
-    if (loading || src) return;
+    if (loading || src || expired) return;
     setLoading(true);
     setError(null);
     try {
@@ -39,21 +52,23 @@ export function WhatsappMediaBubble({
         `/api/evolution/messages/media?messageId=${encodeURIComponent(messageId)}`
       );
       const json = await res.json();
+      if (res.status === 410) setExpired(true);
       if (!res.ok) throw new Error(json.error ?? "Erro ao carregar mídia.");
-      const mime = typeof json.mimetype === "string" ? json.mimetype : "image/jpeg";
-      const b64 = json.base64 as string;
-      setSrc(`data:${mime};base64,${b64}`);
+      setSrc(whatsappMediaSrc(json, "image/jpeg"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao carregar mídia.");
     } finally {
       setLoading(false);
     }
-  }, [loading, messageId, src]);
+  }, [expired, loading, messageId, src]);
 
+  // Imagem carrega sozinha uma vez por mensagem. Antes, cada falha recriava `load`
+  // e disparava o efeito de novo: a conversa aberta pedia a mídia em loop.
   useEffect(() => {
-    if (kind !== "image" || src) return;
+    if (kind !== "image" || autoLoadedFor.current === messageId) return;
+    autoLoadedFor.current = messageId;
     void load();
-  }, [kind, messageId, src, load]);
+  }, [kind, messageId, load]);
 
   if (kind === "image") {
     return (
@@ -70,7 +85,7 @@ export function WhatsappMediaBubble({
             <Loader2 className="h-4 w-4 animate-spin" />
             Carregando imagem…
           </div>
-        ) : (
+        ) : expired ? null : (
           <button
             type="button"
             onClick={() => void load()}
@@ -104,9 +119,9 @@ export function WhatsappMediaBubble({
           <button
             type="button"
             onClick={() => void load()}
-            disabled={loading}
+            disabled={loading || expired}
             className={cn(
-              "inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium",
+              "inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-60",
               fromMe
                 ? "bg-white/15 hover:bg-white/25 text-white"
                 : "bg-muted hover:bg-muted/80"
@@ -151,9 +166,9 @@ export function WhatsappMediaBubble({
         <button
           type="button"
           onClick={() => void load()}
-          disabled={loading}
+          disabled={loading || expired}
           className={cn(
-            "inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium",
+            "inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium disabled:opacity-60",
             fromMe
               ? "bg-white/15 hover:bg-white/25 text-white"
               : "bg-muted hover:bg-muted/80"

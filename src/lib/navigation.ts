@@ -40,6 +40,7 @@ import {
   SquareKanban,
   Ticket,
   TrendingUp,
+  Truck,
   User,
   Users,
   UsersRound,
@@ -50,11 +51,13 @@ import {
   TEAM_POSTS_PATH,
   canSeeTeamPosts,
   hasCafeCulturaAccess,
+  hasFacilitiesAccess,
   hasIcpAccess,
   hasOperacoesLegaisAccess,
   hasOpsPlannerAccess,
-  hasVistagemAccess,
+  canSeeVistagemPath,
   isAdminRole,
+  isFacilitiesPath,
   isOpsPlannerPath,
   isVistagemPath,
   isCollaboratorPhotosManager,
@@ -63,6 +66,7 @@ import {
 } from "@/lib/access-control";
 import { isContentCollaborator } from "@/lib/content-areas";
 import { canAccessGustavoContent } from "@/lib/gustavo-content/access";
+import { FACILITIES_CONTRACTS_PATH, FACILITIES_SUPPLIERS_PATH } from "@/lib/facilities/types";
 import { hasHrAccess } from "@/lib/rh/access";
 import { REELS_APPROVAL_HREF } from "@/hooks/use-reel-deliveries-pending";
 
@@ -221,13 +225,6 @@ export const NAV_FRONTS: NavFront[] = [
         pages: [{ href: "/certificados", label: "Certificados" }],
       },
       {
-        id: "eventos",
-        label: "Gestão de eventos",
-        shortLabel: "Eventos",
-        icon: Ticket,
-        pages: [{ href: "/eventos", label: "Eventos" }],
-      },
-      {
         id: "fotos",
         label: "Fotos institucionais",
         shortLabel: "Fotos",
@@ -369,6 +366,30 @@ export const NAV_FRONTS: NavFront[] = [
     ],
   },
   {
+    id: "facilities",
+    label: "Facilities",
+    features: [
+      {
+        id: "eventos",
+        label: "Gestão de eventos",
+        shortLabel: "Eventos",
+        icon: Ticket,
+        pages: [{ href: "/eventos", label: "Eventos" }],
+      },
+      {
+        // Cadastro único de fornecedores (o mesmo dos eventos) + contratos com datas-chave.
+        id: "fornecedores",
+        label: "Fornecedores e contratos",
+        shortLabel: "Fornecedores",
+        icon: Truck,
+        pages: [
+          { href: FACILITIES_SUPPLIERS_PATH, label: "Fornecedores" },
+          { href: FACILITIES_CONTRACTS_PATH, label: "Contratos" },
+        ],
+      },
+    ],
+  },
+  {
     id: "administracao",
     label: "Administração",
     collapsedByDefault: true,
@@ -449,7 +470,8 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
     return (href) => {
       if (ALWAYS_VISIBLE.has(href)) return true;
       if (href === "/fotos-colaboradores") return isCollaboratorPhotosManager(profile);
-      if (isVistagemPath(href)) return hasVistagemAccess(profile);
+      if (isFacilitiesPath(href)) return hasFacilitiesAccess(profile);
+      if (isVistagemPath(href)) return canSeeVistagemPath(profile, href);
       if (isOpsPlannerPath(href)) return opsPlanner;
       if (href.startsWith("/operacoes-legais")) return hasOperacoesLegaisAccess(profile);
       if (href === "/icp") return hasIcpAccess(profile);
@@ -475,7 +497,8 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
 
   const isAdmin = isAdminRole(profile);
   return (href) => {
-    if (isVistagemPath(href)) return hasVistagemAccess(profile);
+    if (isFacilitiesPath(href)) return hasFacilitiesAccess(profile);
+    if (isVistagemPath(href)) return canSeeVistagemPath(profile, href);
     if (isOpsPlannerPath(href)) return opsPlanner;
     if (href.startsWith("/operacoes-legais/")) return hasOperacoesLegaisAccess(profile);
     switch (href) {

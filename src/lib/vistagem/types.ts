@@ -1,3 +1,4 @@
+import type { ContagemPrazo } from "./dias-uteis";
 import type { FluxoDaTarefa } from "./fluxo-vios";
 import type { PastaSioe, Pendencia } from "./triagem";
 
@@ -137,6 +138,10 @@ export interface PublicacaoResumo {
   devolvidoEm: string | null;
   checadoEm: string | null;
   checkNota: string | null;
+  /** Última transferência para a fila de outra área (escritório de origem, quando e por quê). */
+  transferidoDe: string | null;
+  transferidoEm: string | null;
+  transferenciaMotivo: string | null;
   teor: string;
   /** true quando `teor` foi encurtado na listagem. */
   teorResumido: boolean;
@@ -222,6 +227,10 @@ export interface AgendamentoResumo {
   data: string;
   dataFatal: string | null;
   diasPrazo: number | null;
+  /** Contagem do atalho de dias (úteis/corridos); null sem atalho. */
+  contagemPrazo: ContagemPrazo | null;
+  /** COMPROMISSO: horário HH:MM. */
+  hora: string | null;
   responsavel: string;
   revisor: string | null;
   observacao: string | null;

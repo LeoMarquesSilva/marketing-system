@@ -2,18 +2,25 @@
 
 import { createContext, createElement, useContext, useMemo, type ReactNode } from "react";
 import {
-  Armchair,
   Bath,
   Car,
   Cigarette,
+  CigaretteOff,
   LampDesk,
   Laptop,
+  Library,
   Lightbulb,
+  Package,
   Presentation,
   Shapes,
+  ShieldCheck,
+  Shirt,
+  Sofa,
   Tag,
+  Thermometer,
   UsersRound,
   UtensilsCrossed,
+  Volume2,
   type LucideIcon,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -121,15 +128,22 @@ export function PersonLine({
 /* --------------------------------------------------------------- categorias */
 
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
-  "Mau uso da cozinha / refeitório": UtensilsCrossed,
-  "Ambiente de trabalho desorganizado": LampDesk,
-  "Mau uso da sala de reunião / áreas comuns": Presentation,
-  "Mau uso dos banheiros": Bath,
-  "Luz, ar-condicionado ou equipamento ligado": Lightbulb,
-  "Estacionamento indevido": Car,
-  "Fumar em frente ao escritório": Cigarette,
+  "Uso consciente da sala de reunião": Presentation,
+  "Uso consciente dos banheiros": Bath,
+  "Cigarro eletrônico": CigaretteOff,
+  "Local correto para fumar": Cigarette,
+  "Saúde e comportamento no ambiente de trabalho": Thermometer,
+  "Uso da cozinha": UtensilsCrossed,
+  "Volume de conversas": Volume2,
+  "Dress code": Shirt,
+  "Organização do ambiente de trabalho": LampDesk,
+  "Segurança e confidencialidade": ShieldCheck,
+  "Recebimento de encomendas particulares": Package,
+  Biblioteca: Library,
   "Uso e transporte de equipamentos do escritório": Laptop,
-  "Organização do ambiente de trabalho": Armchair,
+  "Local adequado para descanso": Sofa,
+  "Luz, ar e equipamentos ligados ao sair": Lightbulb,
+  Estacionamento: Car,
   Outros: Shapes,
 };
 

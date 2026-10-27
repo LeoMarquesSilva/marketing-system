@@ -5,13 +5,14 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Plus, Play, Pause, RotateCcw } from "lucide-react";
-import type { Indicator, ActionPlan } from "@/lib/clima-types";
+import type { ThemeSummary } from "@/lib/clima-metrics";
+import type { ActionPlan } from "@/lib/clima-types";
 import type { ClimaTodo } from "@/lib/clima-types";
 
 interface ClimaReuniaoTabProps {
-  indicadores: Indicator[];
+  themes: ThemeSummary[];
   planosAcao: ActionPlan[];
-  onAddTodo?: (todo: Omit<ClimaTodo, "id" | "createdAt">) => void;
+  onAddTodo?: (todo: Omit<ClimaTodo, "id" | "createdAt">) => unknown;
 }
 
 function formatTime(seconds: number): string {
@@ -22,7 +23,7 @@ function formatTime(seconds: number): string {
 }
 
 export function ClimaReuniaoTab({
-  indicadores,
+  themes,
   planosAcao,
   onAddTodo,
 }: ClimaReuniaoTabProps) {
@@ -126,25 +127,25 @@ export function ClimaReuniaoTab({
         <CardHeader>
           <span className="text-base font-semibold">Temas do dia</span>
           <p className="text-sm text-muted-foreground">
-            Selecione indicadores ou planos para discutir
+            Selecione temas ou planos para discutir
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label className="text-xs text-muted-foreground">Indicadores</Label>
+            <Label className="text-xs text-muted-foreground">Temas (% favorável)</Label>
             <div className="mt-2 flex flex-wrap gap-2">
-              {indicadores.map((ind) => (
+              {themes.map((t) => (
                 <button
-                  key={ind.id}
+                  key={t.theme.id}
                   type="button"
-                  onClick={() => toggleTopic(`ind-${ind.id}`)}
+                  onClick={() => toggleTopic(`tema-${t.theme.id}`)}
                   className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
-                    selectedTopics.has(`ind-${ind.id}`)
+                    selectedTopics.has(`tema-${t.theme.id}`)
                       ? "border-[#04202f] bg-[#04202f] text-white"
                       : "border-muted hover:bg-muted/50"
                   }`}
                 >
-                  {ind.name}
+                  {t.theme.name} · {Math.round(t.favorability.favorable)}%
                 </button>
               ))}
             </div>

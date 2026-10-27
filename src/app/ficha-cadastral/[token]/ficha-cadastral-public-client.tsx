@@ -20,6 +20,12 @@ import {
   type RegistrationErrors,
 } from "@/lib/rh/registration/validation";
 import styles from "@/components/rh/registration/ficha-publica.module.css";
+import {
+  ReopenNotice,
+  UntouchedWarning,
+  useJumpToFirstFlagged,
+  useReopenMarks,
+} from "@/components/rh/registration/reopen-notice";
 
 type Payload =
   | { state: "not_found" | "expired" | "cancelled" | "rate_limited" }
@@ -30,6 +36,7 @@ type Payload =
       inviteeName: string;
       answers: RegistrationAnswers;
       reopenNote: string | null;
+      reopenFields: RegistrationField[];
       expiresAt: string;
     };
 
@@ -61,6 +68,8 @@ const MESSAGES: Record<string, { title: string; body: string; tone: "neutral" | 
     body: "Aguarde um minuto e recarregue a página.",
   },
 };
+
+const NO_FIELDS: RegistrationField[] = [];
 
 function firstName(name: string): string {
   return name.trim().split(/\s+/)[0] ?? "";
@@ -191,6 +200,11 @@ export function FichaCadastralPublicClient({ token }: { token: string }) {
   }
 
   const errorCount = Object.keys(errors).length;
+  const payload = screen.kind === "form" ? screen.payload : null;
+  // Campos que a RH marcou ao devolver: a ficha abre direto no primeiro.
+  const flagged = payload?.reopenFields ?? NO_FIELDS;
+  const { marks: reopenMarks, pending: pendingFlagged } = useReopenMarks(flagged, payload?.answers ?? null, answers);
+  useJumpToFirstFlagged(flagged, screen.kind === "form", scrollToField);
 
   return (
     <div className={styles.root}>
@@ -239,8 +253,9 @@ export function FichaCadastralPublicClient({ token }: { token: string }) {
                   : "boas-vindas"}
               </h1>
               <p className={styles.lede}>
-                Para começar seu cadastro no escritório, precisamos de alguns dados. Leva cerca de 5 minutos. Tenha à
-                mão RG, CPF, PIS e os dados da sua conta bancária.
+                {flagged.length > 0 || screen.payload.reopenNote
+                  ? "Suas respostas estão salvas. Ajuste o que Pessoas e Cultura pediu e envie de novo."
+                  : "Para começar seu cadastro no escritório, precisamos de alguns dados. Leva cerca de 5 minutos. Tenha à mão RG, CPF, PIS e os dados da sua conta bancária."}
               </p>
               <ul className={styles.meta}>
                 <li>
@@ -252,12 +267,12 @@ export function FichaCadastralPublicClient({ token }: { token: string }) {
               </ul>
             </section>
 
-            {screen.payload.reopenNote && (
-              <section className={styles.reopen} role="note">
-                <p className={styles.reopenLabel}>Pessoas e Cultura pediu um ajuste</p>
-                <p className={styles.reopenText}>{screen.payload.reopenNote}</p>
-              </section>
-            )}
+            <ReopenNotice
+              note={screen.payload.reopenNote}
+              flagged={flagged}
+              pending={pendingFlagged}
+              onJump={scrollToField}
+            />
 
             <form
               className={styles.form}
@@ -272,6 +287,7 @@ export function FichaCadastralPublicClient({ token }: { token: string }) {
                 answers={answers}
                 errors={errors}
                 disabled={submitting}
+                reopenMarks={reopenMarks}
                 onChange={handleChange}
               />
 
@@ -305,6 +321,7 @@ export function FichaCadastralPublicClient({ token }: { token: string }) {
                     {submitError}
                   </p>
                 )}
+                <UntouchedWarning pending={pendingFlagged} />
                 <button type="submit" className={styles.submit} disabled={submitting}>
                   {submitting ? (
                     <>

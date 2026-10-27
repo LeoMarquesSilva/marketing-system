@@ -1,6 +1,7 @@
 import { fetchArticleContent } from "@/lib/content-extraction";
 import { fetchRssItems, filterItems } from "@/lib/content-roteiros";
 import { analyzeScore, generateAngles } from "@/lib/gustavo-content/ai";
+import { openAIKey } from "@/lib/openai-keys";
 import { SCORE_SUGGESTION_FROM } from "@/lib/gustavo-content/constants";
 import { findSameFact, type DedupeCandidate } from "@/lib/gustavo-content/dedupe";
 import { listRecentForDedupe } from "@/lib/gustavo-content/items";
@@ -33,8 +34,8 @@ export interface GustavoFetchResult {
 export async function runGustavoContentFetchPipeline(
   options: GustavoFetchOptions = {}
 ): Promise<GustavoFetchResult> {
-  if (!process.env.NEXT_OPENAI_API_KEY?.trim() && !process.env.OPENAI_API_KEY?.trim()) {
-    throw new GustavoContentError("Configure OPENAI_API_KEY ou NEXT_OPENAI_API_KEY no servidor.", 503);
+  if (!openAIKey("conteudo")) {
+    throw new GustavoContentError("Configure OPENAI_API_KEY_CONTEUDO no servidor.", 503);
   }
 
   const admin = getGustavoContentAdmin();
@@ -232,8 +233,8 @@ export async function importInstitutionalNews(options: {
   fetchArticle?: boolean;
   days?: number;
 } = {}): Promise<GustavoFetchResult> {
-  if (!process.env.NEXT_OPENAI_API_KEY?.trim() && !process.env.OPENAI_API_KEY?.trim()) {
-    throw new GustavoContentError("Configure OPENAI_API_KEY ou NEXT_OPENAI_API_KEY no servidor.", 503);
+  if (!openAIKey("conteudo")) {
+    throw new GustavoContentError("Configure OPENAI_API_KEY_CONTEUDO no servidor.", 503);
   }
 
   const admin = getGustavoContentAdmin();

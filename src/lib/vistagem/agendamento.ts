@@ -1,4 +1,4 @@
-import { datasDoPrazo } from "./dias-uteis";
+import { CONTAGENS_PRAZO, datasDoPrazo, type ContagemPrazo } from "./dias-uteis";
 import type { CadeiaDoPrazo } from "./fluxo-vios";
 
 /**
@@ -43,8 +43,12 @@ export interface AgendamentoEntrada {
   data: string;
   /** PRAZO: data fatal escolhida no calendário ou pelos atalhos de dias. */
   dataFatal?: string | null;
-  /** PRAZO: atalho usado (5/10/15/30/60/90/180 dias úteis), se houver. */
+  /** PRAZO: atalho usado (5/10/15/30/60/90/180 dias), se houver. */
   diasPrazo?: number | null;
+  /** PRAZO com atalho: dias úteis ou corridos, escolhido no modal. */
+  contagemPrazo?: ContagemPrazo | null;
+  /** COMPROMISSO: HH:MM da audiência, perícia, sessão… (obrigatório). */
+  hora?: string | null;
   responsavel: string;
   revisor?: string | null;
   observacao?: string | null;
@@ -58,6 +62,10 @@ export interface AgendamentoValidado {
   data: string;
   dataFatal: string | null;
   diasPrazo: number | null;
+  /** Só com diasPrazo; sem atalho (fatal no calendário), null. */
+  contagemPrazo: ContagemPrazo | null;
+  /** COMPROMISSO: HH:MM; nas outras classes, null. */
+  hora: string | null;
   responsavel: string;
   responsavelId: string;
   revisor: string | null;
@@ -126,6 +134,11 @@ function dataValida(iso: string): boolean {
   return !Number.isNaN(data.getTime()) && data.toISOString().slice(0, 10) === iso;
 }
 
+/** HH:MM de 00:00 a 23:59. */
+export function horaValida(hora: string | null | undefined): hora is string {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(hora ?? ""));
+}
+
 /** AAAA-MM-DD → DD/MM/AAAA (contrato da fila do robô). */
 export function paraDataVios(iso: string): string {
   const [ano, mes, dia] = iso.split("-");
@@ -183,6 +196,10 @@ export function validarAgendamentos(
       : entrada.data;
     if (prazo && !fatal) erros.push(`${n}: escolha a data fatal do prazo.`);
     if (!prazo && !dataValida(data)) erros.push(`${n}: escolha a data no calendário.`);
+    // Audiência, perícia, sessão…: o horário vai junto para o VIOS.
+    const compromisso = entrada.etiqueta === "COMPROMISSO";
+    const hora = compromisso && horaValida(entrada.hora?.trim()) ? (entrada.hora as string).trim() : null;
+    if (compromisso && !hora) erros.push(`${n}: informe o horário do compromisso.`);
     const responsavel = usuarioPorChave.get(chaveNome(entrada.responsavel));
     if (!responsavel) erros.push(`${n}: escolha o responsável na lista de usuários do VIOS.`);
     const revisor = entrada.revisor?.trim() ? usuarioPorChave.get(chaveNome(entrada.revisor)) : null;
@@ -190,8 +207,10 @@ export function validarAgendamentos(
     if (prazo && !entrada.revisor?.trim()) erros.push(`${n}: no Prazo o revisor é obrigatório.`);
     const observacao = entrada.observacao?.trim() || null;
     if (observacao && observacao.length > MAX_OBSERVACAO) erros.push(`${n}: observação com mais de ${MAX_OBSERVACAO} caracteres.`);
-    if (!tarefa || !responsavel || !dataValida(data) || (prazo && !revisor)) return null;
     const diasPrazo = prazo && Number.isInteger(entrada.diasPrazo) && (entrada.diasPrazo ?? 0) > 0 ? (entrada.diasPrazo as number) : null;
+    const contagemPrazo = diasPrazo ? CONTAGENS_PRAZO.find((contagem) => contagem === entrada.contagemPrazo) ?? null : null;
+    if (diasPrazo && !contagemPrazo) erros.push(`${n}: escolha se o prazo é em dias úteis ou corridos.`);
+    if (!tarefa || !responsavel || !dataValida(data) || (prazo && !revisor) || (compromisso && !hora) || (diasPrazo && !contagemPrazo)) return null;
     return {
       etiqueta: entrada.etiqueta,
       tarefa: tarefa.nomeVios ?? tarefa.nome,
@@ -199,6 +218,8 @@ export function validarAgendamentos(
       data,
       dataFatal: fatal,
       diasPrazo,
+      contagemPrazo,
+      hora,
       responsavel: responsavel.nome,
       responsavelId: responsavel.id,
       revisor: revisor?.nome ?? null,

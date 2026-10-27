@@ -41,6 +41,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/operacoes-legais/vistagem", label: "Vistagem e agendamento", manualOnly: true },
   { key: "/operacoes-legais/planner", label: "Planner de Operações Legais", manualOnly: true },
   { key: "/eventos", label: "Gestão de eventos" },
+  { key: "/facilities", label: "Fornecedores e contratos (Facilities)", manualOnly: true },
   { key: "/cafe-cultura", label: "Café com Cultura", manualOnly: true },
   { key: "/email-marketing", label: "E-mail marketing" },
   { key: "/certificados", label: "Certificados" },
@@ -64,6 +65,7 @@ export const OPERACOES_LEGAIS_KEY = "/operacoes-legais";
 export const VISTAGEM_KEY = "/operacoes-legais/vistagem";
 export const OPS_PLANNER_KEY = "/operacoes-legais/planner";
 export const ICP_KEY = "/icp";
+export const FACILITIES_KEY = "/facilities";
 export const MANUAL_ONLY_KEYS = ACCESS_SECTIONS.filter((s) => s.manualOnly).map((s) => s.key);
 
 const NON_ADMIN_KEYS = ACCESS_SECTIONS.filter(
@@ -120,6 +122,8 @@ export interface AccessProfile {
   /** Participa de algum espaço do Planner de Operações Legais (ops_space_members). */
   ops_planner_member?: boolean | null;
   department?: string | null;
+  /** Papel na Vistagem (controladoria ou juridico); a área é refeita no servidor. */
+  vistagem_papel?: string | null;
 }
 
 /** Postagens da equipe: desempenho no Instagram dos posts de cada área. */
@@ -208,6 +212,25 @@ export function isVistagemPath(pathname: string): boolean {
   return pathname === VISTAGEM_KEY || pathname.startsWith(`${VISTAGEM_KEY}/`);
 }
 
+/** Papel na Vistagem: a controladoria vê todas as abas e áreas; o jurídico, só a aba Jurídico das suas áreas. */
+export type PapelVistagem = "controladoria" | "juridico";
+
+export const VISTAGEM_JURIDICO_PATH = `${VISTAGEM_KEY}/juridico`;
+
+/** Admin e quem tem a Vistagem sem papel marcado são controladoria; sem acesso, null. */
+export function papelVistagem(profile: AccessProfile | null | undefined): PapelVistagem | null {
+  if (!hasVistagemAccess(profile)) return null;
+  if (isAdminRole(profile)) return "controladoria";
+  return profile?.vistagem_papel === "juridico" ? "juridico" : "controladoria";
+}
+
+/** Tela da Vistagem que o perfil pode abrir: o jurídico só abre a aba Jurídico. */
+export function canSeeVistagemPath(profile: AccessProfile | null | undefined, pathname: string): boolean {
+  const papel = papelVistagem(profile);
+  if (papel === "controladoria") return true;
+  return papel === "juridico" && (pathname === VISTAGEM_JURIDICO_PATH || pathname.startsWith(`${VISTAGEM_JURIDICO_PATH}/`));
+}
+
 /**
  * Planner de Operações Legais: admin, quem participa de algum espaço (vem do
  * organograma) ou liberação manual em Usuários. Os dados são recortados por
@@ -232,6 +255,20 @@ export function hasIcpAccess(profile: AccessProfile | null | undefined): boolean
   if (!profile) return false;
   if (isAdminRole(profile)) return true;
   return Boolean(profile.permissions?.includes(ICP_KEY));
+}
+
+/**
+ * Fornecedores e contratos (valores, contratos e dados de pagamento): admin ou
+ * liberação manual em Usuários. Sem `/facilities` marcado, só admin vê.
+ */
+export function hasFacilitiesAccess(profile: AccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  return Boolean(profile.permissions?.includes(FACILITIES_KEY));
+}
+
+export function isFacilitiesPath(pathname: string): boolean {
+  return pathname === FACILITIES_KEY || pathname.startsWith(`${FACILITIES_KEY}/`);
 }
 
 export function isManualOnlyKey(key: string): boolean {
@@ -279,7 +316,7 @@ export function canAccessPath(
   }
 
   if (isVistagemPath(pathname)) {
-    return hasVistagemAccess(profile);
+    return canSeeVistagemPath(profile, pathname);
   }
 
   if (isOpsPlannerPath(pathname)) {
@@ -355,7 +392,9 @@ export function firstAllowedPath(profile: AccessProfile | null | undefined): str
   if (!allowed || allowed.length === 0) return "/";
   // Colaborador de conteúdo cai na home de desempenho.
   if (hasContentAccess(allowed) && !allowed.includes("/")) return CONTENT_HOME_PATH;
-  return allowed.includes("/") ? "/" : allowed[0];
+  const primeiro = allowed.includes("/") ? "/" : allowed[0];
+  // O jurídico não abre a Captura (1ª aba da Vistagem): entra direto na aba Jurídico.
+  return primeiro === VISTAGEM_KEY && papelVistagem(profile) === "juridico" ? VISTAGEM_JURIDICO_PATH : primeiro;
 }
 
 /**

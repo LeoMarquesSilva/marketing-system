@@ -21,19 +21,32 @@ export const SCORE_LABELS = [
 
 export type PracticeType = "acelerar" | "evitar" | "comecar";
 
+/** Bloco do board do Miro em que a afirmação foi respondida */
+export type SurveyBlockId = "proposito" | "seguranca" | "reconhecimento";
+
 export interface Statement {
   id: string;
   text: string;
   /** Percentuais na ordem da legenda: [DT, D, N, C, CT] - sempre 5 valores */
   scores: number[];
+  /** Tema (subdimensão) dentro da dimensão GPTW */
+  themeId: string;
+  origin: SurveyBlockId;
   practiceType?: PracticeType;
   actions?: string[];
 }
 
+export interface ClimaTheme {
+  id: string;
+  name: string;
+}
+
+/** Dimensão do modelo GPTW (Credibilidade, Respeito, Imparcialidade, Orgulho, Camaradagem) */
 export interface Indicator {
   id: string;
   name: string;
   question: string;
+  themes: ClimaTheme[];
   statements: Statement[];
   actions: string[];
 }
@@ -57,6 +70,8 @@ export interface ActionPlan {
   priority: ActionPlanPriority;
   status: "backlog" | "em_andamento" | "concluido";
   responsible: string;
+  /** Temas que o plano ataca (ligação com os focos de ação) */
+  themeIds?: string[];
   indicatorId?: string;
 }
 
@@ -69,6 +84,7 @@ export interface ClimaTodo {
   status: "pendente" | "em_andamento" | "concluido";
   priority: "alta" | "normal" | "baixa";
   actionPlanId?: string;
+  /** Id do tema (ClimaTheme) ao qual a tarefa está ligada */
   indicatorId?: string;
   createdAt: string;
 }

@@ -4,8 +4,11 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { resolveResponsibles, type ThemeSummary } from "@/lib/clima-metrics";
 import type { ActionPlan } from "@/lib/clima-types";
+import type { User } from "@/lib/users";
 import { cn } from "@/lib/utils";
+import { PeopleAvatars, PlanStatusBadge, favorableTextClass } from "./clima-visuals";
 
 const PRIORITY_LABELS: Record<ActionPlan["priority"], string> = {
   urgente: "Faça Primeiro",
@@ -23,10 +26,13 @@ const PRIORITY_COLORS: Record<ActionPlan["priority"], string> = {
 
 interface ActionPlanCardProps {
   plan: ActionPlan;
+  themes: ThemeSummary[];
+  users: User[];
   className?: string;
 }
 
-export function ActionPlanCard({ plan, className }: ActionPlanCardProps) {
+export function ActionPlanCard({ plan, themes, users, className }: ActionPlanCardProps) {
+  const planThemes = themes.filter((t) => plan.themeIds?.includes(t.theme.id));
   const [expanded, setExpanded] = useState(false);
 
   const fields = [
@@ -49,23 +55,34 @@ export function ActionPlanCard({ plan, className }: ActionPlanCardProps) {
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
           <h3 className="font-semibold text-foreground">{plan.title}</h3>
-          <div className="flex flex-wrap gap-1">
-            <Badge
-              variant="outline"
-              className={cn("text-xs", PRIORITY_COLORS[plan.priority])}
-            >
-              {PRIORITY_LABELS[plan.priority]}
-            </Badge>
-            <Badge variant="secondary" className="text-xs">
-              {plan.responsible}
-            </Badge>
-          </div>
+          <Badge
+            variant="outline"
+            className={cn("shrink-0 text-xs", PRIORITY_COLORS[plan.priority])}
+          >
+            {PRIORITY_LABELS[plan.priority]}
+          </Badge>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <PeopleAvatars people={resolveResponsibles(plan.responsible, users)} className="w-0 min-w-0 flex-1" />
+          <PlanStatusBadge status={plan.status} />
         </div>
       </CardHeader>
       <CardContent className="space-y-2">
         <p className="text-sm text-muted-foreground line-clamp-2">
           {plan.what}
         </p>
+        {planThemes.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {planThemes.map((t) => (
+              <span key={t.theme.id} className="rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                {t.theme.name} ·{" "}
+                <span className={cn("font-medium", favorableTextClass(t.favorability.favorable))}>
+                  {Math.round(t.favorability.favorable)}%
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
         {expanded && (
           <div className="space-y-3 border-t pt-3">
             {fields.slice(1).map(({ key, label }) => {

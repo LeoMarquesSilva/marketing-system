@@ -1,11 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 import { jidToPhone } from "@/lib/evolution-display";
+import { openAIKey } from "@/lib/openai-keys";
 import {
   extractMetaWhatsappAttribution,
   isMetaAdLeadFromAttribution,
   type MetaWhatsappAttribution,
 } from "@/lib/evolution-meta-attribution";
 import {
+  getWhatsappMediaKind,
   isMetaAdLeadMessage,
   META_AD_LEAD_TAG,
   isSiteLeadMessage,
@@ -20,6 +22,12 @@ import {
   isPlaceholderWhatsappBody,
 } from "@/lib/evolution-message-meta";
 import { normalizeWhatsappTags } from "@/lib/evolution-tags";
+import {
+  requestWhatsappMediaArchive,
+  signWhatsappMediaUrl,
+  WHATSAPP_MEDIA_BUCKET,
+  whatsappDocumentDownloadName,
+} from "@/lib/whatsapp-media-storage";
 
 export { formatConversationLabel, formatPhoneDisplay, jidToPhone } from "@/lib/evolution-display";
 export { normalizeWhatsappTags, WHATSAPP_TAG_PRESETS } from "@/lib/evolution-tags";
@@ -296,6 +304,9 @@ export async function configureEvolutionMarketingWebhook(
         url: webhookUrl,
         headers: secret ? { apikey: secret } : undefined,
         webhookByEvents: false,
+        // Desligado de propósito: com base64 cada webhook de mídia traria o arquivo
+        // inteiro, e uma falha ao ler esse corpo perderia a própria mensagem. A
+        // Edge Function pede o arquivo à Evolution depois, em segundo plano.
         webhookBase64: false,
         events,
       },
@@ -1416,22 +1427,24 @@ export interface WhatsappMessage {
 export async function fetchWhatsappUnreadSummary(): Promise<{
   totalUnread: number;
   conversationCount: number;
+  /** Por conversa, para o badge seguir o Realtime sem consultar de novo a cada mensagem. */
+  conversations: { id: string; unreadCount: number }[];
 }> {
   const supabase = getAdminClient();
   const { data, error } = await supabase
     .from("whatsapp_conversations")
-    .select("unread_count")
+    .select("id, unread_count")
     .gt("unread_count", 0);
 
   if (error) throw new Error(error.message);
 
-  const rows = data ?? [];
-  const totalUnread = rows.reduce(
-    (sum, row) => sum + Math.max(0, Number(row.unread_count) || 0),
-    0
-  );
+  const conversations = (data ?? []).map((row) => ({
+    id: String(row.id),
+    unreadCount: Math.max(0, Number(row.unread_count) || 0),
+  }));
+  const totalUnread = conversations.reduce((sum, row) => sum + row.unreadCount, 0);
 
-  return { totalUnread, conversationCount: rows.length };
+  return { totalUnread, conversationCount: conversations.length, conversations };
 }
 
 export async function fetchWhatsappConversations(
@@ -1571,6 +1584,14 @@ function defaultMimetypeForMessage(
   return "audio/ogg; codecs=opus";
 }
 
+/** O link da mídia no WhatsApp venceu: não adianta tentar de novo. */
+export class WhatsappMediaUnavailableError extends Error {
+  constructor() {
+    super("Mídia expirada no WhatsApp: o arquivo não está mais disponível para download.");
+    this.name = "WhatsappMediaUnavailableError";
+  }
+}
+
 export async function fetchEvolutionMessageMedia(dbMessageId: string): Promise<{
   base64: string;
   mimetype: string;
@@ -1608,17 +1629,22 @@ export async function fetchEvolutionMessageMedia(dbMessageId: string): Promise<{
     fromMe: (rawKey.fromMe as boolean | undefined) ?? msg.from_me,
   };
 
-  const data = await evolutionFetch<{
-    base64?: string;
-    mimetype?: string;
-    mediaType?: string;
-  }>(`/chat/getBase64FromMediaMessage/${config.instanceName}`, {
-    method: "POST",
-    body: {
-      message: { key },
-      convertToMp4: isVideo,
-    },
-  });
+  let data: { base64?: string; mimetype?: string; mediaType?: string };
+  try {
+    data = await evolutionFetch(`/chat/getBase64FromMediaMessage/${config.instanceName}`, {
+      method: "POST",
+      body: {
+        message: { key },
+        convertToMp4: isVideo,
+      },
+    });
+  } catch (err) {
+    // A Evolution guarda só o link do arquivo no WhatsApp, que vence em ~2 semanas.
+    if (err instanceof Error && /failed to fetch stream/i.test(err.message)) {
+      throw new WhatsappMediaUnavailableError();
+    }
+    throw err;
+  }
 
   if (!data.base64) {
     throw new Error(
@@ -1631,6 +1657,68 @@ export async function fetchEvolutionMessageMedia(dbMessageId: string): Promise<{
     mimetype: data.mimetype ?? defaultMimetypeForMessage(type, body),
     mediaType: data.mediaType,
   };
+}
+
+export type WhatsappMessageMedia =
+  | { url: string; mimetype: string | null }
+  | { base64: string; mimetype: string; mediaType?: string };
+
+/**
+ * Mídia para a tela, de preferência do Storage por URL assinada. Mensagem que
+ * ainda não tem arquivo guardado (anterior ao webhook guardar) pede à Edge
+ * Function para guardar agora; o base64 pela Evolution, pesado aqui na Vercel,
+ * fica só para quando a função não consegue.
+ */
+export async function resolveWhatsappMessageMedia(
+  dbMessageId: string
+): Promise<WhatsappMessageMedia> {
+  const supabase = getAdminClient();
+  const { data: msg, error } = await supabase
+    .from("whatsapp_messages")
+    .select("message_type, body, media_storage_path, media_mimetype, media_expired_at")
+    .eq("id", dbMessageId)
+    .maybeSingle();
+  if (error || !msg) throw new Error("Mensagem não encontrada.");
+
+  let path = msg.media_storage_path as string | null;
+  let mimetype = msg.media_mimetype as string | null;
+  if (!path) {
+    if (msg.media_expired_at) throw new WhatsappMediaUnavailableError();
+    const archived = await requestWhatsappMediaArchive(dbMessageId);
+    if (archived?.status === "expired") throw new WhatsappMediaUnavailableError();
+    if (archived?.status === "stored") {
+      path = archived.path;
+      mimetype = archived.mimetype;
+    }
+  }
+  if (!path) return fetchEvolutionMessageMedia(dbMessageId);
+
+  const body = msg.body as string | null;
+  const isDocument = getWhatsappMediaKind(msg.message_type as string | null, body) === "document";
+  const url = await signWhatsappMediaUrl(
+    supabase,
+    path,
+    isDocument ? whatsappDocumentDownloadName(body, path) : undefined
+  );
+  return { url, mimetype };
+}
+
+/** Arquivo da mídia no servidor: do Storage se já guardado, senão pela Evolution. */
+async function loadWhatsappMediaBlob(dbMessageId: string): Promise<Blob> {
+  const supabase = getAdminClient();
+  const { data: msg } = await supabase
+    .from("whatsapp_messages")
+    .select("media_storage_path")
+    .eq("id", dbMessageId)
+    .maybeSingle();
+  if (msg?.media_storage_path) {
+    const { data } = await supabase.storage
+      .from(WHATSAPP_MEDIA_BUCKET)
+      .download(msg.media_storage_path as string);
+    if (data) return data;
+  }
+  const media = await fetchEvolutionMessageMedia(dbMessageId);
+  return new Blob([Buffer.from(media.base64, "base64")], { type: media.mimetype });
 }
 
 export async function fetchWhatsappMessages(
@@ -1651,20 +1739,12 @@ export async function fetchWhatsappMessages(
   return ((data ?? []) as WhatsappMessage[]).reverse();
 }
 
-function getOpenAiKey(): string | null {
-  return (
-    process.env.OPENAI_API_KEY?.trim() ||
-    process.env.NEXT_OPENAI_API_KEY?.trim() ||
-    null
-  );
-}
-
 export async function transcribeWhatsappAudioMessage(
   messageId: string
 ): Promise<string> {
-  const openaiKey = getOpenAiKey();
+  const openaiKey = openAIKey("atendimento");
   if (!openaiKey) {
-    throw new Error("OPENAI_API_KEY ou NEXT_OPENAI_API_KEY não configurada.");
+    throw new Error("OPENAI_API_KEY_ATENDIMENTO não configurada.");
   }
 
   const supabase = getAdminClient();
@@ -1677,11 +1757,9 @@ export async function transcribeWhatsappAudioMessage(
   if (fetchError || !existing) throw new Error("Mensagem não encontrada.");
   if (existing.audio_transcript) return existing.audio_transcript as string;
 
-  const media = await fetchEvolutionMessageMedia(messageId);
-  const buffer = Buffer.from(media.base64, "base64");
+  const blob = await loadWhatsappMediaBlob(messageId);
 
   const formData = new FormData();
-  const blob = new Blob([buffer], { type: media.mimetype });
   formData.append("file", blob, "audio.ogg");
   formData.append("model", "whisper-1");
   formData.append("language", "pt");

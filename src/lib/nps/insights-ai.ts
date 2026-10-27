@@ -5,6 +5,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
 import { classifyNpsScore } from "@/lib/nps/scoring";
 import { OPENAI_DEFAULT_MODEL, openAIGenerationOptions } from "@/lib/openai-models";
+import { openAIKey } from "@/lib/openai-keys";
 import {
   extractHeuristicThemes,
   isHeuristicActionable,
@@ -65,7 +66,7 @@ export interface ClassifiedNpsField extends NpsInsightFieldRow {
 }
 
 function openaiKey(): string | null {
-  return process.env.NEXT_OPENAI_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim() || null;
+  return openAIKey("relacionamento");
 }
 
 function heuristicField(

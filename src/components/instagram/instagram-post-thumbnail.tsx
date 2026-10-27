@@ -47,10 +47,13 @@ export function InstagramPostThumbnail({
       )}
     >
       {src ? (
+        // lazy: listas com rolagem (stories, posts) pediam todas as capas de uma vez.
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={src}
           alt=""
+          loading="lazy"
+          decoding="async"
           className="h-full w-full object-cover"
           onError={() => setFailed(true)}
         />

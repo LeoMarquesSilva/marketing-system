@@ -24,6 +24,7 @@ function feedback(overrides: Partial<GoodPracticeFeedback>): GoodPracticeFeedbac
     manager_name: "Gestor",
     area: "Cível",
     category: "Outros",
+    subtopic: null,
     description: "Ocorrência",
     manager_action: null,
     responded_on: null,
@@ -34,6 +35,9 @@ function feedback(overrides: Partial<GoodPracticeFeedback>): GoodPracticeFeedbac
     updated_at: "2026-10-01T12:00:00Z",
     created_by_name: null,
     photo_count: 0,
+    feedz_key: null,
+    feedz_sent_at: null,
+    feedz_viewed_at: null,
     ...overrides,
   };
 }
@@ -106,6 +110,23 @@ describe("summarizeMonth", () => {
     expect(summary.weeks[4].label).toBe("S5 · 29–31");
   });
 
+  it("conta os subtemas só nas categorias que têm subtema", () => {
+    const kitchen = [
+      feedback({ sent_on: "2026-10-02", category: "Uso da cozinha", subtopic: "Geladeira e alimentos" }),
+      feedback({ sent_on: "2026-10-03", category: "Uso da cozinha", subtopic: "Geladeira e alimentos" }),
+      feedback({ sent_on: "2026-10-04", category: "Uso da cozinha" }),
+      feedback({ sent_on: "2026-10-05", category: "Uso da cozinha", subtopic: "Permanência" }),
+      feedback({ sent_on: "2026-10-06", category: "Estacionamento" }),
+    ];
+    const rows = summarizeMonth(kitchen, { year: 2026, month: 10 }).categories;
+    expect(rows.find((row) => row.category === "Uso da cozinha")?.subtopics).toEqual([
+      { name: "Geladeira e alimentos", sent: 2 },
+      { name: "Permanência", sent: 1 },
+      { name: "Sem subtema", sent: 1 },
+    ]);
+    expect(rows.find((row) => row.category === "Estacionamento")?.subtopics).toEqual([]);
+  });
+
   it("sem dado de visualização no mês vira s/d por área", () => {
     const summary = summarizeMonth(items, { year: 2026, month: 9 });
     expect(summary.viewedBase).toBe(0);
@@ -115,8 +136,8 @@ describe("summarizeMonth", () => {
 
 describe("summarizeYear e reincidência", () => {
   const items = [
-    feedback({ sent_on: "2026-01-05", area: "Cível", employee_id: "e1", employee_name: "Giancarlo", category: "Estacionamento indevido" }),
-    feedback({ sent_on: "2026-05-05", area: "Cível", employee_id: "e1", employee_name: "Giancarlo", category: "Estacionamento indevido", responded_on: "2026-05-06" }),
+    feedback({ sent_on: "2026-01-05", area: "Cível", employee_id: "e1", employee_name: "Giancarlo", category: "Estacionamento" }),
+    feedback({ sent_on: "2026-05-05", area: "Cível", employee_id: "e1", employee_name: "Giancarlo", category: "Estacionamento", responded_on: "2026-05-06" }),
     feedback({ sent_on: "2026-05-07", area: "Cível", employee_name: "Equipe Cível", is_team: true }),
     feedback({ sent_on: "2026-05-07", area: "Cível", employee_name: "Equipe Cível", is_team: true }),
     feedback({ sent_on: "2025-12-30", area: "Trabalhista" }),
@@ -133,6 +154,6 @@ describe("summarizeYear e reincidência", () => {
   it("lista quem recebeu 2+ e ignora equipes", () => {
     const repeats = repeatOffenders(items, 2026);
     expect(repeats).toHaveLength(1);
-    expect(repeats[0]).toMatchObject({ name: "Giancarlo", count: 2, lastSentOn: "2026-05-05", topCategory: "Estacionamento indevido" });
+    expect(repeats[0]).toMatchObject({ name: "Giancarlo", count: 2, lastSentOn: "2026-05-05", topCategory: "Estacionamento" });
   });
 });

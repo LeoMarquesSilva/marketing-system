@@ -10,6 +10,14 @@ import { onlyDigits } from "@/lib/masks-br";
 import { suggestRegistrationMatches, type MatchCandidate } from "./matching";
 import { PAYROLL_ACCOUNT_RH_SELECT, personalBankFromDeclared, type PrefillPayrollAccount } from "./self-prefill";
 import {
+  coerceChanges,
+  diffAnswers,
+  sanitizeFields,
+  type RegistrationEvent,
+  type RegistrationEventType,
+  type RegistrationFieldChange,
+} from "./history";
+import {
   diffQualificationContact,
   qualificationContactPatch,
   QUALIFICATION_CONTACT_SELECT,
@@ -25,6 +33,7 @@ import {
   REGISTRATION_KIND_EMPLOYMENT_TYPE,
   type DietaryInfo,
   type RegistrationAnswers,
+  type RegistrationField,
   type PersonalBankAccount,
   type RegistrationDetail,
   type RegistrationEmployeeRef,
@@ -51,7 +60,7 @@ const REOPEN_TTL_DAYS = 14;
 const TOKEN_PATTERN = /^fc_[A-Za-z0-9_-]{20,64}$/;
 
 const FORM_SELECT =
-  "id, token, origin, employment_kind, invitee_name, invitee_personal_email, invitee_phone, expected_admission_date, status, answers, expires_at, reopen_note, submitted_at, consent_at, approved_at, linked_at, applied_at, created_at, employee_id, employee:hr_employees(id, full_name, department, position, is_active, employment_type)";
+  "id, token, origin, employment_kind, invitee_name, invitee_personal_email, invitee_phone, expected_admission_date, status, answers, expires_at, reopen_note, reopen_fields, submitted_at, consent_at, approved_at, linked_at, applied_at, created_at, employee_id, employee:hr_employees(id, full_name, department, position, is_active, employment_type)";
 
 export function createRegistrationAdminClient(): SupabaseClient {
   if (!serviceKey) {
@@ -124,6 +133,7 @@ type FormRow = {
   answers: unknown;
   expires_at: string | null;
   reopen_note: string | null;
+  reopen_fields: string[] | null;
   submitted_at: string | null;
   consent_at: string | null;
   approved_at: string | null;
@@ -175,16 +185,79 @@ function toDetail(
   row: FormRow,
   candidates: MatchCandidate[],
   qualificationSync: QualificationSyncPreview | null,
-  personalBank: PersonalBankAccount | null = null
+  personalBank: PersonalBankAccount | null = null,
+  events: RegistrationEvent[] = []
 ): RegistrationDetail {
   return {
     ...toListItem(row, candidates),
     answers: coerceRegistrationAnswers(row.answers),
     reopen_note: row.reopen_note,
+    reopen_fields: sanitizeFields(row.reopen_fields),
     consent_at: row.consent_at,
     qualification_sync: qualificationSync,
     personal_bank: personalBank,
+    events,
   };
+}
+
+// ─── Linha do tempo ──────────────────────────────────────────────────────────
+
+type EventRow = {
+  id: string;
+  event_type: RegistrationEventType;
+  actor: "pessoa" | "rh";
+  note: string | null;
+  fields: string[] | null;
+  changes: unknown;
+  created_at: string;
+  actor_user: { name: string | null } | { name: string | null }[] | null;
+};
+
+async function loadEvents(admin: SupabaseClient, formId: string): Promise<RegistrationEvent[]> {
+  const { data, error } = await admin
+    .from("hr_registration_form_events")
+    .select("id, event_type, actor, note, fields, changes, created_at, actor_user:users(name)")
+    .eq("form_id", formId)
+    .order("created_at", { ascending: true });
+  if (error) return [];
+  return ((data ?? []) as EventRow[]).map((row) => {
+    const user = Array.isArray(row.actor_user) ? row.actor_user[0] : row.actor_user;
+    return {
+      id: row.id,
+      type: row.event_type,
+      actor: row.actor,
+      actorName: user?.name ?? null,
+      note: row.note,
+      fields: sanitizeFields(row.fields),
+      changes: coerceChanges(row.changes),
+      createdAt: row.created_at,
+    };
+  });
+}
+
+/** Registra um passo da ficha; falha aqui não desfaz a ação (só perde o registro). */
+export async function recordRegistrationEvent(
+  admin: SupabaseClient,
+  event: {
+    formId: string;
+    type: RegistrationEventType;
+    actor: "pessoa" | "rh";
+    actorUserId?: string | null;
+    note?: string | null;
+    fields?: RegistrationField[];
+    changes?: RegistrationFieldChange[];
+  }
+): Promise<void> {
+  const { error } = await admin.from("hr_registration_form_events").insert({
+    form_id: event.formId,
+    event_type: event.type,
+    actor: event.actor,
+    actor_user_id: event.actorUserId ?? null,
+    note: event.note ?? null,
+    fields: event.fields ?? [],
+    changes: event.changes ?? [],
+  });
+  if (error) console.error("[ficha-cadastral] evento", event.type, error.message);
 }
 
 /** Conta particular que a pessoa tinha declarado antes da conta da folha. */
@@ -274,11 +347,12 @@ export async function getRegistrationForm(id: string): Promise<RegistrationDetai
   await requireRegistrationManager();
   const admin = createRegistrationAdminClient();
   const [row, candidates] = await Promise.all([loadFormRow(admin, id), loadMatchCandidates(admin)]);
-  const [qualificationSync, personalBank] = await Promise.all([
+  const [qualificationSync, personalBank, events] = await Promise.all([
     previewQualificationSync(admin, row),
     loadPersonalBank(admin, row.employee_id),
+    loadEvents(admin, row.id),
   ]);
-  return toDetail(row, candidates, qualificationSync, personalBank);
+  return toDetail(row, candidates, qualificationSync, personalBank, events);
 }
 
 /** Qualificação jurídica do usuário do colaborador (null = não tem login ou qualificação). */
@@ -390,7 +464,7 @@ function validateOrThrow(raw: unknown, kind: RegistrationKind): RegistrationAnsw
 export type RegistrationAction =
   | { action: "save"; answers: unknown; employmentKind?: unknown }
   | { action: "approve" }
-  | { action: "reopen"; note?: unknown }
+  | { action: "reopen"; note?: unknown; fields?: unknown }
   | { action: "cancel" }
   | { action: "regenerate" }
   | { action: "link"; employeeId: unknown }
@@ -419,12 +493,23 @@ export async function runRegistrationAction(
 
   switch (body.action) {
     case "save": {
-      if (row.status === "pendente") {
+      // Devolvida (pendente, mas já enviada antes) também pode ser corrigida pela RH.
+      if (row.status === "pendente" && !row.submitted_at) {
         throw new RhHttpError("A pessoa ainda não enviou a ficha.", 409, "NOT_SUBMITTED");
       }
       const kind = isRegistrationKind(body.employmentKind) ? body.employmentKind : row.employment_kind;
       const answers = validateOrThrow(body.answers, kind);
+      const changes = diffAnswers(coerceRegistrationAnswers(row.answers), answers);
       await update({ answers, employment_kind: kind });
+      if (changes.length) {
+        await recordRegistrationEvent(admin, {
+          formId: id,
+          type: "corrigida",
+          actor: "rh",
+          actorUserId: manager.profileId,
+          changes,
+        });
+      }
       // Ficha já aprovada e vinculada: a correção também vai para a ficha do colaborador.
       if (row.status === "aprovada" && row.employee_id) {
         await applyToEmployee(admin, { ...row, answers, employment_kind: kind }, manager.profileId);
@@ -442,27 +527,45 @@ export async function runRegistrationAction(
       }
       await update({ status: "aprovada", approved_at: new Date().toISOString(), approved_by: manager.profileId });
       await resolveSubmittedNotifications(admin, id, manager.profileId);
+      await recordRegistrationEvent(admin, { formId: id, type: "aprovada", actor: "rh", actorUserId: manager.profileId });
       break;
     }
     case "reopen": {
-      if (row.status !== "recebida" && row.status !== "aprovada") {
+      // Também vale para ajustar o pedido de uma ficha já devolvida (pendente, mas enviada antes).
+      const alreadyReturned = row.status === "pendente" && !!row.submitted_at;
+      if (row.status !== "recebida" && row.status !== "aprovada" && !alreadyReturned) {
         throw new RhHttpError("A ficha ainda não foi enviada.", 409, "INVALID_STATUS");
+      }
+      const note = optionalText(body.note, 1000);
+      const fields = sanitizeFields(body.fields);
+      if (!note && fields.length === 0) {
+        throw new RhHttpError("Marque o que precisa de ajuste ou escreva um recado.", 400, "EMPTY_REOPEN");
       }
       const minExpiry = daysFromNow(REOPEN_TTL_DAYS);
       await update({
         status: "pendente",
-        reopen_note: optionalText(body.note, 1000),
+        reopen_note: note,
+        reopen_fields: fields,
         approved_at: null,
         approved_by: null,
         // Sem link público (atualização com login): a pessoa corrige em /minha-ficha, sem prazo.
         expires_at: !row.token ? null : row.expires_at && row.expires_at > minExpiry ? row.expires_at : minExpiry,
       });
       await resolveSubmittedNotifications(admin, id, manager.profileId);
+      await recordRegistrationEvent(admin, {
+        formId: id,
+        type: "devolvida",
+        actor: "rh",
+        actorUserId: manager.profileId,
+        note,
+        fields,
+      });
       break;
     }
     case "cancel": {
       await update({ status: "cancelada" });
       await resolveSubmittedNotifications(admin, id, manager.profileId);
+      await recordRegistrationEvent(admin, { formId: id, type: "cancelada", actor: "rh", actorUserId: manager.profileId });
       break;
     }
     case "regenerate": {
@@ -705,6 +808,8 @@ export type PublicRegistrationState =
       inviteeName: string;
       answers: RegistrationAnswers;
       reopenNote: string | null;
+      /** Campos que a RH marcou ao devolver: a ficha abre direto no primeiro. */
+      reopenFields: RegistrationField[];
       expiresAt: string;
     };
 
@@ -716,13 +821,14 @@ type PublicRow = {
   answers: unknown;
   expires_at: string;
   reopen_note: string | null;
+  reopen_fields: string[] | null;
   submitted_at: string | null;
 };
 
 async function loadPublicRow(admin: SupabaseClient, token: string): Promise<PublicRow | null> {
   const { data, error } = await admin
     .from("hr_registration_forms")
-    .select("id, employment_kind, invitee_name, status, answers, expires_at, reopen_note, submitted_at")
+    .select("id, employment_kind, invitee_name, status, answers, expires_at, reopen_note, reopen_fields, submitted_at")
     .eq("token", token)
     .maybeSingle();
   if (error) throw new RhHttpError("Falha ao carregar a ficha.", 500, "QUERY_FAILED");
@@ -751,6 +857,7 @@ export async function resolvePublicRegistration(
     inviteeName: row.invitee_name,
     answers: coerceRegistrationAnswers(row.answers),
     reopenNote: row.reopen_note,
+    reopenFields: sanitizeFields(row.reopen_fields),
     expiresAt: row.expires_at,
   };
 }
@@ -804,6 +911,7 @@ export async function submitPublicRegistration(
       submitted_ip_hash: ipHash,
       submitted_user_agent: request.headers.get("user-agent")?.slice(0, 300) ?? null,
       reopen_note: null,
+      reopen_fields: [],
     })
     .eq("id", row.id)
     .eq("status", "pendente")
@@ -813,6 +921,15 @@ export async function submitPublicRegistration(
   if (!updated) {
     return { ok: false, status: 409, code: "ALREADY_SUBMITTED", message: "Esta ficha já foi enviada." };
   }
+
+  // Já tinha sido enviada antes (foi devolvida): registra o que a pessoa mudou.
+  const resent = !!row.submitted_at;
+  await recordRegistrationEvent(admin, {
+    formId: row.id,
+    type: resent ? "reenviada" : "enviada",
+    actor: "pessoa",
+    changes: resent ? diffAnswers(coerceRegistrationAnswers(row.answers), answers) : [],
+  });
 
   await admin
     .from("hr_onboarding_notifications")

@@ -11,6 +11,7 @@ import { searchKey } from "@/lib/rh/registration/combo-search";
 import {
   FLOW_STATUS_LABEL,
   MONTH_LABELS,
+  categoryLabel,
   type FeedbackFlowStatus,
   type GoodPracticeFeedback,
 } from "@/lib/rh/boas-praticas/types";
@@ -60,7 +61,7 @@ function RecordRow({ item, today, onOpen }: { item: GoodPracticeFeedback; today:
         <span className="col-span-2 min-w-0 lg:col-span-1">
           <span className="flex items-center gap-1.5 text-xs font-medium text-[#285f7a]">
             <CategoryGlyph category={item.category} className="size-3.5 shrink-0" />
-            <span className="truncate">{item.category}</span>
+            <span className="truncate">{categoryLabel(item)}</span>
             {item.photo_count > 0 && (
               <span
                 className="ml-1 inline-flex shrink-0 items-center gap-1 rounded-full bg-[#eef3f5] px-1.5 py-0.5 text-muted-foreground"

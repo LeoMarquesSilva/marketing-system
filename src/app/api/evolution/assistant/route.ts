@@ -1,12 +1,14 @@
 import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
-import { fetchWhatsappMessages } from "@/lib/evolution-whatsapp";
 import { OPENAI_DEFAULT_MODEL, openAIGenerationOptions } from "@/lib/openai-models";
+import { openAIKey } from "@/lib/openai-keys";
+import { loadAssistantContext, saveAssistantSuggestion } from "@/lib/whatsapp-assistant";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+// Áudios sem transcrição são transcritos antes de sugerir.
+export const maxDuration = 60;
 
 interface AssistantRequestBody {
   conversationId?: unknown;
@@ -16,80 +18,24 @@ interface AssistantRequestBody {
   } | null;
 }
 
-interface WhatsappConversationContext {
-  id: string;
-  phone: string | null;
-  push_name: string | null;
-  last_message_preview: string | null;
-  lead_source: string | null;
-  tags: string[] | null;
-  meta_campaign_name?: string | null;
-  meta_adset_name?: string | null;
-  meta_ad_title?: string | null;
-}
+const SYSTEM_PROMPT = `Você ajuda a equipe do escritório Bismarchi | Pires Sociedade de Advogados a responder leads e clientes pelo WhatsApp comercial.
+Sugira a próxima mensagem que o atendente vai enviar, com base na conversa inteira. Os áudios aparecem transcritos.
 
-interface WhatsappMessageContext {
-  from_me: boolean;
-  body: string | null;
-  message_type?: string | null;
-  message_timestamp: string;
-}
-
-function getOpenAiKey() {
-  return (
-    process.env.NEXT_OPENAI_API_KEY?.trim() ||
-    process.env.OPENAI_API_KEY?.trim() ||
-    ""
-  );
-}
-
-function buildConversationContext({
-  conversation,
-  messages,
-  draftMessage,
-  replyToBody,
-}: {
-  conversation: WhatsappConversationContext;
-  messages: WhatsappMessageContext[];
-  draftMessage: string;
-  replyToBody: string;
-}) {
-  const history = messages
-    .slice(-30)
-    .map((message) => {
-      const author = message.from_me ? "Atendente" : "Lead";
-      const text = message.body?.trim() || `[${message.message_type || "mensagem sem texto"}]`;
-      const time = new Date(message.message_timestamp).toLocaleString("pt-BR");
-      return `${time} - ${author}: ${text}`;
-    })
-    .join("\n");
-
-  return `
-## Lead
-Nome: ${conversation.push_name || "Não informado"}
-Telefone: ${conversation.phone || "Não informado"}
-Origem: ${conversation.lead_source || "WhatsApp"}
-Campanha: ${conversation.meta_campaign_name || conversation.meta_adset_name || "Não identificada"}
-Anúncio: ${conversation.meta_ad_title || "Não identificado"}
-Tags: ${(conversation.tags ?? []).join(", ") || "Sem tags"}
-Última prévia: ${conversation.last_message_preview || "Sem prévia"}
-
-## Mensagem em resposta
-${replyToBody || "Nenhuma mensagem específica selecionada."}
-
-## Rascunho atual do atendente
-${draftMessage || "Sem rascunho."}
-
-## Histórico recente
-${history || "Sem histórico salvo."}
-`;
-}
+Regras:
+- Português do Brasil, tom cordial, profissional e direto, como uma pessoa da equipe escreveria no WhatsApp.
+- Escreva só a mensagem a ser enviada, sem títulos, aspas, análise ou markdown.
+- Use o que o cliente já contou e não repita perguntas já respondidas.
+- Não dê parecer jurídico, não prometa resultado e não informe honorários, prazos ou nomes que não estejam na conversa.
+- Se faltar informação para encaminhar, faça no máximo duas perguntas objetivas (por exemplo: se é empresa ou pessoa física, o assunto, o porte da empresa, a urgência).
+- Com informação suficiente, proponha o próximo passo (conversa com o advogado da área, envio de documentos ou agendamento), sem inventar horários.
+- Se houver rascunho do atendente, melhore o rascunho em vez de começar do zero.
+- No máximo um emoji, e só se combinar com o tom da conversa.`;
 
 export async function POST(request: Request) {
-  const apiKey = getOpenAiKey();
+  const apiKey = openAIKey("atendimento");
   if (!apiKey) {
     return NextResponse.json(
-      { error: "NEXT_OPENAI_API_KEY ou OPENAI_API_KEY não configurada." },
+      { error: "O assistente de IA não está disponível agora." },
       { status: 500 }
     );
   }
@@ -115,58 +61,58 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data: conversation, error: conversationError } = await supabase
-      .from("whatsapp_conversations")
-      .select(
-        "id, phone, push_name, last_message_preview, lead_source, tags, meta_campaign_name, meta_adset_name, meta_ad_title"
-      )
-      .eq("id", conversationId)
-      .maybeSingle();
-
-    if (conversationError) throw conversationError;
-    if (!conversation) {
-      return NextResponse.json(
-        { error: "Conversa não encontrada." },
-        { status: 404 }
-      );
+    const context = await loadAssistantContext(conversationId);
+    if (!context) {
+      return NextResponse.json({ error: "Conversa não encontrada." }, { status: 404 });
     }
 
-    const messages = (await fetchWhatsappMessages(conversationId)) as WhatsappMessageContext[];
-    const draftMessage = typeof body.draftMessage === "string" ? body.draftMessage : "";
-    const replyToBody =
-      typeof body.replyTo?.body === "string" ? body.replyTo.body : "";
+    const draftMessage = typeof body.draftMessage === "string" ? body.draftMessage.trim() : "";
+    const replyToBody = typeof body.replyTo?.body === "string" ? body.replyTo.body.trim() : "";
 
-    const context = buildConversationContext({
-      conversation: conversation as WhatsappConversationContext,
-      messages,
-      draftMessage,
-      replyToBody,
-    });
+    const prompt = `## Quem é
+${context.leadSummary || "Sem dados do contato."}
+
+## Conversa completa (${context.messageCount} mensagens)
+${context.transcript || "Sem mensagens salvas."}
+
+## Mensagem que o atendente quer responder
+${replyToBody || "Nenhuma específica: responder ao momento atual da conversa."}
+
+## Rascunho do atendente
+${draftMessage || "Sem rascunho."}
+
+Sugira a próxima mensagem do escritório.`;
 
     const openai = createOpenAI({ apiKey });
     const { text } = await generateText({
       model: openai(OPENAI_DEFAULT_MODEL),
-      system: `Você é um assistente de atendimento comercial via WhatsApp para um CRM.
-
-Seu objetivo é sugerir a próxima resposta do atendente com base no contexto real da conversa.
-
-Regras:
-- Responda sempre em português brasileiro.
-- Escreva apenas a mensagem que será enviada ao lead, sem títulos, análise ou markdown.
-- Seja claro, profissional, humano e objetivo.
-- Não invente dados, preços, horários ou promessas.
-- Se faltar informação, faça uma pergunta curta para avançar a qualificação.
-- Preserve o tom consultivo e educado.
-- Não use emojis em excesso; use no máximo um emoji se fizer sentido.
-- Não envie a mensagem, apenas sugira o texto.`,
-      prompt: `${context}\n\nSugira a melhor próxima mensagem para o atendente enviar agora.`,
+      system: SYSTEM_PROMPT,
+      prompt,
       ...openAIGenerationOptions(OPENAI_DEFAULT_MODEL, { reasoningEffort: "none", temperature: 0.4 }),
     });
+    const suggestion = text.trim();
 
-    return NextResponse.json({ suggestion: text.trim() });
+    after(async () => {
+      try {
+        await saveAssistantSuggestion({
+          conversationId,
+          authId: user.id,
+          draft: draftMessage,
+          suggestion,
+          model: OPENAI_DEFAULT_MODEL,
+          messagesInContext: context.messageCount,
+        });
+      } catch (err) {
+        console.error("[evolution/assistant] guardar sugestão:", err);
+      }
+    });
+
+    return NextResponse.json({ suggestion, transcribedAudios: context.transcribedNow });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Erro ao gerar sugestão com IA.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[evolution/assistant]", error);
+    return NextResponse.json(
+      { error: "Não foi possível sugerir uma resposta agora." },
+      { status: 500 }
+    );
   }
 }

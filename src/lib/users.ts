@@ -18,6 +18,9 @@ export interface User {
   ferias_access_mode?: "auto" | "disabled" | "custom";
   ferias_area_scope?: string[] | null;
   ferias_view_enabled?: boolean;
+  /** Vistagem: controladoria (todas as abas) ou juridico (só a aba Jurídico, nas áreas marcadas). */
+  vistagem_papel?: "controladoria" | "juridico" | null;
+  vistagem_areas?: string[] | null;
   must_change_password?: boolean | null;
   last_seen_at?: string | null;
   qualification_required_at?: string | null;
@@ -30,7 +33,7 @@ export interface User {
 }
 
 const USER_LIST_SELECT =
-  "id, name, email, department, avatar_url, photo_onedrive_url, photo_collected, photo_collected_at, is_active, role, auth_id, permissions, ferias_access_mode, ferias_area_scope, ferias_view_enabled, must_change_password, last_seen_at, qualification_required_at, qualification_completed_at";
+  "id, name, email, department, avatar_url, photo_onedrive_url, photo_collected, photo_collected_at, is_active, role, auth_id, permissions, ferias_access_mode, ferias_area_scope, ferias_view_enabled, vistagem_papel, vistagem_areas, must_change_password, last_seen_at, qualification_required_at, qualification_completed_at";
 
 const ACTIVE_USER_SELECT = "id, name, email, department, avatar_url, is_active";
 

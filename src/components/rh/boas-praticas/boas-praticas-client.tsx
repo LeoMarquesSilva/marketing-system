@@ -2,15 +2,18 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { LayoutDashboard, ListChecks, LockKeyhole, Plus, type LucideIcon } from "lucide-react";
+import { FileSpreadsheet, LayoutDashboard, ListChecks, LockKeyhole, Plus, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { feedzPrefill, type FeedzRow } from "@/lib/rh/boas-praticas/feedz";
 import { currentMonthRef, monthKey, type MonthRef } from "@/lib/rh/boas-praticas/metrics";
-import type { FeedbackPerson, GoodPracticeFeedback } from "@/lib/rh/boas-praticas/types";
+import type { FeedbackPerson, FeedzImportLog, GoodPracticeFeedback } from "@/lib/rh/boas-praticas/types";
 import { cn } from "@/lib/utils";
 import { FeedbackDashboard } from "./feedback-dashboard";
 import { FeedbackRecords } from "./feedback-records";
 import { FeedbackDialog } from "./feedback-dialog";
 import { FeedbackPeopleProvider } from "./feedback-visuals";
+import { FeedzImportDialog } from "./feedz-import-dialog";
+import { FeedzPendingPanel } from "./feedz-pending-panel";
 
 type Tab = "dashboard" | "registros";
 
@@ -38,11 +41,13 @@ export function BoasPraticasClient({
   people,
   initialTab,
   initialMonth,
+  initialFeedzImport,
 }: {
   initialItems: GoodPracticeFeedback[];
   people: FeedbackPerson[];
   initialTab: Tab;
   initialMonth?: string;
+  initialFeedzImport: FeedzImportLog | null;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -51,7 +56,13 @@ export function BoasPraticasClient({
   const [month, setMonth] = useState<MonthRef>(() => parseMonth(initialMonth));
   // Filtro de mês da aba Registros: "Ver registros do mês" abre já filtrado; a aba abre com tudo.
   const [recordsMonth, setRecordsMonth] = useState<string>("all");
-  const [dialog, setDialog] = useState<{ item: GoodPracticeFeedback | null; key: number } | null>(null);
+  const [dialog, setDialog] = useState<{ item: GoodPracticeFeedback | null; key: number; fromFeedz?: FeedzRow } | null>(
+    null
+  );
+  const [importOpen, setImportOpen] = useState(false);
+  const [lastImport, setLastImport] = useState(initialFeedzImport);
+  // Linhas do Feedz da última importação que não têm registro no módulo.
+  const [feedzPending, setFeedzPending] = useState<FeedzRow[]>([]);
 
   function replaceParams(next: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
@@ -114,22 +125,45 @@ export function BoasPraticasClient({
               </button>
             ))}
           </div>
-          <div className="order-1 flex items-center justify-between gap-3 sm:order-2 sm:pb-2">
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <div className="order-1 flex items-center justify-end gap-3 sm:order-2 sm:pb-2">
+            <span className="hidden items-center gap-1.5 text-xs text-muted-foreground lg:flex">
               <LockKeyhole className="size-3.5 shrink-0" aria-hidden />
               <span>
-                Só Pessoas e Cultura vê<span className="hidden lg:inline"> · nada é enviado ao colaborador</span>
+                Só Pessoas e Cultura vê<span className="hidden xl:inline"> · nada é enviado ao colaborador</span>
               </span>
             </span>
-            <Button type="button" className="gap-2" onClick={() => openDialog(null)}>
-              <Plus className="size-4" />
-              Registrar feedback
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" className="gap-2" onClick={() => setImportOpen(true)}>
+                <FileSpreadsheet className="size-4" />
+                <span className="hidden sm:inline">Importar do Feedz</span>
+                <span className="sm:hidden">Feedz</span>
+              </Button>
+              <Button type="button" className="gap-2" onClick={() => openDialog(null)}>
+                <Plus className="size-4" />
+                <span className="hidden sm:inline">Registrar feedback</span>
+                <span className="sm:hidden">Registrar</span>
+              </Button>
+            </div>
           </div>
         </div>
 
+        {feedzPending.length > 0 && (
+          <FeedzPendingPanel
+            rows={feedzPending}
+            people={people}
+            onRegister={(row) => setDialog({ item: null, key: Date.now(), fromFeedz: row })}
+            onDismiss={() => setFeedzPending([])}
+          />
+        )}
+
         {tab === "dashboard" ? (
-          <FeedbackDashboard items={items} month={month} onMonthChange={chooseMonth} onOpenRecords={openRecordsOfMonth} />
+          <FeedbackDashboard
+            items={items}
+            month={month}
+            lastImport={lastImport}
+            onMonthChange={chooseMonth}
+            onOpenRecords={openRecordsOfMonth}
+          />
         ) : (
           <FeedbackRecords
             key={recordsMonth}
@@ -144,13 +178,32 @@ export function BoasPraticasClient({
           <FeedbackDialog
             key={dialog.key}
             item={dialog.item}
+            prefill={dialog.fromFeedz ? feedzPrefill(dialog.fromFeedz, people) : null}
             people={people}
             items={items}
             onClose={() => setDialog(null)}
-            onSaved={(saved) => setItems((current) => sortItems([saved, ...current.filter((entry) => entry.id !== saved.id)]))}
+            onSaved={(saved) => {
+              setItems((current) => sortItems([saved, ...current.filter((entry) => entry.id !== saved.id)]));
+              if (saved.feedz_key) setFeedzPending((current) => current.filter((row) => row.key !== saved.feedz_key));
+            }}
             onDeleted={(id) => {
               setItems((current) => current.filter((entry) => entry.id !== id));
               setDialog(null);
+            }}
+          />
+        )}
+
+        {importOpen && (
+          <FeedzImportDialog
+            items={items}
+            people={people}
+            onClose={() => setImportOpen(false)}
+            onApplied={(result) => {
+              const updated = new Map(result.items.map((item) => [item.id, item]));
+              setItems((current) => current.map((item) => updated.get(item.id) ?? item));
+              setLastImport(result.log);
+              setFeedzPending(result.unmatched);
+              setImportOpen(false);
             }}
           />
         )}

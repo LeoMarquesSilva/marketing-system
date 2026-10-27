@@ -1,5 +1,6 @@
 import { generateObject } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
+import { openAIKey } from "@/lib/openai-keys";
 import {
   GUSTAVO_CONTENT_MODEL_REVIEW,
   GUSTAVO_CONTENT_MODEL_SCORE,
@@ -43,9 +44,9 @@ import {
 } from "@/lib/gustavo-content/strategy";
 
 function getOpenAI() {
-  const apiKey = process.env.NEXT_OPENAI_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim();
+  const apiKey = openAIKey("conteudo");
   if (!apiKey) {
-    throw new GustavoContentError("Configure OPENAI_API_KEY ou NEXT_OPENAI_API_KEY no servidor.", 503);
+    throw new GustavoContentError("Configure OPENAI_API_KEY_CONTEUDO no servidor.", 503);
   }
   return createOpenAI({ apiKey });
 }

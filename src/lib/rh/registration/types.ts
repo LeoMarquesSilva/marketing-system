@@ -4,6 +4,7 @@
  * - atualização: o colaborador logado completa a própria ficha em /minha-ficha.
  */
 
+import type { RegistrationEvent } from "./history";
 import type { QualificationSyncPreview } from "./qualification-sync";
 
 /** `geral` = colaborador sem vínculo no VIOS (só os campos comuns). */
@@ -118,6 +119,16 @@ export interface EmployeeRegistrationRow {
   requiredCount: number;
   filledCount: number;
   missingFields: RegistrationField[];
+  /** Perfil (melhor dado conhecido), para os filtros e o perfil da equipe. "" = não informado. */
+  gender: string;
+  raceColor: string;
+  /** Idade em anos completos; null quando não há data de nascimento. */
+  age: number | null;
+  residenceCity: string;
+  residenceState: string;
+  dietaryRestrictions: string[];
+  /** "sim" | "nao" | "" (não informado) | "na" (vínculo sem a pergunta da OAB). */
+  oab: string;
 }
 
 export interface EmployeeRegistrationDetail {
@@ -440,6 +451,10 @@ export interface RegistrationDetail extends RegistrationListItem {
   qualification_sync: QualificationSyncPreview | null;
   /** Conta pessoal que a pessoa tinha declarado antes da conta da folha (só RH). */
   personal_bank: PersonalBankAccount | null;
+  /** Campos marcados pela RH ao devolver (vazio quando não está devolvida). */
+  reopen_fields: RegistrationField[];
+  /** Linha do tempo: envios, devoluções, correções e aprovação. */
+  events: RegistrationEvent[];
 }
 
 /** Conta particular (outro banco que não o da folha), declarada pela pessoa. */

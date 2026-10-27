@@ -37,6 +37,7 @@ import {
   type EventSupplier,
   type EventSupplierWithStats,
 } from "@/lib/eventos";
+import { isEventSupplierCategory } from "@/lib/suppliers/categories";
 import { cn } from "@/lib/utils";
 
 interface PrestadoresClientProps {
@@ -54,6 +55,8 @@ export function PrestadoresClient({ initialSuppliers }: PrestadoresClientProps) 
 
   const filtered = useMemo(() => {
     return suppliers.filter((s) => {
+      // O cadastro é único com Facilities: aqui ficam os de categoria de evento ou já usados num evento.
+      if (!isEventSupplierCategory(s.category) && s.eventsCount === 0) return false;
       if (onlyActive && !s.active) return false;
       if (categoryFilter !== "__all__" && s.category !== categoryFilter) return false;
       if (search.trim()) {
@@ -90,7 +93,8 @@ export function PrestadoresClient({ initialSuppliers }: PrestadoresClientProps) 
       <div>
         <h2 className="text-xl font-bold tracking-tight text-foreground">Prestadores de eventos</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Catálogo central de prestadores e fornecedores utilizados nos eventos.
+          Prestadores e fornecedores utilizados nos eventos. O cadastro é o mesmo de Facilities &gt; Fornecedores e
+          contratos, onde ficam também os contratos.
         </p>
       </div>
 

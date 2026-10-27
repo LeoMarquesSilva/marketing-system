@@ -34,11 +34,17 @@ const WhatsappInbox = dynamic(
 );
 
 export function TrafegoPagoTabs() {
-  const [tab, setTab] = useState<Tab>("anuncios");
+  // Atendimento é o uso do dia a dia: abre primeiro. Anúncios só carregam quando visitados.
+  const [tab, setTab] = useState<Tab>("whatsapp");
+  const [adsVisited, setAdsVisited] = useState(false);
+  const openTab = (next: Tab) => {
+    setTab(next);
+    if (next === "anuncios") setAdsVisited(true);
+  };
   const whatsappUnread = useWhatsappUnreadCount();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div
         role="tablist"
         aria-label="Seções de tráfego pago"
@@ -47,27 +53,10 @@ export function TrafegoPagoTabs() {
         <button
           type="button"
           role="tab"
-          aria-selected={tab === "anuncios"}
-          aria-controls="tab-panel-anuncios"
-          id="tab-anuncios"
-          onClick={() => setTab("anuncios")}
-          className={cn(
-            "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
-            tab === "anuncios"
-              ? "bg-white dark:bg-card shadow-sm text-[#04202f]"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          <Megaphone className="h-4 w-4" />
-          Anúncios Meta
-        </button>
-        <button
-          type="button"
-          role="tab"
           aria-selected={tab === "whatsapp"}
           aria-controls="tab-panel-whatsapp"
           id="tab-whatsapp"
-          onClick={() => setTab("whatsapp")}
+          onClick={() => openTab("whatsapp")}
           className={cn(
             "relative flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
             tab === "whatsapp"
@@ -78,25 +67,34 @@ export function TrafegoPagoTabs() {
           <MessageCircle className="h-4 w-4" />
           Leads WhatsApp
           {whatsappUnread > 0 && (
-            <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-emerald-500 px-1.5 text-[10px] font-bold text-white">
+            <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#47cdd0] px-1.5 text-xs font-semibold text-[#1c1c1c]">
               {whatsappUnread > 99 ? "99+" : whatsappUnread}
             </span>
           )}
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "anuncios"}
+          aria-controls="tab-panel-anuncios"
+          id="tab-anuncios"
+          onClick={() => openTab("anuncios")}
+          className={cn(
+            "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
+            tab === "anuncios"
+              ? "bg-white dark:bg-card shadow-sm text-[#04202f]"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Megaphone className="h-4 w-4" />
+          Anúncios Meta
+        </button>
       </div>
 
-      {/* As duas seções ficam montadas o tempo todo — só a visibilidade
+      {/* Depois de abertas, as seções ficam montadas — só a visibilidade
           alterna. Desmontar ao trocar de aba fazia o WhatsApp Inbox perder
           todo o estado (lista, conversa aberta, mensagens) e recarregar do
           zero toda vez que o usuário voltava pra essa aba. */}
-      <section
-        role="tabpanel"
-        id="tab-panel-anuncios"
-        aria-labelledby="tab-anuncios"
-        hidden={tab !== "anuncios"}
-      >
-        <TrafegoPagoClient />
-      </section>
       <section
         role="tabpanel"
         id="tab-panel-whatsapp"
@@ -104,6 +102,14 @@ export function TrafegoPagoTabs() {
         hidden={tab !== "whatsapp"}
       >
         <WhatsappInbox />
+      </section>
+      <section
+        role="tabpanel"
+        id="tab-panel-anuncios"
+        aria-labelledby="tab-anuncios"
+        hidden={tab !== "anuncios"}
+      >
+        {adsVisited && <TrafegoPagoClient />}
       </section>
     </div>
   );

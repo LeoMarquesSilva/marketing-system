@@ -4,6 +4,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/utils/supabase/client";
+import { SUPPLIER_CATEGORY_LABELS } from "@/lib/suppliers/categories";
 
 export type EventStatus = "nao_iniciada" | "em_andamento" | "concluida" | "cancelada";
 export type EventKind = "evento" | "campanha";
@@ -471,18 +472,12 @@ export const SUPPLIER_CATEGORIES = [
   "outros",
 ] as const;
 
-export const SUPPLIER_CATEGORY_LABEL: Record<(typeof SUPPLIER_CATEGORIES)[number], string> = {
-  brindes: "Brindes",
-  catering: "Catering",
-  buffet: "Buffet",
-  decoracao: "Decoração",
-  fotografia: "Fotografia",
-  som_iluminacao: "Som e iluminação",
-  transporte: "Transporte",
-  seguranca: "Segurança",
-  locacao: "Locação",
-  outros: "Outros",
-};
+/**
+ * Rótulos de todas as categorias do cadastro único (o mesmo de Facilities >
+ * Fornecedores): um fornecedor de limpeza também pode aparecer num evento.
+ * Os orçamentos de evento continuam oferecendo só SUPPLIER_CATEGORIES.
+ */
+export const SUPPLIER_CATEGORY_LABEL: Record<string, string> = SUPPLIER_CATEGORY_LABELS;
 
 export const BUDGET_PAYMENT_LABEL: Record<BudgetPaymentStatus, string> = {
   pendente: "Pendente",

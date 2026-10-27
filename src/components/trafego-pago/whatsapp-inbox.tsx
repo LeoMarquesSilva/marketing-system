@@ -1,68 +1,65 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  MessageCircle,
-  Loader2,
-  RefreshCw,
-  AlertCircle,
-  Radio,
-  Wifi,
-  WifiOff,
-  List,
-  LayoutGrid,
-} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, Loader2, MessageCircle, X } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { authFetch } from "@/lib/auth-fetch";
+import { cn } from "@/lib/utils";
 import { supabase } from "@/utils/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
-import { AnimatePresence } from "framer-motion";
 import { LeadList } from "@/components/trafego-pago/lead-list";
-import { WhatsappKanbanBoard } from "@/components/trafego-pago/whatsapp-kanban-board";
-import type { AttendanceStatus } from "@/components/trafego-pago/whatsapp-crm-utils";
 import { ConversationHeader } from "@/components/trafego-pago/conversation-header";
 import { MessageBubble } from "@/components/trafego-pago/message-bubble";
 import { ChatInput } from "@/components/trafego-pago/chat-input";
-import { LeadDetailsPanel } from "@/components/trafego-pago/lead-details-panel";
+import { LeadDetailsContent, LeadDetailsPanel } from "@/components/trafego-pago/lead-details-panel";
+import {
+  WhatsappConnectionAlert,
+  WhatsappConnectionDialog,
+  WhatsappConnectionIndicator,
+  connectionHealth,
+  type RealtimeStatus,
+  type WhatsappInstanceState,
+} from "@/components/trafego-pago/whatsapp-connection-dialog";
 import type {
   LeadFilter,
+  WhatsappAgent,
   WhatsappConversation,
   WhatsappMessage,
   WhatsappReplyTarget,
 } from "@/components/trafego-pago/whatsapp-crm-types";
+import { leadDisplayName, sameMessageDay } from "@/components/trafego-pago/whatsapp-crm-utils";
 import {
-  formatMessageDate,
-  formatRelativeLeadTime,
-  isMetaLead,
-  isPaidTrafficLead,
-  isSiteLead,
-  isColaboradorConversation,
-  isGroupConversation,
-  leadDisplayName,
-  sameMessageDay,
-} from "@/components/trafego-pago/whatsapp-crm-utils";
-
-type RealtimeStatus = "connecting" | "connected" | "unavailable";
-
-interface EvolutionStatus {
-  marketingPublicUrl?: string | null;
-  supabaseWebhookUrl?: string | null;
-  targetWebhookUrl?: string | null;
-  preferredTarget?: "supabase";
-  webhook?: {
-    enabled: boolean;
-    url: string;
-    pointsToApp: boolean;
-    messageEventsConfigured: boolean;
-  } | null;
-  recommendations?: string[];
-}
+  STALE_CONVERSATION_DAYS,
+  buildInboxView,
+  formatDaySeparator,
+  isStaleOpenConversation,
+  lastMessageIsOurs,
+  type InboxOwnerTab,
+  type InboxStatusTab,
+} from "@/components/trafego-pago/whatsapp-inbox-view";
 
 type Conversation = WhatsappConversation;
 type Message = WhatsappMessage;
 type ReplyTarget = WhatsappReplyTarget;
 
 const RECONCILIATION_INTERVAL_MS = 10 * 60_000;
+const OWNER_TAB_STORAGE_KEY = "orquestrai:whatsapp:owner-tab";
+const STATUS_TAB_STORAGE_KEY = "orquestrai:whatsapp:status-tab";
+const NOTICE_MS = 6000;
+
+interface Notice {
+  text: string;
+  undo?: () => void;
+}
 
 function markReadSilently(conversationId: string) {
   authFetch(
@@ -168,18 +165,39 @@ function mergeMessages(prev: Message[], incoming: Message): Message[] {
   return [...prev, incoming];
 }
 
+function readStoredTab<T extends string>(key: string, allowed: readonly T[]): T | null {
+  try {
+    const value = window.localStorage.getItem(key);
+    return allowed.includes(value as T) ? (value as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeTab(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Preferência de visualização: sem storage, só não lembra a aba.
+  }
+}
+
+function isWideScreen(): boolean {
+  return typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches;
+}
+
 export function WhatsappInbox() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const myUserId = profile?.id ?? null;
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [configured, setConfigured] = useState(false);
+  const [configured, setConfigured] = useState(true);
   const [loading, setLoading] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
-  const [syncInfo, setSyncInfo] = useState<string | null>(null);
   const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
   const [savingTags, setSavingTags] = useState(false);
   const [draftMessage, setDraftMessage] = useState("");
@@ -188,21 +206,20 @@ export function WhatsappInbox() {
   const lastPreviewRef = useRef<string>("");
   const [sending, setSending] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<LeadFilter>("all");
-  const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
+  const [leadFilter, setLeadFilter] = useState<LeadFilter>("all");
+  const [ownerTab, setOwnerTab] = useState<InboxOwnerTab>("all");
+  const [statusTab, setStatusTab] = useState<InboxStatusTab>("open");
+  const [agents, setAgents] = useState<WhatsappAgent[]>([]);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [connectionOpen, setConnectionOpen] = useState(false);
+  const [staleDialogOpen, setStaleDialogOpen] = useState(false);
+  const [resolvingStale, setResolvingStale] = useState(false);
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("connecting");
-  const [evolutionStatus, setEvolutionStatus] = useState<EvolutionStatus | null>(null);
-  const [configuringWebhook, setConfiguringWebhook] = useState(false);
-  const [webhookInfo, setWebhookInfo] = useState<string | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<string, string>>({});
-  const [pinnedMessageId, setPinnedMessageId] = useState<string | null>(null);
-  const [hotMessageIds, setHotMessageIds] = useState<Set<string>>(() => new Set());
-  const [detailsOpen, setDetailsOpen] = useState(true);
-  const [connectionState, setConnectionState] = useState<{
-    state: string;
-    updated_at: string;
-  } | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [instanceState, setInstanceState] = useState<WhatsappInstanceState | null>(null);
+  const [frameEl, setFrameEl] = useState<HTMLDivElement | null>(null);
+  const [frameHeight, setFrameHeight] = useState<number | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const selectedIdRef = useRef<string | null>(null);
   const conversationsRef = useRef<Conversation[]>([]);
@@ -216,13 +233,27 @@ export function WhatsappInbox() {
     conversationsRef.current = conversations;
   }, [conversations]);
 
+  // Abas lembradas por navegador (lidas depois de montar, para não divergir do SSR).
+  useEffect(() => {
+    const storedOwner = readStoredTab<InboxOwnerTab>(OWNER_TAB_STORAGE_KEY, ["mine", "unassigned", "all"]);
+    const storedStatus = readStoredTab<InboxStatusTab>(STATUS_TAB_STORAGE_KEY, ["open", "waiting", "resolved"]);
+    if (storedOwner) setOwnerTab(storedOwner);
+    if (storedStatus) setStatusTab(storedStatus);
+  }, []);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), NOTICE_MS);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
   useEffect(() => {
     let cancelled = false;
     async function checkConnection() {
       try {
         const res = await authFetch("/api/evolution/connection-state");
         const json = await res.json();
-        if (!cancelled && res.ok) setConnectionState(json.status ?? null);
+        if (!cancelled && res.ok) setInstanceState(json.status ?? null);
       } catch {
         /* ignore */
       }
@@ -235,13 +266,26 @@ export function WhatsappInbox() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    authFetch("/api/evolution/agents")
+      .then(async (res) => (res.ok ? ((await res.json()) as { agents?: WhatsappAgent[] }) : null))
+      .then((json) => {
+        if (!cancelled && json?.agents) setAgents(json.agents);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
   const loadConversations = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
-    setError(null);
     try {
       const res = await authFetch("/api/evolution/conversations");
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Erro ao carregar.");
+      if (!res.ok) throw new Error(json.error ?? "Não foi possível carregar as conversas.");
       const incoming = (json.conversations ?? []).map((c: Conversation) =>
         normalizeConversation(c)
       );
@@ -251,7 +295,7 @@ export function WhatsappInbox() {
       setConfigured(json.configured ?? false);
       setFetchedAt(json.fetchedAt ?? new Date().toISOString());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar.");
+      setError(err instanceof Error ? err.message : "Não foi possível carregar as conversas.");
     } finally {
       if (!silent) setLoading(false);
     }
@@ -262,16 +306,6 @@ export function WhatsappInbox() {
       const res = await authFetch("/api/evolution/conversations?tagSuggestions=1");
       const json = await res.json();
       if (res.ok) setTagSuggestions(json.suggestions ?? []);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  const loadEvolutionStatus = useCallback(async () => {
-    try {
-      const res = await authFetch("/api/evolution/status");
-      const json = await res.json();
-      if (res.ok) setEvolutionStatus(json);
     } catch {
       /* ignore */
     }
@@ -291,68 +325,38 @@ export function WhatsappInbox() {
 
       const res = await authFetch(`/api/evolution/conversations?${params.toString()}`);
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Erro ao carregar mensagens.");
+      if (!res.ok) throw new Error(json.error ?? "Não foi possível carregar as mensagens.");
       if (shouldRefreshAvatar) avatarRefreshRef.current.add(conversationId);
       setMessages(json.messages ?? []);
       if (json.conversation) {
         lastPreviewRef.current =
           (json.conversation as Conversation).last_message_preview ?? "";
       }
-      if (json.avatarUrl || json.pushName) {
-        setConversations((prev) =>
-          prev.map((c) =>
-            c.id === conversationId
-              ? {
-                  ...c,
-                  unread_count: 0,
-                  ...(json.avatarUrl ? { avatar_url: json.avatarUrl } : {}),
-                  ...(json.pushName ? { push_name: json.pushName } : {}),
-                }
-              : c
-          )
-        );
-      } else {
-        setConversations((prev) =>
-          prev.map((c) =>
-            c.id === conversationId ? { ...c, unread_count: 0 } : c
-          )
-        );
-      }
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === conversationId
+            ? {
+                ...c,
+                unread_count: 0,
+                ...(json.avatarUrl ? { avatar_url: json.avatarUrl } : {}),
+                ...(json.pushName ? { push_name: json.pushName } : {}),
+              }
+            : c
+        )
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar mensagens.");
+      setError(err instanceof Error ? err.message : "Não foi possível carregar as mensagens.");
     } finally {
       if (!silent) setLoadingMessages(false);
     }
   }, []);
 
-  const saveTags = useCallback(
-    async (conversationId: string, tags: string[]) => {
-      setSavingTags(true);
-      setError(null);
-      try {
-        const res = await authFetch("/api/evolution/conversations", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ conversationId, tags }),
-        });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error ?? "Erro ao salvar tags.");
-        const updated = json.conversation as Conversation;
-        setConversations((prev) =>
-          prev.map((c) => (c.id === conversationId ? { ...c, tags: updated.tags ?? tags } : c))
-        );
-        await loadTagSuggestions();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Erro ao salvar tags.");
-      } finally {
-        setSavingTags(false);
-      }
-    },
-    [loadTagSuggestions]
-  );
-
-  const updateConversationCrm = useCallback(
-    async (conversationId: string, patch: Record<string, unknown>) => {
+  /** PATCH na conversa com atualização otimista; desfaz se o servidor recusar. */
+  const patchConversation = useCallback(
+    async (conversationId: string, patch: Record<string, unknown>, optimistic: Partial<Conversation>) => {
+      const before = conversationsRef.current.find((c) => c.id === conversationId);
+      setConversations((prev) => prev.map((c) => (c.id === conversationId ? { ...c, ...optimistic } : c)));
+      setUpdatingId(conversationId);
       setError(null);
       try {
         const res = await authFetch("/api/evolution/conversations", {
@@ -361,32 +365,39 @@ export function WhatsappInbox() {
           body: JSON.stringify({ conversationId, ...patch }),
         });
         const json = await res.json();
-        if (!res.ok) throw new Error(json.error ?? "Erro ao atualizar CRM.");
-        const updated = json.conversation as Conversation;
-        setConversations((prev) =>
-          prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c))
-        );
+        if (!res.ok) throw new Error(json.error ?? "Não foi possível salvar.");
+        const updated = json.conversation as Conversation | null;
+        if (updated) {
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === conversationId
+                ? { ...c, ...normalizeConversation(updated), unread_count: optimistic.unread_count ?? c.unread_count }
+                : c
+            )
+          );
+        }
+        return true;
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Erro ao atualizar CRM.");
-        throw err;
+        if (before) {
+          setConversations((prev) => prev.map((c) => (c.id === conversationId ? before : c)));
+        }
+        setError(err instanceof Error ? err.message : "Não foi possível salvar.");
+        return false;
+      } finally {
+        setUpdatingId(null);
       }
     },
     []
   );
 
-  const updateSelectedCrm = useCallback(
-    async (patch: Record<string, unknown>) => {
-      if (!selectedId) return;
-      await updateConversationCrm(selectedId, patch);
+  const saveTags = useCallback(
+    async (conversationId: string, tags: string[]) => {
+      setSavingTags(true);
+      const ok = await patchConversation(conversationId, { tags }, { tags });
+      setSavingTags(false);
+      if (ok) await loadTagSuggestions();
     },
-    [selectedId, updateConversationCrm]
-  );
-
-  const handleKanbanMove = useCallback(
-    async (conversationId: string, status: AttendanceStatus) => {
-      await updateConversationCrm(conversationId, { attendance_status: status });
-    },
-    [updateConversationCrm]
+    [patchConversation, loadTagSuggestions]
   );
 
   const sendMessage = useCallback(async () => {
@@ -409,7 +420,7 @@ export function WhatsappInbox() {
         }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Erro ao enviar.");
+      if (!res.ok) throw new Error(json.error ?? "Não foi possível enviar.");
       const message = json.message as Message;
       setMessages((prev) => mergeMessages(prev, message));
       setConversations((prev) =>
@@ -418,79 +429,61 @@ export function WhatsappInbox() {
             ? {
                 ...c,
                 last_message_at: message.message_timestamp,
+                last_outbound_at: message.message_timestamp,
                 last_message_preview: text.slice(0, 280),
+                attendance_status: "aguardando_cliente",
+                owner_user_id: c.owner_user_id ?? myUserId,
               }
             : c
         )
       );
     } catch (err) {
       setDraftMessage(text);
-      setError(err instanceof Error ? err.message : "Erro ao enviar mensagem.");
+      setError(err instanceof Error ? err.message : "Não foi possível enviar a mensagem.");
     } finally {
       setSending(false);
     }
-  }, [selectedId, draftMessage, sending, replyTo]);
+  }, [selectedId, draftMessage, sending, replyTo, myUserId]);
 
-  const configureEvolutionWebhook = useCallback(async () => {
-    setConfiguringWebhook(true);
-    setWebhookInfo(null);
-    setError(null);
-    try {
-      const res = await authFetch("/api/evolution/webhook/configure", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Erro ao configurar webhook.");
-      setWebhookInfo(
-        `Webhook configurado (${json.target ?? "supabase"}): ${json.webhookUrl}`
-      );
-      await loadEvolutionStatus();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao configurar webhook.");
-    } finally {
-      setConfiguringWebhook(false);
-    }
-  }, [loadEvolutionStatus]);
-
-  const syncFromEvolution = useCallback(async () => {
-    setSyncing(true);
-    setSyncInfo(null);
-    setError(null);
-    try {
-      const res = await authFetch("/api/evolution/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ limit: 150 }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Erro ao sincronizar.");
-      setSyncInfo(
-        `${json.stored ?? 0} mensagem(ns) importada(s) de ${json.fetched ?? 0} encontrada(s).`
-      );
-      await loadConversations(true);
-      if (selectedId) await loadMessages(selectedId, true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao sincronizar.");
-    } finally {
-      setSyncing(false);
-    }
-  }, [loadConversations, loadMessages, selectedId]);
+  const sendReaction = useCallback(
+    async (message: Message, emoji: string) => {
+      if (!selectedId || !message.wa_message_id) return;
+      setMessageReactions((current) => ({ ...current, [message.id]: emoji }));
+      try {
+        const res = await authFetch("/api/evolution/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversationId: selectedId,
+            reaction: emoji,
+            waMessageId: message.wa_message_id,
+          }),
+        });
+        if (!res.ok) throw new Error();
+      } catch {
+        setMessageReactions((current) => {
+          const next = { ...current };
+          delete next[message.id];
+          return next;
+        });
+        setError("Não foi possível enviar a reação.");
+      }
+    },
+    [selectedId]
+  );
 
   useEffect(() => {
     if (!user) return;
 
     loadConversations();
     loadTagSuggestions();
-    loadEvolutionStatus();
 
     const pollId = setInterval(() => {
       void loadConversations(true);
     }, RECONCILIATION_INTERVAL_MS);
 
     return () => clearInterval(pollId);
-  }, [user, loadConversations, loadTagSuggestions, loadEvolutionStatus]);
+  }, [user, loadConversations, loadTagSuggestions]);
 
   useEffect(() => {
     if (!user) return;
@@ -535,6 +528,8 @@ export function WhatsappInbox() {
             return prev.map((c) => {
               if (c.id !== row.id) return c;
               if (isOpen) return { ...nextRow, unread_count: 0 };
+              // Resolvida zera as não lidas no servidor; o local não deve segurar o número.
+              if (nextRow.attendance_status === "resolvido") return nextRow;
               return {
                 ...nextRow,
                 unread_count: Math.max(
@@ -544,7 +539,6 @@ export function WhatsappInbox() {
               };
             });
           });
-
         }
       )
       .on(
@@ -591,14 +585,13 @@ export function WhatsappInbox() {
             const conversationExists = conversationsRef.current.some(
               (conversation) => conversation.id === conversationId
             );
-            setConversations((prev) => {
-              const next = bumpConversationPreview(prev, conversationId, {
+            setConversations((prev) =>
+              bumpConversationPreview(prev, conversationId, {
                 incrementUnread: true,
                 last_message_at: incoming.message_timestamp,
                 last_message_preview: incoming.body?.slice(0, 280) ?? undefined,
-              });
-              return next;
-            });
+              })
+            );
             if (!conversationExists) {
               if (unknownConversationTimer) clearTimeout(unknownConversationTimer);
               unknownConversationTimer = setTimeout(
@@ -688,290 +681,209 @@ export function WhatsappInbox() {
     });
   }, [messages, loadingMessages, selectedId]);
 
-  const selected = conversations.find((c) => c.id === selectedId);
-  const totalUnread = conversations.reduce((s, c) => s + c.unread_count, 0);
+  const health = connectionHealth(configured, instanceState, realtimeStatus);
 
-  const normalizedSearch = searchQuery.trim().toLowerCase();
-  const filteredConversations = conversations.filter((c) => {
-    if (activeFilter === "unread" && c.unread_count === 0) return false;
-    if (activeFilter === "meta_ads" && !isMetaLead(c)) return false;
-    if (activeFilter === "trafego_pago" && !isPaidTrafficLead(c)) return false;
-    if (activeFilter === "site" && !isSiteLead(c)) return false;
-    if (activeFilter === "colaborador" && !isColaboradorConversation(c)) return false;
-    if (activeFilter === "grupo" && !isGroupConversation(c)) return false;
-    if (!normalizedSearch) return true;
-    const haystack = [
-      c.push_name,
-      c.phone,
-      c.last_message_preview,
-      ...(c.tags ?? []),
-      c.meta_campaign_name,
-      c.meta_adset_name,
-      c.site_lead_page_title,
-      leadDisplayName(c),
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return haystack.includes(normalizedSearch);
-  });
+  // A caixa ocupa a altura que sobra na tela (a lista e a conversa rolam por dentro).
+  // O inbox fica montado escondido na aba de anúncios: o ResizeObserver refaz a
+  // conta quando ele aparece.
+  useEffect(() => {
+    if (!frameEl) return;
+    const update = () => {
+      if (frameEl.offsetParent === null) return;
+      const top = frameEl.getBoundingClientRect().top + window.scrollY;
+      const bottomGap = window.matchMedia("(min-width: 768px)").matches ? 24 : 88;
+      setFrameHeight(Math.max(460, Math.round(window.innerHeight - top - bottomGap)));
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(frameEl);
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [frameEl, health, error]);
 
-  const pinnedMessage = pinnedMessageId
-    ? messages.find((message) => message.id === pinnedMessageId)
-    : null;
+  const agentsById = useMemo(() => new Map(agents.map((agent) => [agent.id, agent])), [agents]);
+  const view = useMemo(
+    () =>
+      buildInboxView(conversations, {
+        ownerTab,
+        statusTab,
+        leadFilter,
+        search: searchQuery,
+        myUserId,
+      }),
+    [conversations, ownerTab, statusTab, leadFilter, searchQuery, myUserId]
+  );
+  const staleConversations = useMemo(
+    () => conversations.filter((c) => isStaleOpenConversation(c)),
+    [conversations]
+  );
+
+  const selected = conversations.find((c) => c.id === selectedId) ?? null;
+  const selectedOwner = selected?.owner_user_id ? agentsById.get(selected.owner_user_id) ?? null : null;
+
+  const changeOwnerTab = (tab: InboxOwnerTab) => {
+    setOwnerTab(tab);
+    storeTab(OWNER_TAB_STORAGE_KEY, tab);
+  };
+
+  const changeStatusTab = (tab: InboxStatusTab) => {
+    setStatusTab(tab);
+    storeTab(STATUS_TAB_STORAGE_KEY, tab);
+  };
+
+  const assignOwner = (userId: string | null) => {
+    if (!selected) return;
+    const previous = selected.owner_user_id ?? null;
+    const conversationId = selected.id;
+    void patchConversation(conversationId, { owner_user_id: userId }, { owner_user_id: userId }).then((ok) => {
+      if (!ok) return;
+      const agent = userId ? agentsById.get(userId) : null;
+      setNotice({
+        text: agent ? `Responsável: ${agent.name}` : "Conversa sem responsável",
+        undo: () => void patchConversation(conversationId, { owner_user_id: previous }, { owner_user_id: previous }),
+      });
+    });
+  };
+
+  const resolveSelected = () => {
+    if (!selected) return;
+    const conversation = selected;
+    const previousStatus = conversation.attendance_status ?? "nao_respondido";
+    const index = view.conversations.findIndex((c) => c.id === conversation.id);
+    const next = view.conversations[index + 1] ?? view.conversations[index - 1] ?? null;
+
+    void patchConversation(
+      conversation.id,
+      { attendance_status: "resolvido" },
+      { attendance_status: "resolvido", unread_count: 0 }
+    ).then((ok) => {
+      if (!ok) return;
+      if (statusTab !== "resolved") setSelectedId(isWideScreen() ? (next?.id ?? null) : null);
+      setNotice({
+        text: `Conversa com ${leadDisplayName(conversation)} resolvida`,
+        undo: () =>
+          void patchConversation(
+            conversation.id,
+            { attendance_status: previousStatus },
+            { attendance_status: previousStatus }
+          ),
+      });
+    });
+  };
+
+  const reopenSelected = () => {
+    if (!selected) return;
+    const status = lastMessageIsOurs(selected) ? "aguardando_cliente" : "nao_respondido";
+    void patchConversation(selected.id, { attendance_status: status }, { attendance_status: status });
+  };
+
+  const resolveStale = async () => {
+    setResolvingStale(true);
+    setError(null);
+    try {
+      const res = await authFetch("/api/evolution/conversations/resolve-stale", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days: STALE_CONVERSATION_DAYS }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Não foi possível resolver as conversas paradas.");
+      const staleIds = new Set(staleConversations.map((c) => c.id));
+      setConversations((prev) =>
+        prev.map((c) => (staleIds.has(c.id) ? { ...c, attendance_status: "resolvido", unread_count: 0 } : c))
+      );
+      const resolved = Number(json.resolved ?? 0);
+      setNotice({ text: resolved === 1 ? "1 conversa parada resolvida" : `${resolved} conversas paradas resolvidas` });
+      setStaleDialogOpen(false);
+      void loadConversations(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível resolver as conversas paradas.");
+    } finally {
+      setResolvingStale(false);
+    }
+  };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20 text-muted-foreground gap-2">
+      <div className="flex items-center justify-center gap-2 py-20 text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin" />
-        Carregando leads do WhatsApp…
+        Carregando conversas…
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-lg border bg-card/60 backdrop-blur-sm p-4 flex flex-wrap items-center gap-3">
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          {realtimeStatus === "connected" ? (
-            <>
-              <Wifi className="h-4 w-4 text-emerald-500" />
-              <span className="text-emerald-700 dark:text-emerald-400 font-medium">
-                Tempo real ativo
-              </span>
-            </>
-          ) : realtimeStatus === "connecting" ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              <span className="text-muted-foreground">Conectando tempo real…</span>
-            </>
-          ) : (
-            <>
-              <WifiOff className="h-4 w-4 text-amber-500" />
-              <span className="text-amber-700 dark:text-amber-400">
-                Tempo real indisponível · reconciliação a cada 10 min
-              </span>
-            </>
-          )}
-          {fetchedAt && (
-            <span className="text-muted-foreground text-xs">
-              · atualizado {formatRelativeLeadTime(fetchedAt)}
-            </span>
-          )}
-          {totalUnread > 0 && (
-            <span className="rounded-full bg-emerald-500 text-white text-xs font-bold px-2 py-0.5">
-              {totalUnread} nova{totalUnread !== 1 ? "s" : ""}
-            </span>
-          )}
-        </div>
-        <div className="ml-auto flex flex-wrap gap-2">
-          {configured && (
-            <Button
-              variant="default"
-              size="sm"
-              className="gap-2 bg-emerald-600 hover:bg-emerald-700"
-              disabled={syncing}
-              onClick={() => syncFromEvolution()}
-            >
-              {syncing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-              Sincronizar Evolution
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            onClick={() => loadConversations()}
-          >
-            <RefreshCw className="h-4 w-4" />
-            Atualizar
-          </Button>
-        </div>
-      </div>
-
-      {syncInfo && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 p-3 text-sm text-emerald-900 dark:text-emerald-200">
-          {syncInfo}
-        </div>
-      )}
-
-      {webhookInfo && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 p-3 text-sm text-emerald-900 dark:text-emerald-200">
-          {webhookInfo}
-        </div>
-      )}
-
-      {evolutionStatus?.webhook && !evolutionStatus.webhook.pointsToApp && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/20 p-4 text-sm text-amber-900 dark:text-amber-200 space-y-3">
-          <p className="font-medium flex items-center gap-2">
-            <Radio className="h-4 w-4" />
-            Webhook da Evolution ainda não aponta para o marketing-system
-          </p>
-          <p>
-            Hoje a instância BP envia para{" "}
-            <code className="text-xs break-all">{evolutionStatus.webhook.url}</code>.
-            O ideal é apontar direto para o Supabase (Edge Function) — sem Next.js, sem
-            n8n, sem outros sistemas.
-          </p>
-          {evolutionStatus.supabaseWebhookUrl && (
-            <p className="text-xs">
-              URL Supabase:{" "}
-              <code className="break-all">{evolutionStatus.supabaseWebhookUrl}</code>
-            </p>
-          )}
-          {evolutionStatus.targetWebhookUrl &&
-            evolutionStatus.targetWebhookUrl !== evolutionStatus.supabaseWebhookUrl && (
-              <p className="text-xs">
-                Destino alternativo:{" "}
-                <code className="break-all">{evolutionStatus.targetWebhookUrl}</code>
-              </p>
-            )}
-          {(evolutionStatus.recommendations ?? []).map((tip) => (
-            <p key={tip} className="text-xs opacity-90">
-              {tip}
-            </p>
-          ))}
-          {(evolutionStatus.supabaseWebhookUrl || evolutionStatus.marketingPublicUrl) &&
-            configured && (
-            <Button
-              size="sm"
-              className="bg-amber-700 hover:bg-amber-800 text-white"
-              disabled={configuringWebhook}
-              onClick={() => configureEvolutionWebhook()}
-            >
-              {configuringWebhook ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : null}
-              Apontar webhook BP → Supabase
-            </Button>
-          )}
-          {!evolutionStatus.supabaseWebhookUrl && !evolutionStatus.marketingPublicUrl && (
-            <p className="text-xs">
-              Configure <code>NEXT_PUBLIC_SUPABASE_URL</code> no <code>.env</code>.
-            </p>
-          )}
-        </div>
-      )}
-
-      {!configured && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/20 p-4 text-sm text-amber-900 dark:text-amber-200">
-          Configure no <code className="text-xs">.env</code>:{" "}
-          <code className="text-xs">EVOLUTION_API_URL</code>,{" "}
-          <code className="text-xs">EVOLUTION_API_KEY</code>,{" "}
-          <code className="text-xs">EVOLUTION_INSTANCE=BP</code>.
-        </div>
-      )}
+    <div className="space-y-3">
+      <WhatsappConnectionAlert health={health} instance={instanceState} onOpen={() => setConnectionOpen(true)} />
 
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 flex gap-2 text-sm text-red-800">
-          <AlertCircle className="h-5 w-5 shrink-0" />
-          {error}
+        <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <p className="min-w-0 flex-1">{error}</p>
+          <button type="button" onClick={() => setError(null)} aria-label="Fechar aviso" className="rounded p-0.5 hover:bg-red-100 dark:hover:bg-red-900/40">
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
 
-      {connectionState && connectionState.state !== "open" && (
-        <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
-          <WifiOff className="h-5 w-5 shrink-0" />
-          <div>
-            <p className="font-medium">WhatsApp desconectado — mensagens novas não estão chegando.</p>
-            <p className="text-xs opacity-80">
-              Alguém precisa reconectar o número na Evolution (escanear o QR de novo). Desde{" "}
-              {new Date(connectionState.updated_at).toLocaleString("pt-BR")}.
-            </p>
-          </div>
-        </div>
-      )}
-
-      <div className="flex items-center justify-end">
-        <div className="inline-flex rounded-lg border bg-muted/40 p-0.5">
-          <Button
-            type="button"
-            variant={viewMode === "list" ? "default" : "ghost"}
-            size="sm"
-            className="h-8 gap-1.5 text-xs"
-            onClick={() => setViewMode("list")}
-          >
-            <List className="h-3.5 w-3.5" />
-            Lista
-          </Button>
-          <Button
-            type="button"
-            variant={viewMode === "kanban" ? "default" : "ghost"}
-            size="sm"
-            className="h-8 gap-1.5 text-xs"
-            onClick={() => setViewMode("kanban")}
-          >
-            <LayoutGrid className="h-3.5 w-3.5" />
-            Kanban
-          </Button>
-        </div>
-      </div>
-
-      {viewMode === "kanban" ? (
-        <WhatsappKanbanBoard
-          conversations={filteredConversations}
-          onCardClick={(c) => {
-            setSelectedId(c.id);
-            setViewMode("list");
-          }}
-          onMove={handleKanbanMove}
-        />
-      ) : (
       <div
-        className={
-          detailsOpen
-            ? "grid min-h-[560px] overflow-hidden rounded-lg border bg-white shadow-sm lg:h-[calc(100dvh-9rem)] lg:grid-cols-[330px_minmax(0,1fr)] xl:grid-cols-[330px_minmax(0,1fr)_320px] dark:bg-card"
-            : "grid min-h-[560px] overflow-hidden rounded-lg border bg-white shadow-sm lg:h-[calc(100dvh-9rem)] lg:grid-cols-[330px_minmax(0,1fr)] dark:bg-card"
-        }
+        ref={setFrameEl}
+        style={frameHeight ? { height: frameHeight } : undefined}
+        className="relative grid min-h-[460px] grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden rounded-lg border bg-white shadow-sm dark:bg-card lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[340px_minmax(0,1fr)_300px]"
       >
         <LeadList
-          conversations={conversations}
-          filteredConversations={filteredConversations}
+          className={selected ? "hidden lg:flex" : "flex"}
+          view={view}
+          totalConversations={conversations.length}
           selectedId={selectedId}
+          ownerTab={ownerTab}
+          statusTab={statusTab}
+          leadFilter={leadFilter}
           searchQuery={searchQuery}
-          activeFilter={activeFilter}
-          totalUnread={totalUnread}
+          agentsById={agentsById}
+          staleCount={staleConversations.length}
+          connectionSlot={<WhatsappConnectionIndicator health={health} onClick={() => setConnectionOpen(true)} />}
+          onOwnerTabChange={changeOwnerTab}
+          onStatusTabChange={changeStatusTab}
+          onLeadFilterChange={setLeadFilter}
           onSearchChange={setSearchQuery}
-          onFilterChange={setActiveFilter}
           onSelect={setSelectedId}
+          onResolveStale={() => setStaleDialogOpen(true)}
         />
 
-        <main className="relative z-10 flex min-h-0 min-w-0 flex-col bg-background">
+        <main className={cn("min-h-0 min-w-0 flex-col bg-background", selected ? "flex" : "hidden lg:flex")}>
           {!selected ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-slate-50 p-8 text-center text-muted-foreground dark:bg-muted/5">
-              <div className="flex h-16 w-16 items-center justify-center rounded-lg border bg-white shadow-sm dark:bg-card">
-                <MessageCircle className="h-8 w-8 opacity-40" />
-              </div>
-              <p className="text-sm font-medium">Selecione uma conversa para ver e responder.</p>
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-muted/30 p-8 text-center">
+              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-muted-foreground shadow-sm dark:bg-card">
+                <MessageCircle className="h-6 w-6" aria-hidden />
+              </span>
+              <p className="text-sm font-medium">Escolha uma conversa para responder</p>
+              <p className="max-w-xs text-xs text-muted-foreground">
+                Ao responder um lead sem responsável, ele passa a ser seu.
+              </p>
             </div>
           ) : (
             <>
               <ConversationHeader
                 conversation={selected}
-                tagSuggestions={tagSuggestions}
-                savingTags={savingTags}
-                detailsOpen={detailsOpen}
-                onSaveTags={saveTags}
-                onToggleDetails={() => setDetailsOpen((open) => !open)}
+                owner={selectedOwner}
+                agents={agents}
+                myUserId={myUserId}
+                updating={updatingId === selected.id}
+                onBack={() => setSelectedId(null)}
+                onAssign={assignOwner}
+                onResolve={resolveSelected}
+                onReopen={reopenSelected}
+                onOpenDetails={() => setDetailsOpen(true)}
               />
 
               <div
                 ref={messagesContainerRef}
-                className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden bg-[#f3f5f7] p-5 dark:bg-muted/5"
+                className="min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden bg-[#f3f5f7] p-4 dark:bg-muted/5 sm:p-5"
               >
-                {pinnedMessage && (
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-900 shadow-sm dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100">
-                    <p className="font-semibold">Mensagem fixada</p>
-                    <p className="mt-1 line-clamp-2 text-emerald-800/80 dark:text-emerald-100/80">
-                      {pinnedMessage.body || "Mensagem sem texto"}
-                    </p>
-                  </div>
-                )}
-
                 {loadingMessages ? (
                   <div className="flex justify-center py-8">
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -980,7 +892,7 @@ export function WhatsappInbox() {
                   <div className="flex flex-col items-center justify-center gap-3 py-12 text-center text-muted-foreground">
                     <MessageCircle className="h-10 w-10 opacity-20" />
                     <p className="max-w-[220px] text-sm">
-                      Sem mensagens salvas ainda. Envie a primeira mensagem abaixo.
+                      Nenhuma mensagem salva desta conversa. Envie a primeira abaixo.
                     </p>
                   </div>
                 ) : (
@@ -989,8 +901,8 @@ export function WhatsappInbox() {
                       <div key={message.id} className="space-y-4">
                         {!sameMessageDay(messages[index - 1], message) && (
                           <div className="flex justify-center">
-                            <span className="rounded-full bg-white px-3 py-1 text-[11px] font-medium text-muted-foreground shadow-sm dark:bg-card">
-                              {formatMessageDate(message.message_timestamp)}
+                            <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm dark:bg-card">
+                              {formatDaySeparator(message.message_timestamp)}
                             </span>
                           </div>
                         )}
@@ -998,8 +910,6 @@ export function WhatsappInbox() {
                           message={message}
                           conversation={selected}
                           reaction={messageReactions[message.id]}
-                          pinned={pinnedMessageId === message.id}
-                          hot={hotMessageIds.has(message.id)}
                           onReply={() =>
                             setReplyTo({
                               waMessageId: message.wa_message_id ?? message.id,
@@ -1007,25 +917,7 @@ export function WhatsappInbox() {
                               fromName: message.from_me ? "atendente" : leadDisplayName(selected),
                             })
                           }
-                          onPin={() =>
-                            setPinnedMessageId((current) =>
-                              current === message.id ? null : message.id
-                            )
-                          }
-                          onToggleHot={() =>
-                            setHotMessageIds((current) => {
-                              const next = new Set(current);
-                              if (next.has(message.id)) next.delete(message.id);
-                              else next.add(message.id);
-                              return next;
-                            })
-                          }
-                          onReaction={(emoji) =>
-                            setMessageReactions((current) => ({
-                              ...current,
-                              [message.id]: emoji,
-                            }))
-                          }
+                          onReaction={(emoji) => void sendReaction(message, emoji)}
                           onTranscript={(text) =>
                             setMessages((prev) =>
                               prev.map((msg) =>
@@ -1038,7 +930,6 @@ export function WhatsappInbox() {
                     ))}
                   </AnimatePresence>
                 )}
-                <div ref={messagesEndRef} />
               </div>
 
               <ChatInput
@@ -1060,9 +951,12 @@ export function WhatsappInbox() {
                         ? {
                             ...c,
                             last_message_at: message.message_timestamp,
+                            last_outbound_at: message.message_timestamp,
                             last_message_preview:
                               message.body?.slice(0, 280) ??
                               (message.message_type?.includes("audio") ? "[áudio]" : "[arquivo]"),
+                            attendance_status: "aguardando_cliente",
+                            owner_user_id: c.owner_user_id ?? myUserId,
                           }
                         : c
                     )
@@ -1073,15 +967,98 @@ export function WhatsappInbox() {
           )}
         </main>
 
-        {detailsOpen && (
         <LeadDetailsPanel
-          conversation={selected ?? null}
-          onCollapse={() => setDetailsOpen(false)}
-            onUpdateCrm={updateSelectedCrm}
+          className="hidden xl:flex"
+          conversation={selected ?? undefined}
+          owner={selectedOwner}
+          tagSuggestions={tagSuggestions}
+          savingTags={savingTags}
+          onSaveTags={(tags) => selected && void saveTags(selected.id, tags)}
+          onUpdateCrm={(patch) => selected && void patchConversation(selected.id, patch, patch as Partial<Conversation>)}
         />
+
+        {notice && (
+          <div
+            role="status"
+            className="absolute bottom-3 left-1/2 z-20 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 items-center gap-3 rounded-md bg-[#04202f] px-4 py-2.5 text-sm text-white shadow-lg"
+          >
+            <span className="min-w-0 truncate">{notice.text}</span>
+            {notice.undo && (
+              <button
+                type="button"
+                onClick={() => {
+                  notice.undo?.();
+                  setNotice(null);
+                }}
+                className="shrink-0 font-semibold text-[#47cdd0] hover:underline"
+              >
+                Desfazer
+              </button>
+            )}
+          </div>
         )}
       </div>
-      )}
+
+      <Dialog open={detailsOpen && Boolean(selected)} onOpenChange={setDetailsOpen}>
+        <DialogContent className="flex max-h-[90dvh] flex-col gap-0 p-0 sm:max-w-md">
+          <DialogHeader className="border-b px-6 py-4">
+            <DialogTitle>Detalhes do lead</DialogTitle>
+            <DialogDescription className="sr-only">Dados, origem e tags da conversa.</DialogDescription>
+          </DialogHeader>
+          {selected && (
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+              <LeadDetailsContent
+                conversation={selected}
+                owner={selectedOwner}
+                tagSuggestions={tagSuggestions}
+                savingTags={savingTags}
+                onSaveTags={(tags) => void saveTags(selected.id, tags)}
+                onUpdateCrm={(patch) => void patchConversation(selected.id, patch, patch as Partial<Conversation>)}
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={staleDialogOpen} onOpenChange={(open) => !resolvingStale && setStaleDialogOpen(open)}>
+        <DialogContent className="flex max-h-[90dvh] flex-col gap-0 p-0 sm:max-w-lg">
+          <DialogHeader className="border-b px-6 py-4">
+            <DialogTitle>
+              Resolver {staleConversations.length === 1 ? "1 conversa parada" : `${staleConversations.length} conversas paradas`}?
+            </DialogTitle>
+            <DialogDescription>
+              Sem nenhuma mensagem há mais de {STALE_CONVERSATION_DAYS} dias.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 px-6 py-5 text-sm text-muted-foreground">
+            <p>Elas saem de Abertas e Aguardando, e as não lidas delas deixam de contar no menu.</p>
+            <p>Nada é apagado. Se o cliente escrever de novo, a conversa volta sozinha para Abertas.</p>
+          </div>
+          <DialogFooter className="border-t px-6 py-4">
+            <Button type="button" variant="outline" disabled={resolvingStale} onClick={() => setStaleDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" disabled={resolvingStale} onClick={() => void resolveStale()}>
+              {resolvingStale && <Loader2 className="animate-spin" />}
+              Resolver conversas
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <WhatsappConnectionDialog
+        open={connectionOpen}
+        onOpenChange={setConnectionOpen}
+        health={health}
+        instance={instanceState}
+        realtime={realtimeStatus}
+        fetchedAt={fetchedAt}
+        configured={configured}
+        onSynced={async () => {
+          await loadConversations(true);
+          if (selectedId) await loadMessages(selectedId, true);
+        }}
+      />
     </div>
   );
 }

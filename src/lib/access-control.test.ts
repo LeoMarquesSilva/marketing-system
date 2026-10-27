@@ -3,6 +3,7 @@ import {
   ACCESS_PRESETS,
   canAccessPath,
   canSeeTeamPosts,
+  canSeeVistagemPath,
   canEditPartyInvite,
   firstAllowedPath,
   hasCafeCulturaAccess,
@@ -12,6 +13,7 @@ import {
   hasVistagemAccess,
   isManualOnlyKey,
   normalizePermissionsInput,
+  papelVistagem,
   resolveAllowedSections,
 } from "@/lib/access-control";
 
@@ -72,6 +74,21 @@ describe("access-control permissions catalog", () => {
     expect(hasOpsPlannerAccess({ role: "designer", permissions: null, department: "Marketing" })).toBe(false);
     expect(canAccessPath({ role: null, permissions: ["/operacoes-legais"] }, "/operacoes-legais/planner")).toBe(false);
     expect(canAccessPath({ role: null, permissions: ["/planner"] }, "/operacoes-legais/planner")).toBe(false);
+  });
+
+  it("o jurídico só abre a aba Jurídico da Vistagem; sem papel ou admin é controladoria", () => {
+    const juridico = { role: null, permissions: ["/operacoes-legais/vistagem"], vistagem_papel: "juridico" };
+    expect(papelVistagem(juridico)).toBe("juridico");
+    expect(canAccessPath(juridico, "/operacoes-legais/vistagem/juridico")).toBe(true);
+    for (const aba of ["/operacoes-legais/vistagem", "/operacoes-legais/vistagem/controladoria", "/operacoes-legais/vistagem/conferencia", "/operacoes-legais/vistagem/check"]) {
+      expect(canAccessPath(juridico, aba)).toBe(false);
+    }
+    expect(firstAllowedPath(juridico)).toBe("/operacoes-legais/vistagem/juridico");
+    expect(papelVistagem({ role: null, permissions: ["/operacoes-legais/vistagem"], vistagem_papel: null })).toBe("controladoria");
+    expect(papelVistagem({ role: "admin", vistagem_papel: "juridico" })).toBe("controladoria");
+    // o papel sozinho não dá acesso
+    expect(papelVistagem({ role: null, permissions: ["/planner"], vistagem_papel: "juridico" })).toBeNull();
+    expect(canSeeVistagemPath({ role: null, permissions: ["/planner"], vistagem_papel: "juridico" }, "/operacoes-legais/vistagem/juridico")).toBe(false);
   });
 
   it("não libera a Vistagem pelo modo legado nem pela chave de Operações Legais", () => {

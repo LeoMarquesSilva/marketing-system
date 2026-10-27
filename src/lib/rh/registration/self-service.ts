@@ -6,6 +6,7 @@ import {
   createRegistrationAdminClient,
   getClientIp,
   hashIp,
+  recordRegistrationEvent,
   RegistrationValidationError,
   RhHttpError,
 } from "./server";
@@ -20,10 +21,13 @@ import {
 import {
   employmentTypeLabel,
   resolveRegistrationKind,
+  coerceRegistrationAnswers,
   type RegistrationAnswers,
+  type RegistrationField,
   type RegistrationKind,
   type RegistrationStatus,
 } from "./types";
+import { diffAnswers, sanitizeFields } from "./history";
 import { normalizeRegistrationAnswers, validateRegistrationAnswers } from "./validation";
 
 /**
@@ -45,6 +49,7 @@ type SelfFormRow = {
   status: RegistrationStatus;
   answers: unknown;
   reopen_note: string | null;
+  reopen_fields: string[] | null;
   submitted_at: string | null;
   approved_at: string | null;
 };
@@ -87,7 +92,7 @@ async function loadSelfContext(admin: SupabaseClient): Promise<SelfContext | nul
   // Índice único garante no máximo uma ficha não cancelada por colaborador.
   const { data: form, error: formError } = await admin
     .from("hr_registration_forms")
-    .select("id, employment_kind, status, answers, reopen_note, submitted_at, approved_at")
+    .select("id, employment_kind, status, answers, reopen_note, reopen_fields, submitted_at, approved_at")
     .eq("employee_id", employee.id)
     .neq("status", "cancelada")
     .maybeSingle();
@@ -114,6 +119,8 @@ export type SelfRegistrationState =
         submittedAt: string | null;
         approvedAt: string | null;
         reopenNote: string | null;
+        /** Campos marcados pela RH ao devolver: a ficha abre direto no primeiro. */
+        reopenFields: RegistrationField[];
       } | null;
     };
 
@@ -152,6 +159,7 @@ export async function getSelfRegistration(): Promise<SelfRegistrationState> {
           submittedAt: form.submitted_at,
           approvedAt: form.approved_at,
           reopenNote: form.status === "pendente" ? form.reopen_note : null,
+          reopenFields: form.status === "pendente" ? sanitizeFields(form.reopen_fields) : [],
         }
       : null,
   };
@@ -188,6 +196,7 @@ export async function submitSelfRegistration(body: unknown, request: Request): P
     submitted_ip_hash: hashIp(getClientIp(request)),
     submitted_user_agent: request.headers.get("user-agent")?.slice(0, 300) ?? null,
     reopen_note: null,
+    reopen_fields: [],
     approved_at: null,
     approved_by: null,
     // Daqui em diante a ficha é só com login: o link público, se havia, para de valer.
@@ -223,6 +232,15 @@ export async function submitSelfRegistration(body: unknown, request: Request): P
     if (error || !data) throw new RhHttpError("Não foi possível enviar. Tente de novo.", 500, "INSERT_FAILED");
     formId = data.id as string;
   }
+
+  // Ficha que já tinha sido enviada (devolvida ou atualização nova): registra o que mudou.
+  const resent = !!form?.submitted_at;
+  await recordRegistrationEvent(admin, {
+    formId,
+    type: resent ? "reenviada" : "enviada",
+    actor: "pessoa",
+    changes: resent && form ? diffAnswers(coerceRegistrationAnswers(form.answers), answers) : [],
+  });
 
   // Um aviso pendente por ficha: reenvios antes da revisão não duplicam o sino da RH.
   const { data: pending } = await admin

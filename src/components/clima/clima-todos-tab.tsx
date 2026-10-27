@@ -3,11 +3,10 @@
 import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -20,10 +19,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, List, LayoutGrid, Trash2, Check } from "lucide-react";
-import type { ClimaTodo } from "@/lib/clima-types";
+import type { ThemeSummary } from "@/lib/clima-metrics";
+import type { ActionPlan, ClimaTodo } from "@/lib/clima-types";
 import type { User } from "@/lib/users";
-
-const NONE_VALUE = "__none__";
+import { EmployeeAvatar } from "@/components/ferias/employee-avatar";
+import { ClimaTodoFields, NONE_VALUE, draftToTodo, emptyDraft } from "./clima-todo-form";
 
 interface ClimaTodosTabProps {
   todos: ClimaTodo[];
@@ -34,6 +34,37 @@ interface ClimaTodosTabProps {
     partial: Partial<Pick<ClimaTodo, "status" | "responsible">>
   ) => void;
   users?: User[];
+  planosAcao: ActionPlan[];
+  themes: ThemeSummary[];
+}
+
+/** Tema e plano ligados à tarefa, para saber de onde ela veio */
+function TodoLinks({
+  todo,
+  planosAcao,
+  themes,
+}: {
+  todo: ClimaTodo;
+  planosAcao: ActionPlan[];
+  themes: ThemeSummary[];
+}) {
+  const theme = themes.find((t) => t.theme.id === todo.indicatorId);
+  const plan = planosAcao.find((p) => p.id === todo.actionPlanId);
+  if (!theme && !plan) return null;
+  return (
+    <span className="mt-1 flex flex-wrap gap-1.5">
+      {theme && (
+        <span className="rounded-md bg-[#47cdd0]/15 px-2 py-0.5 text-xs text-[#285f7a]">
+          {theme.theme.name} · {Math.round(theme.favorability.favorable)}%
+        </span>
+      )}
+      {plan && (
+        <span className="max-w-[16rem] truncate rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+          {plan.title}
+        </span>
+      )}
+    </span>
+  );
 }
 
 export function ClimaTodosTab({
@@ -42,30 +73,25 @@ export function ClimaTodosTab({
   onRemoveTodo,
   onUpdateTodo,
   users = [],
+  planosAcao,
+  themes,
 }: ClimaTodosTabProps) {
   const [viewMode, setViewMode] = useState<"lista" | "kanban">("lista");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
-  const [newDesc, setNewDesc] = useState("");
-  const [newResponsible, setNewResponsible] = useState<string>(NONE_VALUE);
+  const [draft, setDraft] = useState(emptyDraft());
 
   const addTodo = () => {
-    if (!newTitle.trim()) return;
+    if (!draft.title.trim()) return;
     onAddTodo({
+      ...draftToTodo(draft),
       id: `t${Date.now()}`,
-      title: newTitle.trim(),
-      description: newDesc.trim() || undefined,
-      responsible:
-        newResponsible === NONE_VALUE ? undefined : newResponsible,
-      status: "pendente",
-      priority: "normal",
       createdAt: new Date().toISOString(),
     });
-    setNewTitle("");
-    setNewDesc("");
-    setNewResponsible(NONE_VALUE);
+    setDraft(emptyDraft());
     setDialogOpen(false);
   };
+
+  const avatarOf = (name?: string) => users.find((u) => u.name === name)?.avatar_url ?? null;
 
   const removeTodo = (id: string) => {
     onRemoveTodo(id);
@@ -173,12 +199,17 @@ export function ClimaTodosTab({
                         {t.description}
                       </p>
                     )}
+                    <TodoLinks todo={t} planosAcao={planosAcao} themes={themes} />
                     {users.length > 0 ? (
+                      <div className="mt-1 flex items-center gap-2">
+                      {t.responsible && (
+                        <EmployeeAvatar name={t.responsible} avatarUrl={avatarOf(t.responsible)} className="h-6 w-6" />
+                      )}
                       <Select
                         value={t.responsible ?? NONE_VALUE}
                         onValueChange={(v) => updateResponsible(t.id, v)}
                       >
-                        <SelectTrigger className="mt-1 h-7 w-auto max-w-[180px] border-dashed text-xs">
+                        <SelectTrigger className="h-7 w-auto max-w-[180px] border-dashed text-xs">
                           <SelectValue placeholder="Selecione o advogado" />
                         </SelectTrigger>
                         <SelectContent>
@@ -191,6 +222,7 @@ export function ClimaTodosTab({
                           ))}
                         </SelectContent>
                       </Select>
+                      </div>
                     ) : (
                       t.responsible && (
                         <p className="text-xs text-muted-foreground mt-1">
@@ -245,6 +277,7 @@ export function ClimaTodosTab({
                           <Trash2 className="h-3 w-3" />
                         </Button>
                       </div>
+                      <TodoLinks todo={t} planosAcao={planosAcao} themes={themes} />
                       {users.length > 0 && (
                         <Select
                           value={t.responsible ?? NONE_VALUE}
@@ -283,57 +316,27 @@ export function ClimaTodosTab({
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="flex max-h-[90dvh] flex-col gap-0 p-0 sm:max-w-2xl">
+          <DialogHeader className="border-b p-5 pr-12">
             <DialogTitle>Nova tarefa</DialogTitle>
+            <DialogDescription>
+              Ligue a tarefa a um tema ou plano para acompanhar o foco de ação.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <Label htmlFor="todo-title">Título</Label>
-              <Input
-                id="todo-title"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                placeholder="Ex: Agendar reunião de feedback"
-              />
-            </div>
-            <div>
-              <Label htmlFor="todo-desc">Descrição (opcional)</Label>
-              <Input
-                id="todo-desc"
-                value={newDesc}
-                onChange={(e) => setNewDesc(e.target.value)}
-                placeholder="Detalhes da tarefa"
-              />
-            </div>
-            {users.length > 0 && (
-              <div>
-                <Label htmlFor="todo-responsible">Advogado / Responsável</Label>
-                <Select
-                  value={newResponsible}
-                  onValueChange={setNewResponsible}
-                >
-                  <SelectTrigger id="todo-responsible">
-                    <SelectValue placeholder="Selecione um advogado" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE_VALUE}>Nenhum</SelectItem>
-                    {users.map((u) => (
-                      <SelectItem key={u.id} value={u.name}>
-                        {u.name}
-                        {u.department ? ` (${u.department})` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            <ClimaTodoFields
+              draft={draft}
+              onChange={setDraft}
+              users={users}
+              planosAcao={planosAcao}
+              themes={themes}
+            />
           </div>
-          <DialogFooter>
+          <DialogFooter className="border-t px-5 py-3">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={addTodo} disabled={!newTitle.trim()}>
+            <Button onClick={addTodo} disabled={!draft.title.trim()}>
               Criar
             </Button>
           </DialogFooter>

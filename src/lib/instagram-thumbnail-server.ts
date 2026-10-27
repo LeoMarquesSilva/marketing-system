@@ -7,6 +7,7 @@ import {
   lookupStoryMediaUrls,
   updateInstagramStoryMediaUrls,
 } from "@/lib/instagram-stories";
+import { isDeadInstagramStoryMedia } from "@/lib/instagram-thumbnail-client";
 
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
@@ -19,6 +20,19 @@ type MediaRecord = {
   media_url: string | null;
   thumbnail_url: string | null;
 };
+
+/**
+ * Falhas também vão com cache no navegador: sem isso cada tela recarregada
+ * pedia de novo a mesma capa morta (e chamava a Graph API a cada vez).
+ */
+function thumbnailError(message: string, status: 404 | 502): Response {
+  return new Response(message, {
+    status,
+    headers: {
+      "Cache-Control": status === 404 ? "private, max-age=86400" : "private, max-age=900",
+    },
+  });
+}
 
 function getMetaToken(): string {
   const raw =
@@ -122,7 +136,7 @@ export async function fetchInstagramThumbnailResponse(
   if (!record) {
     const fresh = await fetchMediaItemById(igMediaId);
     if (!fresh) {
-      return new Response("Mídia não encontrada.", { status: 404 });
+      return thumbnailError("Mídia não encontrada.", 404);
     }
     record = {
       source: "post",
@@ -130,6 +144,11 @@ export async function fetchInstagramThumbnailResponse(
       media_url: fresh.media_url ?? null,
       thumbnail_url: fresh.thumbnail_url ?? null,
     };
+  }
+
+  // Story expirado não volta pela Graph API: nem tenta o CDN nem a renovação.
+  if (record.source === "story" && isDeadInstagramStoryMedia(record)) {
+    return thumbnailError("Story expirado no Instagram.", 404);
   }
 
   const source = record.source;
@@ -140,7 +159,7 @@ export async function fetchInstagramThumbnailResponse(
   }
 
   if (!url) {
-    return new Response("URL da mídia indisponível.", { status: 404 });
+    return thumbnailError("URL da mídia indisponível.", 404);
   }
 
   let cdnRes = await fetchCdnImage(url);
@@ -148,11 +167,11 @@ export async function fetchInstagramThumbnailResponse(
     const refreshed = await refreshMediaFromGraph(igMediaId, source);
     const freshUrl = refreshed ? pickDisplayUrl(refreshed) : null;
     if (!freshUrl) {
-      return new Response("Não foi possível carregar a capa.", { status: 502 });
+      return thumbnailError("Não foi possível carregar a capa.", 502);
     }
     cdnRes = await fetchCdnImage(freshUrl);
     if (!cdnRes) {
-      return new Response("CDN do Instagram recusou o acesso.", { status: 502 });
+      return thumbnailError("CDN do Instagram recusou o acesso.", 502);
     }
   }
 

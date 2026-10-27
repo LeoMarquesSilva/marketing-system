@@ -1,6 +1,36 @@
 import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
-import { proxy } from "@/proxy";
+import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
+import { config, proxy } from "@/proxy";
+
+function matches(path: string, headers?: Record<string, string>) {
+  return unstable_doesMiddlewareMatch({ config, url: path, headers });
+}
+
+describe("proxy — quando executa", () => {
+  it("executa nas navegações de página", () => {
+    expect(matches("/")).toBe(true);
+    expect(matches("/rh/ferias")).toBe(true);
+    expect(matches("/cafe-com-cultura?source=nfc")).toBe(true);
+  });
+
+  it("não executa em rotas de API", () => {
+    expect(matches("/api/account/last-seen")).toBe(false);
+    expect(matches("/api/evolution/conversations")).toBe(false);
+  });
+
+  it("não executa em arquivos nem em assets do Next", () => {
+    expect(matches("/robots.txt")).toBe(false);
+    expect(matches("/models/face-api/tiny_face_detector_model.bin")).toBe(false);
+    expect(matches("/.well-known/passkey-endpoints")).toBe(false);
+    expect(matches("/_next/static/chunks/main.js")).toBe(false);
+  });
+
+  it("não executa nos prefetches dos links", () => {
+    expect(matches("/rh/ferias", { "next-router-prefetch": "1" })).toBe(false);
+    expect(matches("/rh/ferias", { purpose: "prefetch" })).toBe(false);
+  });
+});
 
 function request(path: string, cookie?: string) {
   const headers = new Headers();

@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import { ROTULO_ETIQUETA } from "@/lib/vistagem/agendamento";
+import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import { TIPOS_INCONSISTENCIA_JURIDICO } from "@/lib/vistagem/inconsistencias";
 import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, EnvioStatus, InconsistenciaItem } from "@/lib/vistagem/types";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
@@ -71,10 +72,16 @@ function TabelaTarefas({ agendamentos, comEnvio }: { agendamentos: AgendamentoRe
                 {item.dataFatal ? (
                   <>
                     {formatarData(item.data)}
-                    <span className="block font-sans text-xs text-slate-500">enviar · fatal {formatarData(item.dataFatal)}</span>
+                    <span className="block font-sans text-xs text-slate-500">
+                      enviar · fatal {formatarData(item.dataFatal)}
+                      {item.diasPrazo && item.contagemPrazo ? ` · ${item.diasPrazo} ${ROTULO_CONTAGEM[item.contagemPrazo]}` : ""}
+                    </span>
                   </>
                 ) : (
-                  formatarData(item.data)
+                  <>
+                    {formatarData(item.data)}
+                    {item.hora ? <span className="block">às {item.hora}</span> : null}
+                  </>
                 )}
               </td>
               <td className="px-3 py-2">{item.responsavel}</td>

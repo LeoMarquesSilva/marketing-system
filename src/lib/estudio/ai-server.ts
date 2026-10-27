@@ -2,11 +2,12 @@
 import { generateObject } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { OPENAI_DEFAULT_MODEL, openAIGenerationOptions } from "@/lib/openai-models";
+import { openAIKey } from "@/lib/openai-keys";
 import { STUDIO_AI_SYSTEM_PROMPT, pieceAiSchema } from "./ai";
 import type { PieceKind, StudioTemplateDef } from "./types";
 
 export function studioAiKey(): string | null {
-  return process.env.NEXT_OPENAI_API_KEY || process.env.OPENAI_API_KEY || null;
+  return openAIKey("conteudo");
 }
 
 /** Uma chamada à IA do Estúdio: devolve os slides crus (ainda sem normalizar), a legenda e o resumo. */

@@ -4,6 +4,7 @@
 import {
   Scale,
   Briefcase,
+  Building2,
   Settings,
   RefreshCw,
   Megaphone,
@@ -36,6 +37,7 @@ export const AREA_ICONS: Record<string, LucideIcon> = {
   ADD: Zap, // Distressed Deals, como no registro de boas práticas
   Comercial: Handshake,
   "Operações Legais (Legal Ops)": Settings,
+  Administrativo: Building2, // centro de custo do escritório (Facilities)
   Geral: Folder,
 };
 
@@ -57,6 +59,7 @@ export const AREA_ICON_STYLES: Record<string, string> = {
   ADD: "bg-orange-100 text-orange-700 ring-orange-200/60",
   Comercial: "bg-cyan-100 text-cyan-800 ring-cyan-200/60",
   "Operações Legais (Legal Ops)": "bg-emerald-100 text-emerald-700 ring-emerald-200/60",
+  Administrativo: "bg-slate-100 text-slate-700 ring-slate-200/60",
   Geral: "bg-slate-100 text-slate-700 ring-slate-200/60",
   "Cível | Insolvência": "bg-rose-100 text-rose-700 ring-rose-200/60", // legado → Reestruturação
 };

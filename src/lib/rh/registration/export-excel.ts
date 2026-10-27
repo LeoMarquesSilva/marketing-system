@@ -101,7 +101,12 @@ async function freezeHeaderAndName(data: ArrayBuffer): Promise<ArrayBuffer> {
   });
 }
 
-export async function buildRegistrationsWorkbook(records: ExportRecord[], now: Date = new Date()): Promise<ArrayBuffer> {
+export async function buildRegistrationsWorkbook(
+  records: ExportRecord[],
+  now: Date = new Date(),
+  /** Filtros usados na tela ("Gênero: Feminino; Área: Cível"), vão no cabeçalho. */
+  filters = ""
+): Promise<ArrayBuffer> {
   const columns = EXPORT_COLUMNS;
   const lastCol = columns.length - 1;
   const rows = exportRows(records, columns);
@@ -112,7 +117,7 @@ export async function buildRegistrationsWorkbook(records: ExportRecord[], now: D
     ws,
     SUBTITLE_ROW,
     0,
-    `Gerada em ${formatGeneratedAt(now)} · ${records.length} colaborador${records.length === 1 ? "" : "es"} · Dados pessoais restritos a Pessoas e Cultura (LGPD)`,
+    `Gerada em ${formatGeneratedAt(now)} · ${records.length} colaborador${records.length === 1 ? "" : "es"}${filters ? ` · Filtros: ${filters}` : ""} · Dados pessoais restritos a Pessoas e Cultura (LGPD)`,
     subtitleStyle
   );
   for (let c = 1; c <= lastCol; c += 1) {

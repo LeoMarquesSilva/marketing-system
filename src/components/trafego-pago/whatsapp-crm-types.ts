@@ -6,6 +6,8 @@ export interface WhatsappConversation {
   is_group?: boolean | null;
   group_subject?: string | null;
   last_message_at: string;
+  /** Primeira vez que a conversa apareceu (entrada do lead). */
+  created_at?: string | null;
   last_message_preview: string | null;
   last_inbound_at: string | null;
   unread_count: number;
@@ -51,6 +53,13 @@ export interface WhatsappMessage {
   quoted_wa_message_id?: string | null;
   quoted_body?: string | null;
   participant_name?: string | null;
+}
+
+/** Pessoa da equipe que pode ser responsável por uma conversa. */
+export interface WhatsappAgent {
+  id: string;
+  name: string;
+  avatar_url: string | null;
 }
 
 export interface WhatsappReplyTarget {

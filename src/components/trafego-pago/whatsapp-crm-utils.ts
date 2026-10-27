@@ -8,13 +8,6 @@ export function formatMessageTime(iso: string) {
   });
 }
 
-export function formatMessageDate(iso: string) {
-  return new Date(iso).toLocaleDateString("pt-BR", {
-    day: "2-digit",
-    month: "long",
-  });
-}
-
 export function formatRelativeLeadTime(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.max(0, Math.floor(diff / 60_000));
@@ -32,21 +25,6 @@ export function leadDisplayName(conversation: WhatsappConversation) {
 
 export function leadPhone(conversation: WhatsappConversation) {
   return conversation.phone ? formatPhoneDisplay(conversation.phone) : "Telefone não informado";
-}
-
-export function leadLocation(conversation: WhatsappConversation) {
-  const city = conversation.city?.trim();
-  const state = conversation.state?.trim();
-  if (city && state) return `${city} - ${state}`;
-  if (city) return city;
-  if (state) return state;
-  return "Não informado";
-}
-
-export function leadResponsible(conversation: WhatsappConversation) {
-  return conversation.owner_user_id
-    ? `Atribuído (${conversation.owner_user_id.slice(0, 8)})`
-    : "Sem responsável";
 }
 
 export function isMetaLead(conversation: WhatsappConversation) {
@@ -117,52 +95,6 @@ export function leadOrigin(conversation: WhatsappConversation): LeadOriginInfo {
     return { origin: "trafego_pago", label: "Tráfego Pago", colorClass: "bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-400" };
   }
   return { origin: "outros", label: "Lead", colorClass: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400" };
-}
-
-export const ATTENDANCE_STATUS_COLUMNS = [
-  { id: "nao_respondido", label: "Não respondido" },
-  { id: "em_atendimento", label: "Em atendimento" },
-  { id: "aguardando_cliente", label: "Aguardando cliente" },
-  { id: "resolvido", label: "Resolvido" },
-] as const;
-
-export type AttendanceStatus = (typeof ATTENDANCE_STATUS_COLUMNS)[number]["id"];
-
-export function isHotLead(conversation: WhatsappConversation) {
-  const haystack = [
-    conversation.last_message_preview,
-    ...(conversation.tags ?? []),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  return haystack.includes("quente") || haystack.includes("urgente") || haystack.includes("🔥");
-}
-
-export function leadCampaign(conversation: WhatsappConversation) {
-  return conversation.meta_campaign_name || conversation.meta_adset_name || "Campanha não identificada";
-}
-
-const PIPELINE_STEPS = [
-  "lead_recebido",
-  "qualificacao",
-  "reuniao",
-  "proposta",
-  "fechado",
-] as const;
-
-type PipelineStep = (typeof PIPELINE_STEPS)[number];
-
-export function pipelineStepIndex(stage?: string | null): number {
-  const normalized = (stage ?? "").toLowerCase();
-  const idx = PIPELINE_STEPS.indexOf(normalized as PipelineStep);
-  return idx >= 0 ? idx : 0;
-}
-
-export function messageTextPreview(message: WhatsappMessage | null | undefined) {
-  if (!message) return "";
-  return message.body?.trim() || "[mensagem sem texto]";
 }
 
 export function sameMessageDay(a?: WhatsappMessage, b?: WhatsappMessage) {

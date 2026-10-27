@@ -16,6 +16,8 @@ export interface GoodPracticeFeedback {
   manager_name: string;
   area: string;
   category: string;
+  /** Subtema da categoria (cozinha e sala de reunião); null = sem subtema. */
+  subtopic: string | null;
   description: string;
   manager_action: string | null;
   responded_on: string | null;
@@ -27,6 +29,31 @@ export interface GoodPracticeFeedback {
   updated_at: string;
   created_by_name: string | null;
   photo_count: number;
+  /** Linha do Feedz ligada a este registro (destinatário + data/hora de envio). */
+  feedz_key: string | null;
+  feedz_sent_at: string | null;
+  feedz_viewed_at: string | null;
+}
+
+/** Vínculo com uma linha do relatório do Feedz (importação ou registro a partir dela). */
+export interface FeedzLinkInput {
+  key: string;
+  sent_at: string;
+  viewed_at: string | null;
+  message: string;
+}
+
+export interface FeedzImportLog {
+  id: string;
+  file_name: string;
+  rows_total: number;
+  rows_linked: number;
+  rows_updated: number;
+  rows_unmatched: number;
+  period_start: string | null;
+  period_end: string | null;
+  created_at: string;
+  created_by_name: string | null;
 }
 
 /** Bucket PRIVADO das fotos das ocorrências (visualização por link assinado). */
@@ -72,11 +99,15 @@ export interface FeedbackInput {
   manager_name: string;
   area: string;
   category: string;
+  /** "" = sem subtema. */
+  subtopic: string;
   description: string;
   manager_action: string;
   responded_on: string;
   viewed: boolean | null;
   viewed_on: string;
+  /** Só ao registrar a partir de uma linha do Feedz. */
+  feedz?: FeedzLinkInput | null;
 }
 
 /** Áreas do Registro (mesma grafia das outras telas do RH; Marketing e Comercial à parte). */
@@ -93,18 +124,71 @@ export const FEEDBACK_AREAS = [
   "Comercial",
 ] as const;
 
-export const FEEDBACK_CATEGORIES = [
-  "Mau uso da cozinha / refeitório",
-  "Ambiente de trabalho desorganizado",
-  "Mau uso da sala de reunião / áreas comuns",
-  "Mau uso dos banheiros",
-  "Luz, ar-condicionado ou equipamento ligado",
-  "Estacionamento indevido",
-  "Fumar em frente ao escritório",
-  "Uso e transporte de equipamentos do escritório",
-  "Organização do ambiente de trabalho",
-  "Outros",
-] as const;
+export interface FeedbackCategoryInfo {
+  name: string;
+  /** Capítulo do Manual de Boas Práticas 2025; null = tema fora da numeração do manual. */
+  chapter: number | null;
+  /** O que entra nesta categoria, pelo manual. */
+  hint: string;
+  /** Subtemas opcionais (só nas categorias que concentram muitos casos). */
+  subtopics?: readonly string[];
+}
+
+/**
+ * Categorias = capítulos do Manual de Boas Práticas 2025, na mesma ordem, mais
+ * dois temas sem capítulo próprio e "Outros". Adotadas em 26/10/2026, no lugar
+ * das 10 categorias da planilha (registros antigos reclassificados).
+ */
+export const FEEDBACK_CATEGORY_INFO: readonly FeedbackCategoryInfo[] = [
+  {
+    name: "Uso consciente da sala de reunião",
+    chapter: 1,
+    hint: "Agendamento, liberar a sala e deixar arrumada (TV, HDMI, cadeiras, persianas).",
+    subtopics: ["Arrumação", "Agendamento"],
+  },
+  { name: "Uso consciente dos banheiros", chapter: 2, hint: "Designação de gênero, pia só para higiene, limpeza." },
+  { name: "Cigarro eletrônico", chapter: 3, hint: "Vape nas dependências internas." },
+  { name: "Local correto para fumar", chapter: 4, hint: "Fumar na entrada do escritório." },
+  { name: "Saúde e comportamento no ambiente de trabalho", chapter: 5, hint: "Vir ao escritório com sintomas de gripe ou resfriado." },
+  {
+    name: "Uso da cozinha",
+    chapter: 6,
+    hint: "Geladeira, louça e pia, limpeza do local, escala de almoço e tempo de permanência.",
+    subtopics: ["Geladeira e alimentos", "Louça, pia e limpeza", "Permanência"],
+  },
+  { name: "Volume de conversas", chapter: 7, hint: "Tom de voz, chamadas fora da sala Outback ou da biblioteca." },
+  { name: "Dress code", chapter: 8, hint: "Vestimenta." },
+  {
+    name: "Organização do ambiente de trabalho",
+    chapter: 9,
+    hint: "Copos e canecas na mesa, cadeiras fora do lugar, fios, sujeira e o entorno (mesa alta, impressoras, materiais).",
+  },
+  { name: "Segurança e confidencialidade", chapter: 10, hint: "Documentos ou notebook expostos, tela desbloqueada, senhas." },
+  { name: "Recebimento de encomendas particulares", chapter: 11, hint: "Identificação, presença no dia, aviso prévio." },
+  { name: "Biblioteca", chapter: 12, hint: "Prioridade a clientes e arrumação." },
+  { name: "Uso e transporte de equipamentos do escritório", chapter: 13, hint: "Mochila corporativa, cuidado e dano, impressoras." },
+  { name: "Local adequado para descanso", chapter: 14, hint: "Onde descansar no escritório." },
+  { name: "Luz, ar e equipamentos ligados ao sair", chapter: null, hint: "Luzes, ar-condicionado ou notebook ligados no fim do expediente." },
+  { name: "Estacionamento", chapter: null, hint: "Vagas de sócios e clientes, cone de sinalização." },
+  { name: "Outros", chapter: null, hint: "Só quando nenhuma categoria acima serve." },
+];
+
+export const FEEDBACK_CATEGORIES: readonly string[] = FEEDBACK_CATEGORY_INFO.map((info) => info.name);
+
+export function categoryInfo(category: string): FeedbackCategoryInfo | null {
+  return FEEDBACK_CATEGORY_INFO.find((info) => info.name === category) ?? null;
+}
+
+/** "Uso da cozinha · Geladeira e alimentos" (ou só a categoria, sem subtema). */
+export function categoryLabel(item: { category: string; subtopic: string | null }): string {
+  return item.subtopic ? `${item.category} · ${item.subtopic}` : item.category;
+}
+
+/** "Cap. 6" para os capítulos do manual; null nos temas sem capítulo. */
+export function chapterLabel(category: string): string | null {
+  const chapter = categoryInfo(category)?.chapter;
+  return chapter ? `Cap. ${chapter}` : null;
+}
 
 export type FeedbackFlowStatus = "respondido" | "visualizado" | "nao_visualizado" | "sem_dado";
 

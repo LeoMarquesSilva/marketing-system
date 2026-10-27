@@ -113,3 +113,31 @@ export function isValidCPF(raw: string): boolean {
   const d2 = calcDigit(cpf.slice(0, 10), 11);
   return d1 === Number(cpf[9]) && d2 === Number(cpf[10]);
 }
+
+/** CNPJ: 00.000.000/0000-00. */
+export function maskCNPJ(rawValue: string): string {
+  const digits = onlyDigits(rawValue).slice(0, 14);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 5) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
+  if (digits.length <= 8) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5)}`;
+  if (digits.length <= 12) return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8)}`;
+  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
+}
+
+/** CPF até 11 dígitos, CNPJ a partir do 12º (campo único de fornecedor). */
+export function maskCpfCnpj(rawValue: string): string {
+  return onlyDigits(rawValue).length > 11 ? maskCNPJ(rawValue) : maskCPF(rawValue);
+}
+
+/** Valida CNPJ pelos dígitos verificadores. */
+export function isValidCNPJ(raw: string): boolean {
+  const cnpj = onlyDigits(raw);
+  if (cnpj.length !== 14 || /^(\d)\1{13}$/.test(cnpj)) return false;
+  const calcDigit = (base: string) => {
+    const weights = base.length === 12 ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const sum = weights.reduce((acc, weight, i) => acc + Number(base[i]) * weight, 0);
+    const mod = sum % 11;
+    return mod < 2 ? 0 : 11 - mod;
+  };
+  return calcDigit(cnpj.slice(0, 12)) === Number(cnpj[12]) && calcDigit(cnpj.slice(0, 13)) === Number(cnpj[13]);
+}

@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import { ROTULO_ETIQUETA } from "@/lib/vistagem/agendamento";
+import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import { SUBTIPOS_INCONSISTENCIA_AGENDAMENTO, TIPOS_INCONSISTENCIA_AGENDAMENTO } from "@/lib/vistagem/inconsistencias";
 import type { CheckResposta, ConferenciaItem } from "@/lib/vistagem/types";
 import { linkTarefaVios } from "@/lib/vistagem/vios-links";
@@ -91,8 +92,14 @@ function CartaoCheck({ item, aba, onConcluido }: { item: ConferenciaItem; aba: A
                 </td>
                 <td className="px-3 py-2 font-mono">
                   {formatarData(agendamento.data)}
+                  {agendamento.hora ? <span className="block">às {agendamento.hora}</span> : null}
                   {agendamento.dataFatal ? (
-                    <span className="block font-sans text-xs text-slate-500">enviar · fatal {formatarData(agendamento.dataFatal)}</span>
+                    <span className="block font-sans text-xs text-slate-500">
+                      enviar · fatal {formatarData(agendamento.dataFatal)}
+                      {agendamento.diasPrazo && agendamento.contagemPrazo
+                        ? ` · ${agendamento.diasPrazo} ${ROTULO_CONTAGEM[agendamento.contagemPrazo]}`
+                        : ""}
+                    </span>
                   ) : null}
                 </td>
                 <td className="px-3 py-2">
