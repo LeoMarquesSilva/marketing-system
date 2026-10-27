@@ -47,7 +47,7 @@ const RESPOSTA = z.object({
 
 /** Pede à OpenAI as tarefas da publicação, escolhidas só da lista do VIOS da área. */
 async function pedirSugestao(publicacao: PublicacaoComArea, listas: Record<EtiquetaAgendamento, OpcaoTarefa[]>): Promise<SugestaoIa> {
-  const apiKey = openAIKey("operacoes");
+  const apiKey = openAIKey("analisePublicacao");
   if (!apiKey) throw new VistagemError("A chave da OpenAI não está configurada.", 503);
   const modelo = OPENAI_DEFAULT_MODEL;
   // modelos de raciocínio recusam temperature; nos outros, 0 para a resposta variar pouco

@@ -228,7 +228,7 @@ export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = 
           }
         : null,
     sugestaoIa: publicacao.sugestao_ia,
-    sugestaoIaDisponivel: Boolean(catalogo && areaComSugestaoIa(catalogo.area) && openAIKey("operacoes")),
+    sugestaoIaDisponivel: Boolean(catalogo && areaComSugestaoIa(catalogo.area) && openAIKey("analisePublicacao")),
     hoje: hojeEmSaoPaulo(),
   };
 }
