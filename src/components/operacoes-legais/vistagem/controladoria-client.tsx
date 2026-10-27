@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { ESCRITORIOS, type PastaSioe } from "@/lib/vistagem/triagem";
 import type { PendenciasControladoria, PublicacaoResumo, ResolucaoPendencia, TriagemResumo } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
+import { AvisoArquivoDoDia } from "./aviso-arquivo-do-dia";
 import { DadosPasta, DadosPublicacao, PENDENCIAS, TeorPublicacao, formatarData } from "./publicacao-ui";
 
 function LinhaPasta({ pasta, acao }: { pasta: PastaSioe; acao?: ReactNode }) {
@@ -318,7 +319,10 @@ function Controladoria() {
 export function ControladoriaClient() {
   return (
     <AcessoOperacoesLegais>
-      <Controladoria />
+      <div className="space-y-4">
+        <AvisoArquivoDoDia />
+        <Controladoria />
+      </div>
     </AcessoOperacoesLegais>
   );
 }

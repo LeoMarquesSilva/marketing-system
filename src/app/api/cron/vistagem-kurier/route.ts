@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedCronRequest } from "@/lib/cron-auth";
+import { alertarArquivoAtrasado, situacaoArquivoDoDia } from "@/lib/vistagem/alerta-arquivo-server";
 import { atualizarEnvios } from "@/lib/vistagem/juridico-server";
 import { sincronizarPastasVios } from "@/lib/vistagem/pastas-vios";
 import { sincronizarKurierSharePoint } from "@/lib/vistagem/server";
@@ -18,12 +19,19 @@ export async function GET(request: Request) {
     const resultado = await sincronizarKurierSharePoint();
     // Aproveita a rodada para trazer o andamento das tarefas enviadas ao robô do SAMA.
     const envios = await atualizarEnvios().catch((erro: unknown) => ({ erro: erro instanceof Error ? erro.message : String(erro) }));
+    // Na 2ª tentativa (9h–10h), sem o arquivo do dia, avisa a controladoria pelo WhatsApp.
+    const alertaArquivo =
+      new URL(request.url).searchParams.get("tentativa") === "2"
+        ? await situacaoArquivoDoDia()
+            .then(async (situacao) => (situacao.atrasado ? { ...situacao, ...(await alertarArquivoAtrasado(situacao)) } : situacao))
+            .catch((erro: unknown) => ({ erro: erro instanceof Error ? erro.message : String(erro) }))
+        : null;
     const falhas = resultado.resultados.filter((item) => item.situacao === "erro");
     if (falhas.length || resultado.triagem?.erro) {
       console.error("[cron/vistagem-kurier] falhas", { arquivos: falhas, triagem: resultado.triagem?.erro });
-      return NextResponse.json({ success: false, ...resultado, envios, pastasVios }, { status: 502 });
+      return NextResponse.json({ success: false, ...resultado, envios, pastasVios, alertaArquivo }, { status: 502 });
     }
-    return NextResponse.json({ success: true, ...resultado, envios, pastasVios, finishedAt: new Date().toISOString() });
+    return NextResponse.json({ success: true, ...resultado, envios, pastasVios, alertaArquivo, finishedAt: new Date().toISOString() });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao importar a Kurier.";
     console.error("[cron/vistagem-kurier]", message);
