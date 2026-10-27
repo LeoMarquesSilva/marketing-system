@@ -29,12 +29,14 @@ import {
   type ClassificacaoEsocial,
 } from "@/lib/vistagem/esocial";
 import { CADEIA_PADRAO, PESSOA_FIXA_PROTOCOLAR, cadeiaDoFluxo, type FluxoDaTarefa, type TarefaDoFluxo } from "@/lib/vistagem/fluxo-vios";
+import { fatalSugerida, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
 import type { PublicacaoResumo, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { ComboboxBusca } from "./combobox-busca";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { DadosPasta, DadosPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
+import { CartaoSugestaoIa, SeloIa, type EstadoSugestao } from "./sugestao-ia-ui";
 
 type Etiqueta = EtiquetaAgendamento;
 
@@ -56,6 +58,8 @@ interface Linha {
   observacao: string;
   /** Inserir E-social pedida pela classificação eSocial: tarefa fixa, sai quando a classificação muda. */
   esocial: boolean;
+  /** Veio da sugestão da IA. */
+  ia: boolean;
 }
 
 let proximaChave = 1;
@@ -73,6 +77,7 @@ function novaLinha(base: Partial<Linha> = {}): Linha {
     revisor: "",
     observacao: "",
     esocial: false,
+    ia: false,
     ...base,
   };
 }
@@ -282,11 +287,21 @@ function EditorVistagem({
   /** Atalho de dias clicado, à espera da escolha entre úteis e corridos. */
   const [contagemDe, setContagemDe] = useState<{ chave: number; dias: number; aberto: boolean } | null>(null);
   const [transferindo, setTransferindo] = useState(false);
+  /** Sugestão da IA (Trabalhista) e o que o jurídico fez com ela. */
+  const [sugestao, setSugestao] = useState<SugestaoIa | null>(null);
+  const [estadoSugestao, setEstadoSugestao] = useState<EstadoSugestao | null>(null);
+  const [erroSugestao, setErroSugestao] = useState("");
+  /** Tarefas e eSocial de antes de usar a sugestão, para desfazer. */
+  const [antesDaSugestao, setAntesDaSugestao] = useState<{ linhas: Linha[]; esocial: ClassificacaoEsocial } | null>(null);
 
   useEffect(() => {
     let cancelado = false;
     setDetalhe(null);
     setErro("");
+    setSugestao(null);
+    setEstadoSugestao(null);
+    setErroSugestao("");
+    setAntesDaSugestao(null);
     authFetch(`/api/operacoes-legais/vistagem/juridico/${id}`)
       .then(async (resposta) => {
         const corpo = await resposta.json();
@@ -318,6 +333,26 @@ function EditorVistagem({
               )
             : [novaLinha({ responsavel: dados.responsavelSugerido ?? "", revisor: dados.revisorSugerido ?? "" })]
         );
+        if (dados.sugestaoIa) {
+          setSugestao(dados.sugestaoIa);
+          setEstadoSugestao("pronta");
+        } else if (dados.sugestaoIaDisponivel) {
+          // Ainda sem sugestão (o cron não chegou nela): gera agora, sem travar a tela.
+          setEstadoSugestao("carregando");
+          authFetch(`/api/operacoes-legais/vistagem/juridico/${id}/sugestao`, { method: "POST" })
+            .then(async (resposta) => {
+              const corpo = await resposta.json();
+              if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao gerar a sugestão.");
+              if (cancelado) return;
+              setSugestao(corpo as SugestaoIa);
+              setEstadoSugestao("pronta");
+            })
+            .catch((e) => {
+              if (cancelado) return;
+              setErroSugestao(e instanceof Error ? e.message : "Falha ao gerar a sugestão.");
+              setEstadoSugestao("erro");
+            });
+        }
       })
       .catch((e) => !cancelado && setErro(e instanceof Error ? e.message : "Falha ao carregar a publicação."));
     return () => {
@@ -343,18 +378,60 @@ function EditorVistagem({
   }
 
   /** Acordo homologado e Homologação de cálculo põem a tarefa Inserir E-social no fim da lista; as outras a tiram. */
+  function linhasComEsocial(atuais: Linha[], valor: ClassificacaoEsocial): Linha[] {
+    const tarefa = detalhe?.esocial?.tarefa;
+    if (!pedeTarefaEsocial(valor) || !tarefa) return atuais.filter((linha) => !linha.esocial);
+    const existente = atuais.find((linha) => linha.esocial || (linha.etiqueta === "PROVIDENCIA" && linha.tarefa === tarefa.nome));
+    if (existente) return atuais.map((linha) => (linha === existente ? { ...linha, esocial: true } : linha));
+    return [
+      ...atuais,
+      novaLinha({ etiqueta: "PROVIDENCIA", tarefa: tarefa.nome, responsavel: detalhe?.esocial?.responsavelSugerido ?? "", esocial: true }),
+    ];
+  }
+
   function trocarEsocial(valor: ClassificacaoEsocial) {
     setEsocial(valor);
-    const tarefa = detalhe?.esocial?.tarefa;
-    setLinhas((atuais) => {
-      if (!pedeTarefaEsocial(valor) || !tarefa) return atuais.filter((linha) => !linha.esocial);
-      const existente = atuais.find((linha) => linha.esocial || (linha.etiqueta === "PROVIDENCIA" && linha.tarefa === tarefa.nome));
-      if (existente) return atuais.map((linha) => (linha === existente ? { ...linha, esocial: true } : linha));
+    setLinhas((atuais) => linhasComEsocial(atuais, valor));
+  }
+
+  /** Troca as tarefas pelas da sugestão (responsável e revisor seguem o padrão da pasta) e aplica o eSocial sugerido. */
+  function usarSugestao() {
+    if (!detalhe?.catalogo || !sugestao) return;
+    const { catalogo, publicacao } = detalhe;
+    const sugeridas = sugestao.tarefas.flatMap((tarefa) => {
+      const opcao = catalogo.tarefas[tarefa.classe].find((item) => item.id === tarefa.tarefaId);
+      if (!opcao) return [];
+      const prazo = tarefa.classe === "PRAZO";
       return [
-        ...atuais,
-        novaLinha({ etiqueta: "PROVIDENCIA", tarefa: tarefa.nome, responsavel: detalhe?.esocial?.responsavelSugerido ?? "", esocial: true }),
+        novaLinha({
+          etiqueta: tarefa.classe,
+          tarefa: opcao.nome,
+          dataFatal: prazo ? fatalSugerida(tarefa, publicacao.dataPublicacao, contaPrazo) ?? "" : "",
+          diasPrazo: prazo ? tarefa.dias : null,
+          contagemPrazo: prazo && tarefa.dias ? tarefa.contagem : null,
+          data: tarefa.classe === "COMPROMISSO" ? tarefa.data ?? "" : "",
+          hora: tarefa.hora ?? "",
+          responsavel: detalhe.responsavelSugerido ?? "",
+          revisor: prazo ? detalhe.revisorSugerido ?? "" : "",
+          ia: true,
+        }),
       ];
     });
+    if (!sugeridas.length) return;
+    const classificacao = detalhe.esocial ? sugestao.esocial : esocial;
+    setAntesDaSugestao({ linhas, esocial });
+    setEsocial(classificacao);
+    setLinhas(detalhe.esocial ? linhasComEsocial(sugeridas, classificacao) : sugeridas);
+    setEstadoSugestao("usada");
+  }
+
+  function desfazerSugestao() {
+    if (antesDaSugestao) {
+      setLinhas(antesDaSugestao.linhas);
+      setEsocial(antesDaSugestao.esocial);
+    }
+    setAntesDaSugestao(null);
+    setEstadoSugestao("pronta");
   }
 
   async function enviar() {
@@ -367,6 +444,7 @@ function EditorVistagem({
         body: JSON.stringify({
           observacao,
           publicacaoEsocial: detalhe?.esocial ? esocial : null,
+          sugestaoUsada: estadoSugestao === "usada",
           agendamentos: linhas.map((linha) => ({
             etiqueta: linha.etiqueta,
             tarefa: linha.tarefa,
@@ -454,6 +532,22 @@ function EditorVistagem({
         </pre>
       </section>
 
+      {estadoSugestao && catalogo ? (
+        <CartaoSugestaoIa
+          estado={estadoSugestao}
+          sugestao={sugestao}
+          erro={erroSugestao}
+          nomeDaTarefa={(tarefa) => catalogo.tarefas[tarefa.classe].find((item) => item.id === tarefa.tarefaId)?.nome ?? tarefa.tarefa}
+          dataPublicacao={publicacao.dataPublicacao}
+          contaPrazo={contaPrazo}
+          comEsocial={Boolean(detalhe.esocial)}
+          onUsar={usarSugestao}
+          onIgnorar={() => setEstadoSugestao("ignorada")}
+          onDesfazer={desfazerSugestao}
+          onMostrar={() => setEstadoSugestao("pronta")}
+        />
+      ) : null}
+
       {detalhe.esocial ? (
         <section aria-labelledby="esocial-titulo" className="space-y-3 rounded-lg border border-[#dce9eb] bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -531,6 +625,7 @@ function EditorVistagem({
                   <legend className="px-1 text-xs font-semibold uppercase text-slate-500">
                     Tarefa {indice + 1}
                     {linha.esocial ? " · eSocial" : ""}
+                    {linha.ia ? <SeloIa /> : null}
                   </legend>
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="inline-flex rounded-lg border border-[#dce9eb] p-1" role="group" aria-label="Tipo de tarefa">

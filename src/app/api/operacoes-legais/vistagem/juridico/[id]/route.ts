@@ -27,7 +27,12 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const { authUserId, areas } = await exigirPerfilVistagem();
     const { id } = await context.params;
-    const corpo = (await request.json().catch(() => null)) as { agendamentos?: unknown; observacao?: unknown; publicacaoEsocial?: unknown } | null;
+    const corpo = (await request.json().catch(() => null)) as {
+      agendamentos?: unknown;
+      observacao?: unknown;
+      publicacaoEsocial?: unknown;
+      sugestaoUsada?: unknown;
+    } | null;
     const lista = Array.isArray(corpo?.agendamentos) ? corpo.agendamentos.slice(0, 20) : [];
     const agendamentos: AgendamentoEntrada[] = lista.map((item) => {
       const valor = (item ?? {}) as Record<string, unknown>;
@@ -47,7 +52,12 @@ export async function POST(request: Request, context: RouteContext) {
     });
     await salvarVistagem(
       id,
-      { agendamentos, observacao: texto(corpo?.observacao), publicacaoEsocial: texto(corpo?.publicacaoEsocial, 60) },
+      {
+        agendamentos,
+        observacao: texto(corpo?.observacao),
+        publicacaoEsocial: texto(corpo?.publicacaoEsocial, 60),
+        sugestaoUsada: corpo?.sugestaoUsada === true,
+      },
       authUserId,
       areas
     );

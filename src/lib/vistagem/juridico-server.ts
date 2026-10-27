@@ -10,8 +10,10 @@ import {
   type AgendamentoEntrada,
   type EtiquetaAgendamento,
 } from "./agendamento";
-import { criarCalendario, type ContagemPrazo } from "./dias-uteis";
+import { openAIKey } from "@/lib/openai-keys";
+import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./dias-uteis";
 import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
+import { areaComSugestaoIa, resultadoDaSugestao, type SugestaoIa } from "./sugestao-ia";
 import { carregarFeriados } from "./feriados";
 import { cadeiaDoFluxo, montarFluxo, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
 import { buscarPastasVios } from "./pastas-vios";
@@ -79,12 +81,14 @@ function agendamentoResumo(row: AgendamentoRow): AgendamentoResumo {
   };
 }
 
-type PublicacaoComArea = PublicacaoRow & { area_processo: string | null; devolucoes: number };
+export type PublicacaoComArea = PublicacaoRow & { area_processo: string | null; devolucoes: number; sugestao_ia: SugestaoIa | null };
 
-async function carregarPublicacao(id: string): Promise<PublicacaoComArea> {
+export const COLUNAS_PUBLICACAO_COM_AREA = `${COLUNAS_PUBLICACAO}, area_processo, devolucoes, sugestao_ia`;
+
+export async function carregarPublicacao(id: string): Promise<PublicacaoComArea> {
   const { data, error } = await admin()
     .from("vistagem_publicacoes")
-    .select(`${COLUNAS_PUBLICACAO}, area_processo, devolucoes`)
+    .select(COLUNAS_PUBLICACAO_COM_AREA)
     .eq("id", id)
     .maybeSingle();
   if (error) falhou("carregar a publicação", error);
@@ -119,7 +123,10 @@ function fluxosDoCatalogo(catalogo: CatalogoVistagem, arvore: Map<number, TipoNa
   return fluxos;
 }
 
-function catalogoParaPublicacao(areas: CatalogoArea[], publicacao: PublicacaoComArea): CatalogoVistagem | null {
+export function catalogoParaPublicacao(
+  areas: CatalogoArea[],
+  publicacao: Pick<PublicacaoComArea, "area_processo" | "escritorio_responsavel">
+): CatalogoVistagem | null {
   const area = areaDoCatalogo(publicacao.area_processo, publicacao.escritorio_responsavel, areas.map((item) => item.area));
   const catalogo = catalogoDaArea(areas, area);
   if (!catalogo) return null;
@@ -143,7 +150,7 @@ function catalogoParaPublicacao(areas: CatalogoArea[], publicacao: PublicacaoCom
 export type AreasVistagem = string[] | null;
 
 /** O jurídico só abre e grava publicações das suas áreas. */
-function garantirArea(publicacao: { escritorio_responsavel: string | null }, areas: AreasVistagem): void {
+export function garantirArea(publicacao: { escritorio_responsavel: string | null }, areas: AreasVistagem): void {
   if (areas && !areas.includes(publicacao.escritorio_responsavel ?? "")) {
     throw new VistagemError("Esta publicação não é de uma área sua.", 403);
   }
@@ -220,6 +227,8 @@ export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = 
             responsavelSugerido: responsavelSugerido(RESPONSAVEL_ESOCIAL, catalogo.usuarios)?.nome ?? null,
           }
         : null,
+    sugestaoIa: publicacao.sugestao_ia,
+    sugestaoIaDisponivel: Boolean(catalogo && areaComSugestaoIa(catalogo.area) && openAIKey("operacoes")),
     hoje: hojeEmSaoPaulo(),
   };
 }
@@ -227,7 +236,7 @@ export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = 
 /** O jurídico grava as tarefas da publicação e manda para a conferência da controladoria. */
 export async function salvarVistagem(
   id: string,
-  entrada: { agendamentos: AgendamentoEntrada[]; observacao: string | null; publicacaoEsocial?: string | null },
+  entrada: { agendamentos: AgendamentoEntrada[]; observacao: string | null; publicacaoEsocial?: string | null; sugestaoUsada?: boolean },
   authUserId: string,
   areas: AreasVistagem = null
 ): Promise<void> {
@@ -254,6 +263,18 @@ export async function salvarVistagem(
     itens: validacao.itens,
   });
   if (!esocial.ok) throw new VistagemError(esocial.erro);
+  // Mede o acerto da IA: o jurídico usou a sugestão como veio, alterou ou não usou.
+  const resultadoIa = publicacao.sugestao_ia
+    ? resultadoDaSugestao({
+        usou: entrada.sugestaoUsada === true,
+        sugestao: publicacao.sugestao_ia,
+        itens: validacao.itens,
+        esocial: esocial.valor,
+        tarefaEsocialId: tarefaEsocialDaLista(catalogo.tarefas.PROVIDENCIA)?.id ?? null,
+        dataPublicacao: publicacao.data_publicacao,
+        ehDiaDePrazo: criarCalendarioDePrazo(feriados),
+      })
+    : null;
 
   const db = admin();
   const { error: erroApagar } = await db.from("vistagem_agendamentos").delete().eq("publicacao_id", id).eq("envio_status", "nao_enviado");
@@ -286,6 +307,7 @@ export async function salvarVistagem(
       status: "controladoria_vistar",
       observacao_vistagem: entrada.observacao?.trim() || null,
       publicacao_esocial: esocial.valor,
+      sugestao_ia_resultado: resultadoIa,
       vistado_por: authUserId,
       vistado_em: new Date().toISOString(),
     })

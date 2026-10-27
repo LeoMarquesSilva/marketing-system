@@ -1,6 +1,7 @@
 import type { ContagemPrazo } from "./dias-uteis";
 import type { TarefaNoVios } from "./fila-vios";
 import type { FluxoDaTarefa } from "./fluxo-vios";
+import type { SugestaoIa } from "./sugestao-ia";
 import type { PastaSioe, Pendencia } from "./triagem";
 
 /** Situação da publicação no fluxo de vistagem (captura → vistagem → agendamento → revisão). */
@@ -277,6 +278,10 @@ export interface VistagemDetalhe {
     /** Larissa, se for usuária do VIOS na área. */
     responsavelSugerido: string | null;
   } | null;
+  /** Sugestão da IA já gerada (Trabalhista). */
+  sugestaoIa: SugestaoIa | null;
+  /** A área tem sugestão da IA e a chave da OpenAI está configurada: a tela pede a sugestão se ainda não houver. */
+  sugestaoIaDisponivel: boolean;
   hoje: string;
 }
 
