@@ -21,15 +21,22 @@ export async function situacaoArquivoDoDia(): Promise<ArquivoDoDia> {
 }
 
 /**
- * Avisa pelo WhatsApp (Evolution) que o arquivo do dia não chegou. O destino (número com DDI
- * ou id de grupo terminado em @g.us) fica em VISTAGEM_ALERTA_WHATSAPP.
+ * Grupo e instância dos avisos de automação do SIOE (sioe-aviso-sync e notify-error.js do VIOS):
+ * o número da "RESPONSUM - BP" está no grupo; o da instância comercial do Orquestra, não.
+ */
+const GRUPO_AVISOS = "120363410106016262@g.us";
+const INSTANCIA_AVISOS = "RESPONSUM - BP";
+
+/**
+ * Avisa no grupo de WhatsApp das automações que o arquivo do dia não chegou. Destino e instância
+ * podem ser trocados por VISTAGEM_ALERTA_WHATSAPP (número com DDI ou id @g.us) e
+ * VISTAGEM_ALERTA_EVOLUTION_INSTANCE.
  */
 export async function alertarArquivoAtrasado(situacao: ArquivoDoDia): Promise<{ enviado: boolean; motivo?: string }> {
-  const destino = process.env.VISTAGEM_ALERTA_WHATSAPP?.trim();
-  if (!destino) return { enviado: false, motivo: "VISTAGEM_ALERTA_WHATSAPP não configurada." };
-  const config = getEvolutionConfig();
-  if (!config) return { enviado: false, motivo: "Evolution API não configurada." };
-  await evolutionFetch(`/message/sendText/${config.instanceName}`, {
+  const destino = process.env.VISTAGEM_ALERTA_WHATSAPP?.trim() || GRUPO_AVISOS;
+  const instancia = process.env.VISTAGEM_ALERTA_EVOLUTION_INSTANCE?.trim() || INSTANCIA_AVISOS;
+  if (!getEvolutionConfig()) return { enviado: false, motivo: "Evolution API não configurada." };
+  await evolutionFetch(`/message/sendText/${encodeURIComponent(instancia)}`, {
     method: "POST",
     body: { number: destino, text: mensagemArquivoAtrasado(situacao) },
   });
