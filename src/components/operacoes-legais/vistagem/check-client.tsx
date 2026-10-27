@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { CircleCheck, ExternalLink, LoaderCircle, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { ROTULO_ETIQUETA } from "@/lib/vistagem/agendamento";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import { SUBTIPOS_INCONSISTENCIA_AGENDAMENTO, TIPOS_INCONSISTENCIA_AGENDAMENTO } from "@/lib/vistagem/inconsistencias";
+import type { TarefaNoVios } from "@/lib/vistagem/fila-vios";
 import type { CheckResposta, ConferenciaItem } from "@/lib/vistagem/types";
 import { linkTarefaVios } from "@/lib/vistagem/vios-links";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
@@ -24,6 +25,47 @@ const ABAS: { valor: Aba; rotulo: string }[] = [
 ];
 
 const campo = "h-10 w-full rounded-md border border-input bg-white px-3 text-sm";
+
+/** Como a tarefa ficou no VIOS: a pedida e as que o fluxo criou, com a data e a hora agendadas. */
+function AgendadoNoVios({ tarefas, dataPedida, horaPedida }: { tarefas: TarefaNoVios[]; dataPedida: string; horaPedida: string | null }) {
+  return (
+    <div className="rounded-md border border-[#dce9eb] bg-[#f6fbfb] px-3 py-2 text-xs">
+      <p className="mb-1 font-medium text-slate-700">Agendado no VIOS</p>
+      <ul className="space-y-1">
+        {tarefas.map((tarefa) => {
+          const diverge = tarefa.principal && ((tarefa.data && tarefa.data !== dataPedida) || (horaPedida && tarefa.hora !== horaPedida));
+          return (
+            <li key={tarefa.ci} className="flex flex-wrap items-baseline gap-x-2 text-slate-700">
+              <span className={cn("font-medium", tarefa.principal ? "text-slate-900" : "text-slate-600")}>{tarefa.tipo ?? "Tarefa"}</span>
+              <span className={cn("font-mono", diverge ? "font-semibold text-amber-800" : "text-[#183f50]")}>
+                {formatarData(tarefa.data)}
+                {tarefa.hora ? ` ${tarefa.hora}` : ""}
+              </span>
+              {tarefa.dataLimite && tarefa.dataLimite !== tarefa.data ? <span className="text-slate-500">limite {formatarData(tarefa.dataLimite)}</span> : null}
+              {tarefa.responsaveis ? <span className="text-slate-500">· {tarefa.responsaveis}</span> : null}
+              <a
+                href={linkTarefaVios(tarefa.ci)}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Abrir a tarefa no VIOS (nova aba)"
+                className="font-mono text-[#347796] hover:text-[#285f7a] hover:underline"
+              >
+                CI {tarefa.ci}
+              </a>
+              {diverge ? (
+                <span className="inline-flex items-center gap-1 text-amber-800">
+                  <TriangleAlert className="size-3" aria-hidden />
+                  pedido {formatarData(dataPedida)}
+                  {horaPedida ? ` ${horaPedida}` : ""}
+                </span>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
 function CartaoCheck({ item, aba, onConcluido }: { item: ConferenciaItem; aba: Aba; onConcluido: (mensagem: string) => void }) {
   const [modo, setModo] = useState<"nenhum" | "ok" | "erro">("nenhum");
@@ -84,45 +126,54 @@ function CartaoCheck({ item, aba, onConcluido }: { item: ConferenciaItem; aba: A
           </thead>
           <tbody className="divide-y divide-[#dce9eb]">
             {item.agendamentos.map((agendamento) => (
-              <tr key={agendamento.id} className="align-top">
-                <td className="px-3 py-2">
-                  <span className="font-medium text-slate-900">{agendamento.tarefa}</span>
-                  <span className="ml-1 text-xs text-slate-500">({ROTULO_ETIQUETA[agendamento.etiqueta]})</span>
-                  {agendamento.observacao ? <span className="mt-1 block whitespace-pre-wrap text-xs text-slate-600">{agendamento.observacao}</span> : null}
-                </td>
-                <td className="px-3 py-2 font-mono">
-                  {formatarData(agendamento.data)}
-                  {agendamento.hora ? <span className="block">às {agendamento.hora}</span> : null}
-                  {agendamento.dataFatal ? (
-                    <span className="block font-sans text-xs text-slate-500">
-                      enviar · fatal {formatarData(agendamento.dataFatal)}
-                      {agendamento.diasPrazo && agendamento.contagemPrazo
-                        ? ` · ${agendamento.diasPrazo} ${ROTULO_CONTAGEM[agendamento.contagemPrazo]}`
-                        : ""}
-                    </span>
-                  ) : null}
-                </td>
-                <td className="px-3 py-2">
-                  {agendamento.responsavel}
-                  {agendamento.revisor ? <span className="block text-xs text-slate-500">Revisor: {agendamento.revisor}</span> : null}
-                </td>
-                <td className="px-3 py-2">
-                  {agendamento.viosTarefaId ? (
-                    <a
-                      href={linkTarefaVios(agendamento.viosTarefaId)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title="Abrir a tarefa no VIOS (nova aba)"
-                      className="inline-flex items-center gap-1 text-xs font-medium text-[#347796] hover:text-[#285f7a] hover:underline"
-                    >
-                      <span className="font-mono tabular-nums">CI {agendamento.viosTarefaId}</span>
-                      <ExternalLink className="size-3" aria-hidden />
-                    </a>
-                  ) : (
-                    <span className="text-xs text-slate-400">—</span>
-                  )}
-                </td>
-              </tr>
+              <Fragment key={agendamento.id}>
+                <tr className="align-top">
+                  <td className="px-3 py-2">
+                    <span className="font-medium text-slate-900">{agendamento.tarefa}</span>
+                    <span className="ml-1 text-xs text-slate-500">({ROTULO_ETIQUETA[agendamento.etiqueta]})</span>
+                    {agendamento.observacao ? <span className="mt-1 block whitespace-pre-wrap text-xs text-slate-600">{agendamento.observacao}</span> : null}
+                  </td>
+                  <td className="px-3 py-2 font-mono">
+                    {formatarData(agendamento.data)}
+                    {agendamento.hora ? <span className="block">às {agendamento.hora}</span> : null}
+                    {agendamento.dataFatal ? (
+                      <span className="block font-sans text-xs text-slate-500">
+                        enviar · fatal {formatarData(agendamento.dataFatal)}
+                        {agendamento.diasPrazo && agendamento.contagemPrazo
+                          ? ` · ${agendamento.diasPrazo} ${ROTULO_CONTAGEM[agendamento.contagemPrazo]}`
+                          : ""}
+                      </span>
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-2">
+                    {agendamento.responsavel}
+                    {agendamento.revisor ? <span className="block text-xs text-slate-500">Revisor: {agendamento.revisor}</span> : null}
+                  </td>
+                  <td className="px-3 py-2">
+                    {agendamento.viosTarefaId ? (
+                      <a
+                        href={linkTarefaVios(agendamento.viosTarefaId)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Abrir a tarefa no VIOS (nova aba)"
+                        className="inline-flex items-center gap-1 text-xs font-medium text-[#347796] hover:text-[#285f7a] hover:underline"
+                      >
+                        <span className="font-mono tabular-nums">CI {agendamento.viosTarefaId}</span>
+                        <ExternalLink className="size-3" aria-hidden />
+                      </a>
+                    ) : (
+                      <span className="text-xs text-slate-400">—</span>
+                    )}
+                  </td>
+                </tr>
+                {agendamento.viosTarefas?.length ? (
+                  <tr>
+                    <td colSpan={4} className="px-3 pb-3 pt-0">
+                      <AgendadoNoVios tarefas={agendamento.viosTarefas} dataPedida={agendamento.data} horaPedida={agendamento.hora} />
+                    </td>
+                  </tr>
+                ) : null}
+              </Fragment>
             ))}
           </tbody>
         </table>
