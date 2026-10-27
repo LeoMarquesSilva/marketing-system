@@ -75,6 +75,14 @@ export function StatusPublicacao({ status }: { status: PublicacaoStatus }) {
 }
 
 /** Cabeçalho compacto com processo, tribunal, datas e dados do DJEN. */
+/** Classificação eSocial dada pelo jurídico (Trabalhista); não vai para o VIOS. */
+export function SeloEsocial({ publicacao }: { publicacao: PublicacaoResumo }) {
+  if (!publicacao.publicacaoEsocial) return null;
+  return (
+    <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs text-amber-900">eSocial: {publicacao.publicacaoEsocial}</span>
+  );
+}
+
 export function DadosPublicacao({ publicacao }: { publicacao: PublicacaoResumo }) {
   return (
     <dl className="grid gap-x-4 gap-y-1 text-xs text-slate-600 sm:grid-cols-2">

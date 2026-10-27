@@ -14,7 +14,7 @@ import type { CheckResposta, ConferenciaItem } from "@/lib/vistagem/types";
 import { linkTarefaVios } from "@/lib/vistagem/vios-links";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
-import { DadosPasta, DadosPublicacao, TeorPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
+import { DadosPasta, DadosPublicacao, SeloEsocial, TeorPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
 
 type Aba = "aChecar" | "revisar" | "checadas";
 
@@ -104,6 +104,7 @@ function CartaoCheck({ item, aba, onConcluido }: { item: ConferenciaItem; aba: A
           {publicacao.tribunal ? (
             <span className="rounded-full border border-[#3e84a8]/25 px-2 py-0.5 text-xs text-[#315f73]">{publicacao.tribunal}</span>
           ) : null}
+          <SeloEsocial publicacao={publicacao} />
           <span className="text-xs text-slate-500">
             vistada {item.vistadoPor ? `por ${item.vistadoPor} ` : ""}em {formatarDataHora(publicacao.vistadoEm)} · conferida{" "}
             {item.conferidoPor ? `por ${item.conferidoPor} ` : ""}em {formatarDataHora(publicacao.conferidoEm)}

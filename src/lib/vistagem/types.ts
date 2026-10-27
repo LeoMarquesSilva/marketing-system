@@ -143,6 +143,8 @@ export interface PublicacaoResumo {
   transferidoDe: string | null;
   transferidoEm: string | null;
   transferenciaMotivo: string | null;
+  /** Trabalhista: classificação eSocial escolhida na vistagem (não vai para o VIOS; mesmos valores da BKP). */
+  publicacaoEsocial: string | null;
   teor: string;
   /** true quando `teor` foi encurtado na listagem. */
   teorResumido: boolean;
@@ -268,6 +270,13 @@ export interface VistagemDetalhe {
   fluxos: Record<string, FluxoDaTarefa>;
   /** Por que o fluxo do VIOS não pôde ser carregado. */
   fluxosErro: string | null;
+  /** Pasta do Trabalhista: pede a classificação eSocial. Null nas outras áreas. */
+  esocial: {
+    /** Tipo Inserir E-social na lista de Providências da área; null se o VIOS ainda não tem. */
+    tarefa: { id: string; nome: string } | null;
+    /** Larissa, se for usuária do VIOS na área. */
+    responsavelSugerido: string | null;
+  } | null;
   hoje: string;
 }
 
