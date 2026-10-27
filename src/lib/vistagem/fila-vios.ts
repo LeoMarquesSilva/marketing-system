@@ -158,6 +158,50 @@ export function linhasParaFila(
   ];
 }
 
+/** Tarefa como ficou no VIOS depois do lançamento: a pedida (principal) ou uma que o fluxo criou junto. */
+export interface TarefaNoVios {
+  ci: string;
+  tipo: string | null;
+  principal: boolean;
+  /** AAAA-MM-DD (data para conclusão). */
+  data: string | null;
+  dataLimite: string | null;
+  hora: string | null;
+  responsaveis: string | null;
+}
+
+/** DD/MM/AAAA → AAAA-MM-DD; outro formato → null. */
+function dataIso(valor: unknown): string | null {
+  const m = String(valor ?? "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+}
+
+/** Tarefas do VIOS (resultado.tarefas_vios[] do robô) agrupadas pela chave do agendamento de origem. */
+export function tarefasViosDoResultado(resultado: unknown): Map<string, TarefaNoVios[]> {
+  const mapa = new Map<string, TarefaNoVios[]>();
+  const lista = (resultado as { tarefas_vios?: Record<string, unknown>[] } | null)?.tarefas_vios;
+  if (!Array.isArray(lista)) return mapa;
+  for (const item of lista) {
+    if (typeof item?.chave !== "string" || item.ci == null) continue;
+    const texto = (valor: unknown) => (typeof valor === "string" && valor.trim() ? valor.trim() : null);
+    const tarefa: TarefaNoVios = {
+      ci: String(item.ci),
+      tipo: texto(item.tipo),
+      principal: item.principal === true,
+      data: dataIso(item.data),
+      dataLimite: dataIso(item.data_limite),
+      hora: texto(item.hora),
+      responsaveis: texto(item.responsaveis),
+    };
+    mapa.set(item.chave, [...(mapa.get(item.chave) ?? []), tarefa]);
+  }
+  // a pedida primeiro; as do fluxo pela data
+  for (const tarefas of mapa.values()) {
+    tarefas.sort((a, b) => Number(b.principal) - Number(a.principal) || (a.data ?? "").localeCompare(b.data ?? ""));
+  }
+  return mapa;
+}
+
 /** CI de cada tarefa lançada (resultado.tarefas[] do robô), por chave do agendamento. */
 export function cisDoResultado(resultado: unknown): Map<string, string> {
   const mapa = new Map<string, string>();

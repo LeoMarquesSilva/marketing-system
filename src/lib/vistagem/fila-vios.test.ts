@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cisDoResultado, linhasParaFila, type AgendamentoParaFila, type PublicacaoParaFila } from "./fila-vios";
+import { cisDoResultado, linhasParaFila, tarefasViosDoResultado, type AgendamentoParaFila, type PublicacaoParaFila } from "./fila-vios";
 
 const PUBLICACAO: PublicacaoParaFila = {
   data_publicacao: "2026-10-15",
@@ -93,5 +93,26 @@ describe("fila do robô", () => {
     expect([...cis.entries()]).toEqual([["ag-1", "900"]]);
     expect(cisDoResultado({ ci_vios: 900 }).size).toBe(0);
     expect(cisDoResultado(null).size).toBe(0);
+  });
+
+  it("agrupa as tarefas do VIOS pelo agendamento, a pedida primeiro e o fluxo pela data", () => {
+    const mapa = tarefasViosDoResultado({
+      tarefas_vios: [
+        { ci: 902, chave: "ag-1", principal: false, tipo: "3. PROTOCOLAR", data: "19/10/2026", data_limite: "19/10/2026", hora: null, responsaveis: "Maria, Samuel" },
+        { ci: 900, chave: "ag-1", principal: true, tipo: "MANIFESTAÇÃO", data: "16/10/2026", data_limite: "16/10/2026", hora: null, responsaveis: "Maria" },
+        { ci: 901, chave: "ag-1", principal: false, tipo: "2. REVISAR", data: "17/10/2026", data_limite: null, hora: "", responsaveis: "Giovanna" },
+        { ci: 950, chave: "ag-2", principal: true, tipo: "AUDIÊNCIA", data: "10/11/2026", hora: "14:30", responsaveis: "Ana" },
+        { ci: 999, chave: null, principal: false, tipo: "SOLTA", data: "01/11/2026" },
+      ],
+    });
+    expect(mapa.get("ag-1")?.map((t) => [t.ci, t.data])).toEqual([
+      ["900", "2026-10-16"],
+      ["901", "2026-10-17"],
+      ["902", "2026-10-19"],
+    ]);
+    expect(mapa.get("ag-1")?.[1]).toMatchObject({ hora: null, dataLimite: null, responsaveis: "Giovanna" });
+    expect(mapa.get("ag-2")?.[0]).toMatchObject({ principal: true, hora: "14:30", data: "2026-11-10" });
+    expect(mapa.size).toBe(2);
+    expect(tarefasViosDoResultado({ tarefas: [] }).size).toBe(0);
   });
 });

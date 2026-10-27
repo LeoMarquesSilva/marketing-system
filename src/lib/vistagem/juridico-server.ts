@@ -16,7 +16,7 @@ import { cadeiaDoFluxo, montarFluxo, type FluxoDaTarefa, type TipoNaArvore } fro
 import { buscarPastasVios } from "./pastas-vios";
 import { VistagemError } from "./errors";
 import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
-import { linhasParaFila } from "./fila-vios";
+import { linhasParaFila, type TarefaNoVios } from "./fila-vios";
 import { ESCRITORIOS } from "./triagem";
 import {
   carregarArvoreVios,
@@ -43,15 +43,15 @@ import type {
 } from "./types";
 
 const COLUNAS_AGENDAMENTO =
-  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, hora, responsavel, revisor, observacao, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, envio_erro, enviado_em";
+  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, hora, responsavel, revisor, observacao, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, vios_tarefas, envio_erro, enviado_em";
 
 type AgendamentoRow = {
   id: string; publicacao_id: string; ordem: number; etiqueta: EtiquetaAgendamento; tarefa: string; tarefa_id: string | null;
   data: string; data_fatal: string | null; dias_prazo: number | null; contagem_prazo: ContagemPrazo | null; hora: string | null;
   responsavel: string; revisor: string | null;
   observacao: string | null; envio_status: EnvioStatus;
-  envio_simulado: boolean | null; sama_agendamento_id: string | null; vios_tarefa_id: string | null; envio_erro: string | null;
-  enviado_em: string | null;
+  envio_simulado: boolean | null; sama_agendamento_id: string | null; vios_tarefa_id: string | null;
+  vios_tarefas: TarefaNoVios[] | null; envio_erro: string | null; enviado_em: string | null;
 };
 
 function agendamentoResumo(row: AgendamentoRow): AgendamentoResumo {
@@ -69,6 +69,7 @@ function agendamentoResumo(row: AgendamentoRow): AgendamentoResumo {
     responsavel: row.responsavel,
     revisor: row.revisor,
     observacao: row.observacao,
+    viosTarefas: row.vios_tarefas,
     envioStatus: row.envio_status,
     envioSimulado: row.envio_simulado,
     viosTarefaId: row.vios_tarefa_id,
@@ -590,7 +591,14 @@ export async function atualizarEnvios(): Promise<{ consultadas: number; concluid
     const viosTarefaId = atual.cisPorAgendamento.size ? atual.cisPorAgendamento.get(item.id) ?? null : atual.viosTarefaId;
     await db
       .from("vistagem_agendamentos")
-      .update({ envio_status: atual.status, vios_tarefa_id: viosTarefaId, envio_erro: atual.erro, envio_atualizado_em: agora })
+      .update({
+        envio_status: atual.status,
+        vios_tarefa_id: viosTarefaId,
+        // Datas como ficaram no VIOS (Check); só vêm no lançamento pela intimação.
+        vios_tarefas: atual.tarefasViosPorAgendamento.get(item.id) ?? null,
+        envio_erro: atual.erro,
+        envio_atualizado_em: agora,
+      })
       .eq("id", item.id);
   }
 

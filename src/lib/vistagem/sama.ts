@@ -3,7 +3,7 @@ import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { chaveNome, type EtapaVios, type OpcaoVios } from "./agendamento";
 import { VistagemError } from "./errors";
-import { cisDoResultado, type LinhaFilaSama, type ModoAgendamento } from "./fila-vios";
+import { cisDoResultado, tarefasViosDoResultado, type LinhaFilaSama, type ModoAgendamento, type TarefaNoVios } from "./fila-vios";
 import type { TipoNaArvore } from "./fluxo-vios";
 
 /**
@@ -141,6 +141,8 @@ export interface StatusFilaSama {
   viosTarefaId: string | null;
   /** Lançamento pela intimação: CI de cada tarefa, por id do agendamento. */
   cisPorAgendamento: Map<string, string>;
+  /** Como as tarefas ficaram no VIOS (a pedida e as do fluxo), por id do agendamento. */
+  tarefasViosPorAgendamento: Map<string, TarefaNoVios[]>;
 }
 
 export async function consultarFilaSama(ids: string[]): Promise<Map<string, StatusFilaSama>> {
@@ -157,6 +159,7 @@ export async function consultarFilaSama(ids: string[]): Promise<Map<string, Stat
         erro: (row.erro as string | null) ?? null,
         viosTarefaId: ciVios ? String(ciVios) : null,
         cisPorAgendamento: cisDoResultado(row.resultado),
+        tarefasViosPorAgendamento: tarefasViosDoResultado(row.resultado),
       });
     }
   }
