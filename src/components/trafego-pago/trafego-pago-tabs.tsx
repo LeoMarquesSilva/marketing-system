@@ -1,10 +1,12 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Megaphone, MessageCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWhatsappUnreadCount } from "@/hooks/use-whatsapp-unread";
+import { WHATSAPP_CONVERSATION_PARAM } from "@/lib/whatsapp-lead-push";
 
 type Tab = "anuncios" | "whatsapp";
 
@@ -42,6 +44,11 @@ export function TrafegoPagoTabs() {
     if (next === "anuncios") setAdsVisited(true);
   };
   const whatsappUnread = useWhatsappUnreadCount();
+  // Clique no aviso de lead (?conversa=<id>): a conversa abre na aba de atendimento.
+  const conversationParam = useSearchParams().get(WHATSAPP_CONVERSATION_PARAM);
+  useEffect(() => {
+    if (conversationParam) setTab("whatsapp");
+  }, [conversationParam]);
 
   return (
     <div className="space-y-4">

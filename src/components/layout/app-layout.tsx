@@ -10,6 +10,7 @@ import { NavBadgesProvider } from "@/components/layout/nav-badges";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { ContentCollaboratorTour } from "@/components/conteudo/content-collaborator-tour";
 import { HrPendingNotificationsModal } from "@/components/rh/hr-pending-notifications-modal";
+import { WhatsappLeadNotifications } from "@/components/layout/whatsapp-lead-notifications";
 import { TimerProvider } from "@/contexts/timer-context";
 import { FloatingTimer } from "@/components/timer/floating-timer";
 
@@ -58,6 +59,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </Suspense>
         )}
         {!isBareLayout && <HrPendingNotificationsModal />}
+        {!isBareLayout && <WhatsappLeadNotifications />}
         {isBareLayout ? (
           children
         ) : (

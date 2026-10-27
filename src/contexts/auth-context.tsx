@@ -32,6 +32,8 @@ export interface AuthProfile {
   qualification_required_at?: string | null;
   qualification_completed_at?: string | null;
   is_hr_notification_recipient?: boolean | null;
+  /** Recebe notificação push com som a cada mensagem de lead no WhatsApp. */
+  is_whatsapp_lead_notification_recipient?: boolean | null;
   gustavo_content_member?: boolean;
   gustavo_content_member_role?: "owner" | "editor" | null;
 }
@@ -85,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     for (let attempt = 0; attempt < 3; attempt++) {
       const { data, error } = await supabase
         .from("users")
-        .select("id, name, email, department, role, auth_id, is_active, avatar_url, permissions, ferias_view_enabled, vistagem_papel, must_change_password, content_tutorial_completed_at, meus_clientes_tutorial_completed_at, newsletter_tutorial_completed_at, content_schedule_tutorial_completed_at, minhas_fotos_tutorial_completed_at, qualification_required_at, qualification_completed_at, is_hr_notification_recipient")
+        .select("id, name, email, department, role, auth_id, is_active, avatar_url, permissions, ferias_view_enabled, vistagem_papel, must_change_password, content_tutorial_completed_at, meus_clientes_tutorial_completed_at, newsletter_tutorial_completed_at, content_schedule_tutorial_completed_at, minhas_fotos_tutorial_completed_at, qualification_required_at, qualification_completed_at, is_hr_notification_recipient, is_whatsapp_lead_notification_recipient")
         .eq("auth_id", authId)
         .maybeSingle();
       if (data) {

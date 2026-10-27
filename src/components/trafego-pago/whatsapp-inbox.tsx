@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AlertCircle, Loader2, MessageCircle, X } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
+import { WHATSAPP_CONVERSATION_PARAM, WHATSAPP_INBOX_PATH } from "@/lib/whatsapp-lead-push";
 import { supabase } from "@/utils/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
 import { LeadList } from "@/components/trafego-pago/lead-list";
@@ -228,6 +230,16 @@ export function WhatsappInbox() {
   useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
+
+  // Clique no aviso de lead: /trafego-pago?conversa=<id> abre a conversa. O
+  // parâmetro sai da URL logo depois, para o próximo aviso da mesma conversa
+  // abrir de novo e o recarregar da página não prender nela.
+  const conversationParam = useSearchParams().get(WHATSAPP_CONVERSATION_PARAM);
+  useEffect(() => {
+    if (!conversationParam) return;
+    setSelectedId(conversationParam);
+    window.history.replaceState(null, "", WHATSAPP_INBOX_PATH);
+  }, [conversationParam]);
 
   useEffect(() => {
     conversationsRef.current = conversations;

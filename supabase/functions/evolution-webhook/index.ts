@@ -1,6 +1,16 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { archiveMessagesMedia, mediaKindOf, transcribeMessagesAudio } from "./media.ts";
+import {
+  buildLeadPush,
+  type LeadPush,
+  leadPushPublicKey,
+  sendLeadPushes,
+  sendTestLeadPush,
+} from "./lead-push.ts";
+
+/** Mensagem antiga reenviada (sincronização de histórico) não vira notificação. */
+const LEAD_PUSH_MAX_AGE_MS = 10 * 60 * 1000;
 
 const MESSAGE_EVENTS = new Set([
   "MESSAGES_UPSERT",
@@ -613,11 +623,13 @@ async function applySiteLeadPatch(
 
 /**
  * `mediaQueue` recebe, por id, as mensagens com mídia ainda não guardada no
- * Storage, com o `message` do payload.
+ * Storage, com o `message` do payload. `leadPushes` recebe as notificações das
+ * mensagens novas de contatos (fora de grupos).
  */
 async function upsertMessages(
   messages: ParsedMessage[],
-  mediaQueue: Map<string, Record<string, unknown> | null>
+  mediaQueue: Map<string, Record<string, unknown> | null>,
+  leadPushes: LeadPush[]
 ): Promise<number> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -690,6 +702,9 @@ async function upsertMessages(
     let conversationId = existingConv?.id as string | undefined;
     const canonicalJid =
       (existingConv?.remote_jid as string | undefined) ?? msg.remoteJid;
+    const isNewConversation = !conversationId;
+    const knownPushName = (existingConv?.push_name as string | null | undefined) ?? null;
+    const knownLeadSource = (existingConv?.lead_source as string | null | undefined) ?? null;
 
     if (!conversationId) {
       const groupSubject = msg.isGroup
@@ -771,6 +786,23 @@ async function upsertMessages(
     const savedId = (savedRows?.[0] as { id?: string } | undefined)?.id;
     if (savedId && mediaKindOf(msg.messageType, msg.body)) {
       mediaQueue.set(savedId, msg.rawMessage ?? null);
+    }
+    if (
+      savedId &&
+      !msg.fromMe &&
+      !msg.isGroup &&
+      Date.now() - msg.messageTimestamp.getTime() < LEAD_PUSH_MAX_AGE_MS
+    ) {
+      leadPushes.push(
+        buildLeadPush({
+          conversationId: conversationId!,
+          name: inboundName ?? knownPushName,
+          phone: msgPhone,
+          leadSource: isMetaLead ? "meta_ads" : isNewSiteLead ? "site_whatsapp" : knownLeadSource,
+          isNewConversation,
+          body: msg.body,
+        })
+      );
     }
 
     const existingLastAt = existingConv?.last_message_at
@@ -942,8 +974,10 @@ Deno.serve(async (req: Request) => {
         ok: true,
         endpoint: "evolution-webhook",
         target: "supabase",
-        version: 14,
+        version: 15,
         events: [...MESSAGE_EVENTS],
+        // Chave pública do Web Push: o navegador precisa dela para se inscrever.
+        vapidPublicKey: leadPushPublicKey(),
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
@@ -981,6 +1015,16 @@ Deno.serve(async (req: Request) => {
     // Chamadas internas (rota de mídia da Vercel e backfills), não da Evolution:
     // archive_media guarda no Storage a mídia de mensagens que ainda não têm
     // arquivo; transcribe_audio transcreve áudios já guardados e sem texto.
+    if (payload.action === "test_lead_push") {
+      const result = await sendTestLeadPush(
+        supabase,
+        (payload.subscription as Parameters<typeof sendTestLeadPush>[1]) ?? null
+      );
+      return new Response(JSON.stringify({ ok: true, ...result }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (payload.action === "archive_media" || payload.action === "transcribe_audio") {
       const messageIds = (Array.isArray(payload.messageIds) ? payload.messageIds : [])
         .filter((id): id is string => typeof id === "string" && id.length > 0)
@@ -1025,7 +1069,11 @@ Deno.serve(async (req: Request) => {
 
     const messages = parseWebhookPayload(payload);
     const mediaQueue = new Map<string, Record<string, unknown> | null>();
-    const stored = await upsertMessages(messages, mediaQueue);
+    const leadPushes: LeadPush[] = [];
+    const stored = await upsertMessages(messages, mediaQueue, leadPushes);
+    if (leadPushes.length > 0) {
+      EdgeRuntime.waitUntil(sendLeadPushes(supabase, leadPushes));
+    }
     if (mediaQueue.size > 0) {
       // Em segundo plano: a Evolution recebe o 200 sem esperar o download.
       EdgeRuntime.waitUntil(
