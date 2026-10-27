@@ -270,7 +270,9 @@ export async function transcribeMessageAudio(
       return { status: "skipped", reason: "not_audio" };
     }
     if (row.audio_transcript?.trim()) return { status: "skipped", reason: "already" };
-    const apiKey = Deno.env.get("OPENAI_API_KEY")?.trim();
+    // Chave própria do atendimento separa o gasto no painel da OpenAI.
+    const apiKey =
+      Deno.env.get("OPENAI_API_KEY_ATENDIMENTO")?.trim() || Deno.env.get("OPENAI_API_KEY")?.trim();
     if (!apiKey) return { status: "skipped", reason: "no_key" };
 
     let audio = bytes;

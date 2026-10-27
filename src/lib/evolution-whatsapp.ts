@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { jidToPhone } from "@/lib/evolution-display";
+import { openAIKey } from "@/lib/openai-keys";
 import {
   extractMetaWhatsappAttribution,
   isMetaAdLeadFromAttribution,
@@ -1738,20 +1739,12 @@ export async function fetchWhatsappMessages(
   return ((data ?? []) as WhatsappMessage[]).reverse();
 }
 
-function getOpenAiKey(): string | null {
-  return (
-    process.env.OPENAI_API_KEY?.trim() ||
-    process.env.NEXT_OPENAI_API_KEY?.trim() ||
-    null
-  );
-}
-
 export async function transcribeWhatsappAudioMessage(
   messageId: string
 ): Promise<string> {
-  const openaiKey = getOpenAiKey();
+  const openaiKey = openAIKey("atendimento");
   if (!openaiKey) {
-    throw new Error("OPENAI_API_KEY ou NEXT_OPENAI_API_KEY não configurada.");
+    throw new Error("OPENAI_API_KEY_ATENDIMENTO não configurada.");
   }
 
   const supabase = getAdminClient();

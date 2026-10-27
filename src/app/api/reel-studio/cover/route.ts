@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAuthenticatedContentUser } from "@/lib/content-access";
+import { openAIKey } from "@/lib/openai-keys";
 import { getServerDb } from "@/lib/users-server";
 import { PROJECT_ASSETS_BUCKET, publicStorageObjectUrl } from "@/lib/storage-buckets";
 
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Gere a legenda e a direção visual antes de criar a capa." }, { status: 400 });
   }
 
-  const apiKey = process.env.NEXT_OPENAI_API_KEY;
+  const apiKey = openAIKey("conteudo");
   if (!apiKey) return NextResponse.json({ error: "A chave de IA não está configurada." }, { status: 500 });
 
   try {

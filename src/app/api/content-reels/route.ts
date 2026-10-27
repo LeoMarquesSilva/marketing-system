@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { generateObject } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
+import { openAIKey } from "@/lib/openai-keys";
 import { getAuthenticatedContentUser, resolveAreaFilter } from "@/lib/content-access";
 import {
   REELS_SYSTEM_PROMPT,
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Sem permissão para esta área jurídica." }, { status: 403 });
   }
 
-  const apiKey = process.env.NEXT_OPENAI_API_KEY;
+  const apiKey = openAIKey("conteudo");
   if (!apiKey) {
     return NextResponse.json(
       { error: "A chave de IA não está configurada." },

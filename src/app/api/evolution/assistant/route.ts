@@ -3,6 +3,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { after, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { OPENAI_DEFAULT_MODEL, openAIGenerationOptions } from "@/lib/openai-models";
+import { openAIKey } from "@/lib/openai-keys";
 import { loadAssistantContext, saveAssistantSuggestion } from "@/lib/whatsapp-assistant";
 
 export const dynamic = "force-dynamic";
@@ -30,16 +31,8 @@ Regras:
 - Se houver rascunho do atendente, melhore o rascunho em vez de começar do zero.
 - No máximo um emoji, e só se combinar com o tom da conversa.`;
 
-function getOpenAiKey() {
-  return (
-    process.env.NEXT_OPENAI_API_KEY?.trim() ||
-    process.env.OPENAI_API_KEY?.trim() ||
-    ""
-  );
-}
-
 export async function POST(request: Request) {
-  const apiKey = getOpenAiKey();
+  const apiKey = openAIKey("atendimento");
   if (!apiKey) {
     return NextResponse.json(
       { error: "O assistente de IA não está disponível agora." },

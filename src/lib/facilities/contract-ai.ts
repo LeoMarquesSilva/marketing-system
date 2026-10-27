@@ -6,12 +6,13 @@ import { generateObject } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
 import { OPENAI_DEFAULT_MODEL, openAIGenerationOptions } from "@/lib/openai-models";
+import { openAIKey } from "@/lib/openai-keys";
 import { onlyDigits } from "@/lib/masks-br";
 import { ADJUSTMENT_INDEXES, VALUE_PERIODS, type ContractExtraction } from "./types";
 import { FacilitiesHttpError } from "./server";
 
 export function contractAiKey(): string | null {
-  return process.env.NEXT_OPENAI_API_KEY || process.env.OPENAI_API_KEY || null;
+  return openAIKey("facilities");
 }
 
 const extractionSchema = z.object({

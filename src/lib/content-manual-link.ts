@@ -12,6 +12,7 @@
 
 import { z } from "zod";
 import { createOpenAI } from "@ai-sdk/openai";
+import { openAIKey } from "@/lib/openai-keys";
 import { fetchArticleContent } from "@/lib/content-extraction";
 import {
   generateCarousel,
@@ -80,7 +81,7 @@ export async function createRoteiroFromLink(
   input: ManualLinkInput,
   actor: { id: string; name: string }
 ): Promise<ManualLinkResult> {
-  const apiKey = process.env.NEXT_OPENAI_API_KEY;
+  const apiKey = openAIKey("conteudo");
   if (!apiKey) {
     throw new ManualLinkError(
       "Geração por IA não está configurada.",

@@ -6,6 +6,7 @@ import { resolveContentScheduleAreaLabel } from "@/lib/content-schedule/domain";
 import { WORKFLOW_STAGES } from "@/lib/constants";
 import { generateObject } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
+import { openAIKey } from "@/lib/openai-keys";
 import {
   REEL_AUDIO_MAX_BYTES,
   REEL_COPY_PROMPT,
@@ -880,7 +881,7 @@ export async function requestReelCover(id: string, input: z.infer<typeof reelCov
 }
 
 function openAiKey(): string {
-  const key = process.env.NEXT_OPENAI_API_KEY?.trim();
+  const key = openAIKey("conteudo");
   if (!key) throw new ReelDeliveryHttpError("A chave de IA não está configurada.", 503);
   return key;
 }

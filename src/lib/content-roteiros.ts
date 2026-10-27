@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { OPENAI_DEFAULT_MODEL, openAIGenerationOptions } from "./openai-models";
+import { openAIKey } from "./openai-keys";
 import type { ContentTopic } from "./content-topics";
 import {
   CONTENT_MAX_AGE_DAYS,
@@ -772,9 +773,9 @@ export async function runFetchPipeline(
   topics?: ContentTopic[],
   options?: FetchPipelineOptions
 ): Promise<{ created: number; errors: string[]; skipped: number }> {
-  const apiKey = process.env.NEXT_OPENAI_API_KEY;
+  const apiKey = openAIKey("conteudo");
   if (!apiKey) {
-    throw new Error("NEXT_OPENAI_API_KEY não configurada.");
+    throw new Error("OPENAI_API_KEY_CONTEUDO não configurada.");
   }
 
   const openai = createOpenAI({ apiKey });

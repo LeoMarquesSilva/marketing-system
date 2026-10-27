@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { generateObject } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
+import { openAIKey } from "@/lib/openai-keys";
 import { z } from "zod";
 import { getAuthenticatedContentUser } from "@/lib/content-access";
 import {
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
     .maybeSingle();
   if (itemError || !item) return NextResponse.json({ error: "Roteiro não encontrado." }, { status: 404 });
 
-  const apiKey = process.env.NEXT_OPENAI_API_KEY;
+  const apiKey = openAIKey("conteudo");
   if (!apiKey) return NextResponse.json({ error: "A chave de IA não está configurada." }, { status: 500 });
 
   try {

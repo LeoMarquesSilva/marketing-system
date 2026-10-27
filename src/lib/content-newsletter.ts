@@ -11,6 +11,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { generateText } from "ai";
 import { fetchArticleContent } from "@/lib/content-extraction";
 import { OPENAI_DEFAULT_MODEL, openAIGenerationOptions } from "@/lib/openai-models";
+import { openAIKey } from "@/lib/openai-keys";
 import { getSupabaseAdmin } from "@/lib/content-roteiros";
 
 export const NEWSLETTER_STATUSES = ["rascunho", "em_revisao", "assinado"] as const;
@@ -165,7 +166,7 @@ export function parseGeneratedSection(text: string): { headline: string; body: s
 }
 
 function getOpenAI() {
-  const apiKey = process.env.NEXT_OPENAI_API_KEY;
+  const apiKey = openAIKey("conteudo");
   if (!apiKey) {
     throw new NewsletterError("Geração por IA não está configurada.", 503);
   }
