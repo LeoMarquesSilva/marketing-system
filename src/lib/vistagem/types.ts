@@ -1,4 +1,5 @@
 import type { ContagemPrazo } from "./dias-uteis";
+import type { TarefaNoVios } from "./fila-vios";
 import type { FluxoDaTarefa } from "./fluxo-vios";
 import type { PastaSioe, Pendencia } from "./triagem";
 
@@ -234,6 +235,8 @@ export interface AgendamentoResumo {
   responsavel: string;
   revisor: string | null;
   observacao: string | null;
+  /** Como ficou no VIOS: a tarefa pedida e as que o fluxo criou, com as datas agendadas. */
+  viosTarefas: TarefaNoVios[] | null;
   envioStatus: EnvioStatus;
   envioSimulado: boolean | null;
   viosTarefaId: string | null;
