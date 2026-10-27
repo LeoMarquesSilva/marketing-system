@@ -17,6 +17,14 @@ function formatPhone(digits: string | null): string | null {
   return `+${digits}`;
 }
 
+/**
+ * Conversa com gente do escritório (tag Colaborador, posta também ao encaminhar
+ * um lead): resposta do gestor não é mensagem de lead.
+ */
+export function isTeamConversation(tags: unknown): boolean {
+  return Array.isArray(tags) && tags.some((tag) => String(tag).toLowerCase() === "colaborador");
+}
+
 const SOURCE_LABELS: Record<string, string> = {
   meta_ads: "Meta Ads",
   site_whatsapp: "Site",

@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import { archiveMessagesMedia, mediaKindOf, transcribeMessagesAudio } from "./media.ts";
 import {
   buildLeadPush,
+  isTeamConversation,
   type LeadPush,
   leadPushPublicKey,
   sendLeadPushes,
@@ -791,6 +792,7 @@ async function upsertMessages(
       savedId &&
       !msg.fromMe &&
       !msg.isGroup &&
+      !isTeamConversation(existingConv?.tags) &&
       Date.now() - msg.messageTimestamp.getTime() < LEAD_PUSH_MAX_AGE_MS
     ) {
       leadPushes.push(
@@ -974,7 +976,7 @@ Deno.serve(async (req: Request) => {
         ok: true,
         endpoint: "evolution-webhook",
         target: "supabase",
-        version: 15,
+        version: 16,
         events: [...MESSAGE_EVENTS],
         // Chave pública do Web Push: o navegador precisa dela para se inscrever.
         vapidPublicKey: leadPushPublicKey(),

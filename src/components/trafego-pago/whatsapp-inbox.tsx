@@ -20,6 +20,7 @@ import { supabase } from "@/utils/supabase/client";
 import { useAuth } from "@/contexts/auth-context";
 import { LeadList } from "@/components/trafego-pago/lead-list";
 import { ConversationHeader } from "@/components/trafego-pago/conversation-header";
+import { LeadForwardDialog } from "@/components/trafego-pago/lead-forward-dialog";
 import { MessageBubble } from "@/components/trafego-pago/message-bubble";
 import { ChatInput } from "@/components/trafego-pago/chat-input";
 import { LeadDetailsContent, LeadDetailsPanel } from "@/components/trafego-pago/lead-details-panel";
@@ -214,6 +215,7 @@ export function WhatsappInbox() {
   const [agents, setAgents] = useState<WhatsappAgent[]>([]);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [forwardOpen, setForwardOpen] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
   const [staleDialogOpen, setStaleDialogOpen] = useState(false);
   const [resolvingStale, setResolvingStale] = useState(false);
@@ -890,6 +892,7 @@ export function WhatsappInbox() {
                 onResolve={resolveSelected}
                 onReopen={reopenSelected}
                 onOpenDetails={() => setDetailsOpen(true)}
+                onForward={() => setForwardOpen(true)}
               />
 
               <div
@@ -1010,6 +1013,14 @@ export function WhatsappInbox() {
           </div>
         )}
       </div>
+
+      {selected && (
+        <LeadForwardDialog
+          conversation={selected}
+          open={forwardOpen}
+          onOpenChange={setForwardOpen}
+        />
+      )}
 
       <Dialog open={detailsOpen && Boolean(selected)} onOpenChange={setDetailsOpen}>
         <DialogContent className="flex max-h-[90dvh] flex-col gap-0 p-0 sm:max-w-md">

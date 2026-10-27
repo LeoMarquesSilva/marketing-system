@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import type { LeadPush } from "./lead-push-format.ts";
 
-export { buildLeadPush, type LeadPush } from "./lead-push-format.ts";
+export { buildLeadPush, isTeamConversation, type LeadPush } from "./lead-push-format.ts";
 
 /**
  * Notificação push (Web Push) quando chega mensagem de lead. Só para quem tem
