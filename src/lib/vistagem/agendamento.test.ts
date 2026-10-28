@@ -10,6 +10,8 @@ import {
   atalhosDePrazo,
   montarObservacaoVios,
   referenciaDaPublicacao,
+  responsaveisNaArea,
+  separarNomes,
   paraDataVios,
   responsavelSugerido,
   tarefasPermitidas,
@@ -239,6 +241,40 @@ describe("auxiliares", () => {
   it("o Trabalhista tem atalhos de 8 e 16 dias", () => {
     expect(atalhosDePrazo("Trabalhista")).toEqual([5, 8, 10, 15, 16, 30, 60, 90, 180]);
     expect(atalhosDePrazo("Cível")).toEqual([5, 10, 15, 30, 60, 90, 180]);
+  });
+});
+
+describe("responsáveis", () => {
+  it("separa nomes por vírgula sem repetir", () => {
+    expect(separarNomes(" Maria Julia , Isadora,, maria julia ,Samuel ")).toEqual(["Maria Julia", "Isadora", "Samuel"]);
+    expect(separarNomes(null)).toEqual([]);
+  });
+
+  it("os responsáveis fixos do tipo vão para a opção da lista", () => {
+    const etapas: EtapaVios[] = [{ id: "539", nome: "ATUALIZAÇÃO DE CADASTRO", etiquetas: [204], responsaveis: ["Maria Julia", "Isadora"] }];
+    expect(tarefasPermitidas(etapas, "PROVIDENCIA")).toEqual([{ id: "539", nome: "ATUALIZAÇÃO DE CADASTRO", responsaveis: ["Maria Julia", "Isadora"] }]);
+  });
+
+  it("só ficam os que são usuários do VIOS na área, com a grafia de lá", () => {
+    expect(responsaveisNaArea(["advogada exemplo", "Fora da Lista"], USUARIOS)).toEqual(["Advogada Exemplo"]);
+  });
+
+  it("aceita mais de um responsável e guarda nomes e ids na ordem", () => {
+    const providencia = { etiqueta: "PROVIDENCIA" as const, tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-11-10", observacao: "ciência" };
+    const resultado = validarAgendamentos([{ ...providencia, responsavel: "revisor exemplo, Advogada Exemplo" }], {
+      tarefas: { PRAZO: [], PROVIDENCIA: tarefasPermitidas(ETAPAS, "PROVIDENCIA"), COMPROMISSO: [] },
+      usuarios: USUARIOS,
+      ehDiaUtil: () => true,
+      cadeiaDaTarefa: () => null,
+    });
+    expect(resultado.ok && resultado.itens[0]).toMatchObject({ responsavel: "Revisor Exemplo, Advogada Exemplo", responsavelId: "5,4" });
+    const comUmFora = validarAgendamentos([{ ...providencia, responsavel: "Advogada Exemplo, Fulano" }], {
+      tarefas: { PRAZO: [], PROVIDENCIA: tarefasPermitidas(ETAPAS, "PROVIDENCIA"), COMPROMISSO: [] },
+      usuarios: USUARIOS,
+      ehDiaUtil: () => true,
+      cadeiaDaTarefa: () => null,
+    });
+    expect(comUmFora.ok).toBe(false);
   });
 });
 
