@@ -4,11 +4,14 @@ import {
   ETIQUETAS_AGENDAMENTO,
   areaDoCatalogo,
   responsavelSugerido,
+  responsaveisNaArea,
   tarefasPermitidas,
   usuarioPorSigla,
   validarAgendamentos,
   type AgendamentoEntrada,
   type EtiquetaAgendamento,
+  type OpcaoTarefa,
+  type OpcaoVios,
 } from "./agendamento";
 import { openAIKey } from "@/lib/openai-keys";
 import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./dias-uteis";
@@ -123,6 +126,15 @@ function fluxosDoCatalogo(catalogo: CatalogoVistagem, arvore: Map<number, TipoNa
   return fluxos;
 }
 
+/** Responsáveis fixos do tipo com o nome igual ao da lista de usuários do VIOS da área (os que não estão nela saem). */
+function comResponsaveisDaArea(tarefas: OpcaoTarefa[], usuarios: OpcaoVios[]): OpcaoTarefa[] {
+  return tarefas.map((tarefa) => {
+    if (!tarefa.responsaveis?.length) return tarefa;
+    const responsaveis = responsaveisNaArea(tarefa.responsaveis, usuarios);
+    return responsaveis.length ? { ...tarefa, responsaveis } : { id: tarefa.id, nome: tarefa.nome, ...(tarefa.nomeVios ? { nomeVios: tarefa.nomeVios } : {}) };
+  });
+}
+
 export function catalogoParaPublicacao(
   areas: CatalogoArea[],
   publicacao: Pick<PublicacaoComArea, "area_processo" | "escritorio_responsavel">
@@ -134,9 +146,9 @@ export function catalogoParaPublicacao(
     area: catalogo.area,
     atualizadoEm: catalogo.atualizadoEm,
     tarefas: {
-      PRAZO: tarefasPermitidas(catalogo.etapas, "PRAZO"),
-      PROVIDENCIA: tarefasPermitidas(catalogo.etapas, "PROVIDENCIA"),
-      COMPROMISSO: tarefasPermitidas(catalogo.etapas, "COMPROMISSO"),
+      PRAZO: comResponsaveisDaArea(tarefasPermitidas(catalogo.etapas, "PRAZO"), catalogo.usuarios),
+      PROVIDENCIA: comResponsaveisDaArea(tarefasPermitidas(catalogo.etapas, "PROVIDENCIA"), catalogo.usuarios),
+      COMPROMISSO: comResponsaveisDaArea(tarefasPermitidas(catalogo.etapas, "COMPROMISSO"), catalogo.usuarios),
     },
     usuarios: catalogo.usuarios,
   };

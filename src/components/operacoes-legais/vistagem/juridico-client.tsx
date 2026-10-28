@@ -17,6 +17,7 @@ import {
   ShieldAlert,
   Trash2,
   TriangleAlert,
+  X,
 } from "lucide-react";
 import { Segmented } from "@/components/facilities/form-parts";
 import { Button } from "@/components/ui/button";
@@ -24,7 +25,17 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
-import { ETIQUETAS_AGENDAMENTO, ROTULO_ETIQUETA, atalhosDePrazo, avisosDaData, chaveNome, horaValida, type EtiquetaAgendamento } from "@/lib/vistagem/agendamento";
+import {
+  ETIQUETAS_AGENDAMENTO,
+  ROTULO_ETIQUETA,
+  atalhosDePrazo,
+  avisosDaData,
+  chaveNome,
+  horaValida,
+  separarNomes,
+  type EtiquetaAgendamento,
+  type OpcaoVios,
+} from "@/lib/vistagem/agendamento";
 import {
   CONTAGENS_PRAZO,
   ROTULO_CONTAGEM,
@@ -245,6 +256,53 @@ interface Navegacao {
   proxima: string | null;
 }
 
+/** Um ou mais responsáveis; a fila do robô recebe os nomes separados por vírgula. */
+function CampoResponsaveis({
+  opcoes,
+  valor,
+  onChange,
+  rotulo,
+  dica,
+}: {
+  opcoes: OpcaoVios[];
+  valor: string;
+  onChange: (valor: string) => void;
+  rotulo: string;
+  dica?: string | null;
+}) {
+  const nomes = separarNomes(valor);
+  return (
+    <div className="space-y-1.5">
+      {nomes.length ? (
+        <ul className="flex flex-wrap gap-1.5" aria-label={rotulo}>
+          {nomes.map((nome) => (
+            <li key={nome} className="inline-flex items-center gap-1 rounded-md border border-[#dce9eb] bg-[#f7fbfc] py-0.5 pl-2 pr-0.5 text-sm text-foreground">
+              {nome}
+              <button
+                type="button"
+                className="rounded p-1 text-muted-foreground hover:bg-[#47cdd0]/15 hover:text-foreground"
+                aria-label={`Tirar ${nome}`}
+                onClick={() => onChange(nomes.filter((item) => item !== nome).join(", "))}
+              >
+                <X className="size-3.5" aria-hidden />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <ComboboxBusca
+        opcoes={opcoes.filter((opcao) => !nomes.some((nome) => chaveNome(nome) === chaveNome(opcao.nome)))}
+        valor=""
+        onChange={(nome) => nome && onChange([...nomes, nome].join(", "))}
+        placeholder={nomes.length ? "Adicionar outro responsável…" : "Digite para buscar…"}
+        rotulo={nomes.length ? `Adicionar responsável à ${rotulo.toLowerCase()}` : rotulo}
+        invalido={!nomes.length}
+      />
+      {dica ? <span className="block text-xs text-muted-foreground">{dica}</span> : null}
+    </div>
+  );
+}
+
 function EditorVistagem({
   id,
   navegacao,
@@ -402,7 +460,7 @@ function EditorVistagem({
           contagemPrazo: prazo && tarefa.dias ? tarefa.contagem : null,
           data: tarefa.classe === "COMPROMISSO" ? tarefa.data ?? "" : "",
           hora: tarefa.hora ?? "",
-          responsavel: detalhe.responsavelSugerido ?? "",
+          responsavel: opcao.responsaveis?.length ? opcao.responsaveis.join(", ") : detalhe.responsavelSugerido ?? "",
           revisor: prazo ? detalhe.revisorSugerido ?? "" : "",
           observacao: tarefa.motivo,
           ia: true,
@@ -718,7 +776,18 @@ function EditorVistagem({
                             opcoes={catalogo.tarefas[linha.etiqueta]}
                             valor={linha.tarefa}
                             onChange={(nome) => {
-                              alterar(linha.chave, { tarefa: nome });
+                              const lista = catalogo.tarefas[linha.etiqueta];
+                              const fixos = lista.find((item) => item.nome === nome)?.responsaveis ?? [];
+                              const anteriores = lista.find((item) => item.nome === linha.tarefa)?.responsaveis ?? [];
+                              const eraDoTipo = anteriores.length > 0 && linha.responsavel === anteriores.join(", ");
+                              alterar(linha.chave, {
+                                tarefa: nome,
+                                ...(fixos.length
+                                  ? { responsavel: fixos.join(", ") }
+                                  : eraDoTipo
+                                    ? { responsavel: detalhe.responsavelSugerido ?? "" }
+                                    : {}),
+                              });
                               if (nome && linha.etiqueta === "COMPROMISSO") setHorarioDe(linha.chave);
                             }}
                             placeholder="Tarefa: digite para buscar…"
@@ -846,12 +915,17 @@ function EditorVistagem({
                         <div className="grid gap-3 @md:grid-cols-2">
                           <div className="space-y-1.5">
                             <span className="block text-xs font-medium text-muted-foreground">Responsável</span>
-                            <ComboboxBusca
+                            <CampoResponsaveis
                               opcoes={catalogo.usuarios}
                               valor={linha.responsavel}
-                              onChange={(nome) => alterar(linha.chave, { responsavel: nome })}
-                              placeholder="Digite para buscar…"
+                              onChange={(valor) => alterar(linha.chave, { responsavel: valor })}
                               rotulo={`Responsável da tarefa ${indice + 1}`}
+                              dica={
+                                (catalogo.tarefas[linha.etiqueta].find((item) => item.nome === linha.tarefa)?.responsaveis ?? []).join(", ") === linha.responsavel &&
+                                linha.responsavel
+                                  ? "Responsáveis fixos deste tipo no VIOS."
+                                  : null
+                              }
                             />
                           </div>
                           <div className="space-y-1.5">

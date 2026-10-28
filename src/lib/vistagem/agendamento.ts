@@ -26,11 +26,15 @@ export interface OpcaoVios {
 /** Tipo de tarefa que o VIOS aceita na área, com as etiquetas configuradas nele (SAMA: vios_tipos_tarefa). */
 export interface EtapaVios extends OpcaoVios {
   etiquetas: number[];
+  /** Responsáveis fixos do tipo no VIOS (ex.: ATUALIZAÇÃO DE CADASTRO); vazio = segue o advogado da pasta. */
+  responsaveis?: string[];
 }
 
 /** Tarefa da lista do jurídico. `nome` é único na lista; `nomeVios` vem quando o nome ganhou o tipo para desempatar. */
 export interface OpcaoTarefa extends OpcaoVios {
   nomeVios?: string;
+  /** Responsáveis fixos do tipo no VIOS: a vistagem já vem com eles. */
+  responsaveis?: string[];
 }
 
 /** O que o jurídico escolhe para cada tarefa vinculada à publicação. */
@@ -102,12 +106,32 @@ export function tarefasPermitidas(etapasDaArea: EtapaVios[], etiqueta: EtiquetaA
   const repetidos = new Map<string, number>();
   for (const etapa of etapas) repetidos.set(chaveNome(etapa.nome), (repetidos.get(chaveNome(etapa.nome)) ?? 0) + 1);
   return etapas
-    .map((etapa): OpcaoTarefa =>
-      (repetidos.get(chaveNome(etapa.nome)) ?? 0) > 1
-        ? { id: etapa.id, nome: `${etapa.nome} (tipo ${etapa.id})`, nomeVios: etapa.nome }
-        : { id: etapa.id, nome: etapa.nome }
-    )
+    .map((etapa): OpcaoTarefa => {
+      const opcao: OpcaoTarefa =
+        (repetidos.get(chaveNome(etapa.nome)) ?? 0) > 1 ? { id: etapa.id, nome: `${etapa.nome} (tipo ${etapa.id})`, nomeVios: etapa.nome } : { id: etapa.id, nome: etapa.nome };
+      return etapa.responsaveis?.length ? { ...opcao, responsaveis: etapa.responsaveis } : opcao;
+    })
     .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { numeric: true }));
+}
+
+/** Nomes que existem na lista de usuários do VIOS da área, com a grafia de lá. */
+export function responsaveisNaArea(nomes: string[], usuarios: OpcaoVios[]): string[] {
+  const porChave = new Map(usuarios.map((usuario) => [chaveNome(usuario.nome), usuario.nome]));
+  return [...new Set(nomes.map((nome) => porChave.get(chaveNome(nome))).filter((nome): nome is string => Boolean(nome)))];
+}
+
+/** Nomes separados por vírgula, sem repetir (a fila do robô usa o mesmo formato). */
+export function separarNomes(texto: string | null | undefined): string[] {
+  const vistos = new Set<string>();
+  return String(texto ?? "")
+    .split(",")
+    .map((nome) => nome.trim())
+    .filter((nome) => {
+      const chave = chaveNome(nome);
+      if (!chave || vistos.has(chave)) return false;
+      vistos.add(chave);
+      return true;
+    });
 }
 
 /** Área do catálogo do SAMA para a pasta: a área do processo no VIOS ou, sem ela, a do escritório. */
@@ -200,7 +224,10 @@ export function validarAgendamentos(
     const compromisso = entrada.etiqueta === "COMPROMISSO";
     const hora = compromisso && horaValida(entrada.hora?.trim()) ? (entrada.hora as string).trim() : null;
     if (compromisso && !hora) erros.push(`${n}: informe o horário do compromisso.`);
-    const responsavel = usuarioPorChave.get(chaveNome(entrada.responsavel));
+    // Pode haver mais de um responsável (ex.: tipos com responsáveis fixos no VIOS), separados por vírgula.
+    const nomesResponsaveis = separarNomes(entrada.responsavel);
+    const encontrados = nomesResponsaveis.map((nome) => usuarioPorChave.get(chaveNome(nome)));
+    const responsavel = nomesResponsaveis.length && encontrados.every(Boolean) ? (encontrados as OpcaoVios[]) : null;
     if (!responsavel) erros.push(`${n}: escolha o responsável na lista de usuários do VIOS.`);
     const revisor = entrada.revisor?.trim() ? usuarioPorChave.get(chaveNome(entrada.revisor)) : null;
     if (entrada.revisor?.trim() && !revisor) erros.push(`${n}: escolha o revisor na lista de usuários do VIOS.`);
@@ -224,8 +251,8 @@ export function validarAgendamentos(
       diasPrazo,
       contagemPrazo,
       hora,
-      responsavel: responsavel.nome,
-      responsavelId: responsavel.id,
+      responsavel: responsavel.map((usuario) => usuario.nome).join(", "),
+      responsavelId: responsavel.map((usuario) => usuario.id).join(","),
       revisor: revisor?.nome ?? null,
       revisorId: revisor?.id ?? null,
       observacao,

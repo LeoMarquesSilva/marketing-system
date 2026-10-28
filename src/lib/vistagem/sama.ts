@@ -44,16 +44,35 @@ export interface CatalogoArea {
 }
 
 let cacheCatalogo: { carregadoEm: number; areas: CatalogoArea[] } | null = null;
-let cacheEtiquetas: { carregadoEm: number; etiquetas: Map<string, number[]> } | null = null;
+/** Etiquetas e responsáveis fixos de cada tipo de tarefa do VIOS. */
+interface DadosDoTipo {
+  etiquetas: number[];
+  responsaveis: string[];
+}
+
+let cacheEtiquetas: { carregadoEm: number; etiquetas: Map<string, DadosDoTipo> } | null = null;
 const CACHE_MS = 10 * 60 * 1000;
 
-/** Etiquetas de cada tipo de tarefa do VIOS (ids), por id do tipo. */
-async function carregarEtiquetasDosTipos(): Promise<Map<string, number[]>> {
+/** Etiquetas (ids) e responsáveis fixos de cada tipo de tarefa do VIOS, por id do tipo. */
+async function carregarEtiquetasDosTipos(): Promise<Map<string, DadosDoTipo>> {
   if (cacheEtiquetas && Date.now() - cacheEtiquetas.carregadoEm < CACHE_MS) return cacheEtiquetas.etiquetas;
-  const { data, error } = await sama().from("vios_tipos_tarefa").select("etapa_id, etiquetas").limit(5000);
+  type LinhaTipo = { etapa_id: number; etiquetas: number[] | null; responsaveis?: string[] | null };
+  let { data, error } = await sama().from("vios_tipos_tarefa").select("etapa_id, etiquetas, responsaveis").limit(5000).returns<LinhaTipo[]>();
+  if (error && /responsaveis/.test(error.message)) {
+    // SAMA ainda sem a coluna (migração 20261028000010 do sama-rpa): segue sem os responsáveis fixos.
+    ({ data, error } = await sama().from("vios_tipos_tarefa").select("etapa_id, etiquetas").limit(5000).returns<LinhaTipo[]>());
+  }
   if (error) throw new VistagemError(`Falha ao carregar as etiquetas dos tipos de tarefa do VIOS no SAMA: ${error.message}`, 502);
   if (!data?.length) throw new VistagemError("As etiquetas dos tipos de tarefa do VIOS no SAMA (vios_tipos_tarefa) estão vazias.", 502);
-  const etiquetas = new Map(data.map((row) => [String(row.etapa_id), ((row.etiquetas ?? []) as number[]).map(Number)]));
+  const etiquetas = new Map(
+    data.map((row) => [
+      String(row.etapa_id),
+      {
+        etiquetas: ((row.etiquetas ?? []) as number[]).map(Number),
+        responsaveis: (row.responsaveis ?? []).filter(Boolean),
+      },
+    ])
+  );
   cacheEtiquetas = { carregadoEm: Date.now(), etiquetas };
   return etiquetas;
 }
@@ -70,7 +89,10 @@ export async function carregarCatalogoProcessos(): Promise<CatalogoArea[]> {
     area: row.area as string,
     etapas: ((row.etapas ?? []) as OpcaoVios[])
       .filter((etapa) => etapa?.id && etapa?.nome)
-      .map((etapa) => ({ id: String(etapa.id), nome: etapa.nome, etiquetas: etiquetasPorTipo.get(String(etapa.id)) ?? [] })),
+      .map((etapa) => {
+        const tipo = etiquetasPorTipo.get(String(etapa.id));
+        return { id: String(etapa.id), nome: etapa.nome, etiquetas: tipo?.etiquetas ?? [], responsaveis: tipo?.responsaveis ?? [] };
+      }),
     // o usuário do robô não é responsável de tarefa
     usuarios: ((row.usuarios ?? []) as OpcaoVios[])
       .filter((usuario) => usuario?.id && usuario?.nome && !/f[eê]nix agendador/i.test(usuario.nome))

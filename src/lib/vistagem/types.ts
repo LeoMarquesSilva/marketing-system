@@ -251,7 +251,7 @@ export interface CatalogoVistagem {
   area: string;
   atualizadoEm: string;
   /** `nome` é único na lista (nome repetido no VIOS ganha o tipo); `nomeVios` é o nome original. */
-  tarefas: Record<"PRAZO" | "PROVIDENCIA" | "COMPROMISSO", { id: string; nome: string; nomeVios?: string }[]>;
+  tarefas: Record<"PRAZO" | "PROVIDENCIA" | "COMPROMISSO", { id: string; nome: string; nomeVios?: string; responsaveis?: string[] }[]>;
   usuarios: { id: string; nome: string }[];
 }
 
