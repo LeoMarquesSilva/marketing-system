@@ -1,4 +1,4 @@
-import { ETIQUETA_VIOS, montarObservacaoVios, paraDataVios, type EtiquetaAgendamento } from "./agendamento";
+import { ETIQUETA_VIOS, montarObservacaoVios, paraDataVios, referenciaDaPublicacao, type EtiquetaAgendamento } from "./agendamento";
 
 /**
  * Onde o robô do SAMA agenda: na publicação (Intimações › Lançamento, ligada à
@@ -120,17 +120,15 @@ export function linhasParaFila(
     return itens.map((item) => ({
       linha: base(
         item,
-        montarObservacaoVios(
-          { ...referencia, teor: publicacao.teor },
-          [item.hora ? `Horário: ${item.hora}` : null, item.observacao].filter(Boolean).join("\n") || null
-        )
+        montarObservacaoVios(publicacao.teor, [item.hora ? `Horário: ${item.hora}` : null, item.observacao].filter(Boolean).join("\n") || null)
       ),
       agendamentos: [item.id],
     }));
   }
 
   if (!itens.length) return [];
-  const cabecalho = montarObservacaoVios(referencia, null);
+  // Linha da fila do robô (não vai para a tarefa): só identifica a publicação.
+  const cabecalho = referenciaDaPublicacao(referencia);
   const comunicacao = publicacao.djen_id_comunicacao ? String(publicacao.djen_id_comunicacao) : null;
   return [
     {
@@ -149,7 +147,7 @@ export function linhasParaFila(
             hora: item.hora ?? null,
             responsavel: item.responsavel,
             revisor: item.revisor,
-            observacao: montarObservacaoVios(referencia, item.observacao),
+            observacao: montarObservacaoVios(null, item.observacao),
           })),
         },
       },

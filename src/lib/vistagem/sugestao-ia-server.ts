@@ -43,6 +43,7 @@ const RESPOSTA = z.object({
   ),
   esocial: z.enum(CLASSIFICACOES_ESOCIAL),
   confianca: z.enum(["alta", "media", "baixa"]),
+  parte_contraria: z.boolean(),
 });
 
 /** Pede à OpenAI as tarefas da publicação, escolhidas só da lista do VIOS da área. */
@@ -75,6 +76,7 @@ async function pedirSugestao(publicacao: PublicacaoComArea, listas: Record<Etiqu
     tarefas: tarefasDaResposta(object, listas),
     esocial: esocialDaResposta(object.esocial),
     confianca: object.confianca,
+    parteContraria: object.parte_contraria,
     modelo,
     geradaEm: new Date().toISOString(),
     custoUS: custoDaChamada({

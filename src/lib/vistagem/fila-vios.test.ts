@@ -29,7 +29,7 @@ describe("fila do robô", () => {
     const [naPasta] = linhasParaFila(PUBLICACAO, [audiencia], { simular: false, modo: "pasta" });
     expect(naPasta.linha).toMatchObject({ tipo: "Compromisso", etiqueta_id: "205" });
     // a fila da pasta não tem coluna de hora: vai na descrição
-    expect(naPasta.linha.observacao).toContain("\nHorário: 14:30\n");
+    expect(naPasta.linha.observacao).toMatch(/^Horário: 14:30\n/);
     const [grupo] = linhasParaFila(PUBLICACAO, [ITENS[0], audiencia], { simular: false, modo: "intimacao" });
     expect(grupo.linha.lancamento?.tarefas.map((t) => [t.etiqueta_id, t.hora])).toEqual([
       ["1", null],
@@ -56,7 +56,7 @@ describe("fila do robô", () => {
           hora: null,
           responsavel: "Maria Heloiza Gois Ponce",
           revisor: "Giovanna Pereira de Souza",
-          observacao: "Publicação de 15/10/2026 · TRT17 · Processo 0000952-37.2026.5.17.0141 · ID comunicação 755730632\nlaudo\nVistagem pelo Orquestra.",
+          observacao: "laudo",
         },
         {
           chave: "ag-2",
@@ -67,7 +67,7 @@ describe("fila do robô", () => {
           hora: null,
           responsavel: "Giovanna Pereira de Souza",
           revisor: null,
-          observacao: "Publicação de 15/10/2026 · TRT17 · Processo 0000952-37.2026.5.17.0141 · ID comunicação 755730632\nVistagem pelo Orquestra.",
+          observacao: "",
         },
       ],
     });

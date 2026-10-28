@@ -3,6 +3,8 @@ import { CADEIA_PADRAO, type CadeiaDoPrazo } from "./fluxo-vios";
 /** Atalhos de prazo (dias contados a partir do 1º dia útil após a publicação). */
 export const DIAS_PRAZO = [5, 10, 15, 30, 60, 90, 180] as const;
 
+export const DIAS_PRAZO_TRABALHISTA = [5, 8, 10, 15, 16, 30, 60, 90, 180] as const;
+
 /** Como o prazo é contado: dias úteis (CPC art. 219) ou corridos (ex.: Lei 11.101, art. 189). */
 export type ContagemPrazo = "uteis" | "corridos";
 

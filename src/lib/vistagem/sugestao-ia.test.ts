@@ -20,6 +20,7 @@ const LISTAS: Record<EtiquetaAgendamento, OpcaoTarefa[]> = {
   ],
   PROVIDENCIA: [
     { id: "618", nome: "CIÊNCIA DA MOVIMENTAÇÃO PROCESSUAL" },
+    { id: "316", nome: "CIÊNCIA NF" },
     { id: "792", nome: "INSERIR E-SOCIAL" },
   ],
   COMPROMISSO: [{ id: "202", nome: "AUDIÊNCIA UNA/INICIAL" }],
@@ -51,7 +52,7 @@ describe("tarefasDaResposta", () => {
     const resposta: RespostaIa = {
       resumo: "",
       esocial: "Homologação de cálculo",
-      confianca: "alta",
+      confianca: "alta", parte_contraria: false,
       tarefas: [
         tarefa({ dias: 15, contagem: "uteis" }),
         tarefa({ classe: "PRAZO", tarefa_id: "618", dias: 5 }),
@@ -66,7 +67,7 @@ describe("tarefasDaResposta", () => {
       {
         resumo: "",
         esocial: "Não Identificado",
-        confianca: "alta",
+        confianca: "alta", parte_contraria: false,
         tarefas: [
           tarefa({ classe: "COMPROMISSO", tarefa_id: "202", dias: 3, data: "2026-12-03", hora: "11:10" }),
           tarefa({ classe: "PROVIDENCIA", tarefa_id: "618", data: "2026-11-01", hora: "10:00" }),
@@ -81,7 +82,29 @@ describe("tarefasDaResposta", () => {
   });
 
   it("prazo sem dias nem data sai", () => {
-    expect(tarefasDaResposta({ resumo: "", esocial: "Não Identificado", confianca: "baixa", tarefas: [tarefa({})] }, LISTAS)).toEqual([]);
+    expect(tarefasDaResposta({ resumo: "", esocial: "Não Identificado", confianca: "baixa", parte_contraria: false, tarefas: [tarefa({})] }, LISTAS)).toEqual([]);
+  });
+});
+
+describe("prazo da parte contrária", () => {
+  it("vira só CIÊNCIA NF, com o porquê", () => {
+    const tarefas = tarefasDaResposta(
+      {
+        resumo: "",
+        esocial: "Não Identificado",
+        confianca: "alta",
+        parte_contraria: true,
+        tarefas: [tarefa({ classe: "PRAZO", tarefa_id: "452", dias: 15, contagem: "uteis", motivo: "Prazo de 15 dias é do exequente." }), tarefa({ classe: "PROVIDENCIA", tarefa_id: "618" })],
+      },
+      LISTAS
+    );
+    expect(tarefas).toEqual([
+      { classe: "PROVIDENCIA", tarefaId: "316", tarefa: "CIÊNCIA NF", dias: null, contagem: null, data: null, hora: null, motivo: "Prazo de 15 dias é do exequente." },
+    ]);
+  });
+
+  it("as instruções citam a CIÊNCIA NF da lista", () => {
+    expect(instrucoesDaSugestao(LISTAS)).toContain("SOMENTE a tarefa 316 | CIÊNCIA NF");
   });
 });
 
@@ -98,7 +121,7 @@ describe("fatalSugerida", () => {
       {
         resumo: "",
         esocial: "Não Identificado",
-        confianca: "alta",
+        confianca: "alta", parte_contraria: false,
         tarefas: [tarefa({ dias: 5, contagem: "uteis" }), tarefa({ tarefa_id: "418", data: "2026-12-03" })],
       },
       LISTAS
@@ -117,7 +140,7 @@ describe("resultadoDaSugestao", () => {
     modelo: "gpt-6-luna",
     geradaEm: "2026-11-09T10:00:00Z",
     custoUS: 0.0003,
-    tarefas: tarefasDaResposta({ resumo: "", esocial: "", confianca: "alta", tarefas: [tarefa({ dias: 5, contagem: "uteis" })] }, LISTAS),
+    tarefas: tarefasDaResposta({ resumo: "", esocial: "", confianca: "alta", parte_contraria: false, tarefas: [tarefa({ dias: 5, contagem: "uteis" })] }, LISTAS),
   };
   const item = (mudanca: Partial<AgendamentoValidado> = {}): AgendamentoValidado => ({
     etiqueta: "PRAZO",

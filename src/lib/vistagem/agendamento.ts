@@ -1,4 +1,4 @@
-import { CONTAGENS_PRAZO, datasDoPrazo, type ContagemPrazo } from "./dias-uteis";
+import { CONTAGENS_PRAZO, DIAS_PRAZO, DIAS_PRAZO_TRABALHISTA, datasDoPrazo, type ContagemPrazo } from "./dias-uteis";
 import type { CadeiaDoPrazo } from "./fluxo-vios";
 
 /**
@@ -205,12 +205,16 @@ export function validarAgendamentos(
     const revisor = entrada.revisor?.trim() ? usuarioPorChave.get(chaveNome(entrada.revisor)) : null;
     if (entrada.revisor?.trim() && !revisor) erros.push(`${n}: escolha o revisor na lista de usuários do VIOS.`);
     if (prazo && !entrada.revisor?.trim()) erros.push(`${n}: no Prazo o revisor é obrigatório.`);
+    // A observação vai na descrição da tarefa no VIOS: sem ela, a tarefa fica só com o teor.
     const observacao = entrada.observacao?.trim() || null;
+    if (!observacao) erros.push(`${n}: escreva a observação (vai na descrição da tarefa).`);
     if (observacao && observacao.length > MAX_OBSERVACAO) erros.push(`${n}: observação com mais de ${MAX_OBSERVACAO} caracteres.`);
     const diasPrazo = prazo && Number.isInteger(entrada.diasPrazo) && (entrada.diasPrazo ?? 0) > 0 ? (entrada.diasPrazo as number) : null;
     const contagemPrazo = diasPrazo ? CONTAGENS_PRAZO.find((contagem) => contagem === entrada.contagemPrazo) ?? null : null;
     if (diasPrazo && !contagemPrazo) erros.push(`${n}: escolha se o prazo é em dias úteis ou corridos.`);
-    if (!tarefa || !responsavel || !dataValida(data) || (prazo && !revisor) || (compromisso && !hora) || (diasPrazo && !contagemPrazo)) return null;
+    if (!tarefa || !responsavel || !dataValida(data) || (prazo && !revisor) || (compromisso && !hora) || (diasPrazo && !contagemPrazo) || !observacao) {
+      return null;
+    }
     return {
       etiqueta: entrada.etiqueta,
       tarefa: tarefa.nomeVios ?? tarefa.nome,
@@ -249,18 +253,14 @@ function teorParaVios(teor: string | null | undefined): string {
   return `${limpo.slice(0, LIMITE_TEOR_VIOS).trimEnd()} […]\n(Teor cortado: ${milhar.format(LIMITE_TEOR_VIOS)} de ${milhar.format(limpo.length)} caracteres. Íntegra no Orquestra.)`;
 }
 
-/** Descrição da tarefa no VIOS: referência da publicação + observação do vistador + teor da publicação. */
-export function montarObservacaoVios(
-  publicacao: {
-    dataPublicacao: string | null;
-    tribunal: string | null;
-    numeroProcesso: string | null;
-    djenIdComunicacao: number | null;
-    teor?: string | null;
-  },
-  observacao: string | null
-): string {
-  const referencia = [
+/** Referência curta da publicação (só para a linha da fila do robô, não vai para a tarefa). */
+export function referenciaDaPublicacao(publicacao: {
+  dataPublicacao: string | null;
+  tribunal: string | null;
+  numeroProcesso: string | null;
+  djenIdComunicacao: number | null;
+}): string {
+  return [
     publicacao.dataPublicacao ? `Publicação de ${paraDataVios(publicacao.dataPublicacao)}` : "Publicação",
     publicacao.tribunal,
     publicacao.numeroProcesso ? `Processo ${publicacao.numeroProcesso}` : null,
@@ -268,9 +268,22 @@ export function montarObservacaoVios(
   ]
     .filter(Boolean)
     .join(" · ");
-  const cabecalho = [referencia, observacao?.trim(), "Vistagem pelo Orquestra."].filter(Boolean).join("\n");
-  const teor = teorParaVios(publicacao.teor);
-  return teor ? `${cabecalho}\n\nTEOR DA PUBLICAÇÃO\n${teor}` : cabecalho;
+}
+
+/**
+ * Descrição da tarefa no VIOS: a observação do vistador e, quando a tarefa vai na pasta, o teor.
+ * Lançada na publicação, o próprio VIOS junta o texto da intimação.
+ */
+export function montarObservacaoVios(teor: string | null | undefined, observacao: string | null): string {
+  const texto = observacao?.trim() ?? "";
+  const publicacao = teorParaVios(teor);
+  if (!publicacao) return texto;
+  return texto ? `${texto}\n\nTEOR DA PUBLICAÇÃO\n${publicacao}` : `TEOR DA PUBLICAÇÃO\n${publicacao}`;
+}
+
+/** Atalhos de dias do Prazo: o Trabalhista tem também 8 e 16 dias. */
+export function atalhosDePrazo(areaDoCatalogo: string | null | undefined): readonly number[] {
+  return chaveNome(areaDoCatalogo) === "TRABALHISTA" ? DIAS_PRAZO_TRABALHISTA : DIAS_PRAZO;
 }
 
 /** Sigla do VIOS a partir do nome (ex.: "Fernanda Voltarelli Arnoni" → "FVA"), com e sem preposições. */

@@ -22,7 +22,7 @@ import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import { ROTULO_ETIQUETA } from "@/lib/vistagem/agendamento";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
-import { SUBTIPOS_INCONSISTENCIA_AGENDAMENTO, TIPOS_INCONSISTENCIA_AGENDAMENTO } from "@/lib/vistagem/inconsistencias";
+import { SUBTIPOS_AGENDAMENTO_EM_USO, TIPOS_INCONSISTENCIA_AGENDAMENTO } from "@/lib/vistagem/inconsistencias";
 import type { TarefaNoVios } from "@/lib/vistagem/fila-vios";
 import type { AgendamentoResumo, CheckResposta, ConferenciaItem } from "@/lib/vistagem/types";
 import { linkTarefaVios } from "@/lib/vistagem/vios-links";
@@ -448,7 +448,7 @@ function ItemCheck({ item, aba, onConcluido }: { item: ConferenciaItem; aba: Aba
           <Campo rotulo="Subtipo">
             <select className={campoClasse} value={subtipo} onChange={(evento) => setSubtipo(evento.target.value)}>
               <option value="">Escolha…</option>
-              {SUBTIPOS_INCONSISTENCIA_AGENDAMENTO.map((valor) => (
+              {SUBTIPOS_AGENDAMENTO_EM_USO.map((valor) => (
                 <option key={valor} value={valor}>
                   {valor}
                 </option>
