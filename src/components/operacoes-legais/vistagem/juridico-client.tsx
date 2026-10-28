@@ -1092,7 +1092,9 @@ function ModalTransferir({
   );
 }
 
-const CHAVE_FILA_RECOLHIDA = "vistagem.filaRecolhida";
+const SEM_GRUPO = "Sem grupo";
+
+type FiltroRisco = "todas" | "risco" | "sem_risco";
 
 interface GrupoFila {
   nome: string;
@@ -1104,7 +1106,7 @@ interface GrupoFila {
 function agruparFila(publicacoes: PublicacaoResumo[]): GrupoFila[] {
   const grupos = new Map<string, PublicacaoResumo[]>();
   for (const publicacao of publicacoes) {
-    const nome = publicacao.grupoCliente?.trim() || "Sem grupo";
+    const nome = publicacao.grupoCliente?.trim() || SEM_GRUPO;
     grupos.set(nome, [...(grupos.get(nome) ?? []), publicacao]);
   }
   return [...grupos.entries()]
@@ -1124,27 +1126,17 @@ function Juridico() {
   const [porEscritorio, setPorEscritorio] = useState<Record<string, number>>({});
   /** Áreas do usuário do jurídico; null é a controladoria (todas). */
   const [areas, setAreas] = useState<string[] | null>(null);
+  /** Publicação escolhida; sem escolha (ou fora dos filtros), abre a primeira da fila. */
   const [selecionada, setSelecionada] = useState<string | null>(null);
+  /** No celular a lista e a publicação não cabem juntas: mostra a lista só quando pedida. */
+  const [listaNoCelular, setListaNoCelular] = useState(false);
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
   const [busca, setBusca] = useState("");
-  /** Fila recolhida: a publicação ocupa a largura toda. Lembrado neste navegador. */
-  const [filaRecolhida, setFilaRecolhida] = useState(() => {
-    try {
-      return window.localStorage.getItem(CHAVE_FILA_RECOLHIDA) === "1";
-    } catch {
-      return false;
-    }
-  });
-
-  function recolherFila(recolher: boolean) {
-    setFilaRecolhida(recolher);
-    try {
-      window.localStorage.setItem(CHAVE_FILA_RECOLHIDA, recolher ? "1" : "0");
-    } catch {
-      // sem localStorage, vale só para esta visita
-    }
-  }
+  const [grupo, setGrupo] = useState("");
+  const [risco, setRisco] = useState<FiltroRisco>("todas");
+  /** A fila abre sempre recolhida: a publicação ocupa a largura toda. */
+  const [filaRecolhida, setFilaRecolhida] = useState(true);
 
   const carregar = useCallback(async (filtro: string) => {
     setPublicacoes(null);
@@ -1168,36 +1160,64 @@ function Juridico() {
 
   const escritorios = useMemo(() => Object.entries(porEscritorio).sort((a, b) => a[0].localeCompare(b[0], "pt-BR")), [porEscritorio]);
   const total = escritorios.reduce((soma, [, quantidade]) => soma + quantidade, 0);
+  const gruposDaFila = useMemo(() => {
+    const contagem = new Map<string, number>();
+    for (const publicacao of publicacoes ?? []) {
+      const nome = publicacao.grupoCliente?.trim() || SEM_GRUPO;
+      contagem.set(nome, (contagem.get(nome) ?? 0) + 1);
+    }
+    return [...contagem.entries()].sort((a, b) => a[0].localeCompare(b[0], "pt-BR"));
+  }, [publicacoes]);
+  // Grupo escolhido que sumiu da fila (outro escritório) deixa de filtrar.
+  const grupoAtivo = gruposDaFila.some(([nome]) => nome === grupo) ? grupo : "";
   const filtradas = useMemo(() => {
     const termo = chaveNome(busca);
-    if (!termo) return publicacoes ?? [];
     const digitos = termo.replace(/\D/g, "");
-    return (publicacoes ?? []).filter(
-      (publicacao) =>
+    return (publicacoes ?? []).filter((publicacao) => {
+      if (grupoAtivo && (publicacao.grupoCliente?.trim() || SEM_GRUPO) !== grupoAtivo) return false;
+      if (risco === "risco" && !publicacao.demandaRisco) return false;
+      if (risco === "sem_risco" && publicacao.demandaRisco) return false;
+      if (!termo) return true;
+      return (
         (digitos.length >= 4 && (publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal).replace(/\D/g, "").includes(digitos)) ||
         [publicacao.cliente, publicacao.grupoCliente, publicacao.pastaCi].some((texto) => chaveNome(texto).includes(termo))
-    );
-  }, [publicacoes, busca]);
+      );
+    });
+  }, [publicacoes, busca, grupoAtivo, risco]);
+  const filtrosAtivos = Boolean(busca.trim() || grupoAtivo || risco !== "todas");
   const grupos = useMemo(() => agruparFila(filtradas), [filtradas]);
   // Mesma ordem da lista: é por ela que o editor anda para a anterior e a próxima.
-  const ordem = useMemo(() => grupos.flatMap((grupo) => grupo.publicacoes.map((publicacao) => publicacao.id)), [grupos]);
-  const indiceSelecionada = selecionada ? ordem.indexOf(selecionada) : -1;
+  const ordem = useMemo(() => grupos.flatMap((item) => item.publicacoes.map((publicacao) => publicacao.id)), [grupos]);
+  const aberta = selecionada && ordem.includes(selecionada) ? selecionada : ordem[0] ?? null;
+  const indiceAberta = aberta ? ordem.indexOf(aberta) : -1;
   const navegacao =
-    indiceSelecionada >= 0
+    indiceAberta >= 0
       ? {
-          posicao: indiceSelecionada + 1,
+          posicao: indiceAberta + 1,
           total: ordem.length,
-          anterior: ordem[indiceSelecionada - 1] ?? null,
-          proxima: ordem[indiceSelecionada + 1] ?? null,
+          anterior: ordem[indiceAberta - 1] ?? null,
+          proxima: ordem[indiceAberta + 1] ?? null,
         }
       : null;
 
   useEffect(() => {
     // Ao andar pelas setas, a lista acompanha a publicação aberta.
     document.querySelector("[data-fila-vistagem] [aria-current=true]")?.scrollIntoView({ block: "nearest" });
-  }, [selecionada]);
+  }, [aberta]);
   const riscos = (publicacoes ?? []).filter((publicacao) => publicacao.demandaRisco).length;
   const devolvidas = (publicacoes ?? []).filter((publicacao) => publicacao.devolucaoMotivo || publicacao.devolvidoEm).length;
+
+  function abrir(id: string) {
+    setSelecionada(id);
+    setListaNoCelular(false);
+    setAviso("");
+  }
+
+  function limparFiltros() {
+    setBusca("");
+    setGrupo("");
+    setRisco("todas");
+  }
 
   function transferida(destino: string) {
     // O destino pode ser outra área do próprio usuário: recarrega a fila e as contagens.
@@ -1207,9 +1227,10 @@ function Juridico() {
   }
 
   function concluida(id: string) {
-    const restantes = (publicacoes ?? []).filter((p) => p.id !== id);
-    setPublicacoes(restantes);
-    setSelecionada(agruparFila(restantes)[0]?.publicacoes[0]?.id ?? null);
+    // Segue para a próxima da fila (ou a anterior, se era a última).
+    const posicao = ordem.indexOf(id);
+    setSelecionada(ordem[posicao + 1] ?? ordem[posicao - 1] ?? null);
+    setPublicacoes((publicacoes ?? []).filter((p) => p.id !== id));
     setAviso("Vistagem enviada para a conferência da controladoria.");
     setPorEscritorio((atual) => {
       const p = (publicacoes ?? []).find((item) => item.id === id);
@@ -1228,6 +1249,15 @@ function Juridico() {
               {publicacoes?.length === 1 ? "publicação" : "publicações"} a vistar{escritorio ? ` em ${escritorio}` : ""}
               {riscos ? <span className="text-red-700"> · {riscos} de risco</span> : null}
               {devolvidas ? <span className="text-amber-800"> · {devolvidas} {devolvidas === 1 ? "devolvida" : "devolvidas"}</span> : null}
+              {filtrosAtivos && publicacoes ? (
+                <>
+                  {" · "}
+                  <span className="font-medium text-foreground">{filtradas.length} no filtro</span>{" "}
+                  <button type="button" className="text-xs font-medium text-[#347796] underline-offset-4 hover:underline" onClick={limparFiltros}>
+                    limpar
+                  </button>
+                </>
+              ) : null}
             </p>
             {areas ? (
               <p className="mt-0.5 text-xs">
@@ -1238,7 +1268,7 @@ function Juridico() {
         }
       >
         {filaRecolhida ? (
-          <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => recolherFila(false)}>
+          <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)}>
             <PanelLeftOpen />
             Mostrar fila
           </Button>
@@ -1252,6 +1282,24 @@ function Juridico() {
             </option>
           ))}
         </select>
+        <select aria-label="Grupo do cliente" className={cn(campo, "w-full sm:w-56")} value={grupoAtivo} onChange={(evento) => setGrupo(evento.target.value)}>
+          <option value="">Todos os grupos</option>
+          {gruposDaFila.map(([nome, quantidade]) => (
+            <option key={nome} value={nome}>
+              {nome} ({quantidade})
+            </option>
+          ))}
+        </select>
+        <Segmented
+          label="Demanda de risco"
+          value={risco}
+          options={[
+            { value: "todas", label: "Todas" },
+            { value: "risco", label: `De risco ${riscos}` },
+            { value: "sem_risco", label: `Sem risco ${(publicacoes?.length ?? 0) - riscos}` },
+          ]}
+          onChange={setRisco}
+        />
       </BarraAba>
 
       {aviso ? <Aviso tom="sucesso">{aviso}</Aviso> : null}
@@ -1267,13 +1315,13 @@ function Juridico() {
         <Painel
           aria-label="Publicações a vistar"
           data-fila-vistagem
-          className={cn("lg:flex lg:h-full lg:flex-col", selecionada && "hidden lg:flex", filaRecolhida && "lg:hidden")}
+          className={cn("lg:flex lg:h-full lg:flex-col", aberta && !listaNoCelular && "hidden lg:flex", filaRecolhida && "lg:hidden")}
         >
           <div className="hidden items-center gap-2 border-b border-[#e6eef0] px-4 py-2 lg:flex">
             <span className="flex-1 text-xs font-medium text-muted-foreground">
               Fila <span className="tabular-nums">· {filtradas.length}</span>
             </span>
-            <Button type="button" size="icon-xs" variant="ghost" onClick={() => recolherFila(true)} aria-label="Recolher a fila" title="Recolher a fila">
+            <Button type="button" size="icon-xs" variant="ghost" onClick={() => setFilaRecolhida(true)} aria-label="Recolher a fila" title="Recolher a fila">
               <PanelLeftClose />
             </Button>
           </div>
@@ -1284,31 +1332,32 @@ function Juridico() {
               As publicações do dia aparecem aqui depois da captura e da triagem.
             </Vazio>
           ) : filtradas.length === 0 ? (
-            <Vazio icone={Search} titulo="Nenhuma publicação com essa busca" />
+            <Vazio icone={Search} titulo="Nenhuma publicação com esses filtros">
+              <Button type="button" variant="outline" size="sm" onClick={limparFiltros}>
+                Limpar filtros
+              </Button>
+            </Vazio>
           ) : (
             <div className="max-h-[70vh] overflow-auto lg:max-h-none lg:flex-1">
-              {grupos.map((grupo) => (
-                <section key={grupo.nome} aria-label={grupo.nome}>
+              {grupos.map((bloco) => (
+                <section key={bloco.nome} aria-label={bloco.nome}>
                   <h3 className="sticky top-0 z-10 flex items-center gap-2 border-b border-[#e6eef0] bg-[#f7fbfc] px-4 py-2 text-xs font-semibold text-[#285f7a]">
-                    <span className="truncate">{grupo.nome}</span>
-                    <span className="font-normal tabular-nums text-muted-foreground">{grupo.publicacoes.length}</span>
-                    {grupo.riscos ? (
+                    <span className="truncate">{bloco.nome}</span>
+                    <span className="font-normal tabular-nums text-muted-foreground">{bloco.publicacoes.length}</span>
+                    {bloco.riscos ? (
                       <Selo tom="perigo" className="ml-auto">
-                        {grupo.riscos} de risco
+                        {bloco.riscos} de risco
                       </Selo>
                     ) : null}
                   </h3>
                   <ul className="divide-y divide-[#eef3f5]">
-                    {grupo.publicacoes.map((publicacao) => (
+                    {bloco.publicacoes.map((publicacao) => (
                       <li key={publicacao.id}>
                         <button
                           type="button"
-                          onClick={() => {
-                            setSelecionada(publicacao.id);
-                            setAviso("");
-                          }}
-                          aria-current={publicacao.id === selecionada ? "true" : undefined}
-                          className={cn(linhaLista(publicacao.id === selecionada), "space-y-1")}
+                          onClick={() => abrir(publicacao.id)}
+                          aria-current={publicacao.id === aberta ? "true" : undefined}
+                          className={cn(linhaLista(publicacao.id === aberta), "space-y-1")}
                         >
                           <span className="flex flex-wrap items-center gap-1.5">
                             <span className="font-mono text-xs font-semibold text-foreground">{publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}</span>
@@ -1334,26 +1383,23 @@ function Juridico() {
           )}
         </Painel>
 
-        <div className={cn("min-w-0 lg:h-full lg:overflow-y-auto lg:pr-1", !selecionada && "hidden lg:block")}>
-          {selecionada ? (
+        <div className={cn("min-w-0 lg:h-full lg:overflow-y-auto lg:pr-1", (!aberta || listaNoCelular) && "hidden lg:block")}>
+          {aberta ? (
             <EditorVistagem
-              key={selecionada}
-              id={selecionada}
+              key={aberta}
+              id={aberta}
               navegacao={navegacao}
-              onAbrir={(id) => {
-                setSelecionada(id);
-                setAviso("");
-              }}
+              onAbrir={abrir}
               onConcluida={concluida}
               onTransferida={transferida}
-              onVoltar={() => setSelecionada(null)}
+              onVoltar={() => setListaNoCelular(true)}
             />
           ) : (
             <Painel>
-              <Vazio icone={FileText} titulo="Escolha uma publicação na lista">
-                <p>Leia o teor, use a sugestão da IA quando houver e vincule as tarefas do VIOS.</p>
+              <Vazio icone={FileText} titulo={publicacoes === null ? "Carregando a fila" : "Nenhuma publicação para abrir"}>
+                <p>{publicacoes === null ? "A primeira publicação da fila abre aqui." : "Quando houver publicação na fila (ou nos filtros), a primeira abre aqui."}</p>
                 {filaRecolhida ? (
-                  <Button type="button" variant="outline" className="mt-3" onClick={() => recolherFila(false)}>
+                  <Button type="button" variant="outline" className="mt-3" onClick={() => setFilaRecolhida(false)}>
                     <PanelLeftOpen />
                     Mostrar fila
                   </Button>
