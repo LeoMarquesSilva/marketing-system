@@ -11,6 +11,7 @@ import {
   type EtiquetaAgendamento,
 } from "./agendamento";
 import { criarCalendario, type ContagemPrazo } from "./dias-uteis";
+import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
 import { carregarFeriados } from "./feriados";
 import { cadeiaDoFluxo, montarFluxo, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
 import { buscarPastasVios } from "./pastas-vios";
@@ -212,6 +213,13 @@ export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = 
     feriados,
     fluxos: catalogo && arvore ? fluxosDoCatalogo(catalogo, arvore) : {},
     fluxosErro,
+    esocial:
+      catalogo && pedeEsocial(catalogo.area)
+        ? {
+            tarefa: tarefaEsocialDaLista(catalogo.tarefas.PROVIDENCIA),
+            responsavelSugerido: responsavelSugerido(RESPONSAVEL_ESOCIAL, catalogo.usuarios)?.nome ?? null,
+          }
+        : null,
     hoje: hojeEmSaoPaulo(),
   };
 }
@@ -219,7 +227,7 @@ export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = 
 /** O jurídico grava as tarefas da publicação e manda para a conferência da controladoria. */
 export async function salvarVistagem(
   id: string,
-  entrada: { agendamentos: AgendamentoEntrada[]; observacao: string | null },
+  entrada: { agendamentos: AgendamentoEntrada[]; observacao: string | null; publicacaoEsocial?: string | null },
   authUserId: string,
   areas: AreasVistagem = null
 ): Promise<void> {
@@ -238,6 +246,14 @@ export async function salvarVistagem(
     cadeiaDaTarefa: (tarefaId) => cadeiaDoFluxo(montarFluxo(tarefaId, arvore)),
   });
   if (!validacao.ok) throw new VistagemError(validacao.erros.join(" "));
+  // Trabalhista: classificação eSocial (só na publicação, não vai para o VIOS) e, se pedir, a tarefa Inserir E-social.
+  const esocial = validarEsocial({
+    areaDoCatalogo: catalogo.area,
+    classificacao: entrada.publicacaoEsocial,
+    providencias: catalogo.tarefas.PROVIDENCIA,
+    itens: validacao.itens,
+  });
+  if (!esocial.ok) throw new VistagemError(esocial.erro);
 
   const db = admin();
   const { error: erroApagar } = await db.from("vistagem_agendamentos").delete().eq("publicacao_id", id).eq("envio_status", "nao_enviado");
@@ -269,6 +285,7 @@ export async function salvarVistagem(
     .update({
       status: "controladoria_vistar",
       observacao_vistagem: entrada.observacao?.trim() || null,
+      publicacao_esocial: esocial.valor,
       vistado_por: authUserId,
       vistado_em: new Date().toISOString(),
     })

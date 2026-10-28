@@ -20,6 +20,14 @@ import {
   somarDiasUteis,
   type ContagemPrazo,
 } from "@/lib/vistagem/dias-uteis";
+import {
+  CLASSIFICACOES_ESOCIAL,
+  ESOCIAL_PADRAO,
+  TAREFA_ESOCIAL,
+  classificacaoEsocial,
+  pedeTarefaEsocial,
+  type ClassificacaoEsocial,
+} from "@/lib/vistagem/esocial";
 import { CADEIA_PADRAO, PESSOA_FIXA_PROTOCOLAR, cadeiaDoFluxo, type FluxoDaTarefa, type TarefaDoFluxo } from "@/lib/vistagem/fluxo-vios";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
 import type { PublicacaoResumo, VistagemDetalhe } from "@/lib/vistagem/types";
@@ -46,6 +54,8 @@ interface Linha {
   responsavel: string;
   revisor: string;
   observacao: string;
+  /** Inserir E-social pedida pela classificação eSocial: tarefa fixa, sai quando a classificação muda. */
+  esocial: boolean;
 }
 
 let proximaChave = 1;
@@ -62,6 +72,7 @@ function novaLinha(base: Partial<Linha> = {}): Linha {
     responsavel: "",
     revisor: "",
     observacao: "",
+    esocial: false,
     ...base,
   };
 }
@@ -261,6 +272,8 @@ function EditorVistagem({
   const [detalhe, setDetalhe] = useState<VistagemDetalhe | null>(null);
   const [linhas, setLinhas] = useState<Linha[]>([]);
   const [observacao, setObservacao] = useState("");
+  /** Trabalhista: classificação eSocial (não vai para o VIOS). */
+  const [esocial, setEsocial] = useState<ClassificacaoEsocial>(ESOCIAL_PADRAO);
   const [erro, setErro] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [recarga, setRecarga] = useState(0);
@@ -282,6 +295,9 @@ function EditorVistagem({
         const dados = corpo as VistagemDetalhe;
         setDetalhe(dados);
         setObservacao(dados.publicacao.observacaoVistagem ?? "");
+        const classificacao = classificacaoEsocial(dados.publicacao.publicacaoEsocial) ?? ESOCIAL_PADRAO;
+        const tarefaEsocialId = dados.esocial?.tarefa && pedeTarefaEsocial(classificacao) ? dados.esocial.tarefa.id : null;
+        setEsocial(classificacao);
         setLinhas(
           dados.agendamentos.length
             ? dados.agendamentos.map((item) =>
@@ -297,6 +313,7 @@ function EditorVistagem({
                   responsavel: item.responsavel,
                   revisor: item.revisor ?? "",
                   observacao: item.observacao ?? "",
+                  esocial: tarefaEsocialId !== null && item.tarefaId === tarefaEsocialId,
                 })
               )
             : [novaLinha({ responsavel: dados.responsavelSugerido ?? "", revisor: dados.revisorSugerido ?? "" })]
@@ -325,6 +342,21 @@ function EditorVistagem({
     });
   }
 
+  /** Acordo homologado e Homologação de cálculo põem a tarefa Inserir E-social no fim da lista; as outras a tiram. */
+  function trocarEsocial(valor: ClassificacaoEsocial) {
+    setEsocial(valor);
+    const tarefa = detalhe?.esocial?.tarefa;
+    setLinhas((atuais) => {
+      if (!pedeTarefaEsocial(valor) || !tarefa) return atuais.filter((linha) => !linha.esocial);
+      const existente = atuais.find((linha) => linha.esocial || (linha.etiqueta === "PROVIDENCIA" && linha.tarefa === tarefa.nome));
+      if (existente) return atuais.map((linha) => (linha === existente ? { ...linha, esocial: true } : linha));
+      return [
+        ...atuais,
+        novaLinha({ etiqueta: "PROVIDENCIA", tarefa: tarefa.nome, responsavel: detalhe?.esocial?.responsavelSugerido ?? "", esocial: true }),
+      ];
+    });
+  }
+
   async function enviar() {
     setEnviando(true);
     setErro("");
@@ -334,6 +366,7 @@ function EditorVistagem({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           observacao,
+          publicacaoEsocial: detalhe?.esocial ? esocial : null,
           agendamentos: linhas.map((linha) => ({
             etiqueta: linha.etiqueta,
             tarefa: linha.tarefa,
@@ -368,7 +401,9 @@ function EditorVistagem({
   }
 
   const { publicacao, catalogo } = detalhe;
-  const completo = linhas.every(linhaCompleta);
+  // Sem o tipo Inserir E-social no VIOS, Acordo homologado e Homologação de cálculo não podem ser enviados.
+  const faltaTarefaEsocial = Boolean(detalhe.esocial && pedeTarefaEsocial(esocial) && !detalhe.esocial.tarefa);
+  const completo = linhas.every(linhaCompleta) && !faltaTarefaEsocial;
   const devolucoes = detalhe.inconsistencias.filter((item) => item.origem === "juridico");
 
   return (
@@ -419,6 +454,34 @@ function EditorVistagem({
         </pre>
       </section>
 
+      {detalhe.esocial ? (
+        <section aria-labelledby="esocial-titulo" className="space-y-3 rounded-lg border border-[#dce9eb] bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 id="esocial-titulo" className="text-sm font-semibold text-slate-900">Publicação - eSocial</h3>
+            <span className="text-xs text-slate-500">Não vai para o VIOS</span>
+          </div>
+          <label className="block space-y-1 text-xs font-medium text-slate-600 sm:w-80">
+            Classificação
+            <select className={campo} value={esocial} onChange={(evento) => trocarEsocial(evento.target.value as ClassificacaoEsocial)}>
+              {CLASSIFICACOES_ESOCIAL.map((classificacao) => (
+                <option key={classificacao} value={classificacao}>
+                  {classificacao}
+                </option>
+              ))}
+            </select>
+          </label>
+          {faltaTarefaEsocial ? (
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {esocial} pede a tarefa {TAREFA_ESOCIAL}, mas esse tipo de tarefa não está na lista do VIOS para Trabalhista. Avise a controladoria.
+            </p>
+          ) : pedeTarefaEsocial(esocial) ? (
+            <p className="text-xs text-slate-600">
+              {esocial} pede também a tarefa {TAREFA_ESOCIAL}: ela está na lista abaixo. Confira o responsável e escolha a data.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
       <section aria-labelledby="tarefas-titulo" className="space-y-3 rounded-lg border border-[#dce9eb] bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 id="tarefas-titulo" className="text-sm font-semibold text-slate-900">Tarefas no VIOS</h3>
@@ -465,7 +528,10 @@ function EditorVistagem({
                   : [];
               return (
                 <fieldset key={linha.chave} className="space-y-3 rounded-md border border-[#dce9eb] p-3">
-                  <legend className="px-1 text-xs font-semibold uppercase text-slate-500">Tarefa {indice + 1}</legend>
+                  <legend className="px-1 text-xs font-semibold uppercase text-slate-500">
+                    Tarefa {indice + 1}
+                    {linha.esocial ? " · eSocial" : ""}
+                  </legend>
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="inline-flex rounded-lg border border-[#dce9eb] p-1" role="group" aria-label="Tipo de tarefa">
                       {ETIQUETAS_AGENDAMENTO.map((valor) => (
@@ -477,12 +543,15 @@ function EditorVistagem({
                           aria-pressed={linha.etiqueta === valor}
                           className={cn(linha.etiqueta === valor && "bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")}
                           onClick={() => trocarEtiqueta(linha, valor)}
+                          disabled={linha.esocial}
                         >
                           {ROTULO_ETIQUETA[valor]}
                         </Button>
                       ))}
                     </div>
-                    {linhas.length > 1 ? (
+                    {linha.esocial ? (
+                      <span className="ml-auto text-xs text-slate-500">Pedida pela classificação eSocial ({esocial}).</span>
+                    ) : linhas.length > 1 ? (
                       <Button
                         type="button"
                         size="sm"
@@ -499,16 +568,20 @@ function EditorVistagem({
 
                   <div className="space-y-1 text-xs font-medium text-slate-600">
                     Tarefa
-                    <ComboboxBusca
-                      opcoes={catalogo.tarefas[linha.etiqueta]}
-                      valor={linha.tarefa}
-                      onChange={(nome) => {
-                        alterar(linha.chave, { tarefa: nome });
-                        if (nome && linha.etiqueta === "COMPROMISSO") setHorarioDe(linha.chave);
-                      }}
-                      placeholder="Digite para buscar a tarefa…"
-                      rotulo={`Tarefa ${indice + 1}`}
-                    />
+                    {linha.esocial ? (
+                      <p className={cn(campo, "flex items-center bg-slate-50 text-slate-800")}>{linha.tarefa}</p>
+                    ) : (
+                      <ComboboxBusca
+                        opcoes={catalogo.tarefas[linha.etiqueta]}
+                        valor={linha.tarefa}
+                        onChange={(nome) => {
+                          alterar(linha.chave, { tarefa: nome });
+                          if (nome && linha.etiqueta === "COMPROMISSO") setHorarioDe(linha.chave);
+                        }}
+                        placeholder="Digite para buscar a tarefa…"
+                        rotulo={`Tarefa ${indice + 1}`}
+                      />
+                    )}
                   </div>
 
                   {prazo ? (

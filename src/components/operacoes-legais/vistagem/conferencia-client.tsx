@@ -13,7 +13,7 @@ import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, EnvioStat
 import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { linkTarefaVios } from "@/lib/vistagem/vios-links";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
-import { DadosPasta, DadosPublicacao, TeorPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
+import { DadosPasta, DadosPublicacao, SeloEsocial, TeorPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
 
 type Aba = "conferir" | "enviadas" | "inconsistencias";
 
@@ -190,6 +190,7 @@ function CartaoConferencia({
           {publicacao.tribunal ? (
             <span className="rounded-full border border-[#3e84a8]/25 px-2 py-0.5 text-xs text-[#315f73]">{publicacao.tribunal}</span>
           ) : null}
+          <SeloEsocial publicacao={publicacao} />
           <span className="text-xs text-slate-500">
             vistada {item.vistadoPor ? `por ${item.vistadoPor} ` : ""}em {formatarDataHora(publicacao.vistadoEm)}
             {comEnvio && publicacao.conferidoEm ? ` · conferida ${item.conferidoPor ? `por ${item.conferidoPor} ` : ""}em ${formatarDataHora(publicacao.conferidoEm)}` : ""}

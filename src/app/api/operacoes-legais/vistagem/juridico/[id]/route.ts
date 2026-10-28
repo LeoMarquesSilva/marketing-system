@@ -27,7 +27,7 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const { authUserId, areas } = await exigirPerfilVistagem();
     const { id } = await context.params;
-    const corpo = (await request.json().catch(() => null)) as { agendamentos?: unknown; observacao?: unknown } | null;
+    const corpo = (await request.json().catch(() => null)) as { agendamentos?: unknown; observacao?: unknown; publicacaoEsocial?: unknown } | null;
     const lista = Array.isArray(corpo?.agendamentos) ? corpo.agendamentos.slice(0, 20) : [];
     const agendamentos: AgendamentoEntrada[] = lista.map((item) => {
       const valor = (item ?? {}) as Record<string, unknown>;
@@ -45,7 +45,12 @@ export async function POST(request: Request, context: RouteContext) {
         observacao: texto(valor.observacao, 4000),
       };
     });
-    await salvarVistagem(id, { agendamentos, observacao: texto(corpo?.observacao) }, authUserId, areas);
+    await salvarVistagem(
+      id,
+      { agendamentos, observacao: texto(corpo?.observacao), publicacaoEsocial: texto(corpo?.publicacaoEsocial, 60) },
+      authUserId,
+      areas
+    );
     return NextResponse.json({ ok: true });
   } catch (error) {
     return respostaDeErro(error, "Não foi possível salvar a vistagem.");
