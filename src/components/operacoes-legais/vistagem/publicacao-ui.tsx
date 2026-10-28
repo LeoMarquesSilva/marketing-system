@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronRight, FileText, ShieldAlert } from "lucide-react";
 import { authFetch } from "@/lib/auth-fetch";
-import { cn } from "@/lib/utils";
 import type { Pendencia } from "@/lib/vistagem/triagem";
 import type { PublicacaoResumo, PublicacaoStatus } from "@/lib/vistagem/types";
+import { Selo, type TomSelo } from "./ui";
 
 export function formatarData(iso: string | null): string {
   if (!iso) return "—";
@@ -23,12 +24,12 @@ export function formatarDataHora(iso: string | null): string {
   }).format(new Date(iso));
 }
 
-const STATUS: Partial<Record<PublicacaoStatus, { rotulo: string; classe: string }>> = {
-  captada: { rotulo: "Captada", classe: "border-[#47cdd0]/35 bg-[#e8f8f8] text-[#285f7a]" },
-  duplicidade: { rotulo: "Duplicidade", classe: "border-amber-200 bg-amber-50 text-amber-800" },
-  descartada: { rotulo: "Descartada", classe: "border-slate-200 bg-slate-100 text-slate-600" },
-  triagem_pendente: { rotulo: "Pendente na controladoria", classe: "border-orange-200 bg-orange-50 text-orange-800" },
-  juridico_vistar: { rotulo: "Jurídico vistar", classe: "border-emerald-200 bg-emerald-50 text-emerald-800" },
+const STATUS: Partial<Record<PublicacaoStatus, { rotulo: string; tom: TomSelo }>> = {
+  captada: { rotulo: "Captada", tom: "marca" },
+  duplicidade: { rotulo: "Duplicidade", tom: "alerta" },
+  descartada: { rotulo: "Descartada", tom: "neutro" },
+  triagem_pendente: { rotulo: "Pendente na controladoria", tom: "alerta" },
+  juridico_vistar: { rotulo: "Jurídico vistar", tom: "sucesso" },
 };
 
 export const PENDENCIAS: Record<Pendencia, string> = {
@@ -43,85 +44,83 @@ export const PENDENCIAS: Record<Pendencia, string> = {
 export function DadosPasta({ publicacao }: { publicacao: PublicacaoResumo }) {
   if (!publicacao.pastaCi && !publicacao.escritorioResponsavel && !publicacao.pendencia) return null;
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
-      {publicacao.escritorioResponsavel ? (
-        <span className="rounded-full bg-[#183f50] px-2 py-0.5 font-medium text-white">{publicacao.escritorioResponsavel}</span>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
+      {publicacao.escritorioResponsavel ? <Selo tom="escuro">{publicacao.escritorioResponsavel}</Selo> : null}
+      {publicacao.demandaRisco ? (
+        <Selo tom="perigo" icone={ShieldAlert}>
+          Demanda de risco
+        </Selo>
       ) : null}
+      {publicacao.pendencia ? <Selo tom="alerta">{PENDENCIAS[publicacao.pendencia]}</Selo> : null}
       {publicacao.pastaCi ? (
-        <span className="font-mono text-slate-800">
-          {publicacao.pastaVinculo ? `${publicacao.pastaVinculo} - ` : ""}CI {publicacao.pastaCi}
+        <span className="font-mono text-foreground">
+          {publicacao.pastaVinculo ? `${publicacao.pastaVinculo} · ` : ""}CI {publicacao.pastaCi}
         </span>
       ) : null}
-      {publicacao.grupoCliente ? <span className="font-medium text-slate-800">{publicacao.grupoCliente}</span> : null}
+      {publicacao.grupoCliente ? <span className="font-medium text-foreground">{publicacao.grupoCliente}</span> : null}
       {publicacao.cliente ? <span>{publicacao.cliente}</span> : null}
       {publicacao.advogadoResponsavel ? <span>Resp.: {publicacao.advogadoResponsavel}</span> : null}
-      {publicacao.demandaRisco ? (
-        <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 font-medium text-red-700">Demanda de risco</span>
-      ) : null}
-      {publicacao.pendencia ? (
-        <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-orange-800">{PENDENCIAS[publicacao.pendencia]}</span>
-      ) : null}
     </div>
   );
 }
 
 export function StatusPublicacao({ status }: { status: PublicacaoStatus }) {
-  const info = STATUS[status] ?? { rotulo: status, classe: "border-slate-200 bg-white text-slate-700" };
-  return (
-    <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium", info.classe)}>
-      {info.rotulo}
-    </span>
-  );
+  const info = STATUS[status] ?? { rotulo: status, tom: "neutro" as const };
+  return <Selo tom={info.tom}>{info.rotulo}</Selo>;
 }
 
-/** Cabeçalho compacto com processo, tribunal, datas e dados do DJEN. */
 /** Classificação eSocial dada pelo jurídico (Trabalhista); não vai para o VIOS. */
 export function SeloEsocial({ publicacao }: { publicacao: PublicacaoResumo }) {
   if (!publicacao.publicacaoEsocial) return null;
+  return <Selo tom="marca">eSocial: {publicacao.publicacaoEsocial}</Selo>;
+}
+
+function Dado({ rotulo, children, largo = false }: { rotulo: string; children: React.ReactNode; largo?: boolean }) {
   return (
-    <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs text-amber-900">eSocial: {publicacao.publicacaoEsocial}</span>
+    <div className={largo ? "min-w-0 sm:col-span-2" : "min-w-0"}>
+      <dt className="text-muted-foreground">{rotulo}</dt>
+      <dd className="mt-0.5 break-words text-foreground">{children}</dd>
+    </div>
   );
 }
 
+/** Dados da publicação: datas, IDs e órgão do DJEN. */
 export function DadosPublicacao({ publicacao }: { publicacao: PublicacaoResumo }) {
   return (
-    <dl className="grid gap-x-4 gap-y-1 text-xs text-slate-600 sm:grid-cols-2">
-      <div className="flex gap-1">
-        <dt className="text-slate-500">Divulgação → publicação:</dt>
-        <dd className="font-mono">{formatarData(publicacao.dataDivulgacao)} → {formatarData(publicacao.dataPublicacao)}</dd>
-      </div>
+    <dl className="grid gap-x-6 gap-y-2.5 text-xs sm:grid-cols-2">
+      <Dado rotulo="Divulgação → publicação">
+        <span className="font-mono">
+          {formatarData(publicacao.dataDivulgacao)} → {formatarData(publicacao.dataPublicacao)}
+        </span>
+      </Dado>
       {publicacao.djenIdComunicacao ? (
-        <div className="flex gap-1">
-          <dt className="text-slate-500">ID comunicação:</dt>
-          <dd className="font-mono">{publicacao.djenIdComunicacao}</dd>
-        </div>
+        <Dado rotulo="ID comunicação">
+          <span className="font-mono">{publicacao.djenIdComunicacao}</span>
+        </Dado>
       ) : null}
       {publicacao.documentoIds.length ? (
-        <div className="flex gap-1">
-          <dt className="text-slate-500">Id do documento:</dt>
-          <dd className="font-mono">
+        <Dado rotulo="Id do documento">
+          <span className="font-mono">
             {publicacao.documentoIds.slice(0, 4).join(", ")}
             {publicacao.documentoIds.length > 4 ? "…" : ""}
-          </dd>
-        </div>
+          </span>
+        </Dado>
       ) : null}
       {publicacao.djenOrgao ? (
-        <div className="flex gap-1 sm:col-span-2">
-          <dt className="text-slate-500">Órgão:</dt>
-          <dd>{publicacao.djenOrgao}{publicacao.djenTipoComunicacao ? ` · ${publicacao.djenTipoComunicacao}` : ""}</dd>
-        </div>
+        <Dado rotulo="Órgão" largo>
+          {publicacao.djenOrgao}
+          {publicacao.djenTipoComunicacao ? ` · ${publicacao.djenTipoComunicacao}` : ""}
+        </Dado>
       ) : null}
       {publicacao.djenIntimados.length ? (
-        <div className="flex gap-1 sm:col-span-2">
-          <dt className="text-slate-500">Intimado:</dt>
-          <dd className="font-medium text-slate-800">{publicacao.djenIntimados.join(" · ")}</dd>
-        </div>
+        <Dado rotulo="Intimado" largo>
+          <span className="font-medium">{publicacao.djenIntimados.join(" · ")}</span>
+        </Dado>
       ) : null}
       {publicacao.motivoDescarte ? (
-        <div className="flex gap-1 sm:col-span-2">
-          <dt className="text-slate-500">Motivo:</dt>
-          <dd>{publicacao.motivoDescarte}</dd>
-        </div>
+        <Dado rotulo="Motivo" largo>
+          {publicacao.motivoDescarte}
+        </Dado>
       ) : null}
     </dl>
   );
@@ -151,12 +150,18 @@ export function TeorPublicacao({ publicacao, aberto = false }: { publicacao: Pub
   }
 
   return (
-    <details className="group rounded-md border border-[#dce9eb] bg-slate-50/60" open={aberto}>
-      <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-[#285f7a]">
-        Texto da publicação ({teor.length.toLocaleString("pt-BR")}{resumido ? "+" : ""} caracteres)
+    <details className="group rounded-md border border-[#e6eef0] bg-[#f7fbfc]" open={aberto}>
+      <summary className="flex cursor-pointer select-none list-none items-center gap-2 px-3 py-2 text-xs font-medium text-[#285f7a] [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="size-3.5 transition-transform group-open:rotate-90" aria-hidden />
+        <FileText className="size-3.5" aria-hidden />
+        Texto da publicação
+        <span className="font-normal text-muted-foreground">
+          {teor.length.toLocaleString("pt-BR")}
+          {resumido ? "+" : ""} caracteres
+        </span>
       </summary>
-      <div className="border-t border-[#dce9eb] px-3 py-2">
-        <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words font-sans text-xs leading-relaxed text-slate-700">{teor}</pre>
+      <div className="border-t border-[#e6eef0] bg-white px-3 py-3">
+        <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words font-sans text-xs leading-relaxed text-foreground">{teor}</pre>
         {resumido ? (
           <button
             type="button"
