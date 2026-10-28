@@ -77,8 +77,8 @@ export function ComboboxBusca({
     <div className="relative">
       <div
         className={cn(
-          "flex h-10 items-center rounded-md border bg-white focus-within:ring-2 focus-within:ring-[#47cdd0]",
-          invalido ? "border-red-300" : "border-input"
+          "flex h-10 items-center rounded-md border bg-white shadow-xs transition-[color,box-shadow] hover:border-[#3e84a8]/40 focus-within:border-[#47cdd0] focus-within:ring-[3px] focus-within:ring-[#47cdd0]/18",
+          invalido ? "border-red-400" : "border-input"
         )}
       >
         <input
@@ -88,7 +88,7 @@ export function ComboboxBusca({
           aria-controls={`${id}-lista`}
           aria-autocomplete="list"
           aria-activedescendant={aberto && filtradas[ativo] ? `${id}-op-${ativo}` : undefined}
-          className="h-full min-w-0 flex-1 rounded-md bg-transparent px-3 text-sm outline-none"
+          className="h-full min-w-0 flex-1 rounded-md bg-transparent px-3 text-sm outline-none placeholder:text-muted-foreground/70"
           placeholder={valor || placeholder}
           value={aberto ? busca : valor}
           onFocus={() => {
@@ -110,7 +110,7 @@ export function ComboboxBusca({
         {permitirVazio && valor ? (
           <button
             type="button"
-            className="px-2 text-slate-400 hover:text-slate-700"
+            className="px-2 text-muted-foreground hover:text-foreground"
             aria-label={`Limpar ${rotulo}`}
             onMouseDown={(evento) => {
               evento.preventDefault();
@@ -120,17 +120,17 @@ export function ComboboxBusca({
             <X className="size-4" />
           </button>
         ) : null}
-        <ChevronDown className="mr-2 size-4 shrink-0 text-slate-400" aria-hidden />
+        <ChevronDown className="mr-2 size-4 shrink-0 text-muted-foreground" aria-hidden />
       </div>
       {aberto ? (
         <ul
           id={`${id}-lista`}
           ref={lista}
           role="listbox"
-          className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-md border border-[#dce9eb] bg-white py-1 text-sm shadow-lg"
+          className="absolute z-30 mt-1 max-h-72 w-full overflow-auto rounded-md border border-[#dce9eb] bg-white py-1 text-sm shadow-[0_12px_32px_-12px_rgba(16,41,58,0.28)]"
         >
           {filtradas.length === 0 ? (
-            <li className="px-3 py-2 text-slate-500">Nada encontrado.</li>
+            <li className="px-3 py-2 text-muted-foreground">Nada encontrado.</li>
           ) : (
             filtradas.map((opcao, indice) => (
               <li

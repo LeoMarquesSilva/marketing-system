@@ -1,15 +1,31 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CloudDownload, FileSpreadsheet, LoaderCircle, Search, Upload } from "lucide-react";
+import { CalendarClock, ClipboardList, CloudDownload, FileSpreadsheet, Inbox, LoaderCircle, Scale, SearchX, Upload, X } from "lucide-react";
+import { Segmented } from "@/components/facilities/form-parts";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
+import type { ArquivoDoDia } from "@/lib/vistagem/alerta-arquivo";
 import type { ArquivoKurierResumo, PublicacaoResumo, SincronizacaoResultado } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
-import { AvisoArquivoDoDia } from "./aviso-arquivo-do-dia";
+import { FaixaArquivoDoDia, useArquivoDoDia } from "./aviso-arquivo-do-dia";
 import { DadosPasta, DadosPublicacao, StatusPublicacao, TeorPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
+import {
+  Aviso,
+  BarraAba,
+  Busca,
+  CabecalhoLista,
+  Carregando,
+  Indicador,
+  Indicadores,
+  Painel,
+  PainelTopo,
+  Selo,
+  Vazio,
+  linhaLista,
+  type TomSelo,
+} from "./ui";
 
 type Filtro = "todas" | "juridico_vistar" | "triagem_pendente" | "duplicidade" | "descartada" | "captada";
 
@@ -22,26 +38,20 @@ const FILTROS: { valor: Filtro; rotulo: string }[] = [
   { valor: "captada", rotulo: "Aguardando triagem" },
 ];
 
+const ORIGEM: Record<ArquivoKurierResumo["origem"], string> = { sharepoint: "SharePoint", upload: "envio manual" };
+
+const SITUACAO_ARQUIVO: Record<ArquivoKurierResumo["status"], { rotulo: string; tom: TomSelo }> = {
+  processado: { rotulo: "Importado", tom: "sucesso" },
+  processando: { rotulo: "Importando", tom: "alerta" },
+  erro: { rotulo: "Erro", tom: "perigo" },
+};
+
 function resumoTriagem(triagem: SincronizacaoResultado["triagem"]): string {
   if (!triagem) return "";
   if (triagem.erro) return ` Triagem com o SIOE falhou: ${triagem.erro}`;
   if (!triagem.triadas) return "";
   const descartadas = triagem.descartadas ? `, ${triagem.descartadas} ex-cliente(s) sem o escritório descartada(s)` : "";
   return ` Triagem: ${triagem.juridico} para o jurídico, ${triagem.pendentes} pendente(s) na controladoria${descartadas}.`;
-}
-
-function SituacaoArquivo({ arquivo }: { arquivo: ArquivoKurierResumo }) {
-  const estilo = {
-    processado: "border-emerald-200 bg-emerald-50 text-emerald-800",
-    processando: "border-amber-200 bg-amber-50 text-amber-800",
-    erro: "border-red-200 bg-red-50 text-red-700",
-  }[arquivo.status];
-  const rotulo = { processado: "Importado", processando: "Importando", erro: "Erro" }[arquivo.status];
-  return (
-    <span className={cn("inline-flex rounded-full border px-2 py-0.5 text-xs font-medium", estilo)} title={arquivo.erro ?? undefined}>
-      {rotulo}
-    </span>
-  );
 }
 
 function resumoSincronizacao(resultado: SincronizacaoResultado): string {
@@ -53,7 +63,67 @@ function resumoSincronizacao(resultado: SincronizacaoResultado): string {
   return `O arquivo de hoje já estava importado.${triagem}`;
 }
 
+/**
+ * A consulta do arquivo do dia roda uma vez ao abrir a aba; depois de buscar no SharePoint ou
+ * enviar o xlsx, a lista de arquivos (recarregada) diz se o de hoje já chegou.
+ */
+function situacaoAtualizada(situacao: ArquivoDoDia | null | undefined, arquivos: ArquivoKurierResumo[] | null) {
+  if (!situacao || !arquivos) return situacao;
+  const deHoje = arquivos.filter((arquivo) => arquivo.dataArquivo === situacao.hoje);
+  if (!deHoje.length) return situacao;
+  const chegou = deHoje.some((arquivo) => arquivo.status === "processado");
+  const processando = deHoje.some((arquivo) => arquivo.status === "processando");
+  const falha = deHoje.find((arquivo) => arquivo.status === "erro");
+  return {
+    ...situacao,
+    chegou,
+    erro: chegou ? null : falha ? (falha.erro ?? "erro na importação") : situacao.erro,
+    atrasado: situacao.atrasado && !chegou && !processando,
+  };
+}
+
+function estadoDeHoje(
+  situacao: ArquivoDoDia | null | undefined,
+  arquivos: ArquivoKurierResumo[] | null
+): { valor: string; tom: "neutro" | "alerta" | "perigo" | "sucesso"; detalhe: string } {
+  if (situacao === undefined) return { valor: "—", tom: "neutro", detalhe: "Verificando…" };
+  if (situacao === null) return { valor: "—", tom: "neutro", detalhe: "Não foi possível verificar" };
+  const deHoje = (arquivos ?? []).filter((arquivo) => arquivo.dataArquivo === situacao.hoje);
+  if (situacao.chegou) {
+    const importado = deHoje.find((arquivo) => arquivo.status === "processado");
+    return {
+      valor: "Chegou",
+      tom: "sucesso",
+      detalhe: importado ? `Recebido ${formatarDataHora(importado.recebidoEm)} · ${ORIGEM[importado.origem]}` : formatarData(situacao.hoje),
+    };
+  }
+  const processando = deHoje.find((arquivo) => arquivo.status === "processando");
+  if (processando) return { valor: "Importando", tom: "alerta", detalhe: `Recebido ${formatarDataHora(processando.recebidoEm)}` };
+  if (situacao.erro) return { valor: "Com erro", tom: "perigo", detalhe: "A importação falhou; reenvie o .xlsx" };
+  if (!situacao.diaUtil) return { valor: "Sem arquivo", tom: "neutro", detalhe: "Hoje não é dia útil" };
+  if (situacao.atrasado) return { valor: "Não chegou", tom: "perigo", detalhe: "Confira a Kurier ou envie o .xlsx" };
+  return { valor: "Aguardando", tom: "neutro", detalhe: "A busca automática roda entre 7h e 8h" };
+}
+
+function SituacaoArquivo({ arquivo }: { arquivo: ArquivoKurierResumo }) {
+  const { rotulo, tom } = SITUACAO_ARQUIVO[arquivo.status];
+  return (
+    <span className="shrink-0" title={arquivo.erro ?? undefined}>
+      <Selo tom={tom}>{rotulo}</Selo>
+    </span>
+  );
+}
+
+function Contagem({ valor, singular, plural }: { valor: number; singular: string; plural: string }) {
+  return (
+    <span>
+      <span className="font-mono text-foreground">{valor}</span> {valor === 1 ? singular : plural}
+    </span>
+  );
+}
+
 function Captura() {
+  const situacaoDoDia = useArquivoDoDia();
   const [arquivos, setArquivos] = useState<ArquivoKurierResumo[] | null>(null);
   const [selecionado, setSelecionado] = useState<string | null>(null);
   const [publicacoes, setPublicacoes] = useState<PublicacaoResumo[] | null>(null);
@@ -177,25 +247,26 @@ function Captura() {
     return [...total.entries()].sort((a, b) => b[1] - a[1]);
   }, [publicacoes]);
 
+  const situacaoHoje = useMemo(() => situacaoAtualizada(situacaoDoDia, arquivos), [situacaoDoDia, arquivos]);
+  const hoje = estadoDeHoje(situacaoHoje, arquivos);
   const arquivoAtual = arquivos?.find((arquivo) => arquivo.id === selecionado) ?? null;
+  const publicacoesProntas = Boolean(arquivoAtual && publicacoes);
+  const semArquivo = arquivos === null ? "Carregando…" : "Nenhum arquivo importado";
+  const filtrando = filtro !== "todas" || busca.trim() !== "";
 
   return (
     <div className="space-y-6">
-      <section className="flex flex-col gap-3 rounded-lg border border-[#dce9eb] bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1">
-          <h2 className="text-base font-semibold text-slate-900">Publicações da Kurier</h2>
-          <p className="text-sm text-slate-600">
-            O arquivo do dia é buscado sozinho na pasta do SharePoint entre 7h e 8h, com nova tentativa entre 9h e 10h (dias úteis), e triado com a base de processos do SIOE. Pendências vão para a aba Controladoria; duplicidades, para a aba Duplicidades.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={sincronizar} disabled={ocupado !== null}>
-            {ocupado === "sincronizar" ? <LoaderCircle className="animate-spin" /> : <CloudDownload />}
-            Buscar no SharePoint
-          </Button>
+      <FaixaArquivoDoDia situacao={situacaoHoje} naCaptura />
+
+      <div className="space-y-3">
+        <BarraAba resumo="O arquivo do dia é buscado sozinho no SharePoint entre 7h e 8h (nova tentativa entre 9h e 10h, em dias úteis) e triado com o SIOE. Pendências seguem para a Controladoria; duplicidades, para Duplicidades.">
           <Button variant="outline" onClick={() => inputArquivo.current?.click()} disabled={ocupado !== null}>
             {ocupado === "enviar" ? <LoaderCircle className="animate-spin" /> : <Upload />}
             Enviar xlsx
+          </Button>
+          <Button onClick={sincronizar} disabled={ocupado !== null}>
+            {ocupado === "sincronizar" ? <LoaderCircle className="animate-spin" /> : <CloudDownload />}
+            Buscar no SharePoint
           </Button>
           <input
             ref={inputArquivo}
@@ -208,153 +279,209 @@ function Captura() {
               if (arquivo) void enviar(arquivo);
             }}
           />
-        </div>
-      </section>
+        </BarraAba>
 
-      {aviso ? (
-        <p
-          role="status"
-          className={cn(
-            "rounded-md border px-3 py-2 text-sm",
-            aviso.tipo === "ok" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-700"
-          )}
+        {aviso ? (
+          <Aviso
+            tom={aviso.tipo === "ok" ? "sucesso" : "erro"}
+            acao={
+              <Button variant="ghost" size="icon-xs" className="-my-1 text-current" aria-label="Fechar aviso" onClick={() => setAviso(null)}>
+                <X />
+              </Button>
+            }
+          >
+            {aviso.texto}
+          </Aviso>
+        ) : null}
+      </div>
+
+      <Indicadores>
+        <Indicador icone={CalendarClock} rotulo="Arquivo de hoje" valor={hoje.valor} tom={hoje.tom}>
+          {hoje.detalhe}
+        </Indicador>
+        <Indicador
+          icone={Inbox}
+          rotulo={arquivoAtual ? `Captadas em ${formatarData(arquivoAtual.dataArquivo).slice(0, 5)}` : "Captadas"}
+          valor={arquivoAtual ? arquivoAtual.totalCaptadas : "—"}
         >
-          {aviso.texto}
-        </p>
-      ) : null}
+          {arquivoAtual
+            ? `${arquivoAtual.totalLinhas} linhas · ${arquivoAtual.totalDuplicidades} duplicidades · ${arquivoAtual.totalDescartadas} descartadas`
+            : semArquivo}
+        </Indicador>
+        <Indicador icone={Scale} rotulo="Para o jurídico" valor={publicacoesProntas ? contagem.juridico_vistar : "—"}>
+          {!arquivoAtual
+            ? semArquivo
+            : !publicacoesProntas
+              ? "Carregando…"
+              : porEscritorio.length
+                ? porEscritorio.map(([escritorio, total]) => `${escritorio} ${total}`).join(" · ")
+                : "Nenhuma liberada neste arquivo"}
+        </Indicador>
+        <Indicador
+          icone={ClipboardList}
+          rotulo="Pendências"
+          valor={publicacoesProntas ? contagem.triagem_pendente : "—"}
+          tom={publicacoesProntas && contagem.triagem_pendente ? "alerta" : "neutro"}
+        >
+          {!arquivoAtual
+            ? semArquivo
+            : !publicacoesProntas
+              ? "Carregando…"
+              : contagem.captada
+                ? `${contagem.captada} aguardando triagem`
+                : contagem.triagem_pendente
+                  ? "Resolva na aba Controladoria"
+                  : "Nada pendente neste arquivo"}
+        </Indicador>
+      </Indicadores>
 
-      <section aria-labelledby="arquivos-titulo" className="rounded-lg border border-[#dce9eb] bg-white shadow-sm">
-        <h2 id="arquivos-titulo" className="border-b border-[#dce9eb] px-4 py-3 text-sm font-semibold text-slate-900">
-          Arquivos recebidos
-        </h2>
-        {arquivos === null ? (
-          <div className="flex justify-center p-6"><LoaderCircle className="size-5 animate-spin text-slate-400" aria-label="Carregando" /></div>
-        ) : erroLista ? (
-          <p className="p-4 text-sm text-red-700">{erroLista}</p>
-        ) : arquivos.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 p-8 text-center text-sm text-slate-600">
-            <FileSpreadsheet className="size-6 text-slate-400" />
-            Nenhum arquivo importado ainda. Use “Buscar no SharePoint” ou envie o xlsx do dia.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
-              <thead className="bg-slate-50 text-left text-xs text-slate-500">
-                <tr>
-                  <th className="px-4 py-2 font-medium">Dia</th>
-                  <th className="px-2 py-2 font-medium">Recebido</th>
-                  <th className="px-2 py-2 text-right font-medium">Linhas</th>
-                  <th className="px-2 py-2 text-right font-medium">Captadas</th>
-                  <th className="px-2 py-2 text-right font-medium">Duplicidades</th>
-                  <th className="px-2 py-2 text-right font-medium">Descartadas</th>
-                  <th className="px-4 py-2 font-medium">Situação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#dce9eb]">
-                {arquivos.map((arquivo) => (
-                  <tr
-                    key={arquivo.id}
-                    className={cn("cursor-pointer hover:bg-[#47cdd0]/5", arquivo.id === selecionado && "bg-[#47cdd0]/10")}
-                    onClick={() => setSelecionado(arquivo.id)}
-                  >
-                    <td className="px-4 py-2">
-                      <button type="button" className="text-left font-medium text-slate-900" aria-current={arquivo.id === selecionado ? "true" : undefined}>
-                        {formatarData(arquivo.dataArquivo)}
-                        {arquivo.lote > 1 ? <span className="ml-1 text-xs text-slate-500">lote {arquivo.lote}</span> : null}
-                      </button>
-                    </td>
-                    <td className="px-2 py-2 text-slate-600">
-                      {formatarDataHora(arquivo.recebidoEm)} · {arquivo.origem === "sharepoint" ? "SharePoint" : "envio manual"}
-                    </td>
-                    <td className="px-2 py-2 text-right font-mono">{arquivo.totalLinhas}</td>
-                    <td className="px-2 py-2 text-right font-mono">{arquivo.totalCaptadas}</td>
-                    <td className="px-2 py-2 text-right font-mono">{arquivo.totalDuplicidades}</td>
-                    <td className="px-2 py-2 text-right font-mono">{arquivo.totalDescartadas}</td>
-                    <td className="px-4 py-2"><SituacaoArquivo arquivo={arquivo} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {arquivoAtual ? (
-        <section aria-labelledby="publicacoes-titulo" className="rounded-lg border border-[#dce9eb] bg-white shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-[#dce9eb] px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-            <h2 id="publicacoes-titulo" className="text-sm font-semibold text-slate-900">
-              Publicações de {formatarData(arquivoAtual.dataArquivo)}
-            </h2>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <div className="inline-flex flex-wrap rounded-lg border border-[#dce9eb] bg-white p-1" role="group" aria-label="Filtrar por situação">
-                {FILTROS.filter((item) => item.valor !== "captada" || contagem.captada > 0).map((item) => (
-                  <Button
-                    key={item.valor}
-                    variant="ghost"
-                    size="sm"
-                    aria-pressed={filtro === item.valor}
-                    className={cn(filtro === item.valor && "bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")}
-                    onClick={() => setFiltro(item.valor)}
-                  >
-                    {item.rotulo} <span className="font-mono text-xs opacity-80">{contagem[item.valor]}</span>
-                  </Button>
-                ))}
-              </div>
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-                <Input
-                  value={busca}
-                  onChange={(evento) => setBusca(evento.target.value)}
-                  placeholder="Processo, CI, grupo, escritório ou intimado"
-                  className="pl-9 sm:w-64"
-                  aria-label="Buscar publicação"
-                />
-              </div>
+      <div className={cn("grid gap-6", arquivoAtual && "xl:grid-cols-[minmax(0,21rem)_minmax(0,1fr)] xl:items-start")}>
+        <Painel aria-labelledby="arquivos-titulo">
+          <PainelTopo
+            id="arquivos-titulo"
+            titulo={
+              <>
+                Arquivos recebidos
+                {arquivos?.length ? <span className="ml-2 font-normal tabular-nums text-muted-foreground">{arquivos.length}</span> : null}
+              </>
+            }
+            descricao="Escolha um dia para ver as publicações"
+          />
+          {arquivos === null ? (
+            <Carregando rotulo="Carregando arquivos" />
+          ) : erroLista ? (
+            <div className="p-4">
+              <Aviso tom="erro" titulo="Não foi possível carregar os arquivos">
+                {erroLista}
+              </Aviso>
             </div>
-          </div>
-
-          {porEscritorio.length ? (
-            <div className="flex flex-wrap items-center gap-2 border-b border-[#dce9eb] px-4 py-2 text-xs text-slate-600">
-              <span className="font-medium text-slate-700">Para o jurídico:</span>
-              {porEscritorio.map(([escritorio, total]) => (
-                <span key={escritorio} className="rounded-full border border-[#3e84a8]/25 px-2 py-0.5">
-                  {escritorio} <span className="font-mono">{total}</span>
-                </span>
-              ))}
-            </div>
-          ) : null}
-
-          {arquivoAtual.status === "erro" ? (
-            <p className="m-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{arquivoAtual.erro}</p>
-          ) : null}
-
-          {publicacoes === null ? (
-            <div className="flex justify-center p-6"><LoaderCircle className="size-5 animate-spin text-slate-400" aria-label="Carregando" /></div>
-          ) : visiveis.length === 0 ? (
-            <p className="p-6 text-center text-sm text-slate-600">Nenhuma publicação com esse filtro.</p>
+          ) : arquivos.length === 0 ? (
+            <Vazio icone={FileSpreadsheet} titulo="Nenhum arquivo importado ainda">
+              Use “Buscar no SharePoint” ou envie o xlsx do dia.
+            </Vazio>
           ) : (
-            <ul className="divide-y divide-[#dce9eb]">
-              {visiveis.map((publicacao) => (
-                <li key={publicacao.id} className="space-y-2 px-4 py-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-sm font-medium text-slate-900">
-                      {publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}
-                    </span>
-                    {publicacao.tribunal ? (
-                      <span className="rounded-full border border-[#3e84a8]/25 px-2 py-0.5 text-xs text-[#315f73]">{publicacao.tribunal}</span>
-                    ) : null}
-                    <StatusPublicacao status={publicacao.status} />
-                    <span className="ml-auto text-xs text-slate-500">linha {publicacao.linhaArquivo}</span>
-                  </div>
-                  <DadosPasta publicacao={publicacao} />
-                  <DadosPublicacao publicacao={publicacao} />
-                  <TeorPublicacao key={publicacao.id} publicacao={publicacao} />
-                </li>
-              ))}
+            <ul className="max-h-[22rem] divide-y divide-[#eef3f5] overflow-y-auto xl:max-h-[44rem]">
+              {arquivos.map((arquivo) => {
+                const ativo = arquivo.id === selecionado;
+                return (
+                  <li key={arquivo.id}>
+                    <button
+                      type="button"
+                      className={linhaLista(ativo)}
+                      aria-current={ativo ? "true" : undefined}
+                      onClick={() => setSelecionado(arquivo.id)}
+                    >
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold tabular-nums text-foreground">
+                          {formatarData(arquivo.dataArquivo)}
+                          {arquivo.lote > 1 ? <span className="ml-1.5 text-xs font-normal text-muted-foreground">lote {arquivo.lote}</span> : null}
+                        </span>
+                        <SituacaoArquivo arquivo={arquivo} />
+                      </span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">
+                        Recebido {formatarDataHora(arquivo.recebidoEm)} · {ORIGEM[arquivo.origem]}
+                      </span>
+                      <span className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                        <Contagem valor={arquivo.totalLinhas} singular="linha" plural="linhas" />
+                        <Contagem valor={arquivo.totalCaptadas} singular="captada" plural="captadas" />
+                        <Contagem valor={arquivo.totalDuplicidades} singular="duplicidade" plural="duplicidades" />
+                        <Contagem valor={arquivo.totalDescartadas} singular="descartada" plural="descartadas" />
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
-        </section>
-      ) : null}
+        </Painel>
+
+        {arquivoAtual ? (
+          <section aria-labelledby="publicacoes-titulo" className="min-w-0 space-y-3">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <div className="mr-auto min-w-0">
+                <h2 id="publicacoes-titulo" className="text-base font-semibold text-foreground">
+                  Publicações de {formatarData(arquivoAtual.dataArquivo)}
+                  {arquivoAtual.lote > 1 ? <span className="ml-1.5 text-sm font-normal text-muted-foreground">lote {arquivoAtual.lote}</span> : null}
+                </h2>
+                <p className="truncate text-xs text-muted-foreground" title={arquivoAtual.nomeArquivo}>
+                  {arquivoAtual.nomeArquivo}
+                </p>
+              </div>
+              <Busca
+                value={busca}
+                onChange={(evento) => setBusca(evento.target.value)}
+                placeholder="Processo, CI, grupo, escritório ou intimado"
+                aria-label="Buscar publicação"
+                className="sm:w-72"
+              />
+            </div>
+
+            <Segmented
+              label="Filtrar por situação"
+              value={filtro}
+              options={FILTROS.filter((item) => item.valor !== "captada" || contagem.captada > 0 || filtro === "captada").map((item) => ({
+                value: item.valor,
+                label: `${item.rotulo} ${contagem[item.valor]}`,
+              }))}
+              onChange={setFiltro}
+            />
+
+            {arquivoAtual.status === "erro" ? (
+              <Aviso tom="erro" titulo="A importação deste arquivo falhou">
+                {arquivoAtual.erro}
+              </Aviso>
+            ) : null}
+
+            <Painel>
+              {publicacoes === null ? (
+                <Carregando rotulo="Carregando publicações" />
+              ) : publicacoes.length === 0 ? (
+                <Vazio icone={FileSpreadsheet} titulo="Nenhuma publicação neste arquivo" />
+              ) : visiveis.length === 0 ? (
+                <Vazio icone={SearchX} titulo="Nenhuma publicação com esse filtro">
+                  <Button
+                    variant="link"
+                    className="h-auto p-0"
+                    onClick={() => {
+                      setFiltro("todas");
+                      setBusca("");
+                    }}
+                  >
+                    Limpar filtros
+                  </Button>
+                </Vazio>
+              ) : (
+                <>
+                  <CabecalhoLista className="tabular-nums" aria-live="polite">
+                    {filtrando
+                      ? `${visiveis.length} de ${publicacoes.length} ${publicacoes.length === 1 ? "publicação" : "publicações"}`
+                      : `${publicacoes.length} ${publicacoes.length === 1 ? "publicação" : "publicações"}`}
+                  </CabecalhoLista>
+                  <ul className="divide-y divide-[#eef3f5]">
+                    {visiveis.map((publicacao) => (
+                      <li key={publicacao.id} className="space-y-2.5 px-4 py-3.5">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                          <span className="font-mono text-sm font-semibold text-foreground">
+                            {publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}
+                          </span>
+                          {publicacao.tribunal ? <Selo>{publicacao.tribunal}</Selo> : null}
+                          <StatusPublicacao status={publicacao.status} />
+                          {publicacao.linhaArquivo ? (
+                            <span className="ml-auto text-xs tabular-nums text-muted-foreground">linha {publicacao.linhaArquivo}</span>
+                          ) : null}
+                        </div>
+                        <DadosPasta publicacao={publicacao} />
+                        <DadosPublicacao publicacao={publicacao} />
+                        <TeorPublicacao key={publicacao.id} publicacao={publicacao} />
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </Painel>
+          </section>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -362,10 +489,7 @@ function Captura() {
 export function CapturaClient() {
   return (
     <AcessoOperacoesLegais>
-      <div className="space-y-4">
-        <AvisoArquivoDoDia />
-        <Captura />
-      </div>
+      <Captura />
     </AcessoOperacoesLegais>
   );
 }
