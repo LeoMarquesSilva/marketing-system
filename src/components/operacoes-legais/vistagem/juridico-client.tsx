@@ -24,10 +24,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
-import { ETIQUETAS_AGENDAMENTO, ROTULO_ETIQUETA, avisosDaData, chaveNome, horaValida, type EtiquetaAgendamento } from "@/lib/vistagem/agendamento";
+import { ETIQUETAS_AGENDAMENTO, ROTULO_ETIQUETA, atalhosDePrazo, avisosDaData, chaveNome, horaValida, type EtiquetaAgendamento } from "@/lib/vistagem/agendamento";
 import {
   CONTAGENS_PRAZO,
-  DIAS_PRAZO,
   ROTULO_CONTAGEM,
   criarCalendario,
   criarCalendarioDePrazo,
@@ -89,7 +88,7 @@ function novaLinha(base: Partial<Linha> = {}): Linha {
     data: "",
     dataFatal: "",
     diasPrazo: null,
-    contagemPrazo: null,
+    contagemPrazo: "uteis",
     hora: "",
     responsavel: "",
     revisor: "",
@@ -103,7 +102,7 @@ function novaLinha(base: Partial<Linha> = {}): Linha {
 const campo = campoClasse;
 
 function linhaCompleta(linha: Linha): boolean {
-  if (!linha.tarefa || !linha.responsavel) return false;
+  if (!linha.tarefa || !linha.responsavel || !linha.observacao.trim()) return false;
   if (linha.etiqueta === "PRAZO") return Boolean(linha.dataFatal && linha.revisor);
   return Boolean(linha.data) && (linha.etiqueta !== "COMPROMISSO" || horaValida(linha.hora));
 }
@@ -164,63 +163,6 @@ function ModalHorario({
             </Button>
           </DialogFooter>
         </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/** Ao clicar num atalho de dias, pergunta se o prazo é em dias úteis ou corridos, com a fatal de cada um. */
-function ModalContagem({
-  aberto,
-  dias,
-  dataPublicacao,
-  contaPrazo,
-  onEscolher,
-  onFechar,
-}: {
-  aberto: boolean;
-  /** Mantido ao fechar, para o conteúdo não sumir durante a animação de saída. */
-  dias: number | null;
-  dataPublicacao: string | null;
-  contaPrazo: (iso: string) => boolean;
-  onEscolher: (contagem: ContagemPrazo, fatal: string) => void;
-  onFechar: () => void;
-}) {
-  const fatais = dias && dataPublicacao ? CONTAGENS_PRAZO.map((contagem) => [contagem, fatalPorContagem(dataPublicacao, dias, contagem, contaPrazo)] as const) : [];
-
-  return (
-    <Dialog open={aberto} onOpenChange={(abrir) => !abrir && onFechar()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Prazo de {dias} dias</DialogTitle>
-          <DialogDescription>
-            Contados a partir do 1º dia útil após a publicação{dataPublicacao ? ` de ${formatarData(dataPublicacao)}` : ""}. O recesso
-            forense (20/12 a 20/01) suspende a contagem.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {fatais.map(([contagem, fatal], indice) => (
-            <Button
-              key={contagem}
-              type="button"
-              variant="outline"
-              className="h-auto flex-col items-start gap-1 px-4 py-3 text-left"
-              onClick={() => onEscolher(contagem, fatal)}
-              autoFocus={indice === 0}
-            >
-              <span className="block text-sm font-semibold text-foreground first-letter:uppercase">{ROTULO_CONTAGEM[contagem]}</span>
-              <span className="text-xs font-normal text-muted-foreground">
-                fatal <span className="font-mono font-semibold text-[#183f50]">{formatarData(fatal)}</span>
-              </span>
-            </Button>
-          ))}
-        </div>
-        <p className="text-xs text-muted-foreground">Nos dias corridos, vencimento em fim de semana ou feriado passa para o próximo dia útil.</p>
-        <DialogFooter>
-          <Button type="button" variant="ghost" onClick={onFechar}>
-            Cancelar
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -320,7 +262,6 @@ function EditorVistagem({
 }) {
   const [detalhe, setDetalhe] = useState<VistagemDetalhe | null>(null);
   const [linhas, setLinhas] = useState<Linha[]>([]);
-  const [observacao, setObservacao] = useState("");
   /** Trabalhista: classificação eSocial (não vai para o VIOS). */
   const [esocial, setEsocial] = useState<ClassificacaoEsocial>(ESOCIAL_PADRAO);
   const [erro, setErro] = useState("");
@@ -329,7 +270,6 @@ function EditorVistagem({
   /** Linha do Compromisso com o modal de data e horário aberto. */
   const [horarioDe, setHorarioDe] = useState<number | null>(null);
   /** Atalho de dias clicado, à espera da escolha entre úteis e corridos. */
-  const [contagemDe, setContagemDe] = useState<{ chave: number; dias: number; aberto: boolean } | null>(null);
   const [transferindo, setTransferindo] = useState(false);
   /** Sugestão da IA (Trabalhista) e o que o jurídico fez com ela. */
   const [sugestao, setSugestao] = useState<SugestaoIa | null>(null);
@@ -353,7 +293,6 @@ function EditorVistagem({
         if (cancelado) return;
         const dados = corpo as VistagemDetalhe;
         setDetalhe(dados);
-        setObservacao(dados.publicacao.observacaoVistagem ?? "");
         const classificacao = classificacaoEsocial(dados.publicacao.publicacaoEsocial) ?? ESOCIAL_PADRAO;
         const tarefaEsocialId = dados.esocial?.tarefa && pedeTarefaEsocial(classificacao) ? dados.esocial.tarefa.id : null;
         setEsocial(classificacao);
@@ -367,7 +306,7 @@ function EditorVistagem({
                   data: item.etiqueta === "PRAZO" ? "" : item.data,
                   dataFatal: item.dataFatal ?? "",
                   diasPrazo: item.diasPrazo,
-                  contagemPrazo: item.contagemPrazo,
+                  contagemPrazo: item.contagemPrazo ?? "uteis",
                   hora: item.hora ?? "",
                   responsavel: item.responsavel,
                   revisor: item.revisor ?? "",
@@ -429,7 +368,15 @@ function EditorVistagem({
     if (existente) return atuais.map((linha) => (linha === existente ? { ...linha, esocial: true } : linha));
     return [
       ...atuais,
-      novaLinha({ etiqueta: "PROVIDENCIA", tarefa: tarefa.nome, responsavel: detalhe?.esocial?.responsavelSugerido ?? "", esocial: true }),
+      novaLinha({
+        etiqueta: "PROVIDENCIA",
+        tarefa: tarefa.nome,
+        responsavel: detalhe?.esocial?.responsavelSugerido ?? "",
+        // No VIOS, a Inserir E-social vai para o dia útil seguinte à vistagem.
+        data: detalhe ? somarDiasUteis(detalhe.hoje, 1, ehDiaUtil) : "",
+        observacao: `Inserir no eSocial: ${valor}.`,
+        esocial: true,
+      }),
     ];
   }
 
@@ -457,6 +404,7 @@ function EditorVistagem({
           hora: tarefa.hora ?? "",
           responsavel: detalhe.responsavelSugerido ?? "",
           revisor: prazo ? detalhe.revisorSugerido ?? "" : "",
+          observacao: tarefa.motivo,
           ia: true,
         }),
       ];
@@ -486,7 +434,7 @@ function EditorVistagem({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          observacao,
+          observacao: null,
           publicacaoEsocial: detalhe?.esocial ? esocial : null,
           sugestaoUsada: estadoSugestao === "usada",
           agendamentos: linhas.map((linha) => ({
@@ -786,21 +734,35 @@ function EditorVistagem({
                                   type="date"
                                   className={campo}
                                   value={linha.dataFatal}
-                                  onChange={(evento) => alterar(linha.chave, { dataFatal: evento.target.value, diasPrazo: null, contagemPrazo: null })}
+                                  onChange={(evento) => alterar(linha.chave, { dataFatal: evento.target.value, diasPrazo: null })}
                                 />
                               </Campo>
                               <div className="min-w-0 flex-1 space-y-1.5">
                                 <span className="block text-xs font-medium text-muted-foreground">
                                   Ou dias após {publicacao.dataPublicacao ? formatarData(publicacao.dataPublicacao) : "a publicação"}
-                                  {linha.diasPrazo && linha.contagemPrazo ? (
+                                  {linha.diasPrazo ? (
                                     <span className="font-semibold text-[#183f50]">
                                       {" "}
-                                      · {linha.diasPrazo} {ROTULO_CONTAGEM[linha.contagemPrazo]}
+                                      · {linha.diasPrazo} {ROTULO_CONTAGEM[linha.contagemPrazo ?? "uteis"]}
                                     </span>
                                   ) : null}
                                 </span>
-                                <div className="flex flex-wrap gap-1" role="group" aria-label="Prazo em dias">
-                                  {DIAS_PRAZO.map((dias) => (
+                                <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Prazo em dias">
+                                  {/* Úteis ou corridos ao lado dos dias: troca a contagem e recalcula a fatal do atalho escolhido. */}
+                                  <Segmented
+                                    label={`Contagem do prazo da tarefa ${indice + 1}`}
+                                    value={linha.contagemPrazo ?? "uteis"}
+                                    options={CONTAGENS_PRAZO.map((contagem) => ({ value: contagem, label: contagem === "uteis" ? "Úteis" : "Corridos" }))}
+                                    onChange={(contagem) =>
+                                      alterar(linha.chave, {
+                                        contagemPrazo: contagem,
+                                        ...(linha.diasPrazo && publicacao.dataPublicacao
+                                          ? { dataFatal: fatalPorContagem(publicacao.dataPublicacao, linha.diasPrazo, contagem, contaPrazo) }
+                                          : {}),
+                                      })
+                                    }
+                                  />
+                                  {atalhosDePrazo(catalogo.area).map((dias) => (
                                     <Button
                                       key={dias}
                                       type="button"
@@ -812,7 +774,13 @@ function EditorVistagem({
                                         "h-10 min-w-9 tabular-nums",
                                         linha.diasPrazo === dias && "border-[#285f7a] bg-[#347796] text-white hover:bg-[#285f7a] hover:text-white"
                                       )}
-                                      onClick={() => publicacao.dataPublicacao && setContagemDe({ chave: linha.chave, dias, aberto: true })}
+                                      onClick={() =>
+                                        publicacao.dataPublicacao &&
+                                        alterar(linha.chave, {
+                                          diasPrazo: dias,
+                                          dataFatal: fatalPorContagem(publicacao.dataPublicacao, dias, linha.contagemPrazo ?? "uteis", contaPrazo),
+                                        })
+                                      }
                                     >
                                       {dias}
                                     </Button>
@@ -905,44 +873,24 @@ function EditorVistagem({
                           </div>
                         </div>
 
-                        {fluxo ? (
-                          <FluxoNoVios fluxo={fluxo} responsavel={linha.responsavel} revisor={linha.revisor} datas={datasDoFluxo} />
-                        ) : null}
-
-                        <details className="group" open={Boolean(linha.observacao)}>
-                          <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-[#347796] [&::-webkit-details-marker]:hidden">
-                            <ChevronRight className="size-3.5 transition-transform group-open:rotate-90" aria-hidden />
-                            Observação na descrição da tarefa
-                          </summary>
+                        <Campo rotulo="Observação (vai na descrição da tarefa no VIOS)">
                           <Textarea
-                            className="mt-2"
-                            aria-label={`Observação da tarefa ${indice + 1}`}
                             value={linha.observacao}
                             onChange={(evento) => alterar(linha.chave, { observacao: evento.target.value })}
                             maxLength={2000}
                             rows={2}
+                            placeholder="O que fazer e por quê"
+                            aria-invalid={!linha.observacao.trim()}
                           />
-                        </details>
+                        </Campo>
+
+                        {fluxo ? (
+                          <FluxoNoVios fluxo={fluxo} responsavel={linha.responsavel} revisor={linha.revisor} datas={datasDoFluxo} />
+                        ) : null}
                       </li>
                     );
                   })}
                 </ol>
-
-                <details className="group border-t border-[#e6eef0] px-4 py-3" open={Boolean(observacao)}>
-                  <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-[#347796] [&::-webkit-details-marker]:hidden">
-                    <ChevronRight className="size-3.5 transition-transform group-open:rotate-90" aria-hidden />
-                    Observação para a controladoria
-                  </summary>
-                  <Textarea
-                    className="mt-2"
-                    aria-label="Observação para a controladoria"
-                    value={observacao}
-                    onChange={(evento) => setObservacao(evento.target.value)}
-                    maxLength={2000}
-                    rows={2}
-                    placeholder="Opcional"
-                  />
-                </details>
 
                 {erro ? (
                   <div className="px-4 pb-3">
@@ -956,7 +904,7 @@ function EditorVistagem({
                       ? `${linhas.length} ${linhas.length === 1 ? "tarefa pronta" : "tarefas prontas"} para a conferência.`
                       : faltaTarefaEsocial
                         ? `Falta o tipo ${TAREFA_ESOCIAL} no VIOS.`
-                        : `Complete ${incompletas.join(", ")}: tarefa, data${linhas.some((linha) => linha.etiqueta === "PRAZO") ? ", revisor" : ""} e responsável.`}
+                        : `Complete ${incompletas.join(", ")}: tarefa, data${linhas.some((linha) => linha.etiqueta === "PRAZO") ? ", revisor" : ""}, responsável e observação.`}
                   </p>
                   <Button onClick={enviar} disabled={enviando || !completo}>
                     {enviando ? <LoaderCircle className="animate-spin" /> : <Send />}
@@ -978,18 +926,6 @@ function EditorVistagem({
           setHorarioDe(null);
         }}
         onFechar={() => setHorarioDe(null)}
-      />
-
-      <ModalContagem
-        aberto={Boolean(contagemDe?.aberto)}
-        dias={contagemDe?.dias ?? null}
-        dataPublicacao={publicacao.dataPublicacao}
-        contaPrazo={contaPrazo}
-        onEscolher={(contagemPrazo, dataFatal) => {
-          if (contagemDe) alterar(contagemDe.chave, { diasPrazo: contagemDe.dias, contagemPrazo, dataFatal });
-          setContagemDe((atual) => atual && { ...atual, aberto: false });
-        }}
-        onFechar={() => setContagemDe((atual) => atual && { ...atual, aberto: false })}
       />
 
       <ModalTransferir

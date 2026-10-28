@@ -111,6 +111,7 @@ export function CartaoSugestaoIa({
   return (
     <Painel aria-labelledby="sugestao-ia-titulo" className="border-[#48466e]/20">
       <TituloIa>
+        {sugestao.parteContraria ? <Selo tom="neutro">Prazo da parte contrária</Selo> : null}
         <Selo tom={TOM_CONFIANCA[sugestao.confianca]} className="ml-auto">
           confiança {ROTULO_CONFIANCA[sugestao.confianca]}
         </Selo>

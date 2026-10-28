@@ -7,7 +7,9 @@ import {
   usuarioPorSigla,
   avisosDaData,
   LIMITE_TEOR_VIOS,
+  atalhosDePrazo,
   montarObservacaoVios,
+  referenciaDaPublicacao,
   paraDataVios,
   responsavelSugerido,
   tarefasPermitidas,
@@ -105,7 +107,7 @@ describe("validarAgendamentos", () => {
 
   it("escolhe pelo tipo quando o VIOS tem dois com o mesmo nome e grava o nome do VIOS", () => {
     const resultado = validarAgendamentos(
-      [{ etiqueta: "PRAZO", tarefa: "APELAÇÃO (tipo 486)", tarefaId: "486", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo" }],
+      [{ etiqueta: "PRAZO", tarefa: "APELAÇÃO (tipo 486)", tarefaId: "486", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo", observacao: "ver teor" }],
       contexto
     );
     expect(resultado.ok && resultado.itens[0]).toMatchObject({ tarefa: "APELAÇÃO", tarefaId: "486" });
@@ -118,7 +120,7 @@ describe("validarAgendamentos", () => {
 
   it("compromisso usa a data do calendário e não exige revisor", () => {
     const resultado = validarAgendamentos(
-      [{ etiqueta: "COMPROMISSO", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", data: "2026-11-10", hora: "14:30", responsavel: "Advogada Exemplo" }],
+      [{ etiqueta: "COMPROMISSO", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", data: "2026-11-10", hora: "14:30", responsavel: "Advogada Exemplo", observacao: "levar testemunhas" }],
       contexto
     );
     expect(resultado.ok && resultado.itens[0]).toMatchObject({ etiqueta: "COMPROMISSO", tarefaId: "54", data: "2026-11-10", hora: "14:30", revisor: null });
@@ -130,7 +132,7 @@ describe("validarAgendamentos", () => {
   });
 
   it("atalho de dias exige a contagem (úteis ou corridos); fatal no calendário não", () => {
-    const prazo = { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo" };
+    const prazo = { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo", observacao: "ver teor" };
     expect(validarAgendamentos([{ ...prazo, diasPrazo: 15 }], contexto)).toEqual({
       ok: false,
       erros: ["Tarefa 1: escolha se o prazo é em dias úteis ou corridos."],
@@ -144,14 +146,14 @@ describe("validarAgendamentos", () => {
   });
 
   it("compromisso exige o horário; nas outras classes ele é ignorado", () => {
-    const audiencia = { etiqueta: "COMPROMISSO" as const, tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", data: "2026-11-10", responsavel: "Advogada Exemplo" };
+    const audiencia = { etiqueta: "COMPROMISSO" as const, tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", data: "2026-11-10", responsavel: "Advogada Exemplo", observacao: "ver teor" };
     for (const hora of [undefined, null, "", "24:00", "9:30", "14h30"]) {
       const resultado = validarAgendamentos([{ ...audiencia, hora }], contexto);
       expect(resultado).toEqual({ ok: false, erros: ["Tarefa 1: informe o horário do compromisso."] });
     }
     expect(validarAgendamentos([{ ...audiencia, hora: " 09:05 " }], contexto)).toMatchObject({ ok: true, itens: [{ hora: "09:05" }] });
     const providencia = validarAgendamentos(
-      [{ etiqueta: "PROVIDENCIA", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-11-10", hora: "10:00", responsavel: "Advogada Exemplo" }],
+      [{ etiqueta: "PROVIDENCIA", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-11-10", hora: "10:00", responsavel: "Advogada Exemplo", observacao: "ciência" }],
       contexto
     );
     expect(providencia.ok && providencia.itens[0].hora).toBeNull();
@@ -159,7 +161,7 @@ describe("validarAgendamentos", () => {
 
   it("no Prazo a data do VIOS segue o 3. PROTOCOLAR do fluxo da tarefa", () => {
     const entrada = [
-      { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo" },
+      { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo", observacao: "ver teor" },
     ];
     // fluxo D-5: Protocolar 4 dias úteis depois do Enviar → Enviar = fatal − 5
     const d5 = validarAgendamentos(entrada, { ...contexto, cadeiaDaTarefa: () => ({ revisar: 1, protocolar: 4 }) });
@@ -175,7 +177,8 @@ describe("validarAgendamentos", () => {
       contexto
     );
     expect(resultado.ok).toBe(false);
-    if (!resultado.ok) expect(resultado.erros).toHaveLength(3);
+    // tarefa fora da lista, data inválida, responsável desconhecido e observação vazia
+    if (!resultado.ok) expect(resultado.erros).toHaveLength(4);
     const semRevisor = validarAgendamentos(
       [{ etiqueta: "PRAZO", tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo" }],
       contexto
@@ -188,6 +191,15 @@ describe("validarAgendamentos", () => {
     );
     expect(semFatal.ok).toBe(false);
     expect(validarAgendamentos([], contexto).ok).toBe(false);
+  });
+
+  it("exige a observação, que vai na descrição da tarefa", () => {
+    const providencia = { etiqueta: "PROVIDENCIA" as const, tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-11-10", responsavel: "Advogada Exemplo" };
+    expect(validarAgendamentos([{ ...providencia, observacao: "  " }], contexto)).toEqual({
+      ok: false,
+      erros: ["Tarefa 1: escreva a observação (vai na descrição da tarefa)."],
+    });
+    expect(validarAgendamentos([{ ...providencia, observacao: "prazo do reclamante" }], contexto).ok).toBe(true);
   });
 });
 
@@ -207,20 +219,26 @@ describe("auxiliares", () => {
     expect(responsavelSugerido("Outra Pessoa", USUARIOS)).toBeNull();
   });
 
-  it("monta a descrição da tarefa com a referência da publicação", () => {
-    expect(
-      montarObservacaoVios({ dataPublicacao: "2026-10-14", tribunal: "TRT2", numeroProcesso: "0001234-56.2026.5.02.0001", djenIdComunicacao: 123 }, "Prazo de 8 dias")
-    ).toBe("Publicação de 14/10/2026 · TRT2 · Processo 0001234-56.2026.5.02.0001 · ID comunicação 123\nPrazo de 8 dias\nVistagem pelo Orquestra.");
+  it("a descrição da tarefa é só a observação (o VIOS junta o texto da intimação)", () => {
+    expect(montarObservacaoVios(null, " Prazo de 8 dias ")).toBe("Prazo de 8 dias");
+    expect(referenciaDaPublicacao({ dataPublicacao: "2026-10-14", tribunal: "TRT2", numeroProcesso: "0001234-56.2026.5.02.0001", djenIdComunicacao: 123 })).toBe(
+      "Publicação de 14/10/2026 · TRT2 · Processo 0001234-56.2026.5.02.0001 · ID comunicação 123"
+    );
   });
 
-  it("leva o teor inteiro da publicação depois do cabeçalho", () => {
-    const publicacao = { dataPublicacao: "2026-10-14", tribunal: "TJSP", numeroProcesso: "1", djenIdComunicacao: null };
-    expect(montarObservacaoVios({ ...publicacao, teor: "PROCESSO:1 ORGÃO:Vara TEXTO: Intime-se a parte." }, null)).toBe(
-      "Publicação de 14/10/2026 · TJSP · Processo 1\nVistagem pelo Orquestra.\n\nTEOR DA PUBLICAÇÃO\nPROCESSO:1 ORGÃO:Vara\nTEXTO:\nIntime-se a parte."
+  it("na pasta leva a observação e o teor inteiro da publicação, sem cabeçalho", () => {
+    expect(montarObservacaoVios("PROCESSO:1 ORGÃO:Vara TEXTO: Intime-se a parte.", "ver laudo")).toBe(
+      "ver laudo\n\nTEOR DA PUBLICAÇÃO\nPROCESSO:1 ORGÃO:Vara\nTEXTO:\nIntime-se a parte."
     );
-    const enorme = montarObservacaoVios({ ...publicacao, teor: "x".repeat(LIMITE_TEOR_VIOS + 500) }, null);
+    expect(montarObservacaoVios("Intime-se a parte.", null)).toBe("TEOR DA PUBLICAÇÃO\nIntime-se a parte.");
+    const enorme = montarObservacaoVios("x".repeat(LIMITE_TEOR_VIOS + 500), null);
     expect(enorme).toContain(`(Teor cortado: 30.000 de 30.500 caracteres. Íntegra no Orquestra.)`);
     expect(enorme.length).toBeLessThan(LIMITE_TEOR_VIOS + 200);
+  });
+
+  it("o Trabalhista tem atalhos de 8 e 16 dias", () => {
+    expect(atalhosDePrazo("Trabalhista")).toEqual([5, 8, 10, 15, 16, 30, 60, 90, 180]);
+    expect(atalhosDePrazo("Cível")).toEqual([5, 10, 15, 30, 60, 90, 180]);
   });
 });
 
