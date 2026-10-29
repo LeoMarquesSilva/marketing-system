@@ -137,7 +137,7 @@ export function separarNomes(texto: string | null | undefined): string[] {
 /** Área do catálogo do SAMA para a pasta: a área do processo no VIOS ou, sem ela, a do escritório. */
 export function areaDoCatalogo(areaProcesso: string | null, escritorio: string | null, areasDisponiveis: string[]): string | null {
   const porChave = new Map(areasDisponiveis.map((area) => [chaveNome(area), area]));
-  const candidatas = [areaProcesso, escritorio === "Reestruturação" ? "Cível | Insolvência" : escritorio];
+  const candidatas = [areaProcesso, escritorio];
   for (const candidata of candidatas) {
     const area = candidata ? porChave.get(chaveNome(candidata)) : undefined;
     if (area) return area;

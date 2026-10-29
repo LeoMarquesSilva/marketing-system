@@ -372,7 +372,7 @@ async function itensDeConferencia(
 }
 
 /**
- * Manda a publicação para a fila de outra área (ex.: Cível ↔ Reestruturação), com o motivo.
+ * Manda a publicação para a fila de outra área (ex.: Cível ↔ Cível | Insolvência), com o motivo.
  * Só muda o escritório no Orquestra; a pasta no VIOS fica como está.
  */
 export async function transferirPublicacao(

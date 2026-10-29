@@ -57,12 +57,13 @@ describe("tarefasPermitidas", () => {
 });
 
 describe("areaDoCatalogo", () => {
-  const areas = ["Cível", "Cível | Insolvência", "Trabalhista", "Operações Legais"];
+  const areas = ["Cível", "Cível | Insolvência", "Insolvência", "Trabalhista", "Operações Legais"];
   it("usa a área do processo, ignorando acentos", () => {
     expect(areaDoCatalogo("CIVEL", "Cível", areas)).toBe("Cível");
+    expect(areaDoCatalogo("Insolvência", "Cível | Insolvência", areas)).toBe("Insolvência");
   });
   it("cai para o escritório quando a pasta não tem área", () => {
-    expect(areaDoCatalogo(null, "Reestruturação", areas)).toBe("Cível | Insolvência");
+    expect(areaDoCatalogo(null, "Cível | Insolvência", areas)).toBe("Cível | Insolvência");
     expect(areaDoCatalogo(null, "Operações Legais", areas)).toBe("Operações Legais");
     expect(areaDoCatalogo(null, "Desconhecida", areas)).toBeNull();
   });
