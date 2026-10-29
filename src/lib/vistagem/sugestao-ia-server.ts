@@ -19,6 +19,7 @@ import {
 import { carregarCatalogoProcessos } from "./sama";
 import { admin, falhou } from "./server";
 import {
+  PRAZO_DE,
   areaComSugestaoIa,
   custoDaChamada,
   entradaDaSugestao,
@@ -28,8 +29,10 @@ import {
   type SugestaoIa,
 } from "./sugestao-ia";
 
+// A ordem conta: a IA decide de quem é o prazo antes de escolher as tarefas.
 const RESPOSTA = z.object({
   resumo: z.string(),
+  prazo_de: z.enum(PRAZO_DE),
   tarefas: z.array(
     z.object({
       classe: z.enum(["PRAZO", "PROVIDENCIA", "COMPROMISSO"]),
@@ -43,7 +46,6 @@ const RESPOSTA = z.object({
   ),
   esocial: z.enum(CLASSIFICACOES_ESOCIAL),
   confianca: z.enum(["alta", "media", "baixa"]),
-  parte_contraria: z.boolean(),
 });
 
 /** Pede à OpenAI as tarefas da publicação, escolhidas só da lista do VIOS da área. */
@@ -63,6 +65,8 @@ async function pedirSugestao(publicacao: PublicacaoComArea, listas: Record<Etiqu
       tribunal: publicacao.tribunal,
       orgao: publicacao.djen_orgao,
       tipoComunicacao: publicacao.djen_tipo_comunicacao,
+      cliente: publicacao.cliente,
+      partes: publicacao.djen_partes ?? [],
       teor: publicacao.teor,
     }),
     temperature: raciocinio ? undefined : 0,
@@ -76,7 +80,8 @@ async function pedirSugestao(publicacao: PublicacaoComArea, listas: Record<Etiqu
     tarefas: tarefasDaResposta(object, listas),
     esocial: esocialDaResposta(object.esocial),
     confianca: object.confianca,
-    parteContraria: object.parte_contraria,
+    parteContraria: object.prazo_de === "parte_contraria",
+    prazoDe: object.prazo_de,
     modelo,
     geradaEm: new Date().toISOString(),
     custoUS: custoDaChamada({
