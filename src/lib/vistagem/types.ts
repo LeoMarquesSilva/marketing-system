@@ -2,6 +2,7 @@ import type { ContagemPrazo } from "./dias-uteis";
 import type { TarefaNoVios } from "./fila-vios";
 import type { FluxoDaTarefa } from "./fluxo-vios";
 import type { SugestaoIa } from "./sugestao-ia";
+import type { SugestaoTriagem } from "./sugestao-triagem";
 import type { PastaSioe, Pendencia } from "./triagem";
 
 /** Situação da publicação no fluxo de vistagem (captura → vistagem → agendamento → revisão). */
@@ -146,6 +147,8 @@ export interface PublicacaoResumo {
   transferenciaMotivo: string | null;
   /** Trabalhista: classificação eSocial escolhida na vistagem (não vai para o VIOS; mesmos valores da BKP). */
   publicacaoEsocial: string | null;
+  /** Sem pasta no VIOS: dados sugeridos (processo citado, parte cliente ou IA) para a controladoria conferir. */
+  sugestaoTriagem: SugestaoTriagem | null;
   teor: string;
   /** true quando `teor` foi encurtado na listagem. */
   teorResumido: boolean;
