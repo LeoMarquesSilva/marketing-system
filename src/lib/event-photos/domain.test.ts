@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   compareEventPhotoNames,
   eventPhotoDownloadName,
+  indexAfterReview,
   parseAlbumDate,
   previewDimensions,
   slugifyAlbumTitle,
@@ -84,5 +85,20 @@ describe("eventPhotoDownloadName", () => {
   it("numera com três dígitos e normaliza extensão", () => {
     expect(eventPhotoDownloadName("cafe-set", 0, "DSC_1234.JPEG")).toBe("cafe-set-001.jpg");
     expect(eventPhotoDownloadName("cafe-set", 41, null)).toBe("cafe-set-042.jpg");
+  });
+});
+
+describe("indexAfterReview", () => {
+  it("fica na mesma posição, que agora mostra a próxima foto", () => {
+    expect(indexAfterReview(2, 5)).toBe(2);
+  });
+
+  it("respondeu a última da lista: volta uma", () => {
+    expect(indexAfterReview(4, 4)).toBe(3);
+  });
+
+  it("lista vazia ou nada aberto: fecha", () => {
+    expect(indexAfterReview(0, 0)).toBeNull();
+    expect(indexAfterReview(null, 3)).toBeNull();
   });
 });

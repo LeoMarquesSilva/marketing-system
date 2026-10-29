@@ -10,6 +10,7 @@ import {
   Loader2,
   Star,
   Trash2,
+  UserCheck,
   UserX,
   X,
 } from "lucide-react";
@@ -28,12 +29,57 @@ interface EventPhotoLightboxProps {
   busy: boolean;
   /** Fotos em que o usuário logado foi reconhecido. */
   myPhotoIds: Set<string>;
+  /** Fotos em que o reconhecimento ficou em dúvida ("Talvez seja você"). */
+  maybePhotoIds: Set<string>;
   /** Posição da foto no álbum completo (o filtro "minhas" muda o índice visível). */
   albumPositionOf: (photo: EventPhoto) => number;
   onIndexChange: (index: number | null) => void;
   onNotMe: (photo: EventPhoto) => void;
+  onConfirmMe: (photo: EventPhoto) => void;
   onSetCover: (photo: EventPhoto) => void;
   onDelete: (photo: EventPhoto) => void;
+}
+
+/** "Sou eu" só na dúvida; "Não sou eu" em qualquer marcação. */
+export function FaceReviewButtons({
+  match,
+  busy,
+  onConfirmMe,
+  onNotMe,
+}: {
+  match: "sure" | "maybe" | null;
+  busy: boolean;
+  onConfirmMe: () => void;
+  onNotMe: () => void;
+}) {
+  if (!match) return null;
+  return (
+    <>
+      {match === "maybe" && (
+        <Button
+          type="button"
+          size="sm"
+          className="gap-1.5 bg-[#47cdd0] text-[#03202f] hover:bg-[#6fdadc]"
+          disabled={busy}
+          onClick={onConfirmMe}
+        >
+          <UserCheck className="h-4 w-4" />
+          Sou eu
+        </Button>
+      )}
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        className="gap-1.5 text-white hover:bg-white/10 hover:text-white"
+        disabled={busy}
+        onClick={onNotMe}
+      >
+        <UserX className="h-4 w-4" />
+        Não sou eu
+      </Button>
+    </>
+  );
 }
 
 const navButtonClass =
@@ -48,9 +94,11 @@ export function EventPhotoLightbox({
   canManage,
   busy,
   myPhotoIds,
+  maybePhotoIds,
   albumPositionOf,
   onIndexChange,
   onNotMe,
+  onConfirmMe,
   onSetCover,
   onDelete,
 }: EventPhotoLightboxProps) {
@@ -99,6 +147,7 @@ export function EventPhotoLightbox({
   const downloadName = eventPhotoDownloadName(albumSlug, albumPositionOf(photo), photo.originalFilename);
   const isCover = coverPhotoId === photo.id;
   const isMine = myPhotoIds.has(photo.id);
+  const isMaybe = !isMine && maybePhotoIds.has(photo.id);
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={(next) => !next && onIndexChange(null)}>
@@ -127,6 +176,11 @@ export function EventPhotoLightbox({
               {isMine && (
                 <span className="ml-2 rounded-full bg-[#47cdd0]/20 px-2 py-0.5 text-xs text-[#9fe7e9]">
                   Você aparece aqui
+                </span>
+              )}
+              {isMaybe && (
+                <span className="ml-2 rounded-full bg-[#f5c86a]/20 px-2 py-0.5 text-xs text-[#f7d995]">
+                  Talvez seja você
                 </span>
               )}
             </p>
@@ -205,19 +259,12 @@ export function EventPhotoLightbox({
                 Baixar original
               </a>
             </Button>
-            {isMine && (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="gap-1.5 text-white hover:bg-white/10 hover:text-white"
-                disabled={busy}
-                onClick={() => onNotMe(photo)}
-              >
-                <UserX className="h-4 w-4" />
-                Não sou eu
-              </Button>
-            )}
+            <FaceReviewButtons
+              match={isMine ? "sure" : isMaybe ? "maybe" : null}
+              busy={busy}
+              onConfirmMe={() => onConfirmMe(photo)}
+              onNotMe={() => onNotMe(photo)}
+            />
             {canManage && (
               <>
                 <Button

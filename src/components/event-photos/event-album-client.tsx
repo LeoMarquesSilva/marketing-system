@@ -8,6 +8,7 @@ import {
   CalendarDays,
   Check,
   CheckSquare,
+  CircleHelp,
   Eye,
   EyeOff,
   ImageOff,
@@ -22,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { PhotoConfirmDialog } from "@/components/collaborator-photos/photo-confirm-dialog";
 import { EventPhotoLightbox } from "@/components/event-photos/event-photo-lightbox";
 import {
+  confirmFaceMatch,
   deleteEventAlbum,
   deleteEventPhotos,
   fetchEventAlbum,
@@ -33,6 +35,7 @@ import {
 import {
   EVENT_PHOTO_UPLOAD_CONCURRENCY,
   formatAlbumDate,
+  indexAfterReview,
   validateEventPhotoFile,
 } from "@/lib/event-photos/domain";
 import type { FaceReferenceSet } from "@/lib/event-photos/faces";
@@ -131,7 +134,9 @@ export function EventAlbumClient({ slug }: { slug: string }) {
   const [pending, setPending] = useState<PendingConfirm>(null);
   const [busy, setBusy] = useState(false);
   const [myPhotoIds, setMyPhotoIds] = useState<Set<string>>(new Set());
-  const [onlyMine, setOnlyMine] = useState(false);
+  /** "Talvez seja você": a pessoa confirma ou recusa cada uma. */
+  const [maybePhotoIds, setMaybePhotoIds] = useState<Set<string>>(new Set());
+  const [view, setView] = useState<"all" | "mine" | "maybe">("all");
 
   const uploading = upload !== null && upload.done < upload.total;
 
@@ -143,6 +148,7 @@ export function EventAlbumClient({ slug }: { slug: string }) {
       setAlbum(data.album);
       setPhotos(data.photos);
       setMyPhotoIds(new Set(data.myPhotoIds));
+      setMaybePhotoIds(new Set(data.myMaybePhotoIds));
       setCanManage(data.canManage);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro ao carregar álbum.";
@@ -297,22 +303,53 @@ export function EventAlbumClient({ slug }: { slug: string }) {
     });
   }
 
-  const visiblePhotos = onlyMine ? photos.filter((p) => myPhotoIds.has(p.id)) : photos;
+  const visiblePhotos =
+    view === "mine"
+      ? photos.filter((p) => myPhotoIds.has(p.id))
+      : view === "maybe"
+        ? photos.filter((p) => maybePhotoIds.has(p.id))
+        : photos;
+
+  /** Na lista filtrada a foto respondida some: a ampliada passa para a próxima. */
+  function advanceAfterReview(remaining: number) {
+    setOpenIndex(indexAfterReview(openIndex, remaining));
+    if (remaining === 0) setView("all");
+  }
 
   async function handleNotMe(photo: EventPhoto) {
     setBusy(true);
     setError(null);
     try {
       await rejectFaceMatch(photo.id);
-      const next = new Set(myPhotoIds);
-      next.delete(photo.id);
-      setMyPhotoIds(next);
-      if (onlyMine) {
-        setOpenIndex(null);
-        if (next.size === 0) setOnlyMine(false);
-      }
+      const mine = new Set(myPhotoIds);
+      const maybe = new Set(maybePhotoIds);
+      mine.delete(photo.id);
+      maybe.delete(photo.id);
+      setMyPhotoIds(mine);
+      setMaybePhotoIds(maybe);
+      if (view === "mine") advanceAfterReview(mine.size);
+      if (view === "maybe") advanceAfterReview(maybe.size);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao remover a marcação.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleConfirmMe(photo: EventPhoto) {
+    setBusy(true);
+    setError(null);
+    try {
+      await confirmFaceMatch(photo.id);
+      const mine = new Set(myPhotoIds);
+      const maybe = new Set(maybePhotoIds);
+      mine.add(photo.id);
+      maybe.delete(photo.id);
+      setMyPhotoIds(mine);
+      setMaybePhotoIds(maybe);
+      if (view === "maybe") advanceAfterReview(maybe.size);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao confirmar a marcação.");
     } finally {
       setBusy(false);
     }
@@ -546,30 +583,52 @@ export function EventAlbumClient({ slug }: { slug: string }) {
         </div>
       )}
 
-      {myPhotoIds.size > 0 && photos.length > 0 && (
+      {(myPhotoIds.size > 0 || maybePhotoIds.size > 0) && photos.length > 0 && (
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filtrar fotos">
           <Button
             type="button"
             size="sm"
-            variant={onlyMine ? "outline" : "secondary"}
-            aria-pressed={!onlyMine}
-            onClick={() => setOnlyMine(false)}
+            variant={view === "all" ? "secondary" : "outline"}
+            aria-pressed={view === "all"}
+            onClick={() => setView("all")}
           >
             Todas ({photos.length})
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={onlyMine ? "secondary" : "outline"}
-            aria-pressed={onlyMine}
-            onClick={() => {
-              setOnlyMine(true);
-              setOpenIndex(null);
-            }}
-          >
-            <ScanFace className="h-4 w-4" />
-            Em que eu apareço ({myPhotoIds.size})
-          </Button>
+          {myPhotoIds.size > 0 && (
+            <Button
+              type="button"
+              size="sm"
+              variant={view === "mine" ? "secondary" : "outline"}
+              aria-pressed={view === "mine"}
+              onClick={() => {
+                setView("mine");
+                setOpenIndex(null);
+              }}
+            >
+              <ScanFace className="h-4 w-4" />
+              Em que eu apareço ({myPhotoIds.size})
+            </Button>
+          )}
+          {maybePhotoIds.size > 0 && (
+            <Button
+              type="button"
+              size="sm"
+              variant={view === "maybe" ? "secondary" : "outline"}
+              aria-pressed={view === "maybe"}
+              onClick={() => {
+                setView("maybe");
+                setOpenIndex(null);
+              }}
+            >
+              <CircleHelp className="h-4 w-4" />
+              Talvez seja você ({maybePhotoIds.size})
+            </Button>
+          )}
+          {view === "maybe" && (
+            <p className="w-full text-xs text-[#5e7a85]">
+              O reconhecimento ficou em dúvida nestas fotos. Abra cada uma e responda “Sou eu” ou “Não sou eu”.
+            </p>
+          )}
         </div>
       )}
 
@@ -613,8 +672,10 @@ export function EventAlbumClient({ slug }: { slug: string }) {
       <EventPhotoLightbox
         photos={visiblePhotos}
         myPhotoIds={myPhotoIds}
+        maybePhotoIds={maybePhotoIds}
         albumPositionOf={(photo) => photos.indexOf(photo)}
         onNotMe={(photo) => void handleNotMe(photo)}
+        onConfirmMe={(photo) => void handleConfirmMe(photo)}
         index={openIndex}
         albumSlug={album.slug}
         albumTitle={album.title}

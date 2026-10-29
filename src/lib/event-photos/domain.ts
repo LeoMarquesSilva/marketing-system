@@ -85,6 +85,15 @@ export function compareEventPhotoNames(a: string | null, b: string | null): numb
   return a.localeCompare(b, "pt-BR", { numeric: true, sensitivity: "base" });
 }
 
+/**
+ * Foto ampliada depois de responder "Sou eu"/"Não sou eu" numa lista filtrada: a respondida sai
+ * da lista e a mesma posição passa a mostrar a próxima. null = lista acabou, fecha a ampliação.
+ */
+export function indexAfterReview(openIndex: number | null, remaining: number): number | null {
+  if (openIndex === null || remaining <= 0) return null;
+  return Math.min(openIndex, remaining - 1);
+}
+
 /** Nome de download: <album>-<nnn>.<ext>, estável pela ordem da foto no álbum. */
 export function eventPhotoDownloadName(albumSlug: string, index: number, filename: string | null): string {
   const ext = (filename?.split(".").pop() ?? "jpg").toLowerCase().replace("jpeg", "jpg");

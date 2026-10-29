@@ -36,7 +36,16 @@ export interface FaceStatus {
   consentVersion: string;
   referenceCount: number;
   matchCount: number;
+  /** Marcações em "Talvez seja você" esperando a pessoa confirmar. */
+  maybeCount: number;
   pendingScanAlbums: number;
+}
+
+export interface MyAlbumMatches {
+  /** Aparece direto em "Em que eu apareço". */
+  sure: string[];
+  /** "Talvez seja você": a pessoa confirma ou recusa. */
+  maybe: string[];
 }
 
 export interface ScanQueueAlbum {

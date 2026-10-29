@@ -295,7 +295,9 @@ export function FaceRecognitionPanel({ onMatchesChanged }: { onMatchesChanged: (
             </p>
             <p className="mt-0.5 text-xs leading-relaxed text-[#5e7a85]">
               {status.consented
-                ? "Abra um álbum e use o filtro “Em que eu apareço”. Fotos novas são marcadas automaticamente."
+                ? status.maybeCount > 0
+                  ? `Abra um álbum e use o filtro “Em que eu apareço”. ${status.maybeCount} foto${status.maybeCount === 1 ? "" : "s"} em “Talvez seja você” ${status.maybeCount === 1 ? "espera" : "esperam"} sua confirmação.`
+                  : "Abra um álbum e use o filtro “Em que eu apareço”. Fotos novas são marcadas automaticamente."
                 : "Opcional. Usamos suas fotos corporativas para achar você nos álbuns, direto no navegador."}
             </p>
           </div>
