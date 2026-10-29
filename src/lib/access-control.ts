@@ -24,8 +24,8 @@ export interface AccessSection {
 /** Seções do sistema (chave = rota base usada no menu e nas rotas). */
 export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/", label: "Dashboard" },
-  { key: "/planner", label: "Planner (quadro)" },
-  { key: "/solicitacoes", label: "Planner (solicitações)" },
+  { key: "/planner", label: "Planner de Marketing (quadro)" },
+  { key: "/solicitacoes", label: "Planner de Marketing (solicitações)" },
   { key: "/conteudo/roteiros", label: "Gerador de conteúdo (posts)" },
   { key: "/conteudo/boletim", label: "Gerador de newsletter" },
   { key: "/conteudo/reels", label: "Gerador de conteúdo (roteiros de Reels)" },
@@ -36,9 +36,10 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/linkedin-insights", label: "Métricas (LinkedIn)" },
   { key: "/ga4-insights", label: "Métricas (site GA4)" },
   { key: "/trafego-pago", label: "Tráfego pago" },
-  { key: "/vios-tarefas", label: "Planner (tarefas do VIOS)" },
+  { key: "/vios-tarefas", label: "Planner de Marketing (tarefas do VIOS)" },
   { key: "/operacoes-legais", label: "Operações Legais", admin: true, manualOnly: true },
   { key: "/operacoes-legais/vistagem", label: "Vistagem e agendamento", manualOnly: true },
+  { key: "/operacoes-legais/planner", label: "Planner de Operações Legais", manualOnly: true },
   { key: "/eventos", label: "Gestão de eventos" },
   { key: "/facilities", label: "Fornecedores e contratos (Facilities)", manualOnly: true },
   { key: "/cafe-cultura", label: "Café com Cultura", manualOnly: true },
@@ -62,6 +63,7 @@ export const MEUS_CLIENTES_KEY = "/meus-clientes";
 export const CAFE_CULTURA_KEY = "/cafe-cultura";
 export const OPERACOES_LEGAIS_KEY = "/operacoes-legais";
 export const VISTAGEM_KEY = "/operacoes-legais/vistagem";
+export const OPS_PLANNER_KEY = "/operacoes-legais/planner";
 export const ICP_KEY = "/icp";
 export const FACILITIES_KEY = "/facilities";
 export const MANUAL_ONLY_KEYS = ACCESS_SECTIONS.filter((s) => s.manualOnly).map((s) => s.key);
@@ -117,6 +119,8 @@ export interface AccessProfile {
   ferias_view_enabled?: boolean | null;
   /** Membership do módulo Posicionamento Gustavo — nunca inferir por nome. */
   gustavo_content_member?: boolean | null;
+  /** Participa de algum espaço do Planner de Operações Legais (ops_space_members). */
+  ops_planner_member?: boolean | null;
   department?: string | null;
   /** Papel na Vistagem (controladoria ou juridico); a área é refeita no servidor. */
   vistagem_papel?: string | null;
@@ -228,6 +232,22 @@ export function canSeeVistagemPath(profile: AccessProfile | null | undefined, pa
 }
 
 /**
+ * Planner de Operações Legais: admin, quem participa de algum espaço (vem do
+ * organograma) ou liberação manual em Usuários. Os dados são recortados por
+ * espaço no servidor.
+ */
+export function hasOpsPlannerAccess(profile: AccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  if (profile.ops_planner_member === true) return true;
+  return Boolean(profile.permissions?.includes(OPS_PLANNER_KEY));
+}
+
+export function isOpsPlannerPath(pathname: string): boolean {
+  return pathname === OPS_PLANNER_KEY || pathname.startsWith(`${OPS_PLANNER_KEY}/`);
+}
+
+/**
  * ICP (receita por cliente): admin ou liberação manual em Usuários. A chave
  * nunca vem do modo legado — sem `/icp` marcado, só admin vê.
  */
@@ -297,6 +317,10 @@ export function canAccessPath(
 
   if (isVistagemPath(pathname)) {
     return canSeeVistagemPath(profile, pathname);
+  }
+
+  if (isOpsPlannerPath(pathname)) {
+    return hasOpsPlannerAccess(profile);
   }
 
   const isOperacoesLegaisRoute =
