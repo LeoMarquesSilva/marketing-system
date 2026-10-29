@@ -41,6 +41,7 @@ import type {
   ConferenciaItem,
   ConferenciaResposta,
   CheckResposta,
+  DjenParte,
   EnvioStatus,
   InconsistenciaItem,
   InconsistenciaResumo,
@@ -84,9 +85,14 @@ function agendamentoResumo(row: AgendamentoRow): AgendamentoResumo {
   };
 }
 
-export type PublicacaoComArea = PublicacaoRow & { area_processo: string | null; devolucoes: number; sugestao_ia: SugestaoIa | null };
+export type PublicacaoComArea = PublicacaoRow & {
+  area_processo: string | null;
+  devolucoes: number;
+  sugestao_ia: SugestaoIa | null;
+  djen_partes: DjenParte[] | null;
+};
 
-export const COLUNAS_PUBLICACAO_COM_AREA = `${COLUNAS_PUBLICACAO}, area_processo, devolucoes, sugestao_ia`;
+export const COLUNAS_PUBLICACAO_COM_AREA = `${COLUNAS_PUBLICACAO}, area_processo, devolucoes, sugestao_ia, djen_partes`;
 
 export async function carregarPublicacao(id: string): Promise<PublicacaoComArea> {
   const { data, error } = await admin()

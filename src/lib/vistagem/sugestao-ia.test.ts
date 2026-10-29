@@ -4,6 +4,7 @@ import { criarCalendarioDePrazo } from "./dias-uteis";
 import {
   areaComSugestaoIa,
   custoDaChamada,
+  entradaDaSugestao,
   esocialDaResposta,
   fatalSugerida,
   instrucoesDaSugestao,
@@ -52,7 +53,7 @@ describe("tarefasDaResposta", () => {
     const resposta: RespostaIa = {
       resumo: "",
       esocial: "Homologação de cálculo",
-      confianca: "alta", parte_contraria: false,
+      confianca: "alta", prazo_de: "cliente",
       tarefas: [
         tarefa({ dias: 15, contagem: "uteis" }),
         tarefa({ classe: "PRAZO", tarefa_id: "618", dias: 5 }),
@@ -67,7 +68,7 @@ describe("tarefasDaResposta", () => {
       {
         resumo: "",
         esocial: "Não Identificado",
-        confianca: "alta", parte_contraria: false,
+        confianca: "alta", prazo_de: "cliente",
         tarefas: [
           tarefa({ classe: "COMPROMISSO", tarefa_id: "202", dias: 3, data: "2026-12-03", hora: "11:10" }),
           tarefa({ classe: "PROVIDENCIA", tarefa_id: "618", data: "2026-11-01", hora: "10:00" }),
@@ -82,7 +83,7 @@ describe("tarefasDaResposta", () => {
   });
 
   it("prazo sem dias nem data sai", () => {
-    expect(tarefasDaResposta({ resumo: "", esocial: "Não Identificado", confianca: "baixa", parte_contraria: false, tarefas: [tarefa({})] }, LISTAS)).toEqual([]);
+    expect(tarefasDaResposta({ resumo: "", esocial: "Não Identificado", confianca: "baixa", prazo_de: "cliente", tarefas: [tarefa({})] }, LISTAS)).toEqual([]);
   });
 });
 
@@ -93,7 +94,7 @@ describe("prazo da parte contrária", () => {
         resumo: "",
         esocial: "Não Identificado",
         confianca: "alta",
-        parte_contraria: true,
+        prazo_de: "parte_contraria",
         tarefas: [tarefa({ classe: "PRAZO", tarefa_id: "452", dias: 15, contagem: "uteis", motivo: "Prazo de 15 dias é do exequente." }), tarefa({ classe: "PROVIDENCIA", tarefa_id: "618" })],
       },
       LISTAS
@@ -103,8 +104,36 @@ describe("prazo da parte contrária", () => {
     ]);
   });
 
-  it("as instruções citam a CIÊNCIA NF da lista", () => {
-    expect(instrucoesDaSugestao(LISTAS)).toContain("SOMENTE a tarefa 316 | CIÊNCIA NF");
+  it("prazo comum às partes continua com as tarefas", () => {
+    const tarefas = tarefasDaResposta(
+      { resumo: "", esocial: "Não Identificado", confianca: "alta", prazo_de: "ambas", tarefas: [tarefa({ dias: 5, contagem: "uteis" })] },
+      LISTAS
+    );
+    expect(tarefas.map((item) => item.tarefaId)).toEqual(["452"]);
+  });
+
+  it("as instruções citam a CIÊNCIA NF da lista no roteiro", () => {
+    const texto = instrucoesDaSugestao(LISTAS);
+    expect(texto).toContain("SOMENTE a tarefa 316 | CIÊNCIA NF");
+    expect(texto).toContain('"prazo_de"');
+  });
+
+  it("a entrada leva o cliente e as partes com o polo, sem os intimados", () => {
+    const texto = entradaDaSugestao({
+      dataPublicacao: "2026-10-29",
+      tribunal: "TRT2",
+      orgao: "1ª Vara",
+      tipoComunicacao: "Intimação",
+      cliente: "Empresa Cliente Ltda",
+      partes: [
+        { nome: "FULANO", polo: "A" },
+        { nome: "EMPRESA CLIENTE LTDA", polo: "P" },
+      ],
+      teor: "Intime-se o reclamante.",
+    });
+    expect(texto).toContain("Cliente do escritório: Empresa Cliente Ltda");
+    expect(texto).toContain("Partes: FULANO (polo ativo); EMPRESA CLIENTE LTDA (polo passivo)");
+    expect(texto).not.toContain("Intimados");
   });
 });
 
@@ -121,7 +150,7 @@ describe("fatalSugerida", () => {
       {
         resumo: "",
         esocial: "Não Identificado",
-        confianca: "alta", parte_contraria: false,
+        confianca: "alta", prazo_de: "cliente",
         tarefas: [tarefa({ dias: 5, contagem: "uteis" }), tarefa({ tarefa_id: "418", data: "2026-12-03" })],
       },
       LISTAS
@@ -140,7 +169,7 @@ describe("resultadoDaSugestao", () => {
     modelo: "gpt-6-luna",
     geradaEm: "2026-11-09T10:00:00Z",
     custoUS: 0.0003,
-    tarefas: tarefasDaResposta({ resumo: "", esocial: "", confianca: "alta", parte_contraria: false, tarefas: [tarefa({ dias: 5, contagem: "uteis" })] }, LISTAS),
+    tarefas: tarefasDaResposta({ resumo: "", esocial: "", confianca: "alta", prazo_de: "cliente", tarefas: [tarefa({ dias: 5, contagem: "uteis" })] }, LISTAS),
   };
   const item = (mudanca: Partial<AgendamentoValidado> = {}): AgendamentoValidado => ({
     etiqueta: "PRAZO",
