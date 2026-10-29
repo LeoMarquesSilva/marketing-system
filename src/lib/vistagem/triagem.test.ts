@@ -49,7 +49,14 @@ describe("triar", () => {
 
   it("usa a área do processo quando o advogado não está nas tabelas", () => {
     const resultado = triar([pasta({ area: "Cível | Insolvência", advogadoResponsavel: "" })], areaDoAdvogado);
-    expect(resultado).toMatchObject({ status: "juridico_vistar", escritorio: "Reestruturação" });
+    expect(resultado).toMatchObject({ status: "juridico_vistar", escritorio: "Cível | Insolvência" });
+  });
+
+  it("divide o advogado da Reestruturação pela área de insolvência da pasta", () => {
+    const advogado = "Advogado Insolvência";
+    expect(triar([pasta({ area: "Insolvência", advogadoResponsavel: advogado })], areaDoAdvogado).escritorio).toBe("Insolvência");
+    expect(triar([pasta({ area: "Cível | Insolvência", advogadoResponsavel: advogado })], areaDoAdvogado).escritorio).toBe("Cível | Insolvência");
+    expect(triar([pasta({ area: "Tributário", advogadoResponsavel: advogado })], areaDoAdvogado).escritorio).toBe("Cível | Insolvência");
   });
 
   it("marca demanda de risco pela etiqueta", () => {
@@ -89,7 +96,8 @@ describe("regras auxiliares", () => {
   });
 
   it("converte a área do processo em escritório", () => {
-    expect(escritorioDaAreaDoProcesso("Insolvência")).toBe("Reestruturação");
+    expect(escritorioDaAreaDoProcesso("Insolvência")).toBe("Insolvência");
+    expect(escritorioDaAreaDoProcesso("Civel | Insolvencia")).toBe("Cível | Insolvência");
     expect(escritorioDaAreaDoProcesso("Recuperação de Crédito")).toBe("Recuperação de Crédito");
     expect(escritorioDaAreaDoProcesso("")).toBeNull();
   });
