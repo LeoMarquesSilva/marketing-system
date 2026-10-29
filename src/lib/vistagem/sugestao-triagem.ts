@@ -1,5 +1,5 @@
 import { mascararCnj } from "./processo";
-import { ESCRITORIOS, ESCRITORIO_EX_CLIENTE, ehExCliente, escritorioDaAreaDoProcesso, temDemandaDeRisco, type PastaSioe } from "./triagem";
+import { ESCRITORIOS, ESCRITORIO_EX_CLIENTE, ehExCliente, escritorioDaPasta, temDemandaDeRisco, type PastaSioe } from "./triagem";
 
 /**
  * Sugestão para a publicação sem pasta no VIOS (possível abertura), no roteiro da controladoria:
@@ -67,7 +67,7 @@ export function resumirPastas(pastas: PastaSioe[], areaDoAdvogado: (nome: string
   const exCliente = doGrupo.filter(ehExCliente).length > doGrupo.length / 2;
   const escritorio = exCliente
     ? ESCRITORIO_EX_CLIENTE
-    : maisFrequente(doGrupo.map((pasta) => areaDoAdvogado(pasta.advogadoResponsavel) ?? escritorioDaAreaDoProcesso(pasta.area)));
+    : maisFrequente(doGrupo.map((pasta) => escritorioDaPasta(pasta, areaDoAdvogado)));
   const referencia = doGrupo[0] ?? null;
   return {
     grupo,
@@ -140,7 +140,7 @@ export function instrucoesSugestaoTriagem(grupos: GrupoAtivo[]): string {
 Responda:
 - "cliente": o nome da parte que o escritório representa, como aparece na publicação (null se não der para saber).
 - "grupo": o grupo desse cliente, escolhido SOMENTE na lista abaixo e escrito igual a ela, quando o nome do cliente bate com uma empresa ou pessoa do grupo; sem correspondência clara, null.
-- "escritorio": a área que deve cuidar, uma de: ${ESCRITORIOS.join(", ")}. Justiça do Trabalho → Trabalhista; recuperação judicial, falência ou insolvência → Reestruturação; execução fiscal ou tributos → Tributário; cobrança ou execução movida pelo cliente para receber crédito → Recuperação de Crédito; o resto → Cível. Null se não der para saber.
+- "escritorio": a área que deve cuidar, uma de: ${ESCRITORIOS.join(", ")}. Justiça do Trabalho → Trabalhista; processo do concurso (recuperação judicial, falência, habilitação ou impugnação de crédito, e os recursos neles) → Insolvência; ação cível individual (execução, cumprimento de sentença, embargos, monitória, busca e apreensão) contra ou de empresa em recuperação judicial ou falência → Cível | Insolvência; execução fiscal ou tributos → Tributário; cobrança ou execução movida pelo cliente para receber crédito, sem recuperação judicial ou falência → Recuperação de Crédito; o resto → Cível. Null se não der para saber.
 - "processo_principal": o número CNJ do processo principal ou de origem citado no teor, se houver (ex.: agravo, recurso ou incidente que remete à ação principal); senão null.
 - "demanda_risco": false, salvo se o texto disser que é demanda de risco.
 - "confianca": alta, media ou baixa. "motivo": até 25 palavras, apoiado no texto.
