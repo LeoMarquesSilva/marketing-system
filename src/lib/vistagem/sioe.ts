@@ -67,6 +67,33 @@ export async function buscarPastasPorCnj(digitos: string[]): Promise<Map<string,
   return resultado;
 }
 
+let cacheTodas: { carregadoEm: number; pastas: PastaSioe[] } | null = null;
+
+/**
+ * Todas as pastas do SIOE (~35 mil), para achar pelo nome do cliente. Lê em páginas de mil,
+ * cinco por vez, e guarda por 30 minutos (a triagem e as sugestões rodam em seguida).
+ */
+export async function carregarTodasAsPastas(): Promise<PastaSioe[]> {
+  if (cacheTodas && Date.now() - cacheTodas.carregadoEm < 30 * 60 * 1000) return cacheTodas.pastas;
+  const db = sioe();
+  const { count, error: erroContagem } = await db.from("processos_completo").select("ci", { count: "exact", head: true });
+  if (erroContagem) throw new VistagemError(`Falha ao contar os processos do SIOE: ${erroContagem.message}`, 502);
+  const paginas = Array.from({ length: Math.ceil((count ?? 0) / 1000) }, (_, i) => i * 1000);
+  const pastas: PastaSioe[] = [];
+  for (let i = 0; i < paginas.length; i += 5) {
+    const lotes = await Promise.all(
+      paginas.slice(i, i + 5).map(async (inicio) => {
+        const { data, error } = await db.from("processos_completo").select(COLUNAS).order("ci").range(inicio, inicio + 999);
+        if (error) throw new VistagemError(`Falha ao carregar os processos do SIOE: ${error.message}`, 502);
+        return ((data ?? []) as ProcessoRow[]).map(paraPasta);
+      })
+    );
+    for (const lote of lotes) pastas.push(...lote);
+  }
+  cacheTodas = { carregadoEm: Date.now(), pastas };
+  return pastas;
+}
+
 export async function buscarPastaPorCi(ci: string): Promise<PastaSioe | null> {
   const numero = ci.replace(/\D/g, "");
   if (!numero) return null;

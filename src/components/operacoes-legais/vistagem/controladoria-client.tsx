@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Check, ClipboardCheck, FolderSearch, FolderX, LoaderCircle, RefreshCw, Search, SearchX, Send, UserRoundX, X } from "lucide-react";
+import { Check, ClipboardCheck, FolderSearch, FolderX, LoaderCircle, RefreshCw, Search, SearchX, Send, Sparkles, UserRoundX, Wand2, X } from "lucide-react";
 import { Segmented } from "@/components/facilities/form-parts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { authFetch } from "@/lib/auth-fetch";
 import { ESCRITORIOS, type PastaSioe, type Pendencia } from "@/lib/vistagem/triagem";
+import type { SugestaoTriagem } from "@/lib/vistagem/sugestao-triagem";
 import type { PendenciasControladoria, PublicacaoResumo, ResolucaoPendencia, TriagemResumo } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { AvisoArquivoDoDia } from "./aviso-arquivo-do-dia";
@@ -88,6 +89,39 @@ function LinhaPasta({ pasta, acao }: { pasta: PastaSioe; acao?: ReactNode }) {
 
 const LISTA_PASTAS = "divide-y divide-[#e6eef0] overflow-hidden rounded-md border border-[#dce9eb] bg-white";
 
+const ROTULO_ORIGEM: Record<SugestaoTriagem["origem"], string> = {
+  numero: "Processo citado",
+  parte: "Parte cliente",
+  ia: "Sugestão da IA",
+};
+
+/** Por que os campos vieram preenchidos: origem, confiança, motivo e a pasta de referência. */
+function CaixaSugestao({ sugestao }: { sugestao: SugestaoTriagem }) {
+  const ia = sugestao.origem === "ia";
+  return (
+    <div className={ia ? "space-y-1.5 rounded-md border border-[#48466e]/20 bg-[#f6f6fa] px-3 py-2.5 text-sm text-[#2f2d4d]" : "space-y-1.5 rounded-md border border-[#47cdd0]/30 bg-[#f2fbfb] px-3 py-2.5 text-sm text-[#183f50]"}>
+      <p className="flex flex-wrap items-center gap-1.5 text-xs font-medium">
+        {ia ? <Sparkles className="size-3.5" aria-hidden /> : <Wand2 className="size-3.5" aria-hidden />}
+        Pré-preenchido · {ROTULO_ORIGEM[sugestao.origem]}
+        <Selo tom={sugestao.confianca === "alta" ? "sucesso" : sugestao.confianca === "media" ? "alerta" : "perigo"}>
+          confiança {sugestao.confianca === "media" ? "média" : sugestao.confianca}
+        </Selo>
+      </p>
+      <p>{sugestao.motivo}</p>
+      {sugestao.referencia ? (
+        <p className="text-xs text-muted-foreground">
+          Referência: <span className="font-mono">CI {sugestao.referencia.ci}</span>
+          {sugestao.referencia.cliente ? ` · ${sugestao.referencia.cliente}` : ""}
+          {sugestao.referencia.grupo ? ` · ${sugestao.referencia.grupo}` : ""}
+        </p>
+      ) : sugestao.cliente ? (
+        <p className="text-xs text-muted-foreground">Cliente provável: {sugestao.cliente}</p>
+      ) : null}
+      <p className="text-xs text-muted-foreground">Confira antes de liberar.</p>
+    </div>
+  );
+}
+
 function Resolucao({
   publicacao,
   onResolvida,
@@ -97,9 +131,11 @@ function Resolucao({
 }) {
   const [ci, setCi] = useState("");
   const [previa, setPrevia] = useState<{ pasta: PastaSioe; escritorioSugerido: string | null } | null>(null);
-  const [escritorio, setEscritorio] = useState("");
-  const [grupo, setGrupo] = useState(publicacao.grupoCliente ?? "");
-  const [demandaRisco, setDemandaRisco] = useState(Boolean(publicacao.demandaRisco));
+  // Sem pasta: os campos já vêm com a sugestão (processo citado, parte cliente ou IA); a controladoria confere.
+  const sugestao = publicacao.pendencia === "sem_pasta" ? publicacao.sugestaoTriagem : null;
+  const [escritorio, setEscritorio] = useState(sugestao?.escritorio ?? "");
+  const [grupo, setGrupo] = useState(publicacao.grupoCliente ?? sugestao?.grupo ?? "");
+  const [demandaRisco, setDemandaRisco] = useState(Boolean(publicacao.demandaRisco ?? sugestao?.demandaRisco));
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState("");
 
@@ -203,6 +239,7 @@ function Resolucao({
         titulo={publicacao.pastaCi || candidatas.length > 1 ? "Ou informe os dados" : "Sem pasta: informe os dados"}
         id={`${base}-dados`}
       >
+        {sugestao ? <CaixaSugestao sugestao={sugestao} /> : null}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
           <Campo rotulo="Escritório responsável">
             <select
@@ -314,14 +351,15 @@ function Controladoria() {
       const resposta = await authFetch("/api/operacoes-legais/vistagem/triagem", { method: "POST" });
       const corpo = await resposta.json();
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha na triagem.");
-      const resumo = corpo as TriagemResumo;
+      const resumo = corpo as TriagemResumo & { sugestoes?: { geradas?: number } };
+      const sugeridas = resumo.sugestoes?.geradas ? ` ${resumo.sugestoes.geradas} sem pasta ganharam dados sugeridos.` : "";
       setAviso(
         resumo.triadas
           ? {
               tom: "sucesso",
-              texto: `${resumo.triadas} publicação(ões) triada(s): ${resumo.juridico} para o jurídico, ${resumo.pendentes} ainda pendente(s)${resumo.descartadas ? `, ${resumo.descartadas} descartada(s)` : ""}.`,
+              texto: `${resumo.triadas} publicação(ões) triada(s): ${resumo.juridico} para o jurídico, ${resumo.pendentes} ainda pendente(s)${resumo.descartadas ? `, ${resumo.descartadas} descartada(s)` : ""}.${sugeridas}`,
             }
-          : { tom: "info", texto: "Nada novo para triar." }
+          : { tom: "info", texto: `Nada novo para triar.${sugeridas}` }
       );
       await carregar();
     } catch (e) {

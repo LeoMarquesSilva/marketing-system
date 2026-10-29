@@ -9,6 +9,7 @@ import { baixarArquivoSharePoint, listarArquivosKurierSharePoint } from "./share
 import { buscarPastasVios } from "./pastas-vios";
 import { buscarPastaPorCi, buscarPastasPorCnj, carregarAreasDasPessoas } from "./sioe";
 import { ESCRITORIOS, citaAdvogadoDoEscritorio, temDemandaDeRisco, triar, type PastaSioe, type Pendencia } from "./triagem";
+import type { SugestaoTriagem } from "./sugestao-triagem";
 import type {
   ArquivoKurierResumo,
   DuplicidadeCriterio,
@@ -81,7 +82,7 @@ function arquivoResumo(row: ArquivoRow): ArquivoKurierResumo {
 }
 
 export const COLUNAS_PUBLICACAO =
-  "id, kurier_arquivo_id, linha_arquivo, numero_processo, numero_processo_original, tribunal, justica, data_divulgacao, data_publicacao, nome_localizado, djen_id_comunicacao, djen_orgao, djen_tipo_comunicacao, djen_intimados, status, motivo_descarte, duplicidade_de, duplicidade_resultado, duplicidade_criterio, documento_ids, duplicidade_revisada_por, duplicidade_revisada_em, pasta_ci, pasta_vinculo, cliente, grupo_cliente, advogado_responsavel, situacao_processo, escritorio_responsavel, demanda_risco, pendencia, pastas_candidatas, triada_em, observacao_vistagem, vistado_por, vistado_em, conferido_por, conferido_em, devolucao_motivo, devolvido_em, checado_em, check_nota, transferido_de, transferido_em, transferencia_motivo, publicacao_esocial, teor";
+  "id, kurier_arquivo_id, linha_arquivo, numero_processo, numero_processo_original, tribunal, justica, data_divulgacao, data_publicacao, nome_localizado, djen_id_comunicacao, djen_orgao, djen_tipo_comunicacao, djen_intimados, status, motivo_descarte, duplicidade_de, duplicidade_resultado, duplicidade_criterio, documento_ids, duplicidade_revisada_por, duplicidade_revisada_em, pasta_ci, pasta_vinculo, cliente, grupo_cliente, advogado_responsavel, situacao_processo, escritorio_responsavel, demanda_risco, pendencia, pastas_candidatas, triada_em, observacao_vistagem, vistado_por, vistado_em, conferido_por, conferido_em, devolucao_motivo, devolvido_em, checado_em, check_nota, transferido_de, transferido_em, transferencia_motivo, publicacao_esocial, sugestao_triagem, teor";
 
 export type PublicacaoRow = {
   id: string; kurier_arquivo_id: string | null; linha_arquivo: number | null; numero_processo: string | null;
@@ -99,7 +100,7 @@ export type PublicacaoRow = {
   conferido_em: string | null; devolucao_motivo: string | null; devolvido_em: string | null;
   checado_em: string | null; check_nota: string | null;
   transferido_de: string | null; transferido_em: string | null; transferencia_motivo: string | null;
-  publicacao_esocial: string | null; teor: string;
+  publicacao_esocial: string | null; sugestao_triagem: SugestaoTriagem | null; teor: string;
 };
 
 export function publicacaoResumo(row: PublicacaoRow, limiteTeor: number | null = TEOR_LISTAGEM): PublicacaoResumo {
@@ -146,6 +147,7 @@ export function publicacaoResumo(row: PublicacaoRow, limiteTeor: number | null =
     transferidoEm: row.transferido_em,
     transferenciaMotivo: row.transferencia_motivo,
     publicacaoEsocial: row.publicacao_esocial,
+    sugestaoTriagem: row.sugestao_triagem ?? null,
     teor: resumir ? `${row.teor.slice(0, limiteTeor as number)}…` : row.teor,
     teorResumido: resumir,
   };
