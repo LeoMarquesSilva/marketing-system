@@ -28,6 +28,7 @@ import type { AgendamentoResumo, CheckResposta, ConferenciaItem } from "@/lib/vi
 import { linkTarefaVios } from "@/lib/vistagem/vios-links";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
+import { Seletor } from "./seletor";
 import { DadosPasta, DadosPublicacao, SeloEsocial, TeorPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
 import {
   Aviso,
@@ -43,7 +44,6 @@ import {
   Secao,
   Selo,
   Vazio,
-  campoClasse,
   TOM_CLASSE,
 } from "./ui";
 
@@ -155,7 +155,7 @@ function LinkVios({ ci, className }: { ci: string; className?: string }) {
         className
       )}
     >
-      <span className="font-mono tabular-nums">CI {ci}</span>
+      <span className="tabular-nums">CI {ci}</span>
       <ExternalLink className="size-3" aria-hidden />
     </a>
   );
@@ -185,7 +185,7 @@ function AgendadoNoVios({ tarefas, dataPedida, horaPedida }: { tarefas: TarefaNo
                 )}
                 <span className="break-words">{tarefa.tipo ?? "Tarefa"}</span>
               </span>
-              <span className={cn("font-mono", divergente ? "font-semibold text-amber-800" : "text-foreground")}>
+              <span className={cn("tabular-nums", divergente ? "font-semibold text-amber-800" : "text-foreground")}>
                 {formatarData(tarefa.data)}
                 {tarefa.hora ? ` ${tarefa.hora}` : ""}
               </span>
@@ -197,7 +197,7 @@ function AgendadoNoVios({ tarefas, dataPedida, horaPedida }: { tarefas: TarefaNo
               ) : null}
               {tarefa.dataLimite && tarefa.dataLimite !== tarefa.data ? (
                 <span className="text-muted-foreground">
-                  limite <span className="font-mono">{formatarData(tarefa.dataLimite)}</span>
+                  limite <span className="tabular-nums">{formatarData(tarefa.dataLimite)}</span>
                 </span>
               ) : null}
               {tarefa.responsaveis ? <span className="break-words text-muted-foreground">{tarefa.responsaveis}</span> : null}
@@ -235,13 +235,13 @@ function TabelaCheck({ agendamentos }: { agendamentos: AgendamentoResumo[] }) {
               ) : null}
             </Celula>
             <Celula rotulo="Data pedida">
-              <span className="font-mono text-foreground">
+              <span className="tabular-nums text-foreground">
                 {formatarData(agendamento.data)}
                 {agendamento.hora ? ` às ${agendamento.hora}` : ""}
               </span>
               {agendamento.dataFatal ? (
                 <span className="mt-0.5 block text-xs text-muted-foreground">
-                  enviar · fatal <span className="font-mono">{formatarData(agendamento.dataFatal)}</span>
+                  enviar · fatal <span className="tabular-nums">{formatarData(agendamento.dataFatal)}</span>
                   {agendamento.diasPrazo && agendamento.contagemPrazo ? ` · ${agendamento.diasPrazo} ${ROTULO_CONTAGEM[agendamento.contagemPrazo]}` : ""}
                 </span>
               ) : null}
@@ -306,7 +306,7 @@ function ItemCheck({ item, aba, onConcluido }: { item: ConferenciaItem; aba: Aba
   const spinner = <LoaderCircle className="animate-spin" />;
   const descricaoDialogo = (
     <>
-      Processo <span className="font-mono">{processo}</span>
+      Processo <span className="tabular-nums">{processo}</span>
     </>
   );
 
@@ -316,7 +316,7 @@ function ItemCheck({ item, aba, onConcluido }: { item: ConferenciaItem; aba: Aba
         id={base}
         titulo={
           <span className="flex flex-wrap items-center gap-2">
-            <span className="break-all font-mono">{processo}</span>
+            <span className="break-all tabular-nums">{processo}</span>
             {publicacao.tribunal ? <Selo>{publicacao.tribunal}</Selo> : null}
             <SeloEsocial publicacao={publicacao} />
             {divergente ? (
@@ -435,26 +435,26 @@ function ItemCheck({ item, aba, onConcluido }: { item: ConferenciaItem; aba: Aba
         }
       >
         <div className="grid gap-4 sm:grid-cols-2">
-          <Campo rotulo="Tipo">
-            <select className={campoClasse} value={tipo} onChange={(evento) => setTipo(evento.target.value)}>
-              <option value="">Escolha…</option>
-              {TIPOS_INCONSISTENCIA_AGENDAMENTO.map((valor) => (
-                <option key={valor} value={valor}>
-                  {valor}
-                </option>
-              ))}
-            </select>
-          </Campo>
-          <Campo rotulo="Subtipo">
-            <select className={campoClasse} value={subtipo} onChange={(evento) => setSubtipo(evento.target.value)}>
-              <option value="">Escolha…</option>
-              {SUBTIPOS_AGENDAMENTO_EM_USO.map((valor) => (
-                <option key={valor} value={valor}>
-                  {valor}
-                </option>
-              ))}
-            </select>
-          </Campo>
+          <div className="space-y-1.5">
+            <span className="block text-xs font-medium text-muted-foreground">Tipo</span>
+            <Seletor
+              rotulo="Tipo da inconsistência"
+              placeholder="Escolha…"
+              valor={tipo}
+              onChange={setTipo}
+              opcoes={TIPOS_INCONSISTENCIA_AGENDAMENTO.map((valor) => ({ valor, rotulo: valor }))}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <span className="block text-xs font-medium text-muted-foreground">Subtipo</span>
+            <Seletor
+              rotulo="Subtipo da inconsistência"
+              placeholder="Escolha…"
+              valor={subtipo}
+              onChange={setSubtipo}
+              opcoes={SUBTIPOS_AGENDAMENTO_EM_USO.map((valor) => ({ valor, rotulo: valor }))}
+            />
+          </div>
         </div>
         <Campo rotulo="O que está errado">
           <Textarea value={descricao} onChange={(evento) => setDescricao(evento.target.value)} rows={4} maxLength={2000} />

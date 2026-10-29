@@ -128,6 +128,11 @@ export interface PublicacaoResumo {
   grupoCliente: string | null;
   advogadoResponsavel: string | null;
   situacaoProcesso: string | null;
+  /** Ação, fase processual e valor da ação da pasta no VIOS (retrato da triagem, pelo SIOE). */
+  acaoProcesso: string | null;
+  faseProcessual: string | null;
+  valorAcao: number | null;
+  valorAcaoAtualizado: number | null;
   escritorioResponsavel: string | null;
   demandaRisco: boolean | null;
   pendencia: Pendencia | null;
@@ -267,6 +272,15 @@ export interface VistagemDetalhe {
   responsavelSugerido: string | null;
   /** Auxiliar da pasta no VIOS (sugerido como revisor do Prazo). */
   revisorSugerido: string | null;
+  /** Foto do advogado da pasta e dos usuários do VIOS, pela chave do nome (chaveNome); só quem tem foto. */
+  fotos: Record<string, string>;
+  /**
+   * Quem aparece em Responsável e Revisor: os usuários do VIOS das áreas da publicação (RH e liderança em Usuários),
+   * sócios, quem não tem área conhecida e as pessoas da pasta. Null = sem filtro (a lista inteira do VIOS).
+   */
+  pessoasDaArea: { area: string; nomes: string[] } | null;
+  /** Área de cada usuário do VIOS pelo RH (ex.: "Cível"), pela chave do nome; aparece ao mostrar todas as pessoas. */
+  areaDasPessoas: Record<string, string>;
   inconsistencias: InconsistenciaResumo[];
   /** Feriados (AAAA-MM-DD) para contar os dias úteis do Prazo na tela. */
   feriados: string[];

@@ -10,6 +10,7 @@ import type { ArquivoDoDia } from "@/lib/vistagem/alerta-arquivo";
 import type { ArquivoKurierResumo, PublicacaoResumo, SincronizacaoResultado } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { FaixaArquivoDoDia, useArquivoDoDia } from "./aviso-arquivo-do-dia";
+import { IconeArea } from "./marcas";
 import { DadosPasta, DadosPublicacao, StatusPublicacao, TeorPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
 import {
   Aviso,
@@ -117,7 +118,7 @@ function SituacaoArquivo({ arquivo }: { arquivo: ArquivoKurierResumo }) {
 function Contagem({ valor, singular, plural }: { valor: number; singular: string; plural: string }) {
   return (
     <span>
-      <span className="font-mono text-foreground">{valor}</span> {valor === 1 ? singular : plural}
+      <span className="tabular-nums text-foreground">{valor}</span> {valor === 1 ? singular : plural}
     </span>
   );
 }
@@ -314,7 +315,16 @@ function Captura() {
             : !publicacoesProntas
               ? "Carregando…"
               : porEscritorio.length
-                ? porEscritorio.map(([escritorio, total]) => `${escritorio} ${total}`).join(" · ")
+                ? (
+                    <span className="flex flex-wrap gap-x-2.5 gap-y-1">
+                      {porEscritorio.map(([escritorio, total]) => (
+                        <span key={escritorio} className="inline-flex items-center gap-1">
+                          <IconeArea area={escritorio} />
+                          {escritorio} <span className="font-medium tabular-nums text-foreground">{total}</span>
+                        </span>
+                      ))}
+                    </span>
+                  )
                 : "Nenhuma liberada neste arquivo"}
         </Indicador>
         <Indicador
@@ -461,7 +471,7 @@ function Captura() {
                     {visiveis.map((publicacao) => (
                       <li key={publicacao.id} className="space-y-2.5 px-4 py-3.5">
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                          <span className="font-mono text-sm font-semibold text-foreground">
+                          <span className="tabular-nums text-sm font-semibold text-foreground">
                             {publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}
                           </span>
                           {publicacao.tribunal ? <Selo>{publicacao.tribunal}</Selo> : null}

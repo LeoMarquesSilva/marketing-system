@@ -33,6 +33,7 @@ export const AREA_ICONS: Record<string, LucideIcon> = {
   "Societário e Contratos": FileSignature,
   Sócio: Crown,
   "Distressed Deals - Special Situations": Zap,
+  "Distressed Deals": Zap, // nome do escritório na Vistagem
   "Special Situations": Zap,
   ADD: Zap, // Distressed Deals, como no registro de boas práticas
   Comercial: Handshake,
@@ -55,6 +56,7 @@ export const AREA_ICON_STYLES: Record<string, string> = {
   "Societário e Contratos": "bg-sky-100 text-sky-700 ring-sky-200/60",
   Sócio: "bg-yellow-100 text-yellow-800 ring-yellow-200/60",
   "Distressed Deals - Special Situations": "bg-orange-100 text-orange-700 ring-orange-200/60",
+  "Distressed Deals": "bg-orange-100 text-orange-700 ring-orange-200/60",
   "Special Situations": "bg-orange-100 text-orange-700 ring-orange-200/60",
   ADD: "bg-orange-100 text-orange-700 ring-orange-200/60",
   Comercial: "bg-cyan-100 text-cyan-800 ring-cyan-200/60",

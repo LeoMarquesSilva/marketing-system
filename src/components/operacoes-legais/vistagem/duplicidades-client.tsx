@@ -238,7 +238,7 @@ function Duplicidades() {
                   <li key={grupo.chave}>
                     <Painel aria-labelledby={tituloId}>
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-[#e6eef0] bg-[#f7fbfc] px-4 py-3">
-                        <h2 id={tituloId} className="font-mono text-sm font-semibold text-foreground">
+                        <h2 id={tituloId} className="tabular-nums text-sm font-semibold text-foreground">
                           {referencia.numeroProcesso ?? referencia.numeroProcessoOriginal}
                         </h2>
                         {referencia.tribunal ? <Selo>{referencia.tribunal}</Selo> : null}
@@ -275,7 +275,7 @@ function Duplicidades() {
                         >
                           <TituloColuna>
                             Marcadas como duplicidade{" "}
-                            <span className="font-mono font-normal normal-case text-muted-foreground">{grupo.copias.length}</span>
+                            <span className="tabular-nums font-normal normal-case text-muted-foreground">{grupo.copias.length}</span>
                           </TituloColuna>
                           <ul className="mt-1 divide-y divide-[#eef3f5]">
                             {grupo.copias.map((item) => (

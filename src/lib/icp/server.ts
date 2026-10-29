@@ -104,8 +104,13 @@ type ProfileRow = {
   updated_at: string;
 };
 
-function toProfile(r: ProfileRow): IcpGroupProfile {
+/** URL pública do logo do grupo. O arquivo é regravado no mesmo caminho: a data evita o logo antigo no cache. */
+export function urlDoLogoDoGrupo(logoPath: string, updatedAt: string): string {
   const base = process.env.NEXT_PUBLIC_SUPABASE_URL!.replace(/\/$/, "");
+  return `${base}/storage/v1/object/public/${LOGO_BUCKET}/${logoPath}?v=${Date.parse(updatedAt)}`;
+}
+
+function toProfile(r: ProfileRow): IcpGroupProfile {
   return {
     grupo: r.grupo,
     employeeRange: r.employee_range,
@@ -114,10 +119,7 @@ function toProfile(r: ProfileRow): IcpGroupProfile {
     linkedinUrl: r.linkedin_url,
     linkedinName: r.linkedin_name,
     website: r.website,
-    // O arquivo é regravado no mesmo caminho: a data evita o logo antigo no cache.
-    logoUrl: r.logo_path
-      ? `${base}/storage/v1/object/public/${LOGO_BUCKET}/${r.logo_path}?v=${Date.parse(r.updated_at)}`
-      : null,
+    logoUrl: r.logo_path ? urlDoLogoDoGrupo(r.logo_path, r.updated_at) : null,
     confidence: r.match_confidence,
   };
 }

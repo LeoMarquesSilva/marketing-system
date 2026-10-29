@@ -18,7 +18,7 @@ function sioe(): SupabaseClient {
   }
 }
 
-const COLUNAS = "ci, nro_cnj, vinculo, cliente, grupo_cliente, area, advogado_responsavel, situacao_processo, etiquetas";
+const COLUNAS = "ci, nro_cnj, vinculo, cliente, grupo_cliente, area, advogado_responsavel, situacao_processo, etiquetas, acao, fase_processual, valor_acao, valor_acao_atualizado";
 
 type ProcessoRow = {
   ci: string | number;
@@ -30,7 +30,18 @@ type ProcessoRow = {
   advogado_responsavel: string | null;
   situacao_processo: string | null;
   etiquetas: string | null;
+  acao: string | null;
+  fase_processual: string | null;
+  valor_acao: number | string | null;
+  valor_acao_atualizado: number | string | null;
 };
+
+/** numeric chega como número (ou texto, se passar da precisão do JS). */
+function numero(valor: number | string | null): number | null {
+  if (valor === null || valor === "") return null;
+  const convertido = Number(valor);
+  return Number.isFinite(convertido) ? convertido : null;
+}
 
 function paraPasta(row: ProcessoRow): PastaSioe {
   return {
@@ -43,6 +54,10 @@ function paraPasta(row: ProcessoRow): PastaSioe {
     advogadoResponsavel: row.advogado_responsavel,
     situacao: row.situacao_processo,
     etiquetas: row.etiquetas,
+    acao: row.acao?.trim() || null,
+    fase: row.fase_processual?.trim() || null,
+    valorAcao: numero(row.valor_acao),
+    valorAcaoAtualizado: numero(row.valor_acao_atualizado),
   };
 }
 

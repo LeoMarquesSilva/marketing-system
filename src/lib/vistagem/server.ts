@@ -8,7 +8,7 @@ import { KurierArquivoInvalidoError, lerNomeArquivoKurier, lerPlanilhaKurier } f
 import { baixarArquivoSharePoint, listarArquivosKurierSharePoint } from "./sharepoint";
 import { buscarPastasVios } from "./pastas-vios";
 import { buscarPastaPorCi, buscarPastasPorCnj, carregarAreasDasPessoas } from "./sioe";
-import { ESCRITORIOS, citaAdvogadoDoEscritorio, temDemandaDeRisco, triar, type PastaSioe, type Pendencia } from "./triagem";
+import { ESCRITORIOS, ESCRITORIO_EX_CLIENTE, citaAdvogadoDoEscritorio, temDemandaDeRisco, triar, type PastaSioe, type Pendencia } from "./triagem";
 import type { SugestaoTriagem } from "./sugestao-triagem";
 import type {
   ArquivoKurierResumo,
@@ -82,7 +82,7 @@ function arquivoResumo(row: ArquivoRow): ArquivoKurierResumo {
 }
 
 export const COLUNAS_PUBLICACAO =
-  "id, kurier_arquivo_id, linha_arquivo, numero_processo, numero_processo_original, tribunal, justica, data_divulgacao, data_publicacao, nome_localizado, djen_id_comunicacao, djen_orgao, djen_tipo_comunicacao, djen_intimados, status, motivo_descarte, duplicidade_de, duplicidade_resultado, duplicidade_criterio, documento_ids, duplicidade_revisada_por, duplicidade_revisada_em, pasta_ci, pasta_vinculo, cliente, grupo_cliente, advogado_responsavel, situacao_processo, escritorio_responsavel, demanda_risco, pendencia, pastas_candidatas, triada_em, observacao_vistagem, vistado_por, vistado_em, conferido_por, conferido_em, devolucao_motivo, devolvido_em, checado_em, check_nota, transferido_de, transferido_em, transferencia_motivo, publicacao_esocial, sugestao_triagem, teor";
+  "id, kurier_arquivo_id, linha_arquivo, numero_processo, numero_processo_original, tribunal, justica, data_divulgacao, data_publicacao, nome_localizado, djen_id_comunicacao, djen_orgao, djen_tipo_comunicacao, djen_intimados, status, motivo_descarte, duplicidade_de, duplicidade_resultado, duplicidade_criterio, documento_ids, duplicidade_revisada_por, duplicidade_revisada_em, pasta_ci, pasta_vinculo, cliente, grupo_cliente, advogado_responsavel, situacao_processo, acao_processo, fase_processual, valor_acao, valor_acao_atualizado, escritorio_responsavel, demanda_risco, pendencia, pastas_candidatas, triada_em, observacao_vistagem, vistado_por, vistado_em, conferido_por, conferido_em, devolucao_motivo, devolvido_em, checado_em, check_nota, transferido_de, transferido_em, transferencia_motivo, publicacao_esocial, sugestao_triagem, teor";
 
 export type PublicacaoRow = {
   id: string; kurier_arquivo_id: string | null; linha_arquivo: number | null; numero_processo: string | null;
@@ -94,7 +94,9 @@ export type PublicacaoRow = {
   duplicidade_criterio: DuplicidadeCriterio | null; documento_ids: string[] | null;
   duplicidade_revisada_por: string | null; duplicidade_revisada_em: string | null;
   pasta_ci: string | null; pasta_vinculo: string | null; cliente: string | null; grupo_cliente: string | null; advogado_responsavel: string | null;
-  situacao_processo: string | null; escritorio_responsavel: string | null; demanda_risco: boolean | null;
+  situacao_processo: string | null; acao_processo: string | null; fase_processual: string | null;
+  valor_acao: number | string | null; valor_acao_atualizado: number | string | null;
+  escritorio_responsavel: string | null; demanda_risco: boolean | null;
   pendencia: Pendencia | null; pastas_candidatas: PastaSioe[] | null; triada_em: string | null;
   observacao_vistagem: string | null; vistado_por: string | null; vistado_em: string | null; conferido_por: string | null;
   conferido_em: string | null; devolucao_motivo: string | null; devolvido_em: string | null;
@@ -131,6 +133,11 @@ export function publicacaoResumo(row: PublicacaoRow, limiteTeor: number | null =
     grupoCliente: row.grupo_cliente,
     advogadoResponsavel: row.advogado_responsavel,
     situacaoProcesso: row.situacao_processo,
+    acaoProcesso: row.acao_processo,
+    faseProcessual: row.fase_processual,
+    // numeric pode chegar como texto do PostgREST.
+    valorAcao: row.valor_acao === null ? null : Number(row.valor_acao),
+    valorAcaoAtualizado: row.valor_acao_atualizado === null ? null : Number(row.valor_acao_atualizado),
     escritorioResponsavel: row.escritorio_responsavel,
     demandaRisco: row.demanda_risco,
     pendencia: row.pendencia,
@@ -523,6 +530,10 @@ function camposDaTriagem(resultado: ReturnType<typeof triar>) {
     area_processo: pasta?.area ?? null,
     advogado_responsavel: pasta?.advogadoResponsavel ?? null,
     situacao_processo: pasta?.situacao ?? null,
+    acao_processo: pasta?.acao ?? null,
+    fase_processual: pasta?.fase ?? null,
+    valor_acao: pasta?.valorAcao ?? null,
+    valor_acao_atualizado: pasta?.valorAcaoAtualizado ?? null,
     etiquetas: pasta?.etiquetas ?? null,
     escritorio_responsavel: resultado.escritorio,
     demanda_risco: resultado.demandaRisco,
@@ -666,7 +677,8 @@ export async function resolverPendencia(id: string, entrada: ResolucaoPendencia,
   if (entrada.escritorio && !(ESCRITORIOS as readonly string[]).includes(escritorio)) {
     throw new VistagemError("Escritório inválido.");
   }
-  if (!grupo) throw new VistagemError("Informe o grupo do cliente.");
+  // A controladoria (Operações Legais) pode ficar com a publicação sem saber o grupo; as outras áreas precisam dele.
+  if (!grupo && escritorio !== ESCRITORIO_EX_CLIENTE) throw new VistagemError("Informe o grupo do cliente.");
 
   const campos = pasta && automatico ? camposDaTriagem(automatico) : {};
   const { data: final, error: erroUpdate } = await db
@@ -688,5 +700,32 @@ export async function resolverPendencia(id: string, entrada: ResolucaoPendencia,
     .maybeSingle();
   if (erroUpdate) falhou("salvar a resolução da pendência", erroUpdate);
   if (!final) throw new VistagemError("A publicação foi alterada por outra pessoa. Recarregue a página.", 409);
+  return publicacaoResumo(final as PublicacaoRow);
+}
+
+/** Prefixo do motivo quando quem descarta é a controladoria (os automáticos têm motivo próprio). */
+export const PREFIXO_DESCARTE_CONTROLADORIA = "Descartada pela controladoria: ";
+
+/**
+ * A controladoria descarta a pendência (ex.: o processo não é do escritório), com o motivo. A publicação sai da
+ * fila e não volta na próxima triagem, que só reprocessa as pendentes.
+ */
+export async function descartarPendencia(id: string, motivo: string, authUserId: string): Promise<PublicacaoResumo> {
+  const texto = motivo.trim();
+  if (!texto) throw new VistagemError("Informe o motivo do descarte.");
+  const { data: final, error } = await admin()
+    .from("vistagem_publicacoes")
+    .update({
+      status: "descartada",
+      motivo_descarte: `${PREFIXO_DESCARTE_CONTROLADORIA}${texto}`.slice(0, 2000),
+      triagem_resolvida_por: authUserId,
+      triagem_resolvida_em: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .eq("status", "triagem_pendente")
+    .select(COLUNAS_PUBLICACAO)
+    .maybeSingle();
+  if (error) falhou("descartar a pendência", error);
+  if (!final) throw new VistagemError("Esta publicação não está mais pendente. Recarregue a página.", 409);
   return publicacaoResumo(final as PublicacaoRow);
 }

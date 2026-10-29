@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ESCRITORIO_EX_CLIENTE,
   MOTIVO_EX_CLIENTE_SEM_ESCRITORIO,
+  advogadosDoEscritorioCitados,
   chavePessoa,
   citaAdvogadoDoEscritorio,
   escritorioDaAreaDoProcesso,
@@ -121,5 +122,16 @@ describe("ex-cliente sem advogado do escritório", () => {
     expect(citaAdvogadoDoEscritorio("NOME:FULANO Nº OAB:353389 UF:SP")).toBe(true);
     expect(citaAdvogadoDoEscritorio("ADV: OUTRO ADVOGADO (OAB 1275477/SP)")).toBe(false);
     expect(citaAdvogadoDoEscritorio("ADV: OUTRO ADVOGADO (OAB 123456/SP)")).toBe(false);
+  });
+
+  it("diz quais advogados do escritório a publicação cita", () => {
+    expect(advogadosDoEscritorioCitados("Adv - Ricardo Pires, Gustavo Bismarchi Motta => Sentença")).toEqual([
+      { nome: "Gustavo Bismarchi Motta", oab: "275477" },
+    ]);
+    expect(advogadosDoEscritorioCitados("NOME:GUSTAVO BISMARCHI MOTTA Nº OAB:275477 UF:SP NOME:FULANO Nº OAB:353389 UF:SP").map((a) => a.nome)).toEqual([
+      "Gustavo Bismarchi Motta",
+      "Ricardo Viscardi Pires",
+    ]);
+    expect(advogadosDoEscritorioCitados("ADV: OUTRO ADVOGADO (OAB 123456/SP)")).toEqual([]);
   });
 });

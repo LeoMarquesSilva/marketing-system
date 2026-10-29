@@ -4,14 +4,19 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   ArrowRightLeft,
+  Building2,
+  Check,
   ChevronLeft,
   ChevronRight,
   CircleCheck,
+  Copy,
   FileText,
+  Layers,
   LoaderCircle,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  Scale,
   Search,
   Send,
   ShieldAlert,
@@ -34,7 +39,6 @@ import {
   horaValida,
   separarNomes,
   type EtiquetaAgendamento,
-  type OpcaoVios,
 } from "@/lib/vistagem/agendamento";
 import {
   CONTAGENS_PRAZO,
@@ -55,14 +59,21 @@ import {
   pedeTarefaEsocial,
   type ClassificacaoEsocial,
 } from "@/lib/vistagem/esocial";
+import { consultaProcessual } from "@/lib/vistagem/consulta-processual";
 import { CADEIA_PADRAO, PESSOA_FIXA_PROTOCOLAR, cadeiaDoFluxo, type FluxoDaTarefa, type TarefaDoFluxo } from "@/lib/vistagem/fluxo-vios";
 import { fatalSugerida, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
 import type { PublicacaoResumo, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
-import { ComboboxBusca } from "./combobox-busca";
+import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
+import { FichaPasta } from "./ficha-pasta";
+import { FichaProcesso } from "./ficha-processo";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
-import { DadosPasta, DadosPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
+import { LeitorPublicacao } from "./leitor-publicacao";
+import { IconeArea, LogoGrupo } from "./marcas";
+import { formatarData, formatarDataHora } from "./publicacao-ui";
+import { ReguaDatas } from "./regua-datas";
+import { Seletor, SeletorBusca } from "./seletor";
 import { CartaoSugestaoIa, SeloIa, type EstadoSugestao } from "./sugestao-ia-ui";
 import { Aviso, BarraAba, Busca, Campo, Carregando, Painel, Selo, Vazio, campoClasse, linhaLista } from "./ui";
 
@@ -223,7 +234,7 @@ function FluxoNoVios({
                 <li key={tarefa.id} className="text-foreground">
                   <span className="font-medium text-foreground">{tarefa.nome}</span>
                   {tarefa.prazo ? <span className="text-muted-foreground"> · {tarefa.prazo}</span> : null}
-                  {data ? <span className="font-mono"> · {formatarData(data)}</span> : null}
+                  {data ? <span className="tabular-nums"> · {formatarData(data)}</span> : null}
                   <span> → {quem(tarefa)}</span>
                   {tarefa.tambemCria.length ? (
                     <span className="block pl-3 text-muted-foreground">cria também: {tarefa.tambemCria.join(", ")}</span>
@@ -248,6 +259,57 @@ function FluxoNoVios({
   );
 }
 
+/** Botões da faixa azul-marinho do título da publicação. */
+const NA_FAIXA = "text-white/80 hover:bg-white/10 hover:text-white focus-visible:ring-white/60 disabled:text-white/35";
+
+/** Número do processo no título: abre a consulta do tribunal em nova aba (quando há endereço conhecido) e copia. */
+function NumeroDoProcesso({ numero, tribunal }: { numero: string; tribunal: string | null }) {
+  const [copiado, setCopiado] = useState(false);
+  const consulta = consultaProcessual(tribunal, numero);
+  return (
+    <>
+      <h2 id="publicacao-titulo" className="flex flex-wrap items-center gap-x-2.5 text-base font-bold tabular-nums text-white">
+        <span className="inline-flex items-center gap-1.5 text-sm font-bold text-white">
+          <Scale className="size-4 shrink-0" aria-hidden />
+          Nº do processo
+        </span>
+        {consulta ? (
+          // A lupa diz que o número pesquisa o processo no tribunal (como no VIOS).
+          <a
+            href={consulta.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`Pesquisar ${consulta.onde}${consulta.preenchida ? " (o número já vai preenchido: falta consultar)" : ""}`}
+            className="inline-flex items-center gap-1.5 rounded-sm text-white underline decoration-white/60 underline-offset-4 hover:decoration-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
+          >
+            <Search className="size-4 shrink-0" aria-hidden />
+            {numero}
+            <span className="sr-only">(pesquisa {consulta.onde}, em nova aba)</span>
+          </a>
+        ) : (
+          numero
+        )}
+      </h2>
+      <Button
+        type="button"
+        size="icon-xs"
+        variant="ghost"
+        className={NA_FAIXA}
+        title={copiado ? "Copiado" : "Copiar o número do processo"}
+        aria-label="Copiar o número do processo"
+        onClick={() => {
+          void navigator.clipboard?.writeText(numero).then(() => {
+            setCopiado(true);
+            window.setTimeout(() => setCopiado(false), 1500);
+          });
+        }}
+      >
+        {copiado ? <Check /> : <Copy />}
+      </Button>
+    </>
+  );
+}
+
 /** Posição na fila, para andar entre as publicações sem a lista. */
 interface Navegacao {
   posicao: number;
@@ -256,45 +318,64 @@ interface Navegacao {
   proxima: string | null;
 }
 
+/**
+ * Opções de Responsável e Revisor: as pessoas da área da publicação, com foto, e a lista inteira do VIOS para a
+ * exceção (`ampliar`, null quando não há filtro). Quem já está escolhido vale mesmo fora da área.
+ */
+interface PessoasDoCampo {
+  opcoes: OpcaoBusca[];
+  ampliar: { todas: OpcaoBusca[]; area: string } | null;
+  foto: (nome: string) => string | null;
+}
+
 /** Um ou mais responsáveis; a fila do robô recebe os nomes separados por vírgula. */
 function CampoResponsaveis({
-  opcoes,
+  pessoas,
   valor,
   onChange,
   rotulo,
   dica,
 }: {
-  opcoes: OpcaoVios[];
+  pessoas: PessoasDoCampo;
   valor: string;
   onChange: (valor: string) => void;
   rotulo: string;
   dica?: string | null;
 }) {
   const nomes = separarNomes(valor);
+  const escolhidos = new Set(nomes.map(chaveNome));
+  const livres = (lista: OpcaoBusca[]) => lista.filter((opcao) => !escolhidos.has(chaveNome(opcao.nome)));
   return (
     <div className="space-y-1.5">
-      {nomes.length ? (
-        <ul className="flex flex-wrap gap-1.5" aria-label={rotulo}>
-          {nomes.map((nome) => (
-            <li key={nome} className="inline-flex items-center gap-1 rounded-md border border-[#dce9eb] bg-[#f7fbfc] py-0.5 pl-2 pr-0.5 text-sm text-foreground">
-              {nome}
-              <button
-                type="button"
-                className="rounded p-1 text-muted-foreground hover:bg-[#47cdd0]/15 hover:text-foreground"
-                aria-label={`Tirar ${nome}`}
-                onClick={() => onChange(nomes.filter((item) => item !== nome).join(", "))}
-              >
-                <X className="size-3.5" aria-hidden />
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      {/* Os escolhidos ficam dentro do campo: com uma pessoa, ele tem a altura do Revisor ao lado. */}
       <ComboboxBusca
-        opcoes={opcoes.filter((opcao) => !nomes.some((nome) => chaveNome(nome) === chaveNome(opcao.nome)))}
+        antes={
+          nomes.length ? (
+            <ul className="contents" aria-label={rotulo}>
+              {nomes.map((nome) => (
+                <li key={nome} className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-md border border-[#dce9eb] bg-[#f7fbfc] pl-1 pr-0.5 text-sm text-foreground">
+                  <AvatarPessoa nome={nome} foto={pessoas.foto(nome)} className="size-5" />
+                  <span className="truncate">{nome}</span>
+                  <button
+                    type="button"
+                    className="rounded p-1 text-muted-foreground hover:bg-[#47cdd0]/15 hover:text-foreground"
+                    aria-label={`Tirar ${nome}`}
+                    onMouseDown={(evento) => evento.preventDefault()}
+                    onClick={() => onChange(nomes.filter((item) => item !== nome).join(", "))}
+                  >
+                    <X className="size-3.5" aria-hidden />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null
+        }
+        opcoes={livres(pessoas.opcoes)}
+        ampliar={pessoas.ampliar ? { ...pessoas.ampliar, todas: livres(pessoas.ampliar.todas) } : null}
+        pessoas
         valor=""
         onChange={(nome) => nome && onChange([...nomes, nome].join(", "))}
-        placeholder={nomes.length ? "Adicionar outro responsável…" : "Digite para buscar…"}
+        placeholder={nomes.length ? "Adicionar outro…" : "Digite para buscar…"}
         rotulo={nomes.length ? `Adicionar responsável à ${rotulo.toLowerCase()}` : rotulo}
         invalido={!nomes.length}
       />
@@ -404,6 +485,23 @@ function EditorVistagem({
   const ehDiaUtil = useMemo(() => criarCalendario(detalhe?.feriados ?? []), [detalhe?.feriados]);
   // A fatal conta só dias úteis fora do recesso forense; Enviar/Revisar/Protocolar seguem o expediente.
   const contaPrazo = useMemo(() => criarCalendarioDePrazo(detalhe?.feriados ?? []), [detalhe?.feriados]);
+  // Responsável e Revisor: só quem é da área da publicação, com foto; a última linha da lista abre todas as pessoas.
+  const pessoasDoCampo = useMemo((): PessoasDoCampo => {
+    const fotos = detalhe?.fotos ?? {};
+    const filtro = detalhe?.pessoasDaArea ?? null;
+    const daArea = filtro ? new Set(filtro.nomes.map(chaveNome)) : null;
+    const todas = (detalhe?.catalogo?.usuarios ?? []).map((usuario): OpcaoBusca => {
+      const chave = chaveNome(usuario.nome);
+      // Na lista inteira, quem é de fora da área mostra a área dele ao lado do nome.
+      return { ...usuario, foto: fotos[chave] ?? null, detalhe: daArea && !daArea.has(chave) ? detalhe?.areaDasPessoas?.[chave] ?? null : null };
+    });
+    const opcoes = daArea ? todas.filter((opcao) => daArea.has(chaveNome(opcao.nome))) : todas;
+    return {
+      opcoes,
+      ampliar: filtro && opcoes.length < todas.length ? { todas, area: filtro.area } : null,
+      foto: (nome) => fotos[chaveNome(nome)] ?? null,
+    };
+  }, [detalhe]);
 
   function alterar(chave: number, mudanca: Partial<Linha>) {
     setLinhas((atuais) => atuais.map((linha) => (linha.chave === chave ? { ...linha, ...mudanca } : linha)));
@@ -475,6 +573,20 @@ function EditorVistagem({
     setEstadoSugestao("usada");
   }
 
+  /** "Usar N dias" no leitor: põe o prazo citado na primeira tarefa de Prazo (ou cria uma). */
+  function usarDias(dias: number, contagem: ContagemPrazo | null) {
+    const dataPublicacao = detalhe?.publicacao.dataPublicacao;
+    if (!dataPublicacao) return;
+    setLinhas((atuais) => {
+      const alvo = atuais.find((linha) => linha.etiqueta === "PRAZO" && !linha.esocial);
+      const contagemPrazo = contagem ?? alvo?.contagemPrazo ?? "uteis";
+      const mudanca = { diasPrazo: dias, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, dias, contagemPrazo, contaPrazo) };
+      if (alvo) return atuais.map((linha) => (linha === alvo ? { ...linha, ...mudanca } : linha));
+      if (atuais.length >= 10) return atuais;
+      return [...atuais, novaLinha({ ...mudanca, responsavel: detalhe?.responsavelSugerido ?? "", revisor: detalhe?.revisorSugerido ?? "" })];
+    });
+  }
+
   function desfazerSugestao() {
     if (antesDaSugestao) {
       setLinhas(antesDaSugestao.linhas);
@@ -534,6 +646,23 @@ function EditorVistagem({
   const completo = linhas.every(linhaCompleta) && !faltaTarefaEsocial;
   const incompletas = linhas.flatMap((linha, indice) => (linhaCompleta(linha) ? [] : [`a Tarefa ${indice + 1}`]));
   const devolucoes = detalhe.inconsistencias.filter((item) => item.origem === "juridico");
+  // Régua da publicação: divulgação → publicação → 1º dia do prazo e, quando já há Prazo, a fatal mais próxima.
+  const fatais = linhas.flatMap((linha) => (linha.etiqueta === "PRAZO" && linha.dataFatal ? [linha.dataFatal] : [])).sort();
+  const marcosDaPublicacao = [
+    { rotulo: "Divulgação", data: publicacao.dataDivulgacao, dica: "Disponibilização no diário." },
+    {
+      rotulo: "Publicação",
+      data: publicacao.dataPublicacao,
+      tom: "marca" as const,
+      dica: "Considera-se publicada no 1º dia útil após a disponibilização.",
+    },
+    {
+      rotulo: "Início do prazo",
+      data: publicacao.dataPublicacao ? somarDiasUteis(publicacao.dataPublicacao, 1, contaPrazo) : null,
+      dica: "1º dia útil após a publicação: os dias do prazo contam a partir daqui.",
+    },
+    { rotulo: fatais.length > 1 ? "1ª fatal" : "Fatal", data: fatais[0] ?? null, tom: "perigo" as const },
+  ];
 
   return (
     // Com espaço (fila recolhida ou tela larga), publicação e vistagem ficam lado a lado e rolam cada uma no seu lugar.
@@ -565,12 +694,15 @@ function EditorVistagem({
           ) : null}
 
           <Painel aria-labelledby="publicacao-titulo" className="flex min-h-0 flex-col @4xl:flex-1">
-            <div className="space-y-2 border-b border-[#e6eef0] px-4 py-3">
+            {/* Faixa azul-marinho: o processo aberto fica marcado no topo da coluna. */}
+            <div className="bg-[#10293a] px-4 py-2.5">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 id="publicacao-titulo" className="font-mono text-base font-semibold text-foreground">
-                  {publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}
-                </h2>
-                {publicacao.tribunal ? <Selo tom="marca">{publicacao.tribunal}</Selo> : null}
+                <NumeroDoProcesso numero={publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal} tribunal={publicacao.tribunal} />
+                {publicacao.tribunal ? (
+                  <Selo tom="escuro" className="bg-white/15 text-white ring-white/30">
+                    {publicacao.tribunal}
+                  </Selo>
+                ) : null}
                 <div className="ml-auto flex items-center gap-1">
                   {navegacao ? (
                     <>
@@ -578,6 +710,7 @@ function EditorVistagem({
                         type="button"
                         size="icon-sm"
                         variant="ghost"
+                        className={NA_FAIXA}
                         disabled={!navegacao.anterior}
                         onClick={() => navegacao.anterior && onAbrir(navegacao.anterior)}
                         aria-label="Publicação anterior"
@@ -585,13 +718,14 @@ function EditorVistagem({
                       >
                         <ChevronLeft />
                       </Button>
-                      <span className="min-w-14 text-center text-xs tabular-nums text-muted-foreground">
+                      <span className="min-w-14 text-center text-xs tabular-nums text-white/75">
                         {navegacao.posicao} de {navegacao.total}
                       </span>
                       <Button
                         type="button"
                         size="icon-sm"
                         variant="ghost"
+                        className={NA_FAIXA}
                         disabled={!navegacao.proxima}
                         onClick={() => navegacao.proxima && onAbrir(navegacao.proxima)}
                         aria-label="Próxima publicação"
@@ -601,19 +735,28 @@ function EditorVistagem({
                       </Button>
                     </>
                   ) : null}
-                  <Button type="button" variant="outline" size="sm" className="ml-1" onClick={() => setTransferindo(true)}>
-                    <ArrowRightLeft />
-                    Transferir área
-                  </Button>
                 </div>
               </div>
-              <DadosPasta publicacao={{ ...publicacao, pendencia: null }} />
             </div>
-            <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-3">
-              <DadosPublicacao publicacao={publicacao} />
-              <pre className="max-h-[28rem] min-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md border border-[#e6eef0] bg-[#f7fbfc] p-3 font-sans text-sm leading-relaxed text-foreground @4xl:max-h-none @4xl:flex-1">
-                {publicacao.teor}
-              </pre>
+            {/* Ficha, datas e texto rolam juntos: o espaço da coluna fica para a leitura. */}
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="space-y-4 px-4 py-3">
+                <FichaPasta
+                  publicacao={publicacao}
+                  auxiliar={detalhe.revisorSugerido}
+                  fotos={detalhe.fotos}
+                  acao={
+                    <Button type="button" variant="outline" size="sm" onClick={() => setTransferindo(true)} title="A área ou a pasta não é desta fila">
+                      <ArrowRightLeft />
+                      Transferir área
+                    </Button>
+                  }
+                >
+                  <FichaProcesso publicacao={publicacao} />
+                </FichaPasta>
+                <ReguaDatas rotulo="Datas da publicação" hoje={detalhe.hoje} marcos={marcosDaPublicacao} />
+              </div>
+              <LeitorPublicacao publicacao={publicacao} partesNoCabecalho onUsarDias={catalogo && publicacao.dataPublicacao ? usarDias : undefined} />
             </div>
           </Painel>
         </div>
@@ -660,21 +803,16 @@ function EditorVistagem({
                       <p className="text-xs text-muted-foreground">Lista do VIOS para {catalogo.area}</p>
                     </div>
                     {detalhe.esocial ? (
-                      <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
                         <span title="Não vai para o VIOS">eSocial</span>
-                        <select
-                          className={cn(campo, "h-9 w-52")}
-                          value={esocial}
-                          onChange={(evento) => trocarEsocial(evento.target.value as ClassificacaoEsocial)}
-                          aria-describedby="esocial-dica"
-                        >
-                          {CLASSIFICACOES_ESOCIAL.map((classificacao) => (
-                            <option key={classificacao} value={classificacao}>
-                              {classificacao}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                        <Seletor
+                          rotulo="Classificação eSocial"
+                          className="w-56"
+                          valor={esocial}
+                          onChange={(valor) => trocarEsocial(valor as ClassificacaoEsocial)}
+                          opcoes={CLASSIFICACOES_ESOCIAL.map((classificacao) => ({ valor: classificacao, rotulo: classificacao }))}
+                        />
+                      </div>
                     ) : null}
                     <Button
                       type="button"
@@ -858,28 +996,22 @@ function EditorVistagem({
                               </div>
                             </div>
                             {cadeia ? (
-                              <dl className="grid grid-cols-2 overflow-hidden rounded-md border border-[#e6eef0] text-xs sm:grid-cols-4">
-                                <div className="bg-[#e8f8f8] px-3 py-1.5">
-                                  <dt className="font-medium text-[#285f7a]">{cadeia.protocolar ? "Enviar" : "Tarefa"} · no VIOS</dt>
-                                  <dd className="font-mono text-sm font-semibold text-[#183f50]">{formatarData(cadeia.enviar)}</dd>
-                                </div>
-                                {cadeia.revisar ? (
-                                  <div className="border-l border-[#e6eef0] px-3 py-1.5">
-                                    <dt className="text-muted-foreground">Revisar</dt>
-                                    <dd className="font-mono text-sm text-foreground">{formatarData(cadeia.revisar)}</dd>
-                                  </div>
-                                ) : null}
-                                {cadeia.protocolar ? (
-                                  <div className="border-t border-[#e6eef0] px-3 py-1.5 sm:border-l sm:border-t-0">
-                                    <dt className="text-muted-foreground">Protocolar</dt>
-                                    <dd className="font-mono text-sm text-foreground">{formatarData(cadeia.protocolar)}</dd>
-                                  </div>
-                                ) : null}
-                                <div className="border-l border-t border-[#e6eef0] px-3 py-1.5 sm:border-t-0">
-                                  <dt className="text-muted-foreground">Fatal</dt>
-                                  <dd className="font-mono text-sm font-semibold text-red-700">{formatarData(cadeia.fatal)}</dd>
-                                </div>
-                              </dl>
+                              <ReguaDatas
+                                rotulo={`Datas da tarefa ${indice + 1}`}
+                                hoje={detalhe.hoje}
+                                className="rounded-md border border-[#e6eef0] bg-[#f7fbfc] px-3 py-2"
+                                marcos={[
+                                  {
+                                    rotulo: `${cadeia.protocolar ? "Enviar" : "Tarefa"} · no VIOS`,
+                                    data: cadeia.enviar,
+                                    tom: "marca",
+                                    dica: "Data da tarefa que vai para o VIOS.",
+                                  },
+                                  { rotulo: "Revisar", data: cadeia.revisar },
+                                  { rotulo: "Protocolar", data: cadeia.protocolar },
+                                  { rotulo: "Fatal", data: cadeia.fatal, tom: "perigo" },
+                                ]}
+                              />
                             ) : null}
                             {tarefaId && !cadeiaFluxo ? (
                               <p className="text-xs text-muted-foreground">
@@ -916,7 +1048,7 @@ function EditorVistagem({
                           <div className="space-y-1.5">
                             <span className="block text-xs font-medium text-muted-foreground">Responsável</span>
                             <CampoResponsaveis
-                              opcoes={catalogo.usuarios}
+                              pessoas={pessoasDoCampo}
                               valor={linha.responsavel}
                               onChange={(valor) => alterar(linha.chave, { responsavel: valor })}
                               rotulo={`Responsável da tarefa ${indice + 1}`}
@@ -936,7 +1068,9 @@ function EditorVistagem({
                               ) : null}
                             </span>
                             <ComboboxBusca
-                              opcoes={catalogo.usuarios}
+                              opcoes={pessoasDoCampo.opcoes}
+                              ampliar={pessoasDoCampo.ampliar}
+                              pessoas
                               valor={linha.revisor}
                               onChange={(nome) => alterar(linha.chave, { revisor: nome })}
                               placeholder={prazo ? "Digite para buscar o revisor…" : "Sem revisor"}
@@ -1071,17 +1205,20 @@ function ModalTransferir({
               A publicação sai da fila de {escritorioAtual ?? "sem área"} e vai para a da área escolhida. A pasta no VIOS não muda.
             </DialogDescription>
           </DialogHeader>
-          <label className="space-y-1 text-xs font-medium text-muted-foreground">
+          <div className="space-y-1 text-xs font-medium text-muted-foreground">
             Área de destino
-            <select className={campo} value={destino} onChange={(evento) => setDestino(evento.target.value)} required>
-              <option value="">Escolha a área…</option>
-              {ESCRITORIOS.filter((escritorio) => escritorio !== escritorioAtual).map((escritorio) => (
-                <option key={escritorio} value={escritorio}>
-                  {escritorio}
-                </option>
-              ))}
-            </select>
-          </label>
+            <Seletor
+              rotulo="Área de destino"
+              placeholder="Escolha a área…"
+              valor={destino}
+              onChange={setDestino}
+              opcoes={ESCRITORIOS.filter((escritorio) => escritorio !== escritorioAtual).map((escritorio) => ({
+                valor: escritorio,
+                rotulo: escritorio,
+                icone: <IconeArea area={escritorio} />,
+              }))}
+            />
+          </div>
           <label className="space-y-1 text-xs font-medium text-muted-foreground">
             Motivo
             <Textarea value={motivo} onChange={(evento) => setMotivo(evento.target.value)} maxLength={2000} rows={3} required />
@@ -1178,7 +1315,7 @@ function Juridico() {
     }
     return [...contagem.entries()].sort((a, b) => a[0].localeCompare(b[0], "pt-BR"));
   }, [publicacoes]);
-  // Grupo escolhido que sumiu da fila (outro escritório) deixa de filtrar.
+  // Grupo escolhido que sumiu da fila (outra área) deixa de filtrar.
   const grupoAtivo = gruposDaFila.some(([nome]) => nome === grupo) ? grupo : "";
   const filtradas = useMemo(() => {
     const termo = chaveNome(busca);
@@ -1244,7 +1381,7 @@ function Juridico() {
     setAviso("Vistagem enviada para a conferência da controladoria.");
     setPorEscritorio((atual) => {
       const p = (publicacoes ?? []).find((item) => item.id === id);
-      const chave = p?.escritorioResponsavel ?? "Sem escritório";
+      const chave = p?.escritorioResponsavel ?? "Sem área";
       return { ...atual, [chave]: Math.max(0, (atual[chave] ?? 1) - 1) };
     });
   }
@@ -1284,22 +1421,28 @@ function Juridico() {
           </Button>
         ) : null}
         <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Processo, cliente ou CI" aria-label="Buscar publicação" />
-        <select aria-label="Escritório" className={cn(campo, "w-full sm:w-60")} value={escritorio} onChange={(evento) => setEscritorio(evento.target.value)}>
-          <option value="">Todos os escritórios ({total})</option>
-          {escritorios.map(([nome, quantidade]) => (
-            <option key={nome} value={nome}>
-              {nome} ({quantidade})
-            </option>
-          ))}
-        </select>
-        <select aria-label="Grupo do cliente" className={cn(campo, "w-full sm:w-56")} value={grupoAtivo} onChange={(evento) => setGrupo(evento.target.value)}>
-          <option value="">Todos os grupos</option>
-          {gruposDaFila.map(([nome, quantidade]) => (
-            <option key={nome} value={nome}>
-              {nome} ({quantidade})
-            </option>
-          ))}
-        </select>
+        <Seletor
+          rotulo="Área"
+          className="sm:w-64"
+          valor={escritorio}
+          onChange={setEscritorio}
+          todos={{ rotulo: "Todas as áreas", contagem: total, icone: <Layers className="size-4 text-[#3e84a8]" aria-hidden /> }}
+          opcoes={escritorios.map(([nome, quantidade]) => ({ valor: nome, rotulo: nome, contagem: quantidade, icone: <IconeArea area={nome} /> }))}
+        />
+        <SeletorBusca
+          rotulo="Grupo do cliente"
+          className="sm:w-64"
+          buscaPlaceholder="Buscar grupo…"
+          valor={grupoAtivo}
+          onChange={setGrupo}
+          todos={{ rotulo: "Todos os grupos", contagem: publicacoes?.length, icone: <Building2 className="size-4 text-[#3e84a8]" aria-hidden /> }}
+          opcoes={gruposDaFila.map(([nome, quantidade]) => ({
+            valor: nome,
+            rotulo: nome,
+            contagem: quantidade,
+            icone: <LogoGrupo grupo={nome === SEM_GRUPO ? null : nome} tamanho="xs" />,
+          }))}
+        />
         <Segmented
           label="Demanda de risco"
           value={risco}
@@ -1352,6 +1495,7 @@ function Juridico() {
               {grupos.map((bloco) => (
                 <section key={bloco.nome} aria-label={bloco.nome}>
                   <h3 className="sticky top-0 z-10 flex items-center gap-2 border-b border-[#e6eef0] bg-[#f7fbfc] px-4 py-2 text-xs font-semibold text-[#285f7a]">
+                    <LogoGrupo grupo={bloco.nome === SEM_GRUPO ? null : bloco.nome} tamanho="xs" />
                     <span className="truncate">{bloco.nome}</span>
                     <span className="font-normal tabular-nums text-muted-foreground">{bloco.publicacoes.length}</span>
                     {bloco.riscos ? (
@@ -1370,7 +1514,7 @@ function Juridico() {
                           className={cn(linhaLista(publicacao.id === aberta), "space-y-1")}
                         >
                           <span className="flex flex-wrap items-center gap-1.5">
-                            <span className="font-mono text-xs font-semibold text-foreground">{publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}</span>
+                            <span className="tabular-nums text-xs font-semibold text-foreground">{publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}</span>
                             {publicacao.demandaRisco ? (
                               <Selo tom="perigo" icone={ShieldAlert}>
                                 Risco
@@ -1380,8 +1524,11 @@ function Juridico() {
                             {publicacao.transferidoDe ? <Selo tom="marca">Transferida</Selo> : null}
                           </span>
                           <span className="block truncate text-sm text-foreground">{publicacao.cliente ?? "—"}</span>
-                          <span className="block truncate text-xs text-muted-foreground">
-                            {[publicacao.escritorioResponsavel, publicacao.tribunal, `publ. ${formatarData(publicacao.dataPublicacao)}`].filter(Boolean).join(" · ")}
+                          <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                            {publicacao.escritorioResponsavel ? <IconeArea area={publicacao.escritorioResponsavel} tamanho="xs" /> : null}
+                            <span className="truncate">
+                              {[publicacao.escritorioResponsavel, publicacao.tribunal, `publ. ${formatarData(publicacao.dataPublicacao)}`].filter(Boolean).join(" · ")}
+                            </span>
                           </span>
                         </button>
                       </li>

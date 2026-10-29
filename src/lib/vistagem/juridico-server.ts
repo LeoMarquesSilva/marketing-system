@@ -3,6 +3,7 @@ import "server-only";
 import {
   ETIQUETAS_AGENDAMENTO,
   areaDoCatalogo,
+  pessoasDaArea,
   responsavelSugerido,
   responsaveisNaArea,
   tarefasPermitidas,
@@ -20,6 +21,7 @@ import { areaComSugestaoIa, resultadoDaSugestao, type SugestaoIa } from "./suges
 import { carregarFeriados } from "./feriados";
 import { cadeiaDoFluxo, montarFluxo, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
 import { buscarPastasVios } from "./pastas-vios";
+import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
 import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
 import { linhasParaFila, type TarefaNoVios } from "./fila-vios";
@@ -191,7 +193,7 @@ export async function listarFilaJuridico(
   if (contagem.error) falhou("contar a fila do jurídico", contagem.error);
   const porEscritorio: Record<string, number> = {};
   for (const row of contagem.data ?? []) {
-    const chave = (row.escritorio_responsavel as string | null) ?? "Sem escritório";
+    const chave = (row.escritorio_responsavel as string | null) ?? "Sem área";
     porEscritorio[chave] = (porEscritorio[chave] ?? 0) + 1;
   }
   return { publicacoes: ((data ?? []) as PublicacaoRow[]).map((row) => publicacaoResumo(row, 600)), porEscritorio };
@@ -221,14 +223,29 @@ export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = 
     }),
   ]);
   const auxiliar = publicacao.pasta_ci ? pastaVios.get(publicacao.pasta_ci)?.auxiliarSigla ?? null : null;
+  const responsavel = catalogo ? responsavelSugerido(publicacao.advogado_responsavel, catalogo.usuarios)?.nome ?? null : null;
+  const revisor = catalogo ? usuarioPorSigla(auxiliar, catalogo.usuarios)?.nome ?? null : null;
+  // Foto e área são enfeite e atalho: se a consulta falhar, a tela mostra as iniciais e a lista inteira do VIOS.
+  const pessoas = await pessoasPorNome([publicacao.advogado_responsavel, ...(catalogo?.usuarios.map((usuario) => usuario.nome) ?? [])]).catch(
+    (erro: unknown): PessoasPorNome => {
+      console.error("[vistagem] fotos e áreas das pessoas", erro instanceof Error ? erro.message : erro);
+      return { fotos: {}, areas: {}, rotulos: {} };
+    }
+  );
   return {
     publicacao: publicacaoResumo(publicacao, null),
     agendamentos: agendamentos.get(id) ?? [],
     inconsistencias: inconsistencias.get(id) ?? [],
     catalogo,
     catalogoErro,
-    responsavelSugerido: catalogo ? responsavelSugerido(publicacao.advogado_responsavel, catalogo.usuarios)?.nome ?? null : null,
-    revisorSugerido: catalogo ? usuarioPorSigla(auxiliar, catalogo.usuarios)?.nome ?? null : null,
+    responsavelSugerido: responsavel,
+    revisorSugerido: revisor,
+    fotos: pessoas.fotos,
+    // Responsável e Revisor mostram as pessoas da área da fila e do processo; o servidor aceita qualquer usuário do VIOS.
+    pessoasDaArea: catalogo
+      ? pessoasDaArea(catalogo.usuarios, pessoas.areas, [publicacao.escritorio_responsavel, catalogo.area], [responsavel, revisor])
+      : null,
+    areaDasPessoas: pessoas.rotulos,
     feriados,
     fluxos: catalogo && arvore ? fluxosDoCatalogo(catalogo, arvore) : {},
     fluxosErro,

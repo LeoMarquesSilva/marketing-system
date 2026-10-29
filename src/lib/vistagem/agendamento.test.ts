@@ -3,6 +3,11 @@ import { criarCalendario } from "./dias-uteis";
 import { CADEIA_PADRAO } from "./fluxo-vios";
 import {
   areaDoCatalogo,
+  areasDaPessoa,
+  departamentoNaVistagem,
+  escritorioDaArea,
+  pessoasDaArea,
+  TODAS_AS_AREAS,
   siglasDoNome,
   usuarioPorSigla,
   avisosDaData,
@@ -291,5 +296,90 @@ describe("auxiliar pela sigla", () => {
     expect(usuarioPorSigla("MCDCT", usuarios)?.id).toBe("2");
     expect(usuarioPorSigla("FVA", usuarios)).toBeNull();
     expect(usuarioPorSigla("ZZ", usuarios)).toBeNull();
+  });
+});
+
+describe("pessoas da área", () => {
+  const usuarios: OpcaoVios[] = [
+    { id: "1", nome: "Advogada Trabalhista" },
+    { id: "2", nome: "Advogado Cível" },
+    { id: "3", nome: "Advogada Reestruturação" },
+    { id: "4", nome: "Sócio Patrimonial" },
+    { id: "5", nome: "Pessoa Sem Cadastro" },
+    { id: "6", nome: "Líder de Crédito" },
+    { id: "7", nome: "Analista da Controladoria" },
+  ];
+  const areasDe: Record<string, string[]> = {
+    "ADVOGADA TRABALHISTA": areasDaPessoa("Trabalhista"),
+    "ADVOGADO CIVEL": areasDaPessoa("Cível"),
+    "ADVOGADA REESTRUTURACAO": areasDaPessoa("Insolvência"),
+    "SOCIO PATRIMONIAL": areasDaPessoa("Sócio"),
+    "LIDER DE CREDITO": areasDaPessoa("Recuperação de Crédito", ["Recuperação de Crédito", "Trabalhista"]),
+    "ANALISTA DA CONTROLADORIA": areasDaPessoa("Operações Legais"),
+  };
+
+  it("traduz os nomes de área do RH, do VIOS e de Usuários para os escritórios", () => {
+    expect(escritorioDaArea("Cível | Insolvência")).toBe("Reestruturação");
+    expect(escritorioDaArea("Insolvência")).toBe("Reestruturação");
+    expect(escritorioDaArea("Special Situations")).toBe("Distressed Deals");
+    expect(escritorioDaArea("Operações Legais (Legal Ops)")).toBe("Operações Legais");
+    expect(escritorioDaArea("Societário e Contratos")).toBe("Contratos");
+    expect(escritorioDaArea(" Trabalhista ")).toBe("Trabalhista");
+    expect(escritorioDaArea("")).toBeNull();
+  });
+
+  it("a pessoa vale para o departamento e o escopo de liderança; sócio e escopo * valem para todas", () => {
+    expect(areasDaPessoa("Insolvência", ["Reestruturação"])).toEqual(["Reestruturação"]);
+    expect(areasDaPessoa("Recuperação de Crédito", ["Trabalhista"])).toEqual(["Recuperação de Crédito", "Trabalhista"]);
+    expect(areasDaPessoa("Sócio")).toEqual([TODAS_AS_AREAS]);
+    expect(areasDaPessoa("Facilities", ["*"])).toEqual(["Facilities", TODAS_AS_AREAS]);
+    expect(areasDaPessoa(null)).toEqual([]);
+  });
+
+  it("publicação do Trabalhista mostra a área, os sócios, a liderança e quem não tem área conhecida", () => {
+    expect(pessoasDaArea(usuarios, areasDe, ["Trabalhista", "Trabalhista"])).toEqual({
+      area: "Trabalhista",
+      nomes: ["Advogada Trabalhista", "Sócio Patrimonial", "Pessoa Sem Cadastro", "Líder de Crédito"],
+    });
+  });
+
+  it("as pessoas da pasta (advogado e auxiliar) aparecem mesmo sendo de outra área", () => {
+    expect(pessoasDaArea(usuarios, areasDe, ["Trabalhista"], ["advogado civel", null])?.nomes).toContain("Advogado Cível");
+  });
+
+  it("junta o escritório da fila e a área do processo (ex-cliente em Operações Legais)", () => {
+    const resultado = pessoasDaArea(usuarios, areasDe, ["Operações Legais", "Trabalhista"]);
+    expect(resultado?.area).toBe("Operações Legais e Trabalhista");
+    expect(resultado?.nomes).toEqual(["Advogada Trabalhista", "Sócio Patrimonial", "Pessoa Sem Cadastro", "Líder de Crédito", "Analista da Controladoria"]);
+  });
+
+  it("a área do catálogo do VIOS vira o escritório (Cível | Insolvência é Reestruturação)", () => {
+    expect(pessoasDaArea(usuarios, areasDe, ["Reestruturação", "Cível | Insolvência"])).toEqual({
+      area: "Reestruturação",
+      nomes: ["Advogada Reestruturação", "Sócio Patrimonial", "Pessoa Sem Cadastro"],
+    });
+  });
+
+  it("sem ninguém da área ou sem área, não filtra (lista inteira)", () => {
+    expect(pessoasDaArea(usuarios, areasDe, ["Special Situations"])).toBeNull();
+    expect(pessoasDaArea(usuarios, areasDe, [null, ""])).toBeNull();
+    expect(pessoasDaArea(usuarios, {}, ["Trabalhista"])).toBeNull();
+  });
+});
+
+describe("departamentoNaVistagem", () => {
+  const controladoria = { chave: "controladoria", rotulo: "Controladoria Jurídica" };
+  const financeiro = { chave: "financeiro", rotulo: "Financeiro" };
+
+  it("em Operações Legais só a Controladoria (e a liderança, sem time) continua na área", () => {
+    expect(departamentoNaVistagem("Operações Legais", [controladoria])).toBe("Operações Legais");
+    expect(departamentoNaVistagem("Operações Legais", [])).toBe("Operações Legais");
+    expect(departamentoNaVistagem("Operações Legais", [financeiro])).toBe("Financeiro");
+    expect(departamentoNaVistagem("Operações Legais (Legal Ops)", [financeiro, controladoria])).toBe("Operações Legais (Legal Ops)");
+  });
+
+  it("não mexe nas outras áreas", () => {
+    expect(departamentoNaVistagem("Trabalhista", [financeiro])).toBe("Trabalhista");
+    expect(departamentoNaVistagem(null, [financeiro])).toBeNull();
   });
 });

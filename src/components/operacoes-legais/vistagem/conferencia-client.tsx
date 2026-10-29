@@ -30,6 +30,8 @@ import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, EnvioStat
 import { linkTarefaVios } from "@/lib/vistagem/vios-links";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
+import { IconeArea } from "./marcas";
+import { Seletor } from "./seletor";
 import { DadosPasta, DadosPublicacao, SeloEsocial, TeorPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
 import {
   Aviso,
@@ -45,7 +47,6 @@ import {
   Secao,
   Selo,
   Vazio,
-  campoClasse,
   TOM_CLASSE,
   type TomSelo,
 } from "./ui";
@@ -174,7 +175,7 @@ function LinkVios({ ci }: { ci: string }) {
       aria-label={`Abrir a tarefa CI ${ci} no VIOS (nova aba)`}
       className="inline-flex items-center gap-1 rounded-sm text-xs font-medium text-[#347796] hover:text-[#285f7a] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/50"
     >
-      <span className="font-mono tabular-nums">CI {ci}</span>
+      <span className="tabular-nums">CI {ci}</span>
       <ExternalLink className="size-3" aria-hidden />
     </a>
   );
@@ -211,13 +212,13 @@ function TabelaTarefas({ agendamentos, comEnvio }: { agendamentos: AgendamentoRe
                 {item.observacao ? <span className="mt-0.5 block whitespace-pre-wrap break-words text-xs text-muted-foreground">{item.observacao}</span> : null}
               </Celula>
               <Celula rotulo="Data">
-                <span className="font-mono text-foreground">
+                <span className="tabular-nums text-foreground">
                   {formatarData(item.data)}
                   {!item.dataFatal && item.hora ? ` às ${item.hora}` : ""}
                 </span>
                 {item.dataFatal ? (
                   <span className="mt-0.5 block text-xs text-muted-foreground">
-                    enviar · fatal <span className="font-mono">{formatarData(item.dataFatal)}</span>
+                    enviar · fatal <span className="tabular-nums">{formatarData(item.dataFatal)}</span>
                     {item.diasPrazo && item.contagemPrazo ? ` · ${item.diasPrazo} ${ROTULO_CONTAGEM[item.contagemPrazo]}` : ""}
                   </span>
                 ) : null}
@@ -382,7 +383,7 @@ function ItemConferencia({
         id={base}
         titulo={
           <span className="flex flex-wrap items-center gap-2">
-            <span className="break-all font-mono">{processo}</span>
+            <span className="break-all tabular-nums">{processo}</span>
             {publicacao.tribunal ? <Selo>{publicacao.tribunal}</Selo> : null}
             <SeloEsocial publicacao={publicacao} />
           </span>
@@ -453,7 +454,7 @@ function ItemConferencia({
         titulo="Devolver ao jurídico"
         descricao={
           <>
-            Processo <span className="font-mono">{processo}</span>. A publicação volta para o jurídico com esta inconsistência.
+            Processo <span className="tabular-nums">{processo}</span>. A publicação volta para o jurídico com esta inconsistência.
           </>
         }
         rodape={
@@ -468,16 +469,16 @@ function ItemConferencia({
           </>
         }
       >
-        <Campo rotulo="Inconsistência do jurídico">
-          <select className={campoClasse} value={tipoInconsistencia} onChange={(evento) => setTipoInconsistencia(evento.target.value)}>
-            <option value="">Escolha o tipo…</option>
-            {TIPOS_INCONSISTENCIA_JURIDICO.map((valor) => (
-              <option key={valor} value={valor}>
-                {valor}
-              </option>
-            ))}
-          </select>
-        </Campo>
+        <div className="space-y-1.5">
+          <span className="block text-xs font-medium text-muted-foreground">Inconsistência do jurídico</span>
+          <Seletor
+            rotulo="Inconsistência do jurídico"
+            placeholder="Escolha o tipo…"
+            valor={tipoInconsistencia}
+            onChange={setTipoInconsistencia}
+            opcoes={TIPOS_INCONSISTENCIA_JURIDICO.map((valor) => ({ valor, rotulo: valor }))}
+          />
+        </div>
         <Campo rotulo="O que está errado" dica="O jurídico vê este texto.">
           <Textarea value={motivo} onChange={(evento) => setMotivo(evento.target.value)} rows={4} maxLength={2000} />
         </Campo>
@@ -491,7 +492,7 @@ function ItemConferencia({
         titulo="Rodar de novo no robô?"
         descricao={
           <>
-            Processo <span className="font-mono">{processo}</span>
+            Processo <span className="tabular-nums">{processo}</span>
           </>
         }
         rodape={
@@ -596,11 +597,16 @@ function PainelInconsistencias() {
             {itens.map(({ inconsistencia, publicacao }) => (
               <li key={inconsistencia.id} className={cn("grid gap-x-6 gap-y-2 px-4 py-3", COLUNAS_INCONSISTENCIA)}>
                 <div className="min-w-0 space-y-0.5">
-                  <p className="break-all font-mono text-sm font-medium text-foreground">{publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}</p>
-                  <p className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
-                    {publicacao.escritorioResponsavel ? <span>{publicacao.escritorioResponsavel}</span> : null}
+                  <p className="break-all tabular-nums text-sm font-medium text-foreground">{publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}</p>
+                  <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                    {publicacao.escritorioResponsavel ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <IconeArea area={publicacao.escritorioResponsavel} />
+                        {publicacao.escritorioResponsavel}
+                      </span>
+                    ) : null}
                     <span>
-                      Publicação <span className="font-mono">{formatarData(publicacao.dataPublicacao)}</span>
+                      Publicação <span className="tabular-nums">{formatarData(publicacao.dataPublicacao)}</span>
                     </span>
                   </p>
                 </div>

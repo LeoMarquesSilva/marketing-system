@@ -9,6 +9,11 @@ export interface PastaSioe {
   advogadoResponsavel: string | null;
   situacao: string | null;
   etiquetas: string | null;
+  /** Ação, fase processual e valor da ação da pasta no VIOS (as candidatas gravadas antes não têm). */
+  acao?: string | null;
+  fase?: string | null;
+  valorAcao?: number | null;
+  valorAcaoAtualizado?: number | null;
 }
 
 export type Pendencia = "sem_pasta" | "varias_pastas" | "ex_cliente" | "sem_area" | "sem_grupo";
@@ -30,19 +35,26 @@ export const MOTIVO_EX_CLIENTE_SEM_ESCRITORIO =
 
 /** Advogados do escritório monitorados na Kurier (nome e OAB/SP). */
 const ADVOGADOS_DO_ESCRITORIO = [
-  { nome: "gustavobismarchimotta", oab: "275477" },
-  { nome: "ricardoviscardipires", oab: "353389" },
+  { nome: "gustavobismarchimotta", oab: "275477", exibicao: "Gustavo Bismarchi Motta" },
+  { nome: "ricardoviscardipires", oab: "353389", exibicao: "Ricardo Viscardi Pires" },
 ];
 
 /**
- * A publicação cita um advogado do escritório? Compara o nome sem acentos,
- * espaços e hifens (diários quebram nomes no fim da linha) e aceita também o
- * número da OAB, que aparece quando o nome vem abreviado.
+ * Advogados do escritório que a publicação cita, com o nome e a OAB/SP. Compara o nome sem acentos,
+ * espaços e hifens (diários quebram nomes no fim da linha) e aceita também o número da OAB, que aparece
+ * quando o nome vem abreviado.
  */
-export function citaAdvogadoDoEscritorio(texto: string): boolean {
+export function advogadosDoEscritorioCitados(texto: string): { nome: string; oab: string }[] {
   const compacto = texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[\s-]+/g, "");
   const digitos = texto.replace(/[.\s]/g, "");
-  return ADVOGADOS_DO_ESCRITORIO.some(({ nome, oab }) => compacto.includes(nome) || new RegExp(`(^|\\D)${oab}(\\D|$)`).test(digitos));
+  return ADVOGADOS_DO_ESCRITORIO.filter(({ nome, oab }) => compacto.includes(nome) || new RegExp(`(^|\\D)${oab}(\\D|$)`).test(digitos)).map(
+    (advogado) => ({ nome: advogado.exibicao, oab: advogado.oab })
+  );
+}
+
+/** A publicação cita um advogado do escritório? */
+export function citaAdvogadoDoEscritorio(texto: string): boolean {
+  return advogadosDoEscritorioCitados(texto).length > 0;
 }
 
 /** Escritórios que vistam publicações (áreas das tabelas de pessoas do SIOE). */

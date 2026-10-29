@@ -120,6 +120,85 @@ export function responsaveisNaArea(nomes: string[], usuarios: OpcaoVios[]): stri
   return [...new Set(nomes.map((nome) => porChave.get(chaveNome(nome))).filter((nome): nome is string => Boolean(nome)))];
 }
 
+/** Escopo "*" (liderança em Usuários) e sócio patrimonial (departamento "Sócio" no RH): a pessoa vale para todas as áreas. */
+export const TODAS_AS_AREAS = "*";
+
+/**
+ * Área no nome dos escritórios da vistagem. RH, VIOS e Usuários chamam a mesma área de jeitos diferentes:
+ * Insolvência e "Cível | Insolvência" são Reestruturação; Special Situations é Distressed Deals;
+ * "Operações Legais (Legal Ops)" é Operações Legais; "Societário e Contratos" é Contratos.
+ */
+export function escritorioDaArea(area: string | null | undefined): string | null {
+  const chave = chaveNome(area);
+  if (!chave) return null;
+  if (chave.includes("INSOLV")) return "Reestruturação";
+  if (chave.includes("SPECIAL SITUATIONS")) return "Distressed Deals";
+  if (chave.includes("LEGAL OPS")) return "Operações Legais";
+  if (chave.includes("CONTRATOS")) return "Contratos";
+  return String(area).trim();
+}
+
+/** Time da Controladoria Jurídica no organograma: dentro de Operações Legais, é ele que vista e agenda. */
+export const TIME_CONTROLADORIA = "controladoria";
+
+/**
+ * Departamento que vale para a vistagem. O departamento "Operações Legais" do RH junta Controladoria, Financeiro,
+ * Marketing, Facilities, P&C e outros: só a Controladoria (e a liderança da área, que não tem time) fica em
+ * Operações Legais; quem é de outro time passa a ter o nome do time e sai da lista da área.
+ */
+export function departamentoNaVistagem(departamento: string | null, times: { chave: string; rotulo: string }[]): string | null {
+  if (chaveNome(escritorioDaArea(departamento)) !== chaveNome("Operações Legais") || !times.length) return departamento;
+  return times.some((time) => time.chave === TIME_CONTROLADORIA) ? departamento : times[0].rotulo;
+}
+
+/** Áreas de uma pessoa: o departamento no RH e o escopo de liderança em Usuários (Férias personalizado), sem repetir. */
+export function areasDaPessoa(departamento: string | null | undefined, escopo?: string[] | null): string[] {
+  const areas = new Map<string, string>();
+  for (const valor of [departamento, ...(escopo ?? [])]) {
+    const area = valor?.trim() === TODAS_AS_AREAS || chaveNome(valor) === "SOCIO" ? TODAS_AS_AREAS : escritorioDaArea(valor);
+    if (area && !areas.has(chaveNome(area))) areas.set(chaveNome(area), area);
+  }
+  return [...areas.values()];
+}
+
+/** Quem aparece nos campos de pessoa da publicação: `area` é o rótulo (ex.: "Trabalhista"); `nomes`, com a grafia do VIOS. */
+export interface PessoasDaArea {
+  area: string;
+  nomes: string[];
+}
+
+/**
+ * Usuários do VIOS que aparecem em Responsável e Revisor: os das áreas da publicação (escritório da fila e área
+ * do processo; no ex-cliente, Operações Legais e a área do processo). Também aparecem quem vale para todas as
+ * áreas (sócio patrimonial, escopo "*"), quem não tem área conhecida (fora do RH e de Usuários: não some sem
+ * critério) e as pessoas da pasta (advogado e auxiliar). Null quando nenhum usuário é das áreas (ex.: Distressed
+ * Deals sem colaborador ativo) ou a área é desconhecida: a lista fica inteira.
+ */
+export function pessoasDaArea(
+  usuarios: OpcaoVios[],
+  areasDe: Record<string, string[]>,
+  areasDaPublicacao: (string | null | undefined)[],
+  daPasta: (string | null | undefined)[] = []
+): PessoasDaArea | null {
+  const alvo = new Map<string, string>();
+  for (const valor of areasDaPublicacao) {
+    const area = escritorioDaArea(valor);
+    if (area && !alvo.has(chaveNome(area))) alvo.set(chaveNome(area), area);
+  }
+  if (!alvo.size) return null;
+  const areasDoUsuario = (nome: string) => (areasDe[chaveNome(nome)] ?? []).map(chaveNome);
+  const ehDaArea = (nome: string) => areasDoUsuario(nome).some((area) => alvo.has(area));
+  if (!usuarios.some((usuario) => ehDaArea(usuario.nome))) return null;
+  const fixos = new Set(daPasta.map(chaveNome).filter(Boolean));
+  const nomes = usuarios
+    .filter((usuario) => {
+      const areas = areasDoUsuario(usuario.nome);
+      return !areas.length || areas.includes(TODAS_AS_AREAS) || ehDaArea(usuario.nome) || fixos.has(chaveNome(usuario.nome));
+    })
+    .map((usuario) => usuario.nome);
+  return { area: [...alvo.values()].join(" e "), nomes };
+}
+
 /** Nomes separados por vírgula, sem repetir (a fila do robô usa o mesmo formato). */
 export function separarNomes(texto: string | null | undefined): string[] {
   const vistos = new Set<string>();

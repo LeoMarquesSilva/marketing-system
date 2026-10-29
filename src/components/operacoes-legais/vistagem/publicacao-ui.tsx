@@ -5,6 +5,7 @@ import { ChevronRight, FileText, ShieldAlert } from "lucide-react";
 import { authFetch } from "@/lib/auth-fetch";
 import type { Pendencia } from "@/lib/vistagem/triagem";
 import type { PublicacaoResumo, PublicacaoStatus } from "@/lib/vistagem/types";
+import { LogoGrupo, SeloArea } from "./marcas";
 import { Selo, type TomSelo } from "./ui";
 
 export function formatarData(iso: string | null): string {
@@ -45,7 +46,7 @@ export function DadosPasta({ publicacao }: { publicacao: PublicacaoResumo }) {
   if (!publicacao.pastaCi && !publicacao.escritorioResponsavel && !publicacao.pendencia) return null;
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
-      {publicacao.escritorioResponsavel ? <Selo tom="escuro">{publicacao.escritorioResponsavel}</Selo> : null}
+      {publicacao.escritorioResponsavel ? <SeloArea area={publicacao.escritorioResponsavel} /> : null}
       {publicacao.demandaRisco ? (
         <Selo tom="perigo" icone={ShieldAlert}>
           Demanda de risco
@@ -53,11 +54,16 @@ export function DadosPasta({ publicacao }: { publicacao: PublicacaoResumo }) {
       ) : null}
       {publicacao.pendencia ? <Selo tom="alerta">{PENDENCIAS[publicacao.pendencia]}</Selo> : null}
       {publicacao.pastaCi ? (
-        <span className="font-mono text-foreground">
+        <span className="tabular-nums text-foreground">
           {publicacao.pastaVinculo ? `${publicacao.pastaVinculo} · ` : ""}CI {publicacao.pastaCi}
         </span>
       ) : null}
-      {publicacao.grupoCliente ? <span className="font-medium text-foreground">{publicacao.grupoCliente}</span> : null}
+      {publicacao.grupoCliente ? (
+        <span className="inline-flex min-w-0 items-center gap-1.5 font-medium text-foreground">
+          <LogoGrupo grupo={publicacao.grupoCliente} tamanho="xs" />
+          {publicacao.grupoCliente}
+        </span>
+      ) : null}
       {publicacao.cliente ? <span>{publicacao.cliente}</span> : null}
       {publicacao.advogadoResponsavel ? <span>Resp.: {publicacao.advogadoResponsavel}</span> : null}
     </div>
@@ -89,18 +95,18 @@ export function DadosPublicacao({ publicacao }: { publicacao: PublicacaoResumo }
   return (
     <dl className="grid gap-x-6 gap-y-2.5 text-xs sm:grid-cols-2">
       <Dado rotulo="Divulgação → publicação">
-        <span className="font-mono">
+        <span className="tabular-nums">
           {formatarData(publicacao.dataDivulgacao)} → {formatarData(publicacao.dataPublicacao)}
         </span>
       </Dado>
       {publicacao.djenIdComunicacao ? (
         <Dado rotulo="ID comunicação">
-          <span className="font-mono">{publicacao.djenIdComunicacao}</span>
+          <span className="tabular-nums">{publicacao.djenIdComunicacao}</span>
         </Dado>
       ) : null}
       {publicacao.documentoIds.length ? (
         <Dado rotulo="Id do documento">
-          <span className="font-mono">
+          <span className="tabular-nums">
             {publicacao.documentoIds.slice(0, 4).join(", ")}
             {publicacao.documentoIds.length > 4 ? "…" : ""}
           </span>
