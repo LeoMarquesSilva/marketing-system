@@ -40,6 +40,7 @@ import {
   Sparkles,
   Ticket,
   TrendingUp,
+  Trophy,
   Truck,
   User,
   Users,
@@ -309,6 +310,16 @@ export const NAV_FRONTS: NavFront[] = [
         pages: [{ href: "/rh/boas-praticas", label: "Boas práticas" }],
       },
       {
+        // Premiação CIVIL da festa de 10 anos: todos votam; o comitê (RH) apura e revela.
+        id: "bp-awards",
+        label: "BP Awards",
+        icon: Trophy,
+        pages: [
+          { href: "/rh/bp-awards", label: "Comitê" },
+          { href: "/bp-awards", label: "Votação" },
+        ],
+      },
+      {
         id: "clima",
         label: "Clima organizacional",
         shortLabel: "Clima",
@@ -436,6 +447,10 @@ const RH_RESTRICTED = new Set([
   "/rh/fichas-cadastrais",
   "/rh/organograma",
   "/rh/boas-praticas",
+  "/rh/bp-awards",
+  // A votação é aberta a todos (canAccessPath), mas no menu só para o RH: o
+  // colaborador chega pelo convite no sistema e pelo link do comunicado.
+  "/bp-awards",
 ]);
 
 const COLLABORATOR_PAGES = new Set([

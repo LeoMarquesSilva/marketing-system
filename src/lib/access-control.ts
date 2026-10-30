@@ -93,6 +93,8 @@ export const ALWAYS_ALLOWED_PATHS = [
   "/entregas",
   // Atualização da própria ficha cadastral (Pessoas e Cultura).
   "/minha-ficha",
+  // Votação do BP Awards (o comitê fica em /rh/bp-awards, só com RH).
+  "/bp-awards",
   // Resposta às pesquisas com a equipe (o servidor confere se a pessoa está no público).
   "/pesquisa",
 ];

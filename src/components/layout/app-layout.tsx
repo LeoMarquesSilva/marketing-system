@@ -10,6 +10,7 @@ import { NavBadgesProvider } from "@/components/layout/nav-badges";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { ContentCollaboratorTour } from "@/components/conteudo/content-collaborator-tour";
 import { HrPendingNotificationsModal } from "@/components/rh/hr-pending-notifications-modal";
+import { BpAwardsInvite } from "@/components/rh/bp-awards/bp-awards-invite";
 import { TeamSurveyInvite } from "@/components/pesquisas/team-survey-invite";
 import { WhatsappLeadNotifications } from "@/components/layout/whatsapp-lead-notifications";
 import { TimerProvider } from "@/contexts/timer-context";
@@ -31,6 +32,8 @@ const BARE_LAYOUT_PATHS = [
   "/dress-code",
   "/entregas",
   "/minha-ficha",
+  "/bp-awards",
+  "/rh/bp-awards/revelacao",
   "/pesquisa",
 ];
 
@@ -63,6 +66,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         )}
         {!isBareLayout && <HrPendingNotificationsModal />}
         {!isBareLayout && <WhatsappLeadNotifications />}
+        {!isBareLayout && <BpAwardsInvite />}
         {!isBareLayout && <TeamSurveyInvite />}
         {isBareLayout ? (
           children

@@ -137,7 +137,7 @@ describe("visibilidade por perfil", () => {
   it("permissão /rh libera todas as telas de Pessoas e Cultura do RH", () => {
     const hrefs = visibleHrefs({ role: null, permissions: ["/planner", "/rh"] });
     expect(hrefs).toEqual(
-      expect.arrayContaining(["/rh/ferias", "/rh/qualificacoes", "/rh/fichas-cadastrais", "/rh/organograma", "/rh/boas-praticas"])
+      expect.arrayContaining(["/rh/ferias", "/rh/qualificacoes", "/rh/fichas-cadastrais", "/rh/organograma", "/rh/boas-praticas", "/rh/bp-awards", "/bp-awards"])
     );
     expect(hrefs).not.toContain("/solicitacoes");
   });

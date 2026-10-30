@@ -254,6 +254,15 @@ describe("access-control permissions catalog", () => {
     // A tela de revisão continua restrita à RH.
     expect(canAccessPath(socio, "/rh/fichas-cadastrais")).toBe(false);
   });
+
+  it("libera a votação do BP Awards para qualquer usuário logado; comitê e telão só com RH", () => {
+    const colaborador = { role: null, department: "Trabalhista", permissions: ["/conteudo/roteiros"] };
+    expect(canAccessPath(colaborador, "/bp-awards")).toBe(true);
+    expect(canAccessPath({ role: null, permissions: null }, "/bp-awards")).toBe(true);
+    expect(canAccessPath(colaborador, "/rh/bp-awards")).toBe(false);
+    expect(canAccessPath(colaborador, "/rh/bp-awards/revelacao")).toBe(false);
+    expect(canAccessPath({ role: null, permissions: ["/rh"] }, "/rh/bp-awards/revelacao")).toBe(true);
+  });
 });
 
 describe("pesquisas com a equipe", () => {

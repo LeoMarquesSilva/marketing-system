@@ -1,0 +1,201 @@
+/*
+ * Identidade do Bismarchi | Pires Awards (Bismarchi_Pires_Awards_V1.pdf):
+ * azul-marinho com brilhos dourados desfocados nos cantos, dourado dos selos
+ * (#d5b371), títulos em sans negrito e caixa alta, cápsulas com borda dourada
+ * e o "ponto de luz" (estrela de 4 pontas) que une os cinco selos.
+ */
+
+.theme {
+  --aw-night: #0a1623;
+  --aw-navy: #0f1f2e;
+  --aw-raised: #142839;
+  --aw-raised-hover: #1a3247;
+  --aw-gold: #d5b371;
+  --aw-gold-bright: #e4c88f;
+  --aw-gold-deep: #9c7434;
+  --aw-ivory: #f7f3ea;
+  --aw-mist: #bac5cf;
+  --aw-dim: #8f9dab;
+  --aw-line: rgba(213, 179, 113, 0.32);
+  --aw-line-soft: rgba(247, 243, 234, 0.12);
+  --aw-danger: #f0a493;
+  --aw-sans: var(--font-aw-sans), "Montserrat", "Gotham", "Segoe UI", system-ui, sans-serif;
+
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+  width: 100%;
+  /* clip (e não hidden) para a barra do CIVIL continuar fixa ao rolar. */
+  overflow-x: clip;
+  color: var(--aw-ivory);
+  font-family: var(--aw-sans);
+  background-color: var(--aw-navy);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Fundo da identidade fixo atrás do conteúdo (funciona também no iOS, ao contrário de background-attachment). */
+.theme::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: url("/bp-awards/fundo-awards.webp") center / cover no-repeat, var(--aw-navy);
+  pointer-events: none;
+}
+
+/* Títulos: sans negrito em caixa alta, como nos slides da identidade. */
+.display {
+  font-family: var(--aw-sans);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  line-height: 1.08;
+  text-wrap: balance;
+}
+
+/* "—— PREMIAÇÃO CIVIL ——": rótulo entre filetes dourados, como a capa da identidade. */
+.kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--aw-ivory);
+}
+
+.kicker::before,
+.kicker::after {
+  content: "";
+  height: 1px;
+  width: 2.25rem;
+  background: var(--aw-gold);
+}
+
+/* Nome do valor em cápsula de borda dourada (slide "Cinco formas de reconhecer"). */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2.5rem;
+  padding: 0.45rem 1.1rem;
+  border: 1px solid var(--aw-gold);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+  text-align: center;
+  text-transform: uppercase;
+  color: var(--aw-ivory);
+}
+
+/* Foco visível em fundo escuro: anel dourado. */
+.theme :where(a, button, input, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--aw-gold-bright);
+  outline-offset: 2px;
+}
+
+.field {
+  width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid var(--aw-line-soft);
+  background: rgba(10, 22, 35, 0.6);
+  color: var(--aw-ivory);
+  font-family: var(--aw-sans);
+  font-size: 1rem;
+  line-height: 1.6;
+  transition:
+    border-color 160ms ease-out,
+    background-color 160ms ease-out;
+}
+
+.field::placeholder {
+  color: var(--aw-dim);
+}
+
+.field:hover {
+  border-color: rgba(213, 179, 113, 0.45);
+}
+
+.theme .field:focus-visible {
+  outline: none;
+  border-color: var(--aw-gold);
+  background: rgba(10, 22, 35, 0.85);
+  box-shadow: 0 0 0 3px rgba(213, 179, 113, 0.22);
+}
+
+.field[aria-invalid="true"] {
+  border-color: var(--aw-danger);
+}
+
+/* Botão principal: dourado com texto azul-marinho (contraste AA). */
+.primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.875rem;
+  padding: 0 1.4rem;
+  border-radius: 999px;
+  background: var(--aw-gold);
+  color: var(--aw-night);
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  transition:
+    background-color 160ms ease-out,
+    transform 160ms ease-out;
+}
+
+.primary:hover {
+  background: var(--aw-gold-bright);
+}
+
+.primary:active {
+  transform: translateY(1px);
+}
+
+.primary:disabled {
+  cursor: not-allowed;
+  background: rgba(213, 179, 113, 0.35);
+  color: rgba(10, 22, 35, 0.75);
+}
+
+.secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 2.875rem;
+  padding: 0 1.2rem;
+  border-radius: 999px;
+  border: 1px solid var(--aw-line);
+  color: var(--aw-ivory);
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition:
+    background-color 160ms ease-out,
+    border-color 160ms ease-out;
+}
+
+.secondary:hover {
+  background: rgba(213, 179, 113, 0.1);
+  border-color: var(--aw-gold);
+}
+
+.secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .field,
+  .primary,
+  .secondary {
+    transition: none;
+  }
+}
