@@ -29,7 +29,6 @@ import {
 } from "lucide-react";
 import { Segmented } from "@/components/facilities/form-parts";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
@@ -778,6 +777,85 @@ function LinhaFila({ publicacao, aberta, onAbrir }: { publicacao: PublicacaoResu
   );
 }
 
+/**
+ * "Agendar Direto" na própria tela: o modelo do jurídico (publicação à esquerda; à direita os dados da pendência e,
+ * logo abaixo, as tarefas). Nada é gravado até o envio; "Voltar" devolve a resolução da pendência.
+ */
+function AgendarDireto({
+  previa,
+  navegacao,
+  onAbrir,
+  onMudar,
+  onEnviada,
+  onVoltar,
+}: {
+  previa: { id: string } & PreviaAgendamento;
+  navegacao: Navegacao;
+  onAbrir: (id: string) => void;
+  onMudar: (mudanca: Partial<PreviaAgendamento>) => void;
+  onEnviada: () => void;
+  onVoltar: () => void;
+}) {
+  const escritorioValido = (ESCRITORIOS as readonly string[]).includes(previa.escritorio);
+  const dadosDaPendencia = (
+    <Painel aria-labelledby="agendar-direto-titulo" className="@container overflow-visible">
+      <div className="flex items-center gap-2 border-b border-[#e6eef0] px-4 py-2.5">
+        <CalendarPlus className="size-4 text-[#347796]" aria-hidden />
+        <h2 id="agendar-direto-titulo" className="text-sm font-semibold text-foreground">
+          Agendar Direto
+        </h2>
+        <Button type="button" variant="ghost" size="sm" className="ml-auto" onClick={onVoltar}>
+          <ChevronLeft />
+          Voltar à pendência
+        </Button>
+      </div>
+      <div className="grid items-end gap-3 px-4 py-3 @xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_auto]">
+        <CampoEscritorio valor={previa.escritorio} onChange={(escritorio) => onMudar({ escritorio })} />
+        <CampoGrupo valor={previa.grupo} onChange={(grupo) => onMudar({ grupo })} obrigatorio={previa.escritorio !== ESCRITORIO_EX_CLIENTE} />
+        <label className="flex min-h-10 w-fit cursor-pointer items-center gap-2.5 text-sm text-foreground">
+          <input
+            type="checkbox"
+            checked={previa.demandaRisco}
+            onChange={(evento) => onMudar({ demandaRisco: evento.target.checked })}
+            className="size-4 accent-[#347796]"
+          />
+          Demanda de risco
+        </label>
+      </div>
+      <p className="px-4 pb-3 text-xs text-muted-foreground">
+        Nada é gravado até enviar: ao enviar, a publicação sai da controladoria e as tarefas vão para a conferência.
+      </p>
+    </Painel>
+  );
+  return (
+    // Altura da tela, como no jurídico: publicação e tarefas rolam cada uma na sua coluna.
+    <div className="min-w-0 lg:h-[calc(100dvh-13rem)] lg:min-h-[32rem]">
+      {escritorioValido ? (
+        <EditorVistagem
+          key={`${previa.id}|${previa.escritorio}|${previa.ci ?? ""}`}
+          id={previa.id}
+          navegacao={navegacao}
+          onAbrir={onAbrir}
+          onConcluida={onEnviada}
+          onTransferida={onVoltar}
+          onVoltar={onVoltar}
+          resolucao={{ escritorio: previa.escritorio, grupo: previa.grupo.trim() || undefined, demandaRisco: previa.demandaRisco, ci: previa.ci }}
+          antesDasTarefas={dadosDaPendencia}
+        />
+      ) : (
+        <div className="space-y-3">
+          {dadosDaPendencia}
+          <Painel>
+            <Vazio icone={ListChecks} titulo="Escolha o escritório">
+              A lista de tarefas do VIOS depende da área: escolha o escritório responsável acima.
+            </Vazio>
+          </Painel>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Controladoria() {
   const [dados, setDados] = useState<PendenciasControladoria | null>(null);
   const [erro, setErro] = useState("");
@@ -857,6 +935,12 @@ function Controladoria() {
   const aberta = selecionada && ordem.includes(selecionada) ? selecionada : ordem[0] ?? null;
   const indiceAberta = aberta ? ordem.indexOf(aberta) : -1;
   const publicacaoAberta = fila[indiceAberta] ?? null;
+  const navegacaoAberta: Navegacao = {
+    posicao: indiceAberta + 1,
+    total: ordem.length,
+    anterior: ordem[indiceAberta - 1] ?? null,
+    proxima: ordem[indiceAberta + 1] ?? null,
+  };
 
   const maisAntiga = useMemo(
     () =>
@@ -1010,16 +1094,21 @@ function Controladoria() {
                   </ul>
                 </Painel>
 
-                {publicacaoAberta ? (
+                {publicacaoAberta && agendando?.id === publicacaoAberta.id ? (
+                  // Agendar Direto: a mesma tela do jurídico (publicação à esquerda, tarefas à direita), sem sair daqui.
+                  <AgendarDireto
+                    previa={agendando}
+                    navegacao={navegacaoAberta}
+                    onAbrir={setSelecionada}
+                    onMudar={(mudanca) => setAgendando({ ...agendando, ...mudanca })}
+                    onEnviada={agendamentoEnviado}
+                    onVoltar={() => setAgendando(null)}
+                  />
+                ) : publicacaoAberta ? (
                   <DetalhePendencia
                     key={publicacaoAberta.id}
                     resumo={publicacaoAberta}
-                    navegacao={{
-                      posicao: indiceAberta + 1,
-                      total: ordem.length,
-                      anterior: ordem[indiceAberta - 1] ?? null,
-                      proxima: ordem[indiceAberta + 1] ?? null,
-                    }}
+                    navegacao={navegacaoAberta}
                     onAbrir={setSelecionada}
                     onResolvida={removerResolvida}
                     onAgendar={agendarDireto}
@@ -1030,67 +1119,6 @@ function Controladoria() {
           </div>
         </>
       )}
-
-      <Dialog open={Boolean(agendando)} onOpenChange={(aberto) => !aberto && setAgendando(null)}>
-        <DialogContent className="flex h-[92dvh] w-[96vw] max-w-[96vw] flex-col gap-0 p-0 sm:max-w-[min(96vw,1500px)]">
-          <DialogHeader className="gap-1 border-b border-[#e6eef0] px-5 py-3 pr-14 text-left">
-            <DialogTitle className="tabular-nums">Agendar Direto · {agendando?.numero}</DialogTitle>
-            <DialogDescription>
-              A mesma vistagem do jurídico. Ao enviar, a publicação sai da controladoria e as tarefas vão para a conferência; se fechar
-              antes, nada muda.
-            </DialogDescription>
-          </DialogHeader>
-          {agendando ? (
-            <>
-              {/* Dados da pendência: a área define a lista de tarefas; grupo e risco vão junto no envio. */}
-              <div className="@container border-b border-[#e6eef0] bg-[#fafcfc] px-5 py-3">
-                <div className="grid items-end gap-3 @3xl:grid-cols-[16rem_minmax(0,22rem)_auto]">
-                  <CampoEscritorio valor={agendando.escritorio} onChange={(escritorio) => setAgendando({ ...agendando, escritorio })} />
-                  <CampoGrupo
-                    valor={agendando.grupo}
-                    onChange={(grupo) => setAgendando({ ...agendando, grupo })}
-                    obrigatorio={agendando.escritorio !== ESCRITORIO_EX_CLIENTE}
-                  />
-                  <label className="flex min-h-10 w-fit cursor-pointer items-center gap-2.5 text-sm text-foreground">
-                    <input
-                      type="checkbox"
-                      checked={agendando.demandaRisco}
-                      onChange={(evento) => setAgendando({ ...agendando, demandaRisco: evento.target.checked })}
-                      className="size-4 accent-[#347796]"
-                    />
-                    Demanda de risco
-                  </label>
-                </div>
-              </div>
-              <div className="min-h-0 flex-1 overflow-y-auto p-4">
-                {(ESCRITORIOS as readonly string[]).includes(agendando.escritorio) ? (
-                  <EditorVistagem
-                    key={`${agendando.escritorio}|${agendando.ci ?? ""}`}
-                    id={agendando.id}
-                    navegacao={null}
-                    onAbrir={() => undefined}
-                    onConcluida={agendamentoEnviado}
-                    onTransferida={() => setAgendando(null)}
-                    onVoltar={() => setAgendando(null)}
-                    resolucao={{
-                      escritorio: agendando.escritorio,
-                      grupo: agendando.grupo.trim() || undefined,
-                      demandaRisco: agendando.demandaRisco,
-                      ci: agendando.ci,
-                    }}
-                  />
-                ) : (
-                  <Painel>
-                    <Vazio icone={ListChecks} titulo="Escolha o escritório">
-                      A lista de tarefas do VIOS depende da área: escolha o escritório responsável acima.
-                    </Vazio>
-                  </Painel>
-                )}
-              </div>
-            </>
-          ) : null}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

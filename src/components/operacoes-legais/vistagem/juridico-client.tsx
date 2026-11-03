@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   ArrowRightLeft,
@@ -420,6 +420,7 @@ export function EditorVistagem({
   onTransferida,
   onVoltar,
   resolucao = null,
+  antesDasTarefas = null,
 }: {
   id: string;
   navegacao: Navegacao | null;
@@ -429,6 +430,8 @@ export function EditorVistagem({
   onVoltar: () => void;
   /** "Agendar Direto" da controladoria: a pendência ainda na triagem, com escritório, grupo, risco e CI escolhidos. */
   resolucao?: ResolucaoPendencia | null;
+  /** Bloco no topo da coluna das tarefas (na controladoria: escritório, grupo e risco da pendência). */
+  antesDasTarefas?: ReactNode;
 }) {
   // A lista de tarefas depende do escritório e da pasta: na prévia eles vão na consulta.
   const consultaPrevia = resolucao?.escritorio
@@ -669,10 +672,12 @@ export function EditorVistagem({
   }
 
   if (!detalhe) {
-    return erro ? (
-      <Aviso tom="erro">{erro}</Aviso>
-    ) : (
-      <Painel><Carregando rotulo="Carregando a publicação" /></Painel>
+    // O bloco de cima continua visível: na controladoria, trocar o escritório resolve uma área sem lista de tarefas.
+    return (
+      <div className="space-y-3">
+        {antesDasTarefas}
+        {erro ? <Aviso tom="erro">{erro}</Aviso> : <Painel><Carregando rotulo="Carregando a publicação" /></Painel>}
+      </div>
     );
   }
 
@@ -801,6 +806,7 @@ export function EditorVistagem({
         </div>
 
         <div className="min-h-0 space-y-3 @4xl:h-full @4xl:overflow-y-auto @4xl:pr-1">
+          {antesDasTarefas}
           {estadoSugestao && catalogo ? (
             <CartaoSugestaoIa
               estado={estadoSugestao}
