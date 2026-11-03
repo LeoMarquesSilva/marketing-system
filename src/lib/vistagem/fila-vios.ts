@@ -1,4 +1,4 @@
-import { ETIQUETA_VIOS, montarObservacaoVios, paraDataVios, referenciaDaPublicacao, type EtiquetaAgendamento } from "./agendamento";
+import { chaveNome, ETIQUETA_VIOS, montarObservacaoVios, paraDataVios, referenciaDaPublicacao, type EtiquetaAgendamento } from "./agendamento";
 
 /**
  * Onde o robô do SAMA agenda: na publicação (Intimações › Lançamento, ligada à
@@ -20,6 +20,8 @@ export interface TarefaDoLancamento {
   responsavel: string;
   revisor: string | null;
   observacao: string;
+  /** Resposta da JUSTIFICATIVA NF (questionário que o VIOS pede depois de lançar a CIÊNCIA NF). */
+  justificativa: string | null;
 }
 
 export interface LancamentoFila {
@@ -87,6 +89,8 @@ const TIPO_NA_FILA: Record<EtiquetaAgendamento, string> = { PRAZO: "Prazo", PROV
  * - pasta: uma linha por tarefa, com o teor da publicação na descrição.
  * - intimação: uma linha com todas as tarefas (depois de lançada, a intimação sai da lista do
  *   VIOS); a descrição leva só o cabeçalho e a observação, porque o VIOS insere o texto da intimação.
+ *   Na CIÊNCIA NF a observação vai na JUSTIFICATIVA NF e a descrição fica só com o texto da
+ *   intimação (modelo da Maria: CI 934338, 03/11/2026).
  */
 export function linhasParaFila(
   publicacao: PublicacaoParaFila,
@@ -138,17 +142,21 @@ export function linhasParaFila(
           comunicacao_id: comunicacao,
           comunicacoes_equivalentes: [...new Set((publicacao.comunicacoes_equivalentes ?? []).map(String))].filter((id) => id && id !== comunicacao),
           data_publicacao: publicacao.data_publicacao ? paraDataVios(publicacao.data_publicacao) : null,
-          tarefas: itens.map((item) => ({
-            chave: item.id,
-            tarefa_id: item.tarefa_id,
-            tarefa: item.tarefa,
-            etiqueta_id: etiquetaVios(item),
-            data: paraDataVios(item.data),
-            hora: item.hora ?? null,
-            responsavel: item.responsavel,
-            revisor: item.revisor,
-            observacao: montarObservacaoVios(publicacao.data_publicacao, item.observacao),
-          })),
+          tarefas: itens.map((item) => {
+            const cienciaNf = chaveNome(item.tarefa) === "CIENCIA NF";
+            return {
+              chave: item.id,
+              tarefa_id: item.tarefa_id,
+              tarefa: item.tarefa,
+              etiqueta_id: etiquetaVios(item),
+              data: paraDataVios(item.data),
+              hora: item.hora ?? null,
+              responsavel: item.responsavel,
+              revisor: item.revisor,
+              observacao: cienciaNf ? "" : montarObservacaoVios(publicacao.data_publicacao, item.observacao),
+              justificativa: cienciaNf ? item.observacao?.trim() || null : null,
+            };
+          }),
         },
       },
       agendamentos: itens.map((item) => item.id),
