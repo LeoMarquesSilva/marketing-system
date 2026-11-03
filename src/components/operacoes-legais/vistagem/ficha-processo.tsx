@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import { Check, TriangleAlert } from "lucide-react";
 import { chaveNome } from "@/lib/vistagem/agendamento";
-import { classeDoProcesso, partesPorPolo, valorDaCausa, type ParteDoPolo } from "@/lib/vistagem/dados-processo";
+import { cn } from "@/lib/utils";
+import { classeDoProcesso, paragrafosDaSintese, partesPorPolo, valorDaCausa, type ParteDoPolo } from "@/lib/vistagem/dados-processo";
 import { lerPublicacao } from "@/lib/vistagem/leitura";
 import { advogadosDoEscritorioCitados } from "@/lib/vistagem/triagem";
 import type { PublicacaoResumo } from "@/lib/vistagem/types";
@@ -165,6 +166,55 @@ export function FichaProcesso({ publicacao }: { publicacao: PublicacaoResumo }) 
           )}
         </Celula>
       </div>
+    </div>
+  );
+}
+
+/** Síntese acima disto (parágrafos ou caracteres) começa recolhida, com o "Ver síntese completa". */
+const SINTESE_CURTA = { paragrafos: 4, caracteres: 360 };
+
+/**
+ * Síntese do processo da pasta no VIOS, embaixo da ficha. Longa, começa recolhida em umas cinco linhas; aberta,
+ * rola dentro do bloco (há sínteses de 20 mil caracteres).
+ */
+export function SinteseDoProcesso({ sintese, erro }: { sintese: string | null; erro: string | null }) {
+  const paragrafos = useMemo(() => paragrafosDaSintese(sintese), [sintese]);
+  const [completa, setCompleta] = useState(false);
+  const longa = paragrafos.length > SINTESE_CURTA.paragrafos || paragrafos.join(" ").length > SINTESE_CURTA.caracteres;
+  const recolhida = longa && !completa;
+
+  return (
+    <div className="rounded-md border border-[#c9dde6] bg-[#e9f2f6] px-3 py-2.5">
+      <Celula rotulo="Síntese do processo">
+        {erro ? (
+          <p className="text-sm text-muted-foreground" title={erro}>
+            Não foi possível carregar a síntese do VIOS.
+          </p>
+        ) : paragrafos.length ? (
+          <>
+            <div className={cn("relative", recolhida && "max-h-[6.25rem] overflow-hidden", completa && "max-h-96 overflow-y-auto pr-1")}>
+              <div className="space-y-1 text-sm leading-5 text-foreground">
+                {paragrafos.map((paragrafo, indice) => (
+                  <p key={indice}>{paragrafo}</p>
+                ))}
+              </div>
+              {recolhida ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-[#e9f2f6]" aria-hidden /> : null}
+            </div>
+            {longa ? (
+              <button
+                type="button"
+                className="mt-1 text-xs font-medium text-[#347796] underline-offset-4 hover:underline"
+                aria-expanded={completa}
+                onClick={() => setCompleta((aberta) => !aberta)}
+              >
+                {completa ? "Recolher síntese" : "Ver síntese completa"}
+              </button>
+            ) : null}
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">Não preenchida no VIOS.</p>
+        )}
+      </Celula>
     </div>
   );
 }

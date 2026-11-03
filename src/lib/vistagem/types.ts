@@ -282,6 +282,10 @@ export interface VistagemDetalhe {
   /** Área de cada usuário do VIOS pelo RH (ex.: "Cível"), pela chave do nome; aparece ao mostrar todas as pessoas. */
   areaDasPessoas: Record<string, string>;
   inconsistencias: InconsistenciaResumo[];
+  /** Síntese do processo da pasta no VIOS (via SIOE). Null sem pasta ou com a síntese em branco. */
+  sintese: string | null;
+  /** Por que a síntese não pôde ser carregada. */
+  sinteseErro: string | null;
   /** Feriados (AAAA-MM-DD) para contar os dias úteis do Prazo na tela. */
   feriados: string[];
   /** Fluxo automático do VIOS por id do tipo de tarefa (só os que criam algo). */

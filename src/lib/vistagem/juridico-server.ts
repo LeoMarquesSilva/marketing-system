@@ -25,7 +25,7 @@ import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
 import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
 import { linhasParaFila, type TarefaNoVios } from "./fila-vios";
-import { buscarPastaPorCi } from "./sioe";
+import { buscarPastaPorCi, buscarSinteseDaPasta } from "./sioe";
 import { ESCRITORIOS, type PastaSioe } from "./triagem";
 import {
   carregarArvoreVios,
@@ -258,7 +258,8 @@ export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = 
     catalogoErro = `Não há lista de tarefas do VIOS para a área "${publicacao.area_processo ?? publicacao.escritorio_responsavel ?? "sem área"}" desta pasta.`;
   }
   let fluxosErro: string | null = null;
-  const [inconsistencias, feriados, pastaVios, arvore] = await Promise.all([
+  let sinteseErro: string | null = null;
+  const [inconsistencias, feriados, pastaVios, arvore, sintese] = await Promise.all([
     inconsistenciasPorPublicacao([id]),
     carregarFeriados().catch(() => [] as string[]),
     publicacao.pasta_ci ? buscarPastasVios([publicacao.pasta_ci]) : Promise.resolve(new Map<string, { vinculo: string | null; auxiliarSigla: string | null }>()),
@@ -266,6 +267,12 @@ export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = 
       fluxosErro = erro instanceof Error ? erro.message : String(erro);
       return null;
     }),
+    publicacao.pasta_ci
+      ? buscarSinteseDaPasta(publicacao.pasta_ci).catch((erro: unknown) => {
+          sinteseErro = erro instanceof Error ? erro.message : String(erro);
+          return null;
+        })
+      : Promise.resolve(null),
   ]);
   const auxiliar = publicacao.pasta_ci ? pastaVios.get(publicacao.pasta_ci)?.auxiliarSigla ?? null : null;
   const responsavel = catalogo ? responsavelSugerido(publicacao.advogado_responsavel, catalogo.usuarios)?.nome ?? null : null;
@@ -281,6 +288,8 @@ export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = 
     publicacao: publicacaoResumo(publicacao, null),
     agendamentos: agendamentos.get(id) ?? [],
     inconsistencias: inconsistencias.get(id) ?? [],
+    sintese,
+    sinteseErro,
     catalogo,
     catalogoErro,
     responsavelSugerido: responsavel,
