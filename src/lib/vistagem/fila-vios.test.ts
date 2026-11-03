@@ -58,6 +58,7 @@ describe("fila do robô", () => {
           responsavel: "Maria Heloiza Gois Ponce",
           revisor: "Giovanna Pereira de Souza",
           observacao: "Publicação de 15/10/2026\nlaudo",
+          justificativa: null,
         },
         {
           chave: "ag-2",
@@ -69,11 +70,28 @@ describe("fila do robô", () => {
           responsavel: "Giovanna Pereira de Souza",
           revisor: null,
           observacao: "Publicação de 15/10/2026",
+          justificativa: null,
         },
       ],
     });
     // o VIOS insere o texto da intimação: o teor não vai repetido
     expect(grupo.linha.observacao).not.toContain("TEOR");
+  });
+
+  it("CIÊNCIA NF: a observação vai na justificativa e a descrição fica só com o texto da intimação", () => {
+    const ciencia: AgendamentoParaFila = {
+      ...ITENS[1],
+      tarefa: "CIÊNCIA NF",
+      tarefa_id: "316",
+      observacao: " Prazo do reclamante: indicar em 10 dias meio ainda não analisado. ",
+    };
+    const [grupo] = linhasParaFila(PUBLICACAO, [ITENS[0], ciencia], { simular: false, modo: "intimacao" });
+    expect(grupo.linha.lancamento?.tarefas.map((t) => [t.tarefa, t.observacao, t.justificativa])).toEqual([
+      ["MANIFESTAÇÃO - FLUXO D1", "Publicação de 15/10/2026\nlaudo", null],
+      ["CIÊNCIA NF", "", "Prazo do reclamante: indicar em 10 dias meio ainda não analisado."],
+    ]);
+    const [semObservacao] = linhasParaFila(PUBLICACAO, [{ ...ciencia, observacao: null }], { simular: false, modo: "intimacao" });
+    expect(semObservacao.linha.lancamento?.tarefas[0]).toMatchObject({ observacao: "", justificativa: null });
   });
 
   it("leva os IDs das duplicadas da mesma publicação, sem repetir o próprio", () => {
