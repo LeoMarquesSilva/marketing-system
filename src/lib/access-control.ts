@@ -62,6 +62,7 @@ export const MEUS_CLIENTES_KEY = "/meus-clientes";
 export const CAFE_CULTURA_KEY = "/cafe-cultura";
 export const OPERACOES_LEGAIS_KEY = "/operacoes-legais";
 export const VISTAGEM_KEY = "/operacoes-legais/vistagem";
+export const TEAM_SURVEYS_KEY = "/operacoes-legais/pesquisas";
 export const ICP_KEY = "/icp";
 export const FACILITIES_KEY = "/facilities";
 export const MANUAL_ONLY_KEYS = ACCESS_SECTIONS.filter((s) => s.manualOnly).map((s) => s.key);
@@ -92,6 +93,8 @@ export const ALWAYS_ALLOWED_PATHS = [
   "/entregas",
   // Atualização da própria ficha cadastral (Pessoas e Cultura).
   "/minha-ficha",
+  // Resposta às pesquisas com a equipe (o servidor confere se a pessoa está no público).
+  "/pesquisa",
 ];
 
 /**
@@ -197,6 +200,19 @@ export function hasOperacoesLegaisAccess(profile: AccessProfile | null | undefin
   return isAdminRole(profile);
 }
 
+/**
+ * Pesquisas com a equipe (criar, enviar e ver resultados): só admin, sem
+ * liberação manual em Usuários (decisão dos embaixadores do PE27). Responder é
+ * aberto a quem está no público da pesquisa.
+ */
+export function hasTeamSurveysAccess(profile: AccessProfile | null | undefined): boolean {
+  return isAdminRole(profile);
+}
+
+export function isTeamSurveysPath(pathname: string): boolean {
+  return pathname === TEAM_SURVEYS_KEY || pathname.startsWith(`${TEAM_SURVEYS_KEY}/`);
+}
+
 /** Painel de Vistagem e agendamento: admin ou liberação manual em Usuários. */
 export function hasVistagemAccess(profile: AccessProfile | null | undefined): boolean {
   if (!profile) return false;
@@ -297,6 +313,10 @@ export function canAccessPath(
 
   if (isVistagemPath(pathname)) {
     return canSeeVistagemPath(profile, pathname);
+  }
+
+  if (isTeamSurveysPath(pathname)) {
+    return hasTeamSurveysAccess(profile);
   }
 
   const isOperacoesLegaisRoute =
