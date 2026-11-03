@@ -11,7 +11,6 @@ import {
   siglasDoNome,
   usuarioPorSigla,
   avisosDaData,
-  LIMITE_TEOR_VIOS,
   atalhosDePrazo,
   montarObservacaoVios,
   referenciaDaPublicacao,
@@ -185,8 +184,8 @@ describe("validarAgendamentos", () => {
       contexto
     );
     expect(resultado.ok).toBe(false);
-    // tarefa fora da lista, data inválida, responsável desconhecido e observação vazia
-    if (!resultado.ok) expect(resultado.erros).toHaveLength(4);
+    // tarefa fora da lista, data inválida e responsável desconhecido (a observação é opcional)
+    if (!resultado.ok) expect(resultado.erros).toHaveLength(3);
     const semRevisor = validarAgendamentos(
       [{ etiqueta: "PRAZO", tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo" }],
       contexto
@@ -201,12 +200,10 @@ describe("validarAgendamentos", () => {
     expect(validarAgendamentos([], contexto).ok).toBe(false);
   });
 
-  it("exige a observação, que vai na descrição da tarefa", () => {
+  it("a observação é opcional", () => {
     const providencia = { etiqueta: "PROVIDENCIA" as const, tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-11-10", responsavel: "Advogada Exemplo" };
-    expect(validarAgendamentos([{ ...providencia, observacao: "  " }], contexto)).toEqual({
-      ok: false,
-      erros: ["Tarefa 1: escreva a observação (vai na descrição da tarefa)."],
-    });
+    const semObservacao = validarAgendamentos([{ ...providencia, observacao: "  " }], contexto);
+    expect(semObservacao.ok && semObservacao.itens[0].observacao).toBeNull();
     expect(validarAgendamentos([{ ...providencia, observacao: "prazo do reclamante" }], contexto).ok).toBe(true);
   });
 });
@@ -227,21 +224,13 @@ describe("auxiliares", () => {
     expect(responsavelSugerido("Outra Pessoa", USUARIOS)).toBeNull();
   });
 
-  it("a descrição da tarefa é só a observação (o VIOS junta o texto da intimação)", () => {
-    expect(montarObservacaoVios(null, " Prazo de 8 dias ")).toBe("Prazo de 8 dias");
+  it("a descrição da tarefa é a data da publicação e a observação, sem o teor", () => {
+    expect(montarObservacaoVios("2026-10-14", " Prazo de 8 dias ")).toBe("Publicação de 14/10/2026\nPrazo de 8 dias");
+    expect(montarObservacaoVios("2026-10-14", null)).toBe("Publicação de 14/10/2026");
+    expect(montarObservacaoVios(null, "ver laudo")).toBe("Publicação\nver laudo");
     expect(referenciaDaPublicacao({ dataPublicacao: "2026-10-14", tribunal: "TRT2", numeroProcesso: "0001234-56.2026.5.02.0001", djenIdComunicacao: 123 })).toBe(
       "Publicação de 14/10/2026 · TRT2 · Processo 0001234-56.2026.5.02.0001 · ID comunicação 123"
     );
-  });
-
-  it("na pasta leva a observação e o teor inteiro da publicação, sem cabeçalho", () => {
-    expect(montarObservacaoVios("PROCESSO:1 ORGÃO:Vara TEXTO: Intime-se a parte.", "ver laudo")).toBe(
-      "ver laudo\n\nTEOR DA PUBLICAÇÃO\nPROCESSO:1 ORGÃO:Vara\nTEXTO:\nIntime-se a parte."
-    );
-    expect(montarObservacaoVios("Intime-se a parte.", null)).toBe("TEOR DA PUBLICAÇÃO\nIntime-se a parte.");
-    const enorme = montarObservacaoVios("x".repeat(LIMITE_TEOR_VIOS + 500), null);
-    expect(enorme).toContain(`(Teor cortado: 30.000 de 30.500 caracteres. Íntegra no Orquestra.)`);
-    expect(enorme.length).toBeLessThan(LIMITE_TEOR_VIOS + 200);
   });
 
   it("o Trabalhista tem atalhos de 8 e 16 dias", () => {

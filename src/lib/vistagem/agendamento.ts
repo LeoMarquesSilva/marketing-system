@@ -311,14 +311,13 @@ export function validarAgendamentos(
     const revisor = entrada.revisor?.trim() ? usuarioPorChave.get(chaveNome(entrada.revisor)) : null;
     if (entrada.revisor?.trim() && !revisor) erros.push(`${n}: escolha o revisor na lista de usuários do VIOS.`);
     if (prazo && !entrada.revisor?.trim()) erros.push(`${n}: no Prazo o revisor é obrigatório.`);
-    // A observação vai na descrição da tarefa no VIOS: sem ela, a tarefa fica só com o teor.
+    // Observação opcional: vai na descrição da tarefa no VIOS, abaixo da data da publicação.
     const observacao = entrada.observacao?.trim() || null;
-    if (!observacao) erros.push(`${n}: escreva a observação (vai na descrição da tarefa).`);
     if (observacao && observacao.length > MAX_OBSERVACAO) erros.push(`${n}: observação com mais de ${MAX_OBSERVACAO} caracteres.`);
     const diasPrazo = prazo && Number.isInteger(entrada.diasPrazo) && (entrada.diasPrazo ?? 0) > 0 ? (entrada.diasPrazo as number) : null;
     const contagemPrazo = diasPrazo ? CONTAGENS_PRAZO.find((contagem) => contagem === entrada.contagemPrazo) ?? null : null;
     if (diasPrazo && !contagemPrazo) erros.push(`${n}: escolha se o prazo é em dias úteis ou corridos.`);
-    if (!tarefa || !responsavel || !dataValida(data) || (prazo && !revisor) || (compromisso && !hora) || (diasPrazo && !contagemPrazo) || !observacao) {
+    if (!tarefa || !responsavel || !dataValida(data) || (prazo && !revisor) || (compromisso && !hora) || (diasPrazo && !contagemPrazo)) {
       return null;
     }
     return {
@@ -342,23 +341,6 @@ export function validarAgendamentos(
   return { ok: true, itens: itens as AgendamentoValidado[] };
 }
 
-/** Teor máximo na descrição do VIOS; acima disso (raro) corta e avisa. */
-export const LIMITE_TEOR_VIOS = 30_000;
-
-const milhar = new Intl.NumberFormat("pt-BR");
-
-/** Teor da Kurier vem numa linha só: separa o TEXTO do cabeçalho (PROCESSO, ORGÃO...) e tira linhas vazias em excesso. */
-function teorParaVios(teor: string | null | undefined): string {
-  const limpo = String(teor ?? "")
-    .replace(/\r\n?/g, "\n")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/\s+TEXTO:\s*/, "\nTEXTO:\n")
-    .trim();
-  if (limpo.length <= LIMITE_TEOR_VIOS) return limpo;
-  return `${limpo.slice(0, LIMITE_TEOR_VIOS).trimEnd()} […]\n(Teor cortado: ${milhar.format(LIMITE_TEOR_VIOS)} de ${milhar.format(limpo.length)} caracteres. Íntegra no Orquestra.)`;
-}
-
 /** Referência curta da publicação (só para a linha da fila do robô, não vai para a tarefa). */
 export function referenciaDaPublicacao(publicacao: {
   dataPublicacao: string | null;
@@ -377,14 +359,13 @@ export function referenciaDaPublicacao(publicacao: {
 }
 
 /**
- * Descrição da tarefa no VIOS: a observação do vistador e, quando a tarefa vai na pasta, o teor.
- * Lançada na publicação, o próprio VIOS junta o texto da intimação.
+ * Descrição da tarefa no VIOS: "Publicação de dd/mm/aaaa" e, se houver, a observação do vistador.
+ * O teor não vai: lançada na publicação, o próprio VIOS junta o texto da intimação.
  */
-export function montarObservacaoVios(teor: string | null | undefined, observacao: string | null): string {
-  const texto = observacao?.trim() ?? "";
-  const publicacao = teorParaVios(teor);
-  if (!publicacao) return texto;
-  return texto ? `${texto}\n\nTEOR DA PUBLICAÇÃO\n${publicacao}` : `TEOR DA PUBLICAÇÃO\n${publicacao}`;
+export function montarObservacaoVios(dataPublicacao: string | null | undefined, observacao: string | null): string {
+  const cabecalho = dataPublicacao ? `Publicação de ${paraDataVios(dataPublicacao)}` : "Publicação";
+  const texto = observacao?.trim();
+  return texto ? `${cabecalho}\n${texto}` : cabecalho;
 }
 
 /** Atalhos de dias do Prazo: o Trabalhista tem também 8 e 16 dias. */
