@@ -489,7 +489,9 @@ export async function pedirAtualizacaoSintese(id: string, texto: string, authUse
   const autor = (await nomesDosUsuarios([authUserId])).get(authUserId)?.trim();
   if (!autor) throw new VistagemError("Seu nome não está no cadastro de usuários do Orquestra.", 403);
   const pedidas = await sintesesDaPasta(publicacao.pasta_ci);
-  if (pedidas.some((pedida) => pedida.texto.trim() === trecho && pedida.status !== "erro")) {
+  // Repetido é o trecho que está na fila ou já foi gravado; o que deu erro ou só foi simulado pode ir de novo.
+  const repetido = (pedida: SintesePedida) => pedida.status !== "erro" && !(pedida.simulado && pedida.status === "concluido");
+  if (pedidas.some((pedida) => pedida.texto.trim() === trecho && repetido(pedida))) {
     throw new VistagemError("Este trecho já foi pedido para esta pasta.", 409);
   }
   const [ano, mes, dia] = hojeEmSaoPaulo().split("-");
