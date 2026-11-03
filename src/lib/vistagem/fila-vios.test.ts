@@ -16,10 +16,11 @@ const ITENS: AgendamentoParaFila[] = [
 ];
 
 describe("fila do robô", () => {
-  it("na pasta: uma linha por tarefa, com o teor na descrição", () => {
+  it("na pasta: uma linha por tarefa, com a data da publicação na descrição e sem o teor", () => {
     const linhas = linhasParaFila(PUBLICACAO, ITENS, { simular: false, modo: "pasta" });
     expect(linhas.map((l) => l.agendamentos)).toEqual([["ag-1"], ["ag-2"]]);
-    expect(linhas[0].linha.observacao).toContain("TEOR DA PUBLICAÇÃO");
+    expect(linhas[0].linha.observacao).toBe("Publicação de 15/10/2026\nlaudo");
+    expect(linhas[1].linha.observacao).toBe("Publicação de 15/10/2026");
     expect(linhas[0].linha.lancamento).toBeUndefined();
     expect(linhas[1].linha).toMatchObject({ tipo: "Providências", etiqueta_id: "204", data: "19/10/2026" });
   });
@@ -29,7 +30,7 @@ describe("fila do robô", () => {
     const [naPasta] = linhasParaFila(PUBLICACAO, [audiencia], { simular: false, modo: "pasta" });
     expect(naPasta.linha).toMatchObject({ tipo: "Compromisso", etiqueta_id: "205" });
     // a fila da pasta não tem coluna de hora: vai na descrição
-    expect(naPasta.linha.observacao).toMatch(/^Horário: 14:30\n/);
+    expect(naPasta.linha.observacao).toBe("Publicação de 15/10/2026\nHorário: 14:30");
     const [grupo] = linhasParaFila(PUBLICACAO, [ITENS[0], audiencia], { simular: false, modo: "intimacao" });
     expect(grupo.linha.lancamento?.tarefas.map((t) => [t.etiqueta_id, t.hora])).toEqual([
       ["1", null],
@@ -56,7 +57,7 @@ describe("fila do robô", () => {
           hora: null,
           responsavel: "Maria Heloiza Gois Ponce",
           revisor: "Giovanna Pereira de Souza",
-          observacao: "laudo",
+          observacao: "Publicação de 15/10/2026\nlaudo",
         },
         {
           chave: "ag-2",
@@ -67,7 +68,7 @@ describe("fila do robô", () => {
           hora: null,
           responsavel: "Giovanna Pereira de Souza",
           revisor: null,
-          observacao: "",
+          observacao: "Publicação de 15/10/2026",
         },
       ],
     });

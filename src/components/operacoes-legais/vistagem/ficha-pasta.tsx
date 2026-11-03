@@ -1,12 +1,13 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ShieldAlert } from "lucide-react";
+import { ExternalLink, ShieldAlert } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getInitials } from "@/lib/ferias/filters";
 import { cn } from "@/lib/utils";
 import { chaveNome } from "@/lib/vistagem/agendamento";
 import type { PublicacaoResumo } from "@/lib/vistagem/types";
+import { linkPastaVios } from "@/lib/vistagem/vios-links";
 import { LogoGrupo, SeloArea } from "./marcas";
 import { Selo } from "./ui";
 
@@ -91,7 +92,17 @@ export function FichaPasta({
         <Celula rotulo="Pasta no VIOS">
           {publicacao.pastaCi ? (
             <>
-              <p className="tabular-nums text-sm font-semibold text-foreground">CI {publicacao.pastaCi}</p>
+              <a
+                href={linkPastaVios(publicacao.pastaCi)}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Abrir a pasta no VIOS (nova aba)"
+                className="inline-flex items-center gap-1 rounded-sm text-sm font-semibold tabular-nums text-[#347796] underline decoration-[#347796]/40 underline-offset-4 hover:text-[#285f7a] hover:decoration-[#285f7a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/50"
+              >
+                CI {publicacao.pastaCi}
+                <ExternalLink className="size-3.5" aria-hidden />
+                <span className="sr-only">(abre a pasta no VIOS, em nova aba)</span>
+              </a>
               <p className="truncate text-[11px] text-muted-foreground" title={[publicacao.pastaVinculo, publicacao.situacaoProcesso].filter(Boolean).join(" · ")}>
                 {[publicacao.pastaVinculo, publicacao.situacaoProcesso].filter(Boolean).join(" · ") || "—"}
               </p>

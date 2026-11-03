@@ -186,7 +186,8 @@ function LinkVios({ ci }: { ci: string }) {
 const COLUNAS = "lg:grid-cols-[7rem_minmax(0,1.7fr)_9rem_minmax(0,1fr)_minmax(0,1fr)]";
 const COLUNAS_ENVIO = "lg:grid-cols-[7rem_minmax(0,1.5fr)_9rem_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1.3fr)]";
 
-function TabelaTarefas({ agendamentos, comEnvio }: { agendamentos: AgendamentoResumo[]; comEnvio: boolean }) {
+/** Tarefas de uma vistagem (e, com envio, a situação de cada uma no robô); usada também na visão "Agendadas" do jurídico. */
+export function TabelaTarefas({ agendamentos, comEnvio }: { agendamentos: AgendamentoResumo[]; comEnvio: boolean }) {
   const colunas = comEnvio ? COLUNAS_ENVIO : COLUNAS;
   if (!agendamentos.length) return <p className="px-4 pb-4 text-sm text-muted-foreground">Nenhuma tarefa nesta vistagem.</p>;
   return (

@@ -120,7 +120,7 @@ export function linhasParaFila(
     return itens.map((item) => ({
       linha: base(
         item,
-        montarObservacaoVios(publicacao.teor, [item.hora ? `Horário: ${item.hora}` : null, item.observacao].filter(Boolean).join("\n") || null)
+        montarObservacaoVios(publicacao.data_publicacao, [item.hora ? `Horário: ${item.hora}` : null, item.observacao].filter(Boolean).join("\n") || null)
       ),
       agendamentos: [item.id],
     }));
@@ -147,7 +147,7 @@ export function linhasParaFila(
             hora: item.hora ?? null,
             responsavel: item.responsavel,
             revisor: item.revisor,
-            observacao: montarObservacaoVios(null, item.observacao),
+            observacao: montarObservacaoVios(publicacao.data_publicacao, item.observacao),
           })),
         },
       },

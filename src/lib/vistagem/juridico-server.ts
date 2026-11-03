@@ -370,14 +370,18 @@ async function itensDeConferencia(
   status: string[],
   limite: number,
   ordemAscendente: boolean,
-  ordem: "vistado_em" | "conferido_em" | "checado_em" = ordemAscendente ? "vistado_em" : "conferido_em"
+  ordem: "vistado_em" | "conferido_em" | "checado_em" = ordemAscendente ? "vistado_em" : "conferido_em",
+  filtro: { escritorios?: string[] | null; vistadoDesde?: string } = {}
 ): Promise<ConferenciaItem[]> {
-  const { data, error } = await admin()
+  let consulta = admin()
     .from("vistagem_publicacoes")
     .select(COLUNAS_PUBLICACAO)
     .in("status", status)
     .order(ordem, { ascending: ordemAscendente, nullsFirst: false })
     .limit(limite);
+  if (filtro.escritorios) consulta = consulta.in("escritorio_responsavel", filtro.escritorios);
+  if (filtro.vistadoDesde) consulta = consulta.gte("vistado_em", filtro.vistadoDesde);
+  const { data, error } = await consulta;
   if (error) falhou("carregar a conferência", error);
   const linhas = (data ?? []) as PublicacaoRow[];
   const [agendamentos, nomes, inconsistencias] = await Promise.all([
@@ -426,6 +430,22 @@ export async function transferirPublicacao(
     .select("id");
   if (error) falhou("transferir a publicação", error);
   if (!data?.length) throw new VistagemError("A publicação mudou de situação. Atualize a lista.", 409);
+}
+
+/** Dias que a visão "Agendadas" do jurídico mostra. */
+export const DIAS_AGENDADAS = 30;
+
+/**
+ * O que o jurídico já vistou nos últimos dias, das suas áreas: na conferência, com o robô, agendado,
+ * checado ou em revisão, com as tarefas e a situação de cada uma no VIOS.
+ */
+export async function listarAgendadasJuridico(escritorio: string | null, areas: AreasVistagem = null): Promise<ConferenciaItem[]> {
+  if (areas && (!areas.length || (escritorio && !areas.includes(escritorio)))) return [];
+  const vistadoDesde = new Date(Date.now() - DIAS_AGENDADAS * 86_400_000).toISOString();
+  return itensDeConferencia(["controladoria_vistar", "pronto_para_agendar", "agendado", "checado", "revisar"], 300, false, "vistado_em", {
+    escritorios: escritorio ? [escritorio] : areas,
+    vistadoDesde,
+  });
 }
 
 export async function listarConferencia(): Promise<ConferenciaResposta> {

@@ -42,7 +42,6 @@ import {
 } from "@/lib/vistagem/agendamento";
 import {
   CONTAGENS_PRAZO,
-  ROTULO_CONTAGEM,
   criarCalendario,
   criarCalendarioDePrazo,
   datasDoPrazo,
@@ -69,6 +68,7 @@ import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
 import { FichaPasta } from "./ficha-pasta";
 import { FichaProcesso } from "./ficha-processo";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
+import { AgendadasJuridico } from "./juridico-agendadas";
 import { LeitorPublicacao } from "./leitor-publicacao";
 import { IconeArea, LogoGrupo } from "./marcas";
 import { formatarData, formatarDataHora } from "./publicacao-ui";
@@ -124,7 +124,7 @@ function novaLinha(base: Partial<Linha> = {}): Linha {
 const campo = campoClasse;
 
 function linhaCompleta(linha: Linha): boolean {
-  if (!linha.tarefa || !linha.responsavel || !linha.observacao.trim()) return false;
+  if (!linha.tarefa || !linha.responsavel) return false;
   if (linha.etiqueta === "PRAZO") return Boolean(linha.dataFatal && linha.revisor);
   return Boolean(linha.data) && (linha.etiqueta !== "COMPROMISSO" || horaValida(linha.hora));
 }
@@ -187,6 +187,33 @@ function ModalHorario({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Úteis ou corridos, no visual do Segmented e na altura dos atalhos de dias e da data fatal. */
+function ContagemDoPrazo({ rotulo, valor, onChange }: { rotulo: string; valor: ContagemPrazo; onChange: (contagem: ContagemPrazo) => void }) {
+  return (
+    <div role="radiogroup" aria-label={rotulo} className="inline-flex h-10 shrink-0 rounded-md border border-input bg-white p-0.5">
+      {CONTAGENS_PRAZO.map((contagem) => {
+        const marcado = valor === contagem;
+        return (
+          <button
+            key={contagem}
+            type="button"
+            role="radio"
+            aria-checked={marcado}
+            onClick={() => onChange(contagem)}
+            className={cn(
+              "inline-flex items-center justify-center rounded-[5px] px-2.5 text-xs transition-colors duration-150",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/50",
+              marcado ? "bg-[#347796] font-medium text-white" : "text-muted-foreground hover:bg-[#47cdd0]/10 hover:text-foreground"
+            )}
+          >
+            {contagem === "uteis" ? "Úteis" : "Corridos"}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -644,7 +671,7 @@ function EditorVistagem({
   // Sem o tipo Inserir E-social no VIOS, Acordo homologado e Homologação de cálculo não podem ser enviados.
   const faltaTarefaEsocial = Boolean(detalhe.esocial && pedeTarefaEsocial(esocial) && !detalhe.esocial.tarefa);
   const completo = linhas.every(linhaCompleta) && !faltaTarefaEsocial;
-  const incompletas = linhas.flatMap((linha, indice) => (linhaCompleta(linha) ? [] : [`a Tarefa ${indice + 1}`]));
+  const incompletas = linhas.filter((linha) => !linhaCompleta(linha)).length;
   const devolucoes = detalhe.inconsistencias.filter((item) => item.origem === "juridico");
   // Régua da publicação: divulgação → publicação → 1º dia do prazo e, quando já há Prazo, a fatal mais próxima.
   const fatais = linhas.flatMap((linha) => (linha.etiqueta === "PRAZO" && linha.dataFatal ? [linha.dataFatal] : [])).sort();
@@ -796,15 +823,12 @@ function EditorVistagem({
               <>
                 <div className="space-y-2 rounded-t-lg border-b border-[#e6eef0] bg-[#f7fbfc] px-4 py-3">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                    <div className="min-w-0 flex-1">
-                      <h2 id="tarefas-titulo" className="text-sm font-semibold text-foreground">
-                        Tarefas no VIOS
-                      </h2>
-                      <p className="text-xs text-muted-foreground">Lista do VIOS para {catalogo.area}</p>
-                    </div>
+                    <h2 id="tarefas-titulo" className="min-w-0 flex-1 text-sm font-semibold text-foreground">
+                      Incluir Tarefas
+                    </h2>
                     {detalhe.esocial ? (
                       <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                        <span title="Não vai para o VIOS">eSocial</span>
+                        <span>eSocial</span>
                         <Seletor
                           rotulo="Classificação eSocial"
                           className="w-56"
@@ -830,18 +854,10 @@ function EditorVistagem({
                       Adicionar tarefa
                     </Button>
                   </div>
-                  {detalhe.esocial ? (
-                    faltaTarefaEsocial ? (
-                      <Aviso tom="erro">
-                        {esocial} pede a tarefa {TAREFA_ESOCIAL}, mas esse tipo de tarefa não está na lista do VIOS para Trabalhista. Avise a controladoria.
-                      </Aviso>
-                    ) : (
-                      <p id="esocial-dica" className="text-xs text-muted-foreground">
-                        {pedeTarefaEsocial(esocial)
-                          ? `eSocial (não vai para o VIOS): ${esocial} pede também a tarefa ${TAREFA_ESOCIAL}, já na lista abaixo.`
-                          : "A classificação eSocial fica só na publicação; não vai para o VIOS."}
-                      </p>
-                    )
+                  {faltaTarefaEsocial ? (
+                    <Aviso tom="erro">
+                      {esocial} pede a tarefa {TAREFA_ESOCIAL}, mas esse tipo de tarefa não está na lista do VIOS para Trabalhista. Avise a controladoria.
+                    </Aviso>
                   ) : null}
                 </div>
 
@@ -873,143 +889,142 @@ function EditorVistagem({
                         ? avisosDaData(linha.data, detalhe.hoje)
                         : [];
                     return (
-                      <li key={linha.chave} aria-label={`Tarefa ${indice + 1}`} className="space-y-3 px-4 py-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-semibold text-foreground">Tarefa {indice + 1}</span>
-                          {linha.esocial ? <Selo tom="marca">eSocial</Selo> : null}
+                      <li key={linha.chave} aria-label={`Tarefa ${indice + 1}`} className="space-y-2.5 px-4 py-3">
+                        {/* Número discreto no canto: com várias tarefas, mostra onde cada uma começa. */}
+                        <div className="flex min-h-7 items-center gap-1.5">
+                          <span
+                            className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border-[1.5px] border-[#285f7a] text-[11px] font-bold leading-none tabular-nums text-[#285f7a]"
+                            title={`Tarefa ${indice + 1}`}
+                          >
+                            {indice + 1}
+                          </span>
                           {linha.ia ? <SeloIa /> : null}
-                          <div className="ml-auto flex flex-wrap items-center gap-2">
+                          {!linha.esocial && linhas.length > 1 ? (
+                            <Button
+                              type="button"
+                              size="icon-sm"
+                              variant="ghost"
+                              className="ml-auto text-red-700 hover:bg-red-50 hover:text-red-800"
+                              onClick={() => setLinhas((atuais) => atuais.filter((item) => item.chave !== linha.chave))}
+                              aria-label={`Remover tarefa ${indice + 1}`}
+                              title="Remover tarefa"
+                            >
+                              <Trash2 />
+                            </Button>
+                          ) : null}
+                        </div>
+                        {/* A classe fica à esquerda, na mesma linha da tarefa. */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          {linha.esocial ? (
+                            <Selo tom="marca">eSocial</Selo>
+                          ) : (
+                            <Segmented
+                              label={`Classe da tarefa ${indice + 1}`}
+                              value={linha.etiqueta}
+                              options={ETIQUETAS_AGENDAMENTO.map((valor) => ({ value: valor, label: ROTULO_ETIQUETA[valor] }))}
+                              onChange={(valor) => trocarEtiqueta(linha, valor)}
+                            />
+                          )}
+                          <div className="min-w-[14rem] flex-1">
                             {linha.esocial ? (
-                              <span className="text-xs text-muted-foreground">Pedida pela classificação eSocial</span>
+                              <p className={cn(campo, "flex items-center bg-[#f7fbfc] text-foreground")} aria-label={`Tarefa ${indice + 1}`}>
+                                {linha.tarefa}
+                              </p>
                             ) : (
-                              <Segmented
-                                label={`Classe da tarefa ${indice + 1}`}
-                                value={linha.etiqueta}
-                                options={ETIQUETAS_AGENDAMENTO.map((valor) => ({ value: valor, label: ROTULO_ETIQUETA[valor] }))}
-                                onChange={(valor) => trocarEtiqueta(linha, valor)}
+                              <ComboboxBusca
+                                opcoes={catalogo.tarefas[linha.etiqueta]}
+                                valor={linha.tarefa}
+                                onChange={(nome) => {
+                                  const lista = catalogo.tarefas[linha.etiqueta];
+                                  const fixos = lista.find((item) => item.nome === nome)?.responsaveis ?? [];
+                                  const anteriores = lista.find((item) => item.nome === linha.tarefa)?.responsaveis ?? [];
+                                  const eraDoTipo = anteriores.length > 0 && linha.responsavel === anteriores.join(", ");
+                                  alterar(linha.chave, {
+                                    tarefa: nome,
+                                    ...(fixos.length
+                                      ? { responsavel: fixos.join(", ") }
+                                      : eraDoTipo
+                                        ? { responsavel: detalhe.responsavelSugerido ?? "" }
+                                        : {}),
+                                  });
+                                  if (nome && linha.etiqueta === "COMPROMISSO") setHorarioDe(linha.chave);
+                                }}
+                                placeholder="Tarefa: digite para buscar…"
+                                rotulo={`Tarefa ${indice + 1}`}
                               />
                             )}
-                            {!linha.esocial && linhas.length > 1 ? (
-                              <Button
-                                type="button"
-                                size="icon-sm"
-                                variant="ghost"
-                                className="text-red-700 hover:bg-red-50 hover:text-red-800"
-                                onClick={() => setLinhas((atuais) => atuais.filter((item) => item.chave !== linha.chave))}
-                                aria-label={`Remover tarefa ${indice + 1}`}
-                                title="Remover tarefa"
-                              >
-                                <Trash2 />
-                              </Button>
-                            ) : null}
                           </div>
                         </div>
 
-                        {linha.esocial ? (
-                          <p className={cn(campo, "flex items-center bg-[#f7fbfc] text-foreground")} aria-label={`Tarefa ${indice + 1}`}>
-                            {linha.tarefa}
-                          </p>
-                        ) : (
-                          <ComboboxBusca
-                            opcoes={catalogo.tarefas[linha.etiqueta]}
-                            valor={linha.tarefa}
-                            onChange={(nome) => {
-                              const lista = catalogo.tarefas[linha.etiqueta];
-                              const fixos = lista.find((item) => item.nome === nome)?.responsaveis ?? [];
-                              const anteriores = lista.find((item) => item.nome === linha.tarefa)?.responsaveis ?? [];
-                              const eraDoTipo = anteriores.length > 0 && linha.responsavel === anteriores.join(", ");
-                              alterar(linha.chave, {
-                                tarefa: nome,
-                                ...(fixos.length
-                                  ? { responsavel: fixos.join(", ") }
-                                  : eraDoTipo
-                                    ? { responsavel: detalhe.responsavelSugerido ?? "" }
-                                    : {}),
-                              });
-                              if (nome && linha.etiqueta === "COMPROMISSO") setHorarioDe(linha.chave);
-                            }}
-                            placeholder="Tarefa: digite para buscar…"
-                            rotulo={`Tarefa ${indice + 1}`}
-                          />
-                        )}
-
                         {prazo ? (
                           <div className="space-y-2">
-                            <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
-                              <Campo rotulo="Data fatal" className="w-40">
-                                <input
-                                  type="date"
-                                  className={campo}
-                                  value={linha.dataFatal}
-                                  onChange={(evento) => alterar(linha.chave, { dataFatal: evento.target.value, diasPrazo: null })}
-                                />
-                              </Campo>
-                              <div className="min-w-0 flex-1 space-y-1.5">
-                                <span className="block text-xs font-medium text-muted-foreground">
-                                  Ou dias após {publicacao.dataPublicacao ? formatarData(publicacao.dataPublicacao) : "a publicação"}
-                                  {linha.diasPrazo ? (
-                                    <span className="font-semibold text-[#183f50]">
-                                      {" "}
-                                      · {linha.diasPrazo} {ROTULO_CONTAGEM[linha.contagemPrazo ?? "uteis"]}
-                                    </span>
-                                  ) : null}
-                                </span>
-                                <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Prazo em dias">
-                                  {/* Úteis ou corridos ao lado dos dias: troca a contagem e recalcula a fatal do atalho escolhido. */}
-                                  <Segmented
-                                    label={`Contagem do prazo da tarefa ${indice + 1}`}
-                                    value={linha.contagemPrazo ?? "uteis"}
-                                    options={CONTAGENS_PRAZO.map((contagem) => ({ value: contagem, label: contagem === "uteis" ? "Úteis" : "Corridos" }))}
-                                    onChange={(contagem) =>
+                            {/* 1ª linha: os dias do prazo e, ao lado, úteis ou corridos e a data fatal; embaixo, a linha do tempo do VIOS. */}
+                            <div className="flex flex-wrap items-end gap-x-2 gap-y-2">
+                              <div className="flex flex-wrap items-center gap-0.5" role="group" aria-label={`Prazo em dias da tarefa ${indice + 1}`}>
+                                {atalhosDePrazo(catalogo.area).map((dias) => (
+                                  <Button
+                                    key={dias}
+                                    type="button"
+                                    size="xs"
+                                    variant="outline"
+                                    aria-pressed={linha.diasPrazo === dias}
+                                    disabled={!publicacao.dataPublicacao}
+                                    className={cn(
+                                      "h-10 min-w-8 px-1.5 tabular-nums",
+                                      linha.diasPrazo === dias && "border-[#285f7a] bg-[#347796] text-white hover:bg-[#285f7a] hover:text-white"
+                                    )}
+                                    onClick={() =>
+                                      publicacao.dataPublicacao &&
                                       alterar(linha.chave, {
-                                        contagemPrazo: contagem,
-                                        ...(linha.diasPrazo && publicacao.dataPublicacao
-                                          ? { dataFatal: fatalPorContagem(publicacao.dataPublicacao, linha.diasPrazo, contagem, contaPrazo) }
-                                          : {}),
+                                        diasPrazo: dias,
+                                        dataFatal: fatalPorContagem(publicacao.dataPublicacao, dias, linha.contagemPrazo ?? "uteis", contaPrazo),
                                       })
                                     }
+                                  >
+                                    {dias}
+                                  </Button>
+                                ))}
+                              </div>
+                              {/* Úteis ou corridos e a fatal andam juntos: se faltar espaço, descem os dois. */}
+                              <div className="flex items-end gap-2">
+                                <ContagemDoPrazo
+                                  rotulo={`Contagem do prazo da tarefa ${indice + 1}`}
+                                  valor={linha.contagemPrazo ?? "uteis"}
+                                  onChange={(contagem) =>
+                                    alterar(linha.chave, {
+                                      contagemPrazo: contagem,
+                                      ...(linha.diasPrazo && publicacao.dataPublicacao
+                                        ? { dataFatal: fatalPorContagem(publicacao.dataPublicacao, linha.diasPrazo, contagem, contaPrazo) }
+                                        : {}),
+                                    })
+                                  }
+                                />
+                                <Campo rotulo="Data fatal" className="w-[8.5rem]">
+                                  <input
+                                    type="date"
+                                    className={campo}
+                                    value={linha.dataFatal}
+                                    onChange={(evento) => alterar(linha.chave, { dataFatal: evento.target.value, diasPrazo: null })}
                                   />
-                                  {atalhosDePrazo(catalogo.area).map((dias) => (
-                                    <Button
-                                      key={dias}
-                                      type="button"
-                                      size="xs"
-                                      variant="outline"
-                                      aria-pressed={linha.diasPrazo === dias}
-                                      disabled={!publicacao.dataPublicacao}
-                                      className={cn(
-                                        "h-10 min-w-9 tabular-nums",
-                                        linha.diasPrazo === dias && "border-[#285f7a] bg-[#347796] text-white hover:bg-[#285f7a] hover:text-white"
-                                      )}
-                                      onClick={() =>
-                                        publicacao.dataPublicacao &&
-                                        alterar(linha.chave, {
-                                          diasPrazo: dias,
-                                          dataFatal: fatalPorContagem(publicacao.dataPublicacao, dias, linha.contagemPrazo ?? "uteis", contaPrazo),
-                                        })
-                                      }
-                                    >
-                                      {dias}
-                                    </Button>
-                                  ))}
-                                </div>
+                                </Campo>
                               </div>
                             </div>
                             {cadeia ? (
                               <ReguaDatas
+                                compacta
                                 rotulo={`Datas da tarefa ${indice + 1}`}
                                 hoje={detalhe.hoje}
-                                className="rounded-md border border-[#e6eef0] bg-[#f7fbfc] px-3 py-2"
+                                className="rounded-md border border-[#e6eef0] bg-[#f7fbfc] px-3 py-1.5"
                                 marcos={[
                                   {
-                                    rotulo: `${cadeia.protocolar ? "Enviar" : "Tarefa"} · no VIOS`,
+                                    rotulo: cadeia.protocolar ? "Enviar no VIOS" : "Tarefa no VIOS",
+                                    rotuloCurto: cadeia.protocolar ? "Enviar" : "Tarefa",
                                     data: cadeia.enviar,
                                     tom: "marca",
                                     dica: "Data da tarefa que vai para o VIOS.",
                                   },
-                                  { rotulo: "Revisar", data: cadeia.revisar },
-                                  { rotulo: "Protocolar", data: cadeia.protocolar },
-                                  { rotulo: "Fatal", data: cadeia.fatal, tom: "perigo" },
+                                  { rotulo: "Revisar", rotuloCurto: "Rev.", data: cadeia.revisar },
+                                  { rotulo: "Protocolar", rotuloCurto: "Prot.", data: cadeia.protocolar },
                                 ]}
                               />
                             ) : null}
@@ -1081,14 +1096,13 @@ function EditorVistagem({
                           </div>
                         </div>
 
-                        <Campo rotulo="Observação (vai na descrição da tarefa no VIOS)">
+                        <Campo rotulo="Observação (opcional, vai na descrição da tarefa no VIOS)">
                           <Textarea
                             value={linha.observacao}
                             onChange={(evento) => alterar(linha.chave, { observacao: evento.target.value })}
                             maxLength={2000}
                             rows={2}
                             placeholder="O que fazer e por quê"
-                            aria-invalid={!linha.observacao.trim()}
                           />
                         </Campo>
 
@@ -1112,7 +1126,7 @@ function EditorVistagem({
                       ? `${linhas.length} ${linhas.length === 1 ? "tarefa pronta" : "tarefas prontas"} para a conferência.`
                       : faltaTarefaEsocial
                         ? `Falta o tipo ${TAREFA_ESOCIAL} no VIOS.`
-                        : `Complete ${incompletas.join(", ")}: tarefa, data${linhas.some((linha) => linha.etiqueta === "PRAZO") ? ", revisor" : ""}, responsável e observação.`}
+                        : `Complete ${incompletas === 1 ? "a tarefa marcada" : `as ${incompletas} tarefas marcadas`}: tarefa, data${linhas.some((linha) => linha.etiqueta === "PRAZO") ? ", revisor" : ""} e responsável.`}
                   </p>
                   <Button onClick={enviar} disabled={enviando || !completo}>
                     {enviando ? <LoaderCircle className="animate-spin" /> : <Send />}
@@ -1268,6 +1282,8 @@ function agruparFila(publicacoes: PublicacaoResumo[]): GrupoFila[] {
 }
 
 function Juridico() {
+  /** A vistar (a fila) ou Agendadas (o que já foi vistado e onde está cada tarefa). */
+  const [visao, setVisao] = useState<"fila" | "agendadas">("fila");
   const [escritorio, setEscritorio] = useState("");
   const [publicacoes, setPublicacoes] = useState<PublicacaoResumo[] | null>(null);
   const [porEscritorio, setPorEscritorio] = useState<Record<string, number>>({});
@@ -1284,6 +1300,8 @@ function Juridico() {
   const [risco, setRisco] = useState<FiltroRisco>("todas");
   /** A fila abre sempre recolhida: a publicação ocupa a largura toda. */
   const [filaRecolhida, setFilaRecolhida] = useState(true);
+  /** Na fila, cada grupo vem recolhido (menos o da publicação aberta); aqui ficam os que a pessoa inverteu. */
+  const [gruposAlternados, setGruposAlternados] = useState<Set<string>>(() => new Set());
 
   const carregar = useCallback(async (filtro: string) => {
     setPublicacoes(null);
@@ -1336,6 +1354,9 @@ function Juridico() {
   // Mesma ordem da lista: é por ela que o editor anda para a anterior e a próxima.
   const ordem = useMemo(() => grupos.flatMap((item) => item.publicacoes.map((publicacao) => publicacao.id)), [grupos]);
   const aberta = selecionada && ordem.includes(selecionada) ? selecionada : ordem[0] ?? null;
+  const grupoDe = (id: string | null) => (id ? grupos.find((item) => item.publicacoes.some((publicacao) => publicacao.id === id))?.nome ?? null : null);
+  const grupoDaAberta = grupoDe(aberta);
+  const grupoAberto = (nome: string) => (nome === grupoDaAberta) !== gruposAlternados.has(nome);
   const indiceAberta = aberta ? ordem.indexOf(aberta) : -1;
   const navegacao =
     indiceAberta >= 0
@@ -1358,6 +1379,24 @@ function Juridico() {
     setSelecionada(id);
     setListaNoCelular(false);
     setAviso("");
+    // O grupo da publicação aberta fica aberto na fila, mesmo que a pessoa o tenha recolhido antes.
+    const grupoNovo = grupoDe(id);
+    if (grupoNovo && gruposAlternados.has(grupoNovo)) {
+      setGruposAlternados((atual) => {
+        const proximo = new Set(atual);
+        proximo.delete(grupoNovo);
+        return proximo;
+      });
+    }
+  }
+
+  function alternarGrupo(nome: string) {
+    setGruposAlternados((atual) => {
+      const proximo = new Set(atual);
+      if (proximo.has(nome)) proximo.delete(nome);
+      else proximo.add(nome);
+      return proximo;
+    });
   }
 
   function limparFiltros() {
@@ -1390,20 +1429,23 @@ function Juridico() {
     <div className="space-y-4">
       <BarraAba
         resumo={
-          <>
-            <p>
-              <span className="font-semibold tabular-nums text-foreground">{publicacoes?.length ?? "…"}</span>{" "}
-              {publicacoes?.length === 1 ? "publicação" : "publicações"} a vistar{escritorio ? ` em ${escritorio}` : ""}
-              {riscos ? <span className="text-red-700"> · {riscos} de risco</span> : null}
-              {devolvidas ? <span className="text-amber-800"> · {devolvidas} {devolvidas === 1 ? "devolvida" : "devolvidas"}</span> : null}
-              {filtrosAtivos && publicacoes ? (
-                <>
-                  {" · "}
-                  <span className="font-medium text-foreground">{filtradas.length} no filtro</span>{" "}
-                  <button type="button" className="text-xs font-medium text-[#347796] underline-offset-4 hover:underline" onClick={limparFiltros}>
-                    limpar
-                  </button>
-                </>
+          visao === "agendadas" ? (
+            <p>O que já foi vistado nos últimos 30 dias{escritorio ? ` em ${escritorio}` : ""} e onde está cada tarefa no VIOS.</p>
+          ) : (
+            <>
+              <p>
+                <span className="font-semibold tabular-nums text-foreground">{publicacoes?.length ?? "…"}</span>{" "}
+                {publicacoes?.length === 1 ? "publicação" : "publicações"} a vistar{escritorio ? ` em ${escritorio}` : ""}
+                {riscos ? <span className="text-red-700"> · {riscos} de risco</span> : null}
+                {devolvidas ? <span className="text-amber-800"> · {devolvidas} {devolvidas === 1 ? "devolvida" : "devolvidas"}</span> : null}
+                {filtrosAtivos && publicacoes ? (
+                  <>
+                    {" · "}
+                    <span className="font-medium text-foreground">{filtradas.length} no filtro</span>{" "}
+                    <button type="button" className="text-xs font-medium text-[#347796] underline-offset-4 hover:underline" onClick={limparFiltros}>
+                      limpar
+                    </button>
+                  </>
               ) : null}
             </p>
             {areas ? (
@@ -1412,9 +1454,19 @@ function Juridico() {
               </p>
             ) : null}
           </>
+          )
         }
       >
-        {filaRecolhida ? (
+        <Segmented
+          label="Visão do jurídico"
+          value={visao}
+          options={[
+            { value: "fila", label: `A vistar${publicacoes ? ` ${publicacoes.length}` : ""}` },
+            { value: "agendadas", label: "Agendadas" },
+          ]}
+          onChange={setVisao}
+        />
+        {visao === "fila" && filaRecolhida ? (
           <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)}>
             <PanelLeftOpen />
             Mostrar fila
@@ -1429,143 +1481,159 @@ function Juridico() {
           todos={{ rotulo: "Todas as áreas", contagem: total, icone: <Layers className="size-4 text-[#3e84a8]" aria-hidden /> }}
           opcoes={escritorios.map(([nome, quantidade]) => ({ valor: nome, rotulo: nome, contagem: quantidade, icone: <IconeArea area={nome} /> }))}
         />
-        <SeletorBusca
-          rotulo="Grupo do cliente"
-          className="sm:w-64"
-          buscaPlaceholder="Buscar grupo…"
-          valor={grupoAtivo}
-          onChange={setGrupo}
-          todos={{ rotulo: "Todos os grupos", contagem: publicacoes?.length, icone: <Building2 className="size-4 text-[#3e84a8]" aria-hidden /> }}
-          opcoes={gruposDaFila.map(([nome, quantidade]) => ({
-            valor: nome,
-            rotulo: nome,
-            contagem: quantidade,
-            icone: <LogoGrupo grupo={nome === SEM_GRUPO ? null : nome} tamanho="xs" />,
-          }))}
-        />
-        <Segmented
-          label="Demanda de risco"
-          value={risco}
-          options={[
-            { value: "todas", label: "Todas" },
-            { value: "risco", label: `De risco ${riscos}` },
-            { value: "sem_risco", label: `Sem risco ${(publicacoes?.length ?? 0) - riscos}` },
-          ]}
-          onChange={setRisco}
-        />
+        {visao === "fila" ? (
+          <>
+            <SeletorBusca
+              rotulo="Grupo do cliente"
+              className="sm:w-64"
+              buscaPlaceholder="Buscar grupo…"
+              valor={grupoAtivo}
+              onChange={setGrupo}
+              todos={{ rotulo: "Todos os grupos", contagem: publicacoes?.length, icone: <Building2 className="size-4 text-[#3e84a8]" aria-hidden /> }}
+              opcoes={gruposDaFila.map(([nome, quantidade]) => ({
+                valor: nome,
+                rotulo: nome,
+                contagem: quantidade,
+                icone: <LogoGrupo grupo={nome === SEM_GRUPO ? null : nome} tamanho="xs" />,
+              }))}
+            />
+            <Segmented
+              label="Demanda de risco"
+              value={risco}
+              options={[
+                { value: "todas", label: "Todas" },
+                { value: "risco", label: `De risco ${riscos}` },
+                { value: "sem_risco", label: `Sem risco ${(publicacoes?.length ?? 0) - riscos}` },
+              ]}
+              onChange={setRisco}
+            />
+          </>
+        ) : null}
       </BarraAba>
 
       {aviso ? <Aviso tom="sucesso">{aviso}</Aviso> : null}
       {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
 
-      {/* No desktop, lista e publicação rolam cada uma no seu painel (o main do app não deixa usar sticky). */}
-      <div
-        className={cn(
-          "grid gap-4 lg:h-[calc(100dvh-10.5rem)] lg:min-h-[30rem]",
-          filaRecolhida ? "lg:grid-cols-1" : "lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]"
-        )}
-      >
-        <Painel
-          aria-label="Publicações a vistar"
-          data-fila-vistagem
-          className={cn("lg:flex lg:h-full lg:flex-col", aberta && !listaNoCelular && "hidden lg:flex", filaRecolhida && "lg:hidden")}
+      {visao === "agendadas" ? (
+        <AgendadasJuridico key={escritorio} escritorio={escritorio} busca={busca} />
+      ) : (
+        /* No desktop, lista e publicação rolam cada uma no seu painel (o main do app não deixa usar sticky). */
+        <div
+          className={cn(
+            "grid gap-4 lg:h-[calc(100dvh-10.5rem)] lg:min-h-[30rem]",
+            filaRecolhida ? "lg:grid-cols-1" : "lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]"
+          )}
         >
-          <div className="hidden items-center gap-2 border-b border-[#e6eef0] px-4 py-2 lg:flex">
-            <span className="flex-1 text-xs font-medium text-muted-foreground">
-              Fila <span className="tabular-nums">· {filtradas.length}</span>
-            </span>
-            <Button type="button" size="icon-xs" variant="ghost" onClick={() => setFilaRecolhida(true)} aria-label="Recolher a fila" title="Recolher a fila">
-              <PanelLeftClose />
-            </Button>
-          </div>
-          {publicacoes === null ? (
-            <Carregando rotulo="Carregando a fila" />
-          ) : publicacoes.length === 0 ? (
-            <Vazio icone={CircleCheck} titulo="Nada para vistar">
-              As publicações do dia aparecem aqui depois da captura e da triagem.
-            </Vazio>
-          ) : filtradas.length === 0 ? (
-            <Vazio icone={Search} titulo="Nenhuma publicação com esses filtros">
-              <Button type="button" variant="outline" size="sm" onClick={limparFiltros}>
-                Limpar filtros
+          <Painel
+            aria-label="Publicações a vistar"
+            data-fila-vistagem
+            className={cn("lg:flex lg:h-full lg:flex-col", aberta && !listaNoCelular && "hidden lg:flex", filaRecolhida && "lg:hidden")}
+          >
+            <div className="hidden items-center gap-2 border-b border-[#e6eef0] px-4 py-2 lg:flex">
+              <span className="flex-1 text-xs font-medium text-muted-foreground">
+                Fila <span className="tabular-nums">· {filtradas.length}</span>
+              </span>
+              <Button type="button" size="icon-xs" variant="ghost" onClick={() => setFilaRecolhida(true)} aria-label="Recolher a fila" title="Recolher a fila">
+                <PanelLeftClose />
               </Button>
-            </Vazio>
-          ) : (
-            <div className="max-h-[70vh] overflow-auto lg:max-h-none lg:flex-1">
-              {grupos.map((bloco) => (
-                <section key={bloco.nome} aria-label={bloco.nome}>
-                  <h3 className="sticky top-0 z-10 flex items-center gap-2 border-b border-[#e6eef0] bg-[#f7fbfc] px-4 py-2 text-xs font-semibold text-[#285f7a]">
-                    <LogoGrupo grupo={bloco.nome === SEM_GRUPO ? null : bloco.nome} tamanho="xs" />
-                    <span className="truncate">{bloco.nome}</span>
-                    <span className="font-normal tabular-nums text-muted-foreground">{bloco.publicacoes.length}</span>
-                    {bloco.riscos ? (
-                      <Selo tom="perigo" className="ml-auto">
-                        {bloco.riscos} de risco
-                      </Selo>
-                    ) : null}
-                  </h3>
-                  <ul className="divide-y divide-[#eef3f5]">
-                    {bloco.publicacoes.map((publicacao) => (
-                      <li key={publicacao.id}>
-                        <button
-                          type="button"
-                          onClick={() => abrir(publicacao.id)}
-                          aria-current={publicacao.id === aberta ? "true" : undefined}
-                          className={cn(linhaLista(publicacao.id === aberta), "space-y-1")}
-                        >
-                          <span className="flex flex-wrap items-center gap-1.5">
-                            <span className="tabular-nums text-xs font-semibold text-foreground">{publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}</span>
-                            {publicacao.demandaRisco ? (
-                              <Selo tom="perigo" icone={ShieldAlert}>
-                                Risco
-                              </Selo>
-                            ) : null}
-                            {publicacao.devolucaoMotivo || publicacao.devolvidoEm ? <Selo tom="alerta">Devolvida</Selo> : null}
-                            {publicacao.transferidoDe ? <Selo tom="marca">Transferida</Selo> : null}
-                          </span>
-                          <span className="block truncate text-sm text-foreground">{publicacao.cliente ?? "—"}</span>
-                          <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                            {publicacao.escritorioResponsavel ? <IconeArea area={publicacao.escritorioResponsavel} tamanho="xs" /> : null}
-                            <span className="truncate">
-                              {[publicacao.escritorioResponsavel, publicacao.tribunal, `publ. ${formatarData(publicacao.dataPublicacao)}`].filter(Boolean).join(" · ")}
-                            </span>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ))}
             </div>
-          )}
-        </Painel>
-
-        <div className={cn("min-w-0 lg:h-full lg:overflow-y-auto lg:pr-1", (!aberta || listaNoCelular) && "hidden lg:block")}>
-          {aberta ? (
-            <EditorVistagem
-              key={aberta}
-              id={aberta}
-              navegacao={navegacao}
-              onAbrir={abrir}
-              onConcluida={concluida}
-              onTransferida={transferida}
-              onVoltar={() => setListaNoCelular(true)}
-            />
-          ) : (
-            <Painel>
-              <Vazio icone={FileText} titulo={publicacoes === null ? "Carregando a fila" : "Nenhuma publicação para abrir"}>
-                <p>{publicacoes === null ? "A primeira publicação da fila abre aqui." : "Quando houver publicação na fila (ou nos filtros), a primeira abre aqui."}</p>
-                {filaRecolhida ? (
-                  <Button type="button" variant="outline" className="mt-3" onClick={() => setFilaRecolhida(false)}>
-                    <PanelLeftOpen />
-                    Mostrar fila
-                  </Button>
-                ) : null}
+            {publicacoes === null ? (
+              <Carregando rotulo="Carregando a fila" />
+            ) : publicacoes.length === 0 ? (
+              <Vazio icone={CircleCheck} titulo="Nada para vistar">
+                As publicações do dia aparecem aqui depois da captura e da triagem.
               </Vazio>
-            </Painel>
-          )}
+            ) : filtradas.length === 0 ? (
+              <Vazio icone={Search} titulo="Nenhuma publicação com esses filtros">
+                <Button type="button" variant="outline" size="sm" onClick={limparFiltros}>
+                  Limpar filtros
+                </Button>
+              </Vazio>
+            ) : (
+              <div className="max-h-[70vh] overflow-auto lg:max-h-none lg:flex-1">
+                {grupos.map((bloco) => (
+                  <section key={bloco.nome} aria-label={bloco.nome}>
+                    <h3 className="sticky top-0 z-10 border-b border-[#e6eef0] bg-[#f7fbfc] text-xs font-semibold text-[#285f7a]">
+                      <button
+                        type="button"
+                        aria-expanded={grupoAberto(bloco.nome)}
+                        onClick={() => alternarGrupo(bloco.nome)}
+                        className="flex w-full items-center gap-2 px-4 py-2 text-left hover:bg-[#eef6f8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#47cdd0]/50"
+                      >
+                        <ChevronRight className={cn("size-3.5 shrink-0 transition-transform", grupoAberto(bloco.nome) && "rotate-90")} aria-hidden />
+                        <LogoGrupo grupo={bloco.nome === SEM_GRUPO ? null : bloco.nome} tamanho="xs" />
+                        <span className="truncate">{bloco.nome}</span>
+                        <span className="font-normal tabular-nums text-muted-foreground">{bloco.publicacoes.length}</span>
+                        {bloco.riscos ? (
+                          <Selo tom="perigo" className="ml-auto">
+                            {bloco.riscos} de risco
+                          </Selo>
+                        ) : null}
+                      </button>
+                    </h3>
+                    <ul className={cn("divide-y divide-[#eef3f5]", !grupoAberto(bloco.nome) && "hidden")}>
+                      {bloco.publicacoes.map((publicacao) => (
+                        <li key={publicacao.id}>
+                          <button
+                            type="button"
+                            onClick={() => abrir(publicacao.id)}
+                            aria-current={publicacao.id === aberta ? "true" : undefined}
+                            className={cn(linhaLista(publicacao.id === aberta), "space-y-1")}
+                          >
+                            <span className="flex flex-wrap items-center gap-1.5">
+                              <span className="tabular-nums text-xs font-semibold text-foreground">{publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}</span>
+                              {publicacao.demandaRisco ? (
+                                <Selo tom="perigo" icone={ShieldAlert}>
+                                  Risco
+                                </Selo>
+                              ) : null}
+                              {publicacao.devolucaoMotivo || publicacao.devolvidoEm ? <Selo tom="alerta">Devolvida</Selo> : null}
+                              {publicacao.transferidoDe ? <Selo tom="marca">Transferida</Selo> : null}
+                            </span>
+                            <span className="block truncate text-sm text-foreground">{publicacao.cliente ?? "—"}</span>
+                            <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                              {publicacao.escritorioResponsavel ? <IconeArea area={publicacao.escritorioResponsavel} tamanho="xs" /> : null}
+                              <span className="truncate">
+                                {[publicacao.escritorioResponsavel, publicacao.tribunal, `publ. ${formatarData(publicacao.dataPublicacao)}`].filter(Boolean).join(" · ")}
+                              </span>
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+              </div>
+            )}
+          </Painel>
+
+          <div className={cn("min-w-0 lg:h-full lg:overflow-y-auto lg:pr-1", (!aberta || listaNoCelular) && "hidden lg:block")}>
+            {aberta ? (
+              <EditorVistagem
+                key={aberta}
+                id={aberta}
+                navegacao={navegacao}
+                onAbrir={abrir}
+                onConcluida={concluida}
+                onTransferida={transferida}
+                onVoltar={() => setListaNoCelular(true)}
+              />
+            ) : (
+              <Painel>
+                <Vazio icone={FileText} titulo={publicacoes === null ? "Carregando a fila" : "Nenhuma publicação para abrir"}>
+                  <p>{publicacoes === null ? "A primeira publicação da fila abre aqui." : "Quando houver publicação na fila (ou nos filtros), a primeira abre aqui."}</p>
+                  {filaRecolhida ? (
+                    <Button type="button" variant="outline" className="mt-3" onClick={() => setFilaRecolhida(false)}>
+                      <PanelLeftOpen />
+                      Mostrar fila
+                    </Button>
+                  ) : null}
+                </Vazio>
+              </Painel>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
