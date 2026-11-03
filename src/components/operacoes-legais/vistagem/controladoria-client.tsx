@@ -471,8 +471,8 @@ function CampoEscritorio({ valor, onChange }: { valor: string; onChange: (escrit
 }
 
 /**
- * Achou a pasta (CI) ou informa os dados; depois libera para o jurídico da área ou agenda direto, no mesmo modal
- * do jurídico (a pendência só sai da triagem quando as tarefas são enviadas). Em Operações Legais o grupo é opcional.
+ * Achou a pasta (CI): libera para o jurídico ou agenda direto ("Usar e agendar direto", no modelo do jurídico, nesta
+ * mesma tela). Sem pasta: informa os dados e libera para o jurídico. Em Operações Legais o grupo é opcional.
  */
 function Resolucao({
   publicacao,
@@ -594,20 +594,14 @@ function Resolucao({
           <input type="checkbox" checked={demandaRisco} onChange={(evento) => setDemandaRisco(evento.target.checked)} className="size-4 accent-[#347796]" />
           Demanda de risco
         </label>
-        <div className="grid gap-2 @lg:grid-cols-2 @4xl:grid-cols-1">
-          <Button
-            onClick={() => liberar({ escritorio, grupo: grupo.trim() || undefined, demandaRisco, ci: publicacao.pastaCi ?? undefined })}
-            disabled={ocupado || !pronto}
-          >
-            {ocupado ? <LoaderCircle className="animate-spin" /> : <Send />}
-            Liberar para o jurídico
-          </Button>
-          {/* Abre a vistagem do jurídico aqui mesmo; a pendência só sai da triagem quando as tarefas são enviadas. */}
-          <Button variant="outline" onClick={() => onAgendar({ escritorio, grupo, demandaRisco, ci: publicacao.pastaCi ?? undefined })} disabled={ocupado}>
-            <CalendarPlus />
-            Agendar Direto
-          </Button>
-        </div>
+        <Button
+          className="w-full"
+          onClick={() => liberar({ escritorio, grupo: grupo.trim() || undefined, demandaRisco, ci: publicacao.pastaCi ?? undefined })}
+          disabled={ocupado || !pronto}
+        >
+          {ocupado ? <LoaderCircle className="animate-spin" /> : <Send />}
+          Liberar para o jurídico
+        </Button>
         {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
       </Secao>
     </>
@@ -986,7 +980,7 @@ function Controladoria() {
       />
 
       <div className="space-y-3">
-        <BarraAba resumo="O que a triagem não conseguiu encaminhar sozinha. Confira se a pasta existe mesmo, escolha a certa ou informe os dados para liberar ao jurídico (ou agende aqui mesmo).">
+        <BarraAba resumo="O que a triagem não conseguiu encaminhar sozinha. Confira se a pasta existe mesmo, escolha a certa ou informe os dados para liberar ao jurídico; com a pasta escolhida, dá para agendar direto aqui.">
           <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Processo, CI, grupo ou intimado" aria-label="Buscar publicação" />
           <Button variant="outline" onClick={rodarTriagem} disabled={triando}>
             {triando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
