@@ -19,7 +19,6 @@ import {
   ListChecks,
   LoaderCircle,
   RefreshCw,
-  Scale,
   Search,
   SearchX,
   Send,
@@ -47,7 +46,7 @@ import { LeitorPublicacao } from "./leitor-publicacao";
 import { IconeArea, LogoGrupo } from "./marcas";
 import { PENDENCIAS, formatarData, formatarDataHora } from "./publicacao-ui";
 import { ReguaDatas } from "./regua-datas";
-import { Seletor } from "./seletor";
+import { Seletor, SeletorBusca } from "./seletor";
 import {
   Aviso,
   BarraAba,
@@ -129,8 +128,16 @@ async function resolver(id: string, entrada: ResolucaoPendencia): Promise<string
   return corpo.publicacao?.escritorioResponsavel ?? null;
 }
 
-/** Liberada a pendência para agendar aqui: abre a vistagem (o mesmo modal do jurídico) na própria Controladoria. */
-type AoAgendar = (publicacao: PublicacaoResumo, escritorio: string | null) => void;
+/** O que a controladoria já escolheu ao clicar em "Agendar Direto" (dá para mudar no topo do modal). */
+interface PreviaAgendamento {
+  escritorio: string;
+  grupo: string;
+  demandaRisco: boolean;
+  ci?: string;
+}
+
+/** "Agendar Direto": abre a vistagem do jurídico na própria Controladoria, com a pendência ainda na triagem. */
+type AoAgendar = (publicacao: PublicacaoResumo, previa: PreviaAgendamento) => void;
 
 /** Mesmo número de processo (só os 20 dígitos), para confirmar que a pasta é deste processo. */
 function mesmoProcesso(pasta: PastaSioe, publicacao: PublicacaoResumo): boolean {
@@ -281,7 +288,7 @@ function ComparadorPastas({
 }: {
   publicacao: PublicacaoResumo;
   onResolvida: (resultado: string) => void;
-  onAgendar: (escritorio: string | null) => void;
+  onAgendar: (previa: PreviaAgendamento) => void;
 }) {
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [erro, setErro] = useState("");
@@ -289,13 +296,19 @@ function ComparadorPastas({
   const sugerida = pastaSugerida(candidatas);
   const texto = [publicacao.teor, ...publicacao.djenIntimados].join(" ");
 
-  async function usar(pasta: PastaSioe, agendarAqui = false) {
+  async function usar(pasta: PastaSioe, agendarDireto = false) {
     setOcupado(pasta.ci);
     setErro("");
     try {
-      const escritorio = await resolver(publicacao.id, { ci: pasta.ci });
-      if (agendarAqui) onAgendar(escritorio);
-      else onResolvida(liberada(escritorio));
+      if (agendarDireto) {
+        // Só abre a vistagem: o escritório vem da triagem da pasta; a pendência sai da fila ao enviar as tarefas.
+        const resposta = await authFetch(`/api/operacoes-legais/vistagem/sioe/pasta?ci=${encodeURIComponent(pasta.ci)}`);
+        const corpo = await resposta.json();
+        if (!resposta.ok) throw new Error(corpo.error ?? "CI não encontrada.");
+        onAgendar({ ci: pasta.ci, escritorio: corpo.escritorioSugerido ?? "", grupo: pasta.grupoCliente ?? "", demandaRisco: Boolean(publicacao.demandaRisco) });
+      } else {
+        onResolvida(liberada(await resolver(publicacao.id, { ci: pasta.ci })));
+      }
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao resolver.");
     } finally {
@@ -376,7 +389,7 @@ function ComparadorPastas({
                 </Button>
                 <Button size="sm" variant="ghost" className="text-[#347796]" onClick={() => usar(pasta, true)} disabled={ocupado !== null}>
                   <CalendarPlus />
-                  Usar e agendar aqui
+                  Usar e agendar direto
                 </Button>
               </div>
             </li>
@@ -390,14 +403,77 @@ function ComparadorPastas({
 
 /* -------------------------------------------------------------- resolução */
 
-/** Para onde vai a publicação: a fila do jurídico de uma área ou a vistagem aqui mesmo, pela controladoria. */
-type Destino = "juridico" | "agendar";
+/** Grupo de cliente do VIOS, com as pastas ativas (para o combo). */
+interface GrupoCliente {
+  grupo: string;
+  ativas: number;
+}
 
-const ESCRITORIOS_DO_JURIDICO = ESCRITORIOS.filter((nome) => nome !== ESCRITORIO_EX_CLIENTE);
+let gruposEmCache: GrupoCliente[] | null = null;
+
+/** Grupos de clientes do VIOS, carregados uma vez por página. */
+function useGruposClientes(): GrupoCliente[] {
+  const [grupos, setGrupos] = useState<GrupoCliente[]>(gruposEmCache ?? []);
+  useEffect(() => {
+    if (gruposEmCache) return;
+    let cancelado = false;
+    authFetch("/api/operacoes-legais/vistagem/grupos")
+      .then(async (resposta) => (resposta.ok ? ((await resposta.json()) as { grupos: GrupoCliente[] }).grupos : []))
+      .then((lista) => {
+        if (lista.length) gruposEmCache = lista;
+        if (!cancelado) setGrupos(lista);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+  return grupos;
+}
+
+/** Grupo do cliente em combo (a lista do VIOS), com busca e logo; um grupo sugerido fora da lista aparece no topo. */
+function CampoGrupo({ valor, onChange, obrigatorio }: { valor: string; onChange: (grupo: string) => void; obrigatorio: boolean }) {
+  const grupos = useGruposClientes();
+  const opcoes = useMemo(() => {
+    const lista = grupos.map((item) => ({ valor: item.grupo, rotulo: item.grupo, contagem: item.ativas, icone: <LogoGrupo grupo={item.grupo} tamanho="xs" /> }));
+    return valor && !grupos.some((item) => item.grupo === valor)
+      ? [{ valor, rotulo: `${valor} (sugerido)`, icone: <LogoGrupo grupo={valor} tamanho="xs" /> }, ...lista]
+      : lista;
+  }, [grupos, valor]);
+  return (
+    <div className="space-y-1.5">
+      <span className="block text-xs font-medium text-muted-foreground">{obrigatorio ? "Grupo do cliente" : "Grupo do cliente (opcional)"}</span>
+      <SeletorBusca
+        rotulo="Grupo do cliente"
+        placeholder={grupos.length ? "Escolha o grupo" : "Carregando os grupos…"}
+        buscaPlaceholder="Buscar grupo…"
+        valor={valor}
+        onChange={onChange}
+        opcoes={opcoes}
+      />
+    </div>
+  );
+}
+
+/** Escritório responsável: todas as áreas (Operações Legais é a fila da própria controladoria). */
+function CampoEscritorio({ valor, onChange }: { valor: string; onChange: (escritorio: string) => void }) {
+  return (
+    <div className="space-y-1.5">
+      <span className="block text-xs font-medium text-muted-foreground">Escritório responsável</span>
+      <Seletor
+        rotulo="Escritório responsável"
+        placeholder="Escolha o escritório"
+        valor={(ESCRITORIOS as readonly string[]).includes(valor) ? valor : ""}
+        onChange={onChange}
+        opcoes={ESCRITORIOS.map((nome) => ({ valor: nome, rotulo: nome, icone: <IconeArea area={nome} /> }))}
+      />
+    </div>
+  );
+}
 
 /**
- * Achou a pasta (CI) ou informa os dados; depois libera para o jurídico da área ou agenda aqui mesmo, no mesmo
- * modal do jurídico. Para agendar em Operações Legais o grupo é opcional.
+ * Achou a pasta (CI) ou informa os dados; depois libera para o jurídico da área ou agenda direto, no mesmo modal
+ * do jurídico (a pendência só sai da triagem quando as tarefas são enviadas). Em Operações Legais o grupo é opcional.
  */
 function Resolucao({
   publicacao,
@@ -406,27 +482,23 @@ function Resolucao({
 }: {
   publicacao: PublicacaoResumo;
   onResolvida: (resultado: string) => void;
-  onAgendar: (escritorio: string | null) => void;
+  onAgendar: (previa: PreviaAgendamento) => void;
 }) {
   const [ci, setCi] = useState("");
   const [previa, setPrevia] = useState<{ pasta: PastaSioe; escritorioSugerido: string | null } | null>(null);
   // Sem pasta: os campos já vêm com a sugestão (processo citado, parte cliente ou IA); a controladoria confere.
   const sugestao = publicacao.pendencia === "sem_pasta" ? publicacao.sugestaoTriagem : null;
-  const [destino, setDestino] = useState<Destino>(sugestao?.escritorio === ESCRITORIO_EX_CLIENTE ? "agendar" : "juridico");
-  const [escritorio, setEscritorio] = useState(sugestao?.escritorio ?? "");
+  const [escritorio, setEscritorio] = useState(sugestao?.escritorio ?? publicacao.escritorioResponsavel ?? "");
   const [grupo, setGrupo] = useState(publicacao.grupoCliente ?? sugestao?.grupo ?? "");
   const [demandaRisco, setDemandaRisco] = useState(Boolean(publicacao.demandaRisco ?? sugestao?.demandaRisco));
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState("");
 
-  /** Resolve a pendência e segue: libera para o jurídico ou abre a vistagem aqui. */
-  async function liberar(entrada: ResolucaoPendencia, agendarAqui: boolean) {
+  async function liberar(entrada: ResolucaoPendencia) {
     setOcupado(true);
     setErro("");
     try {
-      const destinoFinal = await resolver(publicacao.id, entrada);
-      if (agendarAqui) onAgendar(destinoFinal);
-      else onResolvida(liberada(destinoFinal));
+      onResolvida(liberada(await resolver(publicacao.id, entrada)));
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao resolver.");
     } finally {
@@ -452,12 +524,9 @@ function Resolucao({
 
   const base = `resolucao-${publicacao.id}`;
   const variasPastas = publicacao.pastasCandidatas.length > 1;
-  const agendarAqui = destino === "agendar";
-  // No jurídico, Operações Legais não é opção (é a fila da própria controladoria).
-  const opcoesEscritorio: readonly string[] = agendarAqui ? ESCRITORIOS : ESCRITORIOS_DO_JURIDICO;
-  const escritorioEscolhido = opcoesEscritorio.includes(escritorio) ? escritorio : "";
-  const grupoObrigatorio = escritorioEscolhido !== ESCRITORIO_EX_CLIENTE;
-  const pronto = Boolean(escritorioEscolhido) && (!grupoObrigatorio || Boolean(grupo.trim()));
+  const escritorioValido = (ESCRITORIOS as readonly string[]).includes(escritorio);
+  const grupoObrigatorio = escritorio !== ESCRITORIO_EX_CLIENTE;
+  const pronto = escritorioValido && (!grupoObrigatorio || Boolean(grupo.trim()));
 
   return (
     <>
@@ -488,13 +557,25 @@ function Resolucao({
                 publicacao={publicacao}
                 acao={
                   <div className="grid gap-1.5">
-                    <Button size="sm" onClick={() => liberar({ ci: previa.pasta.ci }, false)} disabled={ocupado}>
+                    <Button size="sm" onClick={() => liberar({ ci: previa.pasta.ci })} disabled={ocupado}>
                       <Check />
                       Usar e liberar · {previa.escritorioSugerido ?? "definir escritório"}
                     </Button>
-                    <Button size="sm" variant="ghost" className="text-[#347796]" onClick={() => liberar({ ci: previa.pasta.ci }, true)} disabled={ocupado}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        onAgendar({
+                          ci: previa.pasta.ci,
+                          escritorio: previa.escritorioSugerido ?? "",
+                          grupo: previa.pasta.grupoCliente ?? "",
+                          demandaRisco: demandaRisco,
+                        })
+                      }
+                      disabled={ocupado}
+                    >
                       <CalendarPlus />
-                      Usar e agendar aqui
+                      Usar e agendar direto
                     </Button>
                   </div>
                 }
@@ -504,66 +585,30 @@ function Resolucao({
         </Secao>
       ) : null}
 
-      <Secao titulo={variasPastas ? "Nenhuma serve? Escolha o destino" : publicacao.pastaCi ? "Para onde vai" : "Sem pasta: para onde vai"} id={`${base}-destino`}>
-        <Segmented
-          label="Destino da publicação"
-          value={destino}
-          options={[
-            { value: "juridico" as Destino, label: "Jurídico", icon: Scale },
-            { value: "agendar" as Destino, label: "Agendar aqui", icon: CalendarPlus },
-          ]}
-          onChange={(valor) => {
-            setDestino(valor);
-            setErro("");
-          }}
-        />
-
+      <Secao titulo={variasPastas ? "Nenhuma serve? Informe os dados" : publicacao.pastaCi ? "Para onde vai" : "Sem pasta: para onde vai"} id={`${base}-destino`}>
         {sugestao ? <NotaSugestao sugestao={sugestao} /> : null}
-
-        {agendarAqui ? (
-          <p className="text-xs text-muted-foreground">
-            A controladoria vista aqui mesmo, no modal do jurídico, e a vistagem segue para a conferência. Em{" "}
-            <span className="font-medium text-foreground">Operações Legais</span> o grupo é opcional.
-          </p>
-        ) : null}
         <div className="grid gap-3 @lg:grid-cols-2 @4xl:grid-cols-1">
-          <div className="space-y-1.5">
-            <span className="block text-xs font-medium text-muted-foreground">Escritório responsável</span>
-            <Seletor
-              rotulo="Escritório responsável"
-              placeholder="Escolha o escritório"
-              valor={escritorioEscolhido}
-              onChange={setEscritorio}
-              opcoes={opcoesEscritorio.map((nome) => ({ valor: nome, rotulo: nome, icone: <IconeArea area={nome} /> }))}
-            />
-          </div>
-          <Campo rotulo={grupoObrigatorio ? "Grupo do cliente" : "Grupo do cliente (opcional)"}>
-            <div className="relative">
-              {grupo.trim() ? <LogoGrupo grupo={grupo} tamanho="xs" className="absolute left-2.5 top-1/2 -translate-y-1/2" /> : null}
-              <Input
-                value={grupo}
-                onChange={(evento) => setGrupo(evento.target.value)}
-                placeholder="Grupo do cliente"
-                aria-label="Grupo do cliente"
-                className={cn(grupo.trim() && "pl-9")}
-              />
-            </div>
-          </Campo>
+          <CampoEscritorio valor={escritorio} onChange={setEscritorio} />
+          <CampoGrupo valor={grupo} onChange={setGrupo} obrigatorio={grupoObrigatorio} />
         </div>
         <label className="flex min-h-10 w-fit cursor-pointer items-center gap-2.5 text-sm text-foreground">
           <input type="checkbox" checked={demandaRisco} onChange={(evento) => setDemandaRisco(evento.target.checked)} className="size-4 accent-[#347796]" />
           Demanda de risco
         </label>
-        <Button
-          className="w-full"
-          onClick={() =>
-            liberar({ escritorio: escritorioEscolhido, grupo: grupo.trim() || undefined, demandaRisco, ci: publicacao.pastaCi ?? undefined }, agendarAqui)
-          }
-          disabled={ocupado || !pronto}
-        >
-          {ocupado ? <LoaderCircle className="animate-spin" /> : agendarAqui ? <CalendarPlus /> : <Send />}
-          {agendarAqui ? "Agendar aqui" : "Liberar para o jurídico"}
-        </Button>
+        <div className="grid gap-2 @lg:grid-cols-2 @4xl:grid-cols-1">
+          <Button
+            onClick={() => liberar({ escritorio, grupo: grupo.trim() || undefined, demandaRisco, ci: publicacao.pastaCi ?? undefined })}
+            disabled={ocupado || !pronto}
+          >
+            {ocupado ? <LoaderCircle className="animate-spin" /> : <Send />}
+            Liberar para o jurídico
+          </Button>
+          {/* Abre a vistagem do jurídico aqui mesmo; a pendência só sai da triagem quando as tarefas são enviadas. */}
+          <Button variant="outline" onClick={() => onAgendar({ escritorio, grupo, demandaRisco, ci: publicacao.pastaCi ?? undefined })} disabled={ocupado}>
+            <CalendarPlus />
+            Agendar Direto
+          </Button>
+        </div>
         {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
       </Secao>
     </>
@@ -618,7 +663,7 @@ function DetalhePendencia({
 
   const numero = numeroProcesso(publicacao);
   const resolvida = (resultado: string) => onResolvida(publicacao.id, resultado);
-  const agendar = (escritorio: string | null) => onAgendar(publicacao, escritorio);
+  const agendar = (previa: PreviaAgendamento) => onAgendar(publicacao, previa);
   const variasPastas = publicacao.pastasCandidatas.length > 1;
 
   return (
@@ -742,7 +787,7 @@ function Controladoria() {
   const [aba, setAba] = useState<Aba | null>(null);
   const [selecionada, setSelecionada] = useState<string | null>(null);
   /** Publicação que a controladoria liberou para vistar aqui mesmo, no modal do jurídico. */
-  const [agendando, setAgendando] = useState<{ id: string; numero: string; escritorio: string | null } | null>(null);
+  const [agendando, setAgendando] = useState<({ id: string; numero: string } & PreviaAgendamento) | null>(null);
 
   const carregar = useCallback(async () => {
     setErro("");
@@ -832,23 +877,18 @@ function Controladoria() {
     setAviso({ tom: "sucesso", texto: `${publicacao ? numeroProcesso(publicacao) : "Publicação"} ${resultado}.` });
   }
 
-  // "Agendar aqui": a pendência já saiu da triagem (está na fila do jurídico); a vistagem abre por cima.
-  const agendarAqui: AoAgendar = (publicacao, escritorio) => {
-    removerResolvida(publicacao.id, liberada(escritorio));
-    setAgendando({ id: publicacao.id, numero: numeroProcesso(publicacao), escritorio });
+  // "Agendar Direto": abre a vistagem com a pendência ainda na triagem; nada muda até as tarefas serem enviadas.
+  const agendarDireto: AoAgendar = (publicacao, previa) => {
+    setAviso(null);
+    setAgendando({ id: publicacao.id, numero: numeroProcesso(publicacao), ...previa });
   };
 
-  function fecharAgendamento(resultado: "enviada" | "transferida" | "fechada", destino?: string) {
+  /** Tarefas enviadas: a pendência saiu da triagem e a vistagem foi para a conferência. */
+  function agendamentoEnviado() {
     if (!agendando) return;
-    const { numero, escritorio } = agendando;
+    const { id } = agendando;
     setAgendando(null);
-    setAviso(
-      resultado === "enviada"
-        ? { tom: "sucesso", texto: `${numero} vistada pela controladoria: as tarefas foram para a conferência.` }
-        : resultado === "transferida"
-          ? { tom: "info", texto: `${numero} transferida para ${destino}.` }
-          : { tom: "info", texto: `${numero} ficou na fila do Jurídico${escritorio ? ` (${escritorio})` : ""}, sem tarefas.` }
-    );
+    removerResolvida(id, "agendada direto pela controladoria: as tarefas foram para a conferência");
   }
 
   return (
@@ -982,7 +1022,7 @@ function Controladoria() {
                     }}
                     onAbrir={setSelecionada}
                     onResolvida={removerResolvida}
-                    onAgendar={agendarAqui}
+                    onAgendar={agendarDireto}
                   />
                 ) : null}
               </div>
@@ -991,27 +1031,64 @@ function Controladoria() {
         </>
       )}
 
-      <Dialog open={Boolean(agendando)} onOpenChange={(aberto) => !aberto && fecharAgendamento("fechada")}>
+      <Dialog open={Boolean(agendando)} onOpenChange={(aberto) => !aberto && setAgendando(null)}>
         <DialogContent className="flex h-[92dvh] w-[96vw] max-w-[96vw] flex-col gap-0 p-0 sm:max-w-[min(96vw,1500px)]">
           <DialogHeader className="gap-1 border-b border-[#e6eef0] px-5 py-3 pr-14 text-left">
-            <DialogTitle className="tabular-nums">Agendar aqui · {agendando?.numero}</DialogTitle>
+            <DialogTitle className="tabular-nums">Agendar Direto · {agendando?.numero}</DialogTitle>
             <DialogDescription>
-              Mesma vistagem do jurídico: as tarefas vão para a conferência. Se fechar sem enviar, a publicação fica na fila do Jurídico
-              {agendando?.escritorio ? ` (${agendando.escritorio})` : ""}.
+              A mesma vistagem do jurídico. Ao enviar, a publicação sai da controladoria e as tarefas vão para a conferência; se fechar
+              antes, nada muda.
             </DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            {agendando ? (
-              <EditorVistagem
-                id={agendando.id}
-                navegacao={null}
-                onAbrir={() => undefined}
-                onConcluida={() => fecharAgendamento("enviada")}
-                onTransferida={(destino) => fecharAgendamento("transferida", destino)}
-                onVoltar={() => fecharAgendamento("fechada")}
-              />
-            ) : null}
-          </div>
+          {agendando ? (
+            <>
+              {/* Dados da pendência: a área define a lista de tarefas; grupo e risco vão junto no envio. */}
+              <div className="@container border-b border-[#e6eef0] bg-[#fafcfc] px-5 py-3">
+                <div className="grid items-end gap-3 @3xl:grid-cols-[16rem_minmax(0,22rem)_auto]">
+                  <CampoEscritorio valor={agendando.escritorio} onChange={(escritorio) => setAgendando({ ...agendando, escritorio })} />
+                  <CampoGrupo
+                    valor={agendando.grupo}
+                    onChange={(grupo) => setAgendando({ ...agendando, grupo })}
+                    obrigatorio={agendando.escritorio !== ESCRITORIO_EX_CLIENTE}
+                  />
+                  <label className="flex min-h-10 w-fit cursor-pointer items-center gap-2.5 text-sm text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={agendando.demandaRisco}
+                      onChange={(evento) => setAgendando({ ...agendando, demandaRisco: evento.target.checked })}
+                      className="size-4 accent-[#347796]"
+                    />
+                    Demanda de risco
+                  </label>
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                {(ESCRITORIOS as readonly string[]).includes(agendando.escritorio) ? (
+                  <EditorVistagem
+                    key={`${agendando.escritorio}|${agendando.ci ?? ""}`}
+                    id={agendando.id}
+                    navegacao={null}
+                    onAbrir={() => undefined}
+                    onConcluida={agendamentoEnviado}
+                    onTransferida={() => setAgendando(null)}
+                    onVoltar={() => setAgendando(null)}
+                    resolucao={{
+                      escritorio: agendando.escritorio,
+                      grupo: agendando.grupo.trim() || undefined,
+                      demandaRisco: agendando.demandaRisco,
+                      ci: agendando.ci,
+                    }}
+                  />
+                ) : (
+                  <Painel>
+                    <Vazio icone={ListChecks} titulo="Escolha o escritório">
+                      A lista de tarefas do VIOS depende da área: escolha o escritório responsável acima.
+                    </Vazio>
+                  </Painel>
+                )}
+              </div>
+            </>
+          ) : null}
         </DialogContent>
       </Dialog>
     </div>

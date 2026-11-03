@@ -62,7 +62,7 @@ import { consultaProcessual } from "@/lib/vistagem/consulta-processual";
 import { CADEIA_PADRAO, PESSOA_FIXA_PROTOCOLAR, cadeiaDoFluxo, type FluxoDaTarefa, type TarefaDoFluxo } from "@/lib/vistagem/fluxo-vios";
 import { fatalSugerida, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
-import type { PublicacaoResumo, VistagemDetalhe } from "@/lib/vistagem/types";
+import type { PublicacaoResumo, ResolucaoPendencia, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
 import { FichaPasta } from "./ficha-pasta";
@@ -419,6 +419,7 @@ export function EditorVistagem({
   onConcluida,
   onTransferida,
   onVoltar,
+  resolucao = null,
 }: {
   id: string;
   navegacao: Navegacao | null;
@@ -426,7 +427,13 @@ export function EditorVistagem({
   onConcluida: (id: string) => void;
   onTransferida: (destino: string) => void;
   onVoltar: () => void;
+  /** "Agendar Direto" da controladoria: a pendência ainda na triagem, com escritório, grupo, risco e CI escolhidos. */
+  resolucao?: ResolucaoPendencia | null;
 }) {
+  // A lista de tarefas depende do escritório e da pasta: na prévia eles vão na consulta.
+  const consultaPrevia = resolucao?.escritorio
+    ? `?${new URLSearchParams({ escritorio: resolucao.escritorio, ...(resolucao.ci ? { ci: resolucao.ci } : {}) })}`
+    : "";
   const [detalhe, setDetalhe] = useState<VistagemDetalhe | null>(null);
   const [linhas, setLinhas] = useState<Linha[]>([]);
   /** Trabalhista: classificação eSocial (não vai para o VIOS). */
@@ -453,7 +460,7 @@ export function EditorVistagem({
     setEstadoSugestao(null);
     setErroSugestao("");
     setAntesDaSugestao(null);
-    authFetch(`/api/operacoes-legais/vistagem/juridico/${id}`)
+    authFetch(`/api/operacoes-legais/vistagem/juridico/${id}${consultaPrevia}`)
       .then(async (resposta) => {
         const corpo = await resposta.json();
         if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao carregar a publicação.");
@@ -508,7 +515,7 @@ export function EditorVistagem({
     return () => {
       cancelado = true;
     };
-  }, [id, recarga]);
+  }, [id, recarga, consultaPrevia]);
 
   const ehDiaUtil = useMemo(() => criarCalendario(detalhe?.feriados ?? []), [detalhe?.feriados]);
   // A fatal conta só dias úteis fora do recesso forense; Enviar/Revisar/Protocolar seguem o expediente.
@@ -635,6 +642,7 @@ export function EditorVistagem({
           observacao: null,
           publicacaoEsocial: detalhe?.esocial ? esocial : null,
           sugestaoUsada: estadoSugestao === "usada",
+          resolucao,
           agendamentos: linhas.map((linha) => ({
             etiqueta: linha.etiqueta,
             tarefa: linha.tarefa,
@@ -774,10 +782,13 @@ export function EditorVistagem({
                   auxiliar={detalhe.revisorSugerido}
                   fotos={detalhe.fotos}
                   acao={
-                    <Button type="button" variant="outline" size="sm" onClick={() => setTransferindo(true)} title="A área ou a pasta não é desta fila">
-                      <ArrowRightLeft />
-                      Transferir área
-                    </Button>
+                    // Na prévia da controladoria a área é escolhida no topo do modal.
+                    resolucao ? undefined : (
+                      <Button type="button" variant="outline" size="sm" onClick={() => setTransferindo(true)} title="A área ou a pasta não é desta fila">
+                        <ArrowRightLeft />
+                        Transferir área
+                      </Button>
+                    )
                   }
                 >
                   <FichaProcesso publicacao={publicacao} />
