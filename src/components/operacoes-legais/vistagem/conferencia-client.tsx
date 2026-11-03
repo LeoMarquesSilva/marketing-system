@@ -26,14 +26,19 @@ import { cn } from "@/lib/utils";
 import { ROTULO_ETIQUETA } from "@/lib/vistagem/agendamento";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import { TIPOS_INCONSISTENCIA_JURIDICO } from "@/lib/vistagem/inconsistencias";
-import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, EnvioStatus, InconsistenciaItem } from "@/lib/vistagem/types";
+import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, EnvioStatus, InconsistenciaItem, PublicacaoResumo } from "@/lib/vistagem/types";
 import { linkTarefaVios } from "@/lib/vistagem/vios-links";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
+import { FaixaDoProcesso } from "./faixa-processo";
+import { FichaPasta } from "./ficha-pasta";
+import { FichaProcesso } from "./ficha-processo";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { FiltroData, dataNaLista } from "./filtro-data";
+import { LeitorPublicacao } from "./leitor-publicacao";
 import { IconeArea } from "./marcas";
+import { ReguaDatas } from "./regua-datas";
 import { Seletor } from "./seletor";
-import { DadosPasta, DadosPublicacao, SeloEsocial, TeorPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
+import { SeloEsocial, formatarData, formatarDataHora } from "./publicacao-ui";
 import {
   Aviso,
   BarraAba,
@@ -156,11 +161,26 @@ function DialogoAcao({
   );
 }
 
-/** Célula da lista de tarefas: no mobile mostra o rótulo; no desktop o rótulo fica só para leitor de tela. */
-function Celula({ rotulo, mostrarRotulo = true, className, children }: { rotulo: string; mostrarRotulo?: boolean; className?: string; children: ReactNode }) {
+/**
+ * Célula da lista de tarefas: no mobile mostra o rótulo; no desktop o rótulo fica só para leitor de tela.
+ * Compacta (coluna estreita), mostra o rótulo em qualquer largura.
+ */
+function Celula({
+  rotulo,
+  mostrarRotulo = true,
+  compacta = false,
+  className,
+  children,
+}: {
+  rotulo: string;
+  mostrarRotulo?: boolean;
+  compacta?: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
   return (
     <div className={cn("min-w-0", className)}>
-      <span className={cn("block text-xs text-muted-foreground", mostrarRotulo ? "lg:sr-only" : "sr-only")}>{rotulo}</span>
+      <span className={cn("block text-xs text-muted-foreground", !mostrarRotulo ? "sr-only" : !compacta && "lg:sr-only")}>{rotulo}</span>
       {children}
     </div>
   );
@@ -187,33 +207,39 @@ function LinkVios({ ci }: { ci: string }) {
 const COLUNAS = "lg:grid-cols-[7rem_minmax(0,1.7fr)_9rem_minmax(0,1fr)_minmax(0,1fr)]";
 const COLUNAS_ENVIO = "lg:grid-cols-[7rem_minmax(0,1.5fr)_9rem_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,1.3fr)]";
 
-/** Tarefas de uma vistagem (e, com envio, a situação de cada uma no robô); usada também na visão "Agendadas" do jurídico. */
-export function TabelaTarefas({ agendamentos, comEnvio }: { agendamentos: AgendamentoResumo[]; comEnvio: boolean }) {
-  const colunas = comEnvio ? COLUNAS_ENVIO : COLUNAS;
+/**
+ * Tarefas de uma vistagem (e, com envio, a situação de cada uma no robô); usada também na visão "Agendadas" do
+ * jurídico. `compacta`: um cartão por tarefa em qualquer largura, para a coluna ao lado da publicação.
+ */
+export function TabelaTarefas({ agendamentos, comEnvio, compacta = false }: { agendamentos: AgendamentoResumo[]; comEnvio: boolean; compacta?: boolean }) {
+  const colunas = compacta ? "" : comEnvio ? COLUNAS_ENVIO : COLUNAS;
+  const largura = compacta ? "col-span-2" : "col-span-2 lg:col-span-1";
   if (!agendamentos.length) return <p className="px-4 pb-4 text-sm text-muted-foreground">Nenhuma tarefa nesta vistagem.</p>;
   return (
     <div>
-      <CabecalhoLista aria-hidden className={cn("hidden gap-x-4 border-t lg:grid", colunas)}>
-        <span>Tipo</span>
-        <span>Tarefa</span>
-        <span>Data</span>
-        <span>Responsável</span>
-        <span>Revisor</span>
-        {comEnvio ? <span>Robô</span> : null}
-      </CabecalhoLista>
-      <ul className="divide-y divide-[#eef3f5] border-t border-[#e6eef0] lg:border-t-0">
+      {compacta ? null : (
+        <CabecalhoLista aria-hidden className={cn("hidden gap-x-4 border-t lg:grid", colunas)}>
+          <span>Tipo</span>
+          <span>Tarefa</span>
+          <span>Data</span>
+          <span>Responsável</span>
+          <span>Revisor</span>
+          {comEnvio ? <span>Robô</span> : null}
+        </CabecalhoLista>
+      )}
+      <ul className={cn("divide-y divide-[#eef3f5] border-t border-[#e6eef0]", !compacta && "lg:border-t-0")}>
         {agendamentos.map((item) => {
           const simulada = item.envioStatus === "concluido" && item.envioSimulado;
           return (
-            <li key={item.id} className={cn("grid grid-cols-2 gap-x-4 gap-y-2.5 px-4 py-3 text-sm lg:items-start", colunas)}>
-              <Celula rotulo="Tipo" mostrarRotulo={false} className="col-span-2 lg:col-span-1">
+            <li key={item.id} className={cn("grid grid-cols-2 gap-x-4 gap-y-2.5 px-4 py-3 text-sm", !compacta && "lg:items-start", colunas)}>
+              <Celula rotulo="Tipo" mostrarRotulo={false} className={largura}>
                 <Selo tom={TOM_CLASSE[item.etiqueta]}>{ROTULO_ETIQUETA[item.etiqueta]}</Selo>
               </Celula>
-              <Celula rotulo="Tarefa" mostrarRotulo={false} className="col-span-2 lg:col-span-1">
+              <Celula rotulo="Tarefa" mostrarRotulo={false} className={largura}>
                 <span className="block break-words font-medium text-foreground">{item.tarefa}</span>
                 {item.observacao ? <span className="mt-0.5 block whitespace-pre-wrap break-words text-xs text-muted-foreground">{item.observacao}</span> : null}
               </Celula>
-              <Celula rotulo="Data">
+              <Celula rotulo="Data" compacta={compacta}>
                 <span className="tabular-nums text-foreground">
                   {formatarData(item.data)}
                   {!item.dataFatal && item.hora ? ` às ${item.hora}` : ""}
@@ -225,14 +251,14 @@ export function TabelaTarefas({ agendamentos, comEnvio }: { agendamentos: Agenda
                   </span>
                 ) : null}
               </Celula>
-              <Celula rotulo="Responsável">
+              <Celula rotulo="Responsável" compacta={compacta}>
                 <span className="break-words text-foreground">{item.responsavel}</span>
               </Celula>
-              <Celula rotulo="Revisor">
+              <Celula rotulo="Revisor" compacta={compacta}>
                 <span className={cn("break-words", item.revisor ? "text-foreground" : "text-muted-foreground")}>{item.revisor ?? "—"}</span>
               </Celula>
               {comEnvio ? (
-                <Celula rotulo="Robô" className="col-span-2 lg:col-span-1">
+                <Celula rotulo="Robô" compacta={compacta} className={largura}>
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     {simulada ? (
                       <Selo tom="alerta" icone={Bot}>
@@ -271,15 +297,88 @@ function resumoTarefas(agendamentos: AgendamentoResumo[], comEnvio: boolean): st
 
 /* ------------------------------------------------------------ publicação */
 
+/**
+ * Publicação como na vistagem do jurídico: ficha da pasta e do processo, régua de datas e o texto já aberto.
+ * A lista traz o texto até um limite; o resto vem sob demanda.
+ */
+function PublicacaoComoNaVistagem({
+  publicacao: inicial,
+  agendamentos,
+  auxiliar,
+  fotos,
+  hoje,
+}: {
+  publicacao: PublicacaoResumo;
+  agendamentos: AgendamentoResumo[];
+  auxiliar: string | null;
+  fotos: Record<string, string>;
+  hoje: string;
+}) {
+  const [publicacao, setPublicacao] = useState(inicial);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState("");
+  const fatais = agendamentos.flatMap((agendamento) => (agendamento.etiqueta === "PRAZO" && agendamento.dataFatal ? [agendamento.dataFatal] : [])).sort();
+  const marcos = [
+    { rotulo: "Divulgação", data: publicacao.dataDivulgacao, dica: "Disponibilização no diário." },
+    { rotulo: "Publicação", data: publicacao.dataPublicacao, tom: "marca" as const, dica: "Considera-se publicada no 1º dia útil após a disponibilização." },
+    { rotulo: fatais.length > 1 ? "1ª fatal" : "Fatal", data: fatais[0] ?? null, tom: "perigo" as const },
+  ];
+
+  async function carregarCompleto() {
+    setCarregando(true);
+    setErro("");
+    try {
+      const resposta = await authFetch(`/api/operacoes-legais/vistagem/publicacoes/${publicacao.id}`);
+      const corpo = await resposta.json();
+      if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao carregar o texto.");
+      setPublicacao((atual) => ({ ...atual, teor: corpo.publicacao.teor, teorResumido: false }));
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao carregar o texto.");
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="space-y-4 px-4 py-3">
+        <FichaPasta publicacao={publicacao} auxiliar={auxiliar} fotos={fotos}>
+          <FichaProcesso publicacao={publicacao} />
+        </FichaPasta>
+        <ReguaDatas rotulo="Datas da publicação" hoje={hoje} marcos={marcos} />
+      </div>
+      {publicacao.teorResumido ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[#e6eef0] bg-[#fcfdfd] px-4 py-2 text-xs text-muted-foreground">
+          <span>Texto grande: aparece só o começo.</span>
+          <button
+            type="button"
+            onClick={carregarCompleto}
+            disabled={carregando}
+            className="font-medium text-[#347796] underline-offset-4 hover:underline disabled:opacity-60"
+          >
+            {carregando ? "Carregando…" : "Ver texto completo"}
+          </button>
+          {erro ? <span className="text-red-700">{erro}</span> : null}
+        </div>
+      ) : null}
+      <LeitorPublicacao key={publicacao.teorResumido ? "resumido" : "completo"} publicacao={publicacao} partesNoCabecalho />
+    </>
+  );
+}
+
 function ItemConferencia({
   item,
   comEnvio,
   modoReal,
+  fotos,
+  hoje,
   onConcluido,
 }: {
   item: ConferenciaItem;
   comEnvio: boolean;
   modoReal: boolean;
+  fotos: Record<string, string>;
+  hoje: string;
   onConcluido?: (id: string, mensagem: string) => void;
 }) {
   const [devolvendo, setDevolvendo] = useState(false);
@@ -380,27 +479,18 @@ function ItemConferencia({
     ) : null;
 
   return (
-    <Painel aria-labelledby={base}>
-      <PainelTopo
-        id={base}
-        titulo={
-          <span className="flex flex-wrap items-center gap-2">
-            <span className="break-all tabular-nums">{processo}</span>
-            {publicacao.tribunal ? <Selo>{publicacao.tribunal}</Selo> : null}
-            <SeloEsocial publicacao={publicacao} />
-          </span>
-        }
-        descricao={
-          <>
-            Vistada {item.vistadoPor ? `por ${item.vistadoPor} ` : ""}em {formatarDataHora(publicacao.vistadoEm)}
-            {comEnvio && publicacao.conferidoEm
-              ? ` · conferida ${item.conferidoPor ? `por ${item.conferidoPor} ` : ""}em ${formatarDataHora(publicacao.conferidoEm)}`
-              : ""}
-          </>
-        }
-      >
-        {acoes}
-      </PainelTopo>
+    <Painel aria-labelledby={`${base}-titulo`} className="@container">
+      {/* Mesmo topo da vistagem: o número pesquisa o processo no tribunal e o botão ao lado copia. */}
+      <FaixaDoProcesso numero={processo} tribunal={publicacao.tribunal} tituloId={`${base}-titulo`} selos={<SeloEsocial publicacao={publicacao} />} />
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-[#e6eef0] px-4 py-2.5">
+        <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+          Vistada {item.vistadoPor ? `por ${item.vistadoPor} ` : ""}em {formatarDataHora(publicacao.vistadoEm)}
+          {comEnvio && publicacao.conferidoEm
+            ? ` · conferida ${item.conferidoPor ? `por ${item.conferidoPor} ` : ""}em ${formatarDataHora(publicacao.conferidoEm)}`
+            : ""}
+        </p>
+        {acoes ? <div className="flex flex-wrap items-center gap-2">{acoes}</div> : null}
+      </div>
 
       {(erro && !dialogoAberto) || erroRobo || podeReenviar ? (
         <Secao>
@@ -414,40 +504,46 @@ function ItemConferencia({
         </Secao>
       ) : null}
 
-      <Secao titulo="Pasta e publicação" id={`${base}-publicacao`}>
-        <DadosPasta publicacao={{ ...publicacao, pendencia: null }} />
-        <DadosPublicacao publicacao={publicacao} />
-      </Secao>
+      {/* Com espaço, a publicação fica à esquerda (rola sozinha) e o que o jurídico fez à direita, como na vistagem. */}
+      <div className="grid @4xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] @4xl:divide-x @4xl:divide-[#e6eef0]">
+        <section aria-label="Publicação" className="min-w-0 @4xl:max-h-[46rem] @4xl:overflow-y-auto">
+          <PublicacaoComoNaVistagem
+            publicacao={publicacao}
+            agendamentos={item.agendamentos}
+            auxiliar={item.auxiliar ?? null}
+            fotos={fotos}
+            hoje={hoje}
+          />
+        </section>
 
-      {publicacao.observacaoVistagem ? (
-        <Secao titulo="Observação do jurídico" id={`${base}-observacao`}>
-          <p className="whitespace-pre-wrap break-words text-sm text-foreground">{publicacao.observacaoVistagem}</p>
-        </Secao>
-      ) : null}
+        <div className="min-w-0 border-t border-[#e6eef0] @4xl:border-t-0">
+          {publicacao.observacaoVistagem ? (
+            <Secao titulo="Observação do jurídico" id={`${base}-observacao`}>
+              <p className="whitespace-pre-wrap break-words text-sm text-foreground">{publicacao.observacaoVistagem}</p>
+            </Secao>
+          ) : null}
 
-      {item.inconsistencias.length ? (
-        <Secao titulo="Inconsistências" id={`${base}-inconsistencias`} acao={<Selo tom="alerta">{item.inconsistencias.length}</Selo>}>
-          <div className="space-y-2">
-            {item.inconsistencias.map((inconsistencia) => (
-              <CartaoInconsistencia key={inconsistencia.id} inconsistencia={inconsistencia} acao={null} />
-            ))}
-          </div>
-        </Secao>
-      ) : null}
+          {item.inconsistencias.length ? (
+            <Secao titulo="Inconsistências" id={`${base}-inconsistencias`} acao={<Selo tom="alerta">{item.inconsistencias.length}</Selo>}>
+              <div className="space-y-2">
+                {item.inconsistencias.map((inconsistencia) => (
+                  <CartaoInconsistencia key={inconsistencia.id} inconsistencia={inconsistencia} acao={null} />
+                ))}
+              </div>
+            </Secao>
+          ) : null}
 
-      <Secao>
-        <TeorPublicacao publicacao={publicacao} />
-      </Secao>
-
-      <section aria-labelledby={`${base}-tarefas`} className="border-t border-[#e6eef0]">
-        <div className="flex flex-wrap items-center justify-between gap-2 px-4 pb-3 pt-4">
-          <h3 id={`${base}-tarefas`} className="text-xs font-semibold uppercase tracking-normal text-[#285f7a]">
-            Tarefas
-          </h3>
-          <span className="text-xs text-muted-foreground">{resumoTarefas(item.agendamentos, comEnvio)}</span>
+          <section aria-labelledby={`${base}-tarefas`} className="border-t border-[#e6eef0] first:border-t-0">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-4 pb-3 pt-4">
+              <h3 id={`${base}-tarefas`} className="text-xs font-semibold uppercase tracking-normal text-[#285f7a]">
+                Tarefas
+              </h3>
+              <span className="text-xs text-muted-foreground">{resumoTarefas(item.agendamentos, comEnvio)}</span>
+            </div>
+            <TabelaTarefas agendamentos={item.agendamentos} comEnvio={comEnvio} compacta />
+          </section>
         </div>
-        <TabelaTarefas agendamentos={item.agendamentos} comEnvio={comEnvio} />
-      </section>
+      </div>
 
       <DialogoAcao
         aberto={devolvendo}
@@ -647,7 +743,7 @@ function Conferencia() {
       setDados(corpo);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao carregar a conferência.");
-      setDados({ aConferir: [], enviadas: [], envioSimulado: true });
+      setDados({ aConferir: [], enviadas: [], envioSimulado: true, fotos: {}, hoje: new Date().toISOString().slice(0, 10) });
     }
   }, []);
 
@@ -881,7 +977,14 @@ function Conferencia() {
         <ul className="space-y-4" aria-label={aba === "conferir" ? "Vistagens a conferir" : "Publicações enviadas ao robô"}>
           {filtrada.map((item) => (
             <li key={item.publicacao.id}>
-              <ItemConferencia item={item} comEnvio={aba === "enviadas"} modoReal={!dados?.envioSimulado} onConcluido={concluido} />
+              <ItemConferencia
+                item={item}
+                comEnvio={aba === "enviadas"}
+                modoReal={!dados?.envioSimulado}
+                fotos={dados?.fotos ?? {}}
+                hoje={dados?.hoje ?? new Date().toISOString().slice(0, 10)}
+                onConcluido={concluido}
+              />
             </li>
           ))}
         </ul>

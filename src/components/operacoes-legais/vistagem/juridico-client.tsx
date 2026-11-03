@@ -5,18 +5,15 @@ import {
   ArrowLeft,
   ArrowRightLeft,
   Building2,
-  Check,
   ChevronLeft,
   ChevronRight,
   CircleCheck,
-  Copy,
   FileText,
   Layers,
   LoaderCircle,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  Scale,
   Search,
   Send,
   ShieldAlert,
@@ -58,13 +55,13 @@ import {
   pedeTarefaEsocial,
   type ClassificacaoEsocial,
 } from "@/lib/vistagem/esocial";
-import { consultaProcessual } from "@/lib/vistagem/consulta-processual";
 import { CADEIA_PADRAO, PESSOA_FIXA_PROTOCOLAR, cadeiaDoFluxo, type FluxoDaTarefa, type TarefaDoFluxo } from "@/lib/vistagem/fluxo-vios";
 import { fatalSugerida, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
 import type { PublicacaoResumo, ResolucaoPendencia, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
+import { FaixaDoProcesso, NA_FAIXA } from "./faixa-processo";
 import { FichaPasta } from "./ficha-pasta";
 import { FiltroData, dataNaLista } from "./filtro-data";
 import { FichaProcesso, SinteseDoProcesso } from "./ficha-processo";
@@ -284,57 +281,6 @@ function FluxoNoVios({
       ) : null}
       </div>
     </details>
-  );
-}
-
-/** Botões da faixa azul-marinho do título da publicação. */
-const NA_FAIXA = "text-white/80 hover:bg-white/10 hover:text-white focus-visible:ring-white/60 disabled:text-white/35";
-
-/** Número do processo no título: abre a consulta do tribunal em nova aba (quando há endereço conhecido) e copia. */
-function NumeroDoProcesso({ numero, tribunal }: { numero: string; tribunal: string | null }) {
-  const [copiado, setCopiado] = useState(false);
-  const consulta = consultaProcessual(tribunal, numero);
-  return (
-    <>
-      <h2 id="publicacao-titulo" className="flex flex-wrap items-center gap-x-2.5 text-base font-bold tabular-nums text-white">
-        <span className="inline-flex items-center gap-1.5 text-sm font-bold text-white">
-          <Scale className="size-4 shrink-0" aria-hidden />
-          Nº do processo
-        </span>
-        {consulta ? (
-          // A lupa diz que o número pesquisa o processo no tribunal (como no VIOS).
-          <a
-            href={consulta.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={`Pesquisar ${consulta.onde}${consulta.preenchida ? " (o número já vai preenchido: falta consultar)" : ""}`}
-            className="inline-flex items-center gap-1.5 rounded-sm text-white underline decoration-white/60 underline-offset-4 hover:decoration-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
-          >
-            <Search className="size-4 shrink-0" aria-hidden />
-            {numero}
-            <span className="sr-only">(pesquisa {consulta.onde}, em nova aba)</span>
-          </a>
-        ) : (
-          numero
-        )}
-      </h2>
-      <Button
-        type="button"
-        size="icon-xs"
-        variant="ghost"
-        className={NA_FAIXA}
-        title={copiado ? "Copiado" : "Copiar o número do processo"}
-        aria-label="Copiar o número do processo"
-        onClick={() => {
-          void navigator.clipboard?.writeText(numero).then(() => {
-            setCopiado(true);
-            window.setTimeout(() => setCopiado(false), 1500);
-          });
-        }}
-      >
-        {copiado ? <Check /> : <Copy />}
-      </Button>
-    </>
   );
 }
 
@@ -737,49 +683,39 @@ export function EditorVistagem({
 
           <Painel aria-labelledby="publicacao-titulo" className="flex min-h-0 flex-col @4xl:flex-1">
             {/* Faixa azul-marinho: o processo aberto fica marcado no topo da coluna. */}
-            <div className="bg-[#10293a] px-4 py-2.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <NumeroDoProcesso numero={publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal} tribunal={publicacao.tribunal} />
-                {publicacao.tribunal ? (
-                  <Selo tom="escuro" className="bg-white/15 text-white ring-white/30">
-                    {publicacao.tribunal}
-                  </Selo>
-                ) : null}
-                <div className="ml-auto flex items-center gap-1">
-                  {navegacao ? (
-                    <>
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="ghost"
-                        className={NA_FAIXA}
-                        disabled={!navegacao.anterior}
-                        onClick={() => navegacao.anterior && onAbrir(navegacao.anterior)}
-                        aria-label="Publicação anterior"
-                        title="Publicação anterior"
-                      >
-                        <ChevronLeft />
-                      </Button>
-                      <span className="min-w-14 text-center text-xs tabular-nums text-white/75">
-                        {navegacao.posicao} de {navegacao.total}
-                      </span>
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="ghost"
-                        className={NA_FAIXA}
-                        disabled={!navegacao.proxima}
-                        onClick={() => navegacao.proxima && onAbrir(navegacao.proxima)}
-                        aria-label="Próxima publicação"
-                        title="Próxima publicação"
-                      >
-                        <ChevronRight />
-                      </Button>
-                    </>
-                  ) : null}
-                </div>
-              </div>
-            </div>
+            <FaixaDoProcesso numero={publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal} tribunal={publicacao.tribunal} tituloId="publicacao-titulo">
+              {navegacao ? (
+                <>
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    className={NA_FAIXA}
+                    disabled={!navegacao.anterior}
+                    onClick={() => navegacao.anterior && onAbrir(navegacao.anterior)}
+                    aria-label="Publicação anterior"
+                    title="Publicação anterior"
+                  >
+                    <ChevronLeft />
+                  </Button>
+                  <span className="min-w-14 text-center text-xs tabular-nums text-white/75">
+                    {navegacao.posicao} de {navegacao.total}
+                  </span>
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    className={NA_FAIXA}
+                    disabled={!navegacao.proxima}
+                    onClick={() => navegacao.proxima && onAbrir(navegacao.proxima)}
+                    aria-label="Próxima publicação"
+                    title="Próxima publicação"
+                  >
+                    <ChevronRight />
+                  </Button>
+                </>
+              ) : null}
+            </FaixaDoProcesso>
             {/* Ficha, datas e texto rolam juntos: o espaço da coluna fica para a leitura. */}
             <div className="min-h-0 flex-1 overflow-y-auto">
               <div className="space-y-4 px-4 py-3">
