@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Popover as PopoverPrimitive } from "radix-ui";
@@ -12,7 +12,7 @@ import { COMPLETION_TYPES } from "@/lib/constants";
 import type { CompletionTypeConfig, StageSlaDays } from "@/lib/app-settings";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Calendar, Clock, MessageSquare, AlertCircle, CheckCircle2, X, Flag, CalendarX2, CheckCircle, ListChecks } from "lucide-react";
+import { Calendar, Clock, MessageSquare, AlertCircle, CheckCircle2, X, Flag, CalendarX2, CheckCircle, ListChecks, type LucideIcon } from "lucide-react";
 import type { MarketingRequest, RequestPriority } from "@/lib/marketing-requests";
 import { fetchCommentsForRequest, type RequestComment } from "@/lib/request-comments";
 import { differenceInDays, isPast, parseISO } from "date-fns";
@@ -68,6 +68,22 @@ interface KanbanCardProps {
   checklistCompleted?: number;
   completionTypes?: CompletionTypeConfig[];
   stageSlaDays?: StageSlaDays;
+  /** Sem o badge do tipo e sem a descrição — para colunas de um tipo só (ex.: Certificados). */
+  compact?: boolean;
+  /** Conteúdo extra logo abaixo do título. */
+  extra?: ReactNode;
+  /** Botão próprio no rodapé, no lugar do "Concluir" com tipo de conclusão. */
+  footerAction?: KanbanCardFooterAction;
+  /** Substitui o texto do atraso da etapa ("Revisão atrasada há 3d"...). */
+  stageDelayLabel?: string;
+}
+
+export interface KanbanCardFooterAction {
+  label: string;
+  icon: LucideIcon;
+  onClick: () => void;
+  disabled?: boolean;
+  tone?: "default" | "success";
 }
 
 const PRODUCTION_STAGES = new Set(["tarefas", "em_producao"]);
@@ -90,6 +106,10 @@ export function KanbanCard({
   checklistCompleted = 0,
   completionTypes,
   stageSlaDays = {},
+  compact = false,
+  extra,
+  footerAction,
+  stageDelayLabel: stageDelayLabelOverride,
 }: KanbanCardProps) {
   const completionOptions = completionTypes?.length ? completionTypes : COMPLETION_TYPES.map((c) => ({ value: c.value, label: c.label }));
   const didDrag = useRef(false);
@@ -145,7 +165,7 @@ export function KanbanCard({
     !isProductionStage &&
     stageSla != null &&
     daysInStage >= stageSla;
-  const stageDelayLabel = STAGE_DELAY_LABELS[stage] ?? "Etapa atrasada";
+  const stageDelayLabel = stageDelayLabelOverride ?? STAGE_DELAY_LABELS[stage] ?? "Etapa atrasada";
   const productionDelayDays = deadlineMoment
     ? Math.max(1, differenceInDays(new Date(), deadlineMoment))
     : 0;
@@ -228,18 +248,22 @@ export function KanbanCard({
               </span>
             )}
           </div>
-          <Badge
-            variant="secondary"
-            className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${typeColor}`}
-          >
-            {request.request_type}
-          </Badge>
+          {!compact && (
+            <Badge
+              variant="secondary"
+              className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${typeColor}`}
+            >
+              {request.request_type}
+            </Badge>
+          )}
         </div>
 
         {/* Título */}
         <h3 className="text-sm font-semibold tracking-tight text-foreground line-clamp-2 leading-snug">
           {displayTitle}
         </h3>
+
+        {extra}
 
         {request.identity_briefing_enabled && (
           <IdentityBriefingStatusBadge status={request.identity_briefing_status} />
@@ -303,7 +327,7 @@ export function KanbanCard({
         )}
 
         {/* Descrição */}
-        {request.description && (
+        {!compact && request.description && (
           <p className="text-xs text-muted-foreground/80 line-clamp-2 leading-relaxed">
             {request.description}
           </p>
@@ -328,8 +352,24 @@ export function KanbanCard({
                 {checklistCompleted}/{checklistTotal}
               </span>
             )}
+            {footerAction && (
+              <button
+                type="button"
+                disabled={footerAction.disabled}
+                onClick={(e) => { e.stopPropagation(); e.preventDefault(); footerAction.onClick(); }}
+                onKeyDown={(e) => { e.stopPropagation(); }}
+                className={`flex items-center gap-1 text-xs font-medium rounded-full px-2.5 py-1 transition-colors disabled:pointer-events-none disabled:opacity-50 ${
+                  footerAction.tone === "success"
+                    ? "bg-emerald-100/80 text-emerald-700 hover:bg-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-400 dark:hover:bg-emerald-900/50"
+                    : "bg-[#04202f]/8 text-[#04202f] hover:bg-[#04202f]/14 dark:bg-white/10 dark:text-white/85 dark:hover:bg-white/15"
+                }`}
+              >
+                <footerAction.icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                {footerAction.label}
+              </button>
+            )}
             {/* Concluir (popover com tipo de conclusão) */}
-            {onMarkComplete && request.workflow_stage !== "concluido" && (
+            {!footerAction && onMarkComplete && request.workflow_stage !== "concluido" && (
               <PopoverPrimitive.Root open={completeOpen} onOpenChange={setCompleteOpen}>
                 <PopoverPrimitive.Trigger asChild>
                   <button
