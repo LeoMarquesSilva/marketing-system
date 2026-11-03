@@ -16,7 +16,7 @@ import {
 } from "@/lib/post-login-path";
 import { isQualificationPending } from "@/lib/qualification-requirement";
 
-const PUBLIC_PATHS = ["/login", "/t", "/nps", "/leituras", "/manuais", "/materiais", "/ficha-cadastral", "/dress-code"];
+const PUBLIC_PATHS = ["/login", "/redefinir-senha", "/t", "/nps", "/leituras", "/manuais", "/materiais", "/ficha-cadastral", "/dress-code"];
 
 /** Perfil profissional público NFC: /perfil/<slug> e /perfil/<slug>/contato. */
 function isPublicProfessionalProfilePath(pathname: string): boolean {
@@ -71,6 +71,9 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   // Decide de forma síncrona para onde (se for o caso) o usuário deve ir.
   const redirectTo = (() => {
     if (loading) return null;
+    // Redefinição pelo link do e-mail: a sessão abre no meio do formulário e a
+    // própria tela decide o destino depois de salvar.
+    if (pathname === "/redefinir-senha") return null;
     if (!user && !isPublic) return loginPathWithReturn(pathname, search);
     if (!user) return null;
 

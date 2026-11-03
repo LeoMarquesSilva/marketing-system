@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/form";
 import { useAuth } from "@/contexts/auth-context";
 import { resolvePostLoginPath, resolveRequestedNext } from "@/lib/post-login-path";
+import { ForgotPasswordForm } from "@/components/auth/forgot-password-form";
 
 const loginSchema = z.object({
   email: z.string().email("E-mail inválido"),
@@ -35,6 +36,8 @@ export function LoginForm() {
   const searchParams = useSearchParams();
   const nextPath = resolveRequestedNext(searchParams.get("next"));
   const [isSignUp, setIsSignUp] = useState(false);
+  // ?esqueci=1 abre direto o pedido de link (ex.: link de /redefinir-senha expirado).
+  const [isForgot, setIsForgot] = useState(searchParams.get("esqueci") === "1");
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const loginForm = useForm<LoginFormValues>({
@@ -69,6 +72,15 @@ export function LoginForm() {
     const destination = await resolvePostLoginPath(nextPath);
     window.location.assign(destination);
   };
+
+  if (isForgot) {
+    return (
+      <ForgotPasswordForm
+        defaultEmail={loginForm.getValues("email")}
+        onBack={() => setIsForgot(false)}
+      />
+    );
+  }
 
   return (
     <div className="w-full max-w-sm space-y-6">
@@ -158,7 +170,19 @@ export function LoginForm() {
               name="password"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Senha</FormLabel>
+                  <div className="flex items-center justify-between gap-3">
+                    <FormLabel>Senha</FormLabel>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSubmitError(null);
+                        setIsForgot(true);
+                      }}
+                      className="text-xs font-medium text-[#347796] hover:text-[#285f7a] hover:underline"
+                    >
+                      Esqueci minha senha
+                    </button>
+                  </div>
                   <FormControl>
                     <Input type="password" placeholder="••••••••" {...field} />
                   </FormControl>

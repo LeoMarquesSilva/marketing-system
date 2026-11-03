@@ -18,6 +18,7 @@ import { FloatingTimer } from "@/components/timer/floating-timer";
 const BARE_LAYOUT_PATHS = [
   "/login",
   "/alterar-senha",
+  "/redefinir-senha",
   "/completar-qualificacao",
   "/t",
   "/nps",
