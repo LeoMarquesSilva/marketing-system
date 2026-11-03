@@ -448,11 +448,11 @@ async function itensDeConferencia(
   limite: number,
   ordemAscendente: boolean,
   ordem: "vistado_em" | "conferido_em" | "checado_em" = ordemAscendente ? "vistado_em" : "conferido_em",
-  filtro: { escritorios?: string[] | null; vistadoDesde?: string } = {}
+  filtro: { escritorios?: string[] | null; vistadoDesde?: string; limiteTeor?: number; comAuxiliar?: boolean } = {}
 ): Promise<ConferenciaItem[]> {
   let consulta = admin()
     .from("vistagem_publicacoes")
-    .select(COLUNAS_PUBLICACAO)
+    .select(`${COLUNAS_PUBLICACAO}, area_processo`)
     .in("status", status)
     .order(ordem, { ascending: ordemAscendente, nullsFirst: false })
     .limit(limite);
@@ -460,19 +460,43 @@ async function itensDeConferencia(
   if (filtro.vistadoDesde) consulta = consulta.gte("vistado_em", filtro.vistadoDesde);
   const { data, error } = await consulta;
   if (error) falhou("carregar a conferência", error);
-  const linhas = (data ?? []) as PublicacaoRow[];
-  const [agendamentos, nomes, inconsistencias] = await Promise.all([
+  const linhas = (data ?? []) as (PublicacaoRow & { area_processo: string | null })[];
+  const [agendamentos, nomes, inconsistencias, auxiliares] = await Promise.all([
     agendamentosPorPublicacao(linhas.map((row) => row.id)),
     nomesDosUsuarios(linhas.flatMap((row) => [row.vistado_por, row.conferido_por])),
     inconsistenciasPorPublicacao(linhas.map((row) => row.id)),
+    filtro.comAuxiliar ? auxiliaresDasPastas(linhas) : Promise.resolve(new Map<string, string>()),
   ]);
   return linhas.map((row) => ({
-    publicacao: publicacaoResumo(row, 1500),
+    publicacao: publicacaoResumo(row, filtro.limiteTeor ?? 1500),
     agendamentos: agendamentos.get(row.id) ?? [],
     inconsistencias: inconsistencias.get(row.id) ?? [],
     vistadoPor: row.vistado_por ? nomes.get(row.vistado_por) ?? null : null,
     conferidoPor: row.conferido_por ? nomes.get(row.conferido_por) ?? null : null,
+    ...(filtro.comAuxiliar ? { auxiliar: auxiliares.get(row.id) ?? null } : {}),
   }));
+}
+
+/**
+ * Auxiliar da pasta no VIOS de cada publicação (a sigla da pasta vira o usuário da área, como na ficha da vistagem).
+ * É enfeite da ficha: se a pasta ou o catálogo não responderem, a ficha mostra o auxiliar vazio.
+ */
+async function auxiliaresDasPastas(linhas: (PublicacaoRow & { area_processo: string | null })[]): Promise<Map<string, string>> {
+  const mapa = new Map<string, string>();
+  const comPasta = linhas.filter((row) => row.pasta_ci);
+  if (!comPasta.length) return mapa;
+  try {
+    const [pastas, areas] = await Promise.all([buscarPastasVios(comPasta.map((row) => row.pasta_ci as string)), carregarCatalogoProcessos()]);
+    for (const row of comPasta) {
+      const sigla = pastas.get(row.pasta_ci as string)?.auxiliarSigla ?? null;
+      const usuarios = sigla ? catalogoParaPublicacao(areas, row)?.usuarios : null;
+      const nome = usuarios ? usuarioPorSigla(sigla, usuarios)?.nome : null;
+      if (nome) mapa.set(row.id, nome);
+    }
+  } catch (erro) {
+    console.error("[vistagem] auxiliares da conferência", erro instanceof Error ? erro.message : erro);
+  }
+  return mapa;
 }
 
 /**
@@ -556,12 +580,23 @@ export async function listarAgendadasJuridico(escritorio: string | null, areas: 
   });
 }
 
+/** Texto da publicação na Conferência: 9 em cada 10 cabem inteiras; as maiores têm o "Ver texto completo". */
+const LIMITE_TEOR_CONFERENCIA = 12_000;
+
 export async function listarConferencia(): Promise<ConferenciaResposta> {
+  const ficha = { limiteTeor: LIMITE_TEOR_CONFERENCIA, comAuxiliar: true };
   const [aConferir, enviadas] = await Promise.all([
-    itensDeConferencia(["controladoria_vistar"], 300, true),
-    itensDeConferencia(["pronto_para_agendar", "agendado"], 100, false),
+    itensDeConferencia(["controladoria_vistar"], 300, true, "vistado_em", ficha),
+    itensDeConferencia(["pronto_para_agendar", "agendado"], 100, false, "conferido_em", ficha),
   ]);
-  return { aConferir, enviadas, envioSimulado: envioSimulado() };
+  // Foto é enfeite: se a consulta falhar, a ficha mostra as iniciais.
+  const pessoas = await pessoasPorNome([...aConferir, ...enviadas].flatMap((item) => [item.publicacao.advogadoResponsavel, item.auxiliar])).catch(
+    (erro: unknown): PessoasPorNome => {
+      console.error("[vistagem] fotos da conferência", erro instanceof Error ? erro.message : erro);
+      return { fotos: {}, areas: {}, rotulos: {} };
+    }
+  );
+  return { aConferir, enviadas, envioSimulado: envioSimulado(), fotos: pessoas.fotos, hoje: hojeEmSaoPaulo() };
 }
 
 /** Validação da controladoria: as tarefas vão para a fila do robô do SAMA (na intimação, todas juntas). */

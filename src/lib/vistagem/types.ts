@@ -329,12 +329,18 @@ export interface ConferenciaItem {
   inconsistencias: InconsistenciaResumo[];
   vistadoPor: string | null;
   conferidoPor: string | null;
+  /** Auxiliar da pasta no VIOS, para a ficha da conferência (só a lista da Conferência traz). */
+  auxiliar?: string | null;
 }
 
 export interface ConferenciaResposta {
   aConferir: ConferenciaItem[];
   enviadas: ConferenciaItem[];
   envioSimulado: boolean;
+  /** Foto do advogado e do auxiliar de cada pasta, pela chave do nome (chaveNome); só quem tem foto. */
+  fotos: Record<string, string>;
+  /** AAAA-MM-DD em São Paulo, para a régua de datas. */
+  hoje: string;
 }
 
 export interface InconsistenciaResumo {

@@ -262,7 +262,7 @@ function Duplicidades() {
                           {grupo.principal ? (
                             <>
                               <DadosPublicacao publicacao={grupo.principal} />
-                              <TeorPublicacao publicacao={grupo.principal} />
+                              <TeorPublicacao publicacao={grupo.principal} aberto />
                             </>
                           ) : (
                             <p className="text-sm text-muted-foreground">Publicação principal não encontrada.</p>
@@ -315,7 +315,7 @@ function Duplicidades() {
                                   )}
                                 </div>
                                 <DadosPublicacao publicacao={item.duplicidade} />
-                                <TeorPublicacao publicacao={item.duplicidade} />
+                                <TeorPublicacao publicacao={item.duplicidade} aberto />
                               </li>
                             ))}
                           </ul>
