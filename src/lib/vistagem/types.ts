@@ -263,6 +263,21 @@ export interface CatalogoVistagem {
   usuarios: { id: string; nome: string }[];
 }
 
+/** Parágrafo que alguém pediu para o robô acrescentar à síntese da pasta no VIOS. */
+export interface SintesePedida {
+  id: string;
+  texto: string;
+  autor: string | null;
+  /** Dia do pedido (DD/MM/AAAA), que vai no começo do parágrafo. */
+  data: string;
+  status: "pendente" | "enviado" | "processando" | "concluido" | "erro";
+  erro: string | null;
+  simulado: boolean;
+  /** O robô achou o parágrafo já na síntese e não gravou de novo. */
+  jaEstava: boolean;
+  criadoEm: string;
+}
+
 export interface VistagemDetalhe {
   publicacao: PublicacaoResumo;
   agendamentos: AgendamentoResumo[];
@@ -286,6 +301,8 @@ export interface VistagemDetalhe {
   sintese: string | null;
   /** Por que a síntese não pôde ser carregada. */
   sinteseErro: string | null;
+  /** Parágrafos pedidos ao robô para esta pasta (os 10 mais novos). */
+  sintesesPedidas: SintesePedida[];
   /** Feriados (AAAA-MM-DD) para contar os dias úteis do Prazo na tela. */
   feriados: string[];
   /** Fluxo automático do VIOS por id do tipo de tarefa (só os que criam algo). */

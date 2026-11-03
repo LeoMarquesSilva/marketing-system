@@ -798,7 +798,16 @@ export function EditorVistagem({
                   }
                 >
                   <FichaProcesso publicacao={publicacao} />
-                  {publicacao.pastaCi ? <SinteseDoProcesso key={publicacao.id} sintese={detalhe.sintese} erro={detalhe.sinteseErro} /> : null}
+                  {publicacao.pastaCi ? (
+                    <SinteseDoProcesso
+                      key={publicacao.id}
+                      sintese={detalhe.sintese}
+                      erro={detalhe.sinteseErro}
+                      pedidas={detalhe.sintesesPedidas}
+                      // Na prévia da controladoria a pasta ainda não está gravada: a síntese fica só para leitura.
+                      publicacaoId={resolucao ? null : publicacao.id}
+                    />
+                  ) : null}
                 </FichaPasta>
                 <ReguaDatas rotulo="Datas da publicação" hoje={detalhe.hoje} marcos={marcosDaPublicacao} />
               </div>

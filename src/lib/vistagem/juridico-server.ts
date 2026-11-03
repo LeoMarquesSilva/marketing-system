@@ -25,6 +25,7 @@ import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
 import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
 import { linhasParaFila, type TarefaNoVios } from "./fila-vios";
+import { LIMITE_TRECHO_SINTESE } from "./dados-processo";
 import { buscarPastaPorCi, buscarSinteseDaPasta } from "./sioe";
 import { ESCRITORIOS, type PastaSioe } from "./triagem";
 import {
@@ -33,8 +34,11 @@ import {
   catalogoDaArea,
   consultarFilaSama,
   enfileirarNoSama,
+  enfileirarSintese,
   envioSimulado,
   modoAgendamento,
+  sinteseSimulada,
+  sintesesDaPasta,
   type CatalogoArea,
 } from "./sama";
 import { COLUNAS_PUBLICACAO, admin, falhou, hojeEmSaoPaulo, publicacaoResumo, resolverPendencia, type PublicacaoRow } from "./server";
@@ -50,6 +54,7 @@ import type {
   InconsistenciaResumo,
   PublicacaoResumo,
   ResolucaoPendencia,
+  SintesePedida,
   VistagemDetalhe,
 } from "./types";
 
@@ -259,7 +264,7 @@ export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = 
   }
   let fluxosErro: string | null = null;
   let sinteseErro: string | null = null;
-  const [inconsistencias, feriados, pastaVios, arvore, sintese] = await Promise.all([
+  const [inconsistencias, feriados, pastaVios, arvore, sintese, sintesesPedidas] = await Promise.all([
     inconsistenciasPorPublicacao([id]),
     carregarFeriados().catch(() => [] as string[]),
     publicacao.pasta_ci ? buscarPastasVios([publicacao.pasta_ci]) : Promise.resolve(new Map<string, { vinculo: string | null; auxiliarSigla: string | null }>()),
@@ -273,6 +278,13 @@ export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = 
           return null;
         })
       : Promise.resolve(null),
+    // Só a lista do que já foi pedido ao robô: se a fila do SAMA não responder, o modal abre sem ela.
+    publicacao.pasta_ci && !previa
+      ? sintesesDaPasta(publicacao.pasta_ci).catch((erro: unknown): SintesePedida[] => {
+          console.error("[vistagem] sínteses pedidas", erro instanceof Error ? erro.message : erro);
+          return [];
+        })
+      : Promise.resolve([] as SintesePedida[]),
   ]);
   const auxiliar = publicacao.pasta_ci ? pastaVios.get(publicacao.pasta_ci)?.auxiliarSigla ?? null : null;
   const responsavel = catalogo ? responsavelSugerido(publicacao.advogado_responsavel, catalogo.usuarios)?.nome ?? null : null;
@@ -290,6 +302,7 @@ export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = 
     inconsistencias: inconsistencias.get(id) ?? [],
     sintese,
     sinteseErro,
+    sintesesPedidas,
     catalogo,
     catalogoErro,
     responsavelSugerido: responsavel,
@@ -460,6 +473,35 @@ async function itensDeConferencia(
     vistadoPor: row.vistado_por ? nomes.get(row.vistado_por) ?? null : null,
     conferidoPor: row.conferido_por ? nomes.get(row.conferido_por) ?? null : null,
   }));
+}
+
+/**
+ * "Atualizar Síntese": põe na fila do robô o parágrafo que a pessoa escreveu, para ele acrescentar no fim da
+ * síntese da pasta no VIOS como "dd/mm/aaaa (Nome): texto". Devolve a lista atualizada do que foi pedido.
+ */
+export async function pedirAtualizacaoSintese(id: string, texto: string, authUserId: string, areas: AreasVistagem): Promise<SintesePedida[]> {
+  const publicacao = await carregarPublicacao(id);
+  garantirArea(publicacao, areas);
+  if (!publicacao.pasta_ci) throw new VistagemError("Esta publicação está sem pasta no VIOS.");
+  const trecho = texto.trim();
+  if (trecho.length < 3) throw new VistagemError("Escreva o que acrescentar à síntese.");
+  if (trecho.length > LIMITE_TRECHO_SINTESE) throw new VistagemError(`O trecho passa de ${LIMITE_TRECHO_SINTESE} caracteres.`);
+  const autor = (await nomesDosUsuarios([authUserId])).get(authUserId)?.trim();
+  if (!autor) throw new VistagemError("Seu nome não está no cadastro de usuários do Orquestra.", 403);
+  const pedidas = await sintesesDaPasta(publicacao.pasta_ci);
+  if (pedidas.some((pedida) => pedida.texto.trim() === trecho && pedida.status !== "erro")) {
+    throw new VistagemError("Este trecho já foi pedido para esta pasta.", 409);
+  }
+  const [ano, mes, dia] = hojeEmSaoPaulo().split("-");
+  await enfileirarSintese({
+    ci: publicacao.pasta_ci,
+    cnj: publicacao.numero_processo,
+    texto: trecho,
+    autor,
+    data: `${dia}/${mes}/${ano}`,
+    simular: sinteseSimulada(),
+  });
+  return sintesesDaPasta(publicacao.pasta_ci);
 }
 
 /**
