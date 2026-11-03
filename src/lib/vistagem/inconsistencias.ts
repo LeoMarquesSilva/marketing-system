@@ -23,6 +23,9 @@ export const SUBTIPOS_INCONSISTENCIA_AGENDAMENTO = [
   "DUPLICIDADE",
 ] as const;
 
+/** Subtipos que o Check usa: só os de processo e atendimento (P/A). Os outros ficam só na BKP antiga. */
+export const SUBTIPOS_AGENDAMENTO_EM_USO = SUBTIPOS_INCONSISTENCIA_AGENDAMENTO.filter((subtipo) => subtipo.endsWith("(P/A)"));
+
 export const MAX_TEXTO_INCONSISTENCIA = 2000;
 
 export interface InconsistenciaEntrada {
@@ -43,7 +46,7 @@ export function validarInconsistencia(
   if (!tipos.includes(entrada.tipo)) return { ok: false, erro: "Escolha o tipo da inconsistência." };
   const subtipo = entrada.subtipo?.trim() || null;
   if (origem === "agendamento") {
-    if (!subtipo || !(SUBTIPOS_INCONSISTENCIA_AGENDAMENTO as readonly string[]).includes(subtipo)) {
+    if (!subtipo || !(SUBTIPOS_AGENDAMENTO_EM_USO as readonly string[]).includes(subtipo)) {
       return { ok: false, erro: "Escolha o subtipo da inconsistência." };
     }
   }

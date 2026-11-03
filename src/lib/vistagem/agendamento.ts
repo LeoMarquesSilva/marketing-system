@@ -1,4 +1,4 @@
-import { CONTAGENS_PRAZO, datasDoPrazo, type ContagemPrazo } from "./dias-uteis";
+import { CONTAGENS_PRAZO, DIAS_PRAZO, DIAS_PRAZO_TRABALHISTA, datasDoPrazo, type ContagemPrazo } from "./dias-uteis";
 import type { CadeiaDoPrazo } from "./fluxo-vios";
 
 /**
@@ -26,11 +26,15 @@ export interface OpcaoVios {
 /** Tipo de tarefa que o VIOS aceita na área, com as etiquetas configuradas nele (SAMA: vios_tipos_tarefa). */
 export interface EtapaVios extends OpcaoVios {
   etiquetas: number[];
+  /** Responsáveis fixos do tipo no VIOS (ex.: ATUALIZAÇÃO DE CADASTRO); vazio = segue o advogado da pasta. */
+  responsaveis?: string[];
 }
 
 /** Tarefa da lista do jurídico. `nome` é único na lista; `nomeVios` vem quando o nome ganhou o tipo para desempatar. */
 export interface OpcaoTarefa extends OpcaoVios {
   nomeVios?: string;
+  /** Responsáveis fixos do tipo no VIOS: a vistagem já vem com eles. */
+  responsaveis?: string[];
 }
 
 /** O que o jurídico escolhe para cada tarefa vinculada à publicação. */
@@ -102,18 +106,117 @@ export function tarefasPermitidas(etapasDaArea: EtapaVios[], etiqueta: EtiquetaA
   const repetidos = new Map<string, number>();
   for (const etapa of etapas) repetidos.set(chaveNome(etapa.nome), (repetidos.get(chaveNome(etapa.nome)) ?? 0) + 1);
   return etapas
-    .map((etapa): OpcaoTarefa =>
-      (repetidos.get(chaveNome(etapa.nome)) ?? 0) > 1
-        ? { id: etapa.id, nome: `${etapa.nome} (tipo ${etapa.id})`, nomeVios: etapa.nome }
-        : { id: etapa.id, nome: etapa.nome }
-    )
+    .map((etapa): OpcaoTarefa => {
+      const opcao: OpcaoTarefa =
+        (repetidos.get(chaveNome(etapa.nome)) ?? 0) > 1 ? { id: etapa.id, nome: `${etapa.nome} (tipo ${etapa.id})`, nomeVios: etapa.nome } : { id: etapa.id, nome: etapa.nome };
+      return etapa.responsaveis?.length ? { ...opcao, responsaveis: etapa.responsaveis } : opcao;
+    })
     .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { numeric: true }));
+}
+
+/** Nomes que existem na lista de usuários do VIOS da área, com a grafia de lá. */
+export function responsaveisNaArea(nomes: string[], usuarios: OpcaoVios[]): string[] {
+  const porChave = new Map(usuarios.map((usuario) => [chaveNome(usuario.nome), usuario.nome]));
+  return [...new Set(nomes.map((nome) => porChave.get(chaveNome(nome))).filter((nome): nome is string => Boolean(nome)))];
+}
+
+/** Escopo "*" (liderança em Usuários) e sócio patrimonial (departamento "Sócio" no RH): a pessoa vale para todas as áreas. */
+export const TODAS_AS_AREAS = "*";
+
+/**
+ * Área no nome dos escritórios da vistagem. RH, VIOS e Usuários chamam a mesma área de jeitos diferentes:
+ * Insolvência e "Cível | Insolvência" são Reestruturação; Special Situations é Distressed Deals;
+ * "Operações Legais (Legal Ops)" é Operações Legais; "Societário e Contratos" é Contratos.
+ */
+export function escritorioDaArea(area: string | null | undefined): string | null {
+  const chave = chaveNome(area);
+  if (!chave) return null;
+  if (chave.includes("INSOLV")) return "Reestruturação";
+  if (chave.includes("SPECIAL SITUATIONS")) return "Distressed Deals";
+  if (chave.includes("LEGAL OPS")) return "Operações Legais";
+  if (chave.includes("CONTRATOS")) return "Contratos";
+  return String(area).trim();
+}
+
+/** Time da Controladoria Jurídica no organograma: dentro de Operações Legais, é ele que vista e agenda. */
+export const TIME_CONTROLADORIA = "controladoria";
+
+/**
+ * Departamento que vale para a vistagem. O departamento "Operações Legais" do RH junta Controladoria, Financeiro,
+ * Marketing, Facilities, P&C e outros: só a Controladoria (e a liderança da área, que não tem time) fica em
+ * Operações Legais; quem é de outro time passa a ter o nome do time e sai da lista da área.
+ */
+export function departamentoNaVistagem(departamento: string | null, times: { chave: string; rotulo: string }[]): string | null {
+  if (chaveNome(escritorioDaArea(departamento)) !== chaveNome("Operações Legais") || !times.length) return departamento;
+  return times.some((time) => time.chave === TIME_CONTROLADORIA) ? departamento : times[0].rotulo;
+}
+
+/** Áreas de uma pessoa: o departamento no RH e o escopo de liderança em Usuários (Férias personalizado), sem repetir. */
+export function areasDaPessoa(departamento: string | null | undefined, escopo?: string[] | null): string[] {
+  const areas = new Map<string, string>();
+  for (const valor of [departamento, ...(escopo ?? [])]) {
+    const area = valor?.trim() === TODAS_AS_AREAS || chaveNome(valor) === "SOCIO" ? TODAS_AS_AREAS : escritorioDaArea(valor);
+    if (area && !areas.has(chaveNome(area))) areas.set(chaveNome(area), area);
+  }
+  return [...areas.values()];
+}
+
+/** Quem aparece nos campos de pessoa da publicação: `area` é o rótulo (ex.: "Trabalhista"); `nomes`, com a grafia do VIOS. */
+export interface PessoasDaArea {
+  area: string;
+  nomes: string[];
+}
+
+/**
+ * Usuários do VIOS que aparecem em Responsável e Revisor: os das áreas da publicação (escritório da fila e área
+ * do processo; no ex-cliente, Operações Legais e a área do processo). Também aparecem quem vale para todas as
+ * áreas (sócio patrimonial, escopo "*"), quem não tem área conhecida (fora do RH e de Usuários: não some sem
+ * critério) e as pessoas da pasta (advogado e auxiliar). Null quando nenhum usuário é das áreas (ex.: Distressed
+ * Deals sem colaborador ativo) ou a área é desconhecida: a lista fica inteira.
+ */
+export function pessoasDaArea(
+  usuarios: OpcaoVios[],
+  areasDe: Record<string, string[]>,
+  areasDaPublicacao: (string | null | undefined)[],
+  daPasta: (string | null | undefined)[] = []
+): PessoasDaArea | null {
+  const alvo = new Map<string, string>();
+  for (const valor of areasDaPublicacao) {
+    const area = escritorioDaArea(valor);
+    if (area && !alvo.has(chaveNome(area))) alvo.set(chaveNome(area), area);
+  }
+  if (!alvo.size) return null;
+  const areasDoUsuario = (nome: string) => (areasDe[chaveNome(nome)] ?? []).map(chaveNome);
+  const ehDaArea = (nome: string) => areasDoUsuario(nome).some((area) => alvo.has(area));
+  if (!usuarios.some((usuario) => ehDaArea(usuario.nome))) return null;
+  const fixos = new Set(daPasta.map(chaveNome).filter(Boolean));
+  const nomes = usuarios
+    .filter((usuario) => {
+      const areas = areasDoUsuario(usuario.nome);
+      return !areas.length || areas.includes(TODAS_AS_AREAS) || ehDaArea(usuario.nome) || fixos.has(chaveNome(usuario.nome));
+    })
+    .map((usuario) => usuario.nome);
+  return { area: [...alvo.values()].join(" e "), nomes };
+}
+
+/** Nomes separados por vírgula, sem repetir (a fila do robô usa o mesmo formato). */
+export function separarNomes(texto: string | null | undefined): string[] {
+  const vistos = new Set<string>();
+  return String(texto ?? "")
+    .split(",")
+    .map((nome) => nome.trim())
+    .filter((nome) => {
+      const chave = chaveNome(nome);
+      if (!chave || vistos.has(chave)) return false;
+      vistos.add(chave);
+      return true;
+    });
 }
 
 /** Área do catálogo do SAMA para a pasta: a área do processo no VIOS ou, sem ela, a do escritório. */
 export function areaDoCatalogo(areaProcesso: string | null, escritorio: string | null, areasDisponiveis: string[]): string | null {
   const porChave = new Map(areasDisponiveis.map((area) => [chaveNome(area), area]));
-  const candidatas = [areaProcesso, escritorio === "Reestruturação" ? "Cível | Insolvência" : escritorio];
+  const candidatas = [areaProcesso, escritorio];
   for (const candidata of candidatas) {
     const area = candidata ? porChave.get(chaveNome(candidata)) : undefined;
     if (area) return area;
@@ -200,17 +303,23 @@ export function validarAgendamentos(
     const compromisso = entrada.etiqueta === "COMPROMISSO";
     const hora = compromisso && horaValida(entrada.hora?.trim()) ? (entrada.hora as string).trim() : null;
     if (compromisso && !hora) erros.push(`${n}: informe o horário do compromisso.`);
-    const responsavel = usuarioPorChave.get(chaveNome(entrada.responsavel));
+    // Pode haver mais de um responsável (ex.: tipos com responsáveis fixos no VIOS), separados por vírgula.
+    const nomesResponsaveis = separarNomes(entrada.responsavel);
+    const encontrados = nomesResponsaveis.map((nome) => usuarioPorChave.get(chaveNome(nome)));
+    const responsavel = nomesResponsaveis.length && encontrados.every(Boolean) ? (encontrados as OpcaoVios[]) : null;
     if (!responsavel) erros.push(`${n}: escolha o responsável na lista de usuários do VIOS.`);
     const revisor = entrada.revisor?.trim() ? usuarioPorChave.get(chaveNome(entrada.revisor)) : null;
     if (entrada.revisor?.trim() && !revisor) erros.push(`${n}: escolha o revisor na lista de usuários do VIOS.`);
     if (prazo && !entrada.revisor?.trim()) erros.push(`${n}: no Prazo o revisor é obrigatório.`);
+    // Observação opcional: vai na descrição da tarefa no VIOS, abaixo da data da publicação.
     const observacao = entrada.observacao?.trim() || null;
     if (observacao && observacao.length > MAX_OBSERVACAO) erros.push(`${n}: observação com mais de ${MAX_OBSERVACAO} caracteres.`);
     const diasPrazo = prazo && Number.isInteger(entrada.diasPrazo) && (entrada.diasPrazo ?? 0) > 0 ? (entrada.diasPrazo as number) : null;
     const contagemPrazo = diasPrazo ? CONTAGENS_PRAZO.find((contagem) => contagem === entrada.contagemPrazo) ?? null : null;
     if (diasPrazo && !contagemPrazo) erros.push(`${n}: escolha se o prazo é em dias úteis ou corridos.`);
-    if (!tarefa || !responsavel || !dataValida(data) || (prazo && !revisor) || (compromisso && !hora) || (diasPrazo && !contagemPrazo)) return null;
+    if (!tarefa || !responsavel || !dataValida(data) || (prazo && !revisor) || (compromisso && !hora) || (diasPrazo && !contagemPrazo)) {
+      return null;
+    }
     return {
       etiqueta: entrada.etiqueta,
       tarefa: tarefa.nomeVios ?? tarefa.nome,
@@ -220,8 +329,8 @@ export function validarAgendamentos(
       diasPrazo,
       contagemPrazo,
       hora,
-      responsavel: responsavel.nome,
-      responsavelId: responsavel.id,
+      responsavel: responsavel.map((usuario) => usuario.nome).join(", "),
+      responsavelId: responsavel.map((usuario) => usuario.id).join(","),
       revisor: revisor?.nome ?? null,
       revisorId: revisor?.id ?? null,
       observacao,
@@ -232,35 +341,14 @@ export function validarAgendamentos(
   return { ok: true, itens: itens as AgendamentoValidado[] };
 }
 
-/** Teor máximo na descrição do VIOS; acima disso (raro) corta e avisa. */
-export const LIMITE_TEOR_VIOS = 30_000;
-
-const milhar = new Intl.NumberFormat("pt-BR");
-
-/** Teor da Kurier vem numa linha só: separa o TEXTO do cabeçalho (PROCESSO, ORGÃO...) e tira linhas vazias em excesso. */
-function teorParaVios(teor: string | null | undefined): string {
-  const limpo = String(teor ?? "")
-    .replace(/\r\n?/g, "\n")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/\s+TEXTO:\s*/, "\nTEXTO:\n")
-    .trim();
-  if (limpo.length <= LIMITE_TEOR_VIOS) return limpo;
-  return `${limpo.slice(0, LIMITE_TEOR_VIOS).trimEnd()} […]\n(Teor cortado: ${milhar.format(LIMITE_TEOR_VIOS)} de ${milhar.format(limpo.length)} caracteres. Íntegra no Orquestra.)`;
-}
-
-/** Descrição da tarefa no VIOS: referência da publicação + observação do vistador + teor da publicação. */
-export function montarObservacaoVios(
-  publicacao: {
-    dataPublicacao: string | null;
-    tribunal: string | null;
-    numeroProcesso: string | null;
-    djenIdComunicacao: number | null;
-    teor?: string | null;
-  },
-  observacao: string | null
-): string {
-  const referencia = [
+/** Referência curta da publicação (só para a linha da fila do robô, não vai para a tarefa). */
+export function referenciaDaPublicacao(publicacao: {
+  dataPublicacao: string | null;
+  tribunal: string | null;
+  numeroProcesso: string | null;
+  djenIdComunicacao: number | null;
+}): string {
+  return [
     publicacao.dataPublicacao ? `Publicação de ${paraDataVios(publicacao.dataPublicacao)}` : "Publicação",
     publicacao.tribunal,
     publicacao.numeroProcesso ? `Processo ${publicacao.numeroProcesso}` : null,
@@ -268,9 +356,21 @@ export function montarObservacaoVios(
   ]
     .filter(Boolean)
     .join(" · ");
-  const cabecalho = [referencia, observacao?.trim(), "Vistagem pelo Orquestra."].filter(Boolean).join("\n");
-  const teor = teorParaVios(publicacao.teor);
-  return teor ? `${cabecalho}\n\nTEOR DA PUBLICAÇÃO\n${teor}` : cabecalho;
+}
+
+/**
+ * Descrição da tarefa no VIOS: "Publicação de dd/mm/aaaa" e, se houver, a observação do vistador.
+ * O teor não vai: lançada na publicação, o próprio VIOS junta o texto da intimação.
+ */
+export function montarObservacaoVios(dataPublicacao: string | null | undefined, observacao: string | null): string {
+  const cabecalho = dataPublicacao ? `Publicação de ${paraDataVios(dataPublicacao)}` : "Publicação";
+  const texto = observacao?.trim();
+  return texto ? `${cabecalho}\n${texto}` : cabecalho;
+}
+
+/** Atalhos de dias do Prazo: o Trabalhista tem também 8 e 16 dias. */
+export function atalhosDePrazo(areaDoCatalogo: string | null | undefined): readonly number[] {
+  return chaveNome(areaDoCatalogo) === "TRABALHISTA" ? DIAS_PRAZO_TRABALHISTA : DIAS_PRAZO;
 }
 
 /** Sigla do VIOS a partir do nome (ex.: "Fernanda Voltarelli Arnoni" → "FVA"), com e sem preposições. */

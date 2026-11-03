@@ -9,6 +9,7 @@ import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import type { WhatsappMessage, WhatsappReplyTarget } from "./whatsapp-crm-types";
 import { ReplyPreview } from "./reply-preview";
+import { friendlyError } from "./whatsapp-inbox-view";
 
 interface ChatInputProps {
   conversationId: string;
@@ -65,7 +66,7 @@ export function ChatInput({
       }
     } catch (error) {
       setAssistantError(
-        error instanceof Error ? error.message : "Não foi possível sugerir uma resposta."
+        friendlyError(error, "Não foi possível sugerir uma resposta.")
       );
     } finally {
       setGeneratingAssistant(false);

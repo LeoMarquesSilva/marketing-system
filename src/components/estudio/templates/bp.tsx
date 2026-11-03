@@ -227,6 +227,224 @@ function Caixa({ campo, estilo, icone, marcador, rotulo, texto }: { campo: strin
   );
 }
 
+// ---------- capa com equipe ----------
+
+const TEAM = { left: 85, right: 85, gap: 24, maxWidth: 300, ratio: 1.38, bottom: 1185 };
+
+/**
+ * Capa com duas a quatro pessoas: texto centralizado em cima e cartões arredondados
+ * com a foto (com fundo) e o nome numa pílula de contorno dourado.
+ */
+export function BpCapaEquipe({ valores, indice, total, ajustes }: SlideRenderProps) {
+  const aj = adjust(ajustes);
+  const dark = text(valores, "tema") === "escuro";
+  const carrossel = total > 1;
+  const last = carrossel && indice === total - 1;
+  // guarda o número de cada pessoa para o data-campo bater com o formulário
+  const pessoas = [1, 2, 3, 4]
+    .map((n) => ({ n, foto: text(valores, `foto${n}`), nome: text(valores, `nome${n}`) }))
+    .filter((p) => p.foto || p.nome);
+  const count = Math.max(pessoas.length, 1);
+  const width = Math.floor(Math.min(TEAM.maxWidth, (1080 - TEAM.left - TEAM.right - TEAM.gap * (count - 1)) / count));
+  const height = Math.round(width * TEAM.ratio);
+  const cardsTop = TEAM.bottom - height;
+
+  return (
+    <Board bg={`fundo-${dark ? "escuro" : "claro"}-1.jpg`} dark={dark}>
+      <Dots indice={indice} total={total} />
+      <Img src={`${BG}/fenix.png`} style={{ position: "absolute", left: 100, top: 28, width: 110, height: 112 }} />
+      <div className={styles.headerLine} />
+      {carrossel && !last ? (
+        <Img src={`${BG}/arraste-${tone(dark)}.png`} style={{ position: "absolute", left: 830, top: 55, width: 140, height: 65 }} />
+      ) : (
+        <Img src={`${BG}/arroba-${tone(dark)}.png`} style={{ position: "absolute", left: 775, top: 72, width: 195, height: 40 }} />
+      )}
+
+      <FitColumn
+        base={32 * aj.texto}
+        className={styles.column}
+        style={{ left: 110, right: 110, top: 150 + aj.y, bottom: 1350 - cardsTop + 45 - aj.y, alignItems: "center", textAlign: "center" }}
+        deps={[valores, ajustes]}
+      >
+        {text(valores, "area") && (
+          <span className={styles.pillArea} data-campo="area">
+            {text(valores, "area")}
+          </span>
+        )}
+        {text(valores, "chamada") && (
+          <span className={styles.pillKicker} style={{ marginTop: "0.7em" }} data-campo="chamada">
+            {text(valores, "chamada")}
+          </span>
+        )}
+        {text(valores, "titulo") && (
+          <h2
+            className={styles.coverTitle}
+            data-campo="titulo"
+            style={{ marginTop: text(valores, "chamada") ? "0.35em" : "0.6em", ...(aj.titulo !== 1 ? { fontSize: `${2.094 * aj.titulo}em` } : {}) }}
+          >
+            {text(valores, "titulo")}
+          </h2>
+        )}
+        <span className={styles.coverRule} style={{ marginTop: "0.9em" }} />
+        {text(valores, "subtitulo") && (
+          <p className={styles.subtitle} style={{ marginTop: "0.75em", maxWidth: "24em" }} data-campo="subtitulo">
+            {text(valores, "subtitulo")}
+          </p>
+        )}
+      </FitColumn>
+
+      <div className={styles.teamRow} style={{ top: cardsTop, height, gap: TEAM.gap }}>
+        {pessoas.map((p) => (
+          <div key={p.n} className={styles.teamCard} style={{ width, height }}>
+            {p.foto ? (
+              <Img src={studioImageUrl(p.foto)} className={styles.teamPhoto} campo={`foto${p.n}`} />
+            ) : (
+              <span className={styles.teamPlaceholder} data-campo={`foto${p.n}`}>
+                <BpIcon name="pessoas" size={Math.round(width * 0.3)} />
+              </span>
+            )}
+            <span className={styles.teamShade} />
+            {p.nome && (
+              // a pílula fica por fora: o FitText mede só o texto, sem borda nem respiro
+              <div className={styles.teamNameRow}>
+                <span className={styles.teamPill}>
+                  <FitText as="span" className={styles.teamName} size={21} min={15} maxLines={1} campo={`nome${p.n}`}>
+                    {p.nome}
+                  </FitText>
+                </span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {carrossel && !last ? (
+        <>
+          <Img src={`${BG}/acoes-${tone(dark)}.png`} style={{ position: "absolute", left: 105, top: 1210, width: 160, height: 50 }} />
+          <Img src={`${BG}/arroba-${tone(dark)}.png`} style={{ position: "absolute", left: 775, top: 1225, width: 195, height: 40 }} />
+        </>
+      ) : (
+        <Img src={`${BG}/acoes-${tone(dark)}.png`} style={{ position: "absolute", left: 460, top: 1210, width: 160, height: 50 }} />
+      )}
+    </Board>
+  );
+}
+
+// ---------- pessoa ----------
+
+/** Caixa da foto e coluna de texto; a moldura de contorno fica deslocada para fora, como nas capas. */
+const PESSOA_BOX = { width: 450, height: 680, top: 320, frame: 22 };
+const PESSOA = {
+  direita: { box: 540, frame: 1, column: { left: 110, right: 590 } },
+  esquerda: { box: 90, frame: -1, column: { left: 600, right: 100 } },
+};
+/** A coluna de texto fica centrada na altura da caixa da foto. */
+const PESSOA_COLUMN = { top: 220, bottom: 1350 - (PESSOA_BOX.top + PESSOA_BOX.height) - 100 };
+
+/**
+ * Slide interno com uma pessoa: o cabeçalho dos slides de conteúdo (fênix, linha,
+ * "arraste") — sem o logo de 10 anos, que é só da capa —, a foto (com fundo) numa
+ * caixa arredondada de um lado e papel, chamada, nome e texto de apoio do outro,
+ * sempre alinhados à esquerda.
+ */
+export function BpPessoa({ valores, indice, total, ajustes, fundo }: SlideRenderProps) {
+  const aj = adjust(ajustes);
+  const dark = text(valores, "tema") === "escuro";
+  const last = total > 1 && indice === total - 1;
+  const lado = PESSOA[text(valores, "lado") === "esquerda" ? "esquerda" : "direita"];
+  const foto = text(valores, "foto");
+  const bg = `fundo-${dark ? "escuro" : "claro"}-${fundo?.tipo === "variacao" ? fundo.n : (indice % 3) + 1}.jpg`;
+  const backdrop =
+    fundo?.tipo === "imagem" ? (
+      <>
+        <Img src={studioImageUrl(fundo.path)} className={styles.layer} style={{ objectFit: "cover" }} />
+        <div className={styles.layer} style={{ background: dark ? `rgba(16, 28, 44, ${fundo.camada})` : `rgba(252, 248, 244, ${fundo.camada})` }} />
+      </>
+    ) : undefined;
+
+  return (
+    <Board bg={bg} dark={dark} backdrop={backdrop}>
+      <Dots indice={indice} total={total} />
+      <Img src={`${BG}/fenix.png`} style={{ position: "absolute", left: 100, top: 28, width: 110, height: 112 }} />
+      <div className={styles.headerLine} />
+      {last ? (
+        <Img src={`${BG}/arroba-${tone(dark)}.png`} style={{ position: "absolute", left: 775, top: 72, width: 195, height: 40 }} />
+      ) : (
+        <Img src={`${BG}/arraste-${tone(dark)}.png`} style={{ position: "absolute", left: 830, top: 55, width: 140, height: 65 }} />
+      )}
+
+      <span
+        className={styles.personFrame}
+        style={{
+          left: lado.box + PESSOA_BOX.frame * lado.frame,
+          top: PESSOA_BOX.top + PESSOA_BOX.frame,
+          width: PESSOA_BOX.width,
+          height: PESSOA_BOX.height,
+        }}
+      />
+      <div className={styles.personBox} style={{ left: lado.box, top: PESSOA_BOX.top, width: PESSOA_BOX.width, height: PESSOA_BOX.height }}>
+        {foto ? (
+          <Img
+            src={studioImageUrl(foto)}
+            className={styles.teamPhoto}
+            campo="foto"
+            style={{ transform: `translate(${aj.fotoX}px, ${aj.fotoY}px) scale(${aj.fotoZoom})`, transformOrigin: "center top" }}
+          />
+        ) : (
+          <span className={styles.teamPlaceholder} data-campo="foto">
+            <BpIcon name="pessoas" size={130} />
+          </span>
+        )}
+      </div>
+
+      <FitColumn
+        base={32 * aj.texto}
+        className={styles.column}
+        style={{ ...lado.column, top: PESSOA_COLUMN.top + aj.y, bottom: PESSOA_COLUMN.bottom - aj.y, alignItems: "flex-start", textAlign: "left" }}
+        deps={[valores, ajustes]}
+      >
+        {text(valores, "area") && (
+          <span className={styles.pillArea} data-campo="area">
+            {text(valores, "area")}
+          </span>
+        )}
+        {text(valores, "chamada") && (
+          <span className={styles.pillKicker} style={{ marginTop: "0.7em" }} data-campo="chamada">
+            {text(valores, "chamada")}
+          </span>
+        )}
+        {text(valores, "titulo") && (
+          <h2
+            className={styles.coverTitle}
+            data-campo="titulo"
+            style={{ marginTop: text(valores, "chamada") ? "0.35em" : "0.6em", ...(aj.titulo !== 1 ? { fontSize: `${2.094 * aj.titulo}em` } : {}) }}
+          >
+            {text(valores, "titulo")}
+          </h2>
+        )}
+        <span className={styles.coverRule} style={{ marginTop: "1.1em" }} />
+        {text(valores, "rotulo") && (
+          <span className={styles.personLabel} style={{ marginTop: "0.9em" }} data-campo="rotulo">
+            {text(valores, "rotulo")}
+          </span>
+        )}
+        {text(valores, "painel") && (
+          <p className={styles.personPanel} style={{ marginTop: text(valores, "rotulo") ? "0.3em" : "0.9em" }} data-campo="painel">
+            {text(valores, "painel")}
+          </p>
+        )}
+        {text(valores, "subtitulo") && (
+          <p className={styles.subtitle} style={{ marginTop: "0.75em" }} data-campo="subtitulo">
+            {text(valores, "subtitulo")}
+          </p>
+        )}
+      </FitColumn>
+
+      <Img src={`${BG}/acoes-${tone(dark)}.png`} style={{ position: "absolute", left: lado.column.left - 5, top: 1210, width: 160, height: 50 }} />
+    </Board>
+  );
+}
+
 // ---------- capa ----------
 
 /**

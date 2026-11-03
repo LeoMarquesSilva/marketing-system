@@ -3,11 +3,19 @@ import { criarCalendario } from "./dias-uteis";
 import { CADEIA_PADRAO } from "./fluxo-vios";
 import {
   areaDoCatalogo,
+  areasDaPessoa,
+  departamentoNaVistagem,
+  escritorioDaArea,
+  pessoasDaArea,
+  TODAS_AS_AREAS,
   siglasDoNome,
   usuarioPorSigla,
   avisosDaData,
-  LIMITE_TEOR_VIOS,
+  atalhosDePrazo,
   montarObservacaoVios,
+  referenciaDaPublicacao,
+  responsaveisNaArea,
+  separarNomes,
   paraDataVios,
   responsavelSugerido,
   tarefasPermitidas,
@@ -53,12 +61,13 @@ describe("tarefasPermitidas", () => {
 });
 
 describe("areaDoCatalogo", () => {
-  const areas = ["Cível", "Cível | Insolvência", "Trabalhista", "Operações Legais"];
+  const areas = ["Cível", "Cível | Insolvência", "Insolvência", "Trabalhista", "Operações Legais"];
   it("usa a área do processo, ignorando acentos", () => {
     expect(areaDoCatalogo("CIVEL", "Cível", areas)).toBe("Cível");
+    expect(areaDoCatalogo("Insolvência", "Cível | Insolvência", areas)).toBe("Insolvência");
   });
   it("cai para o escritório quando a pasta não tem área", () => {
-    expect(areaDoCatalogo(null, "Reestruturação", areas)).toBe("Cível | Insolvência");
+    expect(areaDoCatalogo(null, "Cível | Insolvência", areas)).toBe("Cível | Insolvência");
     expect(areaDoCatalogo(null, "Operações Legais", areas)).toBe("Operações Legais");
     expect(areaDoCatalogo(null, "Desconhecida", areas)).toBeNull();
   });
@@ -105,7 +114,7 @@ describe("validarAgendamentos", () => {
 
   it("escolhe pelo tipo quando o VIOS tem dois com o mesmo nome e grava o nome do VIOS", () => {
     const resultado = validarAgendamentos(
-      [{ etiqueta: "PRAZO", tarefa: "APELAÇÃO (tipo 486)", tarefaId: "486", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo" }],
+      [{ etiqueta: "PRAZO", tarefa: "APELAÇÃO (tipo 486)", tarefaId: "486", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo", observacao: "ver teor" }],
       contexto
     );
     expect(resultado.ok && resultado.itens[0]).toMatchObject({ tarefa: "APELAÇÃO", tarefaId: "486" });
@@ -118,7 +127,7 @@ describe("validarAgendamentos", () => {
 
   it("compromisso usa a data do calendário e não exige revisor", () => {
     const resultado = validarAgendamentos(
-      [{ etiqueta: "COMPROMISSO", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", data: "2026-11-10", hora: "14:30", responsavel: "Advogada Exemplo" }],
+      [{ etiqueta: "COMPROMISSO", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", data: "2026-11-10", hora: "14:30", responsavel: "Advogada Exemplo", observacao: "levar testemunhas" }],
       contexto
     );
     expect(resultado.ok && resultado.itens[0]).toMatchObject({ etiqueta: "COMPROMISSO", tarefaId: "54", data: "2026-11-10", hora: "14:30", revisor: null });
@@ -130,7 +139,7 @@ describe("validarAgendamentos", () => {
   });
 
   it("atalho de dias exige a contagem (úteis ou corridos); fatal no calendário não", () => {
-    const prazo = { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo" };
+    const prazo = { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo", observacao: "ver teor" };
     expect(validarAgendamentos([{ ...prazo, diasPrazo: 15 }], contexto)).toEqual({
       ok: false,
       erros: ["Tarefa 1: escolha se o prazo é em dias úteis ou corridos."],
@@ -144,14 +153,14 @@ describe("validarAgendamentos", () => {
   });
 
   it("compromisso exige o horário; nas outras classes ele é ignorado", () => {
-    const audiencia = { etiqueta: "COMPROMISSO" as const, tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", data: "2026-11-10", responsavel: "Advogada Exemplo" };
+    const audiencia = { etiqueta: "COMPROMISSO" as const, tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", data: "2026-11-10", responsavel: "Advogada Exemplo", observacao: "ver teor" };
     for (const hora of [undefined, null, "", "24:00", "9:30", "14h30"]) {
       const resultado = validarAgendamentos([{ ...audiencia, hora }], contexto);
       expect(resultado).toEqual({ ok: false, erros: ["Tarefa 1: informe o horário do compromisso."] });
     }
     expect(validarAgendamentos([{ ...audiencia, hora: " 09:05 " }], contexto)).toMatchObject({ ok: true, itens: [{ hora: "09:05" }] });
     const providencia = validarAgendamentos(
-      [{ etiqueta: "PROVIDENCIA", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-11-10", hora: "10:00", responsavel: "Advogada Exemplo" }],
+      [{ etiqueta: "PROVIDENCIA", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-11-10", hora: "10:00", responsavel: "Advogada Exemplo", observacao: "ciência" }],
       contexto
     );
     expect(providencia.ok && providencia.itens[0].hora).toBeNull();
@@ -159,7 +168,7 @@ describe("validarAgendamentos", () => {
 
   it("no Prazo a data do VIOS segue o 3. PROTOCOLAR do fluxo da tarefa", () => {
     const entrada = [
-      { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo" },
+      { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo", observacao: "ver teor" },
     ];
     // fluxo D-5: Protocolar 4 dias úteis depois do Enviar → Enviar = fatal − 5
     const d5 = validarAgendamentos(entrada, { ...contexto, cadeiaDaTarefa: () => ({ revisar: 1, protocolar: 4 }) });
@@ -175,6 +184,7 @@ describe("validarAgendamentos", () => {
       contexto
     );
     expect(resultado.ok).toBe(false);
+    // tarefa fora da lista, data inválida e responsável desconhecido (a observação é opcional)
     if (!resultado.ok) expect(resultado.erros).toHaveLength(3);
     const semRevisor = validarAgendamentos(
       [{ etiqueta: "PRAZO", tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo" }],
@@ -188,6 +198,13 @@ describe("validarAgendamentos", () => {
     );
     expect(semFatal.ok).toBe(false);
     expect(validarAgendamentos([], contexto).ok).toBe(false);
+  });
+
+  it("a observação é opcional", () => {
+    const providencia = { etiqueta: "PROVIDENCIA" as const, tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-11-10", responsavel: "Advogada Exemplo" };
+    const semObservacao = validarAgendamentos([{ ...providencia, observacao: "  " }], contexto);
+    expect(semObservacao.ok && semObservacao.itens[0].observacao).toBeNull();
+    expect(validarAgendamentos([{ ...providencia, observacao: "prazo do reclamante" }], contexto).ok).toBe(true);
   });
 });
 
@@ -207,20 +224,52 @@ describe("auxiliares", () => {
     expect(responsavelSugerido("Outra Pessoa", USUARIOS)).toBeNull();
   });
 
-  it("monta a descrição da tarefa com a referência da publicação", () => {
-    expect(
-      montarObservacaoVios({ dataPublicacao: "2026-10-14", tribunal: "TRT2", numeroProcesso: "0001234-56.2026.5.02.0001", djenIdComunicacao: 123 }, "Prazo de 8 dias")
-    ).toBe("Publicação de 14/10/2026 · TRT2 · Processo 0001234-56.2026.5.02.0001 · ID comunicação 123\nPrazo de 8 dias\nVistagem pelo Orquestra.");
+  it("a descrição da tarefa é a data da publicação e a observação, sem o teor", () => {
+    expect(montarObservacaoVios("2026-10-14", " Prazo de 8 dias ")).toBe("Publicação de 14/10/2026\nPrazo de 8 dias");
+    expect(montarObservacaoVios("2026-10-14", null)).toBe("Publicação de 14/10/2026");
+    expect(montarObservacaoVios(null, "ver laudo")).toBe("Publicação\nver laudo");
+    expect(referenciaDaPublicacao({ dataPublicacao: "2026-10-14", tribunal: "TRT2", numeroProcesso: "0001234-56.2026.5.02.0001", djenIdComunicacao: 123 })).toBe(
+      "Publicação de 14/10/2026 · TRT2 · Processo 0001234-56.2026.5.02.0001 · ID comunicação 123"
+    );
   });
 
-  it("leva o teor inteiro da publicação depois do cabeçalho", () => {
-    const publicacao = { dataPublicacao: "2026-10-14", tribunal: "TJSP", numeroProcesso: "1", djenIdComunicacao: null };
-    expect(montarObservacaoVios({ ...publicacao, teor: "PROCESSO:1 ORGÃO:Vara TEXTO: Intime-se a parte." }, null)).toBe(
-      "Publicação de 14/10/2026 · TJSP · Processo 1\nVistagem pelo Orquestra.\n\nTEOR DA PUBLICAÇÃO\nPROCESSO:1 ORGÃO:Vara\nTEXTO:\nIntime-se a parte."
-    );
-    const enorme = montarObservacaoVios({ ...publicacao, teor: "x".repeat(LIMITE_TEOR_VIOS + 500) }, null);
-    expect(enorme).toContain(`(Teor cortado: 30.000 de 30.500 caracteres. Íntegra no Orquestra.)`);
-    expect(enorme.length).toBeLessThan(LIMITE_TEOR_VIOS + 200);
+  it("o Trabalhista tem atalhos de 8 e 16 dias", () => {
+    expect(atalhosDePrazo("Trabalhista")).toEqual([5, 8, 10, 15, 16, 30, 60, 90, 180]);
+    expect(atalhosDePrazo("Cível")).toEqual([5, 10, 15, 30, 60, 90, 180]);
+  });
+});
+
+describe("responsáveis", () => {
+  it("separa nomes por vírgula sem repetir", () => {
+    expect(separarNomes(" Maria Julia , Isadora,, maria julia ,Samuel ")).toEqual(["Maria Julia", "Isadora", "Samuel"]);
+    expect(separarNomes(null)).toEqual([]);
+  });
+
+  it("os responsáveis fixos do tipo vão para a opção da lista", () => {
+    const etapas: EtapaVios[] = [{ id: "539", nome: "ATUALIZAÇÃO DE CADASTRO", etiquetas: [204], responsaveis: ["Maria Julia", "Isadora"] }];
+    expect(tarefasPermitidas(etapas, "PROVIDENCIA")).toEqual([{ id: "539", nome: "ATUALIZAÇÃO DE CADASTRO", responsaveis: ["Maria Julia", "Isadora"] }]);
+  });
+
+  it("só ficam os que são usuários do VIOS na área, com a grafia de lá", () => {
+    expect(responsaveisNaArea(["advogada exemplo", "Fora da Lista"], USUARIOS)).toEqual(["Advogada Exemplo"]);
+  });
+
+  it("aceita mais de um responsável e guarda nomes e ids na ordem", () => {
+    const providencia = { etiqueta: "PROVIDENCIA" as const, tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-11-10", observacao: "ciência" };
+    const resultado = validarAgendamentos([{ ...providencia, responsavel: "revisor exemplo, Advogada Exemplo" }], {
+      tarefas: { PRAZO: [], PROVIDENCIA: tarefasPermitidas(ETAPAS, "PROVIDENCIA"), COMPROMISSO: [] },
+      usuarios: USUARIOS,
+      ehDiaUtil: () => true,
+      cadeiaDaTarefa: () => null,
+    });
+    expect(resultado.ok && resultado.itens[0]).toMatchObject({ responsavel: "Revisor Exemplo, Advogada Exemplo", responsavelId: "5,4" });
+    const comUmFora = validarAgendamentos([{ ...providencia, responsavel: "Advogada Exemplo, Fulano" }], {
+      tarefas: { PRAZO: [], PROVIDENCIA: tarefasPermitidas(ETAPAS, "PROVIDENCIA"), COMPROMISSO: [] },
+      usuarios: USUARIOS,
+      ehDiaUtil: () => true,
+      cadeiaDaTarefa: () => null,
+    });
+    expect(comUmFora.ok).toBe(false);
   });
 });
 
@@ -237,5 +286,90 @@ describe("auxiliar pela sigla", () => {
     expect(usuarioPorSigla("MCDCT", usuarios)?.id).toBe("2");
     expect(usuarioPorSigla("FVA", usuarios)).toBeNull();
     expect(usuarioPorSigla("ZZ", usuarios)).toBeNull();
+  });
+});
+
+describe("pessoas da área", () => {
+  const usuarios: OpcaoVios[] = [
+    { id: "1", nome: "Advogada Trabalhista" },
+    { id: "2", nome: "Advogado Cível" },
+    { id: "3", nome: "Advogada Reestruturação" },
+    { id: "4", nome: "Sócio Patrimonial" },
+    { id: "5", nome: "Pessoa Sem Cadastro" },
+    { id: "6", nome: "Líder de Crédito" },
+    { id: "7", nome: "Analista da Controladoria" },
+  ];
+  const areasDe: Record<string, string[]> = {
+    "ADVOGADA TRABALHISTA": areasDaPessoa("Trabalhista"),
+    "ADVOGADO CIVEL": areasDaPessoa("Cível"),
+    "ADVOGADA REESTRUTURACAO": areasDaPessoa("Insolvência"),
+    "SOCIO PATRIMONIAL": areasDaPessoa("Sócio"),
+    "LIDER DE CREDITO": areasDaPessoa("Recuperação de Crédito", ["Recuperação de Crédito", "Trabalhista"]),
+    "ANALISTA DA CONTROLADORIA": areasDaPessoa("Operações Legais"),
+  };
+
+  it("traduz os nomes de área do RH, do VIOS e de Usuários para os escritórios", () => {
+    expect(escritorioDaArea("Cível | Insolvência")).toBe("Reestruturação");
+    expect(escritorioDaArea("Insolvência")).toBe("Reestruturação");
+    expect(escritorioDaArea("Special Situations")).toBe("Distressed Deals");
+    expect(escritorioDaArea("Operações Legais (Legal Ops)")).toBe("Operações Legais");
+    expect(escritorioDaArea("Societário e Contratos")).toBe("Contratos");
+    expect(escritorioDaArea(" Trabalhista ")).toBe("Trabalhista");
+    expect(escritorioDaArea("")).toBeNull();
+  });
+
+  it("a pessoa vale para o departamento e o escopo de liderança; sócio e escopo * valem para todas", () => {
+    expect(areasDaPessoa("Insolvência", ["Reestruturação"])).toEqual(["Reestruturação"]);
+    expect(areasDaPessoa("Recuperação de Crédito", ["Trabalhista"])).toEqual(["Recuperação de Crédito", "Trabalhista"]);
+    expect(areasDaPessoa("Sócio")).toEqual([TODAS_AS_AREAS]);
+    expect(areasDaPessoa("Facilities", ["*"])).toEqual(["Facilities", TODAS_AS_AREAS]);
+    expect(areasDaPessoa(null)).toEqual([]);
+  });
+
+  it("publicação do Trabalhista mostra a área, os sócios, a liderança e quem não tem área conhecida", () => {
+    expect(pessoasDaArea(usuarios, areasDe, ["Trabalhista", "Trabalhista"])).toEqual({
+      area: "Trabalhista",
+      nomes: ["Advogada Trabalhista", "Sócio Patrimonial", "Pessoa Sem Cadastro", "Líder de Crédito"],
+    });
+  });
+
+  it("as pessoas da pasta (advogado e auxiliar) aparecem mesmo sendo de outra área", () => {
+    expect(pessoasDaArea(usuarios, areasDe, ["Trabalhista"], ["advogado civel", null])?.nomes).toContain("Advogado Cível");
+  });
+
+  it("junta o escritório da fila e a área do processo (ex-cliente em Operações Legais)", () => {
+    const resultado = pessoasDaArea(usuarios, areasDe, ["Operações Legais", "Trabalhista"]);
+    expect(resultado?.area).toBe("Operações Legais e Trabalhista");
+    expect(resultado?.nomes).toEqual(["Advogada Trabalhista", "Sócio Patrimonial", "Pessoa Sem Cadastro", "Líder de Crédito", "Analista da Controladoria"]);
+  });
+
+  it("a área do catálogo do VIOS vira o escritório (Cível | Insolvência é Reestruturação)", () => {
+    expect(pessoasDaArea(usuarios, areasDe, ["Reestruturação", "Cível | Insolvência"])).toEqual({
+      area: "Reestruturação",
+      nomes: ["Advogada Reestruturação", "Sócio Patrimonial", "Pessoa Sem Cadastro"],
+    });
+  });
+
+  it("sem ninguém da área ou sem área, não filtra (lista inteira)", () => {
+    expect(pessoasDaArea(usuarios, areasDe, ["Special Situations"])).toBeNull();
+    expect(pessoasDaArea(usuarios, areasDe, [null, ""])).toBeNull();
+    expect(pessoasDaArea(usuarios, {}, ["Trabalhista"])).toBeNull();
+  });
+});
+
+describe("departamentoNaVistagem", () => {
+  const controladoria = { chave: "controladoria", rotulo: "Controladoria Jurídica" };
+  const financeiro = { chave: "financeiro", rotulo: "Financeiro" };
+
+  it("em Operações Legais só a Controladoria (e a liderança, sem time) continua na área", () => {
+    expect(departamentoNaVistagem("Operações Legais", [controladoria])).toBe("Operações Legais");
+    expect(departamentoNaVistagem("Operações Legais", [])).toBe("Operações Legais");
+    expect(departamentoNaVistagem("Operações Legais", [financeiro])).toBe("Financeiro");
+    expect(departamentoNaVistagem("Operações Legais (Legal Ops)", [financeiro, controladoria])).toBe("Operações Legais (Legal Ops)");
+  });
+
+  it("não mexe nas outras áreas", () => {
+    expect(departamentoNaVistagem("Trabalhista", [financeiro])).toBe("Trabalhista");
+    expect(departamentoNaVistagem(null, [financeiro])).toBeNull();
   });
 });

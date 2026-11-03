@@ -1,15 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { LoaderCircle, MessageSquareWarning, Trash2 } from "lucide-react";
+import { Ban, LoaderCircle, MessageSquareWarning, Trash2, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import type { InconsistenciaResumo } from "@/lib/vistagem/types";
 import { formatarDataHora } from "./publicacao-ui";
+import { Campo, Selo } from "./ui";
 
-/** Cartão de uma inconsistência, com contestar (jurídico) ou excluir (controladoria). */
+/**
+ * Uma inconsistência registrada, com contestar (jurídico) ou excluir (controladoria).
+ * É um bloco de aviso, não um card: cabe dentro de uma Secao do Painel sem empilhar superfícies.
+ */
 export function CartaoInconsistencia({
   inconsistencia,
   acao,
@@ -24,6 +28,9 @@ export function CartaoInconsistencia({
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState("");
   const excluida = Boolean(inconsistencia.excluidaEm);
+  const podeAgir = !excluida && acao !== null && !(acao === "contestar" && inconsistencia.contestacao);
+  const IconeAcao = acao === "contestar" ? MessageSquareWarning : Trash2;
+  const origem = inconsistencia.origem === "juridico" ? "Inconsistência do jurídico" : "Inconsistência de agendamento";
 
   async function salvar() {
     if (!acao) return;
@@ -48,67 +55,87 @@ export function CartaoInconsistencia({
   }
 
   return (
-    <div
+    <article
+      aria-label={`${origem}: ${inconsistencia.tipo}`}
       className={cn(
-        "space-y-2 rounded-md border px-3 py-2 text-sm",
-        excluida ? "border-slate-200 bg-slate-50 text-slate-500" : "border-amber-200 bg-amber-50 text-amber-900"
+        "rounded-md border px-3 py-2.5 text-sm",
+        excluida ? "border-[#e6eef0] bg-[#f7fbfc]" : "border-amber-200 bg-amber-50/70"
       )}
     >
-      <p className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold">
-          {inconsistencia.origem === "juridico" ? "Inconsistência do jurídico" : "Inconsistência de agendamento"}: {inconsistencia.tipo}
-          {inconsistencia.subtipo ? ` · ${inconsistencia.subtipo}` : ""}
-        </span>
-        <span className="text-xs opacity-80">
-          {inconsistencia.criadoPor ? `${inconsistencia.criadoPor} · ` : ""}
-          {formatarDataHora(inconsistencia.criadoEm)}
-        </span>
-        {excluida ? <span className="rounded-full border border-slate-300 px-2 text-xs">Excluída</span> : null}
-      </p>
-      <p className="whitespace-pre-wrap">{inconsistencia.descricao}</p>
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+        {excluida ? (
+          <Ban className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+        ) : (
+          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-700" aria-hidden />
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className={cn("font-semibold", excluida ? "text-muted-foreground" : "text-amber-900")}>
+              {inconsistencia.tipo}
+              {inconsistencia.subtipo ? ` · ${inconsistencia.subtipo}` : ""}
+            </span>
+            {excluida ? <Selo>Excluída</Selo> : inconsistencia.contestacao ? <Selo tom="alerta">Contestada</Selo> : null}
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {origem}
+            {inconsistencia.criadoPor ? ` · ${inconsistencia.criadoPor}` : ""} · {formatarDataHora(inconsistencia.criadoEm)}
+          </p>
+        </div>
+        {podeAgir && !aberto ? (
+          <Button size="xs" variant="outline" onClick={() => setAberto(true)}>
+            <IconeAcao />
+            {acao === "contestar" ? "Contestar devolução" : "Excluir inconsistência"}
+          </Button>
+        ) : null}
+      </div>
+
+      <p className={cn("mt-2 whitespace-pre-wrap break-words", excluida ? "text-muted-foreground" : "text-foreground")}>{inconsistencia.descricao}</p>
+
       {inconsistencia.contestacao ? (
-        <p className="whitespace-pre-wrap rounded bg-white/70 px-2 py-1 text-slate-700">
-          <span className="font-medium">Contestação{inconsistencia.contestadoPor ? ` de ${inconsistencia.contestadoPor}` : ""}: </span>
-          {inconsistencia.contestacao}
-        </p>
+        <div className="mt-2 border-l-2 border-amber-300 pl-3">
+          <p className="text-xs font-medium text-amber-900">
+            Contestação{inconsistencia.contestadoPor ? ` de ${inconsistencia.contestadoPor}` : ""}
+            {inconsistencia.contestadoEm ? <span className="font-normal text-muted-foreground"> · {formatarDataHora(inconsistencia.contestadoEm)}</span> : null}
+          </p>
+          <p className="mt-0.5 whitespace-pre-wrap break-words text-foreground">{inconsistencia.contestacao}</p>
+        </div>
       ) : null}
+
       {excluida ? (
-        <p className="text-xs">
+        <p className="mt-2 text-xs text-muted-foreground">
           Excluída{inconsistencia.excluidaPor ? ` por ${inconsistencia.excluidaPor}` : ""} em {formatarDataHora(inconsistencia.excluidaEm)}: {inconsistencia.motivoExclusao}
         </p>
       ) : null}
 
-      {!excluida && acao && !(acao === "contestar" && inconsistencia.contestacao) ? (
-        aberto ? (
-          <div className="space-y-2">
+      {podeAgir && aberto ? (
+        <div className="mt-3 space-y-3 border-t border-amber-200/80 pt-3">
+          <Campo rotulo={acao === "contestar" ? "Por que a devolução não procede" : "Motivo da exclusão"}>
             <Textarea
               value={texto}
               onChange={(evento) => setTexto(evento.target.value)}
-              rows={2}
+              rows={3}
               maxLength={2000}
               autoFocus
-              aria-label={acao === "contestar" ? "Por que a devolução não procede" : "Motivo da exclusão"}
-              placeholder={acao === "contestar" ? "Por que a devolução não procede?" : "Motivo da exclusão"}
-              className="bg-white"
+              placeholder={acao === "contestar" ? "Explique para a controladoria" : "Por que esta inconsistência não procede"}
             />
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={salvar} disabled={ocupado || !texto.trim()}>
-                {ocupado ? <LoaderCircle className="animate-spin" /> : acao === "contestar" ? <MessageSquareWarning /> : <Trash2 />}
-                {acao === "contestar" ? "Enviar contestação" : "Excluir inconsistência"}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setAberto(false)} disabled={ocupado}>
-                Cancelar
-              </Button>
-            </div>
+          </Campo>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setAberto(false)} disabled={ocupado}>
+              Cancelar
+            </Button>
+            <Button size="sm" onClick={salvar} disabled={ocupado || !texto.trim()}>
+              {ocupado ? <LoaderCircle className="animate-spin" /> : <IconeAcao />}
+              {acao === "contestar" ? "Enviar contestação" : "Excluir inconsistência"}
+            </Button>
           </div>
-        ) : (
-          <Button size="xs" variant="outline" onClick={() => setAberto(true)}>
-            {acao === "contestar" ? <MessageSquareWarning /> : <Trash2 />}
-            {acao === "contestar" ? "Contestar devolução" : "Excluir inconsistência"}
-          </Button>
-        )
+        </div>
       ) : null}
-      {erro ? <p className="text-xs text-red-700">{erro}</p> : null}
-    </div>
+
+      {erro ? (
+        <p role="alert" className="mt-2 text-xs text-red-700">
+          {erro}
+        </p>
+      ) : null}
+    </article>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronDown, PencilLine, Plus, Search, UserRound, UsersRound, type LucideIcon } from "lucide-react";
+import { Check, ChevronDown, ExternalLink, PencilLine, Plus, Search, UserRound, UsersRound, type LucideIcon } from "lucide-react";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +14,7 @@ import {
   FEEDBACK_AREAS,
   FEEDBACK_CATEGORY_INFO,
   categoryInfo,
+  manualHref,
   type FeedbackInput,
   type FeedbackPerson,
   type GoodPracticeFeedback,
@@ -445,6 +446,20 @@ function CategoryPicker({
               {info.chapter ? `Capítulo ${info.chapter} do manual` : "Fora da numeração do manual"}:
             </span>{" "}
             {info.hint}
+            {info.page && (
+              <>
+                {" "}
+                <a
+                  href={manualHref(info.page)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-medium text-[#285f7a] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/60"
+                >
+                  Ver no manual (p. {info.page})
+                  <ExternalLink className="size-3" aria-hidden />
+                </a>
+              </>
+            )}
           </p>
           {info.subtopics && (
             <div className="mt-2.5 space-y-1.5">

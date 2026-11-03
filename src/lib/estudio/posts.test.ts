@@ -6,7 +6,7 @@ import { BP_ICONS, getTemplate, templatesFor } from "./templates";
 
 describe("coleção BP (posts do escritório)", () => {
   it("só tem carrossel, começando por capa e conteúdo", () => {
-    expect(templatesFor("BP", "carrossel").map((t) => t.id)).toEqual(["bp-capa", "bp-conteudo"]);
+    expect(templatesFor("BP", "carrossel").map((t) => t.id)).toEqual(["bp-capa", "bp-conteudo", "bp-capa-equipe", "bp-pessoa"]);
     expect(templatesFor("BP", "feed")).toEqual([]);
     expect(starterSlides("BP", "carrossel").map((s) => s.modelo)).toEqual(["bp-capa", "bp-conteudo"]);
   });

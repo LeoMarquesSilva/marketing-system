@@ -1,13 +1,15 @@
 "use client";
 
 import type { ComponentType } from "react";
-import { BpCapa, BpConteudo } from "./bp";
+import { BpCapa, BpCapaEquipe, BpConteudo, BpPessoa } from "./bp";
 import { OabAvisoFeed, OabAvisoStory, OabCapa, OabListaFeed, OabListaStory, OabProgramacao } from "./oab";
 import type { SlideRenderProps } from "./parts";
 
 /** Desenho de cada modelo de `src/lib/estudio/templates.ts`, pelo id. */
 export const TEMPLATE_COMPONENTS: Record<string, ComponentType<SlideRenderProps>> = {
   "bp-capa": BpCapa,
+  "bp-capa-equipe": BpCapaEquipe,
+  "bp-pessoa": BpPessoa,
   "bp-conteudo": BpConteudo,
   "oab-capa": OabCapa,
   "oab-programacao": OabProgramacao,

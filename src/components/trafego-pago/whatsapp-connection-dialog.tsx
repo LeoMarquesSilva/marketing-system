@@ -13,6 +13,7 @@ import {
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import { formatRelativeLeadTime } from "./whatsapp-crm-utils";
+import { friendlyError } from "./whatsapp-inbox-view";
 
 export type RealtimeStatus = "connecting" | "connected" | "unavailable";
 
@@ -155,7 +156,7 @@ export function WhatsappConnectionDialog({
       setInfo(stored === 1 ? "1 mensagem nova trazida." : `${stored} mensagens novas trazidas.`);
       await onSynced();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível buscar as mensagens.");
+      setError(friendlyError(err, "Não foi possível buscar as mensagens."));
     } finally {
       setSyncing(false);
     }
@@ -178,7 +179,7 @@ export function WhatsappConnectionDialog({
         current?.webhook ? { ...current, webhook: { ...current.webhook, pointsToApp: true } } : current
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível religar o recebimento.");
+      setError(friendlyError(err, "Não foi possível religar o recebimento."));
     } finally {
       setConfiguringWebhook(false);
     }

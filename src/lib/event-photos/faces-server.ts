@@ -5,12 +5,30 @@ import {
   FACE_MATCH_THRESHOLD,
   FACE_MAX_REFERENCES,
   isFaceDescriptor,
+  isSureMatch,
   type FaceMatch,
   type FaceReferenceSet,
 } from "@/lib/event-photos/faces";
-import type { FaceStatus, ScanQueueAlbum } from "@/lib/event-photos/types";
+import type { FaceStatus, MyAlbumMatches, ScanQueueAlbum } from "@/lib/event-photos/types";
 
 type Actor = Awaited<ReturnType<typeof resolveAppUser>>;
+
+/**
+ * Busca própria que acha a pessoa em mais que isso das fotos de um álbum grande indica cálculo
+ * errado no aparelho (visto em 29/10/2026: 416 de 900 fotos, distâncias 0,2 abaixo do real).
+ */
+const SELF_SCAN_MAX_MATCH_RATE = 0.35;
+const SELF_SCAN_RATE_MIN_PHOTOS = 40;
+
+interface MatchRow {
+  photo_id: string;
+  distance: number;
+  confirmed_at: string | null;
+}
+
+function toMatch(row: MatchRow) {
+  return { distance: row.distance, confirmedAt: row.confirmed_at };
+}
 
 async function loadConsent(userId: string): Promise<{ consented_at: string } | null> {
   const db = await getServerDb();
@@ -66,6 +84,7 @@ export async function getFaceStatus(actor: Actor): Promise<FaceStatus> {
       consentVersion: FACE_CONSENT_VERSION,
       referenceCount: 0,
       matchCount: 0,
+      maybeCount: 0,
       pendingScanAlbums: 0,
     };
   }
@@ -74,17 +93,21 @@ export async function getFaceStatus(actor: Actor): Promise<FaceStatus> {
     db.from("event_face_references").select("id", { count: "exact", head: true }).eq("user_id", actor.id),
     db
       .from("event_photo_face_matches")
-      .select("photo_id", { count: "exact", head: true })
+      .select("photo_id, distance, confirmed_at")
       .eq("user_id", actor.id)
       .is("rejected_at", null),
     pendingScanAlbums(actor.id, consent.consented_at),
   ]);
+  if (matches.error) throw new PhotoHttpError(500, matches.error.message);
+  const rows = (matches.data ?? []) as MatchRow[];
+  const sure = rows.filter((row) => isSureMatch(toMatch(row))).length;
   return {
     consented: true,
     consentedAt: consent.consented_at,
     consentVersion: FACE_CONSENT_VERSION,
     referenceCount: refs.count ?? 0,
-    matchCount: matches.count ?? 0,
+    matchCount: sure,
+    maybeCount: rows.length - sure,
     pendingScanAlbums: pending.length,
   };
 }
@@ -202,7 +225,7 @@ export async function saveSelfScan(
   actor: Actor,
   input: { albumId?: unknown; matches?: unknown }
 ): Promise<{ saved: number }> {
-  await requireConsent(actor.id);
+  const consent = await requireConsent(actor.id);
   const albumId = typeof input.albumId === "string" ? input.albumId : "";
   if (!albumId) throw new PhotoHttpError(400, "Álbum inválido.");
   const raw = Array.isArray(input.matches) ? input.matches : [];
@@ -212,6 +235,21 @@ export async function saveSelfScan(
     .filter((m): m is { photoId: string; distance: number } => Boolean(m.photoId) && m.distance !== null);
 
   const db = await getServerDb();
+  const { count: scannedPhotos, error: countError } = await db
+    .from("event_photos")
+    .select("id", { count: "exact", head: true })
+    .eq("album_id", albumId)
+    .lte("created_at", consent.consented_at);
+  if (countError) throw new PhotoHttpError(500, countError.message);
+  const total = scannedPhotos ?? 0;
+  if (total >= SELF_SCAN_RATE_MIN_PHOTOS && matches.length > total * SELF_SCAN_MAX_MATCH_RATE) {
+    throw new PhotoHttpError(
+      422,
+      `A busca encontrou você em ${matches.length} de ${total} fotos, o que indica erro de cálculo neste aparelho. ` +
+        "Nada foi salvo. Tente em um computador, de preferência no Chrome ou no Edge."
+    );
+  }
+
   let saved = 0;
   if (matches.length > 0) {
     const { data: photos, error } = await db
@@ -285,32 +323,51 @@ export async function saveUploadMatches(photoId: string, raw: unknown): Promise<
   if (insertError) throw new PhotoHttpError(500, insertError.message);
 }
 
-export async function listMyMatchedPhotoIds(actor: Actor, albumId: string): Promise<string[]> {
+export async function listMyAlbumMatches(actor: Actor, albumId: string): Promise<MyAlbumMatches> {
   const db = await getServerDb();
   const { data, error } = await db
     .from("event_photo_face_matches")
-    .select("photo_id, event_photos!inner(album_id)")
+    .select("photo_id, distance, confirmed_at, event_photos!inner(album_id)")
     .eq("user_id", actor.id)
     .eq("event_photos.album_id", albumId)
     .is("rejected_at", null);
   if (error) throw new PhotoHttpError(500, error.message);
-  return (data ?? []).map((row) => row.photo_id as string);
+  const result: MyAlbumMatches = { sure: [], maybe: [] };
+  for (const row of (data ?? []) as unknown as MatchRow[]) {
+    (isSureMatch(toMatch(row)) ? result.sure : result.maybe).push(row.photo_id);
+  }
+  return result;
 }
 
+/** Fotos em que a pessoa aparece com certeza, por álbum (o "você em N" dos cards). */
 export async function listMyMatchCountsByAlbum(actor: Actor): Promise<Record<string, number>> {
   const db = await getServerDb();
   const { data, error } = await db
     .from("event_photo_face_matches")
-    .select("photo_id, event_photos!inner(album_id)")
+    .select("photo_id, distance, confirmed_at, event_photos!inner(album_id)")
     .eq("user_id", actor.id)
     .is("rejected_at", null);
   if (error) throw new PhotoHttpError(500, error.message);
   const counts: Record<string, number> = {};
-  for (const row of (data ?? []) as unknown as Array<{ event_photos: { album_id: string } | null }>) {
+  for (const row of (data ?? []) as unknown as Array<MatchRow & { event_photos: { album_id: string } | null }>) {
     const albumId = row.event_photos?.album_id;
-    if (albumId) counts[albumId] = (counts[albumId] ?? 0) + 1;
+    if (albumId && isSureMatch(toMatch(row))) counts[albumId] = (counts[albumId] ?? 0) + 1;
   }
   return counts;
+}
+
+/** "Sou eu" numa marcação de "Talvez seja você". */
+export async function confirmFaceMatch(actor: Actor, photoId: unknown): Promise<void> {
+  if (typeof photoId !== "string" || !photoId) throw new PhotoHttpError(400, "Foto inválida.");
+  const db = await getServerDb();
+  const { data, error } = await db
+    .from("event_photo_face_matches")
+    .update({ confirmed_at: new Date().toISOString(), rejected_at: null })
+    .eq("photo_id", photoId)
+    .eq("user_id", actor.id)
+    .select("photo_id");
+  if (error) throw new PhotoHttpError(500, error.message);
+  if (!data?.length) throw new PhotoHttpError(404, "Marcação não encontrada.");
 }
 
 export async function rejectFaceMatch(actor: Actor, photoId: unknown): Promise<void> {

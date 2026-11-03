@@ -2,8 +2,14 @@
 
 export const FACE_CONSENT_VERSION = "2026-09-25";
 export const FACE_DESCRIPTOR_LENGTH = 128;
-/** Distância euclidiana máxima para considerar o mesmo rosto (0,6 é o padrão do modelo; 0,5 erra menos). */
+/** Distância euclidiana máxima para sugerir o mesmo rosto (0,6 é o padrão do modelo; 0,5 erra menos). */
 export const FACE_MATCH_THRESHOLD = 0.5;
+/**
+ * Abaixo disso a marcação é automática; entre isso e FACE_MATCH_THRESHOLD vira "Talvez seja você"
+ * e a pessoa confirma. Calibrado em 29/10/2026 com 75 marcações conferidas uma a uma:
+ * abaixo de 0,45 houve 46 acertos e nenhum erro; entre 0,45 e 0,5, 21 acertos e 8 erros.
+ */
+export const FACE_SURE_THRESHOLD = 0.45;
 /** Rostos menores que isso (px na prévia) geram descritor pouco confiável. */
 export const FACE_MIN_SIZE_PX = 40;
 export const FACE_MAX_REFERENCES = 5;
@@ -65,6 +71,11 @@ export function matchFacesToPeople(
   return [...best.entries()]
     .map(([userId, distance]) => ({ userId, distance: Math.round(distance * 10000) / 10000 }))
     .sort((a, b) => a.distance - b.distance);
+}
+
+/** Marcação que aparece direto em "Em que eu apareço" (confirmada pela pessoa ou bem próxima). */
+export function isSureMatch(match: { distance: number; confirmedAt?: string | null }): boolean {
+  return Boolean(match.confirmedAt) || match.distance < FACE_SURE_THRESHOLD;
 }
 
 /** Arredonda o descritor para caber leve no JSON sem perder precisão útil. */

@@ -25,6 +25,7 @@ import { normalizeWhatsappTags } from "@/lib/evolution-tags";
 import {
   requestWhatsappMediaArchive,
   signWhatsappMediaUrl,
+  signWhatsappMediaUrls,
   WHATSAPP_MEDIA_BUCKET,
   whatsappDocumentDownloadName,
 } from "@/lib/whatsapp-media-storage";
@@ -776,6 +777,41 @@ async function applySiteLeadFromMessage(
   await supabase.from("whatsapp_conversations").update(patch).eq("id", conversationId);
 }
 
+const EXISTING_LOOKUP_CHUNK = 100;
+
+/** Mensagens já gravadas, por `instance_name|wa_message_id`, em lotes de 100. */
+async function fetchExistingWhatsappMessages(
+  supabase: ReturnType<typeof getAdminClient>,
+  messages: ParsedEvolutionMessage[]
+): Promise<Map<string, { id: string; body: string | null }>> {
+  const byKey = new Map<string, { id: string; body: string | null }>();
+  const idsByInstance = new Map<string, Set<string>>();
+  for (const msg of messages) {
+    if (msg.isReaction || !msg.waMessageId) continue;
+    const ids = idsByInstance.get(msg.instanceName) ?? new Set<string>();
+    ids.add(msg.waMessageId);
+    idsByInstance.set(msg.instanceName, ids);
+  }
+  for (const [instanceName, idSet] of idsByInstance) {
+    const ids = [...idSet];
+    for (let i = 0; i < ids.length; i += EXISTING_LOOKUP_CHUNK) {
+      const { data, error } = await supabase
+        .from("whatsapp_messages")
+        .select("id, body, wa_message_id")
+        .eq("instance_name", instanceName)
+        .in("wa_message_id", ids.slice(i, i + EXISTING_LOOKUP_CHUNK));
+      if (error) throw new Error(error.message);
+      for (const row of data ?? []) {
+        byKey.set(`${instanceName}|${row.wa_message_id as string}`, {
+          id: row.id as string,
+          body: (row.body as string | null) ?? null,
+        });
+      }
+    }
+  }
+  return byKey;
+}
+
 export async function upsertEvolutionMessages(
   messages: ParsedEvolutionMessage[],
   options?: { skipUnreadIncrement?: boolean }
@@ -784,6 +820,9 @@ export async function upsertEvolutionMessages(
   const supabase = getAdminClient();
   const skipUnread = options?.skipUnreadIncrement ?? false;
   let inserted = 0;
+  // Uma consulta para saber o que já está salvo (a sincronização ao abrir a
+  // conversa traz até 150 mensagens, quase todas já gravadas pelo webhook).
+  const existingByKey = await fetchExistingWhatsappMessages(supabase, messages);
 
   for (const msg of messages) {
     if (msg.isReaction && msg.reactionTargetId) {
@@ -798,12 +837,7 @@ export async function upsertEvolutionMessages(
     }
 
     const inboundName = contactPushNameFromMessage(msg);
-    const { data: existingMsg } = await supabase
-      .from("whatsapp_messages")
-      .select("id, body")
-      .eq("instance_name", msg.instanceName)
-      .eq("wa_message_id", msg.waMessageId)
-      .maybeSingle();
+    const existingMsg = existingByKey.get(`${msg.instanceName}|${msg.waMessageId}`);
 
     if (existingMsg) {
       const existingBody = existingMsg.body as string | null | undefined;
@@ -918,6 +952,8 @@ export async function upsertEvolutionMessages(
     }
 
     inserted += 1;
+    // Mesma mensagem repetida no lote não conta de novo na conversa.
+    existingByKey.set(`${msg.instanceName}|${msg.waMessageId}`, { id: "", body: msg.body });
     if (!conversationId) continue;
 
     const existingLastAt = existingConv?.last_message_at
@@ -1422,6 +1458,10 @@ export interface WhatsappMessage {
   quoted_wa_message_id?: string | null;
   quoted_body?: string | null;
   participant_name?: string | null;
+  /** Arquivo no Storage (a rota de conversas troca por um link assinado). */
+  media_storage_path?: string | null;
+  media_mimetype?: string | null;
+  media_expired_at?: string | null;
 }
 
 export async function fetchWhatsappUnreadSummary(): Promise<{
@@ -1721,6 +1761,30 @@ async function loadWhatsappMediaBlob(dbMessageId: string): Promise<Blob> {
   return new Blob([Buffer.from(media.base64, "base64")], { type: media.mimetype });
 }
 
+export type WhatsappMessageWithMedia = Omit<WhatsappMessage, "media_storage_path"> & {
+  /** Link assinado da mídia guardada (imagem, áudio, vídeo); documento baixa pela rota. */
+  media_url?: string | null;
+};
+
+/**
+ * Troca o caminho no Storage por um link assinado, num pedido só para a conversa
+ * toda. Antes cada imagem chamava /api/evolution/messages/media sozinha.
+ */
+export async function withWhatsappMediaUrls(
+  messages: WhatsappMessage[]
+): Promise<WhatsappMessageWithMedia[]> {
+  const signable = messages.filter(
+    (m) => m.media_storage_path && getWhatsappMediaKind(m.message_type, m.body) !== "document"
+  );
+  const urls = signable.length
+    ? await signWhatsappMediaUrls(getAdminClient(), signable.map((m) => m.media_storage_path as string))
+    : new Map<string, string>();
+  return messages.map(({ media_storage_path, ...message }) => ({
+    ...message,
+    media_url: media_storage_path ? (urls.get(media_storage_path) ?? null) : null,
+  }));
+}
+
 export async function fetchWhatsappMessages(
   conversationId: string,
   limit = 200
@@ -1729,7 +1793,7 @@ export async function fetchWhatsappMessages(
   const { data, error } = await supabase
     .from("whatsapp_messages")
     .select(
-      "id, wa_message_id, from_me, message_type, body, message_timestamp, audio_transcript, wa_status, reaction_emoji, quoted_wa_message_id, quoted_body, participant_name"
+      "id, wa_message_id, from_me, message_type, body, message_timestamp, audio_transcript, wa_status, reaction_emoji, quoted_wa_message_id, quoted_body, participant_name, media_storage_path, media_mimetype, media_expired_at"
     )
     .eq("conversation_id", conversationId)
     .order("message_timestamp", { ascending: false })

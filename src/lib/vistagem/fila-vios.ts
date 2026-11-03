@@ -1,4 +1,4 @@
-import { ETIQUETA_VIOS, montarObservacaoVios, paraDataVios, type EtiquetaAgendamento } from "./agendamento";
+import { ETIQUETA_VIOS, montarObservacaoVios, paraDataVios, referenciaDaPublicacao, type EtiquetaAgendamento } from "./agendamento";
 
 /**
  * Onde o robô do SAMA agenda: na publicação (Intimações › Lançamento, ligada à
@@ -120,17 +120,15 @@ export function linhasParaFila(
     return itens.map((item) => ({
       linha: base(
         item,
-        montarObservacaoVios(
-          { ...referencia, teor: publicacao.teor },
-          [item.hora ? `Horário: ${item.hora}` : null, item.observacao].filter(Boolean).join("\n") || null
-        )
+        montarObservacaoVios(publicacao.data_publicacao, [item.hora ? `Horário: ${item.hora}` : null, item.observacao].filter(Boolean).join("\n") || null)
       ),
       agendamentos: [item.id],
     }));
   }
 
   if (!itens.length) return [];
-  const cabecalho = montarObservacaoVios(referencia, null);
+  // Linha da fila do robô (não vai para a tarefa): só identifica a publicação.
+  const cabecalho = referenciaDaPublicacao(referencia);
   const comunicacao = publicacao.djen_id_comunicacao ? String(publicacao.djen_id_comunicacao) : null;
   return [
     {
@@ -149,13 +147,57 @@ export function linhasParaFila(
             hora: item.hora ?? null,
             responsavel: item.responsavel,
             revisor: item.revisor,
-            observacao: montarObservacaoVios(referencia, item.observacao),
+            observacao: montarObservacaoVios(publicacao.data_publicacao, item.observacao),
           })),
         },
       },
       agendamentos: itens.map((item) => item.id),
     },
   ];
+}
+
+/** Tarefa como ficou no VIOS depois do lançamento: a pedida (principal) ou uma que o fluxo criou junto. */
+export interface TarefaNoVios {
+  ci: string;
+  tipo: string | null;
+  principal: boolean;
+  /** AAAA-MM-DD (data para conclusão). */
+  data: string | null;
+  dataLimite: string | null;
+  hora: string | null;
+  responsaveis: string | null;
+}
+
+/** DD/MM/AAAA → AAAA-MM-DD; outro formato → null. */
+function dataIso(valor: unknown): string | null {
+  const m = String(valor ?? "").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+}
+
+/** Tarefas do VIOS (resultado.tarefas_vios[] do robô) agrupadas pela chave do agendamento de origem. */
+export function tarefasViosDoResultado(resultado: unknown): Map<string, TarefaNoVios[]> {
+  const mapa = new Map<string, TarefaNoVios[]>();
+  const lista = (resultado as { tarefas_vios?: Record<string, unknown>[] } | null)?.tarefas_vios;
+  if (!Array.isArray(lista)) return mapa;
+  for (const item of lista) {
+    if (typeof item?.chave !== "string" || item.ci == null) continue;
+    const texto = (valor: unknown) => (typeof valor === "string" && valor.trim() ? valor.trim() : null);
+    const tarefa: TarefaNoVios = {
+      ci: String(item.ci),
+      tipo: texto(item.tipo),
+      principal: item.principal === true,
+      data: dataIso(item.data),
+      dataLimite: dataIso(item.data_limite),
+      hora: texto(item.hora),
+      responsaveis: texto(item.responsaveis),
+    };
+    mapa.set(item.chave, [...(mapa.get(item.chave) ?? []), tarefa]);
+  }
+  // a pedida primeiro; as do fluxo pela data
+  for (const tarefas of mapa.values()) {
+    tarefas.sort((a, b) => Number(b.principal) - Number(a.principal) || (a.data ?? "").localeCompare(b.data ?? ""));
+  }
+  return mapa;
 }
 
 /** CI de cada tarefa lançada (resultado.tarefas[] do robô), por chave do agendamento. */

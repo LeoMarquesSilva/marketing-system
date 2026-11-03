@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  FACE_SURE_THRESHOLD,
   compactDescriptor,
   euclideanDistance,
   isFaceDescriptor,
+  isSureMatch,
   matchFacesToPeople,
 } from "@/lib/event-photos/faces";
 
@@ -52,6 +54,19 @@ describe("matchFacesToPeople", () => {
 
   it("sem ninguém com consentimento, não há correspondência", () => {
     expect(matchFacesToPeople([vec(0)], [])).toEqual([]);
+  });
+});
+
+describe("isSureMatch", () => {
+  it("marca direto só abaixo do limite de certeza", () => {
+    expect(isSureMatch({ distance: FACE_SURE_THRESHOLD - 0.001 })).toBe(true);
+    expect(isSureMatch({ distance: FACE_SURE_THRESHOLD })).toBe(false);
+    expect(isSureMatch({ distance: 0.49 })).toBe(false);
+  });
+
+  it("confirmação da pessoa vale mais que a distância", () => {
+    expect(isSureMatch({ distance: 0.49, confirmedAt: "2026-10-29T15:00:00Z" })).toBe(true);
+    expect(isSureMatch({ distance: 0.49, confirmedAt: null })).toBe(false);
   });
 });
 

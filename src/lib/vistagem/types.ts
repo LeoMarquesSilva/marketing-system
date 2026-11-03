@@ -1,5 +1,8 @@
 import type { ContagemPrazo } from "./dias-uteis";
+import type { TarefaNoVios } from "./fila-vios";
 import type { FluxoDaTarefa } from "./fluxo-vios";
+import type { SugestaoIa } from "./sugestao-ia";
+import type { SugestaoTriagem } from "./sugestao-triagem";
 import type { PastaSioe, Pendencia } from "./triagem";
 
 /** Situação da publicação no fluxo de vistagem (captura → vistagem → agendamento → revisão). */
@@ -125,6 +128,11 @@ export interface PublicacaoResumo {
   grupoCliente: string | null;
   advogadoResponsavel: string | null;
   situacaoProcesso: string | null;
+  /** Ação, fase processual e valor da ação da pasta no VIOS (retrato da triagem, pelo SIOE). */
+  acaoProcesso: string | null;
+  faseProcessual: string | null;
+  valorAcao: number | null;
+  valorAcaoAtualizado: number | null;
   escritorioResponsavel: string | null;
   demandaRisco: boolean | null;
   pendencia: Pendencia | null;
@@ -142,6 +150,10 @@ export interface PublicacaoResumo {
   transferidoDe: string | null;
   transferidoEm: string | null;
   transferenciaMotivo: string | null;
+  /** Trabalhista: classificação eSocial escolhida na vistagem (não vai para o VIOS; mesmos valores da BKP). */
+  publicacaoEsocial: string | null;
+  /** Sem pasta no VIOS: dados sugeridos (processo citado, parte cliente ou IA) para a controladoria conferir. */
+  sugestaoTriagem: SugestaoTriagem | null;
   teor: string;
   /** true quando `teor` foi encurtado na listagem. */
   teorResumido: boolean;
@@ -234,6 +246,8 @@ export interface AgendamentoResumo {
   responsavel: string;
   revisor: string | null;
   observacao: string | null;
+  /** Como ficou no VIOS: a tarefa pedida e as que o fluxo criou, com as datas agendadas. */
+  viosTarefas: TarefaNoVios[] | null;
   envioStatus: EnvioStatus;
   envioSimulado: boolean | null;
   viosTarefaId: string | null;
@@ -245,8 +259,23 @@ export interface CatalogoVistagem {
   area: string;
   atualizadoEm: string;
   /** `nome` é único na lista (nome repetido no VIOS ganha o tipo); `nomeVios` é o nome original. */
-  tarefas: Record<"PRAZO" | "PROVIDENCIA" | "COMPROMISSO", { id: string; nome: string; nomeVios?: string }[]>;
+  tarefas: Record<"PRAZO" | "PROVIDENCIA" | "COMPROMISSO", { id: string; nome: string; nomeVios?: string; responsaveis?: string[] }[]>;
   usuarios: { id: string; nome: string }[];
+}
+
+/** Parágrafo que alguém pediu para o robô acrescentar à síntese da pasta no VIOS. */
+export interface SintesePedida {
+  id: string;
+  texto: string;
+  autor: string | null;
+  /** Dia do pedido (DD/MM/AAAA), que vai no começo do parágrafo. */
+  data: string;
+  status: "pendente" | "enviado" | "processando" | "concluido" | "erro";
+  erro: string | null;
+  simulado: boolean;
+  /** O robô achou o parágrafo já na síntese e não gravou de novo. */
+  jaEstava: boolean;
+  criadoEm: string;
 }
 
 export interface VistagemDetalhe {
@@ -258,13 +287,39 @@ export interface VistagemDetalhe {
   responsavelSugerido: string | null;
   /** Auxiliar da pasta no VIOS (sugerido como revisor do Prazo). */
   revisorSugerido: string | null;
+  /** Foto do advogado da pasta e dos usuários do VIOS, pela chave do nome (chaveNome); só quem tem foto. */
+  fotos: Record<string, string>;
+  /**
+   * Quem aparece em Responsável e Revisor: os usuários do VIOS das áreas da publicação (RH e liderança em Usuários),
+   * sócios, quem não tem área conhecida e as pessoas da pasta. Null = sem filtro (a lista inteira do VIOS).
+   */
+  pessoasDaArea: { area: string; nomes: string[] } | null;
+  /** Área de cada usuário do VIOS pelo RH (ex.: "Cível"), pela chave do nome; aparece ao mostrar todas as pessoas. */
+  areaDasPessoas: Record<string, string>;
   inconsistencias: InconsistenciaResumo[];
+  /** Síntese do processo da pasta no VIOS (via SIOE). Null sem pasta ou com a síntese em branco. */
+  sintese: string | null;
+  /** Por que a síntese não pôde ser carregada. */
+  sinteseErro: string | null;
+  /** Parágrafos pedidos ao robô para esta pasta (os 10 mais novos). */
+  sintesesPedidas: SintesePedida[];
   /** Feriados (AAAA-MM-DD) para contar os dias úteis do Prazo na tela. */
   feriados: string[];
   /** Fluxo automático do VIOS por id do tipo de tarefa (só os que criam algo). */
   fluxos: Record<string, FluxoDaTarefa>;
   /** Por que o fluxo do VIOS não pôde ser carregado. */
   fluxosErro: string | null;
+  /** Pasta do Trabalhista: pede a classificação eSocial. Null nas outras áreas. */
+  esocial: {
+    /** Tipo Inserir E-social na lista de Providências da área; null se o VIOS ainda não tem. */
+    tarefa: { id: string; nome: string } | null;
+    /** Larissa, se for usuária do VIOS na área. */
+    responsavelSugerido: string | null;
+  } | null;
+  /** Sugestão da IA já gerada (Trabalhista). */
+  sugestaoIa: SugestaoIa | null;
+  /** A área tem sugestão da IA e a chave da OpenAI está configurada: a tela pede a sugestão se ainda não houver. */
+  sugestaoIaDisponivel: boolean;
   hoje: string;
 }
 

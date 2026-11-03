@@ -2,11 +2,17 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FileSpreadsheet, LayoutDashboard, ListChecks, LockKeyhole, Plus, type LucideIcon } from "lucide-react";
+import { BookOpen, FileSpreadsheet, LayoutDashboard, ListChecks, LockKeyhole, Plus, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { feedzPrefill, type FeedzRow } from "@/lib/rh/boas-praticas/feedz";
 import { currentMonthRef, monthKey, type MonthRef } from "@/lib/rh/boas-praticas/metrics";
-import type { FeedbackPerson, FeedzImportLog, GoodPracticeFeedback } from "@/lib/rh/boas-praticas/types";
+import {
+  GOOD_PRACTICES_MANUAL,
+  manualHref,
+  type FeedbackPerson,
+  type FeedzImportLog,
+  type GoodPracticeFeedback,
+} from "@/lib/rh/boas-praticas/types";
 import { cn } from "@/lib/utils";
 import { FeedbackDashboard } from "./feedback-dashboard";
 import { FeedbackRecords } from "./feedback-records";
@@ -133,6 +139,12 @@ export function BoasPraticasClient({
               </span>
             </span>
             <div className="flex items-center gap-2">
+              <Button asChild variant="outline" className="gap-2">
+                <a href={manualHref()} target="_blank" rel="noopener noreferrer" aria-label={`Abrir o ${GOOD_PRACTICES_MANUAL.title}`}>
+                  <BookOpen className="size-4" />
+                  <span className="hidden sm:inline">Manual</span>
+                </a>
+              </Button>
               <Button type="button" variant="outline" className="gap-2" onClick={() => setImportOpen(true)}>
                 <FileSpreadsheet className="size-4" />
                 <span className="hidden sm:inline">Importar do Feedz</span>

@@ -63,6 +63,19 @@ export const FEEDBACK_PHOTOS_MAX = 10;
 export const FEEDBACK_PHOTO_TYPES = ["image/webp", "image/jpeg", "image/png"] as const;
 export type FeedbackPhotoType = (typeof FEEDBACK_PHOTO_TYPES)[number];
 
+/** Manual de Boas Práticas 2025 (PDF de 17 páginas) no bucket PRIVADO de manuais do RH. */
+export const GOOD_PRACTICES_MANUAL = {
+  bucket: "RH-MANUAIS",
+  path: "boas-praticas/manual-de-boas-praticas-2025.pdf",
+  title: "Manual de Boas Práticas 2025",
+  pages: 17,
+} as const;
+
+/** Abre o manual (opcionalmente numa página); o servidor confere o acesso ao RH. */
+export function manualHref(page?: number | null): string {
+  return page ? `/api/rh/boas-praticas/manual?pagina=${page}` : "/api/rh/boas-praticas/manual";
+}
+
 export interface FeedbackPhoto {
   id: string;
   feedback_id: string;
@@ -128,6 +141,8 @@ export interface FeedbackCategoryInfo {
   name: string;
   /** Capítulo do Manual de Boas Práticas 2025; null = tema fora da numeração do manual. */
   chapter: number | null;
+  /** Página do PDF onde o tema começa; null = o manual não traz o texto. */
+  page: number | null;
   /** O que entra nesta categoria, pelo manual. */
   hint: string;
   /** Subtemas opcionais (só nas categorias que concentram muitos casos). */
@@ -143,34 +158,49 @@ export const FEEDBACK_CATEGORY_INFO: readonly FeedbackCategoryInfo[] = [
   {
     name: "Uso consciente da sala de reunião",
     chapter: 1,
+    page: 3,
     hint: "Agendamento, liberar a sala e deixar arrumada (TV, HDMI, cadeiras, persianas).",
     subtopics: ["Arrumação", "Agendamento"],
   },
-  { name: "Uso consciente dos banheiros", chapter: 2, hint: "Designação de gênero, pia só para higiene, limpeza." },
-  { name: "Cigarro eletrônico", chapter: 3, hint: "Vape nas dependências internas." },
-  { name: "Local correto para fumar", chapter: 4, hint: "Fumar na entrada do escritório." },
-  { name: "Saúde e comportamento no ambiente de trabalho", chapter: 5, hint: "Vir ao escritório com sintomas de gripe ou resfriado." },
+  { name: "Uso consciente dos banheiros", chapter: 2, page: 4, hint: "Designação de gênero, pia só para higiene, limpeza." },
+  { name: "Cigarro eletrônico", chapter: 3, page: 6, hint: "Vape nas dependências internas." },
+  { name: "Local correto para fumar", chapter: 4, page: 6, hint: "Fumar na entrada do escritório." },
+  {
+    name: "Saúde e comportamento no ambiente de trabalho",
+    chapter: 5,
+    page: 7,
+    hint: "Vir ao escritório com sintomas de gripe ou resfriado.",
+  },
   {
     name: "Uso da cozinha",
     chapter: 6,
+    page: 8,
     hint: "Geladeira, louça e pia, limpeza do local, escala de almoço e tempo de permanência.",
     subtopics: ["Geladeira e alimentos", "Louça, pia e limpeza", "Permanência"],
   },
-  { name: "Volume de conversas", chapter: 7, hint: "Tom de voz, chamadas fora da sala Outback ou da biblioteca." },
-  { name: "Dress code", chapter: 8, hint: "Vestimenta." },
+  { name: "Volume de conversas", chapter: 7, page: 9, hint: "Tom de voz, chamadas fora da sala Outback ou da biblioteca." },
+  { name: "Dress code", chapter: 8, page: 9, hint: "Vestimenta." },
   {
     name: "Organização do ambiente de trabalho",
     chapter: 9,
+    page: 11,
     hint: "Copos e canecas na mesa, cadeiras fora do lugar, fios, sujeira e o entorno (mesa alta, impressoras, materiais).",
   },
-  { name: "Segurança e confidencialidade", chapter: 10, hint: "Documentos ou notebook expostos, tela desbloqueada, senhas." },
-  { name: "Recebimento de encomendas particulares", chapter: 11, hint: "Identificação, presença no dia, aviso prévio." },
-  { name: "Biblioteca", chapter: 12, hint: "Prioridade a clientes e arrumação." },
-  { name: "Uso e transporte de equipamentos do escritório", chapter: 13, hint: "Mochila corporativa, cuidado e dano, impressoras." },
-  { name: "Local adequado para descanso", chapter: 14, hint: "Onde descansar no escritório." },
-  { name: "Luz, ar e equipamentos ligados ao sair", chapter: null, hint: "Luzes, ar-condicionado ou notebook ligados no fim do expediente." },
-  { name: "Estacionamento", chapter: null, hint: "Vagas de sócios e clientes, cone de sinalização." },
-  { name: "Outros", chapter: null, hint: "Só quando nenhuma categoria acima serve." },
+  { name: "Segurança e confidencialidade", chapter: 10, page: 12, hint: "Documentos ou notebook expostos, tela desbloqueada, senhas." },
+  { name: "Recebimento de encomendas particulares", chapter: 11, page: 13, hint: "Identificação, presença no dia, aviso prévio." },
+  { name: "Biblioteca", chapter: 12, page: 14, hint: "Prioridade a clientes e arrumação." },
+  { name: "Uso e transporte de equipamentos do escritório", chapter: 13, page: 14, hint: "Mochila corporativa, cuidado e dano, impressoras." },
+  // A página do capítulo 14 veio sem texto no PDF.
+  { name: "Local adequado para descanso", chapter: 14, page: null, hint: "Onde descansar no escritório." },
+  // Orientação de luz e ar-condicionado fica na página 12, junto do capítulo 10.
+  {
+    name: "Luz, ar e equipamentos ligados ao sair",
+    chapter: null,
+    page: 12,
+    hint: "Luzes, ar-condicionado ou notebook ligados no fim do expediente.",
+  },
+  { name: "Estacionamento", chapter: null, page: null, hint: "Vagas de sócios e clientes, cone de sinalização." },
+  { name: "Outros", chapter: null, page: null, hint: "Só quando nenhuma categoria acima serve." },
 ];
 
 export const FEEDBACK_CATEGORIES: readonly string[] = FEEDBACK_CATEGORY_INFO.map((info) => info.name);

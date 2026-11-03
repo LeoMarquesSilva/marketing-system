@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ESCRITORIO_EX_CLIENTE,
   MOTIVO_EX_CLIENTE_SEM_ESCRITORIO,
+  advogadosDoEscritorioCitados,
   chavePessoa,
   citaAdvogadoDoEscritorio,
   escritorioDaAreaDoProcesso,
@@ -49,7 +50,14 @@ describe("triar", () => {
 
   it("usa a área do processo quando o advogado não está nas tabelas", () => {
     const resultado = triar([pasta({ area: "Cível | Insolvência", advogadoResponsavel: "" })], areaDoAdvogado);
-    expect(resultado).toMatchObject({ status: "juridico_vistar", escritorio: "Reestruturação" });
+    expect(resultado).toMatchObject({ status: "juridico_vistar", escritorio: "Cível | Insolvência" });
+  });
+
+  it("divide o advogado da Reestruturação pela área de insolvência da pasta", () => {
+    const advogado = "Advogado Insolvência";
+    expect(triar([pasta({ area: "Insolvência", advogadoResponsavel: advogado })], areaDoAdvogado).escritorio).toBe("Insolvência");
+    expect(triar([pasta({ area: "Cível | Insolvência", advogadoResponsavel: advogado })], areaDoAdvogado).escritorio).toBe("Cível | Insolvência");
+    expect(triar([pasta({ area: "Tributário", advogadoResponsavel: advogado })], areaDoAdvogado).escritorio).toBe("Cível | Insolvência");
   });
 
   it("marca demanda de risco pela etiqueta", () => {
@@ -71,6 +79,17 @@ describe("triar", () => {
     expect(resultado.candidatas.map((c) => c.ci)).toEqual(["1000", "2000"]);
   });
 
+  it("com várias pastas e só uma ativa, usa a ativa", () => {
+    const resultado = triar(
+      [pasta({ ci: "1000", situacao: "Arquivado definitivamente" }), pasta({ ci: "2000" }), pasta({ ci: "3000", situacao: "Encerrado - Ex-Cliente" })],
+      areaDoAdvogado
+    );
+    expect(resultado).toMatchObject({ status: "juridico_vistar", pendencia: null, escritorio: "Trabalhista" });
+    expect(resultado.pasta?.ci).toBe("2000");
+    // com duas ativas, a controladoria escolhe
+    expect(triar([pasta({ ci: "1000" }), pasta({ ci: "2000" }), pasta({ ci: "3000", situacao: "Baixado" })], areaDoAdvogado).pendencia).toBe("varias_pastas");
+  });
+
   it("deixa pendente quando a pasta não tem grupo", () => {
     expect(triar([pasta({ grupoCliente: " " })], areaDoAdvogado)).toMatchObject({ status: "triagem_pendente", pendencia: "sem_grupo" });
   });
@@ -89,7 +108,8 @@ describe("regras auxiliares", () => {
   });
 
   it("converte a área do processo em escritório", () => {
-    expect(escritorioDaAreaDoProcesso("Insolvência")).toBe("Reestruturação");
+    expect(escritorioDaAreaDoProcesso("Insolvência")).toBe("Insolvência");
+    expect(escritorioDaAreaDoProcesso("Civel | Insolvencia")).toBe("Cível | Insolvência");
     expect(escritorioDaAreaDoProcesso("Recuperação de Crédito")).toBe("Recuperação de Crédito");
     expect(escritorioDaAreaDoProcesso("")).toBeNull();
   });
@@ -121,5 +141,16 @@ describe("ex-cliente sem advogado do escritório", () => {
     expect(citaAdvogadoDoEscritorio("NOME:FULANO Nº OAB:353389 UF:SP")).toBe(true);
     expect(citaAdvogadoDoEscritorio("ADV: OUTRO ADVOGADO (OAB 1275477/SP)")).toBe(false);
     expect(citaAdvogadoDoEscritorio("ADV: OUTRO ADVOGADO (OAB 123456/SP)")).toBe(false);
+  });
+
+  it("diz quais advogados do escritório a publicação cita", () => {
+    expect(advogadosDoEscritorioCitados("Adv - Ricardo Pires, Gustavo Bismarchi Motta => Sentença")).toEqual([
+      { nome: "Gustavo Bismarchi Motta", oab: "275477" },
+    ]);
+    expect(advogadosDoEscritorioCitados("NOME:GUSTAVO BISMARCHI MOTTA Nº OAB:275477 UF:SP NOME:FULANO Nº OAB:353389 UF:SP").map((a) => a.nome)).toEqual([
+      "Gustavo Bismarchi Motta",
+      "Ricardo Viscardi Pires",
+    ]);
+    expect(advogadosDoEscritorioCitados("ADV: OUTRO ADVOGADO (OAB 123456/SP)")).toEqual([]);
   });
 });

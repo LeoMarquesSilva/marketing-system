@@ -12,6 +12,6 @@ export async function GET(request: Request) {
     if (!ci) return NextResponse.json({ error: "Informe a CI." }, { status: 400 });
     return NextResponse.json(await consultarPastaSioe(ci));
   } catch (error) {
-    return respostaDeErro(error, "Não foi possível consultar a pasta no SIOE.");
+    return respostaDeErro(error, "Não foi possível consultar a pasta no VIOS.");
   }
 }

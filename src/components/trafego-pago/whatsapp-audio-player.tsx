@@ -8,6 +8,8 @@ import { whatsappMediaSrc } from "@/components/trafego-pago/whatsapp-media-bubbl
 
 interface WhatsappAudioPlayerProps {
   messageId: string;
+  /** Link assinado vindo com a conversa: toca sem chamar o servidor. */
+  mediaUrl?: string | null;
   fromMe?: boolean;
   transcript?: string | null;
   onTranscript?: (text: string) => void;
@@ -15,6 +17,7 @@ interface WhatsappAudioPlayerProps {
 
 export function WhatsappAudioPlayer({
   messageId,
+  mediaUrl,
   fromMe,
   transcript: initialTranscript,
   onTranscript,
@@ -28,6 +31,15 @@ export function WhatsappAudioPlayer({
 
   const load = useCallback(async () => {
     if (loading || src) return;
+    if (mediaUrl) {
+      setSrc(mediaUrl);
+      void authFetch("/api/evolution/messages/played", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageId }),
+      }).catch(() => {});
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -47,7 +59,7 @@ export function WhatsappAudioPlayer({
     } finally {
       setLoading(false);
     }
-  }, [loading, messageId, src]);
+  }, [loading, mediaUrl, messageId, src]);
 
   const transcribe = useCallback(async () => {
     if (transcribing || transcript) return;

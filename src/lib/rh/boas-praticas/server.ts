@@ -9,6 +9,7 @@ import {
   FEEDBACK_PHOTO_TYPES,
   FEEDBACK_PHOTOS_BUCKET,
   FEEDBACK_PHOTOS_MAX,
+  GOOD_PRACTICES_MANUAL,
   categoryInfo,
   type FeedbackInput,
   type FeedbackPerson,
@@ -440,6 +441,22 @@ export async function deletePhoto(feedbackId: string, photoId: string): Promise<
   if (storageError) console.error("[boas-praticas] remove arquivo da foto:", storageError);
   const { error: deleteError } = await db.from("hr_good_practice_feedback_photos").delete().eq("id", photoId);
   if (deleteError) throw new RhHttpError("Não foi possível excluir a foto.", 500, "DELETE_FAILED");
+}
+
+/* ------------------------------------------------------------------ manual */
+
+/** Link assinado (1 hora) do Manual de Boas Práticas, só para quem tem acesso ao RH. */
+export async function manualSignedUrl(): Promise<string> {
+  await requireHrManager();
+  const db = createFeedbackAdminClient();
+  const { data, error } = await db.storage
+    .from(GOOD_PRACTICES_MANUAL.bucket)
+    .createSignedUrl(GOOD_PRACTICES_MANUAL.path, PHOTO_URL_SECONDS);
+  if (error || !data?.signedUrl) {
+    console.error("[boas-praticas] link do manual:", error);
+    throw new RhHttpError("O manual não está disponível agora.", 404, "NOT_FOUND");
+  }
+  return data.signedUrl;
 }
 
 /* ------------------------------------------------------ importação do Feedz */

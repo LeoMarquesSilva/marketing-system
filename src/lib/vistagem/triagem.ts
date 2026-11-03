@@ -9,6 +9,11 @@ export interface PastaSioe {
   advogadoResponsavel: string | null;
   situacao: string | null;
   etiquetas: string | null;
+  /** Ação, fase processual e valor da ação da pasta no VIOS (as candidatas gravadas antes não têm). */
+  acao?: string | null;
+  fase?: string | null;
+  valorAcao?: number | null;
+  valorAcaoAtualizado?: number | null;
 }
 
 export type Pendencia = "sem_pasta" | "varias_pastas" | "ex_cliente" | "sem_area" | "sem_grupo";
@@ -30,29 +35,43 @@ export const MOTIVO_EX_CLIENTE_SEM_ESCRITORIO =
 
 /** Advogados do escritório monitorados na Kurier (nome e OAB/SP). */
 const ADVOGADOS_DO_ESCRITORIO = [
-  { nome: "gustavobismarchimotta", oab: "275477" },
-  { nome: "ricardoviscardipires", oab: "353389" },
+  { nome: "gustavobismarchimotta", oab: "275477", exibicao: "Gustavo Bismarchi Motta" },
+  { nome: "ricardoviscardipires", oab: "353389", exibicao: "Ricardo Viscardi Pires" },
 ];
 
 /**
- * A publicação cita um advogado do escritório? Compara o nome sem acentos,
- * espaços e hifens (diários quebram nomes no fim da linha) e aceita também o
- * número da OAB, que aparece quando o nome vem abreviado.
+ * Advogados do escritório que a publicação cita, com o nome e a OAB/SP. Compara o nome sem acentos,
+ * espaços e hifens (diários quebram nomes no fim da linha) e aceita também o número da OAB, que aparece
+ * quando o nome vem abreviado.
  */
-export function citaAdvogadoDoEscritorio(texto: string): boolean {
+export function advogadosDoEscritorioCitados(texto: string): { nome: string; oab: string }[] {
   const compacto = texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[\s-]+/g, "");
   const digitos = texto.replace(/[.\s]/g, "");
-  return ADVOGADOS_DO_ESCRITORIO.some(({ nome, oab }) => compacto.includes(nome) || new RegExp(`(^|\\D)${oab}(\\D|$)`).test(digitos));
+  return ADVOGADOS_DO_ESCRITORIO.filter(({ nome, oab }) => compacto.includes(nome) || new RegExp(`(^|\\D)${oab}(\\D|$)`).test(digitos)).map(
+    (advogado) => ({ nome: advogado.exibicao, oab: advogado.oab })
+  );
 }
 
-/** Escritórios que vistam publicações (áreas das tabelas de pessoas do SIOE). */
+/** A publicação cita um advogado do escritório? */
+export function citaAdvogadoDoEscritorio(texto: string): boolean {
+  return advogadosDoEscritorioCitados(texto).length > 0;
+}
+
+export const ESCRITORIO_INSOLVENCIA = "Insolvência";
+export const ESCRITORIO_CIVEL_INSOLVENCIA = "Cível | Insolvência";
+
+/**
+ * Escritórios que vistam publicações: as áreas das tabelas de pessoas do SIOE, com a
+ * Reestruturação dividida nas duas áreas do VIOS (Insolvência e Cível | Insolvência).
+ */
 export const ESCRITORIOS = [
   "Cível",
+  ESCRITORIO_CIVEL_INSOLVENCIA,
   "Contratos",
   "Distressed Deals",
+  ESCRITORIO_INSOLVENCIA,
   "Operações Legais",
   "Recuperação de Crédito",
-  "Reestruturação",
   "Trabalhista",
   "Tributário",
 ] as const;
@@ -75,17 +94,41 @@ export function ehExCliente(pasta: PastaSioe): boolean {
   return /\bex.?cliente\b/.test(normalizar(`${pasta.grupoCliente} | ${pasta.etiquetas} | ${pasta.situacao}`));
 }
 
+/** Pasta em andamento no VIOS: não está encerrada, arquivada, baixada nem extinta. */
+export function pastaAtiva(pasta: PastaSioe): boolean {
+  return !/encerrad|arquivad|baixad|extint/.test(normalizar(pasta.situacao));
+}
+
 export function temDemandaDeRisco(pasta: PastaSioe): boolean {
   return normalizar(pasta.etiquetas).includes("demanda de risco");
+}
+
+/** "Insolvência" ou "Cível | Insolvência" quando a área do VIOS é de insolvência; null nas outras. */
+function areaDeInsolvencia(area: string | null): string | null {
+  const valor = normalizar(area);
+  if (!valor.includes("insolv")) return null;
+  return valor.includes("civel") ? ESCRITORIO_CIVEL_INSOLVENCIA : ESCRITORIO_INSOLVENCIA;
 }
 
 /** Área do processo no VIOS → escritório, quando o advogado não está nas tabelas de pessoas. */
 export function escritorioDaAreaDoProcesso(area: string | null): string | null {
   const valor = normalizar(area);
   if (!valor) return null;
-  if (valor.includes("insolv")) return "Reestruturação";
+  const insolvencia = areaDeInsolvencia(area);
+  if (insolvencia) return insolvencia;
   const direto = ESCRITORIOS.find((escritorio) => normalizar(escritorio) === valor);
   return direto ?? area?.trim() ?? null;
+}
+
+/**
+ * Escritório da pasta: a área do advogado responsável (tabelas de pessoas do SIOE), com a
+ * área do processo como reserva. Advogado da Reestruturação vai para a área de insolvência
+ * da pasta (Insolvência ou Cível | Insolvência); em pasta de outra área, Cível | Insolvência.
+ */
+export function escritorioDaPasta(pasta: PastaSioe, areaDoAdvogado: (nome: string | null) => string | null): string | null {
+  const daPessoa = areaDoAdvogado(pasta.advogadoResponsavel);
+  if (daPessoa && /reestrutura|insolv/.test(normalizar(daPessoa))) return areaDeInsolvencia(pasta.area) ?? ESCRITORIO_CIVEL_INSOLVENCIA;
+  return daPessoa ?? escritorioDaAreaDoProcesso(pasta.area);
 }
 
 /**
@@ -109,7 +152,11 @@ export function triar(
 
   if (candidatas.length === 0) return pendente("sem_pasta");
 
-  const exCliente = candidatas.find(ehExCliente);
+  // Mais de uma pasta e só uma em andamento: é ela (as encerradas e arquivadas são de antes).
+  const ativas = candidatas.filter(pastaAtiva);
+  const pastas = candidatas.length > 1 && ativas.length === 1 ? ativas : candidatas;
+
+  const exCliente = pastas.find(ehExCliente);
   if (exCliente) {
     // Ex-cliente sem advogado do escritório na publicação não precisa de vistagem.
     const descartar = contexto.citaEscritorio === false;
@@ -117,17 +164,17 @@ export function triar(
       status: descartar ? "descartada" : "juridico_vistar",
       pendencia: "ex_cliente",
       motivoDescarte: descartar ? MOTIVO_EX_CLIENTE_SEM_ESCRITORIO : null,
-      pasta: candidatas.length === 1 ? candidatas[0] : exCliente,
+      pasta: pastas.length === 1 ? pastas[0] : exCliente,
       escritorio: ESCRITORIO_EX_CLIENTE,
       demandaRisco: temDemandaDeRisco(exCliente),
-      candidatas: candidatas.length > 1 ? candidatas : [],
+      candidatas: pastas.length > 1 ? pastas : [],
     };
   }
 
-  if (candidatas.length > 1) return pendente("varias_pastas");
+  if (pastas.length > 1) return pendente("varias_pastas");
 
-  const [pasta] = candidatas;
-  const escritorio = areaDoAdvogado(pasta.advogadoResponsavel) ?? escritorioDaAreaDoProcesso(pasta.area);
+  const [pasta] = pastas;
+  const escritorio = escritorioDaPasta(pasta, areaDoAdvogado);
   if (!escritorio) return pendente("sem_area", pasta);
   if (!pasta.grupoCliente?.trim()) return pendente("sem_grupo", pasta);
 

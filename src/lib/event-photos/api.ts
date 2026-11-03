@@ -40,7 +40,7 @@ export function fetchEventAlbums(): Promise<{
 
 export function fetchEventAlbum(
   slug: string
-): Promise<EventPhotoAlbumDetail & { myPhotoIds: string[]; canManage: boolean }> {
+): Promise<EventPhotoAlbumDetail & { myPhotoIds: string[]; myMaybePhotoIds: string[]; canManage: boolean }> {
   return jsonRequest(
     `/api/event-photos/albums/by-slug/${encodeURIComponent(slug)}`,
     {},
@@ -254,6 +254,14 @@ export async function fetchFaceReferences(): Promise<FaceReferenceSet[]> {
     "Erro ao carregar referências faciais."
   );
   return data.people;
+}
+
+export async function confirmFaceMatch(photoId: string): Promise<void> {
+  await jsonRequest(
+    "/api/event-photos/faces/confirm",
+    { method: "POST", body: JSON.stringify({ photoId }) },
+    "Erro ao confirmar a marcação."
+  );
 }
 
 export async function rejectFaceMatch(photoId: string): Promise<void> {

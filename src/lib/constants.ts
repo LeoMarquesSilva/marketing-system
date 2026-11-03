@@ -68,6 +68,7 @@ export const COMPLETION_TYPES = [
   { value: "postagem_feita", label: "Postagem feita" },
   { value: "postagem_externa", label: "Postagem em outro canal" },
   { value: "conteudo_entregue", label: "Conteúdo entregue" },
+  { value: "enviado_grafica", label: "Enviado à gráfica" },
 ] as const;
 
 export type CompletionType = (typeof COMPLETION_TYPES)[number]["value"];

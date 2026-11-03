@@ -3,55 +3,71 @@ import "server-only";
 import {
   ETIQUETAS_AGENDAMENTO,
   areaDoCatalogo,
+  pessoasDaArea,
   responsavelSugerido,
+  responsaveisNaArea,
   tarefasPermitidas,
   usuarioPorSigla,
   validarAgendamentos,
   type AgendamentoEntrada,
   type EtiquetaAgendamento,
+  type OpcaoTarefa,
+  type OpcaoVios,
 } from "./agendamento";
-import { criarCalendario, type ContagemPrazo } from "./dias-uteis";
+import { openAIKey } from "@/lib/openai-keys";
+import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./dias-uteis";
+import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
+import { areaComSugestaoIa, resultadoDaSugestao, type SugestaoIa } from "./sugestao-ia";
 import { carregarFeriados } from "./feriados";
 import { cadeiaDoFluxo, montarFluxo, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
 import { buscarPastasVios } from "./pastas-vios";
+import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
 import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
-import { linhasParaFila } from "./fila-vios";
-import { ESCRITORIOS } from "./triagem";
+import { linhasParaFila, type TarefaNoVios } from "./fila-vios";
+import { LIMITE_TRECHO_SINTESE } from "./dados-processo";
+import { buscarPastaPorCi, buscarSinteseDaPasta } from "./sioe";
+import { ESCRITORIOS, type PastaSioe } from "./triagem";
 import {
   carregarArvoreVios,
   carregarCatalogoProcessos,
   catalogoDaArea,
   consultarFilaSama,
   enfileirarNoSama,
+  enfileirarSintese,
   envioSimulado,
   modoAgendamento,
+  sinteseSimulada,
+  sintesesDaPasta,
   type CatalogoArea,
 } from "./sama";
-import { COLUNAS_PUBLICACAO, admin, falhou, hojeEmSaoPaulo, publicacaoResumo, type PublicacaoRow } from "./server";
+import { COLUNAS_PUBLICACAO, admin, falhou, hojeEmSaoPaulo, publicacaoResumo, resolverPendencia, type PublicacaoRow } from "./server";
 import type {
   AgendamentoResumo,
   CatalogoVistagem,
   ConferenciaItem,
   ConferenciaResposta,
   CheckResposta,
+  DjenParte,
   EnvioStatus,
   InconsistenciaItem,
   InconsistenciaResumo,
   PublicacaoResumo,
+  ResolucaoPendencia,
+  SintesePedida,
   VistagemDetalhe,
 } from "./types";
 
 const COLUNAS_AGENDAMENTO =
-  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, hora, responsavel, revisor, observacao, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, envio_erro, enviado_em";
+  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, hora, responsavel, revisor, observacao, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, vios_tarefas, envio_erro, enviado_em";
 
 type AgendamentoRow = {
   id: string; publicacao_id: string; ordem: number; etiqueta: EtiquetaAgendamento; tarefa: string; tarefa_id: string | null;
   data: string; data_fatal: string | null; dias_prazo: number | null; contagem_prazo: ContagemPrazo | null; hora: string | null;
   responsavel: string; revisor: string | null;
   observacao: string | null; envio_status: EnvioStatus;
-  envio_simulado: boolean | null; sama_agendamento_id: string | null; vios_tarefa_id: string | null; envio_erro: string | null;
-  enviado_em: string | null;
+  envio_simulado: boolean | null; sama_agendamento_id: string | null; vios_tarefa_id: string | null;
+  vios_tarefas: TarefaNoVios[] | null; envio_erro: string | null; enviado_em: string | null;
 };
 
 function agendamentoResumo(row: AgendamentoRow): AgendamentoResumo {
@@ -69,6 +85,7 @@ function agendamentoResumo(row: AgendamentoRow): AgendamentoResumo {
     responsavel: row.responsavel,
     revisor: row.revisor,
     observacao: row.observacao,
+    viosTarefas: row.vios_tarefas,
     envioStatus: row.envio_status,
     envioSimulado: row.envio_simulado,
     viosTarefaId: row.vios_tarefa_id,
@@ -77,12 +94,19 @@ function agendamentoResumo(row: AgendamentoRow): AgendamentoResumo {
   };
 }
 
-type PublicacaoComArea = PublicacaoRow & { area_processo: string | null; devolucoes: number };
+export type PublicacaoComArea = PublicacaoRow & {
+  area_processo: string | null;
+  devolucoes: number;
+  sugestao_ia: SugestaoIa | null;
+  djen_partes: DjenParte[] | null;
+};
 
-async function carregarPublicacao(id: string): Promise<PublicacaoComArea> {
+export const COLUNAS_PUBLICACAO_COM_AREA = `${COLUNAS_PUBLICACAO}, area_processo, devolucoes, sugestao_ia, djen_partes`;
+
+export async function carregarPublicacao(id: string): Promise<PublicacaoComArea> {
   const { data, error } = await admin()
     .from("vistagem_publicacoes")
-    .select(`${COLUNAS_PUBLICACAO}, area_processo, devolucoes`)
+    .select(COLUNAS_PUBLICACAO_COM_AREA)
     .eq("id", id)
     .maybeSingle();
   if (error) falhou("carregar a publicação", error);
@@ -117,7 +141,19 @@ function fluxosDoCatalogo(catalogo: CatalogoVistagem, arvore: Map<number, TipoNa
   return fluxos;
 }
 
-function catalogoParaPublicacao(areas: CatalogoArea[], publicacao: PublicacaoComArea): CatalogoVistagem | null {
+/** Responsáveis fixos do tipo com o nome igual ao da lista de usuários do VIOS da área (os que não estão nela saem). */
+function comResponsaveisDaArea(tarefas: OpcaoTarefa[], usuarios: OpcaoVios[]): OpcaoTarefa[] {
+  return tarefas.map((tarefa) => {
+    if (!tarefa.responsaveis?.length) return tarefa;
+    const responsaveis = responsaveisNaArea(tarefa.responsaveis, usuarios);
+    return responsaveis.length ? { ...tarefa, responsaveis } : { id: tarefa.id, nome: tarefa.nome, ...(tarefa.nomeVios ? { nomeVios: tarefa.nomeVios } : {}) };
+  });
+}
+
+export function catalogoParaPublicacao(
+  areas: CatalogoArea[],
+  publicacao: Pick<PublicacaoComArea, "area_processo" | "escritorio_responsavel">
+): CatalogoVistagem | null {
   const area = areaDoCatalogo(publicacao.area_processo, publicacao.escritorio_responsavel, areas.map((item) => item.area));
   const catalogo = catalogoDaArea(areas, area);
   if (!catalogo) return null;
@@ -125,9 +161,9 @@ function catalogoParaPublicacao(areas: CatalogoArea[], publicacao: PublicacaoCom
     area: catalogo.area,
     atualizadoEm: catalogo.atualizadoEm,
     tarefas: {
-      PRAZO: tarefasPermitidas(catalogo.etapas, "PRAZO"),
-      PROVIDENCIA: tarefasPermitidas(catalogo.etapas, "PROVIDENCIA"),
-      COMPROMISSO: tarefasPermitidas(catalogo.etapas, "COMPROMISSO"),
+      PRAZO: comResponsaveisDaArea(tarefasPermitidas(catalogo.etapas, "PRAZO"), catalogo.usuarios),
+      PROVIDENCIA: comResponsaveisDaArea(tarefasPermitidas(catalogo.etapas, "PROVIDENCIA"), catalogo.usuarios),
+      COMPROMISSO: comResponsaveisDaArea(tarefasPermitidas(catalogo.etapas, "COMPROMISSO"), catalogo.usuarios),
     },
     usuarios: catalogo.usuarios,
   };
@@ -141,7 +177,7 @@ function catalogoParaPublicacao(areas: CatalogoArea[], publicacao: PublicacaoCom
 export type AreasVistagem = string[] | null;
 
 /** O jurídico só abre e grava publicações das suas áreas. */
-function garantirArea(publicacao: { escritorio_responsavel: string | null }, areas: AreasVistagem): void {
+export function garantirArea(publicacao: { escritorio_responsavel: string | null }, areas: AreasVistagem): void {
   if (areas && !areas.includes(publicacao.escritorio_responsavel ?? "")) {
     throw new VistagemError("Esta publicação não é de uma área sua.", 403);
   }
@@ -170,16 +206,53 @@ export async function listarFilaJuridico(
   if (contagem.error) falhou("contar a fila do jurídico", contagem.error);
   const porEscritorio: Record<string, number> = {};
   for (const row of contagem.data ?? []) {
-    const chave = (row.escritorio_responsavel as string | null) ?? "Sem escritório";
+    const chave = (row.escritorio_responsavel as string | null) ?? "Sem área";
     porEscritorio[chave] = (porEscritorio[chave] ?? 0) + 1;
   }
   return { publicacoes: ((data ?? []) as PublicacaoRow[]).map((row) => publicacaoResumo(row, 600)), porEscritorio };
 }
 
+/**
+ * "Agendar Direto" da controladoria: a pendência ainda está na triagem e a vistagem usa o escritório (e a pasta,
+ * se houver) escolhidos ali, sem gravar nada até o envio.
+ */
+export interface PreviaPendencia {
+  escritorio: string;
+  ci?: string | null;
+}
+
+async function comPrevia(publicacao: PublicacaoComArea, previa: PreviaPendencia, areasDoUsuario: AreasVistagem): Promise<PublicacaoComArea> {
+  if (areasDoUsuario !== null) throw new VistagemError("Só a controladoria agenda direto da triagem.", 403);
+  if (publicacao.status !== "triagem_pendente") throw new VistagemError("Esta publicação não está mais pendente na controladoria. Atualize a lista.", 409);
+  if (!(ESCRITORIOS as readonly string[]).includes(previa.escritorio)) throw new VistagemError("Escolha o escritório responsável.");
+  const ci = previa.ci?.replace(/\D/g, "") || publicacao.pasta_ci || "";
+  const pasta = ci ? (publicacao.pastas_candidatas ?? []).find((candidata) => candidata.ci === ci) ?? (await buscarPastaPorCi(ci)) : null;
+  if (ci && !pasta) throw new VistagemError(`CI ${ci} não encontrada no VIOS.`, 404);
+  return {
+    ...publicacao,
+    escritorio_responsavel: previa.escritorio,
+    ...(pasta ? dadosDaPasta(pasta) : {}),
+  };
+}
+
+/** Campos da pasta escolhida, para a vistagem sugerir responsável, revisor e a lista de tarefas da área do processo. */
+function dadosDaPasta(pasta: PastaSioe): Partial<PublicacaoComArea> {
+  return {
+    pasta_ci: pasta.ci,
+    pasta_vinculo: pasta.vinculo,
+    area_processo: pasta.area,
+    advogado_responsavel: pasta.advogadoResponsavel,
+    cliente: pasta.cliente,
+    grupo_cliente: pasta.grupoCliente,
+    situacao_processo: pasta.situacao,
+  };
+}
+
 /** Publicação com o teor completo, as tarefas já vinculadas e a lista travada da área. */
-export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = null): Promise<VistagemDetalhe> {
-  const [publicacao, agendamentos] = await Promise.all([carregarPublicacao(id), agendamentosPorPublicacao([id])]);
-  garantirArea(publicacao, areasDoUsuario);
+export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = null, previa: PreviaPendencia | null = null): Promise<VistagemDetalhe> {
+  const [carregada, agendamentos] = await Promise.all([carregarPublicacao(id), agendamentosPorPublicacao([id])]);
+  const publicacao = previa ? await comPrevia(carregada, previa, areasDoUsuario) : carregada;
+  if (!previa) garantirArea(publicacao, areasDoUsuario);
   let catalogoErro: string | null = null;
   const areas = await carregarCatalogoProcessos().catch((erro: unknown) => {
     catalogoErro = erro instanceof Error ? erro.message : String(erro);
@@ -190,7 +263,8 @@ export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = 
     catalogoErro = `Não há lista de tarefas do VIOS para a área "${publicacao.area_processo ?? publicacao.escritorio_responsavel ?? "sem área"}" desta pasta.`;
   }
   let fluxosErro: string | null = null;
-  const [inconsistencias, feriados, pastaVios, arvore] = await Promise.all([
+  let sinteseErro: string | null = null;
+  const [inconsistencias, feriados, pastaVios, arvore, sintese, sintesesPedidas] = await Promise.all([
     inconsistenciasPorPublicacao([id]),
     carregarFeriados().catch(() => [] as string[]),
     publicacao.pasta_ci ? buscarPastasVios([publicacao.pasta_ci]) : Promise.resolve(new Map<string, { vinculo: string | null; auxiliarSigla: string | null }>()),
@@ -198,19 +272,60 @@ export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = 
       fluxosErro = erro instanceof Error ? erro.message : String(erro);
       return null;
     }),
+    publicacao.pasta_ci
+      ? buscarSinteseDaPasta(publicacao.pasta_ci).catch((erro: unknown) => {
+          sinteseErro = erro instanceof Error ? erro.message : String(erro);
+          return null;
+        })
+      : Promise.resolve(null),
+    // Só a lista do que já foi pedido ao robô: se a fila do SAMA não responder, o modal abre sem ela.
+    publicacao.pasta_ci && !previa
+      ? sintesesDaPasta(publicacao.pasta_ci).catch((erro: unknown): SintesePedida[] => {
+          console.error("[vistagem] sínteses pedidas", erro instanceof Error ? erro.message : erro);
+          return [];
+        })
+      : Promise.resolve([] as SintesePedida[]),
   ]);
   const auxiliar = publicacao.pasta_ci ? pastaVios.get(publicacao.pasta_ci)?.auxiliarSigla ?? null : null;
+  const responsavel = catalogo ? responsavelSugerido(publicacao.advogado_responsavel, catalogo.usuarios)?.nome ?? null : null;
+  const revisor = catalogo ? usuarioPorSigla(auxiliar, catalogo.usuarios)?.nome ?? null : null;
+  // Foto e área são enfeite e atalho: se a consulta falhar, a tela mostra as iniciais e a lista inteira do VIOS.
+  const pessoas = await pessoasPorNome([publicacao.advogado_responsavel, ...(catalogo?.usuarios.map((usuario) => usuario.nome) ?? [])]).catch(
+    (erro: unknown): PessoasPorNome => {
+      console.error("[vistagem] fotos e áreas das pessoas", erro instanceof Error ? erro.message : erro);
+      return { fotos: {}, areas: {}, rotulos: {} };
+    }
+  );
   return {
     publicacao: publicacaoResumo(publicacao, null),
     agendamentos: agendamentos.get(id) ?? [],
     inconsistencias: inconsistencias.get(id) ?? [],
+    sintese,
+    sinteseErro,
+    sintesesPedidas,
     catalogo,
     catalogoErro,
-    responsavelSugerido: catalogo ? responsavelSugerido(publicacao.advogado_responsavel, catalogo.usuarios)?.nome ?? null : null,
-    revisorSugerido: catalogo ? usuarioPorSigla(auxiliar, catalogo.usuarios)?.nome ?? null : null,
+    responsavelSugerido: responsavel,
+    revisorSugerido: revisor,
+    fotos: pessoas.fotos,
+    // Responsável e Revisor mostram as pessoas da área da fila e do processo; o servidor aceita qualquer usuário do VIOS.
+    pessoasDaArea: catalogo
+      ? pessoasDaArea(catalogo.usuarios, pessoas.areas, [publicacao.escritorio_responsavel, catalogo.area], [responsavel, revisor])
+      : null,
+    areaDasPessoas: pessoas.rotulos,
     feriados,
     fluxos: catalogo && arvore ? fluxosDoCatalogo(catalogo, arvore) : {},
     fluxosErro,
+    esocial:
+      catalogo && pedeEsocial(catalogo.area)
+        ? {
+            tarefa: tarefaEsocialDaLista(catalogo.tarefas.PROVIDENCIA),
+            responsavelSugerido: responsavelSugerido(RESPONSAVEL_ESOCIAL, catalogo.usuarios)?.nome ?? null,
+          }
+        : null,
+    sugestaoIa: publicacao.sugestao_ia,
+    // Na prévia da controladoria a publicação ainda não está na fila do jurídico: a IA gera depois, se for o caso.
+    sugestaoIaDisponivel: !previa && Boolean(catalogo && areaComSugestaoIa(catalogo.area) && openAIKey("analisePublicacao")),
     hoje: hojeEmSaoPaulo(),
   };
 }
@@ -218,13 +333,25 @@ export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = 
 /** O jurídico grava as tarefas da publicação e manda para a conferência da controladoria. */
 export async function salvarVistagem(
   id: string,
-  entrada: { agendamentos: AgendamentoEntrada[]; observacao: string | null },
+  entrada: {
+    agendamentos: AgendamentoEntrada[];
+    observacao: string | null;
+    publicacaoEsocial?: string | null;
+    sugestaoUsada?: boolean;
+    /** "Agendar Direto" da controladoria: resolve a pendência (escritório, grupo, risco, CI) junto com a vistagem. */
+    resolucao?: ResolucaoPendencia | null;
+  },
   authUserId: string,
   areas: AreasVistagem = null
 ): Promise<void> {
-  const publicacao = await carregarPublicacao(id);
-  garantirArea(publicacao, areas);
-  if (publicacao.status !== "juridico_vistar") throw new VistagemError("Esta publicação não está aguardando vistagem.", 409);
+  const carregada = await carregarPublicacao(id);
+  const resolucao = entrada.resolucao ?? null;
+  // Direto da triagem: valida tudo com o escritório e a pasta escolhidos e só então tira a pendência da controladoria.
+  const publicacao = resolucao ? await comPrevia(carregada, { escritorio: resolucao.escritorio ?? "", ci: resolucao.ci }, areas) : carregada;
+  if (!resolucao) {
+    garantirArea(publicacao, areas);
+    if (publicacao.status !== "juridico_vistar") throw new VistagemError("Esta publicação não está aguardando vistagem.", 409);
+  }
   const catalogo = catalogoParaPublicacao(await carregarCatalogoProcessos(), publicacao);
   if (!catalogo) throw new VistagemError("Não há lista de tarefas do VIOS para a área desta pasta. Avise a controladoria.", 422);
 
@@ -237,6 +364,29 @@ export async function salvarVistagem(
     cadeiaDaTarefa: (tarefaId) => cadeiaDoFluxo(montarFluxo(tarefaId, arvore)),
   });
   if (!validacao.ok) throw new VistagemError(validacao.erros.join(" "));
+  // Trabalhista: classificação eSocial (só na publicação, não vai para o VIOS) e, se pedir, a tarefa Inserir E-social.
+  const esocial = validarEsocial({
+    areaDoCatalogo: catalogo.area,
+    classificacao: entrada.publicacaoEsocial,
+    providencias: catalogo.tarefas.PROVIDENCIA,
+    itens: validacao.itens,
+  });
+  if (!esocial.ok) throw new VistagemError(esocial.erro);
+  // Mede o acerto da IA: o jurídico usou a sugestão como veio, alterou ou não usou.
+  const resultadoIa = publicacao.sugestao_ia
+    ? resultadoDaSugestao({
+        usou: entrada.sugestaoUsada === true,
+        sugestao: publicacao.sugestao_ia,
+        itens: validacao.itens,
+        esocial: esocial.valor,
+        tarefaEsocialId: tarefaEsocialDaLista(catalogo.tarefas.PROVIDENCIA)?.id ?? null,
+        dataPublicacao: publicacao.data_publicacao,
+        ehDiaDePrazo: criarCalendarioDePrazo(feriados),
+      })
+    : null;
+
+  // Tarefas válidas: a pendência sai da triagem (vai para "juridico_vistar") e a vistagem segue como a do jurídico.
+  if (resolucao) await resolverPendencia(id, resolucao, authUserId);
 
   const db = admin();
   const { error: erroApagar } = await db.from("vistagem_agendamentos").delete().eq("publicacao_id", id).eq("envio_status", "nao_enviado");
@@ -268,6 +418,8 @@ export async function salvarVistagem(
     .update({
       status: "controladoria_vistar",
       observacao_vistagem: entrada.observacao?.trim() || null,
+      publicacao_esocial: esocial.valor,
+      sugestao_ia_resultado: resultadoIa,
       vistado_por: authUserId,
       vistado_em: new Date().toISOString(),
     })
@@ -295,14 +447,18 @@ async function itensDeConferencia(
   status: string[],
   limite: number,
   ordemAscendente: boolean,
-  ordem: "vistado_em" | "conferido_em" | "checado_em" = ordemAscendente ? "vistado_em" : "conferido_em"
+  ordem: "vistado_em" | "conferido_em" | "checado_em" = ordemAscendente ? "vistado_em" : "conferido_em",
+  filtro: { escritorios?: string[] | null; vistadoDesde?: string } = {}
 ): Promise<ConferenciaItem[]> {
-  const { data, error } = await admin()
+  let consulta = admin()
     .from("vistagem_publicacoes")
     .select(COLUNAS_PUBLICACAO)
     .in("status", status)
     .order(ordem, { ascending: ordemAscendente, nullsFirst: false })
     .limit(limite);
+  if (filtro.escritorios) consulta = consulta.in("escritorio_responsavel", filtro.escritorios);
+  if (filtro.vistadoDesde) consulta = consulta.gte("vistado_em", filtro.vistadoDesde);
+  const { data, error } = await consulta;
   if (error) falhou("carregar a conferência", error);
   const linhas = (data ?? []) as PublicacaoRow[];
   const [agendamentos, nomes, inconsistencias] = await Promise.all([
@@ -320,7 +476,38 @@ async function itensDeConferencia(
 }
 
 /**
- * Manda a publicação para a fila de outra área (ex.: Cível ↔ Reestruturação), com o motivo.
+ * "Atualizar Síntese": põe na fila do robô o parágrafo que a pessoa escreveu, para ele acrescentar no fim da
+ * síntese da pasta no VIOS como "dd/mm/aaaa (Nome): texto". Devolve a lista atualizada do que foi pedido.
+ */
+export async function pedirAtualizacaoSintese(id: string, texto: string, authUserId: string, areas: AreasVistagem): Promise<SintesePedida[]> {
+  const publicacao = await carregarPublicacao(id);
+  garantirArea(publicacao, areas);
+  if (!publicacao.pasta_ci) throw new VistagemError("Esta publicação está sem pasta no VIOS.");
+  const trecho = texto.trim();
+  if (trecho.length < 3) throw new VistagemError("Escreva o que acrescentar à síntese.");
+  if (trecho.length > LIMITE_TRECHO_SINTESE) throw new VistagemError(`O trecho passa de ${LIMITE_TRECHO_SINTESE} caracteres.`);
+  const autor = (await nomesDosUsuarios([authUserId])).get(authUserId)?.trim();
+  if (!autor) throw new VistagemError("Seu nome não está no cadastro de usuários do Orquestra.", 403);
+  const pedidas = await sintesesDaPasta(publicacao.pasta_ci);
+  // Repetido é o trecho que está na fila ou já foi gravado; o que deu erro ou só foi simulado pode ir de novo.
+  const repetido = (pedida: SintesePedida) => pedida.status !== "erro" && !(pedida.simulado && pedida.status === "concluido");
+  if (pedidas.some((pedida) => pedida.texto.trim() === trecho && repetido(pedida))) {
+    throw new VistagemError("Este trecho já foi pedido para esta pasta.", 409);
+  }
+  const [ano, mes, dia] = hojeEmSaoPaulo().split("-");
+  await enfileirarSintese({
+    ci: publicacao.pasta_ci,
+    cnj: publicacao.numero_processo,
+    texto: trecho,
+    autor,
+    data: `${dia}/${mes}/${ano}`,
+    simular: sinteseSimulada(),
+  });
+  return sintesesDaPasta(publicacao.pasta_ci);
+}
+
+/**
+ * Manda a publicação para a fila de outra área (ex.: Cível ↔ Cível | Insolvência), com o motivo.
  * Só muda o escritório no Orquestra; a pasta no VIOS fica como está.
  */
 export async function transferirPublicacao(
@@ -351,6 +538,22 @@ export async function transferirPublicacao(
     .select("id");
   if (error) falhou("transferir a publicação", error);
   if (!data?.length) throw new VistagemError("A publicação mudou de situação. Atualize a lista.", 409);
+}
+
+/** Dias que a visão "Agendadas" do jurídico mostra. */
+export const DIAS_AGENDADAS = 30;
+
+/**
+ * O que o jurídico já vistou nos últimos dias, das suas áreas: na conferência, com o robô, agendado,
+ * checado ou em revisão, com as tarefas e a situação de cada uma no VIOS.
+ */
+export async function listarAgendadasJuridico(escritorio: string | null, areas: AreasVistagem = null): Promise<ConferenciaItem[]> {
+  if (areas && (!areas.length || (escritorio && !areas.includes(escritorio)))) return [];
+  const vistadoDesde = new Date(Date.now() - DIAS_AGENDADAS * 86_400_000).toISOString();
+  return itensDeConferencia(["controladoria_vistar", "pronto_para_agendar", "agendado", "checado", "revisar"], 300, false, "vistado_em", {
+    escritorios: escritorio ? [escritorio] : areas,
+    vistadoDesde,
+  });
 }
 
 export async function listarConferencia(): Promise<ConferenciaResposta> {
@@ -590,7 +793,14 @@ export async function atualizarEnvios(): Promise<{ consultadas: number; concluid
     const viosTarefaId = atual.cisPorAgendamento.size ? atual.cisPorAgendamento.get(item.id) ?? null : atual.viosTarefaId;
     await db
       .from("vistagem_agendamentos")
-      .update({ envio_status: atual.status, vios_tarefa_id: viosTarefaId, envio_erro: atual.erro, envio_atualizado_em: agora })
+      .update({
+        envio_status: atual.status,
+        vios_tarefa_id: viosTarefaId,
+        // Datas como ficaram no VIOS (Check); só vêm no lançamento pela intimação.
+        vios_tarefas: atual.tarefasViosPorAgendamento.get(item.id) ?? null,
+        envio_erro: atual.erro,
+        envio_atualizado_em: agora,
+      })
       .eq("id", item.id);
   }
 

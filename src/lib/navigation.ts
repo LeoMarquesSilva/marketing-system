@@ -17,6 +17,7 @@ import {
   CalendarClock,
   CalendarRange,
   Camera,
+  ClipboardList,
   Clapperboard,
   Coffee,
   Columns3,
@@ -50,6 +51,9 @@ import {
 import {
   TEAM_POSTS_PATH,
   canSeeTeamPosts,
+  TEAM_SURVEYS_KEY,
+  hasTeamSurveysAccess,
+  isTeamSurveysPath,
   hasCafeCulturaAccess,
   hasFacilitiesAccess,
   hasIcpAccess,
@@ -363,6 +367,14 @@ export const NAV_FRONTS: NavFront[] = [
           { href: "/operacoes-legais/vistagem/check", label: "Check" },
         ],
       },
+      {
+        // Escuta do time (1º uso: PE27); a resposta fica em /pesquisa/<link>, aberta ao público de cada pesquisa.
+        id: "pesquisas-equipe",
+        label: "Pesquisas com a equipe",
+        shortLabel: "Pesquisas",
+        icon: ClipboardList,
+        pages: [{ href: TEAM_SURVEYS_KEY, label: "Pesquisas" }],
+      },
     ],
   },
   {
@@ -473,6 +485,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
       if (isFacilitiesPath(href)) return hasFacilitiesAccess(profile);
       if (isVistagemPath(href)) return canSeeVistagemPath(profile, href);
       if (isOpsPlannerPath(href)) return opsPlanner;
+      if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
       if (href.startsWith("/operacoes-legais")) return hasOperacoesLegaisAccess(profile);
       if (href === "/icp") return hasIcpAccess(profile);
       if (href === "/conteudo/gustavo") return gustavo;
@@ -500,6 +513,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
     if (isFacilitiesPath(href)) return hasFacilitiesAccess(profile);
     if (isVistagemPath(href)) return canSeeVistagemPath(profile, href);
     if (isOpsPlannerPath(href)) return opsPlanner;
+    if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
     if (href.startsWith("/operacoes-legais/")) return hasOperacoesLegaisAccess(profile);
     switch (href) {
       case "/conteudo/inicio":

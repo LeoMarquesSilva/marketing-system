@@ -10,6 +10,7 @@ import {
   hasIcpAccess,
   hasOperacoesLegaisAccess,
   hasOpsPlannerAccess,
+  hasTeamSurveysAccess,
   hasVistagemAccess,
   isManualOnlyKey,
   normalizePermissionsInput,
@@ -274,5 +275,19 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath({ role: null, permissions: ["/conteudo/roteiros"] }, "/minha-ficha")).toBe(true);
     // A tela de revisão continua restrita à RH.
     expect(canAccessPath(socio, "/rh/fichas-cadastrais")).toBe(false);
+  });
+});
+
+describe("pesquisas com a equipe", () => {
+  it("gestão e resultados só para admin, mesmo com a chave salva no cadastro", () => {
+    const comChave = { role: null, permissions: ["/operacoes-legais/pesquisas"] };
+    expect(hasTeamSurveysAccess({ role: "admin" })).toBe(true);
+    expect(hasTeamSurveysAccess(comChave)).toBe(false);
+    expect(canAccessPath(comChave, "/operacoes-legais/pesquisas/123")).toBe(false);
+    expect(normalizePermissionsInput(["/operacoes-legais/pesquisas"])).toBeNull();
+  });
+
+  it("a página de resposta abre para qualquer pessoa logada", () => {
+    expect(canAccessPath({ role: null, permissions: ["/planner"] }, "/pesquisa/pe27-operacoes-legais")).toBe(true);
   });
 });

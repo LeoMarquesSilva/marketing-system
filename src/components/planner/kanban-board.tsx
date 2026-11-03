@@ -37,7 +37,17 @@ import {
 import { Button } from "@/components/ui/button";
 import { KanbanColumn, type ColumnId } from "./kanban-column";
 import { KanbanCardOverlay } from "./kanban-card-overlay";
+import { CertificadosColumn } from "./certificados-column";
 import { getTitleTag } from "@/lib/planner-title-tag";
+import {
+  CERTIFICADO_A_FAZER_STAGE,
+  CERTIFICADO_ENVIADO_COMPLETION,
+  CERTIFICADO_PRONTO_STAGE,
+  certificadoSectionFromDropId,
+  getCertificadoSection,
+  isCertificadoRequest,
+  type CertificadoSection,
+} from "@/lib/planner-certificados";
 import { plannerTagDeliveryPath, plannerTagDeliveryUrl } from "@/lib/request-files/domain";
 import {
   type MarketingRequest,
@@ -297,8 +307,16 @@ export function KanbanBoard({
   const [revisaoFileCount, setRevisaoFileCount] = useState(0);
   const [isSubmittingRevisao, setIsSubmittingRevisao] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
+  const [busyCertificadoId, setBusyCertificadoId] = useState<string | null>(null);
   const { profile } = useAuth();
   const revisaoRule = getStageRule("revisao");
+
+  // Certificados ficam numa coluna própria, fora das etapas normais.
+  const boardRequests = useMemo(() => requests.filter((r) => !isCertificadoRequest(r)), [requests]);
+  const certificadoRequests = useMemo(
+    () => requests.filter((r) => isCertificadoRequest(r) && r.workflow_stage !== "concluido"),
+    [requests]
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -338,6 +356,45 @@ export function KanbanBoard({
     [requests, getColumnForRequest, columnIds]
   );
 
+  const moveCertificado = useCallback(
+    async (request: MarketingRequest, section: CertificadoSection) => {
+      if (getCertificadoSection(request) === section) return;
+      const prevStage = request.workflow_stage || "tarefas";
+      const stage = section === "pronto" ? CERTIFICADO_PRONTO_STAGE : CERTIFICADO_A_FAZER_STAGE;
+      setMoveError(null);
+      setBusyCertificadoId(request.id);
+      const { error } = await updateWorkflowStage(request.id, stage);
+      setBusyCertificadoId(null);
+      if (error) {
+        setMoveError("Não foi possível mover o certificado. Tente recarregar o Kanban.");
+        return;
+      }
+      logActivity(request.id, "stage_changed", prevStage, stage, profile?.id ?? null, profile?.name ?? null);
+      onRefresh();
+    },
+    [onRefresh, profile?.id, profile?.name]
+  );
+
+  const markCertificadoEnviado = useCallback(
+    async (request: MarketingRequest) => {
+      const prevStage = request.workflow_stage || "tarefas";
+      setMoveError(null);
+      setBusyCertificadoId(request.id);
+      const { error } = await updateMarketingRequest(request.id, {
+        workflow_stage: "concluido",
+        completion_type: CERTIFICADO_ENVIADO_COMPLETION,
+      });
+      setBusyCertificadoId(null);
+      if (error) {
+        setMoveError("Não foi possível marcar o certificado como enviado. Tente de novo.");
+        return;
+      }
+      logActivity(request.id, "stage_changed", prevStage, "concluido", profile?.id ?? null, profile?.name ?? null);
+      onRefresh();
+    },
+    [onRefresh, profile?.id, profile?.name]
+  );
+
   const handleDragEnd = useCallback(
     async (event: DragEndEvent) => {
       const { active, over } = event;
@@ -348,6 +405,19 @@ export function KanbanBoard({
       }
 
       const requestId = active.id as string;
+
+      // Certificado só anda dentro da própria coluna; nada de fora entra nela.
+      const overId = String(over.id);
+      const draggedCertificado = certificadoRequests.find((r) => r.id === requestId);
+      const overCertificado = certificadoRequests.find((r) => r.id === overId);
+      const certificadoSection =
+        certificadoSectionFromDropId(overId) ?? (overCertificado ? getCertificadoSection(overCertificado) : null);
+      if (draggedCertificado || certificadoSection) {
+        setActiveRequest(null);
+        if (draggedCertificado && certificadoSection) await moveCertificado(draggedCertificado, certificadoSection);
+        return;
+      }
+
       const targetColumnId = resolveTargetColumn(over.id as string);
       if (!targetColumnId) {
         setActiveRequest(null);
@@ -424,7 +494,7 @@ export function KanbanBoard({
         }
       }
     },
-    [requests, onRefresh, resolveTargetColumn, profile?.id, profile?.name, getStageRule, setRevisaoArtLink, setRevisaoImagePath, setRevisaoFileCount]
+    [requests, certificadoRequests, moveCertificado, onRefresh, resolveTargetColumn, profile?.id, profile?.name, getStageRule, setRevisaoArtLink, setRevisaoImagePath, setRevisaoFileCount]
   );
 
   const handleConfirmMoveToRevisao = useCallback(async () => {
@@ -478,7 +548,7 @@ export function KanbanBoard({
               id={col.id}
               title={col.title}
               icon={col.icon}
-              requests={getRequestsForColumn(requests, col.id, displayOpts.cardSort)}
+              requests={getRequestsForColumn(boardRequests, col.id, displayOpts.cardSort)}
               onCardClick={handleCardClick}
               onMarkComplete={onMarkComplete}
               timeTotals={timeTotals}
@@ -497,6 +567,23 @@ export function KanbanBoard({
               }}
             />
           ))}
+          {certificadoRequests.length > 0 && (
+            <CertificadosColumn
+              requests={certificadoRequests}
+              busyRequestId={busyCertificadoId}
+              onCardClick={handleCardClick}
+              onMove={(request, section) => void moveCertificado(request, section)}
+              onSent={(request) => void markCertificadoEnviado(request)}
+              timeTotals={timeTotals}
+              commentsCounts={commentsCounts}
+              pendingAlterationsCounts={pendingAlterationsCounts}
+              checklistTotals={checklistTotals}
+              checklistCompleted={checklistCompleted}
+              stageSlaDays={stageSlaDays}
+              columnWidth={displayOpts.columnWidth}
+              showTimeOnCards={displayOpts.showTimeOnCards}
+            />
+          )}
         </div>
 
         <DragOverlay dropAnimation={null}>

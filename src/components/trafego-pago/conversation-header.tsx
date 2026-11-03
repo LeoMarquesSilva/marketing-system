@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, Check, Info, Loader2, RotateCcw, UserMinus, UserPlus } from "lucide-react";
+import { ArrowLeft, Check, Forward, Info, Loader2, RotateCcw, UserMinus, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { WhatsappLeadAvatar } from "@/components/trafego-pago/whatsapp-lead-avatar";
@@ -23,6 +23,8 @@ interface ConversationHeaderProps {
   onResolve: () => void;
   onReopen: () => void;
   onOpenDetails: () => void;
+  /** Mandar o lead (resumo + contato) para alguém da equipe. */
+  onForward: () => void;
 }
 
 export function ConversationHeader({
@@ -36,6 +38,7 @@ export function ConversationHeader({
   onResolve,
   onReopen,
   onOpenDetails,
+  onForward,
 }: ConversationHeaderProps) {
   const name = leadDisplayName(conversation);
   const origin = leadOriginMeta(conversation);
@@ -61,6 +64,20 @@ export function ConversationHeader({
           {origin.label} · {leadPhone(conversation)}
         </p>
       </div>
+
+      {!conversation.is_group && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onForward}
+          aria-label="Encaminhar lead para a equipe"
+          title="Encaminhar lead para a equipe"
+        >
+          <Forward />
+          <span className="hidden md:inline">Encaminhar</span>
+        </Button>
+      )}
 
       <OwnerPicker
         owner={owner}

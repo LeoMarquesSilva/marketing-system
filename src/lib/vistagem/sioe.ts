@@ -18,7 +18,7 @@ function sioe(): SupabaseClient {
   }
 }
 
-const COLUNAS = "ci, nro_cnj, vinculo, cliente, grupo_cliente, area, advogado_responsavel, situacao_processo, etiquetas";
+const COLUNAS = "ci, nro_cnj, vinculo, cliente, grupo_cliente, area, advogado_responsavel, situacao_processo, etiquetas, acao, fase_processual, valor_acao, valor_acao_atualizado";
 
 type ProcessoRow = {
   ci: string | number;
@@ -30,7 +30,18 @@ type ProcessoRow = {
   advogado_responsavel: string | null;
   situacao_processo: string | null;
   etiquetas: string | null;
+  acao: string | null;
+  fase_processual: string | null;
+  valor_acao: number | string | null;
+  valor_acao_atualizado: number | string | null;
 };
+
+/** numeric chega como número (ou texto, se passar da precisão do JS). */
+function numero(valor: number | string | null): number | null {
+  if (valor === null || valor === "") return null;
+  const convertido = Number(valor);
+  return Number.isFinite(convertido) ? convertido : null;
+}
 
 function paraPasta(row: ProcessoRow): PastaSioe {
   return {
@@ -43,6 +54,10 @@ function paraPasta(row: ProcessoRow): PastaSioe {
     advogadoResponsavel: row.advogado_responsavel,
     situacao: row.situacao_processo,
     etiquetas: row.etiquetas,
+    acao: row.acao?.trim() || null,
+    fase: row.fase_processual?.trim() || null,
+    valorAcao: numero(row.valor_acao),
+    valorAcaoAtualizado: numero(row.valor_acao_atualizado),
   };
 }
 
@@ -67,6 +82,33 @@ export async function buscarPastasPorCnj(digitos: string[]): Promise<Map<string,
   return resultado;
 }
 
+let cacheTodas: { carregadoEm: number; pastas: PastaSioe[] } | null = null;
+
+/**
+ * Todas as pastas do SIOE (~35 mil), para achar pelo nome do cliente. Lê em páginas de mil,
+ * cinco por vez, e guarda por 30 minutos (a triagem e as sugestões rodam em seguida).
+ */
+export async function carregarTodasAsPastas(): Promise<PastaSioe[]> {
+  if (cacheTodas && Date.now() - cacheTodas.carregadoEm < 30 * 60 * 1000) return cacheTodas.pastas;
+  const db = sioe();
+  const { count, error: erroContagem } = await db.from("processos_completo").select("ci", { count: "exact", head: true });
+  if (erroContagem) throw new VistagemError(`Falha ao contar os processos do SIOE: ${erroContagem.message}`, 502);
+  const paginas = Array.from({ length: Math.ceil((count ?? 0) / 1000) }, (_, i) => i * 1000);
+  const pastas: PastaSioe[] = [];
+  for (let i = 0; i < paginas.length; i += 5) {
+    const lotes = await Promise.all(
+      paginas.slice(i, i + 5).map(async (inicio) => {
+        const { data, error } = await db.from("processos_completo").select(COLUNAS).order("ci").range(inicio, inicio + 999);
+        if (error) throw new VistagemError(`Falha ao carregar os processos do SIOE: ${error.message}`, 502);
+        return ((data ?? []) as ProcessoRow[]).map(paraPasta);
+      })
+    );
+    for (const lote of lotes) pastas.push(...lote);
+  }
+  cacheTodas = { carregadoEm: Date.now(), pastas };
+  return pastas;
+}
+
 export async function buscarPastaPorCi(ci: string): Promise<PastaSioe | null> {
   const numero = ci.replace(/\D/g, "");
   if (!numero) return null;
@@ -74,6 +116,19 @@ export async function buscarPastaPorCi(ci: string): Promise<PastaSioe | null> {
   if (error) throw new VistagemError(`Falha ao consultar a pasta no SIOE: ${error.message}`, 502);
   const [row] = (data ?? []) as ProcessoRow[];
   return row ? paraPasta(row) : null;
+}
+
+/**
+ * Síntese do processo (coluna "Observações (síntese do processo)" do relatório do VIOS) da pasta. Fica fora de
+ * COLUNAS: chega a 20 mil caracteres e só a vistagem aberta precisa dela.
+ */
+export async function buscarSinteseDaPasta(ci: string): Promise<string | null> {
+  const numero = ci.replace(/\D/g, "");
+  if (!numero) return null;
+  const { data, error } = await sioe().from("processos_completo").select("observacoes").eq("ci", numero).limit(1);
+  if (error) throw new VistagemError(`Falha ao consultar a síntese do processo no SIOE: ${error.message}`, 502);
+  const [row] = (data ?? []) as { observacoes: string | null }[];
+  return row?.observacoes?.trim() || null;
 }
 
 /** Área de cada pessoa: sp_usuarios_area e, para quem não está lá, colaboradores. */

@@ -3,8 +3,9 @@ import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { chaveNome, type EtapaVios, type OpcaoVios } from "./agendamento";
 import { VistagemError } from "./errors";
-import { cisDoResultado, type LinhaFilaSama, type ModoAgendamento } from "./fila-vios";
+import { cisDoResultado, tarefasViosDoResultado, type LinhaFilaSama, type ModoAgendamento, type TarefaNoVios } from "./fila-vios";
 import type { TipoNaArvore } from "./fluxo-vios";
+import type { SintesePedida } from "./types";
 
 /**
  * Integração com o SAMA: catálogo de tarefas/usuários do VIOS por área
@@ -28,6 +29,14 @@ export function envioSimulado(): boolean {
 }
 
 /**
+ * "Atualizar Síntese" tem chave própria: o robô só acrescenta no editor do VIOS, sem gravar, até
+ * VISTAGEM_SINTESE_MODO=real (e o envio das tarefas também estar em real).
+ */
+export function sinteseSimulada(): boolean {
+  return envioSimulado() || process.env.VISTAGEM_SINTESE_MODO?.trim().toLowerCase() !== "real";
+}
+
+/**
  * VISTAGEM_AGENDAMENTO=intimacao: o robô lança as tarefas na publicação (Intimações do
  * VIOS). Sem ela, cria dentro da pasta, como antes — só ligue depois de implantar o
  * sama-rpa que entende a coluna `lancamento`.
@@ -44,16 +53,35 @@ export interface CatalogoArea {
 }
 
 let cacheCatalogo: { carregadoEm: number; areas: CatalogoArea[] } | null = null;
-let cacheEtiquetas: { carregadoEm: number; etiquetas: Map<string, number[]> } | null = null;
+/** Etiquetas e responsáveis fixos de cada tipo de tarefa do VIOS. */
+interface DadosDoTipo {
+  etiquetas: number[];
+  responsaveis: string[];
+}
+
+let cacheEtiquetas: { carregadoEm: number; etiquetas: Map<string, DadosDoTipo> } | null = null;
 const CACHE_MS = 10 * 60 * 1000;
 
-/** Etiquetas de cada tipo de tarefa do VIOS (ids), por id do tipo. */
-async function carregarEtiquetasDosTipos(): Promise<Map<string, number[]>> {
+/** Etiquetas (ids) e responsáveis fixos de cada tipo de tarefa do VIOS, por id do tipo. */
+async function carregarEtiquetasDosTipos(): Promise<Map<string, DadosDoTipo>> {
   if (cacheEtiquetas && Date.now() - cacheEtiquetas.carregadoEm < CACHE_MS) return cacheEtiquetas.etiquetas;
-  const { data, error } = await sama().from("vios_tipos_tarefa").select("etapa_id, etiquetas").limit(5000);
+  type LinhaTipo = { etapa_id: number; etiquetas: number[] | null; responsaveis?: string[] | null };
+  let { data, error } = await sama().from("vios_tipos_tarefa").select("etapa_id, etiquetas, responsaveis").limit(5000).returns<LinhaTipo[]>();
+  if (error && /responsaveis/.test(error.message)) {
+    // SAMA ainda sem a coluna (migração 20261028000010 do sama-rpa): segue sem os responsáveis fixos.
+    ({ data, error } = await sama().from("vios_tipos_tarefa").select("etapa_id, etiquetas").limit(5000).returns<LinhaTipo[]>());
+  }
   if (error) throw new VistagemError(`Falha ao carregar as etiquetas dos tipos de tarefa do VIOS no SAMA: ${error.message}`, 502);
   if (!data?.length) throw new VistagemError("As etiquetas dos tipos de tarefa do VIOS no SAMA (vios_tipos_tarefa) estão vazias.", 502);
-  const etiquetas = new Map(data.map((row) => [String(row.etapa_id), ((row.etiquetas ?? []) as number[]).map(Number)]));
+  const etiquetas = new Map(
+    data.map((row) => [
+      String(row.etapa_id),
+      {
+        etiquetas: ((row.etiquetas ?? []) as number[]).map(Number),
+        responsaveis: (row.responsaveis ?? []).filter(Boolean),
+      },
+    ])
+  );
   cacheEtiquetas = { carregadoEm: Date.now(), etiquetas };
   return etiquetas;
 }
@@ -70,7 +98,10 @@ export async function carregarCatalogoProcessos(): Promise<CatalogoArea[]> {
     area: row.area as string,
     etapas: ((row.etapas ?? []) as OpcaoVios[])
       .filter((etapa) => etapa?.id && etapa?.nome)
-      .map((etapa) => ({ id: String(etapa.id), nome: etapa.nome, etiquetas: etiquetasPorTipo.get(String(etapa.id)) ?? [] })),
+      .map((etapa) => {
+        const tipo = etiquetasPorTipo.get(String(etapa.id));
+        return { id: String(etapa.id), nome: etapa.nome, etiquetas: tipo?.etiquetas ?? [], responsaveis: tipo?.responsaveis ?? [] };
+      }),
     // o usuário do robô não é responsável de tarefa
     usuarios: ((row.usuarios ?? []) as OpcaoVios[])
       .filter((usuario) => usuario?.id && usuario?.nome && !/f[eê]nix agendador/i.test(usuario.nome))
@@ -135,12 +166,63 @@ export async function enfileirarNoSama(linhas: LinhaFilaSama[]): Promise<string[
   return ids;
 }
 
+/**
+ * Pede ao robô para acrescentar um parágrafo à síntese da pasta no VIOS ("dd/mm/aaaa (Nome): texto").
+ * É a última prioridade da fila: a reserva do SAMA só manda quando não há outro trabalho para o robô.
+ */
+export async function enfileirarSintese(pedido: { ci: string; cnj: string | null; texto: string; autor: string; data: string; simular: boolean }): Promise<string> {
+  const { data, error } = await sama()
+    .from("vios_agendamentos")
+    .insert({
+      operacao: "sintese",
+      status: "pendente",
+      tipo: "SÍNTESE",
+      tarefa: "Acrescentar à síntese do processo",
+      observacao: pedido.texto,
+      responsavel: pedido.autor,
+      data: pedido.data,
+      pasta: pedido.cnj || pedido.ci,
+      pasta_tipo: "Processo",
+      ci_pasta: pedido.ci,
+      simular: pedido.simular,
+    })
+    .select("id")
+    .single();
+  if (error || !data) throw new VistagemError(`Falha ao colocar a síntese na fila do robô: ${error?.message ?? "sem retorno"}`, 502);
+  return data.id as string;
+}
+
+/** Sínteses pedidas para a pasta, da mais nova para a mais antiga. */
+export async function sintesesDaPasta(ci: string): Promise<SintesePedida[]> {
+  const { data, error } = await sama()
+    .from("vios_agendamentos")
+    .select("id, observacao, responsavel, data, status, erro, simular, resultado, criado_em")
+    .eq("operacao", "sintese")
+    .eq("ci_pasta", ci.replace(/\D/g, ""))
+    .order("criado_em", { ascending: false })
+    .limit(10);
+  if (error) throw new VistagemError(`Falha ao consultar as sínteses pedidas ao robô: ${error.message}`, 502);
+  return (data ?? []).map((row) => ({
+    id: row.id as string,
+    texto: row.observacao as string,
+    autor: (row.responsavel as string | null) ?? null,
+    data: row.data as string,
+    status: row.status as SintesePedida["status"],
+    erro: (row.erro as string | null) ?? null,
+    simulado: row.simular === true,
+    jaEstava: (row.resultado as { ja_estava?: boolean } | null)?.ja_estava === true,
+    criadoEm: row.criado_em as string,
+  }));
+}
+
 export interface StatusFilaSama {
   status: "pendente" | "enviado" | "processando" | "concluido" | "erro";
   erro: string | null;
   viosTarefaId: string | null;
   /** Lançamento pela intimação: CI de cada tarefa, por id do agendamento. */
   cisPorAgendamento: Map<string, string>;
+  /** Como as tarefas ficaram no VIOS (a pedida e as do fluxo), por id do agendamento. */
+  tarefasViosPorAgendamento: Map<string, TarefaNoVios[]>;
 }
 
 export async function consultarFilaSama(ids: string[]): Promise<Map<string, StatusFilaSama>> {
@@ -157,6 +239,7 @@ export async function consultarFilaSama(ids: string[]): Promise<Map<string, Stat
         erro: (row.erro as string | null) ?? null,
         viosTarefaId: ciVios ? String(ciVios) : null,
         cisPorAgendamento: cisDoResultado(row.resultado),
+        tarefasViosPorAgendamento: tarefasViosDoResultado(row.resultado),
       });
     }
   }

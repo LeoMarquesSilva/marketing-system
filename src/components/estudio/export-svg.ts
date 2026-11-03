@@ -278,10 +278,28 @@ async function walk(ctx: Ctx, el: Element) {
     return;
   }
   if (el instanceof HTMLElement) drawBox(ctx, el, style);
+  // caixa arredondada que recorta o conteúdo (cartões e caixa de foto): o conteúdo vai
+  // num grupo com máscara na mesma curva, por dentro da borda, para a foto não vazar
+  const clipId = el instanceof HTMLElement && style.overflow === "hidden" ? roundedClip(ctx, el, style) : null;
+  if (clipId) ctx.out.push(`<g clip-path="url(#${clipId})">`);
   for (const child of Array.from(el.childNodes)) {
     if (child.nodeType === Node.TEXT_NODE) drawText(ctx, child as Text, style);
     else if (child.nodeType === Node.ELEMENT_NODE) await walk(ctx, child as Element);
   }
+  if (clipId) ctx.out.push(`</g>`);
+}
+
+/** Máscara arredondada do interior (sem a borda) de um elemento com overflow: hidden; null se não for arredondado. */
+function roundedClip(ctx: Ctx, el: HTMLElement, style: CSSStyleDeclaration): string | null {
+  const b = box(ctx, el);
+  const rx = radius(style, b.w, b.h);
+  if (rx <= 0) return null;
+  const bw = parseFloat(style.borderTopWidth) || 0;
+  const id = `c${++ctx.gradientId}`;
+  ctx.defs.push(
+    `<clipPath id="${id}"><rect x="${num(b.x + bw)}" y="${num(b.y + bw)}" width="${num(b.w - bw * 2)}" height="${num(b.h - bw * 2)}" rx="${num(Math.max(0, rx - bw))}"/></clipPath>`
+  );
+  return id;
 }
 
 export async function renderArtboardSvg(node: HTMLElement, width: number, height: number): Promise<string> {

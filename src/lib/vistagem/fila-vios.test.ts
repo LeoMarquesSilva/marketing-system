@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cisDoResultado, linhasParaFila, type AgendamentoParaFila, type PublicacaoParaFila } from "./fila-vios";
+import { cisDoResultado, linhasParaFila, tarefasViosDoResultado, type AgendamentoParaFila, type PublicacaoParaFila } from "./fila-vios";
 
 const PUBLICACAO: PublicacaoParaFila = {
   data_publicacao: "2026-10-15",
@@ -16,10 +16,11 @@ const ITENS: AgendamentoParaFila[] = [
 ];
 
 describe("fila do robô", () => {
-  it("na pasta: uma linha por tarefa, com o teor na descrição", () => {
+  it("na pasta: uma linha por tarefa, com a data da publicação na descrição e sem o teor", () => {
     const linhas = linhasParaFila(PUBLICACAO, ITENS, { simular: false, modo: "pasta" });
     expect(linhas.map((l) => l.agendamentos)).toEqual([["ag-1"], ["ag-2"]]);
-    expect(linhas[0].linha.observacao).toContain("TEOR DA PUBLICAÇÃO");
+    expect(linhas[0].linha.observacao).toBe("Publicação de 15/10/2026\nlaudo");
+    expect(linhas[1].linha.observacao).toBe("Publicação de 15/10/2026");
     expect(linhas[0].linha.lancamento).toBeUndefined();
     expect(linhas[1].linha).toMatchObject({ tipo: "Providências", etiqueta_id: "204", data: "19/10/2026" });
   });
@@ -29,7 +30,7 @@ describe("fila do robô", () => {
     const [naPasta] = linhasParaFila(PUBLICACAO, [audiencia], { simular: false, modo: "pasta" });
     expect(naPasta.linha).toMatchObject({ tipo: "Compromisso", etiqueta_id: "205" });
     // a fila da pasta não tem coluna de hora: vai na descrição
-    expect(naPasta.linha.observacao).toContain("\nHorário: 14:30\n");
+    expect(naPasta.linha.observacao).toBe("Publicação de 15/10/2026\nHorário: 14:30");
     const [grupo] = linhasParaFila(PUBLICACAO, [ITENS[0], audiencia], { simular: false, modo: "intimacao" });
     expect(grupo.linha.lancamento?.tarefas.map((t) => [t.etiqueta_id, t.hora])).toEqual([
       ["1", null],
@@ -56,7 +57,7 @@ describe("fila do robô", () => {
           hora: null,
           responsavel: "Maria Heloiza Gois Ponce",
           revisor: "Giovanna Pereira de Souza",
-          observacao: "Publicação de 15/10/2026 · TRT17 · Processo 0000952-37.2026.5.17.0141 · ID comunicação 755730632\nlaudo\nVistagem pelo Orquestra.",
+          observacao: "Publicação de 15/10/2026\nlaudo",
         },
         {
           chave: "ag-2",
@@ -67,7 +68,7 @@ describe("fila do robô", () => {
           hora: null,
           responsavel: "Giovanna Pereira de Souza",
           revisor: null,
-          observacao: "Publicação de 15/10/2026 · TRT17 · Processo 0000952-37.2026.5.17.0141 · ID comunicação 755730632\nVistagem pelo Orquestra.",
+          observacao: "Publicação de 15/10/2026",
         },
       ],
     });
@@ -93,5 +94,26 @@ describe("fila do robô", () => {
     expect([...cis.entries()]).toEqual([["ag-1", "900"]]);
     expect(cisDoResultado({ ci_vios: 900 }).size).toBe(0);
     expect(cisDoResultado(null).size).toBe(0);
+  });
+
+  it("agrupa as tarefas do VIOS pelo agendamento, a pedida primeiro e o fluxo pela data", () => {
+    const mapa = tarefasViosDoResultado({
+      tarefas_vios: [
+        { ci: 902, chave: "ag-1", principal: false, tipo: "3. PROTOCOLAR", data: "19/10/2026", data_limite: "19/10/2026", hora: null, responsaveis: "Maria, Samuel" },
+        { ci: 900, chave: "ag-1", principal: true, tipo: "MANIFESTAÇÃO", data: "16/10/2026", data_limite: "16/10/2026", hora: null, responsaveis: "Maria" },
+        { ci: 901, chave: "ag-1", principal: false, tipo: "2. REVISAR", data: "17/10/2026", data_limite: null, hora: "", responsaveis: "Giovanna" },
+        { ci: 950, chave: "ag-2", principal: true, tipo: "AUDIÊNCIA", data: "10/11/2026", hora: "14:30", responsaveis: "Ana" },
+        { ci: 999, chave: null, principal: false, tipo: "SOLTA", data: "01/11/2026" },
+      ],
+    });
+    expect(mapa.get("ag-1")?.map((t) => [t.ci, t.data])).toEqual([
+      ["900", "2026-10-16"],
+      ["901", "2026-10-17"],
+      ["902", "2026-10-19"],
+    ]);
+    expect(mapa.get("ag-1")?.[1]).toMatchObject({ hora: null, dataLimite: null, responsaveis: "Giovanna" });
+    expect(mapa.get("ag-2")?.[0]).toMatchObject({ principal: true, hora: "14:30", data: "2026-11-10" });
+    expect(mapa.size).toBe(2);
+    expect(tarefasViosDoResultado({ tarefas: [] }).size).toBe(0);
   });
 });

@@ -1,32 +1,207 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Check, LoaderCircle, RefreshCw, Search, Send } from "lucide-react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  CalendarPlus,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  CircleCheck,
+  CircleDashed,
+  CircleSlash,
+  ClipboardCheck,
+  Copy,
+  ExternalLink,
+  FolderSearch,
+  FolderX,
+  Folders,
+  ListChecks,
+  LoaderCircle,
+  RefreshCw,
+  Search,
+  SearchX,
+  Send,
+  Sparkles,
+  Star,
+  Wand2,
+  X,
+} from "lucide-react";
+import { Segmented } from "@/components/facilities/form-parts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
-import { ESCRITORIOS, type PastaSioe } from "@/lib/vistagem/triagem";
+import { clienteNoTexto, pastaSugerida, verificacoesSemPasta, type SituacaoVerificacao } from "@/lib/vistagem/controladoria";
+import { criarCalendarioDePrazo, feriadosNacionais, somarDiasUteis } from "@/lib/vistagem/dias-uteis";
+import { ESCRITORIOS, ESCRITORIO_EX_CLIENTE, pastaAtiva, type PastaSioe, type Pendencia } from "@/lib/vistagem/triagem";
+import type { SugestaoTriagem } from "@/lib/vistagem/sugestao-triagem";
 import type { PendenciasControladoria, PublicacaoResumo, ResolucaoPendencia, TriagemResumo } from "@/lib/vistagem/types";
+import { linkPastaVios } from "@/lib/vistagem/vios-links";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
-import { DadosPasta, DadosPublicacao, PENDENCIAS, TeorPublicacao, formatarData } from "./publicacao-ui";
+import { AvisoArquivoDoDia } from "./aviso-arquivo-do-dia";
+import { FiltroData, dataNaLista } from "./filtro-data";
+import { EditorVistagem } from "./juridico-client";
+import { LeitorPublicacao } from "./leitor-publicacao";
+import { IconeArea, LogoGrupo } from "./marcas";
+import { PENDENCIAS, formatarData, formatarDataHora } from "./publicacao-ui";
+import { ReguaDatas } from "./regua-datas";
+import { Seletor, SeletorBusca } from "./seletor";
+import {
+  Aviso,
+  BarraAba,
+  Busca,
+  Campo,
+  Carregando,
+  Indicador,
+  Indicadores,
+  Painel,
+  Secao,
+  Selo,
+  Vazio,
+  linhaLista,
+} from "./ui";
 
-function LinhaPasta({ pasta, acao }: { pasta: PastaSioe; acao?: ReactNode }) {
+/**
+ * As abas seguem o que chega da triagem: sem pasta (possível abertura), mais de uma pasta e, quando houver, dados
+ * faltando. Os ex-clientes não aparecem aqui: a controladoria os vista na fila Operações Legais do Jurídico.
+ */
+type Aba = "sem_pasta" | "varias_pastas" | "dados";
+
+const ABAS: { valor: Aba; rotulo: string; pendencias: Pendencia[] }[] = [
+  { valor: "sem_pasta", rotulo: "Sem pasta · possível abertura", pendencias: ["sem_pasta"] },
+  { valor: "varias_pastas", rotulo: "Mais de uma pasta", pendencias: ["varias_pastas"] },
+  { valor: "dados", rotulo: "Sem área ou grupo", pendencias: ["sem_area", "sem_grupo"] },
+];
+
+const ICONE_ABA = { sem_pasta: FolderX, varias_pastas: Folders, dados: ListChecks } as const;
+
+const reais = (valor: number) => valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+function abaDaPendencia(pendencia: Pendencia | null): Aba | null {
+  return ABAS.find((aba) => pendencia && aba.pendencias.includes(pendencia))?.valor ?? null;
+}
+
+function numeroProcesso(publicacao: PublicacaoResumo): string {
+  return publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal;
+}
+
+/** Busca por número do processo (a partir de 4 dígitos), tribunal, órgão, pasta, grupo, cliente ou intimado. */
+function combinaBusca(publicacao: PublicacaoResumo, busca: string): boolean {
+  const texto = busca.trim().toLowerCase();
+  if (!texto) return true;
+  const digitos = busca.replace(/\D/g, "");
+  if (digitos.length >= 4 && numeroProcesso(publicacao).replace(/\D/g, "").includes(digitos)) return true;
+  return [
+    publicacao.tribunal,
+    publicacao.djenOrgao,
+    publicacao.escritorioResponsavel,
+    publicacao.grupoCliente,
+    publicacao.cliente,
+    publicacao.pastaCi,
+    publicacao.sugestaoTriagem?.grupo,
+    publicacao.sugestaoTriagem?.cliente,
+    ...publicacao.pastasCandidatas.map((pasta) => pasta.grupoCliente),
+    ...publicacao.djenIntimados,
+  ].some((campo) => campo?.toLowerCase().includes(texto));
+}
+
+/** Data de hoje em São Paulo (AAAA-MM-DD), para a régua mostrar "há 2 dias". */
+function hojeEmSaoPaulo(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+}
+
+/** Texto do aviso depois de liberar: para onde a publicação foi. */
+function liberada(escritorio: string | null): string {
+  return escritorio === ESCRITORIO_EX_CLIENTE ? "enviada para a controladoria vistar (fila Operações Legais)" : `liberada para o jurídico${escritorio ? ` (${escritorio})` : ""}`;
+}
+
+/** Resolve a pendência no servidor; devolve o escritório para onde a publicação foi. */
+async function resolver(id: string, entrada: ResolucaoPendencia): Promise<string | null> {
+  const resposta = await authFetch(`/api/operacoes-legais/vistagem/pendencias/${id}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(entrada),
+  });
+  const corpo = await resposta.json();
+  if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao resolver.");
+  return corpo.publicacao?.escritorioResponsavel ?? null;
+}
+
+/** O que a controladoria já escolheu ao clicar em "Agendar Direto" (dá para mudar no topo do modal). */
+interface PreviaAgendamento {
+  escritorio: string;
+  grupo: string;
+  demandaRisco: boolean;
+  ci?: string;
+}
+
+/** "Agendar Direto": abre a vistagem do jurídico na própria Controladoria, com a pendência ainda na triagem. */
+type AoAgendar = (publicacao: PublicacaoResumo, previa: PreviaAgendamento) => void;
+
+/** Mesmo número de processo (só os 20 dígitos), para confirmar que a pasta é deste processo. */
+function mesmoProcesso(pasta: PastaSioe, publicacao: PublicacaoResumo): boolean {
+  const digitos = (texto: string | null) => (texto ?? "").replace(/\D/g, "").slice(0, 20);
+  return Boolean(pasta.cnj) && digitos(pasta.cnj) === digitos(numeroProcesso(publicacao));
+}
+
+/** Dados do processo da pasta: número (e se é o desta publicação), ação, fase e valor, e o link para o VIOS. */
+function ProcessoDaPasta({ pasta, publicacao }: { pasta: PastaSioe; publicacao: PublicacaoResumo }) {
+  const mesmo = mesmoProcesso(pasta, publicacao);
+  const valor = pasta.valorAcaoAtualizado ?? pasta.valorAcao ?? null;
   return (
-    <div className="flex flex-col gap-2 rounded-md border border-[#dce9eb] p-3 text-xs text-slate-600 sm:flex-row sm:items-center sm:justify-between">
-      <div className="space-y-0.5">
+    <div className="space-y-0.5">
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+        <span className="tabular-nums text-foreground">{pasta.cnj || "sem número"}</span>
+        {pasta.cnj ? (
+          <span className={cn("text-[11px] font-medium", mesmo ? "text-emerald-700" : "text-amber-700")}>
+            {mesmo ? "mesmo processo da publicação" : "outro número"}
+          </span>
+        ) : null}
+        <a
+          href={linkPastaVios(pasta.ci)}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Abrir a pasta no VIOS (nova aba)"
+          className="inline-flex items-center gap-1 font-medium text-[#347796] hover:text-[#285f7a] hover:underline"
+        >
+          Abrir no VIOS
+          <ExternalLink className="size-3" aria-hidden />
+        </a>
+      </p>
+      {pasta.acao || pasta.fase || valor !== null ? (
         <p>
-          <span className="font-mono font-medium text-slate-900">CI {pasta.ci}</span>
-          {pasta.vinculo ? <span className="ml-2">{pasta.vinculo}</span> : null}
-          {pasta.situacao ? <span className="ml-2 text-slate-500">· {pasta.situacao}</span> : null}
+          {[pasta.acao, pasta.fase ? `fase ${pasta.fase}` : null, valor !== null ? `valor ${reais(valor)}` : null].filter(Boolean).join(" · ")}
         </p>
-        <p>
-          <span className="font-medium text-slate-800">{pasta.grupoCliente || "sem grupo"}</span>
-          {pasta.cliente ? ` · ${pasta.cliente}` : ""}
+      ) : null}
+    </div>
+  );
+}
+
+/** Pasta do VIOS como opção de uma lista: CI, vínculo e situação; processo; grupo e cliente; área e responsável. */
+function LinhaPasta({ pasta, publicacao, acao }: { pasta: PastaSioe; publicacao: PublicacaoResumo; acao?: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2.5 px-3 py-3 text-xs text-muted-foreground">
+      <div className="min-w-0 space-y-0.5">
+        <p className="flex flex-wrap items-baseline gap-x-2">
+          <span className="tabular-nums text-sm font-semibold text-foreground">CI {pasta.ci}</span>
+          {pasta.vinculo ? <span>{pasta.vinculo}</span> : null}
+          {pasta.situacao ? <span>· {pasta.situacao}</span> : null}
         </p>
-        <p>
-          {pasta.area || "sem área"}
-          {pasta.advogadoResponsavel ? ` · Resp.: ${pasta.advogadoResponsavel}` : ""}
+        <ProcessoDaPasta pasta={pasta} publicacao={publicacao} />
+        <p className="flex min-w-0 items-center gap-1.5">
+          <LogoGrupo grupo={pasta.grupoCliente} tamanho="xs" />
+          <span className="truncate">
+            <span className="font-medium text-foreground">{pasta.grupoCliente || "sem grupo"}</span>
+            {pasta.cliente ? ` · ${pasta.cliente}` : ""}
+          </span>
+        </p>
+        <p className="flex min-w-0 items-center gap-1.5">
+          {pasta.area ? <IconeArea area={pasta.area} /> : null}
+          <span className="truncate">
+            {pasta.area || "sem área"}
+            {pasta.advogadoResponsavel ? ` · Resp.: ${pasta.advogadoResponsavel}` : ""}
+          </span>
         </p>
       </div>
       {acao}
@@ -34,27 +209,296 @@ function LinhaPasta({ pasta, acao }: { pasta: PastaSioe; acao?: ReactNode }) {
   );
 }
 
-function Resolucao({ publicacao, onResolvida }: { publicacao: PublicacaoResumo; onResolvida: (id: string) => void }) {
+const LISTA_PASTAS = "divide-y divide-[#e6eef0] overflow-hidden rounded-md border border-[#dce9eb] bg-white";
+
+const ROTULO_ORIGEM: Record<SugestaoTriagem["origem"], string> = {
+  numero: "Processo citado",
+  parte: "Parte cliente",
+  ia: "Sugestão da IA",
+};
+
+function SeloConfianca({ confianca }: { confianca: SugestaoTriagem["confianca"] }) {
+  return (
+    <Selo tom={confianca === "alta" ? "sucesso" : confianca === "media" ? "alerta" : "perigo"}>
+      confiança {confianca === "media" ? "média" : confianca}
+    </Selo>
+  );
+}
+
+/** De onde vieram os campos já preenchidos (o detalhe está na verificação acima). */
+function NotaSugestao({ sugestao }: { sugestao: SugestaoTriagem }) {
+  const ia = sugestao.origem === "ia";
+  return (
+    <p
+      className={cn(
+        "flex flex-wrap items-center gap-1.5 rounded-md border px-3 py-2 text-xs font-medium",
+        ia ? "border-[#48466e]/20 bg-[#f6f6fa] text-[#2f2d4d]" : "border-[#47cdd0]/30 bg-[#f2fbfb] text-[#183f50]"
+      )}
+    >
+      {ia ? <Sparkles className="size-3.5" aria-hidden /> : <Wand2 className="size-3.5" aria-hidden />}
+      Pré-preenchido · {ROTULO_ORIGEM[sugestao.origem]}
+      <SeloConfianca confianca={sugestao.confianca} />
+      <span className="w-full font-normal text-muted-foreground">Confira antes de liberar.</span>
+    </p>
+  );
+}
+
+/* ------------------------------------------------------------ verificação */
+
+const PASSO: Record<SituacaoVerificacao, { icone: typeof CircleCheck; classe: string; rotulo: string }> = {
+  achou: { icone: CircleCheck, classe: "text-emerald-600", rotulo: "Encontrou" },
+  nada: { icone: CircleSlash, classe: "text-slate-400", rotulo: "Nada encontrado" },
+  nao_verificado: { icone: CircleDashed, classe: "text-slate-300", rotulo: "Não procurado" },
+};
+
+/** Sem pasta: o que o sistema já procurou antes de concluir que é possível abertura. */
+function VerificacaoSemPasta({ publicacao }: { publicacao: PublicacaoResumo }) {
+  const passos = verificacoesSemPasta(publicacao);
+  return (
+    <Secao titulo="O que já foi procurado" id={`verificacao-${publicacao.id}`}>
+      <ol className="space-y-2.5">
+        {passos.map((passo) => {
+          const info = PASSO[passo.situacao];
+          return (
+            <li key={passo.rotulo} className="flex gap-2.5">
+              <info.icone className={cn("mt-0.5 size-4 shrink-0", info.classe)} aria-label={info.rotulo} />
+              <div className="min-w-0 text-sm">
+                <p className="font-medium text-foreground">{passo.rotulo}</p>
+                <p className="text-xs text-muted-foreground">{passo.detalhe}</p>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      <p className="text-xs text-muted-foreground">
+        Rechecado {publicacao.triadaEm ? `em ${formatarDataHora(publicacao.triadaEm)}` : "na última triagem"}; a cada busca do arquivo da Kurier o sistema procura de
+        novo, caso a pasta tenha sido aberta.
+      </p>
+    </Secao>
+  );
+}
+
+/* ------------------------------------------------------------ comparador */
+
+/** Mais de uma pasta: as pastas lado a lado, com a sugerida marcada e o cliente que aparece no texto. */
+function ComparadorPastas({
+  publicacao,
+  onResolvida,
+  onAgendar,
+}: {
+  publicacao: PublicacaoResumo;
+  onResolvida: (resultado: string) => void;
+  onAgendar: (previa: PreviaAgendamento) => void;
+}) {
+  const [ocupado, setOcupado] = useState<string | null>(null);
+  const [erro, setErro] = useState("");
+  const candidatas = publicacao.pastasCandidatas;
+  const sugerida = pastaSugerida(candidatas);
+  const texto = [publicacao.teor, ...publicacao.djenIntimados].join(" ");
+
+  async function usar(pasta: PastaSioe, agendarDireto = false) {
+    setOcupado(pasta.ci);
+    setErro("");
+    try {
+      if (agendarDireto) {
+        // Só abre a vistagem: o escritório vem da triagem da pasta; a pendência sai da fila ao enviar as tarefas.
+        const resposta = await authFetch(`/api/operacoes-legais/vistagem/sioe/pasta?ci=${encodeURIComponent(pasta.ci)}`);
+        const corpo = await resposta.json();
+        if (!resposta.ok) throw new Error(corpo.error ?? "CI não encontrada.");
+        onAgendar({ ci: pasta.ci, escritorio: corpo.escritorioSugerido ?? "", grupo: pasta.grupoCliente ?? "", demandaRisco: Boolean(publicacao.demandaRisco) });
+      } else {
+        onResolvida(liberada(await resolver(publicacao.id, { ci: pasta.ci })));
+      }
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao resolver.");
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  return (
+    <Secao titulo={`${candidatas.length} pastas para o mesmo processo`} id={`comparador-${publicacao.id}`}>
+      {sugerida ? (
+        <p className="flex items-center gap-1.5 text-xs text-[#285f7a]">
+          <Star className="size-3.5 fill-current" aria-hidden />
+          Sugerida: CI {sugerida.pasta.ci}. {sugerida.motivo}
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">Nenhuma se destaca: confira vínculo, situação e cliente.</p>
+      )}
+      <ul className="grid gap-3 @2xl:grid-cols-[repeat(auto-fit,minmax(13rem,1fr))]">
+        {candidatas.map((pasta) => {
+          const destaque = sugerida?.pasta.ci === pasta.ci;
+          const ativa = pastaAtiva(pasta);
+          const citado = clienteNoTexto(pasta, texto);
+          return (
+            <li
+              key={pasta.ci}
+              className={cn(
+                "flex flex-col gap-3 rounded-md border bg-white p-3",
+                destaque ? "border-[#347796] ring-1 ring-[#347796]/20" : "border-[#dce9eb]"
+              )}
+            >
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="tabular-nums text-sm font-semibold text-foreground">CI {pasta.ci}</span>
+                {destaque ? (
+                  <Selo tom="marca" icone={Star}>
+                    Sugerida
+                  </Selo>
+                ) : null}
+              </div>
+              <dl className="grid gap-2 text-xs">
+                <div>
+                  <dt className="text-muted-foreground">Processo</dt>
+                  <dd className="mt-0.5 text-muted-foreground">
+                    <ProcessoDaPasta pasta={pasta} publicacao={publicacao} />
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Vínculo e situação</dt>
+                  <dd className="mt-0.5 flex flex-wrap gap-1.5">
+                    <Selo tom={/principal/i.test(pasta.vinculo ?? "") ? "escuro" : "neutro"}>{pasta.vinculo ?? "sem vínculo"}</Selo>
+                    <Selo tom={ativa ? "sucesso" : "neutro"}>{pasta.situacao ?? "sem situação"}</Selo>
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Cliente</dt>
+                  <dd className="mt-0.5 flex min-w-0 items-center gap-1.5">
+                    <LogoGrupo grupo={pasta.grupoCliente} tamanho="xs" />
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-foreground">{pasta.grupoCliente ?? "sem grupo"}</span>
+                      <span className="block truncate text-muted-foreground" title={pasta.cliente ?? undefined}>
+                        {pasta.cliente ?? "—"}
+                      </span>
+                    </span>
+                  </dd>
+                  {citado ? <p className="mt-1 text-[11px] font-medium text-emerald-700">Aparece no texto da publicação</p> : null}
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Área e responsável</dt>
+                  <dd className="mt-0.5 flex min-w-0 items-center gap-1.5 text-foreground">
+                    {pasta.area ? <IconeArea area={pasta.area} /> : null}
+                    <span className="truncate">{[pasta.area, pasta.advogadoResponsavel].filter(Boolean).join(" · ") || "—"}</span>
+                  </dd>
+                </div>
+              </dl>
+              <div className="mt-auto grid gap-1.5">
+                <Button size="sm" variant={destaque ? "default" : "outline"} onClick={() => usar(pasta)} disabled={ocupado !== null}>
+                  {ocupado === pasta.ci ? <LoaderCircle className="animate-spin" /> : <Check />}
+                  Usar e liberar ao jurídico
+                </Button>
+                <Button size="sm" variant="ghost" className="text-[#347796]" onClick={() => usar(pasta, true)} disabled={ocupado !== null}>
+                  <CalendarPlus />
+                  Usar e agendar direto
+                </Button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
+    </Secao>
+  );
+}
+
+/* -------------------------------------------------------------- resolução */
+
+/** Grupo de cliente do VIOS, com as pastas ativas (para o combo). */
+interface GrupoCliente {
+  grupo: string;
+  ativas: number;
+}
+
+let gruposEmCache: GrupoCliente[] | null = null;
+
+/** Grupos de clientes do VIOS, carregados uma vez por página. */
+function useGruposClientes(): GrupoCliente[] {
+  const [grupos, setGrupos] = useState<GrupoCliente[]>(gruposEmCache ?? []);
+  useEffect(() => {
+    if (gruposEmCache) return;
+    let cancelado = false;
+    authFetch("/api/operacoes-legais/vistagem/grupos")
+      .then(async (resposta) => (resposta.ok ? ((await resposta.json()) as { grupos: GrupoCliente[] }).grupos : []))
+      .then((lista) => {
+        if (lista.length) gruposEmCache = lista;
+        if (!cancelado) setGrupos(lista);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+  return grupos;
+}
+
+/** Grupo do cliente em combo (a lista do VIOS), com busca e logo; um grupo sugerido fora da lista aparece no topo. */
+function CampoGrupo({ valor, onChange, obrigatorio }: { valor: string; onChange: (grupo: string) => void; obrigatorio: boolean }) {
+  const grupos = useGruposClientes();
+  const opcoes = useMemo(() => {
+    const lista = grupos.map((item) => ({ valor: item.grupo, rotulo: item.grupo, contagem: item.ativas, icone: <LogoGrupo grupo={item.grupo} tamanho="xs" /> }));
+    return valor && !grupos.some((item) => item.grupo === valor)
+      ? [{ valor, rotulo: `${valor} (sugerido)`, icone: <LogoGrupo grupo={valor} tamanho="xs" /> }, ...lista]
+      : lista;
+  }, [grupos, valor]);
+  return (
+    <div className="space-y-1.5">
+      <span className="block text-xs font-medium text-muted-foreground">{obrigatorio ? "Grupo do cliente" : "Grupo do cliente (opcional)"}</span>
+      <SeletorBusca
+        rotulo="Grupo do cliente"
+        placeholder={grupos.length ? "Escolha o grupo" : "Carregando os grupos…"}
+        buscaPlaceholder="Buscar grupo…"
+        valor={valor}
+        onChange={onChange}
+        opcoes={opcoes}
+      />
+    </div>
+  );
+}
+
+/** Escritório responsável: todas as áreas (Operações Legais é a fila da própria controladoria). */
+function CampoEscritorio({ valor, onChange }: { valor: string; onChange: (escritorio: string) => void }) {
+  return (
+    <div className="space-y-1.5">
+      <span className="block text-xs font-medium text-muted-foreground">Escritório responsável</span>
+      <Seletor
+        rotulo="Escritório responsável"
+        placeholder="Escolha o escritório"
+        valor={(ESCRITORIOS as readonly string[]).includes(valor) ? valor : ""}
+        onChange={onChange}
+        opcoes={ESCRITORIOS.map((nome) => ({ valor: nome, rotulo: nome, icone: <IconeArea area={nome} /> }))}
+      />
+    </div>
+  );
+}
+
+/**
+ * Achou a pasta (CI): libera para o jurídico ou agenda direto ("Usar e agendar direto", no modelo do jurídico, nesta
+ * mesma tela). Sem pasta: informa os dados e libera para o jurídico. Em Operações Legais o grupo é opcional.
+ */
+function Resolucao({
+  publicacao,
+  onResolvida,
+  onAgendar,
+}: {
+  publicacao: PublicacaoResumo;
+  onResolvida: (resultado: string) => void;
+  onAgendar: (previa: PreviaAgendamento) => void;
+}) {
   const [ci, setCi] = useState("");
   const [previa, setPrevia] = useState<{ pasta: PastaSioe; escritorioSugerido: string | null } | null>(null);
-  const [escritorio, setEscritorio] = useState("");
-  const [grupo, setGrupo] = useState(publicacao.grupoCliente ?? "");
-  const [demandaRisco, setDemandaRisco] = useState(Boolean(publicacao.demandaRisco));
+  // Sem pasta: os campos já vêm com a sugestão (processo citado, parte cliente ou IA); a controladoria confere.
+  const sugestao = publicacao.pendencia === "sem_pasta" ? publicacao.sugestaoTriagem : null;
+  const [escritorio, setEscritorio] = useState(sugestao?.escritorio ?? publicacao.escritorioResponsavel ?? "");
+  const [grupo, setGrupo] = useState(publicacao.grupoCliente ?? sugestao?.grupo ?? "");
+  const [demandaRisco, setDemandaRisco] = useState(Boolean(publicacao.demandaRisco ?? sugestao?.demandaRisco));
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState("");
 
-  async function enviar(entrada: ResolucaoPendencia) {
+  async function liberar(entrada: ResolucaoPendencia) {
     setOcupado(true);
     setErro("");
     try {
-      const resposta = await authFetch(`/api/operacoes-legais/vistagem/pendencias/${publicacao.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(entrada),
-      });
-      const corpo = await resposta.json();
-      if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao resolver.");
-      onResolvida(publicacao.id);
+      onResolvida(liberada(await resolver(publicacao.id, entrada)));
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao resolver.");
     } finally {
@@ -78,112 +522,331 @@ function Resolucao({ publicacao, onResolvida }: { publicacao: PublicacaoResumo; 
     }
   }
 
-  const candidatas = publicacao.pastasCandidatas;
+  const base = `resolucao-${publicacao.id}`;
+  const variasPastas = publicacao.pastasCandidatas.length > 1;
+  const escritorioValido = (ESCRITORIOS as readonly string[]).includes(escritorio);
+  const grupoObrigatorio = escritorio !== ESCRITORIO_EX_CLIENTE;
+  const pronto = escritorioValido && (!grupoObrigatorio || Boolean(grupo.trim()));
 
   return (
-    <div className="space-y-3 border-t border-[#dce9eb] px-4 py-3">
-      {candidatas.length > 1 ? (
-        <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase text-slate-500">Escolha a pasta</p>
-          {candidatas.map((pasta) => (
-            <LinhaPasta
-              key={pasta.ci}
-              pasta={pasta}
-              acao={
-                <Button size="sm" onClick={() => enviar({ ci: pasta.ci })} disabled={ocupado}>
-                  <Check />
-                  Usar esta pasta
-                </Button>
-              }
-            />
-          ))}
-        </div>
-      ) : null}
-
-      {!publicacao.pastaCi && candidatas.length <= 1 ? (
-        <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase text-slate-500">Pasta no VIOS</p>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Input
-              value={ci}
-              onChange={(evento) => setCi(evento.target.value)}
-              placeholder="CI da pasta (se existir)"
-              inputMode="numeric"
-              className="sm:w-56"
-              aria-label="CI da pasta"
-              onKeyDown={(evento) => {
-                if (evento.key === "Enter" && ci.trim()) void buscarCi();
-              }}
-            />
+    <>
+      {!publicacao.pastaCi && !variasPastas ? (
+        <Secao titulo="Achou a pasta no VIOS?" id={`${base}-ci`}>
+          <div className="flex items-end gap-2">
+            <Campo rotulo="CI da pasta" className="min-w-0 flex-1">
+              <Input
+                value={ci}
+                onChange={(evento) => setCi(evento.target.value)}
+                placeholder="Número da CI"
+                inputMode="numeric"
+                aria-label="CI da pasta"
+                onKeyDown={(evento) => {
+                  if (evento.key === "Enter" && ci.trim()) void buscarCi();
+                }}
+              />
+            </Campo>
             <Button variant="outline" onClick={buscarCi} disabled={ocupado || !ci.trim()}>
               <Search />
-              Buscar no SIOE
+              Buscar pasta
             </Button>
           </div>
           {previa ? (
-            <LinhaPasta
-              pasta={previa.pasta}
-              acao={
-                <Button size="sm" onClick={() => enviar({ ci: previa.pasta.ci })} disabled={ocupado}>
-                  <Check />
-                  Usar · {previa.escritorioSugerido ?? "definir escritório"}
-                </Button>
-              }
-            />
+            <div className={LISTA_PASTAS}>
+              <LinhaPasta
+                pasta={previa.pasta}
+                publicacao={publicacao}
+                acao={
+                  <div className="grid gap-1.5">
+                    <Button size="sm" onClick={() => liberar({ ci: previa.pasta.ci })} disabled={ocupado}>
+                      <Check />
+                      Usar e liberar · {previa.escritorioSugerido ?? "definir escritório"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        onAgendar({
+                          ci: previa.pasta.ci,
+                          escritorio: previa.escritorioSugerido ?? "",
+                          grupo: previa.pasta.grupoCliente ?? "",
+                          demandaRisco: demandaRisco,
+                        })
+                      }
+                      disabled={ocupado}
+                    >
+                      <CalendarPlus />
+                      Usar e agendar direto
+                    </Button>
+                  </div>
+                }
+              />
+            </div>
           ) : null}
-        </div>
+        </Secao>
       ) : null}
 
-      <div className="space-y-2">
-        <p className="text-xs font-semibold uppercase text-slate-500">
-          {publicacao.pastaCi || candidatas.length > 1 ? "Ou informe os dados" : "Sem pasta: informe os dados"}
-        </p>
-        <div className="grid gap-2 sm:grid-cols-[minmax(160px,220px)_minmax(160px,1fr)_auto_auto] sm:items-center">
-          <select
-            value={escritorio}
-            onChange={(evento) => setEscritorio(evento.target.value)}
-            className="h-10 rounded-md border border-input bg-white px-3 text-sm"
-            aria-label="Escritório responsável"
-          >
-            <option value="">Escritório responsável</option>
-            {ESCRITORIOS.map((nome) => (
-              <option key={nome} value={nome}>
-                {nome}
-              </option>
-            ))}
-          </select>
-          <Input value={grupo} onChange={(evento) => setGrupo(evento.target.value)} placeholder="Grupo do cliente" aria-label="Grupo do cliente" />
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" checked={demandaRisco} onChange={(evento) => setDemandaRisco(evento.target.checked)} className="size-4" />
-            Demanda de risco
-          </label>
-          <Button
-            onClick={() => enviar({ escritorio, grupo, demandaRisco, ci: publicacao.pastaCi ?? undefined })}
-            disabled={ocupado || !escritorio || !grupo.trim()}
-          >
-            {ocupado ? <LoaderCircle className="animate-spin" /> : <Send />}
-            Liberar para o jurídico
-          </Button>
+      <Secao titulo={variasPastas ? "Nenhuma serve? Informe os dados" : publicacao.pastaCi ? "Para onde vai" : "Sem pasta: para onde vai"} id={`${base}-destino`}>
+        {sugestao ? <NotaSugestao sugestao={sugestao} /> : null}
+        <div className="grid gap-3 @lg:grid-cols-2 @4xl:grid-cols-1">
+          <CampoEscritorio valor={escritorio} onChange={setEscritorio} />
+          <CampoGrupo valor={grupo} onChange={setGrupo} obrigatorio={grupoObrigatorio} />
         </div>
-      </div>
-      {erro ? <p className="text-sm text-red-700">{erro}</p> : null}
-    </div>
+        <label className="flex min-h-10 w-fit cursor-pointer items-center gap-2.5 text-sm text-foreground">
+          <input type="checkbox" checked={demandaRisco} onChange={(evento) => setDemandaRisco(evento.target.checked)} className="size-4 accent-[#347796]" />
+          Demanda de risco
+        </label>
+        <Button
+          className="w-full"
+          onClick={() => liberar({ escritorio, grupo: grupo.trim() || undefined, demandaRisco, ci: publicacao.pastaCi ?? undefined })}
+          disabled={ocupado || !pronto}
+        >
+          {ocupado ? <LoaderCircle className="animate-spin" /> : <Send />}
+          Liberar para o jurídico
+        </Button>
+        {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
+      </Secao>
+    </>
   );
 }
 
-function CabecalhoPublicacao({ publicacao }: { publicacao: PublicacaoResumo }) {
+/* --------------------------------------------------------------- detalhe */
+
+interface Navegacao {
+  posicao: number;
+  total: number;
+  anterior: string | null;
+  proxima: string | null;
+}
+
+/** A pendência aberta: régua, leitura completa e, ao lado, a verificação/comparação e a resolução. */
+function DetalhePendencia({
+  resumo,
+  navegacao,
+  onAbrir,
+  onResolvida,
+  onAgendar,
+}: {
+  resumo: PublicacaoResumo;
+  navegacao: Navegacao;
+  onAbrir: (id: string) => void;
+  onResolvida: (id: string, resultado: string) => void;
+  onAgendar: AoAgendar;
+}) {
+  // A lista traz o teor resumido: o leitor precisa do texto inteiro.
+  const [publicacao, setPublicacao] = useState<PublicacaoResumo>(resumo);
+  const [copiado, setCopiado] = useState(false);
+  const hoje = useMemo(() => hojeEmSaoPaulo(), []);
+  const contaPrazo = useMemo(() => {
+    const ano = Number(hoje.slice(0, 4));
+    return criarCalendarioDePrazo([...feriadosNacionais(ano), ...feriadosNacionais(ano + 1)]);
+  }, [hoje]);
+
+  useEffect(() => {
+    if (!resumo.teorResumido) return;
+    let cancelado = false;
+    authFetch(`/api/operacoes-legais/vistagem/publicacoes/${resumo.id}`)
+      .then(async (resposta) => (resposta.ok ? ((await resposta.json()) as { publicacao: PublicacaoResumo }).publicacao : null))
+      .then((completa) => {
+        if (completa && !cancelado) setPublicacao({ ...resumo, teor: completa.teor, teorResumido: false });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelado = true;
+    };
+  }, [resumo]);
+
+  const numero = numeroProcesso(publicacao);
+  const resolvida = (resultado: string) => onResolvida(publicacao.id, resultado);
+  const agendar = (previa: PreviaAgendamento) => onAgendar(publicacao, previa);
+  const variasPastas = publicacao.pastasCandidatas.length > 1;
+
   return (
-    <div className="flex flex-wrap items-center gap-2 px-4 pt-3">
-      <span className="font-mono text-sm font-medium text-slate-900">{publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}</span>
-      {publicacao.tribunal ? (
-        <span className="rounded-full border border-[#3e84a8]/25 px-2 py-0.5 text-xs text-[#315f73]">{publicacao.tribunal}</span>
-      ) : null}
-      <span className="text-xs text-slate-500">publicação {formatarData(publicacao.dataPublicacao)}</span>
-      {publicacao.pendencia ? (
-        <span className="ml-auto rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-800">
-          {PENDENCIAS[publicacao.pendencia]}
+    <Painel aria-labelledby="pendencia-titulo" className="@container">
+      <div className="space-y-3 border-b border-[#e6eef0] px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 id="pendencia-titulo" className="tabular-nums text-base font-semibold text-foreground">
+            {numero}
+          </h2>
+          <Button
+            type="button"
+            size="icon-xs"
+            variant="ghost"
+            title={copiado ? "Copiado" : "Copiar o número para buscar no VIOS"}
+            aria-label="Copiar o número do processo"
+            onClick={() => {
+              void navigator.clipboard?.writeText(numero).then(() => {
+                setCopiado(true);
+                window.setTimeout(() => setCopiado(false), 1500);
+              });
+            }}
+          >
+            {copiado ? <Check /> : <Copy />}
+          </Button>
+          {publicacao.tribunal ? <Selo tom="marca">{publicacao.tribunal}</Selo> : null}
+          {publicacao.pendencia ? <Selo tom="alerta">{PENDENCIAS[publicacao.pendencia]}</Selo> : null}
+          <div className="ml-auto flex items-center gap-1">
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              disabled={!navegacao.anterior}
+              onClick={() => navegacao.anterior && onAbrir(navegacao.anterior)}
+              aria-label="Pendência anterior"
+              title="Pendência anterior"
+            >
+              <ChevronLeft />
+            </Button>
+            <span className="min-w-14 text-center text-xs tabular-nums text-muted-foreground">
+              {navegacao.posicao} de {navegacao.total}
+            </span>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              disabled={!navegacao.proxima}
+              onClick={() => navegacao.proxima && onAbrir(navegacao.proxima)}
+              aria-label="Próxima pendência"
+              title="Próxima pendência"
+            >
+              <ChevronRight />
+            </Button>
+          </div>
+        </div>
+        <ReguaDatas
+          rotulo="Datas da publicação"
+          hoje={hoje}
+          className="max-w-xl"
+          marcos={[
+            { rotulo: "Divulgação", data: publicacao.dataDivulgacao },
+            { rotulo: "Publicação", data: publicacao.dataPublicacao, tom: "marca" },
+            {
+              rotulo: "Início do prazo",
+              data: publicacao.dataPublicacao ? somarDiasUteis(publicacao.dataPublicacao, 1, contaPrazo) : null,
+              dica: "1º dia útil após a publicação (feriados nacionais): o prazo corre enquanto a pendência não é resolvida.",
+            },
+          ]}
+        />
+      </div>
+
+      <div className="grid @4xl:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)]">
+        <div className="min-w-0">
+          {variasPastas ? <ComparadorPastas key={publicacao.id} publicacao={publicacao} onResolvida={resolvida} onAgendar={agendar} /> : null}
+          <LeitorPublicacao publicacao={publicacao} ocultarIdComunicacao className={cn(variasPastas && "border-t border-[#e6eef0]")} />
+        </div>
+        <div className="min-w-0 border-t border-[#e6eef0] bg-[#fafcfc] @4xl:border-l @4xl:border-t-0">
+          {publicacao.pendencia === "sem_pasta" ? <VerificacaoSemPasta publicacao={publicacao} /> : null}
+          <Resolucao key={publicacao.id} publicacao={publicacao} onResolvida={resolvida} onAgendar={agendar} />
+        </div>
+      </div>
+    </Painel>
+  );
+}
+
+/* ------------------------------------------------------------------ fila */
+
+/** Linha da fila: o que ajuda a reconhecer a pendência sem abrir (sugestão, pastas, intimado). */
+function LinhaFila({ publicacao, aberta, onAbrir }: { publicacao: PublicacaoResumo; aberta: boolean; onAbrir: () => void }) {
+  const sugestao = publicacao.pendencia === "sem_pasta" ? publicacao.sugestaoTriagem : null;
+  const candidatas = publicacao.pastasCandidatas;
+  const grupo = sugestao?.grupo ?? candidatas[0]?.grupoCliente ?? publicacao.grupoCliente;
+  return (
+    <button type="button" onClick={onAbrir} aria-current={aberta ? "true" : undefined} className={cn(linhaLista(aberta), "space-y-1")}>
+      <span className="flex flex-wrap items-center gap-1.5">
+        <span className="tabular-nums text-xs font-semibold text-foreground">{numeroProcesso(publicacao)}</span>
+        {publicacao.tribunal ? <Selo>{publicacao.tribunal}</Selo> : null}
+        <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">publ. {formatarData(publicacao.dataPublicacao).slice(0, 5)}</span>
+      </span>
+      <span className="flex min-w-0 items-center gap-1.5 text-sm text-foreground">
+        {grupo ? <LogoGrupo grupo={grupo} tamanho="xs" /> : null}
+        <span className="truncate">
+          {candidatas.length > 1
+            ? `${candidatas.length} pastas · ${grupo ?? "sem grupo"}`
+            : grupo ?? sugestao?.cliente ?? (sugestao ? "Cliente não identificado" : "Sem sugestão")}
         </span>
+        {sugestao ? <SeloConfianca confianca={sugestao.confianca} /> : null}
+      </span>
+      {publicacao.djenIntimados.length ? (
+        <span className="block truncate text-xs text-muted-foreground">Intimado: {publicacao.djenIntimados.join(" · ")}</span>
       ) : null}
+    </button>
+  );
+}
+
+/**
+ * "Agendar Direto" na própria tela: o modelo do jurídico (publicação à esquerda; à direita os dados da pendência e,
+ * logo abaixo, as tarefas). Nada é gravado até o envio; "Voltar" devolve a resolução da pendência.
+ */
+function AgendarDireto({
+  previa,
+  navegacao,
+  onAbrir,
+  onMudar,
+  onEnviada,
+  onVoltar,
+}: {
+  previa: { id: string } & PreviaAgendamento;
+  navegacao: Navegacao;
+  onAbrir: (id: string) => void;
+  onMudar: (mudanca: Partial<PreviaAgendamento>) => void;
+  onEnviada: () => void;
+  onVoltar: () => void;
+}) {
+  const escritorioValido = (ESCRITORIOS as readonly string[]).includes(previa.escritorio);
+  const dadosDaPendencia = (
+    <Painel aria-labelledby="agendar-direto-titulo" className="@container overflow-visible">
+      <div className="flex items-center gap-2 border-b border-[#e6eef0] px-4 py-2.5">
+        <CalendarPlus className="size-4 text-[#347796]" aria-hidden />
+        <h2 id="agendar-direto-titulo" className="text-sm font-semibold text-foreground">
+          Agendar Direto
+        </h2>
+        <Button type="button" variant="ghost" size="sm" className="ml-auto" onClick={onVoltar}>
+          <ChevronLeft />
+          Voltar à pendência
+        </Button>
+      </div>
+      <div className="grid items-end gap-3 px-4 py-3 @xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_auto]">
+        <CampoEscritorio valor={previa.escritorio} onChange={(escritorio) => onMudar({ escritorio })} />
+        <CampoGrupo valor={previa.grupo} onChange={(grupo) => onMudar({ grupo })} obrigatorio={previa.escritorio !== ESCRITORIO_EX_CLIENTE} />
+        <label className="flex min-h-10 w-fit cursor-pointer items-center gap-2.5 text-sm text-foreground">
+          <input
+            type="checkbox"
+            checked={previa.demandaRisco}
+            onChange={(evento) => onMudar({ demandaRisco: evento.target.checked })}
+            className="size-4 accent-[#347796]"
+          />
+          Demanda de risco
+        </label>
+      </div>
+      <p className="px-4 pb-3 text-xs text-muted-foreground">
+        Nada é gravado até enviar: ao enviar, a publicação sai da controladoria e as tarefas vão para a conferência.
+      </p>
+    </Painel>
+  );
+  return (
+    // Altura da tela, como no jurídico: publicação e tarefas rolam cada uma na sua coluna.
+    <div className="min-w-0 lg:h-[calc(100dvh-13rem)] lg:min-h-[32rem]">
+      {escritorioValido ? (
+        <EditorVistagem
+          key={`${previa.id}|${previa.escritorio}|${previa.ci ?? ""}`}
+          id={previa.id}
+          navegacao={navegacao}
+          onAbrir={onAbrir}
+          onConcluida={onEnviada}
+          onTransferida={onVoltar}
+          onVoltar={onVoltar}
+          resolucao={{ escritorio: previa.escritorio, grupo: previa.grupo.trim() || undefined, demandaRisco: previa.demandaRisco, ci: previa.ci }}
+          antesDasTarefas={dadosDaPendencia}
+        />
+      ) : (
+        <div className="space-y-3">
+          {dadosDaPendencia}
+          <Painel>
+            <Vazio icone={ListChecks} titulo="Escolha o escritório">
+              A lista de tarefas do VIOS depende da área: escolha o escritório responsável acima.
+            </Vazio>
+          </Painel>
+        </div>
+      )}
     </div>
   );
 }
@@ -192,7 +855,16 @@ function Controladoria() {
   const [dados, setDados] = useState<PendenciasControladoria | null>(null);
   const [erro, setErro] = useState("");
   const [triando, setTriando] = useState(false);
-  const [aviso, setAviso] = useState("");
+  const [aviso, setAviso] = useState<{ tom: "sucesso" | "info" | "erro"; texto: string } | null>(null);
+  const [busca, setBusca] = useState("");
+  /** Data da publicação (AAAA-MM-DD); vazio é "Todas as datas". */
+  const [dataPublicacao, setDataPublicacao] = useState("");
+  /** Data da divulgação no diário (AAAA-MM-DD); vazio é "Todas as datas". */
+  const [dataDivulgacao, setDataDivulgacao] = useState("");
+  const [aba, setAba] = useState<Aba | null>(null);
+  const [selecionada, setSelecionada] = useState<string | null>(null);
+  /** Publicação que a controladoria liberou para vistar aqui mesmo, no modal do jurídico. */
+  const [agendando, setAgendando] = useState<({ id: string; numero: string } & PreviaAgendamento) | null>(null);
 
   const carregar = useCallback(async () => {
     setErro("");
@@ -213,102 +885,252 @@ function Controladoria() {
 
   async function rodarTriagem() {
     setTriando(true);
-    setAviso("");
+    setAviso(null);
     try {
       const resposta = await authFetch("/api/operacoes-legais/vistagem/triagem", { method: "POST" });
       const corpo = await resposta.json();
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha na triagem.");
-      const resumo = corpo as TriagemResumo;
+      const resumo = corpo as TriagemResumo & { sugestoes?: { geradas?: number } };
+      const sugeridas = resumo.sugestoes?.geradas ? ` ${resumo.sugestoes.geradas} sem pasta ganharam dados sugeridos.` : "";
       setAviso(
         resumo.triadas
-          ? `${resumo.triadas} publicação(ões) triada(s): ${resumo.juridico} para o jurídico, ${resumo.pendentes} ainda pendente(s)${resumo.descartadas ? `, ${resumo.descartadas} descartada(s)` : ""}.`
-          : "Nada novo para triar."
+          ? {
+              tom: "sucesso",
+              texto: `${resumo.triadas} publicação(ões) triada(s): ${resumo.juridico} para o jurídico, ${resumo.pendentes} ainda pendente(s)${resumo.descartadas ? `, ${resumo.descartadas} descartada(s)` : ""}.${sugeridas}`,
+            }
+          : { tom: "info", texto: `Nada novo para triar.${sugeridas}` }
       );
       await carregar();
     } catch (e) {
-      setAviso(e instanceof Error ? e.message : "Falha na triagem.");
+      setAviso({ tom: "erro", texto: e instanceof Error ? e.message : "Falha na triagem." });
     } finally {
       setTriando(false);
     }
   }
 
-  function removerResolvida(id: string) {
+  // Data da publicação: filtra a fila e a contagem das abas.
+  const datasDasPendencias = useMemo(() => (dados?.pendentes ?? []).map((p) => p.dataPublicacao), [dados]);
+  const dataAtiva = dataNaLista(dataPublicacao, datasDasPendencias);
+  const divulgacoesDasPendencias = useMemo(() => (dados?.pendentes ?? []).map((p) => p.dataDivulgacao), [dados]);
+  const divulgacaoAtiva = dataNaLista(dataDivulgacao, divulgacoesDasPendencias);
+  const pendentesNaData = useMemo(
+    () =>
+      (dados?.pendentes ?? []).filter(
+        (p) => (!dataAtiva || p.dataPublicacao === dataAtiva) && (!divulgacaoAtiva || p.dataDivulgacao === divulgacaoAtiva)
+      ),
+    [dados, dataAtiva, divulgacaoAtiva]
+  );
+
+  const porAba = useMemo(() => {
+    const total: Record<Aba, number> = { sem_pasta: 0, varias_pastas: 0, dados: 0 };
+    for (const p of pendentesNaData) {
+      const destino = abaDaPendencia(p.pendencia);
+      if (destino) total[destino] += 1;
+    }
+    return total;
+  }, [pendentesNaData]);
+
+  // Sem escolha, abre a primeira aba que tem pendência.
+  const abaAtiva: Aba = aba ?? ABAS.find((item) => porAba[item.valor] > 0)?.valor ?? "sem_pasta";
+  const abasVisiveis = ABAS.filter((item) => item.valor !== "dados" || porAba.dados > 0 || abaAtiva === "dados");
+
+  // Mais antigas primeiro: o prazo já está correndo.
+  const fila = useMemo(
+    () =>
+      pendentesNaData
+        .filter((p) => abaDaPendencia(p.pendencia) === abaAtiva)
+        .filter((p) => combinaBusca(p, busca))
+        .sort((a, b) => (a.dataPublicacao ?? "").localeCompare(b.dataPublicacao ?? "") || (a.linhaArquivo ?? 0) - (b.linhaArquivo ?? 0)),
+    [pendentesNaData, abaAtiva, busca]
+  );
+  const ordem = fila.map((p) => p.id);
+  const aberta = selecionada && ordem.includes(selecionada) ? selecionada : ordem[0] ?? null;
+  const indiceAberta = aberta ? ordem.indexOf(aberta) : -1;
+  const publicacaoAberta = fila[indiceAberta] ?? null;
+  const navegacaoAberta: Navegacao = {
+    posicao: indiceAberta + 1,
+    total: ordem.length,
+    anterior: ordem[indiceAberta - 1] ?? null,
+    proxima: ordem[indiceAberta + 1] ?? null,
+  };
+
+  const maisAntiga = useMemo(
+    () =>
+      (dados?.pendentes ?? [])
+        .map((p) => p.dataPublicacao)
+        .filter((data): data is string => Boolean(data))
+        .sort()[0] ?? null,
+    [dados]
+  );
+  const buscando = busca.trim() !== "";
+
+  function removerResolvida(id: string, resultado: string) {
+    const publicacao = dados?.pendentes.find((p) => p.id === id);
+    const posicao = ordem.indexOf(id);
+    // Segue para a próxima da fila (ou a anterior, se era a última).
+    setSelecionada(ordem[posicao + 1] ?? ordem[posicao - 1] ?? null);
     setDados((atual) => (atual ? { ...atual, pendentes: atual.pendentes.filter((p) => p.id !== id) } : atual));
+    setAviso({ tom: "sucesso", texto: `${publicacao ? numeroProcesso(publicacao) : "Publicação"} ${resultado}.` });
+  }
+
+  // "Agendar Direto": abre a vistagem com a pendência ainda na triagem; nada muda até as tarefas serem enviadas.
+  const agendarDireto: AoAgendar = (publicacao, previa) => {
+    setAviso(null);
+    setAgendando({ id: publicacao.id, numero: numeroProcesso(publicacao), ...previa });
+  };
+
+  /** Tarefas enviadas: a pendência saiu da triagem e a vistagem foi para a conferência. */
+  function agendamentoEnviado() {
+    if (!agendando) return;
+    const { id } = agendando;
+    setAgendando(null);
+    removerResolvida(id, "agendada direto pela controladoria: as tarefas foram para a conferência");
   }
 
   return (
     <div className="space-y-6">
-      <section className="flex flex-col gap-3 rounded-lg border border-[#dce9eb] bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1">
-          <h2 className="text-base font-semibold text-slate-900">Esteira da controladoria</h2>
-          <p className="text-sm text-slate-600">
-            Publicações que a triagem com o SIOE não conseguiu mandar sozinha para uma área, e as de ex-clientes, que a controladoria vista. Ex-cliente sem Ricardo Viscardi Pires ou Gustavo Bismarchi Motta na publicação é descartado automaticamente.
-          </p>
-        </div>
-        <Button variant="outline" onClick={rodarTriagem} disabled={triando}>
-          {triando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
-          Rodar triagem agora
-        </Button>
-      </section>
+      <AvisoArquivoDoDia
+        acao={
+          <Button asChild size="sm" variant="outline" className="-my-1 shrink-0">
+            <Link href="/operacoes-legais/vistagem">Abrir Captura</Link>
+          </Button>
+        }
+      />
 
-      {aviso ? <p role="status" className="rounded-md border border-[#dce9eb] bg-white px-3 py-2 text-sm text-slate-700">{aviso}</p> : null}
+      <div className="space-y-3">
+        <BarraAba resumo="O que a triagem não conseguiu encaminhar sozinha. Confira se a pasta existe mesmo, escolha a certa ou informe os dados para liberar ao jurídico; com a pasta escolhida, dá para agendar direto aqui.">
+          <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Processo, CI, grupo ou intimado" aria-label="Buscar publicação" />
+          <FiltroData rotulo="Data Publicação" datas={datasDasPendencias} valor={dataAtiva} onChange={setDataPublicacao} />
+          <FiltroData rotulo="Data Divulgação" datas={divulgacoesDasPendencias} valor={divulgacaoAtiva} onChange={setDataDivulgacao} />
+          <Button variant="outline" onClick={rodarTriagem} disabled={triando}>
+            {triando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
+            Rodar triagem agora
+          </Button>
+        </BarraAba>
+
+        {aviso ? (
+          <Aviso
+            tom={aviso.tom}
+            acao={
+              <Button variant="ghost" size="icon-xs" className="-my-1 text-current" aria-label="Fechar aviso" onClick={() => setAviso(null)}>
+                <X />
+              </Button>
+            }
+          >
+            {aviso.texto}
+          </Aviso>
+        ) : null}
+      </div>
 
       {dados === null ? (
-        <div className="flex justify-center p-8"><LoaderCircle className="size-5 animate-spin text-slate-400" aria-label="Carregando" /></div>
+        <Painel>
+          <Carregando rotulo="Carregando pendências" />
+        </Painel>
       ) : erro ? (
-        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{erro}</p>
+        <Aviso
+          tom="erro"
+          titulo="Não foi possível carregar as pendências"
+          acao={
+            <Button
+              size="sm"
+              variant="outline"
+              className="-my-1 shrink-0"
+              onClick={() => {
+                setDados(null);
+                void carregar();
+              }}
+            >
+              Tentar de novo
+            </Button>
+          }
+        >
+          {erro}
+        </Aviso>
       ) : (
         <>
-          <section aria-labelledby="pendentes-titulo" className="space-y-3">
-            <h2 id="pendentes-titulo" className="text-sm font-semibold text-slate-900">
-              Para resolver <span className="font-mono text-xs text-slate-500">{dados.pendentes.length}</span>
-            </h2>
-            {dados.pendentes.length === 0 ? (
-              <p className="rounded-lg border border-[#dce9eb] bg-white p-6 text-center text-sm text-slate-600">Nenhuma pendência de triagem.</p>
-            ) : (
-              <ul className="space-y-4">
-                {dados.pendentes.map((publicacao) => (
-                  <li key={publicacao.id} className="rounded-lg border border-[#dce9eb] bg-white shadow-sm">
-                    <CabecalhoPublicacao publicacao={publicacao} />
-                    <div className="space-y-2 px-4 py-3">
-                      <DadosPasta publicacao={{ ...publicacao, pendencia: null }} />
-                      <DadosPublicacao publicacao={publicacao} />
-                      <TeorPublicacao publicacao={publicacao} />
-                    </div>
-                    <Resolucao publicacao={publicacao} onResolvida={removerResolvida} />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          <Indicadores>
+            <Indicador icone={ClipboardCheck} rotulo="Para resolver" valor={dados.pendentes.length} tom={dados.pendentes.length ? "alerta" : "neutro"}>
+              {maisAntiga ? `Publicação mais antiga: ${formatarData(maisAntiga)}` : "Nenhuma pendência de triagem"}
+            </Indicador>
+            <Indicador icone={FolderX} rotulo="Sem pasta no VIOS" valor={porAba.sem_pasta}>
+              Possível abertura de pasta
+            </Indicador>
+            <Indicador icone={FolderSearch} rotulo="Mais de uma pasta" valor={porAba.varias_pastas}>
+              {porAba.dados ? `${porAba.dados} sem área ou grupo` : "Escolha a pasta certa"}
+            </Indicador>
+          </Indicadores>
 
-          <section aria-labelledby="ex-clientes-titulo" className="space-y-3">
-            <h2 id="ex-clientes-titulo" className="text-sm font-semibold text-slate-900">
-              Ex-clientes — vistagem da controladoria <span className="font-mono text-xs text-slate-500">{dados.exClientes.length}</span>
-            </h2>
-            {dados.exClientes.length === 0 ? (
-              <p className="rounded-lg border border-[#dce9eb] bg-white p-6 text-center text-sm text-slate-600">Nenhuma publicação de ex-cliente.</p>
+          <div className="space-y-3">
+            <Segmented
+              label="Tipo de pendência"
+              value={abaAtiva}
+              options={abasVisiveis.map((item) => ({ value: item.valor, label: `${item.rotulo} ${porAba[item.valor]}`, icon: ICONE_ABA[item.valor] }))}
+              onChange={(valor) => {
+                setAba(valor);
+                setSelecionada(null);
+              }}
+            />
+
+            {fila.length === 0 && !buscando ? (
+              <Painel>
+                <Vazio icone={ClipboardCheck} titulo={dados.pendentes.length ? "Nada nesta aba" : "Nenhuma pendência de triagem"}>
+                  {dados.pendentes.length ? null : "Tudo o que chegou foi encaminhado para uma área."}
+                </Vazio>
+              </Painel>
+            ) : fila.length === 0 ? (
+              <Painel>
+                <Vazio icone={SearchX} titulo="Nenhuma pendência com essa busca">
+                  <Button variant="link" className="h-auto p-0" onClick={() => setBusca("")}>
+                    Limpar busca
+                  </Button>
+                </Vazio>
+              </Painel>
             ) : (
-              <ul className="divide-y divide-[#dce9eb] rounded-lg border border-[#dce9eb] bg-white shadow-sm">
-                {dados.exClientes.map((publicacao) => (
-                  <li key={publicacao.id} className={cn("space-y-2 px-4 py-3")}>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-mono text-sm font-medium text-slate-900">
-                        {publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}
-                      </span>
-                      {publicacao.tribunal ? (
-                        <span className="rounded-full border border-[#3e84a8]/25 px-2 py-0.5 text-xs text-[#315f73]">{publicacao.tribunal}</span>
-                      ) : null}
-                      <span className="text-xs text-slate-500">publicação {formatarData(publicacao.dataPublicacao)}</span>
-                    </div>
-                    <DadosPasta publicacao={{ ...publicacao, pendencia: null }} />
-                    <DadosPublicacao publicacao={publicacao} />
-                    <TeorPublicacao publicacao={publicacao} />
-                  </li>
-                ))}
-              </ul>
+              <div className="grid items-start gap-4 lg:grid-cols-[minmax(260px,320px)_minmax(0,1fr)]">
+                <Painel aria-label="Pendências" className="lg:sticky lg:top-4">
+                  <div className="border-b border-[#e6eef0] px-4 py-2 text-xs font-medium text-muted-foreground">
+                    Fila <span className="tabular-nums">· {fila.length}</span>{" "}
+                    <span className="font-normal">· mais antigas primeiro</span>
+                  </div>
+                  <ul className="max-h-[70vh] divide-y divide-[#eef3f5] overflow-y-auto">
+                    {fila.map((publicacao) => (
+                      <li key={publicacao.id}>
+                        <LinhaFila
+                          publicacao={publicacao}
+                          aberta={publicacao.id === aberta}
+                          onAbrir={() => {
+                            setSelecionada(publicacao.id);
+                            setAviso(null);
+                          }}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                </Painel>
+
+                {publicacaoAberta && agendando?.id === publicacaoAberta.id ? (
+                  // Agendar Direto: a mesma tela do jurídico (publicação à esquerda, tarefas à direita), sem sair daqui.
+                  <AgendarDireto
+                    previa={agendando}
+                    navegacao={navegacaoAberta}
+                    onAbrir={setSelecionada}
+                    onMudar={(mudanca) => setAgendando({ ...agendando, ...mudanca })}
+                    onEnviada={agendamentoEnviado}
+                    onVoltar={() => setAgendando(null)}
+                  />
+                ) : publicacaoAberta ? (
+                  <DetalhePendencia
+                    key={publicacaoAberta.id}
+                    resumo={publicacaoAberta}
+                    navegacao={navegacaoAberta}
+                    onAbrir={setSelecionada}
+                    onResolvida={removerResolvida}
+                    onAgendar={agendarDireto}
+                  />
+                ) : null}
+              </div>
             )}
-          </section>
+          </div>
         </>
       )}
     </div>

@@ -17,9 +17,11 @@ describe("validarInconsistencia", () => {
   it("exige subtipo da lista na inconsistência de agendamento", () => {
     expect(validarInconsistencia("agendamento", { tipo: "AGENDAMENTO", descricao: "data errada" }).ok).toBe(false);
     expect(validarInconsistencia("agendamento", { tipo: "AGENDAMENTO", subtipo: "INVENTADO", descricao: "data errada" }).ok).toBe(false);
-    expect(validarInconsistencia("agendamento", { tipo: "AGENDAMENTO", subtipo: "DATA", descricao: "data errada" })).toEqual({
+    // só os subtipos (P/A) valem no Check
+    expect(validarInconsistencia("agendamento", { tipo: "AGENDAMENTO", subtipo: "DATA", descricao: "data errada" }).ok).toBe(false);
+    expect(validarInconsistencia("agendamento", { tipo: "AGENDAMENTO", subtipo: "DATA / HORÁRIO - (P/A)", descricao: "data errada" })).toEqual({
       ok: true,
-      valor: { tipo: "AGENDAMENTO", subtipo: "DATA", descricao: "data errada" },
+      valor: { tipo: "AGENDAMENTO", subtipo: "DATA / HORÁRIO - (P/A)", descricao: "data errada" },
     });
   });
 });
