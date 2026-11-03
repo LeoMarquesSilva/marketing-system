@@ -5,6 +5,7 @@ import {
   CalendarClock,
   CheckCheck,
   CircleDashed,
+  ExternalLink,
   Eye,
   EyeOff,
   FileText,
@@ -26,8 +27,10 @@ import {
 } from "@/lib/rh/boas-praticas/photos-client";
 import {
   FEEDBACK_PHOTOS_MAX,
+  categoryInfo,
   categoryLabel,
   chapterLabel,
+  manualHref,
   type FeedbackInput,
   type FeedbackPerson,
   type FeedbackPhoto,
@@ -163,6 +166,8 @@ function FeedbackDetail({
     [items, item]
   );
 
+  const manualPage = categoryInfo(item.category)?.page ?? null;
+
   return (
     <div className="space-y-6 px-6 py-5">
       <section className="space-y-2">
@@ -170,8 +175,20 @@ function FeedbackDetail({
           <CategoryIcon category={item.category} className="size-7" />
           {item.category}
           {item.subtopic && <span className="rounded-full bg-[#eef6f8] px-2 py-0.5 text-xs">{item.subtopic}</span>}
-          {chapterLabel(item.category) && (
-            <span className="text-xs font-normal text-muted-foreground">{chapterLabel(item.category)} do manual</span>
+          {manualPage ? (
+            <a
+              href={manualHref(manualPage)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 rounded text-xs font-normal text-muted-foreground underline-offset-2 hover:text-[#285f7a] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/60"
+            >
+              {chapterLabel(item.category) ? `${chapterLabel(item.category)} do manual` : "Ver no manual"} · p. {manualPage}
+              <ExternalLink className="size-3" aria-hidden />
+            </a>
+          ) : (
+            chapterLabel(item.category) && (
+              <span className="text-xs font-normal text-muted-foreground">{chapterLabel(item.category)} do manual</span>
+            )
           )}
         </p>
         <blockquote className="rounded-md border border-[#e6eef0] bg-[#fafcfc] px-4 py-3 text-[15px] leading-6 text-foreground">
