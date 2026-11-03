@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { Archive, Check, Clock, Inbox, Search, SlidersHorizontal, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,7 +56,8 @@ interface LeadListProps {
   onResolveStale: () => void;
 }
 
-export function LeadList({
+/** Memorizada: digitar uma mensagem não redesenha as conversas da lista. */
+export const LeadList = memo(function LeadList({
   view,
   totalConversations,
   selectedId,
@@ -238,7 +239,7 @@ export function LeadList({
       </div>
     </aside>
   );
-}
+});
 
 function LeadListItem({
   conversation,

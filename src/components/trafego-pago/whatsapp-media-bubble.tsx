@@ -22,6 +22,10 @@ export function whatsappMediaSrc(
 
 interface WhatsappMediaBubbleProps {
   messageId: string;
+  /** Link assinado vindo com a conversa: mostra sem chamar o servidor. */
+  mediaUrl?: string | null;
+  /** Arquivo já perdido: mostra o aviso sem tentar baixar. */
+  mediaExpired?: boolean;
   messageType?: string | null;
   body?: string | null;
   fromMe?: boolean;
@@ -29,6 +33,8 @@ interface WhatsappMediaBubbleProps {
 
 export function WhatsappMediaBubble({
   messageId,
+  mediaUrl,
+  mediaExpired = false,
   messageType,
   body,
   fromMe,
@@ -36,11 +42,14 @@ export function WhatsappMediaBubble({
   const kind =
     getWhatsappMediaKind(messageType, body) ?? ("image" as WhatsappMediaKind);
   const caption = whatsappMediaCaption(body ?? null, kind);
-  const [src, setSrc] = useState<string | null>(null);
+  const [fetchedSrc, setSrc] = useState<string | null>(null);
+  const src = mediaUrl ?? fetchedSrc;
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [fetchError, setError] = useState<string | null>(null);
   /** Link vencido no WhatsApp: não oferece "tentar de novo". */
-  const [expired, setExpired] = useState(false);
+  const [fetchedExpired, setExpired] = useState(false);
+  const expired = mediaExpired || fetchedExpired;
+  const error = mediaExpired && !src ? "Mídia expirada no WhatsApp: o arquivo não está mais disponível para download." : fetchError;
   const autoLoadedFor = useRef<string | null>(null);
 
   const load = useCallback(async () => {
@@ -65,10 +74,10 @@ export function WhatsappMediaBubble({
   // Imagem carrega sozinha uma vez por mensagem. Antes, cada falha recriava `load`
   // e disparava o efeito de novo: a conversa aberta pedia a mídia em loop.
   useEffect(() => {
-    if (kind !== "image" || autoLoadedFor.current === messageId) return;
+    if (kind !== "image" || src || expired || autoLoadedFor.current === messageId) return;
     autoLoadedFor.current = messageId;
     void load();
-  }, [kind, messageId, load]);
+  }, [kind, messageId, load, src, expired]);
 
   if (kind === "image") {
     return (

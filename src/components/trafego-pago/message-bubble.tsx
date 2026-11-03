@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { motion } from "framer-motion";
 import { WhatsappAudioPlayer } from "@/components/trafego-pago/whatsapp-audio-player";
 import { WhatsappLeadAvatar } from "@/components/trafego-pago/whatsapp-lead-avatar";
@@ -15,12 +16,16 @@ interface MessageBubbleProps {
   message: WhatsappMessage;
   conversation: WhatsappConversation;
   reaction?: string;
-  onReply: () => void;
-  onReaction: (emoji: string) => void;
-  onTranscript: (text: string) => void;
+  onReply: (message: WhatsappMessage) => void;
+  onReaction: (message: WhatsappMessage, emoji: string) => void;
+  onTranscript: (messageId: string, text: string) => void;
 }
 
-export function MessageBubble({
+/**
+ * Memorizada: digitar no campo de mensagem redesenha o inbox, e sem isso cada
+ * tecla refazia todas as bolhas da conversa.
+ */
+export const MessageBubble = memo(function MessageBubble({
   message,
   conversation,
   reaction,
@@ -34,7 +39,6 @@ export function MessageBubble({
     <motion.div
       initial={{ opacity: 0, y: 14, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      layout="position"
       transition={{ type: "spring", stiffness: 420, damping: 34 }}
       className={cn("flex w-full gap-2 group/msg", message.from_me ? "justify-end" : "justify-start")}
     >
@@ -64,8 +68,8 @@ export function MessageBubble({
           canReact={Boolean(message.wa_message_id)}
           fromMe={message.from_me}
           messageText={formatWhatsappMessageDisplay(message.body, message.message_type)}
-          onReply={onReply}
-          onReaction={onReaction}
+          onReply={() => onReply(message)}
+          onReaction={(emoji) => onReaction(message, emoji)}
         />
 
         {conversation.is_group && fromLead && message.participant_name && (
@@ -90,13 +94,16 @@ export function MessageBubble({
         {isAudioMessageType(message.message_type, message.body) ? (
           <WhatsappAudioPlayer
             messageId={message.id}
+            mediaUrl={message.media_url}
             fromMe={message.from_me}
             transcript={message.audio_transcript}
-            onTranscript={onTranscript}
+            onTranscript={(text) => onTranscript(message.id, text)}
           />
         ) : isMediaMessageType(message.message_type, message.body) ? (
           <WhatsappMediaBubble
             messageId={message.id}
+            mediaUrl={message.media_url}
+            mediaExpired={Boolean(message.media_expired_at)}
             messageType={message.message_type}
             body={message.body}
             fromMe={message.from_me}
@@ -125,4 +132,4 @@ export function MessageBubble({
       </div>
     </motion.div>
   );
-}
+});

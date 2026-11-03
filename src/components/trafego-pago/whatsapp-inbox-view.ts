@@ -211,6 +211,16 @@ export function isStaleOpenConversation(
   return now.getTime() - new Date(conversation.last_message_at).getTime() > days * DAY_MS;
 }
 
+/**
+ * Mensagem de erro para a tela. `fetch` sem rede (ou servidor fora) lança
+ * TypeError "Failed to fetch"; resposta que não é JSON lança SyntaxError.
+ */
+export function friendlyError(err: unknown, fallback: string): string {
+  if (err instanceof TypeError) return "Sem conexão com o servidor. Confira a internet e tente de novo.";
+  if (err instanceof SyntaxError) return fallback;
+  return err instanceof Error && err.message ? err.message : fallback;
+}
+
 export const ATTENDANCE_STATUS_LABEL: Record<string, string> = {
   nao_respondido: "Aberta, esperando resposta",
   em_atendimento: "Em atendimento",

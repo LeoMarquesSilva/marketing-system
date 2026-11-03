@@ -49,6 +49,24 @@ export async function signWhatsappMediaUrl(
   return data.signedUrl;
 }
 
+/** Vários links de uma vez (uma chamada ao Storage), por caminho. Falha = sem link. */
+export async function signWhatsappMediaUrls(
+  supabase: SupabaseClient,
+  paths: string[]
+): Promise<Map<string, string>> {
+  const unique = [...new Set(paths)];
+  const byPath = new Map<string, string>();
+  if (unique.length === 0) return byPath;
+  const { data, error } = await supabase.storage
+    .from(WHATSAPP_MEDIA_BUCKET)
+    .createSignedUrls(unique, SIGNED_URL_TTL_SECONDS);
+  if (error) return byPath;
+  for (const item of data ?? []) {
+    if (item.path && item.signedUrl && !item.error) byPath.set(item.path, item.signedUrl);
+  }
+  return byPath;
+}
+
 /**
  * Pede à Edge Function que baixe a mídia na Evolution e guarde no Storage. O
  * base64 fica no Supabase; a Vercel só recebe o caminho. `null` = função fora do

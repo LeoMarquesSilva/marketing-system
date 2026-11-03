@@ -43,6 +43,7 @@ import { leadOriginMeta } from "@/components/trafego-pago/whatsapp-lead-origin";
 import { firstName } from "@/components/trafego-pago/whatsapp-agent-avatar";
 import type { WhatsappConversation } from "./whatsapp-crm-types";
 import { leadDisplayName } from "./whatsapp-crm-utils";
+import { friendlyError } from "./whatsapp-inbox-view";
 
 /** Quem recebeu o último lead: já vem marcado da próxima vez. */
 const LAST_RECIPIENT_KEY = "orqestrai:lead-forward-last-recipient";
@@ -225,7 +226,7 @@ export function LeadForwardDialog({ conversation, open, onOpenChange }: LeadForw
         contactSent: Boolean(json.contactSent),
       });
     } catch (err) {
-      setSendError(err instanceof Error ? err.message : "Não foi possível encaminhar o lead.");
+      setSendError(friendlyError(err, "Não foi possível encaminhar o lead."));
     } finally {
       setSending(false);
     }

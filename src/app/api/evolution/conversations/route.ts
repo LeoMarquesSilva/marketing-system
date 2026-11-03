@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import {
   fetchWhatsappConversations,
@@ -13,10 +13,15 @@ import {
   syncConversationMessages,
   updateWhatsappConversationCrm,
   updateWhatsappConversationTags,
+  withWhatsappMediaUrls,
 } from "@/lib/evolution-whatsapp";
 import { clearWhatsappConversationUnread } from "@/lib/whatsapp-attendance";
 
 export const dynamic = "force-dynamic";
+
+function logAfterError(step: string) {
+  return (err: unknown) => console.error(`[evolution/conversations] ${step}:`, err);
+}
 
 export async function GET(request: Request) {
   try {
@@ -46,7 +51,7 @@ export async function GET(request: Request) {
     if (conversationId) {
       const markReadOnly = searchParams.get("markReadOnly") === "1";
       if (markReadOnly) {
-        await markConversationRead(conversationId);
+        after(() => markConversationRead(conversationId).catch(logAfterError("mark read")));
         return NextResponse.json({ ok: true });
       }
 
@@ -54,31 +59,26 @@ export async function GET(request: Request) {
       const refreshMetadata = searchParams.get("refreshMetadata") === "1";
       const syncHistory = searchParams.get("syncHistory") === "1";
 
-      if (syncHistory && isEvolutionConfigured()) {
-        try {
-          await syncConversationMessages(conversationId, { limit: 150 });
-        } catch (syncErr) {
-          console.error("[evolution/conversations] sync history:", syncErr);
-        }
-      }
-
-      const [avatarUrl, pushName] = await Promise.all([
-        refreshAvatar ? refreshConversationAvatar(conversationId) : Promise.resolve(null),
-        refreshMetadata
-          ? refreshConversationPushName(conversationId)
-          : Promise.resolve(null),
+      // Abre na hora com o que já está no banco (o webhook grava tudo que chega).
+      const [messages, { data: conversation }] = await Promise.all([
+        fetchWhatsappMessages(conversationId).then(withWhatsappMediaUrls),
+        supabase.from("whatsapp_conversations").select("*").eq("id", conversationId).maybeSingle(),
       ]);
 
-      const messages = await fetchWhatsappMessages(conversationId);
-      await markConversationRead(conversationId);
+      // Conferência com a Evolution, foto, nome e "lido" depois da resposta: o
+      // que mudar chega pelo Realtime na conversa aberta.
+      after(async () => {
+        if (syncHistory && isEvolutionConfigured()) {
+          await syncConversationMessages(conversationId, { limit: 150 }).catch(logAfterError("sync history"));
+        }
+        await Promise.all([
+          refreshAvatar ? refreshConversationAvatar(conversationId) : null,
+          refreshMetadata ? refreshConversationPushName(conversationId) : null,
+        ]).catch(logAfterError("avatar/nome"));
+        await markConversationRead(conversationId).catch(logAfterError("mark read"));
+      });
 
-      const { data: conversation } = await supabase
-        .from("whatsapp_conversations")
-        .select("*")
-        .eq("id", conversationId)
-        .maybeSingle();
-
-      return NextResponse.json({ messages, avatarUrl, pushName, conversation });
+      return NextResponse.json({ messages, conversation });
     }
 
     const conversations = await fetchWhatsappConversations();

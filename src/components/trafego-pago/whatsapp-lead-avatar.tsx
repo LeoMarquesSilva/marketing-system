@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { User } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,31 @@ function resolveAvatarSrc(avatarUrl: string, conversationId?: string | null): st
   return avatarUrl;
 }
 
+/**
+ * A foto só é pedida quando o avatar entra na tela: cada uma passa pelo proxy
+ * (uma função na Vercel + uma consulta à Evolution), e a lista tem centenas.
+ */
+function useSeenOnScreen<T extends Element>() {
+  const ref = useRef<T>(null);
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || seen) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setSeen(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "200px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [seen]);
+  return { ref, seen };
+}
+
 export function WhatsappLeadAvatar({
   name,
   avatarUrl,
@@ -35,10 +61,11 @@ export function WhatsappLeadAvatar({
 }: WhatsappLeadAvatarProps) {
   const initial = (name?.trim()?.[0] ?? "?").toUpperCase();
   const resolvedSrc = avatarUrl ? resolveAvatarSrc(avatarUrl, conversationId) : null;
+  const { ref, seen } = useSeenOnScreen<HTMLSpanElement>();
 
   return (
-    <Avatar size={size} className={cn("bg-[#04202f]/8", className)}>
-      {resolvedSrc ? (
+    <Avatar ref={ref} size={size} className={cn("bg-[#04202f]/8", className)}>
+      {resolvedSrc && seen ? (
         <AvatarImage src={resolvedSrc} alt={name ?? "Lead"} referrerPolicy="no-referrer" />
       ) : null}
       <AvatarFallback className="bg-[#04202f]/8 text-[#04202f]/70 font-medium">

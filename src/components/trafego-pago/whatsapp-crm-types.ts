@@ -53,6 +53,10 @@ export interface WhatsappMessage {
   quoted_wa_message_id?: string | null;
   quoted_body?: string | null;
   participant_name?: string | null;
+  /** Link assinado da mídia guardada, já vindo com a conversa. */
+  media_url?: string | null;
+  /** Arquivo perdido (link do WhatsApp vencido antes de guardar). */
+  media_expired_at?: string | null;
 }
 
 /** Pessoa da equipe que pode ser responsável por uma conversa. */

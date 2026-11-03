@@ -44,6 +44,7 @@ import {
   STALE_CONVERSATION_DAYS,
   buildInboxView,
   formatDaySeparator,
+  friendlyError,
   isStaleOpenConversation,
   lastMessageIsOurs,
   type InboxOwnerTab,
@@ -309,7 +310,7 @@ export function WhatsappInbox() {
       setConfigured(json.configured ?? false);
       setFetchedAt(json.fetchedAt ?? new Date().toISOString());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível carregar as conversas.");
+      setError(friendlyError(err, "Não foi possível carregar as conversas."));
     } finally {
       if (!silent) setLoading(false);
     }
@@ -359,7 +360,7 @@ export function WhatsappInbox() {
         )
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível carregar as mensagens.");
+      setError(friendlyError(err, "Não foi possível carregar as mensagens."));
     } finally {
       if (!silent) setLoadingMessages(false);
     }
@@ -395,7 +396,7 @@ export function WhatsappInbox() {
         if (before) {
           setConversations((prev) => prev.map((c) => (c.id === conversationId ? before : c)));
         }
-        setError(err instanceof Error ? err.message : "Não foi possível salvar.");
+        setError(friendlyError(err, "Não foi possível salvar."));
         return false;
       } finally {
         setUpdatingId(null);
@@ -453,7 +454,7 @@ export function WhatsappInbox() {
       );
     } catch (err) {
       setDraftMessage(text);
-      setError(err instanceof Error ? err.message : "Não foi possível enviar a mensagem.");
+      setError(friendlyError(err, "Não foi possível enviar a mensagem."));
     } finally {
       setSending(false);
     }
@@ -485,6 +486,27 @@ export function WhatsappInbox() {
     },
     [selectedId]
   );
+
+  // Estáveis para as bolhas memorizadas não redesenharem a cada tecla.
+  const handleReply = useCallback((message: Message) => {
+    const conversation = conversationsRef.current.find((c) => c.id === selectedIdRef.current);
+    setReplyTo({
+      waMessageId: message.wa_message_id ?? message.id,
+      body: message.body,
+      fromName: message.from_me ? "atendente" : conversation ? leadDisplayName(conversation) : "cliente",
+    });
+  }, []);
+
+  const handleReaction = useCallback(
+    (message: Message, emoji: string) => void sendReaction(message, emoji),
+    [sendReaction]
+  );
+
+  const handleTranscript = useCallback((messageId: string, text: string) => {
+    setMessages((prev) =>
+      prev.map((msg) => (msg.id === messageId ? { ...msg, audio_transcript: text } : msg))
+    );
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -738,15 +760,22 @@ export function WhatsappInbox() {
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
   const selectedOwner = selected?.owner_user_id ? agentsById.get(selected.owner_user_id) ?? null : null;
 
-  const changeOwnerTab = (tab: InboxOwnerTab) => {
+  // Estáveis para a lista memorizada não redesenhar a cada tecla no campo de mensagem.
+  const changeOwnerTab = useCallback((tab: InboxOwnerTab) => {
     setOwnerTab(tab);
     storeTab(OWNER_TAB_STORAGE_KEY, tab);
-  };
+  }, []);
 
-  const changeStatusTab = (tab: InboxStatusTab) => {
+  const changeStatusTab = useCallback((tab: InboxStatusTab) => {
     setStatusTab(tab);
     storeTab(STATUS_TAB_STORAGE_KEY, tab);
-  };
+  }, []);
+
+  const openStaleDialog = useCallback(() => setStaleDialogOpen(true), []);
+  const connectionSlot = useMemo(
+    () => <WhatsappConnectionIndicator health={health} onClick={() => setConnectionOpen(true)} />,
+    [health]
+  );
 
   const assignOwner = (userId: string | null) => {
     if (!selected) return;
@@ -814,7 +843,7 @@ export function WhatsappInbox() {
       setStaleDialogOpen(false);
       void loadConversations(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível resolver as conversas paradas.");
+      setError(friendlyError(err, "Não foi possível resolver as conversas paradas."));
     } finally {
       setResolvingStale(false);
     }
@@ -859,13 +888,13 @@ export function WhatsappInbox() {
           searchQuery={searchQuery}
           agentsById={agentsById}
           staleCount={staleConversations.length}
-          connectionSlot={<WhatsappConnectionIndicator health={health} onClick={() => setConnectionOpen(true)} />}
+          connectionSlot={connectionSlot}
           onOwnerTabChange={changeOwnerTab}
           onStatusTabChange={changeStatusTab}
           onLeadFilterChange={setLeadFilter}
           onSearchChange={setSearchQuery}
           onSelect={setSelectedId}
-          onResolveStale={() => setStaleDialogOpen(true)}
+          onResolveStale={openStaleDialog}
         />
 
         <main className={cn("min-h-0 min-w-0 flex-col bg-background", selected ? "flex" : "hidden lg:flex")}>
@@ -925,21 +954,9 @@ export function WhatsappInbox() {
                           message={message}
                           conversation={selected}
                           reaction={messageReactions[message.id]}
-                          onReply={() =>
-                            setReplyTo({
-                              waMessageId: message.wa_message_id ?? message.id,
-                              body: message.body,
-                              fromName: message.from_me ? "atendente" : leadDisplayName(selected),
-                            })
-                          }
-                          onReaction={(emoji) => void sendReaction(message, emoji)}
-                          onTranscript={(text) =>
-                            setMessages((prev) =>
-                              prev.map((msg) =>
-                                msg.id === message.id ? { ...msg, audio_transcript: text } : msg
-                              )
-                            )
-                          }
+                          onReply={handleReply}
+                          onReaction={handleReaction}
+                          onTranscript={handleTranscript}
                         />
                       </div>
                     ))}

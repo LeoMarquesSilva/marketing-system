@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Megaphone, MessageCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWhatsappUnreadCount } from "@/hooks/use-whatsapp-unread";
@@ -46,9 +46,12 @@ export function TrafegoPagoTabs() {
   const whatsappUnread = useWhatsappUnreadCount();
   // Clique no aviso de lead (?conversa=<id>): a conversa abre na aba de atendimento.
   const conversationParam = useSearchParams().get(WHATSAPP_CONVERSATION_PARAM);
-  useEffect(() => {
+  // Ajuste durante o render quando o parâmetro muda (sem efeito: evita um render a mais).
+  const [handledParam, setHandledParam] = useState(conversationParam);
+  if (conversationParam !== handledParam) {
+    setHandledParam(conversationParam);
     if (conversationParam) setTab("whatsapp");
-  }, [conversationParam]);
+  }
 
   return (
     <div className="space-y-4">
