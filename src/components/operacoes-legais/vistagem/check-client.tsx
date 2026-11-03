@@ -27,6 +27,7 @@ import type { TarefaNoVios } from "@/lib/vistagem/fila-vios";
 import type { AgendamentoResumo, CheckResposta, ConferenciaItem } from "@/lib/vistagem/types";
 import { linkTarefaVios } from "@/lib/vistagem/vios-links";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
+import { FiltroDataPublicacao, dataNaLista } from "./filtro-data";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { Seletor } from "./seletor";
 import { DadosPasta, DadosPublicacao, SeloEsocial, TeorPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
@@ -480,6 +481,8 @@ function Check() {
   const [retorno, setRetorno] = useState<Retorno | null>(null);
   const [atualizando, setAtualizando] = useState(false);
   const [busca, setBusca] = useState("");
+  /** Data da publicação (AAAA-MM-DD); vazio é "Todas as datas". */
+  const [dataPublicacao, setDataPublicacao] = useState("");
 
   const carregar = useCallback(async () => {
     setErro("");
@@ -516,7 +519,9 @@ function Check() {
   }, [dados]);
 
   const lista = dados?.[aba];
-  const filtrada = (lista ?? []).filter((item) => combinaBusca(item, busca));
+  const datasDaLista = (lista ?? []).map((item) => item.publicacao.dataPublicacao);
+  const dataAtiva = dataNaLista(dataPublicacao, datasDaLista);
+  const filtrada = (lista ?? []).filter((item) => combinaBusca(item, busca) && (!dataAtiva || item.publicacao.dataPublicacao === dataAtiva));
   const valor = (n: number | undefined) => (dados ? (n ?? 0) : "—");
 
   return (
@@ -554,6 +559,7 @@ function Check() {
         }
       >
         <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Buscar processo, pasta, cliente ou CI" aria-label="Buscar publicação" />
+        <FiltroDataPublicacao datas={datasDaLista} valor={dataAtiva} onChange={setDataPublicacao} />
       </BarraAba>
 
       {retorno ? (

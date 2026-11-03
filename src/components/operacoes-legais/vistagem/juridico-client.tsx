@@ -66,6 +66,7 @@ import type { PublicacaoResumo, ResolucaoPendencia, VistagemDetalhe } from "@/li
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
 import { FichaPasta } from "./ficha-pasta";
+import { FiltroDataPublicacao, dataNaLista } from "./filtro-data";
 import { FichaProcesso } from "./ficha-processo";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { AgendadasJuridico } from "./juridico-agendadas";
@@ -1316,6 +1317,8 @@ function Juridico() {
   const [busca, setBusca] = useState("");
   const [grupo, setGrupo] = useState("");
   const [risco, setRisco] = useState<FiltroRisco>("todas");
+  /** Data da publicação (AAAA-MM-DD); vazio é "Todas as datas". */
+  const [dataPublicacao, setDataPublicacao] = useState("");
   /** A fila abre sempre recolhida: a publicação ocupa a largura toda. */
   const [filaRecolhida, setFilaRecolhida] = useState(true);
   /** Na fila, cada grupo vem recolhido (menos o da publicação aberta); aqui ficam os que a pessoa inverteu. */
@@ -1353,10 +1356,13 @@ function Juridico() {
   }, [publicacoes]);
   // Grupo escolhido que sumiu da fila (outra área) deixa de filtrar.
   const grupoAtivo = gruposDaFila.some(([nome]) => nome === grupo) ? grupo : "";
+  const datasDaFila = useMemo(() => (publicacoes ?? []).map((publicacao) => publicacao.dataPublicacao), [publicacoes]);
+  const dataAtiva = dataNaLista(dataPublicacao, datasDaFila);
   const filtradas = useMemo(() => {
     const termo = chaveNome(busca);
     const digitos = termo.replace(/\D/g, "");
     return (publicacoes ?? []).filter((publicacao) => {
+      if (dataAtiva && publicacao.dataPublicacao !== dataAtiva) return false;
       if (grupoAtivo && (publicacao.grupoCliente?.trim() || SEM_GRUPO) !== grupoAtivo) return false;
       if (risco === "risco" && !publicacao.demandaRisco) return false;
       if (risco === "sem_risco" && publicacao.demandaRisco) return false;
@@ -1366,8 +1372,8 @@ function Juridico() {
         [publicacao.cliente, publicacao.grupoCliente, publicacao.pastaCi].some((texto) => chaveNome(texto).includes(termo))
       );
     });
-  }, [publicacoes, busca, grupoAtivo, risco]);
-  const filtrosAtivos = Boolean(busca.trim() || grupoAtivo || risco !== "todas");
+  }, [publicacoes, busca, grupoAtivo, risco, dataAtiva]);
+  const filtrosAtivos = Boolean(busca.trim() || grupoAtivo || risco !== "todas" || dataAtiva);
   const grupos = useMemo(() => agruparFila(filtradas), [filtradas]);
   // Mesma ordem da lista: é por ela que o editor anda para a anterior e a próxima.
   const ordem = useMemo(() => grupos.flatMap((item) => item.publicacoes.map((publicacao) => publicacao.id)), [grupos]);
@@ -1421,6 +1427,7 @@ function Juridico() {
     setBusca("");
     setGrupo("");
     setRisco("todas");
+    setDataPublicacao("");
   }
 
   function transferida(destino: string) {
@@ -1501,6 +1508,7 @@ function Juridico() {
         />
         {visao === "fila" ? (
           <>
+            <FiltroDataPublicacao datas={datasDaFila} valor={dataAtiva} onChange={setDataPublicacao} />
             <SeletorBusca
               rotulo="Grupo do cliente"
               className="sm:w-64"

@@ -40,6 +40,7 @@ import type { PendenciasControladoria, PublicacaoResumo, ResolucaoPendencia, Tri
 import { linkPastaVios } from "@/lib/vistagem/vios-links";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { AvisoArquivoDoDia } from "./aviso-arquivo-do-dia";
+import { FiltroDataPublicacao, dataNaLista } from "./filtro-data";
 import { EditorVistagem } from "./juridico-client";
 import { LeitorPublicacao } from "./leitor-publicacao";
 import { IconeArea, LogoGrupo } from "./marcas";
@@ -856,6 +857,8 @@ function Controladoria() {
   const [triando, setTriando] = useState(false);
   const [aviso, setAviso] = useState<{ tom: "sucesso" | "info" | "erro"; texto: string } | null>(null);
   const [busca, setBusca] = useState("");
+  /** Data da publicação (AAAA-MM-DD); vazio é "Todas as datas". */
+  const [dataPublicacao, setDataPublicacao] = useState("");
   const [aba, setAba] = useState<Aba | null>(null);
   const [selecionada, setSelecionada] = useState<string | null>(null);
   /** Publicação que a controladoria liberou para vistar aqui mesmo, no modal do jurídico. */
@@ -903,14 +906,22 @@ function Controladoria() {
     }
   }
 
+  // Data da publicação: filtra a fila e a contagem das abas.
+  const datasDasPendencias = useMemo(() => (dados?.pendentes ?? []).map((p) => p.dataPublicacao), [dados]);
+  const dataAtiva = dataNaLista(dataPublicacao, datasDasPendencias);
+  const pendentesNaData = useMemo(
+    () => (dados?.pendentes ?? []).filter((p) => !dataAtiva || p.dataPublicacao === dataAtiva),
+    [dados, dataAtiva]
+  );
+
   const porAba = useMemo(() => {
     const total: Record<Aba, number> = { sem_pasta: 0, varias_pastas: 0, dados: 0 };
-    for (const p of dados?.pendentes ?? []) {
+    for (const p of pendentesNaData) {
       const destino = abaDaPendencia(p.pendencia);
       if (destino) total[destino] += 1;
     }
     return total;
-  }, [dados]);
+  }, [pendentesNaData]);
 
   // Sem escolha, abre a primeira aba que tem pendência.
   const abaAtiva: Aba = aba ?? ABAS.find((item) => porAba[item.valor] > 0)?.valor ?? "sem_pasta";
@@ -919,11 +930,11 @@ function Controladoria() {
   // Mais antigas primeiro: o prazo já está correndo.
   const fila = useMemo(
     () =>
-      (dados?.pendentes ?? [])
+      pendentesNaData
         .filter((p) => abaDaPendencia(p.pendencia) === abaAtiva)
         .filter((p) => combinaBusca(p, busca))
         .sort((a, b) => (a.dataPublicacao ?? "").localeCompare(b.dataPublicacao ?? "") || (a.linhaArquivo ?? 0) - (b.linhaArquivo ?? 0)),
-    [dados, abaAtiva, busca]
+    [pendentesNaData, abaAtiva, busca]
   );
   const ordem = fila.map((p) => p.id);
   const aberta = selecionada && ordem.includes(selecionada) ? selecionada : ordem[0] ?? null;
@@ -982,6 +993,7 @@ function Controladoria() {
       <div className="space-y-3">
         <BarraAba resumo="O que a triagem não conseguiu encaminhar sozinha. Confira se a pasta existe mesmo, escolha a certa ou informe os dados para liberar ao jurídico; com a pasta escolhida, dá para agendar direto aqui.">
           <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Processo, CI, grupo ou intimado" aria-label="Buscar publicação" />
+          <FiltroDataPublicacao datas={datasDasPendencias} valor={dataAtiva} onChange={setDataPublicacao} />
           <Button variant="outline" onClick={rodarTriagem} disabled={triando}>
             {triando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
             Rodar triagem agora
