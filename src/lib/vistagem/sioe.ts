@@ -118,6 +118,19 @@ export async function buscarPastaPorCi(ci: string): Promise<PastaSioe | null> {
   return row ? paraPasta(row) : null;
 }
 
+/**
+ * Síntese do processo (coluna "Observações (síntese do processo)" do relatório do VIOS) da pasta. Fica fora de
+ * COLUNAS: chega a 20 mil caracteres e só a vistagem aberta precisa dela.
+ */
+export async function buscarSinteseDaPasta(ci: string): Promise<string | null> {
+  const numero = ci.replace(/\D/g, "");
+  if (!numero) return null;
+  const { data, error } = await sioe().from("processos_completo").select("observacoes").eq("ci", numero).limit(1);
+  if (error) throw new VistagemError(`Falha ao consultar a síntese do processo no SIOE: ${error.message}`, 502);
+  const [row] = (data ?? []) as { observacoes: string | null }[];
+  return row?.observacoes?.trim() || null;
+}
+
 /** Área de cada pessoa: sp_usuarios_area e, para quem não está lá, colaboradores. */
 export async function carregarAreasDasPessoas(): Promise<(nome: string | null) => string | null> {
   const db = sioe();

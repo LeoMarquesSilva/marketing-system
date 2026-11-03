@@ -84,3 +84,48 @@ export function partesPorPolo(partes: { nome: string; polo: string }[], cliente:
       .sort((a, b) => Number(b.cliente) - Number(a.cliente));
   return { ativo: doPolo("A"), passivo: doPolo("P") };
 }
+
+/** Entidades HTML que o VIOS deixa na síntese (o CSV troca o ";" final por ":", ex.: "&ndash:"). */
+const ENTIDADES: Record<string, string> = {
+  ndash: "–",
+  mdash: "—",
+  bull: "•",
+  ldquo: "“",
+  rdquo: "”",
+  lsquo: "‘",
+  rsquo: "’",
+  lowast: "∗",
+  euro: "€",
+  nbsp: " ",
+  amp: "&",
+  quot: '"',
+  lt: "<",
+  gt: ">",
+  hellip: "…",
+  ordm: "º",
+  ordf: "ª",
+  sect: "§",
+  deg: "°",
+};
+
+/**
+ * Síntese do processo do VIOS em parágrafos. O CSV do VIOS chega sem as quebras de linha ("despacho08/11/2021"):
+ * quebra antes de uma data colada no texto e de um "- " colado ("Transportes.- Julgada"). Também traduz as
+ * entidades HTML.
+ */
+export function paragrafosDaSintese(sintese: string | null): string[] {
+  if (!sintese) return [];
+  return sintese
+    .replace(/&(#\d{2,6}|[a-z]{2,8})[;:]/gi, (entidade, nome: string) => {
+      if (nome.startsWith("#")) {
+        const codigo = Number(nome.slice(1));
+        return codigo > 0 && codigo <= 0x10ffff ? String.fromCodePoint(codigo) : entidade;
+      }
+      return ENTIDADES[nome.toLowerCase()] ?? entidade;
+    })
+    .replace(/(?<=[^\s\d/])(?=\d{2}\/\d{2}(?:\/\d{2,4})?(?!\d))/g, "\n")
+    .replace(/(?<=\S)-\s+(?=[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ])/g, "\n- ")
+    .split(/\r?\n/)
+    .map((linha) => linha.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}

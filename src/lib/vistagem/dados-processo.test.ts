@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classeDoProcesso, partesPorPolo, valorDaCausa } from "./dados-processo";
+import { classeDoProcesso, paragrafosDaSintese, partesPorPolo, valorDaCausa } from "./dados-processo";
 
 describe("classeDoProcesso", () => {
   it("tira o tipo do ato e deixa a classe em caixa de título", () => {
@@ -73,5 +73,37 @@ describe("partesPorPolo", () => {
       partesPorPolo([{ nome: "2. CDA COMERCIO INDUSTRIA DE METAIS LTDA EM RECUPERACAO JUDICIAL (AGRAVANTE)", polo: "A" }], "Cda Comercio Industria de Metais Ltda Em Recuperacao Judicial")
         .ativo
     ).toEqual([{ nome: "CDA COMERCIO INDUSTRIA DE METAIS LTDA EM RECUPERACAO JUDICIAL (AGRAVANTE)", cliente: true }]);
+  });
+});
+
+describe("paragrafosDaSintese", () => {
+  it("quebra antes da data e do traço colados no texto", () => {
+    expect(paragrafosDaSintese("30/08/2021 Conclusos para despacho08/11/2021 Juntado pedido, desde 08/2021.24/06: Citação infrutífera.")).toEqual([
+      "30/08/2021 Conclusos para despacho",
+      "08/11/2021 Juntado pedido, desde 08/2021.",
+      "24/06: Citação infrutífera.",
+    ]);
+    expect(paragrafosDaSintese("Cobrança contra LPS Transportes.- Julgada procedente, R$19.289,76- Iniciado cumprimento")).toEqual([
+      "Cobrança contra LPS Transportes.",
+      "- Julgada procedente, R$19.289,76",
+      "- Iniciado cumprimento",
+    ]);
+  });
+
+  it("não quebra data no meio da frase, traço com espaço antes nem palavra hifenizada", () => {
+    expect(paragrafosDaSintese("09/02/2024 Decisão - Intime-se a exequente em 05/01/2024, processo nº 0028321/2025.")).toEqual([
+      "09/02/2024 Decisão - Intime-se a exequente em 05/01/2024, processo nº 0028321/2025.",
+    ]);
+  });
+
+  it("traduz as entidades HTML, com o ':' que o CSV põe no lugar do ';'", () => {
+    expect(paragrafosDaSintese("17/11/2025 &ndash: Oposição &ldquo:Embargos&rdquo: &bull: R&amp;D &#8727: S&A")).toEqual([
+      "17/11/2025 – Oposição “Embargos” • R&D ∗ S&A",
+    ]);
+  });
+
+  it("vazia, sem parágrafos", () => {
+    expect(paragrafosDaSintese(null)).toEqual([]);
+    expect(paragrafosDaSintese("   ")).toEqual([]);
   });
 });

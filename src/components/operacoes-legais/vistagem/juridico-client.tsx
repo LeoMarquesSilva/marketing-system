@@ -67,7 +67,7 @@ import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
 import { FichaPasta } from "./ficha-pasta";
 import { FiltroData, dataNaLista } from "./filtro-data";
-import { FichaProcesso } from "./ficha-processo";
+import { FichaProcesso, SinteseDoProcesso } from "./ficha-processo";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { AgendadasJuridico } from "./juridico-agendadas";
 import { LeitorPublicacao } from "./leitor-publicacao";
@@ -798,6 +798,7 @@ export function EditorVistagem({
                   }
                 >
                   <FichaProcesso publicacao={publicacao} />
+                  {publicacao.pastaCi ? <SinteseDoProcesso key={publicacao.id} sintese={detalhe.sintese} erro={detalhe.sinteseErro} /> : null}
                 </FichaPasta>
                 <ReguaDatas rotulo="Datas da publicação" hoje={detalhe.hoje} marcos={marcosDaPublicacao} />
               </div>
