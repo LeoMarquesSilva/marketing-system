@@ -411,7 +411,8 @@ function CampoResponsaveis({
   );
 }
 
-function EditorVistagem({
+/** Vistagem de uma publicação: leitura ao lado e tarefas para o VIOS. Usada na fila do Jurídico e na Controladoria ("Agendar aqui"). */
+export function EditorVistagem({
   id,
   navegacao,
   onAbrir,

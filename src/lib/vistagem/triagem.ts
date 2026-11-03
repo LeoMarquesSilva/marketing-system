@@ -94,6 +94,11 @@ export function ehExCliente(pasta: PastaSioe): boolean {
   return /\bex.?cliente\b/.test(normalizar(`${pasta.grupoCliente} | ${pasta.etiquetas} | ${pasta.situacao}`));
 }
 
+/** Pasta em andamento no VIOS: não está encerrada, arquivada, baixada nem extinta. */
+export function pastaAtiva(pasta: PastaSioe): boolean {
+  return !/encerrad|arquivad|baixad|extint/.test(normalizar(pasta.situacao));
+}
+
 export function temDemandaDeRisco(pasta: PastaSioe): boolean {
   return normalizar(pasta.etiquetas).includes("demanda de risco");
 }
@@ -147,7 +152,11 @@ export function triar(
 
   if (candidatas.length === 0) return pendente("sem_pasta");
 
-  const exCliente = candidatas.find(ehExCliente);
+  // Mais de uma pasta e só uma em andamento: é ela (as encerradas e arquivadas são de antes).
+  const ativas = candidatas.filter(pastaAtiva);
+  const pastas = candidatas.length > 1 && ativas.length === 1 ? ativas : candidatas;
+
+  const exCliente = pastas.find(ehExCliente);
   if (exCliente) {
     // Ex-cliente sem advogado do escritório na publicação não precisa de vistagem.
     const descartar = contexto.citaEscritorio === false;
@@ -155,16 +164,16 @@ export function triar(
       status: descartar ? "descartada" : "juridico_vistar",
       pendencia: "ex_cliente",
       motivoDescarte: descartar ? MOTIVO_EX_CLIENTE_SEM_ESCRITORIO : null,
-      pasta: candidatas.length === 1 ? candidatas[0] : exCliente,
+      pasta: pastas.length === 1 ? pastas[0] : exCliente,
       escritorio: ESCRITORIO_EX_CLIENTE,
       demandaRisco: temDemandaDeRisco(exCliente),
-      candidatas: candidatas.length > 1 ? candidatas : [],
+      candidatas: pastas.length > 1 ? pastas : [],
     };
   }
 
-  if (candidatas.length > 1) return pendente("varias_pastas");
+  if (pastas.length > 1) return pendente("varias_pastas");
 
-  const [pasta] = candidatas;
+  const [pasta] = pastas;
   const escritorio = escritorioDaPasta(pasta, areaDoAdvogado);
   if (!escritorio) return pendente("sem_area", pasta);
   if (!pasta.grupoCliente?.trim()) return pendente("sem_grupo", pasta);

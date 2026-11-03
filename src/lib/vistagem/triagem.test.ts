@@ -79,6 +79,17 @@ describe("triar", () => {
     expect(resultado.candidatas.map((c) => c.ci)).toEqual(["1000", "2000"]);
   });
 
+  it("com várias pastas e só uma ativa, usa a ativa", () => {
+    const resultado = triar(
+      [pasta({ ci: "1000", situacao: "Arquivado definitivamente" }), pasta({ ci: "2000" }), pasta({ ci: "3000", situacao: "Encerrado - Ex-Cliente" })],
+      areaDoAdvogado
+    );
+    expect(resultado).toMatchObject({ status: "juridico_vistar", pendencia: null, escritorio: "Trabalhista" });
+    expect(resultado.pasta?.ci).toBe("2000");
+    // com duas ativas, a controladoria escolhe
+    expect(triar([pasta({ ci: "1000" }), pasta({ ci: "2000" }), pasta({ ci: "3000", situacao: "Baixado" })], areaDoAdvogado).pendencia).toBe("varias_pastas");
+  });
+
   it("deixa pendente quando a pasta não tem grupo", () => {
     expect(triar([pasta({ grupoCliente: " " })], areaDoAdvogado)).toMatchObject({ status: "triagem_pendente", pendencia: "sem_grupo" });
   });
