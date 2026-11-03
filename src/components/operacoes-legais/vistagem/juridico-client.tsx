@@ -66,7 +66,7 @@ import type { PublicacaoResumo, ResolucaoPendencia, VistagemDetalhe } from "@/li
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
 import { FichaPasta } from "./ficha-pasta";
-import { FiltroDataPublicacao, dataNaLista } from "./filtro-data";
+import { FiltroData, dataNaLista } from "./filtro-data";
 import { FichaProcesso } from "./ficha-processo";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { AgendadasJuridico } from "./juridico-agendadas";
@@ -1319,6 +1319,8 @@ function Juridico() {
   const [risco, setRisco] = useState<FiltroRisco>("todas");
   /** Data da publicação (AAAA-MM-DD); vazio é "Todas as datas". */
   const [dataPublicacao, setDataPublicacao] = useState("");
+  /** Data da divulgação no diário (AAAA-MM-DD); vazio é "Todas as datas". */
+  const [dataDivulgacao, setDataDivulgacao] = useState("");
   /** A fila abre sempre recolhida: a publicação ocupa a largura toda. */
   const [filaRecolhida, setFilaRecolhida] = useState(true);
   /** Na fila, cada grupo vem recolhido (menos o da publicação aberta); aqui ficam os que a pessoa inverteu. */
@@ -1358,11 +1360,14 @@ function Juridico() {
   const grupoAtivo = gruposDaFila.some(([nome]) => nome === grupo) ? grupo : "";
   const datasDaFila = useMemo(() => (publicacoes ?? []).map((publicacao) => publicacao.dataPublicacao), [publicacoes]);
   const dataAtiva = dataNaLista(dataPublicacao, datasDaFila);
+  const divulgacoesDaFila = useMemo(() => (publicacoes ?? []).map((publicacao) => publicacao.dataDivulgacao), [publicacoes]);
+  const divulgacaoAtiva = dataNaLista(dataDivulgacao, divulgacoesDaFila);
   const filtradas = useMemo(() => {
     const termo = chaveNome(busca);
     const digitos = termo.replace(/\D/g, "");
     return (publicacoes ?? []).filter((publicacao) => {
       if (dataAtiva && publicacao.dataPublicacao !== dataAtiva) return false;
+      if (divulgacaoAtiva && publicacao.dataDivulgacao !== divulgacaoAtiva) return false;
       if (grupoAtivo && (publicacao.grupoCliente?.trim() || SEM_GRUPO) !== grupoAtivo) return false;
       if (risco === "risco" && !publicacao.demandaRisco) return false;
       if (risco === "sem_risco" && publicacao.demandaRisco) return false;
@@ -1372,8 +1377,8 @@ function Juridico() {
         [publicacao.cliente, publicacao.grupoCliente, publicacao.pastaCi].some((texto) => chaveNome(texto).includes(termo))
       );
     });
-  }, [publicacoes, busca, grupoAtivo, risco, dataAtiva]);
-  const filtrosAtivos = Boolean(busca.trim() || grupoAtivo || risco !== "todas" || dataAtiva);
+  }, [publicacoes, busca, grupoAtivo, risco, dataAtiva, divulgacaoAtiva]);
+  const filtrosAtivos = Boolean(busca.trim() || grupoAtivo || risco !== "todas" || dataAtiva || divulgacaoAtiva);
   const grupos = useMemo(() => agruparFila(filtradas), [filtradas]);
   // Mesma ordem da lista: é por ela que o editor anda para a anterior e a próxima.
   const ordem = useMemo(() => grupos.flatMap((item) => item.publicacoes.map((publicacao) => publicacao.id)), [grupos]);
@@ -1428,6 +1433,7 @@ function Juridico() {
     setGrupo("");
     setRisco("todas");
     setDataPublicacao("");
+    setDataDivulgacao("");
   }
 
   function transferida(destino: string) {
@@ -1508,7 +1514,8 @@ function Juridico() {
         />
         {visao === "fila" ? (
           <>
-            <FiltroDataPublicacao datas={datasDaFila} valor={dataAtiva} onChange={setDataPublicacao} />
+            <FiltroData rotulo="Data Publicação" datas={datasDaFila} valor={dataAtiva} onChange={setDataPublicacao} />
+            <FiltroData rotulo="Data Divulgação" datas={divulgacoesDaFila} valor={divulgacaoAtiva} onChange={setDataDivulgacao} />
             <SeletorBusca
               rotulo="Grupo do cliente"
               className="sm:w-64"

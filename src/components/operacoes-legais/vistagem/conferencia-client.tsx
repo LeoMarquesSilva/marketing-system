@@ -30,7 +30,7 @@ import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, EnvioStat
 import { linkTarefaVios } from "@/lib/vistagem/vios-links";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
-import { FiltroDataPublicacao, dataNaLista } from "./filtro-data";
+import { FiltroData, dataNaLista } from "./filtro-data";
 import { IconeArea } from "./marcas";
 import { Seletor } from "./seletor";
 import { DadosPasta, DadosPublicacao, SeloEsocial, TeorPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
@@ -635,6 +635,8 @@ function Conferencia() {
   const [busca, setBusca] = useState("");
   /** Data da publicação (AAAA-MM-DD); vazio é "Todas as datas". */
   const [dataPublicacao, setDataPublicacao] = useState("");
+  /** Data da divulgação no diário (AAAA-MM-DD); vazio é "Todas as datas". */
+  const [dataDivulgacao, setDataDivulgacao] = useState("");
 
   const carregar = useCallback(async () => {
     setErro("");
@@ -737,7 +739,14 @@ function Conferencia() {
   const lista = aba === "conferir" ? dados?.aConferir : aba === "enviadas" ? dados?.enviadas : [];
   const datasDaLista = (lista ?? []).map((item) => item.publicacao.dataPublicacao);
   const dataAtiva = dataNaLista(dataPublicacao, datasDaLista);
-  const filtrada = (lista ?? []).filter((item) => combinaBusca(item, busca) && (!dataAtiva || item.publicacao.dataPublicacao === dataAtiva));
+  const divulgacoesDaLista = (lista ?? []).map((item) => item.publicacao.dataDivulgacao);
+  const divulgacaoAtiva = dataNaLista(dataDivulgacao, divulgacoesDaLista);
+  const filtrada = (lista ?? []).filter(
+    (item) =>
+      combinaBusca(item, busca) &&
+      (!dataAtiva || item.publicacao.dataPublicacao === dataAtiva) &&
+      (!divulgacaoAtiva || item.publicacao.dataDivulgacao === divulgacaoAtiva)
+  );
   const valor = (n: number) => (dados ? n : "—");
 
   return (
@@ -797,7 +806,8 @@ function Conferencia() {
         {aba !== "inconsistencias" ? (
           <>
             <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Buscar processo, pasta ou cliente" aria-label="Buscar publicação" />
-            <FiltroDataPublicacao datas={datasDaLista} valor={dataAtiva} onChange={setDataPublicacao} />
+            <FiltroData rotulo="Data Publicação" datas={datasDaLista} valor={dataAtiva} onChange={setDataPublicacao} />
+            <FiltroData rotulo="Data Divulgação" datas={divulgacoesDaLista} valor={divulgacaoAtiva} onChange={setDataDivulgacao} />
           </>
         ) : null}
         {aba === "enviadas" ? (
