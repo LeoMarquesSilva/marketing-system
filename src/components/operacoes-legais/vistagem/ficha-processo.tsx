@@ -1,15 +1,25 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, TriangleAlert } from "lucide-react";
+import { Check, LoaderCircle, PencilLine, TriangleAlert } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { authFetch } from "@/lib/auth-fetch";
 import { chaveNome } from "@/lib/vistagem/agendamento";
 import { cn } from "@/lib/utils";
-import { classeDoProcesso, paragrafosDaSintese, partesPorPolo, valorDaCausa, type ParteDoPolo } from "@/lib/vistagem/dados-processo";
+import {
+  LIMITE_TRECHO_SINTESE,
+  classeDoProcesso,
+  paragrafosDaSintese,
+  partesPorPolo,
+  valorDaCausa,
+  type ParteDoPolo,
+} from "@/lib/vistagem/dados-processo";
 import { lerPublicacao } from "@/lib/vistagem/leitura";
 import { advogadosDoEscritorioCitados } from "@/lib/vistagem/triagem";
-import type { PublicacaoResumo } from "@/lib/vistagem/types";
+import type { PublicacaoResumo, SintesePedida } from "@/lib/vistagem/types";
 import { Celula } from "./ficha-pasta";
-import { Selo } from "./ui";
+import { Selo, type TomSelo } from "./ui";
 
 /** Nomes de cada polo que aparecem antes do "e mais N". */
 const VISIVEIS = 2;
@@ -173,15 +183,88 @@ export function FichaProcesso({ publicacao }: { publicacao: PublicacaoResumo }) 
 /** Síntese acima disto (parágrafos ou caracteres) começa recolhida, com o "Ver síntese completa". */
 const SINTESE_CURTA = { paragrafos: 4, caracteres: 360 };
 
+/** Situação do pedido na fila do robô. */
+function situacaoDoPedido(pedida: SintesePedida): { rotulo: string; tom: TomSelo } {
+  if (pedida.status === "erro") return { rotulo: "Erro no robô", tom: "perigo" };
+  if (pedida.status === "processando") return { rotulo: "Gravando no VIOS", tom: "marca" };
+  if (pedida.status !== "concluido") return { rotulo: pedida.simulado ? "Na fila (simulação)" : "Na fila do robô", tom: "neutro" };
+  if (pedida.simulado) return { rotulo: "Simulado, não gravou", tom: "alerta" };
+  return { rotulo: pedida.jaEstava ? "Já estava na síntese" : "Gravado no VIOS", tom: "sucesso" };
+}
+
+/** O que já foi pedido ao robô para esta pasta: data, quem pediu, o trecho e a situação. */
+function SintesesPedidas({ pedidas }: { pedidas: SintesePedida[] }) {
+  return (
+    <ul className="space-y-1.5 border-t border-[#c9dde6] pt-2">
+      {pedidas.map((pedida) => {
+        const situacao = situacaoDoPedido(pedida);
+        return (
+          <li key={pedida.id} className="min-w-0 text-xs">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <Selo tom={situacao.tom}>{situacao.rotulo}</Selo>
+              <span className="font-medium text-[#285f7a]">
+                {pedida.data}
+                {pedida.autor ? ` (${pedida.autor})` : ""}
+              </span>
+            </div>
+            <p className="mt-0.5 line-clamp-2 text-foreground" title={pedida.texto}>
+              {pedida.texto}
+            </p>
+            {pedida.erro ? <p className="mt-0.5 text-red-700">{pedida.erro}</p> : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /**
  * Síntese do processo da pasta no VIOS, embaixo da ficha. Longa, começa recolhida em umas cinco linhas; aberta,
- * rola dentro do bloco (há sínteses de 20 mil caracteres).
+ * rola dentro do bloco (há sínteses de 20 mil caracteres). Com `publicacaoId`, a pessoa acrescenta um trecho:
+ * o robô junta no fim da síntese do VIOS como "dd/mm/aaaa (Nome): texto", quando não houver outro trabalho na fila.
  */
-export function SinteseDoProcesso({ sintese, erro }: { sintese: string | null; erro: string | null }) {
+export function SinteseDoProcesso({
+  sintese,
+  erro,
+  pedidas: pedidasIniciais = [],
+  publicacaoId = null,
+}: {
+  sintese: string | null;
+  erro: string | null;
+  pedidas?: SintesePedida[];
+  /** Publicação da vistagem; sem ela (prévia da controladoria), só leitura. */
+  publicacaoId?: string | null;
+}) {
   const paragrafos = useMemo(() => paragrafosDaSintese(sintese), [sintese]);
   const [completa, setCompleta] = useState(false);
+  const [pedidas, setPedidas] = useState(pedidasIniciais);
+  const [escrevendo, setEscrevendo] = useState(false);
+  const [trecho, setTrecho] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [erroEnvio, setErroEnvio] = useState("");
   const longa = paragrafos.length > SINTESE_CURTA.paragrafos || paragrafos.join(" ").length > SINTESE_CURTA.caracteres;
   const recolhida = longa && !completa;
+
+  async function atualizarSintese() {
+    setEnviando(true);
+    setErroEnvio("");
+    try {
+      const resposta = await authFetch(`/api/operacoes-legais/vistagem/juridico/${publicacaoId}/sintese`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ texto: trecho }),
+      });
+      const corpo = await resposta.json();
+      if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao pedir a atualização da síntese.");
+      setPedidas(corpo.sintesesPedidas ?? []);
+      setTrecho("");
+      setEscrevendo(false);
+    } catch (e) {
+      setErroEnvio(e instanceof Error ? e.message : "Falha ao pedir a atualização da síntese.");
+    } finally {
+      setEnviando(false);
+    }
+  }
 
   return (
     <div className="rounded-md border border-[#c9dde6] bg-[#e9f2f6] px-3 py-2.5">
@@ -200,20 +283,73 @@ export function SinteseDoProcesso({ sintese, erro }: { sintese: string | null; e
               </div>
               {recolhida ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-[#e9f2f6]" aria-hidden /> : null}
             </div>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">Não preenchida no VIOS.</p>
+        )}
+        {longa || (publicacaoId && !escrevendo) ? (
+          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
             {longa ? (
               <button
                 type="button"
-                className="mt-1 text-xs font-medium text-[#347796] underline-offset-4 hover:underline"
+                className="text-xs font-medium text-[#347796] underline-offset-4 hover:underline"
                 aria-expanded={completa}
                 onClick={() => setCompleta((aberta) => !aberta)}
               >
                 {completa ? "Recolher síntese" : "Ver síntese completa"}
               </button>
             ) : null}
-          </>
-        ) : (
-          <p className="text-sm text-muted-foreground">Não preenchida no VIOS.</p>
-        )}
+            {publicacaoId && !escrevendo ? (
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-xs font-medium text-[#347796] underline-offset-4 hover:underline"
+                onClick={() => setEscrevendo(true)}
+              >
+                <PencilLine className="size-3.5" aria-hidden />
+                Acrescentar à síntese
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {publicacaoId && escrevendo ? (
+          <form
+            className="mt-2 space-y-2"
+            onSubmit={(evento) => {
+              evento.preventDefault();
+              if (trecho.trim().length >= 3 && !enviando) void atualizarSintese();
+            }}
+          >
+            <Textarea
+              value={trecho}
+              onChange={(evento) => setTrecho(evento.target.value)}
+              maxLength={LIMITE_TRECHO_SINTESE}
+              rows={3}
+              placeholder="O que acrescentar à síntese do processo"
+              aria-label="Trecho para acrescentar à síntese"
+              className="bg-white"
+              autoFocus
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Vai no fim da síntese do VIOS, com a data de hoje e o seu nome. O robô grava quando não houver outro agendamento na fila; o texto
+              acima muda depois da próxima carga do VIOS.
+            </p>
+            {erroEnvio ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{erroEnvio}</p> : null}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setEscrevendo(false)} disabled={enviando}>
+                Cancelar
+              </Button>
+              <Button type="submit" size="sm" disabled={trecho.trim().length < 3 || enviando}>
+                {enviando ? <LoaderCircle className="animate-spin" /> : <PencilLine />}
+                Atualizar Síntese
+              </Button>
+            </div>
+          </form>
+        ) : null}
+        {pedidas.length ? (
+          <div className="mt-2">
+            <SintesesPedidas pedidas={pedidas} />
+          </div>
+        ) : null}
       </Celula>
     </div>
   );

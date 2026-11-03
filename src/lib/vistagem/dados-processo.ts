@@ -85,6 +85,9 @@ export function partesPorPolo(partes: { nome: string; polo: string }[], cliente:
   return { ativo: doPolo("A"), passivo: doPolo("P") };
 }
 
+/** Tamanho do trecho que se acrescenta à síntese de uma vez ("Atualizar Síntese"). */
+export const LIMITE_TRECHO_SINTESE = 4000;
+
 /** Entidades HTML que o VIOS deixa na síntese (o CSV troca o ";" final por ":", ex.: "&ndash:"). */
 const ENTIDADES: Record<string, string> = {
   ndash: "–",
