@@ -43,6 +43,7 @@ export function Seletor({
   className,
   invalido = false,
   desabilitado = false,
+  rotuloVazio,
 }: {
   valor: string;
   onChange: (valor: string) => void;
@@ -54,11 +55,13 @@ export function Seletor({
   className?: string;
   invalido?: boolean;
   desabilitado?: boolean;
+  /** No campo, no lugar da opção `todos` quando nada está escolhido (ex.: "Data Publicação"); a lista continua com `todos`. */
+  rotuloVazio?: ReactNode;
 }) {
   return (
     <Select value={valor || (todos ? VAZIO : "")} onValueChange={(novo) => onChange(novo === VAZIO ? "" : novo)} disabled={desabilitado}>
       <SelectTrigger aria-label={rotulo} aria-invalid={invalido || undefined} className={cn("w-full min-w-0", className)}>
-        <SelectValue placeholder={placeholder} />
+        {!valor && rotuloVazio ? <SelectValue placeholder={placeholder}>{rotuloVazio}</SelectValue> : <SelectValue placeholder={placeholder} />}
       </SelectTrigger>
       <SelectContent className="max-h-80">
         {todos ? (

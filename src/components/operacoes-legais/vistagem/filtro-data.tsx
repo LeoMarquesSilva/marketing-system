@@ -12,21 +12,26 @@ function rotuloDaData(data: string): string {
   return `${dia}/${mes}/${ano} · ${DIAS_DA_SEMANA[new Date(`${data}T12:00:00Z`).getUTCDay()]}`;
 }
 
-/** A data escolhida só filtra enquanto existir na lista (trocou a área ou a aba e ela sumiu: volta a "Todas"). */
+/** A data escolhida só filtra enquanto existir na lista (trocou a área ou a aba e ela sumiu: volta a "todas"). */
 export function dataNaLista(valor: string, datas: (string | null)[]): string {
   return valor && datas.includes(valor) ? valor : "";
 }
 
+const icone = <CalendarDays className="size-4 shrink-0 text-[#3e84a8]" aria-hidden />;
+
 /**
- * Filtro pela data da publicação: as datas que aparecem na lista, da mais recente para a mais antiga, com quantas
- * publicações há em cada uma.
+ * Filtro por uma data da publicação (publicação ou divulgação): as datas que aparecem na lista, da mais recente
+ * para a mais antiga, com quantas publicações há em cada uma. Sem data escolhida, o campo mostra o nome do filtro.
  */
-export function FiltroDataPublicacao({
+export function FiltroData({
+  rotulo,
   datas,
   valor,
   onChange,
-  className = "sm:w-56",
+  className = "sm:w-52",
 }: {
+  /** "Data Publicação" ou "Data Divulgação". */
+  rotulo: string;
   datas: (string | null)[];
   valor: string;
   onChange: (valor: string) => void;
@@ -41,11 +46,17 @@ export function FiltroDataPublicacao({
   }, [datas]);
   return (
     <Seletor
-      rotulo="Data da publicação"
+      rotulo={rotulo}
       className={className}
       valor={dataNaLista(valor, datas)}
       onChange={onChange}
-      todos={{ rotulo: "Todas as datas", contagem: datas.length, icone: <CalendarDays className="size-4 text-[#3e84a8]" aria-hidden /> }}
+      todos={{ rotulo: "Todas as datas", contagem: datas.length, icone }}
+      rotuloVazio={
+        <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+          {icone}
+          <span className="truncate">{rotulo}</span>
+        </span>
+      }
       opcoes={opcoes}
     />
   );

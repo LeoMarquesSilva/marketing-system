@@ -40,7 +40,7 @@ import type { PendenciasControladoria, PublicacaoResumo, ResolucaoPendencia, Tri
 import { linkPastaVios } from "@/lib/vistagem/vios-links";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { AvisoArquivoDoDia } from "./aviso-arquivo-do-dia";
-import { FiltroDataPublicacao, dataNaLista } from "./filtro-data";
+import { FiltroData, dataNaLista } from "./filtro-data";
 import { EditorVistagem } from "./juridico-client";
 import { LeitorPublicacao } from "./leitor-publicacao";
 import { IconeArea, LogoGrupo } from "./marcas";
@@ -859,6 +859,8 @@ function Controladoria() {
   const [busca, setBusca] = useState("");
   /** Data da publicação (AAAA-MM-DD); vazio é "Todas as datas". */
   const [dataPublicacao, setDataPublicacao] = useState("");
+  /** Data da divulgação no diário (AAAA-MM-DD); vazio é "Todas as datas". */
+  const [dataDivulgacao, setDataDivulgacao] = useState("");
   const [aba, setAba] = useState<Aba | null>(null);
   const [selecionada, setSelecionada] = useState<string | null>(null);
   /** Publicação que a controladoria liberou para vistar aqui mesmo, no modal do jurídico. */
@@ -909,9 +911,14 @@ function Controladoria() {
   // Data da publicação: filtra a fila e a contagem das abas.
   const datasDasPendencias = useMemo(() => (dados?.pendentes ?? []).map((p) => p.dataPublicacao), [dados]);
   const dataAtiva = dataNaLista(dataPublicacao, datasDasPendencias);
+  const divulgacoesDasPendencias = useMemo(() => (dados?.pendentes ?? []).map((p) => p.dataDivulgacao), [dados]);
+  const divulgacaoAtiva = dataNaLista(dataDivulgacao, divulgacoesDasPendencias);
   const pendentesNaData = useMemo(
-    () => (dados?.pendentes ?? []).filter((p) => !dataAtiva || p.dataPublicacao === dataAtiva),
-    [dados, dataAtiva]
+    () =>
+      (dados?.pendentes ?? []).filter(
+        (p) => (!dataAtiva || p.dataPublicacao === dataAtiva) && (!divulgacaoAtiva || p.dataDivulgacao === divulgacaoAtiva)
+      ),
+    [dados, dataAtiva, divulgacaoAtiva]
   );
 
   const porAba = useMemo(() => {
@@ -993,7 +1000,8 @@ function Controladoria() {
       <div className="space-y-3">
         <BarraAba resumo="O que a triagem não conseguiu encaminhar sozinha. Confira se a pasta existe mesmo, escolha a certa ou informe os dados para liberar ao jurídico; com a pasta escolhida, dá para agendar direto aqui.">
           <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Processo, CI, grupo ou intimado" aria-label="Buscar publicação" />
-          <FiltroDataPublicacao datas={datasDasPendencias} valor={dataAtiva} onChange={setDataPublicacao} />
+          <FiltroData rotulo="Data Publicação" datas={datasDasPendencias} valor={dataAtiva} onChange={setDataPublicacao} />
+          <FiltroData rotulo="Data Divulgação" datas={divulgacoesDasPendencias} valor={divulgacaoAtiva} onChange={setDataDivulgacao} />
           <Button variant="outline" onClick={rodarTriagem} disabled={triando}>
             {triando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
             Rodar triagem agora
