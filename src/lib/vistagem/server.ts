@@ -543,9 +543,10 @@ function camposDaTriagem(resultado: ReturnType<typeof triar>) {
 }
 
 /**
- * Cruza as publicações captadas com a base de processos do SIOE: uma pasta só
- * vai para "juridico_vistar" no escritório do advogado responsável; sem pasta
- * ou com mais de uma fica em "triagem_pendente" para a controladoria.
+ * Cruza as publicações captadas com a base de processos do SIOE: uma pasta só (ou uma só ativa entre várias)
+ * vai para "juridico_vistar" no escritório do advogado responsável; sem pasta ou com mais de uma ativa fica em
+ * "triagem_pendente" para a controladoria. Com `incluirSemPasta`, as pendentes sem pasta e com várias pastas
+ * são triadas de novo (a pasta pode ter sido aberta ou encerrada).
  */
 export async function triarPublicacoes(
   filtro: { ids?: string[]; arquivoId?: string; incluirSemPasta?: boolean } = {}
@@ -553,7 +554,7 @@ export async function triarPublicacoes(
   const db = admin();
   let consulta = db.from("vistagem_publicacoes").select("id, processo_digitos, teor").limit(2000);
   consulta = filtro.incluirSemPasta
-    ? consulta.or("status.eq.captada,and(status.eq.triagem_pendente,pendencia.eq.sem_pasta)")
+    ? consulta.or("status.eq.captada,and(status.eq.triagem_pendente,pendencia.in.(sem_pasta,varias_pastas))")
     : consulta.eq("status", "captada");
   if (filtro.ids?.length) consulta = consulta.in("id", filtro.ids);
   if (filtro.arquivoId) consulta = consulta.eq("kurier_arquivo_id", filtro.arquivoId);
@@ -642,7 +643,7 @@ export async function listarPendenciasControladoria(limite = 300): Promise<Pende
 /** Prévia de uma pasta do SIOE para a controladoria escolher. */
 export async function consultarPastaSioe(ci: string): Promise<{ pasta: PastaSioe; escritorioSugerido: string | null }> {
   const pasta = await buscarPastaPorCi(ci);
-  if (!pasta) throw new VistagemError(`CI ${ci} não encontrada no SIOE.`, 404);
+  if (!pasta) throw new VistagemError(`CI ${ci} não encontrada no VIOS.`, 404);
   const resultado = triar([pasta], await carregarAreasDasPessoas());
   return { pasta, escritorioSugerido: resultado.escritorio };
 }
@@ -667,7 +668,7 @@ export async function resolverPendencia(id: string, entrada: ResolucaoPendencia,
   if (ci) {
     const candidatas = (atual.pastas_candidatas ?? []) as PastaSioe[];
     pasta = candidatas.find((candidata) => candidata.ci === ci) ?? (await buscarPastaPorCi(ci));
-    if (!pasta) throw new VistagemError(`CI ${ci} não encontrada no SIOE.`, 404);
+    if (!pasta) throw new VistagemError(`CI ${ci} não encontrada no VIOS.`, 404);
   }
 
   const automatico = pasta ? triar([pasta], await carregarAreasDasPessoas()) : null;

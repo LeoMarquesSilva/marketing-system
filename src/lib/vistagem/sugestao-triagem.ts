@@ -1,5 +1,5 @@
 import { mascararCnj } from "./processo";
-import { ESCRITORIOS, ESCRITORIO_EX_CLIENTE, ehExCliente, escritorioDaPasta, temDemandaDeRisco, type PastaSioe } from "./triagem";
+import { ESCRITORIOS, ESCRITORIO_EX_CLIENTE, ehExCliente, escritorioDaPasta, pastaAtiva, temDemandaDeRisco, type PastaSioe } from "./triagem";
 
 /**
  * Sugestão para a publicação sem pasta no VIOS (possível abertura), no roteiro da controladoria:
@@ -48,9 +48,7 @@ export function chaveCliente(nome: string | null | undefined): string {
     .trim();
 }
 
-export function pastaAtiva(pasta: PastaSioe): boolean {
-  return !/encerrad|arquivad|baixad|extint/i.test(pasta.situacao ?? "");
-}
+export { pastaAtiva };
 
 function maisFrequente(valores: (string | null)[]): string | null {
   const contagem = new Map<string, number>();

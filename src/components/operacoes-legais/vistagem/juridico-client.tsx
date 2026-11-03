@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   ArrowRightLeft,
@@ -62,7 +62,7 @@ import { consultaProcessual } from "@/lib/vistagem/consulta-processual";
 import { CADEIA_PADRAO, PESSOA_FIXA_PROTOCOLAR, cadeiaDoFluxo, type FluxoDaTarefa, type TarefaDoFluxo } from "@/lib/vistagem/fluxo-vios";
 import { fatalSugerida, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
-import type { PublicacaoResumo, VistagemDetalhe } from "@/lib/vistagem/types";
+import type { PublicacaoResumo, ResolucaoPendencia, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
 import { FichaPasta } from "./ficha-pasta";
@@ -411,13 +411,16 @@ function CampoResponsaveis({
   );
 }
 
-function EditorVistagem({
+/** Vistagem de uma publicação: leitura ao lado e tarefas para o VIOS. Usada na fila do Jurídico e na Controladoria ("Agendar aqui"). */
+export function EditorVistagem({
   id,
   navegacao,
   onAbrir,
   onConcluida,
   onTransferida,
   onVoltar,
+  resolucao = null,
+  antesDasTarefas = null,
 }: {
   id: string;
   navegacao: Navegacao | null;
@@ -425,7 +428,15 @@ function EditorVistagem({
   onConcluida: (id: string) => void;
   onTransferida: (destino: string) => void;
   onVoltar: () => void;
+  /** "Agendar Direto" da controladoria: a pendência ainda na triagem, com escritório, grupo, risco e CI escolhidos. */
+  resolucao?: ResolucaoPendencia | null;
+  /** Bloco no topo da coluna das tarefas (na controladoria: escritório, grupo e risco da pendência). */
+  antesDasTarefas?: ReactNode;
 }) {
+  // A lista de tarefas depende do escritório e da pasta: na prévia eles vão na consulta.
+  const consultaPrevia = resolucao?.escritorio
+    ? `?${new URLSearchParams({ escritorio: resolucao.escritorio, ...(resolucao.ci ? { ci: resolucao.ci } : {}) })}`
+    : "";
   const [detalhe, setDetalhe] = useState<VistagemDetalhe | null>(null);
   const [linhas, setLinhas] = useState<Linha[]>([]);
   /** Trabalhista: classificação eSocial (não vai para o VIOS). */
@@ -452,7 +463,7 @@ function EditorVistagem({
     setEstadoSugestao(null);
     setErroSugestao("");
     setAntesDaSugestao(null);
-    authFetch(`/api/operacoes-legais/vistagem/juridico/${id}`)
+    authFetch(`/api/operacoes-legais/vistagem/juridico/${id}${consultaPrevia}`)
       .then(async (resposta) => {
         const corpo = await resposta.json();
         if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao carregar a publicação.");
@@ -507,7 +518,7 @@ function EditorVistagem({
     return () => {
       cancelado = true;
     };
-  }, [id, recarga]);
+  }, [id, recarga, consultaPrevia]);
 
   const ehDiaUtil = useMemo(() => criarCalendario(detalhe?.feriados ?? []), [detalhe?.feriados]);
   // A fatal conta só dias úteis fora do recesso forense; Enviar/Revisar/Protocolar seguem o expediente.
@@ -634,6 +645,7 @@ function EditorVistagem({
           observacao: null,
           publicacaoEsocial: detalhe?.esocial ? esocial : null,
           sugestaoUsada: estadoSugestao === "usada",
+          resolucao,
           agendamentos: linhas.map((linha) => ({
             etiqueta: linha.etiqueta,
             tarefa: linha.tarefa,
@@ -660,10 +672,12 @@ function EditorVistagem({
   }
 
   if (!detalhe) {
-    return erro ? (
-      <Aviso tom="erro">{erro}</Aviso>
-    ) : (
-      <Painel><Carregando rotulo="Carregando a publicação" /></Painel>
+    // O bloco de cima continua visível: na controladoria, trocar o escritório resolve uma área sem lista de tarefas.
+    return (
+      <div className="space-y-3">
+        {antesDasTarefas}
+        {erro ? <Aviso tom="erro">{erro}</Aviso> : <Painel><Carregando rotulo="Carregando a publicação" /></Painel>}
+      </div>
     );
   }
 
@@ -773,10 +787,13 @@ function EditorVistagem({
                   auxiliar={detalhe.revisorSugerido}
                   fotos={detalhe.fotos}
                   acao={
-                    <Button type="button" variant="outline" size="sm" onClick={() => setTransferindo(true)} title="A área ou a pasta não é desta fila">
-                      <ArrowRightLeft />
-                      Transferir área
-                    </Button>
+                    // Na prévia da controladoria a área é escolhida no topo do modal.
+                    resolucao ? undefined : (
+                      <Button type="button" variant="outline" size="sm" onClick={() => setTransferindo(true)} title="A área ou a pasta não é desta fila">
+                        <ArrowRightLeft />
+                        Transferir área
+                      </Button>
+                    )
                   }
                 >
                   <FichaProcesso publicacao={publicacao} />
@@ -789,6 +806,7 @@ function EditorVistagem({
         </div>
 
         <div className="min-h-0 space-y-3 @4xl:h-full @4xl:overflow-y-auto @4xl:pr-1">
+          {antesDasTarefas}
           {estadoSugestao && catalogo ? (
             <CartaoSugestaoIa
               estado={estadoSugestao}

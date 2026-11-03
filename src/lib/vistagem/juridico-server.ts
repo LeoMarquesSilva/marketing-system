@@ -25,7 +25,8 @@ import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
 import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
 import { linhasParaFila, type TarefaNoVios } from "./fila-vios";
-import { ESCRITORIOS } from "./triagem";
+import { buscarPastaPorCi } from "./sioe";
+import { ESCRITORIOS, type PastaSioe } from "./triagem";
 import {
   carregarArvoreVios,
   carregarCatalogoProcessos,
@@ -36,7 +37,7 @@ import {
   modoAgendamento,
   type CatalogoArea,
 } from "./sama";
-import { COLUNAS_PUBLICACAO, admin, falhou, hojeEmSaoPaulo, publicacaoResumo, type PublicacaoRow } from "./server";
+import { COLUNAS_PUBLICACAO, admin, falhou, hojeEmSaoPaulo, publicacaoResumo, resolverPendencia, type PublicacaoRow } from "./server";
 import type {
   AgendamentoResumo,
   CatalogoVistagem,
@@ -48,6 +49,7 @@ import type {
   InconsistenciaItem,
   InconsistenciaResumo,
   PublicacaoResumo,
+  ResolucaoPendencia,
   VistagemDetalhe,
 } from "./types";
 
@@ -205,10 +207,47 @@ export async function listarFilaJuridico(
   return { publicacoes: ((data ?? []) as PublicacaoRow[]).map((row) => publicacaoResumo(row, 600)), porEscritorio };
 }
 
+/**
+ * "Agendar Direto" da controladoria: a pendência ainda está na triagem e a vistagem usa o escritório (e a pasta,
+ * se houver) escolhidos ali, sem gravar nada até o envio.
+ */
+export interface PreviaPendencia {
+  escritorio: string;
+  ci?: string | null;
+}
+
+async function comPrevia(publicacao: PublicacaoComArea, previa: PreviaPendencia, areasDoUsuario: AreasVistagem): Promise<PublicacaoComArea> {
+  if (areasDoUsuario !== null) throw new VistagemError("Só a controladoria agenda direto da triagem.", 403);
+  if (publicacao.status !== "triagem_pendente") throw new VistagemError("Esta publicação não está mais pendente na controladoria. Atualize a lista.", 409);
+  if (!(ESCRITORIOS as readonly string[]).includes(previa.escritorio)) throw new VistagemError("Escolha o escritório responsável.");
+  const ci = previa.ci?.replace(/\D/g, "") || publicacao.pasta_ci || "";
+  const pasta = ci ? (publicacao.pastas_candidatas ?? []).find((candidata) => candidata.ci === ci) ?? (await buscarPastaPorCi(ci)) : null;
+  if (ci && !pasta) throw new VistagemError(`CI ${ci} não encontrada no VIOS.`, 404);
+  return {
+    ...publicacao,
+    escritorio_responsavel: previa.escritorio,
+    ...(pasta ? dadosDaPasta(pasta) : {}),
+  };
+}
+
+/** Campos da pasta escolhida, para a vistagem sugerir responsável, revisor e a lista de tarefas da área do processo. */
+function dadosDaPasta(pasta: PastaSioe): Partial<PublicacaoComArea> {
+  return {
+    pasta_ci: pasta.ci,
+    pasta_vinculo: pasta.vinculo,
+    area_processo: pasta.area,
+    advogado_responsavel: pasta.advogadoResponsavel,
+    cliente: pasta.cliente,
+    grupo_cliente: pasta.grupoCliente,
+    situacao_processo: pasta.situacao,
+  };
+}
+
 /** Publicação com o teor completo, as tarefas já vinculadas e a lista travada da área. */
-export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = null): Promise<VistagemDetalhe> {
-  const [publicacao, agendamentos] = await Promise.all([carregarPublicacao(id), agendamentosPorPublicacao([id])]);
-  garantirArea(publicacao, areasDoUsuario);
+export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = null, previa: PreviaPendencia | null = null): Promise<VistagemDetalhe> {
+  const [carregada, agendamentos] = await Promise.all([carregarPublicacao(id), agendamentosPorPublicacao([id])]);
+  const publicacao = previa ? await comPrevia(carregada, previa, areasDoUsuario) : carregada;
+  if (!previa) garantirArea(publicacao, areasDoUsuario);
   let catalogoErro: string | null = null;
   const areas = await carregarCatalogoProcessos().catch((erro: unknown) => {
     catalogoErro = erro instanceof Error ? erro.message : String(erro);
@@ -263,7 +302,8 @@ export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = 
           }
         : null,
     sugestaoIa: publicacao.sugestao_ia,
-    sugestaoIaDisponivel: Boolean(catalogo && areaComSugestaoIa(catalogo.area) && openAIKey("analisePublicacao")),
+    // Na prévia da controladoria a publicação ainda não está na fila do jurídico: a IA gera depois, se for o caso.
+    sugestaoIaDisponivel: !previa && Boolean(catalogo && areaComSugestaoIa(catalogo.area) && openAIKey("analisePublicacao")),
     hoje: hojeEmSaoPaulo(),
   };
 }
@@ -271,13 +311,25 @@ export async function obterVistagem(id: string, areasDoUsuario: AreasVistagem = 
 /** O jurídico grava as tarefas da publicação e manda para a conferência da controladoria. */
 export async function salvarVistagem(
   id: string,
-  entrada: { agendamentos: AgendamentoEntrada[]; observacao: string | null; publicacaoEsocial?: string | null; sugestaoUsada?: boolean },
+  entrada: {
+    agendamentos: AgendamentoEntrada[];
+    observacao: string | null;
+    publicacaoEsocial?: string | null;
+    sugestaoUsada?: boolean;
+    /** "Agendar Direto" da controladoria: resolve a pendência (escritório, grupo, risco, CI) junto com a vistagem. */
+    resolucao?: ResolucaoPendencia | null;
+  },
   authUserId: string,
   areas: AreasVistagem = null
 ): Promise<void> {
-  const publicacao = await carregarPublicacao(id);
-  garantirArea(publicacao, areas);
-  if (publicacao.status !== "juridico_vistar") throw new VistagemError("Esta publicação não está aguardando vistagem.", 409);
+  const carregada = await carregarPublicacao(id);
+  const resolucao = entrada.resolucao ?? null;
+  // Direto da triagem: valida tudo com o escritório e a pasta escolhidos e só então tira a pendência da controladoria.
+  const publicacao = resolucao ? await comPrevia(carregada, { escritorio: resolucao.escritorio ?? "", ci: resolucao.ci }, areas) : carregada;
+  if (!resolucao) {
+    garantirArea(publicacao, areas);
+    if (publicacao.status !== "juridico_vistar") throw new VistagemError("Esta publicação não está aguardando vistagem.", 409);
+  }
   const catalogo = catalogoParaPublicacao(await carregarCatalogoProcessos(), publicacao);
   if (!catalogo) throw new VistagemError("Não há lista de tarefas do VIOS para a área desta pasta. Avise a controladoria.", 422);
 
@@ -310,6 +362,9 @@ export async function salvarVistagem(
         ehDiaDePrazo: criarCalendarioDePrazo(feriados),
       })
     : null;
+
+  // Tarefas válidas: a pendência sai da triagem (vai para "juridico_vistar") e a vistagem segue como a do jurídico.
+  if (resolucao) await resolverPendencia(id, resolucao, authUserId);
 
   const db = admin();
   const { error: erroApagar } = await db.from("vistagem_agendamentos").delete().eq("publicacao_id", id).eq("envio_status", "nao_enviado");

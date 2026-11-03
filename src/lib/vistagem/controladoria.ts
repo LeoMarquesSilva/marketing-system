@@ -59,7 +59,7 @@ export function verificacoesSemPasta(publicacao: {
   const grupoDaReferencia = referencia ? [referencia.grupo, referencia.cliente].filter(Boolean).join(" · ") : "";
 
   const numero: Verificacao = {
-    rotulo: "Número do processo no SIOE",
+    rotulo: "Número do processo no VIOS",
     situacao: "nada",
     detalhe: "Nenhuma pasta com este número.",
   };
