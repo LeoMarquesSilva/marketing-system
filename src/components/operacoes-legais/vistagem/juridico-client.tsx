@@ -9,7 +9,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleCheck,
-  ClipboardList,
   Copy,
   FileText,
   Layers,
@@ -191,13 +190,10 @@ function ModalHorario({
   );
 }
 
-/**
- * Úteis ou corridos, no visual do Segmented. Em pé quando a tarefa é estreita (fila aberta): assim a linha
- * "contagem | data fatal | linha do tempo" do Prazo não quebra.
- */
+/** Úteis ou corridos, no visual do Segmented e na altura dos atalhos de dias e da data fatal. */
 function ContagemDoPrazo({ rotulo, valor, onChange }: { rotulo: string; valor: ContagemPrazo; onChange: (contagem: ContagemPrazo) => void }) {
   return (
-    <div role="radiogroup" aria-label={rotulo} className="inline-flex flex-col rounded-md border border-input bg-white p-0.5 @md:flex-row">
+    <div role="radiogroup" aria-label={rotulo} className="inline-flex h-10 shrink-0 rounded-md border border-input bg-white p-0.5">
       {CONTAGENS_PRAZO.map((contagem) => {
         const marcado = valor === contagem;
         return (
@@ -208,7 +204,7 @@ function ContagemDoPrazo({ rotulo, valor, onChange }: { rotulo: string; valor: C
             aria-checked={marcado}
             onClick={() => onChange(contagem)}
             className={cn(
-              "inline-flex min-h-7 items-center justify-center rounded-[5px] px-2.5 text-xs transition-colors duration-150 @md:min-h-9 @md:px-3 @md:text-sm",
+              "inline-flex items-center justify-center rounded-[5px] px-2.5 text-xs transition-colors duration-150",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/50",
               marcado ? "bg-[#347796] font-medium text-white" : "text-muted-foreground hover:bg-[#47cdd0]/10 hover:text-foreground"
             )}
@@ -893,11 +889,13 @@ function EditorVistagem({
                         ? avisosDaData(linha.data, detalhe.hoje)
                         : [];
                     return (
-                      <li key={linha.chave} aria-label={`Tarefa ${indice + 1}`} className="@container space-y-2.5 px-4 py-3">
+                      <li key={linha.chave} aria-label={`Tarefa ${indice + 1}`} className="space-y-2.5 px-4 py-3">
                         {/* Número discreto no canto: com várias tarefas, mostra onde cada uma começa. */}
                         <div className="flex min-h-7 items-center gap-1.5">
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold tabular-nums text-[#285f7a]" title={`Tarefa ${indice + 1}`}>
-                            <ClipboardList className="size-3.5" aria-hidden />
+                          <span
+                            className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border-[1.5px] border-[#285f7a] text-[11px] font-bold leading-none tabular-nums text-[#285f7a]"
+                            title={`Tarefa ${indice + 1}`}
+                          >
                             {indice + 1}
                           </span>
                           {linha.ia ? <SeloIa /> : null}
@@ -960,75 +958,76 @@ function EditorVistagem({
 
                         {prazo ? (
                           <div className="space-y-2">
-                            {/* 1ª linha: os dias do prazo; 2ª: úteis ou corridos, a fatal e a linha do tempo do VIOS. */}
-                            <div className="flex flex-wrap items-center gap-1" role="group" aria-label={`Prazo em dias da tarefa ${indice + 1}`}>
-                              {atalhosDePrazo(catalogo.area).map((dias) => (
-                                <Button
-                                  key={dias}
-                                  type="button"
-                                  size="xs"
-                                  variant="outline"
-                                  aria-pressed={linha.diasPrazo === dias}
-                                  disabled={!publicacao.dataPublicacao}
-                                  className={cn(
-                                    "h-10 min-w-9 tabular-nums",
-                                    linha.diasPrazo === dias && "border-[#285f7a] bg-[#347796] text-white hover:bg-[#285f7a] hover:text-white"
-                                  )}
-                                  onClick={() =>
-                                    publicacao.dataPublicacao &&
+                            {/* 1ª linha: os dias do prazo e, ao lado, úteis ou corridos e a data fatal; embaixo, a linha do tempo do VIOS. */}
+                            <div className="flex flex-wrap items-end gap-x-2 gap-y-2">
+                              <div className="flex flex-wrap items-center gap-0.5" role="group" aria-label={`Prazo em dias da tarefa ${indice + 1}`}>
+                                {atalhosDePrazo(catalogo.area).map((dias) => (
+                                  <Button
+                                    key={dias}
+                                    type="button"
+                                    size="xs"
+                                    variant="outline"
+                                    aria-pressed={linha.diasPrazo === dias}
+                                    disabled={!publicacao.dataPublicacao}
+                                    className={cn(
+                                      "h-10 min-w-8 px-1.5 tabular-nums",
+                                      linha.diasPrazo === dias && "border-[#285f7a] bg-[#347796] text-white hover:bg-[#285f7a] hover:text-white"
+                                    )}
+                                    onClick={() =>
+                                      publicacao.dataPublicacao &&
+                                      alterar(linha.chave, {
+                                        diasPrazo: dias,
+                                        dataFatal: fatalPorContagem(publicacao.dataPublicacao, dias, linha.contagemPrazo ?? "uteis", contaPrazo),
+                                      })
+                                    }
+                                  >
+                                    {dias}
+                                  </Button>
+                                ))}
+                              </div>
+                              {/* Úteis ou corridos e a fatal andam juntos: se faltar espaço, descem os dois. */}
+                              <div className="flex items-end gap-2">
+                                <ContagemDoPrazo
+                                  rotulo={`Contagem do prazo da tarefa ${indice + 1}`}
+                                  valor={linha.contagemPrazo ?? "uteis"}
+                                  onChange={(contagem) =>
                                     alterar(linha.chave, {
-                                      diasPrazo: dias,
-                                      dataFatal: fatalPorContagem(publicacao.dataPublicacao, dias, linha.contagemPrazo ?? "uteis", contaPrazo),
+                                      contagemPrazo: contagem,
+                                      ...(linha.diasPrazo && publicacao.dataPublicacao
+                                        ? { dataFatal: fatalPorContagem(publicacao.dataPublicacao, linha.diasPrazo, contagem, contaPrazo) }
+                                        : {}),
                                     })
                                   }
-                                >
-                                  {dias}
-                                </Button>
-                              ))}
+                                />
+                                <Campo rotulo="Data fatal" className="w-[8.5rem]">
+                                  <input
+                                    type="date"
+                                    className={campo}
+                                    value={linha.dataFatal}
+                                    onChange={(evento) => alterar(linha.chave, { dataFatal: evento.target.value, diasPrazo: null })}
+                                  />
+                                </Campo>
+                              </div>
                             </div>
-                            {/* Sempre uma linha só: úteis ou corridos | data fatal | linha do tempo do VIOS (a régua encolhe). */}
-                            <div className="grid grid-cols-[auto_8.75rem_minmax(0,1fr)] items-end gap-x-2">
-                              {/* Úteis ou corridos: troca a contagem e recalcula a fatal do atalho escolhido. */}
-                              <ContagemDoPrazo
-                                rotulo={`Contagem do prazo da tarefa ${indice + 1}`}
-                                valor={linha.contagemPrazo ?? "uteis"}
-                                onChange={(contagem) =>
-                                  alterar(linha.chave, {
-                                    contagemPrazo: contagem,
-                                    ...(linha.diasPrazo && publicacao.dataPublicacao
-                                      ? { dataFatal: fatalPorContagem(publicacao.dataPublicacao, linha.diasPrazo, contagem, contaPrazo) }
-                                      : {}),
-                                  })
-                                }
+                            {cadeia ? (
+                              <ReguaDatas
+                                compacta
+                                rotulo={`Datas da tarefa ${indice + 1}`}
+                                hoje={detalhe.hoje}
+                                className="rounded-md border border-[#e6eef0] bg-[#f7fbfc] px-3 py-1.5"
+                                marcos={[
+                                  {
+                                    rotulo: cadeia.protocolar ? "Enviar no VIOS" : "Tarefa no VIOS",
+                                    rotuloCurto: cadeia.protocolar ? "Enviar" : "Tarefa",
+                                    data: cadeia.enviar,
+                                    tom: "marca",
+                                    dica: "Data da tarefa que vai para o VIOS.",
+                                  },
+                                  { rotulo: "Revisar", rotuloCurto: "Rev.", data: cadeia.revisar },
+                                  { rotulo: "Protocolar", rotuloCurto: "Prot.", data: cadeia.protocolar },
+                                ]}
                               />
-                              <Campo rotulo="Data fatal">
-                                <input
-                                  type="date"
-                                  className={campo}
-                                  value={linha.dataFatal}
-                                  onChange={(evento) => alterar(linha.chave, { dataFatal: evento.target.value, diasPrazo: null })}
-                                />
-                              </Campo>
-                              {cadeia ? (
-                                <ReguaDatas
-                                  compacta
-                                  rotulo={`Datas da tarefa ${indice + 1}`}
-                                  hoje={detalhe.hoje}
-                                  className="min-w-0 rounded-md border border-[#e6eef0] bg-[#f7fbfc] px-2.5 py-1"
-                                  marcos={[
-                                    {
-                                      rotulo: cadeia.protocolar ? "Enviar no VIOS" : "Tarefa no VIOS",
-                                      rotuloCurto: cadeia.protocolar ? "Enviar" : "Tarefa",
-                                      data: cadeia.enviar,
-                                      tom: "marca",
-                                      dica: "Data da tarefa que vai para o VIOS.",
-                                    },
-                                    { rotulo: "Revisar", rotuloCurto: "Rev.", data: cadeia.revisar },
-                                    { rotulo: "Protocolar", rotuloCurto: "Prot.", data: cadeia.protocolar },
-                                  ]}
-                                />
-                              ) : null}
-                            </div>
+                            ) : null}
                             {tarefaId && !cadeiaFluxo ? (
                               <p className="text-xs text-muted-foreground">
                                 O VIOS não cria Revisar nem Protocolar para esta tarefa: ela vai com a data do protocolo (1 dia útil antes da fatal).
