@@ -369,7 +369,7 @@ export interface ConferenciaResposta {
   aConferir: ConferenciaItem[];
   enviadas: ConferenciaItem[];
   envioSimulado: boolean;
-  /** Foto do advogado e do auxiliar de cada pasta, pela chave do nome (chaveNome); só quem tem foto. */
+  /** Foto do advogado, do auxiliar e das pessoas das tarefas (e do fluxo), pela chave do nome (chaveNome); só quem tem foto. */
   fotos: Record<string, string>;
   /** AAAA-MM-DD em São Paulo, para a régua de datas. */
   hoje: string;

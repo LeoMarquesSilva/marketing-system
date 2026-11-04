@@ -5,6 +5,7 @@ import {
   areaDoCatalogo,
   areasDaPessoa,
   departamentoNaVistagem,
+  nomesDasPessoas,
   escritorioDaArea,
   pessoasDaArea,
   TODAS_AS_AREAS,
@@ -372,5 +373,15 @@ describe("departamentoNaVistagem", () => {
   it("não mexe nas outras áreas", () => {
     expect(departamentoNaVistagem("Trabalhista", [financeiro])).toBe("Trabalhista");
     expect(departamentoNaVistagem(null, [financeiro])).toBeNull();
+  });
+});
+
+describe("nomesDasPessoas", () => {
+  it("separa por vírgula e pelo ' + ' do Protocolar, sem repetir", () => {
+    expect(nomesDasPessoas("Manoela Brisighello Angotti + Daniel Silva, Manoela Brisighello Angotti")).toEqual([
+      "Manoela Brisighello Angotti",
+      "Daniel Silva",
+    ]);
+    expect(nomesDasPessoas(null)).toEqual([]);
   });
 });

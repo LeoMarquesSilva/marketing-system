@@ -67,7 +67,7 @@ import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
 import { FaixaDoProcesso, NA_FAIXA } from "./faixa-processo";
 import { FichaPasta } from "./ficha-pasta";
 import { FiltroData, dataNaLista } from "./filtro-data";
-import { FichaProcesso, SinteseDoProcesso } from "./ficha-processo";
+import { FichaProcesso, ResumoDaFicha, SinteseDoProcesso } from "./ficha-processo";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { AgendadasJuridico } from "./juridico-agendadas";
 import { LeitorPublicacao } from "./leitor-publicacao";
@@ -767,8 +767,9 @@ export function EditorVistagem({
                 </>
               ) : null}
             </FaixaDoProcesso>
-            {/* Ficha, datas e texto rolam juntos: o espaço da coluna fica para a leitura. */}
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            {/* Ficha, datas e texto rolam juntos: o espaço da coluna fica para a leitura. Sem a altura fixa do
+                desktop (tela menor ou zoom do navegador), param em 75% da tela, como na conferência. */}
+            <div className="min-h-0 flex-1 overflow-y-auto max-lg:max-h-[75dvh]">
               <div className="space-y-4 px-4 py-3">
                 <FichaPasta
                   publicacao={publicacao}
@@ -783,18 +784,22 @@ export function EditorVistagem({
                       </Button>
                     )
                   }
+                  resumo={<ResumoDaFicha publicacao={publicacao} auxiliar={detalhe.revisorSugerido} fotos={detalhe.fotos} />}
+                  // A síntese já começa curta e fica à vista com a ficha aberta ou recolhida.
+                  extra={
+                    publicacao.pastaCi ? (
+                      <SinteseDoProcesso
+                        key={publicacao.id}
+                        sintese={detalhe.sintese}
+                        erro={detalhe.sinteseErro}
+                        pedidas={detalhe.sintesesPedidas}
+                        // Na prévia da controladoria a pasta ainda não está gravada: a síntese fica só para leitura.
+                        publicacaoId={resolucao ? null : publicacao.id}
+                      />
+                    ) : null
+                  }
                 >
                   <FichaProcesso publicacao={publicacao} />
-                  {publicacao.pastaCi ? (
-                    <SinteseDoProcesso
-                      key={publicacao.id}
-                      sintese={detalhe.sintese}
-                      erro={detalhe.sinteseErro}
-                      pedidas={detalhe.sintesesPedidas}
-                      // Na prévia da controladoria a pasta ainda não está gravada: a síntese fica só para leitura.
-                      publicacaoId={resolucao ? null : publicacao.id}
-                    />
-                  ) : null}
                 </FichaPasta>
                 <ReguaDatas rotulo="Datas da publicação" hoje={detalhe.hoje} marcos={marcosDaPublicacao} />
               </div>

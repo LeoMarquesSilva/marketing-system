@@ -18,7 +18,8 @@ import {
 import { lerPublicacao } from "@/lib/vistagem/leitura";
 import { advogadosDoEscritorioCitados } from "@/lib/vistagem/triagem";
 import type { PublicacaoResumo, SintesePedida } from "@/lib/vistagem/types";
-import { Celula } from "./ficha-pasta";
+import { AvatarPessoa } from "./combobox-busca";
+import { Celula, LinkPastaVios } from "./ficha-pasta";
 import { Selo, type TomSelo } from "./ui";
 
 /** Nomes de cada polo que aparecem antes do "e mais N". */
@@ -60,21 +61,124 @@ function Polo({ rotulo, partes, todas, onVerTodas }: { rotulo: string; partes: P
 
 const reais = (valor: number) => valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+/** O que a ficha mostra do processo, aberta ou no resumo: tudo da pasta no VIOS e do texto da publicação. */
+function useDadosDoProcesso(publicacao: PublicacaoResumo) {
+  const leitura = useMemo(() => lerPublicacao(publicacao.teor), [publicacao.teor]);
+  const classe = classeDoProcesso(leitura.classe);
+  const citado = useMemo(() => valorDaCausa(publicacao.teor), [publicacao.teor]);
+  // Pelo nome ou pela OAB no texto todo: vale também para os diários fora do DJEN, que não listam os advogados.
+  const doEscritorio = useMemo(() => advogadosDoEscritorioCitados(publicacao.teor), [publicacao.teor]);
+  return {
+    classe,
+    tipo: publicacao.acaoProcesso ?? classe,
+    citado,
+    ...partesPorPolo(leitura.partes, publicacao.cliente),
+    doEscritorio,
+    outros: leitura.advogados.filter((advogado) => !advogado.doEscritorio),
+  };
+}
+
+/** Advogados do escritório citados (o vistador confere se saiu em nome do Gustavo ou do Ricardo), ou o alerta. */
+function SelosDoEscritorio({ advogados, comOab }: { advogados: { nome: string; oab: string }[]; comOab: boolean }) {
+  if (!advogados.length) {
+    return (
+      <Selo tom="alerta" icone={TriangleAlert}>
+        Gustavo e Ricardo não aparecem na publicação
+      </Selo>
+    );
+  }
+  return (
+    <ul className="flex flex-wrap gap-1.5">
+      {advogados.map((advogado) => (
+        <li key={advogado.oab}>
+          <Selo tom="escuro" icone={Check}>
+            {advogado.nome}
+            {comOab ? ` · OAB ${advogado.oab}/SP` : ""}
+          </Selo>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Um polo no resumo: o primeiro nome (o cliente, se estiver nele) e quantos mais; a lista toda no título. */
+function PoloResumido({ rotulo, partes }: { rotulo: string; partes: ParteDoPolo[] }) {
+  if (!partes.length) return <span className="text-muted-foreground">—</span>;
+  const [primeira] = partes;
+  return (
+    <span className="flex min-w-0 items-center gap-1.5" title={`${rotulo}: ${partes.map((parte) => parte.nome).join("; ")}`}>
+      <span className="truncate font-medium text-foreground">{primeira.nome}</span>
+      {primeira.cliente ? (
+        <Selo tom="escuro" className="shrink-0">
+          cliente
+        </Selo>
+      ) : null}
+      {partes.length > 1 ? <span className="shrink-0 text-muted-foreground">+{partes.length - 1}</span> : null}
+    </span>
+  );
+}
+
+/**
+ * Ficha recolhida: numa caixa só, o que se confere de relance. Linha 1: pasta no VIOS, tipo de ação, fase e valor,
+ * e as fotos do advogado e do auxiliar. Linha 2: polo ativo × polo passivo. Linha 3: advogados do escritório (ou o
+ * alerta de que não aparecem). Ficam de fora: vínculo e situação da pasta, a classe do tribunal e os outros advogados.
+ */
+export function ResumoDaFicha({ publicacao, auxiliar, fotos }: { publicacao: PublicacaoResumo; auxiliar: string | null; fotos: Record<string, string> }) {
+  const dados = useDadosDoProcesso(publicacao);
+  const valor = publicacao.valorAcao !== null ? reais(publicacao.valorAcao) : dados.citado;
+  const processo = [
+    { chave: "tipo", texto: dados.tipo, dica: "Tipo de ação" },
+    { chave: "fase", texto: publicacao.faseProcessual, dica: "Fase da pasta no VIOS" },
+    { chave: "valor", texto: valor, dica: publicacao.valorAcao !== null ? "Valor da ação da pasta no VIOS" : "Valor citado na publicação" },
+  ].filter((parte): parte is { chave: string; texto: string; dica: string } => Boolean(parte.texto));
+  const pessoas = [
+    { papel: "Advogado responsável", nome: publicacao.advogadoResponsavel },
+    { papel: "Auxiliar da pasta", nome: auxiliar },
+  ].filter((pessoa): pessoa is { papel: string; nome: string } => Boolean(pessoa.nome));
+  return (
+    <div className="space-y-2 rounded-md border border-[#c9dde6] bg-[#e9f2f6] px-3 py-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        {publicacao.pastaCi ? <LinkPastaVios ci={publicacao.pastaCi} /> : <span className="text-sm text-muted-foreground">Sem pasta</span>}
+        {processo.map((parte) => (
+          <span key={parte.chave} className="flex min-w-0 items-center gap-2 text-sm">
+            <span className="text-[#9fb8c2]" aria-hidden>
+              ·
+            </span>
+            <span className="truncate font-medium tabular-nums text-foreground" title={parte.dica}>
+              {parte.texto}
+            </span>
+          </span>
+        ))}
+        {pessoas.length ? (
+          <span className="ml-auto flex shrink-0 -space-x-1.5">
+            {pessoas.map((pessoa) => (
+              <span key={pessoa.papel} title={`${pessoa.papel}: ${pessoa.nome}`}>
+                <AvatarPessoa nome={pessoa.nome} foto={fotos[chaveNome(pessoa.nome)]} className="size-7 ring-2 ring-[#e9f2f6]" />
+              </span>
+            ))}
+          </span>
+        ) : null}
+      </div>
+      {dados.ativo.length || dados.passivo.length ? (
+        <p className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-2 border-t border-[#c9dde6] pt-2 text-xs">
+          <PoloResumido rotulo="Polo ativo" partes={dados.ativo} />
+          <span className="text-[11px] font-semibold text-[#285f7a]">×</span>
+          <PoloResumido rotulo="Polo passivo" partes={dados.passivo} />
+        </p>
+      ) : null}
+      <SelosDoEscritorio advogados={dados.doEscritorio} comOab={false} />
+    </div>
+  );
+}
+
 /**
  * Processo no cabeçalho do jurídico: tipo de ação (da pasta no VIOS, ou a classe do DJEN), fase e valor da ação
  * da pasta no VIOS (o valor cai para o citado na publicação, se houver), as partes do DJEN por polo, com o
  * cliente marcado, e os advogados, com os do escritório na frente. A fase nunca é deduzida.
  */
 export function FichaProcesso({ publicacao }: { publicacao: PublicacaoResumo }) {
-  const leitura = useMemo(() => lerPublicacao(publicacao.teor), [publicacao.teor]);
+  const { classe, tipo, citado, ativo, passivo, doEscritorio, outros } = useDadosDoProcesso(publicacao);
   const [todasAsPartes, setTodasAsPartes] = useState(false);
-  const classe = classeDoProcesso(leitura.classe);
-  const tipo = publicacao.acaoProcesso ?? classe;
-  const citado = useMemo(() => valorDaCausa(publicacao.teor), [publicacao.teor]);
-  const { ativo, passivo } = partesPorPolo(leitura.partes, publicacao.cliente);
-  // Pelo nome ou pela OAB no texto todo: vale também para os diários fora do DJEN, que não listam os advogados.
-  const doEscritorio = useMemo(() => advogadosDoEscritorioCitados(publicacao.teor), [publicacao.teor]);
-  const outros = leitura.advogados.filter((advogado) => !advogado.doEscritorio);
   const [todosOsAdvogados, setTodosOsAdvogados] = useState(false);
 
   return (
@@ -130,21 +234,7 @@ export function FichaProcesso({ publicacao }: { publicacao: PublicacaoResumo }) 
       {/* Advogados: o vistador confere logo se a publicação saiu em nome do Gustavo ou do Ricardo. */}
       <div className="grid gap-x-4 gap-y-2 border-t border-[#c9dde6] pt-2.5 @md:col-span-full @md:grid-cols-2">
         <Celula rotulo="Advogados do escritório">
-          {doEscritorio.length ? (
-            <ul className="flex flex-wrap gap-1.5">
-              {doEscritorio.map((advogado) => (
-                <li key={advogado.oab}>
-                  <Selo tom="escuro" icone={Check}>
-                    {advogado.nome} · OAB {advogado.oab}/SP
-                  </Selo>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <Selo tom="alerta" icone={TriangleAlert}>
-              Gustavo e Ricardo não aparecem na publicação
-            </Selo>
-          )}
+          <SelosDoEscritorio advogados={doEscritorio} comOab />
         </Celula>
         <Celula rotulo="Outros advogados">
           {outros.length ? (
