@@ -8,6 +8,8 @@ import {
   CircleCheck,
   ExternalLink,
   Inbox,
+  Landmark,
+  Layers,
   LoaderCircle,
   MessageSquareWarning,
   RefreshCw,
@@ -23,7 +25,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
-import { ROTULO_ETIQUETA } from "@/lib/vistagem/agendamento";
+import { ROTULO_ETIQUETA, chaveNome } from "@/lib/vistagem/agendamento";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import { TIPOS_INCONSISTENCIA_JURIDICO } from "@/lib/vistagem/inconsistencias";
 import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, EnvioStatus, InconsistenciaItem, PublicacaoResumo } from "@/lib/vistagem/types";
@@ -38,7 +40,7 @@ import { LeitorPublicacao } from "./leitor-publicacao";
 import { IconeArea } from "./marcas";
 import { ReguaDatas } from "./regua-datas";
 import { Seletor } from "./seletor";
-import { SeloEsocial, formatarData, formatarDataHora } from "./publicacao-ui";
+import { SeloEsocial, contarPor, formatarData, formatarDataHora, tribunalDe } from "./publicacao-ui";
 import {
   Aviso,
   BarraAba,
@@ -65,6 +67,37 @@ type Retorno = { tom: "sucesso" | "erro" | "alerta" | "info"; texto: string };
 const temErro = (item: ConferenciaItem) => item.agendamentos.some((agendamento) => agendamento.envioStatus === "erro");
 
 const processoDe = (item: ConferenciaItem) => item.publicacao.numeroProcesso ?? item.publicacao.numeroProcessoOriginal;
+
+const SEM_AREA = "Sem área";
+
+const areaDe = (item: ConferenciaItem) => item.publicacao.escritorioResponsavel?.trim() || SEM_AREA;
+
+/** No Trabalhista as publicações se separam também pelo tribunal (TRT2, TRT15, TST…). */
+const separaPorTribunal = (area: string) => chaveNome(area) === "TRABALHISTA";
+
+interface GrupoConferencia {
+  area: string;
+  itens: ConferenciaItem[];
+  /** Só no Trabalhista: os itens da área por tribunal. */
+  tribunais: { tribunal: string; itens: ConferenciaItem[] }[] | null;
+}
+
+/** Lista da conferência por área (ordem alfabética) e, no Trabalhista, por tribunal; dentro de cada um, a ordem da lista. */
+function agruparConferencia(itens: ConferenciaItem[]): GrupoConferencia[] {
+  return contarPor(itens, areaDe).map(([area]) => {
+    const daArea = itens.filter((item) => areaDe(item) === area);
+    return {
+      area,
+      itens: daArea,
+      tribunais: separaPorTribunal(area)
+        ? contarPor(daArea, (item) => tribunalDe(item.publicacao)).map(([tribunal]) => ({
+            tribunal,
+            itens: daArea.filter((item) => tribunalDe(item.publicacao) === tribunal),
+          }))
+        : null,
+    };
+  });
+}
 
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 
@@ -733,6 +766,10 @@ function Conferencia() {
   const [dataPublicacao, setDataPublicacao] = useState("");
   /** Data da divulgação no diário (AAAA-MM-DD); vazio é "Todas as datas". */
   const [dataDivulgacao, setDataDivulgacao] = useState("");
+  /** Área (escritório); vazio é "Todas as áreas". */
+  const [area, setArea] = useState("");
+  /** Tribunal; vazio é "Todos os tribunais". */
+  const [tribunal, setTribunal] = useState("");
 
   const carregar = useCallback(async () => {
     setErro("");
@@ -837,13 +874,46 @@ function Conferencia() {
   const dataAtiva = dataNaLista(dataPublicacao, datasDaLista);
   const divulgacoesDaLista = (lista ?? []).map((item) => item.publicacao.dataDivulgacao);
   const divulgacaoAtiva = dataNaLista(dataDivulgacao, divulgacoesDaLista);
-  const filtrada = (lista ?? []).filter(
+  // Área e tribunal escolhidos que sumiram da lista (outra aba, já conferidas) deixam de filtrar.
+  const areasDaLista = contarPor(lista ?? [], areaDe);
+  const areaAtiva = areasDaLista.some(([nome]) => nome === area) ? area : "";
+  const daArea = (lista ?? []).filter((item) => !areaAtiva || areaDe(item) === areaAtiva);
+  const tribunaisDaLista = contarPor(daArea, (item) => tribunalDe(item.publicacao));
+  const tribunalAtivo = tribunaisDaLista.some(([nome]) => nome === tribunal) ? tribunal : "";
+  const filtrada = daArea.filter(
     (item) =>
       combinaBusca(item, busca) &&
+      (!tribunalAtivo || tribunalDe(item.publicacao) === tribunalAtivo) &&
       (!dataAtiva || item.publicacao.dataPublicacao === dataAtiva) &&
       (!divulgacaoAtiva || item.publicacao.dataDivulgacao === divulgacaoAtiva)
   );
+  const grupos = agruparConferencia(filtrada);
   const valor = (n: number) => (dados ? n : "—");
+
+  function limparFiltros() {
+    setBusca("");
+    setArea("");
+    setTribunal("");
+    setDataPublicacao("");
+    setDataDivulgacao("");
+  }
+
+  const listaDeItens = (itens: ConferenciaItem[], rotulo: string) => (
+    <ul className="space-y-4" aria-label={rotulo}>
+      {itens.map((item) => (
+        <li key={item.publicacao.id}>
+          <ItemConferencia
+            item={item}
+            comEnvio={aba === "enviadas"}
+            modoReal={!dados?.envioSimulado}
+            fotos={dados?.fotos ?? {}}
+            hoje={dados?.hoje ?? new Date().toISOString().slice(0, 10)}
+            onConcluido={concluido}
+          />
+        </li>
+      ))}
+    </ul>
+  );
 
   return (
     <div className="space-y-4">
@@ -902,6 +972,25 @@ function Conferencia() {
         {aba !== "inconsistencias" ? (
           <>
             <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Buscar processo, pasta ou cliente" aria-label="Buscar publicação" />
+            <Seletor
+              rotulo="Área"
+              className="sm:w-60"
+              valor={areaAtiva}
+              onChange={(valor) => {
+                setArea(valor);
+                setTribunal("");
+              }}
+              todos={{ rotulo: "Todas as áreas", contagem: lista?.length, icone: <Layers className="size-4 text-[#3e84a8]" aria-hidden /> }}
+              opcoes={areasDaLista.map(([nome, quantidade]) => ({ valor: nome, rotulo: nome, contagem: quantidade, icone: <IconeArea area={nome} /> }))}
+            />
+            <Seletor
+              rotulo="Tribunal"
+              className="sm:w-52"
+              valor={tribunalAtivo}
+              onChange={setTribunal}
+              todos={{ rotulo: "Todos os tribunais", contagem: daArea.length, icone: <Landmark className="size-4 text-[#3e84a8]" aria-hidden /> }}
+              opcoes={tribunaisDaLista.map(([nome, quantidade]) => ({ valor: nome, rotulo: nome, contagem: quantidade }))}
+            />
             <FiltroData rotulo="Data Publicação" datas={datasDaLista} valor={dataAtiva} onChange={setDataPublicacao} />
             <FiltroData rotulo="Data Divulgação" datas={divulgacoesDaLista} valor={divulgacaoAtiva} onChange={setDataDivulgacao} />
           </>
@@ -967,27 +1056,43 @@ function Conferencia() {
         </Painel>
       ) : filtrada.length === 0 ? (
         <Painel>
-          <Vazio icone={SearchX} titulo="Nenhuma publicação com essa busca.">
-            <Button variant="link" className="h-auto p-0" onClick={() => setBusca("")}>
-              Limpar busca
+          <Vazio icone={SearchX} titulo="Nenhuma publicação com esses filtros.">
+            <Button variant="link" className="h-auto p-0" onClick={limparFiltros}>
+              Limpar filtros
             </Button>
           </Vazio>
         </Painel>
       ) : (
-        <ul className="space-y-4" aria-label={aba === "conferir" ? "Vistagens a conferir" : "Publicações enviadas ao robô"}>
-          {filtrada.map((item) => (
-            <li key={item.publicacao.id}>
-              <ItemConferencia
-                item={item}
-                comEnvio={aba === "enviadas"}
-                modoReal={!dados?.envioSimulado}
-                fotos={dados?.fotos ?? {}}
-                hoje={dados?.hoje ?? new Date().toISOString().slice(0, 10)}
-                onConcluido={concluido}
-              />
-            </li>
+        // Agrupada por área e, no Trabalhista, por tribunal.
+        <div className="space-y-6">
+          {grupos.map((grupo, indice) => (
+            <section key={grupo.area} aria-labelledby={`conferencia-area-${indice}`} className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2 border-b border-[#dce9eb] pb-2">
+                <IconeArea area={grupo.area} />
+                <h2 id={`conferencia-area-${indice}`} className="text-base font-semibold text-[#10293a]">
+                  {grupo.area}
+                </h2>
+                <span className="text-xs tabular-nums text-muted-foreground">{plural(grupo.itens.length, "publicação", "publicações")}</span>
+              </div>
+              {grupo.tribunais ? (
+                grupo.tribunais.map((porTribunal, posicao) => (
+                  <section key={porTribunal.tribunal} aria-labelledby={`conferencia-area-${indice}-tribunal-${posicao}`} className="space-y-3">
+                    <div className="flex items-center gap-1.5 pl-1">
+                      <Landmark className="size-4 text-[#3e84a8]" aria-hidden />
+                      <h3 id={`conferencia-area-${indice}-tribunal-${posicao}`} className="text-sm font-semibold text-[#285f7a]">
+                        {porTribunal.tribunal}
+                      </h3>
+                      <span className="text-xs tabular-nums text-muted-foreground">{porTribunal.itens.length}</span>
+                    </div>
+                    {listaDeItens(porTribunal.itens, `${grupo.area} · ${porTribunal.tribunal}`)}
+                  </section>
+                ))
+              ) : (
+                listaDeItens(grupo.itens, grupo.area)
+              )}
+            </section>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );
