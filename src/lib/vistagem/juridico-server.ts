@@ -20,7 +20,7 @@ import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial 
 import { areaComSugestaoIa, resultadoDaSugestao, type SugestaoIa } from "./sugestao-ia";
 import { carregarFeriados } from "./feriados";
 import { cadeiaDoFluxo, montarFluxo, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
-import { fluxoPrevisto } from "./fluxo-previsto";
+import { caminhosDoFluxo, datasParaOVios, fluxoPrevisto } from "./fluxo-previsto";
 import { buscarPastasVios } from "./pastas-vios";
 import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
@@ -49,6 +49,7 @@ import type {
   ConferenciaItem,
   ConferenciaResposta,
   CheckResposta,
+  DataDoFluxo,
   DjenParte,
   EnvioStatus,
   InconsistenciaItem,
@@ -60,13 +61,13 @@ import type {
 } from "./types";
 
 const COLUNAS_AGENDAMENTO =
-  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, hora, responsavel, revisor, observacao, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, vios_tarefas, envio_erro, enviado_em";
+  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, hora, responsavel, revisor, observacao, fluxo_datas, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, vios_tarefas, envio_erro, enviado_em";
 
 type AgendamentoRow = {
   id: string; publicacao_id: string; ordem: number; etiqueta: EtiquetaAgendamento; tarefa: string; tarefa_id: string | null;
   data: string; data_fatal: string | null; dias_prazo: number | null; contagem_prazo: ContagemPrazo | null; hora: string | null;
   responsavel: string; revisor: string | null;
-  observacao: string | null; envio_status: EnvioStatus;
+  observacao: string | null; fluxo_datas: DataDoFluxo[] | null; envio_status: EnvioStatus;
   envio_simulado: boolean | null; sama_agendamento_id: string | null; vios_tarefa_id: string | null;
   vios_tarefas: TarefaNoVios[] | null; envio_erro: string | null; enviado_em: string | null;
 };
@@ -86,6 +87,7 @@ function agendamentoResumo(row: AgendamentoRow): AgendamentoResumo {
     responsavel: row.responsavel,
     revisor: row.revisor,
     observacao: row.observacao,
+    fluxoDatas: row.fluxo_datas ?? [],
     viosTarefas: row.vios_tarefas,
     envioStatus: row.envio_status,
     envioSimulado: row.envio_simulado,
@@ -387,6 +389,7 @@ export async function salvarVistagem(
     usuarios: catalogo.usuarios,
     ehDiaUtil: criarCalendario(feriados),
     cadeiaDaTarefa: (tarefaId) => cadeiaDoFluxo(montarFluxo(tarefaId, arvore)),
+    caminhosDaTarefa: (tarefaId) => caminhosDoFluxo(montarFluxo(tarefaId, arvore)),
   });
   if (!validacao.ok) throw new VistagemError(validacao.erros.join(" "));
   // Trabalhista: classificação eSocial (só na publicação, não vai para o VIOS) e, se pedir, a tarefa Inserir E-social.
@@ -433,6 +436,7 @@ export async function salvarVistagem(
       revisor: item.revisor,
       revisor_id: item.revisorId,
       observacao: item.observacao,
+      fluxo_datas: item.fluxoDatas.length ? item.fluxoDatas : null,
       criado_por: authUserId,
     }))
   );
@@ -633,11 +637,15 @@ export async function listarConferencia(): Promise<ConferenciaResposta> {
     if (!fluxo) return itens;
     const [arvore, feriados] = fluxo;
     const ehDiaUtil = criarCalendario(feriados);
+    const hoje = hojeEmSaoPaulo();
     return itens.map((item) => ({
       ...item,
       agendamentos: item.agendamentos.map((agendamento) => ({
         ...agendamento,
-        fluxoPrevisto: fluxoPrevisto(agendamento, agendamento.tarefaId ? montarFluxo(agendamento.tarefaId, arvore) : null, ehDiaUtil),
+        fluxoPrevisto: fluxoPrevisto(agendamento, agendamento.tarefaId ? montarFluxo(agendamento.tarefaId, arvore) : null, ehDiaUtil, {
+          hoje,
+          datas: agendamento.fluxoDatas,
+        }),
       })),
     }));
   };
@@ -720,11 +728,40 @@ async function comunicacoesEquivalentes(publicacao: PublicacaoComArea): Promise<
     .map((row) => String(row.djen_id_comunicacao));
 }
 
+/**
+ * Datas do fluxo que o robô grava no VIOS depois de lançar: as que o jurídico mudou e as das filhas delas (que o
+ * VIOS cria pela data dele). Sem a árvore do VIOS, vão só as que o jurídico mudou.
+ */
+async function datasDoFluxoParaOVios(itens: AgendamentoRow[]): Promise<Map<string, DataDoFluxo[]>> {
+  const comDatas = itens.filter((item) => item.fluxo_datas?.length);
+  const mapa = new Map<string, DataDoFluxo[]>(comDatas.map((item) => [item.id, item.fluxo_datas ?? []]));
+  if (!comDatas.length) return mapa;
+  try {
+    const [arvore, feriados] = await Promise.all([carregarArvoreVios(), carregarFeriados()]);
+    const ehDiaUtil = criarCalendario(feriados);
+    const hoje = hojeEmSaoPaulo();
+    for (const item of comDatas) {
+      const previstas = fluxoPrevisto(item, item.tarefa_id ? montarFluxo(item.tarefa_id, arvore) : null, ehDiaUtil, { hoje, datas: item.fluxo_datas });
+      mapa.set(item.id, datasParaOVios(previstas));
+    }
+  } catch (erro) {
+    console.error("[vistagem] datas do fluxo para o robô", erro instanceof Error ? erro.message : erro);
+  }
+  return mapa;
+}
+
 /** Põe as tarefas da publicação na fila do robô; devolve o id da linha da fila de cada agendamento. */
 async function enfileirarPublicacao(publicacao: PublicacaoComArea, itens: AgendamentoRow[], simular: boolean): Promise<Map<string, string>> {
   const modo = modoAgendamento();
-  const equivalentes = modo === "intimacao" ? await comunicacoesEquivalentes(publicacao) : [];
-  const grupos = linhasParaFila({ ...publicacao, comunicacoes_equivalentes: equivalentes }, itens, { simular, modo });
+  const [equivalentes, datasDoFluxo] = await Promise.all([
+    modo === "intimacao" ? comunicacoesEquivalentes(publicacao) : Promise.resolve([] as string[]),
+    datasDoFluxoParaOVios(itens),
+  ]);
+  const grupos = linhasParaFila(
+    { ...publicacao, comunicacoes_equivalentes: equivalentes },
+    itens.map((item) => ({ ...item, fluxoDatas: datasDoFluxo.get(item.id) ?? [] })),
+    { simular, modo }
+  );
   const ids = await enfileirarNoSama(grupos.map((grupo) => grupo.linha));
   return new Map(grupos.flatMap((grupo, indice) => grupo.agendamentos.map((agendamento) => [agendamento, ids[indice]] as const)));
 }

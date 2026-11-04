@@ -33,6 +33,7 @@ import {
   ROTULO_ETIQUETA,
   atalhosDePrazo,
   avisosDaData,
+  chaveDoCaminho,
   chaveNome,
   horaValida,
   separarNomes,
@@ -56,10 +57,11 @@ import {
   pedeTarefaEsocial,
   type ClassificacaoEsocial,
 } from "@/lib/vistagem/esocial";
-import { CADEIA_PADRAO, PESSOA_FIXA_PROTOCOLAR, cadeiaDoFluxo, type FluxoDaTarefa, type TarefaDoFluxo } from "@/lib/vistagem/fluxo-vios";
+import { CADEIA_PADRAO, cadeiaDoFluxo } from "@/lib/vistagem/fluxo-vios";
+import { fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
 import { fatalSugerida, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
-import type { PublicacaoResumo, ResolucaoPendencia, VistagemDetalhe } from "@/lib/vistagem/types";
+import type { DataDoFluxo, PublicacaoResumo, ResolucaoPendencia, TarefaPrevista, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
 import { FaixaDoProcesso, NA_FAIXA } from "./faixa-processo";
@@ -98,7 +100,11 @@ interface Linha {
   esocial: boolean;
   /** Veio da sugestão da IA. */
   ia: boolean;
+  /** Datas do Fluxo do VIOS que a pessoa mudou, pela chave do caminho (chaveDoCaminho). */
+  fluxoDatas: Record<string, DataDoFluxo>;
 }
+
+const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 
 let proximaChave = 1;
 function novaLinha(base: Partial<Linha> = {}): Linha {
@@ -116,6 +122,7 @@ function novaLinha(base: Partial<Linha> = {}): Linha {
     observacao: "",
     esocial: false,
     ia: false,
+    fluxoDatas: {},
     ...base,
   };
 }
@@ -216,29 +223,28 @@ function ContagemDoPrazo({ rotulo, valor, onChange }: { rotulo: string; valor: C
   );
 }
 
-/** O que o fluxo automático do VIOS cria junto com a tarefa e quem o robô coloca em cada uma. */
+/**
+ * O que o fluxo automático do VIOS cria junto com a tarefa, com a data de cada uma (pela regra do VIOS) e quem o
+ * robô coloca nela. A pessoa pode mudar a data (ex.: o VIOS dá 5 dias e ela prioriza em 2): o robô grava no VIOS
+ * depois de lançar, e as tarefas que nascem desta acompanham a nova data.
+ */
 function FluxoNoVios({
-  fluxo,
-  responsavel,
-  revisor,
-  datas,
+  previstas,
+  hoje,
+  onMudarData,
 }: {
-  fluxo: FluxoDaTarefa;
-  responsavel: string;
-  revisor: string;
-  datas: { revisar: string | null; protocolar: string | null } | null;
+  previstas: TarefaPrevista[];
+  hoje: string;
+  onMudarData: (caminho: string[], data: string | null) => void;
 }) {
-  const quem = (tarefa: TarefaDoFluxo) => {
-    if (tarefa.papel === "revisor") return revisor || "padrão do VIOS (sem revisor)";
-    const pessoa = responsavel || "responsável";
-    return tarefa.papel === "protocolar" ? `${pessoa} + ${PESSOA_FIXA_PROTOCOLAR}` : pessoa;
-  };
-  const dataDe = (tarefa: TarefaDoFluxo) =>
-    tarefa.papel === "revisor" ? datas?.revisar ?? null : tarefa.papel === "protocolar" ? datas?.protocolar ?? null : null;
-  // Recolhido: uma linha diz o que o VIOS cria; o detalhe abre quando a pessoa quer conferir.
+  const junto = previstas.filter((tarefa) => tarefa.quando === "criacao");
+  const aoConcluir = previstas.filter((tarefa) => tarefa.quando === "conclusao");
+  const alteradas = junto.filter((tarefa) => tarefa.editada).length;
+  // Recolhido: uma linha diz o que o VIOS cria; o detalhe abre quando a pessoa quer conferir ou mudar.
   const resumo = [
-    fluxo.criacao.length ? `cria junto ${fluxo.criacao.map((tarefa) => tarefa.nome).join(", ")}` : null,
-    fluxo.conclusao.length ? `ao concluir, ${fluxo.conclusao.map((tarefa) => tarefa.nome).join(", ")}` : null,
+    junto.length ? `cria junto ${plural(junto.length, "tarefa", "tarefas")}` : null,
+    alteradas ? `${plural(alteradas, "data alterada", "datas alteradas")}` : null,
+    aoConcluir.length ? `ao concluir, ${aoConcluir.map((tarefa) => tarefa.nome).join(", ")}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -247,39 +253,65 @@ function FluxoNoVios({
       <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-muted-foreground [&::-webkit-details-marker]:hidden">
         <ChevronRight className="size-3.5 shrink-0 transition-transform group-open:rotate-90" aria-hidden />
         <span className="font-medium text-[#285f7a]">Fluxo do VIOS</span>
-        <span className="truncate">{resumo}</span>
+        <span className={cn("truncate", alteradas && "text-[#285f7a]")}>{resumo}</span>
       </summary>
       <div className="space-y-2 border-t border-[#e6eef0] px-3 py-2">
-      {fluxo.criacao.length ? (
-        <div className="space-y-1">
-          <p className="font-medium text-foreground">O VIOS cria junto (o robô coloca os responsáveis):</p>
-          <ul className="space-y-1.5">
-            {fluxo.criacao.map((tarefa) => {
-              const data = dataDe(tarefa);
-              return (
-                <li key={tarefa.id} className="text-foreground">
-                  <span className="font-medium text-foreground">{tarefa.nome}</span>
-                  {tarefa.prazo ? <span className="text-muted-foreground"> · {tarefa.prazo}</span> : null}
-                  {data ? <span className="tabular-nums"> · {formatarData(data)}</span> : null}
-                  <span> → {quem(tarefa)}</span>
-                  {tarefa.tambemCria.length ? (
-                    <span className="block pl-3 text-muted-foreground">cria também: {tarefa.tambemCria.join(", ")}</span>
-                  ) : null}
-                  {tarefa.aoConcluir.length ? (
-                    <span className="block pl-3 text-muted-foreground">ao concluir, cria: {tarefa.aoConcluir.join(", ")}</span>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      ) : null}
-      {fluxo.conclusao.length ? (
-        <p className="text-muted-foreground">
-          <span className="font-medium text-foreground">Ao concluir esta tarefa, o VIOS cria:</span>{" "}
-          {fluxo.conclusao.map((tarefa) => tarefa.nome).join(", ")} (com o responsável padrão do VIOS).
-        </p>
-      ) : null}
+        {junto.length ? (
+          <div className="space-y-1.5">
+            <p className="text-muted-foreground">
+              <span className="font-medium text-foreground">O VIOS cria junto</span> (o robô coloca os responsáveis). Para priorizar, mude a data:
+              o robô grava no VIOS depois de lançar.
+            </p>
+            <ul className="space-y-1">
+              {junto.map((tarefa) => {
+                const rotulo = `Data de ${tarefa.caminho.join(" › ")}`;
+                return (
+                  <li
+                    key={tarefa.caminho.join(" › ")}
+                    className={cn("flex flex-wrap items-center gap-x-2 gap-y-1", tarefa.nivel > 1 && "border-l-2 border-[#c9dde6] pl-2")}
+                    style={tarefa.nivel > 1 ? { marginLeft: `${(tarefa.nivel - 1) * 0.75}rem` } : undefined}
+                  >
+                    <span className="min-w-0 flex-1 basis-48 font-medium text-foreground">{tarefa.nome}</span>
+                    <input
+                      type="date"
+                      value={tarefa.data ?? ""}
+                      min={hoje}
+                      aria-label={rotulo}
+                      title={tarefa.data ? rotulo : "O VIOS data esta tarefa sozinho; escolha uma data só se precisar."}
+                      onChange={(evento) => onMudarData(tarefa.caminho, evento.target.value || null)}
+                      className={cn(
+                        "h-7 rounded-md border bg-white px-1.5 text-xs tabular-nums text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/50",
+                        tarefa.editada ? "border-[#347796] ring-1 ring-[#347796]/30" : "border-[#d7e3e7]"
+                      )}
+                    />
+                    <span className="text-muted-foreground">{tarefa.responsaveis}</span>
+                    {tarefa.editada ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <Selo tom="marca">alterada</Selo>
+                        {tarefa.dataVios ? <span className="text-muted-foreground">VIOS: {formatarData(tarefa.dataVios)}</span> : null}
+                        <button
+                          type="button"
+                          className="font-medium text-[#347796] underline-offset-4 hover:underline"
+                          onClick={() => onMudarData(tarefa.caminho, null)}
+                        >
+                          voltar à do VIOS
+                        </button>
+                      </span>
+                    ) : tarefa.data && tarefa.dataVios && tarefa.data !== tarefa.dataVios ? (
+                      <span className="text-muted-foreground">acompanha a anterior (VIOS: {formatarData(tarefa.dataVios)})</span>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ) : null}
+        {aoConcluir.length ? (
+          <p className="text-muted-foreground">
+            <span className="font-medium text-foreground">Ao concluir esta tarefa, o VIOS cria:</span>{" "}
+            {aoConcluir.map((tarefa) => tarefa.nome).join(", ")} (com o responsável padrão do VIOS).
+          </p>
+        ) : null}
       </div>
     </details>
   );
@@ -437,6 +469,7 @@ export function EditorVistagem({
                   revisor: item.revisor ?? "",
                   observacao: item.observacao ?? "",
                   esocial: tarefaEsocialId !== null && item.tarefaId === tarefaEsocialId,
+                  fluxoDatas: Object.fromEntries(item.fluxoDatas.map((datada) => [chaveDoCaminho(datada.caminho), datada])),
                 })
               )
             : [novaLinha({ responsavel: dados.responsavelSugerido ?? "", revisor: dados.revisorSugerido ?? "" })]
@@ -490,7 +523,23 @@ export function EditorVistagem({
   }, [detalhe]);
 
   function alterar(chave: number, mudanca: Partial<Linha>) {
-    setLinhas((atuais) => atuais.map((linha) => (linha.chave === chave ? { ...linha, ...mudanca } : linha)));
+    setLinhas((atuais) =>
+      atuais.map((linha) => {
+        if (linha.chave !== chave) return linha;
+        // Outro tipo de tarefa tem outro fluxo: as datas mudadas no fluxo anterior não valem mais.
+        const outroTipo = (mudanca.tarefa !== undefined && mudanca.tarefa !== linha.tarefa) || (mudanca.etiqueta !== undefined && mudanca.etiqueta !== linha.etiqueta);
+        return { ...linha, ...mudanca, ...(outroTipo && !mudanca.fluxoDatas ? { fluxoDatas: {} } : {}) };
+      })
+    );
+  }
+
+  /** Data de uma tarefa do Fluxo do VIOS mudada pela pessoa; null volta à data do VIOS. */
+  function mudarDataDoFluxo(linha: Linha, caminho: string[], data: string | null) {
+    const chave = chaveDoCaminho(caminho);
+    const fluxoDatas = { ...linha.fluxoDatas };
+    if (data) fluxoDatas[chave] = { caminho, data };
+    else delete fluxoDatas[chave];
+    alterar(linha.chave, { fluxoDatas });
   }
 
   function trocarEtiqueta(linha: Linha, etiqueta: Etiqueta) {
@@ -606,6 +655,7 @@ export function EditorVistagem({
             responsavel: linha.responsavel,
             revisor: linha.revisor || null,
             observacao: linha.observacao || null,
+            fluxoDatas: Object.values(linha.fluxoDatas),
           })),
         }),
       });
@@ -835,14 +885,15 @@ export function EditorVistagem({
                     // Sem tarefa escolhida (ou sem o fluxo carregado) mostra o fluxo padrão; o servidor recalcula ao gravar.
                     const cadeiaFluxo = !tarefaId || detalhe.fluxosErro ? CADEIA_PADRAO : cadeiaDoFluxo(fluxo);
                     const cadeia = prazo && linha.dataFatal ? datasDoPrazo(linha.dataFatal, ehDiaUtil, cadeiaFluxo) : null;
-                    const datasDoFluxo = prazo
-                      ? cadeia
-                      : linha.data && cadeiaFluxo
-                        ? {
-                            revisar: cadeiaFluxo.revisar === null ? null : somarDiasUteis(linha.data, cadeiaFluxo.revisar, ehDiaUtil),
-                            protocolar: somarDiasUteis(linha.data, cadeiaFluxo.protocolar, ehDiaUtil),
-                          }
-                        : null;
+                    // O VIOS data o fluxo a partir da data que recebe (no Prazo, o Enviar) e do dia do lançamento.
+                    const previstas = fluxo
+                      ? fluxoPrevisto(
+                          { data: (prazo ? cadeia?.enviar : linha.data) ?? "", responsavel: linha.responsavel, revisor: linha.revisor || null },
+                          fluxo,
+                          ehDiaUtil,
+                          { hoje: detalhe.hoje, datas: Object.values(linha.fluxoDatas) }
+                        )
+                      : [];
                     const avisos = prazo
                       ? linha.dataFatal
                         ? avisosDaData(linha.dataFatal, detalhe.hoje).concat(
@@ -1072,8 +1123,12 @@ export function EditorVistagem({
                           />
                         </Campo>
 
-                        {fluxo ? (
-                          <FluxoNoVios fluxo={fluxo} responsavel={linha.responsavel} revisor={linha.revisor} datas={datasDoFluxo} />
+                        {fluxo && previstas.length ? (
+                          <FluxoNoVios
+                            previstas={previstas}
+                            hoje={detalhe.hoje}
+                            onMudarData={(caminho, data) => mudarDataDoFluxo(linha, caminho, data)}
+                          />
                         ) : null}
                       </li>
                     );

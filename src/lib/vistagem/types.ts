@@ -229,11 +229,26 @@ export interface PublicacaoCapturada {
 
 export type EnvioStatus = "nao_enviado" | "pendente" | "enviado" | "processando" | "concluido" | "erro";
 
+/** Data de uma tarefa do fluxo escolhida pelo jurídico (o robô grava no VIOS depois de lançar). */
+export interface DataDoFluxo {
+  /** Tipos desde a tarefa agendada até esta (ex.: ["EMBARGOS DE DECLARAÇÃO", "2. REVISAR"]). */
+  caminho: string[];
+  /** AAAA-MM-DD */
+  data: string;
+}
+
 /** Tarefa que o fluxo automático do VIOS cria com a tarefa agendada, e quem o robô coloca nela. */
 export interface TarefaPrevista {
   nome: string;
-  /** AAAA-MM-DD; só o Revisar e o Protocolar têm a data calculada (as outras o VIOS data sozinho). */
+  caminho: string[];
+  /** 1: criada pela agendada; 2: criada por uma do fluxo (Embargos › 2. REVISAR)… */
+  nivel: number;
+  /** AAAA-MM-DD que vai ficar no VIOS (a escolhida pelo jurídico, ou a do VIOS); null: o VIOS data sozinho. */
   data: string | null;
+  /** A que o VIOS dá pela regra dele (sem as mudanças do jurídico). */
+  dataVios: string | null;
+  /** O jurídico escolheu esta data. */
+  editada: boolean;
   responsaveis: string;
   /** criacao: o VIOS cria junto com a tarefa; conclusao: quando ela for concluída. */
   quando: "criacao" | "conclusao";
@@ -258,6 +273,8 @@ export interface AgendamentoResumo {
   observacao: string | null;
   /** Como ficou no VIOS: a tarefa pedida e as que o fluxo criou, com as datas agendadas. */
   viosTarefas: TarefaNoVios[] | null;
+  /** Datas do fluxo escolhidas pelo jurídico (o robô grava no VIOS). */
+  fluxoDatas: DataDoFluxo[];
   /** O que o fluxo do VIOS vai criar junto e ao concluir (só a lista da Conferência traz). */
   fluxoPrevisto?: TarefaPrevista[];
   envioStatus: EnvioStatus;
