@@ -111,6 +111,8 @@ export interface PublicacaoResumo {
   justica: Justica | null;
   dataDivulgacao: string | null;
   dataPublicacao: string | null;
+  /** Dia do lote da Kurier (ou da colagem) em que a publicação entrou: o filtro "Data da importação". */
+  dataImportacao: string | null;
   nomeLocalizado: string | null;
   djenIdComunicacao: number | null;
   djenOrgao: string | null;

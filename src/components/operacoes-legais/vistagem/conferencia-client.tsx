@@ -827,7 +827,7 @@ function Conferencia() {
   /** Data da publicação (AAAA-MM-DD); vazio é "Todas as datas". */
   const [dataPublicacao, setDataPublicacao] = useState("");
   /** Data da divulgação no diário (AAAA-MM-DD); vazio é "Todas as datas". */
-  const [dataDivulgacao, setDataDivulgacao] = useState("");
+  const [dataImportacao, setDataImportacao] = useState("");
   /** Área (escritório); vazio é "Todas as áreas". */
   const [area, setArea] = useState("");
   /** Tribunal; vazio é "Todos os tribunais". */
@@ -934,8 +934,8 @@ function Conferencia() {
   const lista = aba === "conferir" ? dados?.aConferir : aba === "enviadas" ? dados?.enviadas : [];
   const datasDaLista = (lista ?? []).map((item) => item.publicacao.dataPublicacao);
   const dataAtiva = dataNaLista(dataPublicacao, datasDaLista);
-  const divulgacoesDaLista = (lista ?? []).map((item) => item.publicacao.dataDivulgacao);
-  const divulgacaoAtiva = dataNaLista(dataDivulgacao, divulgacoesDaLista);
+  const importacoesDaLista = (lista ?? []).map((item) => item.publicacao.dataImportacao);
+  const importacaoAtiva = dataNaLista(dataImportacao, importacoesDaLista);
   // Área e tribunal escolhidos que sumiram da lista (outra aba, já conferidas) deixam de filtrar.
   const areasDaLista = contarPor(lista ?? [], areaDe);
   const areaAtiva = areasDaLista.some(([nome]) => nome === area) ? area : "";
@@ -947,7 +947,7 @@ function Conferencia() {
       combinaBusca(item, busca) &&
       (!tribunalAtivo || tribunalDe(item.publicacao) === tribunalAtivo) &&
       (!dataAtiva || item.publicacao.dataPublicacao === dataAtiva) &&
-      (!divulgacaoAtiva || item.publicacao.dataDivulgacao === divulgacaoAtiva)
+      (!importacaoAtiva || item.publicacao.dataImportacao === importacaoAtiva)
   );
   const grupos = agruparConferencia(filtrada);
   const valor = (n: number) => (dados ? n : "—");
@@ -957,7 +957,7 @@ function Conferencia() {
     setArea("");
     setTribunal("");
     setDataPublicacao("");
-    setDataDivulgacao("");
+    setDataImportacao("");
   }
 
   const listaDeItens = (itens: ConferenciaItem[], rotulo: string) => (
@@ -1054,7 +1054,7 @@ function Conferencia() {
               opcoes={tribunaisDaLista.map(([nome, quantidade]) => ({ valor: nome, rotulo: nome, contagem: quantidade }))}
             />
             <FiltroData rotulo="Data Publicação" datas={datasDaLista} valor={dataAtiva} onChange={setDataPublicacao} />
-            <FiltroData rotulo="Data Divulgação" datas={divulgacoesDaLista} valor={divulgacaoAtiva} onChange={setDataDivulgacao} />
+            <FiltroData rotulo="Data da importação" datas={importacoesDaLista} valor={importacaoAtiva} onChange={setDataImportacao} />
           </>
         ) : null}
         {aba === "enviadas" ? (
