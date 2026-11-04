@@ -9,7 +9,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 /** Manda a publicação para a fila de outra área, com o motivo. */
 export async function POST(request: Request, context: RouteContext) {
   try {
-    const { authUserId, areas } = await exigirPerfilVistagem();
+    const { authUserId, areas, veRisco } = await exigirPerfilVistagem();
     const { id } = await context.params;
     const corpo = (await request.json().catch(() => null)) as { destino?: unknown; motivo?: unknown } | null;
     await transferirPublicacao(
@@ -19,7 +19,8 @@ export async function POST(request: Request, context: RouteContext) {
         motivo: typeof corpo?.motivo === "string" ? corpo.motivo : "",
       },
       authUserId,
-      areas
+      areas,
+      veRisco
     );
     return NextResponse.json({ ok: true });
   } catch (error) {

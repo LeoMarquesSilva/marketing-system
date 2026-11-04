@@ -102,9 +102,9 @@ async function gravarSugestao(id: string, sugestao: SugestaoIa): Promise<void> {
 }
 
 /** Sugestão da publicação para a tela do jurídico: a já gravada ou uma nova. */
-export async function sugestaoDaPublicacao(id: string, areas: AreasVistagem = null): Promise<SugestaoIa> {
+export async function sugestaoDaPublicacao(id: string, areas: AreasVistagem = null, veRisco = true): Promise<SugestaoIa> {
   const publicacao = await carregarPublicacao(id);
-  garantirArea(publicacao, areas);
+  garantirArea(publicacao, areas, veRisco);
   if (publicacao.sugestao_ia) return publicacao.sugestao_ia;
   if (publicacao.status !== "juridico_vistar") throw new VistagemError("Esta publicação não está aguardando vistagem.", 409);
   const catalogo = catalogoParaPublicacao(await carregarCatalogoProcessos(), publicacao);

@@ -292,17 +292,20 @@ export async function POST(request: Request) {
       if (papel === "juridico" && areas.length === 0) {
         return NextResponse.json({ error: "Marque ao menos uma área que a pessoa vista." }, { status: 400 });
       }
+      // Demanda de risco só se restringe no jurídico; a controladoria vê todas.
+      const risco = papel === "controladoria" || body.risco !== false;
       const { data: saved, error } = await db
         .from("users")
-        .update({ vistagem_papel: papel, vistagem_areas: papel === "juridico" ? areas : null })
+        .update({ vistagem_papel: papel, vistagem_areas: papel === "juridico" ? areas : null, vistagem_risco: risco })
         .eq("id", userId)
-        .select("vistagem_papel, vistagem_areas")
+        .select("vistagem_papel, vistagem_areas, vistagem_risco")
         .single();
       if (error) throw new Error(error.message);
       return NextResponse.json({
         success: true,
         vistagem_papel: saved.vistagem_papel,
         vistagem_areas: saved.vistagem_areas,
+        vistagem_risco: saved.vistagem_risco,
       });
     }
 

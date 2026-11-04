@@ -10,9 +10,9 @@ type RouteContext = { params: Promise<{ id: string }> };
 /** Sugestão da IA para a vistagem (Trabalhista): devolve a já gerada ou gera agora. */
 export async function POST(_request: Request, context: RouteContext) {
   try {
-    const { areas } = await exigirPerfilVistagem();
+    const { areas, veRisco } = await exigirPerfilVistagem();
     const { id } = await context.params;
-    return NextResponse.json(await sugestaoDaPublicacao(id, areas));
+    return NextResponse.json(await sugestaoDaPublicacao(id, areas, veRisco));
   } catch (error) {
     return respostaDeErro(error, "Não foi possível gerar a sugestão da IA.");
   }

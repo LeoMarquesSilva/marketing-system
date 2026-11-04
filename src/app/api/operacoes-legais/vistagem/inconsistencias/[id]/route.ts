@@ -9,11 +9,11 @@ type RouteContext = { params: Promise<{ id: string }> };
 /** acao=contestar (jurídico) ou acao=excluir (controladoria), com o texto. */
 export async function POST(request: Request, context: RouteContext) {
   try {
-    const { authUserId, papel, areas } = await exigirPerfilVistagem();
+    const { authUserId, papel, areas, veRisco } = await exigirPerfilVistagem();
     const { id } = await context.params;
     const corpo = (await request.json().catch(() => null)) as { acao?: unknown; texto?: unknown } | null;
     const texto = typeof corpo?.texto === "string" ? corpo.texto : "";
-    if (corpo?.acao === "contestar") await contestarInconsistencia(id, texto, authUserId, areas);
+    if (corpo?.acao === "contestar") await contestarInconsistencia(id, texto, authUserId, areas, veRisco);
     else if (corpo?.acao === "excluir") {
       if (papel !== "controladoria") return NextResponse.json({ error: "Só a controladoria exclui inconsistências." }, { status: 403 });
       await excluirInconsistencia(id, texto, authUserId);

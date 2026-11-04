@@ -5,11 +5,12 @@ import type { PapelVistagem } from "@/lib/access-control";
 import { requireAuthenticatedUser, requireVistagemAccess } from "@/lib/api-auth";
 import { VistagemError } from "./errors";
 
-/** Quem acessa a Vistagem: id de auth, papel e áreas (null = todas, na controladoria). */
+/** Quem acessa a Vistagem: id de auth, papel, áreas (null = todas, na controladoria) e se vista demanda de risco. */
 export interface PerfilVistagem {
   authUserId: string;
   papel: PapelVistagem;
   areas: string[] | null;
+  veRisco: boolean;
 }
 
 /** Usuário da controladoria (todas as abas); o jurídico recebe 403. Devolve o id de auth. */
@@ -22,8 +23,8 @@ export async function exigirAcessoVistagem(): Promise<string> {
 /** Qualquer usuário da Vistagem (controladoria ou jurídico), para as rotas da aba Jurídico. */
 export async function exigirPerfilVistagem(): Promise<PerfilVistagem> {
   const user = await requireAuthenticatedUser();
-  const { papel, areas } = await requireVistagemAccess(user.id);
-  return { authUserId: user.id, papel, areas };
+  const { papel, areas, veRisco } = await requireVistagemAccess(user.id);
+  return { authUserId: user.id, papel, areas, veRisco };
 }
 
 export function respostaDeErro(error: unknown, mensagemPadrao: string): NextResponse {
