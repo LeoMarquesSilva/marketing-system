@@ -229,6 +229,16 @@ export interface PublicacaoCapturada {
 
 export type EnvioStatus = "nao_enviado" | "pendente" | "enviado" | "processando" | "concluido" | "erro";
 
+/** Tarefa que o fluxo automático do VIOS cria com a tarefa agendada, e quem o robô coloca nela. */
+export interface TarefaPrevista {
+  nome: string;
+  /** AAAA-MM-DD; só o Revisar e o Protocolar têm a data calculada (as outras o VIOS data sozinho). */
+  data: string | null;
+  responsaveis: string;
+  /** criacao: o VIOS cria junto com a tarefa; conclusao: quando ela for concluída. */
+  quando: "criacao" | "conclusao";
+}
+
 export interface AgendamentoResumo {
   id: string;
   ordem: number;
@@ -248,6 +258,8 @@ export interface AgendamentoResumo {
   observacao: string | null;
   /** Como ficou no VIOS: a tarefa pedida e as que o fluxo criou, com as datas agendadas. */
   viosTarefas: TarefaNoVios[] | null;
+  /** O que o fluxo do VIOS vai criar junto e ao concluir (só a lista da Conferência traz). */
+  fluxoPrevisto?: TarefaPrevista[];
   envioStatus: EnvioStatus;
   envioSimulado: boolean | null;
   viosTarefaId: string | null;

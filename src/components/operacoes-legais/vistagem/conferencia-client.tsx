@@ -309,10 +309,55 @@ export function TabelaTarefas({ agendamentos, comEnvio, compacta = false }: { ag
                   {item.envioErro ? <span className="mt-1 block whitespace-pre-wrap break-words text-xs text-red-700">{item.envioErro}</span> : null}
                 </Celula>
               ) : null}
+              <FluxoDaTarefaAgendada item={item} />
             </li>
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * Tudo o que vai para o VIOS com a tarefa, para validar (não só o Enviar): depois do robô, as tarefas que o
+ * fluxo de fato criou, com o CI; antes, o que o fluxo do VIOS vai criar, com as datas e quem fica em cada uma.
+ */
+function FluxoDaTarefaAgendada({ item }: { item: AgendamentoResumo }) {
+  const criadas = (item.viosTarefas ?? []).filter((tarefa) => !tarefa.principal);
+  const junto = (item.fluxoPrevisto ?? []).filter((tarefa) => tarefa.quando === "criacao");
+  const aoConcluir = (item.fluxoPrevisto ?? []).filter((tarefa) => tarefa.quando === "conclusao");
+  if (!criadas.length && !junto.length && !aoConcluir.length) return null;
+  const linha = (chave: string, nome: string, data: string | null, quem: string | null, ci?: string) => (
+    <li key={chave} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <span className="font-medium text-foreground">{nome}</span>
+      {data ? <span className="tabular-nums text-foreground">{formatarData(data)}</span> : null}
+      {quem ? <span className="text-muted-foreground">{quem}</span> : null}
+      {ci ? <LinkVios ci={ci} /> : null}
+    </li>
+  );
+  return (
+    <div className="col-span-full space-y-1.5 rounded-md border border-[#e6eef0] bg-[#f7fbfc] px-3 py-2 text-xs">
+      {criadas.length ? (
+        <>
+          <p className="font-medium text-[#285f7a]">Criadas junto no VIOS</p>
+          <ul className="space-y-1 border-l-2 border-[#c9dde6] pl-2.5">
+            {criadas.map((tarefa) => linha(tarefa.ci, tarefa.tipo ?? "Tarefa do fluxo", tarefa.data, tarefa.responsaveis, tarefa.ci))}
+          </ul>
+        </>
+      ) : junto.length ? (
+        <>
+          <p className="font-medium text-[#285f7a]">O VIOS cria junto (o robô coloca os responsáveis)</p>
+          <ul className="space-y-1 border-l-2 border-[#c9dde6] pl-2.5">
+            {junto.map((tarefa, indice) => linha(`${indice}-${tarefa.nome}`, tarefa.nome, tarefa.data, tarefa.responsaveis))}
+          </ul>
+        </>
+      ) : null}
+      {!criadas.length && aoConcluir.length ? (
+        <p className="text-muted-foreground">
+          <span className="font-medium text-foreground">Ao concluir, o VIOS cria:</span> {aoConcluir.map((tarefa) => tarefa.nome).join(", ")} (responsável
+          padrão do VIOS)
+        </p>
+      ) : null}
     </div>
   );
 }
