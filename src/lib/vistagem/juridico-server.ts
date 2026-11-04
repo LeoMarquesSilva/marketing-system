@@ -20,6 +20,7 @@ import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial 
 import { areaComSugestaoIa, resultadoDaSugestao, type SugestaoIa } from "./sugestao-ia";
 import { carregarFeriados } from "./feriados";
 import { cadeiaDoFluxo, montarFluxo, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
+import { fluxoPrevisto } from "./fluxo-previsto";
 import { buscarPastasVios } from "./pastas-vios";
 import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
@@ -618,10 +619,30 @@ const LIMITE_TEOR_CONFERENCIA = 12_000;
 
 export async function listarConferencia(): Promise<ConferenciaResposta> {
   const ficha = { limiteTeor: LIMITE_TEOR_CONFERENCIA, comAuxiliar: true };
-  const [aConferir, enviadas] = await Promise.all([
+  const [aConferirSemFluxo, enviadasSemFluxo, fluxo] = await Promise.all([
     itensDeConferencia(["controladoria_vistar"], 300, true, "vistado_em", ficha),
     itensDeConferencia(["pronto_para_agendar", "agendado"], 100, false, "conferido_em", ficha),
+    // Sem a árvore do VIOS, a conferência mostra só as tarefas pedidas.
+    Promise.all([carregarArvoreVios(), carregarFeriados()]).catch((erro: unknown) => {
+      console.error("[vistagem] fluxo previsto da conferência", erro instanceof Error ? erro.message : erro);
+      return null;
+    }),
   ]);
+  // O que o fluxo do VIOS cria com cada tarefa, para a controladoria validar tudo (não só o Enviar).
+  const comFluxo = (itens: ConferenciaItem[]): ConferenciaItem[] => {
+    if (!fluxo) return itens;
+    const [arvore, feriados] = fluxo;
+    const ehDiaUtil = criarCalendario(feriados);
+    return itens.map((item) => ({
+      ...item,
+      agendamentos: item.agendamentos.map((agendamento) => ({
+        ...agendamento,
+        fluxoPrevisto: fluxoPrevisto(agendamento, agendamento.tarefaId ? montarFluxo(agendamento.tarefaId, arvore) : null, ehDiaUtil),
+      })),
+    }));
+  };
+  const aConferir = comFluxo(aConferirSemFluxo);
+  const enviadas = comFluxo(enviadasSemFluxo);
   // Foto é enfeite: se a consulta falhar, a ficha mostra as iniciais.
   const pessoas = await pessoasPorNome([...aConferir, ...enviadas].flatMap((item) => [item.publicacao.advogadoResponsavel, item.auxiliar])).catch(
     (erro: unknown): PessoasPorNome => {

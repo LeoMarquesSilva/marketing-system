@@ -25,6 +25,20 @@ export function formatarDataHora(iso: string | null): string {
   }).format(new Date(iso));
 }
 
+export const SEM_TRIBUNAL = "Sem tribunal";
+
+/** Tribunal da publicação para filtrar e agrupar (o vazio vira "Sem tribunal"). */
+export function tribunalDe(publicacao: Pick<PublicacaoResumo, "tribunal">): string {
+  return publicacao.tribunal?.trim() || SEM_TRIBUNAL;
+}
+
+/** Quantas há de cada valor, na ordem natural (TRT1, TRT2, TRT15, TST). */
+export function contarPor<T>(itens: T[], valor: (item: T) => string): [string, number][] {
+  const contagem = new Map<string, number>();
+  for (const item of itens) contagem.set(valor(item), (contagem.get(valor(item)) ?? 0) + 1);
+  return [...contagem.entries()].sort((a, b) => a[0].localeCompare(b[0], "pt-BR", { numeric: true }));
+}
+
 const STATUS: Partial<Record<PublicacaoStatus, { rotulo: string; tom: TomSelo }>> = {
   captada: { rotulo: "Captada", tom: "marca" },
   duplicidade: { rotulo: "Duplicidade", tom: "alerta" },
