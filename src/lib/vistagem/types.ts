@@ -90,7 +90,8 @@ export interface ArquivoKurierResumo {
   nomeArquivo: string;
   dataArquivo: string;
   lote: number;
-  origem: "sharepoint" | "upload";
+  /** "colado": publicações coladas de e-mail ou Teams (Captura › Colar publicações). */
+  origem: "sharepoint" | "upload" | "colado";
   status: "processando" | "processado" | "erro";
   erro: string | null;
   totalLinhas: number;

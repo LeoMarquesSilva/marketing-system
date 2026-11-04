@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CalendarClock, ClipboardList, CloudDownload, FileSpreadsheet, Inbox, LoaderCircle, Scale, SearchX, Upload, X } from "lucide-react";
+import { CalendarClock, ClipboardList, ClipboardPaste, CloudDownload, FileSpreadsheet, Inbox, LoaderCircle, Scale, SearchX, Upload, X } from "lucide-react";
 import { Segmented } from "@/components/facilities/form-parts";
 import { Button } from "@/components/ui/button";
 import { authFetch } from "@/lib/auth-fetch";
@@ -10,6 +10,7 @@ import type { ArquivoDoDia } from "@/lib/vistagem/alerta-arquivo";
 import type { ArquivoKurierResumo, PublicacaoResumo, SincronizacaoResultado } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { FaixaArquivoDoDia, useArquivoDoDia } from "./aviso-arquivo-do-dia";
+import { ColarPublicacoes, type ResultadoColagem } from "./colar-publicacoes";
 import { IconeArea } from "./marcas";
 import { DadosPasta, DadosPublicacao, StatusPublicacao, TeorPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
 import {
@@ -39,7 +40,24 @@ const FILTROS: { valor: Filtro; rotulo: string }[] = [
   { valor: "captada", rotulo: "Aguardando triagem" },
 ];
 
-const ORIGEM: Record<ArquivoKurierResumo["origem"], string> = { sharepoint: "SharePoint", upload: "envio manual" };
+const ORIGEM: Record<ArquivoKurierResumo["origem"], string> = {
+  sharepoint: "SharePoint",
+  upload: "envio manual",
+  colado: "colado (e-mail/Teams)",
+};
+
+/** Publicações coladas não são o arquivo da Kurier: não contam para "Arquivo de hoje". */
+function daKurier(arquivo: ArquivoKurierResumo): boolean {
+  return arquivo.origem !== "colado";
+}
+
+function resumoColagem(resultado: ResultadoColagem): string {
+  if (!resultado.novo) return "Essas publicações já tinham sido coladas; nada foi duplicado.";
+  const { arquivo } = resultado;
+  const duplicidades = arquivo.totalDuplicidades ? ` ${arquivo.totalDuplicidades} duplicidade(s) para conferir em Duplicidades.` : "";
+  const ignorados = resultado.ignorados.length ? ` ${resultado.ignorados.length} trecho(s) do texto não reconhecido(s).` : "";
+  return `${arquivo.nomeArquivo}.${resumoTriagem(resultado.triagem)}${duplicidades}${ignorados}`;
+}
 
 const SITUACAO_ARQUIVO: Record<ArquivoKurierResumo["status"], { rotulo: string; tom: TomSelo }> = {
   processado: { rotulo: "Importado", tom: "sucesso" },
@@ -70,7 +88,7 @@ function resumoSincronizacao(resultado: SincronizacaoResultado): string {
  */
 function situacaoAtualizada(situacao: ArquivoDoDia | null | undefined, arquivos: ArquivoKurierResumo[] | null) {
   if (!situacao || !arquivos) return situacao;
-  const deHoje = arquivos.filter((arquivo) => arquivo.dataArquivo === situacao.hoje);
+  const deHoje = arquivos.filter((arquivo) => daKurier(arquivo) && arquivo.dataArquivo === situacao.hoje);
   if (!deHoje.length) return situacao;
   const chegou = deHoje.some((arquivo) => arquivo.status === "processado");
   const processando = deHoje.some((arquivo) => arquivo.status === "processando");
@@ -89,7 +107,7 @@ function estadoDeHoje(
 ): { valor: string; tom: "neutro" | "alerta" | "perigo" | "sucesso"; detalhe: string } {
   if (situacao === undefined) return { valor: "—", tom: "neutro", detalhe: "Verificando…" };
   if (situacao === null) return { valor: "—", tom: "neutro", detalhe: "Não foi possível verificar" };
-  const deHoje = (arquivos ?? []).filter((arquivo) => arquivo.dataArquivo === situacao.hoje);
+  const deHoje = (arquivos ?? []).filter((arquivo) => daKurier(arquivo) && arquivo.dataArquivo === situacao.hoje);
   if (situacao.chegou) {
     const importado = deHoje.find((arquivo) => arquivo.status === "processado");
     return {
@@ -132,6 +150,7 @@ function Captura() {
   const [busca, setBusca] = useState("");
   const [ocupado, setOcupado] = useState<"sincronizar" | "enviar" | null>(null);
   const [aviso, setAviso] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
+  const [colando, setColando] = useState(false);
   const [erroLista, setErroLista] = useState("");
   const inputArquivo = useRef<HTMLInputElement>(null);
 
@@ -216,6 +235,12 @@ function Captura() {
     }
   }
 
+  function importouColagem(resultado: ResultadoColagem) {
+    setColando(false);
+    setAviso({ tipo: resultado.triagem?.erro ? "erro" : "ok", texto: resumoColagem(resultado) });
+    void carregarArquivos(resultado.arquivo.id);
+  }
+
   const contagem = useMemo(() => {
     const total: Record<Filtro, number> = { todas: 0, juridico_vistar: 0, triagem_pendente: 0, duplicidade: 0, descartada: 0, captada: 0 };
     for (const p of publicacoes ?? []) {
@@ -258,9 +283,21 @@ function Captura() {
   return (
     <div className="space-y-6">
       <FaixaArquivoDoDia situacao={situacaoHoje} naCaptura />
+      <ColarPublicacoes aberto={colando} onFechar={() => setColando(false)} onImportado={importouColagem} />
 
       <div className="space-y-3">
-        <BarraAba resumo="O arquivo do dia é buscado sozinho no SharePoint entre 7h e 8h (nova tentativa entre 9h e 10h, em dias úteis) e triado com o SIOE. Pendências seguem para a Controladoria; duplicidades, para Duplicidades.">
+        <BarraAba resumo="O arquivo do dia é buscado sozinho no SharePoint entre 7h e 8h (nova tentativa entre 9h e 10h, em dias úteis) e triado com o SIOE. Pendências seguem para a Controladoria; duplicidades, para Duplicidades. Publicações que chegam por e-mail ou Teams entram por “Colar publicações”.">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setAviso(null);
+              setColando(true);
+            }}
+            disabled={ocupado !== null}
+          >
+            <ClipboardPaste />
+            Colar publicações
+          </Button>
           <Button variant="outline" onClick={() => inputArquivo.current?.click()} disabled={ocupado !== null}>
             {ocupado === "enviar" ? <LoaderCircle className="animate-spin" /> : <Upload />}
             Enviar xlsx
@@ -385,6 +422,7 @@ function Captura() {
                         <span className="text-sm font-semibold tabular-nums text-foreground">
                           {formatarData(arquivo.dataArquivo)}
                           {arquivo.lote > 1 ? <span className="ml-1.5 text-xs font-normal text-muted-foreground">lote {arquivo.lote}</span> : null}
+                          {arquivo.origem === "colado" ? <span className="ml-1.5 text-xs font-normal text-muted-foreground">colado</span> : null}
                         </span>
                         <SituacaoArquivo arquivo={arquivo} />
                       </span>

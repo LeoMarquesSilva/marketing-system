@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { montarPublicacoes } from "./captura";
 import { VistagemError } from "./errors";
+import { MAX_TEXTO_COLADO, lerPublicacoesColadas, type TrechoIgnorado } from "./importacao-texto";
 import { KurierArquivoInvalidoError, lerNomeArquivoKurier, lerPlanilhaKurier } from "./kurier-arquivo";
 import { baixarArquivoSharePoint, listarArquivosKurierSharePoint } from "./sharepoint";
 import { buscarPastasVios } from "./pastas-vios";
@@ -58,7 +59,7 @@ const COLUNAS_ARQUIVO =
   "id, nome_arquivo, data_arquivo, lote, origem, status, erro, total_linhas, total_captadas, total_duplicidades, total_descartadas, recebido_em, processado_em";
 
 type ArquivoRow = {
-  id: string; nome_arquivo: string; data_arquivo: string; lote: number; origem: "sharepoint" | "upload";
+  id: string; nome_arquivo: string; data_arquivo: string; lote: number; origem: "sharepoint" | "upload" | "colado";
   status: "processando" | "processado" | "erro"; erro: string | null; total_linhas: number; total_captadas: number;
   total_duplicidades: number; total_descartadas: number; recebido_em: string; processado_em: string | null;
 };
@@ -160,9 +161,9 @@ export function publicacaoResumo(row: PublicacaoRow, limiteTeor: number | null =
   };
 }
 
-function publicacaoParaLinha(p: PublicacaoCapturada, arquivoId: string) {
+function publicacaoParaLinha(p: PublicacaoCapturada, arquivoId: string, origem: "kurier" | "email" = "kurier") {
   return {
-    origem: "kurier",
+    origem,
     kurier_arquivo_id: arquivoId,
     linha_arquivo: p.linha,
     data_divulgacao: p.dataDivulgacao,
@@ -224,6 +225,91 @@ async function principaisAnteriores(db: SupabaseClient, chaves: string[], arquiv
     }
   }
   return encontradas;
+}
+
+/** Publicações já gravadas com a mesma comunicação do DJEN (o mesmo id), apontando para a principal delas. */
+async function principaisPorComunicacao(db: SupabaseClient, ids: number[], arquivoId: string): Promise<Map<number, string>> {
+  const encontradas = new Map<number, string>();
+  for (const lote of emLotes([...new Set(ids)])) {
+    const { data, error } = await db
+      .from("vistagem_publicacoes")
+      .select("id, duplicidade_de, djen_id_comunicacao")
+      .in("djen_id_comunicacao", lote)
+      .or(`kurier_arquivo_id.is.null,kurier_arquivo_id.neq.${arquivoId}`)
+      .order("created_at", { ascending: true });
+    if (error) falhou("verificar comunicações já capturadas", error);
+    for (const row of data ?? []) {
+      if (!encontradas.has(row.djen_id_comunicacao)) encontradas.set(row.djen_id_comunicacao, row.duplicidade_de ?? row.id);
+    }
+  }
+  return encontradas;
+}
+
+/**
+ * Grava as publicações de um arquivo da Kurier ou de um texto colado: primeiro as principais e as
+ * descartadas, depois as duplicidades já com o id da principal (do mesmo arquivo ou de um anterior).
+ * No texto colado, a mesma comunicação do DJEN que já entrou (pela Kurier ou colada antes) também
+ * vira duplicidade.
+ */
+async function gravarPublicacoes(
+  db: SupabaseClient,
+  arquivoId: string,
+  publicacoes: PublicacaoCapturada[],
+  origem: "kurier" | "email"
+): Promise<{ total_linhas: number; total_captadas: number; total_duplicidades: number; total_descartadas: number }> {
+  const anteriores = await principaisAnteriores(
+    db,
+    publicacoes.filter((p) => p.status === "captada" && p.chaveDecisao).map((p) => p.chaveDecisao as string),
+    arquivoId
+  );
+  const anterioresPorId =
+    origem === "email"
+      ? await principaisPorComunicacao(
+          db,
+          publicacoes.filter((p) => p.status === "captada" && p.djen?.idComunicacao).map((p) => p.djen?.idComunicacao as number),
+          arquivoId
+        )
+      : new Map<number, string>();
+  const anteriorPorTexto = (p: PublicacaoCapturada) => (p.chaveDecisao ? anteriores.get(p.chaveDecisao) : undefined);
+  const anterior = (p: PublicacaoCapturada) =>
+    anteriorPorTexto(p) ?? (p.djen?.idComunicacao ? anterioresPorId.get(p.djen.idComunicacao) : undefined);
+
+  const principais = publicacoes.filter((p) => p.status !== "duplicidade" && !anterior(p));
+  const idPorLinha = new Map<number, string>();
+  for (const lote of emLotes(principais)) {
+    const { data, error } = await db
+      .from("vistagem_publicacoes")
+      .insert(lote.map((p) => publicacaoParaLinha(p, arquivoId, origem)))
+      .select("id, linha_arquivo");
+    if (error) throw new Error(error.message);
+    for (const row of data ?? []) idPorLinha.set(row.linha_arquivo, row.id);
+  }
+
+  const porLinha = new Map(publicacoes.map((p) => [p.linha, p]));
+  const duplicidades = publicacoes
+    .filter((p) => !principais.includes(p))
+    .map((p) => {
+      // A principal do arquivo pode ela mesma ter vindo antes: aí a cópia aponta para a anterior.
+      const daLinha = p.duplicidadeDeLinha !== null ? porLinha.get(p.duplicidadeDeLinha) : undefined;
+      const principal = p.duplicidadeDeLinha !== null ? idPorLinha.get(p.duplicidadeDeLinha) ?? (daLinha && anterior(daLinha)) : anterior(p);
+      return {
+        ...publicacaoParaLinha(p, arquivoId, origem),
+        status: "duplicidade",
+        duplicidade_criterio: p.duplicidadeCriterio ?? (anteriorPorTexto(p) ? "texto" : "id_documento"),
+        duplicidade_de: principal ?? null,
+      };
+    });
+  for (const lote of emLotes(duplicidades)) {
+    const { error } = await db.from("vistagem_publicacoes").insert(lote);
+    if (error) throw new Error(error.message);
+  }
+
+  return {
+    total_linhas: publicacoes.length,
+    total_captadas: principais.filter((p) => p.status === "captada").length,
+    total_duplicidades: duplicidades.length,
+    total_descartadas: publicacoes.filter((p) => p.status === "descartada").length,
+  };
 }
 
 /**
@@ -303,45 +389,7 @@ export async function importarArquivoKurier(
   }
 
   try {
-    const publicacoes = montarPublicacoes(lerPlanilhaKurier(input.conteudo));
-    const anteriores = await principaisAnteriores(
-      db,
-      publicacoes.filter((p) => p.status === "captada" && p.chaveDecisao).map((p) => p.chaveDecisao as string),
-      arquivoId
-    );
-
-    // 1) principais e descartadas; 2) duplicidades, já com o id da principal.
-    const principais = publicacoes.filter((p) => p.status !== "duplicidade" && !(p.chaveDecisao && anteriores.has(p.chaveDecisao)));
-    const idPorLinha = new Map<number, string>();
-    for (const lote of emLotes(principais)) {
-      const { data, error } = await db
-        .from("vistagem_publicacoes")
-        .insert(lote.map((p) => publicacaoParaLinha(p, arquivoId)))
-        .select("id, linha_arquivo");
-      if (error) throw new Error(error.message);
-      for (const row of data ?? []) idPorLinha.set(row.linha_arquivo, row.id);
-    }
-
-    const duplicidades = publicacoes
-      .filter((p) => !principais.includes(p))
-      .map((p) => ({
-        ...publicacaoParaLinha(p, arquivoId),
-        status: "duplicidade",
-        duplicidade_criterio: p.duplicidadeCriterio ?? "texto",
-        duplicidade_de:
-          p.duplicidadeDeLinha !== null ? idPorLinha.get(p.duplicidadeDeLinha) : anteriores.get(p.chaveDecisao as string),
-      }));
-    for (const lote of emLotes(duplicidades)) {
-      const { error } = await db.from("vistagem_publicacoes").insert(lote);
-      if (error) throw new Error(error.message);
-    }
-
-    const totais = {
-      total_linhas: publicacoes.length,
-      total_captadas: principais.filter((p) => p.status === "captada").length,
-      total_duplicidades: duplicidades.length,
-      total_descartadas: publicacoes.filter((p) => p.status === "descartada").length,
-    };
+    const totais = await gravarPublicacoes(db, arquivoId, montarPublicacoes(lerPlanilhaKurier(input.conteudo)), "kurier");
     const { data: final, error } = await db
       .from("vistagem_kurier_arquivos")
       .update({ ...totais, status: "processado", processado_em: new Date().toISOString() })
@@ -357,6 +405,88 @@ export async function importarArquivoKurier(
     console.error("[vistagem] importação falhou", input.nome, mensagem);
     await db.from("vistagem_kurier_arquivos").update({ status: "erro", erro: mensagem }).eq("id", arquivoId);
     throw new VistagemError(mensagem, erro instanceof KurierArquivoInvalidoError ? 400 : 500);
+  }
+}
+
+/**
+ * Publicações coladas de e-mail ou Teams (Captura › Colar publicações), para as poucas demandas que
+ * não vêm na Kurier: cada colagem vira um "arquivo" de origem "colado", com o texto original, e as
+ * publicações seguem a mesma esteira (duplicidade, triagem, Controladoria, Jurídico). Colar de novo as
+ * mesmas publicações não duplica nada.
+ */
+export async function importarPublicacoesColadas(input: {
+  texto: string;
+  enviadoPor: string;
+}): Promise<{ arquivo: ArquivoKurierResumo; novo: boolean; triagem?: TriagemResumo; ignorados: TrechoIgnorado[] }> {
+  const { publicacoes: lidas, ignorados } = lerPublicacoesColadas(input.texto);
+  if (!lidas.length) {
+    throw new VistagemError(
+      ignorados.length ? `Nenhuma publicação para importar: ${ignorados.map((item) => item.motivo).join("; ")}.` : "Cole o texto das publicações.",
+      400
+    );
+  }
+
+  const db = admin();
+  // O hash é das publicações, não do texto inteiro: a mesma colagem com outra saudação em volta é a mesma.
+  const sha256 = createHash("sha256")
+    .update(`colado|${lidas.map((p) => p.linha.teor).join("\n")}`)
+    .digest("hex");
+  const { data: existente, error: erroExistente } = await db
+    .from("vistagem_kurier_arquivos")
+    .select(COLUNAS_ARQUIVO)
+    .eq("sha256", sha256)
+    .maybeSingle<ArquivoRow>();
+  if (erroExistente) falhou("verificar se as publicações já foram coladas", erroExistente);
+  if (existente && existente.status !== "erro") return { arquivo: arquivoResumo(existente), novo: false, ignorados };
+
+  const { data: pessoa, error: erroPessoa } = await db.from("users").select("name").eq("auth_id", input.enviadoPor).maybeSingle();
+  if (erroPessoa) falhou("identificar quem colou", erroPessoa);
+  const total = lidas.length;
+  const registro = {
+    nome_arquivo: `${total} ${total === 1 ? "publicação colada" : "publicações coladas"}${pessoa?.name ? ` por ${pessoa.name}` : ""}`,
+    data_arquivo: hojeEmSaoPaulo(),
+    lote: 0,
+    sha256,
+    sharepoint_item_id: null,
+    storage_path: null,
+    origem: "colado",
+    status: "processando",
+    erro: null,
+    enviado_por: input.enviadoPor,
+    recebido_em: new Date().toISOString(),
+    processado_em: null,
+    texto_colado: input.texto.slice(0, MAX_TEXTO_COLADO),
+  };
+
+  let arquivoId: string;
+  if (existente) {
+    arquivoId = existente.id;
+    const { error } = await db.from("vistagem_publicacoes").delete().eq("kurier_arquivo_id", arquivoId);
+    if (error) falhou("limpar a importação anterior", error);
+    const { error: erroUpdate } = await db.from("vistagem_kurier_arquivos").update(registro).eq("id", arquivoId);
+    if (erroUpdate) falhou("registrar as publicações coladas", erroUpdate);
+  } else {
+    const { data, error } = await db.from("vistagem_kurier_arquivos").insert(registro).select("id").single();
+    if (error || !data) falhou("registrar as publicações coladas", error);
+    arquivoId = data.id;
+  }
+
+  try {
+    const totais = await gravarPublicacoes(db, arquivoId, montarPublicacoes(lidas.map((p) => p.linha)), "email");
+    const { data: final, error } = await db
+      .from("vistagem_kurier_arquivos")
+      .update({ ...totais, status: "processado", processado_em: new Date().toISOString() })
+      .eq("id", arquivoId)
+      .select(COLUNAS_ARQUIVO)
+      .single<ArquivoRow>();
+    if (error || !final) throw new Error(error?.message ?? "registro sumiu");
+    const triagem = await triarSemFalhar({ arquivoId });
+    return { arquivo: arquivoResumo(final), novo: true, triagem, ignorados };
+  } catch (erro) {
+    const mensagem = `Falha ao processar: ${erro instanceof Error ? erro.message : erro}`;
+    console.error("[vistagem] publicações coladas falharam", mensagem);
+    await db.from("vistagem_kurier_arquivos").update({ status: "erro", erro: mensagem }).eq("id", arquivoId);
+    throw new VistagemError(mensagem, 500);
   }
 }
 
