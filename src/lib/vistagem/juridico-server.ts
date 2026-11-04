@@ -11,11 +11,13 @@ import {
   usuarioPorSigla,
   validarAgendamentos,
   type AgendamentoEntrada,
+  type AgendamentoValidado,
   type EtiquetaAgendamento,
   type OpcaoTarefa,
   type OpcaoVios,
 } from "./agendamento";
 import { openAIKey } from "@/lib/openai-keys";
+import { cienciaDosAgendamentos, ehCienciaDosAgendamentos, ehReestruturacao } from "./ciencia-agendamentos";
 import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./dias-uteis";
 import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
 import { areaComSugestaoIa, resultadoDaSugestao, type SugestaoIa } from "./sugestao-ia";
@@ -291,7 +293,7 @@ export async function obterVistagem(
   }
   let fluxosErro: string | null = null;
   let sinteseErro: string | null = null;
-  const [inconsistencias, feriados, pastaVios, arvore, sintese, sintesesPedidas] = await Promise.all([
+  const [inconsistencias, feriados, pastaVios, arvore, sintese, sintesesPedidas, estagiarios] = await Promise.all([
     inconsistenciasPorPublicacao([id]),
     carregarFeriados().catch(() => [] as string[]),
     publicacao.pasta_ci ? buscarPastasVios([publicacao.pasta_ci]) : Promise.resolve(new Map<string, { vinculo: string | null; auxiliarSigla: string | null }>()),
@@ -312,6 +314,7 @@ export async function obterVistagem(
           return [];
         })
       : Promise.resolve([] as SintesePedida[]),
+    catalogo && ehReestruturacao(publicacao.escritorio_responsavel ?? catalogo.area) ? estagiariosNoVios() : Promise.resolve(new Set<string>()),
   ]);
   const auxiliar = publicacao.pasta_ci ? pastaVios.get(publicacao.pasta_ci)?.auxiliarSigla ?? null : null;
   const responsavel = catalogo ? responsavelSugerido(publicacao.advogado_responsavel, catalogo.usuarios)?.nome ?? null : null;
@@ -343,6 +346,7 @@ export async function obterVistagem(
     feriados,
     fluxos: catalogo && arvore ? fluxosDoCatalogo(catalogo, arvore) : {},
     fluxosErro,
+    estagiarios: catalogo ? catalogo.usuarios.filter((usuario) => estagiarios.has(String(usuario.id))).map((usuario) => usuario.nome) : [],
     esocial:
       catalogo && pedeEsocial(catalogo.area)
         ? {
@@ -354,6 +358,73 @@ export async function obterVistagem(
     // Na prévia da controladoria a publicação ainda não está na fila do jurídico: a IA gera depois, se for o caso.
     sugestaoIaDisponivel: !previa && Boolean(catalogo && areaComSugestaoIa(catalogo.area) && openAIKey("analisePublicacao")),
     hoje: hojeEmSaoPaulo(),
+  };
+}
+
+/**
+ * Usuários do VIOS (ids) com cargo de estagiário no RH do Orquestra (hr_employees ativos, vios_ci). Se o RH não
+ * responder, a Ciência dos Agendamentos fica com quem faz o Enviar, como nas outras áreas.
+ */
+async function estagiariosNoVios(): Promise<Set<string>> {
+  const { data, error } = await admin()
+    .from("hr_employees")
+    .select("vios_ci")
+    .eq("is_active", true)
+    .ilike("position", "estagi%")
+    .not("vios_ci", "is", null);
+  if (error) {
+    console.error("[vistagem] estagiários no RH", error.message);
+    return new Set();
+  }
+  return new Set((data ?? []).map((row: { vios_ci: string | number }) => String(row.vios_ci)));
+}
+
+/**
+ * A "1. CIÊNCIA DOS AGENDAMENTOS" que o Orquestra acrescenta quando nenhuma tarefa é ela e o fluxo do VIOS de nenhuma
+ * a cria: Providência no dia, para quem faz o Enviar da primeira tarefa (Reestruturação: estagiário → revisor).
+ */
+async function cienciaParaGravar(
+  itens: AgendamentoValidado[],
+  contexto: { arvore: Map<number, TipoNaArvore>; catalogo: CatalogoVistagem; area: string | null }
+): Promise<AgendamentoValidado | null> {
+  const estagiarios = ehReestruturacao(contexto.area) ? await estagiariosNoVios() : new Set<string>();
+  const ciencia = cienciaDosAgendamentos(
+    itens.map((item) => {
+      const ids = item.responsavelId.split(",");
+      return {
+        tarefa: item.tarefa,
+        tarefaId: item.tarefaId,
+        responsaveis: item.responsavel.split(", ").map((nome, indice) => ({ id: ids[indice] ?? null, nome })),
+        revisor: item.revisor ? { id: item.revisorId, nome: item.revisor } : null,
+      };
+    }),
+    {
+      fluxoDe: (tarefaId) => montarFluxo(tarefaId, contexto.arvore),
+      area: contexto.area,
+      ehEstagiario: (pessoa) => Boolean(pessoa.id && estagiarios.has(pessoa.id)),
+    }
+  );
+  if (!ciencia) return null;
+  const tipo = contexto.catalogo.tarefas.PROVIDENCIA.find((opcao) => ehCienciaDosAgendamentos(opcao.nomeVios ?? opcao.nome));
+  if (!tipo) {
+    console.error("[vistagem] a área não tem 1. CIÊNCIA DOS AGENDAMENTOS nas Providências:", contexto.catalogo.area);
+    return null;
+  }
+  return {
+    etiqueta: "PROVIDENCIA",
+    tarefa: tipo.nomeVios ?? tipo.nome,
+    tarefaId: tipo.id,
+    data: hojeEmSaoPaulo(),
+    dataFatal: null,
+    diasPrazo: null,
+    contagemPrazo: null,
+    hora: null,
+    responsavel: ciencia.responsaveis.map((pessoa) => pessoa.nome).join(", "),
+    responsavelId: ciencia.responsaveis.map((pessoa) => pessoa.id ?? "").join(","),
+    revisor: null,
+    revisorId: null,
+    observacao: null,
+    fluxoDatas: [],
   };
 }
 
@@ -401,6 +472,13 @@ export async function salvarVistagem(
     itens: validacao.itens,
   });
   if (!esocial.ok) throw new VistagemError(esocial.erro);
+  // Ciência dos Agendamentos em todo agendamento: se o fluxo do VIOS das tarefas não cria, o Orquestra cria.
+  const ciencia = await cienciaParaGravar(validacao.itens, {
+    arvore,
+    catalogo,
+    area: publicacao.escritorio_responsavel ?? catalogo.area,
+  });
+  const itensParaGravar = ciencia ? [...validacao.itens, ciencia] : validacao.itens;
   // Mede o acerto da IA: o jurídico usou a sugestão como veio, alterou ou não usou.
   const resultadoIa = publicacao.sugestao_ia
     ? resultadoDaSugestao({
@@ -421,7 +499,7 @@ export async function salvarVistagem(
   const { error: erroApagar } = await db.from("vistagem_agendamentos").delete().eq("publicacao_id", id).eq("envio_status", "nao_enviado");
   if (erroApagar) falhou("substituir as tarefas da publicação", erroApagar);
   const { error: erroInserir } = await db.from("vistagem_agendamentos").insert(
-    validacao.itens.map((item, indice) => ({
+    itensParaGravar.map((item, indice) => ({
       publicacao_id: id,
       ordem: indice + 1,
       etiqueta: item.etiqueta,
@@ -770,9 +848,15 @@ async function enfileirarPublicacao(publicacao: PublicacaoComArea, itens: Agenda
     modo === "intimacao" ? comunicacoesEquivalentes(publicacao) : Promise.resolve([] as string[]),
     datasDoFluxoParaOVios(itens),
   ]);
+  // A Ciência dos Agendamentos é para o dia do lançamento: validada noutro dia, não vai com data passada.
+  const hoje = hojeEmSaoPaulo();
   const grupos = linhasParaFila(
     { ...publicacao, comunicacoes_equivalentes: equivalentes },
-    itens.map((item) => ({ ...item, fluxoDatas: datasDoFluxo.get(item.id) ?? [] })),
+    itens.map((item) => ({
+      ...item,
+      data: ehCienciaDosAgendamentos(item.tarefa) && item.data < hoje ? hoje : item.data,
+      fluxoDatas: datasDoFluxo.get(item.id) ?? [],
+    })),
     { simular, modo }
   );
   const ids = await enfileirarNoSama(grupos.map((grupo) => grupo.linha));

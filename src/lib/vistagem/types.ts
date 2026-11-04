@@ -341,6 +341,11 @@ export interface VistagemDetalhe {
   fluxos: Record<string, FluxoDaTarefa>;
   /** Por que o fluxo do VIOS não pôde ser carregado. */
   fluxosErro: string | null;
+  /**
+   * Reestruturação: usuários do VIOS com cargo de estagiário no RH do Orquestra. Na Ciência dos Agendamentos que o
+   * Orquestra cria, o revisor fica no lugar deles. Vazio nas outras áreas.
+   */
+  estagiarios: string[];
   /** Pasta do Trabalhista: pede a classificação eSocial. Null nas outras áreas. */
   esocial: {
     /** Tipo Inserir E-social na lista de Providências da área; null se o VIOS ainda não tem. */
