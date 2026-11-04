@@ -42,6 +42,11 @@ function deslocar(iso: string, dias: number): string {
   return data.toISOString().slice(0, 10);
 }
 
+/** N dias corridos depois (negativo: antes). */
+export function somarDiasCorridos(iso: string, n: number): string {
+  return deslocar(iso, n);
+}
+
 /** Domingo de Páscoa (algoritmo de Meeus/Jones/Butcher), AAAA-MM-DD. */
 export function pascoa(ano: number): string {
   const a = ano % 19;

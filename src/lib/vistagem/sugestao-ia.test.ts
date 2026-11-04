@@ -185,6 +185,7 @@ describe("resultadoDaSugestao", () => {
     revisor: "Auxiliar",
     revisorId: "2",
     observacao: null,
+    fluxoDatas: [],
     ...mudanca,
   });
   const base = { sugestao, esocial: "Homologação de cálculo" as const, tarefaEsocialId: "792", dataPublicacao: "2026-11-09", ehDiaDePrazo: contaPrazo };

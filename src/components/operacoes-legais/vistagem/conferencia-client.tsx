@@ -348,7 +348,24 @@ function FluxoDaTarefaAgendada({ item }: { item: AgendamentoResumo }) {
         <>
           <p className="font-medium text-[#285f7a]">O VIOS cria junto (o robô coloca os responsáveis)</p>
           <ul className="space-y-1 border-l-2 border-[#c9dde6] pl-2.5">
-            {junto.map((tarefa, indice) => linha(`${indice}-${tarefa.nome}`, tarefa.nome, tarefa.data, tarefa.responsaveis))}
+            {junto.map((tarefa) => (
+              // As que nascem de outra do fluxo (Embargos › 2. REVISAR) ficam recuadas embaixo dela.
+              <li
+                key={tarefa.caminho.join(" › ")}
+                className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
+                style={tarefa.nivel > 1 ? { paddingLeft: `${(tarefa.nivel - 1) * 0.75}rem` } : undefined}
+              >
+                <span className="font-medium text-foreground">{tarefa.nome}</span>
+                <span className={cn("tabular-nums", tarefa.data ? "text-foreground" : "text-muted-foreground")}>
+                  {tarefa.data ? formatarData(tarefa.data) : "data do VIOS"}
+                </span>
+                <span className="text-muted-foreground">{tarefa.responsaveis}</span>
+                {tarefa.editada ? <Selo tom="marca">alterada pelo jurídico</Selo> : null}
+                {tarefa.data && tarefa.dataVios && tarefa.data !== tarefa.dataVios ? (
+                  <span className="text-muted-foreground">VIOS daria {formatarData(tarefa.dataVios)}</span>
+                ) : null}
+              </li>
+            ))}
           </ul>
         </>
       ) : null}

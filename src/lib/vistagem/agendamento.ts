@@ -1,5 +1,6 @@
 import { CONTAGENS_PRAZO, DIAS_PRAZO, DIAS_PRAZO_TRABALHISTA, datasDoPrazo, type ContagemPrazo } from "./dias-uteis";
 import type { CadeiaDoPrazo } from "./fluxo-vios";
+import type { DataDoFluxo } from "./types";
 
 /**
  * Classe da tarefa, igual à etiqueta do tipo no VIOS: PRAZO = ENVIAR; PROVIDENCIA =
@@ -56,6 +57,8 @@ export interface AgendamentoEntrada {
   responsavel: string;
   revisor?: string | null;
   observacao?: string | null;
+  /** Datas de tarefas do fluxo que a pessoa mudou (o robô grava no VIOS depois de lançar). */
+  fluxoDatas?: DataDoFluxo[] | null;
 }
 
 export interface AgendamentoValidado {
@@ -75,10 +78,18 @@ export interface AgendamentoValidado {
   revisor: string | null;
   revisorId: string | null;
   observacao: string | null;
+  fluxoDatas: DataDoFluxo[];
 }
 
 export const MAX_AGENDAMENTOS = 10;
 export const MAX_OBSERVACAO = 2000;
+/** O maior fluxo do VIOS cria uns 15 tipos junto (Audiência UNA/Inicial com Contestação e Revisar/Protocolar dela). */
+const MAX_DATAS_DO_FLUXO = 40;
+
+/** Chave de uma tarefa do fluxo pelo caminho de tipos a partir da agendada (ex.: "EMBARGOS DE DECLARACAO > 2. REVISAR"). */
+export function chaveDoCaminho(caminho: string[]): string {
+  return caminho.map(chaveNome).join(" > ");
+}
 
 export function chaveNome(texto: string | null | undefined): string {
   return String(texto ?? "")
@@ -270,6 +281,8 @@ export function validarAgendamentos(
     ehDiaUtil: (iso: string) => boolean;
     /** Cadeia do fluxo do VIOS para o tipo de tarefa (null: o VIOS não cria Protocolar). */
     cadeiaDaTarefa: (tarefaId: string) => CadeiaDoPrazo | null;
+    /** Tarefas que o fluxo do tipo cria junto (chaveDoCaminho), para aceitar só datas delas. */
+    caminhosDaTarefa?: (tarefaId: string) => Set<string>;
   }
 ): { ok: true; itens: AgendamentoValidado[] } | { ok: false; erros: string[] } {
   const erros: string[] = [];
@@ -317,6 +330,22 @@ export function validarAgendamentos(
     const diasPrazo = prazo && Number.isInteger(entrada.diasPrazo) && (entrada.diasPrazo ?? 0) > 0 ? (entrada.diasPrazo as number) : null;
     const contagemPrazo = diasPrazo ? CONTAGENS_PRAZO.find((contagem) => contagem === entrada.contagemPrazo) ?? null : null;
     if (diasPrazo && !contagemPrazo) erros.push(`${n}: escolha se o prazo é em dias úteis ou corridos.`);
+    // Datas que a pessoa mudou no fluxo do VIOS: só de tarefas que o fluxo do tipo cria, e com data válida.
+    const fluxoDatas = (Array.isArray(entrada.fluxoDatas) ? entrada.fluxoDatas : [])
+      .filter(
+        (item) =>
+          Array.isArray(item?.caminho) &&
+          item.caminho.length > 0 &&
+          item.caminho.length <= 5 &&
+          item.caminho.every((parte) => typeof parte === "string" && parte.trim() && parte.length <= 200) &&
+          dataValida(String(item.data))
+      )
+      .slice(0, MAX_DATAS_DO_FLUXO)
+      .map((item) => ({ caminho: item.caminho.map((parte) => parte.trim()), data: item.data }));
+    const caminhos = tarefa && contexto.caminhosDaTarefa ? contexto.caminhosDaTarefa(tarefa.id) : null;
+    if (caminhos && fluxoDatas.some((item) => !caminhos.has(chaveDoCaminho(item.caminho)))) {
+      erros.push(`${n}: há data de tarefa do fluxo que esse tipo não cria no VIOS; confira o Fluxo do VIOS.`);
+    }
     if (!tarefa || !responsavel || !dataValida(data) || (prazo && !revisor) || (compromisso && !hora) || (diasPrazo && !contagemPrazo)) {
       return null;
     }
@@ -334,6 +363,7 @@ export function validarAgendamentos(
       revisor: revisor?.nome ?? null,
       revisorId: revisor?.id ?? null,
       observacao,
+      fluxoDatas,
     };
   });
 

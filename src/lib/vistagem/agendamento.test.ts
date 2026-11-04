@@ -107,6 +107,7 @@ describe("validarAgendamentos", () => {
           revisor: "Revisor Exemplo",
           revisorId: "5",
           observacao: "ver laudo",
+          fluxoDatas: [],
         },
       ],
     });

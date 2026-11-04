@@ -10,12 +10,29 @@ export type PapelNoFluxo = "revisor" | "protocolar" | "responsavel";
 /** O robô mantém essa pessoa no 3. PROTOCOLAR, junto do responsável. */
 export const PESSOA_FIXA_PROTOCOLAR = "Samuel Willian Silva";
 
+/**
+ * De onde a tarefa filha conta a data (aba "Fluxo Automático - Criação" do tipo pai no VIOS): do dia em que
+ * o VIOS a cria (atual), da data para conclusão da tarefa pai (pai) ou da data base da tarefa pai (pai_base).
+ */
+export type BaseDaData = "atual" | "pai" | "pai_base" | "outro";
+
+/** Aba "Prazos" do tipo no VIOS: N dias, "Prazo Negativo" (conta para trás) e dias úteis ou corridos. */
+export interface RegraDePrazo {
+  dias: number;
+  negativo: boolean;
+  corridos: boolean;
+}
+
 /** Um tipo de tarefa na árvore (linha de vios_fluxos_tarefas). */
 export interface TipoNaArvore {
   nome: string;
   prazo: string | null;
   criacao: number[];
   conclusao: number[];
+  /** Null: o robô ainda não leu a aba Prazos deste tipo. */
+  regraPrazo?: RegraDePrazo | null;
+  /** De onde cada filha (id) conta a data; null: o robô ainda não leu a aba de criação. */
+  baseDasFilhas?: Map<number, BaseDaData> | null;
 }
 
 export interface TarefaDoFluxo {
@@ -28,6 +45,10 @@ export interface TarefaDoFluxo {
   tambemCria: string[];
   /** Tarefas que esta cria quando for concluída (ex.: 4. VALIDAR PROTOCOLO). */
   aoConcluir: string[];
+  /** Como o VIOS data esta tarefa; null quando a regra não foi lida (o Orquestra usa a conta antiga). */
+  regra: (RegraDePrazo & { base: BaseDaData }) | null;
+  /** As que esta cria junto, com as regras delas (fluxo dentro do fluxo: Embargos › 2. REVISAR). */
+  filhas: TarefaDoFluxo[];
 }
 
 export interface FluxoDaTarefa {
@@ -69,23 +90,32 @@ export function diasDoPrazo(prazo: string | null | undefined): number | null {
   return achado ? Number(achado[1]) : null;
 }
 
+/** O VIOS encadeia poucos níveis (Recurso › Embargos › Revisar); o limite só protege de ciclo na árvore. */
+const NIVEIS_DO_FLUXO = 4;
+
 /** Fluxo de um tipo de tarefa (id do VIOS); null se o VIOS não cria nada junto nem depois. */
 export function montarFluxo(id: string, arvore: Map<number, TipoNaArvore>): FluxoDaTarefa | null {
   const tipo = arvore.get(Number(id));
   if (!tipo) return null;
   const nomeDe = (filho: number) => arvore.get(filho)?.nome ?? `Tipo ${filho}`;
-  const criacao = tipo.criacao.map((filho): TarefaDoFluxo => {
-    const dados = arvore.get(filho);
-    const nome = nomeDe(filho);
-    return {
-      id: String(filho),
-      nome,
-      prazo: dados?.prazo ?? null,
-      papel: papelNoFluxo(nome),
-      tambemCria: (dados?.criacao ?? []).map(nomeDe),
-      aoConcluir: (dados?.conclusao ?? []).map(nomeDe),
-    };
-  });
+  const filhasDe = (pai: TipoNaArvore, nivel: number, acima: Set<number>): TarefaDoFluxo[] =>
+    pai.criacao.map((filho): TarefaDoFluxo => {
+      const dados = arvore.get(filho);
+      const nome = nomeDe(filho);
+      const base = pai.baseDasFilhas?.get(filho) ?? null;
+      return {
+        id: String(filho),
+        nome,
+        prazo: dados?.prazo ?? null,
+        papel: papelNoFluxo(nome),
+        tambemCria: (dados?.criacao ?? []).map(nomeDe),
+        aoConcluir: (dados?.conclusao ?? []).map(nomeDe),
+        regra: dados?.regraPrazo && base ? { ...dados.regraPrazo, base } : null,
+        filhas:
+          dados && nivel < NIVEIS_DO_FLUXO && !acima.has(filho) ? filhasDe(dados, nivel + 1, new Set([...acima, filho])) : [],
+      };
+    });
+  const criacao = filhasDe(tipo, 1, new Set([Number(id)]));
   const conclusao = tipo.conclusao.map((filho) => ({ id: String(filho), nome: nomeDe(filho), prazo: arvore.get(filho)?.prazo ?? null }));
   return criacao.length || conclusao.length ? { criacao, conclusao } : null;
 }

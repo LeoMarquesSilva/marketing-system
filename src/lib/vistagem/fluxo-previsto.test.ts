@@ -1,54 +1,123 @@
 import { describe, expect, it } from "vitest";
 import { criarCalendario } from "./dias-uteis";
-import { fluxoPrevisto } from "./fluxo-previsto";
-import { montarFluxo, type TipoNaArvore } from "./fluxo-vios";
+import { caminhosDoFluxo, datasParaOVios, fluxoPrevisto } from "./fluxo-previsto";
+import { montarFluxo, type BaseDaData, type RegraDePrazo, type TipoNaArvore } from "./fluxo-vios";
 
-// Recorte da árvore do VIOS: o fluxo da 470 (IDPJ) do teste de 03/11/2026 e um tipo sem fluxo.
+const uteis = (dias: number, negativo = false): RegraDePrazo => ({ dias, negativo, corridos: false });
+const tipo = (
+  nome: string,
+  regraPrazo: RegraDePrazo | null,
+  criacao: [number, BaseDaData][] = [],
+  conclusao: number[] = []
+): TipoNaArvore => ({
+  nome,
+  prazo: null,
+  criacao: criacao.map(([id]) => id),
+  conclusao,
+  regraPrazo,
+  baseDasFilhas: new Map(criacao),
+});
+
+// Recorte da árvore do VIOS com as regras lidas em 04/11/2026 (abas Prazos e Fluxo Automático - Criação).
 const ARVORE = new Map<number, TipoNaArvore>([
-  [470, { nome: "APRESENTAÇÃO/IMPUGNAÇÃO AO IDPJ", prazo: "12 dias", criacao: [321, 314, 414, 313], conclusao: [] }],
-  [731, { nome: "ACOMPANHAMENTO PROCESSUAL DIÁRIO", prazo: "1 dia", criacao: [], conclusao: [731] }],
-  [316, { nome: "CIÊNCIA NF", prazo: null, criacao: [], conclusao: [] }],
-  [321, { nome: "1. CIÊNCIA DOS AGENDAMENTOS", prazo: null, criacao: [], conclusao: [] }],
-  [314, { nome: "2. REVISAR", prazo: "1 dia", criacao: [], conclusao: [] }],
-  [313, { nome: "3. PROTOCOLAR", prazo: "2 dias", criacao: [], conclusao: [318] }],
-  [414, { nome: "INFORMAR CLIENTE + INTERESSE RECURSAL + GUIA", prazo: "1 dia", criacao: [], conclusao: [] }],
-  [318, { nome: "4. VALIDAR PROTOCOLO", prazo: null, criacao: [], conclusao: [] }],
+  [470, tipo("APRESENTAÇÃO/IMPUGNAÇÃO AO IDPJ", uteis(12), [[321, "atual"], [314, "pai"], [414, "atual"], [313, "pai"]])],
+  [154, tipo("RECURSO DE REVISTA", uteis(5), [[462, "pai"], [321, "atual"], [314, "pai"], [414, "atual"], [313, "pai"]])],
+  [462, tipo("EMBARGOS DE DECLARAÇÃO", uteis(3, true), [[314, "pai"], [313, "pai"]])],
+  [202, tipo("AUDIÊNCIA UNA/INICIAL", uteis(0), [[418, "pai"], [321, "atual"], [458, "pai"], [260, "pai"], [417, "atual"]])],
+  [418, tipo("CONTESTAÇÃO", uteis(15, true), [[419, "pai"], [420, "pai"]])],
+  [419, tipo("2. REVISAR", uteis(6))],
+  [420, tipo("3. PROTOCOLAR", uteis(13))],
+  [458, tipo("LEMBRETE AUDIÊNCIA + REGULARIZAÇÃO PROCESSUAL", uteis(4, true))],
+  [260, tipo("CIÊNCIA ATA + ENVIAR RELATÓRIO", uteis(1))],
+  [417, tipo("HABILITAÇÃO PROCESSUAL", uteis(1))],
+  [321, tipo("1. CIÊNCIA DOS AGENDAMENTOS", uteis(0))],
+  [314, tipo("2. REVISAR", uteis(1))],
+  [313, tipo("3. PROTOCOLAR", uteis(2), [], [318])],
+  [414, tipo("INFORMAR CLIENTE + INTERESSE RECURSAL + GUIA", uteis(1))],
+  [318, tipo("4. VALIDAR PROTOCOLO", uteis(0))],
+  [316, tipo("CIÊNCIA NF", uteis(0))],
+  // Sem as regras lidas (catálogo antigo): só o Revisar e o Protocolar ganham data.
+  [452, { nome: "COMPROVAR PAGAMENTO", prazo: "2 dias", criacao: [321, 314, 414, 313], conclusao: [], regraPrazo: null, baseDasFilhas: null }],
 ]);
 
-// 20/11/2026 é feriado (Consciência Negra).
-const ehDiaUtil = criarCalendario(["2026-11-20"]);
+// Feriados: Consciência Negra (20/11/2026), Sexta-feira Santa (26/03/2027) e Tiradentes (21/04/2027).
+const ehDiaUtil = criarCalendario(["2026-11-20", "2027-03-26", "2027-04-21"]);
+const pessoas = { responsavel: "Vanessa Lanza Sellani", revisor: "Fernanda Voltarelli Arnoni" };
+const datas = (lista: { nome: string; data: string | null; nivel: number }[]) => lista.map((tarefa) => [tarefa.nivel, tarefa.nome, tarefa.data]);
 
-describe("fluxo previsto na conferência", () => {
-  it("lista o que o VIOS cria junto, com as datas do Revisar e do Protocolar e quem fica em cada uma", () => {
-    const previsto = fluxoPrevisto(
-      { data: "2026-11-23", responsavel: "Vanessa Lanza Sellani", revisor: "Fernanda Voltarelli Arnoni" },
-      montarFluxo("470", ARVORE),
-      ehDiaUtil
-    );
-    // Igual ao que o VIOS criou para a CI 934332 (Revisar 24/11, Protocolar 25/11).
-    expect(previsto).toEqual([
-      { nome: "1. CIÊNCIA DOS AGENDAMENTOS", data: null, responsaveis: "Vanessa Lanza Sellani", quando: "criacao" },
-      { nome: "2. REVISAR", data: "2026-11-24", responsaveis: "Fernanda Voltarelli Arnoni", quando: "criacao" },
-      { nome: "INFORMAR CLIENTE + INTERESSE RECURSAL + GUIA", data: null, responsaveis: "Vanessa Lanza Sellani", quando: "criacao" },
-      { nome: "3. PROTOCOLAR", data: "2026-11-25", responsaveis: "Vanessa Lanza Sellani + Samuel Willian Silva", quando: "criacao" },
+describe("fluxo previsto (regras do VIOS)", () => {
+  it("IDPJ do teste de 03/11: igual ao que o VIOS criou (CI 934332)", () => {
+    const previstas = fluxoPrevisto({ ...pessoas, data: "2026-11-23" }, montarFluxo("470", ARVORE), ehDiaUtil, { hoje: "2026-11-03" });
+    expect(datas(previstas)).toEqual([
+      [1, "1. CIÊNCIA DOS AGENDAMENTOS", "2026-11-03"],
+      [1, "2. REVISAR", "2026-11-24"],
+      [1, "INFORMAR CLIENTE + INTERESSE RECURSAL + GUIA", "2026-11-04"],
+      [1, "3. PROTOCOLAR", "2026-11-25"],
+    ]);
+    expect(previstas.find((tarefa) => tarefa.nome === "3. PROTOCOLAR")?.responsaveis).toBe("Vanessa Lanza Sellani + Samuel Willian Silva");
+    expect(previstas.find((tarefa) => tarefa.nome === "2. REVISAR")?.responsaveis).toBe("Fernanda Voltarelli Arnoni");
+  });
+
+  it("Recurso de Revista: o Embargos 3 dias úteis antes, e o Revisar e o Protocolar dele (CI 934671)", () => {
+    const previstas = fluxoPrevisto({ ...pessoas, data: "2026-11-12" }, montarFluxo("154", ARVORE), ehDiaUtil, { hoje: "2026-11-04" });
+    expect(datas(previstas).slice(0, 3)).toEqual([
+      [1, "EMBARGOS DE DECLARAÇÃO", "2026-11-09"],
+      [2, "2. REVISAR", "2026-11-10"],
+      [2, "3. PROTOCOLAR", "2026-11-11"],
+    ]);
+    expect(previstas[1].caminho).toEqual(["EMBARGOS DE DECLARAÇÃO", "2. REVISAR"]);
+    expect(previstas.find((tarefa) => tarefa.nivel === 1 && tarefa.nome === "3. PROTOCOLAR")?.data).toBe("2026-11-16");
+  });
+
+  it("Audiência UNA/Inicial de 22/04/2027: Contestação 15 dias úteis antes, lembrete 4 antes, ata depois", () => {
+    const previstas = fluxoPrevisto({ ...pessoas, data: "2027-04-22" }, montarFluxo("202", ARVORE), ehDiaUtil, { hoje: "2026-11-04" });
+    expect(datas(previstas)).toEqual([
+      [1, "CONTESTAÇÃO", "2027-03-31"],
+      [2, "2. REVISAR", "2027-04-08"],
+      [2, "3. PROTOCOLAR", "2027-04-19"],
+      [1, "1. CIÊNCIA DOS AGENDAMENTOS", "2026-11-04"],
+      [1, "LEMBRETE AUDIÊNCIA + REGULARIZAÇÃO PROCESSUAL", "2027-04-15"],
+      [1, "CIÊNCIA ATA + ENVIAR RELATÓRIO", "2027-04-23"],
+      [1, "HABILITAÇÃO PROCESSUAL", "2026-11-05"],
     ]);
   });
 
-  it("pula o feriado na conta dos dias úteis", () => {
-    const previsto = fluxoPrevisto({ data: "2026-11-19", responsavel: "Ana", revisor: "Bia" }, montarFluxo("470", ARVORE), ehDiaUtil);
-    expect(previsto.find((tarefa) => tarefa.nome === "2. REVISAR")?.data).toBe("2026-11-23");
-    expect(previsto.find((tarefa) => tarefa.nome === "3. PROTOCOLAR")?.data).toBe("2026-11-24");
+  it("data mudada pelo jurídico: as filhas acompanham, e o robô recebe o que difere do VIOS", () => {
+    const previstas = fluxoPrevisto({ ...pessoas, data: "2027-04-22" }, montarFluxo("202", ARVORE), ehDiaUtil, {
+      hoje: "2026-11-04",
+      datas: [{ caminho: ["CONTESTAÇÃO"], data: "2027-03-24" }],
+    });
+    const contestacao = previstas.find((tarefa) => tarefa.nome === "CONTESTAÇÃO");
+    expect(contestacao).toMatchObject({ data: "2027-03-24", dataVios: "2027-03-31", editada: true });
+    // 26/03/2027 (Sexta-feira Santa) não conta.
+    expect(previstas.find((tarefa) => tarefa.caminho.join(">") === "CONTESTAÇÃO>2. REVISAR")).toMatchObject({
+      data: "2027-04-02",
+      dataVios: "2027-04-08",
+      editada: false,
+    });
+    expect(datasParaOVios(previstas)).toEqual([
+      { caminho: ["CONTESTAÇÃO"], data: "2027-03-24" },
+      { caminho: ["CONTESTAÇÃO", "2. REVISAR"], data: "2027-04-02" },
+      { caminho: ["CONTESTAÇÃO", "3. PROTOCOLAR"], data: "2027-04-13" },
+    ]);
   });
 
-  it("sem revisor, o Revisar fica com o padrão do VIOS; o que nasce ao concluir vai à parte", () => {
-    const comRevisar = fluxoPrevisto({ data: "2026-11-23", responsavel: "Ana", revisor: null }, montarFluxo("470", ARVORE), ehDiaUtil);
-    expect(comRevisar.find((tarefa) => tarefa.nome === "2. REVISAR")?.responsaveis).toBe("padrão do VIOS (sem revisor)");
-    const diario = fluxoPrevisto({ data: "2026-11-23", responsavel: "Ana", revisor: null }, montarFluxo("731", ARVORE), ehDiaUtil);
-    expect(diario).toEqual([{ nome: "ACOMPANHAMENTO PROCESSUAL DIÁRIO", data: null, responsaveis: "padrão do VIOS", quando: "conclusao" }]);
+  it("sem as regras lidas, só o Revisar e o Protocolar têm data (conta antiga)", () => {
+    const previstas = fluxoPrevisto({ ...pessoas, data: "2026-11-09" }, montarFluxo("452", ARVORE), ehDiaUtil, { hoje: "2026-11-04" });
+    expect(datas(previstas)).toEqual([
+      [1, "1. CIÊNCIA DOS AGENDAMENTOS", null],
+      [1, "2. REVISAR", "2026-11-10"],
+      [1, "INFORMAR CLIENTE + INTERESSE RECURSAL + GUIA", null],
+      [1, "3. PROTOCOLAR", "2026-11-11"],
+    ]);
+    expect(datasParaOVios(previstas)).toEqual([]);
   });
 
-  it("tarefa sem fluxo não cria nada", () => {
-    expect(fluxoPrevisto({ data: "2026-11-04", responsavel: "Ana", revisor: null }, montarFluxo("316", ARVORE), ehDiaUtil)).toEqual([]);
-    expect(fluxoPrevisto({ data: "2026-11-04", responsavel: "Ana", revisor: null }, null, ehDiaUtil)).toEqual([]);
+  it("sem fluxo não cria nada; os caminhos aceitos incluem o fluxo dentro do fluxo", () => {
+    expect(fluxoPrevisto({ ...pessoas, data: "2026-11-04" }, montarFluxo("316", ARVORE), ehDiaUtil, { hoje: "2026-11-04" })).toEqual([]);
+    expect(fluxoPrevisto({ ...pessoas, data: "2026-11-04" }, null, ehDiaUtil, { hoje: "2026-11-04" })).toEqual([]);
+    const caminhos = caminhosDoFluxo(montarFluxo("154", ARVORE));
+    expect(caminhos.has("EMBARGOS DE DECLARACAO > 2. REVISAR")).toBe(true);
+    expect(caminhos.has("4. VALIDAR PROTOCOLO")).toBe(false);
   });
 });

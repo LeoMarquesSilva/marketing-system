@@ -1,4 +1,5 @@
 import { chaveNome, ETIQUETA_VIOS, montarObservacaoVios, paraDataVios, referenciaDaPublicacao, type EtiquetaAgendamento } from "./agendamento";
+import type { DataDoFluxo } from "./types";
 
 /**
  * Onde o robô do SAMA agenda: na publicação (Intimações › Lançamento, ligada à
@@ -22,6 +23,8 @@ export interface TarefaDoLancamento {
   observacao: string;
   /** Resposta da JUSTIFICATIVA NF (questionário que o VIOS pede depois de lançar a CIÊNCIA NF). */
   justificativa: string | null;
+  /** Tarefas do fluxo com outra data (DD/MM/AAAA), achadas pelo caminho de tipos a partir desta. */
+  fluxo_datas: { caminho: string[]; data: string }[];
 }
 
 export interface LancamentoFila {
@@ -77,6 +80,8 @@ export interface AgendamentoParaFila {
   responsavel: string;
   revisor: string | null;
   observacao: string | null;
+  /** Datas do fluxo diferentes das do VIOS (AAAA-MM-DD), que o robô grava depois de lançar. */
+  fluxoDatas?: DataDoFluxo[];
 }
 
 const etiquetaVios = (item: AgendamentoParaFila) => String(ETIQUETA_VIOS[item.etiqueta]);
@@ -155,6 +160,7 @@ export function linhasParaFila(
               revisor: item.revisor,
               observacao: cienciaNf ? "" : montarObservacaoVios(publicacao.data_publicacao, item.observacao),
               justificativa: cienciaNf ? item.observacao?.trim() || null : null,
+              fluxo_datas: (item.fluxoDatas ?? []).map((datada) => ({ caminho: datada.caminho, data: paraDataVios(datada.data) })),
             };
           }),
         },

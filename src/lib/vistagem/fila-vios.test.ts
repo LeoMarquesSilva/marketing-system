@@ -59,6 +59,7 @@ describe("fila do robô", () => {
           revisor: "Giovanna Pereira de Souza",
           observacao: "Publicação de 15/10/2026\nlaudo",
           justificativa: null,
+          fluxo_datas: [],
         },
         {
           chave: "ag-2",
@@ -71,6 +72,7 @@ describe("fila do robô", () => {
           revisor: null,
           observacao: "Publicação de 15/10/2026",
           justificativa: null,
+          fluxo_datas: [],
         },
       ],
     });
@@ -133,5 +135,16 @@ describe("fila do robô", () => {
     expect(mapa.get("ag-2")?.[0]).toMatchObject({ principal: true, hora: "14:30", data: "2026-11-10" });
     expect(mapa.size).toBe(2);
     expect(tarefasViosDoResultado({ tarefas: [] }).size).toBe(0);
+  });
+});
+
+describe("datas do fluxo na fila do robô", () => {
+  it("vão em DD/MM/AAAA, com o caminho de tipos de cada tarefa do fluxo", () => {
+    const [grupo] = linhasParaFila(
+      PUBLICACAO,
+      [{ ...ITENS[0], fluxoDatas: [{ caminho: ["EMBARGOS DE DECLARAÇÃO", "2. REVISAR"], data: "2026-11-10" }] }],
+      { simular: false, modo: "intimacao" }
+    );
+    expect(grupo.linha.lancamento?.tarefas[0].fluxo_datas).toEqual([{ caminho: ["EMBARGOS DE DECLARAÇÃO", "2. REVISAR"], data: "10/11/2026" }]);
   });
 });
