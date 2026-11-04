@@ -60,6 +60,7 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
   const [savingManagers, setSavingManagers] = useState(false);
   const [vistagemPapel, setVistagemPapel] = useState<"controladoria" | "juridico">("controladoria");
   const [vistagemAreas, setVistagemAreas] = useState<string[]>([]);
+  const [vistagemRisco, setVistagemRisco] = useState(true);
   const [savingVistagem, setSavingVistagem] = useState(false);
   const [loadingActivity, setLoadingActivity] = useState(false);
   const [authActivity, setAuthActivity] = useState(user?.auth_activity ?? null);
@@ -77,6 +78,7 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
     setManagerAreas(user.managedLegalAreas ?? []);
     setVistagemPapel(user.vistagem_papel === "juridico" ? "juridico" : "controladoria");
     setVistagemAreas(user.vistagem_areas ?? []);
+    setVistagemRisco(user.vistagem_risco !== false);
     setAuthActivity(user.auth_activity ?? null);
     setError(null);
     setNotice(null);
@@ -266,13 +268,15 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
           userId: user!.id,
           papel: vistagemPapel,
           areas: vistagemPapel === "juridico" ? vistagemAreas : [],
+          risco: vistagemPapel === "controladoria" || vistagemRisco,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Erro ao salvar o papel na Vistagem");
       const savedAreas: string[] = data.vistagem_areas ?? [];
       setVistagemAreas(savedAreas);
-      onUpdated(user!.id, { vistagem_papel: data.vistagem_papel, vistagem_areas: savedAreas });
+      setVistagemRisco(data.vistagem_risco !== false);
+      onUpdated(user!.id, { vistagem_papel: data.vistagem_papel, vistagem_areas: savedAreas, vistagem_risco: data.vistagem_risco });
       setNotice("Papel na Vistagem atualizado.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao salvar o papel na Vistagem");
@@ -554,6 +558,33 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
                       );
                     })}
                   </div>
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={vistagemRisco}
+                    onClick={() => setVistagemRisco((atual) => !atual)}
+                    className={cn(
+                      "flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors",
+                      vistagemRisco
+                        ? "border-primary/40 bg-primary/[0.06] text-foreground"
+                        : "text-muted-foreground hover:bg-muted/50"
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                        vistagemRisco ? "border-primary bg-primary text-primary-foreground" : "border-input"
+                      )}
+                    >
+                      {vistagemRisco && <Check className="h-3 w-3" />}
+                    </span>
+                    <span>
+                      <span className="block font-medium text-foreground">Vista demanda de risco</span>
+                      <span className="block text-[11px] text-muted-foreground">
+                        Desmarcado, a pessoa vê só as publicações sem risco; as de risco ficam para quem vista.
+                      </span>
+                    </span>
+                  </button>
                 </div>
               )}
 

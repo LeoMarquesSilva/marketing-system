@@ -1254,6 +1254,8 @@ function Juridico() {
   const [porEscritorio, setPorEscritorio] = useState<Record<string, number>>({});
   /** Áreas do usuário do jurídico; null é a controladoria (todas). */
   const [areas, setAreas] = useState<string[] | null>(null);
+  /** Quem não vista demanda de risco (Usuários › acesso) não recebe as de risco: o filtro sai. */
+  const [veRisco, setVeRisco] = useState(true);
   /** Publicação escolhida; sem escolha (ou fora dos filtros), abre a primeira da fila. */
   const [selecionada, setSelecionada] = useState<string | null>(null);
   /** No celular a lista e a publicação não cabem juntas: mostra a lista só quando pedida. */
@@ -1282,6 +1284,7 @@ function Juridico() {
       setPublicacoes(corpo.publicacoes);
       setPorEscritorio(corpo.porEscritorio);
       setAreas(corpo.areas ?? null);
+      setVeRisco(corpo.veRisco !== false);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao carregar a fila.");
       setPublicacoes([]);
@@ -1476,16 +1479,18 @@ function Juridico() {
                 icone: <LogoGrupo grupo={nome === SEM_GRUPO ? null : nome} tamanho="xs" />,
               }))}
             />
-            <Segmented
-              label="Demanda de risco"
-              value={risco}
-              options={[
-                { value: "todas", label: "Todas" },
-                { value: "risco", label: `De risco ${riscos}` },
-                { value: "sem_risco", label: `Sem risco ${(publicacoes?.length ?? 0) - riscos}` },
-              ]}
-              onChange={setRisco}
-            />
+            {veRisco ? (
+              <Segmented
+                label="Demanda de risco"
+                value={risco}
+                options={[
+                  { value: "todas", label: "Todas" },
+                  { value: "risco", label: `De risco ${riscos}` },
+                  { value: "sem_risco", label: `Sem risco ${(publicacoes?.length ?? 0) - riscos}` },
+                ]}
+                onChange={setRisco}
+              />
+            ) : null}
           </>
         ) : null}
       </BarraAba>
