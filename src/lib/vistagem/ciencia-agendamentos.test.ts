@@ -50,45 +50,59 @@ describe("cienciaDosAgendamentos", () => {
     expect(cienciaDosAgendamentos([tarefa("CIÊNCIA NF", "9"), tarefa("1. CIÊNCIA DOS AGENDAMENTOS", "321")], opcoes("Trabalhista"))).toBeNull();
   });
 
-  it("cria para quem faz o Enviar da primeira tarefa (tipo sem fluxo, como a Ciência NF)", () => {
+  it("cria para quem faz o Enviar da primeira tarefa (tipo sem fluxo, como o Informar Cliente)", () => {
     const outra = { id: "300", nome: "Outra Advogada" };
     const resultado = cienciaDosAgendamentos(
-      [tarefa("CIÊNCIA NF", "9"), tarefa("SESSÃO DE JULGAMENTO", "406", { responsaveis: [outra] })],
+      [tarefa("INFORMAR CLIENTE", "414"), tarefa("SESSÃO DE JULGAMENTO", "406", { responsaveis: [outra] })],
       opcoes("Trabalhista")
     );
     expect(resultado).toEqual({ responsaveis: [ADVOGADA], revisorNoLugarDe: [] });
   });
 
   it("fora da Reestruturação, o estagiário continua com a Ciência", () => {
-    const resultado = cienciaDosAgendamentos([tarefa("CIÊNCIA NF", "9", { responsaveis: [ESTAGIARIA] })], opcoes("Trabalhista"));
+    const resultado = cienciaDosAgendamentos([tarefa("INFORMAR CLIENTE", "414", { responsaveis: [ESTAGIARIA] })], opcoes("Trabalhista"));
     expect(resultado?.responsaveis).toEqual([ESTAGIARIA]);
   });
 
   it("na Reestruturação, o estagiário dá lugar ao revisor", () => {
     for (const area of ["Insolvência", "Cível | Insolvência"]) {
-      const resultado = cienciaDosAgendamentos([tarefa("CIÊNCIA NF", "9", { responsaveis: [ESTAGIARIA, ADVOGADA] })], opcoes(area));
+      const resultado = cienciaDosAgendamentos([tarefa("INFORMAR CLIENTE", "414", { responsaveis: [ESTAGIARIA, ADVOGADA] })], opcoes(area));
       expect(resultado).toEqual({ responsaveis: [REVISOR, ADVOGADA], revisorNoLugarDe: [ESTAGIARIA.nome] });
     }
   });
 
   it("sem revisor na primeira tarefa, usa o de outra tarefa; sem nenhum, fica com o estagiário", () => {
     const semRevisor = cienciaDosAgendamentos(
-      [tarefa("CIÊNCIA NF", "9", { responsaveis: [ESTAGIARIA], revisor: null }), tarefa("SESSÃO DE JULGAMENTO", "406")],
+      [tarefa("INFORMAR CLIENTE", "414", { responsaveis: [ESTAGIARIA], revisor: null }), tarefa("SESSÃO DE JULGAMENTO", "406")],
       opcoes("Insolvência")
     );
     expect(semRevisor?.responsaveis).toEqual([REVISOR]);
-    const nenhum = cienciaDosAgendamentos([tarefa("CIÊNCIA NF", "9", { responsaveis: [ESTAGIARIA], revisor: null })], opcoes("Insolvência"));
+    const nenhum = cienciaDosAgendamentos([tarefa("INFORMAR CLIENTE", "414", { responsaveis: [ESTAGIARIA], revisor: null })], opcoes("Insolvência"));
     expect(nenhum).toEqual({ responsaveis: [ESTAGIARIA], revisorNoLugarDe: [] });
   });
 
   it("não repete a pessoa quando o revisor já é responsável", () => {
-    const resultado = cienciaDosAgendamentos([tarefa("CIÊNCIA NF", "9", { responsaveis: [ESTAGIARIA, REVISOR] })], opcoes("Insolvência"));
+    const resultado = cienciaDosAgendamentos([tarefa("INFORMAR CLIENTE", "414", { responsaveis: [ESTAGIARIA, REVISOR] })], opcoes("Insolvência"));
     expect(resultado?.responsaveis).toEqual([REVISOR]);
+  });
+
+  it("vistagem só com CIÊNCIA NF não leva a Ciência dos Agendamentos", () => {
+    expect(cienciaDosAgendamentos([tarefa("CIÊNCIA NF", "9")], opcoes("Trabalhista"))).toBeNull();
+    expect(cienciaDosAgendamentos([tarefa("CIÊNCIA NF", "9"), tarefa("CIÊNCIA NF", "9")], opcoes("Insolvência"))).toBeNull();
+  });
+
+  it("com CIÊNCIA NF e outra tarefa, a Ciência vai para quem faz o Enviar da outra", () => {
+    const outra = { id: "300", nome: "Outra Advogada" };
+    const resultado = cienciaDosAgendamentos(
+      [tarefa("CIÊNCIA NF", "9"), tarefa("SESSÃO DE JULGAMENTO", "406", { responsaveis: [outra] })],
+      opcoes("Trabalhista")
+    );
+    expect(resultado).toEqual({ responsaveis: [outra], revisorNoLugarDe: [] });
   });
 
   it("sem tarefa escolhida ou sem responsável, ainda não há o que criar", () => {
     expect(cienciaDosAgendamentos([], opcoes("Trabalhista"))).toBeNull();
     expect(cienciaDosAgendamentos([tarefa("", null)], opcoes("Trabalhista"))).toBeNull();
-    expect(cienciaDosAgendamentos([tarefa("CIÊNCIA NF", "9", { responsaveis: [] })], opcoes("Trabalhista"))).toBeNull();
+    expect(cienciaDosAgendamentos([tarefa("INFORMAR CLIENTE", "414", { responsaveis: [] })], opcoes("Trabalhista"))).toBeNull();
   });
 });
