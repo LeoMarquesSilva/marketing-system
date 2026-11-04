@@ -484,7 +484,7 @@ function Check() {
   /** Data da publicação (AAAA-MM-DD); vazio é "Todas as datas". */
   const [dataPublicacao, setDataPublicacao] = useState("");
   /** Data da divulgação no diário (AAAA-MM-DD); vazio é "Todas as datas". */
-  const [dataDivulgacao, setDataDivulgacao] = useState("");
+  const [dataImportacao, setDataImportacao] = useState("");
 
   const carregar = useCallback(async () => {
     setErro("");
@@ -523,13 +523,13 @@ function Check() {
   const lista = dados?.[aba];
   const datasDaLista = (lista ?? []).map((item) => item.publicacao.dataPublicacao);
   const dataAtiva = dataNaLista(dataPublicacao, datasDaLista);
-  const divulgacoesDaLista = (lista ?? []).map((item) => item.publicacao.dataDivulgacao);
-  const divulgacaoAtiva = dataNaLista(dataDivulgacao, divulgacoesDaLista);
+  const importacoesDaLista = (lista ?? []).map((item) => item.publicacao.dataImportacao);
+  const importacaoAtiva = dataNaLista(dataImportacao, importacoesDaLista);
   const filtrada = (lista ?? []).filter(
     (item) =>
       combinaBusca(item, busca) &&
       (!dataAtiva || item.publicacao.dataPublicacao === dataAtiva) &&
-      (!divulgacaoAtiva || item.publicacao.dataDivulgacao === divulgacaoAtiva)
+      (!importacaoAtiva || item.publicacao.dataImportacao === importacaoAtiva)
   );
   const valor = (n: number | undefined) => (dados ? (n ?? 0) : "—");
 
@@ -569,7 +569,7 @@ function Check() {
       >
         <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Buscar processo, pasta, cliente ou CI" aria-label="Buscar publicação" />
         <FiltroData rotulo="Data Publicação" datas={datasDaLista} valor={dataAtiva} onChange={setDataPublicacao} />
-        <FiltroData rotulo="Data Divulgação" datas={divulgacoesDaLista} valor={divulgacaoAtiva} onChange={setDataDivulgacao} />
+        <FiltroData rotulo="Data da importação" datas={importacoesDaLista} valor={importacaoAtiva} onChange={setDataImportacao} />
       </BarraAba>
 
       {retorno ? (

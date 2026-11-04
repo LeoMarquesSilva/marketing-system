@@ -20,7 +20,7 @@ export function dataNaLista(valor: string, datas: (string | null)[]): string {
 const icone = <CalendarDays className="size-4 shrink-0 text-[#3e84a8]" aria-hidden />;
 
 /**
- * Filtro por uma data da publicação (publicação ou divulgação): as datas que aparecem na lista, da mais recente
+ * Filtro por uma data da publicação (publicação ou importação): as datas que aparecem na lista, da mais recente
  * para a mais antiga, com quantas publicações há em cada uma. Sem data escolhida, o campo mostra o nome do filtro.
  */
 export function FiltroData({
@@ -30,7 +30,7 @@ export function FiltroData({
   onChange,
   className = "sm:w-52",
 }: {
-  /** "Data Publicação" ou "Data Divulgação". */
+  /** "Data Publicação" ou "Data da importação". */
   rotulo: string;
   datas: (string | null)[];
   valor: string;

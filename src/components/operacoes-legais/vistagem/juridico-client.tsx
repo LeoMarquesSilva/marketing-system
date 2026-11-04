@@ -1326,7 +1326,7 @@ function Juridico() {
   /** Data da publicação (AAAA-MM-DD); vazio é "Todas as datas". */
   const [dataPublicacao, setDataPublicacao] = useState("");
   /** Data da divulgação no diário (AAAA-MM-DD); vazio é "Todas as datas". */
-  const [dataDivulgacao, setDataDivulgacao] = useState("");
+  const [dataImportacao, setDataImportacao] = useState("");
   /** A fila abre sempre recolhida: a publicação ocupa a largura toda. */
   const [filaRecolhida, setFilaRecolhida] = useState(true);
   /** Na fila, cada grupo vem recolhido (menos o da publicação aberta); aqui ficam os que a pessoa inverteu. */
@@ -1369,14 +1369,14 @@ function Juridico() {
   const tribunalAtivo = tribunaisDaFila.some(([nome]) => nome === tribunal) ? tribunal : "";
   const datasDaFila = useMemo(() => (publicacoes ?? []).map((publicacao) => publicacao.dataPublicacao), [publicacoes]);
   const dataAtiva = dataNaLista(dataPublicacao, datasDaFila);
-  const divulgacoesDaFila = useMemo(() => (publicacoes ?? []).map((publicacao) => publicacao.dataDivulgacao), [publicacoes]);
-  const divulgacaoAtiva = dataNaLista(dataDivulgacao, divulgacoesDaFila);
+  const importacoesDaFila = useMemo(() => (publicacoes ?? []).map((publicacao) => publicacao.dataImportacao), [publicacoes]);
+  const importacaoAtiva = dataNaLista(dataImportacao, importacoesDaFila);
   const filtradas = useMemo(() => {
     const termo = chaveNome(busca);
     const digitos = termo.replace(/\D/g, "");
     return (publicacoes ?? []).filter((publicacao) => {
       if (dataAtiva && publicacao.dataPublicacao !== dataAtiva) return false;
-      if (divulgacaoAtiva && publicacao.dataDivulgacao !== divulgacaoAtiva) return false;
+      if (importacaoAtiva && publicacao.dataImportacao !== importacaoAtiva) return false;
       if (grupoAtivo && (publicacao.grupoCliente?.trim() || SEM_GRUPO) !== grupoAtivo) return false;
       if (tribunalAtivo && tribunalDe(publicacao) !== tribunalAtivo) return false;
       if (risco === "risco" && !publicacao.demandaRisco) return false;
@@ -1387,8 +1387,8 @@ function Juridico() {
         [publicacao.cliente, publicacao.grupoCliente, publicacao.pastaCi].some((texto) => chaveNome(texto).includes(termo))
       );
     });
-  }, [publicacoes, busca, grupoAtivo, tribunalAtivo, risco, dataAtiva, divulgacaoAtiva]);
-  const filtrosAtivos = Boolean(busca.trim() || grupoAtivo || tribunalAtivo || risco !== "todas" || dataAtiva || divulgacaoAtiva);
+  }, [publicacoes, busca, grupoAtivo, tribunalAtivo, risco, dataAtiva, importacaoAtiva]);
+  const filtrosAtivos = Boolean(busca.trim() || grupoAtivo || tribunalAtivo || risco !== "todas" || dataAtiva || importacaoAtiva);
   const grupos = useMemo(() => agruparFila(filtradas), [filtradas]);
   // Mesma ordem da lista: é por ela que o editor anda para a anterior e a próxima.
   const ordem = useMemo(() => grupos.flatMap((item) => item.publicacoes.map((publicacao) => publicacao.id)), [grupos]);
@@ -1444,7 +1444,7 @@ function Juridico() {
     setTribunal("");
     setRisco("todas");
     setDataPublicacao("");
-    setDataDivulgacao("");
+    setDataImportacao("");
   }
 
   function transferida(destino: string) {
@@ -1526,7 +1526,7 @@ function Juridico() {
         {visao === "fila" ? (
           <>
             <FiltroData rotulo="Data Publicação" datas={datasDaFila} valor={dataAtiva} onChange={setDataPublicacao} />
-            <FiltroData rotulo="Data Divulgação" datas={divulgacoesDaFila} valor={divulgacaoAtiva} onChange={setDataDivulgacao} />
+            <FiltroData rotulo="Data da importação" datas={importacoesDaFila} valor={importacaoAtiva} onChange={setDataImportacao} />
             <SeletorBusca
               rotulo="Grupo do cliente"
               className="sm:w-64"

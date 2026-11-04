@@ -860,7 +860,7 @@ function Controladoria() {
   /** Data da publicação (AAAA-MM-DD); vazio é "Todas as datas". */
   const [dataPublicacao, setDataPublicacao] = useState("");
   /** Data da divulgação no diário (AAAA-MM-DD); vazio é "Todas as datas". */
-  const [dataDivulgacao, setDataDivulgacao] = useState("");
+  const [dataImportacao, setDataImportacao] = useState("");
   const [aba, setAba] = useState<Aba | null>(null);
   const [selecionada, setSelecionada] = useState<string | null>(null);
   /** Publicação que a controladoria liberou para vistar aqui mesmo, no modal do jurídico. */
@@ -911,14 +911,14 @@ function Controladoria() {
   // Data da publicação: filtra a fila e a contagem das abas.
   const datasDasPendencias = useMemo(() => (dados?.pendentes ?? []).map((p) => p.dataPublicacao), [dados]);
   const dataAtiva = dataNaLista(dataPublicacao, datasDasPendencias);
-  const divulgacoesDasPendencias = useMemo(() => (dados?.pendentes ?? []).map((p) => p.dataDivulgacao), [dados]);
-  const divulgacaoAtiva = dataNaLista(dataDivulgacao, divulgacoesDasPendencias);
+  const importacoesDasPendencias = useMemo(() => (dados?.pendentes ?? []).map((p) => p.dataImportacao), [dados]);
+  const importacaoAtiva = dataNaLista(dataImportacao, importacoesDasPendencias);
   const pendentesNaData = useMemo(
     () =>
       (dados?.pendentes ?? []).filter(
-        (p) => (!dataAtiva || p.dataPublicacao === dataAtiva) && (!divulgacaoAtiva || p.dataDivulgacao === divulgacaoAtiva)
+        (p) => (!dataAtiva || p.dataPublicacao === dataAtiva) && (!importacaoAtiva || p.dataImportacao === importacaoAtiva)
       ),
-    [dados, dataAtiva, divulgacaoAtiva]
+    [dados, dataAtiva, importacaoAtiva]
   );
 
   const porAba = useMemo(() => {
@@ -1001,7 +1001,7 @@ function Controladoria() {
         <BarraAba resumo="O que a triagem não conseguiu encaminhar sozinha. Confira se a pasta existe mesmo, escolha a certa ou informe os dados para liberar ao jurídico; com a pasta escolhida, dá para agendar direto aqui.">
           <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Processo, CI, grupo ou intimado" aria-label="Buscar publicação" />
           <FiltroData rotulo="Data Publicação" datas={datasDasPendencias} valor={dataAtiva} onChange={setDataPublicacao} />
-          <FiltroData rotulo="Data Divulgação" datas={divulgacoesDasPendencias} valor={divulgacaoAtiva} onChange={setDataDivulgacao} />
+          <FiltroData rotulo="Data da importação" datas={importacoesDasPendencias} valor={importacaoAtiva} onChange={setDataImportacao} />
           <Button variant="outline" onClick={rodarTriagem} disabled={triando}>
             {triando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
             Rodar triagem agora
