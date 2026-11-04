@@ -14,7 +14,8 @@ export async function situacaoArquivoDoDia(): Promise<ArquivoDoDia> {
   const hoje = hojeEmSaoPaulo();
   const [feriados, { data, error }] = await Promise.all([
     carregarFeriados().catch(() => [] as string[]),
-    admin().from("vistagem_kurier_arquivos").select("status, erro").eq("data_arquivo", hoje),
+    // Publicações coladas (e-mail/Teams) não são o arquivo da Kurier.
+    admin().from("vistagem_kurier_arquivos").select("status, erro").eq("data_arquivo", hoje).neq("origem", "colado"),
   ]);
   if (error) falhou("consultar o arquivo do dia", error);
   return situacaoDoDia({ hoje, hora: horaEmSaoPaulo(), feriados, arquivosDeHoje: data ?? [] });
