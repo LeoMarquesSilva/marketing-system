@@ -1458,6 +1458,7 @@ export interface WhatsappMessage {
   quoted_wa_message_id?: string | null;
   quoted_body?: string | null;
   participant_name?: string | null;
+  participant_phone?: string | null;
   /** Arquivo no Storage (a rota de conversas troca por um link assinado). */
   media_storage_path?: string | null;
   media_mimetype?: string | null;
@@ -1793,7 +1794,7 @@ export async function fetchWhatsappMessages(
   const { data, error } = await supabase
     .from("whatsapp_messages")
     .select(
-      "id, wa_message_id, from_me, message_type, body, message_timestamp, audio_transcript, wa_status, reaction_emoji, quoted_wa_message_id, quoted_body, participant_name, media_storage_path, media_mimetype, media_expired_at"
+      "id, wa_message_id, from_me, message_type, body, message_timestamp, audio_transcript, wa_status, reaction_emoji, quoted_wa_message_id, quoted_body, participant_name, participant_phone, media_storage_path, media_mimetype, media_expired_at"
     )
     .eq("conversation_id", conversationId)
     .order("message_timestamp", { ascending: false })

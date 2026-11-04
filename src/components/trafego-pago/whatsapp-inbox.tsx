@@ -40,6 +40,7 @@ import type {
   WhatsappReplyTarget,
 } from "@/components/trafego-pago/whatsapp-crm-types";
 import { leadDisplayName, sameMessageDay } from "@/components/trafego-pago/whatsapp-crm-utils";
+import { participantLabel, startsParticipantRun } from "@/components/trafego-pago/whatsapp-participant";
 import {
   STALE_CONVERSATION_DAYS,
   buildInboxView,
@@ -493,7 +494,13 @@ export function WhatsappInbox() {
     setReplyTo({
       waMessageId: message.wa_message_id ?? message.id,
       body: message.body,
-      fromName: message.from_me ? "atendente" : conversation ? leadDisplayName(conversation) : "cliente",
+      fromName: message.from_me
+        ? "atendente"
+        : conversation?.is_group
+          ? participantLabel(message)
+          : conversation
+            ? leadDisplayName(conversation)
+            : "cliente",
     });
   }, []);
 
@@ -592,6 +599,7 @@ export function WhatsappInbox() {
           const conversationId = row.conversation_id;
           if (!conversationId) return;
 
+          // Mensagem que chega ao vivo: o nome de quem escreveu no grupo vem junto.
           const incoming: Message = {
             id: row.id,
             wa_message_id: row.wa_message_id ?? null,
@@ -603,6 +611,9 @@ export function WhatsappInbox() {
             reaction_emoji: row.reaction_emoji ?? null,
             quoted_wa_message_id: row.quoted_wa_message_id ?? null,
             quoted_body: row.quoted_body ?? null,
+            participant_name: row.participant_name ?? null,
+            participant_phone: row.participant_phone ?? null,
+            audio_transcript: row.audio_transcript ?? null,
           };
 
           if (conversationId === selectedIdRef.current) {
@@ -953,6 +964,7 @@ export function WhatsappInbox() {
                         <MessageBubble
                           message={message}
                           conversation={selected}
+                          startsRun={startsParticipantRun(messages[index - 1], message)}
                           reaction={messageReactions[message.id]}
                           onReply={handleReply}
                           onReaction={handleReaction}
@@ -965,8 +977,11 @@ export function WhatsappInbox() {
               </div>
 
               <ChatInput
+                key={selected.id}
                 conversationId={selected.id}
                 leadName={leadDisplayName(selected)}
+                contactName={selected.is_group ? null : selected.push_name}
+                attendantName={profile?.name}
                 configured={configured}
                 sending={sending}
                 draftMessage={draftMessage}

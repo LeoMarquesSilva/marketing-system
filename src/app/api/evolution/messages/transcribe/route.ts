@@ -4,6 +4,7 @@ import {
   isEvolutionConfigured,
   transcribeWhatsappAudioMessage,
 } from "@/lib/evolution-whatsapp";
+import { isOpenAIOutOfCredits, openAIErrorMessage } from "@/lib/openai-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -37,8 +38,10 @@ export async function POST(request: Request) {
     const transcript = await transcribeWhatsappAudioMessage(messageId);
     return NextResponse.json({ transcript });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Erro ao transcrever áudio.";
-    console.error("[evolution/messages/transcribe]", msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    console.error("[evolution/messages/transcribe]", err);
+    return NextResponse.json(
+      { error: openAIErrorMessage(err, "Não foi possível transcrever o áudio.") },
+      { status: isOpenAIOutOfCredits(err) ? 503 : 500 }
+    );
   }
 }
