@@ -84,7 +84,7 @@ export function FaixaDoProcesso({
           </Selo>
         ) : null}
         {selos}
-        {children ? <div className="ml-auto flex items-center gap-1">{children}</div> : null}
+        {children ? <div className="ml-auto flex flex-wrap items-center justify-end gap-1">{children}</div> : null}
       </div>
     </div>
   );

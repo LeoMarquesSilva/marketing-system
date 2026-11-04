@@ -3,6 +3,7 @@ import "server-only";
 import {
   ETIQUETAS_AGENDAMENTO,
   areaDoCatalogo,
+  nomesDasPessoas,
   pessoasDaArea,
   responsavelSugerido,
   responsaveisNaArea,
@@ -729,8 +730,20 @@ export async function listarConferencia(): Promise<ConferenciaResposta> {
   };
   const aConferir = comFluxo(aConferirSemFluxo);
   const enviadas = comFluxo(enviadasSemFluxo);
-  // Foto é enfeite: se a consulta falhar, a ficha mostra as iniciais.
-  const pessoas = await pessoasPorNome([...aConferir, ...enviadas].flatMap((item) => [item.publicacao.advogadoResponsavel, item.auxiliar])).catch(
+  // Foto é enfeite: se a consulta falhar, a ficha e as tarefas mostram as iniciais.
+  const nomes = [...aConferir, ...enviadas].flatMap((item) => [
+    item.publicacao.advogadoResponsavel,
+    item.auxiliar,
+    item.vistadoPor,
+    item.conferidoPor,
+    ...item.agendamentos.flatMap((agendamento) => [
+      ...nomesDasPessoas(agendamento.responsavel),
+      agendamento.revisor,
+      ...(agendamento.fluxoPrevisto ?? []).flatMap((tarefa) => nomesDasPessoas(tarefa.responsaveis)),
+      ...(agendamento.viosTarefas ?? []).flatMap((tarefa) => nomesDasPessoas(tarefa.responsaveis)),
+    ]),
+  ]);
+  const pessoas = await pessoasPorNome(nomes).catch(
     (erro: unknown): PessoasPorNome => {
       console.error("[vistagem] fotos da conferência", erro instanceof Error ? erro.message : erro);
       return { fotos: {}, areas: {}, rotulos: {} };

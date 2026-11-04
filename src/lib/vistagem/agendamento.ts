@@ -210,6 +210,14 @@ export function pessoasDaArea(
   return { area: [...alvo.values()].join(" e "), nomes };
 }
 
+/**
+ * Pessoas de um campo de responsáveis como aparece nas telas: separadas por vírgula ou por " + " (no Protocolar o
+ * fluxo junta o responsável e a pessoa fixa), sem repetir.
+ */
+export function nomesDasPessoas(texto: string | null | undefined): string[] {
+  return separarNomes(String(texto ?? "").replace(/\s\+\s/g, ","));
+}
+
 /** Nomes separados por vírgula, sem repetir (a fila do robô usa o mesmo formato). */
 export function separarNomes(texto: string | null | undefined): string[] {
   const vistos = new Set<string>();

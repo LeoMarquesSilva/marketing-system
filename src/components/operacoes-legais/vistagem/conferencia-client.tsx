@@ -2,20 +2,24 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  ArrowLeft,
   Bot,
-  Check,
+  CalendarClock,
+  ChevronLeft,
+  ChevronRight,
   CircleAlert,
   CircleCheck,
-  ExternalLink,
   Inbox,
   Landmark,
   Layers,
   LoaderCircle,
-  MessageSquareWarning,
+  PanelLeftClose,
+  PanelLeftOpen,
   RefreshCw,
   RotateCcw,
   SearchX,
   Send,
+  ShieldAlert,
   Undo2,
   X,
 } from "lucide-react";
@@ -28,18 +32,19 @@ import { cn } from "@/lib/utils";
 import { ROTULO_ETIQUETA, chaveNome } from "@/lib/vistagem/agendamento";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import { TIPOS_INCONSISTENCIA_JURIDICO } from "@/lib/vistagem/inconsistencias";
-import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, EnvioStatus, InconsistenciaItem, PublicacaoResumo } from "@/lib/vistagem/types";
-import { linkTarefaVios } from "@/lib/vistagem/vios-links";
+import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, InconsistenciaItem, PublicacaoResumo } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
-import { FaixaDoProcesso } from "./faixa-processo";
+import { FaixaDoProcesso, NA_FAIXA } from "./faixa-processo";
 import { FichaPasta } from "./ficha-pasta";
-import { FichaProcesso } from "./ficha-processo";
+import { FichaProcesso, ResumoDaFicha } from "./ficha-processo";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { FiltroData, dataNaLista } from "./filtro-data";
 import { LeitorPublicacao } from "./leitor-publicacao";
-import { IconeArea } from "./marcas";
+import { IconeArea, LogoGrupo } from "./marcas";
 import { ReguaDatas } from "./regua-datas";
 import { Seletor } from "./seletor";
+import { AvatarPessoa } from "./combobox-busca";
+import { CartoesTarefas, ENVIO, LinkVios } from "./tarefas-conferencia";
 import { SeloEsocial, contarPor, formatarData, formatarDataHora, tribunalDe } from "./publicacao-ui";
 import {
   Aviso,
@@ -48,15 +53,13 @@ import {
   CabecalhoLista,
   Campo,
   Carregando,
-  Indicador,
-  Indicadores,
   Painel,
   PainelTopo,
   Secao,
   Selo,
   Vazio,
+  linhaLista,
   TOM_CLASSE,
-  type TomSelo,
 } from "./ui";
 
 type Aba = "conferir" | "enviadas" | "inconsistencias";
@@ -113,22 +116,6 @@ async function pedirRodarNovamente(id: string, forcar: boolean): Promise<{ envia
   return corpo;
 }
 
-interface Integracao {
-  nome: string;
-  ok: boolean;
-  detalhe: string;
-}
-
-const ENVIO: Record<EnvioStatus, { rotulo: string; tom: TomSelo }> = {
-  nao_enviado: { rotulo: "Não enviada", tom: "neutro" },
-  pendente: { rotulo: "Na fila do robô", tom: "marca" },
-  enviado: { rotulo: "Com o robô", tom: "marca" },
-  processando: { rotulo: "Agendando no VIOS", tom: "marca" },
-  concluido: { rotulo: "Agendada", tom: "sucesso" },
-  erro: { rotulo: "Erro no robô", tom: "perigo" },
-};
-
-const NA_FILA: EnvioStatus[] = ["pendente", "enviado", "processando"];
 
 /** Classe da tarefa é categoria, não estado: tons da marca (DESIGN.md). */
 
@@ -216,22 +203,6 @@ function Celula({
       <span className={cn("block text-xs text-muted-foreground", !mostrarRotulo ? "sr-only" : !compacta && "lg:sr-only")}>{rotulo}</span>
       {children}
     </div>
-  );
-}
-
-function LinkVios({ ci }: { ci: string }) {
-  return (
-    <a
-      href={linkTarefaVios(ci)}
-      target="_blank"
-      rel="noopener noreferrer"
-      title="Abrir a tarefa no VIOS (nova aba)"
-      aria-label={`Abrir a tarefa CI ${ci} no VIOS (nova aba)`}
-      className="inline-flex items-center gap-1 rounded-sm text-xs font-medium text-[#347796] hover:text-[#285f7a] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/50"
-    >
-      <span className="tabular-nums">CI {ci}</span>
-      <ExternalLink className="size-3" aria-hidden />
-    </a>
   );
 }
 
@@ -340,14 +311,14 @@ function FluxoDaTarefaAgendada({ item }: { item: AgendamentoResumo }) {
       {criadas.length ? (
         <>
           <p className="font-medium text-[#285f7a]">Criadas junto no VIOS</p>
-          <ul className="space-y-1 border-l-2 border-[#c9dde6] pl-2.5">
+          <ul className="space-y-1">
             {criadas.map((tarefa) => linha(tarefa.ci, tarefa.tipo ?? "Tarefa do fluxo", tarefa.data, tarefa.responsaveis, tarefa.ci))}
           </ul>
         </>
       ) : junto.length ? (
         <>
           <p className="font-medium text-[#285f7a]">O VIOS cria junto (o robô coloca os responsáveis)</p>
-          <ul className="space-y-1 border-l-2 border-[#c9dde6] pl-2.5">
+          <ul className="space-y-1">
             {junto.map((tarefa) => (
               // As que nascem de outra do fluxo (Embargos › 2. REVISAR) ficam recuadas embaixo dela.
               <li
@@ -437,7 +408,12 @@ function PublicacaoComoNaVistagem({
   return (
     <>
       <div className="space-y-4 px-4 py-3">
-        <FichaPasta publicacao={publicacao} auxiliar={auxiliar} fotos={fotos}>
+        <FichaPasta
+          publicacao={publicacao}
+          auxiliar={auxiliar}
+          fotos={fotos}
+          resumo={<ResumoDaFicha publicacao={publicacao} auxiliar={auxiliar} fotos={fotos} />}
+        >
           <FichaProcesso publicacao={publicacao} />
         </FichaPasta>
         <ReguaDatas rotulo="Datas da publicação" hoje={hoje} marcos={marcos} />
@@ -461,12 +437,52 @@ function PublicacaoComoNaVistagem({
   );
 }
 
+/** "04/11, 12:00" → "04/11 às 12:00". */
+const dataEHora = (iso: string | null) => formatarDataHora(iso).replace(", ", " às ");
+
+/**
+ * Quem vistou ou conferiu, na faixa do processo: foto, o papel e quando em cima, o nome em destaque embaixo.
+ * É com essa pessoa que a conferência fala, por isso fica ao lado do número do processo.
+ */
+function Autoria({ papel, nome, quando, fotos }: { papel: string; nome: string | null; quando: string | null; fotos: Record<string, string> }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2 sm:ml-1 sm:border-l sm:border-white/20 sm:pl-3">
+      <AvatarPessoa nome={nome ?? "?"} foto={nome ? fotos[chaveNome(nome)] : null} className="size-8 ring-2 ring-white/25" />
+      <div className="min-w-0 leading-tight">
+        <p className="flex items-center gap-1 text-[11px] text-white/65">
+          <span className="font-medium uppercase">{papel}</span>
+          <CalendarClock className="ml-0.5 size-3" aria-hidden />
+          <span className="tabular-nums">{dataEHora(quando)}</span>
+        </p>
+        <p className="truncate text-sm font-semibold text-white" title={nome ?? undefined}>
+          {nome ?? "Não identificado"}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** Botões na faixa azul-marinho: o contornado em branco e o principal em ciano, para se destacar do fundo. */
+const BOTAO_FAIXA = "border-white/35 bg-transparent text-white hover:bg-white/10 hover:text-white focus-visible:ring-white/50 dark:bg-transparent";
+const BOTAO_FAIXA_PRINCIPAL = "bg-[#47cdd0] font-semibold text-[#10293a] hover:bg-[#6ad8da] focus-visible:ring-white/60";
+
+/** Posição na fila, para andar entre as publicações sem a lista (como na vistagem do jurídico). */
+interface Navegacao {
+  posicao: number;
+  total: number;
+  anterior: string | null;
+  proxima: string | null;
+}
+
 function ItemConferencia({
   item,
   comEnvio,
   modoReal,
   fotos,
   hoje,
+  navegacao,
+  onAbrir,
+  onVoltar,
   onConcluido,
 }: {
   item: ConferenciaItem;
@@ -474,6 +490,9 @@ function ItemConferencia({
   modoReal: boolean;
   fotos: Record<string, string>;
   hoje: string;
+  navegacao: Navegacao | null;
+  onAbrir: (id: string) => void;
+  onVoltar: () => void;
   onConcluido?: (id: string, mensagem: string) => void;
 }) {
   const [devolvendo, setDevolvendo] = useState(false);
@@ -548,24 +567,24 @@ function ItemConferencia({
       <>
         {!comEnvio ? (
           <>
-            <Button size="sm" variant="outline" onClick={() => setDevolvendo(true)} disabled={ocupado}>
+            <Button size="sm" variant="outline" className={BOTAO_FAIXA} onClick={() => setDevolvendo(true)} disabled={ocupado}>
               <Undo2 />
               Devolver ao jurídico
             </Button>
-            <Button size="sm" onClick={() => agir("validar")} disabled={ocupado}>
+            <Button size="sm" className={BOTAO_FAIXA_PRINCIPAL} onClick={() => agir("validar")} disabled={ocupado}>
               {ocupado && !dialogoAberto ? spinner : <Send />}
               Validar e enviar ao robô
             </Button>
           </>
         ) : null}
         {erroRobo ? (
-          <Button size="sm" variant="outline" onClick={() => rodarDeNovo(false)} disabled={ocupado}>
+          <Button size="sm" variant="outline" className={BOTAO_FAIXA} onClick={() => rodarDeNovo(false)} disabled={ocupado}>
             {ocupado && !dialogoAberto ? spinner : <RotateCcw />}
             Rodar novamente
           </Button>
         ) : null}
         {podeReenviar ? (
-          <Button size="sm" onClick={() => agir("reenviar")} disabled={ocupado}>
+          <Button size="sm" className={BOTAO_FAIXA_PRINCIPAL} onClick={() => agir("reenviar")} disabled={ocupado}>
             {ocupado && !dialogoAberto ? spinner : <Bot />}
             Reenviar gravando no VIOS
           </Button>
@@ -574,21 +593,64 @@ function ItemConferencia({
     ) : null;
 
   return (
-    <Painel aria-labelledby={`${base}-titulo`} className="@container">
-      {/* Mesmo topo da vistagem: o número pesquisa o processo no tribunal e o botão ao lado copia. */}
-      <FaixaDoProcesso numero={processo} tribunal={publicacao.tribunal} tituloId={`${base}-titulo`} selos={<SeloEsocial publicacao={publicacao} />} />
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-[#e6eef0] px-4 py-2.5">
-        <p className="min-w-0 flex-1 text-xs text-muted-foreground">
-          Vistada {item.vistadoPor ? `por ${item.vistadoPor} ` : ""}em {formatarDataHora(publicacao.vistadoEm)}
-          {comEnvio && publicacao.conferidoEm
-            ? ` · conferida ${item.conferidoPor ? `por ${item.conferidoPor} ` : ""}em ${formatarDataHora(publicacao.conferidoEm)}`
-            : ""}
-        </p>
+    // No desktop ocupa a altura da tela, como a vistagem: publicação e tarefas rolam cada uma no seu lugar.
+    <Painel aria-labelledby={`${base}-titulo`} className="@container lg:flex lg:h-full lg:flex-col">
+      <Button variant="ghost" size="sm" className="m-2 self-start lg:hidden" onClick={onVoltar}>
+        <ArrowLeft />
+        Voltar à lista
+      </Button>
+      {/* Mesmo topo da vistagem: o número pesquisa o processo no tribunal, o botão ao lado copia e as setas andam na fila.
+          Na mesma faixa, quem vistou (e quem conferiu) e as ações: sem uma linha só para isso, sobra altura para a leitura. */}
+      <FaixaDoProcesso
+        numero={processo}
+        tribunal={publicacao.tribunal}
+        tituloId={`${base}-titulo`}
+        selos={
+          <>
+            <SeloEsocial publicacao={publicacao} />
+            <Autoria papel="Vistada por" nome={item.vistadoPor} quando={publicacao.vistadoEm} fotos={fotos} />
+            {comEnvio && publicacao.conferidoEm ? (
+              <Autoria papel="Conferida por" nome={item.conferidoPor} quando={publicacao.conferidoEm} fotos={fotos} />
+            ) : null}
+          </>
+        }
+      >
         {acoes ? <div className="flex flex-wrap items-center gap-2">{acoes}</div> : null}
-      </div>
+        {navegacao ? (
+          <div className={cn("flex items-center gap-1", acoes && "ml-2 border-l border-white/20 pl-2")}>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              className={NA_FAIXA}
+              disabled={!navegacao.anterior}
+              onClick={() => navegacao.anterior && onAbrir(navegacao.anterior)}
+              aria-label="Publicação anterior"
+              title="Publicação anterior"
+            >
+              <ChevronLeft />
+            </Button>
+            <span className="min-w-14 text-center text-xs tabular-nums text-white/80">
+              {navegacao.posicao} de {navegacao.total}
+            </span>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              className={NA_FAIXA}
+              disabled={!navegacao.proxima}
+              onClick={() => navegacao.proxima && onAbrir(navegacao.proxima)}
+              aria-label="Próxima publicação"
+              title="Próxima publicação"
+            >
+              <ChevronRight />
+            </Button>
+          </div>
+        ) : null}
+      </FaixaDoProcesso>
 
       {(erro && !dialogoAberto) || erroRobo || podeReenviar ? (
-        <Secao>
+        <Secao className="shrink-0">
           {erro && !dialogoAberto ? <Aviso tom="erro">{erro}</Aviso> : null}
           {erroRobo ? (
             <Aviso tom="erro" titulo="Erro no robô">
@@ -599,9 +661,10 @@ function ItemConferencia({
         </Secao>
       ) : null}
 
-      {/* Com espaço, a publicação fica à esquerda (rola sozinha) e o que o jurídico fez à direita, como na vistagem. */}
-      <div className="grid @4xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] @4xl:divide-x @4xl:divide-[#e6eef0]">
-        <section aria-label="Publicação" className="min-w-0 @4xl:max-h-[46rem] @4xl:overflow-y-auto">
+      {/* Com espaço, a publicação fica à esquerda e o que o jurídico fez à direita, cada uma rolando sozinha, como na vistagem. */}
+      <div className="grid lg:min-h-0 lg:flex-1 @max-4xl:overflow-y-auto @4xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] @4xl:grid-rows-[minmax(0,1fr)] @4xl:divide-x @4xl:divide-[#e6eef0]">
+        {/* Sem a altura fixa do desktop (tela menor ou zoom do navegador), publicação e tarefas param em 75% da tela e rolam sozinhas. */}
+        <section aria-label="Publicação" className="min-w-0 overflow-y-auto max-lg:max-h-[75dvh]">
           <PublicacaoComoNaVistagem
             publicacao={publicacao}
             agendamentos={item.agendamentos}
@@ -611,7 +674,8 @@ function ItemConferencia({
           />
         </section>
 
-        <div className="min-w-0 border-t border-[#e6eef0] @4xl:border-t-0">
+        {/* A coluna inteira tem o fundo das tarefas: com uma tarefa curta, o espaço que sobra embaixo é a própria coluna, não um vazio branco. */}
+        <div className="min-w-0 border-t border-[#e6eef0] bg-[#f2f6f7] @4xl:overflow-y-auto @4xl:border-t-0 max-lg:@4xl:max-h-[75dvh]">
           {publicacao.observacaoVistagem ? (
             <Secao titulo="Observação do jurídico" id={`${base}-observacao`}>
               <p className="whitespace-pre-wrap break-words text-sm text-foreground">{publicacao.observacaoVistagem}</p>
@@ -635,7 +699,7 @@ function ItemConferencia({
               </h3>
               <span className="text-xs text-muted-foreground">{resumoTarefas(item.agendamentos, comEnvio)}</span>
             </div>
-            <TabelaTarefas agendamentos={item.agendamentos} comEnvio={comEnvio} compacta />
+            <CartoesTarefas agendamentos={item.agendamentos} comEnvio={comEnvio} fotos={fotos} hoje={hoje} />
           </section>
         </div>
       </div>
@@ -815,10 +879,40 @@ function PainelInconsistencias() {
 
 /* ------------------------------------------------------------ tela */
 
+/** Linha da fila: processo, cliente com logo e quem vistou; risco, erro no robô e inconsistências em selo. */
+function LinhaDaFila({ item, comEnvio, aberta, onAbrir }: { item: ConferenciaItem; comEnvio: boolean; aberta: boolean; onAbrir: () => void }) {
+  const { publicacao } = item;
+  const abertas = item.inconsistencias.filter((inconsistencia) => !inconsistencia.excluidaEm).length;
+  return (
+    <button type="button" onClick={onAbrir} aria-current={aberta ? "true" : undefined} className={cn(linhaLista(aberta), "space-y-1")}>
+      <span className="flex flex-wrap items-center gap-1.5">
+        <span className="text-xs font-semibold tabular-nums text-foreground">{processoDe(item)}</span>
+        {publicacao.demandaRisco ? (
+          <Selo tom="perigo" icone={ShieldAlert}>
+            Risco
+          </Selo>
+        ) : null}
+        {comEnvio && temErro(item) ? (
+          <Selo tom="perigo" icone={CircleAlert}>
+            Erro no robô
+          </Selo>
+        ) : null}
+        {abertas ? <Selo tom="alerta">{plural(abertas, "inconsistência", "inconsistências")}</Selo> : null}
+      </span>
+      <span className="flex min-w-0 items-center gap-1.5 text-sm text-foreground">
+        {publicacao.grupoCliente ? <LogoGrupo grupo={publicacao.grupoCliente} tamanho="xs" /> : null}
+        <span className="truncate">{publicacao.cliente ?? publicacao.grupoCliente ?? "—"}</span>
+      </span>
+      <span className="block truncate text-xs text-muted-foreground">
+        {[item.vistadoPor ? `vistada por ${item.vistadoPor}` : null, resumoTarefas(item.agendamentos, comEnvio)].filter(Boolean).join(" · ")}
+      </span>
+    </button>
+  );
+}
+
 function Conferencia() {
   const [aba, setAba] = useState<Aba>("conferir");
   const [dados, setDados] = useState<ConferenciaResposta | null>(null);
-  const [integracoes, setIntegracoes] = useState<Integracao[] | null>(null);
   const [erro, setErro] = useState("");
   const [retorno, setRetorno] = useState<Retorno | null>(null);
   const [atualizando, setAtualizando] = useState(false);
@@ -832,6 +926,12 @@ function Conferencia() {
   const [area, setArea] = useState("");
   /** Tribunal; vazio é "Todos os tribunais". */
   const [tribunal, setTribunal] = useState("");
+  /** Publicação escolhida; sem escolha (ou fora dos filtros), abre a primeira da fila. */
+  const [selecionada, setSelecionada] = useState<string | null>(null);
+  /** A fila abre recolhida, como na vistagem: a publicação ocupa a largura toda. */
+  const [filaRecolhida, setFilaRecolhida] = useState(true);
+  /** No celular a fila e a publicação não cabem juntas: mostra a fila só quando pedida. */
+  const [listaNoCelular, setListaNoCelular] = useState(false);
 
   const carregar = useCallback(async () => {
     setErro("");
@@ -851,10 +951,6 @@ function Conferencia() {
     void authFetch("/api/operacoes-legais/vistagem/envios", { method: "POST" })
       .catch(() => null)
       .finally(() => void carregar());
-    authFetch("/api/operacoes-legais/vistagem/integracoes")
-      .then((resposta) => resposta.json())
-      .then((corpo) => setIntegracoes(corpo.integracoes ?? []))
-      .catch(() => setIntegracoes([]));
   }, [carregar]);
 
   async function atualizarEnvios() {
@@ -879,18 +975,6 @@ function Conferencia() {
   const aConferir = useMemo(() => dados?.aConferir ?? [], [dados]);
   const enviadas = useMemo(() => dados?.enviadas ?? [], [dados]);
   const comErro = useMemo(() => enviadas.filter(temErro), [enviadas]);
-
-  const numeros = useMemo(() => {
-    const tarefasEnviadas = enviadas.flatMap((item) => item.agendamentos);
-    const abertas = [...aConferir, ...enviadas].flatMap((item) => item.inconsistencias).filter((item) => !item.excluidaEm);
-    return {
-      tarefasAConferir: aConferir.reduce((soma, item) => soma + item.agendamentos.length, 0),
-      agendadas: tarefasEnviadas.filter((item) => item.envioStatus === "concluido").length,
-      naFila: tarefasEnviadas.filter((item) => NA_FILA.includes(item.envioStatus)).length,
-      inconsistencias: abertas.length,
-      contestadas: abertas.filter((item) => item.contestacao).length,
-    };
-  }, [aConferir, enviadas]);
 
   /** Roda de novo todas as publicações com erro; as que podem duplicar no VIOS ficam para o botão da publicação. */
   async function rodarNovamenteComErro() {
@@ -926,6 +1010,9 @@ function Conferencia() {
   }
 
   function concluido(id: string, mensagem: string) {
+    // Segue para a próxima da fila (ou a anterior, se era a última).
+    const posicao = ids.indexOf(id);
+    if (posicao >= 0) setSelecionada(ids[posicao + 1] ?? ids[posicao - 1] ?? null);
     setRetorno({ tom: "sucesso", texto: mensagem });
     void carregar();
     setDados((atual) => (atual ? { ...atual, aConferir: atual.aConferir.filter((item) => item.publicacao.id !== id) } : atual));
@@ -950,7 +1037,6 @@ function Conferencia() {
       (!importacaoAtiva || item.publicacao.dataImportacao === importacaoAtiva)
   );
   const grupos = agruparConferencia(filtrada);
-  const valor = (n: number) => (dados ? n : "—");
 
   function limparFiltros() {
     setBusca("");
@@ -960,18 +1046,31 @@ function Conferencia() {
     setDataImportacao("");
   }
 
-  const listaDeItens = (itens: ConferenciaItem[], rotulo: string) => (
-    <ul className="space-y-4" aria-label={rotulo}>
+  // Mesma ordem da fila (área › tribunal): é por ela que as setas andam para a anterior e a próxima.
+  const ordem = grupos.flatMap((grupo) => (grupo.tribunais ? grupo.tribunais.flatMap((porTribunal) => porTribunal.itens) : grupo.itens));
+  const ids = ordem.map((item) => item.publicacao.id);
+  const indiceAberta = selecionada && ids.includes(selecionada) ? ids.indexOf(selecionada) : ids.length ? 0 : -1;
+  const aberta = indiceAberta >= 0 ? ordem[indiceAberta] : null;
+  const navegacao: Navegacao | null = aberta
+    ? { posicao: indiceAberta + 1, total: ids.length, anterior: ids[indiceAberta - 1] ?? null, proxima: ids[indiceAberta + 1] ?? null }
+    : null;
+
+  const idAberta = aberta?.publicacao.id ?? null;
+  useEffect(() => {
+    // Ao andar pelas setas, a fila acompanha a publicação aberta.
+    document.querySelector("[data-fila-conferencia] [aria-current=true]")?.scrollIntoView({ block: "nearest" });
+  }, [idAberta]);
+
+  function abrir(id: string) {
+    setSelecionada(id);
+    setListaNoCelular(false);
+  }
+
+  const linhasDaFila = (itens: ConferenciaItem[]) => (
+    <ul className="divide-y divide-[#eef3f5]">
       {itens.map((item) => (
         <li key={item.publicacao.id}>
-          <ItemConferencia
-            item={item}
-            comEnvio={aba === "enviadas"}
-            modoReal={!dados?.envioSimulado}
-            fotos={dados?.fotos ?? {}}
-            hoje={dados?.hoje ?? new Date().toISOString().slice(0, 10)}
-            onConcluido={concluido}
-          />
+          <LinhaDaFila item={item} comEnvio={aba === "enviadas"} aberta={item.publicacao.id === aberta?.publicacao.id} onAbrir={() => abrir(item.publicacao.id)} />
         </li>
       ))}
     </ul>
@@ -979,44 +1078,6 @@ function Conferencia() {
 
   return (
     <div className="space-y-4">
-      <BarraAba resumo="Valide para mandar as tarefas ao robô de agendamento do VIOS, ou devolva ao jurídico com o motivo.">
-        {dados?.envioSimulado ? (
-          <Selo tom="alerta" icone={Bot}>
-            Modo simulação: o robô preenche no VIOS sem gravar
-          </Selo>
-        ) : null}
-        {(integracoes ?? []).map((integracao) => (
-          <span key={integracao.nome} title={integracao.detalhe} className="inline-flex">
-            <Selo tom={integracao.ok ? "sucesso" : "perigo"} icone={integracao.ok ? Check : CircleAlert}>
-              {integracao.nome}
-            </Selo>
-            <span className="sr-only">
-              {integracao.ok ? " funcionando" : " com problema"}: {integracao.detalhe}
-            </span>
-          </span>
-        ))}
-      </BarraAba>
-
-      <Indicadores>
-        <Indicador icone={Inbox} rotulo="A conferir" valor={valor(aConferir.length)}>
-          {dados ? plural(numeros.tarefasAConferir, "tarefa para validar", "tarefas para validar") : null}
-        </Indicador>
-        <Indicador icone={Bot} rotulo="Enviadas ao robô" valor={valor(enviadas.length)}>
-          {dados ? `${plural(numeros.agendadas, "tarefa agendada", "tarefas agendadas")} no VIOS · ${numeros.naFila} na fila` : null}
-        </Indicador>
-        <Indicador icone={CircleAlert} rotulo="Com erro no robô" valor={valor(comErro.length)} tom={comErro.length ? "perigo" : "neutro"}>
-          {dados ? (comErro.length ? "Rode de novo em Enviadas ao robô" : "Nenhum erro agora") : null}
-        </Indicador>
-        <Indicador
-          icone={MessageSquareWarning}
-          rotulo="Inconsistências abertas"
-          valor={valor(numeros.inconsistencias)}
-          tom={numeros.contestadas ? "alerta" : "neutro"}
-        >
-          {dados ? `${plural(numeros.contestadas, "contestada", "contestadas")} pelo jurídico` : null}
-        </Indicador>
-      </Indicadores>
-
       <BarraAba
         resumo={
           <Segmented
@@ -1033,6 +1094,12 @@ function Conferencia() {
       >
         {aba !== "inconsistencias" ? (
           <>
+            {filaRecolhida ? (
+              <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)}>
+                <PanelLeftOpen />
+                Mostrar fila
+              </Button>
+            ) : null}
             <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Buscar processo, pasta ou cliente" aria-label="Buscar publicação" />
             <Seletor
               rotulo="Área"
@@ -1125,35 +1192,69 @@ function Conferencia() {
           </Vazio>
         </Painel>
       ) : (
-        // Agrupada por área e, no Trabalhista, por tribunal.
-        <div className="space-y-6">
-          {grupos.map((grupo, indice) => (
-            <section key={grupo.area} aria-labelledby={`conferencia-area-${indice}`} className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2 border-b border-[#dce9eb] pb-2">
-                <IconeArea area={grupo.area} />
-                <h2 id={`conferencia-area-${indice}`} className="text-base font-semibold text-[#10293a]">
-                  {grupo.area}
-                </h2>
-                <span className="text-xs tabular-nums text-muted-foreground">{plural(grupo.itens.length, "publicação", "publicações")}</span>
-              </div>
-              {grupo.tribunais ? (
-                grupo.tribunais.map((porTribunal, posicao) => (
-                  <section key={porTribunal.tribunal} aria-labelledby={`conferencia-area-${indice}-tribunal-${posicao}`} className="space-y-3">
-                    <div className="flex items-center gap-1.5 pl-1">
-                      <Landmark className="size-4 text-[#3e84a8]" aria-hidden />
-                      <h3 id={`conferencia-area-${indice}-tribunal-${posicao}`} className="text-sm font-semibold text-[#285f7a]">
-                        {porTribunal.tribunal}
-                      </h3>
-                      <span className="text-xs tabular-nums text-muted-foreground">{porTribunal.itens.length}</span>
-                    </div>
-                    {listaDeItens(porTribunal.itens, `${grupo.area} · ${porTribunal.tribunal}`)}
-                  </section>
-                ))
-              ) : (
-                listaDeItens(grupo.itens, grupo.area)
-              )}
-            </section>
-          ))}
+        // Um processo por vez, como na vistagem do jurídico: a fila (por área e, no Trabalhista, por tribunal) fica
+        // recolhida e as setas da faixa andam entre as publicações. No desktop, fila e publicação rolam cada uma no seu painel.
+        <div
+          className={cn(
+            // A linha tem a altura da grade (e não a do conteúdo): é o que deixa publicação e tarefas rolarem por dentro.
+            "grid gap-4 lg:h-[calc(100dvh-10.5rem)] lg:min-h-[30rem] lg:grid-rows-[minmax(0,1fr)]",
+            filaRecolhida ? "lg:grid-cols-1" : "lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]"
+          )}
+        >
+          <Painel
+            aria-label={aba === "conferir" ? "Publicações a conferir" : "Publicações enviadas ao robô"}
+            data-fila-conferencia
+            className={cn("lg:flex lg:h-full lg:flex-col", aberta && !listaNoCelular && "hidden lg:flex", filaRecolhida && "lg:hidden")}
+          >
+            <div className="hidden items-center gap-2 border-b border-[#e6eef0] px-4 py-2 lg:flex">
+              <span className="flex-1 text-xs font-medium text-muted-foreground">
+                Fila <span className="tabular-nums">· {ordem.length}</span>
+              </span>
+              <Button type="button" size="icon-xs" variant="ghost" onClick={() => setFilaRecolhida(true)} aria-label="Recolher a fila" title="Recolher a fila">
+                <PanelLeftClose />
+              </Button>
+            </div>
+            <div className="max-h-[70vh] overflow-auto lg:max-h-none lg:flex-1">
+              {grupos.map((grupo) => (
+                <section key={grupo.area} aria-label={grupo.area}>
+                  <h3 className="sticky top-0 z-10 flex items-center gap-2 border-b border-[#e6eef0] bg-[#f7fbfc] px-4 py-2 text-xs font-semibold text-[#285f7a]">
+                    <IconeArea area={grupo.area} />
+                    <span className="truncate">{grupo.area}</span>
+                    <span className="font-normal tabular-nums text-muted-foreground">{grupo.itens.length}</span>
+                  </h3>
+                  {grupo.tribunais
+                    ? grupo.tribunais.map((porTribunal) => (
+                        <section key={porTribunal.tribunal} aria-label={`${grupo.area} · ${porTribunal.tribunal}`}>
+                          <p className="flex items-center gap-1.5 border-b border-[#eef3f5] px-4 py-1.5 text-[11px] font-semibold text-muted-foreground">
+                            <Landmark className="size-3.5 text-[#3e84a8]" aria-hidden />
+                            {porTribunal.tribunal}
+                            <span className="font-normal tabular-nums">{porTribunal.itens.length}</span>
+                          </p>
+                          {linhasDaFila(porTribunal.itens)}
+                        </section>
+                      ))
+                    : linhasDaFila(grupo.itens)}
+                </section>
+              ))}
+            </div>
+          </Painel>
+
+          <div className={cn("min-w-0 lg:h-full lg:min-h-0", (!aberta || listaNoCelular) && "hidden lg:block")}>
+            {aberta ? (
+              <ItemConferencia
+                key={aberta.publicacao.id}
+                item={aberta}
+                comEnvio={aba === "enviadas"}
+                modoReal={!dados?.envioSimulado}
+                fotos={dados?.fotos ?? {}}
+                hoje={dados?.hoje ?? new Date().toISOString().slice(0, 10)}
+                navegacao={navegacao}
+                onAbrir={abrir}
+                onVoltar={() => setListaNoCelular(true)}
+                onConcluido={concluido}
+              />
+            ) : null}
+          </div>
         </div>
       )}
     </div>

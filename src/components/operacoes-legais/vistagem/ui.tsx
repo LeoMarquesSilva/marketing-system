@@ -165,7 +165,7 @@ export function Indicador({
       </p>
       <p
         className={cn(
-          "mt-1 text-[28px] font-semibold leading-8 tabular-nums",
+          "mt-1 text-[1.75rem] font-semibold leading-8 tabular-nums",
           tom === "alerta" ? "text-amber-700" : tom === "perigo" ? "text-red-700" : tom === "sucesso" ? "text-emerald-700" : "text-[#10293a]"
         )}
       >

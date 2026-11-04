@@ -177,6 +177,21 @@
   html {
     color-scheme: light;
   }
+  /*
+   * Notebooks e monitores com a escala do Windows em 125%/150% ficam com pouca tela útil (≈1280–1600 px) e a
+   * interface parece "com zoom". Nessas larguras de desktop o tamanho base diminui um pouco: como espaçamentos e
+   * textos estão em rem, tudo encolhe junto (como um zoom out). Celular e monitores grandes ficam como estão.
+   */
+  @media (min-width: 64rem) and (max-width: 90rem) {
+    html {
+      font-size: 87.5%;
+    }
+  }
+  @media (min-width: 90.0625rem) and (max-width: 105rem) {
+    html {
+      font-size: 93.75%;
+    }
+  }
   * {
     @apply border-border outline-ring/50;
     letter-spacing: 0 !important;

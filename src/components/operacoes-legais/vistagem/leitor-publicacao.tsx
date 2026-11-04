@@ -161,7 +161,8 @@ export function LeitorPublicacao({
                 );
               }
               return (
-                <p key={indice} className="text-[15px] leading-7 text-foreground">
+                // Acompanha o tamanho base da tela, mas não fica abaixo de 14px: é o texto que o jurídico lê por inteiro.
+                <p key={indice} className="text-[max(0.9375rem,14px)] leading-7 text-foreground">
                   {destacar(paragrafo.texto).map((trecho) => {
                     if (!trecho.tipo) return <span key={trecho.inicio}>{trecho.texto}</span>;
                     const id = `${base}-${indice}-${trecho.inicio}`;
