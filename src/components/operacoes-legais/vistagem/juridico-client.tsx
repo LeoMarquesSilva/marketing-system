@@ -39,6 +39,7 @@ import {
   separarNomes,
   type EtiquetaAgendamento,
 } from "@/lib/vistagem/agendamento";
+import { cienciaDosAgendamentos } from "@/lib/vistagem/ciencia-agendamentos";
 import {
   CONTAGENS_PRAZO,
   criarCalendario,
@@ -105,6 +106,47 @@ interface Linha {
 }
 
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
+
+/**
+ * Aviso de que o Orquestra acrescenta a 1. CIÊNCIA DOS AGENDAMENTOS: nenhuma tarefa é ela e o fluxo do VIOS de
+ * nenhuma a cria. Mostra para quem vai (Reestruturação: o revisor no lugar do estagiário); o servidor decide ao gravar.
+ */
+function CienciaDoOrquestra({
+  linhas,
+  catalogo,
+  detalhe,
+}: {
+  linhas: Linha[];
+  catalogo: NonNullable<VistagemDetalhe["catalogo"]>;
+  detalhe: VistagemDetalhe;
+}) {
+  if (detalhe.fluxosErro) return null;
+  const estagiarios = new Set(detalhe.estagiarios.map(chaveNome));
+  const ciencia = cienciaDosAgendamentos(
+    linhas.map((linha) => ({
+      tarefa: linha.tarefa,
+      tarefaId: catalogo.tarefas[linha.etiqueta].find((opcao) => opcao.nome === linha.tarefa)?.id ?? null,
+      responsaveis: separarNomes(linha.responsavel).map((nome) => ({ id: null, nome })),
+      revisor: linha.revisor.trim() ? { id: null, nome: linha.revisor.trim() } : null,
+    })),
+    {
+      fluxoDe: (tarefaId) => detalhe.fluxos[tarefaId] ?? null,
+      area: detalhe.publicacao.escritorioResponsavel ?? catalogo.area,
+      ehEstagiario: (pessoa) => estagiarios.has(chaveNome(pessoa.nome)),
+    }
+  );
+  if (!ciencia) return null;
+  const varias = linhas.filter((linha) => linha.tarefa).length > 1;
+  return (
+    <div className="px-4 pb-3">
+      <Aviso tom="info" titulo="O Orquestra cria também a 1. CIÊNCIA DOS AGENDAMENTOS">
+        O fluxo do VIOS {varias ? "destas tarefas" : "desta tarefa"} não cria a Ciência dos Agendamentos: ela vai junto, com a data do
+        lançamento, para {ciencia.responsaveis.map((pessoa) => pessoa.nome).join(", ")}
+        {ciencia.revisorNoLugarDe.length ? ` (na Reestruturação, o revisor no lugar de ${ciencia.revisorNoLugarDe.join(", ")}, estagiário)` : ""}.
+      </Aviso>
+    </div>
+  );
+}
 
 let proximaChave = 1;
 function novaLinha(base: Partial<Linha> = {}): Linha {
@@ -1134,6 +1176,8 @@ export function EditorVistagem({
                     );
                   })}
                 </ol>
+
+                <CienciaDoOrquestra linhas={linhas} catalogo={catalogo} detalhe={detalhe} />
 
                 {erro ? (
                   <div className="px-4 pb-3">
