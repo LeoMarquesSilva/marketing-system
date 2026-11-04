@@ -36,6 +36,7 @@ import { DialogHeaderIcon, DialogSectionHeading } from "@/components/eventos/dia
 import { EventStorageUrlField } from "@/components/eventos/event-storage-url-field";
 import { EventoSupplierDialog } from "@/components/eventos/evento-supplier-dialog";
 import { SupplierSelectSearch } from "@/components/eventos/supplier-select-search";
+import { TermHint } from "@/components/eventos/term-hint";
 import {
   BUDGET_CATEGORIES,
   BUDGET_PAYMENT_LABEL,
@@ -242,7 +243,7 @@ export function EventoBudgetDialog({
               <div className="grid gap-4 sm:grid-cols-3">
                 <FormField control={form.control} name="amount_planned" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Previsto <span className="text-red-500">*</span></FormLabel>
+                    <FormLabel>Previsto <span className="text-red-500">*</span><TermHint term="previsto" /></FormLabel>
                     <FormControl>
                       <CurrencyInput value={field.value} onChange={field.onChange} onBlur={field.onBlur} name={field.name} />
                     </FormControl>
@@ -251,7 +252,7 @@ export function EventoBudgetDialog({
                 )} />
                 <FormField control={form.control} name="amount_quoted" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Cotado</FormLabel>
+                    <FormLabel>Cotado<TermHint term="cotado" /></FormLabel>
                     <FormControl>
                       <CurrencyInput value={field.value ?? ""} onChange={field.onChange} onBlur={field.onBlur} name={field.name} />
                     </FormControl>
@@ -259,7 +260,7 @@ export function EventoBudgetDialog({
                 )} />
                 <FormField control={form.control} name="amount_actual" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Realizado</FormLabel>
+                    <FormLabel>Realizado<TermHint term="realizado" /></FormLabel>
                     <FormControl>
                       <CurrencyInput value={field.value ?? ""} onChange={field.onChange} onBlur={field.onBlur} name={field.name} />
                     </FormControl>
@@ -270,7 +271,7 @@ export function EventoBudgetDialog({
               <div className="grid gap-4 sm:grid-cols-3">
                 <FormField control={form.control} name="payment_status" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Status pagamento</FormLabel>
+                    <FormLabel>Status pagamento<TermHint term="pagamento" /></FormLabel>
                     <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { CalendarPlus, Info, Loader2, TrendingUp, Wallet2 } from "lucide-react";
+import { CalendarPlus, FileSpreadsheet, Info, Loader2, TrendingUp, Wallet2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +28,9 @@ import {
   type EventsForecast,
   type ForecastBaseSource,
 } from "@/lib/eventos";
+import type { EventTermKey } from "@/lib/eventos-glossario";
 import { cn } from "@/lib/utils";
+import { TermLabel } from "@/components/eventos/term-hint";
 
 const BASE_SOURCE_LABEL: Record<ForecastBaseSource, string> = {
   realizado: "Realizado",
@@ -57,6 +59,7 @@ export function PlanejamentoClient({ initialForecast, years }: PlanejamentoClien
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const { targetYear, historyYears, rows, unlinkedCount } = forecast;
@@ -161,6 +164,36 @@ export function PlanejamentoClient({ initialForecast, years }: PlanejamentoClien
     }
   }
 
+  async function handleExport() {
+    setExporting(true);
+    setFeedback(null);
+    try {
+      const params = new URLSearchParams({
+        year: String(targetYear),
+        reajuste: String(Math.round(adjustmentRate * 10000) / 100),
+      });
+      const res = await fetch(`/api/eventos/planejamento/planilha?${params}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        setFeedback(body?.error ?? "Não foi possível gerar a planilha. Tente de novo.");
+        return;
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `planejamento-eventos-${targetYear}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error("Erro ao gerar a planilha do planejamento:", err);
+      setFeedback("Não foi possível gerar a planilha. Tente de novo.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const selectedCount = creatable.filter((r) => selected.has(r.seriesId)).length;
   const lastHistoryYear = historyYears.at(-1) ?? null;
 
@@ -193,6 +226,19 @@ export function PlanejamentoClient({ initialForecast, years }: PlanejamentoClien
             </SelectContent>
           </Select>
           {loading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+          <Button
+            variant="outline"
+            onClick={handleExport}
+            disabled={loading || exporting || forecast.editions.length === 0}
+            title={`Calendário ${targetYear} com budget, mais fornecedores, orçamentos e arquivos de cada evento`}
+          >
+            {exporting ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="h-4 w-4 mr-1" />
+            )}
+            Baixar planilha
+          </Button>
         </div>
       </div>
 
@@ -203,12 +249,16 @@ export function PlanejamentoClient({ initialForecast, years }: PlanejamentoClien
           <SummaryCard
             icon={<Wallet2 className="h-4 w-4" />}
             label={`Previsão ${targetYear}`}
+            term="previsao"
+            termTitle={`Previsão ${targetYear}`}
             value={totals.projectedTotal > 0 ? formatBrl(totals.projectedTotal) : "—"}
             sub={`${totals.withBase} de ${rows.length} séries com base histórica`}
           />
           <SummaryCard
             icon={<TrendingUp className="h-4 w-4" />}
             label={lastHistoryYear ? `Base ${lastHistoryYear}` : "Base histórica"}
+            term="baseHistorica"
+            termTitle={lastHistoryYear ? `Base ${lastHistoryYear}` : undefined}
             value={
               lastHistoryYear && totals.perYear[lastHistoryYear] > 0
                 ? formatBrl(totals.perYear[lastHistoryYear])
@@ -219,12 +269,14 @@ export function PlanejamentoClient({ initialForecast, years }: PlanejamentoClien
           <SummaryCard
             icon={<CalendarPlus className="h-4 w-4" />}
             label={`Séries sem edição em ${targetYear}`}
+            term="serie"
             value={String(creatable.length)}
             sub="Podem ser abertas a partir do ano anterior"
           />
           <SummaryCard
             icon={<Info className="h-4 w-4" />}
             label="Reajuste aplicado"
+            term="reajuste"
             value={`${adjustment || 0}%`}
             sub="Incide sobre a base de cada série"
           />
@@ -301,15 +353,17 @@ export function PlanejamentoClient({ initialForecast, years }: PlanejamentoClien
                       className="h-4 w-4 rounded border-input"
                     />
                   </TableHead>
-                  <TableHead>Série</TableHead>
+                  <TableHead><TermLabel term="serie">Série</TermLabel></TableHead>
                   {historyYears.map((y) => (
                     <TableHead key={y} className="text-right">
-                      {y}
+                      <TermLabel term="valorDoAno" title={`Valor de ${y}`}>{y}</TermLabel>
                     </TableHead>
                   ))}
-                  <TableHead className="text-right">Base</TableHead>
-                  <TableHead className="text-right">R$/pessoa</TableHead>
-                  <TableHead className="text-right">Previsão {targetYear}</TableHead>
+                  <TableHead className="text-right"><TermLabel term="base">Base</TermLabel></TableHead>
+                  <TableHead className="text-right"><TermLabel term="porPessoa">R$/pessoa</TermLabel></TableHead>
+                  <TableHead className="text-right">
+                    <TermLabel term="previsao" title={`Previsão ${targetYear}`}>Previsão {targetYear}</TermLabel>
+                  </TableHead>
                   <TableHead>Situação em {targetYear}</TableHead>
                 </TableRow>
               </TableHeader>
@@ -437,17 +491,29 @@ function SummaryCard({
   label,
   value,
   sub,
+  term,
+  termTitle,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   sub: string;
+  /** Termo do glossário explicado no "?" ao lado do rótulo. */
+  term?: EventTermKey;
+  /** Título da dica quando o rótulo já é o nome do termo (ex.: "Previsão 2027"). */
+  termTitle?: string;
 }) {
   return (
     <div className="rounded-lg border border-border/50 bg-background/60 p-4">
       <div className="flex items-center gap-2 text-muted-foreground mb-2">
         {icon}
-        <span className="text-xs font-medium">{label}</span>
+        {term ? (
+          <TermLabel term={term} title={termTitle} className="text-xs font-medium">
+            {label}
+          </TermLabel>
+        ) : (
+          <span className="text-xs font-medium">{label}</span>
+        )}
       </div>
       <p className="text-xl font-bold tracking-tight tabular-nums">{value}</p>
       <p className="text-[11px] text-muted-foreground mt-1">{sub}</p>
