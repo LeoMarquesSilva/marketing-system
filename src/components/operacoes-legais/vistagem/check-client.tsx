@@ -6,7 +6,10 @@ import {
   ArrowLeft,
   CalendarClock,
   CircleCheck,
+  ClipboardCheck,
+  Eye,
   FileText,
+  Hourglass,
   Info,
   Landmark,
   Layers,
@@ -15,6 +18,7 @@ import {
   PanelLeftOpen,
   RefreshCw,
   SearchX,
+  Tags,
   ShieldAlert,
   TriangleAlert,
   UserRound,
@@ -28,7 +32,16 @@ import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import { chaveNome } from "@/lib/vistagem/agendamento";
 import { camposDaConferencia, combinaCampos } from "@/lib/vistagem/busca";
-import { compararTarefa, descricaoSugerida, situacaoDoCheck, subtipoSugerido, type SituacaoCheck } from "@/lib/vistagem/check";
+import {
+  TIPOS_DE_AGENDAMENTO,
+  compararTarefa,
+  descricaoSugerida,
+  situacaoDoCheck,
+  subtipoSugerido,
+  tiposDoItem,
+  type SituacaoCheck,
+  type TipoDeAgendamento,
+} from "@/lib/vistagem/check";
 import { SUBTIPOS_AGENDAMENTO_EM_USO, TIPOS_INCONSISTENCIA_AGENDAMENTO } from "@/lib/vistagem/inconsistencias";
 import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
 import type { AgendamentoResumo, CheckResposta, ConferenciaItem } from "@/lib/vistagem/types";
@@ -222,6 +235,13 @@ function ItemCheck({
           <>
             <SeloEsocial publicacao={publicacao} />
             <AutoriaNaFaixa papel="Vistada por" nome={item.vistadoPor} quando={publicacao.vistadoEm} fotos={fotos} />
+            {/* Devolvida e vistada de novo: quem analisou primeiro fica em "Vistada por"; depois, quem devolveu e quem vistou de novo. */}
+            {item.revistadoPor ? (
+              <>
+                <AutoriaNaFaixa papel="Devolvida por" nome={item.devolvidoPor} quando={publicacao.devolvidoEm} fotos={fotos} />
+                <AutoriaNaFaixa papel="Vistada de novo por" nome={item.revistadoPor} quando={publicacao.revistadoEm} fotos={fotos} />
+              </>
+            ) : null}
             <AutoriaNaFaixa papel="Conferida por" nome={item.conferidoPor} quando={publicacao.conferidoEm} fotos={fotos} />
             {checada ? <AutoriaNaFaixa papel="Checada por" nome={item.checadoPor ?? null} quando={publicacao.checadoEm} fotos={fotos} /> : null}
           </>
@@ -458,6 +478,14 @@ const VAZIO: Record<Aba, { titulo: string; texto: string }> = {
   checadas: { titulo: "Nenhuma publicação checada ainda.", texto: "As publicações com check registrado aparecem aqui." },
 };
 
+/** Ícone de cada tipo de agendamento no filtro. */
+const ICONE_DO_TIPO: Record<TipoDeAgendamento, LucideIcon> = {
+  CIENCIA_NF: Eye,
+  PRAZO: Hourglass,
+  PROVIDENCIA: ClipboardCheck,
+  COMPROMISSO: CalendarClock,
+};
+
 function Check() {
   const [aba, setAba] = useState<Aba>("aChecar");
   const [dados, setDados] = useState<CheckResposta | null>(null);
@@ -475,6 +503,8 @@ function Check() {
   const [tribunal, setTribunal] = useState("");
   /** Pedido × VIOS; vazio é "Todas as situações". */
   const [situacao, setSituacao] = useState("");
+  /** Ciência NF, Prazo, Providência ou Compromisso; vazio é "Todos os tipos". */
+  const [tipoAgendamento, setTipoAgendamento] = useState("");
   /** Publicação escolhida; sem escolha (ou fora dos filtros), abre a primeira da fila. */
   const [selecionada, setSelecionada] = useState<string | null>(null);
   /** A fila abre recolhida, como na vistagem: a publicação ocupa a largura toda. */
@@ -521,6 +551,9 @@ function Check() {
   // Pedido × VIOS de cada publicação: também uma vez por carga.
   const situacoes = useMemo(() => new Map(todas.map((item) => [item.publicacao.id, situacaoDoCheck(item)])), [todas]);
   const situacaoDe = (item: ConferenciaItem): SituacaoCheck => situacoes.get(item.publicacao.id) ?? "conferir";
+  // Tipos de agendamento de cada publicação (Ciência NF, Prazo, Providência, Compromisso): também uma vez por carga.
+  const tiposPorItem = useMemo(() => new Map(todas.map((item) => [item.publicacao.id, tiposDoItem(item)])), [todas]);
+  const tiposDe = (item: ConferenciaItem): TipoDeAgendamento[] => tiposPorItem.get(item.publicacao.id) ?? [];
 
   const lista = dados?.[aba];
   const datasDaLista = (lista ?? []).map((item) => item.publicacao.dataPublicacao);
@@ -534,11 +567,13 @@ function Check() {
   const tribunaisDaLista = contarPor(daArea, (item) => tribunalDe(item.publicacao));
   const tribunalAtivo = tribunaisDaLista.some(([nome]) => nome === tribunal) ? tribunal : "";
   const situacoesDaLista = new Map(contarPor(lista ?? [], situacaoDe));
+  const tiposDaLista = new Map(TIPOS_DE_AGENDAMENTO.map((tipo) => [tipo.valor, (lista ?? []).filter((item) => tiposDe(item).includes(tipo.valor)).length]));
   const filtrada = daArea.filter(
     (item) =>
       combinaCampos(camposDeBusca.get(item.publicacao.id) ?? [], busca) &&
       (!tribunalAtivo || tribunalDe(item.publicacao) === tribunalAtivo) &&
       (!situacao || situacaoDe(item) === situacao) &&
+      (!tipoAgendamento || tiposDe(item).includes(tipoAgendamento as TipoDeAgendamento)) &&
       (!dataAtiva || item.publicacao.dataPublicacao === dataAtiva) &&
       (!importacaoAtiva || item.publicacao.dataImportacao === importacaoAtiva)
   );
@@ -549,6 +584,7 @@ function Check() {
     setArea("");
     setTribunal("");
     setSituacao("");
+    setTipoAgendamento("");
     setDataPublicacao("");
     setDataImportacao("");
   }
@@ -685,6 +721,20 @@ function Check() {
             descricao: descricaoDoTribunal(nome),
             contagem: quantidade,
             icone: <IconeTribunal sigla={nome} />,
+          }))}
+        />
+        <Seletor
+          rotulo="Tipo de agendamento"
+          className="sm:w-56"
+          valor={tipoAgendamento}
+          onChange={setTipoAgendamento}
+          todos={{ rotulo: "Todos os tipos", contagem: lista?.length, icone: <IconeOpcao icone={Tags} /> }}
+          opcoes={TIPOS_DE_AGENDAMENTO.map((tipo) => ({
+            valor: tipo.valor,
+            rotulo: tipo.rotulo,
+            descricao: tipo.descricao,
+            contagem: tiposDaLista.get(tipo.valor) ?? 0,
+            icone: <IconeOpcao icone={ICONE_DO_TIPO[tipo.valor]} />,
           }))}
         />
         <FiltroData rotulo="Data Publicação" datas={datasDaLista} valor={dataAtiva} onChange={setDataPublicacao} />

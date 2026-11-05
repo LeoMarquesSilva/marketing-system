@@ -212,7 +212,7 @@ export function TabelaTarefas({ agendamentos, comEnvio, compacta = false }: { ag
               <Celula rotulo="Data" compacta={compacta}>
                 <span className="tabular-nums text-foreground">
                   {formatarData(item.data)}
-                  {!item.dataFatal && item.hora ? ` às ${item.hora}` : ""}
+                  {!item.dataFatal && item.hora ? ` às ${item.hora}${item.horaFim ? ` até ${item.horaFim}` : ""}` : ""}
                 </span>
                 {item.dataFatal ? (
                   <span className="mt-0.5 block text-xs text-muted-foreground">
@@ -575,6 +575,13 @@ function ItemConferencia({
           <>
             <SeloEsocial publicacao={publicacao} />
             <Autoria papel="Vistada por" nome={item.vistadoPor} quando={publicacao.vistadoEm} fotos={fotos} />
+            {/* Devolvida e vistada de novo: quem analisou primeiro fica em "Vistada por"; depois, quem devolveu e quem vistou de novo. */}
+            {item.revistadoPor ? (
+              <>
+                <Autoria papel="Devolvida por" nome={item.devolvidoPor} quando={publicacao.devolvidoEm} fotos={fotos} />
+                <Autoria papel="Vistada de novo por" nome={item.revistadoPor} quando={publicacao.revistadoEm} fotos={fotos} />
+              </>
+            ) : null}
             {comEnvio && publicacao.conferidoEm ? (
               <Autoria papel="Conferida por" nome={item.conferidoPor} quando={publicacao.conferidoEm} fotos={fotos} />
             ) : null}
@@ -902,7 +909,13 @@ function LinhaDaFila({ item, comEnvio, aberta, onAbrir }: { item: ConferenciaIte
         <span className="truncate">{publicacao.cliente ?? publicacao.grupoCliente ?? "—"}</span>
       </span>
       <span className="block truncate text-xs text-muted-foreground">
-        {[item.vistadoPor ? `vistada por ${item.vistadoPor}` : null, resumoTarefas(item.agendamentos, comEnvio)].filter(Boolean).join(" · ")}
+        {[
+          item.vistadoPor ? `vistada por ${item.vistadoPor}` : null,
+          item.revistadoPor ? `de novo por ${item.revistadoPor}` : null,
+          resumoTarefas(item.agendamentos, comEnvio),
+        ]
+          .filter(Boolean)
+          .join(" · ")}
       </span>
     </button>
   );

@@ -147,6 +147,8 @@ export interface PublicacaoResumo {
   conferidoEm: string | null;
   devolucaoMotivo: string | null;
   devolvidoEm: string | null;
+  /** Vistada de novo depois da devolução (vistadoEm continua sendo a primeira vistagem). */
+  revistadoEm: string | null;
   checadoEm: string | null;
   checkNota: string | null;
   /** Última transferência para a fila de outra área (escritório de origem, quando e por quê). */
@@ -271,6 +273,8 @@ export interface AgendamentoResumo {
   contagemPrazo: ContagemPrazo | null;
   /** COMPROMISSO: horário HH:MM. */
   hora: string | null;
+  /** COMPROMISSO: Hora final HH:MM (null nos antigos: o robô pôs 1 hora depois, ou 00:00 antes de 05/11/2026). */
+  horaFim: string | null;
   responsavel: string;
   revisor: string | null;
   observacao: string | null;
@@ -364,7 +368,12 @@ export interface ConferenciaItem {
   publicacao: PublicacaoResumo;
   agendamentos: AgendamentoResumo[];
   inconsistencias: InconsistenciaResumo[];
+  /** Quem vistou primeiro (quem analisou a publicação; a devolução volta para essa pessoa). */
   vistadoPor: string | null;
+  /** Quem devolveu ao jurídico na última devolução da conferência. */
+  devolvidoPor: string | null;
+  /** Quem vistou de novo depois da devolução. */
+  revistadoPor: string | null;
   conferidoPor: string | null;
   /** Quem deu o check (só as listas do Check trazem). */
   checadoPor?: string | null;

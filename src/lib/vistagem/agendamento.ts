@@ -54,6 +54,8 @@ export interface AgendamentoEntrada {
   contagemPrazo?: ContagemPrazo | null;
   /** COMPROMISSO: HH:MM da audiência, perícia, sessão… (obrigatório). */
   hora?: string | null;
+  /** COMPROMISSO: HH:MM em que termina (Hora final no VIOS); sem ela, 1 hora depois da inicial. */
+  horaFim?: string | null;
   responsavel: string;
   revisor?: string | null;
   observacao?: string | null;
@@ -73,6 +75,8 @@ export interface AgendamentoValidado {
   contagemPrazo: ContagemPrazo | null;
   /** COMPROMISSO: HH:MM; nas outras classes, null. */
   hora: string | null;
+  /** COMPROMISSO: Hora final no VIOS (HH:MM, depois da inicial); nas outras classes, null. */
+  horaFim: string | null;
   responsavel: string;
   responsavelId: string;
   revisor: string | null;
@@ -261,6 +265,14 @@ export function horaValida(hora: string | null | undefined): hora is string {
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(hora ?? ""));
 }
 
+/** Hora final padrão do Compromisso: 1 hora depois da inicial, sem passar das 23:59 ("09:30" → "10:30"). */
+export function horaFinalPadrao(hora: string | null | undefined): string {
+  if (!horaValida(hora)) return "";
+  const [h, m] = hora.split(":").map(Number);
+  const minutos = Math.min(h * 60 + m + 60, 23 * 60 + 59);
+  return `${String(Math.floor(minutos / 60)).padStart(2, "0")}:${String(minutos % 60).padStart(2, "0")}`;
+}
+
 /** AAAA-MM-DD → DD/MM/AAAA (contrato da fila do robô). */
 export function paraDataVios(iso: string): string {
   const [ano, mes, dia] = iso.split("-");
@@ -324,6 +336,12 @@ export function validarAgendamentos(
     const compromisso = entrada.etiqueta === "COMPROMISSO";
     const hora = compromisso && horaValida(entrada.hora?.trim()) ? (entrada.hora as string).trim() : null;
     if (compromisso && !hora) erros.push(`${n}: informe o horário do compromisso.`);
+    // Hora final: a escolhida (depois da inicial) ou 1 hora depois; sem ela o VIOS grava 00:00 (CI 934918).
+    const horaFimPedida = entrada.horaFim?.trim() || "";
+    if (compromisso && hora && horaFimPedida && (!horaValida(horaFimPedida) || horaFimPedida <= hora)) {
+      erros.push(`${n}: a hora final tem de ser depois da hora do compromisso.`);
+    }
+    const horaFim = compromisso && hora ? (horaValida(horaFimPedida) && horaFimPedida > hora ? horaFimPedida : horaFinalPadrao(hora)) : null;
     // Pode haver mais de um responsável (ex.: tipos com responsáveis fixos no VIOS), separados por vírgula.
     const nomesResponsaveis = separarNomes(entrada.responsavel);
     const encontrados = nomesResponsaveis.map((nome) => usuarioPorChave.get(chaveNome(nome)));
@@ -366,6 +384,7 @@ export function validarAgendamentos(
       diasPrazo,
       contagemPrazo,
       hora,
+      horaFim,
       responsavel: responsavel.map((usuario) => usuario.nome).join(", "),
       responsavelId: responsavel.map((usuario) => usuario.id).join(","),
       revisor: revisor?.nome ?? null,

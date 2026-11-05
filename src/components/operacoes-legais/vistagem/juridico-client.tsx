@@ -45,6 +45,7 @@ import {
   avisosDaData,
   chaveDoCaminho,
   chaveNome,
+  horaFinalPadrao,
   horaValida,
   separarNomes,
   type EtiquetaAgendamento,
@@ -108,6 +109,8 @@ interface Linha {
   contagemPrazo: ContagemPrazo | null;
   /** Compromisso: horário HH:MM (Hora tarefa no VIOS). */
   hora: string;
+  /** Compromisso: Hora final no VIOS (HH:MM); começa 1 hora depois da inicial e acompanha até a pessoa mudar. */
+  horaFim: string;
   responsavel: string;
   revisor: string;
   observacao: string;
@@ -187,6 +190,7 @@ function novaLinha(base: Partial<Linha> = {}): Linha {
     diasPrazo: null,
     contagemPrazo: "uteis",
     hora: "",
+    horaFim: "",
     responsavel: "",
     revisor: "",
     observacao: "",
@@ -202,7 +206,12 @@ const campo = campoClasse;
 function linhaCompleta(linha: Linha): boolean {
   if (!linha.tarefa || !linha.responsavel) return false;
   if (linha.etiqueta === "PRAZO") return Boolean(linha.dataFatal && linha.revisor);
-  return Boolean(linha.data) && (linha.etiqueta !== "COMPROMISSO" || horaValida(linha.hora));
+  return Boolean(linha.data) && (linha.etiqueta !== "COMPROMISSO" || (horaValida(linha.hora) && horaFinalValida(linha)));
+}
+
+/** Hora final vazia (vai 1 hora depois) ou depois da inicial. */
+function horaFinalValida(linha: Pick<Linha, "hora" | "horaFim">): boolean {
+  return !linha.horaFim || (horaValida(linha.horaFim) && linha.horaFim > linha.hora);
 }
 
 /** Pergunta data e horário ao escolher um Compromisso (audiência, perícia, sessão…). Montar com key da linha. */
@@ -542,6 +551,7 @@ export function EditorVistagem({
                   diasPrazo: item.diasPrazo,
                   contagemPrazo: item.contagemPrazo ?? "uteis",
                   hora: item.hora ?? "",
+                  horaFim: item.horaFim ?? horaFinalPadrao(item.hora),
                   responsavel: item.responsavel,
                   revisor: item.revisor ?? "",
                   observacao: item.observacao ?? "",
@@ -605,7 +615,12 @@ export function EditorVistagem({
         if (linha.chave !== chave) return linha;
         // Outro tipo de tarefa tem outro fluxo: as datas mudadas no fluxo anterior não valem mais.
         const outroTipo = (mudanca.tarefa !== undefined && mudanca.tarefa !== linha.tarefa) || (mudanca.etiqueta !== undefined && mudanca.etiqueta !== linha.etiqueta);
-        return { ...linha, ...mudanca, ...(outroTipo && !mudanca.fluxoDatas ? { fluxoDatas: {} } : {}) };
+        // A hora final acompanha a inicial (1 hora depois) enquanto a pessoa não mudar a final.
+        const horaFimAcompanha =
+          mudanca.hora !== undefined && mudanca.horaFim === undefined && (!linha.horaFim || linha.horaFim === horaFinalPadrao(linha.hora))
+            ? { horaFim: horaFinalPadrao(mudanca.hora) }
+            : {};
+        return { ...linha, ...mudanca, ...horaFimAcompanha, ...(outroTipo && !mudanca.fluxoDatas ? { fluxoDatas: {} } : {}) };
       })
     );
   }
@@ -679,6 +694,7 @@ export function EditorVistagem({
           contagemPrazo: prazo && tarefa.dias ? tarefa.contagem : null,
           data: tarefa.classe === "COMPROMISSO" ? tarefa.data ?? "" : "",
           hora: tarefa.hora ?? "",
+          horaFim: horaFinalPadrao(tarefa.hora),
           responsavel: opcao.responsaveis?.length ? opcao.responsaveis.join(", ") : detalhe.responsavelSugerido ?? "",
           revisor: prazo ? detalhe.revisorSugerido ?? "" : "",
           observacao: tarefa.motivo,
@@ -738,6 +754,7 @@ export function EditorVistagem({
             diasPrazo: linha.etiqueta === "PRAZO" ? linha.diasPrazo : null,
             contagemPrazo: linha.etiqueta === "PRAZO" && linha.diasPrazo ? linha.contagemPrazo : null,
             hora: linha.etiqueta === "COMPROMISSO" ? linha.hora : null,
+            horaFim: linha.etiqueta === "COMPROMISSO" ? linha.horaFim || null : null,
             responsavel: linha.responsavel,
             revisor: linha.revisor || null,
             observacao: linha.observacao || null,
@@ -1200,6 +1217,18 @@ export function EditorVistagem({
                                       valor={linha.hora}
                                       onChange={(hora) => alterar(linha.chave, { hora })}
                                       invalido={!horaValida(linha.hora)}
+                                    />
+                                  </div>
+                                ) : null}
+                                {linha.etiqueta === "COMPROMISSO" ? (
+                                  // Vai para a Hora final no VIOS; começa 1 hora depois do horário e acompanha quando ele muda.
+                                  <div className="w-32 space-y-1.5" title="Vai para a Hora final no VIOS. Começa 1 hora depois do horário.">
+                                    <span className="block text-xs font-medium text-muted-foreground">Hora final</span>
+                                    <CampoHora
+                                      rotulo={`Hora final da tarefa ${indice + 1}`}
+                                      valor={linha.horaFim}
+                                      onChange={(horaFim) => alterar(linha.chave, { horaFim })}
+                                      invalido={!horaFinalValida(linha)}
                                     />
                                   </div>
                                 ) : null}

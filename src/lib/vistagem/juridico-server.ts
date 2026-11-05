@@ -65,12 +65,12 @@ import type {
 } from "./types";
 
 const COLUNAS_AGENDAMENTO =
-  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, hora, responsavel, revisor, observacao, fluxo_datas, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, vios_tarefas, envio_erro, enviado_em";
+  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, hora, hora_fim, responsavel, revisor, observacao, fluxo_datas, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, vios_tarefas, envio_erro, enviado_em";
 
 type AgendamentoRow = {
   id: string; publicacao_id: string; ordem: number; etiqueta: EtiquetaAgendamento; tarefa: string; tarefa_id: string | null;
   data: string; data_fatal: string | null; dias_prazo: number | null; contagem_prazo: ContagemPrazo | null; hora: string | null;
-  responsavel: string; revisor: string | null;
+  hora_fim: string | null; responsavel: string; revisor: string | null;
   observacao: string | null; fluxo_datas: DataDoFluxo[] | null; envio_status: EnvioStatus;
   envio_simulado: boolean | null; sama_agendamento_id: string | null; vios_tarefa_id: string | null;
   vios_tarefas: TarefaNoVios[] | null; envio_erro: string | null; enviado_em: string | null;
@@ -88,6 +88,7 @@ function agendamentoResumo(row: AgendamentoRow): AgendamentoResumo {
     diasPrazo: row.dias_prazo,
     contagemPrazo: row.contagem_prazo,
     hora: row.hora,
+    horaFim: row.hora_fim ?? null,
     responsavel: row.responsavel,
     revisor: row.revisor,
     observacao: row.observacao,
@@ -420,6 +421,7 @@ async function cienciaParaGravar(
     diasPrazo: null,
     contagemPrazo: null,
     hora: null,
+    horaFim: null,
     responsavel: ciencia.responsaveis.map((pessoa) => pessoa.nome).join(", "),
     responsavelId: ciencia.responsaveis.map((pessoa) => pessoa.id ?? "").join(","),
     revisor: null,
@@ -511,6 +513,7 @@ export async function salvarVistagem(
       dias_prazo: item.diasPrazo,
       contagem_prazo: item.contagemPrazo,
       hora: item.hora,
+      hora_fim: item.horaFim,
       responsavel: item.responsavel,
       responsavel_id: item.responsavelId,
       revisor: item.revisor,
@@ -522,6 +525,13 @@ export async function salvarVistagem(
   );
   if (erroInserir) falhou("gravar as tarefas da publicação", erroInserir);
 
+  // Depois de uma devolução, "vistado por" continua com quem analisou primeiro (é quem errou); a nova vistagem
+  // fica em revistado_por/em. Na primeira vistagem, grava quem vistou.
+  const agora = new Date().toISOString();
+  const revistagem = Boolean(publicacao.vistado_por && (publicacao.devolucoes ?? 0) > 0);
+  const quemVistou = revistagem
+    ? { revistado_por: authUserId, revistado_em: agora }
+    : { vistado_por: authUserId, vistado_em: agora, revistado_por: null, revistado_em: null };
   const { data: atualizada, error } = await db
     .from("vistagem_publicacoes")
     .update({
@@ -529,8 +539,7 @@ export async function salvarVistagem(
       observacao_vistagem: entrada.observacao?.trim() || null,
       publicacao_esocial: esocial.valor,
       sugestao_ia_resultado: resultadoIa,
-      vistado_por: authUserId,
-      vistado_em: new Date().toISOString(),
+      ...quemVistou,
     })
     .eq("id", id)
     .eq("status", "juridico_vistar")
@@ -573,7 +582,7 @@ async function itensDeConferencia(
   const linhas = (data ?? []) as (PublicacaoRow & { area_processo: string | null; checado_por: string | null })[];
   const [agendamentos, nomes, inconsistencias, auxiliares] = await Promise.all([
     agendamentosPorPublicacao(linhas.map((row) => row.id)),
-    nomesDosUsuarios(linhas.flatMap((row) => [row.vistado_por, row.conferido_por, row.checado_por])),
+    nomesDosUsuarios(linhas.flatMap((row) => [row.vistado_por, row.devolvido_por, row.revistado_por, row.conferido_por, row.checado_por])),
     inconsistenciasPorPublicacao(linhas.map((row) => row.id)),
     filtro.comAuxiliar ? auxiliaresDasPastas(linhas) : Promise.resolve(new Map<string, string>()),
   ]);
@@ -582,6 +591,8 @@ async function itensDeConferencia(
     agendamentos: agendamentos.get(row.id) ?? [],
     inconsistencias: inconsistencias.get(row.id) ?? [],
     vistadoPor: row.vistado_por ? nomes.get(row.vistado_por) ?? null : null,
+    devolvidoPor: row.devolvido_por ? nomes.get(row.devolvido_por) ?? null : null,
+    revistadoPor: row.revistado_por ? nomes.get(row.revistado_por) ?? null : null,
     conferidoPor: row.conferido_por ? nomes.get(row.conferido_por) ?? null : null,
     ...(row.checado_por ? { checadoPor: nomes.get(row.checado_por) ?? null } : {}),
     ...(filtro.comAuxiliar ? { auxiliar: auxiliares.get(row.id) ?? null } : {}),
@@ -748,6 +759,8 @@ async function fotosDosItens(itens: ConferenciaItem[], tela: string): Promise<Re
     item.publicacao.advogadoResponsavel,
     item.auxiliar,
     item.vistadoPor,
+    item.devolvidoPor,
+    item.revistadoPor,
     item.conferidoPor,
     item.checadoPor,
     ...item.agendamentos.flatMap((agendamento) => [

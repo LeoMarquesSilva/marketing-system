@@ -26,7 +26,7 @@ import {
 } from "./esteira-agendada";
 import type { NavegacaoNaFila } from "./faixa-processo";
 import { IconeTribunal, LogoGrupo, SeloArea } from "./marcas";
-import { formatarData } from "./publicacao-ui";
+import { formatarData, formatarDataHora } from "./publicacao-ui";
 import { IconeOpcao, Seletor } from "./seletor";
 import { DiaNaAgenda, ENVIO, ESTILO_CLASSE, ICONE_CLASSE, LinkVios } from "./tarefas-conferencia";
 import { Aviso, Carregando, Painel, Selo, Vazio } from "./ui";
@@ -307,6 +307,16 @@ function CartaoAgendada({ item, fotos, hoje, onAbrir }: { item: ConferenciaItem;
                   {horaDe(publicacao.vistadoEm) ? <span className="tabular-nums"> às {horaDe(publicacao.vistadoEm)}</span> : null}
                 </span>
               </span>
+              {/* Devolvida e vistada de novo: quem refez e quando ("Vistada por" fica com quem analisou primeiro). */}
+              {item.revistadoPor && publicacao.revistadoEm ? (
+                <span className="inline-flex min-w-0 items-center gap-1.5">
+                  <AvatarPessoa nome={item.revistadoPor} foto={fotos[chaveNome(item.revistadoPor)]} className="size-5 [&_[data-slot=avatar-fallback]]:text-[8px]" />
+                  <span className="truncate">
+                    Vistada de novo por <span className="font-medium text-foreground">{nomeCurto(item.revistadoPor)}</span>{" "}
+                    <span className="tabular-nums">em {formatarDataHora(publicacao.revistadoEm)}</span>
+                  </span>
+                </span>
+              ) : null}
             </div>
           </div>
           <ChevronRight className="mt-1 size-4 shrink-0 text-[#9fb8c2] transition-colors group-hover:text-[#347796] @3xl:hidden" aria-hidden />
