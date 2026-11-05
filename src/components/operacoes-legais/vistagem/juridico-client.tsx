@@ -669,7 +669,7 @@ export function EditorVistagem({
                   hora: item.hora ?? "",
                   horaFim: item.horaFim ?? horaFinalPadrao(item.hora),
                   responsavel: item.responsavel,
-                  revisor: item.revisor ?? "",
+                  revisor: item.etiqueta === "PROVIDENCIA" ? "" : item.revisor ?? "",
                   observacao: item.observacao ?? "",
                   esocial: tarefaEsocialId !== null && item.tarefaId === tarefaEsocialId,
                   fluxoDatas: Object.fromEntries(item.fluxoDatas.map((datada) => [chaveDoCaminho(datada.caminho), datada])),
@@ -760,11 +760,12 @@ export function EditorVistagem({
   }
 
   function trocarEtiqueta(linha: Linha, etiqueta: Etiqueta) {
-    // No Prazo o revisor é obrigatório: sugere o auxiliar da pasta se ainda estiver vazio.
+    // No Prazo o revisor é obrigatório: sugere o auxiliar da pasta se ainda estiver vazio. Providência não tem revisor.
     alterar(linha.chave, {
       etiqueta,
       tarefa: "",
-      revisor: etiqueta === "PRAZO" && !linha.revisor ? detalhe?.revisorSugerido ?? "" : linha.revisor,
+      revisor:
+        etiqueta === "PROVIDENCIA" ? "" : etiqueta === "PRAZO" && !linha.revisor ? detalhe?.revisorSugerido ?? "" : linha.revisor,
     });
   }
 
@@ -872,7 +873,7 @@ export function EditorVistagem({
             hora: linha.etiqueta === "COMPROMISSO" ? linha.hora : null,
             horaFim: linha.etiqueta === "COMPROMISSO" ? linha.horaFim || null : null,
             responsavel: linha.responsavel,
-            revisor: linha.revisor || null,
+            revisor: linha.etiqueta === "PROVIDENCIA" ? null : linha.revisor || null,
             observacao: linha.observacao || null,
             fluxoDatas: Object.values(linha.fluxoDatas),
           })),
@@ -1383,7 +1384,8 @@ export function EditorVistagem({
                           </BlocoTarefa>
 
                           <BlocoTarefa titulo="Quem" icone={Users}>
-                            <div className="grid gap-3 @md:grid-cols-2">
+                            {/* Providência não tem revisor (nenhum tipo cria 2. REVISAR no VIOS): só o responsável. */}
+                            <div className={cn("grid gap-3", linha.etiqueta !== "PROVIDENCIA" && "@md:grid-cols-2")}>
                               <div className="space-y-1.5">
                                 <span className="block text-xs font-medium text-muted-foreground">Responsável</span>
                                 <CampoResponsaveis
@@ -1399,6 +1401,7 @@ export function EditorVistagem({
                                   }
                                 />
                               </div>
+                              {linha.etiqueta === "PROVIDENCIA" ? null : (
                               <div className="space-y-1.5">
                                 <span className="block text-xs font-medium text-muted-foreground">
                                   {prazo ? "Revisor (obrigatório)" : "Revisor (opcional)"}
@@ -1418,6 +1421,7 @@ export function EditorVistagem({
                                   invalido={prazo && !linha.revisor}
                                 />
                               </div>
+                              )}
                             </div>
                           </BlocoTarefa>
 
