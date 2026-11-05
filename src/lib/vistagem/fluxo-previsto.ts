@@ -1,7 +1,40 @@
-import { chaveDoCaminho } from "./agendamento";
+import { chaveDoCaminho, separarNomes } from "./agendamento";
 import { somarDiasCorridos, somarDiasUteis } from "./dias-uteis";
-import { PESSOA_FIXA_PROTOCOLAR, cadeiaDoFluxo, type FluxoDaTarefa, type TarefaDoFluxo } from "./fluxo-vios";
+import { PESSOA_FIXA_PROTOCOLAR, cadeiaDoFluxo, type FluxoDaTarefa, type PapelNoFluxo, type ResponsabilidadeDoTipo, type TarefaDoFluxo } from "./fluxo-vios";
 import type { AgendamentoResumo, DataDoFluxo, TarefaPrevista } from "./types";
+
+/** O Orquestra não sabe o nome do estagiário da pasta: o VIOS põe quem está na pasta. */
+export const ESTAGIARIO_DA_PASTA = "Estagiário da pasta";
+
+/**
+ * Quem fica numa tarefa que o fluxo do VIOS cria junto: a mesma regra do robô no lançamento (sama-rpa
+ * regras-fluxo.js), com o que o VIOS põe pelo cadastro do tipo.
+ * - 2. REVISAR: o revisor da vistagem; 3. PROTOCOLAR: o responsável e o Samuel.
+ * - Tipo que o VIOS dá a pessoas fixas ou ao estagiário da pasta, sem a regra do advogado: fica como o VIOS cria
+ *   (Larissa no Verificar Ata, o estagiário no Inserir Pauta e na Habilitação).
+ * - Regra do advogado com outra: o responsável da vistagem e quem o VIOS põe.
+ * - Só a regra do auxiliar: o revisor da vistagem. Só a do advogado, nenhuma, ou cadastro não lido: o responsável.
+ * Com só os fixos lidos (catálogo antigo), ficam os fixos: é o que o VIOS cria quando o tipo não tem a regra do advogado.
+ */
+export function quemFicaNoFluxo(
+  papel: PapelNoFluxo,
+  responsabilidade: ResponsabilidadeDoTipo | null,
+  pessoas: { responsavel: string | null; revisor: string | null }
+): string {
+  const responsavel = pessoas.responsavel || "responsável";
+  if (papel === "revisor") return pessoas.revisor || "padrão do VIOS (sem revisor)";
+  if (papel === "protocolar") return `${responsavel} + ${PESSOA_FIXA_PROTOCOLAR}`;
+  if (!responsabilidade) return responsavel;
+  const { fixos, regras } = responsabilidade;
+  if (!regras) return fixos.length ? fixos.join(", ") : responsavel;
+  // O coordenador e o grupo o Orquestra não sabe quem são: aparecem como "padrão do VIOS" quando são só eles.
+  const doVios = [...fixos, ...(regras.estagiario ? [ESTAGIARIO_DA_PASTA] : [])];
+  const outraRegra = regras.estagiario || regras.coordenador || regras.grupo || fixos.length > 0;
+  if (outraRegra && !regras.advogado && !regras.auxiliar) return doVios.length ? doVios.join(", ") : "padrão do VIOS";
+  if (outraRegra && regras.advogado) return separarNomes([responsavel, ...doVios].join(",")).join(", ");
+  if (regras.auxiliar && !regras.advogado) return pessoas.revisor || "auxiliar da pasta";
+  return responsavel;
+}
 
 /** Data pela regra do VIOS: N dias (úteis ou corridos; negativo = antes) do dia da criação ou da data da tarefa pai. */
 function dataPelaRegra(regra: NonNullable<TarefaDoFluxo["regra"]>, dataDoPai: string | null, hoje: string, ehDiaUtil: (iso: string) => boolean): string | null {
@@ -13,8 +46,8 @@ function dataPelaRegra(regra: NonNullable<TarefaDoFluxo["regra"]>, dataDoPai: st
 
 /**
  * O que o fluxo automático do VIOS vai criar com a tarefa agendada, para conferir antes de mandar ao robô: as
- * tarefas criadas junto (e as que estas criam), com a data de cada uma e quem o robô coloca nela (2. REVISAR
- * com o revisor, 3. PROTOCOLAR com o responsável e o Samuel, o resto com o responsável), e as criadas ao concluir.
+ * tarefas criadas junto (e as que estas criam), com a data de cada uma e quem fica nela (`quemFicaNoFluxo`), e as
+ * criadas ao concluir.
  *
  * A data segue as regras do VIOS lidas pelo robô (aba Prazos do tipo e Fluxo Automático - Criação do pai): N dias
  * úteis ou corridos, para a frente ou para trás, a partir do dia do lançamento (`hoje`) ou da data da tarefa pai.
@@ -32,13 +65,7 @@ export function fluxoPrevisto(
   if (!fluxo) return [];
   const cadeia = cadeiaDoFluxo(fluxo);
   const pedidas = new Map((opcoes.datas ?? []).map((item) => [chaveDoCaminho(item.caminho), item.data]));
-  const responsavel = agendamento.responsavel || "responsável";
-  const quem = (tarefa: TarefaDoFluxo) =>
-    tarefa.papel === "revisor"
-      ? agendamento.revisor || "padrão do VIOS (sem revisor)"
-      : tarefa.papel === "protocolar"
-        ? `${responsavel} + ${PESSOA_FIXA_PROTOCOLAR}`
-        : responsavel;
+  const quem = (tarefa: TarefaDoFluxo) => quemFicaNoFluxo(tarefa.papel, tarefa.responsabilidade ?? null, agendamento);
   // Conta antiga (sem a regra lida): só o Revisar e o Protocolar da agendada, pela cadeia do fluxo.
   const legado = (tarefa: TarefaDoFluxo, dataDoPai: string | null, nivel: number) => {
     if (nivel > 1 || !dataDoPai || !cadeia) return null;
