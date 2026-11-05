@@ -26,15 +26,15 @@ describe("fila do robô", () => {
   });
 
   it("compromisso vai com a etiqueta COMPROMISSO do VIOS e o horário", () => {
-    const audiencia: AgendamentoParaFila = { ...ITENS[1], etiqueta: "COMPROMISSO", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefa_id: "54", hora: "14:30" };
+    const audiencia: AgendamentoParaFila = { ...ITENS[1], etiqueta: "COMPROMISSO", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefa_id: "54", hora: "14:30", hora_fim: "15:30" };
     const [naPasta] = linhasParaFila(PUBLICACAO, [audiencia], { simular: false, modo: "pasta" });
     expect(naPasta.linha).toMatchObject({ tipo: "Compromisso", etiqueta_id: "205" });
     // a fila da pasta não tem coluna de hora: vai na descrição
-    expect(naPasta.linha.observacao).toBe("Publicação de 15/10/2026\nHorário: 14:30");
+    expect(naPasta.linha.observacao).toBe("Publicação de 15/10/2026\nHorário: 14:30 às 15:30");
     const [grupo] = linhasParaFila(PUBLICACAO, [ITENS[0], audiencia], { simular: false, modo: "intimacao" });
-    expect(grupo.linha.lancamento?.tarefas.map((t) => [t.etiqueta_id, t.hora])).toEqual([
-      ["1", null],
-      ["205", "14:30"],
+    expect(grupo.linha.lancamento?.tarefas.map((t) => [t.etiqueta_id, t.hora, t.hora_fim])).toEqual([
+      ["1", null, null],
+      ["205", "14:30", "15:30"],
     ]);
   });
 
@@ -55,6 +55,7 @@ describe("fila do robô", () => {
           etiqueta_id: "1",
           data: "16/10/2026",
           hora: null,
+          hora_fim: null,
           responsavel: "Maria Heloiza Gois Ponce",
           revisor: "Giovanna Pereira de Souza",
           observacao: "Publicação de 15/10/2026\nlaudo",
@@ -68,6 +69,7 @@ describe("fila do robô", () => {
           etiqueta_id: "204",
           data: "19/10/2026",
           hora: null,
+          hora_fim: null,
           responsavel: "Giovanna Pereira de Souza",
           revisor: null,
           observacao: "Publicação de 15/10/2026",

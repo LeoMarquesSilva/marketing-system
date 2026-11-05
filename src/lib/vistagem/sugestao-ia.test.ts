@@ -180,6 +180,7 @@ describe("resultadoDaSugestao", () => {
     diasPrazo: 5,
     contagemPrazo: "uteis",
     hora: null,
+    horaFim: null,
     responsavel: "Advogada",
     responsavelId: "1",
     revisor: "Auxiliar",

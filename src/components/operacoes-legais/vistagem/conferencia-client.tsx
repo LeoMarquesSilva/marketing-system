@@ -212,7 +212,7 @@ export function TabelaTarefas({ agendamentos, comEnvio, compacta = false }: { ag
               <Celula rotulo="Data" compacta={compacta}>
                 <span className="tabular-nums text-foreground">
                   {formatarData(item.data)}
-                  {!item.dataFatal && item.hora ? ` às ${item.hora}` : ""}
+                  {!item.dataFatal && item.hora ? ` às ${item.hora}${item.horaFim ? ` até ${item.horaFim}` : ""}` : ""}
                 </span>
                 {item.dataFatal ? (
                   <span className="mt-0.5 block text-xs text-muted-foreground">

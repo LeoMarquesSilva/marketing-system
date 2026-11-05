@@ -18,6 +18,8 @@ export interface TarefaDoLancamento {
   data: string;
   /** HH:MM (Hora tarefa no VIOS); só no Compromisso. */
   hora: string | null;
+  /** HH:MM (Hora final no VIOS); só no Compromisso. */
+  hora_fim: string | null;
   responsavel: string;
   revisor: string | null;
   observacao: string;
@@ -77,6 +79,8 @@ export interface AgendamentoParaFila {
   data: string;
   /** HH:MM; só no Compromisso. */
   hora: string | null;
+  /** HH:MM em que o Compromisso termina; null nos antigos (o robô usa 1 hora depois). */
+  hora_fim?: string | null;
   responsavel: string;
   revisor: string | null;
   observacao: string | null;
@@ -129,7 +133,7 @@ export function linhasParaFila(
     return itens.map((item) => ({
       linha: base(
         item,
-        montarObservacaoVios(publicacao.data_publicacao, [item.hora ? `Horário: ${item.hora}` : null, item.observacao].filter(Boolean).join("\n") || null)
+        montarObservacaoVios(publicacao.data_publicacao, [item.hora ? `Horário: ${item.hora}${item.hora_fim ? ` às ${item.hora_fim}` : ""}` : null, item.observacao].filter(Boolean).join("\n") || null)
       ),
       agendamentos: [item.id],
     }));
@@ -156,6 +160,7 @@ export function linhasParaFila(
               etiqueta_id: etiquetaVios(item),
               data: paraDataVios(item.data),
               hora: item.hora ?? null,
+              hora_fim: item.hora ? item.hora_fim ?? null : null,
               responsavel: item.responsavel,
               revisor: item.revisor,
               observacao: cienciaNf ? "" : montarObservacaoVios(publicacao.data_publicacao, item.observacao),
