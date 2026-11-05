@@ -115,6 +115,9 @@ export function AgendadasJuridico({ escritorio, busca }: { escritorio: string; b
                     </div>
                     <p className="text-xs text-muted-foreground">
                       Vistada {item.vistadoPor ? `por ${item.vistadoPor} ` : ""}em {formatarDataHora(publicacao.vistadoEm)}
+                      {item.revistadoPor && publicacao.revistadoEm
+                        ? ` · devolvida e vistada de novo por ${item.revistadoPor} em ${formatarDataHora(publicacao.revistadoEm)}`
+                        : ""}
                     </p>
                   </div>
                   <TabelaTarefas agendamentos={item.agendamentos} comEnvio />

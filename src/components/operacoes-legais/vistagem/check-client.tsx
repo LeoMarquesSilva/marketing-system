@@ -222,6 +222,13 @@ function ItemCheck({
           <>
             <SeloEsocial publicacao={publicacao} />
             <AutoriaNaFaixa papel="Vistada por" nome={item.vistadoPor} quando={publicacao.vistadoEm} fotos={fotos} />
+            {/* Devolvida e vistada de novo: quem analisou primeiro fica em "Vistada por"; depois, quem devolveu e quem vistou de novo. */}
+            {item.revistadoPor ? (
+              <>
+                <AutoriaNaFaixa papel="Devolvida por" nome={item.devolvidoPor} quando={publicacao.devolvidoEm} fotos={fotos} />
+                <AutoriaNaFaixa papel="Vistada de novo por" nome={item.revistadoPor} quando={publicacao.revistadoEm} fotos={fotos} />
+              </>
+            ) : null}
             <AutoriaNaFaixa papel="Conferida por" nome={item.conferidoPor} quando={publicacao.conferidoEm} fotos={fotos} />
             {checada ? <AutoriaNaFaixa papel="Checada por" nome={item.checadoPor ?? null} quando={publicacao.checadoEm} fotos={fotos} /> : null}
           </>
