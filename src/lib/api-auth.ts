@@ -122,16 +122,16 @@ export async function requireOperacoesLegaisAccess(authUserId: string) {
 }
 
 /**
- * Papel do usuário na Vistagem e as áreas (escritórios) que ele vista; `areas` null
- * é a controladoria, que vê todas.
+ * Papel do usuário na Vistagem, as áreas (escritórios) que ele vista e se vista demanda de risco;
+ * `areas` null é a controladoria, que vê todas (com e sem risco).
  */
 export async function requireVistagemAccess(
   authUserId: string
-): Promise<{ papel: PapelVistagem; areas: string[] | null }> {
+): Promise<{ papel: PapelVistagem; areas: string[] | null; veRisco: boolean }> {
   const supabase = getAdminClient();
   const { data, error } = await supabase
     .from("users")
-    .select("role, permissions, is_active, vistagem_papel, vistagem_areas")
+    .select("role, permissions, is_active, vistagem_papel, vistagem_areas, vistagem_risco")
     .eq("auth_id", authUserId)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -144,7 +144,12 @@ export async function requireVistagemAccess(
     vistagem_papel: data.vistagem_papel as string | null,
   });
   if (!papel) {
-    throw new Error("Sem permissão para Vistagem e agendamento.");
+    throw new Error("Sem permissão para a Vistagem de Publicações BP.");
   }
-  return { papel, areas: papel === "juridico" ? ((data.vistagem_areas as string[] | null) ?? []) : null };
+  const juridico = papel === "juridico";
+  return {
+    papel,
+    areas: juridico ? ((data.vistagem_areas as string[] | null) ?? []) : null,
+    veRisco: !juridico || data.vistagem_risco !== false,
+  };
 }

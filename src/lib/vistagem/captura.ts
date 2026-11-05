@@ -56,7 +56,14 @@ export function montarPublicacoes(linhas: KurierLinha[]): PublicacaoCapturada[] 
       : null
   );
   const porId = indicesDePrincipal(chavesPorId.map((chave, posicao) => (porTexto[posicao] >= 0 ? null : chave)));
-  const principais = porTexto.map((principal, posicao) => (principal >= 0 ? principal : porId[posicao]));
+  const diretas = porTexto.map((principal, posicao) => (principal >= 0 ? principal : porId[posicao]));
+  // Uma cópia pode apontar para outra cópia (igual pelo texto a uma linha que é duplicidade pelo Id):
+  // segue até a principal, senão a duplicidade fica sem a publicação que vale.
+  const principais = diretas.map((principal) => {
+    let atual = principal;
+    while (atual >= 0 && diretas[atual] >= 0) atual = diretas[atual];
+    return atual;
+  });
 
   return base.map((item, posicao): PublicacaoCapturada => {
     const principal = principais[posicao];

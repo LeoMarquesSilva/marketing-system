@@ -26,15 +26,15 @@ describe("fila do robô", () => {
   });
 
   it("compromisso vai com a etiqueta COMPROMISSO do VIOS e o horário", () => {
-    const audiencia: AgendamentoParaFila = { ...ITENS[1], etiqueta: "COMPROMISSO", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefa_id: "54", hora: "14:30" };
+    const audiencia: AgendamentoParaFila = { ...ITENS[1], etiqueta: "COMPROMISSO", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefa_id: "54", hora: "14:30", hora_fim: "15:30" };
     const [naPasta] = linhasParaFila(PUBLICACAO, [audiencia], { simular: false, modo: "pasta" });
     expect(naPasta.linha).toMatchObject({ tipo: "Compromisso", etiqueta_id: "205" });
     // a fila da pasta não tem coluna de hora: vai na descrição
-    expect(naPasta.linha.observacao).toBe("Publicação de 15/10/2026\nHorário: 14:30");
+    expect(naPasta.linha.observacao).toBe("Publicação de 15/10/2026\nHorário: 14:30 às 15:30");
     const [grupo] = linhasParaFila(PUBLICACAO, [ITENS[0], audiencia], { simular: false, modo: "intimacao" });
-    expect(grupo.linha.lancamento?.tarefas.map((t) => [t.etiqueta_id, t.hora])).toEqual([
-      ["1", null],
-      ["205", "14:30"],
+    expect(grupo.linha.lancamento?.tarefas.map((t) => [t.etiqueta_id, t.hora, t.hora_fim])).toEqual([
+      ["1", null, null],
+      ["205", "14:30", "15:30"],
     ]);
   });
 
@@ -55,9 +55,12 @@ describe("fila do robô", () => {
           etiqueta_id: "1",
           data: "16/10/2026",
           hora: null,
+          hora_fim: null,
           responsavel: "Maria Heloiza Gois Ponce",
           revisor: "Giovanna Pereira de Souza",
           observacao: "Publicação de 15/10/2026\nlaudo",
+          justificativa: null,
+          fluxo_datas: [],
         },
         {
           chave: "ag-2",
@@ -66,14 +69,33 @@ describe("fila do robô", () => {
           etiqueta_id: "204",
           data: "19/10/2026",
           hora: null,
+          hora_fim: null,
           responsavel: "Giovanna Pereira de Souza",
           revisor: null,
           observacao: "Publicação de 15/10/2026",
+          justificativa: null,
+          fluxo_datas: [],
         },
       ],
     });
     // o VIOS insere o texto da intimação: o teor não vai repetido
     expect(grupo.linha.observacao).not.toContain("TEOR");
+  });
+
+  it("CIÊNCIA NF: a observação vai na justificativa e a descrição fica só com o texto da intimação", () => {
+    const ciencia: AgendamentoParaFila = {
+      ...ITENS[1],
+      tarefa: "CIÊNCIA NF",
+      tarefa_id: "316",
+      observacao: " Prazo do reclamante: indicar em 10 dias meio ainda não analisado. ",
+    };
+    const [grupo] = linhasParaFila(PUBLICACAO, [ITENS[0], ciencia], { simular: false, modo: "intimacao" });
+    expect(grupo.linha.lancamento?.tarefas.map((t) => [t.tarefa, t.observacao, t.justificativa])).toEqual([
+      ["MANIFESTAÇÃO - FLUXO D1", "Publicação de 15/10/2026\nlaudo", null],
+      ["CIÊNCIA NF", "", "Prazo do reclamante: indicar em 10 dias meio ainda não analisado."],
+    ]);
+    const [semObservacao] = linhasParaFila(PUBLICACAO, [{ ...ciencia, observacao: null }], { simular: false, modo: "intimacao" });
+    expect(semObservacao.linha.lancamento?.tarefas[0]).toMatchObject({ observacao: "", justificativa: null });
   });
 
   it("leva os IDs das duplicadas da mesma publicação, sem repetir o próprio", () => {
@@ -115,5 +137,16 @@ describe("fila do robô", () => {
     expect(mapa.get("ag-2")?.[0]).toMatchObject({ principal: true, hora: "14:30", data: "2026-11-10" });
     expect(mapa.size).toBe(2);
     expect(tarefasViosDoResultado({ tarefas: [] }).size).toBe(0);
+  });
+});
+
+describe("datas do fluxo na fila do robô", () => {
+  it("vão em DD/MM/AAAA, com o caminho de tipos de cada tarefa do fluxo", () => {
+    const [grupo] = linhasParaFila(
+      PUBLICACAO,
+      [{ ...ITENS[0], fluxoDatas: [{ caminho: ["EMBARGOS DE DECLARAÇÃO", "2. REVISAR"], data: "2026-11-10" }] }],
+      { simular: false, modo: "intimacao" }
+    );
+    expect(grupo.linha.lancamento?.tarefas[0].fluxo_datas).toEqual([{ caminho: ["EMBARGOS DE DECLARAÇÃO", "2. REVISAR"], data: "10/11/2026" }]);
   });
 });

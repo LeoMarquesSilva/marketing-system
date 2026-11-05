@@ -100,7 +100,8 @@ export function linhaLista(selecionada = false): string {
 export function BarraAba({ resumo, children, className }: { resumo?: ReactNode; children?: ReactNode; className?: string }) {
   return (
     <div className={cn("flex flex-wrap items-center gap-x-4 gap-y-3", className)}>
-      {resumo ? <div className="min-w-[min(100%,18rem)] flex-1 text-sm text-muted-foreground">{resumo}</div> : <div className="flex-1" />}
+      {/* O resumo (as abas "A conferir / Enviadas…") não encolhe abaixo do próprio tamanho: quem desce de linha são os filtros. */}
+      {resumo ? <div className="min-w-fit flex-1 text-sm text-muted-foreground">{resumo}</div> : <div className="flex-1" />}
       {children ? <div className="flex flex-wrap items-center gap-2">{children}</div> : null}
     </div>
   );
@@ -165,7 +166,7 @@ export function Indicador({
       </p>
       <p
         className={cn(
-          "mt-1 text-[28px] font-semibold leading-8 tabular-nums",
+          "mt-1 text-[1.75rem] font-semibold leading-8 tabular-nums",
           tom === "alerta" ? "text-amber-700" : tom === "perigo" ? "text-red-700" : tom === "sucesso" ? "text-emerald-700" : "text-[#10293a]"
         )}
       >

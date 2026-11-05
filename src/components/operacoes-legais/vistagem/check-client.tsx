@@ -1,52 +1,64 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { LucideIcon } from "lucide-react";
 import {
-  CalendarCheck,
+  ArrowLeft,
   CalendarClock,
   CircleCheck,
-  CornerDownRight,
-  ExternalLink,
+  ClipboardCheck,
+  Eye,
+  FileText,
+  Hourglass,
+  Info,
+  Landmark,
+  Layers,
   ListChecks,
   LoaderCircle,
+  PanelLeftOpen,
   RefreshCw,
   SearchX,
+  Tags,
+  ShieldAlert,
   TriangleAlert,
+  UserRound,
+  Workflow,
   X,
 } from "lucide-react";
 import { Segmented } from "@/components/facilities/form-parts";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
-import { ROTULO_ETIQUETA } from "@/lib/vistagem/agendamento";
-import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
+import { chaveNome } from "@/lib/vistagem/agendamento";
+import { camposDaConferencia, combinaCampos } from "@/lib/vistagem/busca";
+import {
+  TIPOS_DE_AGENDAMENTO,
+  compararTarefa,
+  descricaoSugerida,
+  situacaoDoCheck,
+  subtipoSugerido,
+  tiposDoItem,
+  type SituacaoCheck,
+  type TipoDeAgendamento,
+} from "@/lib/vistagem/check";
 import { SUBTIPOS_AGENDAMENTO_EM_USO, TIPOS_INCONSISTENCIA_AGENDAMENTO } from "@/lib/vistagem/inconsistencias";
-import type { TarefaNoVios } from "@/lib/vistagem/fila-vios";
+import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
 import type { AgendamentoResumo, CheckResposta, ConferenciaItem } from "@/lib/vistagem/types";
-import { linkTarefaVios } from "@/lib/vistagem/vios-links";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
+import { AvatarPessoa } from "./combobox-busca";
+import { ContextoDoProcesso, DialogoAcao, EscolhaEmCartoes, type OpcaoEmCartao } from "./dialogo-acao";
+import { AutoriaNaFaixa, BOTAO_FAIXA, BOTAO_FAIXA_PRINCIPAL, FaixaDoProcesso, SetasDaFila, type NavegacaoNaFila } from "./faixa-processo";
+import { FilaPorArea, agruparPorArea, areaDaPublicacao, ordemDaFila } from "./fila-por-area";
 import { FiltroData, dataNaLista } from "./filtro-data";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
-import { Seletor } from "./seletor";
-import { DadosPasta, DadosPublicacao, SeloEsocial, TeorPublicacao, formatarData, formatarDataHora } from "./publicacao-ui";
-import {
-  Aviso,
-  BarraAba,
-  Busca,
-  CabecalhoLista,
-  Campo,
-  Carregando,
-  Indicador,
-  Indicadores,
-  Painel,
-  PainelTopo,
-  Secao,
-  Selo,
-  Vazio,
-  TOM_CLASSE,
-} from "./ui";
+import { IconeArea, IconeTribunal, LogoGrupo } from "./marcas";
+import { PublicacaoNaVistagem } from "./publicacao-na-vistagem";
+import { SeloEsocial, contarPor, tribunalDe } from "./publicacao-ui";
+import { IconeOpcao, Seletor } from "./seletor";
+import { CartoesCheck, SeloSituacao } from "./tarefas-check";
+import { ICONE_CLASSE } from "./tarefas-conferencia";
+import { Aviso, BarraAba, Busca, Campo, Carregando, Painel, Secao, Selo, Vazio, linhaLista } from "./ui";
 
 type Aba = "aChecar" | "revisar" | "checadas";
 
@@ -59,214 +71,86 @@ const ABAS: { valor: Aba; rotulo: string }[] = [
 /** Retorno de uma ação da tela. */
 type Retorno = { tom: "sucesso" | "erro"; texto: string };
 
-/** Classe da tarefa é categoria, não estado: tons da marca (DESIGN.md). */
-
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 
-/** A tarefa pedida ficou no VIOS com outra data ou outro horário. */
-function diverge(tarefa: TarefaNoVios, dataPedida: string, horaPedida: string | null): boolean {
-  return Boolean(tarefa.principal && ((tarefa.data && tarefa.data !== dataPedida) || (horaPedida && tarefa.hora !== horaPedida)));
-}
+const processoDe = (item: ConferenciaItem) => item.publicacao.numeroProcesso ?? item.publicacao.numeroProcessoOriginal;
 
-const temDivergencia = (item: ConferenciaItem) =>
-  item.agendamentos.some((agendamento) => (agendamento.viosTarefas ?? []).some((tarefa) => diverge(tarefa, agendamento.data, agendamento.hora)));
+const hojeDoNavegador = () => new Date().toISOString().slice(0, 10);
 
-function normalizar(texto: string): string {
-  return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-}
+/** Filtro "Pedido × VIOS": ícone, nome e o que quer dizer, na mesma ordem de gravidade dos cartões. */
+const FILTRO_SITUACAO: { valor: SituacaoCheck; rotulo: string; descricao: string; icone: LucideIcon; cor: string }[] = [
+  { valor: "diverge", rotulo: "Com divergência", descricao: "Data, horário ou responsável diferente", icone: TriangleAlert, cor: "bg-amber-50 text-amber-800 ring-amber-200" },
+  { valor: "conferir", rotulo: "Conferir no VIOS", descricao: "O robô não devolveu algum dado", icone: Info, cor: "" },
+  { valor: "confere", rotulo: "Conferem", descricao: "O que o robô devolveu bate com o pedido", icone: CircleCheck, cor: "bg-emerald-50 text-emerald-700 ring-emerald-200" },
+];
 
-/** Busca local na lista já carregada: processo (com ou sem pontuação), pasta, cliente, tribunal e pessoas. */
-function combinaBusca(item: ConferenciaItem, busca: string): boolean {
-  const termo = normalizar(busca.trim());
-  if (!termo) return true;
-  const { publicacao } = item;
-  const campos = [
-    publicacao.numeroProcesso,
-    publicacao.numeroProcessoOriginal,
-    publicacao.pastaCi,
-    publicacao.cliente,
-    publicacao.grupoCliente,
-    publicacao.tribunal,
-    publicacao.escritorioResponsavel,
-    item.vistadoPor,
-    item.conferidoPor,
-    ...item.agendamentos.flatMap((agendamento) => [agendamento.responsavel, agendamento.viosTarefaId]),
-  ]
-    .filter((valor): valor is string => Boolean(valor))
-    .map(normalizar);
-  if (campos.some((valor) => valor.includes(termo))) return true;
-  const digitos = termo.replace(/\D/g, "");
-  return digitos.length >= 4 && campos.some((valor) => valor.replace(/\D/g, "").includes(digitos));
-}
+/** Subtipos da inconsistência de agendamento em cartões: o que cada um quer dizer, em uma linha. */
+const SUBTIPO: Record<string, { rotulo: string; descricao: string; icone: LucideIcon }> = {
+  "DATA / HORÁRIO - (P/A)": { rotulo: "Data / horário", descricao: "Data ou horário no VIOS diferente do pedido.", icone: CalendarClock },
+  "FORA DO FLUXO - (P/A)": { rotulo: "Fora do fluxo", descricao: "Tarefa ou fluxo no VIOS diferente do esperado.", icone: Workflow },
+  "RESPONSÁVEL - (P/A)": { rotulo: "Responsável", descricao: "Pessoa na tarefa diferente da pedida.", icone: UserRound },
+  "DESCRIÇÃO - (P/A)": { rotulo: "Descrição", descricao: "Texto da tarefa no VIOS errado ou incompleto.", icone: FileText },
+};
 
-/* ------------------------------------------------------------ peças locais */
+const OPCOES_SUBTIPO: OpcaoEmCartao[] = SUBTIPOS_AGENDAMENTO_EM_USO.map((valor) => ({
+  valor,
+  rotulo: SUBTIPO[valor]?.rotulo ?? valor,
+  descricao: SUBTIPO[valor]?.descricao ?? valor,
+  icone: SUBTIPO[valor]?.icone ?? TriangleAlert,
+}));
 
-/** Modal centralizado do padrão (DESIGN.md): cabeçalho e rodapé fixos, só o corpo rola. */
-function DialogoAcao({
-  aberto,
-  onFechar,
-  ocupado,
-  titulo,
-  descricao,
-  rodape,
-  children,
-}: {
-  aberto: boolean;
-  onFechar: () => void;
-  ocupado: boolean;
-  titulo: ReactNode;
-  descricao: ReactNode;
-  rodape: ReactNode;
-  children: ReactNode;
-}) {
+const ROTULO_TIPO: Record<string, string> = { AGENDAMENTO: "Agendamento", ANÁLISE: "Análise" };
+
+/* ------------------------------------------------------------ publicação aberta */
+
+/** Cada tarefa com a situação no check, para o modal do check (o que a pessoa está confirmando). */
+function ResumoDasTarefas({ agendamentos }: { agendamentos: AgendamentoResumo[] }) {
   return (
-    <Dialog open={aberto} onOpenChange={(abrir) => !abrir && !ocupado && onFechar()}>
-      <DialogContent className="flex max-h-[90dvh] flex-col gap-0 p-0 sm:max-w-lg" showCloseButton={!ocupado}>
-        <DialogHeader className="gap-1 border-b border-[#e6eef0] px-6 py-4 pr-14 text-left">
-          <DialogTitle className="text-lg">{titulo}</DialogTitle>
-          <DialogDescription>{descricao}</DialogDescription>
-        </DialogHeader>
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">{children}</div>
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[#e6eef0] bg-[#fafcfc] px-6 py-4">{rodape}</div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/** Célula da lista de tarefas: no mobile mostra o rótulo; no desktop o rótulo fica só para leitor de tela. */
-function Celula({ rotulo, mostrarRotulo = true, className, children }: { rotulo: string; mostrarRotulo?: boolean; className?: string; children: ReactNode }) {
-  return (
-    <div className={cn("min-w-0", className)}>
-      <span className={cn("block text-xs text-muted-foreground", mostrarRotulo ? "lg:sr-only" : "sr-only")}>{rotulo}</span>
-      {children}
-    </div>
-  );
-}
-
-function LinkVios({ ci, className }: { ci: string; className?: string }) {
-  return (
-    <a
-      href={linkTarefaVios(ci)}
-      target="_blank"
-      rel="noopener noreferrer"
-      title="Abrir a tarefa no VIOS (nova aba)"
-      aria-label={`Abrir a tarefa CI ${ci} no VIOS (nova aba)`}
-      className={cn(
-        "inline-flex items-center gap-1 rounded-sm text-xs font-medium text-[#347796] hover:text-[#285f7a] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/50",
-        className
-      )}
-    >
-      <span className="tabular-nums">CI {ci}</span>
-      <ExternalLink className="size-3" aria-hidden />
-    </a>
-  );
-}
-
-/* ------------------------------------------------------------ tarefas */
-
-/** Como a tarefa ficou no VIOS: a pedida e as que o fluxo criou, com a data e a hora agendadas. */
-function AgendadoNoVios({ tarefas, dataPedida, horaPedida }: { tarefas: TarefaNoVios[]; dataPedida: string; horaPedida: string | null }) {
-  return (
-    <div className="col-span-full overflow-hidden rounded-md border border-[#e6eef0] bg-[#f7fbfc] text-xs">
-      <p className="flex items-center gap-1.5 border-b border-[#e6eef0] px-3 py-1.5 font-medium text-[#285f7a]">
-        <CalendarCheck className="size-3.5" aria-hidden />
-        Agendado no VIOS
-      </p>
-      <ul className="divide-y divide-[#eef3f5]">
-        {tarefas.map((tarefa) => {
-          const divergente = diverge(tarefa, dataPedida, horaPedida);
-          return (
-            <li key={tarefa.ci} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
-              <span className={cn("flex min-w-0 items-center gap-1", tarefa.principal ? "font-medium text-foreground" : "text-muted-foreground")}>
-                {tarefa.principal ? null : (
-                  <>
-                    <CornerDownRight className="size-3 shrink-0" aria-hidden />
-                    <span className="sr-only">Criada pelo fluxo:</span>
-                  </>
-                )}
-                <span className="break-words">{tarefa.tipo ?? "Tarefa"}</span>
+    <ol className="divide-y divide-[#eef3f5] overflow-hidden rounded-lg border border-[#dce9eb]">
+      {agendamentos.map((agendamento, indice) => {
+        const Icone = ICONE_CLASSE[agendamento.etiqueta];
+        const comparacao = compararTarefa(agendamento);
+        return (
+          <li key={agendamento.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2.5">
+            <span className="grid size-7 shrink-0 place-items-center rounded-md bg-[#e8f8f8] text-[#285f7a] ring-1 ring-[#47cdd0]/25" aria-hidden>
+              <Icone className="size-3.5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-foreground" title={agendamento.tarefa}>
+                {agendamentos.length > 1 ? <span className="tabular-nums text-muted-foreground">{indice + 1}. </span> : null}
+                {agendamento.tarefa}
               </span>
-              <span className={cn("tabular-nums", divergente ? "font-semibold text-amber-800" : "text-foreground")}>
-                {formatarData(tarefa.data)}
-                {tarefa.hora ? ` ${tarefa.hora}` : ""}
-              </span>
-              {divergente ? (
-                <Selo tom="alerta" icone={TriangleAlert}>
-                  Pedido {formatarData(dataPedida)}
-                  {horaPedida ? ` ${horaPedida}` : ""}
-                </Selo>
+              {comparacao.divergencias.length ? (
+                <span className="block text-xs text-amber-800">{comparacao.divergencias.map((divergencia) => divergencia.texto).join("; ")}</span>
               ) : null}
-              {tarefa.dataLimite && tarefa.dataLimite !== tarefa.data ? (
-                <span className="text-muted-foreground">
-                  limite <span className="tabular-nums">{formatarData(tarefa.dataLimite)}</span>
-                </span>
-              ) : null}
-              {tarefa.responsaveis ? <span className="break-words text-muted-foreground">{tarefa.responsaveis}</span> : null}
-              <LinkVios ci={tarefa.ci} className="sm:ml-auto" />
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
-const COLUNAS = "lg:grid-cols-[minmax(0,2fr)_10rem_minmax(0,1.2fr)_8rem]";
-
-function TabelaCheck({ agendamentos }: { agendamentos: AgendamentoResumo[] }) {
-  if (!agendamentos.length) return <p className="px-4 pb-4 text-sm text-muted-foreground">Nenhuma tarefa nesta vistagem.</p>;
-  return (
-    <div>
-      <CabecalhoLista aria-hidden className={cn("hidden gap-x-4 border-t lg:grid", COLUNAS)}>
-        <span>Tarefa no VIOS</span>
-        <span>Data pedida</span>
-        <span>Responsável</span>
-        <span>CI</span>
-      </CabecalhoLista>
-      <ul className="divide-y divide-[#eef3f5] border-t border-[#e6eef0] lg:border-t-0">
-        {agendamentos.map((agendamento) => (
-          <li key={agendamento.id} className={cn("grid grid-cols-2 gap-x-4 gap-y-2.5 px-4 py-3 text-sm lg:items-start", COLUNAS)}>
-            <Celula rotulo="Tarefa no VIOS" mostrarRotulo={false} className="col-span-2 lg:col-span-1">
-              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="break-words font-medium text-foreground">{agendamento.tarefa}</span>
-                <Selo tom={TOM_CLASSE[agendamento.etiqueta]}>{ROTULO_ETIQUETA[agendamento.etiqueta]}</Selo>
-              </span>
-              {agendamento.observacao ? (
-                <span className="mt-0.5 block whitespace-pre-wrap break-words text-xs text-muted-foreground">{agendamento.observacao}</span>
-              ) : null}
-            </Celula>
-            <Celula rotulo="Data pedida">
-              <span className="tabular-nums text-foreground">
-                {formatarData(agendamento.data)}
-                {agendamento.hora ? ` às ${agendamento.hora}` : ""}
-              </span>
-              {agendamento.dataFatal ? (
-                <span className="mt-0.5 block text-xs text-muted-foreground">
-                  enviar · fatal <span className="tabular-nums">{formatarData(agendamento.dataFatal)}</span>
-                  {agendamento.diasPrazo && agendamento.contagemPrazo ? ` · ${agendamento.diasPrazo} ${ROTULO_CONTAGEM[agendamento.contagemPrazo]}` : ""}
-                </span>
-              ) : null}
-            </Celula>
-            <Celula rotulo="Responsável">
-              <span className="break-words text-foreground">{agendamento.responsavel}</span>
-              {agendamento.revisor ? <span className="mt-0.5 block break-words text-xs text-muted-foreground">Revisor: {agendamento.revisor}</span> : null}
-            </Celula>
-            <Celula rotulo="CI">
-              {agendamento.viosTarefaId ? <LinkVios ci={agendamento.viosTarefaId} /> : <span className="text-xs text-muted-foreground">—</span>}
-            </Celula>
-            {agendamento.viosTarefas?.length ? (
-              <AgendadoNoVios tarefas={agendamento.viosTarefas} dataPedida={agendamento.data} horaPedida={agendamento.hora} />
-            ) : null}
+            </span>
+            <SeloSituacao situacao={comparacao.situacao} />
           </li>
-        ))}
-      </ul>
-    </div>
+        );
+      })}
+    </ol>
   );
 }
 
-/* ------------------------------------------------------------ publicação */
-
-function ItemCheck({ item, aba, onConcluido }: { item: ConferenciaItem; aba: Aba; onConcluido: (mensagem: string) => void }) {
+function ItemCheck({
+  item,
+  aba,
+  fotos,
+  hoje,
+  navegacao,
+  onAbrir,
+  onVoltar,
+  onConcluido,
+}: {
+  item: ConferenciaItem;
+  aba: Aba;
+  fotos: Record<string, string>;
+  hoje: string;
+  navegacao: NavegacaoNaFila | null;
+  onAbrir: (id: string) => void;
+  onVoltar: () => void;
+  onConcluido: (id: string, mensagem: string) => void;
+}) {
   const [modo, setModo] = useState<"nenhum" | "ok" | "erro">("nenhum");
   const [nota, setNota] = useState("");
   const [tipo, setTipo] = useState("");
@@ -275,9 +159,14 @@ function ItemCheck({ item, aba, onConcluido }: { item: ConferenciaItem; aba: Aba
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState("");
   const { publicacao } = item;
-  const processo = publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal;
+  const processo = processoDe(item);
   const base = `check-${publicacao.id}`;
-  const divergente = aba !== "checadas" && temDivergencia(item);
+  const checada = aba === "checadas";
+  const comparacoes = useMemo(() => item.agendamentos.map((agendamento) => compararTarefa(agendamento)), [item.agendamentos]);
+  const divergencias = comparacoes.flatMap((comparacao, indice) =>
+    comparacao.divergencias.map((divergencia) => ({ ...divergencia, tarefa: indice + 1, nome: item.agendamentos[indice].tarefa }))
+  );
+  const aConferir = comparacoes.filter((comparacao) => comparacao.situacao === "conferir").length;
 
   async function enviar(acao: "ok" | "erro") {
     setOcupado(true);
@@ -291,12 +180,25 @@ function ItemCheck({ item, aba, onConcluido }: { item: ConferenciaItem; aba: Aba
       const corpo = await resposta.json();
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao salvar.");
       setModo("nenhum");
-      onConcluido(acao === "ok" ? "Check registrado." : "Inconsistência registrada; a publicação ficou em revisão.");
+      onConcluido(publicacao.id, acao === "ok" ? "Check registrado." : "Inconsistência registrada; a publicação ficou em revisão.");
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao salvar.");
     } finally {
       setOcupado(false);
     }
+  }
+
+  /** Abre o registro do erro já com o tipo, o subtipo e o texto da divergência (todas, ou só as de uma tarefa). */
+  function apontarErro(soEsta?: AgendamentoResumo) {
+    const alvo = soEsta ? [soEsta] : item.agendamentos;
+    const campos = alvo.flatMap((agendamento) => compararTarefa(agendamento).divergencias.map((divergencia) => divergencia.campo));
+    if (campos.length) {
+      if (!tipo) setTipo("AGENDAMENTO");
+      if (!subtipo) setSubtipo(subtipoSugerido(campos) ?? "");
+      if (!descricao.trim()) setDescricao(descricaoSugerida(item.agendamentos, soEsta ? [soEsta.id] : undefined));
+    }
+    setErro("");
+    setModo("erro");
   }
 
   function fechar() {
@@ -305,100 +207,150 @@ function ItemCheck({ item, aba, onConcluido }: { item: ConferenciaItem; aba: Aba
   }
 
   const spinner = <LoaderCircle className="animate-spin" />;
-  const descricaoDialogo = (
-    <>
-      Processo <span className="tabular-nums">{processo}</span>
-    </>
+  const contexto = (
+    <ContextoDoProcesso
+      grupo={publicacao.grupoCliente}
+      cliente={publicacao.cliente}
+      area={publicacao.escritorioResponsavel}
+      processo={processo}
+      pessoa={item.conferidoPor}
+      papel="Conferida por"
+      fotos={fotos}
+    />
   );
 
   return (
-    <Painel aria-labelledby={base}>
-      <PainelTopo
-        id={base}
-        titulo={
-          <span className="flex flex-wrap items-center gap-2">
-            <span className="break-all tabular-nums">{processo}</span>
-            {publicacao.tribunal ? <Selo>{publicacao.tribunal}</Selo> : null}
-            <SeloEsocial publicacao={publicacao} />
-            {divergente ? (
-              <Selo tom="alerta" icone={CalendarClock}>
-                Data ou hora diverge no VIOS
-              </Selo>
-            ) : null}
-          </span>
-        }
-        descricao={
+    // No desktop ocupa a altura da tela, como a vistagem: publicação e tarefas rolam cada uma no seu lugar.
+    <Painel aria-labelledby={`${base}-titulo`} className="@container lg:flex lg:h-full lg:flex-col">
+      <Button variant="ghost" size="sm" className="m-2 self-start lg:hidden" onClick={onVoltar}>
+        <ArrowLeft />
+        Voltar à lista
+      </Button>
+      {/* Mesmo topo da Conferência: número (pesquisa no tribunal e copia), quem vistou, conferiu e checou, as ações e as setas. */}
+      <FaixaDoProcesso
+        numero={processo}
+        tribunal={publicacao.tribunal}
+        tituloId={`${base}-titulo`}
+        selos={
           <>
-            Vistada {item.vistadoPor ? `por ${item.vistadoPor} ` : ""}em {formatarDataHora(publicacao.vistadoEm)} · conferida{" "}
-            {item.conferidoPor ? `por ${item.conferidoPor} ` : ""}em {formatarDataHora(publicacao.conferidoEm)}
+            <SeloEsocial publicacao={publicacao} />
+            <AutoriaNaFaixa papel="Vistada por" nome={item.vistadoPor} quando={publicacao.vistadoEm} fotos={fotos} />
+            {/* Devolvida e vistada de novo: quem analisou primeiro fica em "Vistada por"; depois, quem devolveu e quem vistou de novo. */}
+            {item.revistadoPor ? (
+              <>
+                <AutoriaNaFaixa papel="Devolvida por" nome={item.devolvidoPor} quando={publicacao.devolvidoEm} fotos={fotos} />
+                <AutoriaNaFaixa papel="Vistada de novo por" nome={item.revistadoPor} quando={publicacao.revistadoEm} fotos={fotos} />
+              </>
+            ) : null}
+            <AutoriaNaFaixa papel="Conferida por" nome={item.conferidoPor} quando={publicacao.conferidoEm} fotos={fotos} />
+            {checada ? <AutoriaNaFaixa papel="Checada por" nome={item.checadoPor ?? null} quando={publicacao.checadoEm} fotos={fotos} /> : null}
           </>
         }
       >
-        {aba === "checadas" ? (
-          <Selo tom="sucesso" icone={CircleCheck}>
-            Checada em {formatarDataHora(publicacao.checadoEm)}
-          </Selo>
-        ) : (
-          <>
-            <Button size="sm" variant="outline" onClick={() => setModo("erro")}>
+        {!checada ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" className={BOTAO_FAIXA} onClick={() => apontarErro()} disabled={ocupado}>
               <TriangleAlert />
               Encontrei erro
             </Button>
-            <Button size="sm" onClick={() => setModo("ok")}>
+            <Button size="sm" className={BOTAO_FAIXA_PRINCIPAL} onClick={() => setModo("ok")} disabled={ocupado}>
               <CircleCheck />
               {aba === "revisar" ? "Corrigido: dar check" : "Check OK"}
             </Button>
-          </>
-        )}
-      </PainelTopo>
+          </div>
+        ) : null}
+        {navegacao ? <SetasDaFila navegacao={navegacao} onAbrir={onAbrir} separada={!checada} /> : null}
+      </FaixaDoProcesso>
 
       {erro && modo === "nenhum" ? (
-        <Secao>
+        <Secao className="shrink-0">
           <Aviso tom="erro">{erro}</Aviso>
         </Secao>
       ) : null}
 
-      <Secao titulo="Pasta e publicação" id={`${base}-publicacao`}>
-        <DadosPasta publicacao={{ ...publicacao, pendencia: null }} />
-        <DadosPublicacao publicacao={publicacao} />
-      </Secao>
+      {/* Com espaço, a publicação fica à esquerda e o pedido × VIOS à direita, cada um rolando sozinho. */}
+      <div className="grid lg:min-h-0 lg:flex-1 @max-4xl:overflow-y-auto @4xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] @4xl:grid-rows-[minmax(0,1fr)] @4xl:divide-x @4xl:divide-[#e6eef0]">
+        <section aria-label="Publicação" className="min-w-0 overflow-y-auto max-lg:max-h-[75dvh]">
+          <PublicacaoNaVistagem publicacao={publicacao} agendamentos={item.agendamentos} auxiliar={item.auxiliar ?? null} fotos={fotos} hoje={hoje} />
+        </section>
 
-      {aba === "checadas" && publicacao.checkNota ? (
-        <Secao titulo="Observação do check" id={`${base}-nota`}>
-          <p className="whitespace-pre-wrap break-words text-sm text-foreground">{publicacao.checkNota}</p>
-        </Secao>
-      ) : null}
+        {/* A coluna inteira tem o fundo das tarefas, até o fim da tela. */}
+        <div className="min-w-0 border-t border-[#e6eef0] bg-[#f2f6f7] @4xl:overflow-y-auto @4xl:border-t-0 max-lg:@4xl:max-h-[75dvh]">
+          {divergencias.length && !checada ? (
+            <div className="px-3 pt-3">
+              <Aviso
+                tom="alerta"
+                titulo={`${plural(divergencias.length, "divergência", "divergências")} entre o pedido e o VIOS`}
+                acao={
+                  <Button size="xs" variant="outline" className="border-amber-300 bg-white text-amber-900 hover:bg-amber-100" onClick={() => apontarErro()}>
+                    Apontar erro
+                  </Button>
+                }
+              >
+                <ul className="space-y-0.5 text-xs">
+                  {divergencias.map((divergencia, indice) => (
+                    <li key={indice}>
+                      {item.agendamentos.length > 1 ? <span className="font-semibold">Tarefa {divergencia.tarefa}: </span> : null}
+                      {divergencia.texto}
+                    </li>
+                  ))}
+                </ul>
+              </Aviso>
+            </div>
+          ) : null}
 
-      {item.inconsistencias.length ? (
-        <Secao titulo="Inconsistências" id={`${base}-inconsistencias`} acao={<Selo tom="alerta">{item.inconsistencias.length}</Selo>}>
-          <div className="space-y-2">
-            {item.inconsistencias.map((inconsistencia) => (
-              <CartaoInconsistencia key={inconsistencia.id} inconsistencia={inconsistencia} acao={null} />
-            ))}
-          </div>
-        </Secao>
-      ) : null}
+          {publicacao.observacaoVistagem ? (
+            <Secao titulo="Observação do jurídico" id={`${base}-observacao`}>
+              <p className="whitespace-pre-wrap break-words text-sm text-foreground">{publicacao.observacaoVistagem}</p>
+            </Secao>
+          ) : null}
 
-      <Secao>
-        <TeorPublicacao publicacao={publicacao} />
-      </Secao>
+          {checada && publicacao.checkNota ? (
+            <Secao titulo="Observação do check" id={`${base}-nota`}>
+              <p className="whitespace-pre-wrap break-words text-sm text-foreground">{publicacao.checkNota}</p>
+            </Secao>
+          ) : null}
 
-      <section aria-labelledby={`${base}-tarefas`} className="border-t border-[#e6eef0]">
-        <div className="flex flex-wrap items-center justify-between gap-2 px-4 pb-3 pt-4">
-          <h3 id={`${base}-tarefas`} className="text-xs font-semibold uppercase tracking-normal text-[#285f7a]">
-            Pedido × agendado no VIOS
-          </h3>
-          <span className="text-xs text-muted-foreground">{plural(item.agendamentos.length, "tarefa", "tarefas")}</span>
+          {item.inconsistencias.length ? (
+            <Secao titulo="Inconsistências" id={`${base}-inconsistencias`} acao={<Selo tom="alerta">{item.inconsistencias.length}</Selo>}>
+              <div className="space-y-2">
+                {item.inconsistencias.map((inconsistencia) => (
+                  <CartaoInconsistencia key={inconsistencia.id} inconsistencia={inconsistencia} acao={null} />
+                ))}
+              </div>
+            </Secao>
+          ) : null}
+
+          <section aria-labelledby={`${base}-tarefas`} className="border-t border-[#e6eef0] first:border-t-0">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-4 pb-3 pt-4">
+              <h3 id={`${base}-tarefas`} className="text-xs font-semibold uppercase tracking-normal text-[#285f7a]">
+                Pedido × no VIOS
+              </h3>
+              <span className="text-xs text-muted-foreground">
+                {[
+                  plural(item.agendamentos.length, "tarefa", "tarefas"),
+                  comparacoes.some((comparacao) => comparacao.situacao === "diverge")
+                    ? `${comparacoes.filter((comparacao) => comparacao.situacao === "diverge").length} diverge`
+                    : null,
+                  aConferir ? `${aConferir} a conferir no VIOS` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </span>
+            </div>
+            <CartoesCheck agendamentos={item.agendamentos} fotos={fotos} hoje={hoje} onApontar={checada ? undefined : (agendamento) => apontarErro(agendamento)} />
+          </section>
         </div>
-        <TabelaCheck agendamentos={item.agendamentos} />
-      </section>
+      </div>
 
       <DialogoAcao
         aberto={modo === "ok"}
         onFechar={fechar}
         ocupado={ocupado}
+        icone={CircleCheck}
         titulo={aba === "revisar" ? "Corrigido: dar check" : "Check OK"}
-        descricao={<>{descricaoDialogo}. A esteira e o agendamento no VIOS estão corretos.</>}
+        descricao="Confirme que a esteira e o agendamento no VIOS estão corretos."
+        aviso="O check fica registrado com o seu nome."
         rodape={
           <>
             <Button variant="outline" onClick={fechar} disabled={ocupado}>
@@ -411,6 +363,16 @@ function ItemCheck({ item, aba, onConcluido }: { item: ConferenciaItem; aba: Aba
           </>
         }
       >
+        {contexto}
+        {divergencias.length ? (
+          <Aviso tom="alerta" titulo="Há divergência entre o pedido e o VIOS">
+            Dê o check só depois de corrigir no VIOS, ou se a diferença não procede (explique na observação).
+          </Aviso>
+        ) : null}
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground">O que você está confirmando</p>
+          <ResumoDasTarefas agendamentos={item.agendamentos} />
+        </div>
         <Campo rotulo="Observação do check (opcional)">
           <Textarea value={nota} onChange={(evento) => setNota(evento.target.value)} rows={3} maxLength={2000} />
         </Campo>
@@ -421,8 +383,11 @@ function ItemCheck({ item, aba, onConcluido }: { item: ConferenciaItem; aba: Aba
         aberto={modo === "erro"}
         onFechar={fechar}
         ocupado={ocupado}
+        icone={TriangleAlert}
+        tom="alerta"
         titulo="Encontrei erro"
-        descricao={<>{descricaoDialogo}. O erro vira inconsistência de agendamento e a publicação fica em revisão.</>}
+        descricao="O erro vira inconsistência de agendamento e a publicação fica em revisão até o novo check."
+        aviso={!tipo || !subtipo || !descricao.trim() ? "Escolha o tipo e o subtipo e diga o que está errado." : null}
         rodape={
           <>
             <Button variant="outline" onClick={fechar} disabled={ocupado}>
@@ -435,34 +400,73 @@ function ItemCheck({ item, aba, onConcluido }: { item: ConferenciaItem; aba: Aba
           </>
         }
       >
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <span className="block text-xs font-medium text-muted-foreground">Tipo</span>
-            <Seletor
-              rotulo="Tipo da inconsistência"
-              placeholder="Escolha…"
-              valor={tipo}
-              onChange={setTipo}
-              opcoes={TIPOS_INCONSISTENCIA_AGENDAMENTO.map((valor) => ({ valor, rotulo: valor }))}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <span className="block text-xs font-medium text-muted-foreground">Subtipo</span>
-            <Seletor
-              rotulo="Subtipo da inconsistência"
-              placeholder="Escolha…"
-              valor={subtipo}
-              onChange={setSubtipo}
-              opcoes={SUBTIPOS_AGENDAMENTO_EM_USO.map((valor) => ({ valor, rotulo: valor }))}
-            />
-          </div>
+        {contexto}
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground">Tipo</p>
+          <Segmented
+            label="Tipo da inconsistência"
+            value={tipo}
+            options={TIPOS_INCONSISTENCIA_AGENDAMENTO.map((valor) => ({ value: valor as string, label: ROTULO_TIPO[valor] ?? valor }))}
+            onChange={setTipo}
+          />
         </div>
-        <Campo rotulo="O que está errado">
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground">Subtipo</p>
+          <EscolhaEmCartoes rotulo="Subtipo da inconsistência" opcoes={OPCOES_SUBTIPO} valor={subtipo} onChange={setSubtipo} desabilitado={ocupado} />
+        </div>
+        <Campo rotulo="O que está errado" dica={divergencias.length ? "Começa com as divergências encontradas: revise antes de registrar." : undefined}>
           <Textarea value={descricao} onChange={(evento) => setDescricao(evento.target.value)} rows={4} maxLength={2000} />
         </Campo>
         {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
       </DialogoAcao>
     </Painel>
+  );
+}
+
+/* ------------------------------------------------------------ fila */
+
+/** Linha da fila: processo, risco, situação do check e inconsistências; cliente com logo; quem conferiu (ou checou), com foto. */
+function LinhaDoCheck({
+  item,
+  situacao,
+  checada,
+  aberta,
+  fotos,
+  onAbrir,
+}: {
+  item: ConferenciaItem;
+  situacao: SituacaoCheck;
+  checada: boolean;
+  aberta: boolean;
+  fotos: Record<string, string>;
+  onAbrir: () => void;
+}) {
+  const { publicacao } = item;
+  const abertas = item.inconsistencias.filter((inconsistencia) => !inconsistencia.excluidaEm).length;
+  const pessoa = checada ? (item.checadoPor ?? null) : item.conferidoPor;
+  return (
+    <button type="button" onClick={onAbrir} aria-current={aberta ? "true" : undefined} className={cn(linhaLista(aberta), "space-y-1")}>
+      <span className="flex flex-wrap items-center gap-1.5">
+        <span className="text-xs font-semibold tabular-nums text-foreground">{processoDe(item)}</span>
+        {publicacao.demandaRisco ? (
+          <Selo tom="perigo" icone={ShieldAlert}>
+            Risco
+          </Selo>
+        ) : null}
+        <SeloSituacao situacao={situacao} />
+        {abertas ? <Selo tom="alerta">{plural(abertas, "inconsistência", "inconsistências")}</Selo> : null}
+      </span>
+      <span className="flex min-w-0 items-center gap-1.5 text-sm text-foreground">
+        {publicacao.grupoCliente ? <LogoGrupo grupo={publicacao.grupoCliente} tamanho="xs" /> : null}
+        <span className="truncate">{publicacao.cliente ?? publicacao.grupoCliente ?? "—"}</span>
+      </span>
+      <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+        {pessoa ? <AvatarPessoa nome={pessoa} foto={fotos[chaveNome(pessoa)]} className="size-4 [&_[data-slot=avatar-fallback]]:text-[7px]" /> : null}
+        <span className="truncate">
+          {[pessoa ? `${checada ? "checada" : "conferida"} por ${pessoa}` : null, plural(item.agendamentos.length, "tarefa", "tarefas")].filter(Boolean).join(" · ")}
+        </span>
+      </span>
+    </button>
   );
 }
 
@@ -472,6 +476,14 @@ const VAZIO: Record<Aba, { titulo: string; texto: string }> = {
   aChecar: { titulo: "Nenhum agendamento aguardando check.", texto: "O que o robô gravar no VIOS aparece aqui para conferir." },
   revisar: { titulo: "Nada em revisão.", texto: "Publicações com erro apontado no check ficam aqui até o novo check." },
   checadas: { titulo: "Nenhuma publicação checada ainda.", texto: "As publicações com check registrado aparecem aqui." },
+};
+
+/** Ícone de cada tipo de agendamento no filtro. */
+const ICONE_DO_TIPO: Record<TipoDeAgendamento, LucideIcon> = {
+  CIENCIA_NF: Eye,
+  PRAZO: Hourglass,
+  PROVIDENCIA: ClipboardCheck,
+  COMPROMISSO: CalendarClock,
 };
 
 function Check() {
@@ -484,92 +496,249 @@ function Check() {
   /** Data da publicação (AAAA-MM-DD); vazio é "Todas as datas". */
   const [dataPublicacao, setDataPublicacao] = useState("");
   /** Data da divulgação no diário (AAAA-MM-DD); vazio é "Todas as datas". */
-  const [dataDivulgacao, setDataDivulgacao] = useState("");
+  const [dataImportacao, setDataImportacao] = useState("");
+  /** Área (escritório); vazio é "Todas as áreas". */
+  const [area, setArea] = useState("");
+  /** Tribunal; vazio é "Todos os tribunais". */
+  const [tribunal, setTribunal] = useState("");
+  /** Pedido × VIOS; vazio é "Todas as situações". */
+  const [situacao, setSituacao] = useState("");
+  /** Ciência NF, Prazo, Providência ou Compromisso; vazio é "Todos os tipos". */
+  const [tipoAgendamento, setTipoAgendamento] = useState("");
+  /** Publicação escolhida; sem escolha (ou fora dos filtros), abre a primeira da fila. */
+  const [selecionada, setSelecionada] = useState<string | null>(null);
+  /** A fila abre recolhida, como na vistagem: a publicação ocupa a largura toda. */
+  const [filaRecolhida, setFilaRecolhida] = useState(true);
+  /** No celular a fila e a publicação não cabem juntas: mostra a fila só quando pedida. */
+  const [listaNoCelular, setListaNoCelular] = useState(false);
+  const rolagemDaFila = useRef<HTMLDivElement>(null);
 
   const carregar = useCallback(async () => {
     setErro("");
     try {
-      // traz antes o andamento do robô, para entrar aqui o que acabou de ser gravado no VIOS
-      await authFetch("/api/operacoes-legais/vistagem/envios", { method: "POST" }).catch(() => null);
       const resposta = await authFetch("/api/operacoes-legais/vistagem/check");
       const corpo = await resposta.json();
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao carregar o check.");
       setDados(corpo);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao carregar o check.");
-      setDados({ aChecar: [], revisar: [], checadas: [] });
+      setDados({ aChecar: [], revisar: [], checadas: [], fotos: {}, hoje: hojeDoNavegador() });
     }
   }, []);
 
-  useEffect(() => {
-    void carregar();
+  /** Traz antes o andamento do robô, para entrar aqui o que acabou de ser gravado no VIOS. */
+  const sincronizarECarregar = useCallback(async () => {
+    await authFetch("/api/operacoes-legais/vistagem/envios", { method: "POST" }).catch(() => null);
+    await carregar();
   }, [carregar]);
+
+  useEffect(() => {
+    void sincronizarECarregar();
+  }, [sincronizarECarregar]);
 
   async function atualizar() {
     setAtualizando(true);
-    await carregar();
+    await sincronizarECarregar();
     setAtualizando(false);
   }
 
-  const numeros = useMemo(() => {
-    const aChecar = dados?.aChecar ?? [];
-    const revisar = dados?.revisar ?? [];
-    return {
-      tarefasAChecar: aChecar.reduce((soma, item) => soma + item.agendamentos.length, 0),
-      divergentes: [...aChecar, ...revisar].filter(temDivergencia).length,
-    };
-  }, [dados]);
+  const todas = useMemo(() => [...(dados?.aChecar ?? []), ...(dados?.revisar ?? []), ...(dados?.checadas ?? [])], [dados]);
+  // O que a busca olha em cada publicação (inclui as partes do texto): montado uma vez por carga, não a cada letra.
+  const camposDeBusca = useMemo(
+    () => new Map(todas.map((item) => [item.publicacao.id, [...camposDaConferencia(item), item.checadoPor ?? ""]])),
+    [todas]
+  );
+  // Pedido × VIOS de cada publicação: também uma vez por carga.
+  const situacoes = useMemo(() => new Map(todas.map((item) => [item.publicacao.id, situacaoDoCheck(item)])), [todas]);
+  const situacaoDe = (item: ConferenciaItem): SituacaoCheck => situacoes.get(item.publicacao.id) ?? "conferir";
+  // Tipos de agendamento de cada publicação (Ciência NF, Prazo, Providência, Compromisso): também uma vez por carga.
+  const tiposPorItem = useMemo(() => new Map(todas.map((item) => [item.publicacao.id, tiposDoItem(item)])), [todas]);
+  const tiposDe = (item: ConferenciaItem): TipoDeAgendamento[] => tiposPorItem.get(item.publicacao.id) ?? [];
 
   const lista = dados?.[aba];
   const datasDaLista = (lista ?? []).map((item) => item.publicacao.dataPublicacao);
   const dataAtiva = dataNaLista(dataPublicacao, datasDaLista);
-  const divulgacoesDaLista = (lista ?? []).map((item) => item.publicacao.dataDivulgacao);
-  const divulgacaoAtiva = dataNaLista(dataDivulgacao, divulgacoesDaLista);
-  const filtrada = (lista ?? []).filter(
+  const importacoesDaLista = (lista ?? []).map((item) => item.publicacao.dataImportacao);
+  const importacaoAtiva = dataNaLista(dataImportacao, importacoesDaLista);
+  // Área e tribunal escolhidos que sumiram da lista (outra aba, já checadas) deixam de filtrar.
+  const areasDaLista = contarPor(lista ?? [], areaDaPublicacao);
+  const areaAtiva = areasDaLista.some(([nome]) => nome === area) ? area : "";
+  const daArea = (lista ?? []).filter((item) => !areaAtiva || areaDaPublicacao(item) === areaAtiva);
+  const tribunaisDaLista = contarPor(daArea, (item) => tribunalDe(item.publicacao));
+  const tribunalAtivo = tribunaisDaLista.some(([nome]) => nome === tribunal) ? tribunal : "";
+  const situacoesDaLista = new Map(contarPor(lista ?? [], situacaoDe));
+  const tiposDaLista = new Map(TIPOS_DE_AGENDAMENTO.map((tipo) => [tipo.valor, (lista ?? []).filter((item) => tiposDe(item).includes(tipo.valor)).length]));
+  const filtrada = daArea.filter(
     (item) =>
-      combinaBusca(item, busca) &&
+      combinaCampos(camposDeBusca.get(item.publicacao.id) ?? [], busca) &&
+      (!tribunalAtivo || tribunalDe(item.publicacao) === tribunalAtivo) &&
+      (!situacao || situacaoDe(item) === situacao) &&
+      (!tipoAgendamento || tiposDe(item).includes(tipoAgendamento as TipoDeAgendamento)) &&
       (!dataAtiva || item.publicacao.dataPublicacao === dataAtiva) &&
-      (!divulgacaoAtiva || item.publicacao.dataDivulgacao === divulgacaoAtiva)
+      (!importacaoAtiva || item.publicacao.dataImportacao === importacaoAtiva)
   );
-  const valor = (n: number | undefined) => (dados ? (n ?? 0) : "—");
+  const grupos = agruparPorArea(filtrada);
+
+  function limparFiltros() {
+    setBusca("");
+    setArea("");
+    setTribunal("");
+    setSituacao("");
+    setTipoAgendamento("");
+    setDataPublicacao("");
+    setDataImportacao("");
+  }
+
+  // Mesma ordem da fila (área › tribunal): é por ela que as setas andam para a anterior e a próxima.
+  const ordem = ordemDaFila(grupos);
+  const ids = ordem.map((item) => item.publicacao.id);
+  // Buscar não troca o processo aberto: os resultados aparecem na fila e a pessoa escolhe. Os outros filtros, sim.
+  const buscando = busca.trim() !== "";
+  const fixaNaBusca = buscando && selecionada ? ((lista ?? []).find((item) => item.publicacao.id === selecionada) ?? null) : null;
+  const indiceAberta = selecionada && ids.includes(selecionada) ? ids.indexOf(selecionada) : fixaNaBusca ? -1 : ids.length ? 0 : -1;
+  const aberta = indiceAberta >= 0 ? ordem[indiceAberta] : fixaNaBusca;
+  // Aberta fora dos resultados: sem setas (elas andam pelos resultados).
+  const navegacao: NavegacaoNaFila | null =
+    aberta && indiceAberta >= 0
+      ? { posicao: indiceAberta + 1, total: ids.length, anterior: ids[indiceAberta - 1] ?? null, proxima: ids[indiceAberta + 1] ?? null }
+      : null;
+  // Com busca, a fila fica à vista com os resultados (no celular, a lista aparece no lugar da publicação).
+  const filaAberta = !filaRecolhida || buscando;
+
+  function mudarBusca(texto: string) {
+    // Prende o processo que está aberto antes de filtrar, para ele não pular para o primeiro resultado.
+    if (!selecionada && aberta) setSelecionada(aberta.publicacao.id);
+    setBusca(texto);
+    if (texto.trim()) setListaNoCelular(true);
+  }
+
+  function mudarAba(nova: Aba) {
+    setAba(nova);
+    setSelecionada(null);
+  }
+
+  const idAberta = aberta?.publicacao.id ?? null;
+  useEffect(() => {
+    // Ao andar pelas setas, a fila acompanha a publicação aberta.
+    rolagemDaFila.current?.querySelector("[aria-current=true]")?.scrollIntoView({ block: "nearest" });
+  }, [idAberta, filaAberta]);
+
+  function abrir(id: string) {
+    setSelecionada(id);
+    setListaNoCelular(false);
+  }
+
+  function concluido(id: string, mensagem: string) {
+    // Segue para a próxima da fila (ou a anterior, se era a última).
+    const posicao = ids.indexOf(id);
+    if (posicao >= 0) setSelecionada(ids[posicao + 1] ?? ids[posicao - 1] ?? null);
+    setRetorno({ tom: "sucesso", texto: mensagem });
+    setDados((atual) =>
+      atual
+        ? {
+            ...atual,
+            aChecar: atual.aChecar.filter((item) => item.publicacao.id !== id),
+            revisar: atual.revisar.filter((item) => item.publicacao.id !== id),
+          }
+        : atual
+    );
+    void carregar();
+  }
+
+  const fotos = dados?.fotos ?? {};
 
   return (
     <div className="space-y-4">
-      <BarraAba resumo="Confira no VIOS se a esteira e o agendamento estão corretos. Erro encontrado vira inconsistência e a publicação fica em revisão.">
-        <Button variant="outline" onClick={atualizar} disabled={atualizando || !dados}>
-          {atualizando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
-          Atualizar
-        </Button>
-      </BarraAba>
-
-      <Indicadores>
-        <Indicador icone={ListChecks} rotulo="A checar" valor={valor(dados?.aChecar.length)}>
-          {dados ? `${plural(numeros.tarefasAChecar, "tarefa agendada", "tarefas agendadas")} no VIOS` : null}
-        </Indicador>
-        <Indicador icone={TriangleAlert} rotulo="Em revisão" valor={valor(dados?.revisar.length)} tom={dados?.revisar.length ? "alerta" : "neutro"}>
-          {dados ? "Com erro apontado no check" : null}
-        </Indicador>
-        <Indicador icone={CircleCheck} rotulo="Checadas" valor={valor(dados?.checadas.length)}>
-          {dados ? "Com check registrado" : null}
-        </Indicador>
-        <Indicador icone={CalendarClock} rotulo="Data ou hora divergente" valor={valor(numeros.divergentes)} tom={numeros.divergentes ? "alerta" : "neutro"}>
-          {dados ? "Pedido diferente do agendado no VIOS" : null}
-        </Indicador>
-      </Indicadores>
-
       <BarraAba
         resumo={
-          <Segmented
-            label="Situação do check"
-            value={aba}
-            options={ABAS.map((item) => ({ value: item.valor, label: dados ? `${item.rotulo} ${dados[item.valor].length}` : item.rotulo }))}
-            onChange={setAba}
-          />
+          // Linha de cima: a lista (A checar, Em revisão, Checadas), o filtro do pedido × VIOS e o Atualizar. Embaixo,
+          // os mesmos filtros da Conferência.
+          <div className="flex flex-wrap items-center gap-2">
+            <Segmented
+              label="Situação do check"
+              value={aba}
+              options={ABAS.map((item) => ({ value: item.valor, label: dados ? `${item.rotulo} ${dados[item.valor].length}` : item.rotulo }))}
+              onChange={mudarAba}
+            />
+            <Seletor
+              rotulo="Pedido × VIOS"
+              className="sm:w-56"
+              valor={situacao}
+              onChange={setSituacao}
+              todos={{ rotulo: "Todas as situações", contagem: lista?.length, icone: <IconeOpcao icone={ListChecks} /> }}
+              opcoes={FILTRO_SITUACAO.map((opcao) => ({
+                valor: opcao.valor,
+                rotulo: opcao.rotulo,
+                descricao: opcao.descricao,
+                contagem: situacoesDaLista.get(opcao.valor) ?? 0,
+                icone: <IconeOpcao icone={opcao.icone} className={opcao.cor || undefined} />,
+              }))}
+            />
+            <Button variant="outline" onClick={atualizar} disabled={atualizando || !dados} title="Traz o andamento do robô e recarrega a lista">
+              {atualizando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
+              Atualizar
+            </Button>
+          </div>
         }
       >
-        <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Buscar processo, pasta, cliente ou CI" aria-label="Buscar publicação" />
+        {!filaAberta ? (
+          <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)}>
+            <PanelLeftOpen />
+            Mostrar fila
+          </Button>
+        ) : null}
+        <Busca
+          value={busca}
+          onChange={(evento) => mudarBusca(evento.target.value)}
+          onKeyDown={(evento) => {
+            // Enter abre o primeiro resultado; Esc limpa a busca.
+            if (evento.key === "Enter" && ids[0]) abrir(ids[0]);
+            if (evento.key === "Escape") mudarBusca("");
+          }}
+          placeholder="Buscar processo, cliente, parte, pessoa ou CI"
+          aria-label="Buscar publicação"
+        />
+        <Seletor
+          rotulo="Área"
+          className="sm:w-60"
+          valor={areaAtiva}
+          onChange={(valor) => {
+            setArea(valor);
+            setTribunal("");
+          }}
+          todos={{ rotulo: "Todas as áreas", contagem: lista?.length, icone: <IconeOpcao icone={Layers} /> }}
+          opcoes={areasDaLista.map(([nome, quantidade]) => ({ valor: nome, rotulo: nome, contagem: quantidade, icone: <IconeArea area={nome} /> }))}
+        />
+        <Seletor
+          rotulo="Tribunal"
+          className="sm:w-52"
+          valor={tribunalAtivo}
+          onChange={setTribunal}
+          todos={{ rotulo: "Todos os tribunais", contagem: daArea.length, icone: <IconeOpcao icone={Landmark} /> }}
+          opcoes={tribunaisDaLista.map(([nome, quantidade]) => ({
+            valor: nome,
+            rotulo: nome,
+            descricao: descricaoDoTribunal(nome),
+            contagem: quantidade,
+            icone: <IconeTribunal sigla={nome} />,
+          }))}
+        />
+        <Seletor
+          rotulo="Tipo de agendamento"
+          className="sm:w-56"
+          valor={tipoAgendamento}
+          onChange={setTipoAgendamento}
+          todos={{ rotulo: "Todos os tipos", contagem: lista?.length, icone: <IconeOpcao icone={Tags} /> }}
+          opcoes={TIPOS_DE_AGENDAMENTO.map((tipo) => ({
+            valor: tipo.valor,
+            rotulo: tipo.rotulo,
+            descricao: tipo.descricao,
+            contagem: tiposDaLista.get(tipo.valor) ?? 0,
+            icone: <IconeOpcao icone={ICONE_DO_TIPO[tipo.valor]} />,
+          }))}
+        />
         <FiltroData rotulo="Data Publicação" datas={datasDaLista} valor={dataAtiva} onChange={setDataPublicacao} />
-        <FiltroData rotulo="Data Divulgação" datas={divulgacoesDaLista} valor={divulgacaoAtiva} onChange={setDataDivulgacao} />
+        <FiltroData rotulo="Data da importação" datas={importacoesDaLista} valor={importacaoAtiva} onChange={setDataImportacao} />
       </BarraAba>
 
       {retorno ? (
@@ -607,29 +776,62 @@ function Check() {
             {VAZIO[aba].texto}
           </Vazio>
         </Painel>
-      ) : filtrada.length === 0 ? (
+      ) : filtrada.length === 0 && !(buscando && aberta) ? (
         <Painel>
-          <Vazio icone={SearchX} titulo="Nenhuma publicação com essa busca.">
-            <Button variant="link" className="h-auto p-0" onClick={() => setBusca("")}>
-              Limpar busca
+          <Vazio icone={SearchX} titulo="Nenhuma publicação com esses filtros.">
+            <Button variant="link" className="h-auto p-0" onClick={limparFiltros}>
+              Limpar filtros
             </Button>
           </Vazio>
         </Painel>
       ) : (
-        <ul className="space-y-4" aria-label={ABAS.find((item) => item.valor === aba)?.rotulo}>
-          {filtrada.map((item) => (
-            <li key={item.publicacao.id}>
-              <ItemCheck
+        // Um processo por vez, como na Conferência: a fila (por área e, no Trabalhista, por tribunal) fica recolhida
+        // e as setas da faixa andam entre as publicações. No desktop, fila e publicação rolam cada uma no seu painel.
+        <div
+          className={cn(
+            // A linha tem a altura da grade (e não a do conteúdo): é o que deixa publicação e tarefas rolarem por dentro.
+            "grid gap-4 lg:h-[calc(100dvh-10.5rem)] lg:min-h-[30rem] lg:grid-rows-[minmax(0,1fr)]",
+            filaAberta ? "lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]" : "lg:grid-cols-1"
+          )}
+        >
+          <FilaPorArea
+            grupos={grupos}
+            total={ordem.length}
+            busca={busca}
+            abertaForaDosResultados={Boolean(aberta) && indiceAberta < 0}
+            onLimparBusca={() => mudarBusca("")}
+            onRecolher={() => setFilaRecolhida(true)}
+            rotulo={buscando ? "Resultados da busca" : `Publicações: ${ABAS.find((item) => item.valor === aba)?.rotulo.toLowerCase()}`}
+            rolagem={rolagemDaFila}
+            className={cn(aberta && !listaNoCelular && "hidden lg:flex", !filaAberta && "lg:hidden")}
+            linha={(item) => (
+              <LinhaDoCheck
                 item={item}
-                aba={aba}
-                onConcluido={(mensagem) => {
-                  setRetorno({ tom: "sucesso", texto: mensagem });
-                  void carregar();
-                }}
+                situacao={situacaoDe(item)}
+                checada={aba === "checadas"}
+                aberta={item.publicacao.id === aberta?.publicacao.id}
+                fotos={fotos}
+                onAbrir={() => abrir(item.publicacao.id)}
               />
-            </li>
-          ))}
-        </ul>
+            )}
+          />
+
+          <div className={cn("min-w-0 lg:h-full lg:min-h-0", (!aberta || listaNoCelular) && "hidden lg:block")}>
+            {aberta ? (
+              <ItemCheck
+                key={aberta.publicacao.id}
+                item={aberta}
+                aba={aba}
+                fotos={fotos}
+                hoje={dados?.hoje ?? hojeDoNavegador()}
+                navegacao={navegacao}
+                onAbrir={abrir}
+                onVoltar={() => setListaNoCelular(true)}
+                onConcluido={concluido}
+              />
+            ) : null}
+          </div>
+        </div>
       )}
     </div>
   );

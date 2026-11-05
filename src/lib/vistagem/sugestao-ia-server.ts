@@ -17,6 +17,7 @@ import {
   type PublicacaoComArea,
 } from "./juridico-server";
 import { carregarCatalogoProcessos } from "./sama";
+import { lerConfiguracoes } from "./configuracoes-server";
 import { admin, falhou } from "./server";
 import {
   PRAZO_DE,
@@ -102,13 +103,14 @@ async function gravarSugestao(id: string, sugestao: SugestaoIa): Promise<void> {
 }
 
 /** Sugestão da publicação para a tela do jurídico: a já gravada ou uma nova. */
-export async function sugestaoDaPublicacao(id: string, areas: AreasVistagem = null): Promise<SugestaoIa> {
+export async function sugestaoDaPublicacao(id: string, areas: AreasVistagem = null, veRisco = true): Promise<SugestaoIa> {
   const publicacao = await carregarPublicacao(id);
-  garantirArea(publicacao, areas);
+  garantirArea(publicacao, areas, veRisco);
   if (publicacao.sugestao_ia) return publicacao.sugestao_ia;
   if (publicacao.status !== "juridico_vistar") throw new VistagemError("Esta publicação não está aguardando vistagem.", 409);
   const catalogo = catalogoParaPublicacao(await carregarCatalogoProcessos(), publicacao);
   if (!catalogo || !areaComSugestaoIa(catalogo.area)) throw new VistagemError("A sugestão da IA ainda é só para o Trabalhista.", 422);
+  if (!(await lerConfiguracoes()).iaSugestaoTarefa) throw new VistagemError("A sugestão da IA está desligada nas configurações da Vistagem.", 422);
   const sugestao = await pedirSugestao(publicacao, catalogo.tarefas);
   await gravarSugestao(id, sugestao);
   return sugestao;
@@ -119,6 +121,8 @@ export async function sugestaoDaPublicacao(id: string, areas: AreasVistagem = nu
  * 4 por vez, até o tempo acabar (as que sobrarem a tela gera ao abrir).
  */
 export async function gerarSugestoesPendentes(prazoMs: number): Promise<{ pendentes: number; geradas: number; erros: number; custoUS: number }> {
+  // Desligada em Configurações: o cron não gera nada (as já geradas continuam na tela).
+  if (!(await lerConfiguracoes()).iaSugestaoTarefa) return { pendentes: 0, geradas: 0, erros: 0, custoUS: 0 };
   const fim = Date.now() + prazoMs;
   const { data, error } = await admin()
     .from("vistagem_publicacoes")

@@ -341,6 +341,28 @@ export interface SeriesForecastRow {
   targetEventId: string | null;
 }
 
+/**
+ * Uma edição do histórico com os campos de cadastro. Serve à planilha do
+ * planejamento, que precisa de tipo e datas que a comparação por série não usa.
+ */
+export interface ForecastEdition {
+  eventId: string;
+  year: number;
+  name: string;
+  kind: EventKind;
+  seriesId: string | null;
+  seriesName: string | null;
+  eventType: string | null;
+  monthLabel: string | null;
+  commemorativeDate: string | null;
+  eventDate: string | null;
+  endDate: string | null;
+  status: EventStatus;
+  budgetApproved: number | null;
+  plannedTotal: number;
+  actualTotal: number;
+}
+
 export interface EventsForecast {
   targetYear: number;
   /** Anos com histórico, do mais antigo ao mais recente. */
@@ -348,6 +370,11 @@ export interface EventsForecast {
   rows: SeriesForecastRow[];
   /** Eventos fora de qualquer série — não entram na comparação. */
   unlinkedCount: number;
+  /**
+   * Todas as edições até o ano-alvo, inclusive avulsas e canceladas — o que a
+   * tela deixa de fora da conta continua aparecendo na planilha.
+   */
+  editions: ForecastEdition[];
 }
 
 export interface EventToPlannerFormData {
@@ -1212,7 +1239,7 @@ export async function fetchEventsForecast(
 
   if (eventsRes.error) {
     console.error("Erro ao montar previsão de eventos:", eventsRes.error);
-    return { targetYear, historyYears: [], rows: [], unlinkedCount: 0 };
+    return { targetYear, historyYears: [], rows: [], unlinkedCount: 0, editions: [] };
   }
 
   const events = (eventsRes.data ?? [])
@@ -1230,9 +1257,31 @@ export async function fetchEventsForecast(
 
   const bySeries = new Map<string, SeriesForecastRow>();
   const historyYears = new Set<number>();
+  const editions: ForecastEdition[] = [];
   let unlinkedCount = 0;
 
   for (const event of events) {
+    if (event.year <= targetYear) {
+      const budget = budgetByEvent[event.id] ?? { planned: 0, actual: 0 };
+      editions.push({
+        eventId: event.id,
+        year: event.year,
+        name: event.name,
+        kind: event.kind,
+        seriesId: event.seriesId,
+        seriesName: event.seriesName ?? null,
+        eventType: event.eventType,
+        monthLabel: event.monthLabel,
+        commemorativeDate: event.commemorativeDate,
+        eventDate: event.eventDate,
+        endDate: event.endDate,
+        status: event.status,
+        budgetApproved: event.budgetApproved,
+        plannedTotal: budget.planned,
+        actualTotal: budget.actual,
+      });
+    }
+
     if (!event.seriesId) {
       unlinkedCount++;
       continue;
@@ -1313,7 +1362,7 @@ export async function fetchEventsForecast(
     return a.seriesName.localeCompare(b.seriesName, "pt-BR");
   });
 
-  return { targetYear, historyYears: years, rows, unlinkedCount };
+  return { targetYear, historyYears: years, rows, unlinkedCount, editions };
 }
 
 export async function fetchAvailableYears(client?: SupabaseClient): Promise<number[]> {

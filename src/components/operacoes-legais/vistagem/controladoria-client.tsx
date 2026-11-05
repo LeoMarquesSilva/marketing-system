@@ -7,13 +7,14 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  PanelLeftClose,
+  PanelLeftOpen,
   CircleCheck,
   CircleDashed,
   CircleSlash,
   ClipboardCheck,
-  Copy,
+  ShieldAlert,
   ExternalLink,
-  FolderSearch,
   FolderX,
   Folders,
   ListChecks,
@@ -32,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
+import { camposDaPublicacao, combinaCampos } from "@/lib/vistagem/busca";
 import { clienteNoTexto, pastaSugerida, verificacoesSemPasta, type SituacaoVerificacao } from "@/lib/vistagem/controladoria";
 import { criarCalendarioDePrazo, feriadosNacionais, somarDiasUteis } from "@/lib/vistagem/dias-uteis";
 import { ESCRITORIOS, ESCRITORIO_EX_CLIENTE, pastaAtiva, type PastaSioe, type Pendencia } from "@/lib/vistagem/triagem";
@@ -43,7 +45,9 @@ import { AvisoArquivoDoDia } from "./aviso-arquivo-do-dia";
 import { FiltroData, dataNaLista } from "./filtro-data";
 import { EditorVistagem } from "./juridico-client";
 import { LeitorPublicacao } from "./leitor-publicacao";
-import { IconeArea, LogoGrupo } from "./marcas";
+import { IconeArea, IconeTribunal, LogoGrupo } from "./marcas";
+import { FaixaDoProcesso, SetasDaFila } from "./faixa-processo";
+import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
 import { PENDENCIAS, formatarData, formatarDataHora } from "./publicacao-ui";
 import { ReguaDatas } from "./regua-datas";
 import { Seletor, SeletorBusca } from "./seletor";
@@ -53,8 +57,6 @@ import {
   Busca,
   Campo,
   Carregando,
-  Indicador,
-  Indicadores,
   Painel,
   Secao,
   Selo,
@@ -86,25 +88,6 @@ function numeroProcesso(publicacao: PublicacaoResumo): string {
   return publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal;
 }
 
-/** Busca por número do processo (a partir de 4 dígitos), tribunal, órgão, pasta, grupo, cliente ou intimado. */
-function combinaBusca(publicacao: PublicacaoResumo, busca: string): boolean {
-  const texto = busca.trim().toLowerCase();
-  if (!texto) return true;
-  const digitos = busca.replace(/\D/g, "");
-  if (digitos.length >= 4 && numeroProcesso(publicacao).replace(/\D/g, "").includes(digitos)) return true;
-  return [
-    publicacao.tribunal,
-    publicacao.djenOrgao,
-    publicacao.escritorioResponsavel,
-    publicacao.grupoCliente,
-    publicacao.cliente,
-    publicacao.pastaCi,
-    publicacao.sugestaoTriagem?.grupo,
-    publicacao.sugestaoTriagem?.cliente,
-    ...publicacao.pastasCandidatas.map((pasta) => pasta.grupoCliente),
-    ...publicacao.djenIntimados,
-  ].some((campo) => campo?.toLowerCase().includes(texto));
-}
 
 /** Data de hoje em São Paulo (AAAA-MM-DD), para a régua mostrar "há 2 dias". */
 function hojeEmSaoPaulo(): string {
@@ -455,6 +438,25 @@ function CampoGrupo({ valor, onChange, obrigatorio }: { valor: string; onChange:
   );
 }
 
+/** Demanda de risco: chave liga/desliga (vermelha quando ligada), no lugar da caixinha do navegador. */
+function ChaveRisco({ ligado, onChange }: { ligado: boolean; onChange: (ligado: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={ligado}
+      onClick={() => onChange(!ligado)}
+      className="inline-flex min-h-10 w-fit items-center gap-2.5 rounded-md text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[#47cdd0]/30"
+    >
+      <span className={cn("relative h-5 w-9 shrink-0 rounded-full transition-colors", ligado ? "bg-red-600" : "bg-[#c9dde6]")} aria-hidden>
+        <span className={cn("absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform", ligado ? "translate-x-[1.125rem]" : "translate-x-0.5")} />
+      </span>
+      <ShieldAlert className={cn("size-4", ligado ? "text-red-700" : "text-muted-foreground")} aria-hidden />
+      <span className={cn(ligado && "font-medium text-red-800")}>Demanda de risco</span>
+    </button>
+  );
+}
+
 /** Escritório responsável: todas as áreas (Operações Legais é a fila da própria controladoria). */
 function CampoEscritorio({ valor, onChange }: { valor: string; onChange: (escritorio: string) => void }) {
   return (
@@ -591,10 +593,7 @@ function Resolucao({
           <CampoEscritorio valor={escritorio} onChange={setEscritorio} />
           <CampoGrupo valor={grupo} onChange={setGrupo} obrigatorio={grupoObrigatorio} />
         </div>
-        <label className="flex min-h-10 w-fit cursor-pointer items-center gap-2.5 text-sm text-foreground">
-          <input type="checkbox" checked={demandaRisco} onChange={(evento) => setDemandaRisco(evento.target.checked)} className="size-4 accent-[#347796]" />
-          Demanda de risco
-        </label>
+        <ChaveRisco ligado={demandaRisco} onChange={setDemandaRisco} />
         <Button
           className="w-full"
           onClick={() => liberar({ escritorio, grupo: grupo.trim() || undefined, demandaRisco, ci: publicacao.pastaCi ?? undefined })}
@@ -634,7 +633,6 @@ function DetalhePendencia({
 }) {
   // A lista traz o teor resumido: o leitor precisa do texto inteiro.
   const [publicacao, setPublicacao] = useState<PublicacaoResumo>(resumo);
-  const [copiado, setCopiado] = useState(false);
   const hoje = useMemo(() => hojeEmSaoPaulo(), []);
   const contaPrazo = useMemo(() => {
     const ano = Number(hoje.slice(0, 4));
@@ -659,59 +657,26 @@ function DetalhePendencia({
   const resolvida = (resultado: string) => onResolvida(publicacao.id, resultado);
   const agendar = (previa: PreviaAgendamento) => onAgendar(publicacao, previa);
   const variasPastas = publicacao.pastasCandidatas.length > 1;
+  const IconePendencia = publicacao.pendencia === "varias_pastas" ? Folders : publicacao.pendencia === "sem_pasta" ? FolderX : ListChecks;
 
   return (
-    <Painel aria-labelledby="pendencia-titulo" className="@container">
-      <div className="space-y-3 border-b border-[#e6eef0] px-4 py-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 id="pendencia-titulo" className="tabular-nums text-base font-semibold text-foreground">
-            {numero}
-          </h2>
-          <Button
-            type="button"
-            size="icon-xs"
-            variant="ghost"
-            title={copiado ? "Copiado" : "Copiar o número para buscar no VIOS"}
-            aria-label="Copiar o número do processo"
-            onClick={() => {
-              void navigator.clipboard?.writeText(numero).then(() => {
-                setCopiado(true);
-                window.setTimeout(() => setCopiado(false), 1500);
-              });
-            }}
-          >
-            {copiado ? <Check /> : <Copy />}
-          </Button>
-          {publicacao.tribunal ? <Selo tom="marca">{publicacao.tribunal}</Selo> : null}
-          {publicacao.pendencia ? <Selo tom="alerta">{PENDENCIAS[publicacao.pendencia]}</Selo> : null}
-          <div className="ml-auto flex items-center gap-1">
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              disabled={!navegacao.anterior}
-              onClick={() => navegacao.anterior && onAbrir(navegacao.anterior)}
-              aria-label="Pendência anterior"
-              title="Pendência anterior"
-            >
-              <ChevronLeft />
-            </Button>
-            <span className="min-w-14 text-center text-xs tabular-nums text-muted-foreground">
-              {navegacao.posicao} de {navegacao.total}
-            </span>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              disabled={!navegacao.proxima}
-              onClick={() => navegacao.proxima && onAbrir(navegacao.proxima)}
-              aria-label="Próxima pendência"
-              title="Próxima pendência"
-            >
-              <ChevronRight />
-            </Button>
-          </div>
-        </div>
+    // Como a Conferência: a faixa do processo no topo e, embaixo, a publicação e a resolução rolando cada uma no seu lugar.
+    <Painel aria-labelledby="pendencia-titulo" className="@container lg:flex lg:h-full lg:flex-col">
+      <FaixaDoProcesso
+        numero={numero}
+        tribunal={publicacao.tribunal}
+        tituloId="pendencia-titulo"
+        selos={
+          publicacao.pendencia ? (
+            <Selo tom="alerta" icone={IconePendencia}>
+              {PENDENCIAS[publicacao.pendencia]}
+            </Selo>
+          ) : null
+        }
+      >
+        <SetasDaFila navegacao={navegacao} onAbrir={onAbrir} />
+      </FaixaDoProcesso>
+      <div className="shrink-0 border-b border-[#e6eef0] bg-[#fafcfc] px-4 py-3">
         <ReguaDatas
           rotulo="Datas da publicação"
           hoje={hoje}
@@ -728,12 +693,13 @@ function DetalhePendencia({
         />
       </div>
 
-      <div className="grid @4xl:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)]">
-        <div className="min-w-0">
+      <div className="grid lg:min-h-0 lg:flex-1 @max-4xl:overflow-y-auto @4xl:grid-cols-[minmax(0,1fr)_minmax(20rem,25rem)] @4xl:grid-rows-[minmax(0,1fr)]">
+        <div className="min-w-0 @4xl:overflow-y-auto">
           {variasPastas ? <ComparadorPastas key={publicacao.id} publicacao={publicacao} onResolvida={resolvida} onAgendar={agendar} /> : null}
           <LeitorPublicacao publicacao={publicacao} ocultarIdComunicacao className={cn(variasPastas && "border-t border-[#e6eef0]")} />
         </div>
-        <div className="min-w-0 border-t border-[#e6eef0] bg-[#fafcfc] @4xl:border-l @4xl:border-t-0">
+        {/* A coluna da resolução tem o fundo até o fim, como a das tarefas na Conferência. */}
+        <div className="min-w-0 border-t border-[#e6eef0] bg-[#f2f6f7] @4xl:overflow-y-auto @4xl:border-l @4xl:border-t-0">
           {publicacao.pendencia === "sem_pasta" ? <VerificacaoSemPasta publicacao={publicacao} /> : null}
           <Resolucao key={publicacao.id} publicacao={publicacao} onResolvida={resolvida} onAgendar={agendar} />
         </div>
@@ -753,7 +719,12 @@ function LinhaFila({ publicacao, aberta, onAbrir }: { publicacao: PublicacaoResu
     <button type="button" onClick={onAbrir} aria-current={aberta ? "true" : undefined} className={cn(linhaLista(aberta), "space-y-1")}>
       <span className="flex flex-wrap items-center gap-1.5">
         <span className="tabular-nums text-xs font-semibold text-foreground">{numeroProcesso(publicacao)}</span>
-        {publicacao.tribunal ? <Selo>{publicacao.tribunal}</Selo> : null}
+        {publicacao.tribunal ? (
+          <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground" title={descricaoDoTribunal(publicacao.tribunal) ?? undefined}>
+            <IconeTribunal sigla={publicacao.tribunal} />
+            {publicacao.tribunal}
+          </span>
+        ) : null}
         <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">publ. {formatarData(publicacao.dataPublicacao).slice(0, 5)}</span>
       </span>
       <span className="flex min-w-0 items-center gap-1.5 text-sm text-foreground">
@@ -807,15 +778,7 @@ function AgendarDireto({
       <div className="grid items-end gap-3 px-4 py-3 @xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_auto]">
         <CampoEscritorio valor={previa.escritorio} onChange={(escritorio) => onMudar({ escritorio })} />
         <CampoGrupo valor={previa.grupo} onChange={(grupo) => onMudar({ grupo })} obrigatorio={previa.escritorio !== ESCRITORIO_EX_CLIENTE} />
-        <label className="flex min-h-10 w-fit cursor-pointer items-center gap-2.5 text-sm text-foreground">
-          <input
-            type="checkbox"
-            checked={previa.demandaRisco}
-            onChange={(evento) => onMudar({ demandaRisco: evento.target.checked })}
-            className="size-4 accent-[#347796]"
-          />
-          Demanda de risco
-        </label>
+        <ChaveRisco ligado={previa.demandaRisco} onChange={(demandaRisco) => onMudar({ demandaRisco })} />
       </div>
       <p className="px-4 pb-3 text-xs text-muted-foreground">
         Nada é gravado até enviar: ao enviar, a publicação sai da controladoria e as tarefas vão para a conferência.
@@ -824,7 +787,7 @@ function AgendarDireto({
   );
   return (
     // Altura da tela, como no jurídico: publicação e tarefas rolam cada uma na sua coluna.
-    <div className="min-w-0 lg:h-[calc(100dvh-13rem)] lg:min-h-[32rem]">
+    <div className="min-w-0 lg:h-full">
       {escritorioValido ? (
         <EditorVistagem
           key={`${previa.id}|${previa.escritorio}|${previa.ci ?? ""}`}
@@ -860,9 +823,13 @@ function Controladoria() {
   /** Data da publicação (AAAA-MM-DD); vazio é "Todas as datas". */
   const [dataPublicacao, setDataPublicacao] = useState("");
   /** Data da divulgação no diário (AAAA-MM-DD); vazio é "Todas as datas". */
-  const [dataDivulgacao, setDataDivulgacao] = useState("");
+  const [dataImportacao, setDataImportacao] = useState("");
   const [aba, setAba] = useState<Aba | null>(null);
   const [selecionada, setSelecionada] = useState<string | null>(null);
+  /** A fila abre recolhida, como nas outras abas: a pendência ocupa a largura toda. */
+  const [filaRecolhida, setFilaRecolhida] = useState(true);
+  /** No celular a fila e a pendência não cabem juntas: mostra a fila só quando pedida. */
+  const [listaNoCelular, setListaNoCelular] = useState(false);
   /** Publicação que a controladoria liberou para vistar aqui mesmo, no modal do jurídico. */
   const [agendando, setAgendando] = useState<({ id: string; numero: string } & PreviaAgendamento) | null>(null);
 
@@ -911,14 +878,14 @@ function Controladoria() {
   // Data da publicação: filtra a fila e a contagem das abas.
   const datasDasPendencias = useMemo(() => (dados?.pendentes ?? []).map((p) => p.dataPublicacao), [dados]);
   const dataAtiva = dataNaLista(dataPublicacao, datasDasPendencias);
-  const divulgacoesDasPendencias = useMemo(() => (dados?.pendentes ?? []).map((p) => p.dataDivulgacao), [dados]);
-  const divulgacaoAtiva = dataNaLista(dataDivulgacao, divulgacoesDasPendencias);
+  const importacoesDasPendencias = useMemo(() => (dados?.pendentes ?? []).map((p) => p.dataImportacao), [dados]);
+  const importacaoAtiva = dataNaLista(dataImportacao, importacoesDasPendencias);
   const pendentesNaData = useMemo(
     () =>
       (dados?.pendentes ?? []).filter(
-        (p) => (!dataAtiva || p.dataPublicacao === dataAtiva) && (!divulgacaoAtiva || p.dataDivulgacao === divulgacaoAtiva)
+        (p) => (!dataAtiva || p.dataPublicacao === dataAtiva) && (!importacaoAtiva || p.dataImportacao === importacaoAtiva)
       ),
-    [dados, dataAtiva, divulgacaoAtiva]
+    [dados, dataAtiva, importacaoAtiva]
   );
 
   const porAba = useMemo(() => {
@@ -934,25 +901,55 @@ function Controladoria() {
   const abaAtiva: Aba = aba ?? ABAS.find((item) => porAba[item.valor] > 0)?.valor ?? "sem_pasta";
   const abasVisiveis = ABAS.filter((item) => item.valor !== "dados" || porAba.dados > 0 || abaAtiva === "dados");
 
+  // O que a busca olha em cada publicação (inclui as partes do texto): montado uma vez por carga, não a cada letra.
+  const camposDeBusca = useMemo(() => new Map((dados?.pendentes ?? []).map((p) => [p.id, camposDaPublicacao(p)])), [dados]);
+
   // Mais antigas primeiro: o prazo já está correndo.
   const fila = useMemo(
     () =>
       pendentesNaData
         .filter((p) => abaDaPendencia(p.pendencia) === abaAtiva)
-        .filter((p) => combinaBusca(p, busca))
+        .filter((p) => combinaCampos(camposDeBusca.get(p.id) ?? [], busca))
         .sort((a, b) => (a.dataPublicacao ?? "").localeCompare(b.dataPublicacao ?? "") || (a.linhaArquivo ?? 0) - (b.linhaArquivo ?? 0)),
-    [pendentesNaData, abaAtiva, busca]
+    [pendentesNaData, abaAtiva, busca, camposDeBusca]
   );
   const ordem = fila.map((p) => p.id);
-  const aberta = selecionada && ordem.includes(selecionada) ? selecionada : ordem[0] ?? null;
-  const indiceAberta = aberta ? ordem.indexOf(aberta) : -1;
-  const publicacaoAberta = fila[indiceAberta] ?? null;
+  const buscando = busca.trim() !== "";
+  // Buscar não troca a pendência aberta: os resultados aparecem na fila e a pessoa escolhe (como na Conferência).
+  const fixaNaBusca = buscando && selecionada ? ((dados?.pendentes ?? []).find((p) => p.id === selecionada) ?? null) : null;
+  const indiceAberta = selecionada && ordem.includes(selecionada) ? ordem.indexOf(selecionada) : fixaNaBusca ? -1 : ordem.length ? 0 : -1;
+  const publicacaoAberta = indiceAberta >= 0 ? fila[indiceAberta] : fixaNaBusca;
+  const aberta = publicacaoAberta?.id ?? null;
   const navegacaoAberta: Navegacao = {
-    posicao: indiceAberta + 1,
+    posicao: Math.max(indiceAberta + 1, 0),
     total: ordem.length,
-    anterior: ordem[indiceAberta - 1] ?? null,
-    proxima: ordem[indiceAberta + 1] ?? null,
+    anterior: indiceAberta >= 0 ? (ordem[indiceAberta - 1] ?? null) : null,
+    proxima: indiceAberta >= 0 ? (ordem[indiceAberta + 1] ?? null) : null,
   };
+  const filaAberta = !filaRecolhida || buscando;
+  // Na busca, quantas acham em cada aba: o que está na outra aba vira um atalho na fila.
+  const buscaPorAba = useMemo(() => {
+    if (!buscando) return null;
+    const total: Record<Aba, number> = { sem_pasta: 0, varias_pastas: 0, dados: 0 };
+    for (const p of pendentesNaData) {
+      const destino = abaDaPendencia(p.pendencia);
+      if (destino && combinaCampos(camposDeBusca.get(p.id) ?? [], busca)) total[destino] += 1;
+    }
+    return total;
+  }, [buscando, pendentesNaData, camposDeBusca, busca]);
+
+  function mudarBusca(texto: string) {
+    // Prende a pendência aberta antes de filtrar, para ela não pular para o primeiro resultado.
+    if (!selecionada && aberta) setSelecionada(aberta);
+    setBusca(texto);
+    if (texto.trim()) setListaNoCelular(true);
+  }
+
+  function abrir(id: string) {
+    setSelecionada(id);
+    setAviso(null);
+    setListaNoCelular(false);
+  }
 
   const maisAntiga = useMemo(
     () =>
@@ -962,7 +959,6 @@ function Controladoria() {
         .sort()[0] ?? null,
     [dados]
   );
-  const buscando = busca.trim() !== "";
 
   function removerResolvida(id: string, resultado: string) {
     const publicacao = dados?.pendentes.find((p) => p.id === id);
@@ -988,39 +984,76 @@ function Controladoria() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <AvisoArquivoDoDia
         acao={
           <Button asChild size="sm" variant="outline" className="-my-1 shrink-0">
-            <Link href="/operacoes-legais/vistagem">Abrir Captura</Link>
+            <Link href="/operacoes-legais/vistagem/base">Abrir Gestão das publicações</Link>
           </Button>
         }
       />
 
-      <div className="space-y-3">
-        <BarraAba resumo="O que a triagem não conseguiu encaminhar sozinha. Confira se a pasta existe mesmo, escolha a certa ou informe os dados para liberar ao jurídico; com a pasta escolhida, dá para agendar direto aqui.">
-          <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Processo, CI, grupo ou intimado" aria-label="Buscar publicação" />
-          <FiltroData rotulo="Data Publicação" datas={datasDasPendencias} valor={dataAtiva} onChange={setDataPublicacao} />
-          <FiltroData rotulo="Data Divulgação" datas={divulgacoesDasPendencias} valor={divulgacaoAtiva} onChange={setDataDivulgacao} />
-          <Button variant="outline" onClick={rodarTriagem} disabled={triando}>
-            {triando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
-            Rodar triagem agora
+      {/* O tipo de pendência fica no topo, como as abas da Conferência; os filtros e a triagem à direita. */}
+      <BarraAba
+        resumo={
+          <div className="space-y-1">
+            <Segmented
+              label="Tipo de pendência"
+              value={abaAtiva}
+              options={abasVisiveis.map((item) => ({
+                value: item.valor,
+                label: dados ? `${item.rotulo} ${porAba[item.valor]}` : item.rotulo,
+                icon: ICONE_ABA[item.valor],
+              }))}
+              onChange={(valor) => {
+                setAba(valor);
+                setSelecionada(null);
+              }}
+            />
+            {maisAntiga ? (
+              <p className="text-xs text-muted-foreground" title="O prazo corre enquanto a pendência não é resolvida.">
+                Mais antiga publicada em <span className="font-medium tabular-nums text-foreground">{formatarData(maisAntiga)}</span>
+              </p>
+            ) : null}
+          </div>
+        }
+      >
+        {!filaAberta ? (
+          <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)}>
+            <PanelLeftOpen />
+            Mostrar fila
           </Button>
-        </BarraAba>
-
-        {aviso ? (
-          <Aviso
-            tom={aviso.tom}
-            acao={
-              <Button variant="ghost" size="icon-xs" className="-my-1 text-current" aria-label="Fechar aviso" onClick={() => setAviso(null)}>
-                <X />
-              </Button>
-            }
-          >
-            {aviso.texto}
-          </Aviso>
         ) : null}
-      </div>
+        <Busca
+          value={busca}
+          onChange={(evento) => mudarBusca(evento.target.value)}
+          onKeyDown={(evento) => {
+            if (evento.key === "Enter" && ordem[0]) abrir(ordem[0]);
+            if (evento.key === "Escape") mudarBusca("");
+          }}
+          placeholder="Processo, CI, grupo, parte ou intimado"
+          aria-label="Buscar publicação"
+        />
+        <FiltroData rotulo="Data Publicação" datas={datasDasPendencias} valor={dataAtiva} onChange={setDataPublicacao} />
+        <FiltroData rotulo="Data da importação" datas={importacoesDasPendencias} valor={importacaoAtiva} onChange={setDataImportacao} />
+        <Button variant="outline" onClick={rodarTriagem} disabled={triando} title="Tria de novo o que ainda está pendente, com o SIOE">
+          {triando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
+          Rodar triagem agora
+        </Button>
+      </BarraAba>
+
+      {aviso ? (
+        <Aviso
+          tom={aviso.tom}
+          acao={
+            <Button variant="ghost" size="icon-xs" className="-my-1 text-current" aria-label="Fechar aviso" onClick={() => setAviso(null)}>
+              <X />
+            </Button>
+          }
+        >
+          {aviso.texto}
+        </Aviso>
+      ) : null}
 
       {dados === null ? (
         <Painel>
@@ -1046,92 +1079,117 @@ function Controladoria() {
         >
           {erro}
         </Aviso>
+      ) : fila.length === 0 && !(buscando && publicacaoAberta) ? (
+        <Painel>
+          {buscando ? (
+            <Vazio icone={SearchX} titulo="Nenhuma pendência com essa busca">
+              <Button variant="link" className="h-auto p-0" onClick={() => mudarBusca("")}>
+                Limpar busca
+              </Button>
+            </Vazio>
+          ) : (
+            <Vazio icone={ClipboardCheck} titulo={dados.pendentes.length ? "Nada nesta aba" : "Nenhuma pendência de triagem"}>
+              {dados.pendentes.length ? "Veja as outras abas no topo." : "Tudo o que chegou foi encaminhado para uma área."}
+            </Vazio>
+          )}
+        </Painel>
       ) : (
-        <>
-          <Indicadores>
-            <Indicador icone={ClipboardCheck} rotulo="Para resolver" valor={dados.pendentes.length} tom={dados.pendentes.length ? "alerta" : "neutro"}>
-              {maisAntiga ? `Publicação mais antiga: ${formatarData(maisAntiga)}` : "Nenhuma pendência de triagem"}
-            </Indicador>
-            <Indicador icone={FolderX} rotulo="Sem pasta no VIOS" valor={porAba.sem_pasta}>
-              Possível abertura de pasta
-            </Indicador>
-            <Indicador icone={FolderSearch} rotulo="Mais de uma pasta" valor={porAba.varias_pastas}>
-              {porAba.dados ? `${porAba.dados} sem área ou grupo` : "Escolha a pasta certa"}
-            </Indicador>
-          </Indicadores>
-
-          <div className="space-y-3">
-            <Segmented
-              label="Tipo de pendência"
-              value={abaAtiva}
-              options={abasVisiveis.map((item) => ({ value: item.valor, label: `${item.rotulo} ${porAba[item.valor]}`, icon: ICONE_ABA[item.valor] }))}
-              onChange={(valor) => {
-                setAba(valor);
-                setSelecionada(null);
-              }}
-            />
-
-            {fila.length === 0 && !buscando ? (
-              <Painel>
-                <Vazio icone={ClipboardCheck} titulo={dados.pendentes.length ? "Nada nesta aba" : "Nenhuma pendência de triagem"}>
-                  {dados.pendentes.length ? null : "Tudo o que chegou foi encaminhado para uma área."}
-                </Vazio>
-              </Painel>
-            ) : fila.length === 0 ? (
-              <Painel>
-                <Vazio icone={SearchX} titulo="Nenhuma pendência com essa busca">
-                  <Button variant="link" className="h-auto p-0" onClick={() => setBusca("")}>
-                    Limpar busca
-                  </Button>
-                </Vazio>
-              </Painel>
+        // Uma pendência por vez, como a Conferência: a fila fica recolhida e as setas da faixa andam entre as pendências.
+        <div
+          className={cn(
+            "grid gap-4 lg:h-[calc(100dvh-10.5rem)] lg:min-h-[30rem] lg:grid-rows-[minmax(0,1fr)]",
+            filaAberta ? "lg:grid-cols-[minmax(270px,330px)_minmax(0,1fr)]" : "lg:grid-cols-1"
+          )}
+        >
+          <Painel
+            aria-label={buscando ? "Resultados da busca" : "Pendências"}
+            className={cn("lg:flex lg:h-full lg:flex-col", publicacaoAberta && !listaNoCelular && "hidden lg:flex", !filaAberta && "lg:hidden")}
+          >
+            {buscando ? (
+              <div className="flex items-center gap-2 border-b border-[#e6eef0] bg-[#f2fbfb] px-4 py-2">
+                <Search className="size-3.5 shrink-0 text-[#3e84a8]" aria-hidden />
+                <span className="min-w-0 flex-1 truncate text-xs text-[#285f7a]" aria-live="polite">
+                  <span className="font-semibold tabular-nums">{fila.length}</span> {fila.length === 1 ? "resultado" : "resultados"} para{" "}
+                  <span className="font-semibold">“{busca.trim()}”</span>
+                </span>
+                <Button type="button" size="icon-xs" variant="ghost" onClick={() => mudarBusca("")} aria-label="Limpar a busca" title="Limpar a busca">
+                  <X />
+                </Button>
+              </div>
             ) : (
-              <div className="grid items-start gap-4 lg:grid-cols-[minmax(260px,320px)_minmax(0,1fr)]">
-                <Painel aria-label="Pendências" className="lg:sticky lg:top-4">
-                  <div className="border-b border-[#e6eef0] px-4 py-2 text-xs font-medium text-muted-foreground">
-                    Fila <span className="tabular-nums">· {fila.length}</span>{" "}
-                    <span className="font-normal">· mais antigas primeiro</span>
-                  </div>
-                  <ul className="max-h-[70vh] divide-y divide-[#eef3f5] overflow-y-auto">
-                    {fila.map((publicacao) => (
-                      <li key={publicacao.id}>
-                        <LinhaFila
-                          publicacao={publicacao}
-                          aberta={publicacao.id === aberta}
-                          onAbrir={() => {
-                            setSelecionada(publicacao.id);
-                            setAviso(null);
-                          }}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                </Painel>
-
-                {publicacaoAberta && agendando?.id === publicacaoAberta.id ? (
-                  // Agendar Direto: a mesma tela do jurídico (publicação à esquerda, tarefas à direita), sem sair daqui.
-                  <AgendarDireto
-                    previa={agendando}
-                    navegacao={navegacaoAberta}
-                    onAbrir={setSelecionada}
-                    onMudar={(mudanca) => setAgendando({ ...agendando, ...mudanca })}
-                    onEnviada={agendamentoEnviado}
-                    onVoltar={() => setAgendando(null)}
-                  />
-                ) : publicacaoAberta ? (
-                  <DetalhePendencia
-                    key={publicacaoAberta.id}
-                    resumo={publicacaoAberta}
-                    navegacao={navegacaoAberta}
-                    onAbrir={setSelecionada}
-                    onResolvida={removerResolvida}
-                    onAgendar={agendarDireto}
-                  />
-                ) : null}
+              <div className="flex items-center gap-2 border-b border-[#e6eef0] px-4 py-2">
+                <span className="flex-1 text-xs font-medium text-muted-foreground">
+                  Fila <span className="tabular-nums">· {fila.length}</span> <span className="font-normal">· mais antigas primeiro</span>
+                </span>
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost"
+                  className="hidden lg:inline-flex"
+                  onClick={() => setFilaRecolhida(true)}
+                  aria-label="Recolher a fila"
+                  title="Recolher a fila"
+                >
+                  <PanelLeftClose />
+                </Button>
               </div>
             )}
+            <ul className="max-h-[70vh] divide-y divide-[#eef3f5] overflow-y-auto lg:max-h-none lg:flex-1">
+              {buscando && publicacaoAberta && indiceAberta < 0 && fila.length ? (
+                <li className="px-4 py-2 text-[11px] text-muted-foreground">A pendência aberta ao lado não está nos resultados. Escolha uma da lista.</li>
+              ) : null}
+              {buscaPorAba
+                ? ABAS.filter((item) => item.valor !== abaAtiva && buscaPorAba[item.valor] > 0).map((item) => {
+                    const Icone = ICONE_ABA[item.valor];
+                    return (
+                      <li key={item.valor}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAba(item.valor);
+                            setSelecionada(null);
+                          }}
+                          className="flex w-full items-center gap-2 bg-[#fafcfc] px-4 py-2.5 text-left text-xs font-medium text-[#347796] hover:bg-[#47cdd0]/10"
+                        >
+                          <Icone className="size-3.5 shrink-0" aria-hidden />
+                          {buscaPorAba[item.valor]} em “{item.rotulo}”
+                          <ChevronRight className="ml-auto size-3.5" aria-hidden />
+                        </button>
+                      </li>
+                    );
+                  })
+                : null}
+              {fila.map((publicacao) => (
+                <li key={publicacao.id}>
+                  <LinhaFila publicacao={publicacao} aberta={publicacao.id === aberta} onAbrir={() => abrir(publicacao.id)} />
+                </li>
+              ))}
+            </ul>
+          </Painel>
+
+          <div className={cn("min-w-0 lg:h-full lg:min-h-0", (!publicacaoAberta || listaNoCelular) && "hidden lg:block")}>
+            {publicacaoAberta && agendando?.id === publicacaoAberta.id ? (
+              // Agendar Direto: a mesma tela do jurídico (publicação à esquerda, tarefas à direita), sem sair daqui.
+              <AgendarDireto
+                previa={agendando}
+                navegacao={navegacaoAberta}
+                onAbrir={abrir}
+                onMudar={(mudanca) => setAgendando({ ...agendando, ...mudanca })}
+                onEnviada={agendamentoEnviado}
+                onVoltar={() => setAgendando(null)}
+              />
+            ) : publicacaoAberta ? (
+              <DetalhePendencia
+                key={publicacaoAberta.id}
+                resumo={publicacaoAberta}
+                navegacao={navegacaoAberta}
+                onAbrir={abrir}
+                onResolvida={removerResolvida}
+                onAgendar={agendarDireto}
+              />
+            ) : null}
           </div>
-        </>
+        </div>
       )}
     </div>
   );

@@ -162,6 +162,17 @@ describe("Id de documento do PJe", () => {
     expect(resultado[1]).toMatchObject({ duplicidadeDeLinha: 3, duplicidadeCriterio: "id_documento", documentoIds: ["1c116a7"] });
   });
 
+  it("a cópia igual a outra cópia aponta para a principal (não fica sem principal)", () => {
+    // 3 é a principal; 4 é duplicidade de 3 pelo Id; 5 e 6 têm o texto de 4 (caso do 1001766-80.2024.5.02.0315).
+    const a = comunicacao({ intimado: "ANA EXEMPLO", id: 901 }).replace("ciência da sentença", "ciência da sentença (Id. 1c116a7) ao reclamante");
+    const b = (id: number) =>
+      comunicacao({ intimado: "EMPRESA FICTICIA LTDA", id }).replace("ciência da sentença", "ciência da sentença (Id. 1c116a7) à reclamada");
+    const resultado = montarPublicacoes([linha(3, a), linha(4, b(902)), linha(5, b(903)), linha(6, b(904))]);
+    expect(resultado.map((p) => p.status)).toEqual(["captada", "duplicidade", "duplicidade", "duplicidade"]);
+    expect(resultado.map((p) => p.duplicidadeDeLinha)).toEqual([null, 3, 3, 3]);
+    expect(resultado.map((p) => p.duplicidadeCriterio)).toEqual([null, "id_documento", "texto", "texto"]);
+  });
+
   it("marca o critério texto quando o despacho é igual", () => {
     const resultado = montarPublicacoes([
       linha(3, comunicacao({ intimado: "ANA EXEMPLO", id: 901 })),

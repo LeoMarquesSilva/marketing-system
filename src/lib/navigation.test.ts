@@ -151,7 +151,7 @@ describe("visibilidade por perfil", () => {
   it("permissão /rh libera todas as telas de Pessoas e Cultura do RH", () => {
     const hrefs = visibleHrefs({ role: null, permissions: ["/planner", "/rh"] });
     expect(hrefs).toEqual(
-      expect.arrayContaining(["/rh/ferias", "/rh/qualificacoes", "/rh/fichas-cadastrais", "/rh/organograma", "/rh/boas-praticas"])
+      expect.arrayContaining(["/rh/ferias", "/rh/qualificacoes", "/rh/fichas-cadastrais", "/rh/organograma", "/rh/boas-praticas", "/rh/bp-awards", "/bp-awards"])
     );
     expect(hrefs).not.toContain("/solicitacoes");
   });
@@ -213,5 +213,18 @@ describe("rota ativa e cabeçalho", () => {
     expect(resolveHeaderContext("/perfil", nav).title).toBe("Meu perfil");
     expect(resolveHeaderContext("/nfc/leituras", nav).title).toBe("Leituras que formam trajetórias");
     expect(resolveHeaderContext("/nfc/tags", nav).title).toBe("NFC Hub");
+  });
+
+  it("configurações da Vistagem: engrenagem no cabeçalho, abas do módulo e nenhuma aba ativa", () => {
+    const nav = buildNav({ role: "admin" });
+    const naAba = resolveHeaderContext("/operacoes-legais/vistagem/juridico", nav);
+    expect(naAba.configuracoes).toMatchObject({ href: "/operacoes-legais/vistagem/configuracoes", ativa: false });
+    const naConfiguracao = resolveHeaderContext("/operacoes-legais/vistagem/configuracoes", nav);
+    expect(naConfiguracao.title).toBe("Vistagem de Publicações BP");
+    expect(naConfiguracao.activeHref).toBeNull();
+    expect(naConfiguracao.tabs.length).toBeGreaterThan(1);
+    expect(naConfiguracao.configuracoes?.ativa).toBe(true);
+    // A página de configurações não vira aba nem aparece na sidebar.
+    expect(visibleHrefs({ role: "admin" })).not.toContain("/operacoes-legais/vistagem/configuracoes");
   });
 });

@@ -4,7 +4,9 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { OPENAI_DEFAULT_MODEL, openAIGenerationOptions } from "@/lib/openai-models";
 import { openAIKey } from "@/lib/openai-keys";
+import { isOpenAIOutOfCredits, openAIErrorMessage } from "@/lib/openai-errors";
 import { loadAssistantContext } from "@/lib/whatsapp-assistant";
+import { ATENDIMENTO_AREAS } from "@/lib/whatsapp-playbook";
 
 export const dynamic = "force-dynamic";
 // Áudios sem transcrição são transcritos antes de resumir.
@@ -13,12 +15,15 @@ export const maxDuration = 60;
 const SYSTEM_PROMPT = `Você resume conversas de leads do WhatsApp comercial do escritório Bismarchi | Pires Sociedade de Advogados para o gestor ou advogado que vai assumir o contato.
 
 Regras:
-- Português do Brasil, direto, em no máximo 6 tópicos curtos, cada um começando com "- ".
+- Português do Brasil, direto, em no máximo 7 tópicos curtos, cada um começando com "- ".
 - Diga quem é (pessoa física ou empresa, ramo, porte e cidade, se aparecerem), o que a pessoa precisa, os fatos importantes, a urgência e em que pé está o atendimento (o que já foi combinado e o próximo passo).
 - Use só o que está na conversa e nos dados do lead. Não invente, não dê parecer jurídico e não avalie o caso.
 - Não repita nome, telefone nem origem: eles já vão no cabeçalho da mensagem.
 - Sem títulos, negrito ou outro markdown além dos tópicos.
-- Se a conversa ainda não tiver informação suficiente, diga isso em um tópico.`;
+- Se a conversa ainda não tiver informação suficiente, diga isso em um tópico.
+- Último tópico: "Área provável: …", pela lista abaixo, só se o assunto deixar claro; se não, "Área provável: a definir".
+
+${ATENDIMENTO_AREAS}`;
 
 /** Resumo do lead para encaminhar a alguém da equipe. */
 export async function POST(request: Request) {
@@ -64,6 +69,9 @@ Resuma para quem vai assumir este lead.`,
     return NextResponse.json({ summary: text.trim(), transcribedAudios: context.transcribedNow });
   } catch (error) {
     console.error("[evolution/forward/summary]", error);
-    return NextResponse.json({ error: "Não foi possível montar o resumo agora." }, { status: 500 });
+    return NextResponse.json(
+      { error: openAIErrorMessage(error, "Não foi possível montar o resumo agora.") },
+      { status: isOpenAIOutOfCredits(error) ? 503 : 500 }
+    );
   }
 }

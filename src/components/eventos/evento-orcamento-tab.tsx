@@ -14,6 +14,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { BUDGET_PAYMENT_LABEL, formatBrl, type EventBudgetItem } from "@/lib/eventos";
+import type { EventTermKey } from "@/lib/eventos-glossario";
+import { TermLabel } from "./term-hint";
 
 export function EventoOrcamentoTab({
   budgetItems,
@@ -38,8 +40,8 @@ export function EventoOrcamentoTab({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold tracking-tight">Orçamento do evento</h2><p className="mt-1 text-xs text-muted-foreground">Acompanhe propostas, custos e pagamentos em cada item.</p></div><Button onClick={onCreate}><Plus className="size-4" />Adicionar despesa</Button></div>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[["Previsto", planned], ["Cotado", quoted], ["Realizado", actual], ["Diferença (realizado − previsto)", actual - planned]].map(([label, value]) => <div key={label} className="rounded-xl border border-border/70 bg-card p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-lg font-semibold tabular-nums">{formatBrl(Number(value))}</p></div>)}</div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold tracking-tight"><TermLabel term="orcamento">Orçamento do evento</TermLabel></h2><p className="mt-1 text-xs text-muted-foreground">Acompanhe propostas, custos e pagamentos em cada item.</p></div><Button onClick={onCreate}><Plus className="size-4" />Adicionar despesa</Button></div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{([["Previsto", planned, "previsto"], ["Cotado", quoted, "cotado"], ["Realizado", actual, "realizado"], ["Diferença (realizado − previsto)", actual - planned, "diferenca"]] as Array<[string, number, EventTermKey]>).map(([label, value, term]) => <div key={label} className="rounded-xl border border-border/70 bg-card p-4"><p className="text-xs text-muted-foreground"><TermLabel term={term}>{label}</TermLabel></p><p className="mt-2 text-lg font-semibold tabular-nums">{formatBrl(value)}</p></div>)}</div>
 
       <div className="rounded-xl border border-border/60 bg-card overflow-hidden">
         <div className="flex flex-wrap items-center gap-3 border-b p-4">
@@ -51,10 +53,10 @@ export function EventoOrcamentoTab({
           <TableHeader>
             <TableRow>
               <TableHead className="min-w-72 w-[45%]">Descrição da despesa</TableHead>
-              <TableHead className="text-right">Previsto</TableHead>
-              <TableHead className="text-right">Cotado</TableHead>
-              <TableHead className="text-right">Realizado</TableHead>
-              <TableHead>Pagamento</TableHead>
+              <TableHead className="text-right"><TermLabel term="previsto">Previsto</TermLabel></TableHead>
+              <TableHead className="text-right"><TermLabel term="cotado">Cotado</TermLabel></TableHead>
+              <TableHead className="text-right"><TermLabel term="realizado">Realizado</TermLabel></TableHead>
+              <TableHead><TermLabel term="pagamento">Pagamento</TermLabel></TableHead>
               <TableHead className="w-[90px]" />
             </TableRow>
           </TableHeader>

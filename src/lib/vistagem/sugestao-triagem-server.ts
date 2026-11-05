@@ -5,6 +5,7 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { openAIKey } from "@/lib/openai-keys";
 import { OPENAI_DEFAULT_MODEL, isOpenAIReasoningModel } from "@/lib/openai-models";
+import { lerConfiguracoes } from "./configuracoes-server";
 import { admin, falhou } from "./server";
 import { buscarPastasPorCnj, carregarAreasDasPessoas, carregarTodasAsPastas } from "./sioe";
 import { custoDaChamada } from "./sugestao-ia";
@@ -103,7 +104,8 @@ async function pedirSugestaoIa(publicacao: PublicacaoSemPasta, partes: string[],
 async function sugerir(
   publicacao: PublicacaoSemPasta,
   indice: IndiceSioe,
-  areaDoAdvogado: (nome: string | null) => string | null
+  areaDoAdvogado: (nome: string | null) => string | null,
+  comIa = true
 ): Promise<SugestaoTriagem | null> {
   // 1) Outro processo citado no teor (o principal) que já tem pasta.
   const numeros = numerosCitados(publicacao.teor, publicacao.numero_processo);
@@ -116,7 +118,8 @@ async function sugerir(
   const partes = [...new Set([...(publicacao.djen_partes ?? []).map((parte) => parte.nome), ...(publicacao.djen_intimados ?? [])].filter(Boolean))];
   const porParte = sugestaoPorPartes(partes, indice.porCliente, areaDoAdvogado);
   if (porParte) return porParte;
-  // 3) A IA, mesmo sem certeza (a controladoria confere).
+  // 3) A IA, mesmo sem certeza (a controladoria confere). Desligada em Configurações, fica sem sugestão.
+  if (!comIa) return null;
   const ia = await pedirSugestaoIa(publicacao, partes, indice);
   if (!ia) return null;
   const principal = ia.resposta.processo_principal?.replace(/\D/g, "") ?? "";
@@ -153,12 +156,12 @@ export async function gerarSugestoesDeTriagem(
   resumo.pendentes = fila.length;
   if (!fila.length) return resumo;
 
-  const [pastas, areaDoAdvogado] = await Promise.all([carregarTodasAsPastas(), carregarAreasDasPessoas()]);
+  const [pastas, areaDoAdvogado, configuracoes] = await Promise.all([carregarTodasAsPastas(), carregarAreasDasPessoas(), lerConfiguracoes()]);
   const indice = montarIndice(pastas);
   for (let i = 0; i < fila.length && Date.now() < fim; i += 4) {
     const lote = await Promise.allSettled(
       fila.slice(i, i + 4).map(async (publicacao) => {
-        const sugestao = await sugerir(publicacao, indice, areaDoAdvogado);
+        const sugestao = await sugerir(publicacao, indice, areaDoAdvogado, configuracoes.iaSugestaoTriagem);
         if (!sugestao) return null;
         const { error: erroGravar } = await admin()
           .from("vistagem_publicacoes")

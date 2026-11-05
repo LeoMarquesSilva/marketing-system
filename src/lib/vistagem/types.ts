@@ -1,7 +1,7 @@
 import type { ContagemPrazo } from "./dias-uteis";
 import type { TarefaNoVios } from "./fila-vios";
 import type { FluxoDaTarefa } from "./fluxo-vios";
-import type { SugestaoIa } from "./sugestao-ia";
+import type { ResultadoSugestao, SugestaoIa } from "./sugestao-ia";
 import type { SugestaoTriagem } from "./sugestao-triagem";
 import type { PastaSioe, Pendencia } from "./triagem";
 
@@ -90,7 +90,8 @@ export interface ArquivoKurierResumo {
   nomeArquivo: string;
   dataArquivo: string;
   lote: number;
-  origem: "sharepoint" | "upload";
+  /** "colado": publicações coladas de e-mail ou Teams (Captura › Colar publicações). */
+  origem: "sharepoint" | "upload" | "colado";
   status: "processando" | "processado" | "erro";
   erro: string | null;
   totalLinhas: number;
@@ -110,6 +111,8 @@ export interface PublicacaoResumo {
   justica: Justica | null;
   dataDivulgacao: string | null;
   dataPublicacao: string | null;
+  /** Dia do lote da Kurier (ou da colagem) em que a publicação entrou: o filtro "Data da importação". */
+  dataImportacao: string | null;
   nomeLocalizado: string | null;
   djenIdComunicacao: number | null;
   djenOrgao: string | null;
@@ -144,6 +147,8 @@ export interface PublicacaoResumo {
   conferidoEm: string | null;
   devolucaoMotivo: string | null;
   devolvidoEm: string | null;
+  /** Vistada de novo depois da devolução (vistadoEm continua sendo a primeira vistagem). */
+  revistadoEm: string | null;
   checadoEm: string | null;
   checkNota: string | null;
   /** Última transferência para a fila de outra área (escritório de origem, quando e por quê). */
@@ -229,6 +234,31 @@ export interface PublicacaoCapturada {
 
 export type EnvioStatus = "nao_enviado" | "pendente" | "enviado" | "processando" | "concluido" | "erro";
 
+/** Data de uma tarefa do fluxo escolhida pelo jurídico (o robô grava no VIOS depois de lançar). */
+export interface DataDoFluxo {
+  /** Tipos desde a tarefa agendada até esta (ex.: ["EMBARGOS DE DECLARAÇÃO", "2. REVISAR"]). */
+  caminho: string[];
+  /** AAAA-MM-DD */
+  data: string;
+}
+
+/** Tarefa que o fluxo automático do VIOS cria com a tarefa agendada, e quem o robô coloca nela. */
+export interface TarefaPrevista {
+  nome: string;
+  caminho: string[];
+  /** 1: criada pela agendada; 2: criada por uma do fluxo (Embargos › 2. REVISAR)… */
+  nivel: number;
+  /** AAAA-MM-DD que vai ficar no VIOS (a escolhida pelo jurídico, ou a do VIOS); null: o VIOS data sozinho. */
+  data: string | null;
+  /** A que o VIOS dá pela regra dele (sem as mudanças do jurídico). */
+  dataVios: string | null;
+  /** O jurídico escolheu esta data. */
+  editada: boolean;
+  responsaveis: string;
+  /** criacao: o VIOS cria junto com a tarefa; conclusao: quando ela for concluída. */
+  quando: "criacao" | "conclusao";
+}
+
 export interface AgendamentoResumo {
   id: string;
   ordem: number;
@@ -243,11 +273,17 @@ export interface AgendamentoResumo {
   contagemPrazo: ContagemPrazo | null;
   /** COMPROMISSO: horário HH:MM. */
   hora: string | null;
+  /** COMPROMISSO: Hora final HH:MM (null nos antigos: o robô pôs 1 hora depois, ou 00:00 antes de 05/11/2026). */
+  horaFim: string | null;
   responsavel: string;
   revisor: string | null;
   observacao: string | null;
   /** Como ficou no VIOS: a tarefa pedida e as que o fluxo criou, com as datas agendadas. */
   viosTarefas: TarefaNoVios[] | null;
+  /** Datas do fluxo escolhidas pelo jurídico (o robô grava no VIOS). */
+  fluxoDatas: DataDoFluxo[];
+  /** O que o fluxo do VIOS vai criar junto e ao concluir (só a lista da Conferência traz). */
+  fluxoPrevisto?: TarefaPrevista[];
   envioStatus: EnvioStatus;
   envioSimulado: boolean | null;
   viosTarefaId: string | null;
@@ -309,6 +345,11 @@ export interface VistagemDetalhe {
   fluxos: Record<string, FluxoDaTarefa>;
   /** Por que o fluxo do VIOS não pôde ser carregado. */
   fluxosErro: string | null;
+  /**
+   * Reestruturação: usuários do VIOS com cargo de estagiário no RH do Orquestra. Na Ciência dos Agendamentos que o
+   * Orquestra cria, o revisor fica no lugar deles. Vazio nas outras áreas.
+   */
+  estagiarios: string[];
   /** Pasta do Trabalhista: pede a classificação eSocial. Null nas outras áreas. */
   esocial: {
     /** Tipo Inserir E-social na lista de Providências da área; null se o VIOS ainda não tem. */
@@ -327,14 +368,37 @@ export interface ConferenciaItem {
   publicacao: PublicacaoResumo;
   agendamentos: AgendamentoResumo[];
   inconsistencias: InconsistenciaResumo[];
+  /** Quem vistou primeiro (quem analisou a publicação; a devolução volta para essa pessoa). */
   vistadoPor: string | null;
+  /** Quem devolveu ao jurídico na última devolução da conferência. */
+  devolvidoPor: string | null;
+  /** Quem vistou de novo depois da devolução. */
+  revistadoPor: string | null;
   conferidoPor: string | null;
+  /** Quem deu o check (só as listas do Check trazem). */
+  checadoPor?: string | null;
+  /** Auxiliar da pasta no VIOS, para a ficha da conferência e do check (só essas listas trazem). */
+  auxiliar?: string | null;
+  /** Sugestão da IA que o jurídico tinha na vistagem e o que fez com ela (só a conferência traz; null sem sugestão). */
+  sugestaoIa?: SugestaoNaVistagem | null;
+}
+
+export interface SugestaoNaVistagem {
+  sugestao: SugestaoIa;
+  /** Se o jurídico usou como veio, alterou ou não usou; null quando a vistagem não registrou. */
+  resultado: ResultadoSugestao | null;
+  /** Data fatal de cada tarefa sugerida, na ordem (só PRAZO; null quando não dá para calcular). */
+  fatais: (string | null)[];
 }
 
 export interface ConferenciaResposta {
   aConferir: ConferenciaItem[];
   enviadas: ConferenciaItem[];
   envioSimulado: boolean;
+  /** Foto do advogado, do auxiliar e das pessoas das tarefas (e do fluxo), pela chave do nome (chaveNome); só quem tem foto. */
+  fotos: Record<string, string>;
+  /** AAAA-MM-DD em São Paulo, para a régua de datas. */
+  hoje: string;
 }
 
 export interface InconsistenciaResumo {
@@ -362,4 +426,18 @@ export interface CheckResposta {
   aChecar: ConferenciaItem[];
   revisar: ConferenciaItem[];
   checadas: ConferenciaItem[];
+  /** Foto de quem vistou, conferiu e checou, do advogado, do auxiliar e das pessoas das tarefas, pela chave do nome. */
+  fotos: Record<string, string>;
+  /** AAAA-MM-DD em São Paulo, para a régua de datas. */
+  hoje: string;
+}
+
+/** Visão "Agendadas" do jurídico: o que foi vistado nos últimos `dias` e onde está cada tarefa. */
+export interface AgendadasJuridicoResposta {
+  itens: ConferenciaItem[];
+  /** Foto de quem vistou, conferiu e checou, do advogado e das pessoas das tarefas, pela chave do nome. */
+  fotos: Record<string, string>;
+  /** AAAA-MM-DD em São Paulo. */
+  hoje: string;
+  dias: number;
 }

@@ -17,10 +17,12 @@ describe("arquivo da Kurier do dia", () => {
     const situacao = situacaoDoDia({ hoje: "2026-10-27", hora: 10, feriados: FERIADOS, arquivosDeHoje: [{ status: "erro", erro: "planilha sem aba Publicações" }] });
     expect(situacao).toMatchObject({ chegou: false, atrasado: true, erro: "planilha sem aba Publicações" });
     expect(mensagemArquivoAtrasado(situacao)).toContain("27/10/2026 chegou, mas a importação falhou (planilha sem aba Publicações)");
+    expect(mensagemArquivoAtrasado(situacao)).toContain("aba Gestão das publicações");
   });
 
   it("mensagem de arquivo que não chegou", () => {
     const situacao = situacaoDoDia({ hoje: "2026-10-27", hora: 10, feriados: FERIADOS, arquivosDeHoje: [] });
     expect(mensagemArquivoAtrasado(situacao)).toContain("27/10/2026 ainda não chegou");
+    expect(mensagemArquivoAtrasado(situacao)).toContain("pela aba Gestão das publicações");
   });
 });

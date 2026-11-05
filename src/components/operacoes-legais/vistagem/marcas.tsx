@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
+import { Landmark, Scale } from "lucide-react";
 import { AreaIcon, getAreaIconStyle } from "@/lib/area-icons";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import { chaveGrupo, iniciaisDoGrupo } from "@/lib/vistagem/logos";
+import { ramoDoTribunal, type RamoTribunal } from "@/lib/vistagem/tribunais";
 
 /* ---------------------------------------------------------- logos dos grupos */
 
@@ -80,6 +82,26 @@ export function SeloArea({ area, className }: { area: string; className?: string
     <span className={cn("inline-flex max-w-full items-center gap-1 rounded-full py-0.5 pl-1 pr-2 text-xs font-medium ring-1 ring-inset", getAreaIconStyle(area), className)}>
       <AreaIcon area={area} className="size-3 shrink-0 text-current" aria-hidden />
       <span className="truncate">{area}</span>
+    </span>
+  );
+}
+
+/* ----------------------------------------------------------------- tribunais */
+
+const ESTILO_RAMO: Record<RamoTribunal, string> = {
+  trabalho: "bg-[#e8f8f8] text-[#285f7a] ring-[#47cdd0]/30",
+  superior: "bg-[#eeedf5] text-[#48466e] ring-[#48466e]/20",
+  estadual: "bg-sky-50 text-sky-800 ring-sky-200",
+  federal: "bg-slate-100 text-slate-700 ring-slate-200",
+  outro: "bg-slate-50 text-slate-600 ring-slate-200",
+};
+
+/** Ícone do tribunal na cor do ramo (Trabalho, superiores, TJ, TRF), do tamanho dos ícones de área. */
+export function IconeTribunal({ sigla, className }: { sigla: string | null | undefined; className?: string }) {
+  const Icone = ramoDoTribunal(sigla) === "superior" ? Scale : Landmark;
+  return (
+    <span className={cn("inline-flex size-5 shrink-0 items-center justify-center rounded ring-1", ESTILO_RAMO[ramoDoTribunal(sigla)], className)} aria-hidden>
+      <Icone className="size-3 text-current" />
     </span>
   );
 }

@@ -19,6 +19,8 @@ export interface ArquivoDoDia {
 export function situacaoDoDia(entrada: {
   hoje: string;
   hora: number;
+  /** Hora (Brasília) a partir da qual a falta do arquivo vira alerta; padrão HORA_ARQUIVO_ESPERADO (muda em Configurações). */
+  horaEsperada?: number;
   feriados: Iterable<string>;
   arquivosDeHoje: { status: string; erro: string | null }[];
 }): ArquivoDoDia {
@@ -30,7 +32,7 @@ export function situacaoDoDia(entrada: {
     diaUtil,
     chegou,
     erro: falha ? falha.erro ?? "erro na importação" : null,
-    atrasado: diaUtil && !chegou && entrada.hora >= HORA_ARQUIVO_ESPERADO,
+    atrasado: diaUtil && !chegou && entrada.hora >= (entrada.horaEsperada ?? HORA_ARQUIVO_ESPERADO),
   };
 }
 
@@ -39,6 +41,6 @@ export function mensagemArquivoAtrasado(situacao: ArquivoDoDia): string {
   const [ano, mes, dia] = situacao.hoje.split("-");
   const data = `${dia}/${mes}/${ano}`;
   return situacao.erro
-    ? `⚠️ Vistagem: o arquivo da Kurier de ${data} chegou, mas a importação falhou (${situacao.erro}). Confira na aba Captura do Orquestra e reenvie o arquivo.`
-    : `⚠️ Vistagem: o arquivo da Kurier de ${data} ainda não chegou ao Orquestra (nem na 2ª tentativa, entre 9h e 10h). Confira o e-mail da Kurier e o Power Automate; dá para enviar o .xlsx pela aba Captura.`;
+    ? `⚠️ Vistagem: o arquivo da Kurier de ${data} chegou, mas a importação falhou (${situacao.erro}). Confira na aba Gestão das publicações do Orquestra e reenvie o arquivo.`
+    : `⚠️ Vistagem: o arquivo da Kurier de ${data} ainda não chegou ao Orquestra (nem na 2ª tentativa, entre 9h e 10h). Confira o e-mail da Kurier e o Power Automate; dá para enviar o .xlsx pela aba Gestão das publicações.`;
 }

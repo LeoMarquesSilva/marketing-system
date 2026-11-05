@@ -71,7 +71,7 @@ export function resumirPastas(pastas: PastaSioe[], areaDoAdvogado: (nome: string
     grupo,
     escritorio,
     exCliente,
-    demandaRisco: doGrupo.filter(temDemandaDeRisco).length > doGrupo.length / 2,
+    demandaRisco: doGrupo.filter((pasta) => temDemandaDeRisco(pasta)).length > doGrupo.length / 2,
     ativas: doGrupo.filter(pastaAtiva).length,
     referencia: referencia ? { ci: referencia.ci, cnj: referencia.cnj, cliente: referencia.cliente, grupo: referencia.grupoCliente } : null,
   };
@@ -85,7 +85,7 @@ export function sugestaoPorNumero(numero: string, pastas: PastaSioe[], areaDoAdv
     origem: "numero",
     escritorio: resumo.escritorio,
     grupo: resumo.grupo,
-    demandaRisco: pastas.some(temDemandaDeRisco),
+    demandaRisco: pastas.some((pasta) => temDemandaDeRisco(pasta)),
     referencia: { ci: pasta.ci, cnj: pasta.cnj, cliente: pasta.cliente, grupo: pasta.grupoCliente },
     cliente: pasta.cliente,
     confianca: "alta",

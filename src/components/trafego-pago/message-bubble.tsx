@@ -11,10 +11,18 @@ import { isAudioMessageType, isMediaMessageType, formatWhatsappMessageDisplay } 
 import type { WhatsappConversation, WhatsappMessage } from "./whatsapp-crm-types";
 import { formatMessageTime, leadDisplayName } from "./whatsapp-crm-utils";
 import { MessageActions } from "./message-actions";
+import {
+  participantColor,
+  participantInitials,
+  participantKey,
+  participantLabel,
+} from "./whatsapp-participant";
 
 interface MessageBubbleProps {
   message: WhatsappMessage;
   conversation: WhatsappConversation;
+  /** Em grupo: primeira mensagem de uma sequência da mesma pessoa (mostra nome e iniciais). */
+  startsRun?: boolean;
   reaction?: string;
   onReply: (message: WhatsappMessage) => void;
   onReaction: (message: WhatsappMessage, emoji: string) => void;
@@ -28,29 +36,54 @@ interface MessageBubbleProps {
 export const MessageBubble = memo(function MessageBubble({
   message,
   conversation,
+  startsRun = true,
   reaction,
   onReply,
   onReaction,
   onTranscript,
 }: MessageBubbleProps) {
   const fromLead = !message.from_me;
+  const groupSender = Boolean(conversation.is_group) && fromLead;
+  const senderLabel = groupSender ? participantLabel(message) : null;
+  const senderColor = groupSender ? participantColor(participantKey(message) || senderLabel || "") : null;
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 14, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ type: "spring", stiffness: 420, damping: 34 }}
-      className={cn("flex w-full gap-2 group/msg", message.from_me ? "justify-end" : "justify-start")}
+      className={cn(
+        "flex w-full gap-2 group/msg",
+        message.from_me ? "justify-end" : "justify-start",
+        groupSender && !startsRun && "-mt-2"
+      )}
     >
-      {fromLead && (
-        <div className="mt-auto hidden shrink-0 sm:block">
-          <WhatsappLeadAvatar
-            name={leadDisplayName(conversation)}
-            avatarUrl={conversation.avatar_url}
-            conversationId={conversation.id}
-            size="sm"
-          />
+      {groupSender ? (
+        // Em grupo, a foto do grupo ao lado de cada mensagem confundia quem escreveu.
+        <div className="mt-0.5 hidden w-8 shrink-0 sm:block" aria-hidden>
+          {startsRun && (
+            <span
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold",
+                senderColor?.circle
+              )}
+              title={senderLabel ?? undefined}
+            >
+              {participantInitials(senderLabel ?? "")}
+            </span>
+          )}
         </div>
+      ) : (
+        fromLead && (
+          <div className="mt-auto hidden shrink-0 sm:block">
+            <WhatsappLeadAvatar
+              name={leadDisplayName(conversation)}
+              avatarUrl={conversation.avatar_url}
+              conversationId={conversation.id}
+              size="sm"
+            />
+          </div>
+        )
       )}
 
       <div
@@ -72,9 +105,9 @@ export const MessageBubble = memo(function MessageBubble({
           onReaction={(emoji) => onReaction(message, emoji)}
         />
 
-        {conversation.is_group && fromLead && message.participant_name && (
-          <p className="mb-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-            {message.participant_name}
+        {groupSender && startsRun && (
+          <p className={cn("mb-0.5 text-[13px] font-semibold dark:brightness-150", senderColor?.text)}>
+            {senderLabel}
           </p>
         )}
 

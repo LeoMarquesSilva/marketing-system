@@ -6,6 +6,7 @@ import {
   audiosWithoutTranscript,
   formatConversationTranscript,
   formatLeadSummary,
+  formatTranscriptLine,
   type TranscriptLead,
   type TranscriptMessage,
 } from "@/lib/whatsapp-conversation-transcript";
@@ -31,13 +32,20 @@ function getAdminClient() {
 const LEAD_COLUMNS =
   "id, push_name, phone, city, state, lead_source, meta_campaign_name, meta_adset_name, meta_ad_title, site_lead_page_title, tags, attendance_status, owner_user_id, pipeline_stage, qualification, notes, created_at, is_group, group_subject";
 
+/** suggest = próxima mensagem; reply = só a mensagem escolhida; improve = melhorar o rascunho. */
+export type AssistantMode = "suggest" | "reply" | "improve";
+
 export interface AssistantContext {
   leadSummary: string;
   transcript: string;
   messageCount: number;
   /** Áudios transcritos agora para esta sugestão (ficam salvos na mensagem). */
   transcribedNow: number;
+  /** A mensagem escolhida para responder, já com o áudio transcrito. */
+  replyToLine: string | null;
 }
+
+type ContextMessage = TranscriptMessage & { id: string; wa_message_id?: string | null };
 
 async function transcribePending(messages: Array<TranscriptMessage & { id: string }>): Promise<number> {
   const pending = audiosWithoutTranscript(messages).slice(0, MAX_AUDIOS_TO_TRANSCRIBE);
@@ -58,8 +66,15 @@ async function transcribePending(messages: Array<TranscriptMessage & { id: strin
   return done;
 }
 
-/** Tudo o que a IA precisa saber da conversa, com os áudios transcritos. */
-export async function loadAssistantContext(conversationId: string): Promise<AssistantContext | null> {
+/**
+ * Tudo o que a IA precisa saber da conversa, com os áudios transcritos.
+ * `transcribeAudios: false` + `maxTranscriptChars` curto = só o tom recente,
+ * para melhorar um rascunho rápido.
+ */
+export async function loadAssistantContext(
+  conversationId: string,
+  options: { transcribeAudios?: boolean; maxTranscriptChars?: number; replyToWaMessageId?: string } = {}
+): Promise<AssistantContext | null> {
   const db = getAdminClient();
   const { data: lead, error } = await db
     .from("whatsapp_conversations")
@@ -75,25 +90,43 @@ export async function loadAssistantContext(conversationId: string): Promise<Assi
     ownerName = (owner?.name as string | undefined) ?? null;
   }
 
-  const messages = (await fetchWhatsappMessages(conversationId, MAX_MESSAGES)) as Array<
-    TranscriptMessage & { id: string }
-  >;
-  const transcribedNow = await transcribePending(messages);
+  const messages = (await fetchWhatsappMessages(conversationId, MAX_MESSAGES)) as ContextMessage[];
+  const replyTarget = options.replyToWaMessageId
+    ? messages.find((message) => message.wa_message_id === options.replyToWaMessageId) ?? null
+    : null;
+
+  let transcribedNow = 0;
+  if (options.transcribeAudios !== false) {
+    // A mensagem escolhida vem antes dos outros áudios, mesmo sendo antiga.
+    if (replyTarget && audiosWithoutTranscript([replyTarget]).length > 0) {
+      transcribedNow += await transcribePending([replyTarget]);
+    }
+    transcribedNow += await transcribePending(messages);
+  }
 
   const leadName = lead.is_group
     ? (lead.group_subject as string | null) || "Grupo"
     : (lead.push_name as string | null)?.trim() || "Cliente";
 
   return {
+    replyToLine: replyTarget
+      ? formatTranscriptLine(replyTarget, { leadName, isGroup: Boolean(lead.is_group) })
+      : null,
     leadSummary: formatLeadSummary(lead as TranscriptLead, ownerName),
     transcript: formatConversationTranscript(messages, {
       leadName,
       isGroup: Boolean(lead.is_group),
-      maxChars: MAX_TRANSCRIPT_CHARS,
+      maxChars: options.maxTranscriptChars ?? MAX_TRANSCRIPT_CHARS,
     }),
     messageCount: messages.length,
     transcribedNow,
   };
+}
+
+/** Nome de quem está atendendo, para a IA se apresentar como ele. */
+export async function attendantNameForAuth(authId: string): Promise<string | null> {
+  const { data } = await getAdminClient().from("users").select("name").eq("auth_id", authId).maybeSingle();
+  return (data?.name as string | undefined)?.trim() || null;
 }
 
 /** Guarda a sugestão para comparar depois com o que foi enviado. */
@@ -104,6 +137,7 @@ export async function saveAssistantSuggestion(input: {
   suggestion: string;
   model: string;
   messagesInContext: number;
+  mode: AssistantMode;
 }): Promise<void> {
   const db = getAdminClient();
   const { data: user } = await db.from("users").select("id").eq("auth_id", input.authId).maybeSingle();
@@ -114,6 +148,7 @@ export async function saveAssistantSuggestion(input: {
     suggestion: input.suggestion,
     model: input.model,
     messages_in_context: input.messagesInContext,
+    mode: input.mode,
   });
   if (error) throw new Error(error.message);
 }

@@ -99,8 +99,22 @@ export function pastaAtiva(pasta: PastaSioe): boolean {
   return !/encerrad|arquivad|baixad|extint/.test(normalizar(pasta.situacao));
 }
 
-export function temDemandaDeRisco(pasta: PastaSioe): boolean {
-  return normalizar(pasta.etiquetas).includes("demanda de risco");
+/** Etiquetas da pasta no VIOS que fazem a publicação ser demanda de risco (o admin muda em Configurações). */
+export const ETIQUETAS_DE_RISCO_PADRAO = ["Demanda de risco", "Crítico"];
+
+const escaparRegex = (texto: string) => texto.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Demanda de risco: a pasta tem uma das etiquetas de risco (sem diferença de acento e maiúscula, como palavra
+ * inteira: "Crítico" pega "Carteira X | CRITICO", mas não "Autocrítica").
+ */
+export function temDemandaDeRisco(pasta: PastaSioe, etiquetasDeRisco: string[] = ETIQUETAS_DE_RISCO_PADRAO): boolean {
+  const etiquetas = normalizar(pasta.etiquetas);
+  if (!etiquetas) return false;
+  return etiquetasDeRisco.some((etiqueta) => {
+    const termo = normalizar(etiqueta);
+    return termo ? new RegExp(`(^|[^a-z0-9])${escaparRegex(termo)}([^a-z0-9]|$)`).test(etiquetas) : false;
+  });
 }
 
 /** "Insolvência" ou "Cível | Insolvência" quando a área do VIOS é de insolvência; null nas outras. */
@@ -138,15 +152,16 @@ export function escritorioDaPasta(pasta: PastaSioe, areaDoAdvogado: (nome: strin
 export function triar(
   candidatas: PastaSioe[],
   areaDoAdvogado: (nome: string | null) => string | null,
-  contexto: { citaEscritorio?: boolean } = {}
+  contexto: { citaEscritorio?: boolean; etiquetasDeRisco?: string[] } = {}
 ): ResultadoTriagem {
+  const risco = (pasta: PastaSioe) => temDemandaDeRisco(pasta, contexto.etiquetasDeRisco);
   const pendente = (pendencia: Pendencia, pasta: PastaSioe | null = null): ResultadoTriagem => ({
     status: "triagem_pendente",
     pendencia,
     motivoDescarte: null,
     pasta,
     escritorio: null,
-    demandaRisco: pasta ? temDemandaDeRisco(pasta) : null,
+    demandaRisco: pasta ? risco(pasta) : null,
     candidatas,
   });
 
@@ -166,7 +181,7 @@ export function triar(
       motivoDescarte: descartar ? MOTIVO_EX_CLIENTE_SEM_ESCRITORIO : null,
       pasta: pastas.length === 1 ? pastas[0] : exCliente,
       escritorio: ESCRITORIO_EX_CLIENTE,
-      demandaRisco: temDemandaDeRisco(exCliente),
+      demandaRisco: risco(exCliente),
       candidatas: pastas.length > 1 ? pastas : [],
     };
   }
@@ -184,7 +199,7 @@ export function triar(
     motivoDescarte: null,
     pasta,
     escritorio,
-    demandaRisco: temDemandaDeRisco(pasta),
+    demandaRisco: risco(pasta),
     candidatas: [],
   };
 }

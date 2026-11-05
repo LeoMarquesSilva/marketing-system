@@ -15,7 +15,7 @@ const MODULES: Array<{ title: string; description: string; icon: typeof Scale; h
     href: "/operacoes-legais/planner",
   },
   {
-    title: "Vistagem e agendamento",
+    title: "Vistagem de Publicações BP",
     description: "Publicações, prazos e agendamento no VIOS.",
     icon: CalendarClock,
     href: "/operacoes-legais/vistagem",
