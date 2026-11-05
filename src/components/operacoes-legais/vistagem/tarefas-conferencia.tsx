@@ -293,7 +293,7 @@ export function CartoesTarefas({
                     <dd className="flex items-center gap-1.5 text-sm tabular-nums text-foreground">
                       <CalendarDays className="size-4 text-[#3e84a8]" aria-hidden />
                       {formatarData(item.data)}
-                      {item.hora ? ` às ${item.hora}` : ""}
+                      {item.hora ? ` às ${item.hora}${item.horaFim ? ` até ${item.horaFim}` : ""}` : ""}
                     </dd>
                   </div>
                 ) : null}

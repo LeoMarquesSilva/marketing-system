@@ -103,6 +103,7 @@ describe("validarAgendamentos", () => {
           diasPrazo: 15,
           contagemPrazo: "corridos",
           hora: null,
+          horaFim: null,
           responsavel: "Advogada Exemplo",
           responsavelId: "4",
           revisor: "Revisor Exemplo",
@@ -127,12 +128,27 @@ describe("validarAgendamentos", () => {
     expect(tipoForaDaLista.ok).toBe(false);
   });
 
+  it("hora final do compromisso: a escolhida, 1 hora depois por padrão, e nunca antes da inicial", () => {
+    const audiencia = { etiqueta: "COMPROMISSO" as const, tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", data: "2026-11-10", hora: "09:30", responsavel: "Advogada Exemplo" };
+    const padrao = validarAgendamentos([audiencia], contexto);
+    expect(padrao.ok && padrao.itens[0].horaFim).toBe("10:30");
+    const escolhida = validarAgendamentos([{ ...audiencia, horaFim: "12:00" }], contexto);
+    expect(escolhida.ok && escolhida.itens[0].horaFim).toBe("12:00");
+    const antes = validarAgendamentos([{ ...audiencia, horaFim: "09:00" }], contexto);
+    expect(antes.ok).toBe(false);
+    const providencia = validarAgendamentos(
+      [{ etiqueta: "PROVIDENCIA", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", tarefaId: "321", data: "2026-11-10", horaFim: "12:00", responsavel: "Advogada Exemplo" }],
+      contexto
+    );
+    expect(providencia.ok && providencia.itens[0].horaFim).toBeNull();
+  });
+
   it("compromisso usa a data do calendário e não exige revisor", () => {
     const resultado = validarAgendamentos(
       [{ etiqueta: "COMPROMISSO", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", data: "2026-11-10", hora: "14:30", responsavel: "Advogada Exemplo", observacao: "levar testemunhas" }],
       contexto
     );
-    expect(resultado.ok && resultado.itens[0]).toMatchObject({ etiqueta: "COMPROMISSO", tarefaId: "54", data: "2026-11-10", hora: "14:30", revisor: null });
+    expect(resultado.ok && resultado.itens[0]).toMatchObject({ etiqueta: "COMPROMISSO", tarefaId: "54", data: "2026-11-10", hora: "14:30", horaFim: "15:30", revisor: null });
     const naClasseErrada = validarAgendamentos(
       [{ etiqueta: "PROVIDENCIA", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", data: "2026-11-10", responsavel: "Advogada Exemplo" }],
       contexto

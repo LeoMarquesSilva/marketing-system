@@ -271,6 +271,8 @@ export interface AgendamentoResumo {
   contagemPrazo: ContagemPrazo | null;
   /** COMPROMISSO: horário HH:MM. */
   hora: string | null;
+  /** COMPROMISSO: Hora final HH:MM (null nos antigos: o robô pôs 1 hora depois, ou 00:00 antes de 05/11/2026). */
+  horaFim: string | null;
   responsavel: string;
   revisor: string | null;
   observacao: string | null;

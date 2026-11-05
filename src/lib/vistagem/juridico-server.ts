@@ -64,12 +64,12 @@ import type {
 } from "./types";
 
 const COLUNAS_AGENDAMENTO =
-  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, hora, responsavel, revisor, observacao, fluxo_datas, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, vios_tarefas, envio_erro, enviado_em";
+  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, hora, hora_fim, responsavel, revisor, observacao, fluxo_datas, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, vios_tarefas, envio_erro, enviado_em";
 
 type AgendamentoRow = {
   id: string; publicacao_id: string; ordem: number; etiqueta: EtiquetaAgendamento; tarefa: string; tarefa_id: string | null;
   data: string; data_fatal: string | null; dias_prazo: number | null; contagem_prazo: ContagemPrazo | null; hora: string | null;
-  responsavel: string; revisor: string | null;
+  hora_fim: string | null; responsavel: string; revisor: string | null;
   observacao: string | null; fluxo_datas: DataDoFluxo[] | null; envio_status: EnvioStatus;
   envio_simulado: boolean | null; sama_agendamento_id: string | null; vios_tarefa_id: string | null;
   vios_tarefas: TarefaNoVios[] | null; envio_erro: string | null; enviado_em: string | null;
@@ -87,6 +87,7 @@ function agendamentoResumo(row: AgendamentoRow): AgendamentoResumo {
     diasPrazo: row.dias_prazo,
     contagemPrazo: row.contagem_prazo,
     hora: row.hora,
+    horaFim: row.hora_fim ?? null,
     responsavel: row.responsavel,
     revisor: row.revisor,
     observacao: row.observacao,
@@ -419,6 +420,7 @@ async function cienciaParaGravar(
     diasPrazo: null,
     contagemPrazo: null,
     hora: null,
+    horaFim: null,
     responsavel: ciencia.responsaveis.map((pessoa) => pessoa.nome).join(", "),
     responsavelId: ciencia.responsaveis.map((pessoa) => pessoa.id ?? "").join(","),
     revisor: null,
@@ -510,6 +512,7 @@ export async function salvarVistagem(
       dias_prazo: item.diasPrazo,
       contagem_prazo: item.contagemPrazo,
       hora: item.hora,
+      hora_fim: item.horaFim,
       responsavel: item.responsavel,
       responsavel_id: item.responsavelId,
       revisor: item.revisor,
