@@ -40,6 +40,7 @@ import {
   Sparkles,
   Ticket,
   TrendingUp,
+  Trophy,
   Truck,
   User,
   Users,
@@ -83,10 +84,14 @@ export type NavFeature = {
   label: string;
   /** Nome no cabeçalho, quando o da sidebar precisa ser mais curto. */
   title?: string;
+  /** No cabeçalho, sem o nome da frente em cima do título (ex.: "Vistagem de Publicações BP" já diz o que é). */
+  semFrenteNoTopo?: boolean;
   /** Rótulo da barra inferior do celular. */
   shortLabel?: string;
   icon: LucideIcon;
   pages: NavPage[];
+  /** Página de configurações do módulo (só admin): fica na engrenagem do canto direito do cabeçalho, não nas abas. */
+  configuracoes?: NavPage;
 };
 
 export type NavFront = {
@@ -309,6 +314,16 @@ export const NAV_FRONTS: NavFront[] = [
         pages: [{ href: "/rh/boas-praticas", label: "Boas práticas" }],
       },
       {
+        // Premiação CIVIL da festa de 10 anos: todos votam; o comitê (RH) apura e revela.
+        id: "bp-awards",
+        label: "BP Awards",
+        icon: Trophy,
+        pages: [
+          { href: "/rh/bp-awards", label: "Comitê" },
+          { href: "/bp-awards", label: "Votação" },
+        ],
+      },
+      {
         id: "clima",
         label: "Clima organizacional",
         shortLabel: "Clima",
@@ -338,17 +353,20 @@ export const NAV_FRONTS: NavFront[] = [
       },
       {
         id: "vistagem",
-        label: "Vistagem e agendamento",
+        label: "Vistagem de Publicações BP",
         shortLabel: "Vistagem",
+        semFrenteNoTopo: true,
         icon: CalendarClock,
         pages: [
-          { href: "/operacoes-legais/vistagem", label: "Captura" },
-          { href: "/operacoes-legais/vistagem/controladoria", label: "Controladoria" },
+          { href: "/operacoes-legais/vistagem", label: "Visão geral" },
+          { href: "/operacoes-legais/vistagem/base", label: "Gestão das publicações" },
+          { href: "/operacoes-legais/vistagem/controladoria", label: "Triagem Manual" },
           { href: "/operacoes-legais/vistagem/duplicidades", label: "Duplicidades" },
-          { href: "/operacoes-legais/vistagem/juridico", label: "Jurídico" },
+          { href: "/operacoes-legais/vistagem/juridico", label: "Vistagem" },
           { href: "/operacoes-legais/vistagem/conferencia", label: "Conferência" },
           { href: "/operacoes-legais/vistagem/check", label: "Check" },
         ],
+        configuracoes: { href: "/operacoes-legais/vistagem/configuracoes", label: "Configurações" },
       },
       {
         // Escuta do time (1º uso: PE27); a resposta fica em /pesquisa/<link>, aberta ao público de cada pesquisa.
@@ -436,6 +454,10 @@ const RH_RESTRICTED = new Set([
   "/rh/fichas-cadastrais",
   "/rh/organograma",
   "/rh/boas-praticas",
+  "/rh/bp-awards",
+  // A votação é aberta a todos (canAccessPath), mas no menu só para o RH: o
+  // colaborador chega pelo convite no sistema e pelo link do comunicado.
+  "/bp-awards",
 ]);
 
 const COLLABORATOR_PAGES = new Set([
@@ -554,13 +576,33 @@ export type HeaderContext = {
   /** Abas das páginas irmãs; vazio quando a funcionalidade tem uma página só. */
   tabs: NavPage[];
   activeHref: string | null;
+  /** Engrenagem das configurações do módulo (quem mostra decide se a pessoa é admin); `ativa` na própria página. */
+  configuracoes?: NavPage & { ativa: boolean };
 };
 
 const allPages = NAV_FRONTS.flatMap((front) =>
   front.features.flatMap((feature) => feature.pages.map((page) => ({ front, feature, page })))
 );
 
+const allConfiguracoes = NAV_FRONTS.flatMap((front) =>
+  front.features.flatMap((feature) => (feature.configuracoes ? [{ front, feature, configuracoes: feature.configuracoes }] : []))
+);
+
 export function resolveHeaderContext(pathname: string, nav: VisibleNavFront[]): HeaderContext {
+  // Página de configurações de um módulo: o cabeçalho do módulo, com as abas, nenhuma ativa e a engrenagem marcada.
+  const naConfiguracao = allConfiguracoes.find(({ configuracoes }) => matchesHref(pathname, configuracoes.href));
+  if (naConfiguracao) {
+    const visivel = nav.flatMap((front) => front.features).find((feature) => feature.id === naConfiguracao.feature.id);
+    return {
+      eyebrow: naConfiguracao.feature.semFrenteNoTopo ? "" : naConfiguracao.front.label,
+      title: naConfiguracao.feature.title ?? naConfiguracao.feature.label,
+      icon: naConfiguracao.feature.icon,
+      tabs: visivel && visivel.pages.length > 1 ? visivel.pages : [],
+      activeHref: null,
+      configuracoes: { ...naConfiguracao.configuracoes, ativa: true },
+    };
+  }
+
   const activeHref = findActiveHref(pathname, allPages.map((entry) => entry.page.href));
   const extraHref = findActiveHref(pathname, EXTRA_HEADERS.map((extra) => extra.href));
 
@@ -583,10 +625,11 @@ export function resolveHeaderContext(pathname: string, nav: VisibleNavFront[]): 
       : [];
 
   return {
-    eyebrow: entry.front.label,
+    eyebrow: entry.feature.semFrenteNoTopo ? "" : entry.front.label,
     title: entry.feature.title ?? entry.feature.label,
     icon: entry.feature.icon,
     tabs,
     activeHref,
+    ...(entry.feature.configuracoes ? { configuracoes: { ...entry.feature.configuracoes, ativa: false } } : {}),
   };
 }

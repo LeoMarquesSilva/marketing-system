@@ -38,7 +38,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/trafego-pago", label: "Tráfego pago" },
   { key: "/vios-tarefas", label: "Planner (tarefas do VIOS)" },
   { key: "/operacoes-legais", label: "Operações Legais", admin: true, manualOnly: true },
-  { key: "/operacoes-legais/vistagem", label: "Vistagem e agendamento", manualOnly: true },
+  { key: "/operacoes-legais/vistagem", label: "Vistagem de Publicações BP", manualOnly: true },
   { key: "/eventos", label: "Gestão de eventos" },
   { key: "/facilities", label: "Fornecedores e contratos (Facilities)", manualOnly: true },
   { key: "/cafe-cultura", label: "Café com Cultura", manualOnly: true },
@@ -93,6 +93,8 @@ export const ALWAYS_ALLOWED_PATHS = [
   "/entregas",
   // Atualização da própria ficha cadastral (Pessoas e Cultura).
   "/minha-ficha",
+  // Votação do BP Awards (o comitê fica em /rh/bp-awards, só com RH).
+  "/bp-awards",
   // Resposta às pesquisas com a equipe (o servidor confere se a pessoa está no público).
   "/pesquisa",
 ];
@@ -236,8 +238,12 @@ export function papelVistagem(profile: AccessProfile | null | undefined): PapelV
   return profile?.vistagem_papel === "juridico" ? "juridico" : "controladoria";
 }
 
-/** Tela da Vistagem que o perfil pode abrir: o jurídico só abre a aba Jurídico. */
+/** Configurações da Vistagem (regras, IA, vistadores): só admin. */
+export const VISTAGEM_CONFIGURACOES_PATH = `${VISTAGEM_KEY}/configuracoes`;
+
+/** Tela da Vistagem que o perfil pode abrir: o jurídico só abre a aba Jurídico; as configurações, só admin. */
 export function canSeeVistagemPath(profile: AccessProfile | null | undefined, pathname: string): boolean {
+  if (pathname === VISTAGEM_CONFIGURACOES_PATH || pathname.startsWith(`${VISTAGEM_CONFIGURACOES_PATH}/`)) return isAdminRole(profile);
   const papel = papelVistagem(profile);
   if (papel === "controladoria") return true;
   return papel === "juridico" && (pathname === VISTAGEM_JURIDICO_PATH || pathname.startsWith(`${VISTAGEM_JURIDICO_PATH}/`));

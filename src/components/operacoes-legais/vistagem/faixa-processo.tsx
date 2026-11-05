@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { CalendarClock, Check, ChevronLeft, ChevronRight, Copy, Scale, Search } from "lucide-react";
+import { CalendarClock, Check, ChevronLeft, ChevronRight, Copy, Scale, Search, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { chaveNome } from "@/lib/vistagem/agendamento";
@@ -136,24 +136,36 @@ function NumeroDoProcesso({ numero, tribunal, tituloId }: { numero: string; trib
 /**
  * Faixa azul-marinho no topo da publicação, na vistagem do jurídico e na conferência da controladoria: o número
  * do processo (pesquisa no tribunal e copiar), o tribunal, outros selos e, à direita, o que a tela pedir.
+ * `antes` fica à esquerda do número (ex.: o botão da fila, com o próprio divisor). Demanda de risco pinta a faixa de vermelho-escuro,
+ * com o selo, para a pessoa ler com mais cautela.
  */
 export function FaixaDoProcesso({
   numero,
   tribunal,
   tituloId,
   selos,
+  antes,
+  risco = false,
   children,
 }: {
   numero: string;
   tribunal: string | null;
   tituloId: string;
   selos?: ReactNode;
+  antes?: ReactNode;
+  risco?: boolean;
   children?: ReactNode;
 }) {
   return (
-    <div className="bg-[#10293a] px-4 py-2.5">
+    <div className={cn("px-4 py-2.5 transition-colors", risco ? "bg-[#8f1d26]" : "bg-[#10293a]")}>
       <div className="flex flex-wrap items-center gap-2">
+        {antes}
         <NumeroDoProcesso numero={numero} tribunal={tribunal} tituloId={tituloId} />
+        {risco ? (
+          <Selo tom="escuro" icone={ShieldAlert} className="bg-white text-[#8f1d26] ring-white">
+            Demanda de risco
+          </Selo>
+        ) : null}
         {tribunal ? (
           <Selo tom="escuro" className="bg-white/15 text-white ring-white/30">
             {tribunal}

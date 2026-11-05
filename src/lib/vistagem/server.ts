@@ -10,6 +10,7 @@ import { baixarArquivoSharePoint, listarArquivosKurierSharePoint } from "./share
 import { buscarPastasVios } from "./pastas-vios";
 import { buscarPastaPorCi, buscarPastasPorCnj, carregarAreasDasPessoas } from "./sioe";
 import { ESCRITORIOS, ESCRITORIO_EX_CLIENTE, citaAdvogadoDoEscritorio, temDemandaDeRisco, triar, type PastaSioe, type Pendencia } from "./triagem";
+import { lerConfiguracoes } from "./configuracoes-server";
 import type { SugestaoTriagem } from "./sugestao-triagem";
 import type {
   ArquivoKurierResumo,
@@ -700,9 +701,10 @@ export async function triarPublicacoes(
   const resumo: TriagemResumo = { triadas: 0, juridico: 0, pendentes: 0, descartadas: 0, porEscritorio: {} };
   if (alvos.length === 0) return resumo;
 
-  const [pastasSioe, areaDoAdvogado] = await Promise.all([
+  const [pastasSioe, areaDoAdvogado, { etiquetasDeRisco }] = await Promise.all([
     buscarPastasPorCnj(alvos.map((alvo) => alvo.processo_digitos ?? "")),
     carregarAreasDasPessoas(),
+    lerConfiguracoes(),
   ]);
   // O SIOE não traz o vínculo; ele vem do "Processos Lista" (vistagem_pastas_vios).
   const vinculos = await buscarPastasVios([...pastasSioe.values()].flat().map((pasta) => pasta.ci));
@@ -715,6 +717,7 @@ export async function triarPublicacoes(
       lote.map(async (alvo) => {
         const resultado = triar(alvo.processo_digitos ? pastas.get(alvo.processo_digitos) ?? [] : [], areaDoAdvogado, {
           citaEscritorio: citaAdvogadoDoEscritorio(alvo.teor),
+          etiquetasDeRisco,
         });
         const { error: erroUpdate } = await db
           .from("vistagem_publicacoes")
@@ -779,7 +782,7 @@ export async function listarPendenciasControladoria(limite = 300): Promise<Pende
 export async function consultarPastaSioe(ci: string): Promise<{ pasta: PastaSioe; escritorioSugerido: string | null }> {
   const pasta = await buscarPastaPorCi(ci);
   if (!pasta) throw new VistagemError(`CI ${ci} não encontrada no VIOS.`, 404);
-  const resultado = triar([pasta], await carregarAreasDasPessoas());
+  const resultado = triar([pasta], await carregarAreasDasPessoas(), { etiquetasDeRisco: (await lerConfiguracoes()).etiquetasDeRisco });
   return { pasta, escritorioSugerido: resultado.escritorio };
 }
 
@@ -806,7 +809,8 @@ export async function resolverPendencia(id: string, entrada: ResolucaoPendencia,
     if (!pasta) throw new VistagemError(`CI ${ci} não encontrada no VIOS.`, 404);
   }
 
-  const automatico = pasta ? triar([pasta], await carregarAreasDasPessoas()) : null;
+  const { etiquetasDeRisco } = await lerConfiguracoes();
+  const automatico = pasta ? triar([pasta], await carregarAreasDasPessoas(), { etiquetasDeRisco }) : null;
   const escritorio = entrada.escritorio?.trim() || automatico?.escritorio || null;
   const grupo = entrada.grupo?.trim() || pasta?.grupoCliente?.trim() || null;
   if (!escritorio) throw new VistagemError("Informe o escritório responsável.");
@@ -825,7 +829,7 @@ export async function resolverPendencia(id: string, entrada: ResolucaoPendencia,
       motivo_descarte: null,
       escritorio_responsavel: escritorio,
       grupo_cliente: grupo,
-      demanda_risco: entrada.demandaRisco ?? (pasta ? temDemandaDeRisco(pasta) : false),
+      demanda_risco: entrada.demandaRisco ?? (pasta ? temDemandaDeRisco(pasta, etiquetasDeRisco) : false),
       pastas_candidatas: (atual.pastas_candidatas ?? []) as PastaSioe[],
       triagem_resolvida_por: authUserId,
       triagem_resolvida_em: new Date().toISOString(),

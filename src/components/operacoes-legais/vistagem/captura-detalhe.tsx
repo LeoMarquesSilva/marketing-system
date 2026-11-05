@@ -93,7 +93,7 @@ function TituloBloco({ children, acao }: { children: string; acao?: ReactNode })
 
 /** Aba que resolve a situação, para quem quiser seguir dali (a captura é só consulta). */
 const ONDE_RESOLVER: Partial<Record<SituacaoCaptura, { rotulo: string; href: string }>> = {
-  pendente: { rotulo: "Abrir na Controladoria", href: "/operacoes-legais/vistagem/controladoria" },
+  pendente: { rotulo: "Abrir na Triagem Manual", href: "/operacoes-legais/vistagem/controladoria" },
   duplicidade: { rotulo: "Abrir em Duplicidades", href: "/operacoes-legais/vistagem/duplicidades" },
 };
 

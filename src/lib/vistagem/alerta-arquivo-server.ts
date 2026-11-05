@@ -2,6 +2,7 @@ import "server-only";
 
 import { evolutionFetch, getEvolutionConfig } from "@/lib/evolution-whatsapp";
 import { mensagemArquivoAtrasado, situacaoDoDia, type ArquivoDoDia } from "./alerta-arquivo";
+import { lerConfiguracoes } from "./configuracoes-server";
 import { carregarFeriados } from "./feriados";
 import { admin, falhou, hojeEmSaoPaulo } from "./server";
 
@@ -9,16 +10,17 @@ function horaEmSaoPaulo(): number {
   return Number(new Intl.DateTimeFormat("en-GB", { timeZone: "America/Sao_Paulo", hour: "2-digit", hourCycle: "h23" }).format(new Date()));
 }
 
-/** O arquivo da Kurier de hoje chegou? (Faixa nas abas Captura e Controladoria e alerta do cron.) */
+/** O arquivo da Kurier de hoje chegou? (Faixa na Visão geral, na Gestão das publicações e na Triagem Manual, e alerta do cron.) */
 export async function situacaoArquivoDoDia(): Promise<ArquivoDoDia> {
   const hoje = hojeEmSaoPaulo();
-  const [feriados, { data, error }] = await Promise.all([
+  const [feriados, { data, error }, configuracoes] = await Promise.all([
     carregarFeriados().catch(() => [] as string[]),
     // Publicações coladas (e-mail/Teams) não são o arquivo da Kurier.
     admin().from("vistagem_kurier_arquivos").select("status, erro").eq("data_arquivo", hoje).neq("origem", "colado"),
+    lerConfiguracoes(),
   ]);
   if (error) falhou("consultar o arquivo do dia", error);
-  return situacaoDoDia({ hoje, hora: horaEmSaoPaulo(), feriados, arquivosDeHoje: data ?? [] });
+  return situacaoDoDia({ hoje, hora: horaEmSaoPaulo(), horaEsperada: configuracoes.horaArquivoEsperado, feriados, arquivosDeHoje: data ?? [] });
 }
 
 /**

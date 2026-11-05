@@ -64,6 +64,14 @@ describe("triar", () => {
     expect(triar([pasta({ etiquetas: "Carteira X | Demanda de risco" })], areaDoAdvogado).demandaRisco).toBe(true);
   });
 
+  it("etiqueta Crítico vale como demanda de risco", () => {
+    expect(triar([pasta({ etiquetas: "Carteira X | Crítico" })], areaDoAdvogado).demandaRisco).toBe(true);
+    expect(triar([pasta({ etiquetas: "CRITICO" })], areaDoAdvogado).demandaRisco).toBe(true);
+    // Palavra que só contém "critic" no meio não conta.
+    expect(triar([pasta({ etiquetas: "Carteira Autocritica Ltda" })], areaDoAdvogado).demandaRisco).toBe(false);
+    expect(triar([pasta({ etiquetas: "Carteira X" })], areaDoAdvogado).demandaRisco).toBe(false);
+  });
+
   it("manda ex-cliente para Operações Legais", () => {
     const resultado = triar([pasta({ etiquetas: "Carteira Ex-Cliente", situacao: "Encerrado - Ex-Cliente" })], areaDoAdvogado);
     expect(resultado).toMatchObject({ status: "juridico_vistar", pendencia: "ex_cliente", escritorio: ESCRITORIO_EX_CLIENTE });
