@@ -144,7 +144,7 @@ export async function requireVistagemAccess(
     vistagem_papel: data.vistagem_papel as string | null,
   });
   if (!papel) {
-    throw new Error("Sem permissão para Vistagem e agendamento.");
+    throw new Error("Sem permissão para a Vistagem de Publicações BP.");
   }
   const juridico = papel === "juridico";
   return {

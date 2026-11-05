@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { JuridicoClient } from "@/components/operacoes-legais/vistagem/juridico-client";
 
 export const metadata: Metadata = {
-  title: "Vistagem — Jurídico — ORQESTRAI",
+  title: "Vistagem — Vistagem do jurídico — ORQESTRAI",
   description: "Vistagem das publicações: tarefas do VIOS vinculadas a cada publicação.",
   robots: { index: false, follow: false },
 };

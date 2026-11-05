@@ -8,7 +8,7 @@ import { hasOperacoesLegaisAccess } from "@/lib/access-control";
 
 const MODULES = [
   {
-    title: "Vistagem e agendamento",
+    title: "Vistagem de Publicações BP",
     description: "Publicações, prazos e agendamento no VIOS.",
     icon: CalendarClock,
   },

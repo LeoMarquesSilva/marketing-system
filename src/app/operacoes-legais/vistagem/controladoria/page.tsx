@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { ControladoriaClient } from "@/components/operacoes-legais/vistagem/controladoria-client";
 
 export const metadata: Metadata = {
-  title: "Vistagem — Controladoria — ORQESTRAI",
+  title: "Vistagem — Triagem Manual — ORQESTRAI",
   description: "Pendências de triagem e publicações de ex-clientes.",
   robots: { index: false, follow: false },
 };

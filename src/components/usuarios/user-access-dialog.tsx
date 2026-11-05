@@ -488,7 +488,7 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
             </div>
             <p className="text-[11px] text-muted-foreground">
               Cadastro de clientes e Gestão de NPS ficam liberados para todo usuário com login e
-              ativo. Café com Cultura, ICP, RH e Vistagem e agendamento só entram se você marcar.
+              ativo. Café com Cultura, ICP, RH e Vistagem de Publicações BP só entram se você marcar.
               Deixe tudo desmarcado para a regra padrão por cargo/área.
             </p>
             <div className="flex justify-end">
@@ -504,7 +504,7 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
               <div>
                 <p className="flex items-center gap-1.5 text-sm font-medium">
                   <CalendarClock className="h-4 w-4" />
-                  Vistagem e agendamento
+                  Vistagem de Publicações BP
                 </p>
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   A controladoria vê todas as abas e áreas. O jurídico vê só a aba Jurídico, com as

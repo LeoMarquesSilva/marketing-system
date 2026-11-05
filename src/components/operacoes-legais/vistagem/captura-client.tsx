@@ -340,7 +340,7 @@ function Captura() {
         <BarraAba
           resumo={
             <div
-              title="O arquivo do dia é buscado sozinho no SharePoint entre 7h e 8h (nova tentativa entre 9h e 10h, em dias úteis) e triado com o SIOE. Pendências seguem para a Controladoria; duplicidades, para Duplicidades. Publicações que chegam por e-mail ou Teams entram por “Colar publicações”."
+              title="O arquivo do dia é buscado sozinho no SharePoint entre 7h e 8h (nova tentativa entre 9h e 10h, em dias úteis) e triado com o SIOE. Pendências seguem para a Triagem Manual; duplicidades, para Duplicidades. Publicações que chegam por e-mail ou Teams entram por “Colar publicações”."
             >
               <ArquivoDeHoje estado={hoje} />
             </div>

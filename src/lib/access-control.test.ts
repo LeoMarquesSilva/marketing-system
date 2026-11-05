@@ -70,6 +70,14 @@ describe("access-control permissions catalog", () => {
     expect(canSeeVistagemPath({ role: null, permissions: ["/planner"], vistagem_papel: "juridico" }, "/operacoes-legais/vistagem/juridico")).toBe(false);
   });
 
+  it("configurações da Vistagem só para admin (nem a controladoria abre)", () => {
+    const configuracoes = "/operacoes-legais/vistagem/configuracoes";
+    expect(canSeeVistagemPath({ role: "admin" }, configuracoes)).toBe(true);
+    expect(canSeeVistagemPath({ role: null, permissions: ["/operacoes-legais/vistagem"] }, configuracoes)).toBe(false);
+    expect(canSeeVistagemPath({ role: null, permissions: ["/operacoes-legais/vistagem"], vistagem_papel: "juridico" }, configuracoes)).toBe(false);
+    expect(canSeeVistagemPath({ role: null, permissions: ["/operacoes-legais/vistagem"] }, "/operacoes-legais/vistagem/conferencia")).toBe(true);
+  });
+
   it("não libera a Vistagem pelo modo legado nem pela chave de Operações Legais", () => {
     expect(hasVistagemAccess({ role: "designer", permissions: null })).toBe(false);
     expect(hasVistagemAccess({ role: null, permissions: ["/operacoes-legais"] })).toBe(false);

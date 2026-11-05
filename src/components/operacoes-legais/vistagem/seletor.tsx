@@ -168,6 +168,7 @@ export function SeletorBusca({
   buscaPlaceholder = "Buscar…",
   rotulo,
   className,
+  rotuloVazio,
 }: {
   valor: string;
   onChange: (valor: string) => void;
@@ -177,6 +178,8 @@ export function SeletorBusca({
   buscaPlaceholder?: string;
   rotulo: string;
   className?: string;
+  /** No campo, no lugar da opção `todos` quando nada está escolhido; a lista continua com `todos`. */
+  rotuloVazio?: ReactNode;
 }) {
   const id = useId();
   const [aberto, setAberto] = useState(false);
@@ -228,7 +231,7 @@ export function SeletorBusca({
           )}
         >
           <span className={cn("flex min-w-0 flex-1 items-center gap-2", !atual && "text-muted-foreground")}>
-            {atual ? <Conteudo opcao={atual} /> : placeholder}
+            {!valor && rotuloVazio ? rotuloVazio : atual ? <Conteudo opcao={atual} /> : placeholder}
           </span>
           <ChevronDown className="size-4 shrink-0 opacity-50" aria-hidden />
         </button>

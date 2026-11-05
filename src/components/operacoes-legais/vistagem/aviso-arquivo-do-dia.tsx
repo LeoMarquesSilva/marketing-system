@@ -42,7 +42,7 @@ export function FaixaArquivoDoDia({
 }) {
   if (!situacao?.atrasado) return null;
   const data = formatarData(situacao.hoje);
-  const onde = naCaptura ? "aqui" : "na aba Captura";
+  const onde = naCaptura ? "aqui" : "na aba Gestão das publicações";
 
   if (situacao.erro) {
     return (
@@ -59,7 +59,7 @@ export function FaixaArquivoDoDia({
   );
 }
 
-/** Faixa do arquivo do dia que busca a própria situação (abas fora da Captura). */
+/** Faixa do arquivo do dia que busca a própria situação (abas fora da Gestão das publicações). */
 export function AvisoArquivoDoDia({ acao }: { acao?: ReactNode }) {
   const situacao = useArquivoDoDia();
   return <FaixaArquivoDoDia situacao={situacao} acao={acao} />;

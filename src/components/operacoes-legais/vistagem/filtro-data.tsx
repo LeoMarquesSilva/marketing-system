@@ -37,13 +37,16 @@ const icone = <IconeOpcao icone={CalendarDays} />;
  */
 export function FiltroData({
   rotulo,
+  rotuloCurto,
   datas,
   valor,
   onChange,
   className = "sm:w-52",
 }: {
-  /** "Data Publicação" ou "Data da importação". */
+  /** "Data Publicação" ou "Data do recebimento": nome do filtro e título da lista. */
   rotulo: string;
+  /** Nome mais curto no campo, para filtros compactos (ex.: "Recebimento"). */
+  rotuloCurto?: string;
   datas: (string | null)[];
   valor: string;
   onChange: (valor: string) => void;
@@ -67,7 +70,7 @@ export function FiltroData({
       rotuloVazio={
         <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
           {icone}
-          <span className="truncate">{rotulo}</span>
+          <span className="truncate">{rotuloCurto ?? rotulo}</span>
         </span>
       }
       opcoes={opcoes}

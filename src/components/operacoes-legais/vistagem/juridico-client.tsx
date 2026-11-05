@@ -28,6 +28,7 @@ import {
   Search,
   Send,
   ShieldAlert,
+  ShieldCheck,
   Trash2,
   TriangleAlert,
   X,
@@ -79,6 +80,8 @@ import { CampoData, CampoHora } from "./campo-data";
 import { ESTILO_CLASSE, ICONE_CLASSE } from "./tarefas-conferencia";
 import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
 import { FaixaDoProcesso, NA_FAIXA } from "./faixa-processo";
+import { CalendarioDoFluxo, ItemDaLegenda, NumeroDoMarco, tomDaTarefaDoFluxo, type MarcoDoCalendario, type TomDoMarco } from "./calendario-fluxo";
+import { nomeCurto as nomeCurtoDaPessoa, partesDaData } from "@/lib/vistagem/como-fica-no-vios";
 import { FichaPasta } from "./ficha-pasta";
 import { FiltroData, dataNaLista } from "./filtro-data";
 import { FichaProcesso, ResumoDaFicha, SinteseDoProcesso } from "./ficha-processo";
@@ -92,7 +95,7 @@ import { contarPor, formatarData, formatarDataHora, tribunalDe } from "./publica
 import { ReguaDatas } from "./regua-datas";
 import { IconeOpcao, Seletor, SeletorBusca } from "./seletor";
 import { CartaoSugestaoIa, SeloIa, type EstadoSugestao } from "./sugestao-ia-ui";
-import { Aviso, BarraAba, Busca, Carregando, Painel, Selo, Vazio, campoClasse, linhaLista } from "./ui";
+import { Aviso, Busca, Carregando, Painel, Selo, Vazio, campoClasse, linhaLista } from "./ui";
 
 type Etiqueta = EtiquetaAgendamento;
 
@@ -309,21 +312,56 @@ function ContagemDoPrazo({ rotulo, valor, onChange }: { rotulo: string; valor: C
  * robô coloca nela. A pessoa pode mudar a data (ex.: o VIOS dá 5 dias e ela prioriza em 2): o robô grava no VIOS
  * depois de lançar, e as tarefas que nascem desta acompanham a nova data.
  */
+/** Classe da tarefa pedida → cor do VIOS no calendário. */
+const TOM_DA_ETIQUETA: Record<Etiqueta, TomDoMarco> = { PRAZO: "prazo", PROVIDENCIA: "providencia", COMPROMISSO: "compromisso" };
+
+/** Quem fica na tarefa, com foto: "Leticia Zamarion Julio, Samuel Willian Silva" vira avatares com o nome curto. */
+function PessoasDaTarefa({ nomes, foto }: { nomes: string | null | undefined; foto: (nome: string) => string | null }) {
+  const lista = separarNomes(nomes ?? "");
+  if (!lista.length) return null;
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+      {lista.map((nome) => (
+        <span key={nome} className="inline-flex min-w-0 items-center gap-1" title={nome}>
+          <AvatarPessoa nome={nome} foto={foto(nome)} className="size-5" />
+          <span className="truncate text-foreground/80">{nomeCurtoDaPessoa(nome)}</span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** Data curta da agenda: "qua, 12/11". */
+function diaDaAgenda(iso: string): string {
+  const partes = partesDaData(iso);
+  return `${partes.semana}, ${partes.dia}/${iso.slice(5, 7)}`;
+}
+
 function FluxoNoVios({
   previstas,
+  principal,
+  fatal,
   hoje,
   ehDiaUtil,
   onMudarData,
+  foto,
 }: {
   previstas: TarefaPrevista[];
+  /** A tarefa pedida: "Enviar no VIOS" (Prazo) ou "Tarefa no VIOS", com a data que vai para o VIOS, a classe e quem fica. */
+  principal: { rotulo: string; nome: string; data: string | null; etiqueta: Etiqueta; responsaveis: string };
+  /** Foto de cada pessoa (as mesmas dos campos Responsável e Revisor). */
+  foto: (nome: string) => string | null;
+  /** Data fatal do Prazo (só para situar no calendário). */
+  fatal: string | null;
   hoje: string;
   ehDiaUtil: (iso: string) => boolean;
   onMudarData: (caminho: string[], data: string | null) => void;
 }) {
+  // Aberto por padrão: o calendário é para ser visto; a pessoa recolhe se quiser.
+  const [aberto, setAberto] = useState(true);
   const junto = previstas.filter((tarefa) => tarefa.quando === "criacao");
   const aoConcluir = previstas.filter((tarefa) => tarefa.quando === "conclusao");
   const alteradas = junto.filter((tarefa) => tarefa.editada).length;
-  // Recolhido: uma linha diz o que o VIOS cria; o detalhe abre quando a pessoa quer conferir ou mudar.
   const resumo = [
     junto.length ? `cria junto ${plural(junto.length, "tarefa", "tarefas")}` : null,
     alteradas ? `${plural(alteradas, "data alterada", "datas alteradas")}` : null,
@@ -331,67 +369,142 @@ function FluxoNoVios({
   ]
     .filter(Boolean)
     .join(" · ");
+
+  // Agenda em ordem de data (a pedida antes das do fluxo no mesmo dia; a fatal por último), numerada: o mesmo
+  // número marca o dia no calendário.
+  type Item =
+    | { tipo: "principal"; chave: string; data: string }
+    | { tipo: "fluxo"; chave: string; data: string; tarefa: TarefaPrevista }
+    | { tipo: "fatal"; chave: string; data: string };
+  const peso = { principal: 0, fluxo: 1, fatal: 2 } as const;
+  const comData: Item[] = [
+    ...(principal.data ? [{ tipo: "principal" as const, chave: "principal", data: principal.data }] : []),
+    ...junto
+      .filter((tarefa) => tarefa.data)
+      .map((tarefa) => ({ tipo: "fluxo" as const, chave: tarefa.caminho.join(" › "), data: tarefa.data as string, tarefa })),
+    ...(fatal ? [{ tipo: "fatal" as const, chave: "fatal", data: fatal }] : []),
+  ].sort((a, b) => a.data.localeCompare(b.data) || peso[a.tipo] - peso[b.tipo]);
+  const semData = junto.filter((tarefa) => !tarefa.data);
+  // Cores do VIOS: a pedida pela classe (Prazo verde, Providência azul); no fluxo, Revisar amarelo e Protocolar vermelho.
+  const tomDaPedida = TOM_DA_ETIQUETA[principal.etiqueta];
+  const tomDe = (item: Item): TomDoMarco =>
+    item.tipo === "principal" ? tomDaPedida : item.tipo === "fatal" ? "fatal" : tomDaTarefaDoFluxo(item.tarefa.nome, tomDaPedida);
+  const editadaDe = (item: Item) => item.tipo === "fluxo" && item.tarefa.editada;
+  const nomeDe = (item: Item) => (item.tipo === "principal" ? `${principal.rotulo}: ${principal.nome}` : item.tipo === "fatal" ? "Data fatal" : item.tarefa.nome);
+  const marcos: MarcoDoCalendario[] = comData.map((item, indice) => ({
+    chave: item.chave,
+    numero: indice + 1,
+    rotulo: nomeDe(item),
+    data: item.data,
+    tom: tomDe(item),
+    editada: editadaDe(item),
+  }));
+  const tons = [...new Set(marcos.map((marco) => marco.tom))];
+  const algumaEditada = marcos.some((marco) => marco.editada);
+
+  const campoDoFluxo = (tarefa: TarefaPrevista) => (
+    <CampoData
+      compacto
+      rotulo={`Data de ${tarefa.caminho.join(" › ")}`}
+      valor={tarefa.data ?? ""}
+      min={hoje}
+      ehDiaUtil={ehDiaUtil}
+      destacado={tarefa.editada}
+      permitirVazio
+      dica={tarefa.data ? undefined : "O VIOS data esta tarefa sozinho; escolha uma data só se precisar."}
+      onChange={(data) => onMudarData(tarefa.caminho, data || null)}
+      className="w-[8.5rem]"
+    />
+  );
+  const extrasDoFluxo = (tarefa: TarefaPrevista) =>
+    tarefa.editada ? (
+      <span className="inline-flex flex-wrap items-center gap-1.5">
+        {tarefa.dataVios ? <span className="text-muted-foreground">VIOS: {formatarData(tarefa.dataVios)}</span> : null}
+        <button type="button" className="font-medium text-[#347796] underline-offset-4 hover:underline" onClick={() => onMudarData(tarefa.caminho, null)}>
+          voltar à do VIOS
+        </button>
+      </span>
+    ) : tarefa.data && tarefa.dataVios && tarefa.data !== tarefa.dataVios ? (
+      <span className="text-muted-foreground">acompanha a anterior (VIOS: {formatarData(tarefa.dataVios)})</span>
+    ) : null;
+
   return (
-    <details className="group rounded-md border border-[#e6eef0] bg-[#f7fbfc] text-xs">
+    <details open={aberto} onToggle={(evento) => setAberto(evento.currentTarget.open)} className="group rounded-md border border-[#e6eef0] bg-[#f7fbfc] text-xs">
       <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-muted-foreground [&::-webkit-details-marker]:hidden">
         <ChevronRight className="size-3.5 shrink-0 transition-transform group-open:rotate-90" aria-hidden />
         <Workflow className="size-3.5 shrink-0 text-[#285f7a]" aria-hidden />
         <span className="font-medium text-[#285f7a]">Fluxo das tarefas</span>
         <span className={cn("truncate", alteradas && "text-[#285f7a]")}>{resumo}</span>
       </summary>
-      <div className="space-y-2 border-t border-[#e6eef0] px-3 py-2">
-        {junto.length ? (
+      <div className="space-y-3 border-t border-[#e6eef0] px-3 py-3">
+        {marcos.length ? (
+          <CalendarioDoFluxo
+            marcos={marcos}
+            hoje={hoje}
+            ehDiaUtil={ehDiaUtil}
+            rotulo={`Calendário do fluxo de ${principal.nome}`}
+            legenda={
+              <>
+                {tons.map((tom) => (
+                  <ItemDaLegenda key={tom} tom={tom} />
+                ))}
+                {algumaEditada ? <ItemDaLegenda editada /> : null}
+              </>
+            }
+          />
+        ) : null}
+
+        {comData.length || semData.length ? (
           <div className="space-y-1.5">
             <p className="text-muted-foreground">
-              <span className="font-medium text-foreground">O VIOS cria junto</span> (o robô coloca os responsáveis). Para priorizar, mude a data:
-              o robô grava no VIOS depois de lançar.
+              O robô coloca os responsáveis. Para priorizar uma tarefa do fluxo, mude a data: o robô grava no VIOS depois de lançar.
             </p>
-            <ul className="space-y-1">
-              {junto.map((tarefa) => {
-                const rotulo = `Data de ${tarefa.caminho.join(" › ")}`;
-                return (
-                  <li
-                    key={tarefa.caminho.join(" › ")}
-                    className="flex flex-wrap items-center gap-x-2 gap-y-1"
-                    style={tarefa.nivel > 1 ? { marginLeft: `${(tarefa.nivel - 1) * 0.75}rem` } : undefined}
-                  >
-                    {/* A que nasce de outra do fluxo fica recuada, com a seta (sem barra lateral). */}
-                    {tarefa.nivel > 1 ? <CornerDownRight className="size-3.5 shrink-0 text-[#9fb8c2]" aria-hidden /> : null}
-                    <span className="min-w-0 flex-1 basis-48 font-medium text-foreground">{tarefa.nome}</span>
-                    <CampoData
-                      compacto
-                      rotulo={rotulo}
-                      valor={tarefa.data ?? ""}
-                      min={hoje}
-                      ehDiaUtil={ehDiaUtil}
-                      destacado={tarefa.editada}
-                      permitirVazio
-                      dica={tarefa.data ? undefined : "O VIOS data esta tarefa sozinho; escolha uma data só se precisar."}
-                      onChange={(data) => onMudarData(tarefa.caminho, data || null)}
-                      className="w-[9.5rem]"
-                    />
-                    <span className="text-muted-foreground">{tarefa.responsaveis}</span>
-                    {tarefa.editada ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        <Selo tom="marca">alterada</Selo>
-                        {tarefa.dataVios ? <span className="text-muted-foreground">VIOS: {formatarData(tarefa.dataVios)}</span> : null}
-                        <button
-                          type="button"
-                          className="font-medium text-[#347796] underline-offset-4 hover:underline"
-                          onClick={() => onMudarData(tarefa.caminho, null)}
-                        >
-                          voltar à do VIOS
-                        </button>
+            <ol className="divide-y divide-[#e6eef0] overflow-hidden rounded-md border border-[#e6eef0] bg-white">
+              {comData.map((item, indice) => (
+                <li
+                  key={item.chave}
+                  className="flex flex-wrap items-center gap-x-2 gap-y-1 px-2.5 py-1.5"
+                  style={item.tipo === "fluxo" && item.tarefa.nivel > 1 ? { paddingLeft: `${0.625 + (item.tarefa.nivel - 1) * 0.75}rem` } : undefined}
+                >
+                  <NumeroDoMarco numero={indice + 1} tom={tomDe(item)} editada={editadaDe(item)} />
+                  {/* A que nasce de outra do fluxo fica recuada, com a seta (sem barra lateral). */}
+                  {item.tipo === "fluxo" && item.tarefa.nivel > 1 ? <CornerDownRight className="size-3.5 shrink-0 text-[#9fb8c2]" aria-hidden /> : null}
+                  <span className={cn("min-w-0 flex-1 basis-40 font-medium", item.tipo === "fatal" ? "text-[#b42318]" : "text-foreground")}>
+                    {nomeDe(item)}
+                  </span>
+                  {item.tipo === "fluxo" ? (
+                    <>
+                      {campoDoFluxo(item.tarefa)}
+                      <PessoasDaTarefa nomes={item.tarefa.responsaveis} foto={foto} />
+                      {extrasDoFluxo(item.tarefa)}
+                    </>
+                  ) : (
+                    <>
+                      <span
+                        className="w-[8.5rem] text-right tabular-nums text-muted-foreground"
+                        title={item.tipo === "principal" ? "Muda no campo de data da tarefa, acima." : "Muda no campo Data fatal, acima."}
+                      >
+                        {diaDaAgenda(item.data)}
                       </span>
-                    ) : tarefa.data && tarefa.dataVios && tarefa.data !== tarefa.dataVios ? (
-                      <span className="text-muted-foreground">acompanha a anterior (VIOS: {formatarData(tarefa.dataVios)})</span>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
+                      {item.tipo === "principal" ? <PessoasDaTarefa nomes={principal.responsaveis} foto={foto} /> : null}
+                    </>
+                  )}
+                </li>
+              ))}
+              {semData.map((tarefa) => (
+                <li key={tarefa.caminho.join(" › ")} className="flex flex-wrap items-center gap-x-2 gap-y-1 px-2.5 py-1.5">
+                  <span className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-[#eef3f5] text-[10px] text-muted-foreground" aria-hidden>
+                    –
+                  </span>
+                  <span className="min-w-0 flex-1 basis-40 font-medium text-foreground">{tarefa.nome}</span>
+                  {campoDoFluxo(tarefa)}
+                  <PessoasDaTarefa nomes={tarefa.responsaveis} foto={foto} />
+                </li>
+              ))}
+            </ol>
           </div>
         ) : null}
+
         {aoConcluir.length ? (
           <p className="text-muted-foreground">
             <span className="font-medium text-foreground">Ao concluir esta tarefa, o VIOS cria:</span>{" "}
@@ -487,6 +600,7 @@ export function EditorVistagem({
   onVoltar,
   resolucao = null,
   antesDasTarefas = null,
+  fila = null,
 }: {
   id: string;
   navegacao: Navegacao | null;
@@ -498,6 +612,8 @@ export function EditorVistagem({
   resolucao?: ResolucaoPendencia | null;
   /** Bloco no topo da coluna das tarefas (na controladoria: escritório, grupo e risco da pendência). */
   antesDasTarefas?: ReactNode;
+  /** Botão de mostrar/recolher a fila, à esquerda do número do processo (só no desktop: no celular há "Voltar à lista"). */
+  fila?: { aberta: boolean; onAlternar: () => void } | null;
 }) {
   // A lista de tarefas depende do escritório e da pasta: na prévia eles vão na consulta.
   const consultaPrevia = resolucao?.escritorio
@@ -837,7 +953,31 @@ export function EditorVistagem({
 
           <Painel aria-labelledby="publicacao-titulo" className="flex min-h-0 flex-col @4xl:flex-1">
             {/* Faixa azul-marinho: o processo aberto fica marcado no topo da coluna. */}
-            <FaixaDoProcesso numero={publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal} tribunal={publicacao.tribunal} tituloId="publicacao-titulo">
+            <FaixaDoProcesso
+              numero={publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}
+              tribunal={publicacao.tribunal}
+              tituloId="publicacao-titulo"
+              risco={Boolean(publicacao.demandaRisco)}
+              antes={
+                fila ? (
+                  // Só no desktop: no celular a lista abre por "Voltar à lista".
+                  <div className="-ml-1.5 hidden items-center border-r border-white/20 pr-2 lg:flex">
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      className={NA_FAIXA}
+                      aria-pressed={fila.aberta}
+                      onClick={fila.onAlternar}
+                      aria-label={fila.aberta ? "Recolher a fila" : "Mostrar a fila"}
+                      title={fila.aberta ? "Recolher a fila" : "Mostrar a fila"}
+                    >
+                      {fila.aberta ? <PanelLeftClose /> : <PanelLeftOpen />}
+                    </Button>
+                  </div>
+                ) : null
+              }
+            >
               {navegacao ? (
                 <>
                   <Button
@@ -1296,6 +1436,15 @@ export function EditorVistagem({
                           {fluxo && previstas.length ? (
                             <FluxoNoVios
                               previstas={previstas}
+                              principal={{
+                                rotulo: prazo && cadeia?.protocolar ? "Enviar no VIOS" : "Tarefa no VIOS",
+                                nome: linha.tarefa,
+                                data: (prazo ? cadeia?.enviar : linha.data) || null,
+                                etiqueta: linha.etiqueta,
+                                responsaveis: linha.responsavel,
+                              }}
+                              fatal={prazo ? linha.dataFatal || null : null}
+                              foto={pessoasDoCampo.foto}
                               hoje={detalhe.hoje}
                               ehDiaUtil={ehDiaUtil}
                               onMudarData={(caminho, data) => mudarDataDoFluxo(linha, caminho, data)}
@@ -1464,12 +1613,85 @@ function ModalTransferir({
 
 const SEM_GRUPO = "Sem grupo";
 
-type FiltroRisco = "todas" | "risco" | "sem_risco";
+/** Filtro do tamanho do conteúdo (cresce até um limite quando há algo escolhido); no celular, a largura toda. */
+const FILTRO_COMPACTO = "w-full sm:w-auto sm:max-w-56";
+
+/** O campo do filtro sem nada escolhido: só o ícone e o nome, em cinza (sem "Todos os…" e sem a contagem). */
+function CampoVazio({ icone, texto }: { icone: ReactNode; texto: string }) {
+  return (
+    <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+      {icone}
+      <span className="truncate">{texto}</span>
+    </span>
+  );
+}
+
+/** Vazio mostra todas; clicar de novo no filtro escolhido volta a mostrar todas. */
+type FiltroRisco = "" | "risco" | "normal";
 
 interface GrupoFila {
   nome: string;
   publicacoes: PublicacaoResumo[];
   riscos: number;
+}
+
+/**
+ * Demanda de risco × normal: dois botões que ligam e desligam. Nenhum ligado mostra todas; clicar no ligado
+ * desliga (sem o botão "Todas").
+ */
+function FiltroDemanda({
+  valor,
+  riscos,
+  normais,
+  onChange,
+}: {
+  valor: FiltroRisco;
+  riscos: number;
+  normais: number;
+  onChange: (valor: FiltroRisco) => void;
+}) {
+  const opcoes = [
+    { valor: "risco" as const, rotulo: "Demanda de risco", curto: "Risco", contagem: riscos, icone: ShieldAlert, ligado: "bg-[#8f1d26] text-white" },
+    { valor: "normal" as const, rotulo: "Demanda normal", curto: "Normal", contagem: normais, icone: ShieldCheck, ligado: "bg-[#347796] text-white" },
+  ];
+  return (
+    <div role="group" aria-label="Tipo de demanda" className="inline-flex shrink-0 rounded-md border border-input bg-white p-0.5">
+      {opcoes.map((opcao) => {
+        const ativo = valor === opcao.valor;
+        const Icone = opcao.icone;
+        return (
+          <button
+            key={opcao.valor}
+            type="button"
+            aria-pressed={ativo}
+            title={ativo ? "Clique de novo para mostrar todas" : `Mostrar só ${opcao.rotulo.toLowerCase()}`}
+            onClick={() => onChange(ativo ? "" : opcao.valor)}
+            className={cn(
+              "inline-flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-[5px] px-2.5 text-sm transition-colors duration-150",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/50",
+              ativo ? cn(opcao.ligado, "font-medium") : "text-muted-foreground hover:bg-[#47cdd0]/10 hover:text-foreground"
+            )}
+          >
+            <Icone className={cn("size-4", !ativo && opcao.valor === "risco" && "text-[#8f1d26]")} aria-hidden />
+            {/* Nome inteiro só em tela bem larga; no resto, "Risco" e "Normal" (o nome inteiro fica na dica). */}
+            <span className="hidden 2xl:inline">{opcao.rotulo}</span>
+            <span className="2xl:hidden" aria-hidden>
+              {opcao.curto}
+            </span>
+            <span className="sr-only 2xl:hidden">{opcao.rotulo}</span>
+            <span
+              className={cn(
+                "rounded-full px-1.5 text-xs font-semibold tabular-nums",
+                ativo ? "bg-white/20 text-white" : "bg-[#eef3f5] text-foreground/70"
+              )}
+            >
+              {opcao.contagem}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 /** Agrupa a fila por grupo do cliente; grupos e publicações com demanda de risco primeiro. */
@@ -1508,15 +1730,13 @@ function Juridico() {
   const [aviso, setAviso] = useState("");
   const [busca, setBusca] = useState("");
   const [grupo, setGrupo] = useState("");
-  const [risco, setRisco] = useState<FiltroRisco>("todas");
+  const [risco, setRisco] = useState<FiltroRisco>("");
   /** Tribunal; vazio é "Todos os tribunais". */
   const [tribunal, setTribunal] = useState("");
-  /** Data da publicação (AAAA-MM-DD); vazio é "Todas as datas". */
-  const [dataPublicacao, setDataPublicacao] = useState("");
-  /** Data da divulgação no diário (AAAA-MM-DD); vazio é "Todas as datas". */
+  /** Dia em que a publicação chegou no Orquestra (AAAA-MM-DD); vazio é "Todas as datas". */
   const [dataImportacao, setDataImportacao] = useState("");
-  /** A fila abre sempre recolhida: a publicação ocupa a largura toda. */
-  const [filaRecolhida, setFilaRecolhida] = useState(true);
+  /** A fila abre sempre aberta, estreita; o botão à esquerda do número do processo recolhe. */
+  const [filaRecolhida, setFilaRecolhida] = useState(false);
   /** Na fila, cada grupo vem recolhido (menos o da publicação aberta); aqui ficam os que a pessoa inverteu. */
   const [gruposAlternados, setGruposAlternados] = useState<Set<string>>(() => new Set());
 
@@ -1555,24 +1775,21 @@ function Juridico() {
   const grupoAtivo = gruposDaFila.some(([nome]) => nome === grupo) ? grupo : "";
   const tribunaisDaFila = useMemo(() => contarPor(publicacoes ?? [], tribunalDe), [publicacoes]);
   const tribunalAtivo = tribunaisDaFila.some(([nome]) => nome === tribunal) ? tribunal : "";
-  const datasDaFila = useMemo(() => (publicacoes ?? []).map((publicacao) => publicacao.dataPublicacao), [publicacoes]);
-  const dataAtiva = dataNaLista(dataPublicacao, datasDaFila);
   const importacoesDaFila = useMemo(() => (publicacoes ?? []).map((publicacao) => publicacao.dataImportacao), [publicacoes]);
   const importacaoAtiva = dataNaLista(dataImportacao, importacoesDaFila);
   // O que a busca olha em cada publicação (inclui as partes do texto): montado uma vez por carga, não a cada letra.
   const camposDeBusca = useMemo(() => new Map((publicacoes ?? []).map((publicacao) => [publicacao.id, camposDaPublicacao(publicacao)])), [publicacoes]);
   const filtradas = useMemo(() => {
     return (publicacoes ?? []).filter((publicacao) => {
-      if (dataAtiva && publicacao.dataPublicacao !== dataAtiva) return false;
       if (importacaoAtiva && publicacao.dataImportacao !== importacaoAtiva) return false;
       if (grupoAtivo && (publicacao.grupoCliente?.trim() || SEM_GRUPO) !== grupoAtivo) return false;
       if (tribunalAtivo && tribunalDe(publicacao) !== tribunalAtivo) return false;
       if (risco === "risco" && !publicacao.demandaRisco) return false;
-      if (risco === "sem_risco" && publicacao.demandaRisco) return false;
+      if (risco === "normal" && publicacao.demandaRisco) return false;
       return combinaCampos(camposDeBusca.get(publicacao.id) ?? [], busca);
     });
-  }, [publicacoes, busca, grupoAtivo, tribunalAtivo, risco, dataAtiva, importacaoAtiva, camposDeBusca]);
-  const filtrosAtivos = Boolean(busca.trim() || grupoAtivo || tribunalAtivo || risco !== "todas" || dataAtiva || importacaoAtiva);
+  }, [publicacoes, busca, grupoAtivo, tribunalAtivo, risco, importacaoAtiva, camposDeBusca]);
+  const filtrosAtivos = Boolean(busca.trim() || grupoAtivo || tribunalAtivo || risco || importacaoAtiva);
   const grupos = useMemo(() => agruparFila(filtradas), [filtradas]);
   // Mesma ordem da lista: é por ela que o editor anda para a anterior e a próxima.
   const ordem = useMemo(() => grupos.flatMap((item) => item.publicacoes.map((publicacao) => publicacao.id)), [grupos]);
@@ -1596,7 +1813,6 @@ function Juridico() {
     document.querySelector("[data-fila-vistagem] [aria-current=true]")?.scrollIntoView({ block: "nearest" });
   }, [aberta]);
   const riscos = (publicacoes ?? []).filter((publicacao) => publicacao.demandaRisco).length;
-  const devolvidas = (publicacoes ?? []).filter((publicacao) => publicacao.devolucaoMotivo || publicacao.devolvidoEm).length;
 
   function abrir(id: string) {
     setSelecionada(id);
@@ -1626,8 +1842,7 @@ function Juridico() {
     setBusca("");
     setGrupo("");
     setTribunal("");
-    setRisco("todas");
-    setDataPublicacao("");
+    setRisco("");
     setDataImportacao("");
   }
 
@@ -1653,71 +1868,52 @@ function Juridico() {
 
   return (
     <div className="space-y-4">
-      <BarraAba
-        resumo={
-          visao === "agendadas" ? (
-            <p>O que já foi vistado nos últimos 30 dias{escritorio ? ` em ${escritorio}` : ""} e onde está cada tarefa no VIOS.</p>
-          ) : (
-            <>
-              <p>
-                <span className="font-semibold tabular-nums text-foreground">{publicacoes?.length ?? "…"}</span>{" "}
-                {publicacoes?.length === 1 ? "publicação" : "publicações"} a vistar{escritorio ? ` em ${escritorio}` : ""}
-                {riscos ? <span className="text-red-700"> · {riscos} de risco</span> : null}
-                {devolvidas ? <span className="text-amber-800"> · {devolvidas} {devolvidas === 1 ? "devolvida" : "devolvidas"}</span> : null}
-                {filtrosAtivos && publicacoes ? (
-                  <>
-                    {" · "}
-                    <span className="font-medium text-foreground">{filtradas.length} no filtro</span>{" "}
-                    <button type="button" className="text-xs font-medium text-[#347796] underline-offset-4 hover:underline" onClick={limparFiltros}>
-                      limpar
-                    </button>
-                  </>
-              ) : null}
-            </p>
-            {areas ? (
-              <p className="mt-0.5 text-xs">
-                {areas.length ? `Suas áreas: ${areas.join(", ")}.` : "Nenhuma área marcada para você. Peça à controladoria para liberar as suas."}
-              </p>
-            ) : null}
-          </>
-          )
-        }
-      >
+      {/* Uma linha só: "A vistar / Agendadas" à esquerda e os filtros do tamanho do conteúdo (sem nada escolhido,
+          só o ícone e o nome do filtro). Em tela estreita, os filtros descem de linha. */}
+      <div className="flex flex-wrap items-center gap-2">
         <Segmented
           label="Visão do jurídico"
           value={visao}
           options={[
             { value: "fila", label: `A vistar${publicacoes ? ` ${publicacoes.length}` : ""}` },
-            { value: "agendadas", label: "Agendadas" },
+            { value: "agendadas", label: "Vistado" },
           ]}
           onChange={setVisao}
         />
-        {visao === "fila" && filaRecolhida ? (
-          <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)}>
-            <PanelLeftOpen />
-            Mostrar fila
-          </Button>
-        ) : null}
-        <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Processo, cliente ou CI" aria-label="Buscar publicação" />
+        <Busca
+          className="sm:w-52"
+          value={busca}
+          onChange={(evento) => setBusca(evento.target.value)}
+          placeholder="Processo, cliente ou CI"
+          aria-label="Buscar publicação"
+        />
         <Seletor
           rotulo="Área"
-          className="sm:w-64"
+          className={FILTRO_COMPACTO}
           valor={escritorio}
           onChange={setEscritorio}
           todos={{ rotulo: "Todas as áreas", contagem: total, icone: <IconeOpcao icone={Layers} /> }}
+          rotuloVazio={<CampoVazio icone={<IconeOpcao icone={Layers} />} texto="Área" />}
           opcoes={escritorios.map(([nome, quantidade]) => ({ valor: nome, rotulo: nome, contagem: quantidade, icone: <IconeArea area={nome} /> }))}
         />
         {visao === "fila" ? (
           <>
-            <FiltroData rotulo="Data Publicação" datas={datasDaFila} valor={dataAtiva} onChange={setDataPublicacao} />
-            <FiltroData rotulo="Data da importação" datas={importacoesDaFila} valor={importacaoAtiva} onChange={setDataImportacao} />
+            <FiltroData
+              rotulo="Data do recebimento"
+              rotuloCurto="Recebimento"
+              className={FILTRO_COMPACTO}
+              datas={importacoesDaFila}
+              valor={importacaoAtiva}
+              onChange={setDataImportacao}
+            />
             <SeletorBusca
               rotulo="Grupo do cliente"
-              className="sm:w-64"
+              className={FILTRO_COMPACTO}
               buscaPlaceholder="Buscar grupo…"
               valor={grupoAtivo}
               onChange={setGrupo}
               todos={{ rotulo: "Todos os grupos", contagem: publicacoes?.length, icone: <IconeOpcao icone={Building2} /> }}
+              rotuloVazio={<CampoVazio icone={<IconeOpcao icone={Building2} />} texto="Grupo" />}
               opcoes={gruposDaFila.map(([nome, quantidade]) => ({
                 valor: nome,
                 rotulo: nome,
@@ -1727,27 +1923,27 @@ function Juridico() {
             />
             <Seletor
               rotulo="Tribunal"
-              className="sm:w-52"
+              className={FILTRO_COMPACTO}
               valor={tribunalAtivo}
               onChange={setTribunal}
               todos={{ rotulo: "Todos os tribunais", contagem: publicacoes?.length, icone: <IconeOpcao icone={Landmark} /> }}
+              rotuloVazio={<CampoVazio icone={<IconeOpcao icone={Landmark} />} texto="Tribunal" />}
               opcoes={tribunaisDaFila.map(([nome, quantidade]) => ({ valor: nome, rotulo: nome, descricao: descricaoDoTribunal(nome), contagem: quantidade, icone: <IconeTribunal sigla={nome} /> }))}
             />
-            {veRisco ? (
-              <Segmented
-                label="Demanda de risco"
-                value={risco}
-                options={[
-                  { value: "todas", label: "Todas" },
-                  { value: "risco", label: `De risco ${riscos}` },
-                  { value: "sem_risco", label: `Sem risco ${(publicacoes?.length ?? 0) - riscos}` },
-                ]}
-                onChange={setRisco}
-              />
+            {veRisco ? <FiltroDemanda valor={risco} riscos={riscos} normais={(publicacoes?.length ?? 0) - riscos} onChange={setRisco} /> : null}
+            {filtrosAtivos && publicacoes ? (
+              <Button type="button" variant="ghost" size="sm" className="text-[#347796]" onClick={limparFiltros} title="Mostrar todas de novo">
+                <X />
+                Limpar ({filtradas.length} de {publicacoes.length})
+              </Button>
             ) : null}
           </>
         ) : null}
-      </BarraAba>
+      </div>
+
+      {areas && areas.length === 0 ? (
+        <Aviso tom="alerta">Nenhuma área marcada para você. Peça à controladoria para liberar as suas.</Aviso>
+      ) : null}
 
       {aviso ? <Aviso tom="sucesso">{aviso}</Aviso> : null}
       {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
@@ -1759,7 +1955,7 @@ function Juridico() {
         <div
           className={cn(
             "grid gap-4 lg:h-[calc(100dvh-10.5rem)] lg:min-h-[30rem]",
-            filaRecolhida ? "lg:grid-cols-1" : "lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]"
+            filaRecolhida ? "lg:grid-cols-1" : "lg:grid-cols-[minmax(230px,270px)_minmax(0,1fr)]"
           )}
         >
           <Painel
@@ -1855,6 +2051,7 @@ function Juridico() {
                 onConcluida={concluida}
                 onTransferida={transferida}
                 onVoltar={() => setListaNoCelular(true)}
+                fila={{ aberta: !filaRecolhida, onAlternar: () => setFilaRecolhida((atual) => !atual) }}
               />
             ) : (
               <Painel>

@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
-import { CapturaClient } from "@/components/operacoes-legais/vistagem/captura-client";
+import { VisaoGeralClient } from "@/components/operacoes-legais/vistagem/visao-geral-client";
 
 export const metadata: Metadata = {
-  title: "Vistagem — Captura — ORQESTRAI",
-  description: "Captura diária das publicações da Kurier.",
+  title: "Vistagem — Visão geral — ORQESTRAI",
+  description: "Resumo da Vistagem: onde estão as publicações, quanto cada vistador tem para vistar e o que chegou da Kurier.",
   robots: { index: false, follow: false },
 };
 
 export const dynamic = "force-dynamic";
 
-export default function VistagemCapturaPage() {
-  return <CapturaClient />;
+export default function VistagemVisaoGeralPage() {
+  return <VisaoGeralClient />;
 }

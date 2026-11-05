@@ -22,6 +22,7 @@ import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./d
 import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
 import { areaComSugestaoIa, resultadoDaSugestao, type SugestaoIa } from "./sugestao-ia";
 import { carregarFeriados } from "./feriados";
+import { lerConfiguracoes } from "./configuracoes-server";
 import { cadeiaDoFluxo, montarFluxo, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
 import { caminhosDoFluxo, datasParaOVios, fluxoPrevisto } from "./fluxo-previsto";
 import { buscarPastasVios } from "./pastas-vios";
@@ -358,7 +359,8 @@ export async function obterVistagem(
         : null,
     sugestaoIa: publicacao.sugestao_ia,
     // Na prévia da controladoria a publicação ainda não está na fila do jurídico: a IA gera depois, se for o caso.
-    sugestaoIaDisponivel: !previa && Boolean(catalogo && areaComSugestaoIa(catalogo.area) && openAIKey("analisePublicacao")),
+    sugestaoIaDisponivel:
+      !previa && Boolean(catalogo && areaComSugestaoIa(catalogo.area) && openAIKey("analisePublicacao")) && (await lerConfiguracoes()).iaSugestaoTarefa,
     hoje: hojeEmSaoPaulo(),
   };
 }
