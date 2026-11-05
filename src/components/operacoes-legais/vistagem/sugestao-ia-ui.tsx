@@ -112,6 +112,9 @@ export function CartaoSugestaoIa({
     <Painel aria-labelledby="sugestao-ia-titulo" className="border-[#48466e]/20">
       <TituloIa>
         {sugestao.parteContraria ? <Selo tom="neutro">Prazo da parte contrária</Selo> : null}
+        {sugestao.prazoDe === "ninguem" && !sugestao.tarefas.some((tarefa) => tarefa.classe === "COMPROMISSO") ? (
+          <Selo tom="neutro">Sem prazo nem providência</Selo>
+        ) : null}
         <Selo tom={TOM_CONFIANCA[sugestao.confianca]} className="ml-auto">
           confiança {ROTULO_CONFIANCA[sugestao.confianca]}
         </Selo>
