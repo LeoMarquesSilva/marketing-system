@@ -339,14 +339,14 @@ function Captura() {
         {/* O que se confere primeiro: o arquivo de hoje chegou? O como funciona fica na dica, sem ocupar a tela. */}
         <BarraAba
           resumo={
-            <div
+            <div data-tour="vg-gestao-hoje"
               title="O arquivo do dia é buscado sozinho no SharePoint entre 7h e 8h (nova tentativa entre 9h e 10h, em dias úteis) e triado com o SIOE. Pendências seguem para a Triagem Manual; duplicidades, para Duplicidades. Publicações que chegam por e-mail ou Teams entram por “Colar publicações”."
             >
               <ArquivoDeHoje estado={hoje} />
             </div>
           }
         >
-          <Button
+          <Button data-tour="vg-gestao-colar"
             variant="outline"
             onClick={() => {
               setAviso(null);
@@ -361,7 +361,7 @@ function Captura() {
             {ocupado === "enviar" ? <LoaderCircle className="animate-spin" /> : <Upload />}
             Enviar xlsx
           </Button>
-          <Button onClick={sincronizar} disabled={ocupado !== null}>
+          <Button onClick={sincronizar} disabled={ocupado !== null} data-tour="vg-gestao-buscar">
             {ocupado === "sincronizar" ? <LoaderCircle className="animate-spin" /> : <CloudDownload />}
             Buscar no SharePoint
           </Button>
@@ -393,7 +393,7 @@ function Captura() {
       </div>
 
       <div className={cn("grid gap-4", arquivos?.length && "xl:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] xl:items-start")}>
-        <Painel aria-labelledby="arquivos-titulo">
+        <Painel aria-labelledby="arquivos-titulo" data-tour="vg-gestao-arquivos">
           <PainelTopo
             id="arquivos-titulo"
             titulo={
@@ -464,7 +464,7 @@ function Captura() {
         </Painel>
 
         {arquivoAtual ? (
-          <Painel aria-labelledby="publicacoes-titulo" className="min-w-0">
+          <Painel aria-labelledby="publicacoes-titulo" className="min-w-0" data-tour="vg-gestao-publicacoes">
             {/* Cabeçalho do arquivo: o dia, de onde veio e o que chegou nele (os números do próprio arquivo). */}
             <div className="space-y-3 border-b border-[#e6eef0] px-4 py-3">
               <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
@@ -503,7 +503,7 @@ function Captura() {
             ) : null}
 
             {/* Para onde foi cada publicação: os botões filtram a lista e já contam com a busca, a área e o tribunal. */}
-            <div className="space-y-3 border-b border-[#e6eef0] bg-[#fafcfc] px-4 py-3">
+            <div className="space-y-3 border-b border-[#e6eef0] bg-[#fafcfc] px-4 py-3" data-tour="vg-gestao-filtros">
               <div role="radiogroup" aria-label="Filtrar por situação" className="flex flex-wrap gap-1.5">
                 {(["todas", ...SITUACOES_CAPTURA] as Filtro[])
                   .filter((valor) => valor !== "captada" || contagem.captada > 0 || filtro === "captada")
@@ -600,11 +600,11 @@ function Captura() {
                   {filtrando ? `${visiveis.length} de ${publicacoes.length}` : publicacoes.length} {publicacoes.length === 1 ? "publicação" : "publicações"} · na ordem do arquivo · clique para ver o detalhe
                 </p>
                 <ul className="divide-y divide-[#eef3f5]">
-                  {visiveis.map((publicacao) => {
+                  {visiveis.map((publicacao, indice) => {
                     const principal = publicacao.duplicidadeDe ? (porId.get(publicacao.duplicidadeDe) ?? null) : null;
                     const detalhe = detalheDaSituacao(publicacao, principal);
                     return (
-                      <li key={publicacao.id}>
+                      <li key={publicacao.id} data-tour={indice === 0 ? "vg-gestao-lista" : undefined}>
                         <button
                           type="button"
                           onClick={() => setAberta(publicacao.id)}

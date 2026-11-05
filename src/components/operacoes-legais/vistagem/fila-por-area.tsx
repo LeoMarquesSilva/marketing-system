@@ -84,7 +84,7 @@ export function FilaPorArea<T extends { publicacao: PublicacaoResumo }>({
 }) {
   const buscando = busca.trim() !== "";
   return (
-    <Painel aria-label={rotulo} className={cn("lg:flex lg:h-full lg:flex-col", className)}>
+    <Painel aria-label={rotulo} data-tour="ck-fila" className={cn("lg:flex lg:h-full lg:flex-col", className)}>
       {buscando ? (
         // Na busca, o topo da fila diz o que foi buscado e quantos achou; o X limpa e a fila volta ao normal.
         <div className="flex items-center gap-2 border-b border-[#e6eef0] bg-[#f2fbfb] px-4 py-2">

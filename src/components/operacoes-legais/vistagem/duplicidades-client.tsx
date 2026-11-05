@@ -320,6 +320,7 @@ function Duplicidades() {
     <div className="space-y-4">
       <BarraAba
         resumo={
+          <div className="w-fit" data-tour="dp-situacao">
           <Segmented
             label="Situação da conferência"
             value={situacao}
@@ -330,15 +331,16 @@ function Duplicidades() {
             }))}
             onChange={trocarSituacao}
           />
+          </div>
         }
       >
         {filaRecolhida ? (
-          <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)}>
+          <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)} data-tour="dp-fila">
             <PanelLeftOpen />
             Mostrar fila
           </Button>
         ) : null}
-        <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Processo, grupo, parte ou intimado" aria-label="Buscar duplicidade" />
+        <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Processo, grupo, parte ou intimado" aria-label="Buscar duplicidade" data-tour="dp-filtros" />
         <Seletor
           rotulo="Id do documento"
           className="sm:w-60"
@@ -393,13 +395,13 @@ function Duplicidades() {
           {erro}
         </Aviso>
       ) : grupos.length === 0 ? (
-        <Painel>
+        <Painel data-tour="dp-vazio">
           <Vazio icone={CopyX} titulo={pendentes ? "Nenhuma duplicidade para conferir." : "Nenhuma duplicidade conferida ainda."}>
             {pendentes ? "Quando a captura marcar uma cópia de despacho, ela aparece aqui para você comparar." : null}
           </Vazio>
         </Painel>
       ) : filtrados.length === 0 ? (
-        <Painel>
+        <Painel data-tour="dp-vazio">
           <Vazio icone={SearchX} titulo="Nenhuma duplicidade com esses filtros.">
             <Button variant="link" className="h-auto p-0" onClick={limparFiltros}>
               Limpar filtros
@@ -415,6 +417,7 @@ function Duplicidades() {
           )}
         >
           <Painel
+            data-tour="dp-fila"
             aria-label="Despachos com duplicidade"
             className={cn("lg:flex lg:h-full lg:flex-col", aberto && !listaNoCelular && "hidden lg:flex", filaRecolhida && "lg:hidden")}
           >
@@ -485,7 +488,7 @@ function Duplicidades() {
                   }
                 >
                   {pendentes ? (
-                    <Button size="sm" className={BOTAO_FAIXA_PRINCIPAL} onClick={() => revisar(aberto, aberto.copias, "confirmada")} disabled={salvando !== null}>
+                    <Button size="sm" className={BOTAO_FAIXA_PRINCIPAL} data-tour="dp-decidir" onClick={() => revisar(aberto, aberto.copias, "confirmada")} disabled={salvando !== null}>
                       {salvando === aberto.chave ? <LoaderCircle className="animate-spin" /> : aberto.copias.length > 1 ? <CheckCheck /> : <Check />}
                       {aberto.copias.length > 1 ? `Confirmar todas (${aberto.copias.length})` : "Confirmar duplicidade"}
                     </Button>
@@ -541,7 +544,7 @@ function Duplicidades() {
                     ) : null}
 
                     {copia ? (
-                      <section aria-label="Comparação" className="overflow-hidden rounded-lg border border-[#dce9eb]">
+                      <section aria-label="Comparação" data-tour="dp-comparacao" className="overflow-hidden rounded-lg border border-[#dce9eb]">
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[#e6eef0] bg-[#f7fbfc] px-3.5 py-2.5">
                           <h3 className="text-xs font-semibold uppercase text-[#285f7a]">Principal × cópia</h3>
                           <span className="text-xs text-muted-foreground">
@@ -636,7 +639,7 @@ function Duplicidades() {
 
                     {/* Os dois textos lado a lado, cada um rolando sozinho, com o que muda em âmbar. */}
                     {copia ? (
-                      <div className="grid gap-3 @3xl:grid-cols-2">
+                      <div className="grid gap-3 @3xl:grid-cols-2" data-tour="dp-textos">
                         {[
                           { titulo: `Principal · linha ${aberto.principal?.linhaArquivo ?? "?"}`, texto: textoPrincipal, outro: textoCopia },
                           { titulo: `Cópia · linha ${copia.duplicidade.linhaArquivo ?? "?"}`, texto: textoCopia, outro: textoPrincipal },

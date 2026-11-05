@@ -589,7 +589,7 @@ function ItemConferencia({
           </>
         }
       >
-        {acoes ? <div className="flex flex-wrap items-center gap-2">{acoes}</div> : null}
+        {acoes ? <div className="flex flex-wrap items-center gap-2" data-tour="cf-acoes">{acoes}</div> : null}
         {navegacao ? (
           <div className={cn("flex items-center gap-1", acoes && "ml-2 border-l border-white/20 pl-2")}>
             <Button
@@ -638,7 +638,7 @@ function ItemConferencia({
       {/* Com espaço, a publicação fica à esquerda e o que o jurídico fez à direita, cada uma rolando sozinha, como na vistagem. */}
       <div className="grid lg:min-h-0 lg:flex-1 @max-4xl:overflow-y-auto @4xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] @4xl:grid-rows-[minmax(0,1fr)] @4xl:divide-x @4xl:divide-[#e6eef0]">
         {/* Sem a altura fixa do desktop (tela menor ou zoom do navegador), publicação e tarefas param em 75% da tela e rolam sozinhas. */}
-        <section aria-label="Publicação" className="min-w-0 overflow-y-auto max-lg:max-h-[75dvh]">
+        <section data-tour="cf-publicacao" aria-label="Publicação" className="min-w-0 overflow-y-auto max-lg:max-h-[75dvh]">
           <PublicacaoComoNaVistagem
             publicacao={publicacao}
             agendamentos={item.agendamentos}
@@ -673,7 +673,7 @@ function ItemConferencia({
             </Secao>
           ) : null}
 
-          <section aria-labelledby={`${base}-tarefas`} className="border-t border-[#e6eef0] first:border-t-0">
+          <section data-tour="cf-tarefas" aria-labelledby={`${base}-tarefas`} className="border-t border-[#e6eef0] first:border-t-0">
             <div className="flex flex-wrap items-center justify-between gap-2 px-4 pb-3 pt-4">
               <h3 id={`${base}-tarefas`} className="text-xs font-semibold uppercase tracking-normal text-[#285f7a]">
                 Tarefas
@@ -1118,6 +1118,7 @@ function Conferencia() {
     <div className="space-y-4">
       <BarraAba
         resumo={
+          <div className="w-fit" data-tour="cf-abas">
           <Segmented
             label="Situação"
             value={aba}
@@ -1128,17 +1129,18 @@ function Conferencia() {
             ]}
             onChange={setAba}
           />
+          </div>
         }
       >
         {aba !== "inconsistencias" ? (
           <>
             {!filaAberta ? (
-              <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)}>
+              <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)} data-tour="cf-fila">
                 <PanelLeftOpen />
                 Mostrar fila
               </Button>
             ) : null}
-            <Busca
+            <Busca data-tour="cf-busca"
               value={busca}
               onChange={(evento) => mudarBusca(evento.target.value)}
               onKeyDown={(evento) => {
@@ -1220,7 +1222,7 @@ function Conferencia() {
           <Carregando rotulo="Carregando a conferência" />
         </Painel>
       ) : lista.length === 0 ? (
-        <Painel>
+        <Painel data-tour="cf-vazio">
           {aba === "conferir" ? (
             <Vazio icone={Inbox} titulo="Nenhuma vistagem para conferir.">
               Quando o jurídico vistar uma publicação, ela aparece aqui.
@@ -1252,6 +1254,7 @@ function Conferencia() {
           <Painel
             aria-label={buscando ? "Resultados da busca" : aba === "conferir" ? "Publicações a conferir" : "Publicações enviadas ao robô"}
             data-fila-conferencia
+            data-tour="cf-fila"
             className={cn("lg:flex lg:h-full lg:flex-col", aberta && !listaNoCelular && "hidden lg:flex", !filaAberta && "lg:hidden")}
           >
             {buscando ? (
