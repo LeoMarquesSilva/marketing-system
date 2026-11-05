@@ -156,6 +156,15 @@ describe("validarAgendamentos", () => {
     expect(naClasseErrada.ok).toBe(false);
   });
 
+  it("providência grava sem revisor, mesmo que a tela mande um (nem confere o nome)", () => {
+    const resultado = validarAgendamentos(
+      [{ etiqueta: "PROVIDENCIA", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", tarefaId: "321", data: "2026-11-10", responsavel: "Advogada Exemplo", revisor: "Fulano Fora da Lista" }],
+      contexto
+    );
+    expect(resultado.ok).toBe(true);
+    expect(resultado.ok && resultado.itens[0]).toMatchObject({ etiqueta: "PROVIDENCIA", revisor: null, revisorId: null });
+  });
+
   it("atalho de dias exige a contagem (úteis ou corridos); fatal no calendário não", () => {
     const prazo = { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo", observacao: "ver teor" };
     expect(validarAgendamentos([{ ...prazo, diasPrazo: 15 }], contexto)).toEqual({
