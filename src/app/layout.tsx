@@ -4,6 +4,7 @@ import "./globals.css";
 import { AuthProvider } from "@/contexts/auth-context";
 import { ContentTourProvider } from "@/contexts/content-tour-context";
 import { AppLayout } from "@/components/layout/app-layout";
+import { DicasDeTitulo } from "@/components/ui/dicas-de-titulo";
 import { PUBLIC_APP_ORIGIN } from "@/lib/public-origin";
 
 const geistSans = Geist({
@@ -49,6 +50,8 @@ export default function RootLayout({
             <AppLayout>{children}</AppLayout>
           </ContentTourProvider>
         </AuthProvider>
+        {/* O balão do navegador (title) sai no padrão do Orquestra em todas as telas. */}
+        <DicasDeTitulo />
       </body>
     </html>
   );

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CalendarCheck, Search } from "lucide-react";
 import { authFetch } from "@/lib/auth-fetch";
-import { chaveNome } from "@/lib/vistagem/agendamento";
+import { camposDaConferencia, combinaCampos } from "@/lib/vistagem/busca";
 import type { ConferenciaItem, PublicacaoStatus } from "@/lib/vistagem/types";
 import { TabelaTarefas } from "./conferencia-client";
 import { IconeArea, LogoGrupo } from "./marcas";
@@ -19,14 +19,6 @@ const SITUACAO: Partial<Record<PublicacaoStatus, { rotulo: string; tom: TomSelo 
   revisar: { rotulo: "Em revisão", tom: "perigo" },
 };
 
-function combina(item: ConferenciaItem, termo: string): boolean {
-  if (!termo) return true;
-  const { publicacao } = item;
-  const textos = [publicacao.cliente, publicacao.grupoCliente, publicacao.pastaCi, item.vistadoPor, ...item.agendamentos.flatMap((a) => [a.tarefa, a.responsavel])];
-  if (textos.some((texto) => chaveNome(texto).includes(termo))) return true;
-  const digitos = termo.replace(/\D/g, "");
-  return digitos.length >= 4 && (publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal).replace(/\D/g, "").includes(digitos);
-}
 
 /** "Hoje", "Ontem" ou a data, pelo dia (no fuso de Brasília) em que a publicação foi vistada. */
 function diaDaVistagem(iso: string | null, hoje: string, ontem: string): string {
@@ -65,18 +57,20 @@ export function AgendadasJuridico({ escritorio, busca }: { escritorio: string; b
     };
   }, [escritorio]);
 
+  // O que a busca olha em cada publicação (inclui as partes do texto): montado uma vez por carga, não a cada letra.
+  const camposDeBusca = useMemo(() => new Map((itens ?? []).map((item) => [item.publicacao.id, camposDaConferencia(item)])), [itens]);
+
   const blocos = useMemo(() => {
-    const termo = chaveNome(busca);
     const agora = new Date();
     const hoje = agora.toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
     const ontem = new Date(agora.getTime() - 86_400_000).toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
     const porDia = new Map<string, ConferenciaItem[]>();
-    for (const item of (itens ?? []).filter((item) => combina(item, termo))) {
+    for (const item of (itens ?? []).filter((item) => combinaCampos(camposDeBusca.get(item.publicacao.id) ?? [], busca))) {
       const dia = diaDaVistagem(item.publicacao.vistadoEm, hoje, ontem);
       porDia.set(dia, [...(porDia.get(dia) ?? []), item]);
     }
     return [...porDia.entries()];
-  }, [itens, busca]);
+  }, [itens, busca, camposDeBusca]);
 
   if (itens === null) return <Painel><Carregando rotulo="Carregando o que foi agendado" /></Painel>;
   return (

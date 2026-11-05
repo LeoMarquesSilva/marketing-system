@@ -72,10 +72,12 @@ import { FichaProcesso, ResumoDaFicha, SinteseDoProcesso } from "./ficha-process
 import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { AgendadasJuridico } from "./juridico-agendadas";
 import { LeitorPublicacao } from "./leitor-publicacao";
-import { IconeArea, LogoGrupo } from "./marcas";
+import { IconeArea, IconeTribunal, LogoGrupo } from "./marcas";
+import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
+import { camposDaPublicacao, combinaCampos } from "@/lib/vistagem/busca";
 import { contarPor, formatarData, formatarDataHora, tribunalDe } from "./publicacao-ui";
 import { ReguaDatas } from "./regua-datas";
-import { Seletor, SeletorBusca } from "./seletor";
+import { IconeOpcao, Seletor, SeletorBusca } from "./seletor";
 import { CartaoSugestaoIa, SeloIa, type EstadoSugestao } from "./sugestao-ia-ui";
 import { Aviso, BarraAba, Busca, Campo, Carregando, Painel, Selo, Vazio, campoClasse, linhaLista } from "./ui";
 
@@ -1420,9 +1422,9 @@ function Juridico() {
   const dataAtiva = dataNaLista(dataPublicacao, datasDaFila);
   const importacoesDaFila = useMemo(() => (publicacoes ?? []).map((publicacao) => publicacao.dataImportacao), [publicacoes]);
   const importacaoAtiva = dataNaLista(dataImportacao, importacoesDaFila);
+  // O que a busca olha em cada publicação (inclui as partes do texto): montado uma vez por carga, não a cada letra.
+  const camposDeBusca = useMemo(() => new Map((publicacoes ?? []).map((publicacao) => [publicacao.id, camposDaPublicacao(publicacao)])), [publicacoes]);
   const filtradas = useMemo(() => {
-    const termo = chaveNome(busca);
-    const digitos = termo.replace(/\D/g, "");
     return (publicacoes ?? []).filter((publicacao) => {
       if (dataAtiva && publicacao.dataPublicacao !== dataAtiva) return false;
       if (importacaoAtiva && publicacao.dataImportacao !== importacaoAtiva) return false;
@@ -1430,13 +1432,9 @@ function Juridico() {
       if (tribunalAtivo && tribunalDe(publicacao) !== tribunalAtivo) return false;
       if (risco === "risco" && !publicacao.demandaRisco) return false;
       if (risco === "sem_risco" && publicacao.demandaRisco) return false;
-      if (!termo) return true;
-      return (
-        (digitos.length >= 4 && (publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal).replace(/\D/g, "").includes(digitos)) ||
-        [publicacao.cliente, publicacao.grupoCliente, publicacao.pastaCi].some((texto) => chaveNome(texto).includes(termo))
-      );
+      return combinaCampos(camposDeBusca.get(publicacao.id) ?? [], busca);
     });
-  }, [publicacoes, busca, grupoAtivo, tribunalAtivo, risco, dataAtiva, importacaoAtiva]);
+  }, [publicacoes, busca, grupoAtivo, tribunalAtivo, risco, dataAtiva, importacaoAtiva, camposDeBusca]);
   const filtrosAtivos = Boolean(busca.trim() || grupoAtivo || tribunalAtivo || risco !== "todas" || dataAtiva || importacaoAtiva);
   const grupos = useMemo(() => agruparFila(filtradas), [filtradas]);
   // Mesma ordem da lista: é por ela que o editor anda para a anterior e a próxima.
@@ -1569,7 +1567,7 @@ function Juridico() {
           className="sm:w-64"
           valor={escritorio}
           onChange={setEscritorio}
-          todos={{ rotulo: "Todas as áreas", contagem: total, icone: <Layers className="size-4 text-[#3e84a8]" aria-hidden /> }}
+          todos={{ rotulo: "Todas as áreas", contagem: total, icone: <IconeOpcao icone={Layers} /> }}
           opcoes={escritorios.map(([nome, quantidade]) => ({ valor: nome, rotulo: nome, contagem: quantidade, icone: <IconeArea area={nome} /> }))}
         />
         {visao === "fila" ? (
@@ -1582,7 +1580,7 @@ function Juridico() {
               buscaPlaceholder="Buscar grupo…"
               valor={grupoAtivo}
               onChange={setGrupo}
-              todos={{ rotulo: "Todos os grupos", contagem: publicacoes?.length, icone: <Building2 className="size-4 text-[#3e84a8]" aria-hidden /> }}
+              todos={{ rotulo: "Todos os grupos", contagem: publicacoes?.length, icone: <IconeOpcao icone={Building2} /> }}
               opcoes={gruposDaFila.map(([nome, quantidade]) => ({
                 valor: nome,
                 rotulo: nome,
@@ -1595,8 +1593,8 @@ function Juridico() {
               className="sm:w-52"
               valor={tribunalAtivo}
               onChange={setTribunal}
-              todos={{ rotulo: "Todos os tribunais", contagem: publicacoes?.length, icone: <Landmark className="size-4 text-[#3e84a8]" aria-hidden /> }}
-              opcoes={tribunaisDaFila.map(([nome, quantidade]) => ({ valor: nome, rotulo: nome, contagem: quantidade }))}
+              todos={{ rotulo: "Todos os tribunais", contagem: publicacoes?.length, icone: <IconeOpcao icone={Landmark} /> }}
+              opcoes={tribunaisDaFila.map(([nome, quantidade]) => ({ valor: nome, rotulo: nome, descricao: descricaoDoTribunal(nome), contagem: quantidade, icone: <IconeTribunal sigla={nome} /> }))}
             />
             {veRisco ? (
               <Segmented

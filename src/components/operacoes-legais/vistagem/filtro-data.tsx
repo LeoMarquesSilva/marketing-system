@@ -2,14 +2,26 @@
 
 import { useMemo } from "react";
 import { CalendarDays } from "lucide-react";
-import { Seletor } from "./seletor";
+import { relativoAHoje } from "./regua-datas";
+import { IconeOpcao, Seletor } from "./seletor";
 
-const DIAS_DA_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+const DIAS_DA_SEMANA = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
 
-/** "2026-10-29" → "29/10/2026 · qui". */
+/** "2026-10-29" → "29/10/2026". */
 function rotuloDaData(data: string): string {
   const [ano, mes, dia] = data.split("-");
-  return `${dia}/${mes}/${ano} · ${DIAS_DA_SEMANA[new Date(`${data}T12:00:00Z`).getUTCDay()]}`;
+  return `${dia}/${mes}/${ano}`;
+}
+
+/** Hoje no calendário de quem está usando (AAAA-MM-DD). */
+function hojeLocal(): string {
+  const agora = new Date();
+  return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
+}
+
+/** Linha de apoio na lista: "quinta-feira · há 6 dias". */
+function descricaoDaData(data: string, hoje: string): string {
+  return `${DIAS_DA_SEMANA[new Date(`${data}T12:00:00Z`).getUTCDay()]} · ${relativoAHoje(data, hoje)}`;
 }
 
 /** A data escolhida só filtra enquanto existir na lista (trocou a área ou a aba e ela sumiu: volta a "todas"). */
@@ -17,7 +29,7 @@ export function dataNaLista(valor: string, datas: (string | null)[]): string {
   return valor && datas.includes(valor) ? valor : "";
 }
 
-const icone = <CalendarDays className="size-4 shrink-0 text-[#3e84a8]" aria-hidden />;
+const icone = <IconeOpcao icone={CalendarDays} />;
 
 /**
  * Filtro por uma data da publicação (publicação ou importação): as datas que aparecem na lista, da mais recente
@@ -38,11 +50,12 @@ export function FiltroData({
   className?: string;
 }) {
   const opcoes = useMemo(() => {
+    const hoje = hojeLocal();
     const contagem = new Map<string, number>();
     for (const data of datas) if (data) contagem.set(data, (contagem.get(data) ?? 0) + 1);
     return [...contagem.entries()]
       .sort((a, b) => b[0].localeCompare(a[0]))
-      .map(([data, quantidade]) => ({ valor: data, rotulo: rotuloDaData(data), contagem: quantidade }));
+      .map(([data, quantidade]) => ({ valor: data, rotulo: rotuloDaData(data), descricao: descricaoDaData(data, hoje), contagem: quantidade, icone }));
   }, [datas]);
   return (
     <Seletor

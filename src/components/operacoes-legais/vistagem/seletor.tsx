@@ -1,16 +1,20 @@
 "use client";
 
-import { useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
 import { Check, ChevronDown, Search } from "lucide-react";
+import { Select as SelectPrimitive } from "radix-ui";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 export interface OpcaoSeletor {
   valor: string;
   rotulo: string;
-  /** Ícone da área, logo do grupo…: aparece na lista e no campo. */
+  /** Ícone da área, logo do grupo…: aparece na lista e no campo. Use o tamanho dos ícones de área (size-5). */
   icone?: ReactNode;
+  /** Linha de apoio, só na lista (ex.: "2ª Região · São Paulo", "quarta-feira · hoje"). */
+  descricao?: string | null;
   contagem?: number;
 }
 
@@ -19,6 +23,19 @@ export type OpcaoTodos = Omit<OpcaoSeletor, "valor">;
 
 const VAZIO = "__vazio";
 
+/** Ícone solto num quadrado do tamanho dos ícones de área, para a lista ficar alinhada (opção "Todos", datas…). */
+export function IconeOpcao({ icone: Icone, className }: { icone: LucideIcon; className?: string }) {
+  return (
+    <span
+      className={cn("inline-flex size-5 shrink-0 items-center justify-center rounded bg-[#e8f8f8] text-[#3e84a8] ring-1 ring-[#47cdd0]/25", className)}
+      aria-hidden
+    >
+      <Icone className="size-3 text-current" />
+    </span>
+  );
+}
+
+/** No campo: ícone, rótulo e a contagem em cinza. */
 function Conteudo({ opcao }: { opcao: OpcaoTodos }) {
   return (
     <>
@@ -29,9 +46,62 @@ function Conteudo({ opcao }: { opcao: OpcaoTodos }) {
   );
 }
 
+/** Contagem na lista: pílula alinhada à direita. */
+function Contagem({ valor }: { valor: number }) {
+  return <span className="shrink-0 rounded-full bg-[#eef4f6] px-1.5 py-px text-[11px] font-medium tabular-nums text-[#285f7a]">{valor}</span>;
+}
+
+/** Classe da linha da lista, igual no Seletor e no SeletorBusca. */
+const LINHA = "relative flex w-full cursor-default select-none items-center gap-2.5 rounded-md py-1.5 pl-2 pr-2 text-sm text-foreground outline-none";
+
 /**
- * Dropdown da Vistagem (no lugar do select nativo): ícone, rótulo e contagem na lista e no campo.
- * Sem `todos`, valor "" mostra o placeholder.
+ * Linha da lista: ícone (coluna fixa), rótulo com a descrição embaixo, contagem à direita e, por último, o ✓ da
+ * escolhida. `texto` é o rótulo já embrulhado (no Seletor, o ItemText do Radix, que serve à busca por teclado).
+ */
+function MioloDaLinha({ opcao, texto, marca }: { opcao: OpcaoTodos; texto: ReactNode; marca: ReactNode }) {
+  return (
+    <>
+      {opcao.icone ? <span className="flex w-5 shrink-0 justify-center">{opcao.icone}</span> : null}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{texto}</span>
+        {opcao.descricao ? <span className="block truncate text-xs text-muted-foreground">{opcao.descricao}</span> : null}
+      </span>
+      {opcao.contagem !== undefined ? <Contagem valor={opcao.contagem} /> : null}
+      <span className="flex size-4 shrink-0 items-center justify-center text-[#285f7a]">{marca}</span>
+    </>
+  );
+}
+
+function ItemSeletor({ valor, opcao }: { valor: string; opcao: OpcaoTodos }) {
+  return (
+    <SelectPrimitive.Item
+      value={valor}
+      className={cn(
+        LINHA,
+        "data-[highlighted]:bg-[#47cdd0]/12 data-[state=checked]:font-medium data-[state=checked]:text-[#183f50] data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+      )}
+    >
+      <MioloDaLinha
+        opcao={opcao}
+        texto={<SelectPrimitive.ItemText>{opcao.rotulo}</SelectPrimitive.ItemText>}
+        marca={
+          <SelectPrimitive.ItemIndicator>
+            <Check className="size-4" aria-hidden />
+          </SelectPrimitive.ItemIndicator>
+        }
+      />
+    </SelectPrimitive.Item>
+  );
+}
+
+/** Título pequeno no topo da lista dos filtros ("Tribunal", "Data Publicação"). */
+const TITULO_LISTA = "px-2 pb-1 pt-1.5 text-[11px] font-semibold uppercase text-[#285f7a]";
+const SEPARADOR = "-mx-1 my-1 h-px bg-[#e6eef0]";
+
+/**
+ * Dropdown da Vistagem (no lugar do select nativo). Na lista: ícone, rótulo com a descrição embaixo e a contagem
+ * em pílula; com `todos` (filtros), o título do filtro no topo e um separador depois de "Todos". No campo: ícone,
+ * rótulo e contagem. Sem `todos`, valor "" mostra o placeholder.
  */
 export function Seletor({
   valor,
@@ -58,22 +128,27 @@ export function Seletor({
   /** No campo, no lugar da opção `todos` quando nada está escolhido (ex.: "Data Publicação"); a lista continua com `todos`. */
   rotuloVazio?: ReactNode;
 }) {
+  // O campo mostra o que a tela monta (ícone, rótulo, contagem), não o texto da linha da lista, que tem a descrição.
+  const atual = valor ? (opcoes.find((opcao) => opcao.valor === valor) ?? { rotulo: valor }) : null;
+  const noCampo = atual ? <Conteudo opcao={atual} /> : rotuloVazio ?? (todos ? <Conteudo opcao={todos} /> : null);
   return (
     <Select value={valor || (todos ? VAZIO : "")} onValueChange={(novo) => onChange(novo === VAZIO ? "" : novo)} disabled={desabilitado}>
       <SelectTrigger aria-label={rotulo} aria-invalid={invalido || undefined} className={cn("w-full min-w-0", className)}>
-        {!valor && rotuloVazio ? <SelectValue placeholder={placeholder}>{rotuloVazio}</SelectValue> : <SelectValue placeholder={placeholder} />}
+        <SelectValue placeholder={placeholder}>{noCampo}</SelectValue>
       </SelectTrigger>
-      <SelectContent className="max-h-80">
-        {todos ? (
-          <SelectItem value={VAZIO}>
-            <Conteudo opcao={todos} />
-          </SelectItem>
-        ) : null}
-        {opcoes.map((opcao) => (
-          <SelectItem key={opcao.valor} value={opcao.valor}>
-            <Conteudo opcao={opcao} />
-          </SelectItem>
-        ))}
+      <SelectContent className="max-h-80 min-w-64">
+        <SelectPrimitive.Group>
+          {todos ? (
+            <>
+              <SelectPrimitive.Label className={TITULO_LISTA}>{rotulo}</SelectPrimitive.Label>
+              <ItemSeletor valor={VAZIO} opcao={todos} />
+              {opcoes.length ? <SelectPrimitive.Separator className={SEPARADOR} /> : null}
+            </>
+          ) : null}
+          {opcoes.map((opcao) => (
+            <ItemSeletor key={opcao.valor} valor={opcao.valor} opcao={opcao} />
+          ))}
+        </SelectPrimitive.Group>
       </SelectContent>
     </Select>
   );
@@ -193,24 +268,24 @@ export function SeletorBusca({
           ) : (
             itens.map((item, indice) => {
               const escolhido = item.valor === valor;
+              // Separador depois de "Todos", como no Seletor.
+              const depoisDoTodos = indice === 1 && !itens[0].valor;
               return (
-                <li
-                  key={item.valor || VAZIO}
-                  id={`${id}-${indice}`}
-                  role="option"
-                  aria-selected={escolhido}
-                  data-indice={indice}
-                  onMouseEnter={() => setAtivo(indice)}
-                  onMouseDown={(evento) => evento.preventDefault()}
-                  onClick={() => escolher(item.valor)}
-                  className={cn(
-                    "flex cursor-default select-none items-center gap-2 rounded-sm py-1.5 pl-2 pr-2 text-sm",
-                    indice === ativo && "bg-[#47cdd0]/12"
-                  )}
-                >
-                  <Conteudo opcao={item} />
-                  {escolhido ? <Check className="ml-auto size-4 shrink-0 text-[#285f7a]" aria-hidden /> : null}
-                </li>
+                <Fragment key={item.valor || VAZIO}>
+                  {depoisDoTodos ? <li role="presentation" className={SEPARADOR} /> : null}
+                  <li
+                    id={`${id}-${indice}`}
+                    role="option"
+                    aria-selected={escolhido}
+                    data-indice={indice}
+                    onMouseEnter={() => setAtivo(indice)}
+                    onMouseDown={(evento) => evento.preventDefault()}
+                    onClick={() => escolher(item.valor)}
+                    className={cn(LINHA, indice === ativo && "bg-[#47cdd0]/12", escolhido && "font-medium text-[#183f50]")}
+                  >
+                    <MioloDaLinha opcao={item} texto={item.rotulo} marca={escolhido ? <Check className="size-4" aria-hidden /> : null} />
+                  </li>
+                </Fragment>
               );
             })
           )}

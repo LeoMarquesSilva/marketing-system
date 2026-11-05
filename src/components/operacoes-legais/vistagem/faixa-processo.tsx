@@ -1,13 +1,89 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Check, Copy, Scale, Search } from "lucide-react";
+import { CalendarClock, Check, ChevronLeft, ChevronRight, Copy, Scale, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { chaveNome } from "@/lib/vistagem/agendamento";
 import { consultaProcessual } from "@/lib/vistagem/consulta-processual";
+import { AvatarPessoa } from "./combobox-busca";
+import { formatarDataHora } from "./publicacao-ui";
 import { Selo } from "./ui";
 
 /** Botões da faixa azul-marinho do título da publicação. */
 export const NA_FAIXA = "text-white/80 hover:bg-white/10 hover:text-white focus-visible:ring-white/60 disabled:text-white/35";
+
+/** Botões de ação na faixa: o contornado em branco e o principal em ciano, para se destacar do fundo. */
+export const BOTAO_FAIXA = "border-white/35 bg-transparent text-white hover:bg-white/10 hover:text-white focus-visible:ring-white/50 dark:bg-transparent";
+export const BOTAO_FAIXA_PRINCIPAL = "bg-[#47cdd0] font-semibold text-[#10293a] hover:bg-[#6ad8da] focus-visible:ring-white/60";
+
+/** "04/11, 12:00" → "04/11 às 12:00". */
+const dataEHora = (iso: string | null) => formatarDataHora(iso).replace(", ", " às ");
+
+/**
+ * Quem vistou, conferiu ou checou, na faixa do processo: foto, o papel e quando em cima, o nome em destaque embaixo.
+ * (Mesmo desenho da Autoria da Conferência, que pode passar a usar esta.)
+ */
+export function AutoriaNaFaixa({ papel, nome, quando, fotos }: { papel: string; nome: string | null; quando: string | null; fotos: Record<string, string> }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2 sm:ml-1 sm:border-l sm:border-white/20 sm:pl-3">
+      <AvatarPessoa nome={nome ?? "?"} foto={nome ? fotos[chaveNome(nome)] : null} className="size-8 ring-2 ring-white/25" />
+      <div className="min-w-0 leading-tight">
+        <p className="flex items-center gap-1 text-[11px] text-white/65">
+          <span className="font-medium uppercase">{papel}</span>
+          <CalendarClock className="ml-0.5 size-3" aria-hidden />
+          <span className="tabular-nums">{dataEHora(quando)}</span>
+        </p>
+        <p className="truncate text-sm font-semibold text-white" title={nome ?? undefined}>
+          {nome ?? "Não identificado"}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** Posição na fila, para andar entre as publicações sem abrir a lista. */
+export interface NavegacaoNaFila {
+  posicao: number;
+  total: number;
+  anterior: string | null;
+  proxima: string | null;
+}
+
+/** Setas "‹ 3 de 12 ›" na faixa do processo. `separada`: com ações antes, ganha um divisor à esquerda. */
+export function SetasDaFila({ navegacao, onAbrir, separada = false }: { navegacao: NavegacaoNaFila; onAbrir: (id: string) => void; separada?: boolean }) {
+  return (
+    <div className={cn("flex items-center gap-1", separada && "ml-2 border-l border-white/20 pl-2")}>
+      <Button
+        type="button"
+        size="icon-sm"
+        variant="ghost"
+        className={NA_FAIXA}
+        disabled={!navegacao.anterior}
+        onClick={() => navegacao.anterior && onAbrir(navegacao.anterior)}
+        aria-label="Publicação anterior"
+        title="Publicação anterior"
+      >
+        <ChevronLeft />
+      </Button>
+      <span className="min-w-14 text-center text-xs tabular-nums text-white/80">
+        {navegacao.posicao} de {navegacao.total}
+      </span>
+      <Button
+        type="button"
+        size="icon-sm"
+        variant="ghost"
+        className={NA_FAIXA}
+        disabled={!navegacao.proxima}
+        onClick={() => navegacao.proxima && onAbrir(navegacao.proxima)}
+        aria-label="Próxima publicação"
+        title="Próxima publicação"
+      >
+        <ChevronRight />
+      </Button>
+    </div>
+  );
+}
 
 /** Número do processo no título: abre a consulta do tribunal em nova aba (quando há endereço conhecido) e copia. */
 function NumeroDoProcesso({ numero, tribunal, tituloId }: { numero: string; tribunal: string | null; tituloId: string }) {

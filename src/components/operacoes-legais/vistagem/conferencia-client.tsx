@@ -5,6 +5,8 @@ import {
   ArrowLeft,
   Bot,
   CalendarClock,
+  FileSearch,
+  Hourglass,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
@@ -17,21 +19,23 @@ import {
   PanelLeftOpen,
   RefreshCw,
   RotateCcw,
+  Search,
   SearchX,
   Send,
   ShieldAlert,
   Undo2,
+  Workflow,
   X,
 } from "lucide-react";
 import { Segmented } from "@/components/facilities/form-parts";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ContextoDoProcesso, DialogoAcao, EscolhaEmCartoes, type OpcaoEmCartao } from "./dialogo-acao";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import { ROTULO_ETIQUETA, chaveNome } from "@/lib/vistagem/agendamento";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
-import { TIPOS_INCONSISTENCIA_JURIDICO } from "@/lib/vistagem/inconsistencias";
+import { MAX_TEXTO_INCONSISTENCIA, TIPOS_INCONSISTENCIA_JURIDICO } from "@/lib/vistagem/inconsistencias";
 import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, InconsistenciaItem, PublicacaoResumo } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { FaixaDoProcesso, NA_FAIXA } from "./faixa-processo";
@@ -40,9 +44,11 @@ import { FichaProcesso, ResumoDaFicha } from "./ficha-processo";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { FiltroData, dataNaLista } from "./filtro-data";
 import { LeitorPublicacao } from "./leitor-publicacao";
-import { IconeArea, LogoGrupo } from "./marcas";
+import { IconeArea, IconeTribunal, LogoGrupo } from "./marcas";
+import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
+import { camposDaConferencia, combinaCampos } from "@/lib/vistagem/busca";
 import { ReguaDatas } from "./regua-datas";
-import { Seletor } from "./seletor";
+import { IconeOpcao, Seletor } from "./seletor";
 import { AvatarPessoa } from "./combobox-busca";
 import { CartoesTarefas, ENVIO, LinkVios } from "./tarefas-conferencia";
 import { SeloEsocial, contarPor, formatarData, formatarDataHora, tribunalDe } from "./publicacao-ui";
@@ -51,7 +57,6 @@ import {
   BarraAba,
   Busca,
   CabecalhoLista,
-  Campo,
   Carregando,
   Painel,
   PainelTopo,
@@ -119,67 +124,28 @@ async function pedirRodarNovamente(id: string, forcar: boolean): Promise<{ envia
 
 /** Classe da tarefa é categoria, não estado: tons da marca (DESIGN.md). */
 
-function normalizar(texto: string): string {
-  return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-}
-
-/** Busca local na lista já carregada: processo (com ou sem pontuação), pasta, cliente, tribunal e pessoas. */
-function combinaBusca(item: ConferenciaItem, busca: string): boolean {
-  const termo = normalizar(busca.trim());
-  if (!termo) return true;
-  const { publicacao } = item;
-  const campos = [
-    publicacao.numeroProcesso,
-    publicacao.numeroProcessoOriginal,
-    publicacao.pastaCi,
-    publicacao.cliente,
-    publicacao.grupoCliente,
-    publicacao.tribunal,
-    publicacao.escritorioResponsavel,
-    item.vistadoPor,
-    item.conferidoPor,
-    ...item.agendamentos.map((agendamento) => agendamento.responsavel),
-  ]
-    .filter((valor): valor is string => Boolean(valor))
-    .map(normalizar);
-  if (campos.some((valor) => valor.includes(termo))) return true;
-  const digitos = termo.replace(/\D/g, "");
-  return digitos.length >= 4 && campos.some((valor) => valor.replace(/\D/g, "").includes(digitos));
-}
 
 /* ------------------------------------------------------------ peças locais */
 
-/** Modal centralizado do padrão (DESIGN.md): cabeçalho e rodapé fixos, só o corpo rola. */
-function DialogoAcao({
-  aberto,
-  onFechar,
-  ocupado,
-  titulo,
-  descricao,
-  rodape,
-  children,
-}: {
-  aberto: boolean;
-  onFechar: () => void;
-  ocupado: boolean;
-  titulo: ReactNode;
-  descricao: ReactNode;
-  rodape: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <Dialog open={aberto} onOpenChange={(abrir) => !abrir && !ocupado && onFechar()}>
-      <DialogContent className="flex max-h-[90dvh] flex-col gap-0 p-0 sm:max-w-lg" showCloseButton={!ocupado}>
-        <DialogHeader className="gap-1 border-b border-[#e6eef0] px-6 py-4 pr-14 text-left">
-          <DialogTitle className="text-lg">{titulo}</DialogTitle>
-          <DialogDescription>{descricao}</DialogDescription>
-        </DialogHeader>
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">{children}</div>
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[#e6eef0] bg-[#fafcfc] px-6 py-4">{rodape}</div>
-      </DialogContent>
-    </Dialog>
-  );
-}
+/** O que cada tipo de inconsistência do jurídico quer dizer, para a conferência escolher sem dúvida. */
+const TIPO_DEVOLUCAO: Record<(typeof TIPOS_INCONSISTENCIA_JURIDICO)[number], Omit<OpcaoEmCartao, "valor">> = {
+  "FORA DO WORKFLOW": {
+    rotulo: "Fora do workflow",
+    descricao: "A tarefa, a classe ou o fluxo escolhido não seguem o workflow do VIOS para esse ato.",
+    icone: Workflow,
+  },
+  "INTERPRETAÇÃO DA PUBLI": {
+    rotulo: "Interpretação da publicação",
+    descricao: "A leitura da publicação está errada: o ato, a providência ou o prazo não são os que ela pede.",
+    icone: FileSearch,
+  },
+  "CONTAGEM DE PRAZO": {
+    rotulo: "Contagem de prazo",
+    descricao: "Os dias, a contagem (úteis ou corridos) ou a data fatal estão errados.",
+    icone: Hourglass,
+  },
+};
+const OPCOES_DEVOLUCAO: OpcaoEmCartao[] = TIPOS_INCONSISTENCIA_JURIDICO.map((valor) => ({ valor, ...TIPO_DEVOLUCAO[valor] }));
 
 /**
  * Célula da lista de tarefas: no mobile mostra o rótulo; no desktop o rótulo fica só para leitor de tela.
@@ -708,11 +674,16 @@ function ItemConferencia({
         aberto={devolvendo}
         onFechar={fecharDialogo}
         ocupado={ocupado}
+        icone={Undo2}
+        tom="alerta"
         titulo="Devolver ao jurídico"
-        descricao={
-          <>
-            Processo <span className="tabular-nums">{processo}</span>. A publicação volta para o jurídico com esta inconsistência.
-          </>
+        descricao="A publicação volta para a fila do jurídico com a inconsistência e o seu texto, para ser vistada de novo."
+        aviso={
+          !tipoInconsistencia
+            ? "Escolha o tipo da inconsistência."
+            : !motivo.trim()
+              ? "Descreva o que está errado."
+              : `Volta para ${item.vistadoPor ?? "o jurídico"} com esse texto.`
         }
         rodape={
           <>
@@ -726,19 +697,44 @@ function ItemConferencia({
           </>
         }
       >
-        <div className="space-y-1.5">
-          <span className="block text-xs font-medium text-muted-foreground">Inconsistência do jurídico</span>
-          <Seletor
-            rotulo="Inconsistência do jurídico"
-            placeholder="Escolha o tipo…"
+        <ContextoDoProcesso
+          grupo={publicacao.grupoCliente}
+          cliente={publicacao.cliente}
+          area={publicacao.escritorioResponsavel}
+          processo={processo}
+          pessoa={item.vistadoPor}
+          fotos={fotos}
+        />
+        <section className="space-y-2" aria-labelledby={`${base}-tipo-devolucao`}>
+          <h3 id={`${base}-tipo-devolucao`} className="text-xs font-semibold uppercase text-[#285f7a]">
+            Tipo de inconsistência
+          </h3>
+          <EscolhaEmCartoes
+            rotulo="Tipo de inconsistência"
+            opcoes={OPCOES_DEVOLUCAO}
             valor={tipoInconsistencia}
             onChange={setTipoInconsistencia}
-            opcoes={TIPOS_INCONSISTENCIA_JURIDICO.map((valor) => ({ valor, rotulo: valor }))}
+            desabilitado={ocupado}
           />
-        </div>
-        <Campo rotulo="O que está errado" dica="O jurídico vê este texto.">
-          <Textarea value={motivo} onChange={(evento) => setMotivo(evento.target.value)} rows={4} maxLength={2000} />
-        </Campo>
+        </section>
+        <label className="block space-y-2">
+          <span className="flex items-baseline justify-between gap-2">
+            <span className="text-xs font-semibold uppercase text-[#285f7a]">O que está errado</span>
+            <span className="text-[11px] tabular-nums text-muted-foreground">
+              {motivo.length}/{MAX_TEXTO_INCONSISTENCIA}
+            </span>
+          </span>
+          <Textarea
+            value={motivo}
+            onChange={(evento) => setMotivo(evento.target.value)}
+            rows={4}
+            maxLength={MAX_TEXTO_INCONSISTENCIA}
+            disabled={ocupado}
+            placeholder="Ex.: o prazo é de 8 dias úteis, não 5; a fatal fica em 17/11."
+            className="min-h-28 resize-y bg-white text-sm"
+          />
+          <span className="block text-xs text-muted-foreground">O jurídico vê este texto junto com a publicação.</span>
+        </label>
         {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
       </DialogoAcao>
 
@@ -746,6 +742,8 @@ function ItemConferencia({
         aberto={confirmacao !== null}
         onFechar={fecharDialogo}
         ocupado={ocupado}
+        icone={RotateCcw}
+        tom="alerta"
         titulo="Rodar de novo no robô?"
         descricao={
           <>
@@ -974,6 +972,11 @@ function Conferencia() {
 
   const aConferir = useMemo(() => dados?.aConferir ?? [], [dados]);
   const enviadas = useMemo(() => dados?.enviadas ?? [], [dados]);
+  // O que a busca olha em cada publicação (inclui as partes do texto): montado uma vez por carga, não a cada letra.
+  const camposDeBusca = useMemo(
+    () => new Map([...aConferir, ...enviadas].map((item) => [item.publicacao.id, camposDaConferencia(item)])),
+    [aConferir, enviadas]
+  );
   const comErro = useMemo(() => enviadas.filter(temErro), [enviadas]);
 
   /** Roda de novo todas as publicações com erro; as que podem duplicar no VIOS ficam para o botão da publicação. */
@@ -1031,7 +1034,7 @@ function Conferencia() {
   const tribunalAtivo = tribunaisDaLista.some(([nome]) => nome === tribunal) ? tribunal : "";
   const filtrada = daArea.filter(
     (item) =>
-      combinaBusca(item, busca) &&
+      combinaCampos(camposDeBusca.get(item.publicacao.id) ?? [], busca) &&
       (!tribunalAtivo || tribunalDe(item.publicacao) === tribunalAtivo) &&
       (!dataAtiva || item.publicacao.dataPublicacao === dataAtiva) &&
       (!importacaoAtiva || item.publicacao.dataImportacao === importacaoAtiva)
@@ -1049,11 +1052,25 @@ function Conferencia() {
   // Mesma ordem da fila (área › tribunal): é por ela que as setas andam para a anterior e a próxima.
   const ordem = grupos.flatMap((grupo) => (grupo.tribunais ? grupo.tribunais.flatMap((porTribunal) => porTribunal.itens) : grupo.itens));
   const ids = ordem.map((item) => item.publicacao.id);
-  const indiceAberta = selecionada && ids.includes(selecionada) ? ids.indexOf(selecionada) : ids.length ? 0 : -1;
-  const aberta = indiceAberta >= 0 ? ordem[indiceAberta] : null;
-  const navegacao: Navegacao | null = aberta
-    ? { posicao: indiceAberta + 1, total: ids.length, anterior: ids[indiceAberta - 1] ?? null, proxima: ids[indiceAberta + 1] ?? null }
-    : null;
+  // Buscar não troca o processo aberto: os resultados aparecem na fila e a pessoa escolhe. Os outros filtros, sim.
+  const buscando = busca.trim() !== "";
+  const fixaNaBusca = buscando && selecionada ? ((lista ?? []).find((item) => item.publicacao.id === selecionada) ?? null) : null;
+  const indiceAberta = selecionada && ids.includes(selecionada) ? ids.indexOf(selecionada) : fixaNaBusca ? -1 : ids.length ? 0 : -1;
+  const aberta = indiceAberta >= 0 ? ordem[indiceAberta] : fixaNaBusca;
+  // Aberta fora dos resultados: sem setas (elas andam pelos resultados).
+  const navegacao: Navegacao | null =
+    aberta && indiceAberta >= 0
+      ? { posicao: indiceAberta + 1, total: ids.length, anterior: ids[indiceAberta - 1] ?? null, proxima: ids[indiceAberta + 1] ?? null }
+      : null;
+  // Com busca, a fila fica à vista com os resultados (no celular, a lista aparece no lugar da publicação).
+  const filaAberta = !filaRecolhida || buscando;
+
+  function mudarBusca(texto: string) {
+    // Prende o processo que está aberto antes de filtrar, para ele não pular para o primeiro resultado.
+    if (!selecionada && aberta) setSelecionada(aberta.publicacao.id);
+    setBusca(texto);
+    if (texto.trim()) setListaNoCelular(true);
+  }
 
   const idAberta = aberta?.publicacao.id ?? null;
   useEffect(() => {
@@ -1094,13 +1111,23 @@ function Conferencia() {
       >
         {aba !== "inconsistencias" ? (
           <>
-            {filaRecolhida ? (
+            {!filaAberta ? (
               <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)}>
                 <PanelLeftOpen />
                 Mostrar fila
               </Button>
             ) : null}
-            <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Buscar processo, pasta ou cliente" aria-label="Buscar publicação" />
+            <Busca
+              value={busca}
+              onChange={(evento) => mudarBusca(evento.target.value)}
+              onKeyDown={(evento) => {
+                // Enter abre o primeiro resultado; Esc limpa a busca.
+                if (evento.key === "Enter" && ids[0]) abrir(ids[0]);
+                if (evento.key === "Escape") mudarBusca("");
+              }}
+              placeholder="Buscar processo, cliente, parte ou pessoa"
+              aria-label="Buscar publicação"
+            />
             <Seletor
               rotulo="Área"
               className="sm:w-60"
@@ -1109,7 +1136,7 @@ function Conferencia() {
                 setArea(valor);
                 setTribunal("");
               }}
-              todos={{ rotulo: "Todas as áreas", contagem: lista?.length, icone: <Layers className="size-4 text-[#3e84a8]" aria-hidden /> }}
+              todos={{ rotulo: "Todas as áreas", contagem: lista?.length, icone: <IconeOpcao icone={Layers} /> }}
               opcoes={areasDaLista.map(([nome, quantidade]) => ({ valor: nome, rotulo: nome, contagem: quantidade, icone: <IconeArea area={nome} /> }))}
             />
             <Seletor
@@ -1117,8 +1144,8 @@ function Conferencia() {
               className="sm:w-52"
               valor={tribunalAtivo}
               onChange={setTribunal}
-              todos={{ rotulo: "Todos os tribunais", contagem: daArea.length, icone: <Landmark className="size-4 text-[#3e84a8]" aria-hidden /> }}
-              opcoes={tribunaisDaLista.map(([nome, quantidade]) => ({ valor: nome, rotulo: nome, contagem: quantidade }))}
+              todos={{ rotulo: "Todos os tribunais", contagem: daArea.length, icone: <IconeOpcao icone={Landmark} /> }}
+              opcoes={tribunaisDaLista.map(([nome, quantidade]) => ({ valor: nome, rotulo: nome, descricao: descricaoDoTribunal(nome), contagem: quantidade, icone: <IconeTribunal sigla={nome} /> }))}
             />
             <FiltroData rotulo="Data Publicação" datas={datasDaLista} valor={dataAtiva} onChange={setDataPublicacao} />
             <FiltroData rotulo="Data da importação" datas={importacoesDaLista} valor={importacaoAtiva} onChange={setDataImportacao} />
@@ -1183,7 +1210,7 @@ function Conferencia() {
             </Vazio>
           )}
         </Painel>
-      ) : filtrada.length === 0 ? (
+      ) : filtrada.length === 0 && !(buscando && aberta) ? (
         <Painel>
           <Vazio icone={SearchX} titulo="Nenhuma publicação com esses filtros.">
             <Button variant="link" className="h-auto p-0" onClick={limparFiltros}>
@@ -1198,23 +1225,48 @@ function Conferencia() {
           className={cn(
             // A linha tem a altura da grade (e não a do conteúdo): é o que deixa publicação e tarefas rolarem por dentro.
             "grid gap-4 lg:h-[calc(100dvh-10.5rem)] lg:min-h-[30rem] lg:grid-rows-[minmax(0,1fr)]",
-            filaRecolhida ? "lg:grid-cols-1" : "lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]"
+            filaAberta ? "lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]" : "lg:grid-cols-1"
           )}
         >
           <Painel
-            aria-label={aba === "conferir" ? "Publicações a conferir" : "Publicações enviadas ao robô"}
+            aria-label={buscando ? "Resultados da busca" : aba === "conferir" ? "Publicações a conferir" : "Publicações enviadas ao robô"}
             data-fila-conferencia
-            className={cn("lg:flex lg:h-full lg:flex-col", aberta && !listaNoCelular && "hidden lg:flex", filaRecolhida && "lg:hidden")}
+            className={cn("lg:flex lg:h-full lg:flex-col", aberta && !listaNoCelular && "hidden lg:flex", !filaAberta && "lg:hidden")}
           >
-            <div className="hidden items-center gap-2 border-b border-[#e6eef0] px-4 py-2 lg:flex">
-              <span className="flex-1 text-xs font-medium text-muted-foreground">
-                Fila <span className="tabular-nums">· {ordem.length}</span>
-              </span>
-              <Button type="button" size="icon-xs" variant="ghost" onClick={() => setFilaRecolhida(true)} aria-label="Recolher a fila" title="Recolher a fila">
-                <PanelLeftClose />
-              </Button>
-            </div>
+            {buscando ? (
+              // Na busca, o topo da fila diz o que foi buscado e quantos achou; o X limpa e a fila volta ao normal.
+              <div className="flex items-center gap-2 border-b border-[#e6eef0] bg-[#f2fbfb] px-4 py-2">
+                <Search className="size-3.5 shrink-0 text-[#3e84a8]" aria-hidden />
+                <span className="min-w-0 flex-1 truncate text-xs text-[#285f7a]" aria-live="polite">
+                  <span className="font-semibold tabular-nums">{ordem.length}</span> {ordem.length === 1 ? "resultado" : "resultados"} para{" "}
+                  <span className="font-semibold">“{busca.trim()}”</span>
+                </span>
+                <Button type="button" size="icon-xs" variant="ghost" onClick={() => mudarBusca("")} aria-label="Limpar a busca" title="Limpar a busca">
+                  <X />
+                </Button>
+              </div>
+            ) : (
+              <div className="hidden items-center gap-2 border-b border-[#e6eef0] px-4 py-2 lg:flex">
+                <span className="flex-1 text-xs font-medium text-muted-foreground">
+                  Fila <span className="tabular-nums">· {ordem.length}</span>
+                </span>
+                <Button type="button" size="icon-xs" variant="ghost" onClick={() => setFilaRecolhida(true)} aria-label="Recolher a fila" title="Recolher a fila">
+                  <PanelLeftClose />
+                </Button>
+              </div>
+            )}
             <div className="max-h-[70vh] overflow-auto lg:max-h-none lg:flex-1">
+              {buscando && !ordem.length ? (
+                <Vazio icone={SearchX} titulo="Nada encontrado." className="py-8">
+                  Tente parte do nome do grupo, da parte ou o número do processo.
+                </Vazio>
+              ) : null}
+              {buscando && ordem.length > 0 && aberta && indiceAberta < 0 ? (
+                // O processo aberto ao lado não está nos resultados: avisa, para não parecer que a busca o achou.
+                <p className="border-b border-[#eef3f5] px-4 py-2 text-[11px] text-muted-foreground">
+                  O processo aberto ao lado não está nos resultados. Escolha um da lista.
+                </p>
+              ) : null}
               {grupos.map((grupo) => (
                 <section key={grupo.area} aria-label={grupo.area}>
                   <h3 className="sticky top-0 z-10 flex items-center gap-2 border-b border-[#e6eef0] bg-[#f7fbfc] px-4 py-2 text-xs font-semibold text-[#285f7a]">

@@ -560,7 +560,7 @@ async function itensDeConferencia(
 ): Promise<ConferenciaItem[]> {
   let consulta = admin()
     .from("vistagem_publicacoes")
-    .select(`${COLUNAS_PUBLICACAO}, area_processo`)
+    .select(`${COLUNAS_PUBLICACAO}, area_processo, checado_por`)
     .in("status", status)
     .order(ordem, { ascending: ordemAscendente, nullsFirst: false })
     .limit(limite);
@@ -569,10 +569,10 @@ async function itensDeConferencia(
   if (filtro.semRisco) consulta = consulta.not("demanda_risco", "is", true);
   const { data, error } = await consulta;
   if (error) falhou("carregar a conferência", error);
-  const linhas = (data ?? []) as (PublicacaoRow & { area_processo: string | null })[];
+  const linhas = (data ?? []) as (PublicacaoRow & { area_processo: string | null; checado_por: string | null })[];
   const [agendamentos, nomes, inconsistencias, auxiliares] = await Promise.all([
     agendamentosPorPublicacao(linhas.map((row) => row.id)),
-    nomesDosUsuarios(linhas.flatMap((row) => [row.vistado_por, row.conferido_por])),
+    nomesDosUsuarios(linhas.flatMap((row) => [row.vistado_por, row.conferido_por, row.checado_por])),
     inconsistenciasPorPublicacao(linhas.map((row) => row.id)),
     filtro.comAuxiliar ? auxiliaresDasPastas(linhas) : Promise.resolve(new Map<string, string>()),
   ]);
@@ -582,6 +582,7 @@ async function itensDeConferencia(
     inconsistencias: inconsistencias.get(row.id) ?? [],
     vistadoPor: row.vistado_por ? nomes.get(row.vistado_por) ?? null : null,
     conferidoPor: row.conferido_por ? nomes.get(row.conferido_por) ?? null : null,
+    ...(row.checado_por ? { checadoPor: nomes.get(row.checado_por) ?? null } : {}),
     ...(filtro.comAuxiliar ? { auxiliar: auxiliares.get(row.id) ?? null } : {}),
   }));
 }
@@ -730,12 +731,22 @@ export async function listarConferencia(): Promise<ConferenciaResposta> {
   };
   const aConferir = comFluxo(aConferirSemFluxo);
   const enviadas = comFluxo(enviadasSemFluxo);
-  // Foto é enfeite: se a consulta falhar, a ficha e as tarefas mostram as iniciais.
-  const nomes = [...aConferir, ...enviadas].flatMap((item) => [
+  const fotos = await fotosDosItens([...aConferir, ...enviadas], "conferência");
+  return { aConferir, enviadas, envioSimulado: envioSimulado(), fotos, hoje: hojeEmSaoPaulo() };
+}
+
+/**
+ * Fotos de quem aparece na conferência e no check: advogado e auxiliar da pasta, quem vistou, conferiu e checou, e as
+ * pessoas das tarefas (pedidas, previstas no fluxo e gravadas no VIOS). Foto é enfeite: se a consulta falhar, as
+ * telas mostram as iniciais.
+ */
+async function fotosDosItens(itens: ConferenciaItem[], tela: string): Promise<Record<string, string>> {
+  const nomes = itens.flatMap((item) => [
     item.publicacao.advogadoResponsavel,
     item.auxiliar,
     item.vistadoPor,
     item.conferidoPor,
+    item.checadoPor,
     ...item.agendamentos.flatMap((agendamento) => [
       ...nomesDasPessoas(agendamento.responsavel),
       agendamento.revisor,
@@ -745,11 +756,11 @@ export async function listarConferencia(): Promise<ConferenciaResposta> {
   ]);
   const pessoas = await pessoasPorNome(nomes).catch(
     (erro: unknown): PessoasPorNome => {
-      console.error("[vistagem] fotos da conferência", erro instanceof Error ? erro.message : erro);
+      console.error(`[vistagem] fotos da ${tela}`, erro instanceof Error ? erro.message : erro);
       return { fotos: {}, areas: {}, rotulos: {} };
     }
   );
-  return { aConferir, enviadas, envioSimulado: envioSimulado(), fotos: pessoas.fotos, hoje: hojeEmSaoPaulo() };
+  return pessoas.fotos;
 }
 
 /** Validação da controladoria: as tarefas vão para a fila do robô do SAMA (na intimação, todas juntas). */
@@ -1158,12 +1169,15 @@ export async function listarInconsistencias(situacao: "contestadas" | "abertas" 
 
 /** Publicações com as tarefas gravadas no VIOS aguardando o check, as em revisão e as últimas checadas. */
 export async function listarCheck(): Promise<CheckResposta> {
+  // Mesma ficha da conferência (texto maior e auxiliar da pasta): o check mostra a publicação como na vistagem.
+  const ficha = { limiteTeor: LIMITE_TEOR_CONFERENCIA, comAuxiliar: true };
   const [aChecar, revisar, checadas] = await Promise.all([
-    itensDeConferencia(["agendado"], 300, true, "conferido_em"),
-    itensDeConferencia(["revisar"], 300, true, "conferido_em"),
-    itensDeConferencia(["checado"], 100, false, "checado_em"),
+    itensDeConferencia(["agendado"], 300, true, "conferido_em", ficha),
+    itensDeConferencia(["revisar"], 300, true, "conferido_em", ficha),
+    itensDeConferencia(["checado"], 100, false, "checado_em", ficha),
   ]);
-  return { aChecar, revisar, checadas };
+  const fotos = await fotosDosItens([...aChecar, ...revisar, ...checadas], "tela de check");
+  return { aChecar, revisar, checadas, fotos, hoje: hojeEmSaoPaulo() };
 }
 
 /** Check OK: a esteira e o agendamento no VIOS estão corretos. */
