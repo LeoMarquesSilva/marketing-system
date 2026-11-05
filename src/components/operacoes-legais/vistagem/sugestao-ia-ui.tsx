@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { ROTULO_ETIQUETA } from "@/lib/vistagem/agendamento";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import { TAREFA_ESOCIAL, pedeTarefaEsocial } from "@/lib/vistagem/esocial";
-import { fatalSugerida, type ConfiancaSugestao, type SugestaoIa, type TarefaSugerida } from "@/lib/vistagem/sugestao-ia";
+import { fatalSugerida, type ConfiancaSugestao, type ResultadoSugestao, type SugestaoIa, type TarefaSugerida } from "@/lib/vistagem/sugestao-ia";
+import type { SugestaoNaVistagem } from "@/lib/vistagem/types";
+import { cn } from "@/lib/utils";
 import { formatarData } from "./publicacao-ui";
 import { Aviso, Carregando, Painel, Selo, TOM_CLASSE, type TomSelo } from "./ui";
 
@@ -24,12 +26,56 @@ export function SeloIa() {
   );
 }
 
-function detalheDaTarefa(tarefa: TarefaSugerida, dataPublicacao: string | null, contaPrazo: (iso: string) => boolean): string | null {
+function detalheDaTarefa(tarefa: TarefaSugerida, fatal: string | null): string | null {
   if (tarefa.classe === "COMPROMISSO") return tarefa.data ? `${formatarData(tarefa.data)}${tarefa.hora ? ` às ${tarefa.hora}` : ""}` : null;
   if (tarefa.classe !== "PRAZO") return null;
-  const fatal = fatalSugerida(tarefa, dataPublicacao, contaPrazo);
   const prazo = tarefa.dias ? `${tarefa.dias} ${ROTULO_CONTAGEM[tarefa.contagem ?? "uteis"]}` : "data fixada";
   return fatal ? `${prazo} · fatal ${formatarData(fatal)}` : prazo;
+}
+
+/** De quem a IA disse que é o prazo, quando a sugestão é só a CIÊNCIA NF. */
+function SelosDoPrazoDe({ sugestao }: { sugestao: SugestaoIa }) {
+  if (sugestao.parteContraria) return <Selo tom="neutro">Prazo da parte contrária</Selo>;
+  if (sugestao.prazoDe === "ninguem" && !sugestao.tarefas.some((tarefa) => tarefa.classe === "COMPROMISSO")) {
+    return <Selo tom="neutro">Sem prazo nem providência</Selo>;
+  }
+  return null;
+}
+
+/** As tarefas sugeridas, com o prazo (e a fatal) ou a data do compromisso e o porquê. */
+function ListaSugerida({
+  tarefas,
+  fatais,
+  nomeDaTarefa,
+  className,
+}: {
+  tarefas: TarefaSugerida[];
+  /** Fatal de cada tarefa, na ordem. */
+  fatais: (string | null)[];
+  nomeDaTarefa: (tarefa: TarefaSugerida) => string;
+  className?: string;
+}) {
+  return (
+    <ul className={cn("divide-y divide-[#eef3f5]", className)}>
+      {tarefas.map((tarefa, indice) => {
+        const detalhe = detalheDaTarefa(tarefa, fatais[indice] ?? null);
+        return (
+          <li key={`${tarefa.tarefaId}-${indice}`} className="flex items-start gap-3 px-4 py-2.5">
+            <Selo tom={TOM_CLASSE[tarefa.classe]} className="mt-0.5 shrink-0">
+              {ROTULO_ETIQUETA[tarefa.classe]}
+            </Selo>
+            <div className="min-w-0 text-sm">
+              <p className="font-medium text-foreground">
+                {nomeDaTarefa(tarefa)}
+                {detalhe ? <span className="font-normal text-muted-foreground"> · {detalhe}</span> : null}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Por quê: {tarefa.motivo}</p>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 function TituloIa({ children }: { children?: React.ReactNode }) {
@@ -111,31 +157,18 @@ export function CartaoSugestaoIa({
   return (
     <Painel aria-labelledby="sugestao-ia-titulo" className="border-[#48466e]/20">
       <TituloIa>
-        {sugestao.parteContraria ? <Selo tom="neutro">Prazo da parte contrária</Selo> : null}
+        <SelosDoPrazoDe sugestao={sugestao} />
         <Selo tom={TOM_CONFIANCA[sugestao.confianca]} className="ml-auto">
           confiança {ROTULO_CONFIANCA[sugestao.confianca]}
         </Selo>
       </TituloIa>
       <p className="px-4 pt-3 text-sm text-foreground">{sugestao.resumo}</p>
-      <ul className="mt-2 divide-y divide-[#eef3f5] border-t border-[#eef3f5]">
-        {sugestao.tarefas.map((tarefa, indice) => {
-          const detalhe = detalheDaTarefa(tarefa, dataPublicacao, contaPrazo);
-          return (
-            <li key={`${tarefa.tarefaId}-${indice}`} className="flex items-start gap-3 px-4 py-2.5">
-              <Selo tom={TOM_CLASSE[tarefa.classe]} className="mt-0.5 shrink-0">
-                {ROTULO_ETIQUETA[tarefa.classe]}
-              </Selo>
-              <div className="min-w-0 text-sm">
-                <p className="font-medium text-foreground">
-                  {nomeDaTarefa(tarefa)}
-                  {detalhe ? <span className="font-normal text-muted-foreground"> · {detalhe}</span> : null}
-                </p>
-                <p className="mt-0.5 text-xs text-muted-foreground">Por quê: {tarefa.motivo}</p>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+      <ListaSugerida
+        tarefas={sugestao.tarefas}
+        fatais={sugestao.tarefas.map((tarefa) => fatalSugerida(tarefa, dataPublicacao, contaPrazo))}
+        nomeDaTarefa={nomeDaTarefa}
+        className="mt-2 border-t border-[#eef3f5]"
+      />
       <div className="flex flex-wrap items-center gap-2 border-t border-[#eef3f5] bg-[#fbfcfd] px-4 py-2.5">
         <span className="min-w-0 flex-1 text-xs text-muted-foreground">
           {comEsocial ? (
@@ -154,5 +187,43 @@ export function CartaoSugestaoIa({
         </Button>
       </div>
     </Painel>
+  );
+}
+
+const RESULTADO_IA: Record<ResultadoSugestao, { rotulo: string; tom: TomSelo }> = {
+  usada: { rotulo: "Jurídico usou como veio", tom: "sucesso" },
+  usada_com_alteracao: { rotulo: "Jurídico usou e alterou", tom: "alerta" },
+  nao_usada: { rotulo: "Jurídico não usou", tom: "neutro" },
+};
+
+/** O que o jurídico fez com a sugestão na vistagem. */
+export function SeloResultadoIa({ resultado }: { resultado: ResultadoSugestao | null }) {
+  if (!resultado) return <Selo tom="neutro">Uso não registrado</Selo>;
+  return <Selo tom={RESULTADO_IA[resultado].tom}>{RESULTADO_IA[resultado].rotulo}</Selo>;
+}
+
+/** Conferência: a sugestão que o jurídico tinha na hora da vistagem, para comparar com as tarefas pedidas. */
+export function SugestaoNaConferencia({ dados }: { dados: SugestaoNaVistagem }) {
+  const { sugestao, fatais } = dados;
+  return (
+    <div className="overflow-hidden rounded-lg border border-[#48466e]/20 bg-white">
+      <div className="space-y-1.5 border-b border-[#48466e]/10 bg-[#f6f6fa] px-4 py-2.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Sparkles className="size-3.5 text-[#48466e]" aria-hidden />
+          <SelosDoPrazoDe sugestao={sugestao} />
+          <Selo tom={TOM_CONFIANCA[sugestao.confianca]}>confiança {ROTULO_CONFIANCA[sugestao.confianca]}</Selo>
+        </div>
+        <p className="text-sm text-foreground">{sugestao.resumo}</p>
+      </div>
+      {sugestao.tarefas.length ? (
+        <ListaSugerida tarefas={sugestao.tarefas} fatais={fatais} nomeDaTarefa={(tarefa) => tarefa.tarefa} />
+      ) : (
+        <p className="px-4 py-2.5 text-sm text-muted-foreground">A IA não sugeriu tarefa.</p>
+      )}
+      <p className="border-t border-[#eef3f5] bg-[#fbfcfd] px-4 py-2 text-xs text-muted-foreground">
+        eSocial: <span className="font-medium text-foreground">{sugestao.esocial}</span>
+        {pedeTarefaEsocial(sugestao.esocial) ? ` · + ${TAREFA_ESOCIAL}` : ""}
+      </p>
+    </div>
   );
 }

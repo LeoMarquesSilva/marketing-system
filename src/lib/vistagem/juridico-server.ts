@@ -20,7 +20,7 @@ import { openAIKey } from "@/lib/openai-keys";
 import { cienciaDosAgendamentos, ehCienciaDosAgendamentos, ehReestruturacao } from "./ciencia-agendamentos";
 import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./dias-uteis";
 import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
-import { areaComSugestaoIa, resultadoDaSugestao, type SugestaoIa } from "./sugestao-ia";
+import { areaComSugestaoIa, fatalSugerida, resultadoDaSugestao, type ResultadoSugestao, type SugestaoIa } from "./sugestao-ia";
 import { carregarFeriados } from "./feriados";
 import { lerConfiguracoes } from "./configuracoes-server";
 import { cadeiaDoFluxo, montarFluxo, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
@@ -62,6 +62,7 @@ import type {
   PublicacaoResumo,
   ResolucaoPendencia,
   SintesePedida,
+  SugestaoNaVistagem,
   VistagemDetalhe,
 } from "./types";
 
@@ -568,11 +569,19 @@ async function itensDeConferencia(
   limite: number,
   ordemAscendente: boolean,
   ordem: "vistado_em" | "conferido_em" | "checado_em" = ordemAscendente ? "vistado_em" : "conferido_em",
-  filtro: { escritorios?: string[] | null; vistadoDesde?: string; limiteTeor?: number; comAuxiliar?: boolean; semRisco?: boolean } = {}
+  filtro: {
+    escritorios?: string[] | null;
+    vistadoDesde?: string;
+    limiteTeor?: number;
+    comAuxiliar?: boolean;
+    semRisco?: boolean;
+    /** Põe no item a sugestão da IA da vistagem (a fatal pelos dias só sai depois, com o calendário). */
+    comSugestaoIa?: boolean;
+  } = {}
 ): Promise<ConferenciaItem[]> {
   let consulta = admin()
     .from("vistagem_publicacoes")
-    .select(`${COLUNAS_PUBLICACAO}, area_processo, checado_por`)
+    .select(`${COLUNAS_PUBLICACAO}, area_processo, checado_por, sugestao_ia, sugestao_ia_resultado`)
     .in("status", status)
     .order(ordem, { ascending: ordemAscendente, nullsFirst: false })
     .limit(limite);
@@ -581,7 +590,12 @@ async function itensDeConferencia(
   if (filtro.semRisco) consulta = consulta.not("demanda_risco", "is", true);
   const { data, error } = await consulta;
   if (error) falhou("carregar a conferência", error);
-  const linhas = (data ?? []) as (PublicacaoRow & { area_processo: string | null; checado_por: string | null })[];
+  const linhas = (data ?? []) as (PublicacaoRow & {
+    area_processo: string | null;
+    checado_por: string | null;
+    sugestao_ia: SugestaoIa | null;
+    sugestao_ia_resultado: ResultadoSugestao | null;
+  })[];
   const [agendamentos, nomes, inconsistencias, auxiliares] = await Promise.all([
     agendamentosPorPublicacao(linhas.map((row) => row.id)),
     nomesDosUsuarios(linhas.flatMap((row) => [row.vistado_por, row.devolvido_por, row.revistado_por, row.conferido_por, row.checado_por])),
@@ -598,7 +612,22 @@ async function itensDeConferencia(
     conferidoPor: row.conferido_por ? nomes.get(row.conferido_por) ?? null : null,
     ...(row.checado_por ? { checadoPor: nomes.get(row.checado_por) ?? null } : {}),
     ...(filtro.comAuxiliar ? { auxiliar: auxiliares.get(row.id) ?? null } : {}),
+    ...(filtro.comSugestaoIa ? { sugestaoIa: sugestaoNaVistagem(row.sugestao_ia, row.sugestao_ia_resultado) } : {}),
   }));
+}
+
+/** A sugestão como o jurídico viu na vistagem; sem calendário, a fatal só sai quando a IA fixou a data. */
+function sugestaoNaVistagem(
+  sugestao: SugestaoIa | null,
+  resultado: ResultadoSugestao | null,
+  dataPublicacao: string | null = null,
+  ehDiaDePrazo: ((iso: string) => boolean) | null = null
+): SugestaoNaVistagem | null {
+  if (!sugestao) return null;
+  const fatais = sugestao.tarefas.map((tarefa) =>
+    ehDiaDePrazo ? fatalSugerida(tarefa, dataPublicacao, ehDiaDePrazo) : tarefa.classe === "PRAZO" && !tarefa.dias ? tarefa.data : null
+  );
+  return { sugestao, resultado, fatais };
 }
 
 /**
@@ -718,7 +747,7 @@ export async function listarAgendadasJuridico(escritorio: string | null, areas: 
 const LIMITE_TEOR_CONFERENCIA = 12_000;
 
 export async function listarConferencia(): Promise<ConferenciaResposta> {
-  const ficha = { limiteTeor: LIMITE_TEOR_CONFERENCIA, comAuxiliar: true };
+  const ficha = { limiteTeor: LIMITE_TEOR_CONFERENCIA, comAuxiliar: true, comSugestaoIa: true };
   const [aConferirSemFluxo, enviadasSemFluxo, fluxo] = await Promise.all([
     itensDeConferencia(["controladoria_vistar"], 300, true, "vistado_em", ficha),
     itensDeConferencia(["pronto_para_agendar", "agendado"], 100, false, "conferido_em", ficha),
@@ -733,9 +762,14 @@ export async function listarConferencia(): Promise<ConferenciaResposta> {
     if (!fluxo) return itens;
     const [arvore, feriados] = fluxo;
     const ehDiaUtil = criarCalendario(feriados);
+    const ehDiaDePrazo = criarCalendarioDePrazo(feriados);
     const hoje = hojeEmSaoPaulo();
     return itens.map((item) => ({
       ...item,
+      // Com o calendário, a fatal da sugestão sai como o jurídico viu na tela.
+      sugestaoIa: item.sugestaoIa
+        ? sugestaoNaVistagem(item.sugestaoIa.sugestao, item.sugestaoIa.resultado, item.publicacao.dataPublicacao, ehDiaDePrazo)
+        : item.sugestaoIa,
       agendamentos: item.agendamentos.map((agendamento) => ({
         ...agendamento,
         fluxoPrevisto: fluxoPrevisto(agendamento, agendamento.tarefaId ? montarFluxo(agendamento.tarefaId, arvore) : null, ehDiaUtil, {
