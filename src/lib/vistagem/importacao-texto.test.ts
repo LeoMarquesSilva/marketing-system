@@ -36,6 +36,18 @@ Publicação: 3.
 ${blocoRecorte("EMPRESA FICTICIA LTDA - OUTRA EMPRESA S.A", 775157522)}
 `;
 
+/** Acórdão de turma no Recorte: sem "Vara:" e sem o rótulo "Publicação:" antes do texto (nomes e números fictícios). */
+const ACORDAO = `Data de Disponibilização: 05/11/2026
+Data de Publicação: 06/11/2026
+Jornal: Diário Oficial DJ Rio de Janeiro
+Caderno: TRT1DJEN
+Local: DJEN - Diário de Justiça Eletrônico Nacional - TRT1   - 1ª Turma
+Página: 00001
+Intimação
+
+Acórdão
+PROCESSO: 0100000-16.2025.5.01.0062 - RECURSO ORDINaRIO TRABALHISTA - || PODER JUDICIARIO JUSTICA DO TRABALHO TRIBUNAL REGIONAL DO TRABALHO DA 1ª REGIAO ROT 0100000-16.2025.5.01.0062 DESTINATARIO: TRANSPORTADORA FICTICIA LTDA INTIMACAO Fica V. Sa. intimado para tomar ciencia do v. Acordao proferido nos autos. Recursos ordinarios conhecidos e nao providos. RIO DE JANEIRO/RJ, 04 de novembro de 2026. SERVIDORA FICTICIA Intimado (s) / Citado (s) - TRANSPORTADORA FICTICIA LTDA ||| POLO ATIVO: LOGISTICA EXEMPLO LTDA POLO PASSIVO: JOSE EXEMPLO POLO PASSIVO: TRANSPORTADORA FICTICIA LTDA ADVOGADO: ADVOGADO FICTICIO - OAB: 058532/RJ ADVOGADO: ADVOGADA FICTICIA - OAB: 439972/SP Acesso ao documento: https://pje.trt1.jus.br/pjekz/validacao/26110412344297200000000000000?instancia=2 Identificador do documento: 776000001`;
+
 /** Mensagem repassada no Teams com comunicações do DJEN (nomes e números fictícios). */
 const TEAMS = `Pessoal, Bom dia! Tudo bem?
 
@@ -138,6 +150,53 @@ describe("lerPublicacoesColadas: Recorte Digital da OAB/SP", () => {
     const [publicacao] = lerPublicacoesColadas(grudado).publicacoes;
     expect(publicacao).toMatchObject({ tribunal: "TRT2", orgao: "11ª Vara do Trabalho de Sao Paulo" });
     expect(publicacao.linha).toMatchObject({ dataDivulgacao: "2026-11-04", dataPublicacao: "2026-11-05" });
+  });
+
+  it("lê o acórdão de turma, que vem sem o rótulo \"Publicação:\" e sem \"Vara:\"", () => {
+    const { publicacoes: lidas, ignorados: fora } = lerPublicacoesColadas(`Publicação: 1.
+
+${ACORDAO}`);
+    expect(fora).toEqual([]);
+    expect(lidas).toHaveLength(1);
+    expect(lidas[0]).toMatchObject({
+      formato: "recorte",
+      processo: "0100000-16.2025.5.01.0062",
+      tribunal: "TRT1",
+      orgao: "1ª Turma",
+      tipoComunicacao: "Intimação",
+      idComunicacao: 776000001,
+      intimados: ["TRANSPORTADORA FICTICIA LTDA"],
+    });
+    expect(lidas[0].linha).toMatchObject({ dataDivulgacao: "2026-11-05", dataPublicacao: "2026-11-06", diario: "TRT1_DJEN", caderno: "TRT1DJEN" });
+    const djen = lerComunicacaoDjen(lidas[0].linha.teor);
+    expect(djen?.corpo).toMatch(/^PODER JUDICIARIO JUSTICA DO TRABALHO TRIBUNAL REGIONAL DO TRABALHO DA 1ª REGIAO/);
+    expect(djen?.partes.map((parte) => parte.polo)).toEqual(["A", "P", "P"]);
+    expect(djen?.advogados).toEqual([
+      { nome: "ADVOGADO FICTICIO", oab: "058532", uf: "RJ" },
+      { nome: "ADVOGADA FICTICIA", oab: "439972", uf: "SP" },
+    ]);
+    expect(normalizarTribunal(lidas[0].linha.diario)).toEqual({ sigla: "TRT1", justica: "trabalhista" });
+  });
+
+  it("acórdão e publicação de vara no mesmo e-mail", () => {
+    const { publicacoes: lidas, ignorados: fora } = lerPublicacoesColadas(`Publicação: 1.
+
+${ACORDAO}
+
+Publicação: 2.
+
+${blocoRecorte("ANA EXEMPLO", 775157494)}`);
+    expect(fora).toEqual([]);
+    expect(lidas.map((p) => [p.processo, p.orgao])).toEqual([
+      ["0100000-16.2025.5.01.0062", "1ª Turma"],
+      ["1000200-04.2025.5.02.0011", "11ª Vara do Trabalho de Sao Paulo"],
+    ]);
+  });
+
+  it("acórdão copiado sem quebras de linha", () => {
+    const [publicacao] = lerPublicacoesColadas(ACORDAO.replace(/\n+/g, " ")).publicacoes;
+    expect(publicacao).toMatchObject({ processo: "0100000-16.2025.5.01.0062", tribunal: "TRT1", orgao: "1ª Turma" });
+    expect(publicacao.linha).toMatchObject({ dataDivulgacao: "2026-11-05", dataPublicacao: "2026-11-06" });
   });
 
   it("aponta o bloco sem data de publicação em vez de importar pela metade", () => {
