@@ -48,6 +48,7 @@ import { IconeArea, IconeTribunal, LogoGrupo } from "./marcas";
 import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
 import { camposDaConferencia, combinaCampos } from "@/lib/vistagem/busca";
 import { ReguaDatas } from "./regua-datas";
+import { SeloResultadoIa, SugestaoNaConferencia } from "./sugestao-ia-ui";
 import { IconeOpcao, Seletor } from "./seletor";
 import { AvatarPessoa } from "./combobox-busca";
 import { CartoesTarefas, ENVIO, LinkVios } from "./tarefas-conferencia";
@@ -662,6 +663,13 @@ function ItemConferencia({
                   <CartaoInconsistencia key={inconsistencia.id} inconsistencia={inconsistencia} acao={null} />
                 ))}
               </div>
+            </Secao>
+          ) : null}
+
+          {/* O que a IA sugeriu na hora da vistagem e o que o jurídico fez com isso, logo acima das tarefas pedidas. */}
+          {item.sugestaoIa ? (
+            <Secao titulo="Sugestão da IA na vistagem" id={`${base}-sugestao-ia`} acao={<SeloResultadoIa resultado={item.sugestaoIa.resultado} />}>
+              <SugestaoNaConferencia dados={item.sugestaoIa} />
             </Secao>
           ) : null}
 

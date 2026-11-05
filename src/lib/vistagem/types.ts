@@ -1,7 +1,7 @@
 import type { ContagemPrazo } from "./dias-uteis";
 import type { TarefaNoVios } from "./fila-vios";
 import type { FluxoDaTarefa } from "./fluxo-vios";
-import type { SugestaoIa } from "./sugestao-ia";
+import type { ResultadoSugestao, SugestaoIa } from "./sugestao-ia";
 import type { SugestaoTriagem } from "./sugestao-triagem";
 import type { PastaSioe, Pendencia } from "./triagem";
 
@@ -379,6 +379,16 @@ export interface ConferenciaItem {
   checadoPor?: string | null;
   /** Auxiliar da pasta no VIOS, para a ficha da conferência e do check (só essas listas trazem). */
   auxiliar?: string | null;
+  /** Sugestão da IA que o jurídico tinha na vistagem e o que fez com ela (só a conferência traz; null sem sugestão). */
+  sugestaoIa?: SugestaoNaVistagem | null;
+}
+
+export interface SugestaoNaVistagem {
+  sugestao: SugestaoIa;
+  /** Se o jurídico usou como veio, alterou ou não usou; null quando a vistagem não registrou. */
+  resultado: ResultadoSugestao | null;
+  /** Data fatal de cada tarefa sugerida, na ordem (só PRAZO; null quando não dá para calcular). */
+  fatais: (string | null)[];
 }
 
 export interface ConferenciaResposta {
