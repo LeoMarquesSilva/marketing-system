@@ -58,6 +58,7 @@ export function camposDaConferencia(item: ConferenciaItem): string[] {
   return [
     ...camposDaPublicacao(item.publicacao),
     item.vistadoPor,
+    item.revistadoPor,
     item.conferidoPor,
     item.auxiliar,
     ...item.agendamentos.flatMap((agendamento) => [agendamento.tarefa, agendamento.responsavel, agendamento.revisor, agendamento.viosTarefaId]),

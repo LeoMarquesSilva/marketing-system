@@ -521,6 +521,13 @@ export async function salvarVistagem(
   );
   if (erroInserir) falhou("gravar as tarefas da publicação", erroInserir);
 
+  // Depois de uma devolução, "vistado por" continua com quem analisou primeiro (é quem errou); a nova vistagem
+  // fica em revistado_por/em. Na primeira vistagem, grava quem vistou.
+  const agora = new Date().toISOString();
+  const revistagem = Boolean(publicacao.vistado_por && (publicacao.devolucoes ?? 0) > 0);
+  const quemVistou = revistagem
+    ? { revistado_por: authUserId, revistado_em: agora }
+    : { vistado_por: authUserId, vistado_em: agora, revistado_por: null, revistado_em: null };
   const { data: atualizada, error } = await db
     .from("vistagem_publicacoes")
     .update({
@@ -528,8 +535,7 @@ export async function salvarVistagem(
       observacao_vistagem: entrada.observacao?.trim() || null,
       publicacao_esocial: esocial.valor,
       sugestao_ia_resultado: resultadoIa,
-      vistado_por: authUserId,
-      vistado_em: new Date().toISOString(),
+      ...quemVistou,
     })
     .eq("id", id)
     .eq("status", "juridico_vistar")
@@ -572,7 +578,7 @@ async function itensDeConferencia(
   const linhas = (data ?? []) as (PublicacaoRow & { area_processo: string | null; checado_por: string | null })[];
   const [agendamentos, nomes, inconsistencias, auxiliares] = await Promise.all([
     agendamentosPorPublicacao(linhas.map((row) => row.id)),
-    nomesDosUsuarios(linhas.flatMap((row) => [row.vistado_por, row.conferido_por, row.checado_por])),
+    nomesDosUsuarios(linhas.flatMap((row) => [row.vistado_por, row.devolvido_por, row.revistado_por, row.conferido_por, row.checado_por])),
     inconsistenciasPorPublicacao(linhas.map((row) => row.id)),
     filtro.comAuxiliar ? auxiliaresDasPastas(linhas) : Promise.resolve(new Map<string, string>()),
   ]);
@@ -581,6 +587,8 @@ async function itensDeConferencia(
     agendamentos: agendamentos.get(row.id) ?? [],
     inconsistencias: inconsistencias.get(row.id) ?? [],
     vistadoPor: row.vistado_por ? nomes.get(row.vistado_por) ?? null : null,
+    devolvidoPor: row.devolvido_por ? nomes.get(row.devolvido_por) ?? null : null,
+    revistadoPor: row.revistado_por ? nomes.get(row.revistado_por) ?? null : null,
     conferidoPor: row.conferido_por ? nomes.get(row.conferido_por) ?? null : null,
     ...(row.checado_por ? { checadoPor: nomes.get(row.checado_por) ?? null } : {}),
     ...(filtro.comAuxiliar ? { auxiliar: auxiliares.get(row.id) ?? null } : {}),
@@ -745,6 +753,8 @@ async function fotosDosItens(itens: ConferenciaItem[], tela: string): Promise<Re
     item.publicacao.advogadoResponsavel,
     item.auxiliar,
     item.vistadoPor,
+    item.devolvidoPor,
+    item.revistadoPor,
     item.conferidoPor,
     item.checadoPor,
     ...item.agendamentos.flatMap((agendamento) => [
