@@ -1,4 +1,5 @@
 import { chaveNome, nomesDasPessoas } from "./agendamento";
+import { ehCienciaDosAgendamentos, ehCienciaNf } from "./ciencia-agendamentos";
 import type { TarefaNoVios } from "./fila-vios";
 import type { AgendamentoResumo, ConferenciaItem } from "./types";
 
@@ -187,4 +188,27 @@ export function descricaoSugerida(agendamentos: AgendamentoResumo[], ids?: strin
     })
     .filter(Boolean)
     .join("\n");
+}
+
+/** Tipo de agendamento para o filtro do Check: a Ciência NF à parte; as outras pela classe (Prazo, Providência, Compromisso). */
+export type TipoDeAgendamento = "CIENCIA_NF" | "PRAZO" | "PROVIDENCIA" | "COMPROMISSO";
+
+export const TIPOS_DE_AGENDAMENTO: { valor: TipoDeAgendamento; rotulo: string; descricao: string }[] = [
+  { valor: "CIENCIA_NF", rotulo: "Ciência NF", descricao: "Ciência de publicação não fatal" },
+  { valor: "PRAZO", rotulo: "Prazo", descricao: "Com data fatal" },
+  { valor: "PROVIDENCIA", rotulo: "Providência", descricao: "Sem a Ciência NF e a Ciência dos Agendamentos" },
+  { valor: "COMPROMISSO", rotulo: "Compromisso", descricao: "Audiência, sessão de julgamento, perícia…" },
+];
+
+/**
+ * Tipos de agendamento da publicação. A 1. CIÊNCIA DOS AGENDAMENTOS não conta: o Orquestra cria em quase todas, e
+ * ela faria quase toda publicação aparecer em "Providência".
+ */
+export function tiposDoItem(item: Pick<ConferenciaItem, "agendamentos">): TipoDeAgendamento[] {
+  const tipos = new Set<TipoDeAgendamento>();
+  for (const agendamento of item.agendamentos) {
+    if (ehCienciaDosAgendamentos(agendamento.tarefa)) continue;
+    tipos.add(ehCienciaNf(agendamento.tarefa) ? "CIENCIA_NF" : agendamento.etiqueta);
+  }
+  return TIPOS_DE_AGENDAMENTO.map((tipo) => tipo.valor).filter((tipo) => tipos.has(tipo));
 }

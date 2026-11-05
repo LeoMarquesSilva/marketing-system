@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compararTarefa, descricaoSugerida, situacaoDoCheck, subtipoSugerido } from "./check";
+import { compararTarefa, descricaoSugerida, situacaoDoCheck, subtipoSugerido, tiposDoItem } from "./check";
 import type { TarefaNoVios } from "./fila-vios";
 import type { AgendamentoResumo } from "./types";
 
@@ -117,5 +117,28 @@ describe("sugestões da inconsistência", () => {
     const errada = agendamento({ id: "a2", tarefa: "INFORMAR CLIENTE", viosTarefas: [gravada({ ci: "934637", data: "2026-11-10" })], viosTarefaId: "934637" });
     expect(descricaoSugerida([ok, errada])).toBe("Tarefa 2 · INFORMAR CLIENTE (CI 934637): data pedida 09/11/2026, no VIOS 10/11/2026.");
     expect(descricaoSugerida([ok, errada], ["a1"])).toBe("");
+  });
+});
+
+describe("tiposDoItem", () => {
+  it("separa a Ciência NF e classifica o resto pela classe, sem a Ciência dos Agendamentos", () => {
+    expect(
+      tiposDoItem({
+        agendamentos: [
+          agendamento({ etiqueta: "PROVIDENCIA", tarefa: "CIÊNCIA NF" }),
+          agendamento({ etiqueta: "PROVIDENCIA", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS" }),
+        ],
+      })
+    ).toEqual(["CIENCIA_NF"]);
+    expect(
+      tiposDoItem({
+        agendamentos: [
+          agendamento({ etiqueta: "COMPROMISSO", tarefa: "SESSÃO DE JULGAMENTO" }),
+          agendamento({ etiqueta: "PRAZO", tarefa: "RECURSO ORDINÁRIO" }),
+          agendamento({ etiqueta: "PROVIDENCIA", tarefa: "INFORMAR CLIENTE" }),
+        ],
+      })
+    ).toEqual(["PRAZO", "PROVIDENCIA", "COMPROMISSO"]);
+    expect(tiposDoItem({ agendamentos: [] })).toEqual([]);
   });
 });
