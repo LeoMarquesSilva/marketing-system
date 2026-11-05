@@ -248,7 +248,7 @@ function ItemCheck({
         }
       >
         {!checada ? (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2" data-tour="ck-acoes">
             <Button size="sm" variant="outline" className={BOTAO_FAIXA} onClick={() => apontarErro()} disabled={ocupado}>
               <TriangleAlert />
               Encontrei erro
@@ -270,14 +270,14 @@ function ItemCheck({
 
       {/* Com espaço, a publicação fica à esquerda e o pedido × VIOS à direita, cada um rolando sozinho. */}
       <div className="grid lg:min-h-0 lg:flex-1 @max-4xl:overflow-y-auto @4xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] @4xl:grid-rows-[minmax(0,1fr)] @4xl:divide-x @4xl:divide-[#e6eef0]">
-        <section aria-label="Publicação" className="min-w-0 overflow-y-auto max-lg:max-h-[75dvh]">
+        <section data-tour="ck-publicacao" aria-label="Publicação" className="min-w-0 overflow-y-auto max-lg:max-h-[75dvh]">
           <PublicacaoNaVistagem publicacao={publicacao} agendamentos={item.agendamentos} auxiliar={item.auxiliar ?? null} fotos={fotos} hoje={hoje} />
         </section>
 
         {/* A coluna inteira tem o fundo das tarefas, até o fim da tela. */}
         <div className="min-w-0 border-t border-[#e6eef0] bg-[#f2f6f7] @4xl:overflow-y-auto @4xl:border-t-0 max-lg:@4xl:max-h-[75dvh]">
           {divergencias.length && !checada ? (
-            <div className="px-3 pt-3">
+            <div className="px-3 pt-3" data-tour="ck-divergencias">
               <Aviso
                 tom="alerta"
                 titulo={`${plural(divergencias.length, "divergência", "divergências")} entre o pedido e o VIOS`}
@@ -321,7 +321,7 @@ function ItemCheck({
             </Secao>
           ) : null}
 
-          <section aria-labelledby={`${base}-tarefas`} className="border-t border-[#e6eef0] first:border-t-0">
+          <section data-tour="ck-comparacao" aria-labelledby={`${base}-tarefas`} className="border-t border-[#e6eef0] first:border-t-0">
             <div className="flex flex-wrap items-center justify-between gap-2 px-4 pb-3 pt-4">
               <h3 id={`${base}-tarefas`} className="text-xs font-semibold uppercase tracking-normal text-[#285f7a]">
                 Pedido × no VIOS
@@ -653,7 +653,7 @@ function Check() {
         resumo={
           // Linha de cima: a lista (A checar, Em revisão, Checadas), o filtro do pedido × VIOS e o Atualizar. Embaixo,
           // os mesmos filtros da Conferência.
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2" data-tour="ck-listas">
             <Segmented
               label="Situação do check"
               value={aba}
@@ -682,12 +682,12 @@ function Check() {
         }
       >
         {!filaAberta ? (
-          <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)}>
+          <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)} data-tour="ck-fila">
             <PanelLeftOpen />
             Mostrar fila
           </Button>
         ) : null}
-        <Busca
+        <Busca data-tour="ck-busca"
           value={busca}
           onChange={(evento) => mudarBusca(evento.target.value)}
           onKeyDown={(evento) => {
@@ -771,7 +771,7 @@ function Check() {
           <Carregando rotulo="Carregando o check" />
         </Painel>
       ) : lista.length === 0 ? (
-        <Painel>
+        <Painel data-tour="ck-vazio">
           <Vazio icone={aba === "checadas" ? CircleCheck : ListChecks} titulo={VAZIO[aba].titulo}>
             {VAZIO[aba].texto}
           </Vazio>
