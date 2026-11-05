@@ -32,6 +32,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
+import { camposDaPublicacao, combinaCampos } from "@/lib/vistagem/busca";
 import { clienteNoTexto, pastaSugerida, verificacoesSemPasta, type SituacaoVerificacao } from "@/lib/vistagem/controladoria";
 import { criarCalendarioDePrazo, feriadosNacionais, somarDiasUteis } from "@/lib/vistagem/dias-uteis";
 import { ESCRITORIOS, ESCRITORIO_EX_CLIENTE, pastaAtiva, type PastaSioe, type Pendencia } from "@/lib/vistagem/triagem";
@@ -86,25 +87,6 @@ function numeroProcesso(publicacao: PublicacaoResumo): string {
   return publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal;
 }
 
-/** Busca por número do processo (a partir de 4 dígitos), tribunal, órgão, pasta, grupo, cliente ou intimado. */
-function combinaBusca(publicacao: PublicacaoResumo, busca: string): boolean {
-  const texto = busca.trim().toLowerCase();
-  if (!texto) return true;
-  const digitos = busca.replace(/\D/g, "");
-  if (digitos.length >= 4 && numeroProcesso(publicacao).replace(/\D/g, "").includes(digitos)) return true;
-  return [
-    publicacao.tribunal,
-    publicacao.djenOrgao,
-    publicacao.escritorioResponsavel,
-    publicacao.grupoCliente,
-    publicacao.cliente,
-    publicacao.pastaCi,
-    publicacao.sugestaoTriagem?.grupo,
-    publicacao.sugestaoTriagem?.cliente,
-    ...publicacao.pastasCandidatas.map((pasta) => pasta.grupoCliente),
-    ...publicacao.djenIntimados,
-  ].some((campo) => campo?.toLowerCase().includes(texto));
-}
 
 /** Data de hoje em São Paulo (AAAA-MM-DD), para a régua mostrar "há 2 dias". */
 function hojeEmSaoPaulo(): string {
@@ -934,14 +916,17 @@ function Controladoria() {
   const abaAtiva: Aba = aba ?? ABAS.find((item) => porAba[item.valor] > 0)?.valor ?? "sem_pasta";
   const abasVisiveis = ABAS.filter((item) => item.valor !== "dados" || porAba.dados > 0 || abaAtiva === "dados");
 
+  // O que a busca olha em cada publicação (inclui as partes do texto): montado uma vez por carga, não a cada letra.
+  const camposDeBusca = useMemo(() => new Map((dados?.pendentes ?? []).map((p) => [p.id, camposDaPublicacao(p)])), [dados]);
+
   // Mais antigas primeiro: o prazo já está correndo.
   const fila = useMemo(
     () =>
       pendentesNaData
         .filter((p) => abaDaPendencia(p.pendencia) === abaAtiva)
-        .filter((p) => combinaBusca(p, busca))
+        .filter((p) => combinaCampos(camposDeBusca.get(p.id) ?? [], busca))
         .sort((a, b) => (a.dataPublicacao ?? "").localeCompare(b.dataPublicacao ?? "") || (a.linhaArquivo ?? 0) - (b.linhaArquivo ?? 0)),
-    [pendentesNaData, abaAtiva, busca]
+    [pendentesNaData, abaAtiva, busca, camposDeBusca]
   );
   const ordem = fila.map((p) => p.id);
   const aberta = selecionada && ordem.includes(selecionada) ? selecionada : ordem[0] ?? null;
@@ -999,7 +984,7 @@ function Controladoria() {
 
       <div className="space-y-3">
         <BarraAba resumo="O que a triagem não conseguiu encaminhar sozinha. Confira se a pasta existe mesmo, escolha a certa ou informe os dados para liberar ao jurídico; com a pasta escolhida, dá para agendar direto aqui.">
-          <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Processo, CI, grupo ou intimado" aria-label="Buscar publicação" />
+          <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Processo, CI, grupo, parte ou intimado" aria-label="Buscar publicação" />
           <FiltroData rotulo="Data Publicação" datas={datasDasPendencias} valor={dataAtiva} onChange={setDataPublicacao} />
           <FiltroData rotulo="Data da importação" datas={importacoesDasPendencias} valor={importacaoAtiva} onChange={setDataImportacao} />
           <Button variant="outline" onClick={rodarTriagem} disabled={triando}>

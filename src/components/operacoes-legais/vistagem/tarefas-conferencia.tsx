@@ -17,9 +17,9 @@ import { Selo, TOM_CLASSE, type TomSelo } from "./ui";
 type Classe = AgendamentoResumo["etiqueta"];
 
 /** Ícone de cada classe, na mesma família de cores do selo (TOM_CLASSE): categoria, não estado. */
-const ICONE_CLASSE: Record<Classe, LucideIcon> = { PRAZO: Hourglass, PROVIDENCIA: ClipboardList, COMPROMISSO: CalendarClock };
+export const ICONE_CLASSE: Record<Classe, LucideIcon> = { PRAZO: Hourglass, PROVIDENCIA: ClipboardList, COMPROMISSO: CalendarClock };
 
-const ESTILO_CLASSE: Record<Classe, string> = {
+export const ESTILO_CLASSE: Record<Classe, string> = {
   PRAZO: "bg-[#183f50] text-white ring-[#183f50]",
   PROVIDENCIA: "bg-[#e8f8f8] text-[#285f7a] ring-[#47cdd0]/30",
   COMPROMISSO: "bg-[#eeedf5] text-[#48466e] ring-[#48466e]/15",
@@ -51,7 +51,7 @@ export function LinkVios({ ci }: { ci: string }) {
 }
 
 /** Uma ou mais pessoas com foto (ou iniciais) e o nome; vazio mostra o texto de `vazio`. */
-function Pessoas({ texto, fotos, vazio = "—" }: { texto: string | null; fotos: Record<string, string>; vazio?: string }) {
+export function Pessoas({ texto, fotos, vazio = "—" }: { texto: string | null; fotos: Record<string, string>; vazio?: string }) {
   const nomes = nomesDasPessoas(texto);
   if (!nomes.length) return <span className="text-sm text-muted-foreground">{vazio}</span>;
   return (
@@ -112,7 +112,7 @@ function QuemFica({ texto, fotos }: { texto: string | null; fotos: Record<string
 }
 
 /** Data numa linha só: "04/11 qua" (com o ano, "16/02/27 ter", quando não é o de hoje). */
-function DiaNaAgenda({ data, hoje }: { data: string | null; hoje: string }) {
+export function DiaNaAgenda({ data, hoje }: { data: string | null; hoje: string }) {
   if (!data) return <span className="text-[11px] text-muted-foreground">data do VIOS</span>;
   const partes = partesDaData(data);
   const [, mes] = data.split("-");
@@ -131,7 +131,7 @@ function DiaNaAgenda({ data, hoje }: { data: string | null; hoje: string }) {
  * Como a tarefa fica no VIOS, em ordem de data, como uma agenda: a pedida pela vistagem (destacada) e as que o fluxo
  * cria junto, com quem fica em cada uma. Depois do robô, é o que ele gravou, com o CI de cada tarefa.
  */
-function AgendaNoVios({ item, fotos, hoje }: { item: AgendamentoResumo; fotos: Record<string, string>; hoje: string }) {
+export function AgendaNoVios({ item, fotos, hoje }: { item: AgendamentoResumo; fotos: Record<string, string>; hoje: string }) {
   const agenda = agendaNoVios(item);
   // Sempre começa aberta; recolher vale só para este cartão, enquanto a tela estiver aberta.
   const [aberta, setAberta] = useState(true);
@@ -166,7 +166,7 @@ function AgendaNoVios({ item, fotos, hoje }: { item: AgendamentoResumo; fotos: R
               <li
                 key={linha.chave}
                 className={cn(
-                  "grid grid-cols-[4.25rem_minmax(0,1fr)] items-baseline gap-x-2.5 gap-y-1 px-3 py-1.5 @sm:grid-cols-[4.25rem_minmax(0,1fr)_minmax(0,8.5rem)]",
+                  "grid grid-cols-[4.75rem_minmax(0,1fr)] items-baseline gap-x-2.5 gap-y-1 px-3 py-1.5 @sm:grid-cols-[4.75rem_minmax(0,1fr)_minmax(0,8.5rem)]",
                   linha.principal && "bg-[#f2fbfb]"
                 )}
               >

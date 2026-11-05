@@ -366,7 +366,9 @@ export interface ConferenciaItem {
   inconsistencias: InconsistenciaResumo[];
   vistadoPor: string | null;
   conferidoPor: string | null;
-  /** Auxiliar da pasta no VIOS, para a ficha da conferência (só a lista da Conferência traz). */
+  /** Quem deu o check (só as listas do Check trazem). */
+  checadoPor?: string | null;
+  /** Auxiliar da pasta no VIOS, para a ficha da conferência e do check (só essas listas trazem). */
   auxiliar?: string | null;
 }
 
@@ -405,4 +407,8 @@ export interface CheckResposta {
   aChecar: ConferenciaItem[];
   revisar: ConferenciaItem[];
   checadas: ConferenciaItem[];
+  /** Foto de quem vistou, conferiu e checou, do advogado, do auxiliar e das pessoas das tarefas, pela chave do nome. */
+  fotos: Record<string, string>;
+  /** AAAA-MM-DD em São Paulo, para a régua de datas. */
+  hoje: string;
 }
