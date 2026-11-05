@@ -9,7 +9,17 @@ import { KurierArquivoInvalidoError, lerNomeArquivoKurier, lerPlanilhaKurier } f
 import { baixarArquivoSharePoint, listarArquivosKurierSharePoint } from "./sharepoint";
 import { buscarPastasVios } from "./pastas-vios";
 import { buscarPastaPorCi, buscarPastasPorCnj, carregarAreasDasPessoas } from "./sioe";
-import { ESCRITORIOS, ESCRITORIO_EX_CLIENTE, citaAdvogadoDoEscritorio, temDemandaDeRisco, triar, type PastaSioe, type Pendencia } from "./triagem";
+import {
+  ESCRITORIOS,
+  ESCRITORIO_EX_CLIENTE,
+  MOTIVO_EX_CLIENTE_SEM_ESCRITORIO,
+  PREFIXO_DESCARTE_CONTROLADORIA,
+  citaAdvogadoDoEscritorio,
+  temDemandaDeRisco,
+  triar,
+  type PastaSioe,
+  type Pendencia,
+} from "./triagem";
 import { lerConfiguracoes } from "./configuracoes-server";
 import type { SugestaoTriagem } from "./sugestao-triagem";
 import type {
@@ -650,6 +660,8 @@ export async function revisarDuplicidade(id: string, resultado: DuplicidadeResul
     .eq("id", id);
   if (erroUpdate) falhou("salvar a revisão da duplicidade", erroUpdate);
   if (resultado === "nao_duplicidade") await triarSemFalhar({ ids: [id] });
+  // Duplicidade confirmada fecha a esteira: vai para o BKP do SIOE (desligado até a troca do SharePoint).
+  if (resultado === "confirmada") await (await import("./bkp-sioe-server")).registrarNoBkpSemFalhar([id]);
 }
 
 // ---------------------------------------------------------------------------
@@ -703,6 +715,8 @@ export async function triarPublicacoes(
   const alvos = (data ?? []) as { id: string; processo_digitos: string | null; teor: string }[];
   const resumo: TriagemResumo = { triadas: 0, juridico: 0, pendentes: 0, descartadas: 0, porEscritorio: {} };
   if (alvos.length === 0) return resumo;
+  // Ex-cliente sem o escritório: a lista BKP registrava em Operações Legais, sem tipo; vai para o BKP do SIOE no fim (desligado até a troca).
+  const exClientesDescartados: string[] = [];
 
   const [pastasSioe, areaDoAdvogado, { etiquetasDeRisco }] = await Promise.all([
     buscarPastasPorCnj(alvos.map((alvo) => alvo.processo_digitos ?? "")),
@@ -734,12 +748,14 @@ export async function triarPublicacoes(
           resumo.porEscritorio[resultado.escritorio] = (resumo.porEscritorio[resultado.escritorio] ?? 0) + 1;
         } else if (resultado.status === "descartada") {
           resumo.descartadas += 1;
+          if (resultado.motivoDescarte === MOTIVO_EX_CLIENTE_SEM_ESCRITORIO) exClientesDescartados.push(alvo.id);
         } else {
           resumo.pendentes += 1;
         }
       })
     );
   }
+  if (exClientesDescartados.length) await (await import("./bkp-sioe-server")).registrarNoBkpSemFalhar(exClientesDescartados);
   return resumo;
 }
 
@@ -846,9 +862,6 @@ export async function resolverPendencia(id: string, entrada: ResolucaoPendencia,
   return publicacaoResumo(final as PublicacaoRow);
 }
 
-/** Prefixo do motivo quando quem descarta é a controladoria (os automáticos têm motivo próprio). */
-export const PREFIXO_DESCARTE_CONTROLADORIA = "Descartada pela controladoria: ";
-
 /**
  * A controladoria descarta a pendência (ex.: o processo não é do escritório), com o motivo. A publicação sai da
  * fila e não volta na próxima triagem, que só reprocessa as pendentes.
@@ -870,5 +883,7 @@ export async function descartarPendencia(id: string, motivo: string, authUserId:
     .maybeSingle();
   if (error) falhou("descartar a pendência", error);
   if (!final) throw new VistagemError("Esta publicação não está mais pendente. Recarregue a página.", 409);
+  // Descartada pela controladoria fecha a esteira: vai para o BKP do SIOE (desligado até a troca do SharePoint).
+  await (await import("./bkp-sioe-server")).registrarNoBkpSemFalhar([id]);
   return publicacaoResumo(final as PublicacaoRow);
 }
