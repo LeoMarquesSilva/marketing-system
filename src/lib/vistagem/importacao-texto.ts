@@ -191,16 +191,49 @@ const ROTULOS_RECORTE_FIM = {
   identificador: "Identificador do documento",
 };
 
+/** Linha do cabeçalho do recorte ("Caderno: TRT1DJEN", "Página: 00001"…). */
+const LINHA_CABECALHO_RECORTE = new RegExp(`^\\s*(?:${Object.values(ROTULOS_RECORTE).join("|")})\\s*:`, "i");
+
+/**
+ * Onde começa o texto da publicação no bloco. Na vara ele vem depois do rótulo "Publicação:"
+ * ("Publicação: Intimação / Notificação / PROCESSO: …"); nos acórdãos de turma o recorte não traz o
+ * rótulo e o texto começa na primeira linha depois do cabeçalho ("Página: 00001 / Intimação / Acórdão /
+ * PROCESSO: …"). Sem quebras de linha (texto grudado), começa no "PROCESSO:".
+ */
+function inicioDoConteudoRecorte(bloco: string): number {
+  const processo = bloco.search(/PROCESSO\s*:/i);
+  // O rótulo só vale antes do "PROCESSO:": depois dele, "publicação:" é texto da decisão.
+  const rotulo = (processo >= 0 ? bloco.slice(0, processo) : bloco).search(/(?<!\bde\s{1,3})Publica[çc][ãa]o\s*:/i);
+  if (rotulo >= 0) return rotulo;
+  let posicao = 0;
+  for (const linha of bloco.split("\n")) {
+    if (linha.trim() && !LINHA_CABECALHO_RECORTE.test(linha)) return posicao;
+    posicao += linha.length + 1;
+  }
+  return processo;
+}
+
+/** "DJEN - Diário de Justiça Eletrônico Nacional - TRT1 - 1ª Turma" → "1ª Turma" (quando o recorte não traz "Vara:"). */
+function orgaoDoLocal(local: string, tribunal: string): string | null {
+  const resto = local
+    .split(/\s+-\s+/)
+    .map((parte) => parte.trim())
+    .filter((parte) => parte && !/^DJE?N$/i.test(parte) && !/^Di[áa]rio d[ae] Justi[çc]a/i.test(parte))
+    .map((parte) => (tribunal && new RegExp(`^${tribunal}\\b`, "i").test(parte) ? parte.slice(tribunal.length).trim() : parte))
+    .filter(Boolean);
+  return resto.join(" - ") || local || null;
+}
+
 function lerBlocoRecorte(bloco: string): Comunicacao | string {
-  // O conteúdo ("Publicação: …") vai até o fim do bloco: os rótulos de cima não se repetem dentro dele.
-  const inicioConteudo = bloco.search(/(?<!\bde\s{1,3})Publica[çc][ãa]o\s*:/i);
+  // O conteúdo vai até o fim do bloco: os rótulos de cima não se repetem dentro dele.
+  const inicioConteudo = inicioDoConteudoRecorte(bloco);
   const cabecalho = inicioConteudo >= 0 ? bloco.slice(0, inicioConteudo) : bloco;
   const campos = camposPorRotulo(cabecalho, ROTULOS_RECORTE, { colados: true });
-  const conteudo = inicioConteudo >= 0 ? plano(bloco.slice(inicioConteudo).replace(/^Publica[çc][ãa]o\s*:/i, "")) : "";
+  const conteudo = inicioConteudo >= 0 ? plano(bloco.slice(inicioConteudo).replace(/^\s*Publica[çc][ãa]o\s*:/i, "")) : "";
 
   const dataDisponibilizacao = dataIso(primeiroCampo(campos, "disponibilizacao"));
   const dataPublicacao = dataIso(primeiroCampo(campos, "publicacao_data"));
-  const cnj = cnjDe(conteudo.match(/PROCESSO\s*:\s*([^|]*)/i)?.[1] ?? conteudo);
+  const cnj = cnjDe(conteudo.match(/PROCESSO\s*:\s*([^|]*)/i)?.[1] ?? "") ?? cnjDe(conteudo) ?? cnjDe(bloco);
   if (!cnj) return "sem número de processo";
   if (!dataDisponibilizacao) return "sem a data de disponibilização";
   if (!dataPublicacao) return "sem a data de publicação";
@@ -255,7 +288,7 @@ function lerBlocoRecorte(bloco: string): Comunicacao | string {
     formato: "recorte",
     cnj,
     tribunal,
-    orgao: primeiroCampo(campos, "vara") ?? (local || null),
+    orgao: primeiroCampo(campos, "vara") ?? orgaoDoLocal(local, tribunal),
     dataDisponibilizacao,
     dataPublicacao,
     tipoComunicacao,
