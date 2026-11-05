@@ -47,6 +47,7 @@ import {
 } from "./sama";
 import { COLUNAS_PUBLICACAO, admin, falhou, hojeEmSaoPaulo, publicacaoResumo, resolverPendencia, type PublicacaoRow } from "./server";
 import type {
+  AgendadasJuridicoResposta,
   AgendamentoResumo,
   CatalogoVistagem,
   ConferenciaItem,
@@ -686,16 +687,18 @@ export const DIAS_AGENDADAS = 30;
 
 /**
  * O que o jurídico já vistou nos últimos dias, das suas áreas: na conferência, com o robô, agendado,
- * checado ou em revisão, com as tarefas e a situação de cada uma no VIOS.
+ * checado ou em revisão, com as tarefas e a situação de cada uma no VIOS, e as fotos de quem aparece.
  */
-export async function listarAgendadasJuridico(escritorio: string | null, areas: AreasVistagem = null, veRisco = true): Promise<ConferenciaItem[]> {
-  if (areas && (!areas.length || (escritorio && !areas.includes(escritorio)))) return [];
+export async function listarAgendadasJuridico(escritorio: string | null, areas: AreasVistagem = null, veRisco = true): Promise<AgendadasJuridicoResposta> {
+  const resposta = (itens: ConferenciaItem[], fotos: Record<string, string>) => ({ itens, fotos, hoje: hojeEmSaoPaulo(), dias: DIAS_AGENDADAS });
+  if (areas && (!areas.length || (escritorio && !areas.includes(escritorio)))) return resposta([], {});
   const vistadoDesde = new Date(Date.now() - DIAS_AGENDADAS * 86_400_000).toISOString();
-  return itensDeConferencia(["controladoria_vistar", "pronto_para_agendar", "agendado", "checado", "revisar"], 300, false, "vistado_em", {
+  const itens = await itensDeConferencia(["controladoria_vistar", "pronto_para_agendar", "agendado", "checado", "revisar"], 300, false, "vistado_em", {
     escritorios: escritorio ? [escritorio] : areas,
     vistadoDesde,
     semRisco: !veRisco,
   });
+  return resposta(itens, await fotosDosItens(itens, "visão Agendadas"));
 }
 
 /** Texto da publicação na Conferência: 9 em cada 10 cabem inteiras; as maiores têm o "Ver texto completo". */

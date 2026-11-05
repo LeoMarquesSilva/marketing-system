@@ -1,14 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
 import {
   ArrowLeft,
   ArrowRightLeft,
   Building2,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   CircleCheck,
+  CircleHelp,
+  ClipboardList,
+  CornerDownRight,
+  FileCheck2,
   FileText,
+  ListPlus,
+  MessageSquareText,
+  Users,
+  Workflow,
   Landmark,
   Layers,
   LoaderCircle,
@@ -64,6 +74,8 @@ import { fatalSugerida, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
 import type { DataDoFluxo, PublicacaoResumo, ResolucaoPendencia, TarefaPrevista, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
+import { CampoData, CampoHora } from "./campo-data";
+import { ESTILO_CLASSE, ICONE_CLASSE } from "./tarefas-conferencia";
 import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
 import { FaixaDoProcesso, NA_FAIXA } from "./faixa-processo";
 import { FichaPasta } from "./ficha-pasta";
@@ -79,7 +91,7 @@ import { contarPor, formatarData, formatarDataHora, tribunalDe } from "./publica
 import { ReguaDatas } from "./regua-datas";
 import { IconeOpcao, Seletor, SeletorBusca } from "./seletor";
 import { CartaoSugestaoIa, SeloIa, type EstadoSugestao } from "./sugestao-ia-ui";
-import { Aviso, BarraAba, Busca, Campo, Carregando, Painel, Selo, Vazio, campoClasse, linhaLista } from "./ui";
+import { Aviso, BarraAba, Busca, Carregando, Painel, Selo, Vazio, campoClasse, linhaLista } from "./ui";
 
 type Etiqueta = EtiquetaAgendamento;
 
@@ -108,6 +120,20 @@ interface Linha {
 }
 
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
+
+/** Parte do cartão da tarefa ("O que", "Prazo", "Quem"): título pequeno com ícone e os campos embaixo. */
+function BlocoTarefa({ titulo, icone: Icone, acao, children }: { titulo: string; icone: LucideIcon; acao?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="space-y-2">
+      <h3 className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] font-semibold uppercase text-[#285f7a]">
+        <Icone className="size-3.5 shrink-0" aria-hidden />
+        {titulo}
+        {acao ? <span className="normal-case">{acao}</span> : null}
+      </h3>
+      {children}
+    </section>
+  );
+}
 
 /**
  * Aviso de que o Orquestra acrescenta a 1. CIÊNCIA DOS AGENDAMENTOS: nenhuma tarefa é ela e o fluxo do VIOS de
@@ -183,11 +209,13 @@ function linhaCompleta(linha: Linha): boolean {
 function ModalHorario({
   linha,
   hoje,
+  ehDiaUtil,
   onConfirmar,
   onFechar,
 }: {
   linha: Linha | null;
   hoje: string;
+  ehDiaUtil: (iso: string) => boolean;
   onConfirmar: (data: string, hora: string) => void;
   onFechar: () => void;
 }) {
@@ -211,14 +239,14 @@ function ModalHorario({
             <DialogDescription>{linha?.tarefa || "Compromisso"}: o horário vai para a Hora tarefa no VIOS.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1 text-xs font-medium text-muted-foreground">
-              Data
-              <input type="date" className={campo} value={data} onChange={(evento) => setData(evento.target.value)} required />
-            </label>
-            <label className="space-y-1 text-xs font-medium text-muted-foreground">
-              Horário
-              <input type="time" className={campo} value={hora} onChange={(evento) => setHora(evento.target.value)} required autoFocus />
-            </label>
+            <div className="space-y-1.5">
+              <span className="block text-xs font-medium text-muted-foreground">Data</span>
+              <CampoData rotulo="Data do compromisso" valor={data} onChange={setData} ehDiaUtil={ehDiaUtil} invalido={!data} />
+            </div>
+            <div className="space-y-1.5">
+              <span className="block text-xs font-medium text-muted-foreground">Horário</span>
+              <CampoHora rotulo="Horário do compromisso" valor={hora} onChange={setHora} invalido={Boolean(hora) && !horaValida(hora)} autoFocus />
+            </div>
           </div>
           {avisos.length ? (
             <p className="flex items-center gap-1 text-xs text-amber-800">
@@ -275,10 +303,12 @@ function ContagemDoPrazo({ rotulo, valor, onChange }: { rotulo: string; valor: C
 function FluxoNoVios({
   previstas,
   hoje,
+  ehDiaUtil,
   onMudarData,
 }: {
   previstas: TarefaPrevista[];
   hoje: string;
+  ehDiaUtil: (iso: string) => boolean;
   onMudarData: (caminho: string[], data: string | null) => void;
 }) {
   const junto = previstas.filter((tarefa) => tarefa.quando === "criacao");
@@ -296,7 +326,8 @@ function FluxoNoVios({
     <details className="group rounded-md border border-[#e6eef0] bg-[#f7fbfc] text-xs">
       <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-muted-foreground [&::-webkit-details-marker]:hidden">
         <ChevronRight className="size-3.5 shrink-0 transition-transform group-open:rotate-90" aria-hidden />
-        <span className="font-medium text-[#285f7a]">Fluxo do VIOS</span>
+        <Workflow className="size-3.5 shrink-0 text-[#285f7a]" aria-hidden />
+        <span className="font-medium text-[#285f7a]">Fluxo das tarefas</span>
         <span className={cn("truncate", alteradas && "text-[#285f7a]")}>{resumo}</span>
       </summary>
       <div className="space-y-2 border-t border-[#e6eef0] px-3 py-2">
@@ -312,21 +343,23 @@ function FluxoNoVios({
                 return (
                   <li
                     key={tarefa.caminho.join(" › ")}
-                    className={cn("flex flex-wrap items-center gap-x-2 gap-y-1", tarefa.nivel > 1 && "border-l-2 border-[#c9dde6] pl-2")}
+                    className="flex flex-wrap items-center gap-x-2 gap-y-1"
                     style={tarefa.nivel > 1 ? { marginLeft: `${(tarefa.nivel - 1) * 0.75}rem` } : undefined}
                   >
+                    {/* A que nasce de outra do fluxo fica recuada, com a seta (sem barra lateral). */}
+                    {tarefa.nivel > 1 ? <CornerDownRight className="size-3.5 shrink-0 text-[#9fb8c2]" aria-hidden /> : null}
                     <span className="min-w-0 flex-1 basis-48 font-medium text-foreground">{tarefa.nome}</span>
-                    <input
-                      type="date"
-                      value={tarefa.data ?? ""}
+                    <CampoData
+                      compacto
+                      rotulo={rotulo}
+                      valor={tarefa.data ?? ""}
                       min={hoje}
-                      aria-label={rotulo}
-                      title={tarefa.data ? rotulo : "O VIOS data esta tarefa sozinho; escolha uma data só se precisar."}
-                      onChange={(evento) => onMudarData(tarefa.caminho, evento.target.value || null)}
-                      className={cn(
-                        "h-7 rounded-md border bg-white px-1.5 text-xs tabular-nums text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/50",
-                        tarefa.editada ? "border-[#347796] ring-1 ring-[#347796]/30" : "border-[#d7e3e7]"
-                      )}
+                      ehDiaUtil={ehDiaUtil}
+                      destacado={tarefa.editada}
+                      permitirVazio
+                      dica={tarefa.data ? undefined : "O VIOS data esta tarefa sozinho; escolha uma data só se precisar."}
+                      onChange={(data) => onMudarData(tarefa.caminho, data || null)}
+                      className="w-[9.5rem]"
                     />
                     <span className="text-muted-foreground">{tarefa.responsaveis}</span>
                     {tarefa.editada ? (
@@ -584,6 +617,15 @@ export function EditorVistagem({
     if (data) fluxoDatas[chave] = { caminho, data };
     else delete fluxoDatas[chave];
     alterar(linha.chave, { fluxoDatas });
+  }
+
+  /** Mais uma tarefa, já com o responsável e o revisor sugeridos da pasta (no topo e no fim da lista). */
+  function adicionarTarefa() {
+    setLinhas((atuais) =>
+      atuais.length >= 10
+        ? atuais
+        : [...atuais, novaLinha({ responsavel: detalhe?.responsavelSugerido ?? "", revisor: detalhe?.revisorSugerido ?? "" })]
+    );
   }
 
   function trocarEtiqueta(linha: Linha, etiqueta: Etiqueta) {
@@ -886,39 +928,45 @@ export function EditorVistagem({
               </div>
             ) : (
               <>
-                <div className="space-y-2 rounded-t-lg border-b border-[#e6eef0] bg-[#f7fbfc] px-4 py-3">
+                {/* Cabeçalho do bloco: o que é, quantas tarefas vão, o eSocial (Trabalhista) e o botão de incluir outra. */}
+                <div className="space-y-3 rounded-t-lg border-b border-[#e6eef0] bg-[#fafcfc] px-4 py-3">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                    <h2 id="tarefas-titulo" className="min-w-0 flex-1 text-sm font-semibold text-foreground">
-                      Incluir Tarefas
-                    </h2>
-                    {detalhe.esocial ? (
-                      <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                        <span>eSocial</span>
-                        <Seletor
-                          rotulo="Classificação eSocial"
-                          className="w-56"
-                          valor={esocial}
-                          onChange={(valor) => trocarEsocial(valor as ClassificacaoEsocial)}
-                          opcoes={CLASSIFICACOES_ESOCIAL.map((classificacao) => ({ valor: classificacao, rotulo: classificacao }))}
-                        />
-                      </div>
-                    ) : null}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        setLinhas((atuais) => [
-                          ...atuais,
-                          novaLinha({ responsavel: detalhe.responsavelSugerido ?? "", revisor: detalhe.revisorSugerido ?? "" }),
-                        ])
-                      }
-                      disabled={linhas.length >= 10}
-                    >
+                    <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#e8f8f8] text-[#285f7a] ring-1 ring-[#47cdd0]/30" aria-hidden>
+                      <ListPlus className="size-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <h2 id="tarefas-titulo" className="text-sm font-semibold text-foreground">
+                        Incluir tarefas
+                      </h2>
+                      <p className="text-xs text-muted-foreground">
+                        {plural(linhas.length, "tarefa", "tarefas")} · vão para a conferência da controladoria e depois para o VIOS
+                      </p>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={adicionarTarefa} disabled={linhas.length >= 10}>
                       <Plus />
                       Adicionar tarefa
                     </Button>
                   </div>
+                  {detalhe.esocial ? (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-[#e6eef0] bg-white px-3 py-2">
+                      <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase text-[#285f7a]">
+                        <FileCheck2 className="size-3.5" aria-hidden />
+                        Publicação eSocial
+                      </span>
+                      <Seletor
+                        rotulo="Classificação eSocial"
+                        className="min-w-0 flex-1 sm:max-w-72"
+                        valor={esocial}
+                        onChange={(valor) => trocarEsocial(valor as ClassificacaoEsocial)}
+                        opcoes={CLASSIFICACOES_ESOCIAL.map((classificacao) => ({
+                          valor: classificacao,
+                          rotulo: classificacao,
+                          descricao: classificacao === "Não Identificado" ? "Sem tarefa de eSocial" : `Inclui a tarefa ${TAREFA_ESOCIAL}`,
+                          icone: <IconeOpcao icone={classificacao === "Não Identificado" ? CircleHelp : FileCheck2} />,
+                        }))}
+                      />
+                    </div>
+                  ) : null}
                   {faltaTarefaEsocial ? (
                     <Aviso tom="erro">
                       {esocial} pede a tarefa {TAREFA_ESOCIAL}, mas esse tipo de tarefa não está na lista do VIOS para Trabalhista. Avise a controladoria.
@@ -926,7 +974,8 @@ export function EditorVistagem({
                   ) : null}
                 </div>
 
-                <ol className="divide-y divide-[#e6eef0]">
+                {/* Cada tarefa num cartão próprio, sobre o fundo da coluna: fica claro onde uma termina e a outra começa. */}
+                <ol className="space-y-3 bg-[#f2f6f7] p-3">
                   {linhas.map((linha, indice) => {
                     const prazo = linha.etiqueta === "PRAZO";
                     const tarefaId = catalogo.tarefas[linha.etiqueta].find((opcao) => opcao.nome === linha.tarefa)?.id ?? null;
@@ -954,23 +1003,41 @@ export function EditorVistagem({
                       : linha.data
                         ? avisosDaData(linha.data, detalhe.hoje)
                         : [];
+                    const IconeClasse = ICONE_CLASSE[linha.etiqueta];
+                    const pronta = linhaCompleta(linha);
                     return (
-                      <li key={linha.chave} aria-label={`Tarefa ${indice + 1}`} className="space-y-2.5 px-4 py-3">
-                        {/* Número discreto no canto: com várias tarefas, mostra onde cada uma começa. */}
-                        <div className="flex min-h-7 items-center gap-1.5">
-                          <span
-                            className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border-[1.5px] border-[#285f7a] text-[11px] font-bold leading-none tabular-nums text-[#285f7a]"
-                            title={`Tarefa ${indice + 1}`}
-                          >
-                            {indice + 1}
+                      <li
+                        key={linha.chave}
+                        aria-label={`Tarefa ${indice + 1} de ${linhas.length}`}
+                        className="overflow-hidden rounded-lg border border-[#d3e2e6] bg-white shadow-[0_1px_3px_rgba(16,41,58,0.08)]"
+                      >
+                        {/* Topo do cartão: classe com ícone, "Tarefa 1 de 2", o nome escolhido e se já está pronta. */}
+                        <header className="flex items-center gap-3 border-b border-[#eef3f5] bg-[#fafcfc] px-4 py-2.5">
+                          <span className={cn("grid size-9 shrink-0 place-items-center rounded-md ring-1", ESTILO_CLASSE[linha.etiqueta])} aria-hidden>
+                            <IconeClasse className="size-4" />
                           </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[11px] font-semibold uppercase tabular-nums text-[#285f7a]">
+                              Tarefa {indice + 1} de {linhas.length} · {ROTULO_ETIQUETA[linha.etiqueta]}
+                            </p>
+                            <p className={cn("truncate text-sm font-semibold", linha.tarefa ? "text-foreground" : "font-normal text-muted-foreground")}>
+                              {linha.tarefa || "Escolha a tarefa"}
+                            </p>
+                          </div>
                           {linha.ia ? <SeloIa /> : null}
+                          {pronta ? (
+                            <Selo tom="sucesso" icone={CircleCheck}>
+                              Pronta
+                            </Selo>
+                          ) : (
+                            <Selo tom="alerta">Falta preencher</Selo>
+                          )}
                           {!linha.esocial && linhas.length > 1 ? (
                             <Button
                               type="button"
                               size="icon-sm"
                               variant="ghost"
-                              className="ml-auto text-red-700 hover:bg-red-50 hover:text-red-800"
+                              className="text-red-700 hover:bg-red-50 hover:text-red-800"
                               onClick={() => setLinhas((atuais) => atuais.filter((item) => item.chave !== linha.chave))}
                               aria-label={`Remover tarefa ${indice + 1}`}
                               title="Remover tarefa"
@@ -978,210 +1045,250 @@ export function EditorVistagem({
                               <Trash2 />
                             </Button>
                           ) : null}
-                        </div>
-                        {/* A classe fica à esquerda, na mesma linha da tarefa. */}
-                        <div className="flex flex-wrap items-center gap-2">
-                          {linha.esocial ? (
-                            <Selo tom="marca">eSocial</Selo>
-                          ) : (
-                            <Segmented
-                              label={`Classe da tarefa ${indice + 1}`}
-                              value={linha.etiqueta}
-                              options={ETIQUETAS_AGENDAMENTO.map((valor) => ({ value: valor, label: ROTULO_ETIQUETA[valor] }))}
-                              onChange={(valor) => trocarEtiqueta(linha, valor)}
-                            />
-                          )}
-                          <div className="min-w-[14rem] flex-1">
-                            {linha.esocial ? (
-                              <p className={cn(campo, "flex items-center bg-[#f7fbfc] text-foreground")} aria-label={`Tarefa ${indice + 1}`}>
-                                {linha.tarefa}
-                              </p>
-                            ) : (
-                              <ComboboxBusca
-                                opcoes={catalogo.tarefas[linha.etiqueta]}
-                                valor={linha.tarefa}
-                                onChange={(nome) => {
-                                  const lista = catalogo.tarefas[linha.etiqueta];
-                                  const fixos = lista.find((item) => item.nome === nome)?.responsaveis ?? [];
-                                  const anteriores = lista.find((item) => item.nome === linha.tarefa)?.responsaveis ?? [];
-                                  const eraDoTipo = anteriores.length > 0 && linha.responsavel === anteriores.join(", ");
-                                  alterar(linha.chave, {
-                                    tarefa: nome,
-                                    ...(fixos.length
-                                      ? { responsavel: fixos.join(", ") }
-                                      : eraDoTipo
-                                        ? { responsavel: detalhe.responsavelSugerido ?? "" }
-                                        : {}),
-                                  });
-                                  if (nome && linha.etiqueta === "COMPROMISSO") setHorarioDe(linha.chave);
-                                }}
-                                placeholder="Tarefa: digite para buscar…"
-                                rotulo={`Tarefa ${indice + 1}`}
-                              />
-                            )}
-                          </div>
-                        </div>
+                        </header>
 
-                        {prazo ? (
-                          <div className="space-y-2">
-                            {/* 1ª linha: os dias do prazo e, ao lado, úteis ou corridos e a data fatal; embaixo, a linha do tempo do VIOS. */}
-                            <div className="flex flex-wrap items-end gap-x-2 gap-y-2">
-                              <div className="flex flex-wrap items-center gap-0.5" role="group" aria-label={`Prazo em dias da tarefa ${indice + 1}`}>
-                                {atalhosDePrazo(catalogo.area).map((dias) => (
-                                  <Button
-                                    key={dias}
-                                    type="button"
-                                    size="xs"
-                                    variant="outline"
-                                    aria-pressed={linha.diasPrazo === dias}
-                                    disabled={!publicacao.dataPublicacao}
-                                    className={cn(
-                                      "h-10 min-w-8 px-1.5 tabular-nums",
-                                      linha.diasPrazo === dias && "border-[#285f7a] bg-[#347796] text-white hover:bg-[#285f7a] hover:text-white"
-                                    )}
-                                    onClick={() =>
-                                      publicacao.dataPublicacao &&
-                                      alterar(linha.chave, {
-                                        diasPrazo: dias,
-                                        dataFatal: fatalPorContagem(publicacao.dataPublicacao, dias, linha.contagemPrazo ?? "uteis", contaPrazo),
-                                      })
-                                    }
-                                  >
-                                    {dias}
-                                  </Button>
-                                ))}
-                              </div>
-                              {/* Úteis ou corridos e a fatal andam juntos: se faltar espaço, descem os dois. */}
-                              <div className="flex items-end gap-2">
-                                <ContagemDoPrazo
-                                  rotulo={`Contagem do prazo da tarefa ${indice + 1}`}
-                                  valor={linha.contagemPrazo ?? "uteis"}
-                                  onChange={(contagem) =>
-                                    alterar(linha.chave, {
-                                      contagemPrazo: contagem,
-                                      ...(linha.diasPrazo && publicacao.dataPublicacao
-                                        ? { dataFatal: fatalPorContagem(publicacao.dataPublicacao, linha.diasPrazo, contagem, contaPrazo) }
-                                        : {}),
-                                    })
-                                  }
+                        <div className="space-y-4 px-4 py-4">
+                          <BlocoTarefa titulo="O que" icone={ClipboardList}>
+                            {/* A classe fica à esquerda, na mesma linha da tarefa. */}
+                            <div className="flex flex-wrap items-center gap-2">
+                              {linha.esocial ? (
+                                <Selo tom="marca">eSocial</Selo>
+                              ) : (
+                                <Segmented
+                                  label={`Classe da tarefa ${indice + 1}`}
+                                  value={linha.etiqueta}
+                                  options={ETIQUETAS_AGENDAMENTO.map((valor) => ({ value: valor, label: ROTULO_ETIQUETA[valor], icon: ICONE_CLASSE[valor] }))}
+                                  onChange={(valor) => trocarEtiqueta(linha, valor)}
                                 />
-                                <Campo rotulo="Data fatal" className="w-[8.5rem]">
-                                  <input
-                                    type="date"
-                                    className={campo}
-                                    value={linha.dataFatal}
-                                    onChange={(evento) => alterar(linha.chave, { dataFatal: evento.target.value, diasPrazo: null })}
+                              )}
+                              <div className="min-w-[14rem] flex-1">
+                                {linha.esocial ? (
+                                  <p className={cn(campo, "flex items-center bg-[#f7fbfc] text-foreground")} aria-label={`Tarefa ${indice + 1}`}>
+                                    {linha.tarefa}
+                                  </p>
+                                ) : (
+                                  <ComboboxBusca
+                                    titulo={`Tarefas de ${ROTULO_ETIQUETA[linha.etiqueta]} no VIOS`}
+                                    icone={<IconeClasse className="size-4 text-[#3e84a8]" aria-hidden />}
+                                    opcoes={catalogo.tarefas[linha.etiqueta]}
+                                    valor={linha.tarefa}
+                                    onChange={(nome) => {
+                                      const lista = catalogo.tarefas[linha.etiqueta];
+                                      const fixos = lista.find((item) => item.nome === nome)?.responsaveis ?? [];
+                                      const anteriores = lista.find((item) => item.nome === linha.tarefa)?.responsaveis ?? [];
+                                      const eraDoTipo = anteriores.length > 0 && linha.responsavel === anteriores.join(", ");
+                                      alterar(linha.chave, {
+                                        tarefa: nome,
+                                        ...(fixos.length
+                                          ? { responsavel: fixos.join(", ") }
+                                          : eraDoTipo
+                                            ? { responsavel: detalhe.responsavelSugerido ?? "" }
+                                            : {}),
+                                      });
+                                      if (nome && linha.etiqueta === "COMPROMISSO") setHorarioDe(linha.chave);
+                                    }}
+                                    placeholder="Tarefa: digite para buscar…"
+                                    rotulo={`Tarefa ${indice + 1}`}
                                   />
-                                </Campo>
+                                )}
                               </div>
                             </div>
-                            {cadeia ? (
-                              <ReguaDatas
-                                compacta
-                                rotulo={`Datas da tarefa ${indice + 1}`}
-                                hoje={detalhe.hoje}
-                                className="rounded-md border border-[#e6eef0] bg-[#f7fbfc] px-3 py-1.5"
-                                marcos={[
-                                  {
-                                    rotulo: cadeia.protocolar ? "Enviar no VIOS" : "Tarefa no VIOS",
-                                    rotuloCurto: cadeia.protocolar ? "Enviar" : "Tarefa",
-                                    data: cadeia.enviar,
-                                    tom: "marca",
-                                    dica: "Data da tarefa que vai para o VIOS.",
-                                  },
-                                  { rotulo: "Revisar", rotuloCurto: "Rev.", data: cadeia.revisar },
-                                  { rotulo: "Protocolar", rotuloCurto: "Prot.", data: cadeia.protocolar },
-                                ]}
-                              />
-                            ) : null}
-                            {tarefaId && !cadeiaFluxo ? (
-                              <p className="text-xs text-muted-foreground">
-                                O VIOS não cria Revisar nem Protocolar para esta tarefa: ela vai com a data do protocolo (1 dia útil antes da fatal).
+                          </BlocoTarefa>
+
+                          <BlocoTarefa titulo={prazo ? "Prazo" : linha.etiqueta === "COMPROMISSO" ? "Data e horário" : "Data"} icone={CalendarDays}>
+                            {prazo ? (
+                              <div className="space-y-2">
+                                {/* 1ª linha: os dias do prazo e, ao lado, úteis ou corridos e a data fatal; embaixo, a linha do tempo do VIOS. */}
+                                <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+                                  <div className="space-y-1.5">
+                                  <span className="block text-xs font-medium text-muted-foreground">Dias</span>
+                                  <div className="flex flex-wrap items-center gap-0.5" role="group" aria-label={`Prazo em dias da tarefa ${indice + 1}`}>
+                                    {atalhosDePrazo(catalogo.area).map((dias) => (
+                                      <Button
+                                        key={dias}
+                                        type="button"
+                                        size="xs"
+                                        variant="outline"
+                                        aria-pressed={linha.diasPrazo === dias}
+                                        disabled={!publicacao.dataPublicacao}
+                                        className={cn(
+                                          "h-10 min-w-8 px-1.5 tabular-nums",
+                                          linha.diasPrazo === dias && "border-[#285f7a] bg-[#347796] text-white hover:bg-[#285f7a] hover:text-white"
+                                        )}
+                                        onClick={() =>
+                                          publicacao.dataPublicacao &&
+                                          alterar(linha.chave, {
+                                            diasPrazo: dias,
+                                            dataFatal: fatalPorContagem(publicacao.dataPublicacao, dias, linha.contagemPrazo ?? "uteis", contaPrazo),
+                                          })
+                                        }
+                                      >
+                                        {dias}
+                                      </Button>
+                                    ))}
+                                  </div>
+                                  </div>
+                                  {/* Úteis ou corridos e a fatal andam juntos: se faltar espaço, descem os dois. */}
+                                  <div className="flex items-end gap-2">
+                                    <div className="space-y-1.5">
+                                    <span className="block text-xs font-medium text-muted-foreground">Contagem</span>
+                                    <ContagemDoPrazo
+                                      rotulo={`Contagem do prazo da tarefa ${indice + 1}`}
+                                      valor={linha.contagemPrazo ?? "uteis"}
+                                      onChange={(contagem) =>
+                                        alterar(linha.chave, {
+                                          contagemPrazo: contagem,
+                                          ...(linha.diasPrazo && publicacao.dataPublicacao
+                                            ? { dataFatal: fatalPorContagem(publicacao.dataPublicacao, linha.diasPrazo, contagem, contaPrazo) }
+                                            : {}),
+                                        })
+                                      }
+                                    />
+                                    </div>
+                                    <div className="w-[11rem] space-y-1.5">
+                                      <span className="block text-xs font-medium text-muted-foreground">Data fatal</span>
+                                      <CampoData
+                                        rotulo={`Data fatal da tarefa ${indice + 1}`}
+                                        valor={linha.dataFatal}
+                                        ehDiaUtil={contaPrazo}
+                                        onChange={(data) => alterar(linha.chave, { dataFatal: data, diasPrazo: null })}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                                {cadeia ? (
+                                  <ReguaDatas
+                                    compacta
+                                    rotulo={`Datas da tarefa ${indice + 1}`}
+                                    hoje={detalhe.hoje}
+                                    className="rounded-md border border-[#e6eef0] bg-[#f7fbfc] px-3 py-1.5"
+                                    marcos={[
+                                      {
+                                        rotulo: cadeia.protocolar ? "Enviar no VIOS" : "Tarefa no VIOS",
+                                        rotuloCurto: cadeia.protocolar ? "Enviar" : "Tarefa",
+                                        data: cadeia.enviar,
+                                        tom: "marca",
+                                        dica: "Data da tarefa que vai para o VIOS.",
+                                      },
+                                      { rotulo: "Revisar", rotuloCurto: "Rev.", data: cadeia.revisar },
+                                      { rotulo: "Protocolar", rotuloCurto: "Prot.", data: cadeia.protocolar },
+                                    ]}
+                                  />
+                                ) : null}
+                                {tarefaId && !cadeiaFluxo ? (
+                                  <p className="text-xs text-muted-foreground">
+                                    O VIOS não cria Revisar nem Protocolar para esta tarefa: ela vai com a data do protocolo (1 dia útil antes da fatal).
+                                  </p>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <div className="flex flex-wrap items-end gap-3">
+                                <div className="w-[11rem] space-y-1.5">
+                                  <span className="block text-xs font-medium text-muted-foreground">Data no VIOS</span>
+                                  <CampoData
+                                    rotulo={`Data da tarefa ${indice + 1} no VIOS`}
+                                    valor={linha.data}
+                                    ehDiaUtil={ehDiaUtil}
+                                    onChange={(data) => alterar(linha.chave, { data })}
+                                  />
+                                </div>
+                                {linha.etiqueta === "COMPROMISSO" ? (
+                                  <div className="w-32 space-y-1.5">
+                                    <span className="block text-xs font-medium text-muted-foreground">Horário</span>
+                                    <CampoHora
+                                      rotulo={`Horário da tarefa ${indice + 1}`}
+                                      valor={linha.hora}
+                                      onChange={(hora) => alterar(linha.chave, { hora })}
+                                      invalido={!horaValida(linha.hora)}
+                                    />
+                                  </div>
+                                ) : null}
+                              </div>
+                            )}
+                            {avisos.length ? (
+                              <p className="flex items-center gap-1.5 text-xs text-amber-800">
+                                <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
+                                {avisos.join(" ")}
                               </p>
                             ) : null}
-                          </div>
-                        ) : (
-                          <div className="flex flex-wrap items-end gap-3">
-                            <Campo rotulo="Data no VIOS" className="w-44">
-                              <input type="date" className={campo} value={linha.data} onChange={(evento) => alterar(linha.chave, { data: evento.target.value })} />
-                            </Campo>
-                            {linha.etiqueta === "COMPROMISSO" ? (
-                              <Campo rotulo="Horário" className="w-32">
-                                <input
-                                  type="time"
-                                  className={campo}
-                                  value={linha.hora}
-                                  onChange={(evento) => alterar(linha.chave, { hora: evento.target.value })}
-                                  aria-invalid={!horaValida(linha.hora)}
+                          </BlocoTarefa>
+
+                          <BlocoTarefa titulo="Quem" icone={Users}>
+                            <div className="grid gap-3 @md:grid-cols-2">
+                              <div className="space-y-1.5">
+                                <span className="block text-xs font-medium text-muted-foreground">Responsável</span>
+                                <CampoResponsaveis
+                                  pessoas={pessoasDoCampo}
+                                  valor={linha.responsavel}
+                                  onChange={(valor) => alterar(linha.chave, { responsavel: valor })}
+                                  rotulo={`Responsável da tarefa ${indice + 1}`}
+                                  dica={
+                                    (catalogo.tarefas[linha.etiqueta].find((item) => item.nome === linha.tarefa)?.responsaveis ?? []).join(", ") === linha.responsavel &&
+                                    linha.responsavel
+                                      ? "Responsáveis fixos deste tipo no VIOS."
+                                      : null
+                                  }
                                 />
-                              </Campo>
-                            ) : null}
-                          </div>
-                        )}
-                        {avisos.length ? (
-                          <p className="flex items-center gap-1.5 text-xs text-amber-800">
-                            <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
-                            {avisos.join(" ")}
-                          </p>
-                        ) : null}
+                              </div>
+                              <div className="space-y-1.5">
+                                <span className="block text-xs font-medium text-muted-foreground">
+                                  {prazo ? "Revisor (obrigatório)" : "Revisor (opcional)"}
+                                  {prazo && detalhe.revisorSugerido && linha.revisor === detalhe.revisorSugerido ? (
+                                    <span className="font-normal"> · auxiliar da pasta</span>
+                                  ) : null}
+                                </span>
+                                <ComboboxBusca
+                                  opcoes={pessoasDoCampo.opcoes}
+                                  ampliar={pessoasDoCampo.ampliar}
+                                  pessoas
+                                  valor={linha.revisor}
+                                  onChange={(nome) => alterar(linha.chave, { revisor: nome })}
+                                  placeholder={prazo ? "Digite para buscar o revisor…" : "Sem revisor"}
+                                  rotulo={`Revisor da tarefa ${indice + 1}`}
+                                  permitirVazio
+                                  invalido={prazo && !linha.revisor}
+                                />
+                              </div>
+                            </div>
+                          </BlocoTarefa>
 
-                        <div className="grid gap-3 @md:grid-cols-2">
-                          <div className="space-y-1.5">
-                            <span className="block text-xs font-medium text-muted-foreground">Responsável</span>
-                            <CampoResponsaveis
-                              pessoas={pessoasDoCampo}
-                              valor={linha.responsavel}
-                              onChange={(valor) => alterar(linha.chave, { responsavel: valor })}
-                              rotulo={`Responsável da tarefa ${indice + 1}`}
-                              dica={
-                                (catalogo.tarefas[linha.etiqueta].find((item) => item.nome === linha.tarefa)?.responsaveis ?? []).join(", ") === linha.responsavel &&
-                                linha.responsavel
-                                  ? "Responsáveis fixos deste tipo no VIOS."
-                                  : null
-                              }
+                          <BlocoTarefa titulo="Observação" icone={MessageSquareText} acao={<span className="text-[11px] font-normal text-muted-foreground">opcional · vai na descrição da tarefa no VIOS</span>}>
+                            <Textarea
+                              aria-label={`Observação da tarefa ${indice + 1}`}
+                              value={linha.observacao}
+                              onChange={(evento) => alterar(linha.chave, { observacao: evento.target.value })}
+                              maxLength={2000}
+                              rows={2}
+                              placeholder="O que fazer e por quê"
+                              className="bg-white"
                             />
-                          </div>
-                          <div className="space-y-1.5">
-                            <span className="block text-xs font-medium text-muted-foreground">
-                              {prazo ? "Revisor (obrigatório)" : "Revisor (opcional)"}
-                              {prazo && detalhe.revisorSugerido && linha.revisor === detalhe.revisorSugerido ? (
-                                <span className="font-normal"> · auxiliar da pasta</span>
-                              ) : null}
-                            </span>
-                            <ComboboxBusca
-                              opcoes={pessoasDoCampo.opcoes}
-                              ampliar={pessoasDoCampo.ampliar}
-                              pessoas
-                              valor={linha.revisor}
-                              onChange={(nome) => alterar(linha.chave, { revisor: nome })}
-                              placeholder={prazo ? "Digite para buscar o revisor…" : "Sem revisor"}
-                              rotulo={`Revisor da tarefa ${indice + 1}`}
-                              permitirVazio
-                              invalido={prazo && !linha.revisor}
+                          </BlocoTarefa>
+
+                          {fluxo && previstas.length ? (
+                            <FluxoNoVios
+                              previstas={previstas}
+                              hoje={detalhe.hoje}
+                              ehDiaUtil={ehDiaUtil}
+                              onMudarData={(caminho, data) => mudarDataDoFluxo(linha, caminho, data)}
                             />
-                          </div>
+                          ) : null}
                         </div>
-
-                        <Campo rotulo="Observação (opcional, vai na descrição da tarefa no VIOS)">
-                          <Textarea
-                            value={linha.observacao}
-                            onChange={(evento) => alterar(linha.chave, { observacao: evento.target.value })}
-                            maxLength={2000}
-                            rows={2}
-                            placeholder="O que fazer e por quê"
-                          />
-                        </Campo>
-
-                        {fluxo && previstas.length ? (
-                          <FluxoNoVios
-                            previstas={previstas}
-                            hoje={detalhe.hoje}
-                            onMudarData={(caminho, data) => mudarDataDoFluxo(linha, caminho, data)}
-                          />
-                        ) : null}
                       </li>
                     );
                   })}
+                  {linhas.length < 10 ? (
+                    <li>
+                      {/* Mais uma tarefa no fim da lista, onde a pessoa está, sem voltar ao topo. */}
+                      <button
+                        type="button"
+                        onClick={adicionarTarefa}
+                        className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[#b9d3dd] bg-white/60 px-4 py-3 text-sm font-medium text-[#347796] transition-colors hover:border-[#47cdd0] hover:bg-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[#47cdd0]/30"
+                      >
+                        <Plus className="size-4" aria-hidden />
+                        Adicionar outra tarefa
+                      </button>
+                    </li>
+                  ) : null}
                 </ol>
 
                 <CienciaDoOrquestra linhas={linhas} catalogo={catalogo} detalhe={detalhe} />
@@ -1215,6 +1322,7 @@ export function EditorVistagem({
         key={horarioDe ?? "fechado"}
         linha={linhas.find((linha) => linha.chave === horarioDe) ?? null}
         hoje={detalhe.hoje}
+        ehDiaUtil={ehDiaUtil}
         onConfirmar={(data, hora) => {
           if (horarioDe !== null) alterar(horarioDe, { data, hora });
           setHorarioDe(null);

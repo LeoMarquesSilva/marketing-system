@@ -412,3 +412,13 @@ export interface CheckResposta {
   /** AAAA-MM-DD em São Paulo, para a régua de datas. */
   hoje: string;
 }
+
+/** Visão "Agendadas" do jurídico: o que foi vistado nos últimos `dias` e onde está cada tarefa. */
+export interface AgendadasJuridicoResposta {
+  itens: ConferenciaItem[];
+  /** Foto de quem vistou, conferiu e checou, do advogado e das pessoas das tarefas, pela chave do nome. */
+  fotos: Record<string, string>;
+  /** AAAA-MM-DD em São Paulo. */
+  hoje: string;
+  dias: number;
+}
