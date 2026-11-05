@@ -3,7 +3,7 @@ import { cienciaDosAgendamentos, ehCienciaDosAgendamentos, fluxoCriaCiencia, typ
 import type { FluxoDaTarefa, TarefaDoFluxo } from "./fluxo-vios";
 
 function noFluxo(nome: string, filhas: TarefaDoFluxo[] = []): TarefaDoFluxo {
-  return { id: nome, nome, prazo: null, papel: "responsavel", tambemCria: [], aoConcluir: [], regra: null, filhas };
+  return { id: nome, nome, prazo: null, papel: "responsavel", tambemCria: [], aoConcluir: [], regra: null, responsabilidade: null, filhas };
 }
 
 const FLUXOS: Record<string, FluxoDaTarefa> = {

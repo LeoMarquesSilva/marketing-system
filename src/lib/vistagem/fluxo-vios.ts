@@ -33,6 +33,19 @@ export interface TipoNaArvore {
   regraPrazo?: RegraDePrazo | null;
   /** De onde cada filha (id) conta a data; null: o robô ainda não leu a aba de criação. */
   baseDasFilhas?: Map<number, BaseDaData> | null;
+  /** Quem o VIOS põe nas tarefas do tipo (SAMA vios_tipos_tarefa); null: o catálogo não leu. */
+  responsabilidade?: ResponsabilidadeDoTipo | null;
+}
+
+/**
+ * Cadastro do tipo no VIOS › Responsabilidade: quem o VIOS põe em toda tarefa desse tipo. O robô usa no lançamento
+ * para decidir quem fica em cada tarefa do fluxo (sama-rpa regras-fluxo.js); o Orquestra, para prever o mesmo.
+ */
+export interface ResponsabilidadeDoTipo {
+  /** Pessoas fixas do tipo (ex.: VERIFICAR ATA = Larissa). */
+  fixos: string[];
+  /** Marcações do cadastro; null enquanto o catálogo só leu os fixos (SAMA sem a 0060 ou sem a nova leitura). */
+  regras: { advogado: boolean; auxiliar: boolean; estagiario: boolean; coordenador: boolean; grupo: boolean } | null;
 }
 
 export interface TarefaDoFluxo {
@@ -47,6 +60,8 @@ export interface TarefaDoFluxo {
   aoConcluir: string[];
   /** Como o VIOS data esta tarefa; null quando a regra não foi lida (o Orquestra usa a conta antiga). */
   regra: (RegraDePrazo & { base: BaseDaData }) | null;
+  /** Quem o VIOS põe neste tipo; null quando não foi lido (fica o responsável da vistagem, como o robô faz). */
+  responsabilidade: ResponsabilidadeDoTipo | null;
   /** As que esta cria junto, com as regras delas (fluxo dentro do fluxo: Embargos › 2. REVISAR). */
   filhas: TarefaDoFluxo[];
 }
@@ -111,6 +126,7 @@ export function montarFluxo(id: string, arvore: Map<number, TipoNaArvore>): Flux
         tambemCria: (dados?.criacao ?? []).map(nomeDe),
         aoConcluir: (dados?.conclusao ?? []).map(nomeDe),
         regra: dados?.regraPrazo && base ? { ...dados.regraPrazo, base } : null,
+        responsabilidade: dados?.responsabilidade ?? null,
         filhas:
           dados && nivel < NIVEIS_DO_FLUXO && !acima.has(filho) ? filhasDe(dados, nivel + 1, new Set([...acima, filho])) : [],
       };
