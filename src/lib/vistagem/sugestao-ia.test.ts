@@ -117,6 +117,44 @@ describe("prazo da parte contrária", () => {
     expect(texto).toContain("SOMENTE a tarefa 316 | CIÊNCIA NF");
     expect(texto).toContain('"prazo_de"');
   });
+});
+
+describe("sem prazo nem providência", () => {
+  it("vira só CIÊNCIA NF, mesmo que a IA escolha outra ciência", () => {
+    const tarefas = tarefasDaResposta(
+      {
+        resumo: "",
+        esocial: "Não Identificado",
+        confianca: "alta",
+        prazo_de: "ninguem",
+        tarefas: [tarefa({ classe: "PROVIDENCIA", tarefa_id: "618", motivo: "Só a distribuição do agravo de petição." })],
+      },
+      LISTAS
+    );
+    expect(tarefas).toEqual([
+      { classe: "PROVIDENCIA", tarefaId: "316", tarefa: "CIÊNCIA NF", dias: null, contagem: null, data: null, hora: null, motivo: "Só a distribuição do agravo de petição." },
+    ]);
+  });
+
+  it("se a IA trouxe audiência ou sessão, fica o compromisso", () => {
+    const tarefas = tarefasDaResposta(
+      {
+        resumo: "",
+        esocial: "Não Identificado",
+        confianca: "media",
+        prazo_de: "ninguem",
+        tarefas: [tarefa({ classe: "COMPROMISSO", tarefa_id: "202", data: "2026-12-03", hora: "11:10" })],
+      },
+      LISTAS
+    );
+    expect(tarefas.map((item) => item.tarefaId)).toEqual(["202"]);
+  });
+
+  it("as instruções mandam CIÊNCIA NF para 'ninguem' e proíbem a ciência genérica", () => {
+    const texto = instrucoesDaSugestao(LISTAS);
+    expect(texto).toContain('Se "parte_contraria" ou "ninguem": sugira SOMENTE a tarefa 316 | CIÊNCIA NF');
+    expect(texto).toContain("Nunca use ACOMPANHAMENTO PROCESSUAL, CIÊNCIA DA MOVIMENTAÇÃO PROCESSUAL");
+  });
 
   it("a entrada leva o cliente e as partes com o polo, sem os intimados", () => {
     const texto = entradaDaSugestao({
