@@ -1,5 +1,5 @@
 import { chaveDoCaminho, separarNomes } from "./agendamento";
-import { somarDiasCorridos, somarDiasUteis } from "./dias-uteis";
+import { datasDoPrazo, somarDiasCorridos, somarDiasUteis } from "./dias-uteis";
 import { PESSOA_FIXA_PROTOCOLAR, cadeiaDoFluxo, type FluxoDaTarefa, type PapelNoFluxo, type ResponsabilidadeDoTipo, type TarefaDoFluxo } from "./fluxo-vios";
 import type { AgendamentoResumo, DataDoFluxo, TarefaPrevista } from "./types";
 
@@ -60,7 +60,15 @@ export function fluxoPrevisto(
   agendamento: Pick<AgendamentoResumo, "data" | "responsavel" | "revisor">,
   fluxo: FluxoDaTarefa | null,
   ehDiaUtil: (iso: string) => boolean,
-  opcoes: { hoje: string; datas?: DataDoFluxo[] | null }
+  opcoes: {
+    hoje: string;
+    datas?: DataDoFluxo[] | null;
+    /**
+     * Prazo curto (`datasDoPrazo` com `ajustada`): o Revisar e o Protocolar da agendada vão nestas datas, não na
+     * conta do VIOS a partir do Enviar (que passaria da fatal). A data escolhida pelo jurídico continua valendo.
+     */
+    apertada?: { revisar: string | null; protocolar: string | null } | null;
+  }
 ): TarefaPrevista[] {
   if (!fluxo) return [];
   const cadeia = cadeiaDoFluxo(fluxo);
@@ -82,7 +90,20 @@ export function fluxoPrevisto(
       const caminho = [...caminhoDoPai, tarefa.nome];
       const dataVios = dataDe(tarefa, viosDoPai, nivel);
       const pedida = pedidas.get(chaveDoCaminho(caminho)) ?? null;
-      const data = pedida ?? dataDe(tarefa, finalDoPai, nivel);
+      const apertada =
+        !pedida && nivel === 1 && opcoes.apertada
+          ? tarefa.papel === "revisor"
+            ? opcoes.apertada.revisar
+            : tarefa.papel === "protocolar"
+              ? opcoes.apertada.protocolar
+              : null
+          : null;
+      const calculada = pedida ?? apertada ?? dataDe(tarefa, finalDoPai, nivel);
+      // Nada antes de hoje: a regra do VIOS pode dar uma data passada (ex.: Enviar Custas 5 dias corridos antes de um
+      // Enviar que já é hoje); vai para hoje, e o robô grava no VIOS. A escolhida pelo jurídico vale como está.
+      const passada = !pedida && calculada !== null && calculada < opcoes.hoje;
+      const data = passada ? opcoes.hoje : calculada;
+      const ajustada = passada ? ("hoje" as const) : apertada && apertada !== dataVios ? ("fatal" as const) : null;
       previstas.push({
         nome: tarefa.nome,
         caminho,
@@ -90,6 +111,7 @@ export function fluxoPrevisto(
         data,
         dataVios,
         editada: Boolean(pedida),
+        ...(ajustada && data !== dataVios ? { ajustada } : {}),
         responsaveis: quem(tarefa),
         quando: "criacao",
         classe: tarefa.classe ?? null,
@@ -113,10 +135,54 @@ export function fluxoPrevisto(
   return previstas;
 }
 
+/**
+ * As tarefas do fluxo em árvore, como o VIOS cria: embaixo de cada uma, as que ela cria (Embargos › Revisar ›
+ * Protocolar; Apelação › Revisar › Protocolar), mesmo que as datas fiquem fora da ordem do calendário. Entre irmãs,
+ * pela data (sem data por último) e, no empate, na ordem do fluxo.
+ */
+export function emOrdemDeArvore(previstas: TarefaPrevista[]): TarefaPrevista[] {
+  const filhas = new Map<string, TarefaPrevista[]>();
+  for (const tarefa of previstas) {
+    const pai = chaveDoCaminho(tarefa.caminho.slice(0, -1));
+    filhas.set(pai, [...(filhas.get(pai) ?? []), tarefa]);
+  }
+  const ordem = new Map(previstas.map((tarefa, indice) => [tarefa, indice]));
+  const porData = (a: TarefaPrevista, b: TarefaPrevista) =>
+    (a.data && b.data ? a.data.localeCompare(b.data) : a.data ? -1 : b.data ? 1 : 0) || (ordem.get(a) ?? 0) - (ordem.get(b) ?? 0);
+  const saida: TarefaPrevista[] = [];
+  const vistas = new Set<TarefaPrevista>();
+  const visitar = (chave: string) => {
+    for (const tarefa of [...(filhas.get(chave) ?? [])].sort(porData)) {
+      if (vistas.has(tarefa)) continue;
+      vistas.add(tarefa);
+      saida.push(tarefa);
+      visitar(chaveDoCaminho(tarefa.caminho));
+    }
+  };
+  visitar(chaveDoCaminho([]));
+  // Garantia: nenhuma fica de fora (caminho sem o pai na lista).
+  return saida.length === previstas.length ? saida : [...saida, ...previstas.filter((tarefa) => !vistas.has(tarefa))];
+}
+
+/**
+ * Prazo curto a partir de hoje (`datasDoPrazo` com `ajustada`): o Enviar que vai para o VIOS (hoje) e as datas
+ * apertadas do Revisar e do Protocolar, até 1 dia útil antes da fatal. Null quando a cadeia do fluxo cabe.
+ */
+export function prazoApertado(
+  agendamento: { etiqueta: string; dataFatal: string | null },
+  fluxo: FluxoDaTarefa | null,
+  ehDiaUtil: (iso: string) => boolean,
+  hoje: string
+): { enviar: string; revisar: string | null; protocolar: string | null } | null {
+  if (agendamento.etiqueta !== "PRAZO" || !agendamento.dataFatal) return null;
+  const datas = datasDoPrazo(agendamento.dataFatal, ehDiaUtil, cadeiaDoFluxo(fluxo), hoje);
+  return datas.ajustada ? { enviar: datas.enviar, revisar: datas.revisar, protocolar: datas.protocolar } : null;
+}
+
 /** Datas que o robô grava no VIOS depois de lançar: as do fluxo que ficaram diferentes da que o VIOS dá. */
 export function datasParaOVios(previstas: TarefaPrevista[]): DataDoFluxo[] {
   return previstas
-    .filter((tarefa) => tarefa.quando === "criacao" && tarefa.data && tarefa.data !== tarefa.dataVios)
+    .filter((tarefa) => tarefa.quando === "criacao" && !tarefa.repetida && tarefa.data && tarefa.data !== tarefa.dataVios)
     .map((tarefa) => ({ caminho: tarefa.caminho, data: tarefa.data as string }));
 }
 
