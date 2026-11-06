@@ -81,7 +81,7 @@ const ETAPAS: Record<EtapaVisao, { rotulo: string; dica: string; href: string; i
   triagem: { rotulo: "Triagem Manual", dica: "pendências sem área", href: "/operacoes-legais/vistagem/controladoria", icone: FolderSearch },
   duplicidades: { rotulo: "Duplicidades", dica: "a revisar", href: "/operacoes-legais/vistagem/duplicidades", icone: Copy },
   vistagem: { rotulo: "Vistagem", dica: "para vistar", href: "/operacoes-legais/vistagem/juridico", icone: Scale },
-  conferencia: { rotulo: "Conferência", dica: "a conferir", href: "/operacoes-legais/vistagem/conferencia", icone: ClipboardCheck },
+  conferencia: { rotulo: "Conferência de Operações Legais", dica: "a conferir", href: "/operacoes-legais/vistagem/conferencia", icone: ClipboardCheck },
   envio: { rotulo: "Envio ao VIOS", dica: "enviando", href: "/operacoes-legais/vistagem/conferencia", icone: ArrowRight },
   check: { rotulo: "Check", dica: "a checar", href: "/operacoes-legais/vistagem/check", icone: CheckCheck },
 };
@@ -390,20 +390,6 @@ function ParaVistar({ visao }: { visao: VisaoGeral }) {
           ))}
         </div>
       )}
-      {(visao.vistadoresDeTodas ?? []).length ? (
-        // Quem vista qualquer área (sócios, controladoria): não é uma fila, então vem como rodapé.
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[#e6eef0] bg-[#f7fbfc] px-4 py-3">
-          <p className="text-xs font-semibold uppercase text-[#285f7a]">Vistam todas as áreas</p>
-          {visao.vistadoresDeTodas.map((grupo) => (
-            <span key={grupo.tipo} className="flex min-w-0 items-center gap-2">
-              <FotosEmPilha pessoas={grupo.pessoas} />
-              <span className="min-w-0 text-xs text-muted-foreground" title={grupo.pessoas.map((pessoa) => pessoa.nome).join(", ")}>
-                <span className="text-foreground">{nomesDaLinha(grupo.pessoas)}</span> · {ROTULO_DEMANDA[grupo.tipo].toLowerCase()}
-              </span>
-            </span>
-          ))}
-        </div>
-      ) : null}
     </Painel>
   );
 }
@@ -419,7 +405,8 @@ function BlocoArea({ area, linhas, maior }: { area: AreaDaVisao; linhas: Vistado
       <div className="flex items-center gap-3 bg-[#f7fbfc] px-4 py-3">
         <IconeArea area={area.area} tamanho="md" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-foreground">{area.area}</p>
+          {/* O nome da área um pouco maior que os vistadores abaixo dele: é o título do bloco. */}
+          <p className="truncate text-base font-semibold leading-snug text-foreground">{area.area}</p>
           <p className="truncate text-xs text-muted-foreground">
             {area.maisAntigaParaVistar ? `Mais antiga publicada em ${formatarData(area.maisAntigaParaVistar)}` : "Nada para vistar"}
             {depois.length ? ` · ${depois.join(" · ")}` : ""}
