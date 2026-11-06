@@ -125,27 +125,154 @@ function TextoComparado({ texto, outro }: { texto: string; outro: string }) {
   );
 }
 
-/** Uma linha da comparação: o rótulo, o valor da principal, o da cópia e se batem. */
-function LinhaComparacao({ rotulo, principal, copia, bate }: { rotulo: string; principal: string; copia: string; bate: boolean | null }) {
+const lista = (valores: (string | number)[]) => valores.join(", ");
+
+/** Um dado do envio (Id, intimados, órgão, divulgação) na principal e na cópia. Vazio quando não veio. */
+interface CampoComparado {
+  rotulo: string;
+  principal: string;
+  copia: string;
+  /** Se batem; null quando nenhum dos dois traz o dado. */
+  bate: boolean | null;
+}
+
+function camposComparados(principal: PublicacaoResumo | null, copia: PublicacaoResumo): CampoComparado[] {
+  const idsPrincipal = principal?.documentoIds ?? [];
+  const intimadosPrincipal = lista(principal?.djenIntimados ?? []);
+  const data = (iso: string | null | undefined) => (iso ? formatarData(iso) : "");
+  return [
+    {
+      rotulo: "Id do documento",
+      principal: lista(idsPrincipal),
+      copia: lista(copia.documentoIds),
+      bate: idsPrincipal.length || copia.documentoIds.length ? idsPrincipal.some((id) => copia.documentoIds.includes(id)) : null,
+    },
+    { rotulo: "Intimado(s)", principal: intimadosPrincipal, copia: lista(copia.djenIntimados), bate: intimadosPrincipal === lista(copia.djenIntimados) },
+    { rotulo: "Órgão", principal: principal?.djenOrgao ?? "", copia: copia.djenOrgao ?? "", bate: (principal?.djenOrgao ?? "") === (copia.djenOrgao ?? "") },
+    { rotulo: "Divulgação", principal: data(principal?.dataDivulgacao), copia: data(copia.dataDivulgacao), bate: principal?.dataDivulgacao === copia.dataDivulgacao },
+  ];
+}
+
+/** Sinal à esquerda do rótulo: ponto âmbar quando difere, ✓ quando bate em parte (um Id em comum, por exemplo). */
+function SinalCampo({ bate }: { bate: boolean | null }) {
   return (
-    <tr className="border-t border-[#eef3f5] align-top first:border-t-0">
-      <th scope="row" className="w-36 py-2 pr-3 text-left text-xs font-medium text-muted-foreground">
-        {rotulo}
-      </th>
-      <td className="py-2 pr-3 text-sm text-foreground">{principal || <span className="text-muted-foreground">—</span>}</td>
-      <td className="py-2 pr-3 text-sm text-foreground">{copia || <span className="text-muted-foreground">—</span>}</td>
-      <td className="w-8 py-2 text-right">
-        {bate === null ? null : bate ? (
-          <Check className="ml-auto size-4 text-emerald-600" aria-label="Igual" />
-        ) : (
-          <span className="ml-auto inline-block size-2.5 rounded-full bg-amber-500" aria-label="Diferente" title="Diferente" />
-        )}
-      </td>
-    </tr>
+    <span className="grid size-3.5 shrink-0 place-items-center">
+      {bate === null ? null : bate ? (
+        <Check className="size-3.5 text-emerald-600" role="img" aria-label="Batem em parte" />
+      ) : (
+        <span className="size-2 rounded-full bg-amber-500" role="img" aria-label="Diferente" title="Diferente" />
+      )}
+    </span>
   );
 }
 
-const lista = (valores: (string | number)[]) => valores.join(", ");
+/**
+ * Os dados do envio comparados, em pouca altura: o que difere fica lado a lado (principal × cópia), com colunas de
+ * largura limitada; o que é igual nos dois vira uma linha só, com o valor uma vez.
+ */
+function DadosComparados({ campos, linhaPrincipal, linhaCopia }: { campos: CampoComparado[]; linhaPrincipal: number | null; linhaCopia: number | null }) {
+  const diferentes = campos.filter((campo) => campo.principal !== campo.copia);
+  // Os que batem com valor primeiro; os que nenhum dos dois traz (—) por último.
+  const iguais = campos.filter((campo) => campo.principal === campo.copia).sort((a, b) => Number(!a.principal) - Number(!b.principal));
+  const rotuloLinha = "block py-0.5 pr-3 text-left align-top text-xs font-medium text-muted-foreground @xl:table-cell @xl:py-1.5";
+  const colunas = [`Principal · linha ${linhaPrincipal ?? "?"}`, `Cópia · linha ${linhaCopia ?? "?"}`];
+  // Painel estreito (celular): cada dado vira um bloco, com principal e cópia um embaixo do outro.
+  const linha = "block border-t border-[#eef3f5] py-1 first:border-t-0 @xl:table-row @xl:py-0";
+  const celula = "block break-words py-0.5 align-top text-foreground @xl:table-cell @xl:max-w-[36rem] @xl:py-1.5";
+  const miniTitulo = "block text-[11px] font-semibold uppercase leading-4 text-[#285f7a] @xl:hidden";
+  return (
+    <div className="px-3.5 py-0.5">
+      {/* Largura pelo conteúdo: a tabela só ocupa o que os valores pedem, sem esticar as colunas pela tela. */}
+      <table className="block text-[13px] leading-5 @xl:table @xl:min-w-[28rem]">
+        <colgroup>
+          <col className="w-[8.5rem]" />
+          <col />
+          <col />
+        </colgroup>
+        {diferentes.length ? (
+          <thead className="hidden @xl:table-header-group">
+            <tr className="text-left text-[11px] font-semibold uppercase leading-4 text-[#285f7a]">
+              <th className="pb-0.5 pt-1.5 pr-3">
+                <span className="sr-only">Dado</span>
+              </th>
+              <th className="pb-0.5 pt-1.5 pr-6">{colunas[0]}</th>
+              <th className="pb-0.5 pt-1.5">{colunas[1]}</th>
+            </tr>
+          </thead>
+        ) : null}
+        <tbody className="block @xl:table-row-group">
+          {diferentes.map((campo) => (
+            <tr key={campo.rotulo} className={linha}>
+              <th scope="row" className={rotuloLinha}>
+                <span className="flex items-center gap-1.5">
+                  <SinalCampo bate={campo.bate} />
+                  {campo.rotulo}
+                </span>
+              </th>
+              {[campo.principal, campo.copia].map((valor, indice) => (
+                <td key={indice} className={cn(celula, indice === 0 && "@xl:pr-6")}>
+                  <span className={miniTitulo}>{colunas[indice]}</span>
+                  {valor || <span className="text-muted-foreground">—</span>}
+                </td>
+              ))}
+            </tr>
+          ))}
+          {iguais.length ? (
+            <tr className={linha}>
+              <th scope="row" className={rotuloLinha}>
+                <span className="flex items-center gap-1.5">
+                  <span className="size-3.5 shrink-0" aria-hidden />
+                  Iguais nos dois
+                </span>
+              </th>
+              <td colSpan={2} className="block py-0.5 align-top @xl:table-cell @xl:py-1.5">
+                <span className="flex flex-wrap gap-x-4 gap-y-1">
+                  {iguais.map((campo) =>
+                    campo.principal ? (
+                      <span key={campo.rotulo} className="inline-flex min-w-0 items-baseline gap-1">
+                        <Check className="size-3.5 shrink-0 self-center text-emerald-600" aria-hidden />
+                        <span className="text-xs text-muted-foreground">{campo.rotulo}</span>
+                        <span className="min-w-0 text-foreground">{campo.principal}</span>
+                      </span>
+                    ) : (
+                      <span key={campo.rotulo} className="text-xs text-muted-foreground" title="Nenhum dos dois envios traz esse dado">
+                        {campo.rotulo} —
+                      </span>
+                    )
+                  )}
+                </span>
+              </td>
+            </tr>
+          ) : null}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** O texto em uma linha: quantos trechos mudam (na cor do realce dos textos abaixo), o quanto bate e o tamanho de cada um. */
+function ResumoDoTexto({ principal, copia, comparacao }: { principal: string | null; copia: string | null; comparacao: ComparacaoTeor | null }) {
+  if (principal === null || copia === null || !comparacao) return <span>comparando o texto…</span>;
+  const tamanhos = `${principal.length.toLocaleString("pt-BR")} × ${copia.length.toLocaleString("pt-BR")} caracteres`;
+  return (
+    <>
+      {comparacao.iguais ? (
+        <span className="inline-flex items-center gap-1 font-medium text-emerald-700">
+          <Check className="size-3.5" aria-hidden />
+          textos iguais
+        </span>
+      ) : (
+        <>
+          <span className="rounded-sm bg-amber-100 px-1 py-px font-medium text-amber-950" title="Em âmbar nos textos abaixo">
+            {plural(comparacao.trechosDiferentes, "trecho diferente", "trechos diferentes")}
+          </span>{" "}
+          · {Math.round(comparacao.semelhanca * 100)}% em comum
+        </>
+      )}{" "}
+      · <span className="tabular-nums">{tamanhos}</span>
+    </>
+  );
+}
 
 function Duplicidades() {
   const [situacao, setSituacao] = useState<Situacao>("pendentes");
@@ -320,6 +447,7 @@ function Duplicidades() {
     <div className="space-y-4">
       <BarraAba
         resumo={
+          <div className="w-fit" data-tour="dp-situacao">
           <Segmented
             label="Situação da conferência"
             value={situacao}
@@ -330,15 +458,16 @@ function Duplicidades() {
             }))}
             onChange={trocarSituacao}
           />
+          </div>
         }
       >
         {filaRecolhida ? (
-          <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)}>
+          <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)} data-tour="dp-fila">
             <PanelLeftOpen />
             Mostrar fila
           </Button>
         ) : null}
-        <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Processo, grupo, parte ou intimado" aria-label="Buscar duplicidade" />
+        <Busca value={busca} onChange={(evento) => setBusca(evento.target.value)} placeholder="Processo, grupo, parte ou intimado" aria-label="Buscar duplicidade" data-tour="dp-filtros" />
         <Seletor
           rotulo="Id do documento"
           className="sm:w-60"
@@ -393,13 +522,13 @@ function Duplicidades() {
           {erro}
         </Aviso>
       ) : grupos.length === 0 ? (
-        <Painel>
+        <Painel data-tour="dp-vazio">
           <Vazio icone={CopyX} titulo={pendentes ? "Nenhuma duplicidade para conferir." : "Nenhuma duplicidade conferida ainda."}>
             {pendentes ? "Quando a captura marcar uma cópia de despacho, ela aparece aqui para você comparar." : null}
           </Vazio>
         </Painel>
       ) : filtrados.length === 0 ? (
-        <Painel>
+        <Painel data-tour="dp-vazio">
           <Vazio icone={SearchX} titulo="Nenhuma duplicidade com esses filtros.">
             <Button variant="link" className="h-auto p-0" onClick={limparFiltros}>
               Limpar filtros
@@ -415,6 +544,7 @@ function Duplicidades() {
           )}
         >
           <Painel
+            data-tour="dp-fila"
             aria-label="Despachos com duplicidade"
             className={cn("lg:flex lg:h-full lg:flex-col", aberto && !listaNoCelular && "hidden lg:flex", filaRecolhida && "lg:hidden")}
           >
@@ -485,7 +615,7 @@ function Duplicidades() {
                   }
                 >
                   {pendentes ? (
-                    <Button size="sm" className={BOTAO_FAIXA_PRINCIPAL} onClick={() => revisar(aberto, aberto.copias, "confirmada")} disabled={salvando !== null}>
+                    <Button size="sm" className={BOTAO_FAIXA_PRINCIPAL} data-tour="dp-decidir" onClick={() => revisar(aberto, aberto.copias, "confirmada")} disabled={salvando !== null}>
                       {salvando === aberto.chave ? <LoaderCircle className="animate-spin" /> : aberto.copias.length > 1 ? <CheckCheck /> : <Check />}
                       {aberto.copias.length > 1 ? `Confirmar todas (${aberto.copias.length})` : "Confirmar duplicidade"}
                     </Button>
@@ -541,12 +671,18 @@ function Duplicidades() {
                     ) : null}
 
                     {copia ? (
-                      <section aria-label="Comparação" className="overflow-hidden rounded-lg border border-[#dce9eb]">
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[#e6eef0] bg-[#f7fbfc] px-3.5 py-2.5">
+                      <section aria-label="Comparação" data-tour="dp-comparacao" className="overflow-hidden rounded-lg border border-[#dce9eb]">
+                        {/* Cabeçalho numa linha: o critério, o resumo do texto e a decisão. */}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-[#e6eef0] bg-[#f7fbfc] px-3.5 py-1.5">
                           <h3 className="text-xs font-semibold uppercase text-[#285f7a]">Principal × cópia</h3>
-                          <span className="text-xs text-muted-foreground">
-                            marcada {copia.duplicidade.duplicidadeCriterio === "id_documento" ? "pelo Id do documento" : "pelo texto"}
-                          </span>
+                          <p className="text-xs leading-5 text-muted-foreground">
+                            marcada {copia.duplicidade.duplicidadeCriterio === "id_documento" ? "pelo Id do documento" : "pelo texto"} ·{" "}
+                            {aberto.principal ? (
+                              <ResumoDoTexto principal={textoPrincipal} copia={textoCopia} comparacao={comparacao} />
+                            ) : (
+                              "principal não encontrada"
+                            )}
+                          </p>
                           <span className="ml-auto flex flex-wrap items-center gap-2">
                             {pendentes ? (
                               <Button size="sm" variant="outline" disabled={salvando !== null} onClick={() => revisar(aberto, [copia], "nao_duplicidade")}>
@@ -569,66 +705,11 @@ function Duplicidades() {
                             )}
                           </span>
                         </div>
-                        <div className="overflow-x-auto px-3.5 py-1">
-                          <table className="w-full min-w-[32rem]">
-                            <thead>
-                              <tr className="text-left text-[11px] font-semibold uppercase text-[#285f7a]">
-                                <th className="py-2 pr-3" />
-                                <th className="py-2 pr-3">Principal · linha {aberto.principal?.linhaArquivo ?? "?"}</th>
-                                <th className="py-2 pr-3">Cópia · linha {copia.duplicidade.linhaArquivo ?? "?"}</th>
-                                <th className="w-8" />
-                              </tr>
-                            </thead>
-                            <tbody>
-                              <LinhaComparacao
-                                rotulo="Id do documento"
-                                principal={lista(aberto.principal?.documentoIds ?? [])}
-                                copia={lista(copia.duplicidade.documentoIds)}
-                                bate={
-                                  (aberto.principal?.documentoIds.length ?? 0) || copia.duplicidade.documentoIds.length
-                                    ? (aberto.principal?.documentoIds ?? []).some((id) => copia.duplicidade.documentoIds.includes(id))
-                                    : null
-                                }
-                              />
-                              <LinhaComparacao
-                                rotulo="Intimado(s)"
-                                principal={lista(aberto.principal?.djenIntimados ?? [])}
-                                copia={lista(copia.duplicidade.djenIntimados)}
-                                bate={lista(aberto.principal?.djenIntimados ?? []) === lista(copia.duplicidade.djenIntimados)}
-                              />
-                              <LinhaComparacao
-                                rotulo="Órgão"
-                                principal={aberto.principal?.djenOrgao ?? ""}
-                                copia={copia.duplicidade.djenOrgao ?? ""}
-                                bate={(aberto.principal?.djenOrgao ?? "") === (copia.duplicidade.djenOrgao ?? "")}
-                              />
-                              <LinhaComparacao
-                                rotulo="Divulgação"
-                                principal={formatarData(aberto.principal?.dataDivulgacao ?? null)}
-                                copia={formatarData(copia.duplicidade.dataDivulgacao)}
-                                bate={aberto.principal?.dataDivulgacao === copia.duplicidade.dataDivulgacao}
-                              />
-                              <LinhaComparacao
-                                rotulo="Texto"
-                                principal={textoPrincipal === null ? "Carregando…" : `${textoPrincipal.length.toLocaleString("pt-BR")} caracteres`}
-                                copia={textoCopia === null ? "Carregando…" : `${textoCopia.length.toLocaleString("pt-BR")} caracteres`}
-                                bate={comparacao ? comparacao.iguais : null}
-                              />
-                            </tbody>
-                          </table>
-                        </div>
-                        {comparacao ? (
-                          <p className="border-t border-[#eef3f5] bg-[#fafcfc] px-3.5 py-2 text-xs text-muted-foreground">
-                            {comparacao.iguais ? (
-                              <span className="font-medium text-emerald-700">Os textos são iguais.</span>
-                            ) : (
-                              <>
-                                <span className="font-medium text-amber-800">{plural(comparacao.trechosDiferentes, "trecho diferente", "trechos diferentes")}</span>{" "}
-                                · {Math.round(comparacao.semelhanca * 100)}% das palavras em comum · em âmbar nos textos abaixo
-                              </>
-                            )}
-                          </p>
-                        ) : null}
+                        <DadosComparados
+                          campos={camposComparados(aberto.principal, copia.duplicidade)}
+                          linhaPrincipal={aberto.principal?.linhaArquivo ?? null}
+                          linhaCopia={copia.duplicidade.linhaArquivo ?? null}
+                        />
                       </section>
                     ) : null}
 
@@ -636,7 +717,7 @@ function Duplicidades() {
 
                     {/* Os dois textos lado a lado, cada um rolando sozinho, com o que muda em âmbar. */}
                     {copia ? (
-                      <div className="grid gap-3 @3xl:grid-cols-2">
+                      <div className="grid gap-3 @3xl:grid-cols-2" data-tour="dp-textos">
                         {[
                           { titulo: `Principal · linha ${aberto.principal?.linhaArquivo ?? "?"}`, texto: textoPrincipal, outro: textoCopia },
                           { titulo: `Cópia · linha ${copia.duplicidade.linhaArquivo ?? "?"}`, texto: textoCopia, outro: textoPrincipal },

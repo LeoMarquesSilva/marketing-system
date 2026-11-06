@@ -84,14 +84,17 @@ function arquivoResumo(row: ArquivoRow): ArquivoKurierResumo {
 }
 
 export const COLUNAS_PUBLICACAO =
-  "id, kurier_arquivo_id, linha_arquivo, numero_processo, numero_processo_original, tribunal, justica, data_divulgacao, data_publicacao, nome_localizado, djen_id_comunicacao, djen_orgao, djen_tipo_comunicacao, djen_intimados, status, motivo_descarte, duplicidade_de, duplicidade_resultado, duplicidade_criterio, documento_ids, duplicidade_revisada_por, duplicidade_revisada_em, pasta_ci, pasta_vinculo, cliente, grupo_cliente, advogado_responsavel, situacao_processo, acao_processo, fase_processual, valor_acao, valor_acao_atualizado, escritorio_responsavel, demanda_risco, pendencia, pastas_candidatas, triada_em, observacao_vistagem, vistado_por, vistado_em, conferido_por, conferido_em, devolucao_motivo, devolvido_em, devolvido_por, revistado_por, revistado_em, checado_em, check_nota, transferido_de, transferido_em, transferencia_motivo, publicacao_esocial, sugestao_triagem, teor, arquivo:vistagem_kurier_arquivos(data_arquivo)";
+  "id, kurier_arquivo_id, linha_arquivo, numero_processo, numero_processo_original, tribunal, justica, data_divulgacao, data_publicacao, nome_localizado, djen_id_comunicacao, djen_orgao, djen_tipo_comunicacao, djen_intimados, status, motivo_descarte, duplicidade_de, duplicidade_resultado, duplicidade_criterio, documento_ids, duplicidade_revisada_por, duplicidade_revisada_em, pasta_ci, pasta_vinculo, cliente, grupo_cliente, advogado_responsavel, situacao_processo, acao_processo, fase_processual, valor_acao, valor_acao_atualizado, escritorio_responsavel, demanda_risco, pendencia, pastas_candidatas, triada_em, observacao_vistagem, vistado_por, vistado_em, conferido_por, conferido_em, devolucao_motivo, devolvido_em, devolvido_por, revistado_por, revistado_em, checado_em, check_nota, transferido_de, transferido_em, transferencia_motivo, publicacao_esocial, sugestao_triagem, teor, arquivo:vistagem_kurier_arquivos(data_arquivo, origem)";
+
+/** Lote de onde a publicação veio: o dia do arquivo e se foi da Kurier (SharePoint/envio) ou colada (e-mail, Teams). */
+export type ArquivoDaPublicacao = { data_arquivo: string | null; origem?: "sharepoint" | "upload" | "colado" | null };
 
 export type PublicacaoRow = {
   id: string; kurier_arquivo_id: string | null; linha_arquivo: number | null; numero_processo: string | null;
   numero_processo_original: string; tribunal: string | null; justica: PublicacaoResumo["justica"];
   data_divulgacao: string | null; data_publicacao: string | null; nome_localizado: string | null;
   /** Lote da Kurier (ou colagem) de onde a publicação veio (o PostgREST manda objeto; o tipo do supabase-js diz lista). */
-  arquivo?: { data_arquivo: string | null } | { data_arquivo: string | null }[] | null;
+  arquivo?: ArquivoDaPublicacao | ArquivoDaPublicacao[] | null;
   djen_id_comunicacao: number | null; djen_orgao: string | null; djen_tipo_comunicacao: string | null;
   djen_intimados: string[] | null; status: PublicacaoResumo["status"]; motivo_descarte: string | null;
   duplicidade_de: string | null; duplicidade_resultado: DuplicidadeResultado | null;

@@ -31,11 +31,24 @@ describe("configurações da Vistagem", () => {
     expect(normalizarValor("etiquetasDeRisco", ["Crítico", "critico", " Demanda de risco "])).toEqual(["Crítico", "Demanda de risco"]);
   });
 
-  it("vistadores: tira nomes vazios e áreas sem ninguém; recusa área fora da lista", () => {
-    expect(normalizarValor("vistadores", { Trabalhista: { normal: " Isadora Godoy ", risco: "" }, Cível: { normal: null, risco: null } })).toEqual({
-      Trabalhista: { normal: "Isadora Godoy" },
+  it("vistadores: listas sem vazios nem repetidos, áreas sem ninguém saem; recusa área fora da lista", () => {
+    expect(
+      normalizarValor("vistadores", {
+        Trabalhista: { normal: [" Isadora Godoy ", "isadora godoy", ""], risco: [] },
+        Cível: { normal: [], risco: [] },
+        "Todas as áreas": { normal: ["Ricardo Pires"] },
+      })
+    ).toEqual({
+      Trabalhista: { normal: ["Isadora Godoy"] },
+      "Todas as áreas": { normal: ["Ricardo Pires"] },
     });
-    expect(() => normalizarValor("vistadores", { "Área inventada": { normal: "Fulano" } })).toThrow();
+    expect(() => normalizarValor("vistadores", { "Área inventada": { normal: ["Fulano"] } })).toThrow();
+  });
+
+  it("vistadores no formato antigo (um nome só) viram lista", () => {
+    expect(lerValor("vistadores", { Trabalhista: { normal: "Isadora Godoy", risco: null } })).toEqual({
+      Trabalhista: { normal: ["Isadora Godoy"], risco: [] },
+    });
   });
 });
 

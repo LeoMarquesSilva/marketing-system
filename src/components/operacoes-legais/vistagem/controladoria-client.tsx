@@ -309,7 +309,7 @@ function ComparadorPastas({
       ) : (
         <p className="text-xs text-muted-foreground">Nenhuma se destaca: confira vínculo, situação e cliente.</p>
       )}
-      <ul className="grid gap-3 @2xl:grid-cols-[repeat(auto-fit,minmax(13rem,1fr))]">
+      <ul className="grid gap-3 @2xl:grid-cols-[repeat(auto-fit,minmax(13rem,1fr))]" data-tour="tm-escolher-pasta">
         {candidatas.map((pasta) => {
           const destaque = sugerida?.pasta.ci === pasta.ci;
           const ativa = pastaAtiva(pasta);
@@ -534,7 +534,7 @@ function Resolucao({
     <>
       {!publicacao.pastaCi && !variasPastas ? (
         <Secao titulo="Achou a pasta no VIOS?" id={`${base}-ci`}>
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2" data-tour="tm-escolher-pasta">
             <Campo rotulo="CI da pasta" className="min-w-0 flex-1">
               <Input
                 value={ci}
@@ -589,7 +589,7 @@ function Resolucao({
 
       <Secao titulo={variasPastas ? "Nenhuma serve? Informe os dados" : publicacao.pastaCi ? "Para onde vai" : "Sem pasta: para onde vai"} id={`${base}-destino`}>
         {sugestao ? <NotaSugestao sugestao={sugestao} /> : null}
-        <div className="grid gap-3 @lg:grid-cols-2 @4xl:grid-cols-1">
+        <div className="grid gap-3 @lg:grid-cols-2 @4xl:grid-cols-1" data-tour="tm-para-onde-vai">
           <CampoEscritorio valor={escritorio} onChange={setEscritorio} />
           <CampoGrupo valor={grupo} onChange={setGrupo} obrigatorio={grupoObrigatorio} />
         </div>
@@ -661,7 +661,7 @@ function DetalhePendencia({
 
   return (
     // Como a Conferência: a faixa do processo no topo e, embaixo, a publicação e a resolução rolando cada uma no seu lugar.
-    <Painel aria-labelledby="pendencia-titulo" className="@container lg:flex lg:h-full lg:flex-col">
+    <Painel aria-labelledby="pendencia-titulo" data-tour="tm-pendencia" className="@container lg:flex lg:h-full lg:flex-col">
       <FaixaDoProcesso
         numero={numero}
         tribunal={publicacao.tribunal}
@@ -676,7 +676,7 @@ function DetalhePendencia({
       >
         <SetasDaFila navegacao={navegacao} onAbrir={onAbrir} />
       </FaixaDoProcesso>
-      <div className="shrink-0 border-b border-[#e6eef0] bg-[#fafcfc] px-4 py-3">
+      <div className="shrink-0 border-b border-[#e6eef0] bg-[#fafcfc] px-4 py-3" data-tour="tm-publicacao">
         <ReguaDatas
           rotulo="Datas da publicação"
           hoje={hoje}
@@ -996,7 +996,7 @@ function Controladoria() {
       {/* O tipo de pendência fica no topo, como as abas da Conferência; os filtros e a triagem à direita. */}
       <BarraAba
         resumo={
-          <div className="space-y-1">
+          <div className="w-fit space-y-1" data-tour="tm-tipos-pendencia">
             <Segmented
               label="Tipo de pendência"
               value={abaAtiva}
@@ -1019,7 +1019,7 @@ function Controladoria() {
         }
       >
         {!filaAberta ? (
-          <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)}>
+          <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)} data-tour="tm-fila">
             <PanelLeftOpen />
             Mostrar fila
           </Button>
@@ -1033,10 +1033,11 @@ function Controladoria() {
           }}
           placeholder="Processo, CI, grupo, parte ou intimado"
           aria-label="Buscar publicação"
+          data-tour="tm-busca"
         />
         <FiltroData rotulo="Data Publicação" datas={datasDasPendencias} valor={dataAtiva} onChange={setDataPublicacao} />
         <FiltroData rotulo="Data da importação" datas={importacoesDasPendencias} valor={importacaoAtiva} onChange={setDataImportacao} />
-        <Button variant="outline" onClick={rodarTriagem} disabled={triando} title="Tria de novo o que ainda está pendente, com o SIOE">
+        <Button variant="outline" onClick={rodarTriagem} disabled={triando} data-tour="tm-rodar-triagem" title="Tria de novo o que ainda está pendente, com o SIOE">
           {triando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
           Rodar triagem agora
         </Button>
@@ -1080,7 +1081,7 @@ function Controladoria() {
           {erro}
         </Aviso>
       ) : fila.length === 0 && !(buscando && publicacaoAberta) ? (
-        <Painel>
+        <Painel data-tour="tm-vazio">
           {buscando ? (
             <Vazio icone={SearchX} titulo="Nenhuma pendência com essa busca">
               <Button variant="link" className="h-auto p-0" onClick={() => mudarBusca("")}>
@@ -1102,6 +1103,7 @@ function Controladoria() {
           )}
         >
           <Painel
+            data-tour="tm-fila"
             aria-label={buscando ? "Resultados da busca" : "Pendências"}
             className={cn("lg:flex lg:h-full lg:flex-col", publicacaoAberta && !listaNoCelular && "hidden lg:flex", !filaAberta && "lg:hidden")}
           >

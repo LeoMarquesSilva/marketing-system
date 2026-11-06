@@ -7,6 +7,19 @@ import type { DataDoFluxo } from "./types";
  */
 export type ModoAgendamento = "intimacao" | "pasta";
 
+/**
+ * Onde agendar esta publicação. A colada à mão ("Colar publicações": e-mail, Teams) não passa pela captura de
+ * Intimações do VIOS, então o lançamento pela intimação nunca a acharia (0101059-16, 06/11/2026): vai direto na
+ * pasta, como antes da intimação. As da Kurier seguem o modo do servidor (VISTAGEM_AGENDAMENTO).
+ */
+export function modoDaPublicacao(
+  arquivo: { origem?: string | null } | { origem?: string | null }[] | null | undefined,
+  padrao: ModoAgendamento
+): ModoAgendamento {
+  const lote = Array.isArray(arquivo) ? arquivo[0] : arquivo;
+  return lote?.origem === "colado" ? "pasta" : padrao;
+}
+
 /** Uma tarefa do lançamento pela intimação (coluna `lancamento` da fila do SAMA). */
 export interface TarefaDoLancamento {
   /** Id do agendamento no Orquestra; o robô devolve o CI de cada uma por esta chave. */

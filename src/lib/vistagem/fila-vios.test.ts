@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cisDoResultado, linhasParaFila, tarefasViosDoResultado, type AgendamentoParaFila, type PublicacaoParaFila } from "./fila-vios";
+import { cisDoResultado, linhasParaFila, modoDaPublicacao, tarefasViosDoResultado, type AgendamentoParaFila, type PublicacaoParaFila } from "./fila-vios";
 
 const PUBLICACAO: PublicacaoParaFila = {
   data_publicacao: "2026-10-15",
@@ -148,5 +148,19 @@ describe("datas do fluxo na fila do robô", () => {
       { simular: false, modo: "intimacao" }
     );
     expect(grupo.linha.lancamento?.tarefas[0].fluxo_datas).toEqual([{ caminho: ["EMBARGOS DE DECLARAÇÃO", "2. REVISAR"], data: "10/11/2026" }]);
+  });
+});
+
+describe("onde agendar cada publicação", () => {
+  it("a colada à mão (e-mail, Teams) vai na pasta: não está nas Intimações do VIOS (0101059-16)", () => {
+    expect(modoDaPublicacao({ origem: "colado" }, "intimacao")).toBe("pasta");
+    expect(modoDaPublicacao([{ origem: "colado" }], "intimacao")).toBe("pasta");
+  });
+
+  it("as da Kurier seguem o modo do servidor", () => {
+    expect(modoDaPublicacao({ origem: "sharepoint" }, "intimacao")).toBe("intimacao");
+    expect(modoDaPublicacao({ origem: "upload" }, "intimacao")).toBe("intimacao");
+    expect(modoDaPublicacao(null, "intimacao")).toBe("intimacao");
+    expect(modoDaPublicacao({ origem: "sharepoint" }, "pasta")).toBe("pasta");
   });
 });

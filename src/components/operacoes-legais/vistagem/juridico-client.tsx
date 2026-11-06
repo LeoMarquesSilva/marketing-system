@@ -429,7 +429,7 @@ function FluxoNoVios({
     ) : null;
 
   return (
-    <details open={aberto} onToggle={(evento) => setAberto(evento.currentTarget.open)} className="group rounded-md border border-[#e6eef0] bg-[#f7fbfc] text-xs">
+    <details data-tour="vj-fluxo" open={aberto} onToggle={(evento) => setAberto(evento.currentTarget.open)} className="group rounded-md border border-[#e6eef0] bg-[#f7fbfc] text-xs">
       <summary className="flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-muted-foreground [&::-webkit-details-marker]:hidden">
         <ChevronRight className="size-3.5 shrink-0 transition-transform group-open:rotate-90" aria-hidden />
         <Workflow className="size-3.5 shrink-0 text-[#285f7a]" aria-hidden />
@@ -669,7 +669,7 @@ export function EditorVistagem({
                   hora: item.hora ?? "",
                   horaFim: item.horaFim ?? horaFinalPadrao(item.hora),
                   responsavel: item.responsavel,
-                  revisor: item.revisor ?? "",
+                  revisor: item.etiqueta === "PROVIDENCIA" ? "" : item.revisor ?? "",
                   observacao: item.observacao ?? "",
                   esocial: tarefaEsocialId !== null && item.tarefaId === tarefaEsocialId,
                   fluxoDatas: Object.fromEntries(item.fluxoDatas.map((datada) => [chaveDoCaminho(datada.caminho), datada])),
@@ -760,11 +760,12 @@ export function EditorVistagem({
   }
 
   function trocarEtiqueta(linha: Linha, etiqueta: Etiqueta) {
-    // No Prazo o revisor é obrigatório: sugere o auxiliar da pasta se ainda estiver vazio.
+    // No Prazo o revisor é obrigatório: sugere o auxiliar da pasta se ainda estiver vazio. Providência não tem revisor.
     alterar(linha.chave, {
       etiqueta,
       tarefa: "",
-      revisor: etiqueta === "PRAZO" && !linha.revisor ? detalhe?.revisorSugerido ?? "" : linha.revisor,
+      revisor:
+        etiqueta === "PROVIDENCIA" ? "" : etiqueta === "PRAZO" && !linha.revisor ? detalhe?.revisorSugerido ?? "" : linha.revisor,
     });
   }
 
@@ -872,7 +873,7 @@ export function EditorVistagem({
             hora: linha.etiqueta === "COMPROMISSO" ? linha.hora : null,
             horaFim: linha.etiqueta === "COMPROMISSO" ? linha.horaFim || null : null,
             responsavel: linha.responsavel,
-            revisor: linha.revisor || null,
+            revisor: linha.etiqueta === "PROVIDENCIA" ? null : linha.revisor || null,
             observacao: linha.observacao || null,
             fluxoDatas: Object.values(linha.fluxoDatas),
           })),
@@ -951,7 +952,7 @@ export function EditorVistagem({
             </Aviso>
           ) : null}
 
-          <Painel aria-labelledby="publicacao-titulo" className="flex min-h-0 flex-col @4xl:flex-1">
+          <Painel aria-labelledby="publicacao-titulo" data-tour="vj-publicacao" className="flex min-h-0 flex-col @4xl:flex-1">
             {/* Faixa azul-marinho: o processo aberto fica marcado no topo da coluna. */}
             <FaixaDoProcesso
               numero={publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}
@@ -1046,7 +1047,9 @@ export function EditorVistagem({
                 </FichaPasta>
                 <ReguaDatas rotulo="Datas da publicação" hoje={detalhe.hoje} marcos={marcosDaPublicacao} />
               </div>
-              <LeitorPublicacao publicacao={publicacao} partesNoCabecalho onUsarDias={catalogo && publicacao.dataPublicacao ? usarDias : undefined} />
+              <div data-tour="vj-leitura">
+                <LeitorPublicacao publicacao={publicacao} partesNoCabecalho onUsarDias={catalogo && publicacao.dataPublicacao ? usarDias : undefined} />
+              </div>
             </div>
           </Painel>
         </div>
@@ -1054,6 +1057,7 @@ export function EditorVistagem({
         <div className="min-h-0 space-y-3 @4xl:h-full @4xl:overflow-y-auto @4xl:pr-1">
           {antesDasTarefas}
           {estadoSugestao && catalogo ? (
+            <div data-tour="vj-sugestao-ia">
             <CartaoSugestaoIa
               estado={estadoSugestao}
               sugestao={sugestao}
@@ -1067,10 +1071,11 @@ export function EditorVistagem({
               onDesfazer={desfazerSugestao}
               onMostrar={() => setEstadoSugestao("pronta")}
             />
+            </div>
           ) : null}
 
           {/* sem overflow-hidden: o rodapé com o botão de enviar fica preso no fim da coluna */}
-          <Painel aria-labelledby="tarefas-titulo" className="overflow-visible">
+          <Painel aria-labelledby="tarefas-titulo" className="overflow-visible" data-tour="vj-tarefas-painel">
             {detalhe.fluxosErro ? (
               <div className="px-4 pt-4">
                 <Aviso tom="alerta">
@@ -1086,7 +1091,7 @@ export function EditorVistagem({
             ) : (
               <>
                 {/* Cabeçalho do bloco: o que é, quantas tarefas vão, o eSocial (Trabalhista) e o botão de incluir outra. */}
-                <div className="space-y-3 rounded-t-lg border-b border-[#e6eef0] bg-[#fafcfc] px-4 py-3">
+                <div className="space-y-3 rounded-t-lg border-b border-[#e6eef0] bg-[#fafcfc] px-4 py-3" data-tour="vj-tarefas">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                     <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#e8f8f8] text-[#285f7a] ring-1 ring-[#47cdd0]/30" aria-hidden>
                       <ListPlus className="size-4" />
@@ -1165,6 +1170,7 @@ export function EditorVistagem({
                     return (
                       <li
                         key={linha.chave}
+                        data-tour={indice === 0 ? "vj-tarefa" : undefined}
                         aria-label={`Tarefa ${indice + 1} de ${linhas.length}`}
                         className="overflow-hidden rounded-lg border border-[#d3e2e6] bg-white shadow-[0_1px_3px_rgba(16,41,58,0.08)]"
                       >
@@ -1383,7 +1389,8 @@ export function EditorVistagem({
                           </BlocoTarefa>
 
                           <BlocoTarefa titulo="Quem" icone={Users}>
-                            <div className="grid gap-3 @md:grid-cols-2">
+                            {/* Providência não tem revisor (nenhum tipo cria 2. REVISAR no VIOS): só o responsável. */}
+                            <div className={cn("grid gap-3", linha.etiqueta !== "PROVIDENCIA" && "@md:grid-cols-2")}>
                               <div className="space-y-1.5">
                                 <span className="block text-xs font-medium text-muted-foreground">Responsável</span>
                                 <CampoResponsaveis
@@ -1399,6 +1406,7 @@ export function EditorVistagem({
                                   }
                                 />
                               </div>
+                              {linha.etiqueta === "PROVIDENCIA" ? null : (
                               <div className="space-y-1.5">
                                 <span className="block text-xs font-medium text-muted-foreground">
                                   {prazo ? "Revisor (obrigatório)" : "Revisor (opcional)"}
@@ -1418,6 +1426,7 @@ export function EditorVistagem({
                                   invalido={prazo && !linha.revisor}
                                 />
                               </div>
+                              )}
                             </div>
                           </BlocoTarefa>
 
@@ -1477,7 +1486,7 @@ export function EditorVistagem({
                   </div>
                 ) : null}
 
-                <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-b-lg border-t border-[#e6eef0] bg-white px-4 py-3 shadow-[0_-8px_16px_-12px_rgba(16,41,58,0.18)]">
+                <div data-tour="vj-enviar" className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-b-lg border-t border-[#e6eef0] bg-white px-4 py-3 shadow-[0_-8px_16px_-12px_rgba(16,41,58,0.18)]">
                   <p className="min-w-0 flex-1 text-xs text-muted-foreground" aria-live="polite">
                     {completo
                       ? `${linhas.length} ${linhas.length === 1 ? "tarefa pronta" : "tarefas prontas"} para a conferência.`
@@ -1694,7 +1703,14 @@ function FiltroDemanda({
   );
 }
 
-/** Agrupa a fila por grupo do cliente; grupos e publicações com demanda de risco primeiro. */
+/** Dia do recebimento para ordenar; sem data vai para o fim. */
+const recebimento = (publicacao: PublicacaoResumo) => publicacao.dataImportacao ?? "9999-12-31";
+
+/**
+ * Agrupa a fila por grupo do cliente, na ordem do recebimento: a mais antiga primeiro, com ou sem risco (a normal
+ * de ontem vem antes da de risco de hoje). No mesmo dia, a de risco vem antes. Os grupos seguem a publicação mais
+ * antiga de cada um.
+ */
 function agruparFila(publicacoes: PublicacaoResumo[]): GrupoFila[] {
   const grupos = new Map<string, PublicacaoResumo[]>();
   for (const publicacao of publicacoes) {
@@ -1705,11 +1721,19 @@ function agruparFila(publicacoes: PublicacaoResumo[]): GrupoFila[] {
     .map(([nome, lista]) => ({
       nome,
       publicacoes: [...lista].sort(
-        (a, b) => Number(Boolean(b.demandaRisco)) - Number(Boolean(a.demandaRisco)) || (a.dataPublicacao ?? "").localeCompare(b.dataPublicacao ?? "")
+        (a, b) =>
+          recebimento(a).localeCompare(recebimento(b)) ||
+          Number(Boolean(b.demandaRisco)) - Number(Boolean(a.demandaRisco)) ||
+          (a.dataPublicacao ?? "").localeCompare(b.dataPublicacao ?? "")
       ),
       riscos: lista.filter((p) => p.demandaRisco).length,
     }))
-    .sort((a, b) => Number(b.riscos > 0) - Number(a.riscos > 0) || a.nome.localeCompare(b.nome, "pt-BR"));
+    .sort(
+      (a, b) =>
+        recebimento(a.publicacoes[0]).localeCompare(recebimento(b.publicacoes[0])) ||
+        Number(b.riscos > 0) - Number(a.riscos > 0) ||
+        a.nome.localeCompare(b.nome, "pt-BR")
+    );
 }
 
 function Juridico() {
@@ -1868,9 +1892,11 @@ function Juridico() {
 
   return (
     <div className="space-y-4">
-      {/* Uma linha só: "A vistar / Agendadas" à esquerda e os filtros do tamanho do conteúdo (sem nada escolhido,
-          só o ícone e o nome do filtro). Em tela estreita, os filtros descem de linha. */}
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Uma linha só: "A vistar / Vistado", Risco / Normal (só para quem vista os dois), área, recebimento,
+          grupo, tribunal e a busca, do tamanho do conteúdo (sem nada escolhido, só o ícone e o nome do filtro).
+          Em tela estreita, os filtros descem de linha. */}
+      <div className="flex flex-wrap items-center gap-2" data-tour="vj-filtros">
+        <div data-tour="vj-visao">
         <Segmented
           label="Visão do jurídico"
           value={visao}
@@ -1880,13 +1906,10 @@ function Juridico() {
           ]}
           onChange={setVisao}
         />
-        <Busca
-          className="sm:w-52"
-          value={busca}
-          onChange={(evento) => setBusca(evento.target.value)}
-          placeholder="Processo, cliente ou CI"
-          aria-label="Buscar publicação"
-        />
+        </div>
+        {visao === "fila" && veRisco ? (
+          <FiltroDemanda valor={risco} riscos={riscos} normais={(publicacoes?.length ?? 0) - riscos} onChange={setRisco} />
+        ) : null}
         <Seletor
           rotulo="Área"
           className={FILTRO_COMPACTO}
@@ -1930,14 +1953,20 @@ function Juridico() {
               rotuloVazio={<CampoVazio icone={<IconeOpcao icone={Landmark} />} texto="Tribunal" />}
               opcoes={tribunaisDaFila.map(([nome, quantidade]) => ({ valor: nome, rotulo: nome, descricao: descricaoDoTribunal(nome), contagem: quantidade, icone: <IconeTribunal sigla={nome} /> }))}
             />
-            {veRisco ? <FiltroDemanda valor={risco} riscos={riscos} normais={(publicacoes?.length ?? 0) - riscos} onChange={setRisco} /> : null}
-            {filtrosAtivos && publicacoes ? (
-              <Button type="button" variant="ghost" size="sm" className="text-[#347796]" onClick={limparFiltros} title="Mostrar todas de novo">
-                <X />
-                Limpar ({filtradas.length} de {publicacoes.length})
-              </Button>
-            ) : null}
           </>
+        ) : null}
+        <Busca
+          className="sm:w-52"
+          value={busca}
+          onChange={(evento) => setBusca(evento.target.value)}
+          placeholder="Processo, cliente ou CI"
+          aria-label="Buscar publicação"
+        />
+        {visao === "fila" && filtrosAtivos && publicacoes ? (
+          <Button type="button" variant="ghost" size="sm" className="text-[#347796]" onClick={limparFiltros} title="Mostrar todas de novo">
+            <X />
+            Limpar ({filtradas.length} de {publicacoes.length})
+          </Button>
         ) : null}
       </div>
 
@@ -1961,6 +1990,7 @@ function Juridico() {
           <Painel
             aria-label="Publicações a vistar"
             data-fila-vistagem
+            data-tour="vj-fila"
             className={cn("lg:flex lg:h-full lg:flex-col", aberta && !listaNoCelular && "hidden lg:flex", filaRecolhida && "lg:hidden")}
           >
             <div className="hidden items-center gap-2 border-b border-[#e6eef0] px-4 py-2 lg:flex">
@@ -2054,7 +2084,7 @@ function Juridico() {
                 fila={{ aberta: !filaRecolhida, onAlternar: () => setFilaRecolhida((atual) => !atual) }}
               />
             ) : (
-              <Painel>
+              <Painel data-tour="vj-vazio">
                 <Vazio icone={FileText} titulo={publicacoes === null ? "Carregando a fila" : "Nenhuma publicação para abrir"}>
                   <p>{publicacoes === null ? "A primeira publicação da fila abre aqui." : "Quando houver publicação na fila (ou nos filtros), a primeira abre aqui."}</p>
                   {filaRecolhida ? (

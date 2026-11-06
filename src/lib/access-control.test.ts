@@ -5,6 +5,7 @@ import {
   canSeeTeamPosts,
   canSeeVistagemPath,
   canEditPartyInvite,
+  entradaDaVistagem,
   firstAllowedPath,
   hasCafeCulturaAccess,
   hasIcpAccess,
@@ -77,14 +78,25 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath({ role: null, permissions: ["/planner"] }, "/operacoes-legais/planner")).toBe(false);
   });
 
-  it("o jurídico só abre a aba Jurídico da Vistagem; sem papel ou admin é controladoria", () => {
+  it("o jurídico abre a Visão geral e a aba Vistagem; sem papel ou admin é controladoria", () => {
     const juridico = { role: null, permissions: ["/operacoes-legais/vistagem"], vistagem_papel: "juridico" };
     expect(papelVistagem(juridico)).toBe("juridico");
+    expect(canAccessPath(juridico, "/operacoes-legais/vistagem")).toBe(true);
     expect(canAccessPath(juridico, "/operacoes-legais/vistagem/juridico")).toBe(true);
-    for (const aba of ["/operacoes-legais/vistagem", "/operacoes-legais/vistagem/controladoria", "/operacoes-legais/vistagem/conferencia", "/operacoes-legais/vistagem/check"]) {
+    for (const aba of [
+      "/operacoes-legais/vistagem/base",
+      "/operacoes-legais/vistagem/controladoria",
+      "/operacoes-legais/vistagem/duplicidades",
+      "/operacoes-legais/vistagem/conferencia",
+      "/operacoes-legais/vistagem/check",
+      "/operacoes-legais/vistagem/configuracoes",
+    ]) {
       expect(canAccessPath(juridico, aba)).toBe(false);
     }
+    // A página inicial e a entrada pelo menu continuam sendo a aba Vistagem.
     expect(firstAllowedPath(juridico)).toBe("/operacoes-legais/vistagem/juridico");
+    expect(entradaDaVistagem(juridico)).toBe("/operacoes-legais/vistagem/juridico");
+    expect(entradaDaVistagem({ role: null, permissions: ["/operacoes-legais/vistagem"] })).toBe("/operacoes-legais/vistagem");
     expect(papelVistagem({ role: null, permissions: ["/operacoes-legais/vistagem"], vistagem_papel: null })).toBe("controladoria");
     expect(papelVistagem({ role: "admin", vistagem_papel: "juridico" })).toBe("controladoria");
     // o papel sozinho não dá acesso

@@ -8,12 +8,13 @@ import { Aviso } from "./ui";
 
 /**
  * Situação do arquivo da Kurier de hoje. `undefined` enquanto consulta; `null` se a consulta
- * falhar (aí nenhuma faixa aparece).
+ * falhar (aí nenhuma faixa aparece) ou se `ativo` for falso (o jurídico não consulta: a rota é da controladoria).
  */
-export function useArquivoDoDia(): ArquivoDoDia | null | undefined {
+export function useArquivoDoDia(ativo = true): ArquivoDoDia | null | undefined {
   const [situacao, setSituacao] = useState<ArquivoDoDia | null | undefined>(undefined);
 
   useEffect(() => {
+    if (!ativo) return;
     let cancelado = false;
     authFetch("/api/operacoes-legais/vistagem/arquivo-do-dia")
       .then(async (resposta) => (resposta.ok ? ((await resposta.json()) as ArquivoDoDia) : null))
@@ -22,9 +23,9 @@ export function useArquivoDoDia(): ArquivoDoDia | null | undefined {
     return () => {
       cancelado = true;
     };
-  }, []);
+  }, [ativo]);
 
-  return situacao;
+  return ativo ? situacao : null;
 }
 
 /**

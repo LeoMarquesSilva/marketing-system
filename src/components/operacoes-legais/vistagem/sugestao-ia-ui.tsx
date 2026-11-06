@@ -206,7 +206,7 @@ export function SeloResultadoIa({ resultado }: { resultado: ResultadoSugestao | 
 export function SugestaoNaConferencia({ dados }: { dados: SugestaoNaVistagem }) {
   const { sugestao, fatais } = dados;
   return (
-    <div className="overflow-hidden rounded-lg border border-[#48466e]/20 bg-white">
+    <div className="overflow-hidden rounded-lg border border-[#48466e]/20 bg-white" data-tour="cf-sugestao-ia">
       <div className="space-y-1.5 border-b border-[#48466e]/10 bg-[#f6f6fa] px-4 py-2.5">
         <div className="flex flex-wrap items-center gap-1.5">
           <Sparkles className="size-3.5 text-[#48466e]" aria-hidden />

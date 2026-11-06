@@ -1,10 +1,11 @@
 import type { PublicacaoStatus } from "./types";
 import {
   TIPOS_DE_DEMANDA,
+  TODAS_AS_AREAS_VISTAGEM,
   VISTADORES_POR_AREA,
   areasComVistador,
   temVistador,
-  vistadorDa,
+  vistadoresDa,
   type MapaDeVistadores,
   type TipoDeDemanda,
 } from "./vistadores";
@@ -24,6 +25,23 @@ export type EtapaVisao = (typeof ETAPAS_VISAO)[number];
 
 /** Rótulo de quem ainda não tem área (a triagem não achou a pasta). */
 export const SEM_AREA_VISAO = "Sem área";
+
+/**
+ * O que a pessoa enxerga: as áreas (null = todas, a controladoria) e se vê as demandas de risco. É o mesmo recorte da
+ * fila do jurídico (`garantirArea` em juridico-server.ts).
+ */
+export interface EscopoDaVisao {
+  areas: string[] | null;
+  veRisco: boolean;
+}
+
+export const ESCOPO_COMPLETO: EscopoDaVisao = { areas: null, veRisco: true };
+
+/** A publicação é das áreas da pessoa e, se ela não vista risco, não é demanda de risco? */
+export function estaNoEscopo(escopo: EscopoDaVisao, publicacao: { area: string | null; risco?: boolean }): boolean {
+  if (escopo.areas && !escopo.areas.includes(publicacao.area ?? "")) return false;
+  return escopo.veRisco || !publicacao.risco;
+}
 
 export interface DiaDeChegada {
   /** Data do arquivo (AAAA-MM-DD). */
@@ -57,12 +75,19 @@ export interface AreaDaVisao {
  * Uma linha do painel "Publicações para vistar": o vistador de um tipo de demanda numa área. Área sem vistador
  * cadastrado vira uma linha só (`tipo` e `nome` nulos) com o total da área.
  */
+export interface PessoaDaVisao {
+  nome: string;
+  foto: string | null;
+}
+
 export interface VistadorDaVisao {
   area: string;
   /** Demandas normais ou de risco; null = área sem vistador cadastrado (as duas juntas). */
   tipo: TipoDeDemanda | null;
-  /** Quem vista (vistadores.ts); null = "Vistador a definir". */
+  /** O primeiro de quem vista (vistadores.ts); null = "Vistador a definir". */
   nome: string | null;
+  /** Todas as pessoas que vistam esse tipo na área (com foto quando tem). */
+  pessoas: PessoaDaVisao[];
   /** Publicações para vistar agora (juridico_vistar). */
   total: number;
   /** Das `total`, quantas são demanda de risco. */
@@ -75,17 +100,21 @@ export interface VisaoGeral {
   hoje: string;
   desde: string;
   dias: PeriodoVisao;
-  /** Somas do período (as mesmas do gráfico). */
+  /** Recorte de quem pediu: a controladoria vê tudo; o jurídico, só as suas áreas (e sem risco, se não vista risco). */
+  escopo: EscopoDaVisao;
+  /** Somas do período (as mesmas do gráfico). No jurídico, zeradas: as linhas do arquivo da Kurier não têm área. */
   chegada: Omit<DiaDeChegada, "data">;
-  /** Um dia por data do período, com ou sem arquivo (sem arquivo, tudo zero e `semArquivo`). */
+  /** Um dia por data do período, com ou sem arquivo (sem arquivo, tudo zero e `semArquivo`). No jurídico, vazio. */
   porDia: (DiaDeChegada & { semArquivo: boolean })[];
-  /** Agora, em cada aba. */
+  /** Agora, em cada aba. No jurídico, Triagem Manual e Duplicidades ficam zeradas (são abas da controladoria). */
   etapas: Record<EtapaVisao, number>;
   /** Publicações que ainda não passaram pela triagem automática (nem área nem pendência). */
   aguardandoTriagem: number;
   areas: AreaDaVisao[];
   /** Linhas por área e vistador, na ordem de `areas` (dentro da área: normais, depois risco). */
   vistadores: VistadorDaVisao[];
+  /** Quem vista qualquer área (lista USUARIOS, "TODAS"), por tipo de demanda. */
+  vistadoresDeTodas: { tipo: TipoDeDemanda; pessoas: PessoaDaVisao[] }[];
   /** O que chegou no período por grupo de clientes (os maiores primeiro; o resto somado em "Outros grupos"). */
   grupos: GrupoDaVisao[];
 }
@@ -123,6 +152,8 @@ export interface ChegadaDaVisao {
   status: PublicacaoStatus;
   area: string | null;
   grupo?: string | null;
+  /** Demanda de risco (some da visão de quem não vista risco). */
+  risco?: boolean;
 }
 
 /** Publicação aberta agora (ainda em alguma aba). */
@@ -206,9 +237,17 @@ export function montarVisaoGeral(entrada: {
   chaveNome?: (nome: string) => string;
   /** Quem vista cada área (padrão: o mapa de `vistadores.ts`). */
   vistadores?: MapaDeVistadores;
+  /** Recorte de quem pediu (padrão: tudo, a controladoria). O servidor já filtra na consulta; aqui vale de novo. */
+  escopo?: EscopoDaVisao;
 }): VisaoGeral {
   const { hoje, dias } = entrada;
   const desde = inicioDoPeriodo(hoje, dias);
+  const escopo = entrada.escopo ?? ESCOPO_COMPLETO;
+  // Jurídico: só as publicações das áreas dele (e sem as de risco, se não vista risco).
+  const restrita = escopo.areas !== null;
+  const chegadas = entrada.chegadas.filter((publicacao) => estaNoEscopo(escopo, publicacao));
+  const abertas = entrada.abertas.filter((publicacao) => estaNoEscopo(escopo, publicacao));
+  const checadas = entrada.checadas.filter((area) => estaNoEscopo(escopo, { area }));
 
   // Chegada por dia: as linhas dos arquivos e o que delas está no sistema.
   const dataDoArquivo = new Map(entrada.arquivos.map((arquivo) => [arquivo.id, arquivo.data]));
@@ -223,7 +262,7 @@ export function montarVisaoGeral(entrada: {
 
   const chegaramPorArea = new Map<string, number>();
   const porGrupo = new Map<string, GrupoDaVisao>();
-  for (const publicacao of entrada.chegadas) {
+  for (const publicacao of chegadas) {
     const data = publicacao.arquivoId ? dataDoArquivo.get(publicacao.arquivoId) : undefined;
     if (!data) continue;
     const doDia = dia(data);
@@ -285,15 +324,19 @@ export function montarVisaoGeral(entrada: {
     return atual;
   };
 
-  for (const publicacao of entrada.abertas) {
+  for (const publicacao of abertas) {
+    // Triagem e Duplicidades são da controladoria: na visão do jurídico ficam zeradas.
     if (publicacao.status === "captada") {
-      aguardandoTriagem += 1;
+      if (!restrita) aguardandoTriagem += 1;
       continue;
     }
     const etapa = etapaDoStatus(publicacao.status, publicacao.duplicidadePendente);
     if (!etapa) continue;
+    if (etapa === "duplicidades" || etapa === "triagem") {
+      if (!restrita) etapas[etapa] += 1;
+      continue;
+    }
     etapas[etapa] += 1;
-    if (etapa === "duplicidades" || etapa === "triagem") continue;
 
     const daArea = area(nomeDaArea(publicacao.area));
     daArea[etapa] += 1;
@@ -306,11 +349,15 @@ export function montarVisaoGeral(entrada: {
   }
 
   for (const [nome, total] of chegaramPorArea) area(nome).chegaram = total;
-  for (const nome of entrada.checadas) area(nomeDaArea(nome)).checadas += 1;
+  for (const nome of checadas) area(nomeDaArea(nome)).checadas += 1;
 
-  // Área com vistador cadastrado sempre aparece no painel, mesmo em dia (mostra quem vista e o zero).
+  // Área com vistador cadastrado sempre aparece no painel, mesmo em dia (mostra quem vista e o zero); no jurídico,
+  // só as áreas dele, e todas elas (mesmo sem vistador cadastrado).
   const mapa = entrada.vistadores ?? VISTADORES_POR_AREA;
-  for (const nome of areasComVistador(mapa)) area(nome);
+  for (const nome of areasComVistador(mapa)) if (estaNoEscopo(escopo, { area: nome })) area(nome);
+  for (const nome of escopo.areas ?? []) area(nome);
+  // Quem não vista risco não vê as linhas (nem os vistadores) das demandas de risco.
+  const tipos = TIPOS_DE_DEMANDA.filter((tipo) => escopo.veRisco || tipo !== "risco");
 
   // Áreas com mais publicações abertas primeiro; "Sem área" por último.
   const areasOrdenadas = [...areas.values()].sort((a, b) => {
@@ -327,12 +374,14 @@ export function montarVisaoGeral(entrada: {
   for (const daArea of areasOrdenadas) {
     const fila = filaDa(daArea.area);
     if (!temVistador(daArea.area, mapa)) {
-      // Sem vistador cadastrado: uma linha com o total da área (normais e de risco juntas), sem deduzir nomes.
+      // Sem vistador cadastrado: uma linha com o total da área (normais e de risco juntas), sem deduzir nomes. Quem não
+      // vista risco só tem as normais.
       if (!daArea.vistagem) continue;
       vistadores.push({
         area: daArea.area,
-        tipo: null,
+        tipo: escopo.veRisco ? null : "normal",
         nome: null,
+        pessoas: [],
         total: daArea.vistagem,
         risco: fila.risco.total,
         maisAntiga: daArea.maisAntigaParaVistar,
@@ -340,19 +389,21 @@ export function montarVisaoGeral(entrada: {
       });
       continue;
     }
-    for (const tipo of TIPOS_DE_DEMANDA) {
-      const nome = vistadorDa(daArea.area, tipo, mapa);
+    for (const tipo of tipos) {
+      const nomes = vistadoresDa(daArea.area, tipo, mapa);
       const { total, maisAntiga } = fila[tipo];
       // O tipo sem vistador só aparece se tiver publicação (aí, como "Vistador a definir").
-      if (!nome && !total) continue;
+      if (!nomes.length && !total) continue;
+      const pessoas = nomes.map((nome) => ({ nome, foto: fotos[chave(nome)] ?? null }));
       vistadores.push({
         area: daArea.area,
         tipo,
-        nome,
+        nome: nomes[0] ?? null,
+        pessoas,
         total,
         risco: tipo === "risco" ? total : 0,
         maisAntiga,
-        foto: nome ? (fotos[chave(nome)] ?? null) : null,
+        foto: pessoas[0]?.foto ?? null,
       });
     }
   }
@@ -361,12 +412,18 @@ export function montarVisaoGeral(entrada: {
     hoje,
     desde,
     dias,
-    chegada,
-    porDia,
+    escopo,
+    // O arquivo da Kurier é da casa toda (as linhas não têm área): o jurídico não recebe esses números.
+    chegada: restrita ? { disponiveis: 0, naVistagem: 0, duplicidades: 0, descartadas: 0, soNoArquivo: 0 } : chegada,
+    porDia: restrita ? [] : porDia,
     etapas,
     aguardandoTriagem,
     areas: areasOrdenadas,
     vistadores,
+    vistadoresDeTodas: tipos.map((tipo) => ({
+      tipo,
+      pessoas: vistadoresDa(TODAS_AS_AREAS_VISTAGEM, tipo, mapa).map((nome) => ({ nome, foto: fotos[chave(nome)] ?? null })),
+    })).filter((grupo) => grupo.pessoas.length > 0),
     grupos: rankearGrupos([...porGrupo.values()]),
   };
 }

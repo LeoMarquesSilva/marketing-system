@@ -10,6 +10,8 @@ import { useAuth } from "@/contexts/auth-context";
 import { isAdminRole } from "@/lib/access-control";
 import { buildNav, resolveHeaderContext, type NavPage } from "@/lib/navigation";
 import { NavBadgePill, useNavBadges, type NavBadge } from "@/components/layout/nav-badges";
+import { GuiaDaVistagem } from "@/components/operacoes-legais/vistagem/guia-vistagem";
+import { moduloDaRota } from "@/lib/vistagem/guia";
 
 /**
  * Cabeçalho do sistema: ícone e nome da funcionalidade (o único h1 da tela) e, quando ela tem mais de uma página,
@@ -26,9 +28,11 @@ export function Header() {
   const comAbas = tabs.length > 1;
   // Configurações do módulo: só para admin.
   const configuracoes = contexto.configuracoes && isAdminRole(profile) ? contexto.configuracoes : null;
-  // Sem abas (ex.: o jurídico, que só enxerga a aba Vistagem), o número da página vai ao lado do título.
+  // Sem abas (a funcionalidade com uma página só liberada), o número da página vai ao lado do título.
   const badgeDaPagina = !comAbas && activeHref ? badgeFor(activeHref) : null;
   const resumo = badgeDaPagina?.soNoCabecalho && badgeDaPagina.value > 0 ? badgeDaPagina : null;
+  // Abas da Vistagem: botão "Ver guia" (e o guia que abre sozinho na primeira visita a cada aba).
+  const comGuia = moduloDaRota(pathname) !== null;
 
   return (
     <header className="sticky top-0 z-30 border-b border-black/[0.07] bg-white/95 backdrop-blur-md supports-[backdrop-filter]:bg-white/90">
@@ -58,10 +62,12 @@ export function Header() {
           </>
         ) : null}
 
-        {configuracoes ? (
-          // Módulo com configurações, para o admin: a engrenagem toma o lugar do logo no canto direito.
-          <div className="ml-auto flex h-16 shrink-0 items-center gap-3 lg:order-last">
-            <span className="hidden h-6 w-px bg-black/[0.08] lg:block" aria-hidden />
+        {configuracoes || comGuia ? (
+          // Guia da Vistagem e, para o admin, a engrenagem das configurações: tomam o lugar do logo no canto direito.
+          <div className="ml-auto flex h-16 shrink-0 items-center gap-2 lg:order-last">
+            <span className="mr-1 hidden h-6 w-px bg-black/[0.08] lg:block" aria-hidden />
+            {comGuia ? <GuiaDaVistagem /> : null}
+            {configuracoes ? (
             <NavLink
               href={configuracoes.href}
               aria-current={configuracoes.ativa ? "page" : undefined}
@@ -77,6 +83,7 @@ export function Header() {
               <Settings className="size-4" aria-hidden />
               <span className="hidden xl:inline">{configuracoes.label}</span>
             </NavLink>
+            ) : null}
           </div>
         ) : (
           /* Com abas, o logo horizontal só volta em telas bem largas: no desktop comum, o espaço é das abas. */

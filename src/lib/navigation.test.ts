@@ -64,14 +64,28 @@ describe("visibilidade por perfil", () => {
     }
   });
 
-  it("jurídico da Vistagem vê no menu só a aba Jurídico", () => {
-    const hrefs = visibleHrefs({ role: null, permissions: ["/operacoes-legais/vistagem"], vistagem_papel: "juridico" });
-    expect(hrefs).toContain("/operacoes-legais/vistagem/juridico");
-    for (const href of ["/operacoes-legais/vistagem", "/operacoes-legais/vistagem/controladoria", "/operacoes-legais/vistagem/duplicidades", "/operacoes-legais/vistagem/conferencia", "/operacoes-legais/vistagem/check"]) {
+  it("jurídico da Vistagem vê as abas Visão geral e Vistagem, e entra pela Vistagem", () => {
+    const juridico = { role: null, permissions: ["/operacoes-legais/vistagem"], vistagem_papel: "juridico" };
+    const vistagem = buildNav(juridico)
+      .flatMap((front) => front.features)
+      .find((feature) => feature.id === "vistagem");
+    expect(vistagem?.pages.map((page) => page.label)).toEqual(["Visão geral", "Vistagem"]);
+    // O link da sidebar leva à aba Vistagem, não à Visão geral.
+    expect(vistagem?.href).toBe("/operacoes-legais/vistagem/juridico");
+    const hrefs = visibleHrefs(juridico);
+    for (const href of ["/operacoes-legais/vistagem/base", "/operacoes-legais/vistagem/controladoria", "/operacoes-legais/vistagem/duplicidades", "/operacoes-legais/vistagem/conferencia", "/operacoes-legais/vistagem/check", "/operacoes-legais/vistagem/configuracoes"]) {
       expect(hrefs).not.toContain(href);
     }
-    const controladoria = visibleHrefs({ role: null, permissions: ["/operacoes-legais/vistagem"] });
-    expect(controladoria).toContain("/operacoes-legais/vistagem/check");
+    // No cabeçalho: as duas abas e nenhuma engrenagem de configurações (o Header só a mostra para admin).
+    const naVisaoGeral = resolveHeaderContext("/operacoes-legais/vistagem", buildNav(juridico));
+    expect(naVisaoGeral.tabs.map((tab) => tab.label)).toEqual(["Visão geral", "Vistagem"]);
+    expect(naVisaoGeral.activeHref).toBe("/operacoes-legais/vistagem");
+
+    const controladoria = buildNav({ role: null, permissions: ["/operacoes-legais/vistagem"] })
+      .flatMap((front) => front.features)
+      .find((feature) => feature.id === "vistagem");
+    expect(controladoria?.pages.map((page) => page.href)).toContain("/operacoes-legais/vistagem/check");
+    expect(controladoria?.href).toBe("/operacoes-legais/vistagem");
   });
 
   it("fornecedores e contratos só aparecem com a liberação de Facilities", () => {
