@@ -74,7 +74,7 @@ import {
 import { CADEIA_PADRAO, cadeiaDoFluxo } from "@/lib/vistagem/fluxo-vios";
 import { emOrdemDeArvore, fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
 import { prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
-import { fatalSugerida, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
+import { fatalSugerida, sugestaoNaListaAtual, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
 import type { DataDoFluxo, PublicacaoResumo, ResolucaoPendencia, TarefaPrevista, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
@@ -884,7 +884,8 @@ export function EditorVistagem({
   function usarSugestao() {
     if (!detalhe?.catalogo || !sugestao) return;
     const { catalogo, publicacao } = detalhe;
-    const sugeridas = sugestao.tarefas.flatMap((tarefa) => {
+    // Tipo recriado no VIOS depois da sugestão (CIÊNCIA NF 316 → 796): vale o de mesmo nome da lista atual.
+    const sugeridas = sugestaoNaListaAtual(sugestao, catalogo.tarefas).tarefas.flatMap((tarefa) => {
       const opcao = catalogo.tarefas[tarefa.classe].find((item) => item.id === tarefa.tarefaId);
       if (!opcao) return [];
       const prazo = tarefa.classe === "PRAZO";
@@ -905,7 +906,12 @@ export function EditorVistagem({
         }),
       ];
     });
-    if (!sugeridas.length) return;
+    if (!sugeridas.length) {
+      // Antes não acontecia nada: avisa e deixa a pessoa escolher à mão.
+      setErro("Nenhuma tarefa da sugestão está na lista atual do VIOS desta pasta. Escolha as tarefas à mão.");
+      return;
+    }
+    setErro("");
     const classificacao = detalhe.esocial ? sugestao.esocial : esocial;
     setAntesDaSugestao({ linhas, esocial });
     setEsocial(classificacao);

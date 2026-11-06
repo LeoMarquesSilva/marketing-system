@@ -21,7 +21,7 @@ import { openAIKey } from "@/lib/openai-keys";
 import { cienciaDosAgendamentos, cienciaQueFica, ehCienciaDosAgendamentos, ehReestruturacao } from "./ciencia-agendamentos";
 import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./dias-uteis";
 import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
-import { areaComSugestaoIa, fatalSugerida, resultadoDaSugestao, type ResultadoSugestao, type SugestaoIa } from "./sugestao-ia";
+import { areaComSugestaoIa, fatalSugerida, resultadoDaSugestao, sugestaoNaListaAtual, type ResultadoSugestao, type SugestaoIa } from "./sugestao-ia";
 import { carregarFeriados } from "./feriados";
 import { lerConfiguracoes } from "./configuracoes-server";
 import { cadeiaDoFluxo, montarFluxo, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
@@ -359,7 +359,8 @@ export async function obterVistagem(
             responsavelSugerido: responsavelSugerido(RESPONSAVEL_ESOCIAL, catalogo.usuarios)?.nome ?? null,
           }
         : null,
-    sugestaoIa: publicacao.sugestao_ia,
+    // Tipo recriado no VIOS depois da sugestão (CIÊNCIA NF 316 → 796): vale o de mesmo nome da lista atual.
+    sugestaoIa: publicacao.sugestao_ia && catalogo ? sugestaoNaListaAtual(publicacao.sugestao_ia, catalogo.tarefas) : publicacao.sugestao_ia,
     // Na prévia da controladoria a publicação ainda não está na fila do jurídico: a IA gera depois, se for o caso.
     sugestaoIaDisponivel:
       !previa && Boolean(catalogo && areaComSugestaoIa(catalogo.area) && openAIKey("analisePublicacao")) && (await lerConfiguracoes()).iaSugestaoTarefa,
@@ -491,7 +492,7 @@ export async function salvarVistagem(
   const resultadoIa = publicacao.sugestao_ia
     ? resultadoDaSugestao({
         usou: entrada.sugestaoUsada === true,
-        sugestao: publicacao.sugestao_ia,
+        sugestao: sugestaoNaListaAtual(publicacao.sugestao_ia, catalogo.tarefas),
         itens: validacao.itens,
         esocial: esocial.valor,
         tarefaEsocialId: tarefaEsocialDaLista(catalogo.tarefas.PROVIDENCIA)?.id ?? null,
