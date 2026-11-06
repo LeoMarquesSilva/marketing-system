@@ -83,7 +83,17 @@ export function fluxoPrevisto(
       const dataVios = dataDe(tarefa, viosDoPai, nivel);
       const pedida = pedidas.get(chaveDoCaminho(caminho)) ?? null;
       const data = pedida ?? dataDe(tarefa, finalDoPai, nivel);
-      previstas.push({ nome: tarefa.nome, caminho, nivel, data, dataVios, editada: Boolean(pedida), responsaveis: quem(tarefa), quando: "criacao" });
+      previstas.push({
+        nome: tarefa.nome,
+        caminho,
+        nivel,
+        data,
+        dataVios,
+        editada: Boolean(pedida),
+        responsaveis: quem(tarefa),
+        quando: "criacao",
+        classe: tarefa.classe ?? null,
+      });
       visitar(tarefa.filhas, caminho, dataVios, data, nivel + 1);
     }
   };

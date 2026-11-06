@@ -4,6 +4,8 @@
  * que o robô relê toda semana na tela processos-etapas-tree.php do VIOS.
  */
 
+import type { EtiquetaAgendamento } from "./agendamento";
+
 /** Quem o robô coloca em cada tarefa criada junto (mesma regra do sama-rpa). */
 export type PapelNoFluxo = "revisor" | "protocolar" | "responsavel";
 
@@ -35,6 +37,8 @@ export interface TipoNaArvore {
   baseDasFilhas?: Map<number, BaseDaData> | null;
   /** Quem o VIOS põe nas tarefas do tipo (SAMA vios_tipos_tarefa); null: o catálogo não leu. */
   responsabilidade?: ResponsabilidadeDoTipo | null;
+  /** Prazo, Providência ou Compromisso pelas etiquetas do tipo (vios_tipos_tarefa); null: sem etiqueta de classe. */
+  classe?: EtiquetaAgendamento | null;
 }
 
 /**
@@ -62,6 +66,8 @@ export interface TarefaDoFluxo {
   regra: (RegraDePrazo & { base: BaseDaData }) | null;
   /** Quem o VIOS põe neste tipo; null quando não foi lido (fica o responsável da vistagem, como o robô faz). */
   responsabilidade: ResponsabilidadeDoTipo | null;
+  /** Classe do tipo no VIOS (dá a cor no fluxo: Providência azul-claro); ausente ou null quando não foi lida. */
+  classe?: EtiquetaAgendamento | null;
   /** As que esta cria junto, com as regras delas (fluxo dentro do fluxo: Embargos › 2. REVISAR). */
   filhas: TarefaDoFluxo[];
 }
@@ -127,6 +133,7 @@ export function montarFluxo(id: string, arvore: Map<number, TipoNaArvore>): Flux
         aoConcluir: (dados?.conclusao ?? []).map(nomeDe),
         regra: dados?.regraPrazo && base ? { ...dados.regraPrazo, base } : null,
         responsabilidade: dados?.responsabilidade ?? null,
+        classe: dados?.classe ?? null,
         filhas:
           dados && nivel < NIVEIS_DO_FLUXO && !acima.has(filho) ? filhasDe(dados, nivel + 1, new Set([...acima, filho])) : [],
       };

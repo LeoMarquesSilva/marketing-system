@@ -18,6 +18,12 @@ export const ROTULO_ETIQUETA: Record<EtiquetaAgendamento, string> = { PRAZO: "Pr
  */
 export const ETIQUETA_VIOS: Record<EtiquetaAgendamento, number> = { PRAZO: 1, PROVIDENCIA: 204, COMPROMISSO: 205 };
 
+/** Classe do tipo de tarefa pelas etiquetas dele no VIOS; null sem nenhuma das três ou com mais de uma. */
+export function classeDasEtiquetas(etiquetas: readonly number[]): EtiquetaAgendamento | null {
+  const classes = (Object.keys(ETIQUETA_VIOS) as EtiquetaAgendamento[]).filter((classe) => etiquetas.includes(ETIQUETA_VIOS[classe]));
+  return classes.length === 1 ? classes[0] : null;
+}
+
 /** Opção do VIOS (tipo de tarefa ou usuário), como o robô do SAMA guarda no catálogo. */
 export interface OpcaoVios {
   id: string;
