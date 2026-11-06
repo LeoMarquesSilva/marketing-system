@@ -5,6 +5,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/utils/supabase/client";
 import { SUPPLIER_CATEGORY_LABELS } from "@/lib/suppliers/categories";
+import { isRsvpTransport, type RsvpTransport } from "@/lib/event-rsvp";
 
 export type EventStatus = "nao_iniciada" | "em_andamento" | "concluida" | "cancelada";
 export type EventKind = "evento" | "campanha";
@@ -178,6 +179,10 @@ export interface EventInvite {
   attended: boolean | null;
   dietaryRestrictions: string | null;
   notes: string | null;
+  /** Micro-ônibus escolhido pelo colaborador na página de confirmação. */
+  transport: RsvpTransport | null;
+  /** Quando o próprio colaborador respondeu pela página de confirmação. */
+  respondedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -660,6 +665,8 @@ type InviteRow = {
   attended: boolean | null;
   dietary_restrictions: string | null;
   notes: string | null;
+  transport?: string | null;
+  responded_at?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -881,6 +888,8 @@ function rowToInvite(row: InviteRow): EventInvite {
     attended: row.attended,
     dietaryRestrictions: row.dietary_restrictions,
     notes: row.notes,
+    transport: isRsvpTransport(row.transport) ? row.transport : null,
+    respondedAt: row.responded_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

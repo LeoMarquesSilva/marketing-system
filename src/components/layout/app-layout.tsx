@@ -12,6 +12,7 @@ import { ContentCollaboratorTour } from "@/components/conteudo/content-collabora
 import { HrPendingNotificationsModal } from "@/components/rh/hr-pending-notifications-modal";
 import { BpAwardsInvite } from "@/components/rh/bp-awards/bp-awards-invite";
 import { TeamSurveyInvite } from "@/components/pesquisas/team-survey-invite";
+import { FestaRsvpInvite } from "@/components/festa-10-anos/festa-rsvp-invite";
 import { WhatsappLeadNotifications } from "@/components/layout/whatsapp-lead-notifications";
 import { ServiceWorkerDoApp } from "@/components/layout/instalar-app";
 import { TimerProvider } from "@/contexts/timer-context";
@@ -36,6 +37,7 @@ const BARE_LAYOUT_PATHS = [
   "/bp-awards",
   "/rh/bp-awards/revelacao",
   "/pesquisa",
+  "/festa-10-anos",
 ];
 
 function isBareLayoutPath(pathname: string): boolean {
@@ -71,6 +73,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         {!isBareLayout && <WhatsappLeadNotifications />}
         {!isBareLayout && <BpAwardsInvite />}
         {!isBareLayout && <TeamSurveyInvite />}
+        {!isBareLayout && <FestaRsvpInvite />}
         {isBareLayout ? (
           children
         ) : (
