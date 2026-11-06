@@ -114,6 +114,7 @@ export function fluxoPrevisto(
         ...(ajustada && data !== dataVios ? { ajustada } : {}),
         responsaveis: quem(tarefa),
         quando: "criacao",
+        classe: tarefa.classe ?? null,
       });
       visitar(tarefa.filhas, caminho, dataVios, data, nivel + 1);
     }

@@ -4,6 +4,7 @@ import { CADEIA_PADRAO } from "./fluxo-vios";
 import {
   areaDoCatalogo,
   areasDaPessoa,
+  classeDasEtiquetas,
   departamentoNaVistagem,
   nomesDasPessoas,
   escritorioDaArea,
@@ -408,5 +409,19 @@ describe("nomesDasPessoas", () => {
       "Daniel Silva",
     ]);
     expect(nomesDasPessoas(null)).toEqual([]);
+  });
+});
+
+describe("classeDasEtiquetas", () => {
+  it("dá a classe pela etiqueta do tipo no VIOS", () => {
+    expect(classeDasEtiquetas([204])).toBe("PROVIDENCIA");
+    expect(classeDasEtiquetas([1, 2])).toBe("PRAZO");
+    expect(classeDasEtiquetas([205])).toBe("COMPROMISSO");
+  });
+
+  it("sem nenhuma das três, ou com mais de uma, fica sem classe", () => {
+    expect(classeDasEtiquetas([2])).toBeNull();
+    expect(classeDasEtiquetas([])).toBeNull();
+    expect(classeDasEtiquetas([1, 204])).toBeNull();
   });
 });

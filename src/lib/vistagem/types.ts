@@ -264,6 +264,8 @@ export interface TarefaPrevista {
   responsaveis: string;
   /** criacao: o VIOS cria junto com a tarefa; conclusao: quando ela for concluída. */
   quando: "criacao" | "conclusao";
+  /** Classe do tipo no VIOS pelas etiquetas (cor no fluxo); ausente ou null quando não foi lida. */
+  classe?: "PRAZO" | "PROVIDENCIA" | "COMPROMISSO" | null;
 }
 
 export interface AgendamentoResumo {

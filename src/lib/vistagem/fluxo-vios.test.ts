@@ -54,3 +54,17 @@ describe("fluxo automático do VIOS", () => {
     expect(cadeiaDoFluxo(montarFluxo("47", ARVORE))).toBeNull();
   });
 });
+
+describe("classe das tarefas do fluxo", () => {
+  it("leva a classe do tipo no VIOS para a tarefa criada junto (dá a cor no fluxo)", () => {
+    const arvore = new Map<number, TipoNaArvore>([
+      [36, { nome: "AGRAVO DE INSTRUMENTO", prazo: null, criacao: [426, 314], conclusao: [], classe: "PRAZO" }],
+      [426, { nome: "INFORMAR CLIENTE + INTERESSE RECURSAL + GUIA", prazo: "2 dias", criacao: [], conclusao: [], classe: "PROVIDENCIA" }],
+      [314, { nome: "2. REVISAR", prazo: null, criacao: [], conclusao: [] }],
+    ]);
+    expect(montarFluxo("36", arvore)?.criacao.map((tarefa) => [tarefa.nome, tarefa.classe])).toEqual([
+      ["INFORMAR CLIENTE + INTERESSE RECURSAL + GUIA", "PROVIDENCIA"],
+      ["2. REVISAR", null],
+    ]);
+  });
+});

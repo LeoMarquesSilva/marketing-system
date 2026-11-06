@@ -393,14 +393,15 @@ function FluxoNoVios({
   const numeros = new Map<string, number>();
   for (const item of itens) if (numerado(item)) numeros.set(item.chave, numeros.size + 1);
   // Cores do VIOS: a pedida pela classe (Prazo verde, Providência azul-claro); no fluxo, Revisar amarelo, Protocolar
-  // vermelho e as outras pela classe delas na lista do VIOS (uma Providência criada por um Prazo fica azul-claro).
+  // vermelho e as outras pela classe do tipo delas no VIOS (etiquetas): uma Providência criada por um Prazo fica
+  // azul-claro. Sem a classe lida, vale a da lista de tarefas da área pelo nome.
   const tomDaPedida = TOM_DA_ETIQUETA[principal.etiqueta];
-  const tomDoFluxo = (nome: string) => {
-    const classe = classeDe(nome);
-    return tomDaTarefaDoFluxo(nome, tomDaPedida, classe ? TOM_DA_ETIQUETA[classe] : null);
+  const tomDoFluxo = (tarefa: TarefaPrevista) => {
+    const classe = tarefa.classe ?? classeDe(tarefa.nome);
+    return tomDaTarefaDoFluxo(tarefa.nome, tomDaPedida, classe ? TOM_DA_ETIQUETA[classe] : null);
   };
   const tomDe = (item: Item): TomDoMarco =>
-    item.tipo === "principal" ? tomDaPedida : item.tipo === "fatal" ? "fatal" : tomDoFluxo(item.tarefa.nome);
+    item.tipo === "principal" ? tomDaPedida : item.tipo === "fatal" ? "fatal" : tomDoFluxo(item.tarefa);
   const editadaDe = (item: Item) => item.tipo === "fluxo" && item.tarefa.editada;
   // Só o nome da tarefa (sem "Enviar no VIOS:"): a cor e o número já dizem que é a pedida.
   const nomeDe = (item: Item) => (item.tipo === "principal" ? principal.nome : item.tipo === "fatal" ? "Data fatal" : item.tarefa.nome);
