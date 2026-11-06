@@ -1,0 +1,2 @@
+# Arquivos de agenda (.ics) exigem CRLF: o git não mexe nas quebras de linha.
+*.ics -text
