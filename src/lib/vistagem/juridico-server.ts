@@ -188,7 +188,7 @@ export function catalogoParaPublicacao(
 export type AreasVistagem = string[] | null;
 
 /**
- * O jurídico só abre e grava publicações das suas áreas e, se não vista demanda de risco (Usuários › acesso),
+ * O jurídico só abre e grava publicações das suas áreas e, se não vista demanda de risco (Configurações › Quem acessa),
  * só as sem risco.
  */
 export function garantirArea(

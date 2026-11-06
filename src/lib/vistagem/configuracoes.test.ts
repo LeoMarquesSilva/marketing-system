@@ -45,6 +45,14 @@ describe("configurações da Vistagem", () => {
     expect(() => normalizarValor("vistadores", { "Área inventada": { normal: ["Fulano"] } })).toThrow();
   });
 
+  it("vistadores: a mesma pessoa pode vistar as normais e as de risco da área", () => {
+    expect(
+      normalizarValor("vistadores", {
+        Cível: { normal: ["Giovani Pina de Freitas", "Maria Caroline"], risco: ["Giovani Pina de Freitas"] },
+      })
+    ).toEqual({ Cível: { normal: ["Giovani Pina de Freitas", "Maria Caroline"], risco: ["Giovani Pina de Freitas"] } });
+  });
+
   it("vistadores no formato antigo (um nome só) viram lista", () => {
     expect(lerValor("vistadores", { Trabalhista: { normal: "Isadora Godoy", risco: null } })).toEqual({
       Trabalhista: { normal: ["Isadora Godoy"], risco: [] },

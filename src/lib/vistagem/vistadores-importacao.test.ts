@@ -60,6 +60,13 @@ describe("importarVistadores", () => {
     expect(resultado.novos).toEqual([]);
   });
 
+  it("quem o admin pôs nos dois tipos continua nos dois depois de atualizar da lista", () => {
+    const resultado = importarVistadores([linha("Giovani", "CÍVEL", "SIM")], { Cível: { normal: ["Giovani"], risco: ["Giovani"] } });
+    expect(vistadoresDa("Cível", "normal", resultado.mapa)).toEqual(["Giovani"]);
+    expect(vistadoresDa("Cível", "risco", resultado.mapa)).toEqual(["Giovani"]);
+    expect(resultado.novos).toEqual([]);
+  });
+
   it("usa o nome completo achado pelo e-mail", () => {
     const resultado = importarVistadores([{ ...linha("Giovani", "CÍVEL"), email: "giovani@x" }], {}, (item) =>
       item.email === "giovani@x" ? "Giovani Nome Completo" : item.nome

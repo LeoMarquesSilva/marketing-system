@@ -369,7 +369,7 @@ function ParaVistar({ visao }: { visao: VisaoGeral }) {
       </PainelTopo>
       {minhas && minhas.length === 0 ? (
         <Vazio icone={UserRoundSearch} titulo="Nenhuma área sua na Vistagem">
-          Peça a um administrador para marcar as suas áreas em Usuários.
+          Peça a um administrador para marcar as suas áreas nas Configurações da Vistagem.
         </Vazio>
       ) : areas.length === 0 ? (
         <Vazio icone={UserRoundCheck} titulo="Nenhuma publicação para vistar">

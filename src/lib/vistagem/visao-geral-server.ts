@@ -71,7 +71,7 @@ export async function obterVisaoGeral(dias: PeriodoVisao, escopo: EscopoDaVisao 
   const db = admin();
   const hoje = hojeEmSaoPaulo();
   const desde = inicioDoPeriodo(hoje, dias);
-  // Jurídico sem área cadastrada (Usuários › acesso): não há publicação dele, nem precisa consultar.
+  // Jurídico sem área cadastrada (Configurações › Quem acessa a Vistagem): não há publicação dele, nem precisa consultar.
   const semAreas = escopo.areas !== null && escopo.areas.length === 0;
   const arquivos = await arquivosDoPeriodo(db, desde);
   const idsArquivos = semAreas ? [] : arquivos.map((arquivo) => arquivo.id);

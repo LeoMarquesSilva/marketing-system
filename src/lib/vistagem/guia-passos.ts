@@ -474,7 +474,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alvo: "cg-vistadores",
       titulo: "Vistadores por área",
       texto:
-        "Define quem vista as demandas normais e as de risco de cada área; o nome aparece na Visão geral. Quem enxerga a fila continua sendo definido em Usuários.",
+        "Define quem vista as demandas normais e as de risco de cada área (a mesma pessoa pode estar nas duas); o nome aparece na Visão geral. Quem enxerga a fila fica no cartão Quem acessa a Vistagem, nesta mesma tela.",
     },
     {
       id: "risco",

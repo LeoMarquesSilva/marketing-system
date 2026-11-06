@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlarmClock,
   Bot,
@@ -51,7 +51,9 @@ import {
 import type { ResultadoDaImportacao } from "@/lib/vistagem/vistadores-importacao";
 import { nomeCurto as nomeCurtoDaPessoa } from "@/lib/vistagem/como-fica-no-vios";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
+import { QuemAcessaAVistagem } from "./acessos-vistagem";
 import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
+import { CartaoEditavel, Interruptor } from "./configuracoes-ui";
 import { IconeArea } from "./marcas";
 import { formatarDataHora } from "./publicacao-ui";
 import { Aviso, Carregando, Painel, PainelTopo, Selo } from "./ui";
@@ -109,26 +111,6 @@ const TOM_DA_ORIGEM: Record<OrigemDaRegra, string> = {
 };
 
 /** Interruptor liga/desliga com o nome dentro do rótulo acessível. */
-function Interruptor({ ligado, onChange, rotulo, desabilitado = false }: { ligado: boolean; onChange: (ligado: boolean) => void; rotulo: string; desabilitado?: boolean }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={ligado}
-      aria-label={rotulo}
-      disabled={desabilitado}
-      onClick={() => onChange(!ligado)}
-      className={cn(
-        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-150 disabled:opacity-50",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/60 focus-visible:ring-offset-2",
-        ligado ? "bg-[#347796]" : "bg-slate-300"
-      )}
-    >
-      <span className={cn("inline-block size-5 rounded-full bg-white shadow-sm transition-transform duration-150", ligado ? "translate-x-[22px]" : "translate-x-0.5")} />
-    </button>
-  );
-}
-
 /** Quem mudou a regra por último (do histórico). */
 function UltimaAlteracao({ painel, chave }: { painel: PainelDeRegras; chave: ChaveConfiguracao }) {
   const ultima = painel.historico.find((item) => item.chave === chave);
@@ -137,43 +119,6 @@ function UltimaAlteracao({ painel, chave }: { painel: PainelDeRegras; chave: Cha
     <p className="text-xs text-muted-foreground">
       Alterada por <span className="font-medium text-foreground">{ultima.alteradoPor ?? "admin"}</span> em {formatarDataHora(ultima.alteradoEm)}
     </p>
-  );
-}
-
-/** Cartão de uma regra editável: ícone, título, explicação, o valor em vigor e as ações. */
-function CartaoEditavel({
-  icone: Icone,
-  titulo,
-  descricao,
-  acao,
-  rodape,
-  children,
-  tour,
-}: {
-  icone: LucideIcon;
-  titulo: string;
-  descricao: ReactNode;
-  acao?: ReactNode;
-  rodape?: ReactNode;
-  children: ReactNode;
-  /** data-tour do cartão (guia da Vistagem). */
-  tour?: string;
-}) {
-  return (
-    <Painel className="flex flex-col" data-tour={tour}>
-      <div className="flex items-start gap-3 border-b border-[#e6eef0] px-4 py-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-md bg-[#e8f8f8] text-[#347796]" aria-hidden>
-          <Icone className="size-[18px]" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-semibold text-foreground">{titulo}</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">{descricao}</p>
-        </div>
-        {acao}
-      </div>
-      <div className="flex-1 px-4 py-3">{children}</div>
-      {rodape ? <div className="border-t border-[#eef3f5] bg-[#f7fbfc] px-4 py-2">{rodape}</div> : null}
-    </Painel>
   );
 }
 
@@ -238,7 +183,7 @@ function Vistadores({
       tour="cg-vistadores"
       icone={UsersRound}
       titulo="Vistadores por área"
-      descricao="Quem vista as demandas normais e as de risco de cada área. A base é a lista USUARIOS do SharePoint; aparece na Visão geral. Quem enxerga a fila continua sendo definido em Usuários."
+      descricao="Quem vista as demandas normais e as de risco de cada área. A base é a lista USUARIOS do SharePoint; aparece na Visão geral. Quem enxerga a fila fica em Quem acessa a Vistagem, aqui embaixo."
       acao={
         <div className="flex shrink-0 flex-wrap justify-end gap-2">
           <Button size="sm" variant="outline" onClick={onImportar} disabled={importando} title="Lê a lista USUARIOS do SharePoint e mostra o que muda antes de salvar">
@@ -283,7 +228,8 @@ function rascunhoDe(mapa: MapaDeVistadores): RascunhoDeVistadores {
 
 /**
  * Montado só enquanto aberto: o rascunho começa com os vistadores em vigor (ou com a proposta da lista do SharePoint,
- * com quem chegou agora marcado como "novo"). Cada pessoa troca de tipo com um clique.
+ * com quem chegou agora marcado como "novo"). A mesma pessoa pode vistar as normais e as de risco da área (entra nas
+ * duas colunas); o escudo passa a pessoa de um tipo para o outro.
  */
 function DialogoVistadores({
   painel,
@@ -311,11 +257,17 @@ function DialogoVistadores({
   const tirar = (area: string, tipo: TipoDeDemanda, nome: string) => mudar(area, (atual) => ({ ...atual, [tipo]: atual[tipo].filter((item) => item !== nome) }));
   const trocarTipo = (area: string, tipo: TipoDeDemanda, nome: string) => {
     const outro: TipoDeDemanda = tipo === "normal" ? "risco" : "normal";
-    mudar(area, (atual) => ({ ...atual, [tipo]: atual[tipo].filter((item) => item !== nome), [outro]: [...atual[outro], nome] }));
+    // Se a pessoa já vista o outro tipo, só sai deste (não repete o nome lá).
+    mudar(area, (atual) => ({
+      ...atual,
+      [tipo]: atual[tipo].filter((item) => item !== nome),
+      [outro]: atual[outro].includes(nome) ? atual[outro] : [...atual[outro], nome],
+    }));
   };
+  // Só não repete no mesmo tipo: estar nas normais não impede de entrar nas de risco (e vice-versa).
   const incluir = (area: string, tipo: TipoDeDemanda, nome: string) => {
     if (!nome) return;
-    mudar(area, (atual) => (atual.normal.includes(nome) || atual.risco.includes(nome) ? atual : { ...atual, [tipo]: [...atual[tipo], nome] }));
+    mudar(area, (atual) => (atual[tipo].includes(nome) ? atual : { ...atual, [tipo]: [...atual[tipo], nome] }));
   };
 
   return (
@@ -326,7 +278,7 @@ function DialogoVistadores({
           <DialogDescription>
             {proposta
               ? `A lista tem ${proposta.responsaveis} responsáveis pela vistagem; ${proposta.novos.length} entram agora (marcados como novo). GERENTE = SIM vai para as demandas de risco: confira e troque o tipo de quem não for. Ninguém sai sem você tirar.`
-              : "Escolha quem vista as demandas normais e as de risco. Clique no escudo ao lado do nome para trocar o tipo."}
+              : "Escolha quem vista as demandas normais e as de risco. Quem vista as duas entra nas duas colunas; o escudo ao lado do nome passa a pessoa para o outro tipo."}
           </DialogDescription>
         </DialogHeader>
         {proposta?.ignorados.length ? (
@@ -341,7 +293,8 @@ function DialogoVistadores({
               </span>
               {TIPOS_DE_DEMANDA.map((tipo) => {
                 const nomes = rascunho[area]?.[tipo] ?? [];
-                const ocupados = new Set([...(rascunho[area]?.normal ?? []), ...(rascunho[area]?.risco ?? [])]);
+                // Na busca, some só quem já está neste tipo (quem está no outro pode entrar aqui também).
+                const ocupados = new Set(nomes);
                 return (
                   <div key={tipo} className="space-y-1.5">
                     <span className={cn("block text-[11px] font-medium", tipo === "risco" ? "text-[#8f1d26]" : "text-muted-foreground")}>{ROTULO_DEMANDA[tipo]}</span>
@@ -986,6 +939,9 @@ function Configuracoes() {
               onPadrao={() => void salvar("etiquetasDeRisco", painel.padroes.etiquetasDeRisco)}
             />
             <HoraDoAlerta painel={painel} salvando={salvando} onSalvar={(hora) => void salvar("horaArquivoEsperado", hora)} />
+          </div>
+          <div className="xl:col-span-2">
+            <QuemAcessaAVistagem />
           </div>
           <div className="xl:col-span-2" data-tour="cg-ia">
             <ChavesDaIa painel={painel} salvando={salvando} onSalvar={(chave, valor) => void salvar(chave, valor)} />
