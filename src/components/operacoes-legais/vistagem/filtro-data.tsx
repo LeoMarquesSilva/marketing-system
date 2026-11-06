@@ -14,7 +14,7 @@ function rotuloDaData(data: string): string {
 }
 
 /** Hoje no calendário de quem está usando (AAAA-MM-DD). */
-function hojeLocal(): string {
+export function hojeLocal(): string {
   const agora = new Date();
   return `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
 }
