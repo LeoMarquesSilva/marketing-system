@@ -326,17 +326,12 @@ function LinhaVistador({ linha, maior }: { linha: VistadorDaVisao; maior: number
           </span>
         </div>
       </div>
-      {/* Como no cabeçalho da área: o número em cima e, embaixo, a data da publicação mais antiga da fila (separada da barra). */}
-      <div className="shrink-0 text-right" aria-label={`${numero(linha.total)} para vistar (${rotuloTipo})${linha.maisAntiga ? `, a mais antiga de ${formatarData(linha.maisAntiga)}` : ""}`}>
+      {/* Como no cabeçalho da área: o número em cima e o que ele conta embaixo, sem data. */}
+      <div className="shrink-0 text-right" aria-label={`${numero(linha.total)} para vistar (${rotuloTipo})`}>
         <p className={cn("text-base font-semibold leading-none tabular-nums", linha.total ? "text-foreground" : "text-muted-foreground/70")}>
           {numero(linha.total)}
         </p>
-        <p
-          className="mt-1 whitespace-nowrap text-[11px] leading-tight text-muted-foreground"
-          title={linha.maisAntiga ? `Publicação mais antiga desta fila: ${formatarData(linha.maisAntiga)}` : undefined}
-        >
-          {linha.maisAntiga ? `mais antiga de ${formatarData(linha.maisAntiga).slice(0, 5)}` : linha.total === 0 ? "em dia" : "para vistar"}
-        </p>
+        <p className="mt-1 whitespace-nowrap text-[11px] leading-tight text-muted-foreground">{linha.total ? "para vistar" : "em dia"}</p>
       </div>
     </li>
   );
