@@ -29,7 +29,7 @@ import { buscarPastasVios } from "./pastas-vios";
 import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
 import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
-import { linhasParaFila, type TarefaNoVios } from "./fila-vios";
+import { linhasParaFila, modoDaPublicacao, type TarefaNoVios } from "./fila-vios";
 import { LIMITE_TRECHO_SINTESE } from "./dados-processo";
 import { buscarPastaPorCi, buscarSinteseDaPasta } from "./sioe";
 import { ESCRITORIOS, type PastaSioe } from "./triagem";
@@ -906,7 +906,7 @@ async function datasDoFluxoParaOVios(itens: AgendamentoRow[]): Promise<Map<strin
 
 /** Põe as tarefas da publicação na fila do robô; devolve o id da linha da fila de cada agendamento. */
 async function enfileirarPublicacao(publicacao: PublicacaoComArea, itens: AgendamentoRow[], simular: boolean): Promise<Map<string, string>> {
-  const modo = modoAgendamento();
+  const modo = modoDaPublicacao(publicacao.arquivo, modoAgendamento());
   const [equivalentes, datasDoFluxo] = await Promise.all([
     modo === "intimacao" ? comunicacoesEquivalentes(publicacao) : Promise.resolve([] as string[]),
     datasDoFluxoParaOVios(itens),

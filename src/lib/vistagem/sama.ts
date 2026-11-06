@@ -4,7 +4,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { chaveNome, type EtapaVios, type OpcaoVios } from "./agendamento";
 import { VistagemError } from "./errors";
 import { cisDoResultado, tarefasViosDoResultado, type LinhaFilaSama, type ModoAgendamento, type TarefaNoVios } from "./fila-vios";
-import type { BaseDaData, TipoNaArvore } from "./fluxo-vios";
+import type { BaseDaData, ResponsabilidadeDoTipo, TipoNaArvore } from "./fluxo-vios";
 import type { SintesePedida } from "./types";
 
 /**
@@ -133,6 +133,7 @@ export async function carregarArvoreVios(): Promise<Map<number, TipoNaArvore>> {
   const { data, error } = comRegras.error ? await sama().from("vios_fluxos_tarefas").select(colunas).limit(5000) : comRegras;
   if (error) throw new VistagemError(`Falha ao carregar o fluxo de tarefas do VIOS no SAMA: ${error.message}`, 502);
   if (!data?.length) throw new VistagemError("O fluxo de tarefas do VIOS no SAMA está vazio.", 502);
+  const responsabilidades = await responsabilidadesDosTipos();
   const arvore = new Map<number, TipoNaArvore>(
     (data as Record<string, unknown>[]).map((row) => {
       const regras = Array.isArray(row.regras_criacao) ? (row.regras_criacao as { id?: unknown; base?: unknown }[]) : null;
@@ -154,12 +155,46 @@ export async function carregarArvoreVios(): Promise<Map<number, TipoNaArvore>> {
                   .map((regra) => [Number(regra.id), (["atual", "pai", "pai_base"].includes(String(regra.base)) ? regra.base : "outro") as BaseDaData])
               )
             : null,
+          responsabilidade: responsabilidades.get(Number(row.etapa_id)) ?? null,
         },
       ];
     })
   );
   cacheArvore = { carregadoEm: Date.now(), arvore };
   return arvore;
+}
+
+/**
+ * Quem o VIOS põe em cada tipo de tarefa (Cadastro do tipo › Responsabilidade), lido pelo catálogo do robô: os fixos
+ * (vios_tipos_tarefa.responsaveis) e as marcações (regras_responsabilidade, SAMA 0060). Sem a coluna nova, só os fixos;
+ * se a consulta falhar, nenhum (a previsão volta a pôr o responsável da vistagem).
+ */
+async function responsabilidadesDosTipos(): Promise<Map<number, ResponsabilidadeDoTipo>> {
+  const mapa = new Map<number, ResponsabilidadeDoTipo>();
+  const comRegras = await sama().from("vios_tipos_tarefa").select("etapa_id, responsaveis, regras_responsabilidade").limit(5000);
+  const { data, error } = comRegras.error ? await sama().from("vios_tipos_tarefa").select("etapa_id, responsaveis").limit(5000) : comRegras;
+  if (error) {
+    console.error("[vistagem] responsáveis dos tipos de tarefa no SAMA:", error.message);
+    return mapa;
+  }
+  const marcado = (valor: Record<string, unknown>, chave: string) => valor[chave] === true;
+  for (const row of (data ?? []) as Record<string, unknown>[]) {
+    if (!Array.isArray(row.responsaveis)) continue;
+    const regras = row.regras_responsabilidade && typeof row.regras_responsabilidade === "object" ? (row.regras_responsabilidade as Record<string, unknown>) : null;
+    mapa.set(Number(row.etapa_id), {
+      fixos: (row.responsaveis as unknown[]).map(String).filter(Boolean),
+      regras: regras
+        ? {
+            advogado: marcado(regras, "advogado"),
+            auxiliar: marcado(regras, "auxiliar"),
+            estagiario: marcado(regras, "estagiario"),
+            coordenador: marcado(regras, "coordenador"),
+            grupo: marcado(regras, "grupo"),
+          }
+        : null,
+    });
+  }
+  return mapa;
 }
 
 export function catalogoDaArea(areas: CatalogoArea[], area: string | null): CatalogoArea | null {

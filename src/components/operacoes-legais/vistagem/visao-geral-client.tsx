@@ -150,7 +150,7 @@ function cartoesDaEsteira(visao: VisaoGeral, juridico: boolean): CartaoDaEsteira
 function Esteira({ visao, juridico }: { visao: VisaoGeral; juridico: boolean }) {
   const cartoes = cartoesDaEsteira(visao, juridico);
   return (
-    <Painel aria-labelledby="esteira-titulo">
+    <Painel aria-labelledby="esteira-titulo" data-tour="vg-visao-esteira">
       <PainelTopo
         id="esteira-titulo"
         titulo="Onde estão as publicações agora"
@@ -358,7 +358,7 @@ function ParaVistar({ visao }: { visao: VisaoGeral }) {
   const maior = Math.max(1, ...visao.vistadores.map((linha) => linha.total));
   const demandas = veRisco ? "nas demandas normais e nas de risco" : "nas demandas normais";
   return (
-    <Painel aria-labelledby="para-vistar-titulo">
+    <Painel aria-labelledby="para-vistar-titulo" data-tour="vg-visao-para-vistar">
       <PainelTopo
         id="para-vistar-titulo"
         titulo="Publicações para vistar, por área e advogado"
@@ -747,7 +747,7 @@ function PorGrupo({ visao, atualizando, seletor }: { visao: VisaoGeral; atualiza
   const maior = Math.max(1, ...grupos.map((grupo) => grupo.total));
   const periodo = visao.dias === 1 ? "hoje" : `nos últimos ${visao.dias} dias`;
   return (
-    <Painel aria-labelledby="grupos-titulo">
+    <Painel aria-labelledby="grupos-titulo" data-tour="vg-visao-grupos">
       <PainelTopo
         id="grupos-titulo"
         titulo="Publicações por grupo de clientes"
@@ -835,7 +835,7 @@ function Chegada({
   const umDia = visao.dias === 1;
 
   return (
-    <Painel aria-labelledby="chegada-titulo">
+    <Painel aria-labelledby="chegada-titulo" data-tour="vg-visao-chegada">
       <PainelTopo
         id="chegada-titulo"
         titulo="Chegada das publicações"
@@ -981,7 +981,7 @@ export function VisaoGeralClient() {
 
       <BarraAba
         resumo={
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div className="flex w-fit flex-wrap items-center gap-x-3 gap-y-1" data-tour="vg-visao-hoje">
             <span className="inline-block font-medium text-foreground first-letter:uppercase">{diaLongo(visao?.hoje ?? new Date().toISOString().slice(0, 10))}</span>
             {juridico ? null : situacaoHoje}
             {juridico && visao?.escopo ? <ResumoDoEscopo escopo={visao.escopo} /> : null}

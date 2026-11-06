@@ -139,7 +139,7 @@ export function AgendaNoVios({ item, fotos, hoje }: { item: AgendamentoResumo; f
   // Só a tarefa pedida, sem fluxo: a data e o responsável já estão no cartão.
   if (agenda.linhas.length < 2 && !agenda.aoConcluir.length) return null;
   return (
-    <section className="@container overflow-hidden rounded-md border border-[#e6eef0]" aria-label={`Fluxo das tarefas de ${item.tarefa}`}>
+    <section data-tour="cf-fluxo" className="@container overflow-hidden rounded-md border border-[#e6eef0]" aria-label={`Fluxo das tarefas de ${item.tarefa}`}>
       <button
         type="button"
         aria-expanded={aberta}

@@ -148,6 +148,7 @@ function CartaoEditavel({
   acao,
   rodape,
   children,
+  tour,
 }: {
   icone: LucideIcon;
   titulo: string;
@@ -155,9 +156,11 @@ function CartaoEditavel({
   acao?: ReactNode;
   rodape?: ReactNode;
   children: ReactNode;
+  /** data-tour do cartão (guia da Vistagem). */
+  tour?: string;
 }) {
   return (
-    <Painel className="flex flex-col">
+    <Painel className="flex flex-col" data-tour={tour}>
       <div className="flex items-start gap-3 border-b border-[#e6eef0] px-4 py-3">
         <span className="grid size-9 shrink-0 place-items-center rounded-md bg-[#e8f8f8] text-[#347796]" aria-hidden>
           <Icone className="size-[18px]" />
@@ -232,6 +235,7 @@ function Vistadores({
   const sem = ESCRITORIOS.filter((area) => !comVistador.includes(area));
   return (
     <CartaoEditavel
+      tour="cg-vistadores"
       icone={UsersRound}
       titulo="Vistadores por área"
       descricao="Quem vista as demandas normais e as de risco de cada área. A base é a lista USUARIOS do SharePoint; aparece na Visão geral. Quem enxerga a fila continua sendo definido em Usuários."
@@ -410,6 +414,7 @@ function EtiquetasDeRisco({ painel, onEditar, onPadrao }: { painel: PainelDeRegr
   const ehPadrao = valorEmTexto("etiquetasDeRisco", atuais) === valorEmTexto("etiquetasDeRisco", painel.padroes.etiquetasDeRisco);
   return (
     <CartaoEditavel
+      tour="cg-risco"
       icone={ShieldAlert}
       titulo="Etiquetas de demanda de risco"
       descricao="Pasta com uma destas etiquetas no VIOS vira demanda de risco: cabeçalho vermelho, filtro próprio e só quem vista risco vê. Vale para as próximas triagens."
@@ -526,6 +531,7 @@ function DialogoEtiquetas({
 function HoraDoAlerta({ painel, salvando, onSalvar }: { painel: PainelDeRegras; salvando: boolean; onSalvar: (hora: number) => void }) {
   return (
     <CartaoEditavel
+      tour="cg-alerta"
       icone={AlarmClock}
       titulo="Alerta do arquivo do dia"
       descricao="A partir desta hora, em dia útil, a falta do arquivo da Kurier vira faixa vermelha nas abas. O aviso de WhatsApp sai na busca das 9h."
@@ -894,7 +900,7 @@ function Configuracoes() {
   return (
     <div className="space-y-4">
       {/* Situação do sistema: o que está ligado no servidor (não muda por esta tela). */}
-      <Painel>
+      <Painel data-tour="cg-topo">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <span className="grid size-9 shrink-0 place-items-center rounded-md bg-[#04202f] text-[#47cdd0]" aria-hidden>
@@ -934,7 +940,7 @@ function Configuracoes() {
         </div>
       </Painel>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3" data-tour="cg-secoes">
         <Segmented<Secao>
           label="Parte das configurações"
           value={secao}
@@ -981,7 +987,7 @@ function Configuracoes() {
             />
             <HoraDoAlerta painel={painel} salvando={salvando} onSalvar={(hora) => void salvar("horaArquivoEsperado", hora)} />
           </div>
-          <div className="xl:col-span-2">
+          <div className="xl:col-span-2" data-tour="cg-ia">
             <ChavesDaIa painel={painel} salvando={salvando} onSalvar={(chave, valor) => void salvar(chave, valor)} />
           </div>
         </div>

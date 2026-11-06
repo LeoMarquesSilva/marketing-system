@@ -291,7 +291,8 @@ export function avisosDaData(iso: string, hoje: string): string[] {
 
 /**
  * Confere a vistagem antes de gravar: ao menos uma tarefa; cada uma com etiqueta,
- * tarefa da lista travada, data válida e responsável/revisor entre os usuários do VIOS.
+ * tarefa da lista travada, data válida e responsável/revisor entre os usuários do VIOS
+ * (revisor obrigatório no Prazo, opcional no Compromisso e ignorado na Providência).
  */
 export function validarAgendamentos(
   entradas: AgendamentoEntrada[],
@@ -347,8 +348,10 @@ export function validarAgendamentos(
     const encontrados = nomesResponsaveis.map((nome) => usuarioPorChave.get(chaveNome(nome)));
     const responsavel = nomesResponsaveis.length && encontrados.every(Boolean) ? (encontrados as OpcaoVios[]) : null;
     if (!responsavel) erros.push(`${n}: escolha o responsável na lista de usuários do VIOS.`);
-    const revisor = entrada.revisor?.trim() ? usuarioPorChave.get(chaveNome(entrada.revisor)) : null;
-    if (entrada.revisor?.trim() && !revisor) erros.push(`${n}: escolha o revisor na lista de usuários do VIOS.`);
+    // Providência não tem revisor: nenhum tipo de Providência cria 2. REVISAR no VIOS (conferido em 05/11/2026).
+    const comRevisor = entrada.etiqueta !== "PROVIDENCIA";
+    const revisor = comRevisor && entrada.revisor?.trim() ? usuarioPorChave.get(chaveNome(entrada.revisor)) : null;
+    if (comRevisor && entrada.revisor?.trim() && !revisor) erros.push(`${n}: escolha o revisor na lista de usuários do VIOS.`);
     if (prazo && !entrada.revisor?.trim()) erros.push(`${n}: no Prazo o revisor é obrigatório.`);
     // Observação opcional: vai na descrição da tarefa no VIOS, abaixo da data da publicação.
     const observacao = entrada.observacao?.trim() || null;
