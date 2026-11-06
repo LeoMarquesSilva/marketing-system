@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { criarCalendario } from "./dias-uteis";
-import { ESTAGIARIO_DA_PASTA, caminhosDoFluxo, datasParaOVios, emOrdemDeArvore, fluxoPrevisto, quemFicaNoFluxo } from "./fluxo-previsto";
+import { ESTAGIARIO_DA_PASTA, caminhosDoFluxo, emOrdemDeArvore, fluxoParaOVios, fluxoPrevisto, quemFicaNoFluxo } from "./fluxo-previsto";
 import { montarFluxo, type BaseDaData, type RegraDePrazo, type ResponsabilidadeDoTipo, type TipoNaArvore } from "./fluxo-vios";
 
 const uteis = (dias: number, negativo = false): RegraDePrazo => ({ dias, negativo, corridos: false });
@@ -101,11 +101,42 @@ describe("fluxo previsto (regras do VIOS)", () => {
       dataVios: "2027-04-08",
       editada: false,
     });
-    expect(datasParaOVios(previstas)).toEqual([
+    expect(fluxoParaOVios(previstas)).toEqual([
       { caminho: ["CONTESTAÇÃO"], data: "2027-03-24" },
       { caminho: ["CONTESTAÇÃO", "2. REVISAR"], data: "2027-04-02" },
       { caminho: ["CONTESTAÇÃO", "3. PROTOCOLAR"], data: "2027-04-13" },
     ]);
+  });
+
+  it("responsáveis escolhidos pelo jurídico ficam no lugar da regra do robô e vão para o robô, com ou sem data", () => {
+    const previstas = fluxoPrevisto({ ...pessoas, data: "2026-11-17" }, montarFluxo("36", ARVORE), ehDiaUtil, {
+      hoje: "2026-11-06",
+      datas: [
+        { caminho: ["2. REVISAR"], responsaveis: ["Leticia Zamarion Julio"] },
+        { caminho: ["EMBARGOS DE DECLARAÇÃO", "3. PROTOCOLAR"], data: "2026-11-16", responsaveis: ["Leticia Zamarion Julio", "Samuel Willian Silva"] },
+      ],
+    });
+    const revisar = previstas.find((tarefa) => tarefa.caminho.join(">") === "2. REVISAR");
+    expect(revisar).toMatchObject({
+      responsaveis: "Leticia Zamarion Julio",
+      responsaveisEscolhidos: ["Leticia Zamarion Julio"],
+      responsaveisPadrao: "Fernanda Voltarelli Arnoni",
+      editada: false,
+    });
+    // Sem escolha, a regra do robô (Protocolar: o responsável e o Samuel).
+    const protocolar = previstas.find((tarefa) => tarefa.caminho.join(">") === "3. PROTOCOLAR");
+    expect(protocolar?.responsaveisEscolhidos).toBeUndefined();
+    expect(protocolar?.responsaveis).toMatch(/^Vanessa Lanza Sellani \+ /);
+    expect(fluxoParaOVios(previstas)).toEqual([
+      { caminho: ["2. REVISAR"], responsaveis: ["Leticia Zamarion Julio"] },
+      { caminho: ["EMBARGOS DE DECLARAÇÃO", "3. PROTOCOLAR"], data: "2026-11-16", responsaveis: ["Leticia Zamarion Julio", "Samuel Willian Silva"] },
+    ]);
+    // A Ciência repetida o robô cancela: o responsável escolhido nela não vai.
+    const comCiencia = fluxoPrevisto({ ...pessoas, data: "2026-11-17" }, montarFluxo("36", ARVORE), ehDiaUtil, {
+      hoje: "2026-11-06",
+      datas: [{ caminho: ["EMBARGOS DE DECLARAÇÃO", "1. CIÊNCIA DOS AGENDAMENTOS"], responsaveis: ["Leticia Zamarion Julio"] }],
+    }).map((tarefa) => (tarefa.caminho.length === 2 && tarefa.nome.startsWith("1. CIÊNCIA") ? { ...tarefa, repetida: true } : tarefa));
+    expect(fluxoParaOVios(comCiencia)).toEqual([]);
   });
 
   it("sem as regras lidas, só o Revisar e o Protocolar têm data (conta antiga)", () => {
@@ -116,7 +147,7 @@ describe("fluxo previsto (regras do VIOS)", () => {
       [1, "INFORMAR CLIENTE + INTERESSE RECURSAL + GUIA", null],
       [1, "3. PROTOCOLAR", "2026-11-11"],
     ]);
-    expect(datasParaOVios(previstas)).toEqual([]);
+    expect(fluxoParaOVios(previstas)).toEqual([]);
   });
 
   it("em árvore: as tarefas que o Embargos cria ficam embaixo dele, mesmo fora da ordem das datas", () => {
@@ -141,7 +172,7 @@ describe("fluxo previsto (regras do VIOS)", () => {
     expect(previstas.find((tarefa) => tarefa.nome === "2. REVISAR")).toMatchObject({ data: "2026-11-09", dataVios: "2026-11-09" });
     expect(previstas.find((tarefa) => tarefa.nome === "2. REVISAR")?.ajustada).toBeUndefined();
     expect(previstas.find((tarefa) => tarefa.nome === "3. PROTOCOLAR")).toMatchObject({ data: "2026-11-09", dataVios: "2026-11-12", ajustada: "fatal", editada: false });
-    expect(datasParaOVios(previstas)).toEqual([{ caminho: ["3. PROTOCOLAR"], data: "2026-11-09" }]);
+    expect(fluxoParaOVios(previstas)).toEqual([{ caminho: ["3. PROTOCOLAR"], data: "2026-11-09" }]);
     // A data escolhida pelo jurídico continua valendo.
     const escolhida = fluxoPrevisto({ ...pessoas, data: "2026-11-06" }, montarFluxo("487", ARVORE), ehDiaUtil, {
       hoje: "2026-11-06",
@@ -158,7 +189,7 @@ describe("fluxo previsto (regras do VIOS)", () => {
     expect(previstas.find((tarefa) => tarefa.nome === "CONTESTAÇÃO")).toMatchObject({ data: "2026-11-06", ajustada: "hoje" });
     // As filhas da Contestação contam da data nova (hoje).
     expect(previstas.find((tarefa) => tarefa.caminho.join(">") === "CONTESTAÇÃO>2. REVISAR")?.data).toBe("2026-11-16");
-    expect(datasParaOVios(previstas).map((item) => item.caminho.join(">"))).toEqual(
+    expect(fluxoParaOVios(previstas).map((item) => item.caminho.join(">"))).toEqual(
       expect.arrayContaining(["CONTESTAÇÃO", "LEMBRETE AUDIÊNCIA + REGULARIZAÇÃO PROCESSUAL"])
     );
   });
@@ -168,7 +199,7 @@ describe("fluxo previsto (regras do VIOS)", () => {
       hoje: "2026-11-06",
       datas: [{ caminho: ["EMBARGOS DE DECLARAÇÃO", "1. CIÊNCIA DOS AGENDAMENTOS"], data: "2026-11-09" }],
     }).map((tarefa) => (tarefa.nivel === 2 && tarefa.nome.startsWith("1. CI") ? { ...tarefa, repetida: true } : tarefa));
-    expect(datasParaOVios(previstas)).toEqual([]);
+    expect(fluxoParaOVios(previstas)).toEqual([]);
   });
 
   it("sem fluxo não cria nada; os caminhos aceitos incluem o fluxo dentro do fluxo", () => {

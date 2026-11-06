@@ -295,7 +295,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alternativa: "vj-tarefa",
       titulo: "O que o VIOS cria junto",
       texto:
-        "Ao escolher a tarefa, aparece o fluxo do VIOS: as tarefas que ele cria junto (como Revisar e Protocolar), com a data e quem fica em cada uma. Para priorizar, mude a data de uma delas: o robô grava a nova data no VIOS (\"voltar à do VIOS\" desfaz).",
+        "Ao escolher a tarefa, aparece o fluxo do VIOS: as tarefas que ele cria junto (como Revisar e Protocolar), com a data e quem fica em cada uma. Para priorizar, mude a data de uma delas: o robô grava a nova data no VIOS (\"voltar à do VIOS\" desfaz). Para outra pessoa fazer, clique em quem fica e escolha os responsáveis (\"voltar ao padrão\" desfaz).",
     },
     {
       id: "enviar",
