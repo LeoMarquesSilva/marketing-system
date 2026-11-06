@@ -15,6 +15,11 @@ export interface MarcoRegua {
 
 const DIAS_DA_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
 
+/** "2026-11-05" → "qua". */
+export function diaDaSemana(data: string): string {
+  return DIAS_DA_SEMANA[new Date(`${data}T12:00:00Z`).getUTCDay()];
+}
+
 function diasEntre(de: string, ate: string): number {
   return Math.round((Date.parse(`${ate}T12:00:00Z`) - Date.parse(`${de}T12:00:00Z`)) / 86_400_000);
 }

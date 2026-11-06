@@ -10,7 +10,7 @@ import { partesDaData } from "@/lib/vistagem/como-fica-no-vios";
  * apagados; hoje, marcado.
  */
 
-/** Tipo da tarefa, com as cores do VIOS (Prazo verde, Revisar amarelo, Protocolar vermelho, Providência azul). */
+/** Tipo da tarefa, com as cores do VIOS (Prazo verde, Revisar amarelo, Protocolar vermelho, Providência azul-claro). */
 export type TomDoMarco = "prazo" | "providencia" | "compromisso" | "revisar" | "protocolar" | "fatal";
 
 export interface MarcoDoCalendario {
@@ -27,7 +27,7 @@ export interface MarcoDoCalendario {
 /** Cor de cada tipo: o número fica dentro, em branco ou quase preto conforme o fundo. A fatal é só contorno. */
 export const ESTILO_DO_MARCO: Record<TomDoMarco, string> = {
   prazo: "bg-[#3cc14d] text-[#04202f]",
-  providencia: "bg-[#347796] text-white",
+  providencia: "bg-[#7ec8ef] text-[#04202f]",
   compromisso: "bg-[#48466e] text-white",
   revisar: "bg-[#e2cc3e] text-[#04202f]",
   protocolar: "bg-[#f0316a] text-white",
@@ -46,12 +46,16 @@ export const ROTULO_DO_TOM: Record<TomDoMarco, string> = {
 /** Contorno da data alterada pelo jurídico (fica por fora da cor do tipo). */
 const CONTORNO_EDITADA = "outline outline-2 outline-offset-1 outline-[#04202f]";
 
-/** Tipo da tarefa do fluxo pelo nome ("2. REVISAR", "3. PROTOCOLAR"); as outras ficam no tipo da tarefa pedida. */
-export function tomDaTarefaDoFluxo(nome: string, tomDaPedida: TomDoMarco): TomDoMarco {
+/**
+ * Tipo da tarefa do fluxo: Revisar e Protocolar pelo nome ("2. REVISAR", "3. PROTOCOLAR"); as outras pela classe
+ * delas na lista de tarefas do VIOS (`tomDoTipo`, ex.: uma Providência criada por um Prazo); sem a classe, o tipo
+ * da tarefa pedida.
+ */
+export function tomDaTarefaDoFluxo(nome: string, tomDaPedida: TomDoMarco, tomDoTipo: TomDoMarco | null = null): TomDoMarco {
   const texto = nome.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   if (/\brevis/.test(texto)) return "revisar";
   if (/\bprotocol/.test(texto)) return "protocolar";
-  return tomDaPedida;
+  return tomDoTipo ?? tomDaPedida;
 }
 
 const SEMANA = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
