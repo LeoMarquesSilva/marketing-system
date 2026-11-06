@@ -274,7 +274,7 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
       {
         id: "corridos",
         titulo: "Dias corridos",
-        quando: "a decisão disser que o prazo é em dias corridos",
+        quando: "a decisão disser que o prazo é em dias corridos, ou a área for Insolvência (já vem marcado Corridos)",
         entao: "conta todos os dias (menos o recesso); se vencer em dia sem expediente, passa para o próximo dia útil.",
         origem: "codigo",
       },
@@ -297,6 +297,13 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         titulo: "Atalhos de dias",
         quando: "a pessoa escolher o prazo pelos botões",
         entao: `aparecem ${lista(DIAS_PRAZO)} dias (no Trabalhista, ${lista(DIAS_PRAZO_TRABALHISTA)}).`,
+        origem: "codigo",
+      },
+      {
+        id: "prazo-legal",
+        titulo: "Prazo legal dos recursos",
+        quando: "a tarefa de Prazo escolhida for um recurso ou a resposta a um",
+        entao: "os dias já vêm marcados: 15 (CPC) ou 8 no Trabalhista; embargos de declaração 5; recurso inominado 10. Dias lidos da publicação ou escolhidos à mão não são trocados.",
         origem: "codigo",
       },
     ],

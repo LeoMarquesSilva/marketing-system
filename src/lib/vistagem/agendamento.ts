@@ -247,6 +247,14 @@ export function areaDoCatalogo(areaProcesso: string | null, escritorio: string |
   return null;
 }
 
+/**
+ * Como o Prazo começa marcado na vistagem: na Insolvência, dias corridos (Lei 11.101, art. 189); nas outras áreas
+ * (inclusive Cível | Insolvência), dias úteis. O jurídico pode trocar na tarefa.
+ */
+export function contagemPadraoDaArea(area: string | null | undefined): ContagemPrazo {
+  return chaveNome(area) === "INSOLVENCIA" ? "corridos" : "uteis";
+}
+
 /** Responsável sugerido: o advogado responsável da pasta, se for usuário do VIOS. */
 export function responsavelSugerido(advogadoResponsavel: string | null, usuarios: OpcaoVios[]): OpcaoVios | null {
   const chave = chaveNome(advogadoResponsavel);
