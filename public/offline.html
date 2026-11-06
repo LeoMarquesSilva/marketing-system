@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#04202f" />
+    <meta name="robots" content="noindex" />
+    <title>Sem conexão · ORQESTRAI</title>
+    <style>
+      :root {
+        --superficie-de: #03070c;
+        --superficie-ate: #04202f;
+        --ciano: #47cdd0;
+        --acao: #347796;
+        --acao-hover: #285f7a;
+        --branco: #f9f9f9;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px 16px;
+        background: radial-gradient(circle at 50% 38%, rgba(71, 205, 208, 0.12), transparent 42%),
+          linear-gradient(135deg, var(--superficie-de), var(--superficie-ate));
+        color: var(--branco);
+        font-family: "Geist", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        letter-spacing: 0;
+        -webkit-font-smoothing: antialiased;
+      }
+      main {
+        width: 100%;
+        max-width: 380px;
+        text-align: center;
+      }
+      .simbolo {
+        width: 72px;
+        height: auto;
+        margin: 0 auto 28px;
+        display: block;
+        filter: drop-shadow(0 2px 14px rgba(71, 205, 208, 0.35));
+      }
+      .situacao {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 14px;
+        padding: 4px 12px;
+        border: 1px solid rgba(249, 249, 249, 0.14);
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 500;
+        color: rgba(249, 249, 249, 0.7);
+      }
+      .situacao::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #f59e0b;
+      }
+      .situacao.online::before {
+        background: #34d399;
+      }
+      h1 {
+        margin: 0 0 10px;
+        font-size: 22px;
+        font-weight: 600;
+        line-height: 1.25;
+      }
+      p {
+        margin: 0;
+        font-size: 14px;
+        line-height: 1.55;
+        color: rgba(249, 249, 249, 0.68);
+      }
+      button {
+        margin-top: 28px;
+        min-height: 44px;
+        padding: 0 22px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--acao);
+        color: #fff;
+        font: inherit;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color 0.15s ease;
+      }
+      button:hover {
+        background: var(--acao-hover);
+      }
+      button:focus-visible {
+        outline: 2px solid var(--ciano);
+        outline-offset: 3px;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        button {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <svg class="simbolo" viewBox="0 0 174.68 136.78" fill="#f9f9f9" aria-hidden="true">
+        <path d="M55.56,100.83c-19.9-19.9-25.9-46.17-13.4-58.67,12.5-12.5,38.77-6.5,58.67,13.4l18.95-18.95C83.21.05,34.95-10.98,11.98,11.98-10.98,34.95.05,83.21,36.61,119.78l18.95-18.95Z" />
+        <path d="M132.52,94.62c-12.5,12.5-38.77,6.5-58.67-13.4l-18.95,18.95c36.57,36.57,84.83,47.59,107.79,24.63,22.97-22.97,11.94-71.23-24.63-107.79l-18.95,18.95c19.9,19.9,25.9,46.17,13.4,58.67Z" />
+        <path d="M151.16,4.02s-4.96,5-12.95,13.07c7.94-7.94,12.95-13.07,12.95-13.07Z" />
+        <path d="M138.25,17.12c7.99-8.07,12.95-13.07,12.95-13.07,0,0-5.08,5.05-12.95,13.07Z" />
+        <path d="M90.45,65.36s-.02-.02-.04-.04c18.42-18.59,36.27-36.6,47.79-48.24-11.99,11.98-30.66,30.34-48.95,47.11-24.69,22.65-48.67,42.39-54.5,39.61,0,0,0,5.83-2.85,13.67-2.12,5.83-5.81,12.77-12.25,19.27,2.25-2.27,7.84-7.91,15.52-15.66.01.01.02.02.04.04-7.68,7.75-13.27,13.4-15.52,15.66,6.47-6.53,13.42-10.29,19.25-12.46,7.77-2.89,13.55-2.94,13.55-2.94-2.84-5.81,16.67-29.96,39.08-54.85,16.61-18.45,34.81-37.31,46.68-49.41-11.53,11.63-29.37,29.64-47.79,48.24Z" />
+      </svg>
+      <span class="situacao" id="situacao" role="status" aria-live="polite">Sem internet</span>
+      <h1>O ORQESTRAI está sem conexão</h1>
+      <p>Os dados do sistema são sempre os mais recentes, por isso ele precisa de internet. Confira a rede e tente de novo; quando a conexão voltar, a página recarrega sozinha.</p>
+      <button type="button" id="tentar">Tentar de novo</button>
+    </main>
+    <script>
+      document.getElementById("tentar").addEventListener("click", function () {
+        location.reload();
+      });
+      window.addEventListener("online", function () {
+        var situacao = document.getElementById("situacao");
+        situacao.textContent = "Conexão de volta";
+        situacao.classList.add("online");
+        setTimeout(function () {
+          location.reload();
+        }, 600);
+      });
+    </script>
+  </body>
+</html>

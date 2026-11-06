@@ -1,10 +1,13 @@
+import { APP_SERVICE_WORKER_URL } from "@/lib/pwa";
+
 /**
- * Avisos de lead do WhatsApp no navegador: Web Push (service worker em
- * public/whatsapp-push-sw.js) + som tocado pela página. Quem manda o push é a
+ * Avisos de lead do WhatsApp no navegador: Web Push (service worker único do
+ * site, public/sw.js) + som tocado pela página. Quem manda o push é a
  * Edge Function evolution-webhook, só para users.is_whatsapp_lead_notification_recipient.
  */
 
-export const WHATSAPP_PUSH_SW_URL = "/whatsapp-push-sw.js";
+/** O push usa o mesmo service worker do app instalável: dois no mesmo escopo brigariam. */
+export const WHATSAPP_PUSH_SW_URL = APP_SERVICE_WORKER_URL;
 
 /** Parâmetro que abre uma conversa na caixa de entrada (/trafego-pago?conversa=<id>). */
 export const WHATSAPP_CONVERSATION_PARAM = "conversa";
