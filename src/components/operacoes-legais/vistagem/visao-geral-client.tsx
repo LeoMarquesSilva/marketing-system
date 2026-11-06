@@ -81,7 +81,7 @@ const ETAPAS: Record<EtapaVisao, { rotulo: string; dica: string; href: string; i
   triagem: { rotulo: "Triagem Manual", dica: "pendências sem área", href: "/operacoes-legais/vistagem/controladoria", icone: FolderSearch },
   duplicidades: { rotulo: "Duplicidades", dica: "a revisar", href: "/operacoes-legais/vistagem/duplicidades", icone: Copy },
   vistagem: { rotulo: "Vistagem", dica: "para vistar", href: "/operacoes-legais/vistagem/juridico", icone: Scale },
-  conferencia: { rotulo: "Conferência", dica: "a conferir", href: "/operacoes-legais/vistagem/conferencia", icone: ClipboardCheck },
+  conferencia: { rotulo: "Conferência de Operações Legais", dica: "a conferir", href: "/operacoes-legais/vistagem/conferencia", icone: ClipboardCheck },
   envio: { rotulo: "Envio ao VIOS", dica: "enviando", href: "/operacoes-legais/vistagem/conferencia", icone: ArrowRight },
   check: { rotulo: "Check", dica: "a checar", href: "/operacoes-legais/vistagem/check", icone: CheckCheck },
 };
@@ -310,20 +310,12 @@ function LinhaVistador({ linha, maior }: { linha: VistadorDaVisao; maior: number
     <li className="flex items-center gap-3 px-4 py-2.5">
       {pessoas.length ? <FotosEmPilha pessoas={pessoas} /> : <SemVistador />}
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <p
-            className={cn("min-w-0 flex-1 truncate text-sm font-medium", pessoas.length ? "text-foreground" : "text-muted-foreground")}
-            title={pessoas.length ? pessoas.map((pessoa) => pessoa.nome).join(", ") : "O vistador desta área ainda não foi cadastrado"}
-          >
-            {pessoas.length ? nomesDaLinha(pessoas) : "Vistador a definir"}
-          </p>
-          <span
-            className={cn("shrink-0 text-sm font-semibold tabular-nums", linha.total ? "text-foreground" : "text-muted-foreground/70")}
-            aria-label={`${numero(linha.total)} para vistar (${rotuloTipo})`}
-          >
-            {numero(linha.total)}
-          </span>
-        </div>
+        <p
+          className={cn("truncate text-sm font-medium", pessoas.length ? "text-foreground" : "text-muted-foreground")}
+          title={pessoas.length ? pessoas.map((pessoa) => pessoa.nome).join(", ") : "O vistador desta área ainda não foi cadastrado"}
+        >
+          {pessoas.length ? nomesDaLinha(pessoas) : "Vistador a definir"}
+        </p>
         <div className="mt-1.5 flex min-w-0 items-center gap-2">
           <TipoDaLinha linha={linha} />
           {/* Barra do mesmo tom para todos: o comprimento compara quem tem mais para vistar. */}
@@ -332,14 +324,14 @@ function LinhaVistador({ linha, maior }: { linha: VistadorDaVisao; maior: number
               <span className="block h-full rounded-full bg-[#347796]" style={{ width: `${Math.max(4, (linha.total / maior) * 100)}%` }} />
             ) : null}
           </span>
-          {linha.maisAntiga ? (
-            <span className="shrink-0 text-xs tabular-nums text-muted-foreground" title={`Publicação mais antiga: ${formatarData(linha.maisAntiga)}`}>
-              desde {formatarData(linha.maisAntiga).slice(0, 5)}
-            </span>
-          ) : linha.total === 0 ? (
-            <span className="shrink-0 text-xs text-muted-foreground">em dia</span>
-          ) : null}
         </div>
+      </div>
+      {/* Como no cabeçalho da área: o número em cima e o que ele conta embaixo, sem data. */}
+      <div className="shrink-0 text-right" aria-label={`${numero(linha.total)} para vistar (${rotuloTipo})`}>
+        <p className={cn("text-base font-semibold leading-none tabular-nums", linha.total ? "text-foreground" : "text-muted-foreground/70")}>
+          {numero(linha.total)}
+        </p>
+        <p className="mt-1 whitespace-nowrap text-[11px] leading-tight text-muted-foreground">{linha.total ? "para vistar" : "em dia"}</p>
       </div>
     </li>
   );
@@ -390,20 +382,6 @@ function ParaVistar({ visao }: { visao: VisaoGeral }) {
           ))}
         </div>
       )}
-      {(visao.vistadoresDeTodas ?? []).length ? (
-        // Quem vista qualquer área (sócios, controladoria): não é uma fila, então vem como rodapé.
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[#e6eef0] bg-[#f7fbfc] px-4 py-3">
-          <p className="text-xs font-semibold uppercase text-[#285f7a]">Vistam todas as áreas</p>
-          {visao.vistadoresDeTodas.map((grupo) => (
-            <span key={grupo.tipo} className="flex min-w-0 items-center gap-2">
-              <FotosEmPilha pessoas={grupo.pessoas} />
-              <span className="min-w-0 text-xs text-muted-foreground" title={grupo.pessoas.map((pessoa) => pessoa.nome).join(", ")}>
-                <span className="text-foreground">{nomesDaLinha(grupo.pessoas)}</span> · {ROTULO_DEMANDA[grupo.tipo].toLowerCase()}
-              </span>
-            </span>
-          ))}
-        </div>
-      ) : null}
     </Painel>
   );
 }
@@ -419,7 +397,8 @@ function BlocoArea({ area, linhas, maior }: { area: AreaDaVisao; linhas: Vistado
       <div className="flex items-center gap-3 bg-[#f7fbfc] px-4 py-3">
         <IconeArea area={area.area} tamanho="md" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-foreground">{area.area}</p>
+          {/* O nome da área um pouco maior que os vistadores abaixo dele: é o título do bloco. */}
+          <p className="truncate text-base font-semibold leading-snug text-foreground">{area.area}</p>
           <p className="truncate text-xs text-muted-foreground">
             {area.maisAntigaParaVistar ? `Mais antiga publicada em ${formatarData(area.maisAntigaParaVistar)}` : "Nada para vistar"}
             {depois.length ? ` · ${depois.join(" · ")}` : ""}
