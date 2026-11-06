@@ -89,6 +89,17 @@ export function SetasDaFila({ navegacao, onAbrir, separada = false }: { navegaca
 function NumeroDoProcesso({ numero, tribunal, tituloId }: { numero: string; tribunal: string | null; tituloId: string }) {
   const [copiado, setCopiado] = useState(false);
   const consulta = consultaProcessual(tribunal, numero);
+  const copiar = (texto: string) =>
+    navigator.clipboard?.writeText(texto).then(() => {
+      setCopiado(true);
+      window.setTimeout(() => setCopiado(false), 1500);
+    });
+  // Consulta só por formulário (ou com login): o clique abre a página e já copia o número para colar no campo.
+  const dica = consulta
+    ? consulta.copiar
+      ? `Abrir ${consulta.onde}: o número (${consulta.copiar}) vai copiado, é só colar no campo do processo`
+      : `Pesquisar ${consulta.onde}${consulta.preenchida ? " (o número já vai preenchido: falta consultar)" : ""}`
+    : "";
   return (
     <>
       <h2 id={tituloId} className="flex flex-wrap items-center gap-x-2.5 text-base font-bold tabular-nums text-white">
@@ -102,12 +113,17 @@ function NumeroDoProcesso({ numero, tribunal, tituloId }: { numero: string; trib
             href={consulta.url}
             target="_blank"
             rel="noopener noreferrer"
-            title={`Pesquisar ${consulta.onde}${consulta.preenchida ? " (o número já vai preenchido: falta consultar)" : ""}`}
+            title={dica}
+            onClick={() => {
+              if (consulta.copiar) void copiar(consulta.copiar);
+            }}
             className="inline-flex items-center gap-1.5 rounded-sm text-white underline decoration-white/60 underline-offset-4 hover:decoration-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
           >
             <Search className="size-4 shrink-0" aria-hidden />
             {numero}
-            <span className="sr-only">(pesquisa {consulta.onde}, em nova aba)</span>
+            <span className="sr-only">
+              ({consulta.copiar ? `abre ${consulta.onde} em nova aba e copia o número para colar` : `pesquisa ${consulta.onde}, em nova aba`})
+            </span>
           </a>
         ) : (
           numero
@@ -120,12 +136,7 @@ function NumeroDoProcesso({ numero, tribunal, tituloId }: { numero: string; trib
         className={NA_FAIXA}
         title={copiado ? "Copiado" : "Copiar o número do processo"}
         aria-label="Copiar o número do processo"
-        onClick={() => {
-          void navigator.clipboard?.writeText(numero).then(() => {
-            setCopiado(true);
-            window.setTimeout(() => setCopiado(false), 1500);
-          });
-        }}
+        onClick={() => void copiar(numero)}
       >
         {copiado ? <Check /> : <Copy />}
       </Button>
@@ -137,7 +148,7 @@ function NumeroDoProcesso({ numero, tribunal, tituloId }: { numero: string; trib
  * Faixa azul-marinho no topo da publicação, na vistagem do jurídico e na conferência da controladoria: o número
  * do processo (pesquisa no tribunal e copiar), o tribunal, outros selos e, à direita, o que a tela pedir.
  * `antes` fica à esquerda do número (ex.: o botão da fila, com o próprio divisor). Demanda de risco pinta a faixa de vermelho-escuro,
- * com o selo, para a pessoa ler com mais cautela.
+ * com o selo, para a pessoa ler com mais cautela; `seloDeRisco={false}` tira o selo quando a tela já o mostra logo abaixo.
  */
 export function FaixaDoProcesso({
   numero,
@@ -146,6 +157,7 @@ export function FaixaDoProcesso({
   selos,
   antes,
   risco = false,
+  seloDeRisco = true,
   children,
 }: {
   numero: string;
@@ -154,6 +166,7 @@ export function FaixaDoProcesso({
   selos?: ReactNode;
   antes?: ReactNode;
   risco?: boolean;
+  seloDeRisco?: boolean;
   children?: ReactNode;
 }) {
   return (
@@ -161,7 +174,7 @@ export function FaixaDoProcesso({
       <div className="flex flex-wrap items-center gap-2">
         {antes}
         <NumeroDoProcesso numero={numero} tribunal={tribunal} tituloId={tituloId} />
-        {risco ? (
+        {risco && seloDeRisco ? (
           <Selo tom="escuro" icone={ShieldAlert} className="bg-white text-[#8f1d26] ring-white">
             Demanda de risco
           </Selo>

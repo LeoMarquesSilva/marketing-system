@@ -32,7 +32,8 @@ export const SIGNATURE_ROW = {
   maxSpacing: 256.4,
   rowWidth: 770,
   /** Assinatura enviada pela tela: caixa acima da linha. */
-  imageMaxHeight: 72,
+  // Altura parecida com a parte das assinaturas dos sócios que fica acima da linha (87 a 107 pt).
+  imageMaxHeight: 95,
   imageOverlap: 6,
 };
 

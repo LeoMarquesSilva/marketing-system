@@ -74,9 +74,48 @@ describe("consultaProcessual", () => {
     expect(consultaProcessual("TJMS", "1400001-10.2026.8.12.0000")).toBeNull();
   });
 
+  it("consulta só por formulário: abre a página do tribunal e copia o número para colar", () => {
+    // Números reais que chegaram na vistagem.
+    expect(consultaProcessual("TRF3", "5000136-96.2024.4.03.6127")).toEqual({
+      url: "https://pje1g.trf3.jus.br/pje/ConsultaPublica/listView.seam",
+      onde: "na consulta pública do PJe do TRF3 (1º grau)",
+      preenchida: false,
+      copiar: "5000136-96.2024.4.03.6127",
+    });
+    expect(consultaProcessual("TRF3", "5006327-52.2025.4.03.0000")?.url).toBe("https://pje2g.trf3.jus.br/pje/ConsultaPublica/listView.seam");
+    expect(consultaProcessual("TJBA", "8139252-58.2023.8.05.0001")).toMatchObject({
+      url: "https://consultapublicapje.tjba.jus.br/pje/ConsultaPublica/listView.seam",
+      copiar: "8139252-58.2023.8.05.0001",
+    });
+    expect(consultaProcessual("TJBA", "8000001-10.2025.8.05.0000")?.url).toBe("https://pje2g.tjba.jus.br/pje/ConsultaPublica/listView.seam");
+    expect(consultaProcessual("TJCE", "3011069-62.2025.8.06.0000")).toMatchObject({
+      url: "https://pje-consulta.tjce.jus.br/pje2grau/ConsultaPublica/listView.seam",
+      copiar: "3011069-62.2025.8.06.0000",
+    });
+    expect(consultaProcessual("TJCE", "0200001-10.2024.8.06.0001")?.url).toBe("https://pje-consulta.tjce.jus.br/pje1grau/ConsultaPublica/listView.seam");
+    expect(consultaProcessual("TJES", "0021350-12.2019.8.08.0024")).toMatchObject({
+      url: "https://portaldeservicos.pdpj.jus.br/consulta",
+      onde: "na consulta do JUS.BR (TJES; pede login)",
+      copiar: "0021350-12.2019.8.08.0024",
+    });
+  });
+
+  it("no TJGO copia o número e o dígito, sem os zeros da frente (como a busca do PROJUDI pede)", () => {
+    expect(consultaProcessual("TJGO", "5759700-75.2022.8.09.0034")).toMatchObject({
+      url: "https://projudi.tjgo.jus.br/BuscaProcesso",
+      copiar: "5759700-75",
+    });
+    expect(consultaProcessual("TJGO", "0148032-91.2009.8.09.0002")?.copiar).toBe("148032-91");
+  });
+
+  it("os links que abrem direto não pedem para copiar", () => {
+    expect(consultaProcessual("TRT15", "0010743-04.2022.5.15.0116")?.copiar).toBeUndefined();
+    expect(consultaProcessual("TJSP", "1001689-76.2018.8.26.0634")?.copiar).toBeUndefined();
+  });
+
   it("sem endereço conhecido ou sem CNJ fica sem link", () => {
     expect(consultaProcessual("TJMG", "5018595-38.2023.8.13.0027")).toBeNull();
-    expect(consultaProcessual("TRF3", "5006327-52.2025.4.03.6183")).toBeNull();
+    expect(consultaProcessual("TRF1", "1000123-45.2024.4.01.3400")).toBeNull();
     expect(consultaProcessual("STF", "0001234-56.2024.1.00.0000")).toBeNull();
     expect(consultaProcessual("TRT2", "0001234-56.2024.5.25.0001")).toBeNull();
     expect(consultaProcessual("TJSP", "123456")).toBeNull();
