@@ -8,10 +8,13 @@ import {
   ArrowRight,
   Bus,
   CalendarDays,
+  CalendarPlus,
   CalendarX2,
   Car,
   Check,
   Clock3,
+  Download,
+  ExternalLink,
   Loader2,
   MapPin,
   Navigation,
@@ -29,6 +32,7 @@ import {
   type RsvpTransport,
   type RsvpView,
 } from "@/lib/event-rsvp";
+import { FESTA_ICS_PATH, googleCalendarUrl, outlookCalendarUrl } from "@/lib/festa-10-anos-agenda";
 
 const API = "/api/festa-10-anos";
 
@@ -36,6 +40,8 @@ const GOLD_TEXT = "text-[#9c7434]";
 const EYEBROW = "text-[12px] font-semibold uppercase tracking-[0.32em] text-[#9c7434]";
 const GOLD_BUTTON =
   "inline-flex h-12 items-center justify-center gap-2 rounded-full bg-gradient-to-b from-[#d9b877] to-[#bf9650] px-7 text-[15px] font-semibold tracking-wide text-white shadow-[0_10px_24px_-12px_rgba(120,86,30,0.75)] transition hover:brightness-105 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9c7434] disabled:cursor-not-allowed disabled:opacity-50";
+const CALENDAR_BUTTON =
+  "inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-[#cfb27a] bg-[#fdfbf7] px-3 text-[13px] font-semibold text-[#7a5a26] transition hover:bg-[#f6eedf] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9c7434]";
 const OUTLINE_BUTTON =
   "inline-flex h-11 items-center justify-center gap-2 rounded-full border border-[#cfb27a] bg-[#fdfbf7] px-5 text-sm font-semibold text-[#7a5a26] transition hover:bg-[#f6eedf] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9c7434]";
 
@@ -315,6 +321,26 @@ function Summary({
               {view.open ? " Se quiser usar o micro-ônibus, é só alterar a resposta aqui embaixo." : ""}
             </p>
           )}
+          <div className="rounded-2xl border border-[#e6d8bc] bg-white/70 px-4 py-3">
+            <p className="flex items-center gap-2 text-[15px] font-semibold text-[#0d1e2e]">
+              <CalendarPlus className="size-[18px] text-[#9c7434]" aria-hidden />
+              Salve na sua agenda
+            </p>
+            <div className="mt-3 grid gap-2">
+              <a href={googleCalendarUrl(view.transport)} target="_blank" rel="noreferrer" className={CALENDAR_BUTTON}>
+                Google Agenda
+                <ExternalLink className="size-3.5 opacity-70" aria-hidden />
+              </a>
+              <a href={outlookCalendarUrl(view.transport)} target="_blank" rel="noreferrer" className={CALENDAR_BUTTON}>
+                Outlook (e-mail do escritório)
+                <ExternalLink className="size-3.5 opacity-70" aria-hidden />
+              </a>
+              <a href={FESTA_ICS_PATH} download="festa-10-anos.ics" className={CALENDAR_BUTTON}>
+                iPhone, Android e outras agendas
+                <Download className="size-3.5 opacity-70" aria-hidden />
+              </a>
+            </div>
+          </div>
           <Link
             href="/dress-code"
             className="flex items-center gap-3 rounded-2xl border border-[#e6d8bc] bg-white/70 px-4 py-3 transition hover:border-[#cfb27a] hover:bg-[#fdf8ee]"
