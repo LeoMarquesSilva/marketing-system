@@ -97,6 +97,8 @@ export const ALWAYS_ALLOWED_PATHS = [
   "/bp-awards",
   // Resposta às pesquisas com a equipe (o servidor confere se a pessoa está no público).
   "/pesquisa",
+  // Confirmação de presença na festa de 10 anos (o servidor confere se a pessoa é da equipe).
+  "/festa-10-anos",
 ];
 
 /**

@@ -42,14 +42,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const { id } = await params;
     const { data: invites, error } = await admin
       .from("event_invites")
-      .select("id, email")
+      .select("id, email, hr_employee_id")
       .eq("event_id", id)
       .eq("guest_type", "colaborador");
     if (error) return NextResponse.json({ error: "Não foi possível carregar os convidados." }, { status: 500 });
 
     const emails = [...new Set((invites ?? []).map((row) => normalizeEmail(row.email)).filter(Boolean))] as string[];
+    const employeeIds = [...new Set((invites ?? []).map((row) => row.hr_employee_id as string | null).filter(Boolean))] as string[];
     const byInviteId: Record<string, DietaryInfo> = {};
-    if (emails.length === 0) return NextResponse.json({ byInviteId });
+    if (emails.length === 0 && employeeIds.length === 0) return NextResponse.json({ byInviteId });
 
     const { data: users } = await admin.from("users").select("id, email").not("email", "is", null);
     const userByEmail = new Map<string, string>();
@@ -57,11 +58,21 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       const email = normalizeEmail(user.email);
       if (email && emails.includes(email)) userByEmail.set(email, user.id as string);
     }
+    // Convite ligado ao cadastro do RH (o e-mail do convite pode ser @bpplaw e o do login @bismarchipires).
+    const userByEmployee = new Map<string, string>();
+    if (employeeIds.length) {
+      const { data: employees } = await admin.from("hr_employees").select("id, user_id").in("id", employeeIds);
+      for (const employee of employees ?? []) {
+        if (employee.user_id) userByEmployee.set(employee.id as string, employee.user_id as string);
+      }
+    }
 
-    const dietary = await getDietaryByUserIds(admin, [...userByEmail.values()]);
+    const dietary = await getDietaryByUserIds(admin, [...userByEmail.values(), ...userByEmployee.values()]);
     for (const invite of invites ?? []) {
       const email = normalizeEmail(invite.email);
-      const userId = email ? userByEmail.get(email) : undefined;
+      const userId =
+        (invite.hr_employee_id ? userByEmployee.get(invite.hr_employee_id as string) : undefined) ??
+        (email ? userByEmail.get(email) : undefined);
       const info = userId ? dietary.get(userId) : undefined;
       if (info) byInviteId[invite.id as string] = info;
     }
