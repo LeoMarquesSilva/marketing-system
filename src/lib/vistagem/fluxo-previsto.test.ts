@@ -140,7 +140,7 @@ describe("fluxo previsto (regras do VIOS)", () => {
     });
     expect(previstas.find((tarefa) => tarefa.nome === "2. REVISAR")).toMatchObject({ data: "2026-11-09", dataVios: "2026-11-09" });
     expect(previstas.find((tarefa) => tarefa.nome === "2. REVISAR")?.ajustada).toBeUndefined();
-    expect(previstas.find((tarefa) => tarefa.nome === "3. PROTOCOLAR")).toMatchObject({ data: "2026-11-09", dataVios: "2026-11-12", ajustada: true, editada: false });
+    expect(previstas.find((tarefa) => tarefa.nome === "3. PROTOCOLAR")).toMatchObject({ data: "2026-11-09", dataVios: "2026-11-12", ajustada: "fatal", editada: false });
     expect(datasParaOVios(previstas)).toEqual([{ caminho: ["3. PROTOCOLAR"], data: "2026-11-09" }]);
     // A data escolhida pelo jurídico continua valendo.
     const escolhida = fluxoPrevisto({ ...pessoas, data: "2026-11-06" }, montarFluxo("487", ARVORE), ehDiaUtil, {
@@ -149,6 +149,18 @@ describe("fluxo previsto (regras do VIOS)", () => {
       datas: [{ caminho: ["3. PROTOCOLAR"], data: "2026-11-06" }],
     });
     expect(escolhida.find((tarefa) => tarefa.nome === "3. PROTOCOLAR")).toMatchObject({ data: "2026-11-06", editada: true });
+  });
+
+  it("nenhuma tarefa do fluxo fica antes de hoje: a regra do VIOS que dá data passada vai para hoje", () => {
+    // Lembrete 4 dias úteis antes de uma audiência daqui a 2 dias úteis: o VIOS daria ontem.
+    const previstas = fluxoPrevisto({ ...pessoas, data: "2026-11-10" }, montarFluxo("202", ARVORE), ehDiaUtil, { hoje: "2026-11-06" });
+    expect(previstas.find((tarefa) => tarefa.nome.startsWith("LEMBRETE"))).toMatchObject({ data: "2026-11-06", dataVios: "2026-11-04", ajustada: "hoje" });
+    expect(previstas.find((tarefa) => tarefa.nome === "CONTESTAÇÃO")).toMatchObject({ data: "2026-11-06", ajustada: "hoje" });
+    // As filhas da Contestação contam da data nova (hoje).
+    expect(previstas.find((tarefa) => tarefa.caminho.join(">") === "CONTESTAÇÃO>2. REVISAR")?.data).toBe("2026-11-16");
+    expect(datasParaOVios(previstas).map((item) => item.caminho.join(">"))).toEqual(
+      expect.arrayContaining(["CONTESTAÇÃO", "LEMBRETE AUDIÊNCIA + REGULARIZAÇÃO PROCESSUAL"])
+    );
   });
 
   it("a Ciência repetida não vai nas datas para o robô", () => {

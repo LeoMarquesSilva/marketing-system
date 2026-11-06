@@ -98,7 +98,12 @@ export function fluxoPrevisto(
               ? opcoes.apertada.protocolar
               : null
           : null;
-      const data = pedida ?? apertada ?? dataDe(tarefa, finalDoPai, nivel);
+      const calculada = pedida ?? apertada ?? dataDe(tarefa, finalDoPai, nivel);
+      // Nada antes de hoje: a regra do VIOS pode dar uma data passada (ex.: Enviar Custas 5 dias corridos antes de um
+      // Enviar que já é hoje); vai para hoje, e o robô grava no VIOS. A escolhida pelo jurídico vale como está.
+      const passada = !pedida && calculada !== null && calculada < opcoes.hoje;
+      const data = passada ? opcoes.hoje : calculada;
+      const ajustada = passada ? ("hoje" as const) : apertada && apertada !== dataVios ? ("fatal" as const) : null;
       previstas.push({
         nome: tarefa.nome,
         caminho,
@@ -106,7 +111,7 @@ export function fluxoPrevisto(
         data,
         dataVios,
         editada: Boolean(pedida),
-        ...(apertada && apertada !== dataVios ? { ajustada: true } : {}),
+        ...(ajustada && data !== dataVios ? { ajustada } : {}),
         responsaveis: quem(tarefa),
         quando: "criacao",
       });

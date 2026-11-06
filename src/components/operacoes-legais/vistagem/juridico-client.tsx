@@ -439,7 +439,8 @@ function FluxoNoVios({
       </span>
     ) : tarefa.ajustada ? (
       <span className="text-muted-foreground">
-        apertada para caber antes da fatal{tarefa.dataVios ? ` (VIOS: ${formatarData(tarefa.dataVios)})` : ""}
+        {tarefa.ajustada === "hoje" ? "o VIOS daria antes de hoje: vai hoje" : "apertada para caber antes da fatal"}
+        {tarefa.dataVios ? ` (VIOS: ${formatarData(tarefa.dataVios)})` : ""}
       </span>
     ) : tarefa.data && tarefa.dataVios && tarefa.data !== tarefa.dataVios ? (
       <span className="text-muted-foreground">acompanha a anterior (VIOS: {formatarData(tarefa.dataVios)})</span>

@@ -5,7 +5,8 @@ import type { FluxoDaTarefa, TarefaDoFluxo } from "./fluxo-vios";
  * "1. CIÊNCIA DOS AGENDAMENTOS" em todo agendamento: quando nenhuma tarefa agendada para a publicação é a Ciência
  * e o fluxo automático do VIOS de nenhuma delas a cria, o Orquestra acrescenta uma (o robô lança junto).
  * Vai para quem faz o Enviar da primeira tarefa; na Reestruturação, estagiário (cargo no RH do Orquestra) dá
- * lugar ao revisor. CIÊNCIA NF fica de fora: vistagem só com ela não leva a Ciência dos Agendamentos.
+ * lugar ao revisor. CIÊNCIA NF e SESSÃO DE JULGAMENTO ficam de fora: vistagem só com elas não leva a Ciência dos
+ * Agendamentos (nem contam como primeira tarefa para escolher o responsável).
  */
 
 export interface PessoaDaTarefa {
@@ -29,6 +30,11 @@ export function ehCienciaDosAgendamentos(nome: string | null | undefined): boole
 /** CIÊNCIA NF não pede Ciência dos Agendamentos (nem conta como primeira tarefa para escolher o responsável). */
 export function ehCienciaNf(nome: string | null | undefined): boolean {
   return chaveNome(nome) === "CIENCIA NF";
+}
+
+/** Tarefas que não pedem a Ciência dos Agendamentos: CIÊNCIA NF e SESSÃO DE JULGAMENTO (pedido de 06/11/2026). */
+export function naoPedeCiencia(nome: string | null | undefined): boolean {
+  return ehCienciaNf(nome) || chaveNome(nome) === "SESSAO DE JULGAMENTO";
 }
 
 /** O fluxo automático do VIOS (em qualquer nível do que cria junto) já cria a Ciência dos Agendamentos? */
@@ -83,8 +89,9 @@ export function cienciaDosAgendamentos(
     (tarefa) => ehCienciaDosAgendamentos(tarefa.tarefa) || (tarefa.tarefaId !== null && fluxoCriaCiencia(opcoes.fluxoDe(tarefa.tarefaId)))
   );
   if (jaTem) return null;
-  // Vistagem só com CIÊNCIA NF não leva Ciência dos Agendamentos; com outras tarefas, vale a primeira delas.
-  const pedem = escolhidas.filter((tarefa) => !ehCienciaNf(tarefa.tarefa));
+  // Vistagem só com CIÊNCIA NF ou SESSÃO DE JULGAMENTO não leva Ciência dos Agendamentos; com outras tarefas,
+  // vale a primeira delas.
+  const pedem = escolhidas.filter((tarefa) => !naoPedeCiencia(tarefa.tarefa));
   if (!pedem.length) return null;
 
   const [primeira] = pedem;

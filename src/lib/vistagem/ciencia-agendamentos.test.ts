@@ -67,6 +67,15 @@ describe("cienciaQueFica (uma Ciência só por vistagem)", () => {
 });
 
 describe("cienciaDosAgendamentos", () => {
+  it("Sessão de Julgamento, como a CIÊNCIA NF, não pede a Ciência (nem escolhe o responsável)", () => {
+    expect(cienciaDosAgendamentos([tarefa("SESSÃO DE JULGAMENTO", "406")], opcoes("Cível"))).toBeNull();
+    expect(cienciaDosAgendamentos([tarefa("Sessão de Julgamento", null), tarefa("CIÊNCIA NF", "796")], opcoes("Cível"))).toBeNull();
+    const outra = { id: "300", nome: "Outra Advogada" };
+    expect(
+      cienciaDosAgendamentos([tarefa("SESSÃO DE JULGAMENTO", "406"), tarefa("INFORMAR CLIENTE", "412", { responsaveis: [outra] })], opcoes("Cível"))
+    ).toEqual({ responsaveis: [outra], revisorNoLugarDe: [] });
+  });
+
   it("não cria quando o fluxo de alguma tarefa já cria a Ciência", () => {
     expect(cienciaDosAgendamentos([tarefa("SESSÃO DE JULGAMENTO", "406"), tarefa("AGRAVO DE PETIÇÃO", "155")], opcoes("Trabalhista"))).toBeNull();
   });
@@ -98,7 +107,7 @@ describe("cienciaDosAgendamentos", () => {
 
   it("sem revisor na primeira tarefa, usa o de outra tarefa; sem nenhum, fica com o estagiário", () => {
     const semRevisor = cienciaDosAgendamentos(
-      [tarefa("INFORMAR CLIENTE", "414", { responsaveis: [ESTAGIARIA], revisor: null }), tarefa("SESSÃO DE JULGAMENTO", "406")],
+      [tarefa("INFORMAR CLIENTE", "414", { responsaveis: [ESTAGIARIA], revisor: null }), tarefa("MANIFESTAÇÃO SOBRE LAUDO PERICIAL", "433")],
       opcoes("Insolvência")
     );
     expect(semRevisor?.responsaveis).toEqual([REVISOR]);
@@ -119,7 +128,7 @@ describe("cienciaDosAgendamentos", () => {
   it("com CIÊNCIA NF e outra tarefa, a Ciência vai para quem faz o Enviar da outra", () => {
     const outra = { id: "300", nome: "Outra Advogada" };
     const resultado = cienciaDosAgendamentos(
-      [tarefa("CIÊNCIA NF", "9"), tarefa("SESSÃO DE JULGAMENTO", "406", { responsaveis: [outra] })],
+      [tarefa("CIÊNCIA NF", "9"), tarefa("MANIFESTAÇÃO SOBRE LAUDO PERICIAL", "433", { responsaveis: [outra] })],
       opcoes("Trabalhista")
     );
     expect(resultado).toEqual({ responsaveis: [outra], revisorNoLugarDe: [] });

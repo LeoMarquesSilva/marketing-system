@@ -305,7 +305,7 @@ function FluxoDaTarefaAgendada({ item }: { item: AgendamentoResumo }) {
                   </>
                 )}
                 {tarefa.editada ? <Selo tom="marca">alterada pelo jurídico</Selo> : null}
-                {tarefa.ajustada ? <Selo tom="marca">apertada antes da fatal</Selo> : null}
+                {tarefa.ajustada ? <Selo tom="marca">{tarefa.ajustada === "hoje" ? "VIOS daria antes de hoje" : "apertada antes da fatal"}</Selo> : null}
                 {!tarefa.repetida && tarefa.data && tarefa.dataVios && tarefa.data !== tarefa.dataVios ? (
                   <span className="text-muted-foreground">VIOS daria {formatarData(tarefa.dataVios)}</span>
                 ) : null}
