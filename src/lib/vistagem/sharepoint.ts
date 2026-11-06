@@ -14,7 +14,7 @@ export interface ArquivoSharePoint {
   tamanho: number;
 }
 
-async function tokenGraph(): Promise<string> {
+export async function tokenGraph(): Promise<string> {
   const tenant = process.env.MICROSOFT_TENANT_ID?.trim();
   const clientId = process.env.MICROSOFT_CLIENT_ID?.trim();
   const secret = process.env.MICROSOFT_CLIENT_SECRET?.trim();

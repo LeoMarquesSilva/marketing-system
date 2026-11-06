@@ -8,7 +8,7 @@ import { VISTAGEM_JURIDICO_PATH, canSeeVistagemPath, hasVistagemAccess } from "@
 
 /**
  * Mostra as telas da Vistagem só para quem tem o painel liberado; o jurídico só abre a
- * aba Jurídico. Os dados são protegidos de novo nas rotas.
+ * Visão geral e a aba Vistagem. Os dados são protegidos de novo nas rotas.
  */
 export function AcessoOperacoesLegais({ children }: { children: ReactNode }) {
   const { user, profile, loading } = useAuth();

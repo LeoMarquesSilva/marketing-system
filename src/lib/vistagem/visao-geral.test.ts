@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { ETAPAS_VISAO, etapaDoStatus, inicioDoPeriodo, montarVisaoGeral, rankearGrupos, periodoValido, somarDias } from "./visao-geral";
+import {
+  ESCOPO_COMPLETO,
+  ETAPAS_VISAO,
+  estaNoEscopo,
+  etapaDoStatus,
+  inicioDoPeriodo,
+  montarVisaoGeral,
+  rankearGrupos,
+  periodoValido,
+  somarDias,
+  type AbertaDaVisao,
+  type ChegadaDaVisao,
+} from "./visao-geral";
 import { nomesDosVistadores, vistadorDa } from "./vistadores";
 
 describe("datas do período", () => {
@@ -54,7 +66,7 @@ describe("vistadores", () => {
 });
 
 describe("montarVisaoGeral", () => {
-  const vistadores = { Trabalhista: { normal: "Ana Souza", risco: "Carla Dias" } };
+  const vistadores = { Trabalhista: { normal: ["Ana Souza"], risco: ["Carla Dias"] } };
   const visao = montarVisaoGeral({
     hoje: "2026-11-05",
     dias: 7,
@@ -120,14 +132,42 @@ describe("montarVisaoGeral", () => {
 
   it("uma linha por vistador (normais e de risco), com a foto quando tem", () => {
     expect(visao.vistadores.filter((linha) => linha.area === "Trabalhista")).toEqual([
-      { area: "Trabalhista", tipo: "normal", nome: "Ana Souza", total: 2, risco: 0, maisAntiga: "2026-11-04", foto: "https://foto/ana.jpg" },
-      { area: "Trabalhista", tipo: "risco", nome: "Carla Dias", total: 1, risco: 1, maisAntiga: "2026-11-03", foto: null },
+      {
+        area: "Trabalhista",
+        tipo: "normal",
+        nome: "Ana Souza",
+        pessoas: [{ nome: "Ana Souza", foto: "https://foto/ana.jpg" }],
+        total: 2,
+        risco: 0,
+        maisAntiga: "2026-11-04",
+        foto: "https://foto/ana.jpg",
+      },
+      { area: "Trabalhista", tipo: "risco", nome: "Carla Dias", pessoas: [{ nome: "Carla Dias", foto: null }], total: 1, risco: 1, maisAntiga: "2026-11-03", foto: null },
     ]);
+  });
+
+  it("várias pessoas no mesmo tipo e quem vista todas as áreas", () => {
+    const comVarios = montarVisaoGeral({
+      hoje: "2026-11-05",
+      dias: 1,
+      arquivos: [],
+      chegadas: [],
+      abertas: [{ status: "juridico_vistar", area: "Cível", risco: false, dataPublicacao: "2026-11-04", duplicidadePendente: false }],
+      checadas: [],
+      vistadores: { Cível: { normal: ["Giovani", "Maria Caroline"], risco: ["Giancarlo"] }, "Todas as áreas": { normal: ["Ricardo Pires"] } },
+    });
+    const civel = comVarios.vistadores.filter((linha) => linha.area === "Cível");
+    expect(civel.map((linha) => [linha.tipo, linha.pessoas.map((pessoa) => pessoa.nome), linha.total])).toEqual([
+      ["normal", ["Giovani", "Maria Caroline"], 1],
+      ["risco", ["Giancarlo"], 0],
+    ]);
+    expect(comVarios.areas.map((area) => area.area)).not.toContain("Todas as áreas");
+    expect(comVarios.vistadoresDeTodas).toEqual([{ tipo: "normal", pessoas: [{ nome: "Ricardo Pires", foto: null }] }]);
   });
 
   it("área sem vistador cadastrado: o total da área, com o vistador a definir", () => {
     expect(visao.vistadores.filter((linha) => linha.area === "Cível")).toEqual([
-      { area: "Cível", tipo: null, nome: null, total: 2, risco: 1, maisAntiga: "2026-11-02", foto: null },
+      { area: "Cível", tipo: null, nome: null, pessoas: [], total: 2, risco: 1, maisAntiga: "2026-11-02", foto: null },
     ]);
   });
 
@@ -141,14 +181,14 @@ describe("montarVisaoGeral", () => {
         { status: "juridico_vistar", area: "Tributário", risco: true, dataPublicacao: "2026-11-01", duplicidadePendente: false },
       ],
       checadas: [],
-      vistadores: { Trabalhista: { normal: "Ana Souza", risco: "Carla Dias" }, Tributário: { normal: "Bruno Lima" } },
+      vistadores: { Trabalhista: { normal: ["Ana Souza"], risco: ["Carla Dias"] }, Tributário: { normal: ["Bruno Lima"] } },
     });
     expect(emDia.areas.map((area) => area.area)).toEqual(["Tributário", "Trabalhista"]);
     expect(emDia.vistadores).toEqual([
-      { area: "Tributário", tipo: "normal", nome: "Bruno Lima", total: 0, risco: 0, maisAntiga: null, foto: null },
-      { area: "Tributário", tipo: "risco", nome: null, total: 1, risco: 1, maisAntiga: "2026-11-01", foto: null },
-      { area: "Trabalhista", tipo: "normal", nome: "Ana Souza", total: 0, risco: 0, maisAntiga: null, foto: null },
-      { area: "Trabalhista", tipo: "risco", nome: "Carla Dias", total: 0, risco: 0, maisAntiga: null, foto: null },
+      { area: "Tributário", tipo: "normal", nome: "Bruno Lima", pessoas: [{ nome: "Bruno Lima", foto: null }], total: 0, risco: 0, maisAntiga: null, foto: null },
+      { area: "Tributário", tipo: "risco", nome: null, pessoas: [], total: 1, risco: 1, maisAntiga: "2026-11-01", foto: null },
+      { area: "Trabalhista", tipo: "normal", nome: "Ana Souza", pessoas: [{ nome: "Ana Souza", foto: null }], total: 0, risco: 0, maisAntiga: null, foto: null },
+      { area: "Trabalhista", tipo: "risco", nome: "Carla Dias", pessoas: [{ nome: "Carla Dias", foto: null }], total: 0, risco: 0, maisAntiga: null, foto: null },
     ]);
   });
 
@@ -198,5 +238,133 @@ describe("grupos de clientes", () => {
       ["Sem grupo", 9],
     ]);
     expect(ranking[2].outros).toBe(2);
+  });
+});
+
+describe("recorte do jurídico (áreas e demandas de risco)", () => {
+  const aberta = (area: string | null, status: AbertaDaVisao["status"], risco: boolean, data: string, duplicidadePendente = false): AbertaDaVisao => ({
+    status,
+    area,
+    risco,
+    dataPublicacao: data,
+    duplicidadePendente,
+  });
+  const chegada = (area: string | null, status: ChegadaDaVisao["status"], grupo: string, risco = false): ChegadaDaVisao => ({
+    arquivoId: "a1",
+    status,
+    area,
+    grupo,
+    risco,
+  });
+  const entrada = {
+    hoje: "2026-11-05",
+    dias: 7 as const,
+    arquivos: [{ id: "a1", data: "2026-11-05", linhas: 40 }],
+    chegadas: [
+      chegada("Trabalhista", "juridico_vistar", "Grupo Mazda"),
+      chegada("Trabalhista", "juridico_vistar", "Grupo Mazda", true),
+      chegada("Trabalhista", "checado", "Grupo Gaspec"),
+      chegada("Cível", "juridico_vistar", "Grupo Mazda"),
+      chegada("Tributário", "juridico_vistar", "Grupo Tributo"),
+      chegada(null, "triagem_pendente", "Grupo Mazda"),
+      chegada(null, "duplicidade", "Grupo Mazda"),
+    ],
+    abertas: [
+      aberta("Trabalhista", "juridico_vistar", false, "2026-11-04"),
+      aberta("Trabalhista", "juridico_vistar", true, "2026-11-01"),
+      aberta("Trabalhista", "controladoria_vistar", false, "2026-11-03"),
+      aberta("Trabalhista", "pronto_para_agendar", true, "2026-11-03"),
+      aberta("Trabalhista", "agendado", false, "2026-11-02"),
+      aberta("Trabalhista", "duplicidade", false, "2026-11-04", true),
+      aberta("Cível", "juridico_vistar", false, "2026-11-05"),
+      aberta("Cível", "juridico_vistar", true, "2026-10-30"),
+      aberta("Tributário", "juridico_vistar", false, "2026-10-29"),
+      aberta(null, "triagem_pendente", false, "2026-11-05"),
+      aberta(null, "captada", false, "2026-11-05"),
+    ],
+    checadas: ["Trabalhista", "Tributário", null],
+    vistadores: {
+      Trabalhista: { normal: ["Ana Souza"], risco: ["Carla Dias"] },
+      Tributário: { normal: ["Bruno Lima"] },
+      "Todas as áreas": { normal: ["Ricardo Pires"], risco: ["Rui Mota"] },
+    },
+  };
+
+  it("estaNoEscopo: só as áreas da pessoa e, sem risco, só as demandas normais", () => {
+    expect(estaNoEscopo(ESCOPO_COMPLETO, { area: null, risco: true })).toBe(true);
+    const juridico = { areas: ["Trabalhista"], veRisco: false };
+    expect(estaNoEscopo(juridico, { area: "Trabalhista", risco: false })).toBe(true);
+    expect(estaNoEscopo(juridico, { area: "Trabalhista" })).toBe(true);
+    expect(estaNoEscopo(juridico, { area: "Trabalhista", risco: true })).toBe(false);
+    expect(estaNoEscopo(juridico, { area: "Cível", risco: false })).toBe(false);
+    expect(estaNoEscopo(juridico, { area: null })).toBe(false);
+    expect(estaNoEscopo({ areas: [], veRisco: true }, { area: "Trabalhista" })).toBe(false);
+  });
+
+  it("a controladoria continua vendo tudo, com o escopo completo", () => {
+    const visao = montarVisaoGeral(entrada);
+    expect(visao.escopo).toEqual(ESCOPO_COMPLETO);
+    expect(visao.etapas).toMatchObject({ triagem: 1, duplicidades: 1, vistagem: 5 });
+    expect(visao.aguardandoTriagem).toBe(1);
+    expect(visao.porDia).toHaveLength(7);
+    expect(visao.chegada.disponiveis).toBe(40);
+    expect(visao.areas.map((area) => area.area)).toEqual(expect.arrayContaining(["Trabalhista", "Cível", "Tributário"]));
+  });
+
+  it("jurídico que vista risco: só as áreas dele, sem Triagem, Duplicidades nem o arquivo da Kurier", () => {
+    const visao = montarVisaoGeral({ ...entrada, escopo: { areas: ["Trabalhista"], veRisco: true } });
+    expect(visao.escopo).toEqual({ areas: ["Trabalhista"], veRisco: true });
+    // Etapas: só o que é da Trabalhista; Triagem e Duplicidades (abas da controladoria) zeradas.
+    expect(visao.etapas).toEqual({ triagem: 0, duplicidades: 0, vistagem: 2, conferencia: 1, envio: 1, check: 1 });
+    expect(visao.aguardandoTriagem).toBe(0);
+    // Áreas e vistadores: nada das outras áreas, nem "Sem área".
+    expect(visao.areas.map((area) => area.area)).toEqual(["Trabalhista"]);
+    expect(visao.areas[0]).toMatchObject({ vistagem: 2, chegaram: 3, checadas: 1, maisAntigaParaVistar: "2026-11-01" });
+    expect(visao.vistadores.map((linha) => [linha.area, linha.tipo, linha.nome, linha.total])).toEqual([
+      ["Trabalhista", "normal", "Ana Souza", 1],
+      ["Trabalhista", "risco", "Carla Dias", 1],
+    ]);
+    expect(visao.vistadoresDeTodas.map((grupo) => grupo.tipo)).toEqual(["normal", "risco"]);
+    // A chegada do arquivo não vai para o jurídico (as linhas do arquivo não têm área).
+    expect(visao.porDia).toEqual([]);
+    expect(visao.chegada).toEqual({ disponiveis: 0, naVistagem: 0, duplicidades: 0, descartadas: 0, soNoArquivo: 0 });
+    // Grupos: só o que chegou para a Trabalhista.
+    expect(visao.grupos).toEqual([
+      { grupo: "Grupo Mazda", total: 2, naTriagem: 0, paraVistar: 2, vistadas: 0 },
+      { grupo: "Grupo Gaspec", total: 1, naTriagem: 0, paraVistar: 0, vistadas: 1 },
+    ]);
+  });
+
+  it("jurídico que não vista risco: sem as demandas de risco em nenhum painel", () => {
+    const visao = montarVisaoGeral({ ...entrada, escopo: { areas: ["Trabalhista", "Cível"], veRisco: false } });
+    expect(visao.etapas).toEqual({ triagem: 0, duplicidades: 0, vistagem: 2, conferencia: 1, envio: 0, check: 1 });
+    const trabalhista = visao.areas.find((area) => area.area === "Trabalhista");
+    // A mais antiga para vistar ignora a de risco (01/11).
+    expect(trabalhista).toMatchObject({ vistagem: 1, maisAntigaParaVistar: "2026-11-04" });
+    expect(visao.areas.map((area) => area.area)).not.toContain("Tributário");
+    // Nenhuma linha de risco: Trabalhista só nas normais; Cível (sem vistador) vira "normais" com o vistador a definir.
+    expect(visao.vistadores).toEqual([
+      { area: "Trabalhista", tipo: "normal", nome: "Ana Souza", pessoas: [{ nome: "Ana Souza", foto: null }], total: 1, risco: 0, maisAntiga: "2026-11-04", foto: null },
+      { area: "Cível", tipo: "normal", nome: null, pessoas: [], total: 1, risco: 0, maisAntiga: "2026-11-05", foto: null },
+    ]);
+    expect(visao.vistadoresDeTodas).toEqual([{ tipo: "normal", pessoas: [{ nome: "Ricardo Pires", foto: null }] }]);
+    expect(visao.grupos).toEqual([
+      { grupo: "Grupo Mazda", total: 2, naTriagem: 0, paraVistar: 2, vistadas: 0 },
+      { grupo: "Grupo Gaspec", total: 1, naTriagem: 0, paraVistar: 0, vistadas: 1 },
+    ]);
+  });
+
+  it("área do jurídico sem vistador e em dia aparece; sem área cadastrada, nada", () => {
+    const emDia = montarVisaoGeral({ ...entrada, abertas: [], escopo: { areas: ["Societário"], veRisco: true } });
+    expect(emDia.areas).toEqual([
+      { area: "Societário", chegaram: 0, vistagem: 0, conferencia: 0, envio: 0, check: 0, checadas: 0, maisAntigaParaVistar: null },
+    ]);
+    expect(emDia.vistadores).toEqual([]);
+
+    const semAreas = montarVisaoGeral({ ...entrada, escopo: { areas: [], veRisco: true } });
+    expect(semAreas.areas).toEqual([]);
+    expect(semAreas.vistadores).toEqual([]);
+    expect(semAreas.grupos).toEqual([]);
+    expect(Object.values(semAreas.etapas).every((total) => total === 0)).toBe(true);
   });
 });

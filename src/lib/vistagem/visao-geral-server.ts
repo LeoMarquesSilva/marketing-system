@@ -6,11 +6,13 @@ import { pessoasPorNome } from "./pessoas-server";
 import { admin, falhou, hojeEmSaoPaulo } from "./server";
 import type { PublicacaoStatus } from "./types";
 import {
+  ESCOPO_COMPLETO,
   STATUS_ABERTOS,
   inicioDoPeriodo,
   montarVisaoGeral,
   type AbertaDaVisao,
   type ChegadaDaVisao,
+  type EscopoDaVisao,
   type PeriodoVisao,
   type VisaoGeral,
 } from "./visao-geral";
@@ -54,14 +56,33 @@ async function arquivosDoPeriodo(db: SupabaseClient, desde: string) {
   }));
 }
 
-export async function obterVisaoGeral(dias: PeriodoVisao): Promise<VisaoGeral> {
+/**
+ * Publicações já com o recorte do jurídico na consulta, como na fila dele (`listarFilaJuridico`): só as áreas dele e,
+ * se não vista risco, sem as demandas de risco. A controladoria passa sem filtro.
+ */
+function publicacoesNoEscopo(db: SupabaseClient, colunas: string, escopo: EscopoDaVisao) {
+  let consulta = db.from("vistagem_publicacoes").select(colunas);
+  if (escopo.areas) consulta = consulta.in("escritorio_responsavel", escopo.areas);
+  if (!escopo.veRisco) consulta = consulta.not("demanda_risco", "is", true);
+  return consulta;
+}
+
+export async function obterVisaoGeral(dias: PeriodoVisao, escopo: EscopoDaVisao = ESCOPO_COMPLETO): Promise<VisaoGeral> {
   const db = admin();
   const hoje = hojeEmSaoPaulo();
   const desde = inicioDoPeriodo(hoje, dias);
+  // Jurídico sem área cadastrada (Usuários › acesso): não há publicação dele, nem precisa consultar.
+  const semAreas = escopo.areas !== null && escopo.areas.length === 0;
   const arquivos = await arquivosDoPeriodo(db, desde);
-  const idsArquivos = arquivos.map((arquivo) => arquivo.id);
+  const idsArquivos = semAreas ? [] : arquivos.map((arquivo) => arquivo.id);
 
-  type ChegadaRow = { kurier_arquivo_id: string | null; status: PublicacaoStatus; escritorio_responsavel: string | null; grupo_cliente: string | null };
+  type ChegadaRow = {
+    kurier_arquivo_id: string | null;
+    status: PublicacaoStatus;
+    escritorio_responsavel: string | null;
+    grupo_cliente: string | null;
+    demanda_risco: boolean | null;
+  };
   type AbertaRow = {
     status: PublicacaoStatus;
     escritorio_responsavel: string | null;
@@ -74,31 +95,29 @@ export async function obterVisaoGeral(dias: PeriodoVisao): Promise<VisaoGeral> {
   const [chegadas, abertas, checadas] = await Promise.all([
     idsArquivos.length
       ? todasAsPaginas<ChegadaRow>("carregar o que chegou no período", (de, ate) =>
-          db
-            .from("vistagem_publicacoes")
-            .select("kurier_arquivo_id, status, escritorio_responsavel, grupo_cliente")
+          publicacoesNoEscopo(db, "kurier_arquivo_id, status, escritorio_responsavel, grupo_cliente, demanda_risco", escopo)
             .in("kurier_arquivo_id", idsArquivos)
             .order("id")
             .range(de, ate)
         )
       : Promise.resolve([] as ChegadaRow[]),
-    todasAsPaginas<AbertaRow>("carregar as publicações em andamento", (de, ate) =>
-      db
-        .from("vistagem_publicacoes")
-        .select("status, escritorio_responsavel, demanda_risco, data_publicacao, duplicidade_de, duplicidade_resultado")
-        .in("status", STATUS_ABERTOS)
-        .order("id")
-        .range(de, ate)
-    ),
-    todasAsPaginas<{ escritorio_responsavel: string | null }>("carregar as checadas do período", (de, ate) =>
-      db
-        .from("vistagem_publicacoes")
-        .select("escritorio_responsavel")
-        .eq("status", "checado")
-        .gte("checado_em", inicioDoDiaEmSaoPaulo(desde))
-        .order("id")
-        .range(de, ate)
-    ),
+    semAreas
+      ? Promise.resolve([] as AbertaRow[])
+      : todasAsPaginas<AbertaRow>("carregar as publicações em andamento", (de, ate) =>
+          publicacoesNoEscopo(db, "status, escritorio_responsavel, demanda_risco, data_publicacao, duplicidade_de, duplicidade_resultado", escopo)
+            .in("status", STATUS_ABERTOS)
+            .order("id")
+            .range(de, ate)
+        ),
+    semAreas
+      ? Promise.resolve([] as { escritorio_responsavel: string | null }[])
+      : todasAsPaginas<{ escritorio_responsavel: string | null }>("carregar as checadas do período", (de, ate) =>
+          publicacoesNoEscopo(db, "escritorio_responsavel", escopo)
+            .eq("status", "checado")
+            .gte("checado_em", inicioDoDiaEmSaoPaulo(desde))
+            .order("id")
+            .range(de, ate)
+        ),
   ]);
 
   const abertasDaVisao: AbertaDaVisao[] = abertas.map((row) => ({
@@ -114,6 +133,7 @@ export async function obterVisaoGeral(dias: PeriodoVisao): Promise<VisaoGeral> {
     status: row.status,
     area: row.escritorio_responsavel,
     grupo: row.grupo_cliente,
+    risco: row.demanda_risco === true,
   }));
 
   // Foto de cada vistador cadastrado (vistadores.ts), procurada pelo nome completo do RH; sem foto, as iniciais.
@@ -139,5 +159,6 @@ export async function obterVisaoGeral(dias: PeriodoVisao): Promise<VisaoGeral> {
     fotos: fotosDosVistadores,
     chaveNome,
     vistadores: mapaDeVistadores,
+    escopo,
   });
 }

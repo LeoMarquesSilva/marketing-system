@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowRight,
   CheckCheck,
@@ -21,6 +21,8 @@ import {
 import { Segmented } from "@/components/facilities/form-parts";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/auth-context";
+import { papelVistagem } from "@/lib/access-control";
 import { authFetch } from "@/lib/auth-fetch";
 import { getInitials } from "@/lib/ferias/filters";
 import { cn } from "@/lib/utils";
@@ -28,7 +30,9 @@ import {
   OUTROS_GRUPOS_VISAO,
   SEM_AREA_VISAO,
   SEM_GRUPO_VISAO,
+  type EscopoDaVisao,
   type GrupoDaVisao,
+  type PessoaDaVisao,
   type AreaDaVisao,
   type DiaDeChegada,
   type EtapaVisao,
@@ -58,10 +62,17 @@ const diaDaSemana = (data: string) => DIA_DA_SEMANA.format(dataUtc(data)).replac
 /** "quinta-feira, 05/11" */
 const diaLongo = (data: string) => DIA_POR_EXTENSO.format(dataUtc(data));
 
-/** "Vanessa Lanza Sellani" → "Vanessa Lanza" (o nome inteiro fica no title). */
+/** Partículas que não servem de sobrenome no nome curto. */
+const PARTICULAS = new Set(["de", "da", "do", "dos", "das", "e"]);
+
+/**
+ * Primeiro e último nome, sem as partículas: "Francisco de Assis Barbosa Campos Zanin" → "Francisco Zanin" (o nome
+ * inteiro fica no title).
+ */
 function nomeCurto(nome: string): string {
-  const partes = nome.trim().split(/\s+/);
-  return partes.length > 2 ? `${partes[0]} ${partes[1]}` : nome.trim();
+  const partes = nome.trim().split(/\s+/).filter((parte) => !PARTICULAS.has(parte.toLocaleLowerCase("pt-BR")));
+  if (partes.length === 0) return nome.trim();
+  return partes.length === 1 ? partes[0] : `${partes[0]} ${partes[partes.length - 1]}`;
 }
 
 /* -------------------------------------------------------------------- esteira */
@@ -78,11 +89,18 @@ const ETAPAS: Record<EtapaVisao, { rotulo: string; dica: string; href: string; i
 /** Na ordem das abas do cabeçalho. O envio ao VIOS é passagem rápida: aparece como nota da Conferência, não como etapa. */
 const ETAPAS_NA_ESTEIRA: EtapaVisao[] = ["triagem", "duplicidades", "vistagem", "conferencia", "check"];
 
+/**
+ * O jurídico acompanha só as etapas que têm área (as publicações dele): a Vistagem, que é a aba dele, e o que vem
+ * depois, com a controladoria (Conferência e Check, sem link: ele não abre essas abas).
+ */
+const ETAPAS_DO_JURIDICO: EtapaVisao[] = ["vistagem", "conferencia", "check"];
+
 interface CartaoDaEsteira {
   chave: string;
   rotulo: string;
   dica: string;
-  href: string;
+  /** Sem `href`, o cartão só mostra o número (aba que a pessoa não abre). */
+  href?: string;
   icone: LucideIcon;
   total: number;
   nota?: string;
@@ -91,14 +109,24 @@ interface CartaoDaEsteira {
 
 /**
  * Um cartão por aba, na ordem do cabeçalho: Gestão das publicações (o que entrou hoje pelo arquivo do dia) e as
- * filas de trabalho, com a Vistagem em destaque.
+ * filas de trabalho, com a Vistagem em destaque. No jurídico, só as etapas das áreas dele.
  */
-function cartoesDaEsteira(visao: VisaoGeral): CartaoDaEsteira[] {
-  const hoje = visao.porDia.find((dia) => dia.data === visao.hoje);
+function cartoesDaEsteira(visao: VisaoGeral, juridico: boolean): CartaoDaEsteira[] {
   const notas: Partial<Record<EtapaVisao, string>> = {
     triagem: visao.aguardandoTriagem ? `+${numero(visao.aguardandoTriagem)} aguardando a triagem automática` : undefined,
     conferencia: visao.etapas.envio ? `+${numero(visao.etapas.envio)} enviando ao VIOS` : undefined,
   };
+  if (juridico) {
+    return ETAPAS_DO_JURIDICO.map((etapa) => ({
+      chave: etapa,
+      ...ETAPAS[etapa],
+      href: etapa === "vistagem" ? ETAPAS[etapa].href : undefined,
+      total: visao.etapas[etapa],
+      nota: notas[etapa],
+      destaque: etapa === "vistagem",
+    }));
+  }
+  const hoje = visao.porDia.find((dia) => dia.data === visao.hoje);
   return [
     {
       chave: "base",
@@ -119,35 +147,52 @@ function cartoesDaEsteira(visao: VisaoGeral): CartaoDaEsteira[] {
   ];
 }
 
-function Esteira({ visao }: { visao: VisaoGeral }) {
+function Esteira({ visao, juridico }: { visao: VisaoGeral; juridico: boolean }) {
+  const cartoes = cartoesDaEsteira(visao, juridico);
   return (
     <Painel aria-labelledby="esteira-titulo">
-      <PainelTopo id="esteira-titulo" titulo="Onde estão as publicações agora" descricao="Na ordem das abas; cada cartão abre a aba dele." />
-      {/* 6 cartões: 2, 3 ou 6 por linha, sempre sem célula vazia. */}
-      <ol className="grid grid-cols-2 gap-px bg-[#e6eef0] sm:grid-cols-3 xl:grid-cols-6">
-        {cartoesDaEsteira(visao).map(({ chave, rotulo, dica, href, icone: Icone, total, nota, destaque }) => {
-          return (
-            <li key={chave} className="min-w-0 bg-white">
-              <Link
-                href={href}
-                className={cn(
-                  "group flex h-full flex-col gap-2 px-4 py-4 outline-none transition-colors duration-150",
-                  "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#47cdd0]",
-                  destaque ? "bg-[#04202f] text-white hover:bg-[#0a2c3f]" : "hover:bg-[#f6fafb]"
-                )}
-              >
-                <span className="flex items-center gap-2">
-                  <span
-                    className={cn(
-                      "grid size-7 shrink-0 place-items-center rounded-md",
-                      destaque ? "bg-white/10 text-[#47cdd0]" : "bg-[#e8f8f8] text-[#347796]"
-                    )}
-                    aria-hidden
-                  >
-                    <Icone className="size-4" />
-                  </span>
-                  {/* Pode quebrar em duas linhas ("Gestão das publicações" nas 6 colunas). */}
-                  <span className={cn("min-w-0 text-xs font-medium leading-tight", destaque ? "text-white/80" : "text-muted-foreground")}>{rotulo}</span>
+      <PainelTopo
+        id="esteira-titulo"
+        titulo="Onde estão as publicações agora"
+        descricao={
+          juridico
+            ? "Das suas áreas. A Vistagem abre a sua aba; a Conferência e o Check ficam com a controladoria."
+            : "Na ordem das abas; cada cartão abre a aba dele."
+        }
+      />
+      {/* 6 cartões: 2, 3 ou 6 por linha; 3 cartões (jurídico): 1 ou 3. Sempre sem célula vazia. */}
+      <ol
+        className={cn(
+          "grid gap-px bg-[#e6eef0]",
+          cartoes.length === 3 ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-2 sm:grid-cols-3 xl:grid-cols-6"
+        )}
+      >
+        {cartoes.map(({ chave, rotulo, dica, href, icone: Icone, total, nota, destaque }) => {
+          const classe = cn(
+            "flex h-full flex-col gap-2 px-4 py-4",
+            destaque ? "bg-[#04202f] text-white" : "",
+            href &&
+              cn(
+                "group outline-none transition-colors duration-150",
+                "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#47cdd0]",
+                destaque ? "hover:bg-[#0a2c3f]" : "hover:bg-[#f6fafb]"
+              )
+          );
+          const conteudo = (
+            <>
+              <span className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    "grid size-7 shrink-0 place-items-center rounded-md",
+                    destaque ? "bg-white/10 text-[#47cdd0]" : "bg-[#e8f8f8] text-[#347796]"
+                  )}
+                  aria-hidden
+                >
+                  <Icone className="size-4" />
+                </span>
+                {/* Pode quebrar em duas linhas ("Gestão das publicações" nas 6 colunas). */}
+                <span className={cn("min-w-0 text-xs font-medium leading-tight", destaque ? "text-white/80" : "text-muted-foreground")}>{rotulo}</span>
+                {href ? (
                   <ArrowRight
                     className={cn(
                       "ml-auto size-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100",
@@ -155,15 +200,26 @@ function Esteira({ visao }: { visao: VisaoGeral }) {
                     )}
                     aria-hidden
                   />
-                </span>
-                <span className={cn("text-3xl font-semibold leading-none", destaque ? "text-white" : total ? "text-foreground" : "text-muted-foreground/60")}>
-                  {numero(total)}
-                </span>
-                <span className={cn("text-xs", destaque ? "text-white/70" : "text-muted-foreground")}>
-                  {dica}
-                  {nota ? <span className={cn("mt-0.5 block", destaque ? "text-white/60" : "text-[#285f7a]")}>{nota}</span> : null}
-                </span>
-              </Link>
+                ) : null}
+              </span>
+              <span className={cn("text-3xl font-semibold leading-none", destaque ? "text-white" : total ? "text-foreground" : "text-muted-foreground/60")}>
+                {numero(total)}
+              </span>
+              <span className={cn("text-xs", destaque ? "text-white/70" : "text-muted-foreground")}>
+                {dica}
+                {nota ? <span className={cn("mt-0.5 block", destaque ? "text-white/60" : "text-[#285f7a]")}>{nota}</span> : null}
+              </span>
+            </>
+          );
+          return (
+            <li key={chave} className="min-w-0 bg-white">
+              {href ? (
+                <Link href={href} className={classe}>
+                  {conteudo}
+                </Link>
+              ) : (
+                <div className={classe}>{conteudo}</div>
+              )}
             </li>
           );
         })}
@@ -222,18 +278,44 @@ function TipoDaLinha({ linha }: { linha: VistadorDaVisao }) {
   );
 }
 
+/** Fotos sobrepostas de quem vista (até 4; o resto vira "+N"). */
+function FotosEmPilha({ pessoas }: { pessoas: PessoaDaVisao[] }) {
+  const visiveis = pessoas.slice(0, 4);
+  const resto = pessoas.length - visiveis.length;
+  return (
+    <span className="flex shrink-0 -space-x-2" aria-hidden>
+      {visiveis.map((pessoa) => (
+        <span key={pessoa.nome} className="rounded-full ring-2 ring-white">
+          <FotoPessoa nome={pessoa.nome} foto={pessoa.foto} />
+        </span>
+      ))}
+      {resto > 0 ? (
+        <span className="grid size-8 place-items-center rounded-full bg-[#eaf2f5] text-[11px] font-semibold text-[#285f7a] ring-2 ring-white">+{resto}</span>
+      ) : null}
+    </span>
+  );
+}
+
+/** "Giovani, Maria Caroline e mais 2": nomes curtos de quem vista. */
+function nomesDaLinha(pessoas: PessoaDaVisao[]): string {
+  const curtos = pessoas.map((pessoa) => nomeCurto(pessoa.nome));
+  if (curtos.length <= 2) return curtos.join(" e ");
+  return `${curtos.slice(0, 2).join(", ")} e mais ${curtos.length - 2}`;
+}
+
 function LinhaVistador({ linha, maior }: { linha: VistadorDaVisao; maior: number }) {
   const rotuloTipo = linha.tipo ? ROTULO_DEMANDA[linha.tipo].toLowerCase() : "todas as demandas";
+  const pessoas = linha.pessoas ?? (linha.nome ? [{ nome: linha.nome, foto: linha.foto }] : []);
   return (
     <li className="flex items-center gap-3 px-4 py-2.5">
-      {linha.nome ? <FotoPessoa nome={linha.nome} foto={linha.foto} /> : <SemVistador />}
+      {pessoas.length ? <FotosEmPilha pessoas={pessoas} /> : <SemVistador />}
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <p
-            className={cn("min-w-0 flex-1 truncate text-sm font-medium", linha.nome ? "text-foreground" : "text-muted-foreground")}
-            title={linha.nome ?? "O vistador desta área ainda não foi cadastrado"}
+            className={cn("min-w-0 flex-1 truncate text-sm font-medium", pessoas.length ? "text-foreground" : "text-muted-foreground")}
+            title={pessoas.length ? pessoas.map((pessoa) => pessoa.nome).join(", ") : "O vistador desta área ainda não foi cadastrado"}
           >
-            {linha.nome ? nomeCurto(linha.nome) : "Vistador a definir"}
+            {pessoas.length ? nomesDaLinha(pessoas) : "Vistador a definir"}
           </p>
           <span
             className={cn("shrink-0 text-sm font-semibold tabular-nums", linha.total ? "text-foreground" : "text-muted-foreground/70")}
@@ -264,17 +346,27 @@ function LinhaVistador({ linha, maior }: { linha: VistadorDaVisao; maior: number
 }
 
 function ParaVistar({ visao }: { visao: VisaoGeral }) {
-  // Área com algo aberto ou com vistador cadastrado (essa aparece mesmo em dia, com o zero).
+  const minhas = visao.escopo?.areas ?? null;
+  const veRisco = visao.escopo?.veRisco ?? true;
+  // Área com algo aberto ou com vistador cadastrado (essa aparece mesmo em dia, com o zero); no jurídico, todas as dele.
   const areas = visao.areas.filter(
-    (area) => area.vistagem + area.conferencia + area.envio + area.check > 0 || visao.vistadores.some((linha) => linha.area === area.area)
+    (area) =>
+      area.vistagem + area.conferencia + area.envio + area.check > 0 ||
+      visao.vistadores.some((linha) => linha.area === area.area) ||
+      Boolean(minhas?.includes(area.area))
   );
   const maior = Math.max(1, ...visao.vistadores.map((linha) => linha.total));
+  const demandas = veRisco ? "nas demandas normais e nas de risco" : "nas demandas normais";
   return (
     <Painel aria-labelledby="para-vistar-titulo">
       <PainelTopo
         id="para-vistar-titulo"
         titulo="Publicações para vistar, por área e advogado"
-        descricao="Quem vista cada área, nas demandas normais e nas de risco, com a publicação mais antiga de cada um."
+        descricao={
+          minhas
+            ? `Quem vista cada uma das suas áreas, ${demandas}, com a publicação mais antiga de cada um.`
+            : `Quem vista cada área, ${demandas}, com a publicação mais antiga de cada um.`
+        }
       >
         <Button asChild size="sm" variant="outline">
           <Link href="/operacoes-legais/vistagem/juridico">
@@ -283,7 +375,11 @@ function ParaVistar({ visao }: { visao: VisaoGeral }) {
           </Link>
         </Button>
       </PainelTopo>
-      {areas.length === 0 ? (
+      {minhas && minhas.length === 0 ? (
+        <Vazio icone={UserRoundSearch} titulo="Nenhuma área sua na Vistagem">
+          Peça a um administrador para marcar as suas áreas em Usuários.
+        </Vazio>
+      ) : areas.length === 0 ? (
         <Vazio icone={UserRoundCheck} titulo="Nenhuma publicação para vistar">
           Tudo o que chegou já foi vistado.
         </Vazio>
@@ -294,6 +390,20 @@ function ParaVistar({ visao }: { visao: VisaoGeral }) {
           ))}
         </div>
       )}
+      {(visao.vistadoresDeTodas ?? []).length ? (
+        // Quem vista qualquer área (sócios, controladoria): não é uma fila, então vem como rodapé.
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[#e6eef0] bg-[#f7fbfc] px-4 py-3">
+          <p className="text-xs font-semibold uppercase text-[#285f7a]">Vistam todas as áreas</p>
+          {visao.vistadoresDeTodas.map((grupo) => (
+            <span key={grupo.tipo} className="flex min-w-0 items-center gap-2">
+              <FotosEmPilha pessoas={grupo.pessoas} />
+              <span className="min-w-0 text-xs text-muted-foreground" title={grupo.pessoas.map((pessoa) => pessoa.nome).join(", ")}>
+                <span className="text-foreground">{nomesDaLinha(grupo.pessoas)}</span> · {ROTULO_DEMANDA[grupo.tipo].toLowerCase()}
+              </span>
+            </span>
+          ))}
+        </div>
+      ) : null}
     </Painel>
   );
 }
@@ -323,7 +433,7 @@ function BlocoArea({ area, linhas, maior }: { area: AreaDaVisao; linhas: Vistado
       {linhas.length ? (
         <ul className="divide-y divide-[#eef3f5]">
           {linhas.map((linha) => (
-            <LinhaVistador key={`${linha.tipo ?? "todas"}-${linha.nome ?? "a-definir"}`} linha={linha} maior={maior} />
+            <LinhaVistador key={linha.tipo ?? "todas"} linha={linha} maior={maior} />
           ))}
         </ul>
       ) : null}
@@ -593,6 +703,17 @@ function TabelaPorDia({ dias }: { dias: VisaoGeral["porDia"] }) {
 
 const ROTULO_PERIODO: Record<PeriodoVisao, string> = { 1: "Hoje", 7: "7 dias", 30: "30 dias" };
 
+function SeletorDePeriodo({ periodo, onPeriodo }: { periodo: PeriodoVisao; onPeriodo: (periodo: PeriodoVisao) => void }) {
+  return (
+    <Segmented<`${PeriodoVisao}`>
+      label="Período"
+      value={`${periodo}`}
+      options={(Object.keys(ROTULO_PERIODO) as `${PeriodoVisao}`[]).map((valor) => ({ value: valor, label: ROTULO_PERIODO[Number(valor) as PeriodoVisao] }))}
+      onChange={(valor) => onPeriodo(Number(valor) as PeriodoVisao)}
+    />
+  );
+}
+
 /* ------------------------------------------------------------- por grupo */
 
 /**
@@ -617,8 +738,11 @@ function IconeDoGrupo({ grupo }: { grupo: GrupoDaVisao }) {
   return <LogoGrupo grupo={grupo.grupo} tamanho="sm" />;
 }
 
-/** Barras deitadas por grupo (os maiores primeiro), cada uma dividida pela etapa em que as publicações estão. */
-function PorGrupo({ visao, atualizando }: { visao: VisaoGeral; atualizando: boolean }) {
+/**
+ * Barras deitadas por grupo (os maiores primeiro), cada uma dividida pela etapa em que as publicações estão. Com
+ * `seletor` (o jurídico, que não tem o painel da chegada), o período é escolhido aqui mesmo.
+ */
+function PorGrupo({ visao, atualizando, seletor }: { visao: VisaoGeral; atualizando: boolean; seletor?: ReactNode }) {
   const grupos = visao.grupos ?? [];
   const maior = Math.max(1, ...grupos.map((grupo) => grupo.total));
   const periodo = visao.dias === 1 ? "hoje" : `nos últimos ${visao.dias} dias`;
@@ -627,8 +751,13 @@ function PorGrupo({ visao, atualizando }: { visao: VisaoGeral; atualizando: bool
       <PainelTopo
         id="grupos-titulo"
         titulo="Publicações por grupo de clientes"
-        descricao={`O que chegou ${periodo} (pelo período escolhido acima), por grupo e por onde está agora.`}
+        descricao={
+          visao.escopo?.areas
+            ? `O que chegou ${periodo} para as suas áreas, por grupo e por onde está agora.`
+            : `O que chegou ${periodo} (pelo período escolhido acima), por grupo e por onde está agora.`
+        }
       >
+        {seletor}
         <ul className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground" aria-label="Legenda">
           {[...ETAPAS_DO_GRUPO].reverse().map((etapa) => (
             <li key={etapa.chave} className="inline-flex items-center gap-1.5" title={etapa.dica}>
@@ -712,12 +841,7 @@ function Chegada({
         titulo="Chegada das publicações"
         descricao="O que estava disponível no arquivo da Kurier (e nas colagens) e até onde entrou no sistema."
       >
-        <Segmented<`${PeriodoVisao}`>
-          label="Período"
-          value={`${periodo}`}
-          options={(Object.keys(ROTULO_PERIODO) as `${PeriodoVisao}`[]).map((valor) => ({ value: valor, label: ROTULO_PERIODO[Number(valor) as PeriodoVisao] }))}
-          onChange={(valor) => onPeriodo(Number(valor) as PeriodoVisao)}
-        />
+        <SeletorDePeriodo periodo={periodo} onPeriodo={onPeriodo} />
       </PainelTopo>
 
       {/* Ao trocar o período, o gráfico anterior fica esmaecido até chegar o novo (sem pular a tela). */}
@@ -782,12 +906,33 @@ function Chegada({
 
 /* ---------------------------------------------------------------------- tela */
 
+/** "Cível e Trabalhista", "Cível, Trabalhista e Tributário". */
+function juntarNomes(nomes: string[]): string {
+  return nomes.length <= 1 ? (nomes[0] ?? "") : `${nomes.slice(0, -1).join(", ")} e ${nomes.at(-1)}`;
+}
+
+/** No jurídico, o lugar da situação do arquivo do dia: de quais áreas são os números (e se ficam sem as de risco). */
+function ResumoDoEscopo({ escopo }: { escopo: EscopoDaVisao }) {
+  const areas = escopo.areas ?? [];
+  return (
+    <>
+      <Selo tom="marca" icone={Scale}>
+        {areas.length ? `${areas.length === 1 ? "Sua área" : "Suas áreas"}: ${juntarNomes(areas)}` : "Nenhuma área sua cadastrada"}
+      </Selo>
+      {escopo.veRisco ? null : <Selo tom="neutro">Sem as demandas de risco</Selo>}
+    </>
+  );
+}
+
 export function VisaoGeralClient() {
+  const { profile } = useAuth();
+  // O jurídico vê só as suas áreas (o servidor já filtra) e nenhum atalho para as abas da controladoria.
+  const juridico = papelVistagem(profile) === "juridico";
   const [periodo, setPeriodo] = useState<PeriodoVisao>(7);
   const [visao, setVisao] = useState<VisaoGeral | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
-  const arquivoDoDia = useArquivoDoDia();
+  const arquivoDoDia = useArquivoDoDia(!juridico);
   const ultimoPedido = useRef(0);
 
   const carregar = useCallback(async (dias: PeriodoVisao) => {
@@ -823,20 +968,23 @@ export function VisaoGeralClient() {
 
   return (
     <div className="space-y-4">
-      <FaixaArquivoDoDia
-        situacao={arquivoDoDia}
-        acao={
-          <Button asChild size="sm" variant="outline" className="-my-1 shrink-0">
-            <Link href="/operacoes-legais/vistagem/base">Abrir Gestão das publicações</Link>
-          </Button>
-        }
-      />
+      {juridico ? null : (
+        <FaixaArquivoDoDia
+          situacao={arquivoDoDia}
+          acao={
+            <Button asChild size="sm" variant="outline" className="-my-1 shrink-0">
+              <Link href="/operacoes-legais/vistagem/base">Abrir Gestão das publicações</Link>
+            </Button>
+          }
+        />
+      )}
 
       <BarraAba
         resumo={
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="inline-block font-medium text-foreground first-letter:uppercase">{diaLongo(visao?.hoje ?? new Date().toISOString().slice(0, 10))}</span>
-            {situacaoHoje}
+            {juridico ? null : situacaoHoje}
+            {juridico && visao?.escopo ? <ResumoDoEscopo escopo={visao.escopo} /> : null}
           </div>
         }
       >
@@ -844,9 +992,11 @@ export function VisaoGeralClient() {
           <RefreshCw className={cn(carregando && "animate-spin")} />
           Atualizar
         </Button>
-        <Button asChild variant="outline">
-          <Link href="/operacoes-legais/vistagem/base">Gestão das publicações</Link>
-        </Button>
+        {juridico ? null : (
+          <Button asChild variant="outline">
+            <Link href="/operacoes-legais/vistagem/base">Gestão das publicações</Link>
+          </Button>
+        )}
       </BarraAba>
 
       {erro && !visao ? (
@@ -868,12 +1018,26 @@ export function VisaoGeralClient() {
       ) : (
         <>
           {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
-          <Esteira visao={visao} />
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] xl:items-start">
-            <Chegada visao={visao} periodo={periodo} onPeriodo={setPeriodo} atualizando={carregando} />
-            <ParaVistar visao={visao} />
-          </div>
-          <PorGrupo visao={visao} atualizando={carregando} />
+          <Esteira visao={visao} juridico={juridico} />
+          {juridico ? (
+            // Sem a chegada (o arquivo da Kurier é da casa toda): para vistar e por grupo, lado a lado.
+            <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
+              <ParaVistar visao={visao} />
+              <PorGrupo
+                visao={visao}
+                atualizando={carregando}
+                seletor={<SeletorDePeriodo periodo={periodo} onPeriodo={setPeriodo} />}
+              />
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] xl:items-start">
+                <Chegada visao={visao} periodo={periodo} onPeriodo={setPeriodo} atualizando={carregando} />
+                <ParaVistar visao={visao} />
+              </div>
+              <PorGrupo visao={visao} atualizando={carregando} />
+            </>
+          )}
         </>
       )}
     </div>
