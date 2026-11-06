@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   ArrowLeft,
@@ -46,12 +46,13 @@ import {
   avisosDaData,
   chaveDoCaminho,
   chaveNome,
+  contagemPadraoDaArea,
   horaFinalPadrao,
   horaValida,
   separarNomes,
   type EtiquetaAgendamento,
 } from "@/lib/vistagem/agendamento";
-import { cienciaDosAgendamentos } from "@/lib/vistagem/ciencia-agendamentos";
+import { cienciaDosAgendamentos, cienciaQueFica, ehCienciaDosAgendamentos } from "@/lib/vistagem/ciencia-agendamentos";
 import {
   CONTAGENS_PRAZO,
   criarCalendario,
@@ -71,8 +72,9 @@ import {
   type ClassificacaoEsocial,
 } from "@/lib/vistagem/esocial";
 import { CADEIA_PADRAO, cadeiaDoFluxo } from "@/lib/vistagem/fluxo-vios";
-import { fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
-import { fatalSugerida, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
+import { emOrdemDeArvore, fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
+import { prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
+import { fatalSugerida, sugestaoNaListaAtual, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
 import type { DataDoFluxo, PublicacaoResumo, ResolucaoPendencia, TarefaPrevista, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
@@ -83,7 +85,7 @@ import { FaixaDoProcesso, NA_FAIXA } from "./faixa-processo";
 import { CalendarioDoFluxo, ItemDaLegenda, NumeroDoMarco, tomDaTarefaDoFluxo, type MarcoDoCalendario, type TomDoMarco } from "./calendario-fluxo";
 import { nomeCurto as nomeCurtoDaPessoa, partesDaData } from "@/lib/vistagem/como-fica-no-vios";
 import { FichaPasta } from "./ficha-pasta";
-import { FiltroData, dataNaLista } from "./filtro-data";
+import { FiltroData, dataNaLista, hojeLocal } from "./filtro-data";
 import { FichaProcesso, ResumoDaFicha, SinteseDoProcesso } from "./ficha-processo";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { AgendadasJuridico } from "./juridico-agendadas";
@@ -92,7 +94,7 @@ import { IconeArea, IconeTribunal, LogoGrupo } from "./marcas";
 import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
 import { camposDaPublicacao, combinaCampos } from "@/lib/vistagem/busca";
 import { contarPor, formatarData, formatarDataHora, tribunalDe } from "./publicacao-ui";
-import { ReguaDatas } from "./regua-datas";
+import { ReguaDatas, diaDaSemana, relativoAHoje } from "./regua-datas";
 import { IconeOpcao, Seletor, SeletorBusca } from "./seletor";
 import { CartaoSugestaoIa, SeloIa, type EstadoSugestao } from "./sugestao-ia-ui";
 import { Aviso, Busca, Carregando, Painel, Selo, Vazio, campoClasse, linhaLista } from "./ui";
@@ -345,10 +347,13 @@ function FluxoNoVios({
   ehDiaUtil,
   onMudarData,
   foto,
+  classeDe,
 }: {
   previstas: TarefaPrevista[];
-  /** A tarefa pedida: "Enviar no VIOS" (Prazo) ou "Tarefa no VIOS", com a data que vai para o VIOS, a classe e quem fica. */
-  principal: { rotulo: string; nome: string; data: string | null; etiqueta: Etiqueta; responsaveis: string };
+  /** Classe da tarefa do fluxo na lista do VIOS da área (Prazo, Providência…), pelo nome; null quando não está lá. */
+  classeDe: (nome: string) => Etiqueta | null;
+  /** A tarefa pedida, com a data que vai para o VIOS (no Prazo, o Enviar), a classe e quem fica. */
+  principal: { nome: string; data: string | null; etiqueta: Etiqueta; responsaveis: string };
   /** Foto de cada pessoa (as mesmas dos campos Responsável e Revisor). */
   foto: (nome: string) => string | null;
   /** Data fatal do Prazo (só para situar no calendário). */
@@ -362,38 +367,47 @@ function FluxoNoVios({
   const junto = previstas.filter((tarefa) => tarefa.quando === "criacao");
   const aoConcluir = previstas.filter((tarefa) => tarefa.quando === "conclusao");
   const alteradas = junto.filter((tarefa) => tarefa.editada).length;
+  const repetidas = junto.filter((tarefa) => tarefa.repetida).length;
   const resumo = [
     junto.length ? `cria junto ${plural(junto.length, "tarefa", "tarefas")}` : null,
     alteradas ? `${plural(alteradas, "data alterada", "datas alteradas")}` : null,
+    repetidas ? `${plural(repetidas, "Ciência repetida", "Ciências repetidas")} (o robô cancela)` : null,
     aoConcluir.length ? `ao concluir, ${aoConcluir.map((tarefa) => tarefa.nome).join(", ")}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
 
-  // Agenda em ordem de data (a pedida antes das do fluxo no mesmo dia; a fatal por último), numerada: o mesmo
-  // número marca o dia no calendário.
+  // Agenda em árvore, como o VIOS cria: a pedida no topo e, embaixo de cada tarefa, as que ela cria (Embargos ›
+  // Revisar › Protocolar), mesmo fora da ordem das datas; a fatal por último. Numerada nessa ordem: o mesmo número
+  // marca o dia no calendário. Sem data ou repetida (o robô cancela), fica sem número.
   type Item =
     | { tipo: "principal"; chave: string; data: string }
-    | { tipo: "fluxo"; chave: string; data: string; tarefa: TarefaPrevista }
+    | { tipo: "fluxo"; chave: string; data: string | null; tarefa: TarefaPrevista }
     | { tipo: "fatal"; chave: string; data: string };
-  const peso = { principal: 0, fluxo: 1, fatal: 2 } as const;
-  const comData: Item[] = [
+  const itens: Item[] = [
     ...(principal.data ? [{ tipo: "principal" as const, chave: "principal", data: principal.data }] : []),
-    ...junto
-      .filter((tarefa) => tarefa.data)
-      .map((tarefa) => ({ tipo: "fluxo" as const, chave: tarefa.caminho.join(" › "), data: tarefa.data as string, tarefa })),
+    ...emOrdemDeArvore(junto).map((tarefa) => ({ tipo: "fluxo" as const, chave: tarefa.caminho.join(" › "), data: tarefa.data, tarefa })),
     ...(fatal ? [{ tipo: "fatal" as const, chave: "fatal", data: fatal }] : []),
-  ].sort((a, b) => a.data.localeCompare(b.data) || peso[a.tipo] - peso[b.tipo]);
-  const semData = junto.filter((tarefa) => !tarefa.data);
-  // Cores do VIOS: a pedida pela classe (Prazo verde, Providência azul); no fluxo, Revisar amarelo e Protocolar vermelho.
+  ];
+  const numerado = (item: Item): item is Item & { data: string } => Boolean(item.data) && !(item.tipo === "fluxo" && item.tarefa.repetida);
+  const numeros = new Map<string, number>();
+  for (const item of itens) if (numerado(item)) numeros.set(item.chave, numeros.size + 1);
+  // Cores do VIOS: a pedida pela classe (Prazo verde, Providência azul-claro); no fluxo, Revisar amarelo, Protocolar
+  // vermelho e as outras pela classe do tipo delas no VIOS (etiquetas): uma Providência criada por um Prazo fica
+  // azul-claro. Sem a classe lida, vale a da lista de tarefas da área pelo nome.
   const tomDaPedida = TOM_DA_ETIQUETA[principal.etiqueta];
+  const tomDoFluxo = (tarefa: TarefaPrevista) => {
+    const classe = tarefa.classe ?? classeDe(tarefa.nome);
+    return tomDaTarefaDoFluxo(tarefa.nome, tomDaPedida, classe ? TOM_DA_ETIQUETA[classe] : null);
+  };
   const tomDe = (item: Item): TomDoMarco =>
-    item.tipo === "principal" ? tomDaPedida : item.tipo === "fatal" ? "fatal" : tomDaTarefaDoFluxo(item.tarefa.nome, tomDaPedida);
+    item.tipo === "principal" ? tomDaPedida : item.tipo === "fatal" ? "fatal" : tomDoFluxo(item.tarefa);
   const editadaDe = (item: Item) => item.tipo === "fluxo" && item.tarefa.editada;
-  const nomeDe = (item: Item) => (item.tipo === "principal" ? `${principal.rotulo}: ${principal.nome}` : item.tipo === "fatal" ? "Data fatal" : item.tarefa.nome);
-  const marcos: MarcoDoCalendario[] = comData.map((item, indice) => ({
+  // Só o nome da tarefa (sem "Enviar no VIOS:"): a cor e o número já dizem que é a pedida.
+  const nomeDe = (item: Item) => (item.tipo === "principal" ? principal.nome : item.tipo === "fatal" ? "Data fatal" : item.tarefa.nome);
+  const marcos: MarcoDoCalendario[] = itens.filter(numerado).map((item) => ({
     chave: item.chave,
-    numero: indice + 1,
+    numero: numeros.get(item.chave) ?? 0,
     rotulo: nomeDe(item),
     data: item.data,
     tom: tomDe(item),
@@ -423,6 +437,11 @@ function FluxoNoVios({
         <button type="button" className="font-medium text-[#347796] underline-offset-4 hover:underline" onClick={() => onMudarData(tarefa.caminho, null)}>
           voltar à do VIOS
         </button>
+      </span>
+    ) : tarefa.ajustada ? (
+      <span className="text-muted-foreground">
+        {tarefa.ajustada === "hoje" ? "o VIOS daria antes de hoje: vai hoje" : "apertada para caber antes da fatal"}
+        {tarefa.dataVios ? ` (VIOS: ${formatarData(tarefa.dataVios)})` : ""}
       </span>
     ) : tarefa.data && tarefa.dataVios && tarefa.data !== tarefa.dataVios ? (
       <span className="text-muted-foreground">acompanha a anterior (VIOS: {formatarData(tarefa.dataVios)})</span>
@@ -454,25 +473,42 @@ function FluxoNoVios({
           />
         ) : null}
 
-        {comData.length || semData.length ? (
+        {itens.length ? (
           <div className="space-y-1.5">
             <p className="text-muted-foreground">
               O robô coloca os responsáveis. Para priorizar uma tarefa do fluxo, mude a data: o robô grava no VIOS depois de lançar.
             </p>
             <ol className="divide-y divide-[#e6eef0] overflow-hidden rounded-md border border-[#e6eef0] bg-white">
-              {comData.map((item, indice) => (
+              {itens.map((item) => (
                 <li
                   key={item.chave}
-                  className="flex flex-wrap items-center gap-x-2 gap-y-1 px-2.5 py-1.5"
-                  style={item.tipo === "fluxo" && item.tarefa.nivel > 1 ? { paddingLeft: `${0.625 + (item.tarefa.nivel - 1) * 0.75}rem` } : undefined}
+                  className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 px-2.5 py-1.5", item.tipo === "fluxo" && item.tarefa.repetida && "bg-[#fafbfb]")}
+                  style={item.tipo === "fluxo" && item.tarefa.nivel > 1 ? { paddingLeft: `${0.625 + (item.tarefa.nivel - 1) * 1.25}rem` } : undefined}
                 >
-                  <NumeroDoMarco numero={indice + 1} tom={tomDe(item)} editada={editadaDe(item)} />
-                  {/* A que nasce de outra do fluxo fica recuada, com a seta (sem barra lateral). */}
-                  {item.tipo === "fluxo" && item.tarefa.nivel > 1 ? <CornerDownRight className="size-3.5 shrink-0 text-[#9fb8c2]" aria-hidden /> : null}
-                  <span className={cn("min-w-0 flex-1 basis-40 font-medium", item.tipo === "fatal" ? "text-[#b42318]" : "text-foreground")}>
+                  {numerado(item) ? (
+                    <NumeroDoMarco numero={numeros.get(item.chave) ?? 0} tom={tomDe(item)} editada={editadaDe(item)} />
+                  ) : (
+                    <span className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-[#eef3f5] text-[10px] text-muted-foreground" aria-hidden>
+                      –
+                    </span>
+                  )}
+                  {/* Cada tarefa do fluxo fica embaixo da que a cria, recuada pelo nível e com a seta. */}
+                  {item.tipo === "fluxo" ? <CornerDownRight className="size-3.5 shrink-0 text-[#9fb8c2]" aria-hidden /> : null}
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 basis-40 font-medium",
+                      item.tipo === "fatal"
+                        ? "text-[#b42318]"
+                        : item.tipo === "fluxo" && item.tarefa.repetida
+                          ? "text-muted-foreground line-through"
+                          : "text-foreground"
+                    )}
+                  >
                     {nomeDe(item)}
                   </span>
-                  {item.tipo === "fluxo" ? (
+                  {item.tipo === "fluxo" && item.tarefa.repetida ? (
+                    <span className="text-muted-foreground">repetida: o robô cancela no VIOS (Duplicidade); fica a da primeira tarefa</span>
+                  ) : item.tipo === "fluxo" ? (
                     <>
                       {campoDoFluxo(item.tarefa)}
                       <PessoasDaTarefa nomes={item.tarefa.responsaveis} foto={foto} />
@@ -489,16 +525,6 @@ function FluxoNoVios({
                       {item.tipo === "principal" ? <PessoasDaTarefa nomes={principal.responsaveis} foto={foto} /> : null}
                     </>
                   )}
-                </li>
-              ))}
-              {semData.map((tarefa) => (
-                <li key={tarefa.caminho.join(" › ")} className="flex flex-wrap items-center gap-x-2 gap-y-1 px-2.5 py-1.5">
-                  <span className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-[#eef3f5] text-[10px] text-muted-foreground" aria-hidden>
-                    –
-                  </span>
-                  <span className="min-w-0 flex-1 basis-40 font-medium text-foreground">{tarefa.nome}</span>
-                  {campoDoFluxo(tarefa)}
-                  <PessoasDaTarefa nomes={tarefa.responsaveis} foto={foto} />
                 </li>
               ))}
             </ol>
@@ -655,6 +681,7 @@ export function EditorVistagem({
         const classificacao = classificacaoEsocial(dados.publicacao.publicacaoEsocial) ?? ESOCIAL_PADRAO;
         const tarefaEsocialId = dados.esocial?.tarefa && pedeTarefaEsocial(classificacao) ? dados.esocial.tarefa.id : null;
         setEsocial(classificacao);
+        const contagemDaArea = contagemPadraoDaArea(dados.publicacao.escritorioResponsavel ?? dados.catalogo?.area);
         setLinhas(
           dados.agendamentos.length
             ? dados.agendamentos.map((item) =>
@@ -665,7 +692,7 @@ export function EditorVistagem({
                   data: item.etiqueta === "PRAZO" ? "" : item.data,
                   dataFatal: item.dataFatal ?? "",
                   diasPrazo: item.diasPrazo,
-                  contagemPrazo: item.contagemPrazo ?? "uteis",
+                  contagemPrazo: item.contagemPrazo ?? contagemDaArea,
                   hora: item.hora ?? "",
                   horaFim: item.horaFim ?? horaFinalPadrao(item.hora),
                   responsavel: item.responsavel,
@@ -675,7 +702,7 @@ export function EditorVistagem({
                   fluxoDatas: Object.fromEntries(item.fluxoDatas.map((datada) => [chaveDoCaminho(datada.caminho), datada])),
                 })
               )
-            : [novaLinha({ responsavel: dados.responsavelSugerido ?? "", revisor: dados.revisorSugerido ?? "" })]
+            : [novaLinha({ responsavel: dados.responsavelSugerido ?? "", revisor: dados.revisorSugerido ?? "", contagemPrazo: contagemDaArea })]
         );
         if (dados.sugestaoIa) {
           setSugestao(dados.sugestaoIa);
@@ -707,6 +734,28 @@ export function EditorVistagem({
   const ehDiaUtil = useMemo(() => criarCalendario(detalhe?.feriados ?? []), [detalhe?.feriados]);
   // A fatal conta só dias úteis fora do recesso forense; Enviar/Revisar/Protocolar seguem o expediente.
   const contaPrazo = useMemo(() => criarCalendarioDePrazo(detalhe?.feriados ?? []), [detalhe?.feriados]);
+  /**
+   * Uma Ciência dos Agendamentos só por vistagem: fica a da primeira tarefa incluída (ela mesma, ou a mais perto dela
+   * no fluxo do VIOS); as outras o robô cancela no VIOS depois de lançar (tipo Duplicidade).
+   */
+  const cienciaFica = useMemo(() => {
+    const catalogo = detalhe?.catalogo;
+    if (!detalhe || !catalogo) return null;
+    return cienciaQueFica(
+      linhas
+        .filter((linha) => linha.tarefa)
+        .map((linha) => {
+          const opcao = catalogo.tarefas[linha.etiqueta].find((item) => item.nome === linha.tarefa);
+          return { chave: linha.chave, nome: opcao?.nomeVios ?? linha.tarefa, fluxo: opcao ? detalhe.fluxos[opcao.id] ?? null : null };
+        })
+    );
+  }, [detalhe, linhas]);
+  const cienciaFicaEm = (chave: number, caminho: string[] | null) =>
+    !cienciaFica ||
+    (cienciaFica.chave === chave &&
+      (caminho === null ? cienciaFica.caminho === null : cienciaFica.caminho !== null && chaveDoCaminho(cienciaFica.caminho) === chaveDoCaminho(caminho)));
+  /** Úteis ou Corridos já marcado no Prazo: Corridos na Insolvência, Úteis nas outras áreas. */
+  const contagemPadrao = contagemPadraoDaArea(detalhe?.publicacao.escritorioResponsavel ?? detalhe?.catalogo?.area);
   // Responsável e Revisor: só quem é da área da publicação, com foto; a última linha da lista abre todas as pessoas.
   const pessoasDoCampo = useMemo((): PessoasDoCampo => {
     const fotos = detalhe?.fotos ?? {};
@@ -724,6 +773,21 @@ export function EditorVistagem({
       foto: (nome) => fotos[chaveNome(nome)] ?? null,
     };
   }, [detalhe]);
+  // Classe de cada tipo de tarefa na lista do VIOS da área, pelo nome original: dá a cor das tarefas do fluxo
+  // (nome que aparece em mais de uma classe fica sem, e a tarefa usa a cor da pedida).
+  const classeDaTarefa = useMemo(() => {
+    const classes = new Map<string, Set<Etiqueta>>();
+    for (const etiqueta of ETIQUETAS_AGENDAMENTO) {
+      for (const tarefa of detalhe?.catalogo?.tarefas[etiqueta] ?? []) {
+        const chave = chaveNome(tarefa.nomeVios ?? tarefa.nome);
+        classes.set(chave, (classes.get(chave) ?? new Set<Etiqueta>()).add(etiqueta));
+      }
+    }
+    return (nome: string): Etiqueta | null => {
+      const daTarefa = classes.get(chaveNome(nome));
+      return daTarefa?.size === 1 ? [...daTarefa][0] : null;
+    };
+  }, [detalhe?.catalogo]);
 
   function alterar(chave: number, mudanca: Partial<Linha>) {
     setLinhas((atuais) =>
@@ -755,8 +819,31 @@ export function EditorVistagem({
     setLinhas((atuais) =>
       atuais.length >= 10
         ? atuais
-        : [...atuais, novaLinha({ responsavel: detalhe?.responsavelSugerido ?? "", revisor: detalhe?.revisorSugerido ?? "" })]
+        : [...atuais, novaLinha({ responsavel: detalhe?.responsavelSugerido ?? "", revisor: detalhe?.revisorSugerido ?? "", contagemPrazo: contagemPadrao })]
     );
+  }
+
+  /**
+   * Ao escolher a tarefa de Prazo, já marca os dias do prazo legal do recurso (Apelação 15, Recurso Ordinário
+   * trabalhista 8…). Não passa por cima de dias escolhidos à mão, lidos da publicação ou de uma fatal digitada; só troca
+   * os que vieram da tarefa anterior.
+   */
+  function diasDaTarefa(linha: Linha, nome: string): Partial<Linha> {
+    const dataPublicacao = detalhe?.publicacao.dataPublicacao;
+    const catalogo = detalhe?.catalogo;
+    if (linha.etiqueta !== "PRAZO" || !dataPublicacao || !catalogo) return {};
+    const legal = (nomeTarefa: string) => {
+      const opcao = nomeTarefa ? catalogo.tarefas.PRAZO.find((item) => item.nome === nomeTarefa) : undefined;
+      return opcao ? prazoLegalDaTarefa(opcao.nomeVios ?? opcao.nome, catalogo.area) : null;
+    };
+    const novo = legal(nome);
+    const anterior = legal(linha.tarefa);
+    const vazio = linha.diasPrazo === null && !linha.dataFatal;
+    const daTarefaAnterior = anterior !== null && linha.diasPrazo === anterior;
+    if (!vazio && !daTarefaAnterior) return {};
+    if (novo === null) return daTarefaAnterior ? { diasPrazo: null, dataFatal: "" } : {};
+    const contagemPrazo = linha.contagemPrazo ?? contagemPadrao;
+    return { diasPrazo: novo, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, novo, contagemPrazo, contaPrazo) };
   }
 
   function trocarEtiqueta(linha: Linha, etiqueta: Etiqueta) {
@@ -798,7 +885,8 @@ export function EditorVistagem({
   function usarSugestao() {
     if (!detalhe?.catalogo || !sugestao) return;
     const { catalogo, publicacao } = detalhe;
-    const sugeridas = sugestao.tarefas.flatMap((tarefa) => {
+    // Tipo recriado no VIOS depois da sugestão (CIÊNCIA NF 316 → 796): vale o de mesmo nome da lista atual.
+    const sugeridas = sugestaoNaListaAtual(sugestao, catalogo.tarefas).tarefas.flatMap((tarefa) => {
       const opcao = catalogo.tarefas[tarefa.classe].find((item) => item.id === tarefa.tarefaId);
       if (!opcao) return [];
       const prazo = tarefa.classe === "PRAZO";
@@ -819,7 +907,12 @@ export function EditorVistagem({
         }),
       ];
     });
-    if (!sugeridas.length) return;
+    if (!sugeridas.length) {
+      // Antes não acontecia nada: avisa e deixa a pessoa escolher à mão.
+      setErro("Nenhuma tarefa da sugestão está na lista atual do VIOS desta pasta. Escolha as tarefas à mão.");
+      return;
+    }
+    setErro("");
     const classificacao = detalhe.esocial ? sugestao.esocial : esocial;
     setAntesDaSugestao({ linhas, esocial });
     setEsocial(classificacao);
@@ -833,7 +926,7 @@ export function EditorVistagem({
     if (!dataPublicacao) return;
     setLinhas((atuais) => {
       const alvo = atuais.find((linha) => linha.etiqueta === "PRAZO" && !linha.esocial);
-      const contagemPrazo = contagem ?? alvo?.contagemPrazo ?? "uteis";
+      const contagemPrazo = contagem ?? alvo?.contagemPrazo ?? contagemPadrao;
       const mudanca = { diasPrazo: dias, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, dias, contagemPrazo, contaPrazo) };
       if (alvo) return atuais.map((linha) => (linha === alvo ? { ...linha, ...mudanca } : linha));
       if (atuais.length >= 10) return atuais;
@@ -894,7 +987,13 @@ export function EditorVistagem({
     return (
       <div className="space-y-3">
         {antesDasTarefas}
-        {erro ? <Aviso tom="erro">{erro}</Aviso> : <Painel><Carregando rotulo="Carregando a publicação" /></Painel>}
+        {erro ? (
+          <Aviso tom="erro">{erro}</Aviso>
+        ) : (
+          <Painel className={cn(fila?.aberta && "lg:rounded-l-none lg:border-l-0")}>
+            <Carregando rotulo="Carregando a publicação" />
+          </Painel>
+        )}
       </div>
     );
   }
@@ -952,13 +1051,20 @@ export function EditorVistagem({
             </Aviso>
           ) : null}
 
-          <Painel aria-labelledby="publicacao-titulo" data-tour="vj-publicacao" className="flex min-h-0 flex-col @4xl:flex-1">
+          <Painel
+            aria-labelledby="publicacao-titulo"
+            data-tour="vj-publicacao"
+            // Com a fila aberta ao lado, o painel encosta nela: uma borda só entre os dois, sem o canto arredondado.
+            className={cn("flex min-h-0 flex-col @4xl:flex-1", fila?.aberta && "lg:rounded-l-none lg:border-l-0")}
+          >
             {/* Faixa azul-marinho: o processo aberto fica marcado no topo da coluna. */}
             <FaixaDoProcesso
               numero={publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}
               tribunal={publicacao.tribunal}
               tituloId="publicacao-titulo"
               risco={Boolean(publicacao.demandaRisco)}
+              // O selo "Demanda de risco" já está na ficha da pasta, logo abaixo; a faixa fica só vermelha.
+              seloDeRisco={false}
               antes={
                 fila ? (
                   // Só no desktop: no celular a lista abre por "Voltar à lista".
@@ -1144,16 +1250,27 @@ export function EditorVistagem({
                     const fluxo = tarefaId ? detalhe.fluxos[tarefaId] ?? null : null;
                     // Sem tarefa escolhida (ou sem o fluxo carregado) mostra o fluxo padrão; o servidor recalcula ao gravar.
                     const cadeiaFluxo = !tarefaId || detalhe.fluxosErro ? CADEIA_PADRAO : cadeiaDoFluxo(fluxo);
-                    const cadeia = prazo && linha.dataFatal ? datasDoPrazo(linha.dataFatal, ehDiaUtil, cadeiaFluxo) : null;
+                    // Nunca antes de hoje: prazo curto aperta a cadeia (Enviar hoje, Protocolar 1 dia útil antes da fatal).
+                    const cadeia = prazo && linha.dataFatal ? datasDoPrazo(linha.dataFatal, ehDiaUtil, cadeiaFluxo, detalhe.hoje) : null;
                     // O VIOS data o fluxo a partir da data que recebe (no Prazo, o Enviar) e do dia do lançamento.
                     const previstas = fluxo
                       ? fluxoPrevisto(
                           { data: (prazo ? cadeia?.enviar : linha.data) ?? "", responsavel: linha.responsavel, revisor: linha.revisor || null },
                           fluxo,
                           ehDiaUtil,
-                          { hoje: detalhe.hoje, datas: Object.values(linha.fluxoDatas) }
+                          {
+                            hoje: detalhe.hoje,
+                            datas: Object.values(linha.fluxoDatas),
+                            apertada: cadeia?.ajustada ? { revisar: cadeia.revisar, protocolar: cadeia.protocolar } : null,
+                          }
+                        ).map((tarefa) =>
+                          // Uma Ciência só por vistagem: fica a da primeira tarefa; as outras o robô cancela.
+                          tarefa.quando === "criacao" && ehCienciaDosAgendamentos(tarefa.nome) && !cienciaFicaEm(linha.chave, tarefa.caminho)
+                            ? { ...tarefa, repetida: true }
+                            : tarefa
                         )
                       : [];
+                    const cienciaPedidaRepetida = ehCienciaDosAgendamentos(linha.tarefa) && !cienciaFicaEm(linha.chave, null);
                     const avisos = prazo
                       ? linha.dataFatal
                         ? avisosDaData(linha.dataFatal, detalhe.hoje).concat(
@@ -1242,6 +1359,7 @@ export function EditorVistagem({
                                       const eraDoTipo = anteriores.length > 0 && linha.responsavel === anteriores.join(", ");
                                       alterar(linha.chave, {
                                         tarefa: nome,
+                                        ...diasDaTarefa(linha, nome),
                                         ...(fixos.length
                                           ? { responsavel: fixos.join(", ") }
                                           : eraDoTipo
@@ -1274,16 +1392,23 @@ export function EditorVistagem({
                                         variant="outline"
                                         aria-pressed={linha.diasPrazo === dias}
                                         disabled={!publicacao.dataPublicacao}
+                                        title={linha.diasPrazo === dias ? "Clique de novo para tirar os dias e a data fatal" : undefined}
                                         className={cn(
                                           "h-10 min-w-8 px-1.5 tabular-nums",
                                           linha.diasPrazo === dias && "border-[#285f7a] bg-[#347796] text-white hover:bg-[#285f7a] hover:text-white"
                                         )}
                                         onClick={() =>
                                           publicacao.dataPublicacao &&
-                                          alterar(linha.chave, {
-                                            diasPrazo: dias,
-                                            dataFatal: fatalPorContagem(publicacao.dataPublicacao, dias, linha.contagemPrazo ?? "uteis", contaPrazo),
-                                          })
+                                          // Clicar de novo no dia marcado desmarca: sai também a fatal que ele tinha calculado.
+                                          alterar(
+                                            linha.chave,
+                                            linha.diasPrazo === dias
+                                              ? { diasPrazo: null, dataFatal: "" }
+                                              : {
+                                                  diasPrazo: dias,
+                                                  dataFatal: fatalPorContagem(publicacao.dataPublicacao, dias, linha.contagemPrazo ?? contagemPadrao, contaPrazo),
+                                                }
+                                          )
                                         }
                                       >
                                         {dias}
@@ -1297,7 +1422,7 @@ export function EditorVistagem({
                                     <span className="block text-xs font-medium text-muted-foreground">Contagem</span>
                                     <ContagemDoPrazo
                                       rotulo={`Contagem do prazo da tarefa ${indice + 1}`}
-                                      valor={linha.contagemPrazo ?? "uteis"}
+                                      valor={linha.contagemPrazo ?? contagemPadrao}
                                       onChange={(contagem) =>
                                         alterar(linha.chave, {
                                           contagemPrazo: contagem,
@@ -1386,6 +1511,18 @@ export function EditorVistagem({
                                 {avisos.join(" ")}
                               </p>
                             ) : null}
+                            {cadeia?.ajustada ? (
+                              <p className="flex items-center gap-1.5 text-xs text-amber-800">
+                                <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
+                                Prazo curto: o Enviar vai hoje e o Revisar e o Protocolar ficam antes da fatal (o robô grava no VIOS).
+                              </p>
+                            ) : null}
+                            {cienciaPedidaRepetida ? (
+                              <p className="flex items-center gap-1.5 text-xs text-amber-800">
+                                <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
+                                O fluxo de uma tarefa incluída antes já cria a 1. CIÊNCIA DOS AGENDAMENTOS: esta fica repetida e o robô a cancela no VIOS. Tire esta tarefa.
+                              </p>
+                            ) : null}
                           </BlocoTarefa>
 
                           <BlocoTarefa titulo="Quem" icone={Users}>
@@ -1446,7 +1583,6 @@ export function EditorVistagem({
                             <FluxoNoVios
                               previstas={previstas}
                               principal={{
-                                rotulo: prazo && cadeia?.protocolar ? "Enviar no VIOS" : "Tarefa no VIOS",
                                 nome: linha.tarefa,
                                 data: (prazo ? cadeia?.enviar : linha.data) || null,
                                 etiqueta: linha.etiqueta,
@@ -1457,6 +1593,7 @@ export function EditorVistagem({
                               hoje={detalhe.hoje}
                               ehDiaUtil={ehDiaUtil}
                               onMudarData={(caminho, data) => mudarDataDoFluxo(linha, caminho, data)}
+                              classeDe={classeDaTarefa}
                             />
                           ) : null}
                         </div>
@@ -1639,6 +1776,10 @@ function CampoVazio({ icone, texto }: { icone: ReactNode; texto: string }) {
 type FiltroRisco = "" | "risco" | "normal";
 
 interface GrupoFila {
+  /** Dia do recebimento + grupo: o mesmo grupo pode aparecer em dois dias. */
+  chave: string;
+  /** Dia do recebimento (AAAA-MM-DD), ou null quando a publicação não tem. */
+  dia: string | null;
   nome: string;
   publicacoes: PublicacaoResumo[];
   riscos: number;
@@ -1707,33 +1848,43 @@ function FiltroDemanda({
 const recebimento = (publicacao: PublicacaoResumo) => publicacao.dataImportacao ?? "9999-12-31";
 
 /**
- * Agrupa a fila por grupo do cliente, na ordem do recebimento: a mais antiga primeiro, com ou sem risco (a normal
- * de ontem vem antes da de risco de hoje). No mesmo dia, a de risco vem antes. Os grupos seguem a publicação mais
- * antiga de cada um.
+ * Agrupa a fila por dia do recebimento e, dentro do dia, por grupo do cliente: a mais antiga primeiro, com ou sem
+ * risco (a normal de ontem vem antes da de risco de hoje). No mesmo dia, grupos e publicações de risco vêm antes.
  */
 function agruparFila(publicacoes: PublicacaoResumo[]): GrupoFila[] {
-  const grupos = new Map<string, PublicacaoResumo[]>();
+  const grupos = new Map<string, GrupoFila>();
   for (const publicacao of publicacoes) {
     const nome = publicacao.grupoCliente?.trim() || SEM_GRUPO;
-    grupos.set(nome, [...(grupos.get(nome) ?? []), publicacao]);
+    const chave = `${recebimento(publicacao)}|${nome}`;
+    const grupo = grupos.get(chave) ?? { chave, dia: publicacao.dataImportacao, nome, publicacoes: [], riscos: 0 };
+    grupo.publicacoes.push(publicacao);
+    if (publicacao.demandaRisco) grupo.riscos += 1;
+    grupos.set(chave, grupo);
   }
-  return [...grupos.entries()]
-    .map(([nome, lista]) => ({
-      nome,
-      publicacoes: [...lista].sort(
-        (a, b) =>
-          recebimento(a).localeCompare(recebimento(b)) ||
-          Number(Boolean(b.demandaRisco)) - Number(Boolean(a.demandaRisco)) ||
-          (a.dataPublicacao ?? "").localeCompare(b.dataPublicacao ?? "")
+  return [...grupos.values()]
+    .map((grupo) => ({
+      ...grupo,
+      publicacoes: grupo.publicacoes.sort(
+        (a, b) => Number(Boolean(b.demandaRisco)) - Number(Boolean(a.demandaRisco)) || (a.dataPublicacao ?? "").localeCompare(b.dataPublicacao ?? "")
       ),
-      riscos: lista.filter((p) => p.demandaRisco).length,
     }))
     .sort(
       (a, b) =>
-        recebimento(a.publicacoes[0]).localeCompare(recebimento(b.publicacoes[0])) ||
+        (a.dia ?? "9999-12-31").localeCompare(b.dia ?? "9999-12-31") ||
         Number(b.riscos > 0) - Number(a.riscos > 0) ||
         a.nome.localeCompare(b.nome, "pt-BR")
     );
+}
+
+/** Chave do dia na fila (para recolher), com as publicações sem data juntas. */
+const chaveDoDia = (dia: string | null) => dia ?? "sem-data";
+
+/** "Recebidas hoje · qui, 06/11", "Recebidas ontem · qua, 05/11", "Recebidas qui, 30/10". */
+function rotuloDoDia(dia: string | null, hoje: string): string {
+  if (!dia) return "Sem data de recebimento";
+  const data = `${diaDaSemana(dia)}, ${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
+  const relativo = relativoAHoje(dia, hoje);
+  return relativo === "hoje" || relativo === "ontem" ? `Recebidas ${relativo} · ${data}` : `Recebidas ${data} · ${relativo}`;
 }
 
 function Juridico() {
@@ -1744,7 +1895,7 @@ function Juridico() {
   const [porEscritorio, setPorEscritorio] = useState<Record<string, number>>({});
   /** Áreas do usuário do jurídico; null é a controladoria (todas). */
   const [areas, setAreas] = useState<string[] | null>(null);
-  /** Quem não vista demanda de risco (Usuários › acesso) não recebe as de risco: o filtro sai. */
+  /** Quem não vista demanda de risco (Configurações › Quem acessa a Vistagem) não recebe as de risco: o filtro sai. */
   const [veRisco, setVeRisco] = useState(true);
   /** Publicação escolhida; sem escolha (ou fora dos filtros), abre a primeira da fila. */
   const [selecionada, setSelecionada] = useState<string | null>(null);
@@ -1759,10 +1910,12 @@ function Juridico() {
   const [tribunal, setTribunal] = useState("");
   /** Dia em que a publicação chegou no Orquestra (AAAA-MM-DD); vazio é "Todas as datas". */
   const [dataImportacao, setDataImportacao] = useState("");
-  /** A fila abre sempre aberta, estreita; o botão à esquerda do número do processo recolhe. */
-  const [filaRecolhida, setFilaRecolhida] = useState(false);
+  /** A fila abre sempre recolhida (a publicação ocupa a tela); o botão à esquerda do número do processo mostra. */
+  const [filaRecolhida, setFilaRecolhida] = useState(true);
   /** Na fila, cada grupo vem recolhido (menos o da publicação aberta); aqui ficam os que a pessoa inverteu. */
   const [gruposAlternados, setGruposAlternados] = useState<Set<string>>(() => new Set());
+  /** Com mais de um dia na fila, cada dia também vem recolhido (menos o da publicação aberta); os invertidos ficam aqui. */
+  const [diasAlternados, setDiasAlternados] = useState<Set<string>>(() => new Set());
 
   const carregar = useCallback(async (filtro: string) => {
     setPublicacoes(null);
@@ -1818,9 +1971,18 @@ function Juridico() {
   // Mesma ordem da lista: é por ela que o editor anda para a anterior e a próxima.
   const ordem = useMemo(() => grupos.flatMap((item) => item.publicacoes.map((publicacao) => publicacao.id)), [grupos]);
   const aberta = selecionada && ordem.includes(selecionada) ? selecionada : ordem[0] ?? null;
-  const grupoDe = (id: string | null) => (id ? grupos.find((item) => item.publicacoes.some((publicacao) => publicacao.id === id))?.nome ?? null : null);
+  const grupoDe = (id: string | null) => (id ? grupos.find((item) => item.publicacoes.some((publicacao) => publicacao.id === id))?.chave ?? null : null);
   const grupoDaAberta = grupoDe(aberta);
-  const grupoAberto = (nome: string) => (nome === grupoDaAberta) !== gruposAlternados.has(nome);
+  const grupoAberto = (chave: string) => (chave === grupoDaAberta) !== gruposAlternados.has(chave);
+  // Com mais de um dia na fila, cada dia ganha um cabeçalho por cima dos grupos, que recolhe o dia inteiro.
+  const variosDias = new Set(grupos.map((item) => item.dia)).size > 1;
+  const [hoje] = useState(hojeLocal);
+  const diaDe = (id: string | null) => {
+    const bloco = id ? grupos.find((item) => item.publicacoes.some((publicacao) => publicacao.id === id)) : undefined;
+    return bloco ? chaveDoDia(bloco.dia) : null;
+  };
+  const diaDaAberta = diaDe(aberta);
+  const diaAberto = (dia: string | null) => !variosDias || (chaveDoDia(dia) === diaDaAberta) !== diasAlternados.has(chaveDoDia(dia));
   const indiceAberta = aberta ? ordem.indexOf(aberta) : -1;
   const navegacao =
     indiceAberta >= 0
@@ -1842,12 +2004,20 @@ function Juridico() {
     setSelecionada(id);
     setListaNoCelular(false);
     setAviso("");
-    // O grupo da publicação aberta fica aberto na fila, mesmo que a pessoa o tenha recolhido antes.
+    // O grupo e o dia da publicação aberta ficam abertos na fila, mesmo que a pessoa os tenha recolhido antes.
     const grupoNovo = grupoDe(id);
     if (grupoNovo && gruposAlternados.has(grupoNovo)) {
       setGruposAlternados((atual) => {
         const proximo = new Set(atual);
         proximo.delete(grupoNovo);
+        return proximo;
+      });
+    }
+    const diaNovo = diaDe(id);
+    if (diaNovo && diasAlternados.has(diaNovo)) {
+      setDiasAlternados((atual) => {
+        const proximo = new Set(atual);
+        proximo.delete(diaNovo);
         return proximo;
       });
     }
@@ -1858,6 +2028,16 @@ function Juridico() {
       const proximo = new Set(atual);
       if (proximo.has(nome)) proximo.delete(nome);
       else proximo.add(nome);
+      return proximo;
+    });
+  }
+
+  function alternarDia(dia: string | null) {
+    const chave = chaveDoDia(dia);
+    setDiasAlternados((atual) => {
+      const proximo = new Set(atual);
+      if (proximo.has(chave)) proximo.delete(chave);
+      else proximo.add(chave);
       return proximo;
     });
   }
@@ -1984,22 +2164,26 @@ function Juridico() {
         <div
           className={cn(
             "grid gap-4 lg:h-[calc(100dvh-10.5rem)] lg:min-h-[30rem]",
-            filaRecolhida ? "lg:grid-cols-1" : "lg:grid-cols-[minmax(230px,270px)_minmax(0,1fr)]"
+            // Fila aberta: fila e publicação ficam coladas, sem o espaço entre as colunas.
+            filaRecolhida ? "lg:grid-cols-1" : "lg:grid-cols-[minmax(230px,270px)_minmax(0,1fr)] lg:gap-x-0"
           )}
         >
           <Painel
             aria-label="Publicações a vistar"
             data-fila-vistagem
             data-tour="vj-fila"
-            className={cn("lg:flex lg:h-full lg:flex-col", aberta && !listaNoCelular && "hidden lg:flex", filaRecolhida && "lg:hidden")}
+            className={cn("lg:flex lg:h-full lg:flex-col lg:rounded-r-none", aberta && !listaNoCelular && "hidden lg:flex", filaRecolhida && "lg:hidden")}
           >
             <div className="hidden items-center gap-2 border-b border-[#e6eef0] px-4 py-2 lg:flex">
               <span className="flex-1 text-xs font-medium text-muted-foreground">
                 Fila <span className="tabular-nums">· {filtradas.length}</span>
               </span>
-              <Button type="button" size="icon-xs" variant="ghost" onClick={() => setFilaRecolhida(true)} aria-label="Recolher a fila" title="Recolher a fila">
-                <PanelLeftClose />
-              </Button>
+              {/* Com uma publicação aberta, quem recolhe a fila é o botão da faixa do processo (um botão só). */}
+              {aberta ? null : (
+                <Button type="button" size="icon-xs" variant="ghost" onClick={() => setFilaRecolhida(true)} aria-label="Recolher a fila" title="Recolher a fila">
+                  <PanelLeftClose />
+                </Button>
+              )}
             </div>
             {publicacoes === null ? (
               <Carregando rotulo="Carregando a fila" />
@@ -2015,16 +2199,34 @@ function Juridico() {
               </Vazio>
             ) : (
               <div className="max-h-[70vh] overflow-auto lg:max-h-none lg:flex-1">
-                {grupos.map((bloco) => (
-                  <section key={bloco.nome} aria-label={bloco.nome}>
+                {grupos.map((bloco, indice) => (
+                  <Fragment key={bloco.chave}>
+                  {variosDias && (indice === 0 || grupos[indice - 1].dia !== bloco.dia) ? (
+                    <h3 className="border-b border-[#c9dde6] bg-[#e9f2f6] text-[11px] font-semibold text-[#183f50]">
+                      <button
+                        type="button"
+                        aria-expanded={diaAberto(bloco.dia)}
+                        onClick={() => alternarDia(bloco.dia)}
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-[#dfecf2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#47cdd0]/50"
+                      >
+                        <ChevronRight className={cn("size-3.5 shrink-0 transition-transform", diaAberto(bloco.dia) && "rotate-90")} aria-hidden />
+                        <CalendarDays className="size-3.5 shrink-0" aria-hidden />
+                        <span className="truncate">{rotuloDoDia(bloco.dia, hoje)}</span>
+                        <span className="ml-auto font-normal tabular-nums text-[#285f7a]">
+                          {grupos.filter((item) => item.dia === bloco.dia).reduce((soma, item) => soma + item.publicacoes.length, 0)}
+                        </span>
+                      </button>
+                    </h3>
+                  ) : null}
+                  <section aria-label={bloco.nome} className={cn(!diaAberto(bloco.dia) && "hidden")}>
                     <h3 className="sticky top-0 z-10 border-b border-[#e6eef0] bg-[#f7fbfc] text-xs font-semibold text-[#285f7a]">
                       <button
                         type="button"
-                        aria-expanded={grupoAberto(bloco.nome)}
-                        onClick={() => alternarGrupo(bloco.nome)}
+                        aria-expanded={grupoAberto(bloco.chave)}
+                        onClick={() => alternarGrupo(bloco.chave)}
                         className="flex w-full items-center gap-2 px-4 py-2 text-left hover:bg-[#eef6f8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#47cdd0]/50"
                       >
-                        <ChevronRight className={cn("size-3.5 shrink-0 transition-transform", grupoAberto(bloco.nome) && "rotate-90")} aria-hidden />
+                        <ChevronRight className={cn("size-3.5 shrink-0 transition-transform", grupoAberto(bloco.chave) && "rotate-90")} aria-hidden />
                         <LogoGrupo grupo={bloco.nome === SEM_GRUPO ? null : bloco.nome} tamanho="xs" />
                         <span className="truncate">{bloco.nome}</span>
                         <span className="font-normal tabular-nums text-muted-foreground">{bloco.publicacoes.length}</span>
@@ -2035,7 +2237,7 @@ function Juridico() {
                         ) : null}
                       </button>
                     </h3>
-                    <ul className={cn("divide-y divide-[#eef3f5]", !grupoAberto(bloco.nome) && "hidden")}>
+                    <ul className={cn("divide-y divide-[#eef3f5]", !grupoAberto(bloco.chave) && "hidden")}>
                       {bloco.publicacoes.map((publicacao) => (
                         <li key={publicacao.id}>
                           <button
@@ -2066,6 +2268,7 @@ function Juridico() {
                       ))}
                     </ul>
                   </section>
+                  </Fragment>
                 ))}
               </div>
             )}
@@ -2084,7 +2287,7 @@ function Juridico() {
                 fila={{ aberta: !filaRecolhida, onAlternar: () => setFilaRecolhida((atual) => !atual) }}
               />
             ) : (
-              <Painel data-tour="vj-vazio">
+              <Painel data-tour="vj-vazio" className={cn(!filaRecolhida && "lg:rounded-l-none lg:border-l-0")}>
                 <Vazio icone={FileText} titulo={publicacoes === null ? "Carregando a fila" : "Nenhuma publicação para abrir"}>
                   <p>{publicacoes === null ? "A primeira publicação da fila abre aqui." : "Quando houver publicação na fila (ou nos filtros), a primeira abre aqui."}</p>
                   {filaRecolhida ? (

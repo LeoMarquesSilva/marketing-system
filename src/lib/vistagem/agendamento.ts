@@ -18,6 +18,12 @@ export const ROTULO_ETIQUETA: Record<EtiquetaAgendamento, string> = { PRAZO: "Pr
  */
 export const ETIQUETA_VIOS: Record<EtiquetaAgendamento, number> = { PRAZO: 1, PROVIDENCIA: 204, COMPROMISSO: 205 };
 
+/** Classe do tipo de tarefa pelas etiquetas dele no VIOS; null sem nenhuma das três ou com mais de uma. */
+export function classeDasEtiquetas(etiquetas: readonly number[]): EtiquetaAgendamento | null {
+  const classes = (Object.keys(ETIQUETA_VIOS) as EtiquetaAgendamento[]).filter((classe) => etiquetas.includes(ETIQUETA_VIOS[classe]));
+  return classes.length === 1 ? classes[0] : null;
+}
+
 /** Opção do VIOS (tipo de tarefa ou usuário), como o robô do SAMA guarda no catálogo. */
 export interface OpcaoVios {
   id: string;
@@ -247,6 +253,14 @@ export function areaDoCatalogo(areaProcesso: string | null, escritorio: string |
   return null;
 }
 
+/**
+ * Como o Prazo começa marcado na vistagem: na Insolvência, dias corridos (Lei 11.101, art. 189); nas outras áreas
+ * (inclusive Cível | Insolvência), dias úteis. O jurídico pode trocar na tarefa.
+ */
+export function contagemPadraoDaArea(area: string | null | undefined): ContagemPrazo {
+  return chaveNome(area) === "INSOLVENCIA" ? "corridos" : "uteis";
+}
+
 /** Responsável sugerido: o advogado responsável da pasta, se for usuário do VIOS. */
 export function responsavelSugerido(advogadoResponsavel: string | null, usuarios: OpcaoVios[]): OpcaoVios | null {
   const chave = chaveNome(advogadoResponsavel);
@@ -304,6 +318,8 @@ export function validarAgendamentos(
     cadeiaDaTarefa: (tarefaId: string) => CadeiaDoPrazo | null;
     /** Tarefas que o fluxo do tipo cria junto (chaveDoCaminho), para aceitar só datas delas. */
     caminhosDaTarefa?: (tarefaId: string) => Set<string>;
+    /** Dia da vistagem: o Enviar do Prazo nunca fica antes dele (prazo curto aperta a cadeia). */
+    hoje?: string;
   }
 ): { ok: true; itens: AgendamentoValidado[] } | { ok: false; erros: string[] } {
   const erros: string[] = [];
@@ -328,7 +344,7 @@ export function validarAgendamentos(
     // fluxo do tipo de tarefa. Recalculado aqui; não vem da tela.
     const data = prazo
       ? fatal && tarefa
-        ? datasDoPrazo(fatal, contexto.ehDiaUtil, contexto.cadeiaDaTarefa(tarefa.id)).enviar
+        ? datasDoPrazo(fatal, contexto.ehDiaUtil, contexto.cadeiaDaTarefa(tarefa.id), contexto.hoje ?? null).enviar
         : ""
       : entrada.data;
     if (prazo && !fatal) erros.push(`${n}: escolha a data fatal do prazo.`);

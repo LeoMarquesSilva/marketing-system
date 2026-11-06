@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgendamentoValidado, EtiquetaAgendamento, OpcaoTarefa } from "./agendamento";
 import { criarCalendarioDePrazo } from "./dias-uteis";
+import { ESOCIAL_PADRAO } from "./esocial";
 import {
   areaComSugestaoIa,
   custoDaChamada,
@@ -9,6 +10,7 @@ import {
   fatalSugerida,
   instrucoesDaSugestao,
   resultadoDaSugestao,
+  sugestaoNaListaAtual,
   tarefasDaResposta,
   type RespostaIa,
   type SugestaoIa,
@@ -248,5 +250,34 @@ describe("resultadoDaSugestao", () => {
 describe("custoDaChamada", () => {
   it("entrada em cache sai a 1/10", () => {
     expect(custoDaChamada({ entrada: 4000, cache: 3000, saida: 300 })).toBeCloseTo(0.00028, 6);
+  });
+});
+
+describe("sugestaoNaListaAtual (tipo recriado no VIOS)", () => {
+  const sugestao = (tarefaId: string, tarefa: string): SugestaoIa => ({
+    resumo: "",
+    tarefas: [{ classe: "PROVIDENCIA", tarefaId, tarefa, dias: null, contagem: null, data: null, hora: null, motivo: "" }],
+    esocial: ESOCIAL_PADRAO,
+    confianca: "alta",
+    modelo: "teste",
+    geradaEm: "2026-11-06T10:00:00Z",
+    custoUS: 0,
+  });
+  const lista = (providencias: { id: string; nome: string; nomeVios?: string }[]) => ({ PRAZO: [], PROVIDENCIA: providencias, COMPROMISSO: [] });
+
+  it("CIÊNCIA NF sugerida com o 316 vira o 796, que está na lista", () => {
+    const atual = sugestaoNaListaAtual(sugestao("316", "CIÊNCIA NF"), lista([{ id: "796", nome: "CIÊNCIA NF" }]));
+    expect(atual.tarefas[0].tarefaId).toBe("796");
+  });
+
+  it("com o número na lista, ou sem um único tipo de mesmo nome, fica como veio", () => {
+    const comNumero = sugestao("316", "CIÊNCIA NF");
+    expect(sugestaoNaListaAtual(comNumero, lista([{ id: "316", nome: "CIÊNCIA NF" }, { id: "796", nome: "CIÊNCIA NF (tipo 796)", nomeVios: "CIÊNCIA NF" }]))).toBe(comNumero);
+    const dois = lista([
+      { id: "1", nome: "CIÊNCIA NF (tipo 1)", nomeVios: "CIÊNCIA NF" },
+      { id: "2", nome: "CIÊNCIA NF (tipo 2)", nomeVios: "CIÊNCIA NF" },
+    ]);
+    expect(sugestaoNaListaAtual(comNumero, dois).tarefas[0].tarefaId).toBe("316");
+    expect(sugestaoNaListaAtual(comNumero, lista([])).tarefas[0].tarefaId).toBe("316");
   });
 });

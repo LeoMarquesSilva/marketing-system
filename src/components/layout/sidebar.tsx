@@ -4,7 +4,7 @@ import { NavLink } from "@/components/layout/nav-link";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, LogOut, MoreHorizontal, User } from "lucide-react";
+import { ChevronDown, LogOut, MonitorDown, MoreHorizontal, Smartphone, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -16,6 +16,7 @@ import {
 import { NavBadgePill, sumBadges, useNavBadges } from "@/components/layout/nav-badges";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { NotificationsBell } from "@/components/layout/notifications-bell";
+import { InstrucoesInstalacaoDialog, useInstalarApp } from "@/components/layout/instalar-app";
 
 type SidebarProps = {
   expanded: boolean;
@@ -213,6 +214,8 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
 
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // "Instalar o ORQESTRAI" só aparece quando o navegador deixa instalar.
+  const instalacao = useInstalarApp();
   const [frontState, setFrontState] = useState<Record<string, boolean>>(readStoredFronts);
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
@@ -422,6 +425,20 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
                       <User className="h-4 w-4" />
                       Meu perfil
                     </NavLink>
+                    {instalacao.modo && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setProfileMenuOpen(false);
+                          instalacao.instalar();
+                        }}
+                        className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                      >
+                        <MonitorDown className="h-4 w-4 text-[#47cdd0]" />
+                        Instalar o ORQESTRAI
+                      </button>
+                    )}
                     <button
                       type="button"
                       role="menuitem"
@@ -507,6 +524,20 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
                 ))}
               </div>
               <div className="mt-4 grid grid-cols-2 gap-1.5 border-t border-white/10 pt-3">
+                {instalacao.modo && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      instalacao.instalar();
+                    }}
+                    className="col-span-2 flex min-h-12 items-center gap-2.5 rounded-md bg-white/[0.04] px-3 py-2.5 text-sm font-medium text-white/85 outline-none transition-colors hover:bg-white/[0.09] hover:text-white focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
+                  >
+                    <Smartphone className="h-[18px] w-[18px] text-[#47cdd0]" aria-hidden />
+                    <span className="min-w-0 flex-1 text-left leading-tight">Instalar o ORQESTRAI</span>
+                    <span className="text-xs font-normal text-white/50">ícone na tela inicial</span>
+                  </button>
+                )}
                 <NavLink
                   href="/perfil"
                   onClick={() => setMobileMenuOpen(false)}
@@ -574,6 +605,11 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
         </button>
       </nav>
 
+      {/* Fora dos menus: eles fecham ao clicar e levariam o modal junto. */}
+      <InstrucoesInstalacaoDialog
+        open={instalacao.instrucoesAbertas}
+        onOpenChange={instalacao.setInstrucoesAbertas}
+      />
     </>
   );
 }

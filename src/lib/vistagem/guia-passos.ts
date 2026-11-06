@@ -287,7 +287,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alternativa: "vj-vazio",
       titulo: "Preencha a tarefa",
       texto:
-        "No Prazo, clique nos dias (úteis ou corridos) ou digite a fatal: o VIOS recebe a data do Enviar, antes da fatal, e o revisor é obrigatório. Providência não tem revisor; Compromisso pede data, horário e hora final. A observação vai na descrição da tarefa no VIOS.",
+        "No Prazo, clique nos dias (úteis ou corridos) ou digite a fatal; nos recursos, os dias do prazo legal já vêm marcados, e na Insolvência a contagem já vem em Corridos. O VIOS recebe a data do Enviar, antes da fatal, e o revisor é obrigatório. Providência não tem revisor; Compromisso pede data, horário e hora final. A observação vai na descrição da tarefa no VIOS.",
     },
     {
       id: "fluxo",
@@ -474,7 +474,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alvo: "cg-vistadores",
       titulo: "Vistadores por área",
       texto:
-        "Define quem vista as demandas normais e as de risco de cada área; o nome aparece na Visão geral. Quem enxerga a fila continua sendo definido em Usuários.",
+        "Define quem vista as demandas normais e as de risco de cada área (a mesma pessoa pode estar nas duas); o nome aparece na Visão geral. Quem enxerga a fila fica no cartão Quem acessa a Vistagem, nesta mesma tela.",
     },
     {
       id: "risco",

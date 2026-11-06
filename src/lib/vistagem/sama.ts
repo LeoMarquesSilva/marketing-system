@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { chaveNome, type EtapaVios, type OpcaoVios } from "./agendamento";
+import { chaveNome, classeDasEtiquetas, type EtapaVios, type OpcaoVios } from "./agendamento";
 import { VistagemError } from "./errors";
 import { cisDoResultado, tarefasViosDoResultado, type LinhaFilaSama, type ModoAgendamento, type TarefaNoVios } from "./fila-vios";
 import type { BaseDaData, ResponsabilidadeDoTipo, TipoNaArvore } from "./fluxo-vios";
@@ -133,7 +133,14 @@ export async function carregarArvoreVios(): Promise<Map<number, TipoNaArvore>> {
   const { data, error } = comRegras.error ? await sama().from("vios_fluxos_tarefas").select(colunas).limit(5000) : comRegras;
   if (error) throw new VistagemError(`Falha ao carregar o fluxo de tarefas do VIOS no SAMA: ${error.message}`, 502);
   if (!data?.length) throw new VistagemError("O fluxo de tarefas do VIOS no SAMA está vazio.", 502);
-  const responsabilidades = await responsabilidadesDosTipos();
+  // A classe de cada tipo (pelas etiquetas) dá a cor no fluxo; sem ela, a tela cai na lista da área.
+  const [responsabilidades, etiquetasPorTipo] = await Promise.all([
+    responsabilidadesDosTipos(),
+    carregarEtiquetasDosTipos().catch((erro: unknown) => {
+      console.error("[vistagem] etiquetas dos tipos para o fluxo:", erro instanceof Error ? erro.message : erro);
+      return new Map<string, DadosDoTipo>();
+    }),
+  ]);
   const arvore = new Map<number, TipoNaArvore>(
     (data as Record<string, unknown>[]).map((row) => {
       const regras = Array.isArray(row.regras_criacao) ? (row.regras_criacao as { id?: unknown; base?: unknown }[]) : null;
@@ -156,6 +163,7 @@ export async function carregarArvoreVios(): Promise<Map<number, TipoNaArvore>> {
               )
             : null,
           responsabilidade: responsabilidades.get(Number(row.etapa_id)) ?? null,
+          classe: classeDasEtiquetas(etiquetasPorTipo.get(String(row.etapa_id))?.etiquetas ?? []),
         },
       ];
     })

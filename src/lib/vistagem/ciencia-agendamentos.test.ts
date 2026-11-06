@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cienciaDosAgendamentos, ehCienciaDosAgendamentos, fluxoCriaCiencia, type TarefaParaCiencia } from "./ciencia-agendamentos";
+import { cienciaDosAgendamentos, cienciaQueFica, ehCienciaDosAgendamentos, fluxoCriaCiencia, type TarefaParaCiencia } from "./ciencia-agendamentos";
 import type { FluxoDaTarefa, TarefaDoFluxo } from "./fluxo-vios";
 
 function noFluxo(nome: string, filhas: TarefaDoFluxo[] = []): TarefaDoFluxo {
@@ -41,7 +41,41 @@ describe("ehCienciaDosAgendamentos / fluxoCriaCiencia", () => {
   });
 });
 
+describe("cienciaQueFica (uma Ciência só por vistagem)", () => {
+  const ciencia = () => noFluxo("1. CIÊNCIA DOS AGENDAMENTOS");
+  // Apelação: o Embargos (com a Ciência dele) vem antes, na ordem do fluxo, da Ciência da própria Apelação.
+  const apelacao: FluxoDaTarefa = { criacao: [noFluxo("2. REVISAR"), noFluxo("EMBARGOS DE DECLARAÇÃO", [ciencia()]), ciencia()], conclusao: [] };
+
+  it("no fluxo de uma tarefa, fica a mais perto dela", () => {
+    expect(cienciaQueFica([{ chave: 1, nome: "APELAÇÃO", fluxo: apelacao }])).toEqual({ chave: 1, caminho: ["1. CIÊNCIA DOS AGENDAMENTOS"] });
+  });
+
+  it("entre as tarefas, fica a da primeira incluída que cria (ou é) a Ciência", () => {
+    expect(
+      cienciaQueFica([
+        { chave: "a", nome: "INFORMAR CLIENTE", fluxo: null },
+        { chave: "b", nome: "CONTESTAÇÃO", fluxo: FLUXOS["202"] },
+        { chave: "c", nome: "APELAÇÃO", fluxo: apelacao },
+      ])
+    ).toEqual({ chave: "b", caminho: ["CONTESTAÇÃO", "1. CIÊNCIA DOS AGENDAMENTOS"] });
+    expect(cienciaQueFica([{ chave: "a", nome: "1. CIÊNCIA DOS AGENDAMENTOS", fluxo: null }, { chave: "b", nome: "APELAÇÃO", fluxo: apelacao }])).toEqual({
+      chave: "a",
+      caminho: null,
+    });
+    expect(cienciaQueFica([{ chave: "a", nome: "INFORMAR CLIENTE", fluxo: FLUXOS["406"] }])).toBeNull();
+  });
+});
+
 describe("cienciaDosAgendamentos", () => {
+  it("Sessão de Julgamento, como a CIÊNCIA NF, não pede a Ciência (nem escolhe o responsável)", () => {
+    expect(cienciaDosAgendamentos([tarefa("SESSÃO DE JULGAMENTO", "406")], opcoes("Cível"))).toBeNull();
+    expect(cienciaDosAgendamentos([tarefa("Sessão de Julgamento", null), tarefa("CIÊNCIA NF", "796")], opcoes("Cível"))).toBeNull();
+    const outra = { id: "300", nome: "Outra Advogada" };
+    expect(
+      cienciaDosAgendamentos([tarefa("SESSÃO DE JULGAMENTO", "406"), tarefa("INFORMAR CLIENTE", "412", { responsaveis: [outra] })], opcoes("Cível"))
+    ).toEqual({ responsaveis: [outra], revisorNoLugarDe: [] });
+  });
+
   it("não cria quando o fluxo de alguma tarefa já cria a Ciência", () => {
     expect(cienciaDosAgendamentos([tarefa("SESSÃO DE JULGAMENTO", "406"), tarefa("AGRAVO DE PETIÇÃO", "155")], opcoes("Trabalhista"))).toBeNull();
   });
@@ -73,7 +107,7 @@ describe("cienciaDosAgendamentos", () => {
 
   it("sem revisor na primeira tarefa, usa o de outra tarefa; sem nenhum, fica com o estagiário", () => {
     const semRevisor = cienciaDosAgendamentos(
-      [tarefa("INFORMAR CLIENTE", "414", { responsaveis: [ESTAGIARIA], revisor: null }), tarefa("SESSÃO DE JULGAMENTO", "406")],
+      [tarefa("INFORMAR CLIENTE", "414", { responsaveis: [ESTAGIARIA], revisor: null }), tarefa("MANIFESTAÇÃO SOBRE LAUDO PERICIAL", "433")],
       opcoes("Insolvência")
     );
     expect(semRevisor?.responsaveis).toEqual([REVISOR]);
@@ -94,7 +128,7 @@ describe("cienciaDosAgendamentos", () => {
   it("com CIÊNCIA NF e outra tarefa, a Ciência vai para quem faz o Enviar da outra", () => {
     const outra = { id: "300", nome: "Outra Advogada" };
     const resultado = cienciaDosAgendamentos(
-      [tarefa("CIÊNCIA NF", "9"), tarefa("SESSÃO DE JULGAMENTO", "406", { responsaveis: [outra] })],
+      [tarefa("CIÊNCIA NF", "9"), tarefa("MANIFESTAÇÃO SOBRE LAUDO PERICIAL", "433", { responsaveis: [outra] })],
       opcoes("Trabalhista")
     );
     expect(resultado).toEqual({ responsaveis: [outra], revisorNoLugarDe: [] });

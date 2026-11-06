@@ -4,8 +4,9 @@ import { mascararCnj } from "./processo";
  * Consulta processual pública do tribunal, para o jurídico abrir o processo em nova aba pelo número.
  * STJ e TST publicam com o número da origem, então valem pelo campo `tribunal` (ou pelo J do CNJ: 3 é o
  * STJ, 5.00 o TST); nos demais manda o próprio CNJ (J.TR: 5.02 é o TRT2, 8.26 o TJSP), que diz onde o
- * processo tramita mesmo quando o diário é de outro tribunal. Sem endereço conferido (PJe dos TJs e TRFs
- * só com formulário, eproc sem link direto), null: melhor sem link do que um link que leva a erro.
+ * processo tramita mesmo quando o diário é de outro tribunal. Onde a consulta é só por formulário (PJe do
+ * TJBA, TJCE e TRF3, PROJUDI do TJGO) ou pede login (JUS.BR, no TJES), o link abre a consulta e o clique copia o
+ * número (`copiar`). Sem endereço conferido, null: melhor sem link do que um link que leva a erro.
  */
 export interface ConsultaProcessual {
   url: string;
@@ -13,6 +14,16 @@ export interface ConsultaProcessual {
   onde: string;
   /** A página abre com o número preenchido e a pessoa ainda escolhe a instância e consulta. */
   preenchida: boolean;
+  /**
+   * Consulta só por formulário (PJe dos TJs e TRFs, PROJUDI) ou com login (JUS.BR): o link abre a consulta e o
+   * clique copia este texto, no formato que o campo do tribunal pede, para a pessoa só colar.
+   */
+  copiar?: string;
+}
+
+/** Consulta pública que não aceita o número no endereço: abre o formulário e o clique copia o número. */
+function porFormulario(url: string, onde: string, copiar: string): ConsultaProcessual {
+  return { url, onde, preenchida: false, copiar };
 }
 
 /**
@@ -76,8 +87,35 @@ export function consultaProcessual(tribunal: string | null, numero: string | nul
     }
     return null;
   }
-  if (justica !== "8") return null;
   const segundoGrau = origem === "0000";
+  // TRF3 (Justiça Federal, 3ª Região): consulta pública do PJe, 1º e 2º grau.
+  if (justica === "4" && regiao === 3) {
+    return segundoGrau
+      ? porFormulario("https://pje2g.trf3.jus.br/pje/ConsultaPublica/listView.seam", "na consulta pública do PJe do TRF3 (2º grau)", cnj)
+      : porFormulario("https://pje1g.trf3.jus.br/pje/ConsultaPublica/listView.seam", "na consulta pública do PJe do TRF3 (1º grau)", cnj);
+  }
+  if (justica !== "8") return null;
+  // TJBA: consulta pública do PJe, 1º e 2º grau.
+  if (regiao === 5) {
+    return segundoGrau
+      ? porFormulario("https://pje2g.tjba.jus.br/pje/ConsultaPublica/listView.seam", "na consulta pública do PJe do TJBA (2º grau)", cnj)
+      : porFormulario("https://consultapublicapje.tjba.jus.br/pje/ConsultaPublica/listView.seam", "na consulta pública do PJe do TJBA (1º grau)", cnj);
+  }
+  // TJCE: consulta pública do PJe, 1º e 2º grau.
+  if (regiao === 6) {
+    const instancia = segundoGrau ? "pje2grau" : "pje1grau";
+    return porFormulario(
+      `https://pje-consulta.tjce.jus.br/${instancia}/ConsultaPublica/listView.seam`,
+      `na consulta pública do PJe do TJCE (${segundoGrau ? "2º" : "1º"} grau)`,
+      cnj
+    );
+  }
+  // TJES: a consulta pública do PJe manda para a consulta nacional do CNJ (JUS.BR), que pede login gov.br ou certificado.
+  if (regiao === 8) return porFormulario("https://portaldeservicos.pdpj.jus.br/consulta", "na consulta do JUS.BR (TJES; pede login)", cnj);
+  // TJGO: busca pública do PROJUDI, que pede o número e o dígito ("148032-91"), sem os zeros da frente.
+  if (regiao === 9) {
+    return porFormulario("https://projudi.tjgo.jus.br/BuscaProcesso", "na busca pública do PROJUDI do TJGO", `${Number(digitos.slice(0, 7))}-${digitos.slice(7, 9)}`);
+  }
   if (regiao === 26) {
     // Os processos novos do eproc (sequencial 4…) não estão no e-SAJ: a consulta unificada abre com o número.
     if (digitos[0] === "4") {

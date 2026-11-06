@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   Dialog,
@@ -29,7 +30,6 @@ import {
   isManualOnlyKey,
   normalizePermissionsInput,
 } from "@/lib/access-control";
-import { ESCRITORIOS } from "@/lib/vistagem/triagem";
 import { DEFAULT_AREA_MANAGER_AREAS } from "@/lib/legal-areas";
 import { formatAuthDateTime } from "@/lib/users-auth-activity";
 
@@ -58,10 +58,6 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
     DEFAULT_AREA_MANAGER_AREAS
   );
   const [savingManagers, setSavingManagers] = useState(false);
-  const [vistagemPapel, setVistagemPapel] = useState<"controladoria" | "juridico">("controladoria");
-  const [vistagemAreas, setVistagemAreas] = useState<string[]>([]);
-  const [vistagemRisco, setVistagemRisco] = useState(true);
-  const [savingVistagem, setSavingVistagem] = useState(false);
   const [loadingActivity, setLoadingActivity] = useState(false);
   const [authActivity, setAuthActivity] = useState(user?.auth_activity ?? null);
   const [error, setError] = useState<string | null>(null);
@@ -76,9 +72,6 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
     setFeriasMode(user.ferias_access_mode ?? "auto");
     setFeriasAreas(user.ferias_area_scope ?? []);
     setManagerAreas(user.managedLegalAreas ?? []);
-    setVistagemPapel(user.vistagem_papel === "juridico" ? "juridico" : "controladoria");
-    setVistagemAreas(user.vistagem_areas ?? []);
-    setVistagemRisco(user.vistagem_risco !== false);
     setAuthActivity(user.auth_activity ?? null);
     setError(null);
     setNotice(null);
@@ -246,42 +239,6 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
       setError(e instanceof Error ? e.message : "Erro ao salvar o acesso às férias");
     } finally {
       setSavingFerias(false);
-    }
-  }
-
-  const toggleVistagemArea = (area: string) =>
-    setVistagemAreas((prev) =>
-      prev.includes(area) ? prev.filter((item) => item !== area) : [...prev, area]
-    );
-
-  async function saveVistagemAccess() {
-    setError(null);
-    setNotice(null);
-    setSavingVistagem(true);
-    try {
-      const res = await fetch("/api/admin/users", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "set_vistagem_access",
-          userId: user!.id,
-          papel: vistagemPapel,
-          areas: vistagemPapel === "juridico" ? vistagemAreas : [],
-          risco: vistagemPapel === "controladoria" || vistagemRisco,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Erro ao salvar o papel na Vistagem");
-      const savedAreas: string[] = data.vistagem_areas ?? [];
-      setVistagemAreas(savedAreas);
-      setVistagemRisco(data.vistagem_risco !== false);
-      onUpdated(user!.id, { vistagem_papel: data.vistagem_papel, vistagem_areas: savedAreas, vistagem_risco: data.vistagem_risco });
-      setNotice("Papel na Vistagem atualizado.");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao salvar o papel na Vistagem");
-    } finally {
-      setSavingVistagem(false);
     }
   }
 
@@ -507,102 +464,21 @@ export function UserAccessDialog({ open, onOpenChange, user, onUpdated }: UserAc
                   Vistagem de Publicações BP
                 </p>
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  A controladoria vê todas as abas e áreas. O jurídico vê só a aba Jurídico, com as
-                  publicações das áreas marcadas. Admin é sempre controladoria.
+                  Aqui só se libera o módulo. O papel (controladoria ou jurídico), as áreas e as
+                  demandas de risco de cada pessoa ficam em Vistagem › Configurações, no cartão
+                  &quot;Quem acessa a Vistagem&quot;, junto dos vistadores.
                 </p>
               </div>
-
-              <Select
-                value={vistagemPapel}
-                onValueChange={(value) => setVistagemPapel(value as "controladoria" | "juridico")}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="controladoria">Controladoria (todas as abas e áreas)</SelectItem>
-                  <SelectItem value="juridico">Jurídico (só a aba Jurídico)</SelectItem>
-                </SelectContent>
-              </Select>
-
-              {vistagemPapel === "juridico" && (
-                <div className="space-y-2">
-                  <Label className="text-xs">Áreas que a pessoa vista</Label>
-                  <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-                    {ESCRITORIOS.map((area) => {
-                      const checked = vistagemAreas.includes(area);
-                      return (
-                        <button
-                          key={area}
-                          type="button"
-                          onClick={() => toggleVistagemArea(area)}
-                          className={cn(
-                            "flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors",
-                            checked
-                              ? "border-primary/40 bg-primary/[0.06] text-foreground"
-                              : "text-muted-foreground hover:bg-muted/50"
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-                              checked
-                                ? "border-primary bg-primary text-primary-foreground"
-                                : "border-input"
-                            )}
-                          >
-                            {checked && <Check className="h-3 w-3" />}
-                          </span>
-                          {area}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <button
-                    type="button"
-                    role="checkbox"
-                    aria-checked={vistagemRisco}
-                    onClick={() => setVistagemRisco((atual) => !atual)}
-                    className={cn(
-                      "flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors",
-                      vistagemRisco
-                        ? "border-primary/40 bg-primary/[0.06] text-foreground"
-                        : "text-muted-foreground hover:bg-muted/50"
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-                        vistagemRisco ? "border-primary bg-primary text-primary-foreground" : "border-input"
-                      )}
-                    >
-                      {vistagemRisco && <Check className="h-3 w-3" />}
-                    </span>
-                    <span>
-                      <span className="block font-medium text-foreground">Vista demanda de risco</span>
-                      <span className="block text-[11px] text-muted-foreground">
-                        Desmarcado, a pessoa vê só as publicações sem risco; as de risco ficam para quem vista.
-                      </span>
-                    </span>
-                  </button>
-                </div>
-              )}
-
               {!(user.permissions ?? []).includes(VISTAGEM_KEY) && (
                 <p className="text-[11px] text-muted-foreground">
                   Salve as permissões acima para liberar a Vistagem.
                 </p>
               )}
-
               <div className="flex justify-end">
-                <Button
-                  onClick={saveVistagemAccess}
-                  disabled={savingVistagem || (vistagemPapel === "juridico" && vistagemAreas.length === 0)}
-                  size="sm"
-                  className="gap-2"
-                >
-                  {savingVistagem && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Salvar papel na Vistagem
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/operacoes-legais/vistagem/configuracoes" onClick={() => onOpenChange(false)}>
+                    Abrir as Configurações da Vistagem
+                  </Link>
                 </Button>
               </div>
             </div>
