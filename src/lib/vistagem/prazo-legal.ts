@@ -7,9 +7,14 @@ import { chaveNome } from "./agendamento";
  * Comum (CPC art. 1.003, § 5º): 15 dias; embargos de declaração e a resposta a eles, 5 (art. 1.023); recurso
  * inominado do Juizado, 10 (Lei 9.099, art. 42). Trabalhista (Lei 5.584/70, art. 6º): 8 dias; embargos de declaração,
  * 5 (CLT art. 897-A); recurso extraordinário e agravos para o STF seguem o CPC (15).
+ *
+ * O nome tem que ser o do VIOS (a busca é pelo nome inteiro). Em 06/11/2026 as duas APELAÇÃO do VIOS passaram a
+ * "APELAÇÃO - COM EMBARGOS" (36) e "APELAÇÃO - SEM EMBARGOS" (486); "APELAÇÃO" fica para as pastas com o nome antigo.
  */
 const PRAZOS_DE_RECURSO: readonly (readonly [nome: string, comum: number, trabalhista: number])[] = [
   ["APELAÇÃO", 15, 15],
+  ["APELAÇÃO - COM EMBARGOS", 15, 15],
+  ["APELAÇÃO - SEM EMBARGOS", 15, 15],
   ["AGRAVO DE INSTRUMENTO", 15, 8],
   ["AGRAVO DE PETIÇÃO", 8, 8],
   ["AGRAVO EM RECURSO ESPECIAL - ARESP", 15, 15],
