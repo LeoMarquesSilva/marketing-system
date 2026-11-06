@@ -2003,7 +2003,7 @@ function Juridico() {
   const [porEscritorio, setPorEscritorio] = useState<Record<string, number>>({});
   /** Áreas do usuário do jurídico; null é a controladoria (todas). */
   const [areas, setAreas] = useState<string[] | null>(null);
-  /** Quem não vista demanda de risco (Usuários › acesso) não recebe as de risco: o filtro sai. */
+  /** Quem não vista demanda de risco (Configurações › Quem acessa a Vistagem) não recebe as de risco: o filtro sai. */
   const [veRisco, setVeRisco] = useState(true);
   /** Publicação escolhida; sem escolha (ou fora dos filtros), abre a primeira da fila. */
   const [selecionada, setSelecionada] = useState<string | null>(null);

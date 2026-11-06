@@ -6,8 +6,8 @@ export { buildLeadPush, isTeamConversation, type LeadPush } from "./lead-push-fo
 /**
  * Notificação push (Web Push) quando chega mensagem de lead. Só para quem tem
  * users.is_whatsapp_lead_notification_recipient; cada navegador inscrito fica em
- * whatsapp_push_subscriptions. O som toca pela página aberta (service worker em
- * public/whatsapp-push-sw.js) ou pelo próprio sistema quando não há aba aberta.
+ * whatsapp_push_subscriptions. O som toca pela página aberta (service worker único
+ * do site, public/sw.js) ou pelo próprio sistema quando não há aba aberta.
  */
 
 interface PushSubscriptionRow {
