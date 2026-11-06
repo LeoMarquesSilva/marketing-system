@@ -13,6 +13,7 @@ import { HrPendingNotificationsModal } from "@/components/rh/hr-pending-notifica
 import { BpAwardsInvite } from "@/components/rh/bp-awards/bp-awards-invite";
 import { TeamSurveyInvite } from "@/components/pesquisas/team-survey-invite";
 import { WhatsappLeadNotifications } from "@/components/layout/whatsapp-lead-notifications";
+import { ServiceWorkerDoApp } from "@/components/layout/instalar-app";
 import { TimerProvider } from "@/contexts/timer-context";
 import { FloatingTimer } from "@/components/timer/floating-timer";
 
@@ -65,6 +66,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </Suspense>
         )}
         {!isBareLayout && <HrPendingNotificationsModal />}
+        {/* Service worker do app instalável (offline + push); só nas telas do sistema. */}
+        {!isBareLayout && <ServiceWorkerDoApp />}
         {!isBareLayout && <WhatsappLeadNotifications />}
         {!isBareLayout && <BpAwardsInvite />}
         {!isBareLayout && <TeamSurveyInvite />}
