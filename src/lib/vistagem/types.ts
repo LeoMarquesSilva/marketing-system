@@ -254,6 +254,10 @@ export interface TarefaPrevista {
   dataVios: string | null;
   /** O jurídico escolheu esta data. */
   editada: boolean;
+  /** Revisar/Protocolar apertado para caber antes da fatal (prazo curto a partir de hoje); o robô grava no VIOS. */
+  ajustada?: boolean;
+  /** 1. CIÊNCIA DOS AGENDAMENTOS repetida na vistagem: o robô cancela no VIOS (fica a da primeira tarefa). */
+  repetida?: boolean;
   responsaveis: string;
   /** criacao: o VIOS cria junto com a tarefa; conclusao: quando ela for concluída. */
   quando: "criacao" | "conclusao";

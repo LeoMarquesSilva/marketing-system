@@ -126,6 +126,11 @@ export interface DatasDoPrazo {
   /** Null quando o fluxo do VIOS não cria a tarefa. */
   revisar: string | null;
   protocolar: string | null;
+  /**
+   * O prazo é curto demais para a cadeia do fluxo a partir de hoje: o Enviar foi para hoje e o Revisar e o
+   * Protocolar foram apertados até 1 dia útil antes da fatal (o robô grava essas datas no VIOS depois de lançar).
+   */
+  ajustada?: true;
 }
 
 /**
@@ -134,18 +139,44 @@ export interface DatasDoPrazo {
  * cair 1 dia útil antes da fatal, então Enviar = fatal − 1 − N do Protocolar
  * (fluxo padrão: Enviar D-3, Revisar D-2, Protocolar D-1; fluxo D-5: Enviar D-5).
  * Sem Protocolar no fluxo, a tarefa vai com a data do protocolo (fatal − 1).
+ *
+ * Com `hoje`, nada fica antes de hoje: se a conta acima der um Enviar no passado (prazo curto, ex.: Embargos de
+ * Declaração de 5 dias com um fluxo de Protocolar 4 dias depois do Enviar), o Enviar vai para hoje, o Protocolar
+ * fica 1 dia útil antes da fatal (ou hoje, se não houver tempo) e o Revisar, na conta do fluxo, sem passar do
+ * Protocolar (`ajustada`).
  */
 export function datasDoPrazo(
   fatal: string,
   ehDiaUtil: (iso: string) => boolean,
-  cadeia: CadeiaDoPrazo | null = CADEIA_PADRAO
+  cadeia: CadeiaDoPrazo | null = CADEIA_PADRAO,
+  hoje: string | null = null
 ): DatasDoPrazo {
-  if (!cadeia) return { fatal, enviar: somarDiasUteis(fatal, -1, ehDiaUtil), revisar: null, protocolar: null };
+  const naoAntesDeHoje = (iso: string) => (hoje && iso < hoje ? hoje : iso);
+  // Fatal já passada: não há o que apertar (a tela avisa da data).
+  const ajustar = (enviar: string) => Boolean(hoje && enviar < hoje && fatal >= hoje);
+  if (!cadeia) {
+    const enviar = somarDiasUteis(fatal, -1, ehDiaUtil);
+    return ajustar(enviar)
+      ? { fatal, enviar: hoje as string, revisar: null, protocolar: null, ajustada: true }
+      : { fatal, enviar, revisar: null, protocolar: null };
+  }
   const enviar = somarDiasUteis(fatal, -(1 + cadeia.protocolar), ehDiaUtil);
+  if (!ajustar(enviar)) {
+    return {
+      fatal,
+      enviar,
+      revisar: cadeia.revisar === null ? null : somarDiasUteis(enviar, cadeia.revisar, ehDiaUtil),
+      protocolar: somarDiasUteis(enviar, cadeia.protocolar, ehDiaUtil),
+    };
+  }
+  const enviarHoje = hoje as string;
+  const protocolar = naoAntesDeHoje(somarDiasUteis(fatal, -1, ehDiaUtil));
+  const revisarPeloFluxo = cadeia.revisar === null ? null : somarDiasUteis(enviarHoje, cadeia.revisar, ehDiaUtil);
   return {
     fatal,
-    enviar,
-    revisar: cadeia.revisar === null ? null : somarDiasUteis(enviar, cadeia.revisar, ehDiaUtil),
-    protocolar: somarDiasUteis(enviar, cadeia.protocolar, ehDiaUtil),
+    enviar: enviarHoje,
+    revisar: revisarPeloFluxo === null ? null : revisarPeloFluxo > protocolar ? protocolar : revisarPeloFluxo,
+    protocolar,
+    ajustada: true,
   };
 }

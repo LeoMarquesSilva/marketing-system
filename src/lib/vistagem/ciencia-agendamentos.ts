@@ -37,6 +37,29 @@ export function fluxoCriaCiencia(fluxo: FluxoDaTarefa | null | undefined): boole
   return Boolean(fluxo && cria(fluxo.criacao));
 }
 
+/**
+ * Uma Ciência dos Agendamentos só por vistagem: quando o fluxo do VIOS cria mais de uma (a Apelação cria a dela e
+ * um Embargos de Declaração que cria outra; ou duas tarefas pedidas, cada uma com a sua), fica a da primeira tarefa
+ * incluída e o robô cancela as outras no VIOS (tipo Duplicidade). Dentro do fluxo de uma tarefa, fica a mais perto
+ * dela (menor nível; no empate, a primeira do fluxo). Devolve qual fica: a própria tarefa (caminho null, quando ela
+ * é a Ciência) ou o caminho no fluxo dela; null quando nenhuma cria Ciência.
+ * O robô segue a mesma regra no lançamento (sama-rpa).
+ */
+export function cienciaQueFica<T>(
+  tarefas: { chave: T; nome: string; fluxo: FluxoDaTarefa | null | undefined }[]
+): { chave: T; caminho: string[] | null } | null {
+  for (const tarefa of tarefas) {
+    if (ehCienciaDosAgendamentos(tarefa.nome)) return { chave: tarefa.chave, caminho: null };
+    let nivel: { tarefa: TarefaDoFluxo; caminho: string[] }[] = (tarefa.fluxo?.criacao ?? []).map((filha) => ({ tarefa: filha, caminho: [filha.nome] }));
+    for (let profundidade = 0; nivel.length && profundidade < 10; profundidade++) {
+      const achada = nivel.find((item) => ehCienciaDosAgendamentos(item.tarefa.nome));
+      if (achada) return { chave: tarefa.chave, caminho: achada.caminho };
+      nivel = nivel.flatMap((item) => item.tarefa.filhas.map((filha) => ({ tarefa: filha, caminho: [...item.caminho, filha.nome] })));
+    }
+  }
+  return null;
+}
+
 export function ehReestruturacao(area: string | null | undefined): boolean {
   return escritorioDaArea(area) === "Reestruturação";
 }

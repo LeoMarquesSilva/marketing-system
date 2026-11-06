@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { criarCalendario } from "./dias-uteis";
-import { ESTAGIARIO_DA_PASTA, caminhosDoFluxo, datasParaOVios, fluxoPrevisto, quemFicaNoFluxo } from "./fluxo-previsto";
+import { ESTAGIARIO_DA_PASTA, caminhosDoFluxo, datasParaOVios, emOrdemDeArvore, fluxoPrevisto, quemFicaNoFluxo } from "./fluxo-previsto";
 import { montarFluxo, type BaseDaData, type RegraDePrazo, type ResponsabilidadeDoTipo, type TipoNaArvore } from "./fluxo-vios";
 
 const uteis = (dias: number, negativo = false): RegraDePrazo => ({ dias, negativo, corridos: false });
@@ -36,6 +36,12 @@ const ARVORE = new Map<number, TipoNaArvore>([
   [414, tipo("INFORMAR CLIENTE + INTERESSE RECURSAL + GUIA", uteis(1))],
   [318, tipo("4. VALIDAR PROTOCOLO", uteis(0))],
   [316, tipo("CIÊNCIA NF", uteis(0))],
+  // Apelação (Cível) cria a Ciência dela e um Embargos de Declaração, que cria outra (lidas em 06/11/2026).
+  [36, tipo("APELAÇÃO", uteis(12), [[321, "atual"], [314, "pai"], [313, "pai"], [19, "atual"]])],
+  [19, tipo("EMBARGOS DE DECLARAÇÃO", uteis(2), [[321, "atual"], [314, "pai"], [313, "pai"]])],
+  // Embargos de Declaração da Insolvência: Protocolar 4 dias úteis depois do Enviar.
+  [487, tipo("EMBARGOS DE DECLARAÇÃO", uteis(2), [[321, "atual"], [314, "pai"], [482, "pai"]])],
+  [482, tipo("3. PROTOCOLAR", uteis(4))],
   // Sem as regras lidas (catálogo antigo): só o Revisar e o Protocolar ganham data.
   [452, { nome: "COMPROVAR PAGAMENTO", prazo: "2 dias", criacao: [321, 314, 414, 313], conclusao: [], regraPrazo: null, baseDasFilhas: null }],
 ]);
@@ -110,6 +116,46 @@ describe("fluxo previsto (regras do VIOS)", () => {
       [1, "INFORMAR CLIENTE + INTERESSE RECURSAL + GUIA", null],
       [1, "3. PROTOCOLAR", "2026-11-11"],
     ]);
+    expect(datasParaOVios(previstas)).toEqual([]);
+  });
+
+  it("em árvore: as tarefas que o Embargos cria ficam embaixo dele, mesmo fora da ordem das datas", () => {
+    const previstas = fluxoPrevisto({ ...pessoas, data: "2026-11-17" }, montarFluxo("36", ARVORE), ehDiaUtil, { hoje: "2026-11-06" });
+    expect(datas(emOrdemDeArvore(previstas))).toEqual([
+      [1, "1. CIÊNCIA DOS AGENDAMENTOS", "2026-11-06"],
+      [1, "EMBARGOS DE DECLARAÇÃO", "2026-11-10"],
+      [2, "1. CIÊNCIA DOS AGENDAMENTOS", "2026-11-06"],
+      [2, "2. REVISAR", "2026-11-11"],
+      [2, "3. PROTOCOLAR", "2026-11-12"],
+      [1, "2. REVISAR", "2026-11-18"],
+      [1, "3. PROTOCOLAR", "2026-11-19"],
+    ]);
+  });
+
+  it("prazo curto: o Revisar e o Protocolar vão nas datas apertadas e o robô as grava no VIOS", () => {
+    // Embargos de 5 dias corridos, fatal 10/11, vistado em 06/11: Enviar hoje, Revisar e Protocolar 09/11.
+    const previstas = fluxoPrevisto({ ...pessoas, data: "2026-11-06" }, montarFluxo("487", ARVORE), ehDiaUtil, {
+      hoje: "2026-11-06",
+      apertada: { revisar: "2026-11-09", protocolar: "2026-11-09" },
+    });
+    expect(previstas.find((tarefa) => tarefa.nome === "2. REVISAR")).toMatchObject({ data: "2026-11-09", dataVios: "2026-11-09" });
+    expect(previstas.find((tarefa) => tarefa.nome === "2. REVISAR")?.ajustada).toBeUndefined();
+    expect(previstas.find((tarefa) => tarefa.nome === "3. PROTOCOLAR")).toMatchObject({ data: "2026-11-09", dataVios: "2026-11-12", ajustada: true, editada: false });
+    expect(datasParaOVios(previstas)).toEqual([{ caminho: ["3. PROTOCOLAR"], data: "2026-11-09" }]);
+    // A data escolhida pelo jurídico continua valendo.
+    const escolhida = fluxoPrevisto({ ...pessoas, data: "2026-11-06" }, montarFluxo("487", ARVORE), ehDiaUtil, {
+      hoje: "2026-11-06",
+      apertada: { revisar: "2026-11-09", protocolar: "2026-11-09" },
+      datas: [{ caminho: ["3. PROTOCOLAR"], data: "2026-11-06" }],
+    });
+    expect(escolhida.find((tarefa) => tarefa.nome === "3. PROTOCOLAR")).toMatchObject({ data: "2026-11-06", editada: true });
+  });
+
+  it("a Ciência repetida não vai nas datas para o robô", () => {
+    const previstas = fluxoPrevisto({ ...pessoas, data: "2026-11-17" }, montarFluxo("36", ARVORE), ehDiaUtil, {
+      hoje: "2026-11-06",
+      datas: [{ caminho: ["EMBARGOS DE DECLARAÇÃO", "1. CIÊNCIA DOS AGENDAMENTOS"], data: "2026-11-09" }],
+    }).map((tarefa) => (tarefa.nivel === 2 && tarefa.nome.startsWith("1. CI") ? { ...tarefa, repetida: true } : tarefa));
     expect(datasParaOVios(previstas)).toEqual([]);
   });
 

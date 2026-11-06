@@ -3,6 +3,7 @@ import "server-only";
 import {
   ETIQUETAS_AGENDAMENTO,
   areaDoCatalogo,
+  chaveDoCaminho,
   nomesDasPessoas,
   pessoasDaArea,
   responsavelSugerido,
@@ -17,14 +18,14 @@ import {
   type OpcaoVios,
 } from "./agendamento";
 import { openAIKey } from "@/lib/openai-keys";
-import { cienciaDosAgendamentos, ehCienciaDosAgendamentos, ehReestruturacao } from "./ciencia-agendamentos";
+import { cienciaDosAgendamentos, cienciaQueFica, ehCienciaDosAgendamentos, ehReestruturacao } from "./ciencia-agendamentos";
 import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./dias-uteis";
 import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
 import { areaComSugestaoIa, fatalSugerida, resultadoDaSugestao, type ResultadoSugestao, type SugestaoIa } from "./sugestao-ia";
 import { carregarFeriados } from "./feriados";
 import { lerConfiguracoes } from "./configuracoes-server";
 import { cadeiaDoFluxo, montarFluxo, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
-import { caminhosDoFluxo, datasParaOVios, fluxoPrevisto } from "./fluxo-previsto";
+import { caminhosDoFluxo, datasParaOVios, fluxoPrevisto, prazoApertado } from "./fluxo-previsto";
 import { buscarPastasVios } from "./pastas-vios";
 import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
@@ -468,6 +469,7 @@ export async function salvarVistagem(
     ehDiaUtil: criarCalendario(feriados),
     cadeiaDaTarefa: (tarefaId) => cadeiaDoFluxo(montarFluxo(tarefaId, arvore)),
     caminhosDaTarefa: (tarefaId) => caminhosDoFluxo(montarFluxo(tarefaId, arvore)),
+    hoje: hojeEmSaoPaulo(),
   });
   if (!validacao.ok) throw new VistagemError(validacao.erros.join(" "));
   // Trabalhista: classificação eSocial (só na publicação, não vai para o VIOS) e, se pedir, a tarefa Inserir E-social.
@@ -770,13 +772,23 @@ export async function listarConferencia(): Promise<ConferenciaResposta> {
       sugestaoIa: item.sugestaoIa
         ? sugestaoNaVistagem(item.sugestaoIa.sugestao, item.sugestaoIa.resultado, item.publicacao.dataPublicacao, ehDiaDePrazo)
         : item.sugestaoIa,
-      agendamentos: item.agendamentos.map((agendamento) => ({
-        ...agendamento,
-        fluxoPrevisto: fluxoPrevisto(agendamento, agendamento.tarefaId ? montarFluxo(agendamento.tarefaId, arvore) : null, ehDiaUtil, {
-          hoje,
-          datas: agendamento.fluxoDatas,
-        }),
-      })),
+      agendamentos: marcarCienciaRepetida(item.agendamentos, arvore).map(({ cienciaFica, ...agendamento }) => {
+        const fluxoDaTarefa = agendamento.tarefaId ? montarFluxo(agendamento.tarefaId, arvore) : null;
+        // Prazo curto (ou validado noutro dia): o Enviar vai hoje e o Revisar e o Protocolar ficam antes da fatal.
+        const apertada = prazoApertado(agendamento, fluxoDaTarefa, ehDiaUtil, hoje);
+        return {
+          ...agendamento,
+          fluxoPrevisto: fluxoPrevisto(apertada ? { ...agendamento, data: apertada.enviar } : agendamento, fluxoDaTarefa, ehDiaUtil, {
+            hoje,
+            datas: agendamento.fluxoDatas,
+            apertada,
+          }).map((tarefa) =>
+            tarefa.quando === "criacao" && ehCienciaDosAgendamentos(tarefa.nome) && !cienciaFica(tarefa.caminho)
+              ? { ...tarefa, repetida: true }
+              : tarefa
+          ),
+        };
+      }),
     }));
   };
   const aConferir = comFluxo(aConferirSemFluxo);
@@ -883,20 +895,51 @@ async function comunicacoesEquivalentes(publicacao: PublicacaoComArea): Promise<
 }
 
 /**
- * Datas do fluxo que o robô grava no VIOS depois de lançar: as que o jurídico mudou e as das filhas delas (que o
- * VIOS cria pela data dele). Sem a árvore do VIOS, vão só as que o jurídico mudou.
+ * Uma Ciência dos Agendamentos só por vistagem (`cienciaQueFica`): diz, para cada tarefa, se a Ciência num caminho
+ * do fluxo dela é a que fica; as outras o robô cancela no VIOS.
  */
-async function datasDoFluxoParaOVios(itens: AgendamentoRow[]): Promise<Map<string, DataDoFluxo[]>> {
-  const comDatas = itens.filter((item) => item.fluxo_datas?.length);
-  const mapa = new Map<string, DataDoFluxo[]>(comDatas.map((item) => [item.id, item.fluxo_datas ?? []]));
-  if (!comDatas.length) return mapa;
+function marcarCienciaRepetida<T extends { id: string; ordem: number; tarefa: string; tarefaId: string | null }>(
+  agendamentos: T[],
+  arvore: Map<number, TipoNaArvore>
+): (T & { cienciaFica: (caminho: string[]) => boolean })[] {
+  const ordenados = [...agendamentos].sort((a, b) => a.ordem - b.ordem);
+  const fica = cienciaQueFica(
+    ordenados.map((agendamento) => ({
+      chave: agendamento.id,
+      nome: agendamento.tarefa,
+      fluxo: agendamento.tarefaId ? montarFluxo(agendamento.tarefaId, arvore) : null,
+    }))
+  );
+  return agendamentos.map((agendamento) => ({
+    ...agendamento,
+    cienciaFica: (caminho: string[]) =>
+      !fica || (fica.chave === agendamento.id && fica.caminho !== null && chaveDoCaminho(fica.caminho) === chaveDoCaminho(caminho)),
+  }));
+}
+
+/**
+ * Datas do fluxo que o robô grava no VIOS depois de lançar: as que o jurídico mudou, as das filhas delas (que o
+ * VIOS cria pela data dele) e, no prazo curto a partir de hoje, o Revisar e o Protocolar apertados antes da fatal
+ * (`enviar`: o Enviar vai hoje, não no passado). Sem a árvore do VIOS, vão só as que o jurídico mudou.
+ */
+async function datasDoFluxoParaOVios(itens: AgendamentoRow[]): Promise<Map<string, { datas: DataDoFluxo[]; enviar: string | null }>> {
+  const mapa = new Map(itens.map((item) => [item.id, { datas: item.fluxo_datas ?? [], enviar: null as string | null }]));
+  const aConferir = itens.filter((item) => item.fluxo_datas?.length || (item.etiqueta === "PRAZO" && item.data_fatal));
+  if (!aConferir.length) return mapa;
   try {
     const [arvore, feriados] = await Promise.all([carregarArvoreVios(), carregarFeriados()]);
     const ehDiaUtil = criarCalendario(feriados);
     const hoje = hojeEmSaoPaulo();
-    for (const item of comDatas) {
-      const previstas = fluxoPrevisto(item, item.tarefa_id ? montarFluxo(item.tarefa_id, arvore) : null, ehDiaUtil, { hoje, datas: item.fluxo_datas });
-      mapa.set(item.id, datasParaOVios(previstas));
+    for (const item of aConferir) {
+      const fluxoDaTarefa = item.tarefa_id ? montarFluxo(item.tarefa_id, arvore) : null;
+      const apertada = prazoApertado({ etiqueta: item.etiqueta, dataFatal: item.data_fatal }, fluxoDaTarefa, ehDiaUtil, hoje);
+      if (!apertada && !item.fluxo_datas?.length) continue;
+      const previstas = fluxoPrevisto(apertada ? { ...item, data: apertada.enviar } : item, fluxoDaTarefa, ehDiaUtil, {
+        hoje,
+        datas: item.fluxo_datas,
+        apertada,
+      });
+      mapa.set(item.id, { datas: datasParaOVios(previstas), enviar: apertada?.enviar ?? null });
     }
   } catch (erro) {
     console.error("[vistagem] datas do fluxo para o robô", erro instanceof Error ? erro.message : erro);
@@ -917,8 +960,9 @@ async function enfileirarPublicacao(publicacao: PublicacaoComArea, itens: Agenda
     { ...publicacao, comunicacoes_equivalentes: equivalentes },
     itens.map((item) => ({
       ...item,
-      data: ehCienciaDosAgendamentos(item.tarefa) && item.data < hoje ? hoje : item.data,
-      fluxoDatas: datasDoFluxo.get(item.id) ?? [],
+      // Prazo curto (ou validado noutro dia): o Enviar vai hoje, nunca no passado.
+      data: ehCienciaDosAgendamentos(item.tarefa) && item.data < hoje ? hoje : (datasDoFluxo.get(item.id)?.enviar ?? item.data),
+      fluxoDatas: datasDoFluxo.get(item.id)?.datas ?? [],
     })),
     { simular, modo }
   );

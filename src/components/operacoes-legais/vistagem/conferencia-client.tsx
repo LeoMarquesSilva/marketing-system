@@ -293,13 +293,20 @@ function FluxoDaTarefaAgendada({ item }: { item: AgendamentoResumo }) {
                 className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
                 style={tarefa.nivel > 1 ? { paddingLeft: `${(tarefa.nivel - 1) * 0.75}rem` } : undefined}
               >
-                <span className="font-medium text-foreground">{tarefa.nome}</span>
-                <span className={cn("tabular-nums", tarefa.data ? "text-foreground" : "text-muted-foreground")}>
-                  {tarefa.data ? formatarData(tarefa.data) : "data do VIOS"}
-                </span>
-                <span className="text-muted-foreground">{tarefa.responsaveis}</span>
+                <span className={cn("font-medium", tarefa.repetida ? "text-muted-foreground line-through" : "text-foreground")}>{tarefa.nome}</span>
+                {tarefa.repetida ? (
+                  <span className="text-muted-foreground">repetida: o robô cancela no VIOS (Duplicidade)</span>
+                ) : (
+                  <>
+                    <span className={cn("tabular-nums", tarefa.data ? "text-foreground" : "text-muted-foreground")}>
+                      {tarefa.data ? formatarData(tarefa.data) : "data do VIOS"}
+                    </span>
+                    <span className="text-muted-foreground">{tarefa.responsaveis}</span>
+                  </>
+                )}
                 {tarefa.editada ? <Selo tom="marca">alterada pelo jurídico</Selo> : null}
-                {tarefa.data && tarefa.dataVios && tarefa.data !== tarefa.dataVios ? (
+                {tarefa.ajustada ? <Selo tom="marca">apertada antes da fatal</Selo> : null}
+                {!tarefa.repetida && tarefa.data && tarefa.dataVios && tarefa.data !== tarefa.dataVios ? (
                   <span className="text-muted-foreground">VIOS daria {formatarData(tarefa.dataVios)}</span>
                 ) : null}
               </li>

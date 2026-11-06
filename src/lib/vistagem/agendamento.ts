@@ -312,6 +312,8 @@ export function validarAgendamentos(
     cadeiaDaTarefa: (tarefaId: string) => CadeiaDoPrazo | null;
     /** Tarefas que o fluxo do tipo cria junto (chaveDoCaminho), para aceitar só datas delas. */
     caminhosDaTarefa?: (tarefaId: string) => Set<string>;
+    /** Dia da vistagem: o Enviar do Prazo nunca fica antes dele (prazo curto aperta a cadeia). */
+    hoje?: string;
   }
 ): { ok: true; itens: AgendamentoValidado[] } | { ok: false; erros: string[] } {
   const erros: string[] = [];
@@ -336,7 +338,7 @@ export function validarAgendamentos(
     // fluxo do tipo de tarefa. Recalculado aqui; não vem da tela.
     const data = prazo
       ? fatal && tarefa
-        ? datasDoPrazo(fatal, contexto.ehDiaUtil, contexto.cadeiaDaTarefa(tarefa.id)).enviar
+        ? datasDoPrazo(fatal, contexto.ehDiaUtil, contexto.cadeiaDaTarefa(tarefa.id), contexto.hoje ?? null).enviar
         : ""
       : entrada.data;
     if (prazo && !fatal) erros.push(`${n}: escolha a data fatal do prazo.`);

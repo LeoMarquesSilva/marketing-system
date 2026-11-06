@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cienciaDosAgendamentos, ehCienciaDosAgendamentos, fluxoCriaCiencia, type TarefaParaCiencia } from "./ciencia-agendamentos";
+import { cienciaDosAgendamentos, cienciaQueFica, ehCienciaDosAgendamentos, fluxoCriaCiencia, type TarefaParaCiencia } from "./ciencia-agendamentos";
 import type { FluxoDaTarefa, TarefaDoFluxo } from "./fluxo-vios";
 
 function noFluxo(nome: string, filhas: TarefaDoFluxo[] = []): TarefaDoFluxo {
@@ -38,6 +38,31 @@ describe("ehCienciaDosAgendamentos / fluxoCriaCiencia", () => {
     expect(fluxoCriaCiencia(FLUXOS["202"])).toBe(true);
     expect(fluxoCriaCiencia(FLUXOS["406"])).toBe(false);
     expect(fluxoCriaCiencia(null)).toBe(false);
+  });
+});
+
+describe("cienciaQueFica (uma Ciência só por vistagem)", () => {
+  const ciencia = () => noFluxo("1. CIÊNCIA DOS AGENDAMENTOS");
+  // Apelação: o Embargos (com a Ciência dele) vem antes, na ordem do fluxo, da Ciência da própria Apelação.
+  const apelacao: FluxoDaTarefa = { criacao: [noFluxo("2. REVISAR"), noFluxo("EMBARGOS DE DECLARAÇÃO", [ciencia()]), ciencia()], conclusao: [] };
+
+  it("no fluxo de uma tarefa, fica a mais perto dela", () => {
+    expect(cienciaQueFica([{ chave: 1, nome: "APELAÇÃO", fluxo: apelacao }])).toEqual({ chave: 1, caminho: ["1. CIÊNCIA DOS AGENDAMENTOS"] });
+  });
+
+  it("entre as tarefas, fica a da primeira incluída que cria (ou é) a Ciência", () => {
+    expect(
+      cienciaQueFica([
+        { chave: "a", nome: "INFORMAR CLIENTE", fluxo: null },
+        { chave: "b", nome: "CONTESTAÇÃO", fluxo: FLUXOS["202"] },
+        { chave: "c", nome: "APELAÇÃO", fluxo: apelacao },
+      ])
+    ).toEqual({ chave: "b", caminho: ["CONTESTAÇÃO", "1. CIÊNCIA DOS AGENDAMENTOS"] });
+    expect(cienciaQueFica([{ chave: "a", nome: "1. CIÊNCIA DOS AGENDAMENTOS", fluxo: null }, { chave: "b", nome: "APELAÇÃO", fluxo: apelacao }])).toEqual({
+      chave: "a",
+      caminho: null,
+    });
+    expect(cienciaQueFica([{ chave: "a", nome: "INFORMAR CLIENTE", fluxo: FLUXOS["406"] }])).toBeNull();
   });
 });
 
