@@ -19,6 +19,12 @@ describe("prazoLegalDaTarefa", () => {
     expect(prazoLegalDaTarefa("RECURSO ESPECIAL/EXTRAORDINÁRIO", "Trabalhista")).toBe(15);
   });
 
+  it("reconhece as Apelações com o nome novo do VIOS (36 com embargos, 486 sem)", () => {
+    expect(prazoLegalDaTarefa("APELAÇÃO - COM EMBARGOS", "Cível")).toBe(15);
+    expect(prazoLegalDaTarefa("APELAÇÃO - SEM EMBARGOS", "Insolvência")).toBe(15);
+    expect(prazoLegalDaTarefa("Apelacao - sem embargos", "Tributário")).toBe(15);
+  });
+
   it("devolve null quando a tarefa não é recurso", () => {
     expect(prazoLegalDaTarefa("CONTESTAÇÃO", "Cível")).toBeNull();
     expect(prazoLegalDaTarefa("MANIFESTAÇÃO SOBRE LAUDO PERICIAL", "Trabalhista")).toBeNull();
