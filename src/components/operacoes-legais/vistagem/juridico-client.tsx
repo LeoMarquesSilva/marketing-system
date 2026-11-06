@@ -46,6 +46,7 @@ import {
   avisosDaData,
   chaveDoCaminho,
   chaveNome,
+  contagemPadraoDaArea,
   horaFinalPadrao,
   horaValida,
   separarNomes,
@@ -72,6 +73,7 @@ import {
 } from "@/lib/vistagem/esocial";
 import { CADEIA_PADRAO, cadeiaDoFluxo } from "@/lib/vistagem/fluxo-vios";
 import { fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
+import { prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
 import { fatalSugerida, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
 import type { DataDoFluxo, PublicacaoResumo, ResolucaoPendencia, TarefaPrevista, VistagemDetalhe } from "@/lib/vistagem/types";
@@ -665,6 +667,7 @@ export function EditorVistagem({
         const classificacao = classificacaoEsocial(dados.publicacao.publicacaoEsocial) ?? ESOCIAL_PADRAO;
         const tarefaEsocialId = dados.esocial?.tarefa && pedeTarefaEsocial(classificacao) ? dados.esocial.tarefa.id : null;
         setEsocial(classificacao);
+        const contagemDaArea = contagemPadraoDaArea(dados.publicacao.escritorioResponsavel ?? dados.catalogo?.area);
         setLinhas(
           dados.agendamentos.length
             ? dados.agendamentos.map((item) =>
@@ -675,7 +678,7 @@ export function EditorVistagem({
                   data: item.etiqueta === "PRAZO" ? "" : item.data,
                   dataFatal: item.dataFatal ?? "",
                   diasPrazo: item.diasPrazo,
-                  contagemPrazo: item.contagemPrazo ?? "uteis",
+                  contagemPrazo: item.contagemPrazo ?? contagemDaArea,
                   hora: item.hora ?? "",
                   horaFim: item.horaFim ?? horaFinalPadrao(item.hora),
                   responsavel: item.responsavel,
@@ -685,7 +688,7 @@ export function EditorVistagem({
                   fluxoDatas: Object.fromEntries(item.fluxoDatas.map((datada) => [chaveDoCaminho(datada.caminho), datada])),
                 })
               )
-            : [novaLinha({ responsavel: dados.responsavelSugerido ?? "", revisor: dados.revisorSugerido ?? "" })]
+            : [novaLinha({ responsavel: dados.responsavelSugerido ?? "", revisor: dados.revisorSugerido ?? "", contagemPrazo: contagemDaArea })]
         );
         if (dados.sugestaoIa) {
           setSugestao(dados.sugestaoIa);
@@ -717,6 +720,8 @@ export function EditorVistagem({
   const ehDiaUtil = useMemo(() => criarCalendario(detalhe?.feriados ?? []), [detalhe?.feriados]);
   // A fatal conta só dias úteis fora do recesso forense; Enviar/Revisar/Protocolar seguem o expediente.
   const contaPrazo = useMemo(() => criarCalendarioDePrazo(detalhe?.feriados ?? []), [detalhe?.feriados]);
+  /** Úteis ou Corridos já marcado no Prazo: Corridos na Insolvência, Úteis nas outras áreas. */
+  const contagemPadrao = contagemPadraoDaArea(detalhe?.publicacao.escritorioResponsavel ?? detalhe?.catalogo?.area);
   // Responsável e Revisor: só quem é da área da publicação, com foto; a última linha da lista abre todas as pessoas.
   const pessoasDoCampo = useMemo((): PessoasDoCampo => {
     const fotos = detalhe?.fotos ?? {};
@@ -780,8 +785,31 @@ export function EditorVistagem({
     setLinhas((atuais) =>
       atuais.length >= 10
         ? atuais
-        : [...atuais, novaLinha({ responsavel: detalhe?.responsavelSugerido ?? "", revisor: detalhe?.revisorSugerido ?? "" })]
+        : [...atuais, novaLinha({ responsavel: detalhe?.responsavelSugerido ?? "", revisor: detalhe?.revisorSugerido ?? "", contagemPrazo: contagemPadrao })]
     );
+  }
+
+  /**
+   * Ao escolher a tarefa de Prazo, já marca os dias do prazo legal do recurso (Apelação 15, Recurso Ordinário
+   * trabalhista 8…). Não passa por cima de dias escolhidos à mão, lidos da publicação ou de uma fatal digitada; só troca
+   * os que vieram da tarefa anterior.
+   */
+  function diasDaTarefa(linha: Linha, nome: string): Partial<Linha> {
+    const dataPublicacao = detalhe?.publicacao.dataPublicacao;
+    const catalogo = detalhe?.catalogo;
+    if (linha.etiqueta !== "PRAZO" || !dataPublicacao || !catalogo) return {};
+    const legal = (nomeTarefa: string) => {
+      const opcao = nomeTarefa ? catalogo.tarefas.PRAZO.find((item) => item.nome === nomeTarefa) : undefined;
+      return opcao ? prazoLegalDaTarefa(opcao.nomeVios ?? opcao.nome, catalogo.area) : null;
+    };
+    const novo = legal(nome);
+    const anterior = legal(linha.tarefa);
+    const vazio = linha.diasPrazo === null && !linha.dataFatal;
+    const daTarefaAnterior = anterior !== null && linha.diasPrazo === anterior;
+    if (!vazio && !daTarefaAnterior) return {};
+    if (novo === null) return daTarefaAnterior ? { diasPrazo: null, dataFatal: "" } : {};
+    const contagemPrazo = linha.contagemPrazo ?? contagemPadrao;
+    return { diasPrazo: novo, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, novo, contagemPrazo, contaPrazo) };
   }
 
   function trocarEtiqueta(linha: Linha, etiqueta: Etiqueta) {
@@ -858,7 +886,7 @@ export function EditorVistagem({
     if (!dataPublicacao) return;
     setLinhas((atuais) => {
       const alvo = atuais.find((linha) => linha.etiqueta === "PRAZO" && !linha.esocial);
-      const contagemPrazo = contagem ?? alvo?.contagemPrazo ?? "uteis";
+      const contagemPrazo = contagem ?? alvo?.contagemPrazo ?? contagemPadrao;
       const mudanca = { diasPrazo: dias, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, dias, contagemPrazo, contaPrazo) };
       if (alvo) return atuais.map((linha) => (linha === alvo ? { ...linha, ...mudanca } : linha));
       if (atuais.length >= 10) return atuais;
@@ -1280,6 +1308,7 @@ export function EditorVistagem({
                                       const eraDoTipo = anteriores.length > 0 && linha.responsavel === anteriores.join(", ");
                                       alterar(linha.chave, {
                                         tarefa: nome,
+                                        ...diasDaTarefa(linha, nome),
                                         ...(fixos.length
                                           ? { responsavel: fixos.join(", ") }
                                           : eraDoTipo
@@ -1326,7 +1355,7 @@ export function EditorVistagem({
                                               ? { diasPrazo: null, dataFatal: "" }
                                               : {
                                                   diasPrazo: dias,
-                                                  dataFatal: fatalPorContagem(publicacao.dataPublicacao, dias, linha.contagemPrazo ?? "uteis", contaPrazo),
+                                                  dataFatal: fatalPorContagem(publicacao.dataPublicacao, dias, linha.contagemPrazo ?? contagemPadrao, contaPrazo),
                                                 }
                                           )
                                         }
@@ -1342,7 +1371,7 @@ export function EditorVistagem({
                                     <span className="block text-xs font-medium text-muted-foreground">Contagem</span>
                                     <ContagemDoPrazo
                                       rotulo={`Contagem do prazo da tarefa ${indice + 1}`}
-                                      valor={linha.contagemPrazo ?? "uteis"}
+                                      valor={linha.contagemPrazo ?? contagemPadrao}
                                       onChange={(contagem) =>
                                         alterar(linha.chave, {
                                           contagemPrazo: contagem,
