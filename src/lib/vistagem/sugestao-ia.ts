@@ -46,6 +46,24 @@ export function tarefaCienciaNf(providencias: OpcaoTarefa[]): OpcaoTarefa | null
   return providencias.find((opcao) => chaveNome(opcao.nomeVios ?? opcao.nome) === "CIENCIA NF") ?? null;
 }
 
+/**
+ * A sugestão guardada nos tipos da lista atual do VIOS. O tipo pode ter sido recriado depois que a IA sugeriu
+ * (CIÊNCIA NF era o 316 e passou a 796 em 06/11/2026; o "Usar sugestão" não achava a tarefa e não fazia nada):
+ * sem o número na lista, vale o único tipo com o mesmo nome; sem ele (ou com mais de um), fica como veio.
+ */
+export function sugestaoNaListaAtual(sugestao: SugestaoIa, tarefas: Record<EtiquetaAgendamento, OpcaoTarefa[]>): SugestaoIa {
+  let mudou = false;
+  const atualizadas = sugestao.tarefas.map((tarefa) => {
+    const lista = tarefas[tarefa.classe] ?? [];
+    if (lista.some((opcao) => opcao.id === tarefa.tarefaId)) return tarefa;
+    const mesmoNome = lista.filter((opcao) => chaveNome(opcao.nomeVios ?? opcao.nome) === chaveNome(tarefa.tarefa));
+    if (mesmoNome.length !== 1) return tarefa;
+    mudou = true;
+    return { ...tarefa, tarefaId: mesmoNome[0].id };
+  });
+  return mudou ? { ...sugestao, tarefas: atualizadas } : sugestao;
+}
+
 export type ResultadoSugestao = "nao_usada" | "usada" | "usada_com_alteracao";
 
 /** Áreas com sugestão da IA. */

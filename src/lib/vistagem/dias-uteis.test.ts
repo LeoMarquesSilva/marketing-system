@@ -45,6 +45,34 @@ describe("dias úteis", () => {
     expect(datasDoPrazo("2026-11-23", util, null)).toEqual({ fatal: "2026-11-23", enviar: "2026-11-19", revisar: null, protocolar: null });
   });
 
+  it("nunca põe o Enviar e o Revisar antes de hoje: aperta a cadeia até 1 dia útil antes da fatal", () => {
+    // Embargos de Declaração de 5 dias corridos, fatal terça 10/11, vistado na sexta 06/11; fluxo com Protocolar
+    // 4 dias úteis depois do Enviar: a conta dava Enviar 03/11 e Revisar 04/11.
+    expect(datasDoPrazo("2026-11-10", util, { revisar: 1, protocolar: 4 }, "2026-11-06")).toEqual({
+      fatal: "2026-11-10",
+      enviar: "2026-11-06",
+      revisar: "2026-11-09",
+      protocolar: "2026-11-09",
+      ajustada: true,
+    });
+    // Fatal no próximo dia útil: tudo hoje.
+    expect(datasDoPrazo("2026-11-09", util, { revisar: 1, protocolar: 2 }, "2026-11-06")).toEqual({
+      fatal: "2026-11-09",
+      enviar: "2026-11-06",
+      revisar: "2026-11-06",
+      protocolar: "2026-11-06",
+      ajustada: true,
+    });
+    // Sem Protocolar no fluxo e fatal hoje: a tarefa vai hoje (a conta dava ontem).
+    expect(datasDoPrazo("2026-11-06", util, null, "2026-11-06")).toEqual({ fatal: "2026-11-06", enviar: "2026-11-06", revisar: null, protocolar: null, ajustada: true });
+  });
+
+  it("com tempo para a cadeia, hoje não muda nada", () => {
+    expect(datasDoPrazo("2026-11-23", util, { revisar: 1, protocolar: 4 }, "2026-11-06")).toEqual(datasDoPrazo("2026-11-23", util, { revisar: 1, protocolar: 4 }));
+    // Fatal já passada: não aperta (a tela avisa da data).
+    expect(datasDoPrazo("2026-11-04", util, undefined, "2026-11-06").ajustada).toBeUndefined();
+  });
+
   it("anda zero dias sem mexer na data", () => {
     expect(somarDiasUteis("2026-10-17", 0, util)).toBe("2026-10-17");
   });

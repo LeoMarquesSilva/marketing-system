@@ -52,7 +52,7 @@ import {
   separarNomes,
   type EtiquetaAgendamento,
 } from "@/lib/vistagem/agendamento";
-import { cienciaDosAgendamentos } from "@/lib/vistagem/ciencia-agendamentos";
+import { cienciaDosAgendamentos, cienciaQueFica, ehCienciaDosAgendamentos } from "@/lib/vistagem/ciencia-agendamentos";
 import {
   CONTAGENS_PRAZO,
   criarCalendario,
@@ -72,9 +72,9 @@ import {
   type ClassificacaoEsocial,
 } from "@/lib/vistagem/esocial";
 import { CADEIA_PADRAO, cadeiaDoFluxo } from "@/lib/vistagem/fluxo-vios";
-import { fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
+import { emOrdemDeArvore, fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
 import { prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
-import { fatalSugerida, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
+import { fatalSugerida, sugestaoNaListaAtual, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
 import type { DataDoFluxo, PublicacaoResumo, ResolucaoPendencia, TarefaPrevista, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
@@ -367,29 +367,31 @@ function FluxoNoVios({
   const junto = previstas.filter((tarefa) => tarefa.quando === "criacao");
   const aoConcluir = previstas.filter((tarefa) => tarefa.quando === "conclusao");
   const alteradas = junto.filter((tarefa) => tarefa.editada).length;
+  const repetidas = junto.filter((tarefa) => tarefa.repetida).length;
   const resumo = [
     junto.length ? `cria junto ${plural(junto.length, "tarefa", "tarefas")}` : null,
     alteradas ? `${plural(alteradas, "data alterada", "datas alteradas")}` : null,
+    repetidas ? `${plural(repetidas, "Ciência repetida", "Ciências repetidas")} (o robô cancela)` : null,
     aoConcluir.length ? `ao concluir, ${aoConcluir.map((tarefa) => tarefa.nome).join(", ")}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
 
-  // Agenda em ordem de data (a pedida antes das do fluxo no mesmo dia; a fatal por último), numerada: o mesmo
-  // número marca o dia no calendário.
+  // Agenda em árvore, como o VIOS cria: a pedida no topo e, embaixo de cada tarefa, as que ela cria (Embargos ›
+  // Revisar › Protocolar), mesmo fora da ordem das datas; a fatal por último. Numerada nessa ordem: o mesmo número
+  // marca o dia no calendário. Sem data ou repetida (o robô cancela), fica sem número.
   type Item =
     | { tipo: "principal"; chave: string; data: string }
-    | { tipo: "fluxo"; chave: string; data: string; tarefa: TarefaPrevista }
+    | { tipo: "fluxo"; chave: string; data: string | null; tarefa: TarefaPrevista }
     | { tipo: "fatal"; chave: string; data: string };
-  const peso = { principal: 0, fluxo: 1, fatal: 2 } as const;
-  const comData: Item[] = [
+  const itens: Item[] = [
     ...(principal.data ? [{ tipo: "principal" as const, chave: "principal", data: principal.data }] : []),
-    ...junto
-      .filter((tarefa) => tarefa.data)
-      .map((tarefa) => ({ tipo: "fluxo" as const, chave: tarefa.caminho.join(" › "), data: tarefa.data as string, tarefa })),
+    ...emOrdemDeArvore(junto).map((tarefa) => ({ tipo: "fluxo" as const, chave: tarefa.caminho.join(" › "), data: tarefa.data, tarefa })),
     ...(fatal ? [{ tipo: "fatal" as const, chave: "fatal", data: fatal }] : []),
-  ].sort((a, b) => a.data.localeCompare(b.data) || peso[a.tipo] - peso[b.tipo]);
-  const semData = junto.filter((tarefa) => !tarefa.data);
+  ];
+  const numerado = (item: Item): item is Item & { data: string } => Boolean(item.data) && !(item.tipo === "fluxo" && item.tarefa.repetida);
+  const numeros = new Map<string, number>();
+  for (const item of itens) if (numerado(item)) numeros.set(item.chave, numeros.size + 1);
   // Cores do VIOS: a pedida pela classe (Prazo verde, Providência azul-claro); no fluxo, Revisar amarelo, Protocolar
   // vermelho e as outras pela classe do tipo delas no VIOS (etiquetas): uma Providência criada por um Prazo fica
   // azul-claro. Sem a classe lida, vale a da lista de tarefas da área pelo nome.
@@ -403,9 +405,9 @@ function FluxoNoVios({
   const editadaDe = (item: Item) => item.tipo === "fluxo" && item.tarefa.editada;
   // Só o nome da tarefa (sem "Enviar no VIOS:"): a cor e o número já dizem que é a pedida.
   const nomeDe = (item: Item) => (item.tipo === "principal" ? principal.nome : item.tipo === "fatal" ? "Data fatal" : item.tarefa.nome);
-  const marcos: MarcoDoCalendario[] = comData.map((item, indice) => ({
+  const marcos: MarcoDoCalendario[] = itens.filter(numerado).map((item) => ({
     chave: item.chave,
-    numero: indice + 1,
+    numero: numeros.get(item.chave) ?? 0,
     rotulo: nomeDe(item),
     data: item.data,
     tom: tomDe(item),
@@ -435,6 +437,11 @@ function FluxoNoVios({
         <button type="button" className="font-medium text-[#347796] underline-offset-4 hover:underline" onClick={() => onMudarData(tarefa.caminho, null)}>
           voltar à do VIOS
         </button>
+      </span>
+    ) : tarefa.ajustada ? (
+      <span className="text-muted-foreground">
+        {tarefa.ajustada === "hoje" ? "o VIOS daria antes de hoje: vai hoje" : "apertada para caber antes da fatal"}
+        {tarefa.dataVios ? ` (VIOS: ${formatarData(tarefa.dataVios)})` : ""}
       </span>
     ) : tarefa.data && tarefa.dataVios && tarefa.data !== tarefa.dataVios ? (
       <span className="text-muted-foreground">acompanha a anterior (VIOS: {formatarData(tarefa.dataVios)})</span>
@@ -466,25 +473,42 @@ function FluxoNoVios({
           />
         ) : null}
 
-        {comData.length || semData.length ? (
+        {itens.length ? (
           <div className="space-y-1.5">
             <p className="text-muted-foreground">
               O robô coloca os responsáveis. Para priorizar uma tarefa do fluxo, mude a data: o robô grava no VIOS depois de lançar.
             </p>
             <ol className="divide-y divide-[#e6eef0] overflow-hidden rounded-md border border-[#e6eef0] bg-white">
-              {comData.map((item, indice) => (
+              {itens.map((item) => (
                 <li
                   key={item.chave}
-                  className="flex flex-wrap items-center gap-x-2 gap-y-1 px-2.5 py-1.5"
-                  style={item.tipo === "fluxo" && item.tarefa.nivel > 1 ? { paddingLeft: `${0.625 + (item.tarefa.nivel - 1) * 0.75}rem` } : undefined}
+                  className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 px-2.5 py-1.5", item.tipo === "fluxo" && item.tarefa.repetida && "bg-[#fafbfb]")}
+                  style={item.tipo === "fluxo" && item.tarefa.nivel > 1 ? { paddingLeft: `${0.625 + (item.tarefa.nivel - 1) * 1.25}rem` } : undefined}
                 >
-                  <NumeroDoMarco numero={indice + 1} tom={tomDe(item)} editada={editadaDe(item)} />
-                  {/* A que nasce de outra do fluxo fica recuada, com a seta (sem barra lateral). */}
-                  {item.tipo === "fluxo" && item.tarefa.nivel > 1 ? <CornerDownRight className="size-3.5 shrink-0 text-[#9fb8c2]" aria-hidden /> : null}
-                  <span className={cn("min-w-0 flex-1 basis-40 font-medium", item.tipo === "fatal" ? "text-[#b42318]" : "text-foreground")}>
+                  {numerado(item) ? (
+                    <NumeroDoMarco numero={numeros.get(item.chave) ?? 0} tom={tomDe(item)} editada={editadaDe(item)} />
+                  ) : (
+                    <span className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-[#eef3f5] text-[10px] text-muted-foreground" aria-hidden>
+                      –
+                    </span>
+                  )}
+                  {/* Cada tarefa do fluxo fica embaixo da que a cria, recuada pelo nível e com a seta. */}
+                  {item.tipo === "fluxo" ? <CornerDownRight className="size-3.5 shrink-0 text-[#9fb8c2]" aria-hidden /> : null}
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 basis-40 font-medium",
+                      item.tipo === "fatal"
+                        ? "text-[#b42318]"
+                        : item.tipo === "fluxo" && item.tarefa.repetida
+                          ? "text-muted-foreground line-through"
+                          : "text-foreground"
+                    )}
+                  >
                     {nomeDe(item)}
                   </span>
-                  {item.tipo === "fluxo" ? (
+                  {item.tipo === "fluxo" && item.tarefa.repetida ? (
+                    <span className="text-muted-foreground">repetida: o robô cancela no VIOS (Duplicidade); fica a da primeira tarefa</span>
+                  ) : item.tipo === "fluxo" ? (
                     <>
                       {campoDoFluxo(item.tarefa)}
                       <PessoasDaTarefa nomes={item.tarefa.responsaveis} foto={foto} />
@@ -501,16 +525,6 @@ function FluxoNoVios({
                       {item.tipo === "principal" ? <PessoasDaTarefa nomes={principal.responsaveis} foto={foto} /> : null}
                     </>
                   )}
-                </li>
-              ))}
-              {semData.map((tarefa) => (
-                <li key={tarefa.caminho.join(" › ")} className="flex flex-wrap items-center gap-x-2 gap-y-1 px-2.5 py-1.5">
-                  <span className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-[#eef3f5] text-[10px] text-muted-foreground" aria-hidden>
-                    –
-                  </span>
-                  <span className="min-w-0 flex-1 basis-40 font-medium text-foreground">{tarefa.nome}</span>
-                  {campoDoFluxo(tarefa)}
-                  <PessoasDaTarefa nomes={tarefa.responsaveis} foto={foto} />
                 </li>
               ))}
             </ol>
@@ -720,6 +734,26 @@ export function EditorVistagem({
   const ehDiaUtil = useMemo(() => criarCalendario(detalhe?.feriados ?? []), [detalhe?.feriados]);
   // A fatal conta só dias úteis fora do recesso forense; Enviar/Revisar/Protocolar seguem o expediente.
   const contaPrazo = useMemo(() => criarCalendarioDePrazo(detalhe?.feriados ?? []), [detalhe?.feriados]);
+  /**
+   * Uma Ciência dos Agendamentos só por vistagem: fica a da primeira tarefa incluída (ela mesma, ou a mais perto dela
+   * no fluxo do VIOS); as outras o robô cancela no VIOS depois de lançar (tipo Duplicidade).
+   */
+  const cienciaFica = useMemo(() => {
+    const catalogo = detalhe?.catalogo;
+    if (!detalhe || !catalogo) return null;
+    return cienciaQueFica(
+      linhas
+        .filter((linha) => linha.tarefa)
+        .map((linha) => {
+          const opcao = catalogo.tarefas[linha.etiqueta].find((item) => item.nome === linha.tarefa);
+          return { chave: linha.chave, nome: opcao?.nomeVios ?? linha.tarefa, fluxo: opcao ? detalhe.fluxos[opcao.id] ?? null : null };
+        })
+    );
+  }, [detalhe, linhas]);
+  const cienciaFicaEm = (chave: number, caminho: string[] | null) =>
+    !cienciaFica ||
+    (cienciaFica.chave === chave &&
+      (caminho === null ? cienciaFica.caminho === null : cienciaFica.caminho !== null && chaveDoCaminho(cienciaFica.caminho) === chaveDoCaminho(caminho)));
   /** Úteis ou Corridos já marcado no Prazo: Corridos na Insolvência, Úteis nas outras áreas. */
   const contagemPadrao = contagemPadraoDaArea(detalhe?.publicacao.escritorioResponsavel ?? detalhe?.catalogo?.area);
   // Responsável e Revisor: só quem é da área da publicação, com foto; a última linha da lista abre todas as pessoas.
@@ -851,7 +885,8 @@ export function EditorVistagem({
   function usarSugestao() {
     if (!detalhe?.catalogo || !sugestao) return;
     const { catalogo, publicacao } = detalhe;
-    const sugeridas = sugestao.tarefas.flatMap((tarefa) => {
+    // Tipo recriado no VIOS depois da sugestão (CIÊNCIA NF 316 → 796): vale o de mesmo nome da lista atual.
+    const sugeridas = sugestaoNaListaAtual(sugestao, catalogo.tarefas).tarefas.flatMap((tarefa) => {
       const opcao = catalogo.tarefas[tarefa.classe].find((item) => item.id === tarefa.tarefaId);
       if (!opcao) return [];
       const prazo = tarefa.classe === "PRAZO";
@@ -872,7 +907,12 @@ export function EditorVistagem({
         }),
       ];
     });
-    if (!sugeridas.length) return;
+    if (!sugeridas.length) {
+      // Antes não acontecia nada: avisa e deixa a pessoa escolher à mão.
+      setErro("Nenhuma tarefa da sugestão está na lista atual do VIOS desta pasta. Escolha as tarefas à mão.");
+      return;
+    }
+    setErro("");
     const classificacao = detalhe.esocial ? sugestao.esocial : esocial;
     setAntesDaSugestao({ linhas, esocial });
     setEsocial(classificacao);
@@ -1210,16 +1250,27 @@ export function EditorVistagem({
                     const fluxo = tarefaId ? detalhe.fluxos[tarefaId] ?? null : null;
                     // Sem tarefa escolhida (ou sem o fluxo carregado) mostra o fluxo padrão; o servidor recalcula ao gravar.
                     const cadeiaFluxo = !tarefaId || detalhe.fluxosErro ? CADEIA_PADRAO : cadeiaDoFluxo(fluxo);
-                    const cadeia = prazo && linha.dataFatal ? datasDoPrazo(linha.dataFatal, ehDiaUtil, cadeiaFluxo) : null;
+                    // Nunca antes de hoje: prazo curto aperta a cadeia (Enviar hoje, Protocolar 1 dia útil antes da fatal).
+                    const cadeia = prazo && linha.dataFatal ? datasDoPrazo(linha.dataFatal, ehDiaUtil, cadeiaFluxo, detalhe.hoje) : null;
                     // O VIOS data o fluxo a partir da data que recebe (no Prazo, o Enviar) e do dia do lançamento.
                     const previstas = fluxo
                       ? fluxoPrevisto(
                           { data: (prazo ? cadeia?.enviar : linha.data) ?? "", responsavel: linha.responsavel, revisor: linha.revisor || null },
                           fluxo,
                           ehDiaUtil,
-                          { hoje: detalhe.hoje, datas: Object.values(linha.fluxoDatas) }
+                          {
+                            hoje: detalhe.hoje,
+                            datas: Object.values(linha.fluxoDatas),
+                            apertada: cadeia?.ajustada ? { revisar: cadeia.revisar, protocolar: cadeia.protocolar } : null,
+                          }
+                        ).map((tarefa) =>
+                          // Uma Ciência só por vistagem: fica a da primeira tarefa; as outras o robô cancela.
+                          tarefa.quando === "criacao" && ehCienciaDosAgendamentos(tarefa.nome) && !cienciaFicaEm(linha.chave, tarefa.caminho)
+                            ? { ...tarefa, repetida: true }
+                            : tarefa
                         )
                       : [];
+                    const cienciaPedidaRepetida = ehCienciaDosAgendamentos(linha.tarefa) && !cienciaFicaEm(linha.chave, null);
                     const avisos = prazo
                       ? linha.dataFatal
                         ? avisosDaData(linha.dataFatal, detalhe.hoje).concat(
@@ -1458,6 +1509,18 @@ export function EditorVistagem({
                               <p className="flex items-center gap-1.5 text-xs text-amber-800">
                                 <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
                                 {avisos.join(" ")}
+                              </p>
+                            ) : null}
+                            {cadeia?.ajustada ? (
+                              <p className="flex items-center gap-1.5 text-xs text-amber-800">
+                                <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
+                                Prazo curto: o Enviar vai hoje e o Revisar e o Protocolar ficam antes da fatal (o robô grava no VIOS).
+                              </p>
+                            ) : null}
+                            {cienciaPedidaRepetida ? (
+                              <p className="flex items-center gap-1.5 text-xs text-amber-800">
+                                <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
+                                O fluxo de uma tarefa incluída antes já cria a 1. CIÊNCIA DOS AGENDAMENTOS: esta fica repetida e o robô a cancela no VIOS. Tire esta tarefa.
                               </p>
                             ) : null}
                           </BlocoTarefa>
