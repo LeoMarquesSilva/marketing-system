@@ -17,6 +17,7 @@ import {
   FileText,
   ListPlus,
   MessageSquareText,
+  Pencil,
   Users,
   Workflow,
   Landmark,
@@ -49,6 +50,7 @@ import {
   contagemPadraoDaArea,
   horaFinalPadrao,
   horaValida,
+  nomesDasPessoas,
   separarNomes,
   type EtiquetaAgendamento,
 } from "@/lib/vistagem/agendamento";
@@ -123,7 +125,7 @@ interface Linha {
   esocial: boolean;
   /** Veio da sugestão da IA. */
   ia: boolean;
-  /** Datas do Fluxo do VIOS que a pessoa mudou, pela chave do caminho (chaveDoCaminho). */
+  /** Datas e responsáveis do Fluxo do VIOS que a pessoa mudou, pela chave do caminho (chaveDoCaminho). */
   fluxoDatas: Record<string, DataDoFluxo>;
 }
 
@@ -317,9 +319,12 @@ function ContagemDoPrazo({ rotulo, valor, onChange }: { rotulo: string; valor: C
 /** Classe da tarefa pedida → cor do VIOS no calendário. */
 const TOM_DA_ETIQUETA: Record<Etiqueta, TomDoMarco> = { PRAZO: "prazo", PROVIDENCIA: "providencia", COMPROMISSO: "compromisso" };
 
-/** Quem fica na tarefa, com foto: "Leticia Zamarion Julio, Samuel Willian Silva" vira avatares com o nome curto. */
+/**
+ * Quem fica na tarefa, com foto: "Leticia Zamarion Julio, Samuel Willian Silva" (ou "… + Samuel Willian Silva", do
+ * 3. PROTOCOLAR) vira avatares com o nome curto.
+ */
 function PessoasDaTarefa({ nomes, foto }: { nomes: string | null | undefined; foto: (nome: string) => string | null }) {
-  const lista = separarNomes(nomes ?? "");
+  const lista = nomesDasPessoas(nomes);
   if (!lista.length) return null;
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -330,6 +335,90 @@ function PessoasDaTarefa({ nomes, foto }: { nomes: string | null | undefined; fo
         </span>
       ))}
     </span>
+  );
+}
+
+/** Mesmas pessoas, sem olhar acento, maiúscula nem ordem. */
+function mesmasPessoas(a: string[], b: string[]): boolean {
+  const chaves = (lista: string[]) => [...new Set(lista.map(chaveNome))].sort().join("|");
+  return chaves(a) === chaves(b);
+}
+
+/**
+ * Quem fica numa tarefa do fluxo, com o botão para trocar: abre a busca de pessoas (as mesmas do Responsável). A
+ * escolha vai para o robô no lugar da regra dele; "voltar ao padrão" devolve a regra. Escolher as mesmas pessoas da
+ * regra não conta como mudança.
+ */
+function ResponsaveisDoFluxo({
+  tarefa,
+  pessoas,
+  onMudar,
+}: {
+  tarefa: TarefaPrevista;
+  pessoas: PessoasDoCampo;
+  onMudar: (nomes: string[] | null) => void;
+}) {
+  // Valor do campo enquanto o modal está aberto (null: fechado).
+  const [editando, setEditando] = useState<string | null>(null);
+  const escolhidos = tarefa.responsaveisEscolhidos ?? null;
+  const padrao = tarefa.responsaveisPadrao ?? tarefa.responsaveis;
+  const conhecidas = new Set((pessoas.ampliar?.todas ?? pessoas.opcoes).map((opcao) => chaveNome(opcao.nome)));
+  // Ao abrir, começa com quem já fica; "padrão do VIOS", "Estagiário da pasta"… não são pessoas da lista e ficam de fora.
+  const pessoasDe = (texto: string) => nomesDasPessoas(texto).filter((nome) => conhecidas.has(chaveNome(nome)));
+  const nomes = editando === null ? [] : separarNomes(editando);
+  const rotulo = `Responsáveis de ${tarefa.caminho.join(" › ")}`;
+  const aplicar = () => {
+    if (!nomes.length) return;
+    onMudar(mesmasPessoas(nomes, pessoasDe(padrao)) && pessoasDe(padrao).length === nomesDasPessoas(padrao).length ? null : nomes);
+    setEditando(null);
+  };
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setEditando((escolhidos ?? pessoasDe(tarefa.responsaveis)).join(", "))}
+        title={escolhidos ? `Escolhido na vistagem. Pela regra do robô: ${padrao}` : "Trocar quem fica nesta tarefa"}
+        aria-label={`Trocar os responsáveis de ${tarefa.caminho.join(" › ")}`}
+        className={cn(
+          "group/pessoas inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-[#47cdd0]/10",
+          escolhidos && "bg-[#eef6f8] ring-1 ring-[#347796]/35"
+        )}
+      >
+        {nomesDasPessoas(tarefa.responsaveis).length ? (
+          <PessoasDaTarefa nomes={tarefa.responsaveis} foto={pessoas.foto} />
+        ) : (
+          <span className="text-muted-foreground">escolher responsável</span>
+        )}
+        <Pencil className="size-3 shrink-0 text-muted-foreground opacity-60 group-hover/pessoas:opacity-100" aria-hidden />
+      </button>
+      {escolhidos ? (
+        <button type="button" className="font-medium text-[#347796] underline-offset-4 hover:underline" onClick={() => onMudar(null)}>
+          voltar ao padrão
+        </button>
+      ) : null}
+      <Dialog open={editando !== null} onOpenChange={(aberto) => !aberto && setEditando(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Responsáveis de {tarefa.nome}</DialogTitle>
+            <DialogDescription>
+              Pela regra do robô fica com {padrao}. Os escolhidos aqui o robô põe no VIOS depois de lançar.
+            </DialogDescription>
+          </DialogHeader>
+          {/* Altura para a lista de pessoas abrir dentro do modal. */}
+          <div className="min-h-[19rem]">
+            <CampoResponsaveis pessoas={pessoas} valor={editando ?? ""} onChange={setEditando} rotulo={rotulo} />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditando(null)}>
+              Cancelar
+            </Button>
+            <Button type="button" disabled={!nomes.length} onClick={aplicar}>
+              Aplicar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -346,7 +435,8 @@ function FluxoNoVios({
   hoje,
   ehDiaUtil,
   onMudarData,
-  foto,
+  onMudarResponsaveis,
+  pessoas,
   classeDe,
 }: {
   previstas: TarefaPrevista[];
@@ -354,23 +444,28 @@ function FluxoNoVios({
   classeDe: (nome: string) => Etiqueta | null;
   /** A tarefa pedida, com a data que vai para o VIOS (no Prazo, o Enviar), a classe e quem fica. */
   principal: { nome: string; data: string | null; etiqueta: Etiqueta; responsaveis: string };
-  /** Foto de cada pessoa (as mesmas dos campos Responsável e Revisor). */
-  foto: (nome: string) => string | null;
+  /** As pessoas e as fotos dos campos Responsável e Revisor (para trocar quem fica numa tarefa do fluxo). */
+  pessoas: PessoasDoCampo;
   /** Data fatal do Prazo (só para situar no calendário). */
   fatal: string | null;
   hoje: string;
   ehDiaUtil: (iso: string) => boolean;
   onMudarData: (caminho: string[], data: string | null) => void;
+  /** null volta à regra do robô. */
+  onMudarResponsaveis: (caminho: string[], nomes: string[] | null) => void;
 }) {
   // Aberto por padrão: o calendário é para ser visto; a pessoa recolhe se quiser.
   const [aberto, setAberto] = useState(true);
+  const foto = pessoas.foto;
   const junto = previstas.filter((tarefa) => tarefa.quando === "criacao");
   const aoConcluir = previstas.filter((tarefa) => tarefa.quando === "conclusao");
   const alteradas = junto.filter((tarefa) => tarefa.editada).length;
   const repetidas = junto.filter((tarefa) => tarefa.repetida).length;
+  const pessoasTrocadas = junto.filter((tarefa) => tarefa.responsaveisEscolhidos && !tarefa.repetida).length;
   const resumo = [
     junto.length ? `cria junto ${plural(junto.length, "tarefa", "tarefas")}` : null,
     alteradas ? `${plural(alteradas, "data alterada", "datas alteradas")}` : null,
+    pessoasTrocadas ? `${plural(pessoasTrocadas, "responsável alterado", "responsáveis alterados")}` : null,
     repetidas ? `${plural(repetidas, "Ciência repetida", "Ciências repetidas")} (o robô cancela)` : null,
     aoConcluir.length ? `ao concluir, ${aoConcluir.map((tarefa) => tarefa.nome).join(", ")}` : null,
   ]
@@ -453,7 +548,7 @@ function FluxoNoVios({
         <ChevronRight className="size-3.5 shrink-0 transition-transform group-open:rotate-90" aria-hidden />
         <Workflow className="size-3.5 shrink-0 text-[#285f7a]" aria-hidden />
         <span className="font-medium text-[#285f7a]">Fluxo das tarefas</span>
-        <span className={cn("truncate", alteradas && "text-[#285f7a]")}>{resumo}</span>
+        <span className={cn("truncate", (alteradas || pessoasTrocadas) && "text-[#285f7a]")}>{resumo}</span>
       </summary>
       <div className="space-y-3 border-t border-[#e6eef0] px-3 py-3">
         {marcos.length ? (
@@ -476,7 +571,8 @@ function FluxoNoVios({
         {itens.length ? (
           <div className="space-y-1.5">
             <p className="text-muted-foreground">
-              O robô coloca os responsáveis. Para priorizar uma tarefa do fluxo, mude a data: o robô grava no VIOS depois de lançar.
+              Para priorizar uma tarefa do fluxo, mude a data; para outra pessoa fazer, clique em quem fica. O robô grava no VIOS depois de
+              lançar.
             </p>
             <ol className="divide-y divide-[#e6eef0] overflow-hidden rounded-md border border-[#e6eef0] bg-white">
               {itens.map((item) => (
@@ -511,7 +607,11 @@ function FluxoNoVios({
                   ) : item.tipo === "fluxo" ? (
                     <>
                       {campoDoFluxo(item.tarefa)}
-                      <PessoasDaTarefa nomes={item.tarefa.responsaveis} foto={foto} />
+                      <ResponsaveisDoFluxo
+                        tarefa={item.tarefa}
+                        pessoas={pessoas}
+                        onMudar={(nomes) => onMudarResponsaveis(item.tarefa.caminho, nomes)}
+                      />
                       {extrasDoFluxo(item.tarefa)}
                     </>
                   ) : (
@@ -805,12 +905,19 @@ export function EditorVistagem({
     );
   }
 
-  /** Data de uma tarefa do Fluxo do VIOS mudada pela pessoa; null volta à data do VIOS. */
-  function mudarDataDoFluxo(linha: Linha, caminho: string[], data: string | null) {
+  /**
+   * Data e/ou responsáveis de uma tarefa do Fluxo do VIOS mudados pela pessoa; null volta à data do VIOS ou à regra
+   * do robô. O que não vem na mudança fica como estava.
+   */
+  function mudarNoFluxo(linha: Linha, caminho: string[], mudanca: { data?: string | null; responsaveis?: string[] | null }) {
     const chave = chaveDoCaminho(caminho);
+    const atual = linha.fluxoDatas[chave];
+    const data = (mudanca.data !== undefined ? mudanca.data : atual?.data) || null;
+    const responsaveis = mudanca.responsaveis !== undefined ? mudanca.responsaveis : atual?.responsaveis ?? null;
     const fluxoDatas = { ...linha.fluxoDatas };
-    if (data) fluxoDatas[chave] = { caminho, data };
-    else delete fluxoDatas[chave];
+    if (data || responsaveis?.length) {
+      fluxoDatas[chave] = { caminho, ...(data ? { data } : {}), ...(responsaveis?.length ? { responsaveis } : {}) };
+    } else delete fluxoDatas[chave];
     alterar(linha.chave, { fluxoDatas });
   }
 
@@ -1589,10 +1696,11 @@ export function EditorVistagem({
                                 responsaveis: linha.responsavel,
                               }}
                               fatal={prazo ? linha.dataFatal || null : null}
-                              foto={pessoasDoCampo.foto}
+                              pessoas={pessoasDoCampo}
                               hoje={detalhe.hoje}
                               ehDiaUtil={ehDiaUtil}
-                              onMudarData={(caminho, data) => mudarDataDoFluxo(linha, caminho, data)}
+                              onMudarData={(caminho, data) => mudarNoFluxo(linha, caminho, { data })}
+                              onMudarResponsaveis={(caminho, nomes) => mudarNoFluxo(linha, caminho, { responsaveis: nomes })}
                               classeDe={classeDaTarefa}
                             />
                           ) : null}

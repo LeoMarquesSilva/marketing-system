@@ -101,14 +101,17 @@ function compararResponsavel(pedidoTexto: string, gravada: TarefaNoVios | null):
 
 function compararDatasDoFluxo(agendamento: AgendamentoResumo): DataDoFluxoNoVios[] {
   const doFluxo = (agendamento.viosTarefas ?? []).filter((tarefa) => !tarefa.principal);
-  return (agendamento.fluxoDatas ?? []).map((pedida) => {
+  // Só as datas: o responsável escolhido no fluxo o robô confere e avisa no resultado.
+  return (agendamento.fluxoDatas ?? []).flatMap((pedida) => {
+    const pedido = pedida.data;
+    if (!pedido) return [];
     const nome = pedida.caminho[pedida.caminho.length - 1] ?? "";
     const noVios = doFluxo
       .filter((tarefa) => chaveNome(tarefa.tipo) === chaveNome(nome))
       .map((tarefa) => tarefa.data)
       .filter((data): data is string => Boolean(data));
-    const situacao: SituacaoCampo = !noVios.length ? "sem_dado" : noVios.includes(pedida.data) ? "confere" : "diverge";
-    return { nome, caminho: pedida.caminho, pedido: pedida.data, noVios, situacao };
+    const situacao: SituacaoCampo = !noVios.length ? "sem_dado" : noVios.includes(pedido) ? "confere" : "diverge";
+    return [{ nome, caminho: pedida.caminho, pedido, noVios, situacao }];
   });
 }
 

@@ -228,6 +228,33 @@ describe("validarAgendamentos", () => {
     expect(validarAgendamentos([], contexto).ok).toBe(false);
   });
 
+  it("tarefas do fluxo: aceita data e/ou responsáveis do VIOS (com a grafia de lá) e recusa pessoa fora da lista", () => {
+    const entrada = (fluxoDatas: { caminho: string[]; data?: string; responsaveis?: string[] }[]) => [
+      { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo", fluxoDatas },
+    ];
+    const certo = validarAgendamentos(
+      entrada([
+        { caminho: ["2. REVISAR"], responsaveis: ["revisor exemplo", "Advogada Exemplo", "REVISOR EXEMPLO"] },
+        { caminho: ["3. PROTOCOLAR"], data: "2026-10-30" },
+        { caminho: ["1. CIÊNCIA"], data: "2026-02-30", responsaveis: [] },
+      ]),
+      contexto
+    );
+    expect(certo.ok && certo.itens[0].fluxoDatas).toEqual([
+      { caminho: ["2. REVISAR"], responsaveis: ["Revisor Exemplo", "Advogada Exemplo"] },
+      { caminho: ["3. PROTOCOLAR"], data: "2026-10-30" },
+    ]);
+    const fora = validarAgendamentos(entrada([{ caminho: ["2. REVISAR"], responsaveis: ["Fulano de Tal"] }]), contexto);
+    expect(fora.ok).toBe(false);
+    if (!fora.ok) expect(fora.erros.join(" ")).toMatch(/responsáveis das tarefas do fluxo/);
+    // Caminho que o tipo não cria: recusa também quando só o responsável mudou.
+    const naoCria = validarAgendamentos(entrada([{ caminho: ["INVENTADA"], responsaveis: ["Advogada Exemplo"] }]), {
+      ...contexto,
+      caminhosDaTarefa: () => new Set(["2. REVISAR"]),
+    });
+    expect(naoCria.ok).toBe(false);
+  });
+
   it("a observação é opcional", () => {
     const providencia = { etiqueta: "PROVIDENCIA" as const, tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-11-10", responsavel: "Advogada Exemplo" };
     const semObservacao = validarAgendamentos([{ ...providencia, observacao: "  " }], contexto);

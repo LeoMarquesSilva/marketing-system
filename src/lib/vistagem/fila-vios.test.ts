@@ -148,6 +148,13 @@ describe("datas do fluxo na fila do robô", () => {
       { simular: false, modo: "intimacao" }
     );
     expect(grupo.linha.lancamento?.tarefas[0].fluxo_datas).toEqual([{ caminho: ["EMBARGOS DE DECLARAÇÃO", "2. REVISAR"], data: "10/11/2026" }]);
+    // Só o responsável escolhido: vai sem data (o robô não reagenda), com os nomes.
+    const [soPessoa] = linhasParaFila(
+      PUBLICACAO,
+      [{ ...ITENS[0], fluxoDatas: [{ caminho: ["2. REVISAR"], responsaveis: ["Vanessa Lanza Sellani"] }] }],
+      { simular: false, modo: "intimacao" }
+    );
+    expect(soPessoa.linha.lancamento?.tarefas[0].fluxo_datas).toEqual([{ caminho: ["2. REVISAR"], responsaveis: ["Vanessa Lanza Sellani"] }]);
   });
 });
 

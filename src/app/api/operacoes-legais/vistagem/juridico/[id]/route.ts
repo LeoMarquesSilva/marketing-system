@@ -54,13 +54,21 @@ export async function POST(request: Request, context: RouteContext) {
         responsavel: texto(valor.responsavel, 200) ?? "",
         revisor: texto(valor.revisor, 200),
         observacao: texto(valor.observacao, 4000),
-        // Datas do fluxo do VIOS que a pessoa mudou; o servidor confere o caminho e a data.
+        // Datas e responsáveis do fluxo do VIOS que a pessoa mudou; o servidor confere o caminho, a data e as pessoas.
         fluxoDatas: Array.isArray(valor.fluxoDatas)
           ? valor.fluxoDatas.slice(0, 60).flatMap((datada) => {
               const campos = (datada ?? {}) as Record<string, unknown>;
               const caminho = Array.isArray(campos.caminho) ? campos.caminho.filter((parte): parte is string => typeof parte === "string") : [];
               const data = texto(campos.data, 10);
-              return caminho.length && data ? [{ caminho, data }] : [];
+              const responsaveis = Array.isArray(campos.responsaveis)
+                ? campos.responsaveis.slice(0, 10).flatMap((nome) => {
+                    const limpo = texto(nome, 200);
+                    return limpo ? [limpo] : [];
+                  })
+                : [];
+              return caminho.length && (data || responsaveis.length)
+                ? [{ caminho, ...(data ? { data } : {}), ...(responsaveis.length ? { responsaveis } : {}) }]
+                : [];
             })
           : [],
       };

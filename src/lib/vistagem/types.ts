@@ -234,12 +234,17 @@ export interface PublicacaoCapturada {
 
 export type EnvioStatus = "nao_enviado" | "pendente" | "enviado" | "processando" | "concluido" | "erro";
 
-/** Data de uma tarefa do fluxo escolhida pelo jurídico (o robô grava no VIOS depois de lançar). */
+/**
+ * O que o jurídico escolheu para uma tarefa do fluxo (o robô grava no VIOS depois de lançar): a data e/ou os
+ * responsáveis. Sem a data, vale a do VIOS; sem os responsáveis, a regra do robô (`quemFicaNoFluxo`).
+ */
 export interface DataDoFluxo {
   /** Tipos desde a tarefa agendada até esta (ex.: ["EMBARGOS DE DECLARAÇÃO", "2. REVISAR"]). */
   caminho: string[];
-  /** AAAA-MM-DD */
-  data: string;
+  /** AAAA-MM-DD; ausente quando só os responsáveis mudaram. */
+  data?: string;
+  /** Nomes dos usuários do VIOS; ausente quando só a data mudou. */
+  responsaveis?: string[];
 }
 
 /** Tarefa que o fluxo automático do VIOS cria com a tarefa agendada, e quem o robô coloca nela. */
@@ -262,6 +267,10 @@ export interface TarefaPrevista {
   /** 1. CIÊNCIA DOS AGENDAMENTOS repetida na vistagem: o robô cancela no VIOS (fica a da primeira tarefa). */
   repetida?: boolean;
   responsaveis: string;
+  /** O jurídico escolheu quem fica (no lugar da regra do robô); os nomes vão para o robô. */
+  responsaveisEscolhidos?: string[];
+  /** Com a escolha do jurídico: quem ficaria pela regra do robô. */
+  responsaveisPadrao?: string;
   /** criacao: o VIOS cria junto com a tarefa; conclusao: quando ela for concluída. */
   quando: "criacao" | "conclusao";
   /** Classe do tipo no VIOS pelas etiquetas (cor no fluxo); ausente ou null quando não foi lida. */

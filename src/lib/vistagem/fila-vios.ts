@@ -38,8 +38,11 @@ export interface TarefaDoLancamento {
   observacao: string;
   /** Resposta da JUSTIFICATIVA NF (questionário que o VIOS pede depois de lançar a CIÊNCIA NF). */
   justificativa: string | null;
-  /** Tarefas do fluxo com outra data (DD/MM/AAAA), achadas pelo caminho de tipos a partir desta. */
-  fluxo_datas: { caminho: string[]; data: string }[];
+  /**
+   * Tarefas do fluxo com outra data (DD/MM/AAAA) e/ou com os responsáveis escolhidos pelo jurídico, achadas pelo
+   * caminho de tipos a partir desta.
+   */
+  fluxo_datas: { caminho: string[]; data?: string; responsaveis?: string[] }[];
 }
 
 export interface LancamentoFila {
@@ -97,7 +100,7 @@ export interface AgendamentoParaFila {
   responsavel: string;
   revisor: string | null;
   observacao: string | null;
-  /** Datas do fluxo diferentes das do VIOS (AAAA-MM-DD), que o robô grava depois de lançar. */
+  /** Datas do fluxo diferentes das do VIOS (AAAA-MM-DD) e responsáveis escolhidos, que o robô grava depois de lançar. */
   fluxoDatas?: DataDoFluxo[];
 }
 
@@ -178,7 +181,11 @@ export function linhasParaFila(
               revisor: item.revisor,
               observacao: cienciaNf ? "" : montarObservacaoVios(publicacao.data_publicacao, item.observacao),
               justificativa: cienciaNf ? item.observacao?.trim() || null : null,
-              fluxo_datas: (item.fluxoDatas ?? []).map((datada) => ({ caminho: datada.caminho, data: paraDataVios(datada.data) })),
+              fluxo_datas: (item.fluxoDatas ?? []).map((datada) => ({
+                caminho: datada.caminho,
+                ...(datada.data ? { data: paraDataVios(datada.data) } : {}),
+                ...(datada.responsaveis?.length ? { responsaveis: datada.responsaveis } : {}),
+              })),
             };
           }),
         },

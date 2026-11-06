@@ -25,7 +25,7 @@ import { areaComSugestaoIa, fatalSugerida, resultadoDaSugestao, sugestaoNaListaA
 import { carregarFeriados } from "./feriados";
 import { lerConfiguracoes } from "./configuracoes-server";
 import { cadeiaDoFluxo, montarFluxo, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
-import { caminhosDoFluxo, datasParaOVios, fluxoPrevisto, prazoApertado } from "./fluxo-previsto";
+import { caminhosDoFluxo, fluxoParaOVios, fluxoPrevisto, prazoApertado } from "./fluxo-previsto";
 import { buscarPastasVios } from "./pastas-vios";
 import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
@@ -921,7 +921,8 @@ function marcarCienciaRepetida<T extends { id: string; ordem: number; tarefa: st
 /**
  * Datas do fluxo que o robô grava no VIOS depois de lançar: as que o jurídico mudou, as das filhas delas (que o
  * VIOS cria pela data dele) e, no prazo curto a partir de hoje, o Revisar e o Protocolar apertados antes da fatal
- * (`enviar`: o Enviar vai hoje, não no passado). Sem a árvore do VIOS, vão só as que o jurídico mudou.
+ * (`enviar`: o Enviar vai hoje, não no passado). Vão junto os responsáveis que o jurídico escolheu. Sem a árvore
+ * do VIOS, vai só o que o jurídico mudou.
  */
 async function datasDoFluxoParaOVios(itens: AgendamentoRow[]): Promise<Map<string, { datas: DataDoFluxo[]; enviar: string | null }>> {
   const mapa = new Map(itens.map((item) => [item.id, { datas: item.fluxo_datas ?? [], enviar: null as string | null }]));
@@ -940,7 +941,7 @@ async function datasDoFluxoParaOVios(itens: AgendamentoRow[]): Promise<Map<strin
         datas: item.fluxo_datas,
         apertada,
       });
-      mapa.set(item.id, { datas: datasParaOVios(previstas), enviar: apertada?.enviar ?? null });
+      mapa.set(item.id, { datas: fluxoParaOVios(previstas), enviar: apertada?.enviar ?? null });
     }
   } catch (erro) {
     console.error("[vistagem] datas do fluxo para o robô", erro instanceof Error ? erro.message : erro);

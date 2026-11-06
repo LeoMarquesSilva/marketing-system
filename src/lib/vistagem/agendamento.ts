@@ -65,7 +65,7 @@ export interface AgendamentoEntrada {
   responsavel: string;
   revisor?: string | null;
   observacao?: string | null;
-  /** Datas de tarefas do fluxo que a pessoa mudou (o robô grava no VIOS depois de lançar). */
+  /** Datas e responsáveis de tarefas do fluxo que a pessoa mudou (o robô grava no VIOS depois de lançar). */
   fluxoDatas?: DataDoFluxo[] | null;
 }
 
@@ -95,6 +95,8 @@ export const MAX_AGENDAMENTOS = 10;
 export const MAX_OBSERVACAO = 2000;
 /** O maior fluxo do VIOS cria uns 15 tipos junto (Audiência UNA/Inicial com Contestação e Revisar/Protocolar dela). */
 const MAX_DATAS_DO_FLUXO = 40;
+/** Pessoas numa tarefa do fluxo escolhidas pelo jurídico. */
+const MAX_RESPONSAVEIS_DO_FLUXO = 10;
 
 /** Chave de uma tarefa do fluxo pelo caminho de tipos a partir da agendada (ex.: "EMBARGOS DE DECLARACAO > 2. REVISAR"). */
 export function chaveDoCaminho(caminho: string[]): string {
@@ -375,21 +377,39 @@ export function validarAgendamentos(
     const diasPrazo = prazo && Number.isInteger(entrada.diasPrazo) && (entrada.diasPrazo ?? 0) > 0 ? (entrada.diasPrazo as number) : null;
     const contagemPrazo = diasPrazo ? CONTAGENS_PRAZO.find((contagem) => contagem === entrada.contagemPrazo) ?? null : null;
     if (diasPrazo && !contagemPrazo) erros.push(`${n}: escolha se o prazo é em dias úteis ou corridos.`);
-    // Datas que a pessoa mudou no fluxo do VIOS: só de tarefas que o fluxo do tipo cria, e com data válida.
+    // O que a pessoa mudou no fluxo do VIOS: só de tarefas que o fluxo do tipo cria, com data válida e/ou
+    // responsáveis da lista de usuários do VIOS (com o nome como está no VIOS, que o robô procura).
+    let pessoaForaDoVios = false;
     const fluxoDatas = (Array.isArray(entrada.fluxoDatas) ? entrada.fluxoDatas : [])
       .filter(
         (item) =>
           Array.isArray(item?.caminho) &&
           item.caminho.length > 0 &&
           item.caminho.length <= 5 &&
-          item.caminho.every((parte) => typeof parte === "string" && parte.trim() && parte.length <= 200) &&
-          dataValida(String(item.data))
+          item.caminho.every((parte) => typeof parte === "string" && parte.trim() && parte.length <= 200)
       )
       .slice(0, MAX_DATAS_DO_FLUXO)
-      .map((item) => ({ caminho: item.caminho.map((parte) => parte.trim()), data: item.data }));
+      .flatMap((item): DataDoFluxo[] => {
+        const dataDoFluxo = item.data && dataValida(String(item.data)) ? item.data : null;
+        const pedidos = (Array.isArray(item.responsaveis) ? item.responsaveis : [])
+          .filter((nome): nome is string => typeof nome === "string" && Boolean(nome.trim()))
+          .slice(0, MAX_RESPONSAVEIS_DO_FLUXO)
+          .map((nome) => usuarioPorChave.get(chaveNome(nome)));
+        if (pedidos.some((usuario) => !usuario)) pessoaForaDoVios = true;
+        const responsaveis = [...new Set(pedidos.flatMap((usuario) => (usuario ? [usuario.nome] : [])))];
+        if (!dataDoFluxo && !responsaveis.length) return [];
+        return [
+          {
+            caminho: item.caminho.map((parte) => parte.trim()),
+            ...(dataDoFluxo ? { data: dataDoFluxo } : {}),
+            ...(responsaveis.length ? { responsaveis } : {}),
+          },
+        ];
+      });
+    if (pessoaForaDoVios) erros.push(`${n}: escolha os responsáveis das tarefas do fluxo na lista de usuários do VIOS.`);
     const caminhos = tarefa && contexto.caminhosDaTarefa ? contexto.caminhosDaTarefa(tarefa.id) : null;
     if (caminhos && fluxoDatas.some((item) => !caminhos.has(chaveDoCaminho(item.caminho)))) {
-      erros.push(`${n}: há data de tarefa do fluxo que esse tipo não cria no VIOS; confira o Fluxo do VIOS.`);
+      erros.push(`${n}: há data ou responsável de tarefa do fluxo que esse tipo não cria no VIOS; confira o Fluxo das tarefas.`);
     }
     if (!tarefa || !responsavel || !dataValida(data) || (prazo && !revisor) || (compromisso && !hora) || (diasPrazo && !contagemPrazo)) {
       return null;
