@@ -226,7 +226,7 @@ export function isVistagemPath(pathname: string): boolean {
   return pathname === VISTAGEM_KEY || pathname.startsWith(`${VISTAGEM_KEY}/`);
 }
 
-/** Papel na Vistagem: a controladoria vê todas as abas e áreas; o jurídico, só a aba Jurídico das suas áreas. */
+/** Papel na Vistagem: a controladoria vê todas as abas e áreas; o jurídico, a Visão geral e a aba Vistagem, só das suas áreas. */
 export type PapelVistagem = "controladoria" | "juridico";
 
 export const VISTAGEM_JURIDICO_PATH = `${VISTAGEM_KEY}/juridico`;
@@ -241,12 +241,21 @@ export function papelVistagem(profile: AccessProfile | null | undefined): PapelV
 /** Configurações da Vistagem (regras, IA, vistadores): só admin. */
 export const VISTAGEM_CONFIGURACOES_PATH = `${VISTAGEM_KEY}/configuracoes`;
 
-/** Tela da Vistagem que o perfil pode abrir: o jurídico só abre a aba Jurídico; as configurações, só admin. */
+/**
+ * Tela da Vistagem que o perfil pode abrir: o jurídico abre a Visão geral (só a página, não as abas abaixo dela) e
+ * a aba Vistagem; as configurações, só admin.
+ */
 export function canSeeVistagemPath(profile: AccessProfile | null | undefined, pathname: string): boolean {
   if (pathname === VISTAGEM_CONFIGURACOES_PATH || pathname.startsWith(`${VISTAGEM_CONFIGURACOES_PATH}/`)) return isAdminRole(profile);
   const papel = papelVistagem(profile);
   if (papel === "controladoria") return true;
-  return papel === "juridico" && (pathname === VISTAGEM_JURIDICO_PATH || pathname.startsWith(`${VISTAGEM_JURIDICO_PATH}/`));
+  if (papel !== "juridico") return false;
+  return pathname === VISTAGEM_KEY || pathname === VISTAGEM_JURIDICO_PATH || pathname.startsWith(`${VISTAGEM_JURIDICO_PATH}/`);
+}
+
+/** Por onde a pessoa entra na Vistagem: o jurídico, pela aba Vistagem (a Visão geral é consulta); os outros, pela Visão geral. */
+export function entradaDaVistagem(profile: AccessProfile | null | undefined): string {
+  return papelVistagem(profile) === "juridico" ? VISTAGEM_JURIDICO_PATH : VISTAGEM_KEY;
 }
 
 /**
@@ -395,8 +404,8 @@ export function firstAllowedPath(profile: AccessProfile | null | undefined): str
   // Colaborador de conteúdo cai na home de desempenho.
   if (hasContentAccess(allowed) && !allowed.includes("/")) return CONTENT_HOME_PATH;
   const primeiro = allowed.includes("/") ? "/" : allowed[0];
-  // O jurídico não abre a Captura (1ª aba da Vistagem): entra direto na aba Jurídico.
-  return primeiro === VISTAGEM_KEY && papelVistagem(profile) === "juridico" ? VISTAGEM_JURIDICO_PATH : primeiro;
+  // O jurídico entra direto na aba Vistagem, onde está o trabalho dele (a Visão geral fica a uma aba de distância).
+  return primeiro === VISTAGEM_KEY ? entradaDaVistagem(profile) : primeiro;
 }
 
 /**

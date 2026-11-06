@@ -15,7 +15,9 @@ import {
   History,
   Info,
   Pencil,
+  LoaderCircle,
   Plus,
+  RefreshCw,
   RotateCcw,
   Scale,
   Send,
@@ -37,7 +39,17 @@ import type { ChaveConfiguracao, ConfiguracoesVistagem } from "@/lib/vistagem/co
 import type { EtapaDocumentada, IaDocumentada, MetricaDaRegra, OrigemDaRegra } from "@/lib/vistagem/regras-documentacao";
 import type { PainelDeRegras } from "@/lib/vistagem/regras-server";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
-import { ROTULO_DEMANDA, TIPOS_DE_DEMANDA, type MapaDeVistadores, type TipoDeDemanda } from "@/lib/vistagem/vistadores";
+import {
+  ROTULO_DEMANDA,
+  TIPOS_DE_DEMANDA,
+  TODAS_AS_AREAS_VISTAGEM,
+  vistadoresDa,
+  type AreaDeVistador,
+  type MapaDeVistadores,
+  type TipoDeDemanda,
+} from "@/lib/vistagem/vistadores";
+import type { ResultadoDaImportacao } from "@/lib/vistagem/vistadores-importacao";
+import { nomeCurto as nomeCurtoDaPessoa } from "@/lib/vistagem/como-fica-no-vios";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
 import { IconeArea } from "./marcas";
@@ -62,10 +74,13 @@ function valorEmTexto(chave: string, valor: unknown): string {
   if (valor === null || valor === undefined) return "—";
   if (chave === "vistadores") {
     const mapa = valor as MapaDeVistadores;
-    const partes = Object.entries(mapa).map(([area, quem]) =>
-      `${area}: ${TIPOS_DE_DEMANDA.map((tipo) => (quem?.[tipo] ? `${quem[tipo]} (${tipo === "normal" ? "normais" : "risco"})` : null))
+    const partes = Object.keys(mapa).map((area) =>
+      `${area}: ${TIPOS_DE_DEMANDA.map((tipo) => {
+        const nomes = vistadoresDa(area, tipo, mapa);
+        return nomes.length ? `${nomes.join(", ")} (${tipo === "normal" ? "normais" : "risco"})` : null;
+      })
         .filter(Boolean)
-        .join(", ")}`
+        .join("; ")}`
     );
     return partes.length ? partes.join(" · ") : "ninguém";
   }
@@ -164,49 +179,90 @@ function CartaoEditavel({
 
 /* --------------------------------------------------------------- editáveis */
 
-function Vistadores({ painel, onEditar }: { painel: PainelDeRegras; onEditar: () => void }) {
-  const mapa = painel.configuracoes.vistadores as Record<string, Partial<Record<TipoDeDemanda, string | null>> | undefined>;
-  const comVistador = ESCRITORIOS.filter((area) => TIPOS_DE_DEMANDA.some((tipo) => mapa[area]?.[tipo]));
+/** Área do cartão e do modal: as do sistema e, no fim, quem vista todas as áreas. */
+const AREAS_DE_VISTADOR: AreaDeVistador[] = [...ESCRITORIOS, TODAS_AS_AREAS_VISTAGEM];
+
+function IconeDaAreaDeVistador({ area }: { area: string }) {
+  if (area === TODAS_AS_AREAS_VISTAGEM) {
+    return (
+      <span className="grid size-6 shrink-0 place-items-center rounded bg-[#04202f] text-[#47cdd0]" aria-hidden>
+        <UsersRound className="size-3.5" />
+      </span>
+    );
+  }
+  return <IconeArea area={area} tamanho="sm" />;
+}
+
+/** Fotos de quem vista um tipo na área, com os nomes curtos (até 3; o resto em "+N"). */
+function PessoasDoTipo({ nomes, fotos, tipo }: { nomes: string[]; fotos: Record<string, string>; tipo: TipoDeDemanda }) {
+  return (
+    <div className="min-w-0 space-y-1">
+      <span className={cn("block text-[11px] font-medium", tipo === "risco" ? "text-[#8f1d26]" : "text-muted-foreground")}>{ROTULO_DEMANDA[tipo]}</span>
+      {nomes.length ? (
+        <ul className="flex flex-wrap gap-x-3 gap-y-1.5">
+          {nomes.slice(0, 3).map((nome) => (
+            <li key={nome} className="flex min-w-0 items-center gap-1.5" title={nome}>
+              <AvatarPessoa nome={nome} foto={fotos[nome] ?? null} className="size-6" />
+              <span className="truncate text-sm text-foreground">{nomeCurtoDaPessoa(nome)}</span>
+            </li>
+          ))}
+          {nomes.length > 3 ? (
+            <li className="text-xs text-muted-foreground" title={nomes.slice(3).join(", ")}>
+              +{nomes.length - 3}
+            </li>
+          ) : null}
+        </ul>
+      ) : (
+        <span className="text-sm text-muted-foreground">A definir</span>
+      )}
+    </div>
+  );
+}
+
+function Vistadores({
+  painel,
+  onEditar,
+  onImportar,
+  importando,
+}: {
+  painel: PainelDeRegras;
+  onEditar: () => void;
+  onImportar: () => void;
+  importando: boolean;
+}) {
+  const mapa = painel.configuracoes.vistadores;
+  const comVistador = AREAS_DE_VISTADOR.filter((area) => TIPOS_DE_DEMANDA.some((tipo) => vistadoresDa(area, tipo, mapa).length));
   const sem = ESCRITORIOS.filter((area) => !comVistador.includes(area));
   return (
     <CartaoEditavel
       tour="cg-vistadores"
       icone={UsersRound}
       titulo="Vistadores por área"
-      descricao="Quem vista as demandas normais e as de risco de cada área. Aparece na Visão geral; quem enxerga a fila continua sendo definido em Usuários."
+      descricao="Quem vista as demandas normais e as de risco de cada área. A base é a lista USUARIOS do SharePoint; aparece na Visão geral. Quem enxerga a fila continua sendo definido em Usuários."
       acao={
-        <Button size="sm" variant="outline" onClick={onEditar}>
-          <Pencil />
-          Editar
-        </Button>
+        <div className="flex shrink-0 flex-wrap justify-end gap-2">
+          <Button size="sm" variant="outline" onClick={onImportar} disabled={importando} title="Lê a lista USUARIOS do SharePoint e mostra o que muda antes de salvar">
+            {importando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
+            Atualizar da lista
+          </Button>
+          <Button size="sm" variant="outline" onClick={onEditar}>
+            <Pencil />
+            Editar
+          </Button>
+        </div>
       }
       rodape={<UltimaAlteracao painel={painel} chave="vistadores" />}
     >
       <ul className="divide-y divide-[#eef3f5]">
         {comVistador.map((area) => (
-          <li key={area} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-2.5">
-            <span className="flex min-w-40 items-center gap-2 text-sm font-medium text-foreground">
-              <IconeArea area={area} tamanho="sm" />
+          <li key={area} className="grid gap-x-4 gap-y-2 py-2.5 sm:grid-cols-[10.5rem_minmax(0,1fr)_minmax(0,1fr)] sm:items-start">
+            <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <IconeDaAreaDeVistador area={area} />
               {area}
             </span>
-            {TIPOS_DE_DEMANDA.map((tipo) => {
-              const nome = mapa[area]?.[tipo];
-              return (
-                <span key={tipo} className="flex min-w-0 items-center gap-2">
-                  {nome ? (
-                    <AvatarPessoa nome={nome} foto={painel.fotosDosVistadores[nome] ?? null} className="size-7" />
-                  ) : (
-                    <span className="grid size-7 place-items-center rounded-full bg-[#f2f6f7] text-muted-foreground ring-1 ring-[#e6eef0]" aria-hidden>
-                      ?
-                    </span>
-                  )}
-                  <span className="min-w-0 leading-tight">
-                    <span className="block truncate text-sm text-foreground">{nome ?? "A definir"}</span>
-                    <span className={cn("block text-[11px]", tipo === "risco" ? "text-[#8f1d26]" : "text-muted-foreground")}>{ROTULO_DEMANDA[tipo]}</span>
-                  </span>
-                </span>
-              );
-            })}
+            {TIPOS_DE_DEMANDA.map((tipo) => (
+              <PessoasDoTipo key={tipo} tipo={tipo} nomes={vistadoresDa(area, tipo, mapa)} fotos={painel.fotosDosVistadores} />
+            ))}
           </li>
         ))}
       </ul>
@@ -219,56 +275,124 @@ function Vistadores({ painel, onEditar }: { painel: PainelDeRegras; onEditar: ()
   );
 }
 
-/** Montado só enquanto aberto: o rascunho começa com os vistadores em vigor. */
+type RascunhoDeVistadores = Record<string, Record<TipoDeDemanda, string[]>>;
+
+function rascunhoDe(mapa: MapaDeVistadores): RascunhoDeVistadores {
+  return Object.fromEntries(AREAS_DE_VISTADOR.map((area) => [area, { normal: vistadoresDa(area, "normal", mapa), risco: vistadoresDa(area, "risco", mapa) }]));
+}
+
+/**
+ * Montado só enquanto aberto: o rascunho começa com os vistadores em vigor (ou com a proposta da lista do SharePoint,
+ * com quem chegou agora marcado como "novo"). Cada pessoa troca de tipo com um clique.
+ */
 function DialogoVistadores({
   painel,
+  proposta,
   salvando,
   onFechar,
   onSalvar,
 }: {
   painel: PainelDeRegras;
+  proposta: ResultadoDaImportacao | null;
   salvando: boolean;
   onFechar: () => void;
   onSalvar: (valor: MapaDeVistadores) => void;
 }) {
-  const [rascunho, setRascunho] = useState<Record<string, Partial<Record<TipoDeDemanda, string>>>>(() =>
-    JSON.parse(JSON.stringify(painel.configuracoes.vistadores ?? {}))
-  );
+  const [rascunho, setRascunho] = useState<RascunhoDeVistadores>(() => rascunhoDe(proposta?.mapa ?? painel.configuracoes.vistadores));
+  const novos = useMemo(() => new Set((proposta?.novos ?? []).map((item) => `${item.area}|${item.nome}`)), [proposta]);
   const opcoes = useMemo<OpcaoBusca[]>(
     () => painel.pessoas.map((pessoa) => ({ id: pessoa.nome, nome: pessoa.nome, foto: pessoa.foto, detalhe: pessoa.area })),
     [painel.pessoas]
   );
-  // Quem já está cadastrado com o nome do dia a dia (fora da lista do RH) continua escolhível.
-  const comAtuais = (atual: string | undefined) => (atual && !opcoes.some((opcao) => opcao.nome === atual) ? [{ id: atual, nome: atual, foto: painel.fotosDosVistadores[atual] ?? null }, ...opcoes] : opcoes);
+  const foto = (nome: string) => painel.fotosDosVistadores[nome] ?? painel.pessoas.find((pessoa) => pessoa.nome === nome)?.foto ?? null;
+
+  const mudar = (area: string, mudanca: (atual: Record<TipoDeDemanda, string[]>) => Record<TipoDeDemanda, string[]>) =>
+    setRascunho((atual) => ({ ...atual, [area]: mudanca(atual[area] ?? { normal: [], risco: [] }) }));
+  const tirar = (area: string, tipo: TipoDeDemanda, nome: string) => mudar(area, (atual) => ({ ...atual, [tipo]: atual[tipo].filter((item) => item !== nome) }));
+  const trocarTipo = (area: string, tipo: TipoDeDemanda, nome: string) => {
+    const outro: TipoDeDemanda = tipo === "normal" ? "risco" : "normal";
+    mudar(area, (atual) => ({ ...atual, [tipo]: atual[tipo].filter((item) => item !== nome), [outro]: [...atual[outro], nome] }));
+  };
+  const incluir = (area: string, tipo: TipoDeDemanda, nome: string) => {
+    if (!nome) return;
+    mudar(area, (atual) => (atual.normal.includes(nome) || atual.risco.includes(nome) ? atual : { ...atual, [tipo]: [...atual[tipo], nome] }));
+  };
 
   return (
     <Dialog open onOpenChange={(abrir) => !abrir && onFechar()}>
-      <DialogContent className="max-h-[88dvh] overflow-y-auto sm:max-w-4xl" onOpenAutoFocus={(evento) => evento.preventDefault()}>
+      <DialogContent className="max-h-[88dvh] overflow-y-auto sm:max-w-5xl" onOpenAutoFocus={(evento) => evento.preventDefault()}>
         <DialogHeader>
-          <DialogTitle>Vistadores por área</DialogTitle>
-          <DialogDescription>Escolha quem vista as demandas normais e as de risco. Deixe vazio o que ainda não foi definido.</DialogDescription>
+          <DialogTitle>{proposta ? "Vistadores da lista USUARIOS" : "Vistadores por área"}</DialogTitle>
+          <DialogDescription>
+            {proposta
+              ? `A lista tem ${proposta.responsaveis} responsáveis pela vistagem; ${proposta.novos.length} entram agora (marcados como novo). GERENTE = SIM vai para as demandas de risco: confira e troque o tipo de quem não for. Ninguém sai sem você tirar.`
+              : "Escolha quem vista as demandas normais e as de risco. Clique no escudo ao lado do nome para trocar o tipo."}
+          </DialogDescription>
         </DialogHeader>
+        {proposta?.ignorados.length ? (
+          <Aviso tom="alerta">Ficaram de fora: {proposta.ignorados.map((item) => `${item.nome} (${item.motivo})`).join("; ")}.</Aviso>
+        ) : null}
         <ul className="divide-y divide-[#eef3f5] rounded-md border border-[#e6eef0]">
-          {ESCRITORIOS.map((area) => (
-            <li key={area} className="grid gap-2 px-3 py-3 sm:grid-cols-[11rem_minmax(0,1fr)_minmax(0,1fr)] sm:items-center">
-              <span className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <IconeArea area={area} tamanho="sm" />
+          {AREAS_DE_VISTADOR.map((area) => (
+            <li key={area} className="grid gap-3 px-3 py-3 lg:grid-cols-[11rem_minmax(0,1fr)_minmax(0,1fr)]">
+              <span className="flex items-center gap-2 pt-1 text-sm font-medium text-foreground">
+                <IconeDaAreaDeVistador area={area} />
                 {area}
               </span>
-              {TIPOS_DE_DEMANDA.map((tipo) => (
-                <div key={tipo} className="space-y-1">
-                  <span className={cn("block text-[11px] font-medium", tipo === "risco" ? "text-[#8f1d26]" : "text-muted-foreground")}>{ROTULO_DEMANDA[tipo]}</span>
-                  <ComboboxBusca
-                    pessoas
-                    permitirVazio
-                    opcoes={comAtuais(rascunho[area]?.[tipo])}
-                    valor={rascunho[area]?.[tipo] ?? ""}
-                    onChange={(nome) => setRascunho((atual) => ({ ...atual, [area]: { ...atual[area], [tipo]: nome || undefined } }))}
-                    placeholder="A definir"
-                    rotulo={`${ROTULO_DEMANDA[tipo]} de ${area}`}
-                  />
-                </div>
-              ))}
+              {TIPOS_DE_DEMANDA.map((tipo) => {
+                const nomes = rascunho[area]?.[tipo] ?? [];
+                const ocupados = new Set([...(rascunho[area]?.normal ?? []), ...(rascunho[area]?.risco ?? [])]);
+                return (
+                  <div key={tipo} className="space-y-1.5">
+                    <span className={cn("block text-[11px] font-medium", tipo === "risco" ? "text-[#8f1d26]" : "text-muted-foreground")}>{ROTULO_DEMANDA[tipo]}</span>
+                    {nomes.length ? (
+                      <ul className="flex flex-wrap gap-1.5">
+                        {nomes.map((nome) => (
+                          <li
+                            key={nome}
+                            className="inline-flex max-w-full items-center gap-1 rounded-md border border-[#dce9eb] bg-[#f7fbfc] py-0.5 pl-1 pr-0.5 text-sm text-foreground"
+                          >
+                            <AvatarPessoa nome={nome} foto={foto(nome)} className="size-5" />
+                            <span className="truncate" title={nome}>
+                              {nome}
+                            </span>
+                            {novos.has(`${area}|${nome}`) ? (
+                              <span className="rounded-full bg-[#e8f8f8] px-1.5 text-[10px] font-semibold uppercase text-[#285f7a]">novo</span>
+                            ) : null}
+                            <button
+                              type="button"
+                              className="rounded p-1 text-muted-foreground hover:bg-[#47cdd0]/15 hover:text-foreground"
+                              title={tipo === "normal" ? "Passar para demandas de risco" : "Passar para demandas normais"}
+                              aria-label={`${nome}: passar para ${tipo === "normal" ? "demandas de risco" : "demandas normais"}`}
+                              onClick={() => trocarTipo(area, tipo, nome)}
+                            >
+                              {tipo === "normal" ? <ShieldAlert className="size-3.5" aria-hidden /> : <ShieldCheck className="size-3.5" aria-hidden />}
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded p-1 text-muted-foreground hover:bg-red-50 hover:text-red-700"
+                              aria-label={`Tirar ${nome}`}
+                              title="Tirar"
+                              onClick={() => tirar(area, tipo, nome)}
+                            >
+                              <X className="size-3.5" aria-hidden />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    <ComboboxBusca
+                      pessoas
+                      permitirVazio
+                      opcoes={opcoes.filter((opcao) => !ocupados.has(opcao.nome))}
+                      valor=""
+                      onChange={(nome) => incluir(area, tipo, nome)}
+                      placeholder={nomes.length ? "Incluir outra pessoa…" : "A definir"}
+                      rotulo={`Incluir em ${ROTULO_DEMANDA[tipo].toLowerCase()} de ${area}`}
+                    />
+                  </div>
+                );
+              })}
             </li>
           ))}
         </ul>
@@ -692,6 +816,26 @@ function Configuracoes() {
   const [salvando, setSalvando] = useState(false);
   const [secao, setSecao] = useState<Secao>("editaveis");
   const [editando, setEditando] = useState<"vistadores" | "etiquetas" | null>(null);
+  /** Proposta lida da lista USUARIOS do SharePoint (abre no modal dos vistadores para conferir antes de salvar). */
+  const [proposta, setProposta] = useState<ResultadoDaImportacao | null>(null);
+  const [importando, setImportando] = useState(false);
+
+  async function importarDaLista() {
+    setImportando(true);
+    setErro("");
+    setAviso("");
+    try {
+      const resposta = await authFetch("/api/operacoes-legais/vistagem/configuracoes/vistadores-sharepoint", { method: "POST" });
+      const corpo = await resposta.json();
+      if (!resposta.ok) throw new Error(corpo.error ?? "Não foi possível ler a lista USUARIOS.");
+      setProposta(corpo as ResultadoDaImportacao);
+      setEditando("vistadores");
+    } catch (falha) {
+      setErro(falha instanceof Error ? falha.message : "Não foi possível ler a lista USUARIOS.");
+    } finally {
+      setImportando(false);
+    }
+  }
 
   const carregar = useCallback(async () => {
     setErro("");
@@ -826,7 +970,15 @@ function Configuracoes() {
 
       {secao === "editaveis" ? (
         <div className="grid gap-4 xl:grid-cols-2">
-          <Vistadores painel={painel} onEditar={() => setEditando("vistadores")} />
+          <Vistadores
+            painel={painel}
+            importando={importando}
+            onImportar={() => void importarDaLista()}
+            onEditar={() => {
+              setProposta(null);
+              setEditando("vistadores");
+            }}
+          />
           <div className="grid content-start gap-4">
             <EtiquetasDeRisco
               painel={painel}
@@ -852,7 +1004,16 @@ function Configuracoes() {
       )}
 
       {editando === "vistadores" ? (
-        <DialogoVistadores painel={painel} salvando={salvando} onFechar={() => setEditando(null)} onSalvar={(valor) => void salvar("vistadores", valor)} />
+        <DialogoVistadores
+          painel={painel}
+          proposta={proposta}
+          salvando={salvando}
+          onFechar={() => {
+            setEditando(null);
+            setProposta(null);
+          }}
+          onSalvar={(valor) => void salvar("vistadores", valor)}
+        />
       ) : null}
       {editando === "etiquetas" ? (
         <DialogoEtiquetas

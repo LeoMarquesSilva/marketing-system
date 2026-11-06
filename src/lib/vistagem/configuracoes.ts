@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ESCRITORIOS, ETIQUETAS_DE_RISCO_PADRAO } from "./triagem";
-import { VISTADORES_POR_AREA, type MapaDeVistadores } from "./vistadores";
+import { TODAS_AS_AREAS_VISTAGEM, VISTADORES_POR_AREA, listaDeNomes, type AreaDeVistador, type MapaDeVistadores } from "./vistadores";
 
 /**
  * Regras da Vistagem que o admin altera em Vistagem › Configurações. Cada uma tem um padrão no código: sem linha no
@@ -11,10 +11,14 @@ import { VISTADORES_POR_AREA, type MapaDeVistadores } from "./vistadores";
 export { ETIQUETAS_DE_RISCO_PADRAO };
 export const HORA_ARQUIVO_PADRAO = 8;
 
-const nome = z.string().trim().max(120).nullable();
+/** Pessoas de um tipo: lista de nomes (aceita o formato antigo, um nome só ou vazio). */
+const pessoas = z.preprocess(
+  (valor) => (valor === null || valor === undefined ? [] : typeof valor === "string" ? [valor] : valor),
+  z.array(z.string().trim().max(120)).max(40)
+);
 
 export const ESQUEMAS = {
-  vistadores: z.partialRecord(z.enum(ESCRITORIOS), z.object({ normal: nome.optional(), risco: nome.optional() })),
+  vistadores: z.partialRecord(z.enum([...ESCRITORIOS, TODAS_AS_AREAS_VISTAGEM]), z.object({ normal: pessoas.optional(), risco: pessoas.optional() })),
   etiquetasDeRisco: z.array(z.string().trim().min(2).max(60)).min(1).max(20),
   // O alerta de WhatsApp só é conferido no cron das 9h: depois disso ele nunca dispararia.
   horaArquivoEsperado: z.number().int().min(7).max(9),
@@ -62,7 +66,7 @@ export function montarConfiguracoes(linhas: { chave: string; valor: unknown }[])
   };
 }
 
-/** Limpa o que a tela mandou antes de gravar: nomes vazios viram null, etiquetas sem repetir. */
+/** Limpa o que a tela mandou antes de gravar: nomes vazios e repetidos saem, etiquetas sem repetir. */
 export function normalizarValor<C extends ChaveConfiguracao>(chave: C, valor: unknown): ConfiguracoesVistagem[C] {
   const dados = ESQUEMAS[chave].parse(valor) as ConfiguracoesVistagem[C];
   if (chave === "etiquetasDeRisco") {
@@ -77,9 +81,9 @@ export function normalizarValor<C extends ChaveConfiguracao>(chave: C, valor: un
   if (chave === "vistadores") {
     const limpo: MapaDeVistadores = {};
     for (const [area, quem] of Object.entries(dados as MapaDeVistadores)) {
-      const normal = quem?.normal?.trim() || null;
-      const risco = quem?.risco?.trim() || null;
-      if (normal || risco) limpo[area as keyof MapaDeVistadores] = { ...(normal ? { normal } : {}), ...(risco ? { risco } : {}) };
+      const normal = listaDeNomes(quem?.normal);
+      const risco = listaDeNomes(quem?.risco);
+      if (normal.length || risco.length) limpo[area as AreaDeVistador] = { ...(normal.length ? { normal } : {}), ...(risco.length ? { risco } : {}) };
     }
     return limpo as ConfiguracoesVistagem[C];
   }

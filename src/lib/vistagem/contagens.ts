@@ -24,7 +24,7 @@ const publicacoes = (total: number) => (total === 1 ? "publicação" : "publica�
 
 /**
  * Aba de cada contagem, a frase do leitor de tela (e da dica ao passar o mouse) e o resumo curto que vai ao lado
- * do título quando a pessoa só enxerga uma aba (o jurídico). As abas Visão geral e Gestão das publicações não têm
+ * do título quando a pessoa só enxerga uma aba. As abas Visão geral e Gestão das publicações não têm
  * número: não são fila de trabalho.
  */
 export const ABAS_COM_CONTAGEM: Record<AbaComContagem, { href: string; resumo: string; descrever: (total: number) => string }> = {

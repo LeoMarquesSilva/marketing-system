@@ -59,6 +59,7 @@ import {
   hasIcpAccess,
   hasOperacoesLegaisAccess,
   canSeeVistagemPath,
+  entradaDaVistagem,
   isAdminRole,
   isFacilitiesPath,
   isVistagemPath,
@@ -92,6 +93,8 @@ export type NavFeature = {
   pages: NavPage[];
   /** Página de configurações do módulo (só admin): fica na engrenagem do canto direito do cabeçalho, não nas abas. */
   configuracoes?: NavPage;
+  /** Por onde o perfil entra na funcionalidade (link da sidebar), quando não é a primeira aba liberada. */
+  entrada?: (profile: NavProfile | null | undefined) => string;
 };
 
 export type NavFront = {
@@ -367,6 +370,8 @@ export const NAV_FRONTS: NavFront[] = [
           { href: "/operacoes-legais/vistagem/check", label: "Check" },
         ],
         configuracoes: { href: "/operacoes-legais/vistagem/configuracoes", label: "Configurações" },
+        // O jurídico vê a Visão geral e a Vistagem, mas entra pela Vistagem (como no firstAllowedPath).
+        entrada: entradaDaVistagem,
       },
       {
         // Escuta do time (1º uso: PE27); a resposta fica em /pesquisa/<link>, aberta ao público de cada pesquisa.
@@ -550,7 +555,11 @@ export function buildNav(profile: NavProfile | null | undefined): VisibleNavFron
     ...front,
     features: front.features.flatMap((feature) => {
       const pages = feature.pages.filter((page) => isVisible(page.href));
-      return pages.length > 0 ? [{ ...feature, pages, href: pages[0].href }] : [];
+      if (pages.length === 0) return [];
+      // A entrada do perfil só vale se for uma das abas que ele enxerga; senão, a primeira liberada.
+      const entrada = feature.entrada?.(profile);
+      const href = entrada && pages.some((page) => page.href === entrada) ? entrada : pages[0].href;
+      return [{ ...feature, pages, href }];
     }),
   })).filter((front) => front.features.length > 0);
 }

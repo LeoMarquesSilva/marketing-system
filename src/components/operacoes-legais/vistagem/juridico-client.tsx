@@ -1703,7 +1703,14 @@ function FiltroDemanda({
   );
 }
 
-/** Agrupa a fila por grupo do cliente; grupos e publicações com demanda de risco primeiro. */
+/** Dia do recebimento para ordenar; sem data vai para o fim. */
+const recebimento = (publicacao: PublicacaoResumo) => publicacao.dataImportacao ?? "9999-12-31";
+
+/**
+ * Agrupa a fila por grupo do cliente, na ordem do recebimento: a mais antiga primeiro, com ou sem risco (a normal
+ * de ontem vem antes da de risco de hoje). No mesmo dia, a de risco vem antes. Os grupos seguem a publicação mais
+ * antiga de cada um.
+ */
 function agruparFila(publicacoes: PublicacaoResumo[]): GrupoFila[] {
   const grupos = new Map<string, PublicacaoResumo[]>();
   for (const publicacao of publicacoes) {
@@ -1714,11 +1721,19 @@ function agruparFila(publicacoes: PublicacaoResumo[]): GrupoFila[] {
     .map(([nome, lista]) => ({
       nome,
       publicacoes: [...lista].sort(
-        (a, b) => Number(Boolean(b.demandaRisco)) - Number(Boolean(a.demandaRisco)) || (a.dataPublicacao ?? "").localeCompare(b.dataPublicacao ?? "")
+        (a, b) =>
+          recebimento(a).localeCompare(recebimento(b)) ||
+          Number(Boolean(b.demandaRisco)) - Number(Boolean(a.demandaRisco)) ||
+          (a.dataPublicacao ?? "").localeCompare(b.dataPublicacao ?? "")
       ),
       riscos: lista.filter((p) => p.demandaRisco).length,
     }))
-    .sort((a, b) => Number(b.riscos > 0) - Number(a.riscos > 0) || a.nome.localeCompare(b.nome, "pt-BR"));
+    .sort(
+      (a, b) =>
+        recebimento(a.publicacoes[0]).localeCompare(recebimento(b.publicacoes[0])) ||
+        Number(b.riscos > 0) - Number(a.riscos > 0) ||
+        a.nome.localeCompare(b.nome, "pt-BR")
+    );
 }
 
 function Juridico() {
@@ -1877,8 +1892,9 @@ function Juridico() {
 
   return (
     <div className="space-y-4">
-      {/* Uma linha só: "A vistar / Agendadas" à esquerda e os filtros do tamanho do conteúdo (sem nada escolhido,
-          só o ícone e o nome do filtro). Em tela estreita, os filtros descem de linha. */}
+      {/* Uma linha só: "A vistar / Vistado", Risco / Normal (só para quem vista os dois), área, recebimento,
+          grupo, tribunal e a busca, do tamanho do conteúdo (sem nada escolhido, só o ícone e o nome do filtro).
+          Em tela estreita, os filtros descem de linha. */}
       <div className="flex flex-wrap items-center gap-2" data-tour="vj-filtros">
         <div data-tour="vj-visao">
         <Segmented
@@ -1891,13 +1907,9 @@ function Juridico() {
           onChange={setVisao}
         />
         </div>
-        <Busca
-          className="sm:w-52"
-          value={busca}
-          onChange={(evento) => setBusca(evento.target.value)}
-          placeholder="Processo, cliente ou CI"
-          aria-label="Buscar publicação"
-        />
+        {visao === "fila" && veRisco ? (
+          <FiltroDemanda valor={risco} riscos={riscos} normais={(publicacoes?.length ?? 0) - riscos} onChange={setRisco} />
+        ) : null}
         <Seletor
           rotulo="Área"
           className={FILTRO_COMPACTO}
@@ -1941,14 +1953,20 @@ function Juridico() {
               rotuloVazio={<CampoVazio icone={<IconeOpcao icone={Landmark} />} texto="Tribunal" />}
               opcoes={tribunaisDaFila.map(([nome, quantidade]) => ({ valor: nome, rotulo: nome, descricao: descricaoDoTribunal(nome), contagem: quantidade, icone: <IconeTribunal sigla={nome} /> }))}
             />
-            {veRisco ? <FiltroDemanda valor={risco} riscos={riscos} normais={(publicacoes?.length ?? 0) - riscos} onChange={setRisco} /> : null}
-            {filtrosAtivos && publicacoes ? (
-              <Button type="button" variant="ghost" size="sm" className="text-[#347796]" onClick={limparFiltros} title="Mostrar todas de novo">
-                <X />
-                Limpar ({filtradas.length} de {publicacoes.length})
-              </Button>
-            ) : null}
           </>
+        ) : null}
+        <Busca
+          className="sm:w-52"
+          value={busca}
+          onChange={(evento) => setBusca(evento.target.value)}
+          placeholder="Processo, cliente ou CI"
+          aria-label="Buscar publicação"
+        />
+        {visao === "fila" && filtrosAtivos && publicacoes ? (
+          <Button type="button" variant="ghost" size="sm" className="text-[#347796]" onClick={limparFiltros} title="Mostrar todas de novo">
+            <X />
+            Limpar ({filtradas.length} de {publicacoes.length})
+          </Button>
         ) : null}
       </div>
 

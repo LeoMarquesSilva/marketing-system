@@ -28,7 +28,7 @@ export function Header() {
   const comAbas = tabs.length > 1;
   // Configurações do módulo: só para admin.
   const configuracoes = contexto.configuracoes && isAdminRole(profile) ? contexto.configuracoes : null;
-  // Sem abas (ex.: o jurídico, que só enxerga a aba Vistagem), o número da página vai ao lado do título.
+  // Sem abas (a funcionalidade com uma página só liberada), o número da página vai ao lado do título.
   const badgeDaPagina = !comAbas && activeHref ? badgeFor(activeHref) : null;
   const resumo = badgeDaPagina?.soNoCabecalho && badgeDaPagina.value > 0 ? badgeDaPagina : null;
   // Abas da Vistagem: botão "Ver guia" (e o guia que abre sozinho na primeira visita a cada aba).
