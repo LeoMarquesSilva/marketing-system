@@ -38,6 +38,7 @@ import {
   Scale,
   Settings,
   Sparkles,
+  SquareKanban,
   Ticket,
   TrendingUp,
   Trophy,
@@ -58,10 +59,12 @@ import {
   hasFacilitiesAccess,
   hasIcpAccess,
   hasOperacoesLegaisAccess,
+  hasOpsPlannerAccess,
   canSeeVistagemPath,
   entradaDaVistagem,
   isAdminRole,
   isFacilitiesPath,
+  isOpsPlannerPath,
   isVistagemPath,
   isCollaboratorPhotosManager,
   resolveAllowedSections,
@@ -138,7 +141,8 @@ export const NAV_FRONTS: NavFront[] = [
     features: [
       {
         id: "planner",
-        label: "Planner",
+        label: "Planner de Marketing",
+        shortLabel: "Planner Mkt",
         icon: Columns3,
         pages: [
           { href: "/planner", label: "Quadro" },
@@ -355,6 +359,19 @@ export const NAV_FRONTS: NavFront[] = [
         pages: [{ href: "/operacoes-legais", label: "Operações Legais" }],
       },
       {
+        id: "planner-ops",
+        label: "Planner Ops",
+        title: "Planner de Operações Legais",
+        shortLabel: "Planner Ops",
+        icon: SquareKanban,
+        pages: [
+          { href: "/operacoes-legais/planner", label: "Minhas tarefas" },
+          { href: "/operacoes-legais/planner/espacos", label: "Espaços" },
+          { href: "/operacoes-legais/planner/gestao", label: "Gestão" },
+          { href: "/operacoes-legais/planner/rotinas", label: "Rotinas" },
+        ],
+      },
+      {
         id: "vistagem",
         label: "Vistagem de Publicações BP",
         shortLabel: "Vistagem",
@@ -482,6 +499,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
     hasHrAccess(profile?.role, profile?.permissions) || profile?.ferias_view_enabled === true;
   const gustavo = canAccessGustavoContent(profile);
   const teamPosts = canSeeTeamPosts(profile);
+  const opsPlanner = hasOpsPlannerAccess(profile);
   const allowed = resolveAllowedSections(profile);
 
   if (allowed) {
@@ -493,6 +511,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
       if (href === "/fotos-colaboradores") return isCollaboratorPhotosManager(profile);
       if (isFacilitiesPath(href)) return hasFacilitiesAccess(profile);
       if (isVistagemPath(href)) return canSeeVistagemPath(profile, href);
+      if (isOpsPlannerPath(href)) return opsPlanner;
       if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
       if (href.startsWith("/operacoes-legais")) return hasOperacoesLegaisAccess(profile);
       if (href === "/icp") return hasIcpAccess(profile);
@@ -508,6 +527,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
   if (isContentCollaborator(profile)) {
     return (href) => {
       if (COLLABORATOR_PAGES.has(href)) return true;
+      if (isOpsPlannerPath(href)) return opsPlanner;
       if (href === "/rh/ferias") return feriasView;
       if (href === "/conteudo/gustavo") return gustavo;
       if (href === TEAM_POSTS_PATH) return teamPosts;
@@ -519,6 +539,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
   return (href) => {
     if (isFacilitiesPath(href)) return hasFacilitiesAccess(profile);
     if (isVistagemPath(href)) return canSeeVistagemPath(profile, href);
+    if (isOpsPlannerPath(href)) return opsPlanner;
     if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
     if (href.startsWith("/operacoes-legais/")) return hasOperacoesLegaisAccess(profile);
     switch (href) {
