@@ -18,6 +18,7 @@ import {
   type OpcaoVios,
 } from "./agendamento";
 import { openAIKey } from "@/lib/openai-keys";
+import { registrarNoBkpSemFalhar } from "./bkp-sioe-server";
 import { cienciaDosAgendamentos, cienciaQueFica, ehCienciaDosAgendamentos, ehReestruturacao } from "./ciencia-agendamentos";
 import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./dias-uteis";
 import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
@@ -1291,6 +1292,8 @@ export async function checarPublicacao(id: string, nota: string | null, authUser
     .maybeSingle();
   if (error) falhou("registrar o check", error);
   if (!data) throw new VistagemError("A publicação foi alterada por outra pessoa. Recarregue a página.", 409);
+  // Fim da esteira: vai para o BKP do SIOE (desligado até a troca do SharePoint; VISTAGEM_BKP_SIOE=on liga).
+  await registrarNoBkpSemFalhar([id]);
 }
 
 /** Erro encontrado no check: registra a inconsistência de agendamento e deixa a publicação em revisão. */

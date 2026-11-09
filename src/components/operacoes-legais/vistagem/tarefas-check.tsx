@@ -5,8 +5,8 @@ import type { LucideIcon } from "lucide-react";
 import { Bot, CalendarDays, CircleCheck, Clock, Flag, Info, TriangleAlert, UserCheck, UserRound, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ROTULO_ETIQUETA, chaveNome, nomesDasPessoas } from "@/lib/vistagem/agendamento";
-import { compararTarefa, type ComparacaoDaTarefa, type SituacaoCampo, type SituacaoCheck } from "@/lib/vistagem/check";
+import { ROTULO_ETIQUETA, chaveNome, nomesDasPessoas, revisorFicaNaTarefa } from "@/lib/vistagem/agendamento";
+import { compararTarefa, revisorEstaNaTarefa, type ComparacaoDaTarefa, type SituacaoCampo, type SituacaoCheck } from "@/lib/vistagem/check";
 import { nomeCurto } from "@/lib/vistagem/como-fica-no-vios";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import type { AgendamentoResumo } from "@/lib/vistagem/types";
@@ -169,6 +169,7 @@ function Comparacao({
 }) {
   const { gravada } = comparacao;
   const responsavel = comparacao.responsavel;
+  const revisorNaTarefa = revisorEstaNaTarefa(item);
   return (
     <div className="@container overflow-hidden rounded-md border border-[#e6eef0]">
       <table className="w-full table-fixed border-collapse text-sm @max-sm:block">
@@ -248,10 +249,22 @@ function Comparacao({
             <Linha
               icone={UserCheck}
               rotulo="Revisor"
-              dica="O robô não devolve o revisor da tarefa. No VIOS, aparecem aqui as tarefas Revisar do fluxo e quem está nelas."
-              situacao={null}
+              dica={
+                revisorFicaNaTarefa(item.tarefa)
+                  ? "Na Sessão de Julgamento o revisor fica na própria tarefa, junto com o responsável."
+                  : "O robô não devolve o revisor da tarefa. No VIOS, aparecem aqui as tarefas Revisar do fluxo e quem está nelas."
+              }
+              situacao={revisorNaTarefa ? "confere" : null}
               pedido={<PessoasCurtas texto={item.revisor} fotos={fotos} />}
-              noVios={<RevisoresNoVios item={item} fotos={fotos} hoje={hoje} />}
+              noVios={
+                revisorNaTarefa ? (
+                  <PessoasCurtas texto={item.revisor} fotos={fotos} />
+                ) : revisorNaTarefa === false ? (
+                  <NaoVeio>Não está na tarefa: confira no VIOS</NaoVeio>
+                ) : (
+                  <RevisoresNoVios item={item} fotos={fotos} hoje={hoje} />
+                )
+              }
             />
           ) : null}
         </tbody>

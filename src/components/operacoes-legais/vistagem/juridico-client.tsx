@@ -51,6 +51,7 @@ import {
   horaFinalPadrao,
   horaValida,
   nomesDasPessoas,
+  revisorFicaNaTarefa,
   separarNomes,
   type EtiquetaAgendamento,
 } from "@/lib/vistagem/agendamento";
@@ -1008,7 +1009,7 @@ export function EditorVistagem({
           hora: tarefa.hora ?? "",
           horaFim: horaFinalPadrao(tarefa.hora),
           responsavel: opcao.responsaveis?.length ? opcao.responsaveis.join(", ") : detalhe.responsavelSugerido ?? "",
-          revisor: prazo ? detalhe.revisorSugerido ?? "" : "",
+          revisor: prazo || revisorFicaNaTarefa(opcao.nome) ? detalhe.revisorSugerido ?? "" : "",
           observacao: tarefa.motivo,
           ia: true,
         }),
@@ -1472,6 +1473,7 @@ export function EditorVistagem({
                                           : eraDoTipo
                                             ? { responsavel: detalhe.responsavelSugerido ?? "" }
                                             : {}),
+                                        ...(revisorFicaNaTarefa(nome) && !linha.revisor ? { revisor: detalhe.revisorSugerido ?? "" } : {}),
                                       });
                                       if (nome && linha.etiqueta === "COMPROMISSO") setHorarioDe(linha.chave);
                                     }}
@@ -1657,6 +1659,7 @@ export function EditorVistagem({
                                   {prazo && detalhe.revisorSugerido && linha.revisor === detalhe.revisorSugerido ? (
                                     <span className="font-normal"> · auxiliar da pasta</span>
                                   ) : null}
+                                  {revisorFicaNaTarefa(linha.tarefa) ? <span className="font-normal"> · fica na tarefa, com o responsável</span> : null}
                                 </span>
                                 <ComboboxBusca
                                   opcoes={pessoasDoCampo.opcoes}
