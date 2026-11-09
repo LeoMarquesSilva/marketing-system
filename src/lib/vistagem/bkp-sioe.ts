@@ -269,7 +269,7 @@ export function linhaDoBkp(
   // Devolução da vistagem de Operações Legais: entra como erro da Análise (com o do Check, vale o mais recente).
   const daAnalise =
     devolucao && publicacao.vistadoPorOperacoesLegais
-      ? { tipo: "ANÁLISE", subtipo: SUBTIPO_DA_ANALISE[devolucao.tipo] ?? null, criadoEm: devolucao.criadoEm }
+      ? { tipo: "ANÁLISE", subtipo: SUBTIPO_DA_ANALISE[devolucao.tipo] ?? null, descricao: devolucao.descricao, criadoEm: devolucao.criadoEm }
       : null;
   const doCheck = maisRecente([ultima(inconsistencias, "agendamento"), daAnalise]);
   const doJuridico = daAnalise ? null : devolucao;
@@ -306,9 +306,20 @@ export function linhaDoBkp(
     inconsistencia_subtipo: doCheck?.subtipo ?? null,
     inconsistencias_juridico: doJuridico?.tipo ?? null,
     inconsistencia_juridico_descricao: doJuridico?.descricao ?? null,
-    check_pub: publicacao.checkNota?.trim() || null,
+    check_pub: textoDoCheck(doCheck?.descricao, publicacao.checkNota),
     publicacao_esocial: publicacao.publicacaoEsocial,
   };
+}
+
+/**
+ * Coluna CHECK da lista: com erro (ANÁLISE ou AGENDAMENTO), o "O que está errado" da inconsistência, como a lista guardava;
+ * a nota do check OK, se houver, vai depois. Sem erro, só a nota.
+ */
+function textoDoCheck(erro: string | null | undefined, nota: string | null): string | null {
+  const texto = erro?.trim();
+  const observacao = nota?.trim();
+  if (!texto) return observacao || null;
+  return observacao && observacao !== texto ? `${texto} — Check: ${observacao}` : texto;
 }
 
 /** Colunas de vistagem_publicacoes que o BKP usa (as mesmas no servidor e no script de preenchimento). */
