@@ -15,6 +15,7 @@ import {
   avisosDaData,
   atalhosDePrazo,
   montarObservacaoVios,
+  observacaoObrigatoria,
   referenciaDaPublicacao,
   responsaveisNaArea,
   separarNomes,
@@ -113,6 +114,55 @@ describe("validarAgendamentos", () => {
           fluxoDatas: [],
         },
       ],
+    });
+  });
+
+  describe("CIÊNCIA NF: observação obrigatória", () => {
+    const comCiencia = {
+      ...contexto,
+      tarefas: {
+        ...contexto.tarefas,
+        PROVIDENCIA: [
+          ...contexto.tarefas.PROVIDENCIA,
+          { id: "796", nome: "CIÊNCIA NF" },
+          { id: "316", nome: "CIÊNCIA NF (tipo 316)", nomeVios: "CIÊNCIA NF" },
+        ],
+      },
+    };
+    const nf = (extra: Record<string, unknown>) => ({ etiqueta: "PROVIDENCIA" as const, tarefa: "CIÊNCIA NF", data: "2026-11-10", responsavel: "Advogada Exemplo", ...extra });
+
+    it("reconhece o tipo pelo nome do VIOS, sem acento e sem diferença de caixa", () => {
+      expect(observacaoObrigatoria("CIÊNCIA NF")).toBe(true);
+      expect(observacaoObrigatoria(" ciencia nf ")).toBe(true);
+      expect(observacaoObrigatoria("1. CIÊNCIA DOS AGENDAMENTOS")).toBe(false);
+      expect(observacaoObrigatoria(null)).toBe(false);
+    });
+
+    it("sem observação, não passa; só espaços também não", () => {
+      for (const observacao of [undefined, "", "   "]) {
+        const resultado = validarAgendamentos([nf({ observacao })], comCiencia);
+        expect(resultado).toEqual({ ok: false, erros: ["Tarefa 1: na CIÊNCIA NF a observação é obrigatória (vai como justificativa no VIOS)."] });
+      }
+    });
+
+    it("com observação, passa", () => {
+      const resultado = validarAgendamentos([nf({ observacao: " Sem providência: só ciência. " })], comCiencia);
+      expect(resultado.ok && resultado.itens[0]).toMatchObject({ tarefa: "CIÊNCIA NF", tarefaId: "796", observacao: "Sem providência: só ciência." });
+    });
+
+    it("vale também quando a lista mostra o tipo no fim do nome", () => {
+      const resultado = validarAgendamentos([nf({ tarefa: "CIÊNCIA NF (tipo 316)", tarefaId: "316" })], comCiencia);
+      expect(resultado.ok).toBe(false);
+    });
+
+    it("as outras tarefas continuam com a observação opcional", () => {
+      const resultado = validarAgendamentos([nf({ tarefa: "1. CIÊNCIA DOS AGENDAMENTOS" })], comCiencia);
+      expect(resultado.ok).toBe(true);
+    });
+
+    it("a Conferência não exige: ali só se ajusta data e pessoas", () => {
+      const resultado = validarAgendamentos([nf({})], { ...comCiencia, exigirObservacao: false });
+      expect(resultado.ok).toBe(true);
     });
   });
 
