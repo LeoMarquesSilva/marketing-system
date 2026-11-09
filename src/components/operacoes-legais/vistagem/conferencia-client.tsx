@@ -45,6 +45,7 @@ import { EditarTarefa } from "./editar-tarefa";
 import { FaixaDoProcesso, NA_FAIXA } from "./faixa-processo";
 import { FichaPasta } from "./ficha-pasta";
 import { FichaProcesso, ResumoDaFicha } from "./ficha-processo";
+import { BotaoHistorico } from "./historico-publicacao";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { FiltroData, dataNaLista } from "./filtro-data";
 import { LeitorPublicacao } from "./leitor-publicacao";
@@ -627,6 +628,8 @@ function ItemConferencia({
           </>
         }
       >
+        {/* O que aconteceu com a publicação: triagem, transferência de área, vistagem, devolução, robô. */}
+        <BotaoHistorico publicacaoId={publicacao.id} processo={processo} className={cn(BOTAO_FAIXA, acoes && "mr-1")} />
         {acoes ? <div className="flex flex-wrap items-center gap-2" data-tour="cf-acoes">{acoes}</div> : null}
         {navegacao ? (
           <div className={cn("flex items-center gap-1", acoes && "ml-2 border-l border-white/20 pl-2")}>

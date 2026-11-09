@@ -19,7 +19,7 @@ export const SITUACOES_NO_ROBO: { valor: SituacaoNoRobo; rotulo: string; descric
 type TarefaNoRobo = Pick<AgendamentoResumo, "envioStatus" | "envioErro" | "envioSimulado">;
 
 /** A fila deixa a tarefa pendente com o motivo no texto do envio enquanto espera o VIOS (ou vai para a pasta às 17h). */
-function esperandoOVios(tarefa: TarefaNoRobo): boolean {
+export function esperandoOVios(tarefa: TarefaNoRobo): boolean {
   return tarefa.envioStatus === "pendente" && /^Aguardando a disponibilidade da publicação no VIOS|agendar direto na pasta/.test(tarefa.envioErro ?? "");
 }
 

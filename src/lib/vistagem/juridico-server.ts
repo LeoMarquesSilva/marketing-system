@@ -37,7 +37,8 @@ import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsisten
 import { linhasParaFila, modoDaPublicacao, type TarefaNoVios } from "./fila-vios";
 import { LIMITE_TRECHO_SINTESE, materiasDaLista, precisaDeMateria, precisaDeSistema, sistemaDaLista } from "./dados-processo";
 import { buscarPastaPorCi, buscarSinteseDaPasta, cadastroDaPasta, semMateria, semSistema, type CadastroDaPasta } from "./sioe";
-import { ESCRITORIOS, type PastaSioe } from "./triagem";
+import { ESCRITORIOS, type PastaSioe, type Pendencia } from "./triagem";
+import { montarHistorico, type HistoricoPublicacao } from "./historico";
 import {
   carregarArvoreVios,
   carregarCatalogoProcessos,
@@ -53,7 +54,7 @@ import {
   sintesesDaPasta,
   type CatalogoArea,
 } from "./sama";
-import { COLUNAS_PUBLICACAO, admin, falhou, hojeEmSaoPaulo, publicacaoResumo, resolverPendencia, type PublicacaoRow } from "./server";
+import { COLUNAS_PUBLICACAO, admin, falhou, hojeEmSaoPaulo, publicacaoResumo, resolverPendencia, type ArquivoDaPublicacao, type PublicacaoRow } from "./server";
 import type {
   AgendadasJuridicoResposta,
   AgendamentoResumo,
@@ -64,11 +65,13 @@ import type {
   CheckResposta,
   DataDoFluxo,
   DjenParte,
+  DuplicidadeResultado,
   EnvioStatus,
   InconsistenciaItem,
   InconsistenciaResumo,
   MateriaVios,
   PublicacaoResumo,
+  PublicacaoStatus,
   ResolucaoPendencia,
   ResultadoCentral,
   SintesePedida,
@@ -623,6 +626,101 @@ async function nomesDosUsuarios(ids: (string | null)[]): Promise<Map<string, str
   const { data, error } = await admin().from("users").select("auth_id, name").in("auth_id", unicos);
   if (error) falhou("carregar os nomes de quem vistou", error);
   return new Map((data ?? []).map((row: { auth_id: string; name: string | null }) => [row.auth_id, row.name ?? ""]));
+}
+
+// ---------------------------------------------------------------------------
+// Histórico da publicação (botão "Histórico" da Conferência)
+// ---------------------------------------------------------------------------
+
+const COLUNAS_HISTORICO =
+  "status, created_at, linha_arquivo, data_publicacao, triada_em, pasta_ci, pasta_vinculo, escritorio_responsavel, pendencia, triagem_resolvida_por, triagem_resolvida_em, duplicidade_resultado, duplicidade_revisada_por, duplicidade_revisada_em, transferido_de, transferido_por, transferido_em, transferencia_motivo, vistado_por, vistado_em, observacao_vistagem, devolvido_por, devolvido_em, devolucao_motivo, devolucoes, revistado_por, revistado_em, conferido_por, conferido_em, central_item_id, central_enviada_em, central_erro, central_tentativa_em, checado_por, checado_em, check_nota, arquivo:vistagem_kurier_arquivos(origem)";
+
+type HistoricoRow = {
+  status: PublicacaoStatus; created_at: string; linha_arquivo: number | null; data_publicacao: string | null;
+  triada_em: string | null; pasta_ci: string | null; pasta_vinculo: string | null; escritorio_responsavel: string | null;
+  pendencia: Pendencia | null; triagem_resolvida_por: string | null; triagem_resolvida_em: string | null;
+  duplicidade_resultado: DuplicidadeResultado | null; duplicidade_revisada_por: string | null; duplicidade_revisada_em: string | null;
+  transferido_de: string | null; transferido_por: string | null; transferido_em: string | null; transferencia_motivo: string | null;
+  vistado_por: string | null; vistado_em: string | null; observacao_vistagem: string | null;
+  devolvido_por: string | null; devolvido_em: string | null; devolucao_motivo: string | null; devolucoes: number | null;
+  revistado_por: string | null; revistado_em: string | null; conferido_por: string | null; conferido_em: string | null;
+  central_item_id: string | null; central_enviada_em: string | null; central_erro: string | null; central_tentativa_em: string | null;
+  checado_por: string | null; checado_em: string | null; check_nota: string | null;
+  arquivo?: ArquivoDaPublicacao | ArquivoDaPublicacao[] | null;
+};
+
+type TarefaDoHistoricoRow = {
+  tarefa: string; data: string | null; responsavel: string | null; ajustes: AjusteNaTarefa[] | null; envio_status: EnvioStatus;
+  envio_simulado: boolean | null; envio_erro: string | null; enviado_em: string | null; envio_atualizado_em: string | null;
+};
+
+/** O que aconteceu com a publicação, em ordem: das colunas de quem fez e quando, das tarefas e das inconsistências. */
+export async function historicoDaPublicacao(id: string): Promise<HistoricoPublicacao> {
+  const db = admin();
+  const [publicacao, tarefas, inconsistencias] = await Promise.all([
+    db.from("vistagem_publicacoes").select(COLUNAS_HISTORICO).eq("id", id).maybeSingle(),
+    db
+      .from("vistagem_agendamentos")
+      .select("tarefa, data, responsavel, ajustes, envio_status, envio_simulado, envio_erro, enviado_em, envio_atualizado_em")
+      .eq("publicacao_id", id)
+      .order("ordem", { ascending: true }),
+    inconsistenciasPorPublicacao([id]),
+  ]);
+  if (publicacao.error) falhou("carregar o histórico da publicação", publicacao.error);
+  if (tarefas.error) falhou("carregar as tarefas do histórico", tarefas.error);
+  const row = publicacao.data as unknown as HistoricoRow | null;
+  if (!row) throw new VistagemError("Publicação não encontrada.", 404);
+  const nomes = await nomesDosUsuarios([
+    row.triagem_resolvida_por, row.duplicidade_revisada_por, row.transferido_por, row.vistado_por,
+    row.devolvido_por, row.revistado_por, row.conferido_por, row.checado_por,
+  ]);
+  const nome = (authId: string | null) => (authId ? nomes.get(authId) || null : null);
+  const marca = (por: string | null, em: string | null) => (em ? { por: nome(por), em } : null);
+  const arquivo = Array.isArray(row.arquivo) ? row.arquivo[0] : row.arquivo;
+  const vistagem = marca(row.vistado_por, row.vistado_em);
+  const devolucao = marca(row.devolvido_por, row.devolvido_em);
+  const duplicidade = marca(row.duplicidade_revisada_por, row.duplicidade_revisada_em);
+  const check = marca(row.checado_por, row.checado_em);
+  const temCentral = Boolean(row.central_item_id || row.central_enviada_em || row.central_erro);
+  const eventos = montarHistorico({
+    status: row.status,
+    capturadaEm: row.created_at,
+    colada: arquivo?.origem === "colado",
+    linhaArquivo: row.linha_arquivo,
+    dataPublicacao: row.data_publicacao,
+    triadaEm: row.triada_em,
+    pastaCi: row.pasta_ci,
+    pastaVinculo: row.pasta_vinculo,
+    escritorio: row.escritorio_responsavel,
+    pendencia: row.pendencia,
+    triagemResolvida: marca(row.triagem_resolvida_por, row.triagem_resolvida_em),
+    duplicidadeRevisada: duplicidade ? { ...duplicidade, resultado: row.duplicidade_resultado } : null,
+    transferencia:
+      row.transferido_de && row.transferido_em
+        ? { de: row.transferido_de, por: nome(row.transferido_por), em: row.transferido_em, motivo: row.transferencia_motivo }
+        : null,
+    vistagem: vistagem ? { ...vistagem, observacao: row.observacao_vistagem } : null,
+    devolucao: devolucao ? { ...devolucao, motivo: row.devolucao_motivo, total: row.devolucoes ?? 1 } : null,
+    revistagem: marca(row.revistado_por, row.revistado_em),
+    conferencia: marca(row.conferido_por, row.conferido_em),
+    central: temCentral
+      ? { itemId: row.central_item_id, enviadaEm: row.central_enviada_em, erro: row.central_erro, tentativaEm: row.central_tentativa_em }
+      : null,
+    check: check ? { ...check, nota: row.check_nota } : null,
+    tarefas: ((tarefas.data ?? []) as unknown as TarefaDoHistoricoRow[]).map((tarefa) => ({
+      tarefa: tarefa.tarefa,
+      data: tarefa.data,
+      responsavel: tarefa.responsavel,
+      ajustes: tarefa.ajustes ?? [],
+      envioStatus: tarefa.envio_status,
+      envioSimulado: tarefa.envio_simulado,
+      envioErro: tarefa.envio_erro,
+      enviadoEm: tarefa.enviado_em,
+      envioAtualizadoEm: tarefa.envio_atualizado_em,
+    })),
+    inconsistencias: inconsistencias.get(id) ?? [],
+  });
+  return { status: row.status, eventos };
 }
 
 async function itensDeConferencia(
