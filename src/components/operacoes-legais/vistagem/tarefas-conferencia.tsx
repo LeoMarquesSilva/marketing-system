@@ -2,15 +2,16 @@
 
 import { useId, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Bot, CalendarClock, CalendarDays, ChevronDown, CircleCheckBig, ClipboardList, CornerDownRight, ExternalLink, Hourglass, Workflow } from "lucide-react";
+import { ArrowRight, Bot, CalendarClock, CalendarDays, ChevronDown, CircleCheckBig, ClipboardList, CornerDownRight, ExternalLink, Hourglass, Pencil, Workflow } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ROTULO_ETIQUETA, chaveNome, nomesDasPessoas } from "@/lib/vistagem/agendamento";
 import { agendaNoVios, nomeCurto, partesDaData } from "@/lib/vistagem/como-fica-no-vios";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
-import type { AgendamentoResumo, EnvioStatus } from "@/lib/vistagem/types";
+import type { AgendamentoResumo, AjusteNaTarefa, EnvioStatus, MudancaNaTarefa } from "@/lib/vistagem/types";
 import { linkTarefaVios } from "@/lib/vistagem/vios-links";
 import { AvatarPessoa } from "./combobox-busca";
-import { formatarData } from "./publicacao-ui";
+import { formatarData, formatarDataHora } from "./publicacao-ui";
 import { ReguaDatas, relativoAHoje, type MarcoRegua } from "./regua-datas";
 import { Selo, TOM_CLASSE, type TomSelo } from "./ui";
 
@@ -186,7 +187,7 @@ export function AgendaNoVios({ item, fotos, hoje }: { item: AgendamentoResumo; f
                   ) : null}
                   {dataMudou ? (
                     <p className="text-[11px] text-amber-800">
-                      Data alterada pelo jurídico{linha.dataVios ? ` · o VIOS daria ${formatarData(linha.dataVios)}` : ""}
+                      Data alterada{linha.dataVios ? ` · o VIOS daria ${formatarData(linha.dataVios)}` : ""}
                     </p>
                   ) : null}
                 </div>
@@ -211,20 +212,58 @@ export function AgendaNoVios({ item, fotos, hoje }: { item: AgendamentoResumo; f
   );
 }
 
+/** O que muda ou mudou numa tarefa: "Data fatal: 20/11/2026 → 24/11/2026". */
+export function ListaDeMudancas({ mudancas }: { mudancas: MudancaNaTarefa[] }) {
+  return (
+    <ul className="space-y-0.5 text-xs text-foreground">
+      {mudancas.map((mudanca) => (
+        <li key={mudanca.campo} className="break-words">
+          <span className="font-medium">{mudanca.campo}:</span> <span className="text-muted-foreground">{mudanca.de}</span>
+          <ArrowRight className="mx-1 inline size-3 text-muted-foreground" aria-label="passou para" />
+          {mudanca.para}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** O que a controladoria ajustou na tarefa, com quem e quando: a data e o responsável não são mais os que o jurídico vistou. */
+function AjustesDaTarefa({ ajustes }: { ajustes: AjusteNaTarefa[] }) {
+  return (
+    <section aria-label="Ajustes feitos na conferência" className="space-y-2 rounded-md border border-[#dce9eb] bg-[#f7fbfc] px-3 py-2">
+      {ajustes.map((ajuste) => (
+        <div key={ajuste.em} className="space-y-1">
+          <p className="flex flex-wrap items-center gap-x-1.5 text-xs font-medium text-[#285f7a]">
+            <Pencil className="size-3 shrink-0" aria-hidden />
+            Ajustada na conferência{ajuste.por ? ` por ${ajuste.por}` : ""}
+            <span className="font-normal tabular-nums text-muted-foreground">{formatarDataHora(ajuste.em)}</span>
+          </p>
+          <ListaDeMudancas mudancas={ajuste.mudancas} />
+        </div>
+      ))}
+    </section>
+  );
+}
+
 /**
  * Tarefas da vistagem em cartões separados e numerados, para a coluna ao lado da publicação (conferência): classe
  * com ícone, data (no Prazo, a régua até a fatal), responsável e revisor com foto, a situação no robô e a agenda do VIOS.
+ * Com `onEditar`, as tarefas em que `podeEditar` vale têm o lápis para ajustar data e responsáveis.
  */
 export function CartoesTarefas({
   agendamentos,
   comEnvio,
   fotos,
   hoje,
+  onEditar,
+  podeEditar,
 }: {
   agendamentos: AgendamentoResumo[];
   comEnvio: boolean;
   fotos: Record<string, string>;
   hoje: string;
+  onEditar?: (agendamento: AgendamentoResumo) => void;
+  podeEditar?: (agendamento: AgendamentoResumo) => boolean;
 }) {
   if (!agendamentos.length) return <p className="px-4 pb-4 text-sm text-muted-foreground">Nenhuma tarefa nesta vistagem.</p>;
   const total = agendamentos.length;
@@ -272,9 +311,24 @@ export function CartoesTarefas({
                 {simulada ? <p className="text-xs text-muted-foreground">Preenchida no VIOS, não gravada.</p> : null}
                 {item.envioErro ? <p className="whitespace-pre-wrap break-words text-xs text-red-700">{item.envioErro}</p> : null}
               </div>
+              {onEditar && podeEditar?.(item) ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0 bg-white"
+                  title="Ajustar data e responsáveis desta tarefa, sem devolver ao jurídico"
+                  aria-label={`Editar data e responsáveis de ${item.tarefa}`}
+                  onClick={() => onEditar(item)}
+                >
+                  <Pencil />
+                  Editar
+                </Button>
+              ) : null}
             </header>
 
             <div className="space-y-3 px-4 py-3.5">
+              {item.ajustes?.length ? <AjustesDaTarefa ajustes={item.ajustes} /> : null}
               {prazoComFatal ? (
                 <div className="space-y-1.5 rounded-md border border-[#e6eef0] bg-white px-3 py-2">
                   <ReguaDatas rotulo={`Datas de ${item.tarefa}`} hoje={hoje} marcos={marcosDoPrazo(item)} />

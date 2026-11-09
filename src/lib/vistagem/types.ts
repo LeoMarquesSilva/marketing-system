@@ -283,6 +283,20 @@ export interface TarefaPrevista {
   classe?: "PRAZO" | "PROVIDENCIA" | "COMPROMISSO" | null;
 }
 
+/** Uma mudança feita na Conferência, em texto de tela ("Data fatal", "20/11/2026", "24/11/2026"). */
+export interface MudancaNaTarefa {
+  campo: string;
+  de: string;
+  para: string;
+}
+
+/** Ajuste da controladoria numa tarefa, sem devolver ao jurídico: quem fez, quando e o que mudou. */
+export interface AjusteNaTarefa {
+  por: string | null;
+  em: string;
+  mudancas: MudancaNaTarefa[];
+}
+
 export interface AgendamentoResumo {
   id: string;
   ordem: number;
@@ -308,6 +322,8 @@ export interface AgendamentoResumo {
   fluxoDatas: DataDoFluxo[];
   /** O que o fluxo do VIOS vai criar junto e ao concluir (só a lista da Conferência traz). */
   fluxoPrevisto?: TarefaPrevista[];
+  /** Ajustes feitos na Conferência; sem nenhum, a tarefa está como o jurídico vistou. */
+  ajustes?: AjusteNaTarefa[];
   envioStatus: EnvioStatus;
   envioSimulado: boolean | null;
   viosTarefaId: string | null;

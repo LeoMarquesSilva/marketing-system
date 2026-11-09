@@ -365,7 +365,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alternativa: "cf-vazio",
       titulo: "O que o jurídico pediu",
       texto:
-        "Cada tarefa vem num cartão: o tipo, a data, o responsável e o revisor; no Prazo, uma régua mostra as datas até a fatal. Acima ficam, quando houver, a observação do jurídico e as inconsistências já registradas.",
+        "Cada tarefa vem num cartão: o tipo, a data, o responsável e o revisor; no Prazo, uma régua mostra as datas até a fatal. Acima ficam, quando houver, a observação do jurídico e as inconsistências já registradas. O lápis (Editar) ajusta a data e os responsáveis da tarefa e do fluxo sem devolver ao jurídico: o ajuste fica registrado no cartão e vai para o robô ao validar.",
     },
     {
       id: "fluxo",
@@ -373,7 +373,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alternativa: "cf-tarefas",
       titulo: "O fluxo no VIOS",
       texto:
-        "Em ordem de data, as tarefas que o VIOS cria junto com a pedida e quem fica em cada uma. A data que o jurídico mudou aparece marcada; depois do robô, a lista mostra o que ele gravou, com o CI de cada tarefa.",
+        "Em ordem de data, as tarefas que o VIOS cria junto com a pedida e quem fica em cada uma. A data alterada aparece marcada; depois do robô, a lista mostra o que ele gravou, com o CI de cada tarefa.",
     },
     {
       id: "acoes",

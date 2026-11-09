@@ -244,6 +244,12 @@ export function separarNomes(texto: string | null | undefined): string[] {
     });
 }
 
+/** Mesmas pessoas, sem olhar acento, maiúscula nem ordem. */
+export function mesmasPessoas(a: string[], b: string[]): boolean {
+  const chaves = (lista: string[]) => [...new Set(lista.map(chaveNome))].sort().join("|");
+  return chaves(a) === chaves(b);
+}
+
 /**
  * SESSÃO DE JULGAMENTO: o fluxo dela não tem "2. REVISAR", então o revisor fica na própria tarefa, junto com o
  * responsável. É a regra do robô no lançamento (sama-rpa regras-fluxo.js, responsaveisDaTarefaLancada).
@@ -278,7 +284,7 @@ export function responsavelSugerido(advogadoResponsavel: string | null, usuarios
   return usuarios.find((usuario) => chaveNome(usuario.nome) === chave) ?? null;
 }
 
-function dataValida(iso: string): boolean {
+export function dataValida(iso: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
   const data = new Date(`${iso}T12:00:00Z`);
   return !Number.isNaN(data.getTime()) && data.toISOString().slice(0, 10) === iso;
