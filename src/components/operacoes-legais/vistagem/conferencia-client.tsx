@@ -1057,7 +1057,9 @@ function Conferencia() {
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao atualizar.");
       setRetorno({
         tom: "info",
-        texto: `${corpo.consultadas} tarefa(s) consultada(s): ${corpo.concluidas} concluída(s) pelo robô, ${corpo.erros} com erro.`,
+        texto:
+          `${corpo.consultadas} tarefa(s) consultada(s): ${corpo.concluidas} concluída(s) pelo robô, ${corpo.erros} com erro.` +
+          (corpo.checadasSozinhas ? ` ${corpo.checadasSozinhas} CIÊNCIA NF única com check automático.` : ""),
       });
       await carregar();
     } catch (e) {

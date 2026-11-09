@@ -19,6 +19,7 @@ import {
 } from "./agendamento";
 import { openAIKey } from "@/lib/openai-keys";
 import { enviarDoPrazo, mudancasNaTarefa, podeEditarNaConferencia, type CamposDaTarefa } from "./ajuste-conferencia";
+import { CHECK_AUTOMATICO, foiCheckAutomatico, notaDoCheckAutomatico } from "./check";
 import { registrarNoBkpSemFalhar } from "./bkp-sioe-server";
 import { vaiParaCentral } from "./central";
 import { enviarParaCentral } from "./central-server";
@@ -706,7 +707,7 @@ export async function historicoDaPublicacao(id: string): Promise<HistoricoPublic
     central: temCentral
       ? { itemId: row.central_item_id, enviadaEm: row.central_enviada_em, erro: row.central_erro, tentativaEm: row.central_tentativa_em }
       : null,
-    check: check ? { ...check, nota: row.check_nota } : null,
+    check: check ? { ...check, por: check.por ?? (foiCheckAutomatico(row.checado_por, row.check_nota) ? CHECK_AUTOMATICO : null), nota: row.check_nota } : null,
     tarefas: ((tarefas.data ?? []) as unknown as TarefaDoHistoricoRow[]).map((tarefa) => ({
       tarefa: tarefa.tarefa,
       data: tarefa.data,
@@ -770,7 +771,12 @@ async function itensDeConferencia(
     devolvidoPor: row.devolvido_por ? nomes.get(row.devolvido_por) ?? null : null,
     revistadoPor: row.revistado_por ? nomes.get(row.revistado_por) ?? null : null,
     conferidoPor: row.conferido_por ? nomes.get(row.conferido_por) ?? null : null,
-    ...(row.checado_por ? { checadoPor: nomes.get(row.checado_por) ?? null } : {}),
+    // Check automático da CIÊNCIA NF: sem pessoa; aparece como "Check automático".
+    ...(row.checado_por
+      ? { checadoPor: nomes.get(row.checado_por) ?? null }
+      : foiCheckAutomatico(null, row.check_nota)
+        ? { checadoPor: CHECK_AUTOMATICO }
+        : {}),
     ...(filtro.comAuxiliar ? { auxiliar: auxiliares.get(row.id) ?? null } : {}),
     ...(filtro.comSugestaoIa ? { sugestaoIa: sugestaoNaVistagem(row.sugestao_ia, row.sugestao_ia_resultado) } : {}),
   }));
@@ -1422,7 +1428,7 @@ export async function devolverVistagem(id: string, entrada: InconsistenciaEntrad
 }
 
 /** Lê na fila do SAMA o andamento das tarefas enviadas; publicação com todas concluídas vira "agendado". */
-export async function atualizarEnvios(): Promise<{ consultadas: number; concluidas: number; erros: number }> {
+export async function atualizarEnvios(): Promise<{ consultadas: number; concluidas: number; erros: number; checadasSozinhas: number }> {
   const db = admin();
   const { data, error } = await db
     .from("vistagem_agendamentos")
@@ -1433,7 +1439,7 @@ export async function atualizarEnvios(): Promise<{ consultadas: number; concluid
   if (error) falhou("carregar os envios em andamento", error);
   const pendentes = (data ?? []) as { id: string; publicacao_id: string; sama_agendamento_id: string; envio_status: EnvioStatus; envio_erro: string | null }[];
   const resumo = { consultadas: pendentes.length, concluidas: 0, erros: 0 };
-  if (!pendentes.length) return resumo;
+  if (!pendentes.length) return { ...resumo, checadasSozinhas: await checarCienciasNfSozinho() };
 
   const fila = await consultarFilaSama(pendentes.map((item) => item.sama_agendamento_id));
   const agora = new Date().toISOString();
@@ -1467,7 +1473,48 @@ export async function atualizarEnvios(): Promise<{ consultadas: number; concluid
       await db.from("vistagem_publicacoes").update({ status: "agendado" }).eq("id", publicacaoId).eq("status", "pronto_para_agendar");
     }
   }
-  return resumo;
+  return { ...resumo, checadasSozinhas: await checarCienciasNfSozinho() };
+}
+
+/**
+ * Check automático da CIÊNCIA NF única (pedido de 09/11/2026): das publicações agendadas no VIOS aguardando o check, as
+ * que têm só a CIÊNCIA NF, gravada com o CI e conferindo com o pedido (notaDoCheckAutomatico), ficam "Check OK" sem a
+ * controladoria, como no check manual (inclusive o BKP), com quem checou vazio. Roda junto com a atualização dos envios
+ * (cron da Kurier e Conferência); um erro aqui não atrapalha os envios. Devolve quantas foram checadas.
+ */
+async function checarCienciasNfSozinho(): Promise<number> {
+  try {
+    const db = admin();
+    const { data, error } = await db.from("vistagem_publicacoes").select("id").eq("status", "agendado").limit(1000);
+    if (error) throw new Error(error.message);
+    const ids = ((data ?? []) as { id: string }[]).map((row) => row.id);
+    const agora = new Date().toISOString();
+    const checadas: string[] = [];
+    // Em lotes: a lista de ids vai na URL da consulta das tarefas.
+    for (let inicio = 0; inicio < ids.length; inicio += 100) {
+      const lote = ids.slice(inicio, inicio + 100);
+      const tarefas = await agendamentosPorPublicacao(lote);
+      for (const id of lote) {
+        const nota = notaDoCheckAutomatico(tarefas.get(id) ?? []);
+        if (!nota) continue;
+        const { data: checada, error: erroCheck } = await db
+          .from("vistagem_publicacoes")
+          .update({ status: "checado", check_nota: nota, checado_por: null, checado_em: agora })
+          .eq("id", id)
+          .eq("status", "agendado")
+          .select("id")
+          .maybeSingle();
+        if (erroCheck) throw new Error(erroCheck.message);
+        if (checada) checadas.push(id);
+      }
+    }
+    // Fim da esteira, como no check manual: vai para o BKP do SIOE (quando ligado).
+    if (checadas.length) await registrarNoBkpSemFalhar(checadas);
+    return checadas.length;
+  } catch (erro) {
+    console.error("[vistagem] check automático da CIÊNCIA NF:", erro instanceof Error ? erro.message : erro);
+    return 0;
+  }
 }
 
 // ---------------------------------------------------------------------------
