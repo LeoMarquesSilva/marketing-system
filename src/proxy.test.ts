@@ -51,6 +51,12 @@ describe("proxy — retorno após login", () => {
     expect(response.headers.get("location")).toBeNull();
   });
 
+  it("deixa o WhatsApp ler a prévia da festa de 10 anos (o login fica no AuthGuard)", () => {
+    const response = proxy(request("/festa-10-anos"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+  });
+
   it("exige login na página de download das peças e volta para ela depois", () => {
     const response = proxy(request("/entregas/oab"));
     expect(response.status).toBeGreaterThanOrEqual(300);
