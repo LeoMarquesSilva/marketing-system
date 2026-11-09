@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compararTarefa, descricaoSugerida, situacaoDoCheck, subtipoSugerido, tiposDoItem } from "./check";
+import { compararTarefa, descricaoSugerida, revisorEstaNaTarefa, situacaoDoCheck, subtipoSugerido, tiposDoItem } from "./check";
 import type { TarefaNoVios } from "./fila-vios";
 import type { AgendamentoResumo } from "./types";
 
@@ -42,6 +42,32 @@ function agendamento(campos: Partial<AgendamentoResumo>): AgendamentoResumo {
     ...campos,
   };
 }
+
+describe("revisorEstaNaTarefa", () => {
+  const sessao = (campos: Partial<AgendamentoResumo>) =>
+    agendamento({ etiqueta: "COMPROMISSO", tarefa: "SESSÃO DE JULGAMENTO", responsavel: "Lorena Lourenço Miranda", revisor: "Vanessa Lanza Sellani", ...campos });
+
+  it("Sessão de Julgamento: acha o revisor entre os responsáveis da tarefa no VIOS", () => {
+    expect(revisorEstaNaTarefa(sessao({ viosTarefas: [gravada({ responsaveis: "Lorena Lourenço Miranda, Vanessa Lanza Sellani" })] }))).toBe(true);
+    // O VIOS não garante a ordem (como no 3. PROTOCOLAR: "Samuel Willian Silva, Lorena Lourenço Miranda").
+    expect(revisorEstaNaTarefa(sessao({ viosTarefas: [gravada({ responsaveis: "Vanessa Lanza Sellani, Lorena Lourenço Miranda" })] }))).toBe(true);
+    expect(revisorEstaNaTarefa(sessao({ viosTarefas: [gravada({ responsaveis: "Lorena Lourenço Miranda" })] }))).toBe(false);
+  });
+
+  it("não responde quando não se aplica ou quando o robô não devolveu os responsáveis", () => {
+    expect(revisorEstaNaTarefa(sessao({ viosTarefas: null }))).toBeNull();
+    expect(revisorEstaNaTarefa(sessao({ viosTarefas: [gravada({ responsaveis: null })] }))).toBeNull();
+    expect(revisorEstaNaTarefa(sessao({ revisor: null }))).toBeNull();
+    expect(revisorEstaNaTarefa(agendamento({}))).toBeNull();
+  });
+
+  it("o revisor na tarefa não muda o resultado da conferência", () => {
+    const comparacao = compararTarefa(sessao({ viosTarefas: [gravada({ responsaveis: "Lorena Lourenço Miranda, Vanessa Lanza Sellani" })] }));
+    expect(comparacao.responsavel.situacao).toBe("confere");
+    expect(comparacao.responsavel.aMais).toEqual(["Vanessa Lanza Sellani"]);
+    expect(comparacao.divergencias).toEqual([]);
+  });
+});
 
 describe("compararTarefa", () => {
   it("confere quando data e responsável batem", () => {

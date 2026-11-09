@@ -1,3 +1,4 @@
+import { revisorFicaNaTarefa, separarNomes } from "./agendamento";
 import type { AgendamentoResumo } from "./types";
 
 /** Uma linha do "Fluxo das tarefas" (como fica no VIOS): a tarefa pedida ou uma que o fluxo cria junto com ela. */
@@ -81,7 +82,7 @@ export function agendaNoVios(item: AgendamentoResumo): AgendaNoVios {
     nome: item.tarefa,
     data: item.data || null,
     hora: item.hora,
-    responsaveis: item.responsavel,
+    responsaveis: revisorFicaNaTarefa(item.tarefa) && item.revisor ? separarNomes(`${item.responsavel},${item.revisor}`).join(", ") : item.responsavel,
     principal: true,
     criadaPor: null,
     ci: null,

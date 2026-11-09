@@ -1,4 +1,4 @@
-import { chaveNome, nomesDasPessoas } from "./agendamento";
+import { chaveNome, nomesDasPessoas, revisorFicaNaTarefa } from "./agendamento";
 import { ehCienciaDosAgendamentos, ehCienciaNf } from "./ciencia-agendamentos";
 import type { TarefaNoVios } from "./fila-vios";
 import type { AgendamentoResumo, ConferenciaItem } from "./types";
@@ -97,6 +97,18 @@ function compararResponsavel(pedidoTexto: string, gravada: TarefaNoVios | null):
   const faltando = pedido.filter((nome) => !chavesNoVios.has(chaveNome(nome)));
   const aMais = noVios.filter((nome) => !chavesPedido.has(chaveNome(nome)));
   return { pedido, noVios, faltando, aMais, situacao: !noVios.length ? "sem_dado" : faltando.length ? "diverge" : "confere" };
+}
+
+/**
+ * Sessão de Julgamento: o revisor está na tarefa que o robô gravou? Null nas outras tarefas e quando o robô não devolveu
+ * os responsáveis. Não vira divergência: o que o robô devolveu é como a tarefa ficou no lançamento, e quem incluir o
+ * revisor depois, no VIOS, não apareceria aqui.
+ */
+export function revisorEstaNaTarefa(agendamento: AgendamentoResumo): boolean | null {
+  if (!agendamento.revisor || !revisorFicaNaTarefa(agendamento.tarefa)) return null;
+  const noVios = nomesDasPessoas(principalDe(agendamento)?.responsaveis);
+  if (!noVios.length) return null;
+  return noVios.some((nome) => chaveNome(nome) === chaveNome(agendamento.revisor));
 }
 
 function compararDatasDoFluxo(agendamento: AgendamentoResumo): DataDoFluxoNoVios[] {

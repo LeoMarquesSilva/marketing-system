@@ -244,6 +244,14 @@ export function separarNomes(texto: string | null | undefined): string[] {
     });
 }
 
+/**
+ * SESSÃO DE JULGAMENTO: o fluxo dela não tem "2. REVISAR", então o revisor fica na própria tarefa, junto com o
+ * responsável. É a regra do robô no lançamento (sama-rpa regras-fluxo.js, responsaveisDaTarefaLancada).
+ */
+export function revisorFicaNaTarefa(tarefa: string | null | undefined): boolean {
+  return chaveNome(tarefa) === "SESSAO DE JULGAMENTO";
+}
+
 /** Área do catálogo do SAMA para a pasta: a área do processo no VIOS ou, sem ela, a do escritório. */
 export function areaDoCatalogo(areaProcesso: string | null, escritorio: string | null, areasDisponiveis: string[]): string | null {
   const porChave = new Map(areasDisponiveis.map((area) => [chaveNome(area), area]));
