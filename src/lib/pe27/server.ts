@@ -3,7 +3,7 @@ import "server-only";
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { createClient as createSsrClient } from "@/utils/supabase/server";
-import { hasPe27Access } from "@/lib/access-control";
+import { canEditPe27, hasPe27Access } from "@/lib/access-control";
 import { resolveEmployeeAvatarUrl } from "@/lib/ferias/filters";
 import { loadPeopleDirectory } from "@/lib/rh/people-directory";
 import { RhHttpError } from "@/lib/rh/qualifications/server";
@@ -58,9 +58,10 @@ function createPe27AdminClient(): SupabaseClient {
 interface Pe27Viewer {
   profileId: string;
   name: string;
+  canEdit: boolean;
 }
 
-/** Sessão + admin (o PE27 ainda não abre para mais ninguém). */
+/** Sessão + acesso ao PE27 (admin, ou a chave /pe27 só para ler). */
 async function requirePe27Viewer(db: SupabaseClient): Promise<Pe27Viewer> {
   const ssr = await createSsrClient();
   const {
@@ -74,10 +75,18 @@ async function requirePe27Viewer(db: SupabaseClient): Promise<Pe27Viewer> {
     .maybeSingle();
   if (error || !data) throw new Pe27HttpError("Não foi possível validar o acesso.", 500, "ACCESS_LOOKUP_FAILED");
   if (data.is_active === false) throw new Pe27HttpError("Usuário inativo.", 403, "FORBIDDEN");
-  if (!hasPe27Access({ role: data.role as string | null, permissions: (data.permissions as string[] | null) ?? null })) {
-    throw new Pe27HttpError("O PE27 está aberto só para administradores.", 403, "FORBIDDEN");
+  const profile = { role: data.role as string | null, permissions: (data.permissions as string[] | null) ?? null };
+  if (!hasPe27Access(profile)) {
+    throw new Pe27HttpError("Você não tem acesso ao PE27.", 403, "FORBIDDEN");
   }
-  return { profileId: data.id as string, name: (data.name as string) ?? "" };
+  return { profileId: data.id as string, name: (data.name as string) ?? "", canEdit: canEditPe27(profile) };
+}
+
+/** Escrita (decisões, textos, itens novos): só admin. */
+async function requirePe27Editor(db: SupabaseClient): Promise<Pe27Viewer> {
+  const viewer = await requirePe27Viewer(db);
+  if (!viewer.canEdit) throw new Pe27HttpError("Só administradores alteram o PE27.", 403, "READ_ONLY");
+  return viewer;
 }
 
 /* ------------------------------------------------------------------ leitura */
@@ -103,7 +112,7 @@ function byPosition<T extends { position: number; created_at: string }>(a: T, b:
 
 export async function loadPe27Board(): Promise<Pe27Board> {
   const db = createPe27AdminClient();
-  await requirePe27Viewer(db);
+  const viewer = await requirePe27Viewer(db);
 
   const [groupsResult, membersResult, leversResult, goalsResult, people] = await Promise.all([
     db
@@ -192,6 +201,7 @@ export async function loadPe27Board(): Promise<Pe27Board> {
   });
 
   return {
+    can_edit: viewer.canEdit,
     groups,
     levers,
     conductors,
@@ -294,7 +304,7 @@ function dropUndefined<T extends Record<string, unknown>>(value: T): Partial<T> 
 
 export async function updateLever(id: string, patch: LeverPatch): Promise<void> {
   const db = createPe27AdminClient();
-  const viewer = await requirePe27Viewer(db);
+  const viewer = await requirePe27Editor(db);
   const merge = await resolveMerge(db, "strategic_plan_levers", id, patch.status, patch.merged_into);
   const { merged_into: _ignored, ...rest } = patch;
   void _ignored;
@@ -313,7 +323,7 @@ export async function updateLever(id: string, patch: LeverPatch): Promise<void> 
 
 export async function createLever(input: z.infer<typeof leverCreateSchema>): Promise<string> {
   const db = createPe27AdminClient();
-  const viewer = await requirePe27Viewer(db);
+  const viewer = await requirePe27Editor(db);
   const { data: last } = await db
     .from("strategic_plan_levers")
     .select("position")
@@ -344,7 +354,7 @@ export async function createLever(input: z.infer<typeof leverCreateSchema>): Pro
 /** Só apaga o que foi criado na revisão; o que veio do cartaz se descarta. */
 export async function deleteLever(id: string): Promise<void> {
   const db = createPe27AdminClient();
-  await requirePe27Viewer(db);
+  await requirePe27Editor(db);
   const { data, error } = await db.from("strategic_plan_levers").select("id, group_id").eq("id", id).maybeSingle();
   if (error || !data) throw new Pe27HttpError("Alavanca não encontrada.", 404, "NOT_FOUND");
   if (data.group_id) {
@@ -359,7 +369,7 @@ export async function deleteLever(id: string): Promise<void> {
 
 export async function updateGoal(id: string, patch: GoalPatch): Promise<void> {
   const db = createPe27AdminClient();
-  const viewer = await requirePe27Viewer(db);
+  const viewer = await requirePe27Editor(db);
   const merge = await resolveMerge(db, "strategic_plan_goals", id, patch.status, patch.merged_into);
   if (patch.lever_id) {
     const { data: lever } = await db
@@ -386,7 +396,7 @@ export async function updateGoal(id: string, patch: GoalPatch): Promise<void> {
 
 export async function createGoal(input: z.infer<typeof goalCreateSchema>): Promise<string> {
   const db = createPe27AdminClient();
-  const viewer = await requirePe27Viewer(db);
+  const viewer = await requirePe27Editor(db);
   const { data: lever } = await db
     .from("strategic_plan_levers")
     .select("id")
@@ -421,7 +431,7 @@ export async function createGoal(input: z.infer<typeof goalCreateSchema>): Promi
 
 export async function deleteGoal(id: string): Promise<void> {
   const db = createPe27AdminClient();
-  await requirePe27Viewer(db);
+  await requirePe27Editor(db);
   const { data, error } = await db.from("strategic_plan_goals").select("id, original_text").eq("id", id).maybeSingle();
   if (error || !data) throw new Pe27HttpError("Meta não encontrada.", 404, "NOT_FOUND");
   if (data.original_text !== null) {

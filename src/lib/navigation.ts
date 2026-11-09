@@ -58,6 +58,7 @@ import {
   PE27_KEY,
   hasPe27Access,
   isPe27Path,
+  isPe27OnlyProfile,
   hasCafeCulturaAccess,
   hasFacilitiesAccess,
   hasIcpAccess,
@@ -141,7 +142,7 @@ export const NAV_FRONTS: NavFront[] = [
     label: "Estratégia",
     features: [
       {
-        // Planejamento Estratégico 2027: insumos do workshop, revisão dos sócios e, depois, plano tático. Só admin por enquanto.
+        // Planejamento Estratégico 2027: insumos do workshop, revisão dos sócios e, depois, plano tático. Admin edita; a chave /pe27 dá só leitura.
         id: "pe27",
         label: "PE27 · Planejamento 2027",
         title: "PE27 · Planejamento Estratégico 2027",
@@ -500,6 +501,8 @@ const COLLABORATOR_PAGES = new Set([
  * permissões explícitas, colaborador de conteúdo (sem permissões) e legado/admin.
  */
 export function createNavVisibility(profile: NavProfile | null | undefined): (href: string) => boolean {
+  // Consultores externos liberados só no PE27 não veem nem as telas abertas a todos.
+  if (isPe27OnlyProfile(profile)) return (href) => isPe27Path(href);
   const feriasView =
     hasHrAccess(profile?.role, profile?.permissions) || profile?.ferias_view_enabled === true;
   const gustavo = canAccessGustavoContent(profile);

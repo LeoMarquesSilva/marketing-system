@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Expand, ExternalLink, Image as ImageIcon, LoaderCircle, MessageSquareQuote, Pencil, Plus, Target, Trash2 } from "lucide-react";
+import { Expand, ExternalLink, Eye, Image as ImageIcon, LoaderCircle, MessageSquareQuote, Pencil, Plus, Target, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -210,13 +210,15 @@ function LeverItem({
             <p className="mt-1 text-xs text-muted-foreground">{plural(hidden, "meta fora do filtro", "metas fora do filtro")}</p>
           )}
 
-          <Button variant="ghost" size="sm" className="mt-1 -ml-2" onClick={() => onCreateGoal(lever.id)}>
-            <Plus className="size-4" aria-hidden />
-            Meta
-          </Button>
+          {board.can_edit && (
+            <Button variant="ghost" size="sm" className="mt-1 -ml-2" onClick={() => onCreateGoal(lever.id)}>
+              <Plus className="size-4" aria-hidden />
+              Meta
+            </Button>
+          )}
         </div>
         <Button variant="outline" size="sm" className="shrink-0" onClick={() => onOpenItem({ kind: "lever", leverId: lever.id })}>
-          Decidir
+          {board.can_edit ? "Decidir" : "Ver"}
         </Button>
       </div>
     </li>
@@ -339,12 +341,14 @@ function DimensionSection({
         </ol>
       )}
 
-      <div className="border-t border-[#e6eef0] px-4 py-3 sm:px-5">
-        <Button variant="ghost" size="sm" className="-ml-2" onClick={() => onCreate({ kind: "lever", dimension })}>
-          <Plus className="size-4" aria-hidden />
-          Nova alavanca em {DIMENSION_LABELS[dimension]}
-        </Button>
-      </div>
+      {board.can_edit && (
+        <div className="border-t border-[#e6eef0] px-4 py-3 sm:px-5">
+          <Button variant="ghost" size="sm" className="-ml-2" onClick={() => onCreate({ kind: "lever", dimension })}>
+            <Plus className="size-4" aria-hidden />
+            Nova alavanca em {DIMENSION_LABELS[dimension]}
+          </Button>
+        </div>
+      )}
     </section>
   );
 }
@@ -416,6 +420,13 @@ function ItemDialog({
   const current = isLever ? lever?.title : goalHit?.goal.text;
   const fromWorkshop = original !== null && original !== undefined;
   const group = board.groups.find((entry) => entry.id === parentLever.group_id);
+  const readOnly = !board.can_edit;
+  const mergedLabel =
+    item.status === "juntada"
+      ? isLever
+        ? (findLever(board, item.merged_into)?.title ?? null)
+        : (findGoal(board, item.merged_into)?.goal.text ?? null)
+      : null;
 
   async function save() {
     if (status === "juntada" && !mergedInto) {
@@ -505,7 +516,25 @@ function ItemDialog({
             )}
           </div>
 
-          {/* Decisão */}
+          {/* Decisão: quem tem só leitura vê o que foi decidido, sem os controles. */}
+          {readOnly ? (
+            <section className="space-y-2" aria-labelledby="pe27-decisao">
+              <h3 id="pe27-decisao" className="text-sm font-semibold text-foreground">
+                Decisão dos sócios
+              </h3>
+              <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                <DecisionBadge status={item.status} />
+                {mergedLabel && (
+                  <span>
+                    com <span className="font-medium text-foreground">{mergedLabel}</span>
+                  </span>
+                )}
+              </div>
+              <p className={cn("text-sm leading-6", item.decision_note ? "text-foreground" : "text-muted-foreground")}>
+                {item.decision_note || "Sem observação."}
+              </p>
+            </section>
+          ) : (
           <fieldset className="space-y-3">
             <legend className="text-sm font-semibold text-foreground">Decisão dos sócios</legend>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-5" role="radiogroup" aria-label="Decisão">
@@ -567,6 +596,7 @@ function ItemDialog({
               />
             </div>
           </fieldset>
+          )}
 
           {/* Texto e dados */}
           <section className="space-y-3" aria-labelledby="pe27-dados">
@@ -574,7 +604,7 @@ function ItemDialog({
               <h3 id="pe27-dados" className="text-sm font-semibold text-foreground">
                 {isLever ? "Texto e dimensão" : "Texto e dados da meta"}
               </h3>
-              {!editing && (
+              {!editing && !readOnly && (
                 <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
                   <Pencil className="size-4" aria-hidden />
                   Editar
@@ -678,6 +708,7 @@ function ItemDialog({
         <DialogFooter className="flex-col-reverse gap-2 border-t px-6 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-h-9 items-center gap-2 text-xs text-muted-foreground">
             {!fromWorkshop &&
+              !readOnly &&
               (confirmDelete ? (
                 <>
                   <span className="text-sm text-foreground">Apagar de vez?</span>
@@ -699,21 +730,27 @@ function ItemDialog({
                   Apagar
                 </Button>
               ))}
-            {fromWorkshop && item.updated_by_name && (
+            {(fromWorkshop || readOnly) && item.updated_by_name && (
               <span>
                 Alterado por {item.updated_by_name} em {formatPe27DateTime(item.updated_at)}
               </span>
             )}
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose} disabled={saving}>
-              Cancelar
+          {readOnly ? (
+            <Button variant="outline" onClick={onClose}>
+              Fechar
             </Button>
-            <Button onClick={save} disabled={saving || (editing && !text.trim())}>
-              {saving && <LoaderCircle className="size-4 animate-spin" aria-hidden />}
-              Salvar
-            </Button>
-          </div>
+          ) : (
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={onClose} disabled={saving}>
+                Cancelar
+              </Button>
+              <Button onClick={save} disabled={saving || (editing && !text.trim())}>
+                {saving && <LoaderCircle className="size-4 animate-spin" aria-hidden />}
+                Salvar
+              </Button>
+            </div>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -934,17 +971,24 @@ export function Pe27Insumos({ initialBoard, initialDimension }: { initialBoard: 
                 </span>
               )}
             </p>
-            <Button
-              onClick={() =>
-                setCreating({
-                  kind: "lever",
-                  dimension: dimension ?? "clientes",
-                })
-              }
-            >
-              <Plus className="size-4" aria-hidden />
-              Nova alavanca
-            </Button>
+            {board.can_edit ? (
+              <Button
+                onClick={() =>
+                  setCreating({
+                    kind: "lever",
+                    dimension: dimension ?? "clientes",
+                  })
+                }
+              >
+                <Plus className="size-4" aria-hidden />
+                Nova alavanca
+              </Button>
+            ) : (
+              <span className="inline-flex min-h-8 items-center gap-1.5 rounded-full bg-[#eaf2f5] px-3 text-xs font-medium text-[#285f7a]">
+                <Eye className="size-3.5" aria-hidden />
+                Só leitura
+              </span>
+            )}
           </div>
         </div>
 

@@ -100,6 +100,8 @@ export interface Pe27Conductor extends Pe27Person {
 }
 
 export interface Pe27Board {
+  /** Admin altera; quem tem só a chave /pe27 lê. */
+  can_edit: boolean;
   groups: Pe27Group[];
   levers: Pe27Lever[];
   conductors: Pe27Conductor[];

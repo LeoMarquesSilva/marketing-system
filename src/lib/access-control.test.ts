@@ -9,9 +9,11 @@ import {
   firstAllowedPath,
   hasCafeCulturaAccess,
   hasIcpAccess,
+  canEditPe27,
   hasOperacoesLegaisAccess,
   hasPe27Access,
   hasTeamSurveysAccess,
+  isPe27OnlyProfile,
   hasVistagemAccess,
   isManualOnlyKey,
   normalizePermissionsInput,
@@ -301,11 +303,33 @@ describe("pesquisas com a equipe", () => {
 });
 
 describe("PE27 (planejamento estratégico)", () => {
-  it("só admin abre, nem pelo modo legado nem com a chave salva no cadastro", () => {
+  it("admin abre e edita; a chave /pe27 abre só para ler; o modo legado não abre", () => {
     expect(hasPe27Access({ role: "admin" })).toBe(true);
+    expect(canEditPe27({ role: "admin" })).toBe(true);
     expect(canAccessPath({ role: "admin" }, "/pe27/insumos")).toBe(true);
     expect(canAccessPath({ role: null, permissions: null }, "/pe27")).toBe(false);
-    expect(canAccessPath({ role: null, permissions: ["/pe27"] }, "/pe27")).toBe(false);
-    expect(normalizePermissionsInput(["/pe27"])).toBeNull();
+    const comChave = { role: null, permissions: ["/pe27"] };
+    expect(canAccessPath(comChave, "/pe27/insumos")).toBe(true);
+    expect(canEditPe27(comChave)).toBe(false);
+    expect(normalizePermissionsInput(["/pe27"])).toEqual(["/pe27"]);
+    expect(isManualOnlyKey("/pe27")).toBe(true);
+  });
+
+  it("perfil só com o PE27 (consultores) não vê nem as telas abertas a todos", () => {
+    const consultor = { role: null, permissions: ["/pe27"] };
+    expect(isPe27OnlyProfile(consultor)).toBe(true);
+    for (const path of ["/", "/meus-clientes", "/minhas-fotos", "/fotos-eventos", "/conteudo/cronograma", "/perfil", "/planner"]) {
+      expect(canAccessPath(consultor, path)).toBe(false);
+    }
+    expect(canAccessPath(consultor, "/alterar-senha")).toBe(true);
+    expect(firstAllowedPath(consultor)).toBe("/pe27");
+  });
+
+  it("a chave junto com outras não restringe o resto", () => {
+    const socio = { role: null, permissions: ["/planner", "/pe27"] };
+    expect(isPe27OnlyProfile(socio)).toBe(false);
+    expect(isPe27OnlyProfile({ role: "admin", permissions: ["/pe27"] })).toBe(false);
+    expect(canAccessPath(socio, "/meus-clientes")).toBe(true);
+    expect(canAccessPath(socio, "/pe27")).toBe(true);
   });
 });
