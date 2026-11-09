@@ -341,13 +341,16 @@ export interface CatalogoVistagem {
   usuarios: { id: string; nome: string }[];
 }
 
-/** Opção do campo Matéria do cadastro de processo no VIOS. */
+/** Opção de um campo de escolha do cadastro de processo no VIOS (Matéria, Sistema do Tribunal). */
 export interface MateriaVios {
   id: string;
   nome: string;
 }
 
-/** Parágrafo que alguém pediu para o robô acrescentar à síntese da pasta no VIOS. */
+/**
+ * Pedido de "Atualizar cadastro no VIOS" para a pasta: o parágrafo da síntese, a Matéria e/ou o Sistema do Tribunal
+ * (cada um opcional; o robô grava os três de uma vez).
+ */
 export interface SintesePedida {
   id: string;
   texto: string;
@@ -359,8 +362,10 @@ export interface SintesePedida {
   simulado: boolean;
   /** O robô achou o parágrafo já na síntese e não gravou de novo. */
   jaEstava: boolean;
-  /** Matéria escolhida no pedido, para o robô preencher se o cadastro estiver sem nenhuma. */
+  /** Matéria escolhida no pedido: o robô preenche ou troca a do VIOS. */
   materias: MateriaVios[];
+  /** Sistema do Tribunal escolhido no pedido: o robô troca o do VIOS. */
+  sistemaTribunal: MateriaVios | null;
   criadoEm: string;
 }
 
@@ -389,10 +394,18 @@ export interface VistagemDetalhe {
   sinteseErro: string | null;
   /** Parágrafos pedidos ao robô para esta pasta (os 10 mais novos). */
   sintesesPedidas: SintesePedida[];
-  /** A pasta está sem Matéria na base do SIOE: o VIOS não grava a síntese sem ela. */
+  /** A pasta está sem Matéria na base do SIOE: o VIOS não grava o cadastro sem ela. */
   materiaVazia: boolean;
-  /** Opções do campo Matéria do VIOS; só vêm quando a pasta está sem Matéria. */
+  /** Matéria da pasta na base do SIOE, como veio do relatório do VIOS (null sem ela). */
+  materiaAtual: string | null;
+  /** Opções do campo Matéria do VIOS (o jurídico pode preencher ou trocar). */
   materiasVios: MateriaVios[];
+  /** A pasta está sem Sistema do Tribunal na base do SIOE (o VIOS não grava o cadastro sem ele). */
+  sistemaVazio: boolean;
+  /** Sistema do Tribunal da pasta na base do SIOE (null sem ele ou sem a coluna ainda). */
+  sistemaAtual: string | null;
+  /** Opções do campo Sistema do Tribunal do VIOS. */
+  sistemasVios: MateriaVios[];
   /** Feriados (AAAA-MM-DD) para contar os dias úteis do Prazo na tela. */
   feriados: string[];
   /** Fluxo automático do VIOS por id do tipo de tarefa (só os que criam algo). */

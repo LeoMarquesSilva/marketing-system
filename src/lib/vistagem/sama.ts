@@ -29,7 +29,7 @@ export function envioSimulado(): boolean {
 }
 
 /**
- * "Atualizar Síntese" tem chave própria: o robô só acrescenta no editor do VIOS, sem gravar, até
+ * "Atualizar cadastro no VIOS" tem chave própria: o robô só acrescenta no editor do VIOS, sem gravar, até
  * VISTAGEM_SINTESE_MODO=real (e o envio das tarefas também estar em real).
  */
 export function sinteseSimulada(): boolean {
@@ -227,7 +227,8 @@ export async function enfileirarNoSama(linhas: LinhaFilaSama[]): Promise<string[
 }
 
 /**
- * Pede ao robô para acrescentar um parágrafo à síntese da pasta no VIOS ("dd/mm/aaaa (Nome): texto").
+ * "Atualizar cadastro no VIOS": pede ao robô para acrescentar um parágrafo à síntese da pasta
+ * ("dd/mm/aaaa (Nome): texto"), trocar a Matéria e/ou o Sistema do Tribunal. Cada parte é opcional.
  * É a última prioridade da fila: a reserva do SAMA só manda quando não há outro trabalho para o robô.
  */
 export async function enfileirarSintese(pedido: {
@@ -238,6 +239,7 @@ export async function enfileirarSintese(pedido: {
   data: string;
   simular: boolean;
   materias: MateriaVios[];
+  sistemaTribunal: MateriaVios | null;
 }): Promise<string> {
   const { data, error } = await sama()
     .from("vios_agendamentos")
@@ -245,7 +247,7 @@ export async function enfileirarSintese(pedido: {
       operacao: "sintese",
       status: "pendente",
       tipo: "SÍNTESE",
-      tarefa: "Acrescentar à síntese do processo",
+      tarefa: "Atualizar cadastro no VIOS",
       observacao: pedido.texto,
       responsavel: pedido.autor,
       data: pedido.data,
@@ -254,14 +256,21 @@ export async function enfileirarSintese(pedido: {
       ci_pasta: pedido.ci,
       simular: pedido.simular,
       ...(pedido.materias.length ? { materias: pedido.materias } : {}),
+      // Coluna da migração 20261109000014 do sama-rpa.
+      ...(pedido.sistemaTribunal ? { sistema_tribunal: pedido.sistemaTribunal } : {}),
     })
     .select("id")
     .single();
-  if (error || !data) throw new VistagemError(`Falha ao colocar a síntese na fila do robô: ${error?.message ?? "sem retorno"}`, 502);
+  if (error || !data) throw new VistagemError(`Falha ao colocar a atualização do cadastro na fila do robô: ${error?.message ?? "sem retorno"}`, 502);
   return data.id as string;
 }
 
-/** Sínteses pedidas para a pasta, da mais nova para a mais antiga. */
+function comoMateria(valor: unknown): MateriaVios | null {
+  const item = valor as { id?: unknown; nome?: unknown } | null;
+  return item && typeof item.id === "string" && typeof item.nome === "string" ? { id: item.id, nome: item.nome } : null;
+}
+
+/** Atualizações de cadastro pedidas para a pasta, da mais nova para a mais antiga. */
 export async function sintesesDaPasta(ci: string): Promise<SintesePedida[]> {
   const colunas = "id, observacao, responsavel, data, status, erro, simular, resultado, criado_em";
   const consulta = (selecao: string) =>
@@ -272,13 +281,16 @@ export async function sintesesDaPasta(ci: string): Promise<SintesePedida[]> {
       .eq("ci_pasta", ci.replace(/\D/g, ""))
       .order("criado_em", { ascending: false })
       .limit(10);
-  // Coluna da migração 20261109000012 do sama-rpa; sem ela ainda, a lista vem sem as matérias.
-  const comMaterias = await consulta(`${colunas}, materias`);
-  const { data, error } = comMaterias.error ? await consulta(colunas) : comMaterias;
-  if (error) throw new VistagemError(`Falha ao consultar as sínteses pedidas ao robô: ${error.message}`, 502);
+  // Colunas das migrações 20261109000012 (materias) e 20261109000014 (sistema_tribunal) do sama-rpa; sem elas
+  // ainda, a lista vem sem o que falta.
+  let resposta = await consulta(`${colunas}, materias, sistema_tribunal`);
+  if (resposta.error) resposta = await consulta(`${colunas}, materias`);
+  if (resposta.error) resposta = await consulta(colunas);
+  const { data, error } = resposta;
+  if (error) throw new VistagemError(`Falha ao consultar as atualizações de cadastro pedidas ao robô: ${error.message}`, 502);
   return ((data ?? []) as unknown as Record<string, unknown>[]).map((row) => ({
     id: row.id as string,
-    texto: row.observacao as string,
+    texto: (row.observacao as string | null) ?? "",
     autor: (row.responsavel as string | null) ?? null,
     data: row.data as string,
     status: row.status as SintesePedida["status"],
@@ -286,6 +298,7 @@ export async function sintesesDaPasta(ci: string): Promise<SintesePedida[]> {
     simulado: row.simular === true,
     jaEstava: (row.resultado as { ja_estava?: boolean } | null)?.ja_estava === true,
     materias: Array.isArray(row.materias) ? (row.materias as MateriaVios[]) : [],
+    sistemaTribunal: comoMateria(row.sistema_tribunal),
     criadoEm: row.criado_em as string,
   }));
 }
@@ -300,6 +313,18 @@ export async function carregarMateriasVios(): Promise<MateriaVios[]> {
   const materias = (data ?? []) as MateriaVios[];
   if (materias.length) cacheMaterias = { carregadoEm: Date.now(), materias };
   return materias;
+}
+
+let cacheSistemas: { carregadoEm: number; sistemas: MateriaVios[] } | null = null;
+
+/** Opções do campo Sistema do Tribunal do VIOS, na ordem dele. O robô relê a lista a cada catálogo. */
+export async function carregarSistemasVios(): Promise<MateriaVios[]> {
+  if (cacheSistemas && Date.now() - cacheSistemas.carregadoEm < CACHE_MS) return cacheSistemas.sistemas;
+  const { data, error } = await sama().from("vios_sistemas_tribunal").select("id, nome").order("ordem").limit(500);
+  if (error) throw new VistagemError(`Falha ao carregar os sistemas do tribunal do VIOS no SAMA: ${error.message}`, 502);
+  const sistemas = (data ?? []) as MateriaVios[];
+  if (sistemas.length) cacheSistemas = { carregadoEm: Date.now(), sistemas };
+  return sistemas;
 }
 
 export interface StatusFilaSama {
