@@ -26,6 +26,12 @@ describe("podeEditarNaConferencia", () => {
 });
 
 describe("mudancasNaTarefa", () => {
+  it("SESSÃO DE JULGAMENTO: registra a data limite que mudou (sem gravada, era a própria data)", () => {
+    const sessao: CamposDaTarefa = { ...BASE, dataFatal: null, data: "2026-11-19", hora: "09:00", horaFim: "18:00", dataLimite: null };
+    expect(mudancasNaTarefa(sessao, { ...sessao, dataLimite: "2026-11-19" })).toEqual([]);
+    expect(mudancasNaTarefa(sessao, { ...sessao, dataLimite: "2026-11-25" })).toEqual([{ campo: "Data limite", de: "19/11/2026", para: "25/11/2026" }]);
+  });
+
   it("sem mudança, lista vazia", () => {
     expect(mudancasNaTarefa(BASE, { ...BASE })).toEqual([]);
   });

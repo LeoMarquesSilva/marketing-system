@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { CalendarDays, LoaderCircle, Pencil, Save, TriangleAlert, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authFetch } from "@/lib/auth-fetch";
-import { avisosDaData, chaveDoCaminho, contagemPadraoDaArea, horaFinalPadrao, horaValida, revisorFicaNaTarefa } from "@/lib/vistagem/agendamento";
+import { avisosDaData, chaveDoCaminho, contagemPadraoDaArea, horaFinalPadrao, horaValida, pedeDataLimite, revisorFicaNaTarefa } from "@/lib/vistagem/agendamento";
 import { mudancasNaTarefa, type CamposDaTarefa } from "@/lib/vistagem/ajuste-conferencia";
 import { ROTULO_CONTAGEM, criarCalendario, criarCalendarioDePrazo, datasDoPrazo, noRecessoForense } from "@/lib/vistagem/dias-uteis";
 import { caminhosDoFluxo, fluxoPrevisto, prazoApertado } from "@/lib/vistagem/fluxo-previsto";
@@ -25,6 +25,8 @@ interface Formulario {
   dataFatal: string;
   hora: string;
   horaFim: string;
+  /** SESSÃO DE JULGAMENTO: data limite no VIOS. Vazia = a mesma data, e acompanha quando ela muda. */
+  dataLimite: string;
   responsavel: string;
   revisor: string;
   /** O que foi mudado no Fluxo do VIOS, pela chave do caminho. */
@@ -133,6 +135,8 @@ function FormularioDaTarefa({
   const comFatal = prazo && !semPrazoProprio(fluxo);
   const compromisso = tarefa.etiqueta === "COMPROMISSO";
   const comRevisor = tarefa.etiqueta !== "PROVIDENCIA";
+  // SESSÃO DE JULGAMENTO: a data limite no VIOS pode ir além da data (a tarefa guarda o nome como está no VIOS).
+  const comLimite = pedeDataLimite(tarefa.tarefa);
   const contagemDaArea = contagemPadraoDaArea(dados.publicacao.escritorioResponsavel ?? dados.catalogo?.area);
 
   // Validada noutro dia, com prazo curto, o Enviar que vai para o VIOS é o de hoje (como no robô): a tela mostra esse.
@@ -142,6 +146,7 @@ function FormularioDaTarefa({
     dataFatal: tarefa.dataFatal ?? "",
     hora: tarefa.hora ?? "",
     horaFim: tarefa.horaFim ?? horaFinalPadrao(tarefa.hora),
+    dataLimite: tarefa.dataLimite && tarefa.dataLimite !== tarefa.data ? tarefa.dataLimite : "",
     responsavel: tarefa.responsavel,
     revisor: tarefa.revisor ?? "",
     fluxoDatas: Object.fromEntries(tarefa.fluxoDatas.map((item) => [chaveDoCaminho(item.caminho), item])),
@@ -162,6 +167,7 @@ function FormularioDaTarefa({
     dataFatal: comFatal ? valor.dataFatal || null : null,
     hora: compromisso ? valor.hora || null : null,
     horaFim: compromisso ? valor.horaFim || null : null,
+    dataLimite: comLimite ? valor.dataLimite || valor.data || null : null,
     responsavel: valor.responsavel,
     revisor: comRevisor ? valor.revisor || null : null,
     fluxoDatas: Object.values(valor.fluxoDatas).filter((item) => dados.fluxosErro || caminhos.has(chaveDoCaminho(item.caminho))),
@@ -181,7 +187,9 @@ function FormularioDaTarefa({
     : [];
 
   const horaFimOk = !form.horaFim || (horaValida(form.horaFim) && form.horaFim > form.hora);
+  const limiteOk = !comLimite || !form.dataLimite || !form.data || form.dataLimite >= form.data;
   const completo =
+    limiteOk &&
     Boolean(form.responsavel.trim()) &&
     (comFatal ? Boolean(form.dataFatal && form.data) : Boolean(form.data)) &&
     (!prazo || Boolean(form.revisor)) &&
@@ -277,7 +285,15 @@ function FormularioDaTarefa({
           ) : null}
           <div className="w-[11rem] space-y-1.5">
             <span className="block text-xs font-medium text-muted-foreground">{comFatal ? "Enviar (data no VIOS)" : "Data no VIOS"}</span>
-            <CampoData rotulo={comFatal ? "Enviar: data no VIOS" : "Data no VIOS"} valor={form.data} ehDiaUtil={ehDiaUtil} invalido={!form.data} destacado={enviarAMao} onChange={(data) => alterar({ data })} />
+            <CampoData
+              rotulo={comFatal ? "Enviar: data no VIOS" : "Data no VIOS"}
+              valor={form.data}
+              ehDiaUtil={ehDiaUtil}
+              invalido={!form.data}
+              destacado={enviarAMao}
+              // A data limite igual à data acompanha a data; a escolhida fica.
+              onChange={(data) => alterar({ data, ...(form.dataLimite && form.dataLimite === form.data ? { dataLimite: "" } : {}) })}
+            />
             {enviarAMao && enviarDaConta ? (
               <p className="text-xs text-muted-foreground">
                 Pela fatal: {formatarData(enviarDaConta)}.{" "}
@@ -304,6 +320,20 @@ function FormularioDaTarefa({
                 <CampoHora rotulo="Hora final do compromisso" valor={form.horaFim} invalido={!horaFimOk} onChange={(horaFim) => alterar({ horaFim })} />
               </div>
             </>
+          ) : null}
+          {comLimite ? (
+            <div className="w-[11rem] space-y-1.5" title="Vai para a Data limite no VIOS. Começa igual à data e pode ir além dela.">
+              <span className="block text-xs font-medium text-muted-foreground">Data limite</span>
+              <CampoData
+                rotulo="Data limite no VIOS"
+                valor={form.dataLimite || form.data}
+                min={form.data || undefined}
+                ehDiaUtil={ehDiaUtil}
+                destacado={Boolean(form.dataLimite && form.dataLimite !== form.data)}
+                invalido={!limiteOk}
+                onChange={(dataLimite) => alterar({ dataLimite })}
+              />
+            </div>
           ) : null}
         </div>
         {avisos.length ? (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classeDoProcesso, materiasDaLista, paragrafosDaSintese, partesPorPolo, precisaDeMateria, valorDaCausa } from "./dados-processo";
+import { classeDoProcesso, materiasDaLista, paragrafosDaSintese, partesPorPolo, precisaDeMateria, precisaDeSistema, sistemaDaLista, valorDaCausa } from "./dados-processo";
 
 describe("precisaDeMateria", () => {
   const execucao = { id: "133", nome: "Execução de Título Extrajudicial" };
@@ -22,6 +22,41 @@ describe("precisaDeMateria", () => {
 
   it("um pedido na fila sem Matéria não resolve", () => {
     expect(precisaDeMateria(true, [{ materias: [], status: "pendente", simulado: false }])).toBe(true);
+  });
+});
+
+describe("precisaDeSistema", () => {
+  const pje = { id: "223", nome: "pje" };
+
+  it("só exige quando a pasta está sem Sistema do Tribunal", () => {
+    expect(precisaDeSistema(true, [])).toBe(true);
+    expect(precisaDeSistema(false, [])).toBe(false);
+  });
+
+  it("um pedido com Sistema na fila ou gravado resolve; com erro, simulado ou sem Sistema, não", () => {
+    expect(precisaDeSistema(true, [{ sistemaTribunal: pje, status: "pendente", simulado: false }])).toBe(false);
+    expect(precisaDeSistema(true, [{ sistemaTribunal: pje, status: "concluido", simulado: false }])).toBe(false);
+    expect(precisaDeSistema(true, [{ sistemaTribunal: pje, status: "erro", simulado: false }])).toBe(true);
+    expect(precisaDeSistema(true, [{ sistemaTribunal: pje, status: "concluido", simulado: true }])).toBe(true);
+    expect(precisaDeSistema(true, [{ sistemaTribunal: null, status: "pendente", simulado: false }])).toBe(true);
+  });
+});
+
+describe("sistemaDaLista", () => {
+  const lista = [
+    { id: "222", nome: "E-saj" },
+    { id: "223", nome: "pje" },
+  ];
+
+  it("troca o id pelo sistema da lista", () => {
+    expect(sistemaDaLista(" 223 ", lista)).toEqual({ sistema: lista[1], fora: false });
+  });
+
+  it("sem escolha, nada; fora da lista, aponta", () => {
+    expect(sistemaDaLista(null, lista)).toEqual({ sistema: null, fora: false });
+    expect(sistemaDaLista("", lista)).toEqual({ sistema: null, fora: false });
+    expect(sistemaDaLista(223, lista)).toEqual({ sistema: null, fora: false });
+    expect(sistemaDaLista("999", lista)).toEqual({ sistema: null, fora: true });
   });
 });
 

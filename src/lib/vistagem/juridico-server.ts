@@ -35,13 +35,14 @@ import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
 import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
 import { linhasParaFila, modoDaPublicacao, type TarefaNoVios } from "./fila-vios";
-import { LIMITE_TRECHO_SINTESE, materiasDaLista, precisaDeMateria } from "./dados-processo";
-import { buscarPastaPorCi, buscarSinteseDaPasta, pastaSemMateria } from "./sioe";
+import { LIMITE_TRECHO_SINTESE, materiasDaLista, precisaDeMateria, precisaDeSistema, sistemaDaLista } from "./dados-processo";
+import { buscarPastaPorCi, buscarSinteseDaPasta, cadastroDaPasta, semMateria, semSistema, type CadastroDaPasta } from "./sioe";
 import { ESCRITORIOS, type PastaSioe } from "./triagem";
 import {
   carregarArvoreVios,
   carregarCatalogoProcessos,
   carregarMateriasVios,
+  carregarSistemasVios,
   catalogoDaArea,
   consultarFilaSama,
   enfileirarNoSama,
@@ -76,12 +77,12 @@ import type {
 } from "./types";
 
 const COLUNAS_AGENDAMENTO =
-  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, hora, hora_fim, responsavel, revisor, observacao, fluxo_datas, ajustes, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, vios_tarefas, envio_erro, enviado_em";
+  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, hora, hora_fim, data_limite, responsavel, revisor, observacao, fluxo_datas, ajustes, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, vios_tarefas, envio_erro, enviado_em";
 
 type AgendamentoRow = {
   id: string; publicacao_id: string; ordem: number; etiqueta: EtiquetaAgendamento; tarefa: string; tarefa_id: string | null;
   data: string; data_fatal: string | null; dias_prazo: number | null; contagem_prazo: ContagemPrazo | null; hora: string | null;
-  hora_fim: string | null; responsavel: string; revisor: string | null;
+  hora_fim: string | null; data_limite: string | null; responsavel: string; revisor: string | null;
   observacao: string | null; fluxo_datas: DataDoFluxo[] | null; ajustes: AjusteNaTarefa[] | null; envio_status: EnvioStatus;
   envio_simulado: boolean | null; sama_agendamento_id: string | null; vios_tarefa_id: string | null;
   vios_tarefas: TarefaNoVios[] | null; envio_erro: string | null; enviado_em: string | null;
@@ -100,6 +101,7 @@ function agendamentoResumo(row: AgendamentoRow): AgendamentoResumo {
     contagemPrazo: row.contagem_prazo,
     hora: row.hora,
     horaFim: row.hora_fim ?? null,
+    dataLimite: row.data_limite ?? null,
     responsavel: row.responsavel,
     revisor: row.revisor,
     observacao: row.observacao,
@@ -319,7 +321,7 @@ export async function obterVistagem(
   }
   let fluxosErro: string | null = null;
   let sinteseErro: string | null = null;
-  const [inconsistencias, feriados, pastaVios, arvore, sintese, sintesesPedidas, estagiarios, materiaVazia] = await Promise.all([
+  const [inconsistencias, feriados, pastaVios, arvore, sintese, sintesesPedidas, estagiarios, cadastro, materiasVios, sistemasVios] = await Promise.all([
     inconsistenciasPorPublicacao([id]),
     carregarFeriados().catch(() => [] as string[]),
     publicacao.pasta_ci ? buscarPastasVios([publicacao.pasta_ci]) : Promise.resolve(new Map<string, { vinculo: string | null; auxiliarSigla: string | null }>()),
@@ -341,20 +343,28 @@ export async function obterVistagem(
         })
       : Promise.resolve([] as SintesePedida[]),
     catalogo && ehReestruturacao(publicacao.escritorio_responsavel ?? catalogo.area) ? estagiariosNoVios() : Promise.resolve(new Set<string>()),
-    // Só decide se a síntese pede a Matéria: sem resposta do SIOE, segue sem pedir, e quem recusa é o VIOS.
+    // Matéria e Sistema do Tribunal atuais, para mostrar e decidir o que "Atualizar cadastro no VIOS" exige: sem
+    // resposta do SIOE, segue sem exigir, e quem recusa é o VIOS.
     publicacao.pasta_ci && !previa
-      ? pastaSemMateria(publicacao.pasta_ci).catch((erro: unknown) => {
-          console.error("[vistagem] matéria da pasta", erro instanceof Error ? erro.message : erro);
-          return false;
+      ? cadastroDaPasta(publicacao.pasta_ci).catch((erro: unknown): CadastroDaPasta | null => {
+          console.error("[vistagem] cadastro da pasta", erro instanceof Error ? erro.message : erro);
+          return null;
         })
-      : Promise.resolve(false),
+      : Promise.resolve(null),
+    // As listas do VIOS para escolher: sem elas, o campo some e o resto do pedido segue.
+    publicacao.pasta_ci && !previa
+      ? carregarMateriasVios().catch((erro: unknown) => {
+          console.error("[vistagem] matérias do VIOS", erro instanceof Error ? erro.message : erro);
+          return [] as MateriaVios[];
+        })
+      : Promise.resolve([] as MateriaVios[]),
+    publicacao.pasta_ci && !previa
+      ? carregarSistemasVios().catch((erro: unknown) => {
+          console.error("[vistagem] sistemas do tribunal do VIOS", erro instanceof Error ? erro.message : erro);
+          return [] as MateriaVios[];
+        })
+      : Promise.resolve([] as MateriaVios[]),
   ]);
-  const materiasVios = materiaVazia
-    ? await carregarMateriasVios().catch((erro: unknown) => {
-        console.error("[vistagem] matérias do VIOS", erro instanceof Error ? erro.message : erro);
-        return [] as MateriaVios[];
-      })
-    : [];
   const auxiliar = publicacao.pasta_ci ? pastaVios.get(publicacao.pasta_ci)?.auxiliarSigla ?? null : null;
   const responsavel = catalogo ? responsavelSugerido(publicacao.advogado_responsavel, catalogo.usuarios)?.nome ?? null : null;
   const revisor = catalogo ? usuarioPorSigla(auxiliar, catalogo.usuarios)?.nome ?? null : null;
@@ -372,8 +382,12 @@ export async function obterVistagem(
     sintese,
     sinteseErro,
     sintesesPedidas,
-    materiaVazia,
+    materiaVazia: cadastro ? semMateria(cadastro) : false,
+    materiaAtual: cadastro?.materia ?? null,
     materiasVios,
+    sistemaVazio: cadastro ? semSistema(cadastro) : false,
+    sistemaAtual: cadastro?.sistemaTribunal ?? null,
+    sistemasVios,
     catalogo,
     catalogoErro,
     responsavelSugerido: responsavel,
@@ -463,6 +477,7 @@ async function cienciaParaGravar(
     contagemPrazo: null,
     hora: null,
     horaFim: null,
+    dataLimite: null,
     responsavel: ciencia.responsaveis.map((pessoa) => pessoa.nome).join(", "),
     responsavelId: ciencia.responsaveis.map((pessoa) => pessoa.id ?? "").join(","),
     revisor: null,
@@ -559,6 +574,7 @@ export async function salvarVistagem(
       contagem_prazo: item.contagemPrazo,
       hora: item.hora,
       hora_fim: item.horaFim,
+      data_limite: item.dataLimite,
       responsavel: item.responsavel,
       responsavel_id: item.responsavelId,
       revisor: item.revisor,
@@ -699,13 +715,14 @@ async function auxiliaresDasPastas(linhas: (PublicacaoRow & { area_processo: str
 }
 
 /**
- * "Atualizar Síntese": põe na fila do robô o parágrafo que a pessoa escreveu, para ele acrescentar no fim da
- * síntese da pasta no VIOS como "dd/mm/aaaa (Nome): texto". Devolve a lista atualizada do que foi pedido.
+ * "Atualizar cadastro no VIOS": põe na fila do robô o que a pessoa pediu para o cadastro da pasta — o parágrafo a
+ * acrescentar no fim da síntese ("dd/mm/aaaa (Nome): texto"), a Matéria e/ou o Sistema do Tribunal. Cada parte é
+ * opcional, mas o pedido precisa de ao menos uma; a Matéria e o Sistema são exigidos quando estão vazios, porque o
+ * VIOS não grava o cadastro sem eles. Devolve a lista atualizada do que foi pedido.
  */
 export async function pedirAtualizacaoSintese(
   id: string,
-  texto: string,
-  materiasEscolhidas: unknown,
+  pedido: { texto: string; materias: unknown; sistema: unknown },
   authUserId: string,
   areas: AreasVistagem,
   veRisco = true
@@ -713,26 +730,35 @@ export async function pedirAtualizacaoSintese(
   const publicacao = await carregarPublicacao(id);
   garantirArea(publicacao, areas, veRisco);
   if (!publicacao.pasta_ci) throw new VistagemError("Esta publicação está sem pasta no VIOS.");
-  const trecho = texto.trim();
-  if (trecho.length < 3) throw new VistagemError("Escreva o que acrescentar à síntese.");
+  const trecho = pedido.texto.trim();
+  if (trecho && trecho.length < 3) throw new VistagemError("O trecho da síntese precisa de ao menos 3 caracteres.");
   if (trecho.length > LIMITE_TRECHO_SINTESE) throw new VistagemError(`O trecho passa de ${LIMITE_TRECHO_SINTESE} caracteres.`);
   const autor = (await nomesDosUsuarios([authUserId])).get(authUserId)?.trim();
   if (!autor) throw new VistagemError("Seu nome não está no cadastro de usuários do Orquestra.", 403);
-  const pedidas = await sintesesDaPasta(publicacao.pasta_ci);
+  // Sem a base ou sem as listas, não trava o pedido: quem recusa é o VIOS, como antes.
+  const [pedidas, cadastro, listaDeMaterias, listaDeSistemas] = await Promise.all([
+    sintesesDaPasta(publicacao.pasta_ci),
+    cadastroDaPasta(publicacao.pasta_ci).catch((): CadastroDaPasta | null => null),
+    carregarMateriasVios().catch(() => [] as MateriaVios[]),
+    carregarSistemasVios().catch(() => [] as MateriaVios[]),
+  ]);
+  const { materias, fora } = materiasDaLista(pedido.materias, listaDeMaterias);
+  if (fora.length) throw new VistagemError("A Matéria escolhida não está na lista do VIOS. Recarregue a página e escolha de novo.", 422);
+  const { sistema, fora: sistemaFora } = sistemaDaLista(pedido.sistema, listaDeSistemas);
+  if (sistemaFora) throw new VistagemError("O Sistema do Tribunal escolhido não está na lista do VIOS. Recarregue a página e escolha de novo.", 422);
+  if (!trecho && !materias.length && !sistema) {
+    throw new VistagemError("Escreva o trecho da síntese ou escolha a Matéria ou o Sistema do Tribunal.");
+  }
   // Repetido é o trecho que está na fila ou já foi gravado; o que deu erro ou só foi simulado pode ir de novo.
   const repetido = (pedida: SintesePedida) => pedida.status !== "erro" && !(pedida.simulado && pedida.status === "concluido");
-  if (pedidas.some((pedida) => pedida.texto.trim() === trecho && repetido(pedida))) {
+  if (trecho && pedidas.some((pedida) => pedida.texto.trim() === trecho && repetido(pedida))) {
     throw new VistagemError("Este trecho já foi pedido para esta pasta.", 409);
   }
-  // Sem a base ou sem a lista, não trava o pedido: quem recusa é o VIOS, como antes.
-  const [materiaVazia, listaDeMaterias] = await Promise.all([
-    pastaSemMateria(publicacao.pasta_ci).catch(() => false),
-    carregarMateriasVios().catch(() => [] as MateriaVios[]),
-  ]);
-  const { materias, fora } = materiasDaLista(materiasEscolhidas, listaDeMaterias);
-  if (fora.length) throw new VistagemError("A Matéria escolhida não está na lista do VIOS. Recarregue a página e escolha de novo.", 422);
-  if (listaDeMaterias.length && !materias.length && precisaDeMateria(materiaVazia, pedidas)) {
-    throw new VistagemError("Este processo está sem Matéria no VIOS. Escolha a Matéria para o robô conseguir gravar a síntese.", 422);
+  if (listaDeMaterias.length && !materias.length && cadastro && precisaDeMateria(semMateria(cadastro), pedidas)) {
+    throw new VistagemError("Este processo está sem Matéria no VIOS. Escolha a Matéria para o robô conseguir gravar o cadastro.", 422);
+  }
+  if (listaDeSistemas.length && !sistema && cadastro && precisaDeSistema(semSistema(cadastro), pedidas)) {
+    throw new VistagemError("Este processo está sem Sistema do Tribunal no VIOS. Escolha o sistema para o robô conseguir gravar o cadastro.", 422);
   }
   const [ano, mes, dia] = hojeEmSaoPaulo().split("-");
   await enfileirarSintese({
@@ -743,6 +769,7 @@ export async function pedirAtualizacaoSintese(
     data: `${dia}/${mes}/${ano}`,
     simular: sinteseSimulada(),
     materias,
+    sistemaTribunal: sistema,
   });
   return sintesesDaPasta(publicacao.pasta_ci);
 }
@@ -999,6 +1026,7 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
         dataFatal: edicao.dataFatal,
         hora: edicao.hora,
         horaFim: edicao.horaFim,
+        dataLimite: edicao.dataLimite,
         responsavel: edicao.responsavel,
         revisor: edicao.revisor,
         observacao: row.observacao,
@@ -1030,6 +1058,7 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
       dataFatal: row.data_fatal,
       hora: row.hora,
       horaFim: row.hora_fim,
+      dataLimite: row.data_limite,
       responsavel: row.responsavel,
       revisor: row.revisor,
       fluxoDatas: row.fluxo_datas ?? [],
@@ -1039,6 +1068,7 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
       dataFatal: item.dataFatal,
       hora: item.hora,
       horaFim: item.horaFim,
+      dataLimite: item.dataLimite,
       responsavel: item.responsavel,
       revisor: item.revisor,
       fluxoDatas: item.fluxoDatas,
@@ -1058,6 +1088,7 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
       contagem_prazo: mesmaFatal ? row.contagem_prazo : null,
       hora: item.hora,
       hora_fim: item.horaFim,
+      data_limite: item.dataLimite,
       responsavel: item.responsavel,
       responsavel_id: item.responsavelId,
       revisor: item.revisor,
@@ -1297,12 +1328,12 @@ export async function atualizarEnvios(): Promise<{ consultadas: number; concluid
   const db = admin();
   const { data, error } = await db
     .from("vistagem_agendamentos")
-    .select("id, publicacao_id, sama_agendamento_id, envio_status")
+    .select("id, publicacao_id, sama_agendamento_id, envio_status, envio_erro")
     .in("envio_status", ["pendente", "enviado", "processando"])
     .not("sama_agendamento_id", "is", null)
     .limit(1000);
   if (error) falhou("carregar os envios em andamento", error);
-  const pendentes = (data ?? []) as { id: string; publicacao_id: string; sama_agendamento_id: string; envio_status: EnvioStatus }[];
+  const pendentes = (data ?? []) as { id: string; publicacao_id: string; sama_agendamento_id: string; envio_status: EnvioStatus; envio_erro: string | null }[];
   const resumo = { consultadas: pendentes.length, concluidas: 0, erros: 0 };
   if (!pendentes.length) return resumo;
 
@@ -1311,7 +1342,8 @@ export async function atualizarEnvios(): Promise<{ consultadas: number; concluid
   const publicacoesTocadas = new Set<string>();
   for (const item of pendentes) {
     const atual = fila.get(item.sama_agendamento_id);
-    if (!atual || atual.status === item.envio_status) continue;
+    // O texto também conta: pendente esperando o VIOS ("Aguardando a disponibilidade…", próxima tentativa) muda só ele.
+    if (!atual || (atual.status === item.envio_status && (atual.erro ?? null) === (item.envio_erro ?? null))) continue;
     if (atual.status === "concluido") resumo.concluidas += 1;
     if (atual.status === "erro") resumo.erros += 1;
     publicacoesTocadas.add(item.publicacao_id);

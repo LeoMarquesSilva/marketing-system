@@ -131,14 +131,56 @@ export async function buscarSinteseDaPasta(ci: string): Promise<string | null> {
   return row?.observacoes?.trim() || null;
 }
 
-/** A pasta está na base do SIOE e sem Matéria (coluna "Matéria" do relatório do VIOS). */
-export async function pastaSemMateria(ci: string): Promise<boolean> {
+/** Matéria e Sistema do Tribunal da pasta na base do SIOE (colunas do relatório "Processos Completo" do VIOS). */
+export interface CadastroDaPasta {
+  /** A pasta está na base do SIOE. */
+  naBase: boolean;
+  materia: string | null;
+  sistemaTribunal: string | null;
+  /**
+   * A base já traz o Sistema do Tribunal (coluna criada e preenchida pelo sync). Antes disso, campo vazio não quer
+   * dizer vazio no VIOS, e a síntese não o exige.
+   */
+  temSistema: boolean;
+}
+
+const CACHE_MS = 10 * 60 * 1000;
+let cacheBaseComSistema: { em: number; tem: boolean } | null = null;
+
+/** O sync já preencheu o Sistema do Tribunal em alguma pasta. */
+async function baseComSistema(): Promise<boolean> {
+  if (cacheBaseComSistema && Date.now() - cacheBaseComSistema.em < CACHE_MS) return cacheBaseComSistema.tem;
+  const { data, error } = await sioe().from("processos_completo").select("ci").not("sistema_tribunal", "is", null).neq("sistema_tribunal", "").limit(1);
+  const tem = !error && (data ?? []).length > 0;
+  cacheBaseComSistema = { em: Date.now(), tem };
+  return tem;
+}
+
+export async function cadastroDaPasta(ci: string): Promise<CadastroDaPasta> {
   const numero = ci.replace(/\D/g, "");
-  if (!numero) return false;
-  const { data, error } = await sioe().from("processos_completo").select("materia").eq("ci", numero).limit(1);
+  const vazio: CadastroDaPasta = { naBase: false, materia: null, sistemaTribunal: null, temSistema: false };
+  if (!numero) return vazio;
+  const consulta = (colunas: string) => sioe().from("processos_completo").select(colunas).eq("ci", numero).limit(1);
+  // Sem a coluna sistema_tribunal ainda (SQL do SIOE), lê só a Matéria.
+  const comSistema = await consulta("materia, sistema_tribunal");
+  const temColuna = !comSistema.error;
+  const { data, error } = temColuna ? comSistema : await consulta("materia");
   if (error) throw new VistagemError(`Falha ao consultar a matéria do processo no SIOE: ${error.message}`, 502);
-  const [row] = (data ?? []) as { materia: string | null }[];
-  return Boolean(row) && !row.materia?.trim();
+  const [row] = (data ?? []) as unknown as { materia: string | null; sistema_tribunal?: string | null }[];
+  const sistemaTribunal = row?.sistema_tribunal?.trim() || null;
+  const temSistema = temColuna && (Boolean(sistemaTribunal) || (await baseComSistema()));
+  if (!row) return { ...vazio, temSistema };
+  return { naBase: true, materia: row.materia?.trim() || null, sistemaTribunal, temSistema };
+}
+
+/** Na base do SIOE e sem Matéria: a síntese pede a Matéria. */
+export function semMateria(cadastro: CadastroDaPasta): boolean {
+  return cadastro.naBase && !cadastro.materia;
+}
+
+/** Na base do SIOE (com a coluna) e sem Sistema do Tribunal: a síntese pede o Sistema. */
+export function semSistema(cadastro: CadastroDaPasta): boolean {
+  return cadastro.naBase && cadastro.temSistema && !cadastro.sistemaTribunal;
 }
 
 /** Área de cada pessoa: sp_usuarios_area e, para quem não está lá, colaboradores. */

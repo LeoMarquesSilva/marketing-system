@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
 import {
   ArrowLeft,
   Bot,
@@ -50,11 +51,12 @@ import { LeitorPublicacao } from "./leitor-publicacao";
 import { IconeArea, IconeTribunal, LogoGrupo } from "./marcas";
 import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
 import { camposDaConferencia, combinaCampos } from "@/lib/vistagem/busca";
+import { SITUACOES_NO_ROBO, situacaoNoRobo, type SituacaoNoRobo } from "@/lib/vistagem/situacao-robo";
 import { ReguaDatas } from "./regua-datas";
 import { SeloResultadoIa, SugestaoNaConferencia } from "./sugestao-ia-ui";
 import { IconeOpcao, Seletor } from "./seletor";
 import { AvatarPessoa } from "./combobox-busca";
-import { CartoesTarefas, ENVIO, LinkVios } from "./tarefas-conferencia";
+import { CartoesTarefas, LinkVios, corDoTextoDoEnvio, envioDaTarefa } from "./tarefas-conferencia";
 import { PainelAberturaDePasta, SeloAberturaDePasta } from "./abertura-pasta";
 import { SeloEsocial, contarPor, formatarData, formatarDataHora, tribunalDe } from "./publicacao-ui";
 import {
@@ -78,6 +80,16 @@ type Aba = "conferir" | "enviadas" | "aberturas" | "inconsistencias";
 type Retorno = { tom: "sucesso" | "erro" | "alerta" | "info"; texto: string };
 
 const temErro = (item: ConferenciaItem) => item.agendamentos.some((agendamento) => agendamento.envioStatus === "erro");
+
+/** Ícone de cada situação no filtro Status do robô. */
+const ICONE_SITUACAO: Record<SituacaoNoRobo, LucideIcon> = {
+  erro: CircleAlert,
+  aguardando_vios: Hourglass,
+  com_robo: Bot,
+  na_fila: Inbox,
+  simulada: FileSearch,
+  agendada: CircleCheck,
+};
 
 const processoDe = (item: ConferenciaItem) => item.publicacao.numeroProcesso ?? item.publicacao.numeroProcessoOriginal;
 
@@ -218,6 +230,7 @@ export function TabelaTarefas({ agendamentos, comEnvio, compacta = false }: { ag
                 <span className="tabular-nums text-foreground">
                   {formatarData(item.data)}
                   {!item.dataFatal && item.hora ? ` às ${item.hora}${item.horaFim ? ` até ${item.horaFim}` : ""}` : ""}
+                  {item.dataLimite && item.dataLimite !== item.data ? ` · limite ${formatarData(item.dataLimite)}` : ""}
                 </span>
                 {item.dataFatal ? (
                   <span className="mt-0.5 block text-xs text-muted-foreground">
@@ -240,15 +253,15 @@ export function TabelaTarefas({ agendamentos, comEnvio, compacta = false }: { ag
                         Simulada
                       </Selo>
                     ) : (
-                      <Selo tom={ENVIO[item.envioStatus].tom}>
-                        {ENVIO[item.envioStatus].rotulo}
+                      <Selo tom={envioDaTarefa(item).tom}>
+                        {envioDaTarefa(item).rotulo}
                         {item.envioSimulado ? " (simulação)" : ""}
                       </Selo>
                     )}
                     {item.viosTarefaId ? <LinkVios ci={item.viosTarefaId} /> : null}
                   </div>
                   {simulada ? <span className="mt-1 block text-xs text-muted-foreground">Preenchida no VIOS, não gravada</span> : null}
-                  {item.envioErro ? <span className="mt-1 block whitespace-pre-wrap break-words text-xs text-red-700">{item.envioErro}</span> : null}
+                  {item.envioErro ? <span className={cn("mt-1 block whitespace-pre-wrap break-words text-xs", corDoTextoDoEnvio(item))}>{item.envioErro}</span> : null}
                 </Celula>
               ) : null}
               <FluxoDaTarefaAgendada item={item} />
@@ -1003,6 +1016,8 @@ function Conferencia() {
   const [area, setArea] = useState("");
   /** Tribunal; vazio é "Todos os tribunais". */
   const [tribunal, setTribunal] = useState("");
+  /** Enviadas ao robô: situação no robô (erro, aguardando o VIOS…); vazio é "Todos os status". */
+  const [statusRobo, setStatusRobo] = useState("");
   /** Publicação escolhida; sem escolha (ou fora dos filtros), abre a primeira da fila. */
   const [selecionada, setSelecionada] = useState<string | null>(null);
   /** A fila abre recolhida, como na vistagem: a publicação ocupa a largura toda. */
@@ -1113,10 +1128,16 @@ function Conferencia() {
   const daArea = (lista ?? []).filter((item) => !areaAtiva || areaDe(item) === areaAtiva);
   const tribunaisDaLista = contarPor(daArea, (item) => tribunalDe(item.publicacao));
   const tribunalAtivo = tribunaisDaLista.some(([nome]) => nome === tribunal) ? tribunal : "";
+  // Status do robô: só em Enviadas ao robô; contado na área e no tribunal escolhidos. O escolhido que sumiu deixa de filtrar.
+  const situacaoDe = (item: ConferenciaItem): SituacaoNoRobo => situacaoNoRobo(item.agendamentos);
+  const doTribunal = daArea.filter((item) => !tribunalAtivo || tribunalDe(item.publicacao) === tribunalAtivo);
+  const situacoesDaLista = aba === "enviadas" ? contarPor(doTribunal, situacaoDe) : [];
+  const statusRoboAtivo = situacoesDaLista.some(([valor]) => valor === statusRobo) ? statusRobo : "";
   const filtrada = daArea.filter(
     (item) =>
       combinaCampos(camposDeBusca.get(item.publicacao.id) ?? [], busca) &&
       (!tribunalAtivo || tribunalDe(item.publicacao) === tribunalAtivo) &&
+      (!statusRoboAtivo || situacaoDe(item) === statusRoboAtivo) &&
       (!dataAtiva || item.publicacao.dataPublicacao === dataAtiva) &&
       (!importacaoAtiva || item.publicacao.dataImportacao === importacaoAtiva)
   );
@@ -1126,6 +1147,7 @@ function Conferencia() {
     setBusca("");
     setArea("");
     setTribunal("");
+    setStatusRobo("");
     setDataPublicacao("");
     setDataImportacao("");
   }
@@ -1237,6 +1259,20 @@ function Conferencia() {
         ) : null}
         {aba === "enviadas" ? (
           <>
+            <Seletor
+              rotulo="Status do robô"
+              className="sm:w-56"
+              valor={statusRoboAtivo}
+              onChange={setStatusRobo}
+              todos={{ rotulo: "Todos os status", contagem: doTribunal.length, icone: <IconeOpcao icone={Bot} /> }}
+              // Na ordem do filtro (primeiro o que pede ação), só as situações que existem na lista.
+              opcoes={SITUACOES_NO_ROBO.flatMap((situacao) => {
+                const quantidade = situacoesDaLista.find(([valor]) => valor === situacao.valor)?.[1];
+                return quantidade
+                  ? [{ valor: situacao.valor, rotulo: situacao.rotulo, descricao: situacao.descricao, contagem: quantidade, icone: <IconeOpcao icone={ICONE_SITUACAO[situacao.valor]} /> }]
+                  : [];
+              })}
+            />
             <Button variant="outline" onClick={atualizarEnvios} disabled={atualizando || rodando}>
               {atualizando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
               Atualizar status do robô

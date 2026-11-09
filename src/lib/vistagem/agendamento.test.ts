@@ -15,7 +15,9 @@ import {
   avisosDaData,
   atalhosDePrazo,
   montarObservacaoVios,
+  dataLimiteDaTarefa,
   observacaoObrigatoria,
+  pedeDataLimite,
   referenciaDaPublicacao,
   responsaveisNaArea,
   separarNomes,
@@ -106,6 +108,7 @@ describe("validarAgendamentos", () => {
           contagemPrazo: "corridos",
           hora: null,
           horaFim: null,
+          dataLimite: null,
           responsavel: "Advogada Exemplo",
           responsavelId: "4",
           revisor: "Revisor Exemplo",
@@ -114,6 +117,55 @@ describe("validarAgendamentos", () => {
           fluxoDatas: [],
         },
       ],
+    });
+  });
+
+  describe("SESSÃO DE JULGAMENTO: data limite própria", () => {
+    const comSessao = {
+      ...contexto,
+      tarefas: { ...contexto.tarefas, COMPROMISSO: [...contexto.tarefas.COMPROMISSO, { id: "406", nome: "SESSÃO DE JULGAMENTO" }] },
+    };
+    const sessao = (extra: Record<string, unknown>) => ({
+      etiqueta: "COMPROMISSO" as const,
+      tarefa: "SESSÃO DE JULGAMENTO",
+      tarefaId: "406",
+      data: "2026-11-19",
+      hora: "09:00",
+      responsavel: "Advogada Exemplo",
+      ...extra,
+    });
+
+    it("reconhece o tipo pelo nome do VIOS", () => {
+      expect(pedeDataLimite("SESSÃO DE JULGAMENTO")).toBe(true);
+      expect(pedeDataLimite("sessao de julgamento")).toBe(true);
+      expect(pedeDataLimite("AUDIÊNCIA DE INSTRUÇÃO")).toBe(false);
+    });
+
+    it("sem escolha, a data limite é a própria data", () => {
+      const resultado = validarAgendamentos([sessao({})], comSessao);
+      expect(resultado.ok && resultado.itens[0].dataLimite).toBe("2026-11-19");
+    });
+
+    it("a escolhida vale quando é a data ou depois", () => {
+      const resultado = validarAgendamentos([sessao({ dataLimite: "2026-11-25" })], comSessao);
+      expect(resultado.ok && resultado.itens[0]).toMatchObject({ data: "2026-11-19", dataLimite: "2026-11-25" });
+    });
+
+    it("antes da data, não passa", () => {
+      const resultado = validarAgendamentos([sessao({ dataLimite: "2026-11-18" })], comSessao);
+      expect(resultado).toEqual({ ok: false, erros: ["Tarefa 1: a data limite tem de ser a data para conclusão ou depois."] });
+    });
+
+    it("nos outros tipos a data limite não existe, mesmo se vier", () => {
+      const resultado = validarAgendamentos([sessao({ tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", dataLimite: "2026-11-25" })], comSessao);
+      expect(resultado.ok && resultado.itens[0].dataLimite).toBeNull();
+    });
+
+    it("dataLimiteDaTarefa: inválida ou antes da data vira a própria data", () => {
+      expect(dataLimiteDaTarefa("SESSÃO DE JULGAMENTO", "2026-11-19", "xx")).toBe("2026-11-19");
+      expect(dataLimiteDaTarefa("SESSÃO DE JULGAMENTO", "2026-11-19", "2026-11-01")).toBe("2026-11-19");
+      expect(dataLimiteDaTarefa("SESSÃO DE JULGAMENTO", "", "2026-11-25")).toBeNull();
+      expect(dataLimiteDaTarefa("PERÍCIA", "2026-11-19", "2026-11-25")).toBeNull();
     });
   });
 

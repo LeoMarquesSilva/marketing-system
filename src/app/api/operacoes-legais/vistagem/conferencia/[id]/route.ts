@@ -36,6 +36,7 @@ export async function POST(request: Request, context: RouteContext) {
             dataFatal: texto(corpo.dataFatal, 10),
             hora: texto(corpo.hora, 5),
             horaFim: texto(corpo.horaFim, 5),
+            dataLimite: texto(corpo.dataLimite, 10),
             responsavel: texto(corpo.responsavel, 500) ?? "",
             revisor: texto(corpo.revisor, 200),
             // O servidor confere caminho, data e pessoas (validarAgendamentos).

@@ -53,6 +53,7 @@ import {
   mesmasPessoas,
   nomesDasPessoas,
   observacaoObrigatoria,
+  pedeDataLimite,
   revisorFicaNaTarefa,
   separarNomes,
   type EtiquetaAgendamento,
@@ -125,6 +126,8 @@ interface Linha {
   hora: string;
   /** Compromisso: Hora final no VIOS (HH:MM); começa 1 hora depois da inicial e acompanha até a pessoa mudar. */
   horaFim: string;
+  /** SESSÃO DE JULGAMENTO: data limite no VIOS (AAAA-MM-DD). Vazia = a mesma data para conclusão, e acompanha quando ela muda. */
+  dataLimite: string;
   responsavel: string;
   revisor: string;
   observacao: string;
@@ -205,6 +208,7 @@ function novaLinha(base: Partial<Linha> = {}): Linha {
     contagemPrazo: "uteis",
     hora: "",
     horaFim: "",
+    dataLimite: "",
     responsavel: "",
     revisor: "",
     observacao: "",
@@ -220,12 +224,19 @@ const campo = campoClasse;
 /**
  * `semFatal`: tarefa de Prazo sem prazo próprio no VIOS (a SENTENÇA), que leva a data dela em vez da fatal.
  * `pedeObservacao`: tipo em que a Observação é obrigatória (CIÊNCIA NF).
+ * `pedeLimite`: tipo com data limite própria (SESSÃO DE JULGAMENTO), que não pode ficar antes da data.
  */
-function linhaCompleta(linha: Linha, semFatal: boolean, pedeObservacao = false): boolean {
+function linhaCompleta(linha: Linha, semFatal: boolean, pedeObservacao = false, pedeLimite = false): boolean {
   if (!linha.tarefa || !linha.responsavel) return false;
   if (pedeObservacao && !linha.observacao.trim()) return false;
+  if (pedeLimite && !dataLimiteValida(linha)) return false;
   if (linha.etiqueta === "PRAZO") return Boolean((semFatal ? linha.data : linha.dataFatal) && linha.revisor);
   return Boolean(linha.data) && (linha.etiqueta !== "COMPROMISSO" || (horaValida(linha.hora) && horaFinalValida(linha)));
+}
+
+/** Data limite vazia (vai a mesma data) ou a data para conclusão ou depois. */
+function dataLimiteValida(linha: Pick<Linha, "data" | "dataLimite">): boolean {
+  return !linha.dataLimite || !linha.data || linha.dataLimite >= linha.data;
 }
 
 /** Hora final vazia (vai 1 hora depois) ou depois da inicial. */
@@ -859,6 +870,7 @@ export function EditorVistagem({
                   contagemPrazo: item.contagemPrazo ?? contagemDaArea,
                   hora: item.hora ?? "",
                   horaFim: item.horaFim ?? horaFinalPadrao(item.hora),
+                  dataLimite: item.dataLimite && item.dataLimite !== item.data ? item.dataLimite : "",
                   responsavel: item.responsavel,
                   revisor: item.etiqueta === "PROVIDENCIA" ? "" : item.revisor ?? "",
                   observacao: item.observacao ?? "",
@@ -936,8 +948,14 @@ export function EditorVistagem({
     return observacaoObrigatoria(opcao ? opcao.nomeVios ?? opcao.nome : linha.tarefa);
   }
 
+  /** O tipo tem data limite própria (SESSÃO DE JULGAMENTO), pelo nome como está no VIOS. */
+  function pedeLimite(linha: Pick<Linha, "etiqueta" | "tarefa">): boolean {
+    const opcao = detalhe?.catalogo?.tarefas[linha.etiqueta].find((item) => item.nome === linha.tarefa);
+    return pedeDataLimite(opcao ? opcao.nomeVios ?? opcao.nome : linha.tarefa);
+  }
+
   function linhaPronta(linha: Linha): boolean {
-    return linhaCompleta(linha, semFatal(linha), pedeObservacao(linha));
+    return linhaCompleta(linha, semFatal(linha), pedeObservacao(linha), pedeLimite(linha));
   }
 
   function dataSemFatal(): string {
@@ -955,7 +973,9 @@ export function EditorVistagem({
           mudanca.hora !== undefined && mudanca.horaFim === undefined && (!linha.horaFim || linha.horaFim === horaFinalPadrao(linha.hora))
             ? { horaFim: horaFinalPadrao(mudanca.hora) }
             : {};
-        return { ...linha, ...mudanca, ...horaFimAcompanha, ...(outroTipo && !mudanca.fluxoDatas ? { fluxoDatas: {} } : {}) };
+        // A data limite igual à data acompanha a data; a escolhida pela pessoa fica.
+        const limiteAcompanha = mudanca.data !== undefined && mudanca.dataLimite === undefined && linha.dataLimite === linha.data ? { dataLimite: "" } : {};
+        return { ...linha, ...mudanca, ...horaFimAcompanha, ...limiteAcompanha, ...(outroTipo && !mudanca.fluxoDatas ? { fluxoDatas: {} } : {}) };
       })
     );
   }
@@ -1055,6 +1075,7 @@ export function EditorVistagem({
           data: semPrazo ? dataSemFatal() : tarefa.classe === "COMPROMISSO" ? tarefa.data ?? "" : "",
           hora: tarefa.hora ?? "",
           horaFim: horaFinalPadrao(tarefa.hora),
+          dataLimite: "",
           responsavel: opcao.responsaveis?.length ? opcao.responsaveis.join(", ") : detalhe.responsavelSugerido ?? "",
           revisor: prazo || revisorFicaNaTarefa(opcao.nome) ? detalhe.revisorSugerido ?? "" : "",
           observacao: tarefa.motivo,
@@ -1120,6 +1141,7 @@ export function EditorVistagem({
             contagemPrazo: linha.etiqueta === "PRAZO" && !semFatal(linha) && linha.diasPrazo ? linha.contagemPrazo : null,
             hora: linha.etiqueta === "COMPROMISSO" ? linha.hora : null,
             horaFim: linha.etiqueta === "COMPROMISSO" ? linha.horaFim || null : null,
+            dataLimite: pedeLimite(linha) ? linha.dataLimite || linha.data || null : null,
             responsavel: linha.responsavel,
             revisor: linha.etiqueta === "PROVIDENCIA" ? null : linha.revisor || null,
             observacao: linha.observacao || null,
@@ -1302,7 +1324,11 @@ export function EditorVistagem({
                         erro={detalhe.sinteseErro}
                         pedidas={detalhe.sintesesPedidas}
                         materiaVazia={detalhe.materiaVazia}
+                        materiaAtual={detalhe.materiaAtual}
                         materias={detalhe.materiasVios}
+                        sistemaVazio={detalhe.sistemaVazio}
+                        sistemaAtual={detalhe.sistemaAtual}
+                        sistemas={detalhe.sistemasVios}
                         // Na prévia da controladoria a pasta ainda não está gravada: a síntese fica só para leitura.
                         publicacaoId={resolucao ? null : publicacao.id}
                       />
@@ -1447,6 +1473,7 @@ export function EditorVistagem({
                     const IconeClasse = ICONE_CLASSE[linha.etiqueta];
                     const pronta = linhaPronta(linha);
                     const observacaoPedida = pedeObservacao(linha);
+                    const limitePedido = pedeLimite(linha);
                     return (
                       <li
                         key={linha.chave}
@@ -1670,6 +1697,21 @@ export function EditorVistagem({
                                       valor={linha.horaFim}
                                       onChange={(horaFim) => alterar(linha.chave, { horaFim })}
                                       invalido={!horaFinalValida(linha)}
+                                    />
+                                  </div>
+                                ) : null}
+                                {limitePedido ? (
+                                  // SESSÃO DE JULGAMENTO: a sessão é num dia e o prazo da tarefa pode ir além. Começa igual à data.
+                                  <div className="w-[11rem] space-y-1.5" title="Vai para a Data limite no VIOS. Começa igual à data e pode ir além dela.">
+                                    <span className="block text-xs font-medium text-muted-foreground">Data limite</span>
+                                    <CampoData
+                                      rotulo={`Data limite da tarefa ${indice + 1} no VIOS`}
+                                      valor={linha.dataLimite || linha.data}
+                                      min={linha.data || undefined}
+                                      ehDiaUtil={ehDiaUtil}
+                                      destacado={Boolean(linha.dataLimite && linha.dataLimite !== linha.data)}
+                                      invalido={!dataLimiteValida(linha)}
+                                      onChange={(dataLimite) => alterar(linha.chave, { dataLimite })}
                                     />
                                   </div>
                                 ) : null}

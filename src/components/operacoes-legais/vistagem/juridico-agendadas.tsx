@@ -29,7 +29,7 @@ import type { NavegacaoNaFila } from "./faixa-processo";
 import { IconeTribunal, LogoGrupo, SeloArea } from "./marcas";
 import { formatarData, formatarDataHora } from "./publicacao-ui";
 import { IconeOpcao, Seletor } from "./seletor";
-import { DiaNaAgenda, ENVIO, ESTILO_CLASSE, ICONE_CLASSE, LinkVios } from "./tarefas-conferencia";
+import { DiaNaAgenda, ESTILO_CLASSE, ICONE_CLASSE, LinkVios, corDoTextoDoEnvio, envioDaTarefa } from "./tarefas-conferencia";
 import { Aviso, Carregando, Painel, Selo, Vazio } from "./ui";
 
 /** Filtro por situação; vazio é "Todas". */
@@ -159,7 +159,7 @@ function LinhaTarefa({ item, fotos, hoje, semRobo = false }: { item: Agendamento
   const simulada = item.envioStatus === "concluido" && item.envioSimulado;
   const doFluxo = (item.viosTarefas ?? []).filter((tarefa) => !tarefa.principal).length;
   const ci = item.viosTarefaId ?? item.viosTarefas?.find((tarefa) => tarefa.principal)?.ci ?? null;
-  const envio = ENVIO[item.envioStatus];
+  const envio = envioDaTarefa(item);
   // Pedido × o que o robô gravou: só quando o robô já devolveu a tarefa (sem o dado, não há o que comparar).
   const divergencias = item.viosTarefas?.length ? compararTarefa(item).divergencias : [];
   return (
@@ -221,7 +221,7 @@ function LinhaTarefa({ item, fotos, hoje, semRobo = false }: { item: Agendamento
         </span>
         )}
       </div>
-      {item.envioErro ? <p className="col-span-full whitespace-pre-wrap break-words pl-11 text-xs text-red-700">{item.envioErro}</p> : null}
+      {item.envioErro ? <p className={cn("col-span-full whitespace-pre-wrap break-words pl-11 text-xs", corDoTextoDoEnvio(item))}>{item.envioErro}</p> : null}
     </li>
   );
 }

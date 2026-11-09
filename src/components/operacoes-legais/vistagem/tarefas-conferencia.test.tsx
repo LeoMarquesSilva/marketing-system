@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { AgendamentoResumo } from "@/lib/vistagem/types";
-import { CartoesTarefas } from "./tarefas-conferencia";
+import { CartoesTarefas, aguardandoOVios, corDoTextoDoEnvio, envioDaTarefa } from "./tarefas-conferencia";
 
 function agendamento(campos: Partial<AgendamentoResumo> = {}): AgendamentoResumo {
   return {
@@ -16,6 +16,7 @@ function agendamento(campos: Partial<AgendamentoResumo> = {}): AgendamentoResumo
     contagemPrazo: null,
     hora: null,
     horaFim: null,
+    dataLimite: null,
     responsavel: "Ana Souza",
     revisor: null,
     observacao: null,
@@ -65,5 +66,34 @@ describe("CartoesTarefas: ajustes da conferência", () => {
 
   it("sem ajuste, o cartão não fala nisso", () => {
     expect(cartoes(agendamento({ ajustes: [] }))).not.toContain("Ajustada na conferência");
+  });
+});
+
+describe("envio esperando a publicação chegar ao VIOS", () => {
+  const ESPERA = "Aguardando a disponibilidade da publicação no VIOS. Próxima tentativa às 14:52; se não chegar até 10/11 às 17h, o robô agenda direto na pasta.";
+
+  it("pendente com o aviso da fila: Aguardando o VIOS, em âmbar", () => {
+    const item = { envioStatus: "pendente" as const, envioErro: ESPERA };
+    expect(aguardandoOVios(item)).toBe(true);
+    expect(envioDaTarefa(item)).toEqual({ rotulo: "Aguardando o VIOS", tom: "alerta" });
+    expect(corDoTextoDoEnvio(item)).toBe("text-amber-800");
+  });
+
+  it("às 17h, a volta para a pasta tem rótulo próprio", () => {
+    const item = { envioStatus: "pendente" as const, envioErro: "A publicação não chegou ao VIOS até 10/11/2026 às 17h: o robô vai agendar direto na pasta." };
+    expect(envioDaTarefa(item)).toEqual({ rotulo: "Vai para a pasta", tom: "alerta" });
+  });
+
+  it("os outros casos seguem o status", () => {
+    expect(envioDaTarefa({ envioStatus: "pendente", envioErro: null }).rotulo).toBe("Na fila do robô");
+    expect(envioDaTarefa({ envioStatus: "erro", envioErro: ESPERA }).rotulo).toBe("Erro no robô");
+    expect(corDoTextoDoEnvio({ envioStatus: "erro" })).toBe("text-red-700");
+  });
+
+  it("o cartão mostra o rótulo e o texto da espera", () => {
+    const html = cartoes(agendamento({ envioStatus: "pendente", envioErro: ESPERA }), { comEnvio: true });
+    expect(html).toContain("Aguardando o VIOS");
+    expect(html).toContain("text-amber-800");
+    expect(html).not.toContain("text-red-700\">Aguardando");
   });
 });
