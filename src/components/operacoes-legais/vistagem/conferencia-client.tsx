@@ -34,6 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import { ROTULO_ETIQUETA, chaveNome } from "@/lib/vistagem/agendamento";
+import { vaiParaCentral } from "@/lib/vistagem/central";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import { MAX_TEXTO_INCONSISTENCIA, TIPOS_INCONSISTENCIA_JURIDICO } from "@/lib/vistagem/inconsistencias";
 import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, InconsistenciaItem, PublicacaoResumo } from "@/lib/vistagem/types";
@@ -484,6 +485,8 @@ function ItemConferencia({
   const podeReenviar =
     comEnvio && modoReal && item.agendamentos.some((a) => a.envioSimulado && (a.envioStatus === "concluido" || a.envioStatus === "erro"));
   const dialogoAberto = devolvendo || confirmacao !== null;
+  // Sem pasta no VIOS (vistada antes de a Central entrar no fluxo): ao validar, vai como abertura de pasta, não para o robô.
+  const abertura = vaiParaCentral(publicacao);
 
   /** Roda de novo as tarefas com erro; se o servidor pedir confirmação (pode duplicar no VIOS), abre o modal. */
   async function rodarDeNovo(forcar: boolean) {
@@ -553,7 +556,7 @@ function ItemConferencia({
             </Button>
             <Button size="sm" className={BOTAO_FAIXA_PRINCIPAL} onClick={() => agir("validar")} disabled={ocupado}>
               {ocupado && !dialogoAberto ? spinner : <Send />}
-              Validar e enviar ao robô
+              {abertura ? "Validar e enviar à Central" : "Validar e enviar ao robô"}
             </Button>
           </>
         ) : null}
@@ -663,6 +666,14 @@ function ItemConferencia({
 
         {/* A coluna inteira tem o fundo das tarefas: com uma tarefa curta, o espaço que sobra embaixo é a própria coluna, não um vazio branco. */}
         <div className="min-w-0 border-t border-[#e6eef0] bg-[#f2f6f7] @4xl:overflow-y-auto @4xl:border-t-0 max-lg:@4xl:max-h-[75dvh]">
+          {abertura && !comEnvio ? (
+            <div className="px-4 pt-4">
+              <Aviso tom="info" titulo="Sem pasta no VIOS">
+                Ao validar, as tarefas não vão para o robô: viram um pedido de abertura de pasta na Central do SharePoint.
+              </Aviso>
+            </div>
+          ) : null}
+
           {publicacao.observacaoVistagem ? (
             <Secao titulo="Observação do jurídico" id={`${base}-observacao`}>
               <p className="whitespace-pre-wrap break-words text-sm text-foreground">{publicacao.observacaoVistagem}</p>
