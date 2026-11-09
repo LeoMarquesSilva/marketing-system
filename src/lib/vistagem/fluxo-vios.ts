@@ -143,6 +143,15 @@ export function montarFluxo(id: string, arvore: Map<number, TipoNaArvore>): Flux
   return criacao.length || conclusao.length ? { criacao, conclusao } : null;
 }
 
+/**
+ * Tarefa de Prazo sem prazo próprio no VIOS: ela não cria 3. PROTOCOLAR, mas cria tarefas que têm o seu (a SENTENÇA
+ * cria os Embargos e o Recurso Ordinário, cada um com Revisar e Protocolar). Essas contam da data dela: não há fatal a pedir.
+ */
+export function semPrazoProprio(fluxo: FluxoDaTarefa | null | undefined): boolean {
+  if (!fluxo || cadeiaDoFluxo(fluxo)) return false;
+  return fluxo.criacao.some((tarefa) => tarefa.filhas.some((filha) => filha.papel === "protocolar"));
+}
+
 /** Cadeia do Prazo pelo fluxo: null quando o VIOS não cria 3. PROTOCOLAR para a tarefa. */
 export function cadeiaDoFluxo(fluxo: FluxoDaTarefa | null | undefined): CadeiaDoPrazo | null {
   const protocolar = fluxo?.criacao.find((tarefa) => tarefa.papel === "protocolar");

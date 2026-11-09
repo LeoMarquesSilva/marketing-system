@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { cadeiaDoFluxo, diasDoPrazo, montarFluxo, papelNoFluxo, type TipoNaArvore } from "./fluxo-vios";
+import { criarCalendario, dataDaTarefaSemPrazo } from "./dias-uteis";
+import { cadeiaDoFluxo, diasDoPrazo, montarFluxo, papelNoFluxo, semPrazoProprio, type TipoNaArvore } from "./fluxo-vios";
 
 // Recorte da árvore do VIOS (processos-etapas-tree.php) em 15/10/2026.
 const ARVORE = new Map<number, TipoNaArvore>([
@@ -17,6 +18,35 @@ const ARVORE = new Map<number, TipoNaArvore>([
   [318, { nome: "4. VALIDAR PROTOCOLO", prazo: null, criacao: [], conclusao: [] }],
   [483, { nome: "4. VALIDAR PROTOCOLO", prazo: null, criacao: [], conclusao: [] }],
 ]);
+
+describe("tarefa de Prazo sem prazo próprio", () => {
+  // SENTENÇA (13): não cria 3. PROTOCOLAR, e os Embargos e o Recurso Ordinário que ela cria têm o seu.
+  const COM_SENTENCA = new Map<number, TipoNaArvore>([
+    ...ARVORE,
+    [13, { nome: "SENTENÇA", prazo: null, criacao: [321, 414, 462, 153], conclusao: [] }],
+    [153, { nome: "RECURSO ORDINÁRIO", prazo: "5 dias", criacao: [314, 313], conclusao: [] }],
+  ]);
+
+  it("é a que só cria tarefas que têm o próprio Protocolar", () => {
+    expect(semPrazoProprio(montarFluxo("13", COM_SENTENCA))).toBe(true);
+  });
+
+  it("não é a que cria o Protocolar, nem a que não cria nenhum", () => {
+    expect(semPrazoProprio(montarFluxo("452", COM_SENTENCA))).toBe(false);
+    expect(semPrazoProprio(montarFluxo("155", COM_SENTENCA))).toBe(false);
+    expect(semPrazoProprio(montarFluxo("731", COM_SENTENCA))).toBe(false);
+    expect(semPrazoProprio(montarFluxo("47", COM_SENTENCA))).toBe(false);
+    expect(semPrazoProprio(null)).toBe(false);
+  });
+
+  it("vai no dia da publicação, nunca antes de hoje nem em dia sem expediente", () => {
+    const ehDiaUtil = criarCalendario(["2026-11-20"]);
+    expect(dataDaTarefaSemPrazo("2026-11-10", "2026-11-09", ehDiaUtil)).toBe("2026-11-10");
+    expect(dataDaTarefaSemPrazo("2026-11-06", "2026-11-09", ehDiaUtil)).toBe("2026-11-09");
+    expect(dataDaTarefaSemPrazo(null, "2026-11-09", ehDiaUtil)).toBe("2026-11-09");
+    expect(dataDaTarefaSemPrazo("2026-11-20", "2026-11-19", ehDiaUtil)).toBe("2026-11-23");
+  });
+});
 
 describe("fluxo automático do VIOS", () => {
   it("decide quem fica em cada tarefa como o robô", () => {

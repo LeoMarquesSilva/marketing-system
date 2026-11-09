@@ -255,6 +255,29 @@ describe("validarAgendamentos", () => {
     expect(naoCria.ok).toBe(false);
   });
 
+  it("tarefa de Prazo sem prazo próprio vai com a data dela, sem fatal; o revisor continua obrigatório", () => {
+    const semPrazo = { ...contexto, cadeiaDaTarefa: () => null, semPrazoProprio: () => true };
+    const base = { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo" };
+    const certo = validarAgendamentos([{ ...base, data: "2026-11-10", dataFatal: null, diasPrazo: 8 }], semPrazo);
+    expect(certo.ok && certo.itens[0]).toMatchObject({ data: "2026-11-10", dataFatal: null, diasPrazo: null, contagemPrazo: null });
+
+    const semData = validarAgendamentos([{ ...base, data: "", dataFatal: null }], semPrazo);
+    expect(semData.ok).toBe(false);
+    if (!semData.ok) expect(semData.erros.join(" ")).toMatch(/data no calendário/);
+
+    const semRevisor = validarAgendamentos([{ ...base, data: "2026-11-10", dataFatal: null, revisor: "" }], semPrazo);
+    expect(semRevisor.ok).toBe(false);
+
+    // Aba aberta antes da mudança: ainda manda a fatal, e a tarefa vai no Enviar dela.
+    const abaAntiga = validarAgendamentos([{ ...base, data: "", dataFatal: "2026-11-11" }], semPrazo);
+    expect(abaAntiga.ok && abaAntiga.itens[0]).toMatchObject({ data: "2026-11-10", dataFatal: null });
+
+    // As outras tarefas de Prazo continuam pedindo a fatal.
+    const comPrazo = validarAgendamentos([{ ...base, data: "2026-11-10", dataFatal: null }], { ...contexto, semPrazoProprio: () => false });
+    expect(comPrazo.ok).toBe(false);
+    if (!comPrazo.ok) expect(comPrazo.erros.join(" ")).toMatch(/data fatal/);
+  });
+
   it("a observação é opcional", () => {
     const providencia = { etiqueta: "PROVIDENCIA" as const, tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", data: "2026-11-10", responsavel: "Advogada Exemplo" };
     const semObservacao = validarAgendamentos([{ ...providencia, observacao: "  " }], contexto);

@@ -119,6 +119,15 @@ export function fatalPorContagem(
   return contagem === "corridos" ? fatalPorDiasCorridos(dataPublicacao, dias, ehDiaDePrazo) : fatalPorDias(dataPublicacao, dias, ehDiaDePrazo);
 }
 
+/**
+ * Data de uma tarefa sem prazo próprio (a SENTENÇA): o dia da publicação, nunca antes de hoje. Dali o fluxo do VIOS
+ * data os Embargos e o Recurso Ordinário, com o Protocolar 1 dia útil antes de cada prazo legal.
+ */
+export function dataDaTarefaSemPrazo(dataPublicacao: string | null | undefined, hoje: string, ehDiaUtil: (iso: string) => boolean): string {
+  const dia = dataPublicacao && dataPublicacao > hoje ? dataPublicacao : hoje;
+  return ehDiaUtil(dia) ? dia : somarDiasUteis(dia, 1, ehDiaUtil);
+}
+
 export interface DatasDoPrazo {
   fatal: string;
   /** Data da tarefa que vai para o VIOS. */
