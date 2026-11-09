@@ -577,12 +577,12 @@ export async function salvarVistagem(
   const quemVistou = revistagem
     ? { revistado_por: authUserId, revistado_em: agora }
     : { vistado_por: authUserId, vistado_em: agora, revistado_por: null, revistado_em: null };
-  // Sem pasta no VIOS não há onde o robô agendar: a vistagem vira pedido de abertura de pasta na Central do SharePoint.
-  const abertura = vaiParaCentral({ pastaCi: publicacao.pasta_ci, pendencia: publicacao.pendencia });
+  // Toda vistagem passa pela conferência da controladoria, com ou sem pasta. Sem pasta no VIOS, é ao validar que ela
+  // vira pedido de abertura de pasta na Central do SharePoint (validarVistagem), com quem conferiu registrado.
   const { data: atualizada, error } = await db
     .from("vistagem_publicacoes")
     .update({
-      status: abertura ? "abertura_pasta" : "controladoria_vistar",
+      status: "controladoria_vistar",
       observacao_vistagem: entrada.observacao?.trim() || null,
       publicacao_esocial: esocial.valor,
       sugestao_ia_resultado: resultadoIa,
@@ -594,7 +594,7 @@ export async function salvarVistagem(
     .maybeSingle();
   if (error) falhou("enviar a vistagem para a controladoria", error);
   if (!atualizada) throw new VistagemError("A publicação foi alterada por outra pessoa. Recarregue a página.", 409);
-  return { central: abertura ? await enviarParaCentral(id) : null };
+  return { central: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -907,7 +907,7 @@ export async function validarVistagem(id: string, authUserId: string): Promise<{
   const agendamentos = (data ?? []) as AgendamentoRow[];
   if (!agendamentos.length) throw new VistagemError("Nenhuma tarefa para enviar.", 422);
 
-  // Sem pasta (vistada antes de existir a Central no fluxo): o robô não tem onde agendar, vai como abertura de pasta.
+  // Sem pasta no VIOS o robô não tem onde agendar: validada, vira pedido de abertura de pasta na Central do SharePoint.
   if (vaiParaCentral({ pastaCi: publicacao.pasta_ci, pendencia: publicacao.pendencia })) {
     const { data: marcadaCentral, error: erroCentral } = await db
       .from("vistagem_publicacoes")

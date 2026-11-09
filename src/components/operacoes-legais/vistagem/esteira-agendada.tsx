@@ -4,6 +4,7 @@ import type { LucideIcon } from "lucide-react";
 import { BadgeCheck, Bot, CalendarCheck, Check, CircleAlert, FolderPlus, SearchCheck, Stamp, TriangleAlert, Undo2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { chaveNome } from "@/lib/vistagem/agendamento";
+import { vaiParaCentral } from "@/lib/vistagem/central";
 import type { ConferenciaItem, PublicacaoStatus } from "@/lib/vistagem/types";
 import { AvatarPessoa } from "./combobox-busca";
 import { formatarDataHora } from "./publicacao-ui";
@@ -11,7 +12,8 @@ import type { TomSelo } from "./ui";
 
 /**
  * Esteira da publicação depois da vistagem do jurídico: Vistada → Conferência → Robô → Agendada no VIOS → Checada.
- * Sem pasta no VIOS, é mais curta: Vistada → Central do SharePoint (pedido de abertura de pasta).
+ * Sem pasta no VIOS, é mais curta: Vistada → Conferência → Central do SharePoint (pedido de abertura de pasta). As que foram
+ * direto para a Central em 09/11/2026, antes de a conferência valer também para elas, ficam sem a Conferência.
  * Tudo vem da situação gravada (status, quem e quando); nada é deduzido.
  */
 
@@ -84,10 +86,35 @@ function primeiroEnvio(item: ConferenciaItem): string | null {
 
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 
-/** Sem pasta no VIOS: a vistagem e o pedido na Central. O que vem depois (abrir a pasta e agendar) acontece no SharePoint. */
-function etapasDaCentral(item: ConferenciaItem): EtapaEsteira[] {
+/**
+ * Sem pasta no VIOS: a vistagem, a conferência e o pedido na Central. Abrir a pasta e agendar acontece no SharePoint.
+ * `naConferencia`: ainda espera a controladoria; a Central vem depois, sem o robô.
+ */
+function etapasDaCentral(item: ConferenciaItem, naConferencia = false): EtapaEsteira[] {
   const { publicacao } = item;
   const chegou = Boolean(publicacao.centralItemId);
+  const etapaConferencia = { chave: "conferencia", rotulo: "Conferência", curto: "Conferência", icone: SearchCheck } as const;
+  const conferida: EtapaEsteira[] = naConferencia
+    ? [{ ...etapaConferencia, estado: "atual", texto: "Na conferência da controladoria", quem: null, quando: null, devolvida: devolucoesDe(item) > 0 }]
+    : item.conferidoPor || publicacao.conferidoEm
+      ? [{ ...etapaConferencia, estado: "feita", texto: "Conferida pela controladoria", quem: item.conferidoPor, quando: publicacao.conferidoEm }]
+      : [];
+  if (naConferencia) {
+    return [
+      { chave: "vistada", rotulo: "Vistada", curto: "Vistada", icone: Stamp, estado: "feita", texto: "Vistada pelo jurídico", quem: item.vistadoPor, quando: publicacao.vistadoEm },
+      ...conferida,
+      {
+        chave: "central",
+        rotulo: "Central do SharePoint",
+        curto: "Central",
+        icone: FolderPlus,
+        estado: "pendente",
+        texto: "Sem pasta no VIOS: depois da conferência vira pedido de abertura de pasta, sem o robô",
+        quem: null,
+        quando: null,
+      },
+    ];
+  }
   return [
     {
       chave: "vistada",
@@ -99,6 +126,7 @@ function etapasDaCentral(item: ConferenciaItem): EtapaEsteira[] {
       quem: item.vistadoPor,
       quando: publicacao.vistadoEm,
     },
+    ...conferida,
     {
       chave: "central",
       rotulo: "Central do SharePoint",
@@ -121,6 +149,7 @@ export function etapasDaEsteira(item: ConferenciaItem): EtapaEsteira[] {
   const { publicacao, agendamentos } = item;
   const situacaoGravada = situacaoAgendada(item) ?? "conferencia";
   if (situacaoGravada === "central") return etapasDaCentral(item);
+  if (situacaoGravada === "conferencia" && vaiParaCentral(publicacao)) return etapasDaCentral(item, true);
   const situacao = situacaoGravada;
   const atual = ATUAL[situacao];
   const estado = (indice: number): EstadoEtapa => (indice < atual ? "feita" : indice === atual ? "atual" : "pendente");

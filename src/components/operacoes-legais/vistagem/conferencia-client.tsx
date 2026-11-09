@@ -494,7 +494,7 @@ function ItemConferencia({
   const podeReenviar =
     comEnvio && modoReal && item.agendamentos.some((a) => a.envioSimulado && (a.envioStatus === "concluido" || a.envioStatus === "erro"));
   const dialogoAberto = devolvendo || confirmacao !== null;
-  // Sem pasta no VIOS (vistada antes de a Central entrar no fluxo): ao validar, vai como abertura de pasta, não para o robô.
+  // Sem pasta no VIOS: ao validar, vai como abertura de pasta para a Central do SharePoint, não para o robô.
   const abertura = vaiParaCentral(publicacao);
 
   /** Roda de novo as tarefas com erro; se o servidor pedir confirmação (pode duplicar no VIOS), abre o modal. */

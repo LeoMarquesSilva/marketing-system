@@ -1154,7 +1154,7 @@ export function EditorVistagem({
   }
 
   const { publicacao, catalogo } = detalhe;
-  // Sem pasta no VIOS: a vistagem vira pedido de abertura de pasta na Central do SharePoint.
+  // Sem pasta no VIOS: passa pela conferência e, validada, vira pedido de abertura de pasta na Central do SharePoint.
   const abertura = vaiParaCentral(publicacao);
   // Sem o tipo Inserir E-social no VIOS, Acordo homologado e Homologação de cálculo não podem ser enviados.
   const faltaTarefaEsocial = Boolean(detalhe.esocial && pedeTarefaEsocial(esocial) && !detalhe.esocial.tarefa);
@@ -1818,7 +1818,7 @@ export function EditorVistagem({
                 {abertura ? (
                   <div className="px-4 pb-3">
                     <Aviso tom="info" titulo="Sem pasta no VIOS">
-                      Ao enviar, as tarefas não vão para a conferência nem para o robô: viram um pedido de abertura de pasta na Central do SharePoint, e a controladoria agenda depois de abrir a pasta.
+                      Ao enviar, as tarefas vão para a conferência da controladoria. Depois de validadas, não vão para o robô: viram um pedido de abertura de pasta na Central do SharePoint, e a controladoria agenda depois de abrir a pasta.
                     </Aviso>
                   </div>
                 ) : null}
@@ -1832,14 +1832,14 @@ export function EditorVistagem({
                 <div data-tour="vj-enviar" className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-b-lg border-t border-[#e6eef0] bg-white px-4 py-3 shadow-[0_-8px_16px_-12px_rgba(16,41,58,0.18)]">
                   <p className="min-w-0 flex-1 text-xs text-muted-foreground" aria-live="polite">
                     {completo
-                      ? `${linhas.length} ${linhas.length === 1 ? "tarefa pronta" : "tarefas prontas"} para ${abertura ? "a Central do SharePoint" : "a conferência"}.`
+                      ? `${linhas.length} ${linhas.length === 1 ? "tarefa pronta" : "tarefas prontas"} para a conferência.`
                       : faltaTarefaEsocial
                         ? `Falta o tipo ${TAREFA_ESOCIAL} no VIOS.`
                         : `Complete ${incompletas === 1 ? "a tarefa marcada" : `as ${incompletas} tarefas marcadas`}: tarefa, data${linhas.some((linha) => linha.etiqueta === "PRAZO") ? ", revisor" : ""}${faltaObservacao ? ", observação" : ""} e responsável.`}
                   </p>
                   <Button onClick={enviar} disabled={enviando || !completo}>
                     {enviando ? <LoaderCircle className="animate-spin" /> : <Send />}
-                    {abertura ? "Enviar para abertura de pasta" : "Enviar para conferência"}
+                    Enviar para conferência
                   </Button>
                 </div>
               </>
