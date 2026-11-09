@@ -339,6 +339,12 @@ export interface CatalogoVistagem {
   usuarios: { id: string; nome: string }[];
 }
 
+/** Opção do campo Matéria do cadastro de processo no VIOS. */
+export interface MateriaVios {
+  id: string;
+  nome: string;
+}
+
 /** Parágrafo que alguém pediu para o robô acrescentar à síntese da pasta no VIOS. */
 export interface SintesePedida {
   id: string;
@@ -351,6 +357,8 @@ export interface SintesePedida {
   simulado: boolean;
   /** O robô achou o parágrafo já na síntese e não gravou de novo. */
   jaEstava: boolean;
+  /** Matéria escolhida no pedido, para o robô preencher se o cadastro estiver sem nenhuma. */
+  materias: MateriaVios[];
   criadoEm: string;
 }
 
@@ -379,6 +387,10 @@ export interface VistagemDetalhe {
   sinteseErro: string | null;
   /** Parágrafos pedidos ao robô para esta pasta (os 10 mais novos). */
   sintesesPedidas: SintesePedida[];
+  /** A pasta está sem Matéria na base do SIOE: o VIOS não grava a síntese sem ela. */
+  materiaVazia: boolean;
+  /** Opções do campo Matéria do VIOS; só vêm quando a pasta está sem Matéria. */
+  materiasVios: MateriaVios[];
   /** Feriados (AAAA-MM-DD) para contar os dias úteis do Prazo na tela. */
   feriados: string[];
   /** Fluxo automático do VIOS por id do tipo de tarefa (só os que criam algo). */

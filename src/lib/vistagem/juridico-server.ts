@@ -35,12 +35,13 @@ import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
 import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
 import { linhasParaFila, modoDaPublicacao, type TarefaNoVios } from "./fila-vios";
-import { LIMITE_TRECHO_SINTESE } from "./dados-processo";
-import { buscarPastaPorCi, buscarSinteseDaPasta } from "./sioe";
+import { LIMITE_TRECHO_SINTESE, materiasDaLista, precisaDeMateria } from "./dados-processo";
+import { buscarPastaPorCi, buscarSinteseDaPasta, pastaSemMateria } from "./sioe";
 import { ESCRITORIOS, type PastaSioe } from "./triagem";
 import {
   carregarArvoreVios,
   carregarCatalogoProcessos,
+  carregarMateriasVios,
   catalogoDaArea,
   consultarFilaSama,
   enfileirarNoSama,
@@ -65,6 +66,7 @@ import type {
   EnvioStatus,
   InconsistenciaItem,
   InconsistenciaResumo,
+  MateriaVios,
   PublicacaoResumo,
   ResolucaoPendencia,
   ResultadoCentral,
@@ -317,7 +319,7 @@ export async function obterVistagem(
   }
   let fluxosErro: string | null = null;
   let sinteseErro: string | null = null;
-  const [inconsistencias, feriados, pastaVios, arvore, sintese, sintesesPedidas, estagiarios] = await Promise.all([
+  const [inconsistencias, feriados, pastaVios, arvore, sintese, sintesesPedidas, estagiarios, materiaVazia] = await Promise.all([
     inconsistenciasPorPublicacao([id]),
     carregarFeriados().catch(() => [] as string[]),
     publicacao.pasta_ci ? buscarPastasVios([publicacao.pasta_ci]) : Promise.resolve(new Map<string, { vinculo: string | null; auxiliarSigla: string | null }>()),
@@ -339,7 +341,20 @@ export async function obterVistagem(
         })
       : Promise.resolve([] as SintesePedida[]),
     catalogo && ehReestruturacao(publicacao.escritorio_responsavel ?? catalogo.area) ? estagiariosNoVios() : Promise.resolve(new Set<string>()),
+    // Só decide se a síntese pede a Matéria: sem resposta do SIOE, segue sem pedir, e quem recusa é o VIOS.
+    publicacao.pasta_ci && !previa
+      ? pastaSemMateria(publicacao.pasta_ci).catch((erro: unknown) => {
+          console.error("[vistagem] matéria da pasta", erro instanceof Error ? erro.message : erro);
+          return false;
+        })
+      : Promise.resolve(false),
   ]);
+  const materiasVios = materiaVazia
+    ? await carregarMateriasVios().catch((erro: unknown) => {
+        console.error("[vistagem] matérias do VIOS", erro instanceof Error ? erro.message : erro);
+        return [] as MateriaVios[];
+      })
+    : [];
   const auxiliar = publicacao.pasta_ci ? pastaVios.get(publicacao.pasta_ci)?.auxiliarSigla ?? null : null;
   const responsavel = catalogo ? responsavelSugerido(publicacao.advogado_responsavel, catalogo.usuarios)?.nome ?? null : null;
   const revisor = catalogo ? usuarioPorSigla(auxiliar, catalogo.usuarios)?.nome ?? null : null;
@@ -357,6 +372,8 @@ export async function obterVistagem(
     sintese,
     sinteseErro,
     sintesesPedidas,
+    materiaVazia,
+    materiasVios,
     catalogo,
     catalogoErro,
     responsavelSugerido: responsavel,
@@ -560,12 +577,12 @@ export async function salvarVistagem(
   const quemVistou = revistagem
     ? { revistado_por: authUserId, revistado_em: agora }
     : { vistado_por: authUserId, vistado_em: agora, revistado_por: null, revistado_em: null };
-  // Sem pasta no VIOS não há onde o robô agendar: a vistagem vira pedido de abertura de pasta na Central do SharePoint.
-  const abertura = vaiParaCentral({ pastaCi: publicacao.pasta_ci, pendencia: publicacao.pendencia });
+  // Toda vistagem passa pela conferência da controladoria, com ou sem pasta. Sem pasta no VIOS, é ao validar que ela
+  // vira pedido de abertura de pasta na Central do SharePoint (validarVistagem), com quem conferiu registrado.
   const { data: atualizada, error } = await db
     .from("vistagem_publicacoes")
     .update({
-      status: abertura ? "abertura_pasta" : "controladoria_vistar",
+      status: "controladoria_vistar",
       observacao_vistagem: entrada.observacao?.trim() || null,
       publicacao_esocial: esocial.valor,
       sugestao_ia_resultado: resultadoIa,
@@ -577,7 +594,7 @@ export async function salvarVistagem(
     .maybeSingle();
   if (error) falhou("enviar a vistagem para a controladoria", error);
   if (!atualizada) throw new VistagemError("A publicação foi alterada por outra pessoa. Recarregue a página.", 409);
-  return { central: abertura ? await enviarParaCentral(id) : null };
+  return { central: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -688,6 +705,7 @@ async function auxiliaresDasPastas(linhas: (PublicacaoRow & { area_processo: str
 export async function pedirAtualizacaoSintese(
   id: string,
   texto: string,
+  materiasEscolhidas: unknown,
   authUserId: string,
   areas: AreasVistagem,
   veRisco = true
@@ -706,6 +724,16 @@ export async function pedirAtualizacaoSintese(
   if (pedidas.some((pedida) => pedida.texto.trim() === trecho && repetido(pedida))) {
     throw new VistagemError("Este trecho já foi pedido para esta pasta.", 409);
   }
+  // Sem a base ou sem a lista, não trava o pedido: quem recusa é o VIOS, como antes.
+  const [materiaVazia, listaDeMaterias] = await Promise.all([
+    pastaSemMateria(publicacao.pasta_ci).catch(() => false),
+    carregarMateriasVios().catch(() => [] as MateriaVios[]),
+  ]);
+  const { materias, fora } = materiasDaLista(materiasEscolhidas, listaDeMaterias);
+  if (fora.length) throw new VistagemError("A Matéria escolhida não está na lista do VIOS. Recarregue a página e escolha de novo.", 422);
+  if (listaDeMaterias.length && !materias.length && precisaDeMateria(materiaVazia, pedidas)) {
+    throw new VistagemError("Este processo está sem Matéria no VIOS. Escolha a Matéria para o robô conseguir gravar a síntese.", 422);
+  }
   const [ano, mes, dia] = hojeEmSaoPaulo().split("-");
   await enfileirarSintese({
     ci: publicacao.pasta_ci,
@@ -714,6 +742,7 @@ export async function pedirAtualizacaoSintese(
     autor,
     data: `${dia}/${mes}/${ano}`,
     simular: sinteseSimulada(),
+    materias,
   });
   return sintesesDaPasta(publicacao.pasta_ci);
 }
@@ -878,7 +907,7 @@ export async function validarVistagem(id: string, authUserId: string): Promise<{
   const agendamentos = (data ?? []) as AgendamentoRow[];
   if (!agendamentos.length) throw new VistagemError("Nenhuma tarefa para enviar.", 422);
 
-  // Sem pasta (vistada antes de existir a Central no fluxo): o robô não tem onde agendar, vai como abertura de pasta.
+  // Sem pasta no VIOS o robô não tem onde agendar: validada, vira pedido de abertura de pasta na Central do SharePoint.
   if (vaiParaCentral({ pastaCi: publicacao.pasta_ci, pendencia: publicacao.pendencia })) {
     const { data: marcadaCentral, error: erroCentral } = await db
       .from("vistagem_publicacoes")
@@ -985,6 +1014,8 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
       caminhosDaTarefa: (tarefaId) => caminhosDoFluxo(montarFluxo(tarefaId, arvore)),
       semPrazoProprio: (tarefaId) => semPrazoProprio(montarFluxo(tarefaId, arvore)),
       hoje,
+      // A Observação não se edita aqui: uma CIÊNCIA NF vistada antes da regra não pode ficar sem ajuste de data.
+      exigirObservacao: false,
     }
   );
   if (!validacao.ok) throw new VistagemError(validacao.erros.map((erro) => erro.replace(/^Tarefa 1: /, "")).join(" "));

@@ -70,6 +70,7 @@ export function ComboboxBusca({
   antes = null,
   titulo,
   icone = null,
+  maxResultados = MAX_RESULTADOS,
 }: {
   opcoes: OpcaoBusca[];
   valor: string;
@@ -91,6 +92,8 @@ export function ComboboxBusca({
   titulo?: string;
   /** Ícone no campo, à esquerda (ex.: a classe da tarefa). */
   icone?: ReactNode;
+  /** Quantas opções a lista mostra de uma vez (ex.: a lista toda, como no combo do VIOS). */
+  maxResultados?: number;
 }) {
   const id = useId();
   const [aberto, setAberto] = useState(false);
@@ -100,8 +103,8 @@ export function ComboboxBusca({
   const lista = useRef<HTMLUListElement>(null);
 
   const filtradas = useMemo(
-    () => filtrar(ampliado && ampliar ? ampliar.todas : opcoes, busca).slice(0, MAX_RESULTADOS),
-    [ampliado, ampliar, busca, opcoes]
+    () => filtrar(ampliado && ampliar ? ampliar.todas : opcoes, busca).slice(0, maxResultados),
+    [ampliado, ampliar, busca, maxResultados, opcoes]
   );
   // Quantas pessoas de toda a lista batem com a busca: aparece na linha que abre a lista inteira.
   const naListaInteira = useMemo(() => (ampliar && !ampliado && busca.trim() ? filtrar(ampliar.todas, busca).length : null), [ampliado, ampliar, busca]);

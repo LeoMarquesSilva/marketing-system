@@ -52,6 +52,7 @@ import {
   horaValida,
   mesmasPessoas,
   nomesDasPessoas,
+  observacaoObrigatoria,
   revisorFicaNaTarefa,
   separarNomes,
   type EtiquetaAgendamento,
@@ -216,9 +217,13 @@ function novaLinha(base: Partial<Linha> = {}): Linha {
 
 const campo = campoClasse;
 
-/** `semFatal`: tarefa de Prazo sem prazo próprio no VIOS (a SENTENÇA), que leva a data dela em vez da fatal. */
-function linhaCompleta(linha: Linha, semFatal: boolean): boolean {
+/**
+ * `semFatal`: tarefa de Prazo sem prazo próprio no VIOS (a SENTENÇA), que leva a data dela em vez da fatal.
+ * `pedeObservacao`: tipo em que a Observação é obrigatória (CIÊNCIA NF).
+ */
+function linhaCompleta(linha: Linha, semFatal: boolean, pedeObservacao = false): boolean {
   if (!linha.tarefa || !linha.responsavel) return false;
+  if (pedeObservacao && !linha.observacao.trim()) return false;
   if (linha.etiqueta === "PRAZO") return Boolean((semFatal ? linha.data : linha.dataFatal) && linha.revisor);
   return Boolean(linha.data) && (linha.etiqueta !== "COMPROMISSO" || (horaValida(linha.hora) && horaFinalValida(linha)));
 }
@@ -925,6 +930,16 @@ export function EditorVistagem({
     return Boolean(id && semPrazoProprio(detalhe.fluxos[id]));
   }
 
+  /** O tipo pede Observação (CIÊNCIA NF), pelo nome como está no VIOS: a lista pode mostrar "(tipo 316)" no fim. */
+  function pedeObservacao(linha: Pick<Linha, "etiqueta" | "tarefa">): boolean {
+    const opcao = detalhe?.catalogo?.tarefas[linha.etiqueta].find((item) => item.nome === linha.tarefa);
+    return observacaoObrigatoria(opcao ? opcao.nomeVios ?? opcao.nome : linha.tarefa);
+  }
+
+  function linhaPronta(linha: Linha): boolean {
+    return linhaCompleta(linha, semFatal(linha), pedeObservacao(linha));
+  }
+
   function dataSemFatal(): string {
     return detalhe ? dataDaTarefaSemPrazo(detalhe.publicacao.dataPublicacao, detalhe.hoje, ehDiaUtil) : "";
   }
@@ -1139,12 +1154,13 @@ export function EditorVistagem({
   }
 
   const { publicacao, catalogo } = detalhe;
-  // Sem pasta no VIOS: a vistagem vira pedido de abertura de pasta na Central do SharePoint.
+  // Sem pasta no VIOS: passa pela conferência e, validada, vira pedido de abertura de pasta na Central do SharePoint.
   const abertura = vaiParaCentral(publicacao);
   // Sem o tipo Inserir E-social no VIOS, Acordo homologado e Homologação de cálculo não podem ser enviados.
   const faltaTarefaEsocial = Boolean(detalhe.esocial && pedeTarefaEsocial(esocial) && !detalhe.esocial.tarefa);
-  const completo = linhas.every((linha) => linhaCompleta(linha, semFatal(linha))) && !faltaTarefaEsocial;
-  const incompletas = linhas.filter((linha) => !linhaCompleta(linha, semFatal(linha))).length;
+  const completo = linhas.every(linhaPronta) && !faltaTarefaEsocial;
+  const incompletas = linhas.filter((linha) => !linhaPronta(linha)).length;
+  const faltaObservacao = linhas.some((linha) => pedeObservacao(linha) && !linha.observacao.trim());
   const devolucoes = detalhe.inconsistencias.filter((item) => item.origem === "juridico");
   // Régua da publicação: divulgação → publicação → 1º dia do prazo e, quando já há Prazo, a fatal mais próxima.
   const fatais = linhas.flatMap((linha) => (linha.etiqueta === "PRAZO" && linha.dataFatal ? [linha.dataFatal] : [])).sort();
@@ -1285,6 +1301,8 @@ export function EditorVistagem({
                         sintese={detalhe.sintese}
                         erro={detalhe.sinteseErro}
                         pedidas={detalhe.sintesesPedidas}
+                        materiaVazia={detalhe.materiaVazia}
+                        materias={detalhe.materiasVios}
                         // Na prévia da controladoria a pasta ainda não está gravada: a síntese fica só para leitura.
                         publicacaoId={resolucao ? null : publicacao.id}
                       />
@@ -1427,7 +1445,8 @@ export function EditorVistagem({
                         ? avisosDaData(linha.data, detalhe.hoje)
                         : [];
                     const IconeClasse = ICONE_CLASSE[linha.etiqueta];
-                    const pronta = linhaCompleta(linha, semFatal(linha));
+                    const pronta = linhaPronta(linha);
+                    const observacaoPedida = pedeObservacao(linha);
                     return (
                       <li
                         key={linha.chave}
@@ -1719,15 +1738,29 @@ export function EditorVistagem({
                             </div>
                           </BlocoTarefa>
 
-                          <BlocoTarefa titulo="Observação" icone={MessageSquareText} acao={<span className="text-[11px] font-normal text-muted-foreground">opcional · vai na descrição da tarefa no VIOS</span>}>
+                          <BlocoTarefa
+                            titulo="Observação"
+                            icone={MessageSquareText}
+                            acao={
+                              observacaoPedida ? (
+                                <span className="text-[11px] font-normal text-muted-foreground">
+                                  <span className="font-semibold text-red-700">obrigatória</span> · vai como justificativa da CIÊNCIA NF no VIOS
+                                </span>
+                              ) : (
+                                <span className="text-[11px] font-normal text-muted-foreground">opcional · vai na descrição da tarefa no VIOS</span>
+                              )
+                            }
+                          >
                             <Textarea
                               aria-label={`Observação da tarefa ${indice + 1}`}
+                              aria-required={observacaoPedida}
+                              aria-invalid={observacaoPedida && !linha.observacao.trim()}
                               value={linha.observacao}
                               onChange={(evento) => alterar(linha.chave, { observacao: evento.target.value })}
                               maxLength={2000}
                               rows={2}
-                              placeholder="O que fazer e por quê"
-                              className="bg-white"
+                              placeholder={observacaoPedida ? "Por que não há o que agendar" : "O que fazer e por quê"}
+                              className={cn("bg-white", observacaoPedida && !linha.observacao.trim() && "border-red-400")}
                             />
                           </BlocoTarefa>
 
@@ -1785,7 +1818,7 @@ export function EditorVistagem({
                 {abertura ? (
                   <div className="px-4 pb-3">
                     <Aviso tom="info" titulo="Sem pasta no VIOS">
-                      Ao enviar, as tarefas não vão para a conferência nem para o robô: viram um pedido de abertura de pasta na Central do SharePoint, e a controladoria agenda depois de abrir a pasta.
+                      Ao enviar, as tarefas vão para a conferência da controladoria. Depois de validadas, não vão para o robô: viram um pedido de abertura de pasta na Central do SharePoint, e a controladoria agenda depois de abrir a pasta.
                     </Aviso>
                   </div>
                 ) : null}
@@ -1799,14 +1832,14 @@ export function EditorVistagem({
                 <div data-tour="vj-enviar" className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-b-lg border-t border-[#e6eef0] bg-white px-4 py-3 shadow-[0_-8px_16px_-12px_rgba(16,41,58,0.18)]">
                   <p className="min-w-0 flex-1 text-xs text-muted-foreground" aria-live="polite">
                     {completo
-                      ? `${linhas.length} ${linhas.length === 1 ? "tarefa pronta" : "tarefas prontas"} para ${abertura ? "a Central do SharePoint" : "a conferência"}.`
+                      ? `${linhas.length} ${linhas.length === 1 ? "tarefa pronta" : "tarefas prontas"} para a conferência.`
                       : faltaTarefaEsocial
                         ? `Falta o tipo ${TAREFA_ESOCIAL} no VIOS.`
-                        : `Complete ${incompletas === 1 ? "a tarefa marcada" : `as ${incompletas} tarefas marcadas`}: tarefa, data${linhas.some((linha) => linha.etiqueta === "PRAZO") ? ", revisor" : ""} e responsável.`}
+                        : `Complete ${incompletas === 1 ? "a tarefa marcada" : `as ${incompletas} tarefas marcadas`}: tarefa, data${linhas.some((linha) => linha.etiqueta === "PRAZO") ? ", revisor" : ""}${faltaObservacao ? ", observação" : ""} e responsável.`}
                   </p>
                   <Button onClick={enviar} disabled={enviando || !completo}>
                     {enviando ? <LoaderCircle className="animate-spin" /> : <Send />}
-                    {abertura ? "Enviar para abertura de pasta" : "Enviar para conferência"}
+                    Enviar para conferência
                   </Button>
                 </div>
               </>

@@ -1,5 +1,50 @@
 import { describe, expect, it } from "vitest";
-import { classeDoProcesso, paragrafosDaSintese, partesPorPolo, valorDaCausa } from "./dados-processo";
+import { classeDoProcesso, materiasDaLista, paragrafosDaSintese, partesPorPolo, precisaDeMateria, valorDaCausa } from "./dados-processo";
+
+describe("precisaDeMateria", () => {
+  const execucao = { id: "133", nome: "Execução de Título Extrajudicial" };
+
+  it("só pede quando a pasta está sem Matéria", () => {
+    expect(precisaDeMateria(true, [])).toBe(true);
+    expect(precisaDeMateria(false, [])).toBe(false);
+  });
+
+  it("um pedido com Matéria na fila ou gravado resolve, mesmo antes da próxima carga do SIOE", () => {
+    for (const status of ["pendente", "enviado", "processando", "concluido"] as const) {
+      expect(precisaDeMateria(true, [{ materias: [execucao], status, simulado: false }])).toBe(false);
+    }
+  });
+
+  it("volta a pedir se o pedido deu erro ou só foi simulado", () => {
+    expect(precisaDeMateria(true, [{ materias: [execucao], status: "erro", simulado: false }])).toBe(true);
+    expect(precisaDeMateria(true, [{ materias: [execucao], status: "concluido", simulado: true }])).toBe(true);
+  });
+
+  it("um pedido na fila sem Matéria não resolve", () => {
+    expect(precisaDeMateria(true, [{ materias: [], status: "pendente", simulado: false }])).toBe(true);
+  });
+});
+
+describe("materiasDaLista", () => {
+  const lista = [
+    { id: "133", nome: "Execução de Título Extrajudicial" },
+    { id: "150", nome: "Ação de Exigir Contas" },
+  ];
+
+  it("troca os ids pelas matérias da lista, sem repetir", () => {
+    expect(materiasDaLista(["150", " 133 ", "150"], lista)).toEqual({ materias: [lista[1], lista[0]], fora: [] });
+  });
+
+  it("aponta o que a lista do VIOS não tem", () => {
+    expect(materiasDaLista(["133", "999"], lista)).toEqual({ materias: [lista[0]], fora: ["999"] });
+  });
+
+  it("ignora o que não é lista de ids", () => {
+    expect(materiasDaLista(undefined, lista)).toEqual({ materias: [], fora: [] });
+    expect(materiasDaLista("133", lista)).toEqual({ materias: [], fora: [] });
+    expect(materiasDaLista([133, null, ""], lista)).toEqual({ materias: [], fora: [] });
+  });
+});
 
 describe("classeDoProcesso", () => {
   it("tira o tipo do ato e deixa a classe em caixa de título", () => {

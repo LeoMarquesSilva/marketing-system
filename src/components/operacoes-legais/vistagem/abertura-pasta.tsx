@@ -119,7 +119,7 @@ function LinhaAbertura({ item, onTentar, ocupado }: { item: ConferenciaItem; onT
 }
 
 /**
- * Publicações sem pasta no VIOS que o jurídico vistou: não passam pela conferência nem pelo robô, viram pedido de abertura
+ * Publicações sem pasta no VIOS que a controladoria validou na conferência: não vão para o robô, viram pedido de abertura
  * de pasta na Central do SharePoint. Aqui a controladoria vê o que foi e tenta de novo o que não chegou.
  */
 export function PainelAberturaDePasta({
@@ -156,7 +156,7 @@ export function PainelAberturaDePasta({
     return (
       <Painel>
         <Vazio icone={FolderPlus} titulo="Nenhum pedido de abertura de pasta.">
-          Quando o jurídico vistar uma publicação sem pasta no VIOS, ela vai para a Central do SharePoint e aparece aqui.
+          Quando a conferência validar uma publicação sem pasta no VIOS, ela vai para a Central do SharePoint e aparece aqui.
         </Vazio>
       </Painel>
     );

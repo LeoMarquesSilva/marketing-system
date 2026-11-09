@@ -320,6 +320,14 @@ export function avisosDaData(iso: string, hoje: string): string[] {
 }
 
 /**
+ * Tipos de tarefa em que a Observação é obrigatória. Na CIÊNCIA NF ela vai para o VIOS como a justificativa de
+ * não agendar nada (pedido de 09/11/2026). Recebe o nome como está no VIOS.
+ */
+export function observacaoObrigatoria(nomeDaTarefa: string | null | undefined): boolean {
+  return chaveNome(nomeDaTarefa) === "CIENCIA NF";
+}
+
+/**
  * Confere a vistagem antes de gravar: ao menos uma tarefa; cada uma com etiqueta,
  * tarefa da lista travada, data válida e responsável/revisor entre os usuários do VIOS
  * (revisor obrigatório no Prazo, opcional no Compromisso e ignorado na Providência).
@@ -338,6 +346,11 @@ export function validarAgendamentos(
     semPrazoProprio?: (tarefaId: string) => boolean;
     /** Dia da vistagem: o Enviar do Prazo nunca fica antes dele (prazo curto aperta a cadeia). */
     hoje?: string;
+    /**
+     * Exige a Observação nos tipos que pedem (CIÊNCIA NF). Padrão: sim. A Conferência desliga: ali só se ajusta data
+     * e pessoas, e uma tarefa vistada antes da regra não pode ficar sem ajuste.
+     */
+    exigirObservacao?: boolean;
   }
 ): { ok: true; itens: AgendamentoValidado[] } | { ok: false; erros: string[] } {
   const erros: string[] = [];
@@ -391,9 +404,11 @@ export function validarAgendamentos(
     const revisor = comRevisor && entrada.revisor?.trim() ? usuarioPorChave.get(chaveNome(entrada.revisor)) : null;
     if (comRevisor && entrada.revisor?.trim() && !revisor) erros.push(`${n}: escolha o revisor na lista de usuários do VIOS.`);
     if (prazo && !entrada.revisor?.trim()) erros.push(`${n}: no Prazo o revisor é obrigatório.`);
-    // Observação opcional: vai na descrição da tarefa no VIOS, abaixo da data da publicação.
+    // Observação: vai na descrição da tarefa no VIOS, abaixo da data da publicação; na CIÊNCIA NF, é a justificativa e é obrigatória.
     const observacao = entrada.observacao?.trim() || null;
     if (observacao && observacao.length > MAX_OBSERVACAO) erros.push(`${n}: observação com mais de ${MAX_OBSERVACAO} caracteres.`);
+    const pedeObservacao = Boolean(tarefa) && contexto.exigirObservacao !== false && observacaoObrigatoria(tarefa?.nomeVios ?? tarefa?.nome);
+    if (pedeObservacao && !observacao) erros.push(`${n}: na CIÊNCIA NF a observação é obrigatória (vai como justificativa no VIOS).`);
     const diasPrazo = prazo && !semFatal && Number.isInteger(entrada.diasPrazo) && (entrada.diasPrazo ?? 0) > 0 ? (entrada.diasPrazo as number) : null;
     const contagemPrazo = diasPrazo ? CONTAGENS_PRAZO.find((contagem) => contagem === entrada.contagemPrazo) ?? null : null;
     if (diasPrazo && !contagemPrazo) erros.push(`${n}: escolha se o prazo é em dias úteis ou corridos.`);
@@ -431,7 +446,15 @@ export function validarAgendamentos(
     if (caminhos && fluxoDatas.some((item) => !caminhos.has(chaveDoCaminho(item.caminho)))) {
       erros.push(`${n}: há data ou responsável de tarefa do fluxo que esse tipo não cria no VIOS; confira o Fluxo das tarefas.`);
     }
-    if (!tarefa || !responsavel || !dataValida(data) || (prazo && !revisor) || (compromisso && !hora) || (diasPrazo && !contagemPrazo)) {
+    if (
+      !tarefa ||
+      !responsavel ||
+      !dataValida(data) ||
+      (prazo && !revisor) ||
+      (compromisso && !hora) ||
+      (diasPrazo && !contagemPrazo) ||
+      (pedeObservacao && !observacao)
+    ) {
       return null;
     }
     return {

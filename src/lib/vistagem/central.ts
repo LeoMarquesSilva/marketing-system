@@ -5,7 +5,7 @@ import type { DataDoFluxo } from "./types";
 
 /**
  * "Central do SharePoint": a lista SOLICITAÇÃO DE AGENDAMENTOS E REAGENDAMENTOS (site CONTROLADORIAJURDICA). Publicação
- * sem pasta no VIOS não vai para o robô: depois da vistagem do jurídico vira um pedido de abertura de pasta nessa lista,
+ * sem pasta no VIOS não vai para o robô: depois da conferência da controladoria vira um pedido de abertura de pasta nessa lista,
  * com os mesmos campos do fluxo antigo da lista de trabalho (modelo: item 64033), e a controladoria agenda ao abrir a pasta.
  */
 

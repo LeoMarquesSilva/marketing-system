@@ -5,7 +5,7 @@ import { chaveNome, classeDasEtiquetas, type EtapaVios, type OpcaoVios } from ".
 import { VistagemError } from "./errors";
 import { cisDoResultado, tarefasViosDoResultado, type LinhaFilaSama, type ModoAgendamento, type TarefaNoVios } from "./fila-vios";
 import type { BaseDaData, ResponsabilidadeDoTipo, TipoNaArvore } from "./fluxo-vios";
-import type { SintesePedida } from "./types";
+import type { MateriaVios, SintesePedida } from "./types";
 
 /**
  * Integração com o SAMA: catálogo de tarefas/usuários do VIOS por área
@@ -230,7 +230,15 @@ export async function enfileirarNoSama(linhas: LinhaFilaSama[]): Promise<string[
  * Pede ao robô para acrescentar um parágrafo à síntese da pasta no VIOS ("dd/mm/aaaa (Nome): texto").
  * É a última prioridade da fila: a reserva do SAMA só manda quando não há outro trabalho para o robô.
  */
-export async function enfileirarSintese(pedido: { ci: string; cnj: string | null; texto: string; autor: string; data: string; simular: boolean }): Promise<string> {
+export async function enfileirarSintese(pedido: {
+  ci: string;
+  cnj: string | null;
+  texto: string;
+  autor: string;
+  data: string;
+  simular: boolean;
+  materias: MateriaVios[];
+}): Promise<string> {
   const { data, error } = await sama()
     .from("vios_agendamentos")
     .insert({
@@ -245,6 +253,7 @@ export async function enfileirarSintese(pedido: { ci: string; cnj: string | null
       pasta_tipo: "Processo",
       ci_pasta: pedido.ci,
       simular: pedido.simular,
+      ...(pedido.materias.length ? { materias: pedido.materias } : {}),
     })
     .select("id")
     .single();
@@ -254,15 +263,20 @@ export async function enfileirarSintese(pedido: { ci: string; cnj: string | null
 
 /** Sínteses pedidas para a pasta, da mais nova para a mais antiga. */
 export async function sintesesDaPasta(ci: string): Promise<SintesePedida[]> {
-  const { data, error } = await sama()
-    .from("vios_agendamentos")
-    .select("id, observacao, responsavel, data, status, erro, simular, resultado, criado_em")
-    .eq("operacao", "sintese")
-    .eq("ci_pasta", ci.replace(/\D/g, ""))
-    .order("criado_em", { ascending: false })
-    .limit(10);
+  const colunas = "id, observacao, responsavel, data, status, erro, simular, resultado, criado_em";
+  const consulta = (selecao: string) =>
+    sama()
+      .from("vios_agendamentos")
+      .select(selecao)
+      .eq("operacao", "sintese")
+      .eq("ci_pasta", ci.replace(/\D/g, ""))
+      .order("criado_em", { ascending: false })
+      .limit(10);
+  // Coluna da migração 20261109000012 do sama-rpa; sem ela ainda, a lista vem sem as matérias.
+  const comMaterias = await consulta(`${colunas}, materias`);
+  const { data, error } = comMaterias.error ? await consulta(colunas) : comMaterias;
   if (error) throw new VistagemError(`Falha ao consultar as sínteses pedidas ao robô: ${error.message}`, 502);
-  return (data ?? []).map((row) => ({
+  return ((data ?? []) as unknown as Record<string, unknown>[]).map((row) => ({
     id: row.id as string,
     texto: row.observacao as string,
     autor: (row.responsavel as string | null) ?? null,
@@ -271,8 +285,21 @@ export async function sintesesDaPasta(ci: string): Promise<SintesePedida[]> {
     erro: (row.erro as string | null) ?? null,
     simulado: row.simular === true,
     jaEstava: (row.resultado as { ja_estava?: boolean } | null)?.ja_estava === true,
+    materias: Array.isArray(row.materias) ? (row.materias as MateriaVios[]) : [],
     criadoEm: row.criado_em as string,
   }));
+}
+
+let cacheMaterias: { carregadoEm: number; materias: MateriaVios[] } | null = null;
+
+/** Opções do campo Matéria do VIOS (o mesmo combo do cadastro), na ordem dele. O robô relê a lista a cada catálogo. */
+export async function carregarMateriasVios(): Promise<MateriaVios[]> {
+  if (cacheMaterias && Date.now() - cacheMaterias.carregadoEm < CACHE_MS) return cacheMaterias.materias;
+  const { data, error } = await sama().from("vios_materias").select("id, nome").order("ordem").limit(2000);
+  if (error) throw new VistagemError(`Falha ao carregar as matérias do VIOS no SAMA: ${error.message}`, 502);
+  const materias = (data ?? []) as MateriaVios[];
+  if (materias.length) cacheMaterias = { carregadoEm: Date.now(), materias };
+  return materias;
 }
 
 export interface StatusFilaSama {

@@ -303,7 +303,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alternativa: "vj-vazio",
       titulo: "Envie para a conferência",
       texto:
-        "Com todas as tarefas prontas, clique em \"Enviar para conferência\": a controladoria confere e o robô lança no VIOS. Se nada criar a Ciência dos Agendamentos, o Orquestra acrescenta sozinho (menos quando a vistagem é só CIÊNCIA NF), e a próxima publicação abre.",
+        "Com todas as tarefas prontas, clique em \"Enviar para conferência\": a controladoria confere e o robô lança no VIOS (sem pasta no VIOS, depois de conferida vira pedido de abertura de pasta na Central do SharePoint). Se nada criar a Ciência dos Agendamentos, o Orquestra acrescenta sozinho (menos quando a vistagem é só CIÊNCIA NF), e a próxima publicação abre.",
     },
     {
       id: "vistado",
@@ -327,7 +327,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alvo: "cf-abas",
       titulo: "Quatro listas",
       texto:
-        "\"A conferir\" traz o que o jurídico vistou e espera a sua conferência. \"Enviadas ao robô\" mostra o que você validou, com o andamento de cada tarefa no VIOS. \"Abertura de pasta\" lista o que o jurídico vistou sem pasta no VIOS e foi direto para a Central do SharePoint. \"Inconsistências\" reúne as registradas; as contestadas pelo jurídico pedem a sua decisão.",
+        "\"A conferir\" traz o que o jurídico vistou e espera a sua conferência. \"Enviadas ao robô\" mostra o que você validou, com o andamento de cada tarefa no VIOS. \"Abertura de pasta\" lista o que você validou sem pasta no VIOS e foi para a Central do SharePoint em vez do robô. \"Inconsistências\" reúne as registradas; as contestadas pelo jurídico pedem a sua decisão.",
     },
     {
       id: "busca",
