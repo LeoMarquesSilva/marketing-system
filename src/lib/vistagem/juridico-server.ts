@@ -18,6 +18,7 @@ import {
   type OpcaoVios,
 } from "./agendamento";
 import { openAIKey } from "@/lib/openai-keys";
+import { enviarDoPrazo, mudancasNaTarefa, podeEditarNaConferencia, type CamposDaTarefa } from "./ajuste-conferencia";
 import { registrarNoBkpSemFalhar } from "./bkp-sioe-server";
 import { vaiParaCentral } from "./central";
 import { enviarParaCentral } from "./central-server";
@@ -54,6 +55,7 @@ import { COLUNAS_PUBLICACAO, admin, falhou, hojeEmSaoPaulo, publicacaoResumo, re
 import type {
   AgendadasJuridicoResposta,
   AgendamentoResumo,
+  AjusteNaTarefa,
   CatalogoVistagem,
   ConferenciaItem,
   ConferenciaResposta,
@@ -72,13 +74,13 @@ import type {
 } from "./types";
 
 const COLUNAS_AGENDAMENTO =
-  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, hora, hora_fim, responsavel, revisor, observacao, fluxo_datas, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, vios_tarefas, envio_erro, enviado_em";
+  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, hora, hora_fim, responsavel, revisor, observacao, fluxo_datas, ajustes, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, vios_tarefas, envio_erro, enviado_em";
 
 type AgendamentoRow = {
   id: string; publicacao_id: string; ordem: number; etiqueta: EtiquetaAgendamento; tarefa: string; tarefa_id: string | null;
   data: string; data_fatal: string | null; dias_prazo: number | null; contagem_prazo: ContagemPrazo | null; hora: string | null;
   hora_fim: string | null; responsavel: string; revisor: string | null;
-  observacao: string | null; fluxo_datas: DataDoFluxo[] | null; envio_status: EnvioStatus;
+  observacao: string | null; fluxo_datas: DataDoFluxo[] | null; ajustes: AjusteNaTarefa[] | null; envio_status: EnvioStatus;
   envio_simulado: boolean | null; sama_agendamento_id: string | null; vios_tarefa_id: string | null;
   vios_tarefas: TarefaNoVios[] | null; envio_erro: string | null; enviado_em: string | null;
 };
@@ -100,6 +102,7 @@ function agendamentoResumo(row: AgendamentoRow): AgendamentoResumo {
     revisor: row.revisor,
     observacao: row.observacao,
     fluxoDatas: row.fluxo_datas ?? [],
+    ajustes: row.ajustes ?? [],
     viosTarefas: row.vios_tarefas,
     envioStatus: row.envio_status,
     envioSimulado: row.envio_simulado,
@@ -926,6 +929,121 @@ export async function validarVistagem(id: string, authUserId: string): Promise<{
   }
 }
 
+/** Pedido de ajuste de uma tarefa na Conferência. */
+export interface EdicaoNaConferencia extends CamposDaTarefa {
+  agendamentoId: string;
+}
+
+/**
+ * A controladoria ajusta data, horário e pessoas de uma tarefa (e das do fluxo dela), sem devolver ao jurídico. Grava
+ * na própria tarefa, que é o que o robô lê ao validar (ou ao rodar de novo, depois de um erro), e registra quem mudou
+ * o quê. As regras são as da vistagem (`validarAgendamentos`); o tipo de tarefa e a observação não mudam aqui.
+ */
+export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConferencia, authUserId: string): Promise<{ mudancas: number }> {
+  const publicacao = await carregarPublicacao(id);
+  const db = admin();
+  const { data, error } = await db
+    .from("vistagem_agendamentos")
+    .select(COLUNAS_AGENDAMENTO)
+    .eq("id", edicao.agendamentoId)
+    .eq("publicacao_id", id)
+    .maybeSingle();
+  if (error) falhou("carregar a tarefa", error);
+  if (!data) throw new VistagemError("Tarefa não encontrada nesta publicação.", 404);
+  const row = data as AgendamentoRow;
+  if (!podeEditarNaConferencia(publicacao.status, row.envio_status)) {
+    throw new VistagemError("Esta tarefa não está mais na conferência: a alteração não chegaria ao VIOS. Recarregue a página.", 409);
+  }
+
+  const [catalogos, feriados, arvoreInteira] = await Promise.all([carregarCatalogoProcessos(), carregarFeriados(), carregarArvoreVios()]);
+  const catalogo = catalogoParaPublicacao(catalogos, publicacao);
+  if (!catalogo) throw new VistagemError("Não há lista de usuários do VIOS para a área desta pasta.", 422);
+  const arvore = arvoreDaPublicacao(arvoreInteira, catalogos, publicacao);
+  const hoje = hojeEmSaoPaulo();
+  const validacao = validarAgendamentos(
+    [
+      {
+        etiqueta: row.etiqueta,
+        tarefa: row.tarefa,
+        tarefaId: row.tarefa_id,
+        data: edicao.data,
+        dataFatal: edicao.dataFatal,
+        hora: edicao.hora,
+        horaFim: edicao.horaFim,
+        responsavel: edicao.responsavel,
+        revisor: edicao.revisor,
+        observacao: row.observacao,
+        fluxoDatas: edicao.fluxoDatas,
+      },
+    ],
+    {
+      // O tipo não muda aqui: vale o que o jurídico escolheu, mesmo que a lista do VIOS tenha mudado depois.
+      tarefas: { ...catalogo.tarefas, [row.etiqueta]: [{ id: row.tarefa_id ?? "", nome: row.tarefa }] },
+      usuarios: catalogo.usuarios,
+      ehDiaUtil: criarCalendario(feriados),
+      cadeiaDaTarefa: (tarefaId) => cadeiaDoFluxo(montarFluxo(tarefaId, arvore)),
+      caminhosDaTarefa: (tarefaId) => caminhosDoFluxo(montarFluxo(tarefaId, arvore)),
+      semPrazoProprio: (tarefaId) => semPrazoProprio(montarFluxo(tarefaId, arvore)),
+      hoje,
+    }
+  );
+  if (!validacao.ok) throw new VistagemError(validacao.erros.map((erro) => erro.replace(/^Tarefa 1: /, "")).join(" "));
+  const item = validacao.itens[0];
+  // Com fatal, `validarAgendamentos` devolve o Enviar da conta; a pessoa pode ter escolhido outro.
+  const enviar = item.dataFatal ? enviarDoPrazo(edicao.data, { calculado: item.data, anterior: row.data, fatal: item.dataFatal, hoje }) : { ok: true as const, data: item.data };
+  if (!enviar.ok) throw new VistagemError(enviar.erro);
+
+  const mudancas = mudancasNaTarefa(
+    {
+      data: row.data,
+      dataFatal: row.data_fatal,
+      hora: row.hora,
+      horaFim: row.hora_fim,
+      responsavel: row.responsavel,
+      revisor: row.revisor,
+      fluxoDatas: row.fluxo_datas ?? [],
+    },
+    {
+      data: enviar.data,
+      dataFatal: item.dataFatal,
+      hora: item.hora,
+      horaFim: item.horaFim,
+      responsavel: item.responsavel,
+      revisor: item.revisor,
+      fluxoDatas: item.fluxoDatas,
+    }
+  );
+  if (!mudancas.length) return { mudancas: 0 };
+
+  const nomes = await nomesDosUsuarios([authUserId]);
+  // Outra fatal: "5 dias úteis após a publicação" não vale mais (como a fatal digitada na vistagem).
+  const mesmaFatal = item.dataFatal === row.data_fatal;
+  const { data: atualizada, error: erroGravar } = await db
+    .from("vistagem_agendamentos")
+    .update({
+      data: enviar.data,
+      data_fatal: item.dataFatal,
+      dias_prazo: mesmaFatal ? row.dias_prazo : null,
+      contagem_prazo: mesmaFatal ? row.contagem_prazo : null,
+      hora: item.hora,
+      hora_fim: item.horaFim,
+      responsavel: item.responsavel,
+      responsavel_id: item.responsavelId,
+      revisor: item.revisor,
+      revisor_id: item.revisorId,
+      fluxo_datas: item.fluxoDatas.length ? item.fluxoDatas : null,
+      ajustes: [...(row.ajustes ?? []), { por: nomes.get(authUserId) || null, em: new Date().toISOString(), mudancas } satisfies AjusteNaTarefa],
+    })
+    .eq("id", row.id)
+    // A mesma situação de quando leu: se outra pessoa validou nesse meio-tempo, não muda o que já foi para o robô.
+    .eq("envio_status", row.envio_status)
+    .select("id")
+    .maybeSingle();
+  if (erroGravar) falhou("gravar o ajuste da tarefa", erroGravar);
+  if (!atualizada) throw new VistagemError("A tarefa foi alterada por outra pessoa. Recarregue a página.", 409);
+  return { mudancas: mudancas.length };
+}
+
 /** IDs de comunicação das outras publicações do mesmo grupo de duplicidade (principal e duplicadas). */
 async function comunicacoesEquivalentes(publicacao: PublicacaoComArea): Promise<string[]> {
   const principal = publicacao.duplicidade_de ?? publicacao.id;
@@ -979,7 +1097,7 @@ async function datasDoFluxoParaOVios(publicacao: PublicacaoComArea, itens: Agend
     const hoje = hojeEmSaoPaulo();
     for (const item of aConferir) {
       const fluxoDaTarefa = item.tarefa_id ? montarFluxo(item.tarefa_id, arvore) : null;
-      const apertada = prazoApertado({ etiqueta: item.etiqueta, dataFatal: item.data_fatal }, fluxoDaTarefa, ehDiaUtil, hoje);
+      const apertada = prazoApertado({ etiqueta: item.etiqueta, dataFatal: item.data_fatal, data: item.data }, fluxoDaTarefa, ehDiaUtil, hoje);
       if (!apertada && !item.fluxo_datas?.length) continue;
       const previstas = fluxoPrevisto(apertada ? { ...item, data: apertada.enviar } : item, fluxoDaTarefa, ehDiaUtil, {
         hoje,

@@ -30,6 +30,7 @@ export function DialogoAcao({
   aviso,
   rodape,
   children,
+  className,
 }: {
   aberto: boolean;
   onFechar: () => void;
@@ -42,11 +43,13 @@ export function DialogoAcao({
   aviso?: ReactNode;
   rodape: ReactNode;
   children: ReactNode;
+  /** Ex.: outra largura para um modal com mais campos. */
+  className?: string;
 }) {
   return (
     <Dialog open={aberto} onOpenChange={(abrir) => !abrir && !ocupado && onFechar()}>
       <DialogContent
-        className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 focus:outline-none sm:max-w-xl"
+        className={cn("flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 focus:outline-none sm:max-w-xl", className)}
         showCloseButton={!ocupado}
         // O foco fica no próprio modal: no primeiro cartão de escolha, ele parecia já escolhido.
         onOpenAutoFocus={(evento) => {

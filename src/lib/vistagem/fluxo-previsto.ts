@@ -171,14 +171,18 @@ export function emOrdemDeArvore(previstas: TarefaPrevista[]): TarefaPrevista[] {
 /**
  * Prazo curto a partir de hoje (`datasDoPrazo` com `ajustada`): o Enviar que vai para o VIOS (hoje) e as datas
  * apertadas do Revisar e do Protocolar, até 1 dia útil antes da fatal. Null quando a cadeia do fluxo cabe.
+ *
+ * Com `data` depois de hoje, também null: pela conta da fatal, um Enviar futuro nunca precisa apertar, então só
+ * chega aqui o escolhido à mão na Conferência, que vale como está (senão o robô receberia o de hoje no lugar dele).
  */
 export function prazoApertado(
-  agendamento: { etiqueta: string; dataFatal: string | null },
+  agendamento: { etiqueta: string; dataFatal: string | null; data?: string | null },
   fluxo: FluxoDaTarefa | null,
   ehDiaUtil: (iso: string) => boolean,
   hoje: string
 ): { enviar: string; revisar: string | null; protocolar: string | null } | null {
   if (agendamento.etiqueta !== "PRAZO" || !agendamento.dataFatal) return null;
+  if (agendamento.data && agendamento.data > hoje) return null;
   const datas = datasDoPrazo(agendamento.dataFatal, ehDiaUtil, cadeiaDoFluxo(fluxo), hoje);
   return datas.ajustada ? { enviar: datas.enviar, revisar: datas.revisar, protocolar: datas.protocolar } : null;
 }

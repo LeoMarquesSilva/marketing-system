@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { criarCalendario } from "./dias-uteis";
-import { ESTAGIARIO_DA_PASTA, caminhosDoFluxo, emOrdemDeArvore, fluxoParaOVios, fluxoPrevisto, quemFicaNoFluxo } from "./fluxo-previsto";
+import { ESTAGIARIO_DA_PASTA, caminhosDoFluxo, emOrdemDeArvore, fluxoParaOVios, fluxoPrevisto, prazoApertado, quemFicaNoFluxo } from "./fluxo-previsto";
 import { montarFluxo, type BaseDaData, type RegraDePrazo, type ResponsabilidadeDoTipo, type TipoNaArvore } from "./fluxo-vios";
 
 const uteis = (dias: number, negativo = false): RegraDePrazo => ({ dias, negativo, corridos: false });
@@ -274,5 +274,29 @@ describe("quem fica nas tarefas do fluxo (regra do robô, sama-rpa regras-fluxo.
       ["HABILITAÇÃO PROCESSUAL", ESTAGIARIO_DA_PASTA],
       ["VERIFICAR ATA", LARISSA],
     ]);
+  });
+});
+
+describe("prazoApertado", () => {
+  // Embargos de 5 dias corridos: o Protocolar é 4 dias úteis depois do Enviar. Fatal 10/11, hoje 06/11.
+  const embargos = montarFluxo("487", ARVORE);
+  const prazo = { etiqueta: "PRAZO", dataFatal: "2026-11-10" };
+
+  it("prazo curto: o Enviar vai hoje e o Protocolar 1 dia útil antes da fatal", () => {
+    expect(prazoApertado(prazo, embargos, ehDiaUtil, "2026-11-06")).toMatchObject({ enviar: "2026-11-06", protocolar: "2026-11-09" });
+  });
+
+  it("a data gravada de hoje ou de antes (validada noutro dia) continua apertando", () => {
+    expect(prazoApertado({ ...prazo, data: "2026-11-06" }, embargos, ehDiaUtil, "2026-11-06")?.enviar).toBe("2026-11-06");
+    expect(prazoApertado({ ...prazo, data: "2026-11-05" }, embargos, ehDiaUtil, "2026-11-06")?.enviar).toBe("2026-11-06");
+  });
+
+  it("o Enviar escolhido à mão na Conferência, depois de hoje, vale como está", () => {
+    expect(prazoApertado({ ...prazo, data: "2026-11-09" }, embargos, ehDiaUtil, "2026-11-06")).toBeNull();
+  });
+
+  it("o prazo que cabe não aperta, nem outra classe de tarefa", () => {
+    expect(prazoApertado({ etiqueta: "PRAZO", dataFatal: "2026-12-10" }, embargos, ehDiaUtil, "2026-11-06")).toBeNull();
+    expect(prazoApertado({ etiqueta: "PROVIDENCIA", dataFatal: null }, embargos, ehDiaUtil, "2026-11-06")).toBeNull();
   });
 });

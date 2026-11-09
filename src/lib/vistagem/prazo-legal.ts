@@ -1,4 +1,6 @@
 import { chaveNome } from "./agendamento";
+import { fatalPorContagem, type ContagemPrazo } from "./dias-uteis";
+import type { FluxoDaTarefa } from "./fluxo-vios";
 
 /**
  * Prazo legal dos recursos (e das respostas a eles), em dias, para a vistagem já marcar os dias quando o jurídico
@@ -42,6 +44,33 @@ export function prazoLegalDaTarefa(nomeTarefa: string | null | undefined, areaDo
   const prazo = POR_NOME.get(chaveNome(nomeTarefa));
   if (!prazo) return null;
   return chaveNome(areaDoCatalogo) === "TRABALHISTA" ? prazo.trabalhista : prazo.comum;
+}
+
+export interface FatalDoFluxo {
+  nome: string;
+  dias: number;
+  data: string;
+}
+
+/**
+ * A tarefa sem prazo próprio (a SENTENÇA) não tem fatal, mas cada prazo que ela cria tem a sua: a publicação mais o
+ * prazo legal (Trabalhista: Embargos 5, Recurso Ordinário 8). Só para situar no calendário: não vai para o VIOS nem
+ * é exigida no envio.
+ */
+export function fataisDoFluxo(
+  fluxo: FluxoDaTarefa | null | undefined,
+  dataPublicacao: string | null | undefined,
+  areaDoCatalogo: string | null | undefined,
+  contagem: ContagemPrazo,
+  ehDiaDePrazo: (iso: string) => boolean
+): FatalDoFluxo[] {
+  if (!fluxo || !dataPublicacao) return [];
+  return fluxo.criacao
+    .flatMap((tarefa) => {
+      const dias = tarefa.filhas.some((filha) => filha.papel === "protocolar") ? prazoLegalDaTarefa(tarefa.nome, areaDoCatalogo) : null;
+      return dias ? [{ nome: tarefa.nome, dias, data: fatalPorContagem(dataPublicacao, dias, contagem, ehDiaDePrazo) }] : [];
+    })
+    .sort((a, b) => a.data.localeCompare(b.data));
 }
 
 /** Nomes com prazo legal, para a página de regras. */

@@ -50,6 +50,7 @@ import {
   contagemPadraoDaArea,
   horaFinalPadrao,
   horaValida,
+  mesmasPessoas,
   nomesDasPessoas,
   revisorFicaNaTarefa,
   separarNomes,
@@ -58,6 +59,7 @@ import {
 import { cienciaDosAgendamentos, cienciaQueFica, ehCienciaDosAgendamentos } from "@/lib/vistagem/ciencia-agendamentos";
 import {
   CONTAGENS_PRAZO,
+  ROTULO_CONTAGEM,
   criarCalendario,
   criarCalendarioDePrazo,
   dataDaTarefaSemPrazo,
@@ -77,7 +79,7 @@ import {
 } from "@/lib/vistagem/esocial";
 import { CADEIA_PADRAO, cadeiaDoFluxo, semPrazoProprio } from "@/lib/vistagem/fluxo-vios";
 import { emOrdemDeArvore, fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
-import { prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
+import { fataisDoFluxo, prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
 import { fatalSugerida, sugestaoNaListaAtual, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
 import { vaiParaCentral } from "@/lib/vistagem/central";
@@ -136,7 +138,7 @@ interface Linha {
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 
 /** Parte do cartão da tarefa ("O que", "Prazo", "Quem"): título pequeno com ícone e os campos embaixo. */
-function BlocoTarefa({ titulo, icone: Icone, acao, children }: { titulo: string; icone: LucideIcon; acao?: ReactNode; children: ReactNode }) {
+export function BlocoTarefa({ titulo, icone: Icone, acao, children }: { titulo: string; icone: LucideIcon; acao?: ReactNode; children: ReactNode }) {
   return (
     <section className="space-y-2">
       <h3 className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] font-semibold uppercase text-[#285f7a]">
@@ -343,12 +345,6 @@ function PessoasDaTarefa({ nomes, foto }: { nomes: string | null | undefined; fo
   );
 }
 
-/** Mesmas pessoas, sem olhar acento, maiúscula nem ordem. */
-function mesmasPessoas(a: string[], b: string[]): boolean {
-  const chaves = (lista: string[]) => [...new Set(lista.map(chaveNome))].sort().join("|");
-  return chaves(a) === chaves(b);
-}
-
 /**
  * Quem fica numa tarefa do fluxo, com o botão para trocar: abre a busca de pessoas (as mesmas do Responsável). A
  * escolha vai para o robô no lugar da regra dele; "voltar ao padrão" devolve a regra. Escolher as mesmas pessoas da
@@ -433,10 +429,10 @@ function diaDaAgenda(iso: string): string {
   return `${partes.semana}, ${partes.dia}/${iso.slice(5, 7)}`;
 }
 
-function FluxoNoVios({
+export function FluxoNoVios({
   previstas,
   principal,
-  fatal,
+  fatais,
   hoje,
   ehDiaUtil,
   onMudarData,
@@ -451,8 +447,8 @@ function FluxoNoVios({
   principal: { nome: string; data: string | null; etiqueta: Etiqueta; responsaveis: string };
   /** As pessoas e as fotos dos campos Responsável e Revisor (para trocar quem fica numa tarefa do fluxo). */
   pessoas: PessoasDoCampo;
-  /** Data fatal do Prazo (só para situar no calendário). */
-  fatal: string | null;
+  /** Data fatal do Prazo ou, na tarefa sem prazo próprio, a de cada prazo que ela cria (só para situar no calendário). */
+  fatais: { rotulo: string; data: string; dica: string }[];
   hoje: string;
   ehDiaUtil: (iso: string) => boolean;
   onMudarData: (caminho: string[], data: string | null) => void;
@@ -483,11 +479,11 @@ function FluxoNoVios({
   type Item =
     | { tipo: "principal"; chave: string; data: string }
     | { tipo: "fluxo"; chave: string; data: string | null; tarefa: TarefaPrevista }
-    | { tipo: "fatal"; chave: string; data: string };
+    | { tipo: "fatal"; chave: string; data: string; rotulo: string; dica: string };
   const itens: Item[] = [
     ...(principal.data ? [{ tipo: "principal" as const, chave: "principal", data: principal.data }] : []),
     ...emOrdemDeArvore(junto).map((tarefa) => ({ tipo: "fluxo" as const, chave: tarefa.caminho.join(" › "), data: tarefa.data, tarefa })),
-    ...(fatal ? [{ tipo: "fatal" as const, chave: "fatal", data: fatal }] : []),
+    ...fatais.map((fatal) => ({ tipo: "fatal" as const, chave: `fatal ${fatal.rotulo}`, ...fatal })),
   ];
   const numerado = (item: Item): item is Item & { data: string } => Boolean(item.data) && !(item.tipo === "fluxo" && item.tarefa.repetida);
   const numeros = new Map<string, number>();
@@ -504,7 +500,7 @@ function FluxoNoVios({
     item.tipo === "principal" ? tomDaPedida : item.tipo === "fatal" ? "fatal" : tomDoFluxo(item.tarefa);
   const editadaDe = (item: Item) => item.tipo === "fluxo" && item.tarefa.editada;
   // Só o nome da tarefa (sem "Enviar no VIOS:"): a cor e o número já dizem que é a pedida.
-  const nomeDe = (item: Item) => (item.tipo === "principal" ? principal.nome : item.tipo === "fatal" ? "Data fatal" : item.tarefa.nome);
+  const nomeDe = (item: Item) => (item.tipo === "principal" ? principal.nome : item.tipo === "fatal" ? item.rotulo : item.tarefa.nome);
   const marcos: MarcoDoCalendario[] = itens.filter(numerado).map((item) => ({
     chave: item.chave,
     numero: numeros.get(item.chave) ?? 0,
@@ -623,7 +619,7 @@ function FluxoNoVios({
                     <>
                       <span
                         className="w-[8.5rem] text-right tabular-nums text-muted-foreground"
-                        title={item.tipo === "principal" ? "Muda no campo de data da tarefa, acima." : "Muda no campo Data fatal, acima."}
+                        title={item.tipo === "fatal" ? item.dica : "Muda no campo de data da tarefa, acima."}
                       >
                         {diaDaAgenda(item.data)}
                       </span>
@@ -659,14 +655,70 @@ interface Navegacao {
  * Opções de Responsável e Revisor: as pessoas da área da publicação, com foto, e a lista inteira do VIOS para a
  * exceção (`ampliar`, null quando não há filtro). Quem já está escolhido vale mesmo fora da área.
  */
-interface PessoasDoCampo {
+export interface PessoasDoCampo {
   opcoes: OpcaoBusca[];
   ampliar: { todas: OpcaoBusca[]; area: string } | null;
   foto: (nome: string) => string | null;
 }
 
+/** Responsável e Revisor: só quem é da área da publicação, com foto; a última linha da lista abre todas as pessoas. */
+export function pessoasDoDetalhe(detalhe: VistagemDetalhe | null): PessoasDoCampo {
+  const fotos = detalhe?.fotos ?? {};
+  const filtro = detalhe?.pessoasDaArea ?? null;
+  const daArea = filtro ? new Set(filtro.nomes.map(chaveNome)) : null;
+  const todas = (detalhe?.catalogo?.usuarios ?? []).map((usuario): OpcaoBusca => {
+    const chave = chaveNome(usuario.nome);
+    // Na lista inteira, quem é de fora da área mostra a área dele ao lado do nome.
+    return { ...usuario, foto: fotos[chave] ?? null, detalhe: daArea && !daArea.has(chave) ? detalhe?.areaDasPessoas?.[chave] ?? null : null };
+  });
+  const opcoes = daArea ? todas.filter((opcao) => daArea.has(chaveNome(opcao.nome))) : todas;
+  return {
+    opcoes,
+    ampliar: filtro && opcoes.length < todas.length ? { todas, area: filtro.area } : null,
+    foto: (nome) => fotos[chaveNome(nome)] ?? null,
+  };
+}
+
+/**
+ * Classe de cada tipo de tarefa na lista do VIOS da área, pelo nome original: dá a cor das tarefas do fluxo (nome que
+ * aparece em mais de uma classe fica sem, e a tarefa usa a cor da pedida).
+ */
+export function classeNoCatalogo(catalogo: VistagemDetalhe["catalogo"] | undefined): (nome: string) => Etiqueta | null {
+  const classes = new Map<string, Set<Etiqueta>>();
+  for (const etiqueta of ETIQUETAS_AGENDAMENTO) {
+    for (const tarefa of catalogo?.tarefas[etiqueta] ?? []) {
+      const chave = chaveNome(tarefa.nomeVios ?? tarefa.nome);
+      classes.set(chave, (classes.get(chave) ?? new Set<Etiqueta>()).add(etiqueta));
+    }
+  }
+  return (nome) => {
+    const daTarefa = classes.get(chaveNome(nome));
+    return daTarefa?.size === 1 ? [...daTarefa][0] : null;
+  };
+}
+
+/**
+ * Data e/ou responsáveis de uma tarefa do Fluxo do VIOS mudados pela pessoa; null volta à data do VIOS ou à regra do
+ * robô. O que não vem na mudança fica como estava.
+ */
+export function comMudancaNoFluxo(
+  fluxoDatas: Record<string, DataDoFluxo>,
+  caminho: string[],
+  mudanca: { data?: string | null; responsaveis?: string[] | null }
+): Record<string, DataDoFluxo> {
+  const chave = chaveDoCaminho(caminho);
+  const atual = fluxoDatas[chave];
+  const data = (mudanca.data !== undefined ? mudanca.data : atual?.data) || null;
+  const responsaveis = mudanca.responsaveis !== undefined ? mudanca.responsaveis : atual?.responsaveis ?? null;
+  const novas = { ...fluxoDatas };
+  if (data || responsaveis?.length) {
+    novas[chave] = { caminho, ...(data ? { data } : {}), ...(responsaveis?.length ? { responsaveis } : {}) };
+  } else delete novas[chave];
+  return novas;
+}
+
 /** Um ou mais responsáveis; a fila do robô recebe os nomes separados por vírgula. */
-function CampoResponsaveis({
+export function CampoResponsaveis({
   pessoas,
   valor,
   onChange,
@@ -863,38 +915,8 @@ export function EditorVistagem({
       (caminho === null ? cienciaFica.caminho === null : cienciaFica.caminho !== null && chaveDoCaminho(cienciaFica.caminho) === chaveDoCaminho(caminho)));
   /** Úteis ou Corridos já marcado no Prazo: Corridos na Insolvência, Úteis nas outras áreas. */
   const contagemPadrao = contagemPadraoDaArea(detalhe?.publicacao.escritorioResponsavel ?? detalhe?.catalogo?.area);
-  // Responsável e Revisor: só quem é da área da publicação, com foto; a última linha da lista abre todas as pessoas.
-  const pessoasDoCampo = useMemo((): PessoasDoCampo => {
-    const fotos = detalhe?.fotos ?? {};
-    const filtro = detalhe?.pessoasDaArea ?? null;
-    const daArea = filtro ? new Set(filtro.nomes.map(chaveNome)) : null;
-    const todas = (detalhe?.catalogo?.usuarios ?? []).map((usuario): OpcaoBusca => {
-      const chave = chaveNome(usuario.nome);
-      // Na lista inteira, quem é de fora da área mostra a área dele ao lado do nome.
-      return { ...usuario, foto: fotos[chave] ?? null, detalhe: daArea && !daArea.has(chave) ? detalhe?.areaDasPessoas?.[chave] ?? null : null };
-    });
-    const opcoes = daArea ? todas.filter((opcao) => daArea.has(chaveNome(opcao.nome))) : todas;
-    return {
-      opcoes,
-      ampliar: filtro && opcoes.length < todas.length ? { todas, area: filtro.area } : null,
-      foto: (nome) => fotos[chaveNome(nome)] ?? null,
-    };
-  }, [detalhe]);
-  // Classe de cada tipo de tarefa na lista do VIOS da área, pelo nome original: dá a cor das tarefas do fluxo
-  // (nome que aparece em mais de uma classe fica sem, e a tarefa usa a cor da pedida).
-  const classeDaTarefa = useMemo(() => {
-    const classes = new Map<string, Set<Etiqueta>>();
-    for (const etiqueta of ETIQUETAS_AGENDAMENTO) {
-      for (const tarefa of detalhe?.catalogo?.tarefas[etiqueta] ?? []) {
-        const chave = chaveNome(tarefa.nomeVios ?? tarefa.nome);
-        classes.set(chave, (classes.get(chave) ?? new Set<Etiqueta>()).add(etiqueta));
-      }
-    }
-    return (nome: string): Etiqueta | null => {
-      const daTarefa = classes.get(chaveNome(nome));
-      return daTarefa?.size === 1 ? [...daTarefa][0] : null;
-    };
-  }, [detalhe?.catalogo]);
+  const pessoasDoCampo = useMemo(() => pessoasDoDetalhe(detalhe), [detalhe]);
+  const classeDaTarefa = useMemo(() => classeNoCatalogo(detalhe?.catalogo), [detalhe?.catalogo]);
 
   /** Tarefa de Prazo sem prazo próprio no VIOS (a SENTENÇA): não pede fatal, e as do fluxo contam da data dela. */
   function semFatal(linha: Pick<Linha, "etiqueta" | "tarefa">): boolean {
@@ -923,20 +945,8 @@ export function EditorVistagem({
     );
   }
 
-  /**
-   * Data e/ou responsáveis de uma tarefa do Fluxo do VIOS mudados pela pessoa; null volta à data do VIOS ou à regra
-   * do robô. O que não vem na mudança fica como estava.
-   */
   function mudarNoFluxo(linha: Linha, caminho: string[], mudanca: { data?: string | null; responsaveis?: string[] | null }) {
-    const chave = chaveDoCaminho(caminho);
-    const atual = linha.fluxoDatas[chave];
-    const data = (mudanca.data !== undefined ? mudanca.data : atual?.data) || null;
-    const responsaveis = mudanca.responsaveis !== undefined ? mudanca.responsaveis : atual?.responsaveis ?? null;
-    const fluxoDatas = { ...linha.fluxoDatas };
-    if (data || responsaveis?.length) {
-      fluxoDatas[chave] = { caminho, ...(data ? { data } : {}), ...(responsaveis?.length ? { responsaveis } : {}) };
-    } else delete fluxoDatas[chave];
-    alterar(linha.chave, { fluxoDatas });
+    alterar(linha.chave, { fluxoDatas: comMudancaNoFluxo(linha.fluxoDatas, caminho, mudanca) });
   }
 
   /** Mais uma tarefa, já com o responsável e o revisor sugeridos da pasta (no topo e no fim da lista). */
@@ -1730,7 +1740,19 @@ export function EditorVistagem({
                                 etiqueta: linha.etiqueta,
                                 responsaveis: linha.responsavel,
                               }}
-                              fatal={comFatal ? linha.dataFatal || null : null}
+                              fatais={
+                                comFatal
+                                  ? linha.dataFatal
+                                    ? [{ rotulo: "Data fatal", data: linha.dataFatal, dica: "Muda no campo Data fatal, acima." }]
+                                    : []
+                                  : prazo
+                                    ? fataisDoFluxo(fluxo, detalhe.publicacao.dataPublicacao, catalogo.area, contagemPadrao, contaPrazo).map((fatal) => ({
+                                        rotulo: `Data fatal · ${fatal.nome}`,
+                                        data: fatal.data,
+                                        dica: `${fatal.dias} ${ROTULO_CONTAGEM[contagemPadrao]} após a publicação (prazo legal). Só para conferir: não vai para o VIOS.`,
+                                      }))
+                                    : []
+                              }
                               pessoas={pessoasDoCampo}
                               hoje={detalhe.hoje}
                               ehDiaUtil={ehDiaUtil}

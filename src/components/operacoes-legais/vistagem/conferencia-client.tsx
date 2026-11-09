@@ -37,8 +37,10 @@ import { ROTULO_ETIQUETA, chaveNome } from "@/lib/vistagem/agendamento";
 import { vaiParaCentral } from "@/lib/vistagem/central";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import { MAX_TEXTO_INCONSISTENCIA, TIPOS_INCONSISTENCIA_JURIDICO } from "@/lib/vistagem/inconsistencias";
-import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, InconsistenciaItem, PublicacaoResumo } from "@/lib/vistagem/types";
+import { podeEditarNaConferencia } from "@/lib/vistagem/ajuste-conferencia";
+import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, InconsistenciaItem, PublicacaoResumo, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
+import { EditarTarefa } from "./editar-tarefa";
 import { FaixaDoProcesso, NA_FAIXA } from "./faixa-processo";
 import { FichaPasta } from "./ficha-pasta";
 import { FichaProcesso, ResumoDaFicha } from "./ficha-processo";
@@ -306,8 +308,8 @@ function FluxoDaTarefaAgendada({ item }: { item: AgendamentoResumo }) {
                     <span className="text-muted-foreground">{tarefa.responsaveis}</span>
                   </>
                 )}
-                {tarefa.editada ? <Selo tom="marca">alterada pelo jurídico</Selo> : null}
-                {tarefa.responsaveisEscolhidos && !tarefa.repetida ? <Selo tom="marca">responsável escolhido pelo jurídico</Selo> : null}
+                {tarefa.editada ? <Selo tom="marca">data alterada</Selo> : null}
+                {tarefa.responsaveisEscolhidos && !tarefa.repetida ? <Selo tom="marca">responsável escolhido</Selo> : null}
                 {tarefa.ajustada ? <Selo tom="marca">{tarefa.ajustada === "hoje" ? "VIOS daria antes de hoje" : "apertada antes da fatal"}</Selo> : null}
                 {!tarefa.repetida && tarefa.data && tarefa.dataVios && tarefa.data !== tarefa.dataVios ? (
                   <span className="text-muted-foreground">VIOS daria {formatarData(tarefa.dataVios)}</span>
@@ -461,6 +463,7 @@ function ItemConferencia({
   onAbrir,
   onVoltar,
   onConcluido,
+  onEditado,
 }: {
   item: ConferenciaItem;
   comEnvio: boolean;
@@ -471,7 +474,13 @@ function ItemConferencia({
   onAbrir: (id: string) => void;
   onVoltar: () => void;
   onConcluido?: (id: string, mensagem: string) => void;
+  /** Tarefa ajustada pelo lápis: a publicação continua aberta, com as tarefas recarregadas. */
+  onEditado: (mensagem: string) => Promise<void>;
 }) {
+  /** Tarefa com o modal do lápis aberto. */
+  const [editando, setEditando] = useState<AgendamentoResumo | null>(null);
+  /** Lista de pessoas e fluxos da pasta para o lápis: carrega no primeiro uso e vale para as outras tarefas da publicação. */
+  const [dadosDoLapis, setDadosDoLapis] = useState<VistagemDetalhe | null>(null);
   const [devolvendo, setDevolvendo] = useState(false);
   const [tipoInconsistencia, setTipoInconsistencia] = useState("");
   const [motivo, setMotivo] = useState("");
@@ -704,10 +713,34 @@ function ItemConferencia({
               </h3>
               <span className="text-xs text-muted-foreground">{resumoTarefas(item.agendamentos, comEnvio)}</span>
             </div>
-            <CartoesTarefas agendamentos={item.agendamentos} comEnvio={comEnvio} fotos={fotos} hoje={hoje} />
+            <CartoesTarefas
+              agendamentos={item.agendamentos}
+              comEnvio={comEnvio}
+              fotos={fotos}
+              hoje={hoje}
+              onEditar={setEditando}
+              podeEditar={(agendamento) => podeEditarNaConferencia(publicacao.status, agendamento.envioStatus)}
+            />
           </section>
         </div>
       </div>
+
+      {editando ? (
+        <EditarTarefa
+          key={editando.id}
+          publicacaoId={publicacao.id}
+          processo={processo}
+          tarefa={editando}
+          comEnvio={comEnvio}
+          dados={dadosDoLapis}
+          onDados={setDadosDoLapis}
+          onFechar={() => setEditando(null)}
+          onSalva={async (mensagem) => {
+            await onEditado(mensagem);
+            setEditando(null);
+          }}
+        />
+      ) : null}
 
       <DialogoAcao
         aberto={devolvendo}
@@ -1368,6 +1401,10 @@ function Conferencia() {
                 onAbrir={abrir}
                 onVoltar={() => setListaNoCelular(true)}
                 onConcluido={concluido}
+                onEditado={async (mensagem) => {
+                  setRetorno({ tom: "sucesso", texto: mensagem });
+                  await carregar();
+                }}
               />
             ) : null}
           </div>
