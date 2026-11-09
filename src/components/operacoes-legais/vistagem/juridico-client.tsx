@@ -1595,6 +1595,7 @@ export function EditorVistagem({
                                       },
                                       { rotulo: "Revisar", rotuloCurto: "Rev.", data: cadeia.revisar },
                                       { rotulo: "Protocolar", rotuloCurto: "Prot.", data: cadeia.protocolar },
+                                      { rotulo: "Data fatal", rotuloCurto: "Fatal", data: linha.dataFatal, tom: "perigo" },
                                     ]}
                                   />
                                 ) : null}
