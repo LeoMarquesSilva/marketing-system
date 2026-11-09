@@ -35,12 +35,13 @@ import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
 import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
 import { linhasParaFila, modoDaPublicacao, type TarefaNoVios } from "./fila-vios";
-import { LIMITE_TRECHO_SINTESE } from "./dados-processo";
-import { buscarPastaPorCi, buscarSinteseDaPasta } from "./sioe";
+import { LIMITE_TRECHO_SINTESE, materiasDaLista, precisaDeMateria } from "./dados-processo";
+import { buscarPastaPorCi, buscarSinteseDaPasta, pastaSemMateria } from "./sioe";
 import { ESCRITORIOS, type PastaSioe } from "./triagem";
 import {
   carregarArvoreVios,
   carregarCatalogoProcessos,
+  carregarMateriasVios,
   catalogoDaArea,
   consultarFilaSama,
   enfileirarNoSama,
@@ -65,6 +66,7 @@ import type {
   EnvioStatus,
   InconsistenciaItem,
   InconsistenciaResumo,
+  MateriaVios,
   PublicacaoResumo,
   ResolucaoPendencia,
   ResultadoCentral,
@@ -317,7 +319,7 @@ export async function obterVistagem(
   }
   let fluxosErro: string | null = null;
   let sinteseErro: string | null = null;
-  const [inconsistencias, feriados, pastaVios, arvore, sintese, sintesesPedidas, estagiarios] = await Promise.all([
+  const [inconsistencias, feriados, pastaVios, arvore, sintese, sintesesPedidas, estagiarios, materiaVazia] = await Promise.all([
     inconsistenciasPorPublicacao([id]),
     carregarFeriados().catch(() => [] as string[]),
     publicacao.pasta_ci ? buscarPastasVios([publicacao.pasta_ci]) : Promise.resolve(new Map<string, { vinculo: string | null; auxiliarSigla: string | null }>()),
@@ -339,7 +341,20 @@ export async function obterVistagem(
         })
       : Promise.resolve([] as SintesePedida[]),
     catalogo && ehReestruturacao(publicacao.escritorio_responsavel ?? catalogo.area) ? estagiariosNoVios() : Promise.resolve(new Set<string>()),
+    // Só decide se a síntese pede a Matéria: sem resposta do SIOE, segue sem pedir, e quem recusa é o VIOS.
+    publicacao.pasta_ci && !previa
+      ? pastaSemMateria(publicacao.pasta_ci).catch((erro: unknown) => {
+          console.error("[vistagem] matéria da pasta", erro instanceof Error ? erro.message : erro);
+          return false;
+        })
+      : Promise.resolve(false),
   ]);
+  const materiasVios = materiaVazia
+    ? await carregarMateriasVios().catch((erro: unknown) => {
+        console.error("[vistagem] matérias do VIOS", erro instanceof Error ? erro.message : erro);
+        return [] as MateriaVios[];
+      })
+    : [];
   const auxiliar = publicacao.pasta_ci ? pastaVios.get(publicacao.pasta_ci)?.auxiliarSigla ?? null : null;
   const responsavel = catalogo ? responsavelSugerido(publicacao.advogado_responsavel, catalogo.usuarios)?.nome ?? null : null;
   const revisor = catalogo ? usuarioPorSigla(auxiliar, catalogo.usuarios)?.nome ?? null : null;
@@ -357,6 +372,8 @@ export async function obterVistagem(
     sintese,
     sinteseErro,
     sintesesPedidas,
+    materiaVazia,
+    materiasVios,
     catalogo,
     catalogoErro,
     responsavelSugerido: responsavel,
@@ -688,6 +705,7 @@ async function auxiliaresDasPastas(linhas: (PublicacaoRow & { area_processo: str
 export async function pedirAtualizacaoSintese(
   id: string,
   texto: string,
+  materiasEscolhidas: unknown,
   authUserId: string,
   areas: AreasVistagem,
   veRisco = true
@@ -706,6 +724,16 @@ export async function pedirAtualizacaoSintese(
   if (pedidas.some((pedida) => pedida.texto.trim() === trecho && repetido(pedida))) {
     throw new VistagemError("Este trecho já foi pedido para esta pasta.", 409);
   }
+  // Sem a base ou sem a lista, não trava o pedido: quem recusa é o VIOS, como antes.
+  const [materiaVazia, listaDeMaterias] = await Promise.all([
+    pastaSemMateria(publicacao.pasta_ci).catch(() => false),
+    carregarMateriasVios().catch(() => [] as MateriaVios[]),
+  ]);
+  const { materias, fora } = materiasDaLista(materiasEscolhidas, listaDeMaterias);
+  if (fora.length) throw new VistagemError("A Matéria escolhida não está na lista do VIOS. Recarregue a página e escolha de novo.", 422);
+  if (listaDeMaterias.length && !materias.length && precisaDeMateria(materiaVazia, pedidas)) {
+    throw new VistagemError("Este processo está sem Matéria no VIOS. Escolha a Matéria para o robô conseguir gravar a síntese.", 422);
+  }
   const [ano, mes, dia] = hojeEmSaoPaulo().split("-");
   await enfileirarSintese({
     ci: publicacao.pasta_ci,
@@ -714,6 +742,7 @@ export async function pedirAtualizacaoSintese(
     autor,
     data: `${dia}/${mes}/${ano}`,
     simular: sinteseSimulada(),
+    materias,
   });
   return sintesesDaPasta(publicacao.pasta_ci);
 }

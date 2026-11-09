@@ -4,6 +4,8 @@
  * vem só da pasta no VIOS.
  */
 
+import type { MateriaVios, SintesePedida } from "./types";
+
 function plano(texto: string | null | undefined): string {
   return String(texto ?? "")
     .normalize("NFD")
@@ -87,6 +89,29 @@ export function partesPorPolo(partes: { nome: string; polo: string }[], cliente:
 
 /** Tamanho do trecho que se acrescenta à síntese de uma vez ("Atualizar Síntese"). */
 export const LIMITE_TRECHO_SINTESE = 4000;
+
+/**
+ * Pede a Matéria ao acrescentar à síntese: o VIOS não grava o cadastro do processo sem ela. A base do SIOE só muda
+ * na carga seguinte, então um pedido com Matéria que está na fila ou foi gravado já resolve; o que deu erro ou só
+ * foi simulado, não.
+ */
+export function precisaDeMateria(materiaVazia: boolean, pedidas: Pick<SintesePedida, "materias" | "status" | "simulado">[]): boolean {
+  if (!materiaVazia) return false;
+  return !pedidas.some((pedida) => pedida.materias.length > 0 && pedida.status !== "erro" && !(pedida.simulado && pedida.status === "concluido"));
+}
+
+/** Confere as matérias escolhidas na lista do VIOS. `fora` são os ids que a lista não tem. */
+export function materiasDaLista(ids: unknown, lista: MateriaVios[]): { materias: MateriaVios[]; fora: string[] } {
+  const pedidos = Array.isArray(ids) ? [...new Set(ids.filter((id): id is string => typeof id === "string").map((id) => id.trim()).filter(Boolean))] : [];
+  const porId = new Map(lista.map((materia) => [materia.id, materia]));
+  return {
+    materias: pedidos.flatMap((id) => {
+      const materia = porId.get(id);
+      return materia ? [materia] : [];
+    }),
+    fora: pedidos.filter((id) => !porId.has(id)),
+  };
+}
 
 /** Entidades HTML que o VIOS deixa na síntese (o CSV troca o ";" final por ":", ex.: "&ndash:"). */
 const ENTIDADES: Record<string, string> = {

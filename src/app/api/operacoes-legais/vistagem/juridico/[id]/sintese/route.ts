@@ -12,9 +12,9 @@ export async function POST(request: Request, context: RouteContext) {
   try {
     const { authUserId, areas, veRisco } = await exigirPerfilVistagem();
     const { id } = await context.params;
-    const corpo = (await request.json().catch(() => null)) as { texto?: unknown } | null;
+    const corpo = (await request.json().catch(() => null)) as { texto?: unknown; materias?: unknown } | null;
     const texto = typeof corpo?.texto === "string" ? corpo.texto.slice(0, LIMITE_TRECHO_SINTESE + 1) : "";
-    return NextResponse.json({ sintesesPedidas: await pedirAtualizacaoSintese(id, texto, authUserId, areas, veRisco) });
+    return NextResponse.json({ sintesesPedidas: await pedirAtualizacaoSintese(id, texto, corpo?.materias, authUserId, areas, veRisco) });
   } catch (error) {
     return respostaDeErro(error, "Não foi possível pedir a atualização da síntese.");
   }

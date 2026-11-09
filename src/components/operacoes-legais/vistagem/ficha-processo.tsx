@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, LoaderCircle, PencilLine, TriangleAlert } from "lucide-react";
+import { Check, LoaderCircle, PencilLine, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
@@ -12,13 +12,14 @@ import {
   classeDoProcesso,
   paragrafosDaSintese,
   partesPorPolo,
+  precisaDeMateria,
   valorDaCausa,
   type ParteDoPolo,
 } from "@/lib/vistagem/dados-processo";
 import { lerPublicacao } from "@/lib/vistagem/leitura";
 import { advogadosDoEscritorioCitados } from "@/lib/vistagem/triagem";
-import type { PublicacaoResumo, SintesePedida } from "@/lib/vistagem/types";
-import { AvatarPessoa } from "./combobox-busca";
+import type { MateriaVios, PublicacaoResumo, SintesePedida } from "@/lib/vistagem/types";
+import { AvatarPessoa, ComboboxBusca } from "./combobox-busca";
 import { Celula, LinkPastaVios } from "./ficha-pasta";
 import { Selo, type TomSelo } from "./ui";
 
@@ -300,6 +301,7 @@ function SintesesPedidas({ pedidas }: { pedidas: SintesePedida[] }) {
             <p className="mt-0.5 line-clamp-2 text-foreground" title={pedida.texto}>
               {pedida.texto}
             </p>
+            {pedida.materias.length ? <p className="mt-0.5 text-muted-foreground">Matéria: {pedida.materias.map((materia) => materia.nome).join(", ")}</p> : null}
             {pedida.erro ? <p className="mt-0.5 text-red-700">{pedida.erro}</p> : null}
           </li>
         );
@@ -308,32 +310,87 @@ function SintesesPedidas({ pedidas }: { pedidas: SintesePedida[] }) {
   );
 }
 
+/** O combo de Matéria do VIOS: busca na lista inteira, uma ou mais matérias, com as escolhidas dentro do campo. */
+function CampoMaterias({ opcoes, escolhidas, onChange }: { opcoes: MateriaVios[]; escolhidas: MateriaVios[]; onChange: (materias: MateriaVios[]) => void }) {
+  const ids = new Set(escolhidas.map((materia) => materia.id));
+  return (
+    <div className="space-y-1">
+      <p className="text-xs font-medium text-foreground">
+        Matéria <span className="text-red-700">*</span>
+      </p>
+      <ComboboxBusca
+        antes={
+          escolhidas.length ? (
+            <ul className="contents" aria-label="Matérias escolhidas">
+              {escolhidas.map((materia) => (
+                <li key={materia.id} className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-md border border-[#dce9eb] bg-[#f7fbfc] pl-2 pr-0.5 text-xs font-medium text-foreground">
+                  <span className="truncate">{materia.nome}</span>
+                  <button
+                    type="button"
+                    className="rounded p-1 text-muted-foreground hover:bg-[#47cdd0]/15 hover:text-foreground"
+                    aria-label={`Tirar ${materia.nome}`}
+                    onMouseDown={(evento) => evento.preventDefault()}
+                    onClick={() => onChange(escolhidas.filter((item) => item.id !== materia.id))}
+                  >
+                    <X className="size-3.5" aria-hidden />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null
+        }
+        opcoes={opcoes.filter((materia) => !ids.has(materia.id))}
+        maxResultados={opcoes.length}
+        valor=""
+        onChange={(nome) => {
+          const materia = opcoes.find((item) => item.nome === nome);
+          if (materia) onChange([...escolhidas, materia]);
+        }}
+        placeholder={escolhidas.length ? "Adicionar outra…" : "Digite para buscar…"}
+        rotulo="Matéria"
+        titulo="Matérias do VIOS"
+      />
+      <p className="text-[11px] text-muted-foreground">Este processo está sem Matéria no VIOS, e o VIOS só grava a síntese com ela. O robô preenche junto com o texto.</p>
+    </div>
+  );
+}
+
 /**
  * Síntese do processo da pasta no VIOS, embaixo da ficha. Longa, começa recolhida em umas cinco linhas; aberta,
  * rola dentro do bloco (há sínteses de 20 mil caracteres). Com `publicacaoId`, a pessoa acrescenta um trecho:
  * o robô junta no fim da síntese do VIOS como "dd/mm/aaaa (Nome): texto", quando não houver outro trabalho na fila.
+ * Com o processo sem Matéria, pede também a Matéria, porque o VIOS não grava o cadastro sem ela.
  */
 export function SinteseDoProcesso({
   sintese,
   erro,
   pedidas: pedidasIniciais = [],
   publicacaoId = null,
+  materiaVazia = false,
+  materias = [],
 }: {
   sintese: string | null;
   erro: string | null;
   pedidas?: SintesePedida[];
   /** Publicação da vistagem; sem ela (prévia da controladoria), só leitura. */
   publicacaoId?: string | null;
+  /** A pasta está sem Matéria na base do SIOE. */
+  materiaVazia?: boolean;
+  /** Opções do campo Matéria do VIOS; sem a lista, a síntese vai sem pedir (quem recusa é o VIOS). */
+  materias?: MateriaVios[];
 }) {
   const paragrafos = useMemo(() => paragrafosDaSintese(sintese), [sintese]);
   const [completa, setCompleta] = useState(false);
   const [pedidas, setPedidas] = useState(pedidasIniciais);
   const [escrevendo, setEscrevendo] = useState(false);
   const [trecho, setTrecho] = useState("");
+  const [materiasEscolhidas, setMateriasEscolhidas] = useState<MateriaVios[]>([]);
   const [enviando, setEnviando] = useState(false);
   const [erroEnvio, setErroEnvio] = useState("");
   const longa = paragrafos.length > SINTESE_CURTA.paragrafos || paragrafos.join(" ").length > SINTESE_CURTA.caracteres;
   const recolhida = longa && !completa;
+  const pedirMateria = materias.length > 0 && precisaDeMateria(materiaVazia, pedidas);
+  const podeEnviar = trecho.trim().length >= 3 && (!pedirMateria || materiasEscolhidas.length > 0) && !enviando;
 
   async function atualizarSintese() {
     setEnviando(true);
@@ -342,12 +399,13 @@ export function SinteseDoProcesso({
       const resposta = await authFetch(`/api/operacoes-legais/vistagem/juridico/${publicacaoId}/sintese`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ texto: trecho }),
+        body: JSON.stringify({ texto: trecho, materias: pedirMateria ? materiasEscolhidas.map((materia) => materia.id) : [] }),
       });
       const corpo = await resposta.json();
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao pedir a atualização da síntese.");
       setPedidas(corpo.sintesesPedidas ?? []);
       setTrecho("");
+      setMateriasEscolhidas([]);
       setEscrevendo(false);
     } catch (e) {
       setErroEnvio(e instanceof Error ? e.message : "Falha ao pedir a atualização da síntese.");
@@ -406,7 +464,7 @@ export function SinteseDoProcesso({
             className="mt-2 space-y-2"
             onSubmit={(evento) => {
               evento.preventDefault();
-              if (trecho.trim().length >= 3 && !enviando) void atualizarSintese();
+              if (podeEnviar) void atualizarSintese();
             }}
           >
             <Textarea
@@ -423,12 +481,13 @@ export function SinteseDoProcesso({
               Vai no fim da síntese do VIOS, com a data de hoje e o seu nome. O robô grava quando não houver outro agendamento na fila; o texto
               acima muda depois da próxima carga do VIOS.
             </p>
+            {pedirMateria ? <CampoMaterias opcoes={materias} escolhidas={materiasEscolhidas} onChange={setMateriasEscolhidas} /> : null}
             {erroEnvio ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{erroEnvio}</p> : null}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setEscrevendo(false)} disabled={enviando}>
                 Cancelar
               </Button>
-              <Button type="submit" size="sm" disabled={trecho.trim().length < 3 || enviando}>
+              <Button type="submit" size="sm" disabled={!podeEnviar}>
                 {enviando ? <LoaderCircle className="animate-spin" /> : <PencilLine />}
                 Atualizar Síntese
               </Button>

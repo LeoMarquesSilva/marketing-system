@@ -131,6 +131,16 @@ export async function buscarSinteseDaPasta(ci: string): Promise<string | null> {
   return row?.observacoes?.trim() || null;
 }
 
+/** A pasta está na base do SIOE e sem Matéria (coluna "Matéria" do relatório do VIOS). */
+export async function pastaSemMateria(ci: string): Promise<boolean> {
+  const numero = ci.replace(/\D/g, "");
+  if (!numero) return false;
+  const { data, error } = await sioe().from("processos_completo").select("materia").eq("ci", numero).limit(1);
+  if (error) throw new VistagemError(`Falha ao consultar a matéria do processo no SIOE: ${error.message}`, 502);
+  const [row] = (data ?? []) as { materia: string | null }[];
+  return Boolean(row) && !row.materia?.trim();
+}
+
 /** Área de cada pessoa: sp_usuarios_area e, para quem não está lá, colaboradores. */
 export async function carregarAreasDasPessoas(): Promise<(nome: string | null) => string | null> {
   const db = sioe();

@@ -1285,6 +1285,8 @@ export function EditorVistagem({
                         sintese={detalhe.sintese}
                         erro={detalhe.sinteseErro}
                         pedidas={detalhe.sintesesPedidas}
+                        materiaVazia={detalhe.materiaVazia}
+                        materias={detalhe.materiasVios}
                         // Na prévia da controladoria a pasta ainda não está gravada: a síntese fica só para leitura.
                         publicacaoId={resolucao ? null : publicacao.id}
                       />
