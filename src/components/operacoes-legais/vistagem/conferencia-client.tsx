@@ -34,6 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import { ROTULO_ETIQUETA, chaveNome } from "@/lib/vistagem/agendamento";
+import { vaiParaCentral } from "@/lib/vistagem/central";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import { MAX_TEXTO_INCONSISTENCIA, TIPOS_INCONSISTENCIA_JURIDICO } from "@/lib/vistagem/inconsistencias";
 import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, InconsistenciaItem, PublicacaoResumo } from "@/lib/vistagem/types";
@@ -52,6 +53,7 @@ import { SeloResultadoIa, SugestaoNaConferencia } from "./sugestao-ia-ui";
 import { IconeOpcao, Seletor } from "./seletor";
 import { AvatarPessoa } from "./combobox-busca";
 import { CartoesTarefas, ENVIO, LinkVios } from "./tarefas-conferencia";
+import { PainelAberturaDePasta, SeloAberturaDePasta } from "./abertura-pasta";
 import { SeloEsocial, contarPor, formatarData, formatarDataHora, tribunalDe } from "./publicacao-ui";
 import {
   Aviso,
@@ -68,7 +70,7 @@ import {
   TOM_CLASSE,
 } from "./ui";
 
-type Aba = "conferir" | "enviadas" | "inconsistencias";
+type Aba = "conferir" | "enviadas" | "aberturas" | "inconsistencias";
 
 /** Retorno de uma ação da tela (sucesso, alerta, informação ou erro). */
 type Retorno = { tom: "sucesso" | "erro" | "alerta" | "info"; texto: string };
@@ -483,6 +485,8 @@ function ItemConferencia({
   const podeReenviar =
     comEnvio && modoReal && item.agendamentos.some((a) => a.envioSimulado && (a.envioStatus === "concluido" || a.envioStatus === "erro"));
   const dialogoAberto = devolvendo || confirmacao !== null;
+  // Sem pasta no VIOS (vistada antes de a Central entrar no fluxo): ao validar, vai como abertura de pasta, não para o robô.
+  const abertura = vaiParaCentral(publicacao);
 
   /** Roda de novo as tarefas com erro; se o servidor pedir confirmação (pode duplicar no VIOS), abre o modal. */
   async function rodarDeNovo(forcar: boolean) {
@@ -518,7 +522,11 @@ function ItemConferencia({
       onConcluido?.(
         publicacao.id,
         acao === "validar"
-          ? `${corpo.enviadas} tarefa(s) enviada(s) ao robô${corpo.simulado ? " em modo simulação" : ""}.`
+          ? corpo.central
+            ? corpo.central.itemId
+              ? `Sem pasta no VIOS: pedido de abertura de pasta criado na Central do SharePoint (item ${corpo.central.itemId}).`
+              : "Sem pasta no VIOS: a Central do SharePoint não respondeu. Veja em Abertura de pasta."
+            : `${corpo.enviadas} tarefa(s) enviada(s) ao robô${corpo.simulado ? " em modo simulação" : ""}.`
           : acao === "reenviar"
             ? `${corpo.enviadas} tarefa(s) reenviada(s) ao robô para gravar no VIOS.`
             : "Devolvida ao jurídico."
@@ -548,7 +556,7 @@ function ItemConferencia({
             </Button>
             <Button size="sm" className={BOTAO_FAIXA_PRINCIPAL} onClick={() => agir("validar")} disabled={ocupado}>
               {ocupado && !dialogoAberto ? spinner : <Send />}
-              Validar e enviar ao robô
+              {abertura ? "Validar e enviar à Central" : "Validar e enviar ao robô"}
             </Button>
           </>
         ) : null}
@@ -658,6 +666,14 @@ function ItemConferencia({
 
         {/* A coluna inteira tem o fundo das tarefas: com uma tarefa curta, o espaço que sobra embaixo é a própria coluna, não um vazio branco. */}
         <div className="min-w-0 border-t border-[#e6eef0] bg-[#f2f6f7] @4xl:overflow-y-auto @4xl:border-t-0 max-lg:@4xl:max-h-[75dvh]">
+          {abertura && !comEnvio ? (
+            <div className="px-4 pt-4">
+              <Aviso tom="info" titulo="Sem pasta no VIOS">
+                Ao validar, as tarefas não vão para o robô: viram um pedido de abertura de pasta na Central do SharePoint.
+              </Aviso>
+            </div>
+          ) : null}
+
           {publicacao.observacaoVistagem ? (
             <Secao titulo="Observação do jurídico" id={`${base}-observacao`}>
               <p className="whitespace-pre-wrap break-words text-sm text-foreground">{publicacao.observacaoVistagem}</p>
@@ -913,6 +929,7 @@ function LinhaDaFila({ item, comEnvio, aberta, onAbrir }: { item: ConferenciaIte
             Risco
           </Selo>
         ) : null}
+        <SeloAberturaDePasta publicacao={publicacao} />
         {comEnvio && temErro(item) ? (
           <Selo tom="perigo" icone={CircleAlert}>
             Erro no robô
@@ -969,7 +986,7 @@ function Conferencia() {
       setDados(corpo);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao carregar a conferência.");
-      setDados({ aConferir: [], enviadas: [], envioSimulado: true, fotos: {}, hoje: new Date().toISOString().slice(0, 10) });
+      setDados({ aConferir: [], enviadas: [], aberturas: [], envioSimulado: true, fotos: {}, hoje: new Date().toISOString().slice(0, 10) });
     }
   }, []);
 
@@ -1001,6 +1018,8 @@ function Conferencia() {
 
   const aConferir = useMemo(() => dados?.aConferir ?? [], [dados]);
   const enviadas = useMemo(() => dados?.enviadas ?? [], [dados]);
+  const aberturas = useMemo(() => dados?.aberturas ?? [], [dados]);
+  const aberturasSemItem = aberturas.filter((item) => !item.publicacao.centralItemId).length;
   // O que a busca olha em cada publicação (inclui as partes do texto): montado uma vez por carga, não a cada letra.
   const camposDeBusca = useMemo(
     () => new Map([...aConferir, ...enviadas].map((item) => [item.publicacao.id, camposDaConferencia(item)])),
@@ -1133,6 +1152,7 @@ function Conferencia() {
             options={[
               { value: "conferir", label: dados ? `A conferir ${aConferir.length}` : "A conferir" },
               { value: "enviadas", label: dados ? `Enviadas ao robô ${enviadas.length}` : "Enviadas ao robô" },
+              { value: "aberturas", label: !dados ? "Abertura de pasta" : aberturasSemItem ? `Abertura de pasta ${aberturas.length} (${aberturasSemItem} sem item)` : `Abertura de pasta ${aberturas.length}` },
               { value: "inconsistencias", label: "Inconsistências" },
             ]}
             onChange={setAba}
@@ -1140,7 +1160,7 @@ function Conferencia() {
           </div>
         }
       >
-        {aba !== "inconsistencias" ? (
+        {aba !== "inconsistencias" && aba !== "aberturas" ? (
           <>
             {!filaAberta ? (
               <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)} data-tour="cf-fila">
@@ -1225,6 +1245,18 @@ function Conferencia() {
 
       {aba === "inconsistencias" ? (
         <PainelInconsistencias />
+      ) : aba === "aberturas" && dados ? (
+        <PainelAberturaDePasta
+          itens={aberturas}
+          onTentado={(texto) => {
+            setRetorno({ tom: "sucesso", texto });
+            void carregar();
+          }}
+          onErro={(texto) => {
+            setRetorno({ tom: "erro", texto });
+            void carregar();
+          }}
+        />
       ) : lista === undefined ? (
         <Painel>
           <Carregando rotulo="Carregando a conferência" />

@@ -43,6 +43,7 @@ export const ETAPA_DEPOIS: Partial<Record<PublicacaoStatus, string>> = {
   agendado: "Agendada no VIOS",
   checado: "Checada",
   revisar: "Em revisão",
+  abertura_pasta: "Na Central do SharePoint (abertura de pasta)",
 };
 
 const CRITERIO: Record<string, string> = { texto: "mesmo texto", id_documento: "mesmo Id do documento" };

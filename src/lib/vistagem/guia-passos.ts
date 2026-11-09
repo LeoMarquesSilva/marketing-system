@@ -325,9 +325,9 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
     {
       id: "abas",
       alvo: "cf-abas",
-      titulo: "Três listas",
+      titulo: "Quatro listas",
       texto:
-        "\"A conferir\" traz o que o jurídico vistou e espera a sua conferência. \"Enviadas ao robô\" mostra o que você validou, com o andamento de cada tarefa no VIOS. \"Inconsistências\" reúne as registradas; as contestadas pelo jurídico pedem a sua decisão.",
+        "\"A conferir\" traz o que o jurídico vistou e espera a sua conferência. \"Enviadas ao robô\" mostra o que você validou, com o andamento de cada tarefa no VIOS. \"Abertura de pasta\" lista o que o jurídico vistou sem pasta no VIOS e foi direto para a Central do SharePoint. \"Inconsistências\" reúne as registradas; as contestadas pelo jurídico pedem a sua decisão.",
     },
     {
       id: "busca",

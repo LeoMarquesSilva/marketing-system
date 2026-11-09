@@ -28,6 +28,7 @@ import { camposDaPublicacao, combinaCampos } from "@/lib/vistagem/busca";
 import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
 import type { ArquivoKurierResumo, PublicacaoResumo, SincronizacaoResultado } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
+import { SeloAberturaDePasta } from "./abertura-pasta";
 import { FaixaArquivoDoDia, useArquivoDoDia } from "./aviso-arquivo-do-dia";
 import { DetalheCaptura, SITUACAO_CAPTURA, SITUACOES_CAPTURA, SeloSituacaoCaptura, detalheDaSituacao, situacaoNaCaptura, type SituacaoCaptura } from "./captura-detalhe";
 import { ColarPublicacoes, type ResultadoColagem } from "./colar-publicacoes";
@@ -627,6 +628,7 @@ function Captura() {
                                   Risco
                                 </Selo>
                               ) : null}
+                              <SeloAberturaDePasta publicacao={publicacao} />
                             </span>
                             <span className="block truncate text-sm text-foreground">
                               {publicacao.grupoCliente ?? publicacao.cliente ?? "Sem grupo"}

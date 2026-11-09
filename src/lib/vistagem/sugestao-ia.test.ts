@@ -35,6 +35,51 @@ function tarefa(item: Partial<RespostaIa["tarefas"][number]>): RespostaIa["taref
   return { classe: "PRAZO", tarefa_id: "452", dias: null, contagem: null, data: null, hora: null, motivo: "trecho", ...item };
 }
 
+describe("Recurso Ordinário vira a tarefa SENTENÇA (fluxo interno)", () => {
+  const COM_SENTENCA: Record<EtiquetaAgendamento, OpcaoTarefa[]> = {
+    ...LISTAS,
+    PRAZO: [...LISTAS.PRAZO, { id: "153", nome: "RECURSO ORDINÁRIO" }, { id: "13", nome: "SENTENÇA" }],
+  };
+  const resposta = (tarefas: RespostaIa["tarefas"]): RespostaIa => ({ resumo: "", tarefas, esocial: "Não Identificado", confianca: "alta", prazo_de: "cliente" });
+  const guardada = (tarefas: SugestaoIa["tarefas"]): SugestaoIa => ({ resumo: "", tarefas, esocial: ESOCIAL_PADRAO, confianca: "media", modelo: "x", geradaEm: "2026-11-09", custoUS: 0 });
+  const ro = { classe: "PRAZO" as const, tarefaId: "153", tarefa: "RECURSO ORDINÁRIO", dias: 8, contagem: "uteis" as const, data: null, hora: null, motivo: "Sentença." };
+
+  it("o prompt manda sugerir a SENTENÇA, se a área tiver", () => {
+    expect(instrucoesDaSugestao(COM_SENTENCA)).toContain("sugira a tarefa 13 | SENTENÇA, e nunca RECURSO ORDINÁRIO");
+    expect(instrucoesDaSugestao(LISTAS)).not.toContain("nunca RECURSO ORDINÁRIO");
+  });
+
+  it("na resposta da IA, troca o Recurso Ordinário e tira os dias", () => {
+    expect(tarefasDaResposta(resposta([tarefa({ tarefa_id: "153", dias: 8, contagem: "uteis", motivo: "Sentença." })]), COM_SENTENCA)).toEqual([
+      { classe: "PRAZO", tarefaId: "13", tarefa: "SENTENÇA", dias: null, contagem: null, data: null, hora: null, motivo: "Sentença." },
+    ]);
+  });
+
+  it("a SENTENÇA sugerida sem dias fica; com o Recurso junto, sai uma só", () => {
+    expect(tarefasDaResposta(resposta([tarefa({ tarefa_id: "13" })]), COM_SENTENCA).map((item) => item.tarefaId)).toEqual(["13"]);
+    expect(tarefasDaResposta(resposta([tarefa({ tarefa_id: "13" }), tarefa({ tarefa_id: "153", dias: 8 })]), COM_SENTENCA).map((item) => item.tarefaId)).toEqual(["13"]);
+  });
+
+  it("área sem a SENTENÇA na lista: o Recurso Ordinário fica", () => {
+    const semSentenca = { ...LISTAS, PRAZO: [{ id: "153", nome: "RECURSO ORDINÁRIO" }] };
+    expect(tarefasDaResposta(resposta([tarefa({ tarefa_id: "153", dias: 8, contagem: "uteis" })]), semSentenca)[0]).toMatchObject({ tarefaId: "153", dias: 8 });
+    expect(sugestaoNaListaAtual(guardada([ro]), semSentenca).tarefas[0]).toMatchObject({ tarefaId: "153", dias: 8 });
+  });
+
+  it("sugestão já guardada: o Recurso Ordinário e a SENTENÇA com dias aparecem como SENTENÇA sem prazo", () => {
+    const trocada = sugestaoNaListaAtual(guardada([ro]), COM_SENTENCA);
+    expect(trocada.tarefas).toEqual([{ ...ro, tarefaId: "13", tarefa: "SENTENÇA", dias: null, contagem: null }]);
+    expect(fatalSugerida(trocada.tarefas[0], "2026-11-10", contaPrazo)).toBeNull();
+    expect(sugestaoNaListaAtual(guardada([{ ...ro, tarefaId: "13", tarefa: "SENTENÇA" }]), COM_SENTENCA).tarefas[0]).toMatchObject({ tarefaId: "13", dias: null });
+    expect(sugestaoNaListaAtual(guardada([ro, { ...ro, tarefaId: "13", tarefa: "SENTENÇA" }]), COM_SENTENCA).tarefas).toHaveLength(1);
+  });
+
+  it("já no formato certo, devolve a mesma sugestão", () => {
+    const certa = guardada([{ ...ro, tarefaId: "13", tarefa: "SENTENÇA", dias: null, contagem: null }]);
+    expect(sugestaoNaListaAtual(certa, COM_SENTENCA)).toBe(certa);
+  });
+});
+
 describe("areaComSugestaoIa", () => {
   it("só Trabalhista", () => {
     expect(areaComSugestaoIa("Trabalhista")).toBe(true);

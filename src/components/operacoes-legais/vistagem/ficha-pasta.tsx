@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { chaveNome } from "@/lib/vistagem/agendamento";
 import type { PublicacaoResumo } from "@/lib/vistagem/types";
 import { linkPastaVios } from "@/lib/vistagem/vios-links";
+import { SeloAberturaDePasta } from "./abertura-pasta";
 import { LogoGrupo, SeloArea } from "./marcas";
 import { Selo } from "./ui";
 
@@ -129,6 +130,7 @@ export function FichaPasta({
                 Demanda de risco
               </Selo>
             ) : null}
+            <SeloAberturaDePasta publicacao={publicacao} />
           </p>
           <p className="truncate text-base font-semibold text-foreground" title={publicacao.grupoCliente ?? undefined}>
             {publicacao.grupoCliente ?? "Sem grupo"}

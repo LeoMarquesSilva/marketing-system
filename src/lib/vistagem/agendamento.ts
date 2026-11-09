@@ -328,6 +328,8 @@ export function validarAgendamentos(
     cadeiaDaTarefa: (tarefaId: string) => CadeiaDoPrazo | null;
     /** Tarefas que o fluxo do tipo cria junto (chaveDoCaminho), para aceitar só datas delas. */
     caminhosDaTarefa?: (tarefaId: string) => Set<string>;
+    /** Tarefa de Prazo sem prazo próprio no VIOS (a SENTENÇA): vai com a data dela, sem fatal. */
+    semPrazoProprio?: (tarefaId: string) => boolean;
     /** Dia da vistagem: o Enviar do Prazo nunca fica antes dele (prazo curto aperta a cadeia). */
     hoje?: string;
   }
@@ -349,16 +351,20 @@ export function validarAgendamentos(
       : opcoes.find((opcao) => chaveNome(opcao.nome) === chaveNome(entrada.tarefa));
     if (!tarefa) erros.push(`${n}: escolha uma tarefa da lista.`);
     const prazo = entrada.etiqueta === "PRAZO";
-    const fatal = prazo && entrada.dataFatal && dataValida(entrada.dataFatal) ? entrada.dataFatal : null;
+    const semFatal = prazo && Boolean(tarefa && contexto.semPrazoProprio?.(tarefa.id));
+    const fatalPedida = prazo && entrada.dataFatal && dataValida(entrada.dataFatal) ? entrada.dataFatal : null;
+    const fatal = semFatal ? null : fatalPedida;
     // No Prazo, o VIOS recebe o Enviar e cria sozinho o Revisar e o Protocolar conforme o
-    // fluxo do tipo de tarefa. Recalculado aqui; não vem da tela.
-    const data = prazo
-      ? fatal && tarefa
-        ? datasDoPrazo(fatal, contexto.ehDiaUtil, contexto.cadeiaDaTarefa(tarefa.id), contexto.hoje ?? null).enviar
-        : ""
-      : entrada.data;
-    if (prazo && !fatal) erros.push(`${n}: escolha a data fatal do prazo.`);
-    if (!prazo && !dataValida(data)) erros.push(`${n}: escolha a data no calendário.`);
+    // fluxo do tipo de tarefa. Recalculado aqui; não vem da tela. Sem prazo próprio, vale a data da tela
+    // (ou, de uma aba aberta antes desta versão, o Enviar da fatal que ela ainda pede).
+    const data =
+      prazo && !(semFatal && entrada.data)
+        ? fatalPedida && tarefa
+          ? datasDoPrazo(fatalPedida, contexto.ehDiaUtil, contexto.cadeiaDaTarefa(tarefa.id), contexto.hoje ?? null).enviar
+          : ""
+        : entrada.data;
+    if (prazo && !semFatal && !fatal) erros.push(`${n}: escolha a data fatal do prazo.`);
+    if ((!prazo || semFatal) && !dataValida(data)) erros.push(`${n}: escolha a data no calendário.`);
     // Audiência, perícia, sessão…: o horário vai junto para o VIOS.
     const compromisso = entrada.etiqueta === "COMPROMISSO";
     const hora = compromisso && horaValida(entrada.hora?.trim()) ? (entrada.hora as string).trim() : null;
@@ -382,7 +388,7 @@ export function validarAgendamentos(
     // Observação opcional: vai na descrição da tarefa no VIOS, abaixo da data da publicação.
     const observacao = entrada.observacao?.trim() || null;
     if (observacao && observacao.length > MAX_OBSERVACAO) erros.push(`${n}: observação com mais de ${MAX_OBSERVACAO} caracteres.`);
-    const diasPrazo = prazo && Number.isInteger(entrada.diasPrazo) && (entrada.diasPrazo ?? 0) > 0 ? (entrada.diasPrazo as number) : null;
+    const diasPrazo = prazo && !semFatal && Number.isInteger(entrada.diasPrazo) && (entrada.diasPrazo ?? 0) > 0 ? (entrada.diasPrazo as number) : null;
     const contagemPrazo = diasPrazo ? CONTAGENS_PRAZO.find((contagem) => contagem === entrada.contagemPrazo) ?? null : null;
     if (diasPrazo && !contagemPrazo) erros.push(`${n}: escolha se o prazo é em dias úteis ou corridos.`);
     // O que a pessoa mudou no fluxo do VIOS: só de tarefas que o fluxo do tipo cria, com data válida e/ou

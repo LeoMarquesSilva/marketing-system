@@ -16,7 +16,9 @@ export type PublicacaoStatus =
   | "pronto_para_agendar"
   | "agendado"
   | "checado"
-  | "revisar";
+  | "revisar"
+  /** Sem pasta no VIOS: a vistagem virou pedido de abertura de pasta na Central do SharePoint. */
+  | "abertura_pasta";
 
 export type DuplicidadeResultado = "confirmada" | "nao_duplicidade";
 
@@ -157,6 +159,10 @@ export interface PublicacaoResumo {
   transferenciaMotivo: string | null;
   /** Trabalhista: classificação eSocial escolhida na vistagem (não vai para o VIOS; mesmos valores da BKP). */
   publicacaoEsocial: string | null;
+  /** Pedido de abertura de pasta na Central do SharePoint: o item criado e, se não chegou, o erro. */
+  centralItemId: string | null;
+  centralEnviadaEm: string | null;
+  centralErro: string | null;
   /** Sem pasta no VIOS: dados sugeridos (processo citado, parte cliente ou IA) para a controladoria conferir. */
   sugestaoTriagem: SugestaoTriagem | null;
   teor: string;
@@ -382,8 +388,16 @@ export interface VistagemDetalhe {
   hoje: string;
 }
 
+/** Resultado de criar o pedido na Central do SharePoint: o id do item ou o erro (o cron tenta de novo). */
+export interface ResultadoCentral {
+  itemId: string | null;
+  erro: string | null;
+}
+
 export interface ConferenciaItem {
   publicacao: PublicacaoResumo;
+  /** Área da pasta no VIOS: decide o que o fluxo automático cria (os tipos disponíveis para a área). */
+  areaProcesso: string | null;
   agendamentos: AgendamentoResumo[];
   inconsistencias: InconsistenciaResumo[];
   /** Quem vistou primeiro (quem analisou a publicação; a devolução volta para essa pessoa). */
@@ -412,6 +426,8 @@ export interface SugestaoNaVistagem {
 export interface ConferenciaResposta {
   aConferir: ConferenciaItem[];
   enviadas: ConferenciaItem[];
+  /** Sem pasta no VIOS: vistagens que foram para a Central do SharePoint como abertura de pasta. */
+  aberturas: ConferenciaItem[];
   envioSimulado: boolean;
   /** Foto do advogado, do auxiliar e das pessoas das tarefas (e do fluxo), pela chave do nome (chaveNome); só quem tem foto. */
   fotos: Record<string, string>;

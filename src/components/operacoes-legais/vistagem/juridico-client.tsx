@@ -60,6 +60,7 @@ import {
   CONTAGENS_PRAZO,
   criarCalendario,
   criarCalendarioDePrazo,
+  dataDaTarefaSemPrazo,
   datasDoPrazo,
   fatalPorContagem,
   noRecessoForense,
@@ -74,13 +75,15 @@ import {
   pedeTarefaEsocial,
   type ClassificacaoEsocial,
 } from "@/lib/vistagem/esocial";
-import { CADEIA_PADRAO, cadeiaDoFluxo } from "@/lib/vistagem/fluxo-vios";
+import { CADEIA_PADRAO, cadeiaDoFluxo, semPrazoProprio } from "@/lib/vistagem/fluxo-vios";
 import { emOrdemDeArvore, fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
 import { prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
 import { fatalSugerida, sugestaoNaListaAtual, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
-import type { DataDoFluxo, PublicacaoResumo, ResolucaoPendencia, TarefaPrevista, VistagemDetalhe } from "@/lib/vistagem/types";
+import { vaiParaCentral } from "@/lib/vistagem/central";
+import type { DataDoFluxo, PublicacaoResumo, ResolucaoPendencia, ResultadoCentral, TarefaPrevista, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
+import { SeloAberturaDePasta } from "./abertura-pasta";
 import { CampoData, CampoHora } from "./campo-data";
 import { ESTILO_CLASSE, ICONE_CLASSE } from "./tarefas-conferencia";
 import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
@@ -211,9 +214,10 @@ function novaLinha(base: Partial<Linha> = {}): Linha {
 
 const campo = campoClasse;
 
-function linhaCompleta(linha: Linha): boolean {
+/** `semFatal`: tarefa de Prazo sem prazo próprio no VIOS (a SENTENÇA), que leva a data dela em vez da fatal. */
+function linhaCompleta(linha: Linha, semFatal: boolean): boolean {
   if (!linha.tarefa || !linha.responsavel) return false;
-  if (linha.etiqueta === "PRAZO") return Boolean(linha.dataFatal && linha.revisor);
+  if (linha.etiqueta === "PRAZO") return Boolean((semFatal ? linha.data : linha.dataFatal) && linha.revisor);
   return Boolean(linha.data) && (linha.etiqueta !== "COMPROMISSO" || (horaValida(linha.hora) && horaFinalValida(linha)));
 }
 
@@ -732,7 +736,8 @@ export function EditorVistagem({
   id: string;
   navegacao: Navegacao | null;
   onAbrir: (id: string) => void;
-  onConcluida: (id: string) => void;
+  /** `central`: a publicação não tem pasta e virou pedido de abertura na Central do SharePoint. */
+  onConcluida: (id: string, central: ResultadoCentral | null) => void;
   onTransferida: (destino: string) => void;
   onVoltar: () => void;
   /** "Agendar Direto" da controladoria: a pendência ainda na triagem, com escritório, grupo, risco e CI escolhidos. */
@@ -785,14 +790,15 @@ export function EditorVistagem({
         const contagemDaArea = contagemPadraoDaArea(dados.publicacao.escritorioResponsavel ?? dados.catalogo?.area);
         setLinhas(
           dados.agendamentos.length
-            ? dados.agendamentos.map((item) =>
-                novaLinha({
+            ? dados.agendamentos.map((item) => {
+                const semPrazo = item.etiqueta === "PRAZO" && semPrazoProprio(dados.fluxos[item.tarefaId ?? ""]);
+                return novaLinha({
                   etiqueta: item.etiqueta,
                   // a lista mostra o tipo junto quando o VIOS tem dois com o mesmo nome
                   tarefa: dados.catalogo?.tarefas[item.etiqueta].find((opcao) => opcao.id === item.tarefaId)?.nome ?? item.tarefa,
-                  data: item.etiqueta === "PRAZO" ? "" : item.data,
-                  dataFatal: item.dataFatal ?? "",
-                  diasPrazo: item.diasPrazo,
+                  data: item.etiqueta === "PRAZO" && !semPrazo ? "" : item.data,
+                  dataFatal: semPrazo ? "" : item.dataFatal ?? "",
+                  diasPrazo: semPrazo ? null : item.diasPrazo,
                   contagemPrazo: item.contagemPrazo ?? contagemDaArea,
                   hora: item.hora ?? "",
                   horaFim: item.horaFim ?? horaFinalPadrao(item.hora),
@@ -801,8 +807,8 @@ export function EditorVistagem({
                   observacao: item.observacao ?? "",
                   esocial: tarefaEsocialId !== null && item.tarefaId === tarefaEsocialId,
                   fluxoDatas: Object.fromEntries(item.fluxoDatas.map((datada) => [chaveDoCaminho(datada.caminho), datada])),
-                })
-              )
+                });
+              })
             : [novaLinha({ responsavel: dados.responsavelSugerido ?? "", revisor: dados.revisorSugerido ?? "", contagemPrazo: contagemDaArea })]
         );
         if (dados.sugestaoIa) {
@@ -890,6 +896,17 @@ export function EditorVistagem({
     };
   }, [detalhe?.catalogo]);
 
+  /** Tarefa de Prazo sem prazo próprio no VIOS (a SENTENÇA): não pede fatal, e as do fluxo contam da data dela. */
+  function semFatal(linha: Pick<Linha, "etiqueta" | "tarefa">): boolean {
+    if (linha.etiqueta !== "PRAZO" || !detalhe?.catalogo) return false;
+    const id = detalhe.catalogo.tarefas.PRAZO.find((opcao) => opcao.nome === linha.tarefa)?.id;
+    return Boolean(id && semPrazoProprio(detalhe.fluxos[id]));
+  }
+
+  function dataSemFatal(): string {
+    return detalhe ? dataDaTarefaSemPrazo(detalhe.publicacao.dataPublicacao, detalhe.hoje, ehDiaUtil) : "";
+  }
+
   function alterar(chave: number, mudanca: Partial<Linha>) {
     setLinhas((atuais) =>
       atuais.map((linha) => {
@@ -934,12 +951,15 @@ export function EditorVistagem({
   /**
    * Ao escolher a tarefa de Prazo, já marca os dias do prazo legal do recurso (Apelação 15, Recurso Ordinário
    * trabalhista 8…). Não passa por cima de dias escolhidos à mão, lidos da publicação ou de uma fatal digitada; só troca
-   * os que vieram da tarefa anterior.
+   * os que vieram da tarefa anterior. A SENTENÇA não tem prazo próprio: já vem com a data dela, sem dias nem fatal.
    */
   function diasDaTarefa(linha: Linha, nome: string): Partial<Linha> {
     const dataPublicacao = detalhe?.publicacao.dataPublicacao;
     const catalogo = detalhe?.catalogo;
-    if (linha.etiqueta !== "PRAZO" || !dataPublicacao || !catalogo) return {};
+    if (linha.etiqueta !== "PRAZO") return {};
+    if (semFatal({ etiqueta: "PRAZO", tarefa: nome })) return { data: dataSemFatal(), dataFatal: "", diasPrazo: null };
+    const saindo = semFatal(linha) ? { data: "" } : {};
+    if (!dataPublicacao || !catalogo) return saindo;
     const legal = (nomeTarefa: string) => {
       const opcao = nomeTarefa ? catalogo.tarefas.PRAZO.find((item) => item.nome === nomeTarefa) : undefined;
       return opcao ? prazoLegalDaTarefa(opcao.nomeVios ?? opcao.nome, catalogo.area) : null;
@@ -948,10 +968,10 @@ export function EditorVistagem({
     const anterior = legal(linha.tarefa);
     const vazio = linha.diasPrazo === null && !linha.dataFatal;
     const daTarefaAnterior = anterior !== null && linha.diasPrazo === anterior;
-    if (!vazio && !daTarefaAnterior) return {};
-    if (novo === null) return daTarefaAnterior ? { diasPrazo: null, dataFatal: "" } : {};
+    if (!vazio && !daTarefaAnterior) return saindo;
+    if (novo === null) return daTarefaAnterior ? { ...saindo, diasPrazo: null, dataFatal: "" } : saindo;
     const contagemPrazo = linha.contagemPrazo ?? contagemPadrao;
-    return { diasPrazo: novo, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, novo, contagemPrazo, contaPrazo) };
+    return { ...saindo, diasPrazo: novo, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, novo, contagemPrazo, contaPrazo) };
   }
 
   function trocarEtiqueta(linha: Linha, etiqueta: Etiqueta) {
@@ -959,6 +979,7 @@ export function EditorVistagem({
     alterar(linha.chave, {
       etiqueta,
       tarefa: "",
+      ...(semFatal(linha) ? { data: "" } : {}),
       revisor:
         etiqueta === "PROVIDENCIA" ? "" : etiqueta === "PRAZO" && !linha.revisor ? detalhe?.revisorSugerido ?? "" : linha.revisor,
     });
@@ -998,14 +1019,15 @@ export function EditorVistagem({
       const opcao = catalogo.tarefas[tarefa.classe].find((item) => item.id === tarefa.tarefaId);
       if (!opcao) return [];
       const prazo = tarefa.classe === "PRAZO";
+      const semPrazo = semFatal({ etiqueta: tarefa.classe, tarefa: opcao.nome });
       return [
         novaLinha({
           etiqueta: tarefa.classe,
           tarefa: opcao.nome,
-          dataFatal: prazo ? fatalSugerida(tarefa, publicacao.dataPublicacao, contaPrazo) ?? "" : "",
-          diasPrazo: prazo ? tarefa.dias : null,
-          contagemPrazo: prazo && tarefa.dias ? tarefa.contagem : null,
-          data: tarefa.classe === "COMPROMISSO" ? tarefa.data ?? "" : "",
+          dataFatal: prazo && !semPrazo ? fatalSugerida(tarefa, publicacao.dataPublicacao, contaPrazo) ?? "" : "",
+          diasPrazo: prazo && !semPrazo ? tarefa.dias : null,
+          contagemPrazo: prazo && !semPrazo && tarefa.dias ? tarefa.contagem : null,
+          data: semPrazo ? dataSemFatal() : tarefa.classe === "COMPROMISSO" ? tarefa.data ?? "" : "",
           hora: tarefa.hora ?? "",
           horaFim: horaFinalPadrao(tarefa.hora),
           responsavel: opcao.responsaveis?.length ? opcao.responsaveis.join(", ") : detalhe.responsavelSugerido ?? "",
@@ -1033,7 +1055,7 @@ export function EditorVistagem({
     const dataPublicacao = detalhe?.publicacao.dataPublicacao;
     if (!dataPublicacao) return;
     setLinhas((atuais) => {
-      const alvo = atuais.find((linha) => linha.etiqueta === "PRAZO" && !linha.esocial);
+      const alvo = atuais.find((linha) => linha.etiqueta === "PRAZO" && !linha.esocial && !semFatal(linha));
       const contagemPrazo = contagem ?? alvo?.contagemPrazo ?? contagemPadrao;
       const mudanca = { diasPrazo: dias, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, dias, contagemPrazo, contaPrazo) };
       if (alvo) return atuais.map((linha) => (linha === alvo ? { ...linha, ...mudanca } : linha));
@@ -1067,10 +1089,10 @@ export function EditorVistagem({
             etiqueta: linha.etiqueta,
             tarefa: linha.tarefa,
             tarefaId: detalhe?.catalogo?.tarefas[linha.etiqueta].find((opcao) => opcao.nome === linha.tarefa)?.id ?? null,
-            data: linha.etiqueta === "PRAZO" ? "" : linha.data,
-            dataFatal: linha.etiqueta === "PRAZO" ? linha.dataFatal : null,
-            diasPrazo: linha.etiqueta === "PRAZO" ? linha.diasPrazo : null,
-            contagemPrazo: linha.etiqueta === "PRAZO" && linha.diasPrazo ? linha.contagemPrazo : null,
+            data: linha.etiqueta === "PRAZO" && !semFatal(linha) ? "" : linha.data,
+            dataFatal: linha.etiqueta === "PRAZO" && !semFatal(linha) ? linha.dataFatal : null,
+            diasPrazo: linha.etiqueta === "PRAZO" && !semFatal(linha) ? linha.diasPrazo : null,
+            contagemPrazo: linha.etiqueta === "PRAZO" && !semFatal(linha) && linha.diasPrazo ? linha.contagemPrazo : null,
             hora: linha.etiqueta === "COMPROMISSO" ? linha.hora : null,
             horaFim: linha.etiqueta === "COMPROMISSO" ? linha.horaFim || null : null,
             responsavel: linha.responsavel,
@@ -1082,7 +1104,7 @@ export function EditorVistagem({
       });
       const corpo = await resposta.json();
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao enviar.");
-      onConcluida(id);
+      onConcluida(id, corpo.central ?? null);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao enviar.");
     } finally {
@@ -1107,10 +1129,12 @@ export function EditorVistagem({
   }
 
   const { publicacao, catalogo } = detalhe;
+  // Sem pasta no VIOS: a vistagem vira pedido de abertura de pasta na Central do SharePoint.
+  const abertura = vaiParaCentral(publicacao);
   // Sem o tipo Inserir E-social no VIOS, Acordo homologado e Homologação de cálculo não podem ser enviados.
   const faltaTarefaEsocial = Boolean(detalhe.esocial && pedeTarefaEsocial(esocial) && !detalhe.esocial.tarefa);
-  const completo = linhas.every(linhaCompleta) && !faltaTarefaEsocial;
-  const incompletas = linhas.filter((linha) => !linhaCompleta(linha)).length;
+  const completo = linhas.every((linha) => linhaCompleta(linha, semFatal(linha))) && !faltaTarefaEsocial;
+  const incompletas = linhas.filter((linha) => !linhaCompleta(linha, semFatal(linha))).length;
   const devolucoes = detalhe.inconsistencias.filter((item) => item.origem === "juridico");
   // Régua da publicação: divulgação → publicação → 1º dia do prazo e, quando já há Prazo, a fatal mais próxima.
   const fatais = linhas.flatMap((linha) => (linha.etiqueta === "PRAZO" && linha.dataFatal ? [linha.dataFatal] : [])).sort();
@@ -1356,14 +1380,16 @@ export function EditorVistagem({
                     const prazo = linha.etiqueta === "PRAZO";
                     const tarefaId = catalogo.tarefas[linha.etiqueta].find((opcao) => opcao.nome === linha.tarefa)?.id ?? null;
                     const fluxo = tarefaId ? detalhe.fluxos[tarefaId] ?? null : null;
+                    // Prazo com fatal; a SENTENÇA é de Prazo (exige revisor), mas leva só a data dela.
+                    const comFatal = prazo && !semFatal(linha);
                     // Sem tarefa escolhida (ou sem o fluxo carregado) mostra o fluxo padrão; o servidor recalcula ao gravar.
                     const cadeiaFluxo = !tarefaId || detalhe.fluxosErro ? CADEIA_PADRAO : cadeiaDoFluxo(fluxo);
                     // Nunca antes de hoje: prazo curto aperta a cadeia (Enviar hoje, Protocolar 1 dia útil antes da fatal).
-                    const cadeia = prazo && linha.dataFatal ? datasDoPrazo(linha.dataFatal, ehDiaUtil, cadeiaFluxo, detalhe.hoje) : null;
+                    const cadeia = comFatal && linha.dataFatal ? datasDoPrazo(linha.dataFatal, ehDiaUtil, cadeiaFluxo, detalhe.hoje) : null;
                     // O VIOS data o fluxo a partir da data que recebe (no Prazo, o Enviar) e do dia do lançamento.
                     const previstas = fluxo
                       ? fluxoPrevisto(
-                          { data: (prazo ? cadeia?.enviar : linha.data) ?? "", responsavel: linha.responsavel, revisor: linha.revisor || null },
+                          { data: (comFatal ? cadeia?.enviar : linha.data) ?? "", responsavel: linha.responsavel, revisor: linha.revisor || null },
                           fluxo,
                           ehDiaUtil,
                           {
@@ -1379,7 +1405,7 @@ export function EditorVistagem({
                         )
                       : [];
                     const cienciaPedidaRepetida = ehCienciaDosAgendamentos(linha.tarefa) && !cienciaFicaEm(linha.chave, null);
-                    const avisos = prazo
+                    const avisos = comFatal
                       ? linha.dataFatal
                         ? avisosDaData(linha.dataFatal, detalhe.hoje).concat(
                             contaPrazo(linha.dataFatal)
@@ -1391,7 +1417,7 @@ export function EditorVistagem({
                         ? avisosDaData(linha.data, detalhe.hoje)
                         : [];
                     const IconeClasse = ICONE_CLASSE[linha.etiqueta];
-                    const pronta = linhaCompleta(linha);
+                    const pronta = linhaCompleta(linha, semFatal(linha));
                     return (
                       <li
                         key={linha.chave}
@@ -1485,8 +1511,8 @@ export function EditorVistagem({
                             </div>
                           </BlocoTarefa>
 
-                          <BlocoTarefa titulo={prazo ? "Prazo" : linha.etiqueta === "COMPROMISSO" ? "Data e horário" : "Data"} icone={CalendarDays}>
-                            {prazo ? (
+                          <BlocoTarefa titulo={comFatal ? "Prazo" : linha.etiqueta === "COMPROMISSO" ? "Data e horário" : "Data"} icone={CalendarDays}>
+                            {comFatal ? (
                               <div className="space-y-2">
                                 {/* 1ª linha: os dias do prazo e, ao lado, úteis ou corridos e a data fatal; embaixo, a linha do tempo do VIOS. */}
                                 <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
@@ -1589,6 +1615,11 @@ export function EditorVistagem({
                                     onChange={(data) => alterar(linha.chave, { data })}
                                   />
                                 </div>
+                                {prazo ? (
+                                  <p className="min-w-[14rem] flex-1 text-xs text-muted-foreground">
+                                    Sem prazo próprio no VIOS: a data já vem preenchida, e as tarefas do fluxo contam a partir dela.
+                                  </p>
+                                ) : null}
                                 {linha.etiqueta === "COMPROMISSO" ? (
                                   <div className="w-32 space-y-1.5">
                                     <span className="block text-xs font-medium text-muted-foreground">Horário</span>
@@ -1694,11 +1725,11 @@ export function EditorVistagem({
                               previstas={previstas}
                               principal={{
                                 nome: linha.tarefa,
-                                data: (prazo ? cadeia?.enviar : linha.data) || null,
+                                data: (comFatal ? cadeia?.enviar : linha.data) || null,
                                 etiqueta: linha.etiqueta,
                                 responsaveis: linha.responsavel,
                               }}
-                              fatal={prazo ? linha.dataFatal || null : null}
+                              fatal={comFatal ? linha.dataFatal || null : null}
                               pessoas={pessoasDoCampo}
                               hoje={detalhe.hoje}
                               ehDiaUtil={ehDiaUtil}
@@ -1728,6 +1759,14 @@ export function EditorVistagem({
 
                 <CienciaDoOrquestra linhas={linhas} catalogo={catalogo} detalhe={detalhe} />
 
+                {abertura ? (
+                  <div className="px-4 pb-3">
+                    <Aviso tom="info" titulo="Sem pasta no VIOS">
+                      Ao enviar, as tarefas não vão para a conferência nem para o robô: viram um pedido de abertura de pasta na Central do SharePoint, e a controladoria agenda depois de abrir a pasta.
+                    </Aviso>
+                  </div>
+                ) : null}
+
                 {erro ? (
                   <div className="px-4 pb-3">
                     <Aviso tom="erro">{erro}</Aviso>
@@ -1737,14 +1776,14 @@ export function EditorVistagem({
                 <div data-tour="vj-enviar" className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-b-lg border-t border-[#e6eef0] bg-white px-4 py-3 shadow-[0_-8px_16px_-12px_rgba(16,41,58,0.18)]">
                   <p className="min-w-0 flex-1 text-xs text-muted-foreground" aria-live="polite">
                     {completo
-                      ? `${linhas.length} ${linhas.length === 1 ? "tarefa pronta" : "tarefas prontas"} para a conferência.`
+                      ? `${linhas.length} ${linhas.length === 1 ? "tarefa pronta" : "tarefas prontas"} para ${abertura ? "a Central do SharePoint" : "a conferência"}.`
                       : faltaTarefaEsocial
                         ? `Falta o tipo ${TAREFA_ESOCIAL} no VIOS.`
                         : `Complete ${incompletas === 1 ? "a tarefa marcada" : `as ${incompletas} tarefas marcadas`}: tarefa, data${linhas.some((linha) => linha.etiqueta === "PRAZO") ? ", revisor" : ""} e responsável.`}
                   </p>
                   <Button onClick={enviar} disabled={enviando || !completo}>
                     {enviando ? <LoaderCircle className="animate-spin" /> : <Send />}
-                    Enviar para conferência
+                    {abertura ? "Enviar para abertura de pasta" : "Enviar para conferência"}
                   </Button>
                 </div>
               </>
@@ -2168,12 +2207,18 @@ function Juridico() {
     void carregar(escritorio);
   }
 
-  function concluida(id: string) {
+  function concluida(id: string, central: ResultadoCentral | null) {
     // Segue para a próxima da fila (ou a anterior, se era a última).
     const posicao = ordem.indexOf(id);
     setSelecionada(ordem[posicao + 1] ?? ordem[posicao - 1] ?? null);
     setPublicacoes((publicacoes ?? []).filter((p) => p.id !== id));
-    setAviso("Vistagem enviada para a conferência da controladoria.");
+    setAviso(
+      !central
+        ? "Vistagem enviada para a conferência da controladoria."
+        : central.itemId
+          ? `Sem pasta no VIOS: pedido de abertura de pasta criado na Central do SharePoint (item ${central.itemId}).`
+          : "Vistagem salva. A Central do SharePoint não respondeu: a controladoria vê o pedido na Conferência e o sistema tenta de novo."
+    );
     setPorEscritorio((atual) => {
       const p = (publicacoes ?? []).find((item) => item.id === id);
       const chave = p?.escritorioResponsavel ?? "Sem área";
@@ -2364,6 +2409,7 @@ function Juridico() {
                                   Risco
                                 </Selo>
                               ) : null}
+                              <SeloAberturaDePasta publicacao={publicacao} />
                               {publicacao.devolucaoMotivo || publicacao.devolvidoEm ? <Selo tom="alerta">Devolvida</Selo> : null}
                               {publicacao.transferidoDe ? <Selo tom="marca">Transferida</Selo> : null}
                             </span>

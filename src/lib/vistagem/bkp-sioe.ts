@@ -8,7 +8,8 @@ import { MOTIVO_EX_CLIENTE_SEM_ESCRITORIO, PREFIXO_DESCARTE_CONTROLADORIA } from
  * (área pelo De-Para, vistado D+1 até 12h do próximo dia útil, eficiência pelo erro do check).
  *
  * Quando: como na lista antiga, o registro entra no fim da esteira (publicação checada, duplicidade confirmada,
- * ex-cliente descartado na triagem ou publicação descartada pela controladoria), com "STATUS DA PUBLICAÇÃO" = CHECKADO.
+ * ex-cliente descartado na triagem, publicação descartada pela controladoria ou enviada à Central como abertura de
+ * pasta), com "STATUS DA PUBLICAÇÃO" = CHECKADO.
  *
  * Ex-cliente, como a lista fazia: o que a controladoria tratou (vistado em Operações Legais) é RENÚNCIA, com quem
  * agendou; o descartado automático (sem advogado do escritório na publicação) entra em Operações Legais sem tipo e
@@ -85,6 +86,7 @@ const STATUS_NO_BKP: Record<string, string> = {
   agendado: "AGENDADO",
   revisar: "REVISAR",
   checado: "CHECKADO",
+  abertura_pasta: "CHECKADO",
   duplicidade: "CHECKADO",
   descartada: "CHECKADO",
 };
@@ -313,11 +315,11 @@ export function entraNoBkp(row: LinhaDaVistagem): boolean {
 }
 
 /**
- * Publicação que fechou a esteira: checada, duplicidade confirmada, ex-cliente descartado na triagem ou descartada pela
- * controladoria. Os outros descartes automáticos (índice de advogados do diário) não são publicação e ficam de fora.
+ * Publicação que fechou a esteira: checada, enviada à Central como abertura de pasta, duplicidade confirmada, ex-cliente
+ * descartado na triagem ou descartada pela controladoria. Os outros descartes automáticos (índice de advogados do diário) não são publicação e ficam de fora.
  */
 export function fechouAEsteira(row: Pick<LinhaDaVistagem, "status" | "duplicidade_resultado" | "motivo_descarte">): boolean {
-  if (row.status === "checado") return true;
+  if (row.status === "checado" || row.status === "abertura_pasta") return true;
   if (row.status === "duplicidade") return row.duplicidade_resultado === "confirmada";
   if (row.status !== "descartada") return false;
   return row.motivo_descarte === MOTIVO_EX_CLIENTE_SEM_ESCRITORIO || Boolean(row.motivo_descarte?.startsWith(PREFIXO_DESCARTE_CONTROLADORIA));
@@ -365,7 +367,7 @@ export function publicacaoParaBkp(
     vistadoPor: nome(row.vistado_por),
     vistadoEm: row.vistado_em,
     agendadoPor: duplicidade ? nome(row.duplicidade_revisada_por) : descartada ? null : nome(row.conferido_por),
-    registradoEm: (duplicidade ? row.duplicidade_revisada_em : descartada ? row.triagem_resolvida_em ?? row.triada_em : row.checado_em) ?? row.created_at,
+    registradoEm: (duplicidade ? row.duplicidade_revisada_em : descartada ? row.triagem_resolvida_em ?? row.triada_em : row.status === "abertura_pasta" ? row.vistado_em : row.checado_em) ?? row.created_at,
     exCliente: !duplicidade && !descartada && row.pendencia === "ex_cliente" && escritorioNoBkp(row.escritorio_responsavel) === "OPERAÇÕES LEGAIS",
   };
 }
