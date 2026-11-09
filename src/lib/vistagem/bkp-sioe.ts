@@ -179,6 +179,11 @@ export interface PublicacaoParaBkp {
   registradoEm: string;
   /** Ex-cliente tratado pela controladoria (Operações Legais): RENÚNCIA na lista. */
   exCliente?: boolean;
+  /**
+   * Quem vistou é de Operações Legais (a Isadora, no Trabalhista sem risco): o erro na vistagem dela é da Análise de
+   * Operações Legais, não do jurídico.
+   */
+  vistadoPorOperacoesLegais?: boolean;
 }
 
 export interface InconsistenciaParaBkp {
@@ -226,8 +231,22 @@ export interface LinhaBkp {
 
 /** A mais recente de cada origem (a lista guarda uma de cada). */
 function ultima(inconsistencias: InconsistenciaParaBkp[], origem: InconsistenciaParaBkp["origem"]): InconsistenciaParaBkp | null {
-  return [...inconsistencias].filter((item) => item.origem === origem).sort((a, b) => b.criadoEm.localeCompare(a.criadoEm))[0] ?? null;
+  return maisRecente(inconsistencias.filter((item) => item.origem === origem));
 }
+
+function maisRecente<T extends { criadoEm: string }>(itens: (T | null)[]): T | null {
+  return itens.filter((item): item is T => item !== null).sort((a, b) => b.criadoEm.localeCompare(a.criadoEm))[0] ?? null;
+}
+
+/**
+ * Erro na vistagem de Operações Legais, na lista: "INCONSISTÊNCIAS - TIPO" = ANÁLISE (card Análise de Ops Legais), com o
+ * subtipo do Check. No Trabalhista sem risco, desde 04/2026 a lista só usou INTERPRETAÇÃO DA PUBLI - (P) e DATA / HORÁRIO - (P/A).
+ */
+export const SUBTIPO_DA_ANALISE: Record<string, string> = {
+  "INTERPRETAÇÃO DA PUBLI": "INTERPRETAÇÃO DA PUBLI - (P)",
+  "CONTAGEM DE PRAZO": "DATA / HORÁRIO - (P/A)",
+  "FORA DO WORKFLOW": "FORA DO FLUXO - (P/A)",
+};
 
 /** Linha da publicação no BKP, com as mesmas colunas e valores da lista do SharePoint. */
 export function linhaDoBkp(
@@ -246,8 +265,14 @@ export function linhaDoBkp(
         : publicacao.exCliente
           ? ["RENÚNCIA"]
           : tiposDoAgendamento(agendamentos);
-  const doCheck = ultima(inconsistencias, "agendamento");
-  const doJuridico = ultima(inconsistencias, "juridico");
+  const devolucao = ultima(inconsistencias, "juridico");
+  // Devolução da vistagem de Operações Legais: entra como erro da Análise (com o do Check, vale o mais recente).
+  const daAnalise =
+    devolucao && publicacao.vistadoPorOperacoesLegais
+      ? { tipo: "ANÁLISE", subtipo: SUBTIPO_DA_ANALISE[devolucao.tipo] ?? null, criadoEm: devolucao.criadoEm }
+      : null;
+  const doCheck = maisRecente([ultima(inconsistencias, "agendamento"), daAnalise]);
+  const doJuridico = daAnalise ? null : devolucao;
   const risco = publicacao.demandaRisco === null ? null : publicacao.demandaRisco ? "Sim" : "Não";
   const vistado = publicacao.status !== "duplicidade" && Boolean(publicacao.vistadoPor && publicacao.vistadoEm);
   return {
@@ -328,11 +353,13 @@ export function fechouAEsteira(row: Pick<LinhaDaVistagem, "status" | "duplicidad
 /**
  * Dados da vistagem para a linha do BKP; null se a publicação ainda não fechou a esteira. `nome`: id do usuário → nome.
  * `original`: na duplicidade, a publicação que ela repete (de onde vêm pasta, cliente e área, que a duplicada não tem).
+ * `deOperacoesLegais`: id do usuário → se é do departamento Operações Legais.
  */
 export function publicacaoParaBkp(
   row: LinhaDaVistagem,
   nome: (id: string | null) => string | null,
-  original?: LinhaDaVistagem | null
+  original?: LinhaDaVistagem | null,
+  deOperacoesLegais: (id: string | null) => boolean = () => false
 ): PublicacaoParaBkp | null {
   if (!fechouAEsteira(row)) return null;
   const duplicidade = row.status === "duplicidade";
@@ -369,5 +396,11 @@ export function publicacaoParaBkp(
     agendadoPor: duplicidade ? nome(row.duplicidade_revisada_por) : descartada ? null : nome(row.conferido_por),
     registradoEm: (duplicidade ? row.duplicidade_revisada_em : descartada ? row.triagem_resolvida_em ?? row.triada_em : row.status === "abertura_pasta" ? row.vistado_em : row.checado_em) ?? row.created_at,
     exCliente: !duplicidade && !descartada && row.pendencia === "ex_cliente" && escritorioNoBkp(row.escritorio_responsavel) === "OPERAÇÕES LEGAIS",
+    vistadoPorOperacoesLegais: Boolean(row.vistado_por) && deOperacoesLegais(row.vistado_por),
   };
+}
+
+/** Departamento do cadastro de usuários do Orquestra (users.department) é Operações Legais. */
+export function ehDeOperacoesLegais(departamento: string | null | undefined): boolean {
+  return semAcento(departamento) === "OPERACOES LEGAIS";
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   areaNoBkp,
+  ehDeOperacoesLegais,
   escritorioNoBkp,
   linhaDoBkp,
   entraNoBkp,
@@ -92,7 +93,7 @@ describe("vistadoD1 (regra do sync do SIOE)", () => {
 describe("linhaDoBkp", () => {
   it("publicação checada: as mesmas colunas e valores da lista", () => {
     const linha = linhaDoBkp(
-      publicacao(),
+      publicacao({ vistadoPorOperacoesLegais: true }),
       [
         { etiqueta: "PRAZO", tarefa: "SENTENÇA" },
         { etiqueta: "PROVIDENCIA", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS" },
@@ -127,13 +128,56 @@ describe("linhaDoBkp", () => {
       natureza: null,
       status: "Ativo",
       acao: "Reclamação Trabalhista",
+      // Vistagem da Isadora (Operações Legais): a devolução é erro da Análise de Ops Legais, como a lista lançava.
+      eficiencia: "DESVIO",
+      inconsistencias_tipo: "ANÁLISE",
+      inconsistencia_subtipo: "DATA / HORÁRIO - (P/A)",
+      inconsistencias_juridico: null,
+      inconsistencia_juridico_descricao: null,
+      check_pub: null,
+      publicacao_esocial: "Sentença – Conhecimento",
+    });
+  });
+
+  it("devolução da vistagem de Operações Legais: ANÁLISE com o subtipo equivalente", () => {
+    const devolvida = (tipo: string) =>
+      linhaDoBkp(
+        publicacao({ vistadoPorOperacoesLegais: true }),
+        [],
+        [{ origem: "juridico", tipo, subtipo: null, descricao: "x", criadoEm: "2026-11-05T02:00:00Z" }],
+        FERIADOS
+      );
+    expect(devolvida("INTERPRETAÇÃO DA PUBLI")).toMatchObject({ inconsistencias_tipo: "ANÁLISE", inconsistencia_subtipo: "INTERPRETAÇÃO DA PUBLI - (P)", eficiencia: "DESVIO" });
+    expect(devolvida("FORA DO WORKFLOW")).toMatchObject({ inconsistencias_tipo: "ANÁLISE", inconsistencia_subtipo: "FORA DO FLUXO - (P/A)", eficiencia: "DESVIO" });
+    expect(devolvida("CONTAGEM DE PRAZO")).toMatchObject({ inconsistencias_tipo: "ANÁLISE", inconsistencia_subtipo: "DATA / HORÁRIO - (P/A)", inconsistencias_juridico: null });
+  });
+
+  it("devolução e erro no Check na mesma publicação de Operações Legais: vale o mais recente", () => {
+    const linha = linhaDoBkp(
+      publicacao({ vistadoPorOperacoesLegais: true }),
+      [],
+      [
+        { origem: "juridico", tipo: "INTERPRETAÇÃO DA PUBLI", subtipo: null, descricao: "a", criadoEm: "2026-11-05T01:00:00Z" },
+        { origem: "agendamento", tipo: "AGENDAMENTO", subtipo: "RESPONSÁVEL - (P/A)", descricao: "b", criadoEm: "2026-11-05T02:00:00Z" },
+      ],
+      FERIADOS
+    );
+    expect(linha).toMatchObject({ inconsistencias_tipo: "AGENDAMENTO", inconsistencia_subtipo: "RESPONSÁVEL - (P/A)", inconsistencias_juridico: null });
+  });
+
+  it("devolução da vistagem do jurídico continua como inconsistência do jurídico, fora da eficiência de Ops Legais", () => {
+    const linha = linhaDoBkp(
+      publicacao({ escritorioResponsavel: "Cível", demandaRisco: true, vistadoPor: "Giancarlo Murta Zotini" }),
+      [],
+      [{ origem: "juridico", tipo: "FORA DO WORKFLOW", subtipo: null, descricao: "Preencher a observação.", criadoEm: "2026-11-09T16:09:49Z" }],
+      FERIADOS
+    );
+    expect(linha).toMatchObject({
       eficiencia: "EFICIÊNCIA DE PUBLICAÇÃO",
       inconsistencias_tipo: null,
       inconsistencia_subtipo: null,
-      inconsistencias_juridico: "CONTAGEM DE PRAZO",
-      inconsistencia_juridico_descricao: "Prazo do fluxo não foi conferido.",
-      check_pub: null,
-      publicacao_esocial: "Sentença – Conhecimento",
+      inconsistencias_juridico: "FORA DO WORKFLOW",
+      inconsistencia_juridico_descricao: "Preencher a observação.",
     });
   });
 
@@ -262,6 +306,17 @@ describe("o que entra no BKP", () => {
 describe("publicacaoParaBkp", () => {
   const nomes: Record<string, string> = { "u-isadora": "Isadora Godoy Conte", "u-maria": "Maria Heloiza Gois Ponce" };
   const nome = (id: string | null) => (id ? nomes[id] ?? null : null);
+
+  it("marca a vistagem feita por Operações Legais pelo departamento de quem vistou", () => {
+    const deOperacoesLegais = (id: string | null) => id === "u-isadora";
+    expect(publicacaoParaBkp(linhaDaVistagem({ vistado_por: "u-isadora" }), nome, null, deOperacoesLegais)?.vistadoPorOperacoesLegais).toBe(true);
+    expect(publicacaoParaBkp(linhaDaVistagem({ vistado_por: "u-maria" }), nome, null, deOperacoesLegais)?.vistadoPorOperacoesLegais).toBe(false);
+    expect(publicacaoParaBkp(linhaDaVistagem({ vistado_por: "u-isadora" }), nome)?.vistadoPorOperacoesLegais).toBe(false);
+    expect(ehDeOperacoesLegais("Operações Legais")).toBe(true);
+    expect(ehDeOperacoesLegais("OPERACOES LEGAIS")).toBe(true);
+    expect(ehDeOperacoesLegais("Cível")).toBe(false);
+    expect(ehDeOperacoesLegais(null)).toBe(false);
+  });
 
   it("duplicidade leva pasta, cliente e área da original; agendado por quem confirmou", () => {
     const original = linhaDaVistagem();

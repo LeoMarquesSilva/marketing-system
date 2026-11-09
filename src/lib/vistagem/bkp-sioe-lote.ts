@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   COLUNAS_DO_BKP,
   diaDaImportacao,
+  ehDeOperacoesLegais,
   linhaDoBkp,
   publicacaoParaBkp,
   type InconsistenciaParaBkp,
@@ -107,15 +108,24 @@ export async function montarLinhasDoBkp(orquestra: SupabaseClient, publicacoes: 
 
   const idsPessoas = [...new Set(publicacoes.flatMap((row) => [row.vistado_por, row.conferido_por, row.duplicidade_revisada_por]).filter(Boolean) as string[])];
   const nomes = new Map<string, string>();
+  const operacoesLegais = new Set<string>();
   for (const lote of emLotes(idsPessoas, 200)) {
-    const { data, error } = await orquestra.from("users").select("auth_id, name").in("auth_id", lote);
+    const { data, error } = await orquestra.from("users").select("auth_id, name, department").in("auth_id", lote);
     if (error) falhou("nomes", error);
-    for (const row of (data ?? []) as { auth_id: string; name: string | null }[]) nomes.set(row.auth_id, row.name ?? "");
+    for (const row of (data ?? []) as { auth_id: string; name: string | null; department: string | null }[]) {
+      nomes.set(row.auth_id, row.name ?? "");
+      if (ehDeOperacoesLegais(row.department)) operacoesLegais.add(row.auth_id);
+    }
   }
 
   const linhas: LinhaParaGravar[] = [];
   for (const row of publicacoes) {
-    const publicacao = publicacaoParaBkp(row, (id) => (id ? nomes.get(id) || null : null), originalDe(row));
+    const publicacao = publicacaoParaBkp(
+      row,
+      (id) => (id ? nomes.get(id) || null : null),
+      originalDe(row),
+      (id) => Boolean(id && operacoesLegais.has(id))
+    );
     if (!publicacao) continue;
     linhas.push({ ...linhaDoBkp(publicacao, agendamentos.get(row.id) ?? [], inconsistencias.get(row.id) ?? [], feriados), orquestra_id: row.id });
   }
