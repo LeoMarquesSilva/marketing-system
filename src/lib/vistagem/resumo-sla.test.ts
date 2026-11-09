@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { diasDeAtraso, montarResumoSla, resumoEmHtml, type PublicacaoDoResumo } from "./resumo-sla";
+import { diasDeAtraso, montarResumoSla, type PublicacaoDoResumo } from "./resumo-sla";
 
 /** `total` publicações do conjunto: uma por grupo, e o restante repete o primeiro grupo. */
 function conjunto(escritorio: string, dia: string, demandaRisco: boolean, grupos: string[], total: number): PublicacaoDoResumo[] {
@@ -7,12 +7,6 @@ function conjunto(escritorio: string, dia: string, demandaRisco: boolean, grupos
 }
 
 const SEGUNDA_MANHA = new Date("2026-11-09T09:18:00-03:00");
-
-describe("resumoEmHtml", () => {
-  it("mantém as linhas e escapa o nome dos grupos", () => {
-    expect(resumoEmHtml("Grupos: Grupo A & B <C>\nTotal: 1")).toBe("Grupos: Grupo A &amp; B &lt;C&gt;<br>Total: 1");
-  });
-});
 
 describe("diasDeAtraso", () => {
   it("vale até 12h do próximo dia útil", () => {
@@ -41,33 +35,45 @@ describe("montarResumoSla", () => {
       ...conjunto("Insolvência", "2026-11-06", true, ["Grupo CDA"], 6),
       ...conjunto("Tributário", "2026-11-05", false, ["Grupo Spel"], 1),
     ];
-    expect(montarResumoSla(publicacoes, SEGUNDA_MANHA, [])).toBe(
+    expect(montarResumoSla(publicacoes, SEGUNDA_MANHA, []).texto).toBe(
       [
         "📊 Resumo SLA Publicações — JURÍDICO VISTAR",
         "Conjuntos: 5 | Publicações: 75 | Fora SLA: 32",
+        "",
         "CÍVEL | INSOLVÊNCIA",
+        "",
         "🟢 06-11-2026 - Demanda de Risco",
         "Grupos: Grupo Lira, Grupo Teixeira",
         "Total: 7 | Dentro SLA: 7 | Fora SLA: 0",
         "Maior atraso: 0 dias",
+        "",
         "______________________________",
+        "",
         "INSOLVÊNCIA",
+        "",
         "🟢 06-11-2026 - Demanda de Risco",
         "Grupos: Grupo CDA",
         "Total: 6 | Dentro SLA: 6 | Fora SLA: 0",
         "Maior atraso: 0 dias",
+        "",
         "______________________________",
+        "",
         "TRABALHISTA",
+        "",
         "🟡 05-11-2026 - Demanda Comum",
         "Grupos: Grupo A",
         "Total: 31 | Dentro SLA: 0 | Fora SLA: 31",
         "Maior atraso: 1 dia",
+        "",
         "🟢 06-11-2026 - Demanda Comum",
         "Grupos: Grupo B, Grupo C",
         "Total: 30 | Dentro SLA: 30 | Fora SLA: 0",
         "Maior atraso: 0 dias",
+        "",
         "______________________________",
+        "",
         "TRIBUTÁRIO",
+        "",
         "🟡 05-11-2026 - Demanda Comum",
         "Grupos: Grupo Spel",
         "Total: 1 | Dentro SLA: 0 | Fora SLA: 1",
@@ -76,8 +82,25 @@ describe("montarResumoSla", () => {
     );
   });
 
+  it("no HTML põe títulos em negrito, abre espaço entre os blocos e escapa o nome dos grupos", () => {
+    const { html } = montarResumoSla(conjunto("Cível", "2026-11-06", false, ["Grupo A & B <C>"], 1), SEGUNDA_MANHA, []);
+    expect(html).toBe(
+      [
+        "<strong>📊 Resumo SLA Publicações — JURÍDICO VISTAR</strong>",
+        "<strong>Conjuntos: 1 | Publicações: 1 | Fora SLA: 0</strong>",
+        "",
+        "<strong>CÍVEL</strong>",
+        "",
+        "<strong>🟢 06-11-2026 - Demanda Comum</strong>",
+        "Grupos: Grupo A &amp; B &lt;C&gt;",
+        "Total: 1 | Dentro SLA: 1 | Fora SLA: 0",
+        "Maior atraso: 0 dias",
+      ].join("<br>"),
+    );
+  });
+
   it("deixa Operações Legais de fora", () => {
-    const texto = montarResumoSla(
+    const { texto } = montarResumoSla(
       [...conjunto("Operações Legais", "2026-10-26", false, ["Grupo X"], 5), ...conjunto("Cível", "2026-11-06", false, ["Grupo Y"], 1)],
       SEGUNDA_MANHA,
       [],
@@ -87,7 +110,7 @@ describe("montarResumoSla", () => {
   });
 
   it("marca atraso de 2 dias ou mais em vermelho e põe o risco antes no mesmo dia", () => {
-    const texto = montarResumoSla(
+    const { texto } = montarResumoSla(
       [...conjunto("Cível", "2026-11-04", false, ["Grupo X"], 1), ...conjunto("Cível", "2026-11-04", true, ["Grupo Y"], 1)],
       new Date("2026-11-09T09:00:00-03:00"),
       [],
@@ -98,6 +121,6 @@ describe("montarResumoSla", () => {
   });
 
   it("fila vazia traz só o cabeçalho zerado", () => {
-    expect(montarResumoSla([], SEGUNDA_MANHA, [])).toBe("📊 Resumo SLA Publicações — JURÍDICO VISTAR\nConjuntos: 0 | Publicações: 0 | Fora SLA: 0");
+    expect(montarResumoSla([], SEGUNDA_MANHA, []).texto).toBe("📊 Resumo SLA Publicações — JURÍDICO VISTAR\nConjuntos: 0 | Publicações: 0 | Fora SLA: 0");
   });
 });

@@ -12,16 +12,23 @@ export interface PublicacaoDoResumo {
 /** O resumo é do jurídico: a fila de Operações Legais não entra. */
 const FORA_DO_RESUMO = new Set(["OPERAÇÕES LEGAIS"]);
 
-const SEPARADOR = "_".repeat(30);
+/** Uma linha do aviso: `destaque` sai em negrito no Teams; texto vazio é só espaçamento. */
+interface Linha {
+  texto: string;
+  destaque?: boolean;
+}
+
+const VAZIA: Linha = { texto: "" };
+const SEPARADOR: Linha = { texto: "_".repeat(30) };
 
 /** AAAA-MM-DD do instante em São Paulo. */
 export function diaEmSaoPaulo(instante: Date): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(instante);
 }
 
-/** O Teams junta as linhas de uma mensagem de texto: em HTML, cada quebra vira <br>. */
-export function resumoEmHtml(texto: string): string {
-  return texto.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
+function linhaEmHtml({ texto, destaque }: Linha): string {
+  const seguro = texto.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return destaque ? `<strong>${seguro}</strong>` : seguro;
 }
 
 /**
@@ -60,8 +67,11 @@ interface Conjunto {
   grupos: Set<string>;
 }
 
-/** Texto do aviso: uma linha por conjunto de área + dia + tipo de demanda, igual ao resumo que saía da lista do SharePoint. */
-export function montarResumoSla(publicacoes: PublicacaoDoResumo[], agora: Date, feriados: Iterable<string>): string {
+/**
+ * Aviso por conjunto de área + dia + tipo de demanda, no modelo do resumo que saía da lista do SharePoint.
+ * O `html` é o que vai ao Teams, que junta as linhas de uma mensagem em texto puro.
+ */
+export function montarResumoSla(publicacoes: PublicacaoDoResumo[], agora: Date, feriados: Iterable<string>): { texto: string; html: string } {
   const feriadosDoAno = [...feriados];
   const conjuntos = new Map<string, Conjunto>();
   for (const publicacao of publicacoes) {
@@ -80,28 +90,32 @@ export function montarResumoSla(publicacoes: PublicacaoDoResumo[], agora: Date, 
   const lista = [...conjuntos.values()];
   const total = lista.reduce((soma, conjunto) => soma + conjunto.total, 0);
   const fora = lista.reduce((soma, conjunto) => soma + (conjunto.atraso > 0 ? conjunto.total : 0), 0);
-  const cabecalho = ["📊 Resumo SLA Publicações — JURÍDICO VISTAR", `Conjuntos: ${lista.length} | Publicações: ${total} | Fora SLA: ${fora}`];
+  const linhas: Linha[] = [
+    { texto: "📊 Resumo SLA Publicações — JURÍDICO VISTAR", destaque: true },
+    { texto: `Conjuntos: ${lista.length} | Publicações: ${total} | Fora SLA: ${fora}`, destaque: true },
+  ];
 
   const porArea = new Map<string, Conjunto[]>();
   for (const conjunto of lista) porArea.set(conjunto.area, [...(porArea.get(conjunto.area) ?? []), conjunto]);
 
-  const blocos = [...porArea.entries()]
+  [...porArea.entries()]
     .sort(([a], [b]) => a.localeCompare(b, "pt-BR"))
-    .map(([area, daArea]) => {
-      const linhas = [...daArea]
+    .forEach(([area, daArea], indice) => {
+      linhas.push(...(indice === 0 ? [VAZIA] : [VAZIA, SEPARADOR, VAZIA]), { texto: area, destaque: true });
+      [...daArea]
         // Mais antigos primeiro; no mesmo dia, a demanda de risco vem antes.
         .sort((a, b) => a.dia.localeCompare(b.dia) || Number(b.risco) - Number(a.risco))
-        .flatMap((conjunto) => {
+        .forEach((conjunto) => {
           const foraDoConjunto = conjunto.atraso > 0 ? conjunto.total : 0;
-          return [
-            `${selo(conjunto.atraso)} ${dataNoResumo(conjunto.dia)} - ${conjunto.risco ? "Demanda de Risco" : "Demanda Comum"}`,
-            `Grupos: ${[...conjunto.grupos].join(", ") || "—"}`,
-            `Total: ${conjunto.total} | Dentro SLA: ${conjunto.total - foraDoConjunto} | Fora SLA: ${foraDoConjunto}`,
-            `Maior atraso: ${conjunto.atraso} ${conjunto.atraso === 1 ? "dia" : "dias"}`,
-          ];
+          linhas.push(
+            VAZIA,
+            { texto: `${selo(conjunto.atraso)} ${dataNoResumo(conjunto.dia)} - ${conjunto.risco ? "Demanda de Risco" : "Demanda Comum"}`, destaque: true },
+            { texto: `Grupos: ${[...conjunto.grupos].join(", ") || "—"}` },
+            { texto: `Total: ${conjunto.total} | Dentro SLA: ${conjunto.total - foraDoConjunto} | Fora SLA: ${foraDoConjunto}` },
+            { texto: `Maior atraso: ${conjunto.atraso} ${conjunto.atraso === 1 ? "dia" : "dias"}` },
+          );
         });
-      return [area, ...linhas].join("\n");
     });
 
-  return [cabecalho.join("\n"), blocos.join(`\n${SEPARADOR}\n`)].filter(Boolean).join("\n");
+  return { texto: linhas.map((linha) => linha.texto).join("\n"), html: linhas.map(linhaEmHtml).join("<br>") };
 }

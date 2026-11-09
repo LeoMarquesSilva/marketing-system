@@ -2,7 +2,7 @@ import "server-only";
 
 import { criarCalendario, feriadosNacionais } from "./dias-uteis";
 import { carregarFeriados } from "./feriados";
-import { diaEmSaoPaulo, montarResumoSla, resumoEmHtml, type PublicacaoDoResumo } from "./resumo-sla";
+import { diaEmSaoPaulo, montarResumoSla, type PublicacaoDoResumo } from "./resumo-sla";
 import { admin, falhou } from "./server";
 
 const COLUNAS = "escritorio_responsavel, demanda_risco, grupo_cliente, triada_em, triagem_resolvida_em, transferido_em, created_at";
@@ -37,6 +37,5 @@ async function filaDoJuridico(): Promise<PublicacaoDoResumo[]> {
 export async function resumoSlaDoJuridico(agora = new Date()): Promise<{ texto: string; html: string; diaUtil: boolean }> {
   const hoje = diaEmSaoPaulo(agora);
   const [feriados, fila] = await Promise.all([carregarFeriados().catch(() => feriadosNacionais(Number(hoje.slice(0, 4)))), filaDoJuridico()]);
-  const texto = montarResumoSla(fila, agora, feriados);
-  return { texto, html: resumoEmHtml(texto), diaUtil: criarCalendario(feriados)(hoje) };
+  return { ...montarResumoSla(fila, agora, feriados), diaUtil: criarCalendario(feriados)(hoje) };
 }
