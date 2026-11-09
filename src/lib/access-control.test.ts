@@ -10,6 +10,7 @@ import {
   hasCafeCulturaAccess,
   hasIcpAccess,
   hasOperacoesLegaisAccess,
+  hasPe27Access,
   hasTeamSurveysAccess,
   hasVistagemAccess,
   isManualOnlyKey,
@@ -296,5 +297,15 @@ describe("pesquisas com a equipe", () => {
 
   it("a página de resposta abre para qualquer pessoa logada", () => {
     expect(canAccessPath({ role: null, permissions: ["/planner"] }, "/pesquisa/pe27-operacoes-legais")).toBe(true);
+  });
+});
+
+describe("PE27 (planejamento estratégico)", () => {
+  it("só admin abre, nem pelo modo legado nem com a chave salva no cadastro", () => {
+    expect(hasPe27Access({ role: "admin" })).toBe(true);
+    expect(canAccessPath({ role: "admin" }, "/pe27/insumos")).toBe(true);
+    expect(canAccessPath({ role: null, permissions: null }, "/pe27")).toBe(false);
+    expect(canAccessPath({ role: null, permissions: ["/pe27"] }, "/pe27")).toBe(false);
+    expect(normalizePermissionsInput(["/pe27"])).toBeNull();
   });
 });

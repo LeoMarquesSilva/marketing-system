@@ -65,6 +65,7 @@ export const VISTAGEM_KEY = "/operacoes-legais/vistagem";
 export const TEAM_SURVEYS_KEY = "/operacoes-legais/pesquisas";
 export const ICP_KEY = "/icp";
 export const FACILITIES_KEY = "/facilities";
+export const PE27_KEY = "/pe27";
 export const MANUAL_ONLY_KEYS = ACCESS_SECTIONS.filter((s) => s.manualOnly).map((s) => s.key);
 
 const NON_ADMIN_KEYS = ACCESS_SECTIONS.filter(
@@ -217,6 +218,18 @@ export function isTeamSurveysPath(pathname: string): boolean {
   return pathname === TEAM_SURVEYS_KEY || pathname.startsWith(`${TEAM_SURVEYS_KEY}/`);
 }
 
+/**
+ * PE27 (Planejamento Estratégico 2027): por enquanto só admin, sem liberação
+ * manual em Usuários. Depois abre para os sócios.
+ */
+export function hasPe27Access(profile: AccessProfile | null | undefined): boolean {
+  return isAdminRole(profile);
+}
+
+export function isPe27Path(pathname: string): boolean {
+  return pathname === PE27_KEY || pathname.startsWith(`${PE27_KEY}/`);
+}
+
 /** Painel de Vistagem e agendamento: admin ou liberação manual em Usuários. */
 export function hasVistagemAccess(profile: AccessProfile | null | undefined): boolean {
   if (!profile) return false;
@@ -334,6 +347,10 @@ export function canAccessPath(
 
   if (isTeamSurveysPath(pathname)) {
     return hasTeamSurveysAccess(profile);
+  }
+
+  if (isPe27Path(pathname)) {
+    return hasPe27Access(profile);
   }
 
   const isOperacoesLegaisRoute =

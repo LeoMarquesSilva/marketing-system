@@ -29,6 +29,7 @@ describe("catálogo de navegação", () => {
     const admin = buildNav({ role: "admin" });
     expect(admin.map((front) => front.label)).toEqual([
       "Visão geral",
+      "Estratégia",
       "Marketing",
       "Relacionamento / Comercial",
       "Pessoas e Cultura",
@@ -41,6 +42,13 @@ describe("catálogo de navegação", () => {
     const marketing = admin.find((front) => front.id === "marketing")!;
     expect(marketing.features.map((feature) => feature.label)).toContain("Gerador de conteúdo");
     expect(marketing.features.map((feature) => feature.label)).toContain("Métricas de redes sociais");
+  });
+
+  it("PE27 aparece só para admin (nem legado nem quem tem permissões explícitas)", () => {
+    expect(visibleHrefs({ role: "admin" })).toEqual(expect.arrayContaining(["/pe27", "/pe27/insumos"]));
+    expect(visibleHrefs({ role: null, permissions: null })).not.toContain("/pe27");
+    expect(visibleHrefs({ role: null, permissions: ["/planner"] })).not.toContain("/pe27");
+    expect(buildNav({ role: null, permissions: ["/planner"] }).some((front) => front.id === "estrategia")).toBe(false);
   });
 });
 

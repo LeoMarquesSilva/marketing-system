@@ -21,6 +21,7 @@ import {
   Clapperboard,
   Coffee,
   Columns3,
+  Compass,
   Contact,
   Crosshair,
   Heart,
@@ -54,6 +55,9 @@ import {
   TEAM_SURVEYS_KEY,
   hasTeamSurveysAccess,
   isTeamSurveysPath,
+  PE27_KEY,
+  hasPe27Access,
+  isPe27Path,
   hasCafeCulturaAccess,
   hasFacilitiesAccess,
   hasIcpAccess,
@@ -129,6 +133,24 @@ export const NAV_FRONTS: NavFront[] = [
         title: "Meu desempenho",
         icon: House,
         pages: [{ href: "/conteudo/inicio", label: "Início" }],
+      },
+    ],
+  },
+  {
+    id: "estrategia",
+    label: "Estratégia",
+    features: [
+      {
+        // Planejamento Estratégico 2027: insumos do workshop, revisão dos sócios e, depois, plano tático. Só admin por enquanto.
+        id: "pe27",
+        label: "PE27 · Planejamento 2027",
+        title: "PE27 · Planejamento Estratégico 2027",
+        shortLabel: "PE27",
+        icon: Compass,
+        pages: [
+          { href: PE27_KEY, label: "Visão geral" },
+          { href: `${PE27_KEY}/insumos`, label: "Insumos do workshop" },
+        ],
       },
     ],
   },
@@ -494,6 +516,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
       if (isFacilitiesPath(href)) return hasFacilitiesAccess(profile);
       if (isVistagemPath(href)) return canSeeVistagemPath(profile, href);
       if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
+      if (isPe27Path(href)) return hasPe27Access(profile);
       if (href.startsWith("/operacoes-legais")) return hasOperacoesLegaisAccess(profile);
       if (href === "/icp") return hasIcpAccess(profile);
       if (href === "/conteudo/gustavo") return gustavo;
@@ -508,6 +531,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
   if (isContentCollaborator(profile)) {
     return (href) => {
       if (COLLABORATOR_PAGES.has(href)) return true;
+      if (isPe27Path(href)) return hasPe27Access(profile);
       if (href === "/rh/ferias") return feriasView;
       if (href === "/conteudo/gustavo") return gustavo;
       if (href === TEAM_POSTS_PATH) return teamPosts;
@@ -520,6 +544,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
     if (isFacilitiesPath(href)) return hasFacilitiesAccess(profile);
     if (isVistagemPath(href)) return canSeeVistagemPath(profile, href);
     if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
+    if (isPe27Path(href)) return hasPe27Access(profile);
     if (href.startsWith("/operacoes-legais/")) return hasOperacoesLegaisAccess(profile);
     switch (href) {
       case "/conteudo/inicio":
