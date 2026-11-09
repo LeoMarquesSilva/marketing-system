@@ -47,6 +47,8 @@ describe("fila do robô", () => {
       comunicacao_id: "755730632",
       comunicacoes_equivalentes: [],
       data_publicacao: "15/10/2026",
+      // só para o plano B do robô (agendar na pasta se a publicação não chegar ao VIOS)
+      texto_publicacao: "PROCESSO:0000952 TEXTO: Intimem-se as partes.",
       tarefas: [
         {
           chave: "ag-1",

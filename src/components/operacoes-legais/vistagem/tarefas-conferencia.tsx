@@ -26,6 +26,26 @@ export const ESTILO_CLASSE: Record<Classe, string> = {
   COMPROMISSO: "bg-[#eeedf5] text-[#48466e] ring-[#48466e]/15",
 };
 
+/**
+ * O robô está esperando a publicação chegar a Intimações do VIOS (tenta de hora em hora; às 17h do dia da publicação,
+ * agenda direto na pasta). A fila deixa a tarefa pendente com o motivo no texto do envio.
+ */
+export function aguardandoOVios(item: Pick<AgendamentoResumo, "envioStatus" | "envioErro">): boolean {
+  return item.envioStatus === "pendente" && /^Aguardando a disponibilidade da publicação no VIOS/.test(item.envioErro ?? "");
+}
+
+/** Rótulo e tom do envio da tarefa: o do status, ou a espera pelo VIOS (e a volta para a pasta) quando é o caso. */
+export function envioDaTarefa(item: Pick<AgendamentoResumo, "envioStatus" | "envioErro">): { rotulo: string; tom: TomSelo } {
+  if (aguardandoOVios(item)) return { rotulo: "Aguardando o VIOS", tom: "alerta" };
+  if (item.envioStatus === "pendente" && /agendar direto na pasta/.test(item.envioErro ?? "")) return { rotulo: "Vai para a pasta", tom: "alerta" };
+  return ENVIO[item.envioStatus];
+}
+
+/** Cor do texto do envio: erro do robô em vermelho; aviso da fila (esperando o VIOS, nova tentativa) em âmbar. */
+export function corDoTextoDoEnvio(item: Pick<AgendamentoResumo, "envioStatus">): string {
+  return item.envioStatus === "erro" ? "text-red-700" : "text-amber-800";
+}
+
 export const ENVIO: Record<EnvioStatus, { rotulo: string; tom: TomSelo }> = {
   nao_enviado: { rotulo: "Não enviada", tom: "neutro" },
   pendente: { rotulo: "Na fila do robô", tom: "marca" },
@@ -298,8 +318,8 @@ export function CartoesTarefas({
                         Simulada
                       </Selo>
                     ) : (
-                      <Selo tom={ENVIO[item.envioStatus].tom} icone={Bot}>
-                        {ENVIO[item.envioStatus].rotulo}
+                      <Selo tom={envioDaTarefa(item).tom} icone={Bot}>
+                        {envioDaTarefa(item).rotulo}
                         {item.envioSimulado ? " (simulação)" : ""}
                       </Selo>
                     )
@@ -309,7 +329,7 @@ export function CartoesTarefas({
                 <p className="break-words font-semibold text-foreground">{item.tarefa}</p>
                 {item.observacao ? <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{item.observacao}</p> : null}
                 {simulada ? <p className="text-xs text-muted-foreground">Preenchida no VIOS, não gravada.</p> : null}
-                {item.envioErro ? <p className="whitespace-pre-wrap break-words text-xs text-red-700">{item.envioErro}</p> : null}
+                {item.envioErro ? <p className={cn("whitespace-pre-wrap break-words text-xs", corDoTextoDoEnvio(item))}>{item.envioErro}</p> : null}
               </div>
               {onEditar && podeEditar?.(item) ? (
                 <Button

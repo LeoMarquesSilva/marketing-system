@@ -1297,12 +1297,12 @@ export async function atualizarEnvios(): Promise<{ consultadas: number; concluid
   const db = admin();
   const { data, error } = await db
     .from("vistagem_agendamentos")
-    .select("id, publicacao_id, sama_agendamento_id, envio_status")
+    .select("id, publicacao_id, sama_agendamento_id, envio_status, envio_erro")
     .in("envio_status", ["pendente", "enviado", "processando"])
     .not("sama_agendamento_id", "is", null)
     .limit(1000);
   if (error) falhou("carregar os envios em andamento", error);
-  const pendentes = (data ?? []) as { id: string; publicacao_id: string; sama_agendamento_id: string; envio_status: EnvioStatus }[];
+  const pendentes = (data ?? []) as { id: string; publicacao_id: string; sama_agendamento_id: string; envio_status: EnvioStatus; envio_erro: string | null }[];
   const resumo = { consultadas: pendentes.length, concluidas: 0, erros: 0 };
   if (!pendentes.length) return resumo;
 
@@ -1311,7 +1311,8 @@ export async function atualizarEnvios(): Promise<{ consultadas: number; concluid
   const publicacoesTocadas = new Set<string>();
   for (const item of pendentes) {
     const atual = fila.get(item.sama_agendamento_id);
-    if (!atual || atual.status === item.envio_status) continue;
+    // O texto também conta: pendente esperando o VIOS ("Aguardando a disponibilidade…", próxima tentativa) muda só ele.
+    if (!atual || (atual.status === item.envio_status && (atual.erro ?? null) === (item.envio_erro ?? null))) continue;
     if (atual.status === "concluido") resumo.concluidas += 1;
     if (atual.status === "erro") resumo.erros += 1;
     publicacoesTocadas.add(item.publicacao_id);

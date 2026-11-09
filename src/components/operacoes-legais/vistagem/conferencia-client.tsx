@@ -54,7 +54,7 @@ import { ReguaDatas } from "./regua-datas";
 import { SeloResultadoIa, SugestaoNaConferencia } from "./sugestao-ia-ui";
 import { IconeOpcao, Seletor } from "./seletor";
 import { AvatarPessoa } from "./combobox-busca";
-import { CartoesTarefas, ENVIO, LinkVios } from "./tarefas-conferencia";
+import { CartoesTarefas, LinkVios, corDoTextoDoEnvio, envioDaTarefa } from "./tarefas-conferencia";
 import { PainelAberturaDePasta, SeloAberturaDePasta } from "./abertura-pasta";
 import { SeloEsocial, contarPor, formatarData, formatarDataHora, tribunalDe } from "./publicacao-ui";
 import {
@@ -240,15 +240,15 @@ export function TabelaTarefas({ agendamentos, comEnvio, compacta = false }: { ag
                         Simulada
                       </Selo>
                     ) : (
-                      <Selo tom={ENVIO[item.envioStatus].tom}>
-                        {ENVIO[item.envioStatus].rotulo}
+                      <Selo tom={envioDaTarefa(item).tom}>
+                        {envioDaTarefa(item).rotulo}
                         {item.envioSimulado ? " (simulação)" : ""}
                       </Selo>
                     )}
                     {item.viosTarefaId ? <LinkVios ci={item.viosTarefaId} /> : null}
                   </div>
                   {simulada ? <span className="mt-1 block text-xs text-muted-foreground">Preenchida no VIOS, não gravada</span> : null}
-                  {item.envioErro ? <span className="mt-1 block whitespace-pre-wrap break-words text-xs text-red-700">{item.envioErro}</span> : null}
+                  {item.envioErro ? <span className={cn("mt-1 block whitespace-pre-wrap break-words text-xs", corDoTextoDoEnvio(item))}>{item.envioErro}</span> : null}
                 </Celula>
               ) : null}
               <FluxoDaTarefaAgendada item={item} />

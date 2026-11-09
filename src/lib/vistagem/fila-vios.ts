@@ -54,6 +54,11 @@ export interface LancamentoFila {
   comunicacoes_equivalentes: string[];
   /** DD/MM/AAAA; usada pelo robô quando não há ID de comunicação. */
   data_publicacao: string | null;
+  /**
+   * Texto da publicação. O VIOS insere o da intimação sozinho; o robô só usa este se a publicação não chegar a
+   * Intimações do VIOS até as 17h do dia dela e ele tiver de agendar direto na pasta (vai na descrição da tarefa).
+   */
+  texto_publicacao: string | null;
   tarefas: TarefaDoLancamento[];
 }
 
@@ -167,6 +172,7 @@ export function linhasParaFila(
           comunicacao_id: comunicacao,
           comunicacoes_equivalentes: [...new Set((publicacao.comunicacoes_equivalentes ?? []).map(String))].filter((id) => id && id !== comunicacao),
           data_publicacao: publicacao.data_publicacao ? paraDataVios(publicacao.data_publicacao) : null,
+          texto_publicacao: publicacao.teor?.trim() || null,
           tarefas: itens.map((item) => {
             const cienciaNf = chaveNome(item.tarefa) === "CIENCIA NF";
             return {
