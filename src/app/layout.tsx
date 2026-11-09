@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
-import { Geist, Geist_Mono, Baloo_Bhaijaan_2 } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/auth-context";
 import { ContentTourProvider } from "@/contexts/content-tour-context";
@@ -9,21 +9,23 @@ import { DicasDeTitulo } from "@/components/ui/dicas-de-titulo";
 import { PUBLIC_APP_ORIGIN } from "@/lib/public-origin";
 import { CAPTURA_INSTALACAO_SCRIPT } from "@/lib/pwa";
 
-const geistSans = Geist({
+const geistSans = localFont({
+  src: "../fonts/geist-latin-variable.woff2",
+  weight: "100 900",
   variable: "--font-geist-sans",
-  subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
+const geistMono = localFont({
+  src: "../fonts/geist-mono-latin-variable.woff2",
+  weight: "100 900",
   variable: "--font-geist-mono",
-  subsets: ["latin"],
 });
 
 /** Fonte de marca ORQESTRAI — usar só em pontos de marca (login, telas institucionais), não na UI corrida. */
-const baloo = Baloo_Bhaijaan_2({
+const baloo = localFont({
+  src: "../fonts/baloo-bhaijaan-2-latin-variable.woff2",
+  weight: "500 700",
   variable: "--font-baloo",
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
 });
 
 export const metadata: Metadata = {

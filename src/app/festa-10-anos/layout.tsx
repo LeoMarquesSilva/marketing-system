@@ -1,16 +1,16 @@
 import type { ReactNode } from "react";
-import { Bebas_Neue, Montserrat } from "next/font/google";
+import localFont from "next/font/local";
 
 /** Mesma dupla do comunicado e do dress code: Montserrat no corpo (substituta da Gotham) e Bebas Neue no título. */
-const sans = Montserrat({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+const sans = localFont({
+  src: "../../fonts/montserrat-latin-variable.woff2",
+  weight: "400 700",
   variable: "--font-festa-sans",
   display: "swap",
 });
 
-const display = Bebas_Neue({
-  subsets: ["latin"],
+const display = localFont({
+  src: "../../fonts/bebas-neue-latin.woff2",
   weight: "400",
   variable: "--font-festa-display",
   display: "swap",

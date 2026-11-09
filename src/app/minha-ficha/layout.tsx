@@ -1,10 +1,10 @@
-import { Montserrat } from "next/font/google";
+import localFont from "next/font/local";
 import type { ReactNode } from "react";
 
 /** Mesma tipografia da ficha de admissão (Montserrat no lugar da Gotham). */
-const sans = Montserrat({
-  subsets: ["latin"],
-  weight: ["200", "300", "400", "500", "600"],
+const sans = localFont({
+  src: "../../fonts/montserrat-latin-variable.woff2",
+  weight: "200 600",
   variable: "--font-fc-sans",
   display: "swap",
 });
