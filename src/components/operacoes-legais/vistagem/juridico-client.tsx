@@ -58,6 +58,7 @@ import {
 import { cienciaDosAgendamentos, cienciaQueFica, ehCienciaDosAgendamentos } from "@/lib/vistagem/ciencia-agendamentos";
 import {
   CONTAGENS_PRAZO,
+  ROTULO_CONTAGEM,
   criarCalendario,
   criarCalendarioDePrazo,
   dataDaTarefaSemPrazo,
@@ -77,7 +78,7 @@ import {
 } from "@/lib/vistagem/esocial";
 import { CADEIA_PADRAO, cadeiaDoFluxo, semPrazoProprio } from "@/lib/vistagem/fluxo-vios";
 import { emOrdemDeArvore, fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
-import { prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
+import { fataisDoFluxo, prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
 import { fatalSugerida, sugestaoNaListaAtual, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
 import { vaiParaCentral } from "@/lib/vistagem/central";
@@ -436,7 +437,7 @@ function diaDaAgenda(iso: string): string {
 function FluxoNoVios({
   previstas,
   principal,
-  fatal,
+  fatais,
   hoje,
   ehDiaUtil,
   onMudarData,
@@ -451,8 +452,8 @@ function FluxoNoVios({
   principal: { nome: string; data: string | null; etiqueta: Etiqueta; responsaveis: string };
   /** As pessoas e as fotos dos campos Responsável e Revisor (para trocar quem fica numa tarefa do fluxo). */
   pessoas: PessoasDoCampo;
-  /** Data fatal do Prazo (só para situar no calendário). */
-  fatal: string | null;
+  /** Data fatal do Prazo ou, na tarefa sem prazo próprio, a de cada prazo que ela cria (só para situar no calendário). */
+  fatais: { rotulo: string; data: string; dica: string }[];
   hoje: string;
   ehDiaUtil: (iso: string) => boolean;
   onMudarData: (caminho: string[], data: string | null) => void;
@@ -483,11 +484,11 @@ function FluxoNoVios({
   type Item =
     | { tipo: "principal"; chave: string; data: string }
     | { tipo: "fluxo"; chave: string; data: string | null; tarefa: TarefaPrevista }
-    | { tipo: "fatal"; chave: string; data: string };
+    | { tipo: "fatal"; chave: string; data: string; rotulo: string; dica: string };
   const itens: Item[] = [
     ...(principal.data ? [{ tipo: "principal" as const, chave: "principal", data: principal.data }] : []),
     ...emOrdemDeArvore(junto).map((tarefa) => ({ tipo: "fluxo" as const, chave: tarefa.caminho.join(" › "), data: tarefa.data, tarefa })),
-    ...(fatal ? [{ tipo: "fatal" as const, chave: "fatal", data: fatal }] : []),
+    ...fatais.map((fatal) => ({ tipo: "fatal" as const, chave: `fatal ${fatal.rotulo}`, ...fatal })),
   ];
   const numerado = (item: Item): item is Item & { data: string } => Boolean(item.data) && !(item.tipo === "fluxo" && item.tarefa.repetida);
   const numeros = new Map<string, number>();
@@ -504,7 +505,7 @@ function FluxoNoVios({
     item.tipo === "principal" ? tomDaPedida : item.tipo === "fatal" ? "fatal" : tomDoFluxo(item.tarefa);
   const editadaDe = (item: Item) => item.tipo === "fluxo" && item.tarefa.editada;
   // Só o nome da tarefa (sem "Enviar no VIOS:"): a cor e o número já dizem que é a pedida.
-  const nomeDe = (item: Item) => (item.tipo === "principal" ? principal.nome : item.tipo === "fatal" ? "Data fatal" : item.tarefa.nome);
+  const nomeDe = (item: Item) => (item.tipo === "principal" ? principal.nome : item.tipo === "fatal" ? item.rotulo : item.tarefa.nome);
   const marcos: MarcoDoCalendario[] = itens.filter(numerado).map((item) => ({
     chave: item.chave,
     numero: numeros.get(item.chave) ?? 0,
@@ -623,7 +624,7 @@ function FluxoNoVios({
                     <>
                       <span
                         className="w-[8.5rem] text-right tabular-nums text-muted-foreground"
-                        title={item.tipo === "principal" ? "Muda no campo de data da tarefa, acima." : "Muda no campo Data fatal, acima."}
+                        title={item.tipo === "fatal" ? item.dica : "Muda no campo de data da tarefa, acima."}
                       >
                         {diaDaAgenda(item.data)}
                       </span>
@@ -1730,7 +1731,19 @@ export function EditorVistagem({
                                 etiqueta: linha.etiqueta,
                                 responsaveis: linha.responsavel,
                               }}
-                              fatal={comFatal ? linha.dataFatal || null : null}
+                              fatais={
+                                comFatal
+                                  ? linha.dataFatal
+                                    ? [{ rotulo: "Data fatal", data: linha.dataFatal, dica: "Muda no campo Data fatal, acima." }]
+                                    : []
+                                  : prazo
+                                    ? fataisDoFluxo(fluxo, detalhe.publicacao.dataPublicacao, catalogo.area, contagemPadrao, contaPrazo).map((fatal) => ({
+                                        rotulo: `Data fatal · ${fatal.nome}`,
+                                        data: fatal.data,
+                                        dica: `${fatal.dias} ${ROTULO_CONTAGEM[contagemPadrao]} após a publicação (prazo legal). Só para conferir: não vai para o VIOS.`,
+                                      }))
+                                    : []
+                              }
                               pessoas={pessoasDoCampo}
                               hoje={detalhe.hoje}
                               ehDiaUtil={ehDiaUtil}
