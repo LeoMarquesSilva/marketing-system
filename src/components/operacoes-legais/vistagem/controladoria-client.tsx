@@ -38,7 +38,7 @@ import { clienteNoTexto, pastaSugerida, verificacoesSemPasta, type SituacaoVerif
 import { criarCalendarioDePrazo, feriadosNacionais, somarDiasUteis } from "@/lib/vistagem/dias-uteis";
 import { ESCRITORIOS, ESCRITORIO_EX_CLIENTE, pastaAtiva, type PastaSioe, type Pendencia } from "@/lib/vistagem/triagem";
 import type { SugestaoTriagem } from "@/lib/vistagem/sugestao-triagem";
-import type { PendenciasControladoria, PublicacaoResumo, ResolucaoPendencia, TriagemResumo } from "@/lib/vistagem/types";
+import type { PendenciasControladoria, PublicacaoResumo, ResolucaoPendencia, ResultadoCentral, TriagemResumo } from "@/lib/vistagem/types";
 import { linkPastaVios } from "@/lib/vistagem/vios-links";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { AvisoArquivoDoDia } from "./aviso-arquivo-do-dia";
@@ -759,7 +759,7 @@ function AgendarDireto({
   navegacao: Navegacao;
   onAbrir: (id: string) => void;
   onMudar: (mudanca: Partial<PreviaAgendamento>) => void;
-  onEnviada: () => void;
+  onEnviada: (id: string, central: ResultadoCentral | null) => void;
   onVoltar: () => void;
 }) {
   const escritorioValido = (ESCRITORIOS as readonly string[]).includes(previa.escritorio);
@@ -975,12 +975,19 @@ function Controladoria() {
     setAgendando({ id: publicacao.id, numero: numeroProcesso(publicacao), ...previa });
   };
 
-  /** Tarefas enviadas: a pendência saiu da triagem e a vistagem foi para a conferência. */
-  function agendamentoEnviado() {
+  /** Tarefas enviadas: a pendência saiu da triagem e a vistagem foi para a conferência (ou, sem pasta, para a Central do SharePoint). */
+  function agendamentoEnviado(_id: string, central: ResultadoCentral | null) {
     if (!agendando) return;
     const { id } = agendando;
     setAgendando(null);
-    removerResolvida(id, "agendada direto pela controladoria: as tarefas foram para a conferência");
+    removerResolvida(
+      id,
+      !central
+        ? "agendada direto pela controladoria: as tarefas foram para a conferência"
+        : central.itemId
+          ? `sem pasta no VIOS: pedido de abertura de pasta criado na Central do SharePoint (item ${central.itemId})`
+          : "salva, mas a Central do SharePoint não respondeu: veja em Conferência › Abertura de pasta"
+    );
   }
 
   return (

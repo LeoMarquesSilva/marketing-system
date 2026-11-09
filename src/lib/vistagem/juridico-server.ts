@@ -19,6 +19,8 @@ import {
 } from "./agendamento";
 import { openAIKey } from "@/lib/openai-keys";
 import { registrarNoBkpSemFalhar } from "./bkp-sioe-server";
+import { vaiParaCentral } from "./central";
+import { enviarParaCentral } from "./central-server";
 import { cienciaDosAgendamentos, cienciaQueFica, ehCienciaDosAgendamentos, ehReestruturacao } from "./ciencia-agendamentos";
 import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./dias-uteis";
 import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
@@ -63,6 +65,7 @@ import type {
   InconsistenciaResumo,
   PublicacaoResumo,
   ResolucaoPendencia,
+  ResultadoCentral,
   SintesePedida,
   SugestaoNaVistagem,
   VistagemDetalhe,
@@ -451,7 +454,7 @@ export async function salvarVistagem(
   authUserId: string,
   areas: AreasVistagem = null,
   veRisco = true
-): Promise<void> {
+): Promise<{ central: ResultadoCentral | null }> {
   const carregada = await carregarPublicacao(id);
   const resolucao = entrada.resolucao ?? null;
   // Direto da triagem: valida tudo com o escritório e a pasta escolhidos e só então tira a pendência da controladoria.
@@ -539,10 +542,12 @@ export async function salvarVistagem(
   const quemVistou = revistagem
     ? { revistado_por: authUserId, revistado_em: agora }
     : { vistado_por: authUserId, vistado_em: agora, revistado_por: null, revistado_em: null };
+  // Sem pasta no VIOS não há onde o robô agendar: a vistagem vira pedido de abertura de pasta na Central do SharePoint.
+  const abertura = vaiParaCentral({ pastaCi: publicacao.pasta_ci, pendencia: publicacao.pendencia });
   const { data: atualizada, error } = await db
     .from("vistagem_publicacoes")
     .update({
-      status: "controladoria_vistar",
+      status: abertura ? "abertura_pasta" : "controladoria_vistar",
       observacao_vistagem: entrada.observacao?.trim() || null,
       publicacao_esocial: esocial.valor,
       sugestao_ia_resultado: resultadoIa,
@@ -554,6 +559,7 @@ export async function salvarVistagem(
     .maybeSingle();
   if (error) falhou("enviar a vistagem para a controladoria", error);
   if (!atualizada) throw new VistagemError("A publicação foi alterada por outra pessoa. Recarregue a página.", 409);
+  return { central: abertura ? await enviarParaCentral(id) : null };
 }
 
 // ---------------------------------------------------------------------------
@@ -739,7 +745,7 @@ export async function listarAgendadasJuridico(escritorio: string | null, areas: 
   const resposta = (itens: ConferenciaItem[], fotos: Record<string, string>) => ({ itens, fotos, hoje: hojeEmSaoPaulo(), dias: DIAS_AGENDADAS });
   if (areas && (!areas.length || (escritorio && !areas.includes(escritorio)))) return resposta([], {});
   const vistadoDesde = new Date(Date.now() - DIAS_AGENDADAS * 86_400_000).toISOString();
-  const itens = await itensDeConferencia(["controladoria_vistar", "pronto_para_agendar", "agendado", "checado", "revisar"], 300, false, "vistado_em", {
+  const itens = await itensDeConferencia(["controladoria_vistar", "pronto_para_agendar", "agendado", "checado", "revisar", "abertura_pasta"], 300, false, "vistado_em", {
     escritorios: escritorio ? [escritorio] : areas,
     vistadoDesde,
     semRisco: !veRisco,
@@ -752,9 +758,10 @@ const LIMITE_TEOR_CONFERENCIA = 12_000;
 
 export async function listarConferencia(): Promise<ConferenciaResposta> {
   const ficha = { limiteTeor: LIMITE_TEOR_CONFERENCIA, comAuxiliar: true, comSugestaoIa: true };
-  const [aConferirSemFluxo, enviadasSemFluxo, fluxo] = await Promise.all([
+  const [aConferirSemFluxo, enviadasSemFluxo, aberturas, fluxo] = await Promise.all([
     itensDeConferencia(["controladoria_vistar"], 300, true, "vistado_em", ficha),
     itensDeConferencia(["pronto_para_agendar", "agendado"], 100, false, "conferido_em", ficha),
+    itensDeConferencia(["abertura_pasta"], 100, false, "vistado_em", { limiteTeor: 300 }),
     // Sem a árvore do VIOS, a conferência mostra só as tarefas pedidas.
     Promise.all([carregarArvoreVios(), carregarFeriados()]).catch((erro: unknown) => {
       console.error("[vistagem] fluxo previsto da conferência", erro instanceof Error ? erro.message : erro);
@@ -795,8 +802,8 @@ export async function listarConferencia(): Promise<ConferenciaResposta> {
   };
   const aConferir = comFluxo(aConferirSemFluxo);
   const enviadas = comFluxo(enviadasSemFluxo);
-  const fotos = await fotosDosItens([...aConferir, ...enviadas], "conferência");
-  return { aConferir, enviadas, envioSimulado: envioSimulado(), fotos, hoje: hojeEmSaoPaulo() };
+  const fotos = await fotosDosItens([...aConferir, ...enviadas, ...aberturas], "conferência");
+  return { aConferir, enviadas, aberturas, envioSimulado: envioSimulado(), fotos, hoje: hojeEmSaoPaulo() };
 }
 
 /**
@@ -830,7 +837,7 @@ async function fotosDosItens(itens: ConferenciaItem[], tela: string): Promise<Re
 }
 
 /** Validação da controladoria: as tarefas vão para a fila do robô do SAMA (na intimação, todas juntas). */
-export async function validarVistagem(id: string, authUserId: string): Promise<{ enviadas: number; simulado: boolean }> {
+export async function validarVistagem(id: string, authUserId: string): Promise<{ enviadas: number; simulado: boolean; central?: ResultadoCentral }> {
   const publicacao = await carregarPublicacao(id);
   if (publicacao.status !== "controladoria_vistar") throw new VistagemError("Esta publicação não está aguardando conferência.", 409);
   if (!publicacao.numero_processo) throw new VistagemError("Publicação sem número de processo: não dá para agendar no VIOS.", 422);
@@ -845,6 +852,20 @@ export async function validarVistagem(id: string, authUserId: string): Promise<{
   if (error) falhou("carregar as tarefas para envio", error);
   const agendamentos = (data ?? []) as AgendamentoRow[];
   if (!agendamentos.length) throw new VistagemError("Nenhuma tarefa para enviar.", 422);
+
+  // Sem pasta (vistada antes de existir a Central no fluxo): o robô não tem onde agendar, vai como abertura de pasta.
+  if (vaiParaCentral({ pastaCi: publicacao.pasta_ci, pendencia: publicacao.pendencia })) {
+    const { data: marcadaCentral, error: erroCentral } = await db
+      .from("vistagem_publicacoes")
+      .update({ status: "abertura_pasta", conferido_por: authUserId, conferido_em: new Date().toISOString() })
+      .eq("id", id)
+      .eq("status", "controladoria_vistar")
+      .select("id")
+      .maybeSingle();
+    if (erroCentral) falhou("enviar para a abertura de pasta", erroCentral);
+    if (!marcadaCentral) throw new VistagemError("A publicação foi alterada por outra pessoa. Recarregue a página.", 409);
+    return { enviadas: agendamentos.length, simulado: false, central: await enviarParaCentral(id) };
+  }
 
   // Marca a publicação antes de enfileirar: duas validações simultâneas não duplicam a tarefa no VIOS.
   const { data: marcada, error: erroMarcar } = await db

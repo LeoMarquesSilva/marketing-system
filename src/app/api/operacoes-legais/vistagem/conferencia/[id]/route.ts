@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { reenviarParaCentral } from "@/lib/vistagem/central-server";
 import { exigirAcessoVistagem, respostaDeErro } from "@/lib/vistagem/http";
 import { devolverVistagem, reenviarGravando, rodarNovamente, validarVistagem } from "@/lib/vistagem/juridico-server";
 
@@ -10,7 +11,8 @@ type RouteContext = { params: Promise<{ id: string }> };
 /**
  * acao=validar → fila do robô; acao=devolver (com motivo) → volta para o jurídico;
  * acao=reenviar → grava no VIOS as tarefas que só passaram em simulação;
- * acao=rodar_novamente (forcar opcional) → roda de novo no robô as tarefas que deram erro.
+ * acao=rodar_novamente (forcar opcional) → roda de novo no robô as tarefas que deram erro;
+ * acao=central → cria de novo na Central do SharePoint o pedido de abertura de pasta que não chegou.
  */
 export async function POST(request: Request, context: RouteContext) {
   try {
@@ -20,6 +22,7 @@ export async function POST(request: Request, context: RouteContext) {
     if (corpo?.acao === "validar") return NextResponse.json(await validarVistagem(id, authUserId));
     if (corpo?.acao === "reenviar") return NextResponse.json(await reenviarGravando(id));
     if (corpo?.acao === "rodar_novamente") return NextResponse.json(await rodarNovamente(id, corpo.forcar === true));
+    if (corpo?.acao === "central") return NextResponse.json(await reenviarParaCentral(id));
     if (corpo?.acao === "devolver") {
       await devolverVistagem(
         id,
@@ -28,7 +31,7 @@ export async function POST(request: Request, context: RouteContext) {
       );
       return NextResponse.json({ ok: true });
     }
-    return NextResponse.json({ error: "Informe acao: validar, devolver, reenviar ou rodar_novamente." }, { status: 400 });
+    return NextResponse.json({ error: "Informe acao: validar, devolver, reenviar, rodar_novamente ou central." }, { status: 400 });
   } catch (error) {
     return respostaDeErro(error, "Não foi possível concluir a conferência.");
   }

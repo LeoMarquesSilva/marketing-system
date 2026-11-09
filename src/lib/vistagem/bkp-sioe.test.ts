@@ -300,6 +300,20 @@ describe("publicacaoParaBkp", () => {
     expect(publicacaoParaBkp({ ...duplicada, duplicidade_resultado: null }, nome, original)).toBeNull();
   });
 
+  it("abertura de pasta fecha ao ir para a Central: tipos das tarefas, sem pasta e sem agendado por", () => {
+    const abertura = publicacaoParaBkp(
+      linhaDaVistagem({ status: "abertura_pasta", pasta_ci: null, pasta_vinculo: null, pendencia: "sem_pasta", conferido_por: null, checado_em: null, vistado_em: "2026-11-09T14:00:00Z" }),
+      nome
+    );
+    expect(abertura).toMatchObject({ status: "abertura_pasta", agendadoPor: null, registradoEm: "2026-11-09T14:00:00Z" });
+    expect(linhaDoBkp(abertura!, [{ etiqueta: "PROVIDENCIA", tarefa: "CIÊNCIA NF" }], [], FERIADOS)).toMatchObject({
+      pasta: "POSSÍVEL ABERTURA DE PASTA",
+      tipo_agendamento: JSON.stringify(["CIÊNCIA NF"]),
+      status_publicacao: "CHECKADO",
+      agendado_por: null,
+    });
+  });
+
   it("o número leva o incidente, como na lista", () => {
     const comSufixo = publicacaoParaBkp(linhaDaVistagem({ numero_processo: "1413501-21.2026.8.12.0000", processo_sufixo: "50002" }), nome);
     expect(linhaDoBkp(comSufixo!, [], [], FERIADOS).numero_processo).toBe("1413501-21.2026.8.12.0000/50002");

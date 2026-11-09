@@ -15,7 +15,7 @@ import {
  */
 export type LinhaParaGravar = LinhaBkp & { orquestra_id: string };
 
-const STATUS_QUE_FECHAM = ["checado", "duplicidade", "descartada"];
+const STATUS_QUE_FECHAM = ["checado", "abertura_pasta", "duplicidade", "descartada"];
 
 function emLotes<T>(itens: T[], tamanho: number): T[][] {
   return Array.from({ length: Math.ceil(itens.length / tamanho) }, (_, i) => itens.slice(i * tamanho, (i + 1) * tamanho));

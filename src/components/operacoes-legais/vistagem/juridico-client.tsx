@@ -79,7 +79,8 @@ import { emOrdemDeArvore, fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
 import { prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
 import { fatalSugerida, sugestaoNaListaAtual, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
-import type { DataDoFluxo, PublicacaoResumo, ResolucaoPendencia, TarefaPrevista, VistagemDetalhe } from "@/lib/vistagem/types";
+import { vaiParaCentral } from "@/lib/vistagem/central";
+import type { DataDoFluxo, PublicacaoResumo, ResolucaoPendencia, ResultadoCentral, TarefaPrevista, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { CampoData, CampoHora } from "./campo-data";
 import { ESTILO_CLASSE, ICONE_CLASSE } from "./tarefas-conferencia";
@@ -732,7 +733,8 @@ export function EditorVistagem({
   id: string;
   navegacao: Navegacao | null;
   onAbrir: (id: string) => void;
-  onConcluida: (id: string) => void;
+  /** `central`: a publicação não tem pasta e virou pedido de abertura na Central do SharePoint. */
+  onConcluida: (id: string, central: ResultadoCentral | null) => void;
   onTransferida: (destino: string) => void;
   onVoltar: () => void;
   /** "Agendar Direto" da controladoria: a pendência ainda na triagem, com escritório, grupo, risco e CI escolhidos. */
@@ -1082,7 +1084,7 @@ export function EditorVistagem({
       });
       const corpo = await resposta.json();
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao enviar.");
-      onConcluida(id);
+      onConcluida(id, corpo.central ?? null);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao enviar.");
     } finally {
@@ -1107,6 +1109,8 @@ export function EditorVistagem({
   }
 
   const { publicacao, catalogo } = detalhe;
+  // Sem pasta no VIOS: a vistagem vira pedido de abertura de pasta na Central do SharePoint.
+  const abertura = vaiParaCentral(publicacao);
   // Sem o tipo Inserir E-social no VIOS, Acordo homologado e Homologação de cálculo não podem ser enviados.
   const faltaTarefaEsocial = Boolean(detalhe.esocial && pedeTarefaEsocial(esocial) && !detalhe.esocial.tarefa);
   const completo = linhas.every(linhaCompleta) && !faltaTarefaEsocial;
@@ -1728,6 +1732,14 @@ export function EditorVistagem({
 
                 <CienciaDoOrquestra linhas={linhas} catalogo={catalogo} detalhe={detalhe} />
 
+                {abertura ? (
+                  <div className="px-4 pb-3">
+                    <Aviso tom="info" titulo="Sem pasta no VIOS">
+                      Ao enviar, as tarefas não vão para a conferência nem para o robô: viram um pedido de abertura de pasta na Central do SharePoint, e a controladoria agenda depois de abrir a pasta.
+                    </Aviso>
+                  </div>
+                ) : null}
+
                 {erro ? (
                   <div className="px-4 pb-3">
                     <Aviso tom="erro">{erro}</Aviso>
@@ -1737,14 +1749,14 @@ export function EditorVistagem({
                 <div data-tour="vj-enviar" className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-b-lg border-t border-[#e6eef0] bg-white px-4 py-3 shadow-[0_-8px_16px_-12px_rgba(16,41,58,0.18)]">
                   <p className="min-w-0 flex-1 text-xs text-muted-foreground" aria-live="polite">
                     {completo
-                      ? `${linhas.length} ${linhas.length === 1 ? "tarefa pronta" : "tarefas prontas"} para a conferência.`
+                      ? `${linhas.length} ${linhas.length === 1 ? "tarefa pronta" : "tarefas prontas"} para ${abertura ? "a Central do SharePoint" : "a conferência"}.`
                       : faltaTarefaEsocial
                         ? `Falta o tipo ${TAREFA_ESOCIAL} no VIOS.`
                         : `Complete ${incompletas === 1 ? "a tarefa marcada" : `as ${incompletas} tarefas marcadas`}: tarefa, data${linhas.some((linha) => linha.etiqueta === "PRAZO") ? ", revisor" : ""} e responsável.`}
                   </p>
                   <Button onClick={enviar} disabled={enviando || !completo}>
                     {enviando ? <LoaderCircle className="animate-spin" /> : <Send />}
-                    Enviar para conferência
+                    {abertura ? "Enviar para abertura de pasta" : "Enviar para conferência"}
                   </Button>
                 </div>
               </>
@@ -2168,12 +2180,18 @@ function Juridico() {
     void carregar(escritorio);
   }
 
-  function concluida(id: string) {
+  function concluida(id: string, central: ResultadoCentral | null) {
     // Segue para a próxima da fila (ou a anterior, se era a última).
     const posicao = ordem.indexOf(id);
     setSelecionada(ordem[posicao + 1] ?? ordem[posicao - 1] ?? null);
     setPublicacoes((publicacoes ?? []).filter((p) => p.id !== id));
-    setAviso("Vistagem enviada para a conferência da controladoria.");
+    setAviso(
+      !central
+        ? "Vistagem enviada para a conferência da controladoria."
+        : central.itemId
+          ? `Sem pasta no VIOS: pedido de abertura de pasta criado na Central do SharePoint (item ${central.itemId}).`
+          : "Vistagem salva. A Central do SharePoint não respondeu: a controladoria vê o pedido na Conferência e o sistema tenta de novo."
+    );
     setPorEscritorio((atual) => {
       const p = (publicacoes ?? []).find((item) => item.id === id);
       const chave = p?.escritorioResponsavel ?? "Sem área";

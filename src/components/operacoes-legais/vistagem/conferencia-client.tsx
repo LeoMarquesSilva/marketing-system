@@ -52,6 +52,7 @@ import { SeloResultadoIa, SugestaoNaConferencia } from "./sugestao-ia-ui";
 import { IconeOpcao, Seletor } from "./seletor";
 import { AvatarPessoa } from "./combobox-busca";
 import { CartoesTarefas, ENVIO, LinkVios } from "./tarefas-conferencia";
+import { PainelAberturaDePasta } from "./abertura-pasta";
 import { SeloEsocial, contarPor, formatarData, formatarDataHora, tribunalDe } from "./publicacao-ui";
 import {
   Aviso,
@@ -68,7 +69,7 @@ import {
   TOM_CLASSE,
 } from "./ui";
 
-type Aba = "conferir" | "enviadas" | "inconsistencias";
+type Aba = "conferir" | "enviadas" | "aberturas" | "inconsistencias";
 
 /** Retorno de uma ação da tela (sucesso, alerta, informação ou erro). */
 type Retorno = { tom: "sucesso" | "erro" | "alerta" | "info"; texto: string };
@@ -518,7 +519,11 @@ function ItemConferencia({
       onConcluido?.(
         publicacao.id,
         acao === "validar"
-          ? `${corpo.enviadas} tarefa(s) enviada(s) ao robô${corpo.simulado ? " em modo simulação" : ""}.`
+          ? corpo.central
+            ? corpo.central.itemId
+              ? `Sem pasta no VIOS: pedido de abertura de pasta criado na Central do SharePoint (item ${corpo.central.itemId}).`
+              : "Sem pasta no VIOS: a Central do SharePoint não respondeu. Veja em Abertura de pasta."
+            : `${corpo.enviadas} tarefa(s) enviada(s) ao robô${corpo.simulado ? " em modo simulação" : ""}.`
           : acao === "reenviar"
             ? `${corpo.enviadas} tarefa(s) reenviada(s) ao robô para gravar no VIOS.`
             : "Devolvida ao jurídico."
@@ -969,7 +974,7 @@ function Conferencia() {
       setDados(corpo);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao carregar a conferência.");
-      setDados({ aConferir: [], enviadas: [], envioSimulado: true, fotos: {}, hoje: new Date().toISOString().slice(0, 10) });
+      setDados({ aConferir: [], enviadas: [], aberturas: [], envioSimulado: true, fotos: {}, hoje: new Date().toISOString().slice(0, 10) });
     }
   }, []);
 
@@ -1001,6 +1006,8 @@ function Conferencia() {
 
   const aConferir = useMemo(() => dados?.aConferir ?? [], [dados]);
   const enviadas = useMemo(() => dados?.enviadas ?? [], [dados]);
+  const aberturas = useMemo(() => dados?.aberturas ?? [], [dados]);
+  const aberturasSemItem = aberturas.filter((item) => !item.publicacao.centralItemId).length;
   // O que a busca olha em cada publicação (inclui as partes do texto): montado uma vez por carga, não a cada letra.
   const camposDeBusca = useMemo(
     () => new Map([...aConferir, ...enviadas].map((item) => [item.publicacao.id, camposDaConferencia(item)])),
@@ -1133,6 +1140,7 @@ function Conferencia() {
             options={[
               { value: "conferir", label: dados ? `A conferir ${aConferir.length}` : "A conferir" },
               { value: "enviadas", label: dados ? `Enviadas ao robô ${enviadas.length}` : "Enviadas ao robô" },
+              { value: "aberturas", label: !dados ? "Abertura de pasta" : aberturasSemItem ? `Abertura de pasta ${aberturas.length} (${aberturasSemItem} sem item)` : `Abertura de pasta ${aberturas.length}` },
               { value: "inconsistencias", label: "Inconsistências" },
             ]}
             onChange={setAba}
@@ -1140,7 +1148,7 @@ function Conferencia() {
           </div>
         }
       >
-        {aba !== "inconsistencias" ? (
+        {aba !== "inconsistencias" && aba !== "aberturas" ? (
           <>
             {!filaAberta ? (
               <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)} data-tour="cf-fila">
@@ -1225,6 +1233,18 @@ function Conferencia() {
 
       {aba === "inconsistencias" ? (
         <PainelInconsistencias />
+      ) : aba === "aberturas" && dados ? (
+        <PainelAberturaDePasta
+          itens={aberturas}
+          onTentado={(texto) => {
+            setRetorno({ tom: "sucesso", texto });
+            void carregar();
+          }}
+          onErro={(texto) => {
+            setRetorno({ tom: "erro", texto });
+            void carregar();
+          }}
+        />
       ) : lista === undefined ? (
         <Painel>
           <Carregando rotulo="Carregando a conferência" />

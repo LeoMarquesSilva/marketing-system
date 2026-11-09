@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { compararTarefa } from "@/lib/vistagem/check";
 import type { ConferenciaItem } from "@/lib/vistagem/types";
+import { SituacaoNaCentral } from "./abertura-pasta";
 import { devolucoesDe, etapasDaEsteira, EsteiraDetalhada, situacaoAgendada, SITUACAO_AGENDADA } from "./esteira-agendada";
 import { FaixaDoProcesso, NA_FAIXA, SetasDaFila, type NavegacaoNaFila } from "./faixa-processo";
 import { FichaPasta } from "./ficha-pasta";
@@ -15,7 +16,7 @@ import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { formatarData, formatarDataHora, SeloEsocial } from "./publicacao-ui";
 import { CartoesCheck } from "./tarefas-check";
 import { CartoesTarefas } from "./tarefas-conferencia";
-import { Selo } from "./ui";
+import { Aviso, Selo } from "./ui";
 
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 
@@ -139,6 +140,13 @@ function Conteudo({
       {/* Só o corpo rola; a chave volta a rolagem para o topo ao andar pelas setas. */}
       <div key={publicacao.id} className="min-h-0 flex-1 overflow-y-auto">
         <div className="space-y-6 px-4 py-5 sm:px-6">
+          {situacao === "central" ? (
+            <Aviso tom={publicacao.centralErro && !publicacao.centralItemId ? "erro" : "info"} titulo="Sem pasta no VIOS">
+              As tarefas não vão para o robô: a controladoria abre a pasta e agenda pela Central do SharePoint.{" "}
+              <SituacaoNaCentral publicacao={publicacao} />
+            </Aviso>
+          ) : null}
+
           {situacao === "revisao" ? (
             <p className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-800">
               <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
@@ -233,7 +241,7 @@ function Conteudo({
             {vistaAtiva === "vios" ? (
               <CartoesCheck agendamentos={agendamentos} fotos={fotos} hoje={hoje} />
             ) : (
-              <CartoesTarefas agendamentos={agendamentos} comEnvio fotos={fotos} hoje={hoje} />
+              <CartoesTarefas agendamentos={agendamentos} comEnvio={situacao !== "central"} fotos={fotos} hoje={hoje} />
             )}
           </div>
         </section>

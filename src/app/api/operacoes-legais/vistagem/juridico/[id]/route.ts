@@ -73,7 +73,7 @@ export async function POST(request: Request, context: RouteContext) {
           : [],
       };
     });
-    await salvarVistagem(
+    const resultado = await salvarVistagem(
       id,
       {
         agendamentos,
@@ -93,7 +93,7 @@ export async function POST(request: Request, context: RouteContext) {
       areas,
       veRisco
     );
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, central: resultado.central });
   } catch (error) {
     return respostaDeErro(error, "Não foi possível salvar a vistagem.");
   }
