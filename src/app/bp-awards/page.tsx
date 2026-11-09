@@ -10,7 +10,11 @@ export const metadata: Metadata = {
 };
 
 /** Votação do BP Awards pelo colaborador (login exigido pelo proxy e pelo AuthGuard). ?previa=1: revisão do RH. */
-export default async function BpAwardsPage({ searchParams }: { searchParams: Promise<{ previa?: string }> }) {
+export default async function BpAwardsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ previa?: string; hub?: string }>;
+}) {
   const params = await searchParams;
-  return <VotingClient preview={params.previa === "1"} />;
+  return <VotingClient preview={params.previa === "1"} previewAs={params.hub ?? null} />;
 }

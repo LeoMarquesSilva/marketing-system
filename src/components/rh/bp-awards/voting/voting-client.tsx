@@ -24,14 +24,18 @@ import { PersonPicker } from "@/components/rh/bp-awards/voting/person-picker";
 import { firstName, formatAwardDateTime } from "@/lib/rh/bp-awards/format";
 import {
   AWARD_CATEGORIES,
+  AWARD_HUBS,
   AWARDS_COMMITTEE_PATH,
   AWARDS_LOGO_SRC,
   AWARDS_SYMBOL_SRC,
   JUSTIFICATION_MAX,
-  awardSealSrc,
   JUSTIFICATION_MIN,
+  awardHub,
+  awardSealSrc,
+  slotKey,
   type AwardCategory,
   type AwardCategoryKey,
+  type AwardHubKey,
   type AwardPerson,
   type VoterView,
 } from "@/lib/rh/bp-awards/types";
@@ -39,24 +43,31 @@ import { cn } from "@/lib/utils";
 
 type ReadyView = Extract<VoterView, { state: "ready" }>;
 type Draft = { nominee: string | null; text: string };
-type Drafts = Record<AwardCategoryKey, Draft>;
+/** Indicações da cédula por `slotKey(hub, valor)`. */
+type Drafts = Record<string, Draft>;
 type SaveState = { status: "idle" | "pending" | "saving" | "saved" | "error"; message?: string };
 type Screen = "intro" | "step" | "review" | "done";
+/** Uma indicação a preencher: um valor dentro de um hub. */
+type Step = { key: string; hub: AwardHubKey; category: AwardCategory };
 
 const PARTY = { when: "17 de dezembro de 2026, às 18h", where: "Fazenda Santa Margarida, Campinas/SP" };
 const SAVE_DELAY_MS = 900;
+const EMPTY_DRAFT: Draft = { nominee: null, text: "" };
+const IDLE_SAVE: SaveState = { status: "idle" };
 
-const emptyDrafts = (): Drafts =>
-  Object.fromEntries(AWARD_CATEGORIES.map((category) => [category.key, { nominee: null, text: "" }])) as unknown as Drafts;
+function buildSteps(hubs: AwardHubKey[]): Step[] {
+  return hubs.flatMap((hub) =>
+    AWARD_CATEGORIES.map((category) => ({ key: slotKey(hub, category.key), hub, category }))
+  );
+}
 
-const idleSaves = (): Record<AwardCategoryKey, SaveState> =>
-  Object.fromEntries(AWARD_CATEGORIES.map((category) => [category.key, { status: "idle" }])) as unknown as Record<
-    AwardCategoryKey,
-    SaveState
-  >;
+function isComplete(draft: Draft | undefined): boolean {
+  return Boolean(draft?.nominee) && (draft?.text.trim().length ?? 0) >= JUSTIFICATION_MIN;
+}
 
-function isComplete(draft: Draft): boolean {
-  return Boolean(draft.nominee) && draft.text.trim().length >= JUSTIFICATION_MIN;
+/** "Cível, Trabalhista e Contratos". */
+function listAreas(areas: string[]): string {
+  return areas.length > 1 ? `${areas.slice(0, -1).join(", ")} e ${areas[areas.length - 1]}` : (areas[0] ?? "");
 }
 
 async function readError(response: Response, fallback: string): Promise<string> {
@@ -66,22 +77,22 @@ async function readError(response: Response, fallback: string): Promise<string> 
 
 /* =============================================================== página */
 
-export function VotingClient({ preview = false }: { preview?: boolean }) {
+export function VotingClient({ preview = false, previewAs = null }: { preview?: boolean; previewAs?: string | null }) {
   const [view, setView] = useState<ReadyView | null>(null);
   const [failure, setFailure] = useState<{ title: string; body: string } | null>(null);
   const [screen, setScreen] = useState<Screen>("intro");
   const [stepIndex, setStepIndex] = useState(0);
-  const [drafts, setDrafts] = useState<Drafts>(emptyDrafts);
-  const [saves, setSaves] = useState(idleSaves);
+  const [drafts, setDrafts] = useState<Drafts>({});
+  const [saves, setSaves] = useState<Record<string, SaveState>>({});
   const [submittedAt, setSubmittedAt] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const draftsRef = useRef(drafts);
   const submittedRef = useRef(submittedAt);
-  const timers = useRef(new Map<AwardCategoryKey, ReturnType<typeof setTimeout>>());
-  const inflight = useRef(new Set<AwardCategoryKey>());
-  const again = useRef(new Set<AwardCategoryKey>());
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const inflight = useRef(new Set<string>());
+  const again = useRef(new Set<string>());
   const topRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -94,7 +105,8 @@ export function VotingClient({ preview = false }: { preview?: boolean }) {
   const load = useCallback(async () => {
     setFailure(null);
     try {
-      const response = await fetch(preview ? "/api/bp-awards?previa=1" : "/api/bp-awards", { cache: "no-store" });
+      const url = preview ? `/api/bp-awards?previa=1${previewAs ? `&hub=${encodeURIComponent(previewAs)}` : ""}` : "/api/bp-awards";
+      const response = await fetch(url, { cache: "no-store" });
       if (!response.ok) {
         setFailure({
           title: response.status === 403 ? "só para o comitê" : "algo deu errado",
@@ -107,46 +119,52 @@ export function VotingClient({ preview = false }: { preview?: boolean }) {
         setFailure({ title: "em breve", body: "A premiação ainda está sendo preparada pela equipe de Pessoas e Cultura." });
         return;
       }
-      const next = emptyDrafts();
+      const next: Drafts = {};
       for (const nomination of data.nominations) {
-        next[nomination.category] = { nominee: nomination.nominee_employee_id, text: nomination.justification };
+        next[slotKey(nomination.hub, nomination.category)] = {
+          nominee: nomination.nominee_employee_id,
+          text: nomination.justification,
+        };
       }
       setDrafts(next);
       draftsRef.current = next;
       setSubmittedAt(data.submittedAt);
       setView(data);
+      setStepIndex(0);
       setScreen(data.submittedAt && data.phase === "aberta" ? "review" : "intro");
     } catch {
       setFailure({ title: "sem conexão", body: "Verifique sua internet e recarregue a página." });
     }
-  }, [preview]);
+  }, [preview, previewAs]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const candidatesById = useMemo(() => new Map((view?.candidates ?? []).map((person) => [person.id, person])), [view]);
+  const steps = useMemo(() => buildSteps(view?.hubs ?? []), [view]);
 
   /* ---------------------------------------------------------- salvamento */
 
-  const save = useCallback(async (key: AwardCategoryKey) => {
+  const save = useCallback(async (key: string) => {
     if (inflight.current.has(key)) {
       again.current.add(key);
       return;
     }
     const draft = draftsRef.current[key];
-    if (!draft.nominee) return;
+    if (!draft?.nominee) return;
     if (preview) {
       setSaves((current) => ({ ...current, [key]: { status: "saved" } }));
       return;
     }
+    const [hub, category] = key.split(":");
     inflight.current.add(key);
     setSaves((current) => ({ ...current, [key]: { status: "saving" } }));
     try {
       const response = await fetch("/api/bp-awards/indicacoes", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ category: key, nominee_employee_id: draft.nominee, justification: draft.text }),
+        body: JSON.stringify({ hub, category, nominee_employee_id: draft.nominee, justification: draft.text }),
       });
       if (!response.ok) {
         const message = await readError(response, "Não foi possível salvar.");
@@ -166,11 +184,11 @@ export function VotingClient({ preview = false }: { preview?: boolean }) {
   }, [preview]);
 
   const scheduleSave = useCallback(
-    (key: AwardCategoryKey, delay: number) => {
+    (key: string, delay: number) => {
       const timer = timers.current.get(key);
       if (timer) clearTimeout(timer);
       const draft = draftsRef.current[key];
-      if (!draft.nominee) return;
+      if (!draft?.nominee) return;
       if (submittedRef.current && draft.text.trim().length < JUSTIFICATION_MIN) {
         setSaves((current) => ({
           ...current,
@@ -210,8 +228,8 @@ export function VotingClient({ preview = false }: { preview?: boolean }) {
   }, []);
 
   const updateDraft = useCallback(
-    (key: AwardCategoryKey, patch: Partial<Draft>, delay: number) => {
-      const next = { ...draftsRef.current, [key]: { ...draftsRef.current[key], ...patch } };
+    (key: string, patch: Partial<Draft>, delay: number) => {
+      const next = { ...draftsRef.current, [key]: { ...(draftsRef.current[key] ?? EMPTY_DRAFT), ...patch } };
       draftsRef.current = next;
       setDrafts(next);
       scheduleSave(key, delay);
@@ -232,8 +250,9 @@ export function VotingClient({ preview = false }: { preview?: boolean }) {
     [flushSaves]
   );
 
-  const firstIncomplete = AWARD_CATEGORIES.findIndex((category) => !isComplete(drafts[category.key]));
-  const completeCount = AWARD_CATEGORIES.filter((category) => isComplete(drafts[category.key])).length;
+  const firstIncomplete = steps.findIndex((step) => !isComplete(drafts[step.key]));
+  const completeCount = steps.filter((step) => isComplete(drafts[step.key])).length;
+  const totalSteps = steps.length;
   const anySaving = Object.values(saves).some((state) => state.status === "saving" || state.status === "pending");
 
   const submit = useCallback(async () => {
@@ -301,7 +320,7 @@ export function VotingClient({ preview = false }: { preview?: boolean }) {
       <Shell firstNameLabel={greeting} topRef={topRef}>
         <MessageBlock
           title="votação dos colaboradores"
-          body="A indicação do BP Awards é feita pelos colaboradores ativos do escritório. Não achamos um cadastro de colaborador ligado ao seu usuário; se isso estiver errado, fale com a equipe de Pessoas e Cultura."
+          body="A indicação do BP Awards é feita pelos colaboradores ativos do escritório, cada um no seu hub. Não achamos um cadastro de colaborador em um hub ligado ao seu usuário; se isso estiver errado, fale com a equipe de Pessoas e Cultura."
         />
       </Shell>
     );
@@ -319,6 +338,8 @@ export function VotingClient({ preview = false }: { preview?: boolean }) {
     return (
       <Shell firstNameLabel={greeting} topRef={topRef}>
         <Hero
+          hubs={view.hubs}
+          hubAreas={view.hubAreas}
           closesAt={null}
           note={
             view.phase === "agendada" && view.edition.voting_opens_at
@@ -345,7 +366,7 @@ export function VotingClient({ preview = false }: { preview?: boolean }) {
           <PartyInfo />
         </MessageBlock>
         {submittedAt && (
-          <ReviewList drafts={drafts} candidatesById={candidatesById} readOnly onEdit={() => undefined} />
+          <ReviewList steps={steps} drafts={drafts} candidatesById={candidatesById} readOnly onEdit={() => undefined} />
         )}
       </Shell>
     );
@@ -354,14 +375,16 @@ export function VotingClient({ preview = false }: { preview?: boolean }) {
   /* ----------------------------------------------------- votação aberta */
 
   const closesAt = view.edition.voting_closes_at;
-  const category = AWARD_CATEGORIES[stepIndex];
+  const step = steps[stepIndex];
 
   return (
-    <Shell firstNameLabel={greeting} topRef={topRef} preview={view.preview}>
+    <Shell firstNameLabel={greeting} topRef={topRef} preview={view.preview} previewHubs={view.hubs}>
       {screen !== "intro" && screen !== "done" && (
         <CivilStepper
+          steps={steps}
+          hubs={view.hubs}
           drafts={drafts}
-          current={screen === "step" ? stepIndex : null}
+          stepIndex={stepIndex}
           reviewing={screen === "review"}
           onStep={(index) => go("step", index)}
           onReview={() => go("review")}
@@ -378,7 +401,7 @@ export function VotingClient({ preview = false }: { preview?: boolean }) {
         >
           {screen === "intro" && (
             <>
-              <Hero closesAt={closesAt} note={null}>
+              <Hero hubs={view.hubs} hubAreas={view.hubAreas} closesAt={closesAt} note={null}>
                 <button
                   type="button"
                   className={styles.primary}
@@ -388,29 +411,40 @@ export function VotingClient({ preview = false }: { preview?: boolean }) {
                   <ArrowRight className="size-4" aria-hidden />
                 </button>
                 {completeCount > 0 && !submittedAt && (
-                  <span className="text-sm text-[var(--aw-mist)]">{completeCount} de 5 valores preenchidos</span>
+                  <span className="text-sm text-[var(--aw-mist)]">
+                    {completeCount} de {totalSteps} indicações preenchidas
+                  </span>
                 )}
               </Hero>
-              <ValuesList drafts={drafts} onPick={(index) => go("step", index)} />
-              <Rules partnersEligible={view.edition.partners_eligible} />
+              <ValuesList
+                steps={steps}
+                drafts={drafts}
+                onPick={(key) => {
+                  const pending = steps.findIndex((item) => item.category.key === key && !isComplete(drafts[item.key]));
+                  go("step", pending >= 0 ? pending : steps.findIndex((item) => item.category.key === key));
+                }}
+              />
+              <Rules partnersEligible={view.edition.partners_eligible} hubs={view.hubs} />
             </>
           )}
 
-          {screen === "step" && (
+          {screen === "step" && step && (
             <ValueStep
-              index={stepIndex}
-              category={category}
-              draft={drafts[category.key]}
-              save={saves[category.key]}
+              step={step}
+              nextStep={steps[stepIndex + 1] ?? null}
+              isFirst={stepIndex === 0}
+              draft={drafts[step.key] ?? EMPTY_DRAFT}
+              save={saves[step.key] ?? IDLE_SAVE}
               candidates={view.candidates}
               candidatesById={candidatesById}
+              steps={steps}
               drafts={drafts}
               submitted={Boolean(submittedAt)}
-              onPick={(person) => updateDraft(category.key, { nominee: person.id }, 0)}
-              onText={(text) => updateDraft(category.key, { text }, SAVE_DELAY_MS)}
-              onRetry={() => void save(category.key)}
+              onPick={(person) => updateDraft(step.key, { nominee: person.id }, 0)}
+              onText={(text) => updateDraft(step.key, { text }, SAVE_DELAY_MS)}
+              onRetry={() => void save(step.key)}
               onBack={() => (stepIndex === 0 ? go("intro") : go("step", stepIndex - 1))}
-              onNext={() => (stepIndex === AWARD_CATEGORIES.length - 1 ? go("review") : go("step", stepIndex + 1))}
+              onNext={() => (stepIndex === steps.length - 1 ? go("review") : go("step", stepIndex + 1))}
             />
           )}
 
@@ -425,6 +459,7 @@ export function VotingClient({ preview = false }: { preview?: boolean }) {
                   : "Confira quem você indicou em cada valor. Depois de enviar, ainda dá para ajustar até o fim da votação."}
               </p>
               <ReviewList
+                steps={steps}
                 drafts={drafts}
                 candidatesById={candidatesById}
                 saves={saves}
@@ -435,15 +470,15 @@ export function VotingClient({ preview = false }: { preview?: boolean }) {
                   <button
                     type="button"
                     className={styles.primary}
-                    disabled={completeCount < 5 || submitting}
+                    disabled={completeCount < totalSteps || submitting}
                     onClick={() => void submit()}
                   >
                     {submitting ? <LoaderCircle className="size-4 animate-spin" aria-hidden /> : <Send className="size-4" aria-hidden />}
                     {submitting ? "Enviando…" : "Enviar indicações"}
                   </button>
                   <span className="text-sm text-[var(--aw-mist)]" aria-live="polite">
-                    {completeCount < 5
-                      ? `Faltam ${5 - completeCount} ${5 - completeCount === 1 ? "valor" : "valores"} para enviar.`
+                    {completeCount < totalSteps
+                      ? `${totalSteps - completeCount === 1 ? "Falta 1 indicação" : `Faltam ${totalSteps - completeCount} indicações`} para enviar.`
                       : anySaving
                         ? "Salvando as últimas mudanças…"
                         : "Tudo pronto."}
@@ -495,22 +530,45 @@ function Shell({
   firstNameLabel,
   topRef,
   preview = false,
+  previewHubs = [],
   children,
 }: {
   firstNameLabel: string | null;
   topRef: React.RefObject<HTMLDivElement | null>;
   preview?: boolean;
+  previewHubs?: AwardHubKey[];
   children: React.ReactNode;
 }) {
+  const simulated = previewHubs.length > 1 ? "socio" : previewHubs[0];
   return (
     <div className={styles.theme}>
       {preview && (
-        <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-[var(--aw-gold)] px-4 py-2 text-center text-sm font-medium text-[var(--aw-night)]">
-          Pré-visualização do RH: a votação aparece aberta, mas nada é salvo nem enviado.
-          <Link href={AWARDS_COMMITTEE_PATH} className="underline underline-offset-4">
-            Voltar ao comitê
-          </Link>
-        </p>
+        <div className="bg-[var(--aw-gold)] px-4 py-2 text-center text-sm font-medium text-[var(--aw-night)]">
+          <p>
+            Pré-visualização do RH: a votação aparece aberta, mas nada é salvo nem enviado.{" "}
+            <Link href={AWARDS_COMMITTEE_PATH} className="underline underline-offset-4">
+              Voltar ao comitê
+            </Link>
+          </p>
+          <nav aria-label="Ver como" className="mt-1 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+            <span>Ver como:</span>
+            {[...AWARD_HUBS.map((hub) => ({ key: hub.key as string, label: hub.shortName })), { key: "socio", label: "Sócio patrimonial" }].map(
+              (option) => (
+                <Link
+                  key={option.key}
+                  href={`/bp-awards?previa=1&hub=${option.key}`}
+                  aria-current={simulated === option.key ? "true" : undefined}
+                  className={cn(
+                    "underline-offset-4 hover:underline",
+                    simulated === option.key ? "font-bold underline" : "font-medium"
+                  )}
+                >
+                  {option.label}
+                </Link>
+              )
+            )}
+          </nav>
+        </div>
       )}
       <div ref={topRef} className="mx-auto w-full max-w-[52rem] scroll-mt-0 px-4 pb-20 sm:px-6">
         <header className="flex items-center justify-between gap-4 py-5 sm:py-6">
@@ -547,14 +605,21 @@ function MessageBlock({ title, body, children }: { title: string; body: string; 
 }
 
 function Hero({
+  hubs,
+  hubAreas,
   closesAt,
   note,
   children,
 }: {
+  hubs: AwardHubKey[];
+  hubAreas: Record<AwardHubKey, string[]>;
   closesAt: string | null;
   note: string | null;
   children?: React.ReactNode;
 }) {
+  const isAllHubs = hubs.length > 1;
+  const ownHub = hubs.length === 1 ? awardHub(hubs[0]) : null;
+  const ownAreas = ownHub ? hubAreas[ownHub.key] : [];
   return (
     <section aria-labelledby="bp-awards-titulo" className="flex flex-col items-center pb-12 pt-2 text-center sm:pt-4">
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -570,10 +635,19 @@ function Hero({
         Quem representa nossos valores?
       </h1>
       <p className="mt-5 max-w-[60ch] text-[1.02rem] leading-8 text-[var(--aw-mist)]">
-        O Bismarchi | Pires Awards reconhece as pessoas que traduzem os valores CIVIL em atitudes do dia a dia. Pensando em
-        cada um dos 5 valores, quem você indicaria como exemplo? Um comitê analisa as indicações e os vencedores são
-        revelados na festa de 10 anos.
+        O Bismarchi | Pires Awards reconhece as pessoas que traduzem os valores CIVIL em atitudes do dia a dia. Cada hub tem as
+        suas 5 premiações: pensando em cada valor, quem você indicaria como exemplo? Um comitê analisa as indicações e os
+        vencedores são revelados na festa de 10 anos.
       </p>
+      {(ownHub || isAllHubs) && (
+        <p className={cn(styles.pill, "mt-6 min-h-0 px-4 py-2 normal-case tracking-normal")}>
+          {ownHub
+            ? ownAreas.length > 1
+              ? `Você indica no ${ownHub.name}: ${listAreas(ownAreas)}`
+              : `Você indica no ${ownHub.name}`
+            : `Você indica em ${hubs.length} hubs: ${hubs.map((hub) => awardHub(hub).shortName).join(", ")}`}
+        </p>
+      )}
       {note ? (
         <p className="mt-6 flex items-center gap-2 text-[var(--aw-ivory)]">
           <CalendarClock className="size-5 text-[var(--aw-gold)]" aria-hidden />
@@ -589,7 +663,7 @@ function Hero({
           )}
           <li className="flex items-center gap-2">
             <Timer className="size-4 text-[var(--aw-gold)]" aria-hidden />
-            Uns 10 minutos
+            {isAllHubs ? "Uns 30 minutos" : "Uns 10 minutos"}
           </li>
           <li className="flex items-center gap-2">
             <CloudCheck className="size-4 text-[var(--aw-gold)]" aria-hidden />
@@ -603,7 +677,15 @@ function Hero({
 }
 
 /** "Cinco formas de reconhecer": os selos dos valores, como no slide da identidade. */
-function ValuesList({ drafts, onPick }: { drafts?: Drafts; onPick?: (index: number) => void }) {
+function ValuesList({
+  steps = [],
+  drafts,
+  onPick,
+}: {
+  steps?: Step[];
+  drafts?: Drafts;
+  onPick?: (key: AwardCategoryKey) => void;
+}) {
   return (
     <section aria-labelledby="valores-titulo" className="border-t border-[var(--aw-line-soft)] pt-10">
       <h2 id="valores-titulo" className={cn(styles.display, "text-center text-[1.5rem] text-[var(--aw-ivory)]")}>
@@ -612,7 +694,8 @@ function ValuesList({ drafts, onPick }: { drafts?: Drafts; onPick?: (index: numb
       <p className="mt-2 text-center text-sm text-[var(--aw-mist)]">Os valores CIVIL</p>
       <ol className="mt-8 grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 md:grid-cols-5">
         {AWARD_CATEGORIES.map((category, index) => {
-          const done = drafts ? isComplete(drafts[category.key]) : false;
+          const own = steps.filter((step) => step.category.key === category.key);
+          const done = own.length > 0 && own.every((step) => isComplete(drafts?.[step.key]));
           const content = (
             <>
               <Seal categoryKey={category.key} className="w-28 sm:w-32" />
@@ -627,7 +710,7 @@ function ValuesList({ drafts, onPick }: { drafts?: Drafts; onPick?: (index: numb
               {onPick ? (
                 <button
                   type="button"
-                  onClick={() => onPick(index)}
+                  onClick={() => onPick(category.key)}
                   aria-label={`${category.name}${done ? ", preenchido" : ""}`}
                   className="group flex w-full flex-col items-center rounded-xl px-1 py-2 transition-transform duration-200 ease-out hover:-translate-y-0.5"
                 >
@@ -644,8 +727,11 @@ function ValuesList({ drafts, onPick }: { drafts?: Drafts; onPick?: (index: numb
   );
 }
 
-function Rules({ partnersEligible }: { partnersEligible: boolean }) {
+function Rules({ partnersEligible, hubs }: { partnersEligible: boolean; hubs: AwardHubKey[] }) {
   const rules = [
+    hubs.length > 1
+      ? `Cada hub tem as suas 5 premiações. Você indica em ${hubs.length} hubs.`
+      : "Cada hub tem as suas 5 premiações, e você indica só colegas do seu hub.",
     "Indique uma pessoa por valor. A mesma pessoa pode aparecer em mais de um valor.",
     "Não vale indicar a si mesmo.",
     partnersEligible ? null : "Sócios participam votando, mas não concorrem.",
@@ -668,68 +754,101 @@ function Rules({ partnersEligible }: { partnersEligible: boolean }) {
   );
 }
 
-/** Progresso que soletra CIVIL: cada letra é um valor. */
+/** Progresso que soletra CIVIL (cada letra é um valor); com mais de um hub, abas para trocar de hub. */
 function CivilStepper({
+  steps,
+  hubs,
   drafts,
-  current,
+  stepIndex,
   reviewing,
   onStep,
   onReview,
 }: {
+  steps: Step[];
+  hubs: AwardHubKey[];
   drafts: Drafts;
-  current: number | null;
+  stepIndex: number;
   reviewing: boolean;
   onStep: (index: number) => void;
   onReview: () => void;
 }) {
+  const activeHub = steps[stepIndex]?.hub ?? hubs[0];
   return (
-    <nav
-      aria-label="Valores"
-      className="sticky top-0 z-20 -mx-4 flex items-center justify-between gap-3 border-b border-[var(--aw-line-soft)] bg-[var(--aw-navy)]/95 px-4 py-2 sm:-mx-6 sm:px-6"
-    >
-      <ol className="flex items-end gap-1 sm:gap-2">
-        {AWARD_CATEGORIES.map((category, index) => {
-          const done = isComplete(drafts[category.key]);
-          const active = current === index;
-          return (
-            <li key={category.key}>
+    <nav aria-label="Valores" className="sticky top-0 z-20 -mx-4 border-b border-[var(--aw-line-soft)] bg-[var(--aw-navy)]/95 px-4 py-2 sm:-mx-6 sm:px-6">
+      {hubs.length > 1 && (
+        <div className="mb-1.5 flex gap-1.5 overflow-x-auto pb-0.5 [scrollbar-width:none]" role="group" aria-label="Hub">
+          {hubs.map((hub) => {
+            const own = steps.filter((step) => step.hub === hub);
+            const done = own.filter((step) => isComplete(drafts[step.key])).length;
+            const active = hub === activeHub && !reviewing;
+            return (
               <button
+                key={hub}
                 type="button"
-                onClick={() => onStep(index)}
-                aria-current={active ? "step" : undefined}
-                aria-label={`${category.name}${done ? ", preenchido" : ", a preencher"}`}
-                title={category.name}
+                aria-pressed={active}
+                onClick={() => {
+                  const pending = steps.findIndex((step) => step.hub === hub && !isComplete(drafts[step.key]));
+                  onStep(pending >= 0 ? pending : steps.findIndex((step) => step.hub === hub));
+                }}
                 className={cn(
-                  "relative grid h-11 w-9 place-items-center text-xl font-bold transition-colors duration-150 sm:w-10",
-                  active ? "text-[var(--aw-ivory)]" : done ? "text-[var(--aw-gold)]" : "text-[var(--aw-dim)] hover:text-[var(--aw-mist)]"
+                  "shrink-0 rounded-full border px-3 py-1 text-xs font-semibold transition-colors duration-150",
+                  active
+                    ? "border-[var(--aw-gold)] bg-[var(--aw-gold)] text-[var(--aw-night)]"
+                    : "border-[var(--aw-line)] text-[var(--aw-ivory)] hover:bg-[var(--aw-gold)]/10"
                 )}
               >
-                {category.letter}
-                <span
-                  aria-hidden
-                  className={cn(
-                    "absolute inset-x-2 bottom-0.5 h-0.5 rounded-full",
-                    active ? "bg-[var(--aw-ivory)]" : done ? "bg-[var(--aw-gold)]" : "bg-transparent"
-                  )}
-                />
+                {awardHub(hub).shortName} · {done}/{own.length}
               </button>
-            </li>
-          );
-        })}
-      </ol>
-      <button
-        type="button"
-        onClick={onReview}
-        aria-current={reviewing ? "step" : undefined}
-        className={cn(
-          "rounded-full border px-3.5 py-2 text-sm font-semibold transition-colors duration-150",
-          reviewing
-            ? "border-[var(--aw-gold)] bg-[var(--aw-gold)] text-[var(--aw-night)]"
-            : "border-[var(--aw-line)] text-[var(--aw-ivory)] hover:bg-[var(--aw-gold)]/10"
-        )}
-      >
-        Revisar
-      </button>
+            );
+          })}
+        </div>
+      )}
+      <div className="flex items-center justify-between gap-3">
+        <ol className="flex items-end gap-1 sm:gap-2">
+          {steps.map((step, index) => {
+            if (step.hub !== activeHub) return null;
+            const done = isComplete(drafts[step.key]);
+            const active = !reviewing && stepIndex === index;
+            return (
+              <li key={step.key}>
+                <button
+                  type="button"
+                  onClick={() => onStep(index)}
+                  aria-current={active ? "step" : undefined}
+                  aria-label={`${step.category.name}${done ? ", preenchido" : ", a preencher"}`}
+                  title={step.category.name}
+                  className={cn(
+                    "relative grid h-11 w-9 place-items-center text-xl font-bold transition-colors duration-150 sm:w-10",
+                    active ? "text-[var(--aw-ivory)]" : done ? "text-[var(--aw-gold)]" : "text-[var(--aw-dim)] hover:text-[var(--aw-mist)]"
+                  )}
+                >
+                  {step.category.letter}
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "absolute inset-x-2 bottom-0.5 h-0.5 rounded-full",
+                      active ? "bg-[var(--aw-ivory)]" : done ? "bg-[var(--aw-gold)]" : "bg-transparent"
+                    )}
+                  />
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+        <button
+          type="button"
+          onClick={onReview}
+          aria-current={reviewing ? "step" : undefined}
+          className={cn(
+            "rounded-full border px-3.5 py-2 text-sm font-semibold transition-colors duration-150",
+            reviewing
+              ? "border-[var(--aw-gold)] bg-[var(--aw-gold)] text-[var(--aw-night)]"
+              : "border-[var(--aw-line)] text-[var(--aw-ivory)] hover:bg-[var(--aw-gold)]/10"
+          )}
+        >
+          Revisar
+        </button>
+      </div>
     </nav>
   );
 }
@@ -766,12 +885,14 @@ function SaveStatus({ save, onRetry }: { save: SaveState; onRetry: () => void })
 }
 
 function ValueStep({
-  index,
-  category,
+  step,
+  nextStep,
+  isFirst,
   draft,
   save,
   candidates,
   candidatesById,
+  steps,
   drafts,
   submitted,
   onPick,
@@ -780,12 +901,14 @@ function ValueStep({
   onBack,
   onNext,
 }: {
-  index: number;
-  category: AwardCategory;
+  step: Step;
+  nextStep: Step | null;
+  isFirst: boolean;
   draft: Draft;
   save: SaveState;
   candidates: AwardPerson[];
   candidatesById: Map<string, AwardPerson>;
+  steps: Step[];
   drafts: Drafts;
   submitted: boolean;
   onPick: (person: AwardPerson) => void;
@@ -794,29 +917,33 @@ function ValueStep({
   onBack: () => void;
   onNext: () => void;
 }) {
+  const { category, hub } = step;
   const nominee = draft.nominee ? (candidatesById.get(draft.nominee) ?? null) : null;
-  const textId = `situacao-${category.key}`;
+  const textId = `situacao-${hub}-${category.key}`;
   const hintId = `${textId}-dica`;
   const length = draft.text.trim().length;
-  const isLast = index === AWARD_CATEGORIES.length - 1;
+  const position = AWARD_CATEGORIES.findIndex((item) => item.key === category.key) + 1;
 
+  const hubCandidates = useMemo(() => candidates.filter((person) => person.hub === hub), [candidates, hub]);
   const usedIn = useMemo(() => {
     const map = new Map<string, string[]>();
-    for (const other of AWARD_CATEGORIES) {
-      const id = drafts[other.key].nominee;
-      if (other.key === category.key || !id) continue;
-      map.set(id, [...(map.get(id) ?? []), other.letter]);
+    for (const other of steps) {
+      const id = drafts[other.key]?.nominee;
+      if (other.key === step.key || other.hub !== hub || !id) continue;
+      map.set(id, [...(map.get(id) ?? []), other.category.letter]);
     }
     return map;
-  }, [drafts, category.key]);
+  }, [drafts, steps, step.key, hub]);
 
   return (
-    <section aria-labelledby={`valor-${category.key}`} className="pt-8">
+    <section aria-labelledby={`valor-${step.key}`} className="pt-8">
       {/* Como nos slides da identidade: texto, filete dourado e o selo do valor. */}
       <div className="flex flex-col-reverse items-center gap-6 sm:grid sm:grid-cols-[minmax(0,1fr)_1px_11rem] sm:items-center sm:gap-8">
         <div className="min-w-0 text-center sm:text-left">
-          <p className="text-sm font-medium text-[var(--aw-gold-bright)]">Valor {index + 1} de 5</p>
-          <h1 id={`valor-${category.key}`} className={cn(styles.display, "mt-2 text-[clamp(1.75rem,5.5vw,2.5rem)] text-[var(--aw-ivory)]")}>
+          <p className="text-sm font-medium text-[var(--aw-gold-bright)]">
+            {awardHub(hub).name} · Valor {position} de 5
+          </p>
+          <h1 id={`valor-${step.key}`} className={cn(styles.display, "mt-2 text-[clamp(1.75rem,5.5vw,2.5rem)] text-[var(--aw-ivory)]")}>
             {category.name}
           </h1>
           <p className="mt-4 max-w-[58ch] text-[1.02rem] leading-8 text-[var(--aw-mist)]">{category.description}</p>
@@ -828,11 +955,11 @@ function ValueStep({
       <div className="mt-10 space-y-8 border-t border-[var(--aw-line-soft)] pt-8">
         <fieldset className="min-w-0">
           <legend className="mb-4 text-[1.05rem] font-semibold leading-7 text-[var(--aw-ivory)]">
-            Pensando nesse valor, quem mais representa esse comportamento no dia a dia?
+            Pensando nesse valor, quem do {awardHub(hub).name} mais representa esse comportamento no dia a dia?
           </legend>
           <PersonPicker
-            key={category.key}
-            candidates={candidates}
+            key={step.key}
+            candidates={hubCandidates}
             selected={nominee}
             onSelect={onPick}
             usedIn={usedIn}
@@ -872,10 +999,10 @@ function ValueStep({
       <div className="mt-10 flex items-center justify-between gap-3 border-t border-[var(--aw-line-soft)] pt-6">
         <button type="button" className={styles.secondary} onClick={onBack}>
           <ArrowLeft className="size-4" aria-hidden />
-          {index === 0 ? "Início" : "Anterior"}
+          {isFirst ? "Início" : "Anterior"}
         </button>
         <button type="button" className={styles.primary} onClick={onNext}>
-          {isLast ? "Revisar" : "Próximo valor"}
+          {!nextStep ? "Revisar" : nextStep.hub !== hub ? awardHub(nextStep.hub).shortName : "Próximo valor"}
           <ArrowRight className="size-4" aria-hidden />
         </button>
       </div>
@@ -884,61 +1011,72 @@ function ValueStep({
 }
 
 function ReviewList({
+  steps,
   drafts,
   candidatesById,
   saves,
   readOnly = false,
   onEdit,
 }: {
+  steps: Step[];
   drafts: Drafts;
   candidatesById: Map<string, AwardPerson>;
-  saves?: Record<AwardCategoryKey, SaveState>;
+  saves?: Record<string, SaveState>;
   readOnly?: boolean;
   onEdit: (index: number) => void;
 }) {
+  const hubs = [...new Set(steps.map((step) => step.hub))];
   return (
-    <ol className="mt-8 divide-y divide-[var(--aw-line-soft)] border-y border-[var(--aw-line-soft)]">
-      {AWARD_CATEGORIES.map((category, index) => {
-        const draft = drafts[category.key];
-        const nominee = draft.nominee ? (candidatesById.get(draft.nominee) ?? null) : null;
-        const complete = Boolean(nominee) && isComplete(draft);
-        const error = saves?.[category.key]?.status === "error" ? saves[category.key].message : null;
-        return (
-          <li key={category.key} className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-x-4 gap-y-3 py-5 sm:grid-cols-[4rem_minmax(0,1fr)_auto]">
-            <Seal categoryKey={category.key} className="w-14 sm:w-16" />
-            <div className="min-w-0">
-              <p className="text-xs font-bold tracking-[0.04em] text-[var(--aw-gold-bright)] uppercase">{category.name}</p>
-              {nominee ? (
-                <div className="mt-2 flex items-center gap-3">
-                  <AwardAvatar person={nominee} size="sm" />
-                  <span className="truncate font-semibold text-[var(--aw-ivory)]">{nominee.short_name}</span>
-                </div>
-              ) : (
-                <p className="mt-2 text-[var(--aw-gold-bright)]">Falta escolher quem você indica.</p>
-              )}
-              {nominee && draft.text.trim().length >= JUSTIFICATION_MIN && (
-                <p className="mt-2 line-clamp-2 text-sm leading-6 text-[var(--aw-mist)]">“{draft.text.trim()}”</p>
-              )}
-              {nominee && draft.text.trim().length < JUSTIFICATION_MIN && (
-                <p className="mt-2 text-sm text-[var(--aw-gold-bright)]">
-                  Falta descrever a situação (pelo menos {JUSTIFICATION_MIN} caracteres).
-                </p>
-              )}
-              {error && <p className="mt-2 text-sm text-[var(--aw-danger)]">{error}</p>}
-            </div>
-            {!readOnly && (
-              <button
-                type="button"
-                onClick={() => onEdit(index)}
-                className={cn(styles.secondary, "col-start-2 min-h-10 justify-self-start px-4 text-sm sm:col-start-3 sm:self-center")}
-              >
-                {complete ? "Editar" : "Completar"}
-              </button>
-            )}
-          </li>
-        );
-      })}
-    </ol>
+    <div className="mt-8 space-y-8">
+      {hubs.map((hub) => (
+        <section key={hub} aria-label={awardHub(hub).name}>
+          <h2 className="text-sm font-bold tracking-[0.04em] text-[var(--aw-ivory)] uppercase">{awardHub(hub).name}</h2>
+          <ol className="mt-3 divide-y divide-[var(--aw-line-soft)] border-y border-[var(--aw-line-soft)]">
+            {steps.map((step, index) => {
+              if (step.hub !== hub) return null;
+              const draft = drafts[step.key] ?? EMPTY_DRAFT;
+              const nominee = draft.nominee ? (candidatesById.get(draft.nominee) ?? null) : null;
+              const complete = Boolean(nominee) && isComplete(draft);
+              const error = saves?.[step.key]?.status === "error" ? saves[step.key].message : null;
+              return (
+                <li key={step.key} className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-x-4 gap-y-3 py-5 sm:grid-cols-[4rem_minmax(0,1fr)_auto]">
+                  <Seal categoryKey={step.category.key} className="w-14 sm:w-16" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold tracking-[0.04em] text-[var(--aw-gold-bright)] uppercase">{step.category.name}</p>
+                    {nominee ? (
+                      <div className="mt-2 flex items-center gap-3">
+                        <AwardAvatar person={nominee} size="sm" />
+                        <span className="truncate font-semibold text-[var(--aw-ivory)]">{nominee.short_name}</span>
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-[var(--aw-gold-bright)]">Falta escolher quem você indica.</p>
+                    )}
+                    {nominee && draft.text.trim().length >= JUSTIFICATION_MIN && (
+                      <p className="mt-2 line-clamp-2 text-sm leading-6 text-[var(--aw-mist)]">“{draft.text.trim()}”</p>
+                    )}
+                    {nominee && draft.text.trim().length < JUSTIFICATION_MIN && (
+                      <p className="mt-2 text-sm text-[var(--aw-gold-bright)]">
+                        Falta descrever a situação (pelo menos {JUSTIFICATION_MIN} caracteres).
+                      </p>
+                    )}
+                    {error && <p className="mt-2 text-sm text-[var(--aw-danger)]">{error}</p>}
+                  </div>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      onClick={() => onEdit(index)}
+                      className={cn(styles.secondary, "col-start-2 min-h-10 justify-self-start px-4 text-sm sm:col-start-3 sm:self-center")}
+                    >
+                      {complete ? "Editar" : "Completar"}
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      ))}
+    </div>
   );
 }
 
@@ -981,27 +1119,38 @@ function WinnersBlock({ view }: { view: ReadyView }) {
       {view.winners.length === 0 ? (
         <p className="mt-10 text-center text-[var(--aw-mist)]">O resultado ainda está sendo preparado.</p>
       ) : (
-        <ol className="mt-10 divide-y divide-[var(--aw-line-soft)] border-y border-[var(--aw-line-soft)]">
-          {view.winners.map((winner) => {
-            const category = AWARD_CATEGORIES.find((item) => item.key === winner.category)!;
+        <div className="mt-10 space-y-10">
+          {AWARD_HUBS.map((hub) => {
+            const winners = view.winners.filter((winner) => winner.hub === hub.key);
+            if (winners.length === 0) return null;
             return (
-              <li key={winner.category} className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-5 py-7 sm:gap-8">
-                <span className="relative">
-                  <AwardAvatar person={winner.person} size="xl" className="ring-2 ring-[var(--aw-gold)]" />
-                  <Seal categoryKey={winner.category} className="absolute -bottom-2 -right-3 w-12 drop-shadow-[0_2px_6px_rgba(0,0,0,0.5)]" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-bold tracking-[0.04em] text-[var(--aw-gold-bright)] uppercase">{category.name}</p>
-                  <p className="mt-1 text-xl font-semibold text-[var(--aw-ivory)]">{winner.person.short_name}</p>
-                  <p className="text-sm text-[var(--aw-mist)]">{winner.person.department}</p>
-                  {winner.citation && (
-                    <p className="mt-3 max-w-[60ch] leading-7 text-[var(--aw-ivory)]/90">“{winner.citation}”</p>
-                  )}
-                </div>
-              </li>
+              <section key={hub.key} aria-label={hub.name}>
+                <h2 className={cn(styles.display, "text-center text-[1.25rem] text-[var(--aw-ivory)]")}>{hub.name}</h2>
+                <ol className="mt-4 divide-y divide-[var(--aw-line-soft)] border-y border-[var(--aw-line-soft)]">
+                  {winners.map((winner) => {
+                    const category = AWARD_CATEGORIES.find((item) => item.key === winner.category)!;
+                    return (
+                      <li key={winner.category} className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-5 py-7 sm:gap-8">
+                        <span className="relative">
+                          <AwardAvatar person={winner.person} size="xl" className="ring-2 ring-[var(--aw-gold)]" />
+                          <Seal categoryKey={winner.category} className="absolute -bottom-2 -right-3 w-12 drop-shadow-[0_2px_6px_rgba(0,0,0,0.5)]" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold tracking-[0.04em] text-[var(--aw-gold-bright)] uppercase">{category.name}</p>
+                          <p className="mt-1 text-xl font-semibold text-[var(--aw-ivory)]">{winner.person.short_name}</p>
+                          <p className="text-sm text-[var(--aw-mist)]">{winner.person.department}</p>
+                          {winner.citation && (
+                            <p className="mt-3 max-w-[60ch] leading-7 text-[var(--aw-ivory)]/90">“{winner.citation}”</p>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </section>
             );
           })}
-        </ol>
+        </div>
       )}
     </section>
   );

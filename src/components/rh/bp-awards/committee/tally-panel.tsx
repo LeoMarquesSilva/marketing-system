@@ -1,23 +1,32 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronRight, LoaderCircle, MessageSquareQuote, Sparkles, Star, TriangleAlert, X } from "lucide-react";
+import { Briefcase, ChevronRight, LoaderCircle, MessageSquareQuote, Scale, Sparkles, Star, TriangleAlert, Waypoints, X, type LucideIcon } from "lucide-react";
 import { AwardAvatar } from "@/components/rh/bp-awards/award-avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   AWARD_CATEGORIES,
+  AWARD_HUBS,
   CITATION_MAX,
   MAX_FINALISTS,
+  awardHub,
   awardSealSrc,
   type AwardCategoryKey,
   type AwardFinalist,
+  type AwardHubKey,
   type AwardPerson,
-  type NomineeTally,
+  type HubTallies,
 } from "@/lib/rh/bp-awards/types";
 import { cn } from "@/lib/utils";
 import { NomineeDialog } from "./nominee-dialog";
 import { requestJson } from "./request";
+
+const HUB_ICONS: Record<AwardHubKey, LucideIcon> = {
+  empresarial: Briefcase,
+  reestruturacao: Scale,
+  operacoes: Waypoints,
+};
 
 export function TallyPanel({
   tallies,
@@ -26,34 +35,39 @@ export function TallyPanel({
   partial,
   onFinalistsChange,
 }: {
-  tallies: Record<AwardCategoryKey, NomineeTally[]>;
+  tallies: HubTallies;
   finalists: AwardFinalist[];
   people: AwardPerson[];
   /** Votação ainda aberta: a contagem é parcial. */
   partial: boolean;
   onFinalistsChange: (finalists: AwardFinalist[]) => void;
 }) {
+  const [activeHub, setActiveHub] = useState<AwardHubKey>("empresarial");
   const [active, setActive] = useState<AwardCategoryKey>("cliente");
   const [openNominee, setOpenNominee] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const category = AWARD_CATEGORIES.find((item) => item.key === active)!;
-  const list = tallies[active];
-  const own = finalists.filter((finalist) => finalist.category === active);
+  const hub = awardHub(activeHub);
+  const list = tallies[activeHub][active];
+  const hubFinalists = finalists.filter((finalist) => finalist.hub === activeHub);
+  const own = hubFinalists.filter((finalist) => finalist.category === active);
   const personById = useMemo(() => new Map(people.map((person) => [person.id, person])), [people]);
   const finalistByEmployee = new Map(own.map((finalist) => [finalist.employee_id, finalist]));
   const maxCount = list[0]?.count ?? 0;
   const totalInCategory = list.reduce((sum, tally) => sum + tally.count, 0);
 
-  /** Pessoa que venceu em mais de um valor (a regra sugerida é um prêmio por pessoa). */
+  /** Pessoa que venceu em mais de um valor do hub (a regra sugerida é um prêmio por pessoa). */
   const winsByEmployee = useMemo(() => {
     const map = new Map<string, AwardCategoryKey[]>();
     for (const finalist of finalists) {
-      if (finalist.is_winner) map.set(finalist.employee_id, [...(map.get(finalist.employee_id) ?? []), finalist.category]);
+      if (finalist.hub === activeHub && finalist.is_winner) {
+        map.set(finalist.employee_id, [...(map.get(finalist.employee_id) ?? []), finalist.category]);
+      }
     }
     return map;
-  }, [finalists]);
+  }, [finalists, activeHub]);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -71,7 +85,7 @@ export function TallyPanel({
     run(async () => {
       const data = await requestJson<{ finalist: AwardFinalist }>("/api/rh/bp-awards/finalistas", {
         method: "POST",
-        body: JSON.stringify({ category: active, employee_id: employeeId }),
+        body: JSON.stringify({ hub: activeHub, category: active, employee_id: employeeId }),
       });
       onFinalistsChange([...finalists, data.finalist]);
     });
@@ -80,10 +94,10 @@ export function TallyPanel({
     run(async () => {
       let next = [...finalists];
       for (const tally of list.slice(0, MAX_FINALISTS)) {
-        if (next.some((finalist) => finalist.category === active && finalist.employee_id === tally.person.id)) continue;
+        if (next.some((finalist) => finalist.hub === activeHub && finalist.category === active && finalist.employee_id === tally.person.id)) continue;
         const data = await requestJson<{ finalist: AwardFinalist }>("/api/rh/bp-awards/finalistas", {
           method: "POST",
-          body: JSON.stringify({ category: active, employee_id: tally.person.id }),
+          body: JSON.stringify({ hub: activeHub, category: active, employee_id: tally.person.id }),
         });
         next = [...next, data.finalist];
         onFinalistsChange(next);
@@ -109,11 +123,55 @@ export function TallyPanel({
 
   return (
     <div className="space-y-5">
+      <div className="grid gap-2 sm:grid-cols-3" role="tablist" aria-label="Hubs">
+        {AWARD_HUBS.map((item) => {
+          const selected = item.key === activeHub;
+          const Icon = HUB_ICONS[item.key];
+          const winners = finalists.filter((finalist) => finalist.hub === item.key && finalist.is_winner).length;
+          const count = AWARD_CATEGORIES.reduce(
+            (sum, category) => sum + tallies[item.key][category.key].reduce((total, tally) => total + tally.count, 0),
+            0
+          );
+          return (
+            <button
+              key={item.key}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              onClick={() => {
+                setActiveHub(item.key);
+                setError(null);
+              }}
+              className={cn(
+                "flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors duration-150",
+                selected ? "border-[#0f1f2e] bg-[#0f1f2e] text-white" : "border-[#dce9eb] bg-white hover:border-[#47cdd0]/60 hover:bg-[#f5fbfb]"
+              )}
+            >
+              <span
+                className={cn(
+                  "grid size-9 shrink-0 place-items-center rounded-md",
+                  selected ? "bg-white/10 text-[#d5b371]" : "bg-[#eef3f5] text-[#285f7a]"
+                )}
+                aria-hidden
+              >
+                <Icon className="size-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold">{item.name}</span>
+                <span className={cn("block text-xs", selected ? "text-white/70" : "text-muted-foreground")}>
+                  {count} {count === 1 ? "indicação" : "indicações"} · {winners}/{AWARD_CATEGORIES.length} vencedores
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Valores">
         {AWARD_CATEGORIES.map((item) => {
           const selected = item.key === active;
-          const count = tallies[item.key].reduce((sum, tally) => sum + tally.count, 0);
-          const itemFinalists = finalists.filter((finalist) => finalist.category === item.key);
+          const count = tallies[activeHub][item.key].reduce((sum, tally) => sum + tally.count, 0);
+          const itemFinalists = hubFinalists.filter((finalist) => finalist.category === item.key);
           const hasWinner = itemFinalists.some((finalist) => finalist.is_winner);
           return (
             <button
@@ -156,7 +214,7 @@ export function TallyPanel({
         <section aria-labelledby="indicados-titulo" className="min-w-0 rounded-lg border border-[#dce9eb] bg-white shadow-xs">
           <header className="border-b border-[#dce9eb] px-4 py-3">
             <h2 id="indicados-titulo" className="text-sm font-semibold">
-              Indicados em {category.name}
+              Indicados em {category.name} · {hub.name}
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {totalInCategory} {totalInCategory === 1 ? "indicação" : "indicações"} de cédulas enviadas
@@ -216,7 +274,7 @@ export function TallyPanel({
         </section>
 
         <FinalistsColumn
-          key={active}
+          key={`${activeHub}-${active}`}
           categoryName={category.name}
           finalists={own}
           personById={personById}
@@ -235,9 +293,10 @@ export function TallyPanel({
 
       {openTally && (
         <NomineeDialog
-          key={`${active}-${openTally.person.id}`}
+          key={`${activeHub}-${active}-${openTally.person.id}`}
           tally={openTally}
           category={category}
+          hubName={hub.name}
           finalist={finalistByEmployee.get(openTally.person.id) ?? null}
           finalistCount={own.length}
           busy={busy}

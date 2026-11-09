@@ -7,24 +7,36 @@ import { RhHttpError, requireAuthenticatedUser, requireHrManager } from "@/lib/r
 import {
   AWARD_CATEGORIES,
   AWARD_CATEGORY_KEYS,
+  AWARD_HUBS,
+  AWARD_HUB_KEYS,
   CITATION_MAX,
   JUSTIFICATION_MAX,
   JUSTIFICATION_MIN,
   MAX_FINALISTS,
+  TOTAL_AWARDS,
   awardCategory,
+  awardHub,
+  buildAwardRules,
+  defaultParticipant,
+  hubAreas,
   isNominationComplete,
-  isPartner,
   resolveAwardPhase,
+  resolveParticipant,
+  slotKey,
   type AwardCategoryKey,
   type AwardEdition,
   type AwardFinalist,
+  type AwardHubKey,
   type AwardInviteStatus,
   type AwardPerson,
+  type AwardRules,
   type AwardWinner,
   type CommitteeView,
+  type HubTallies,
   type NomineeTally,
+  type ParticipantOverride,
   type ParticipationRow,
-  type RevealCategory,
+  type RevealHub,
   type VoterView,
 } from "./types";
 
@@ -32,8 +44,8 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabas
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
 const LOG = "bp-awards";
-const EDITION_SELECT = "id, year, title, voting_opens_at, voting_closes_at, partners_eligible, results_published_at";
-const FINALIST_SELECT = "id, category, employee_id, is_winner, citation";
+const EDITION_SELECT = "id, year, title, voting_opens_at, voting_closes_at, partners_eligible, results_published_at, area_hubs";
+const FINALIST_SELECT = "id, hub, category, employee_id, is_winner, citation";
 
 function createAwardsAdminClient(): SupabaseClient {
   if (!serviceKey) {
@@ -44,7 +56,7 @@ function createAwardsAdminClient(): SupabaseClient {
   });
 }
 
-function toAwardPerson(person: DirectoryPerson): AwardPerson {
+function toAwardPerson(person: DirectoryPerson, rules: AwardRules): AwardPerson {
   return {
     id: person.id,
     full_name: person.full_name,
@@ -52,6 +64,7 @@ function toAwardPerson(person: DirectoryPerson): AwardPerson {
     department: person.department,
     position: person.position,
     avatar_url: person.avatar_url,
+    hub: resolveParticipant(person, rules).hub,
   };
 }
 
@@ -86,6 +99,19 @@ function requireOpen(edition: AwardEdition) {
   }
 }
 
+/** Regra da edição: área de cada hub + exceções por pessoa. */
+async function loadRules(db: SupabaseClient, edition: AwardEdition): Promise<AwardRules> {
+  const { data, error } = await db
+    .from("hr_award_participants")
+    .select("employee_id, hub, vote_hubs, can_compete")
+    .eq("edition_id", edition.id);
+  if (error) {
+    console.error(`[${LOG}] participantes:`, error);
+    throw new RhHttpError("Falha ao carregar as configurações do BP Awards.", 500, "QUERY_FAILED");
+  }
+  return buildAwardRules(edition, (data ?? []) as ParticipantOverride[]);
+}
+
 type EmployeeLite = { id: string; full_name: string; department: string | null; position: string | null; is_active: boolean };
 
 /** Cadastro de colaborador ativo do usuário logado (quem não tem não vota). */
@@ -104,15 +130,18 @@ async function loadVoterEmployee(db: SupabaseClient, profileId: string): Promise
   return (data as EmployeeLite | null) ?? null;
 }
 
-/** Por que esta pessoa não pode ser indicada por este votante (null = pode). */
+/** Por que esta pessoa não pode ser indicada neste hub por este votante (null = pode). */
 function nomineeProblem(
   nominee: Pick<EmployeeLite, "id" | "department" | "position" | "is_active"> | null | undefined,
   voterEmployeeId: string,
-  edition: AwardEdition
+  rules: AwardRules,
+  hub: AwardHubKey
 ): string | null {
   if (!nominee || !nominee.is_active) return "Escolha um colaborador ativo do escritório.";
   if (nominee.id === voterEmployeeId) return "Não vale indicar a si mesmo.";
-  if (!edition.partners_eligible && isPartner(nominee)) return "Nesta edição, sócios não concorrem.";
+  const participant = resolveParticipant(nominee, rules);
+  if (participant.hub !== hub) return `Indique alguém do ${awardHub(hub).name}.`;
+  if (!participant.canCompete) return "Essa pessoa não concorre nesta edição.";
   return null;
 }
 
@@ -120,6 +149,7 @@ type BallotRow = { id: string; voter_user_id: string; voter_employee_id: string 
 type NominationRow = {
   id: string;
   ballot_id: string;
+  hub: AwardHubKey;
   category: AwardCategoryKey;
   nominee_employee_id: string;
   justification: string;
@@ -140,7 +170,7 @@ async function loadOwnBallot(db: SupabaseClient, editionId: string, profileId: s
   if (!ballot) return { ballot: null, nominations: [] as NominationRow[] };
   const { data: nominations, error: nominationsError } = await db
     .from("hr_award_nominations")
-    .select("id, ballot_id, category, nominee_employee_id, justification, updated_at")
+    .select("id, ballot_id, hub, category, nominee_employee_id, justification, updated_at")
     .eq("ballot_id", ballot.id);
   if (nominationsError) {
     console.error(`[${LOG}] indicações:`, nominationsError);
@@ -158,8 +188,9 @@ async function loadFinalists(db: SupabaseClient, editionId: string): Promise<Awa
   return (data ?? []) as AwardFinalist[];
 }
 
-function categoryOrder(key: AwardCategoryKey): number {
-  return AWARD_CATEGORY_KEYS.indexOf(key);
+/** Ordem das premiações: hub, depois a sequência do CIVIL. */
+function slotOrder(item: { hub: AwardHubKey; category: AwardCategoryKey }): number {
+  return AWARD_HUB_KEYS.indexOf(item.hub) * AWARD_CATEGORY_KEYS.length + AWARD_CATEGORY_KEYS.indexOf(item.category);
 }
 
 /* ------------------------------------------------------------ colaborador */
@@ -167,36 +198,49 @@ function categoryOrder(key: AwardCategoryKey): number {
 /**
  * `preview` (só RH): a página como o colaborador verá com a votação aberta,
  * sem cédula própria e sem salvar nada, para revisar antes do lançamento.
+ * `previewAs` escolhe o hub simulado ("socio" = sócio patrimonial, nos três).
  */
-export async function getVoterView({ preview = false }: { preview?: boolean } = {}): Promise<VoterView> {
+export async function getVoterView({
+  preview = false,
+  previewAs = null,
+}: { preview?: boolean; previewAs?: AwardHubKey | "socio" | null } = {}): Promise<VoterView> {
   const user = preview ? await requireHrManager() : await requireAuthenticatedUser();
   const db = createAwardsAdminClient();
   const edition = await loadCurrentEdition(db);
   if (!edition) return { state: "no_edition" };
 
   const phase = preview ? "aberta" : resolveAwardPhase(edition);
-  const [people, own] = await Promise.all([
+  const [people, own, rules] = await Promise.all([
     loadPeopleDirectory(db, LOG),
     preview ? { ballot: null, nominations: [] as NominationRow[] } : loadOwnBallot(db, edition.id, user.profileId),
+    loadRules(db, edition),
   ]);
   const me = people.find((person) => person.user_id === user.profileId && person.is_active) ?? null;
-  const candidates =
-    me || preview
-      ? people
-          .filter((person) => !nomineeProblem(person, me?.id ?? "", edition))
-          .map(toAwardPerson)
-          .sort((a, b) => a.short_name.localeCompare(b.short_name, "pt-BR"))
+  const hubs: AwardHubKey[] = preview
+    ? previewAs === "socio"
+      ? [...AWARD_HUB_KEYS]
+      : [previewAs ?? (me ? resolveParticipant(me, rules).hub : null) ?? AWARD_HUB_KEYS[0]]
+    : me
+      ? resolveParticipant(me, rules).voteHubs
       : [];
+  const candidates = people
+    .filter((person) => {
+      const { hub } = resolveParticipant(person, rules);
+      return hub !== null && hubs.includes(hub) && !nomineeProblem(person, me?.id ?? "", rules, hub);
+    })
+    .map((person) => toAwardPerson(person, rules))
+    .sort((a, b) => a.short_name.localeCompare(b.short_name, "pt-BR"));
 
   let winners: AwardWinner[] = [];
   if (phase === "publicada") {
     const byId = new Map(people.map((person) => [person.id, person]));
     winners = (await loadFinalists(db, edition.id))
       .filter((finalist) => finalist.is_winner && byId.has(finalist.employee_id))
-      .sort((a, b) => categoryOrder(a.category) - categoryOrder(b.category))
+      .sort((a, b) => slotOrder(a) - slotOrder(b))
       .map((finalist) => ({
+        hub: finalist.hub,
         category: finalist.category,
-        person: toAwardPerson(byId.get(finalist.employee_id)!),
+        person: toAwardPerson(byId.get(finalist.employee_id)!, rules),
         citation: finalist.citation,
       }));
   }
@@ -206,10 +250,13 @@ export async function getVoterView({ preview = false }: { preview?: boolean } = 
     edition,
     phase,
     preview,
-    eligible: Boolean(me) || preview,
+    eligible: hubs.length > 0,
     voterFirstName: firstName(me?.short_name ?? user.name),
+    hubs,
+    hubAreas: hubAreas(edition.area_hubs ?? {}),
     candidates,
-    nominations: own.nominations.map(({ category, nominee_employee_id, justification }) => ({
+    nominations: own.nominations.map(({ hub, category, nominee_employee_id, justification }) => ({
+      hub,
       category,
       nominee_employee_id,
       justification,
@@ -220,7 +267,8 @@ export async function getVoterView({ preview = false }: { preview?: boolean } = 
 }
 
 const nominationSchema = z.object({
-  category: z.enum(AWARD_CATEGORY_KEYS),
+  hub: z.enum(AWARD_HUB_KEYS, { error: "Hub inválido." }),
+  category: z.enum(AWARD_CATEGORY_KEYS, { error: "Valor inválido." }),
   nominee_employee_id: z.string().uuid("Escolha um colaborador."),
   justification: z.string().max(JUSTIFICATION_MAX, "Texto muito longo.").default(""),
 });
@@ -239,6 +287,10 @@ export async function saveNomination(input: unknown): Promise<{ savedAt: string 
 
   const voter = await loadVoterEmployee(db, user.profileId);
   if (!voter) throw new RhHttpError("A votação é para colaboradores ativos do escritório.", 403, "NOT_ELIGIBLE");
+  const rules = await loadRules(db, edition);
+  if (!resolveParticipant(voter, rules).voteHubs.includes(value.hub)) {
+    throw new RhHttpError("Cada colaborador indica só colegas do próprio hub.", 403, "WRONG_HUB");
+  }
 
   const { data: nominee, error: nomineeError } = await db
     .from("hr_employees")
@@ -246,7 +298,7 @@ export async function saveNomination(input: unknown): Promise<{ savedAt: string 
     .eq("id", value.nominee_employee_id)
     .maybeSingle();
   if (nomineeError) throw new RhHttpError("Falha ao conferir o colaborador.", 500, "QUERY_FAILED");
-  const problem = nomineeProblem(nominee as EmployeeLite | null, voter.id, edition);
+  const problem = nomineeProblem(nominee as EmployeeLite | null, voter.id, rules, value.hub);
   if (problem) throw new RhHttpError(problem, 400, "INVALID_NOMINEE");
 
   const { data: ballot, error: ballotError } = await db
@@ -277,11 +329,12 @@ export async function saveNomination(input: unknown): Promise<{ savedAt: string 
       {
         ballot_id: ballot.id,
         edition_id: edition.id,
+        hub: value.hub,
         category: value.category,
         nominee_employee_id: value.nominee_employee_id,
         justification,
       },
-      { onConflict: "ballot_id,category" }
+      { onConflict: "ballot_id,hub,category" }
     )
     .select("updated_at")
     .single();
@@ -292,7 +345,7 @@ export async function saveNomination(input: unknown): Promise<{ savedAt: string 
   return { savedAt: saved.updated_at as string };
 }
 
-/** Envia as 5 indicações para o comitê. */
+/** Envia as indicações para o comitê: 5 por hub do votante. */
 export async function submitBallot(): Promise<{ submittedAt: string }> {
   const user = await requireAuthenticatedUser();
   const db = createAwardsAdminClient();
@@ -301,24 +354,32 @@ export async function submitBallot(): Promise<{ submittedAt: string }> {
 
   const voter = await loadVoterEmployee(db, user.profileId);
   if (!voter) throw new RhHttpError("A votação é para colaboradores ativos do escritório.", 403, "NOT_ELIGIBLE");
+  const rules = await loadRules(db, edition);
+  const hubs = resolveParticipant(voter, rules).voteHubs;
+  if (hubs.length === 0) throw new RhHttpError("Você não está em nenhum hub do BP Awards.", 403, "NOT_ELIGIBLE");
 
   const { ballot, nominations } = await loadOwnBallot(db, edition.id, user.profileId);
-  if (!ballot) throw new RhHttpError(`Falta completar ${AWARD_CATEGORIES[0].name}.`, 400, "INCOMPLETE");
-  const byCategory = new Map(nominations.map((nomination) => [nomination.category, nomination]));
-  for (const category of AWARD_CATEGORIES) {
-    if (!isNominationComplete(byCategory.get(category.key))) {
-      throw new RhHttpError(`Falta completar ${category.name}.`, 400, "INCOMPLETE");
+  if (!ballot) {
+    throw new RhHttpError(`Falta completar ${AWARD_CATEGORIES[0].name} (${awardHub(hubs[0]).name}).`, 400, "INCOMPLETE");
+  }
+  const bySlot = new Map(nominations.map((nomination) => [slotKey(nomination.hub, nomination.category), nomination]));
+  for (const hub of hubs) {
+    for (const category of AWARD_CATEGORIES) {
+      if (!isNominationComplete(bySlot.get(slotKey(hub, category.key)))) {
+        throw new RhHttpError(`Falta completar ${category.name} (${awardHub(hub).name}).`, 400, "INCOMPLETE");
+      }
     }
   }
 
+  const required = nominations.filter((nomination) => hubs.includes(nomination.hub));
   const { data: nominees, error: nomineesError } = await db
     .from("hr_employees")
     .select("id, department, position, is_active")
-    .in("id", nominations.map((nomination) => nomination.nominee_employee_id));
+    .in("id", required.map((nomination) => nomination.nominee_employee_id));
   if (nomineesError) throw new RhHttpError("Falha ao conferir os colaboradores.", 500, "QUERY_FAILED");
   const nomineeById = new Map(((nominees ?? []) as EmployeeLite[]).map((nominee) => [nominee.id, nominee]));
-  for (const nomination of nominations) {
-    const problem = nomineeProblem(nomineeById.get(nomination.nominee_employee_id), voter.id, edition);
+  for (const nomination of required) {
+    const problem = nomineeProblem(nomineeById.get(nomination.nominee_employee_id), voter.id, rules, nomination.hub);
     if (problem) {
       throw new RhHttpError(`${awardCategory(nomination.category)?.name}: ${problem}`, 400, "INVALID_NOMINEE");
     }
@@ -339,12 +400,19 @@ export async function getInviteStatus(): Promise<AwardInviteStatus> {
   const user = await requireAuthenticatedUser();
   const db = createAwardsAdminClient();
   const edition = await loadCurrentEdition(db);
-  const idle: AwardInviteStatus = { pending: false, closesAt: edition?.voting_closes_at ?? null, filled: 0 };
+  const idle: AwardInviteStatus = { pending: false, closesAt: edition?.voting_closes_at ?? null, filled: 0, total: 0 };
   if (!edition || resolveAwardPhase(edition) !== "aberta") return idle;
-  if (!(await loadVoterEmployee(db, user.profileId))) return idle;
+  const voter = await loadVoterEmployee(db, user.profileId);
+  const hubs = voter ? resolveParticipant(voter, await loadRules(db, edition)).voteHubs : [];
+  if (hubs.length === 0) return idle;
   const { ballot, nominations } = await loadOwnBallot(db, edition.id, user.profileId);
   if (ballot?.submitted_at) return idle;
-  return { pending: true, closesAt: edition.voting_closes_at, filled: nominations.filter(isNominationComplete).length };
+  return {
+    pending: true,
+    closesAt: edition.voting_closes_at,
+    filled: nominations.filter((nomination) => hubs.includes(nomination.hub) && isNominationComplete(nomination)).length,
+    total: hubs.length * AWARD_CATEGORY_KEYS.length,
+  };
 }
 
 /* ----------------------------------------------------------------- comitê */
@@ -354,14 +422,15 @@ export async function getCommitteeView(): Promise<CommitteeView> {
   const db = createAwardsAdminClient();
   const edition = await requireCurrentEdition(db);
 
-  const [people, ballotsResult, nominationsResult, finalists] = await Promise.all([
+  const [people, ballotsResult, nominationsResult, finalists, rules] = await Promise.all([
     loadPeopleDirectory(db, LOG),
     db.from("hr_award_ballots").select("id, voter_user_id, voter_employee_id, submitted_at").eq("edition_id", edition.id),
     db
       .from("hr_award_nominations")
-      .select("id, ballot_id, category, nominee_employee_id, justification, updated_at")
+      .select("id, ballot_id, hub, category, nominee_employee_id, justification, updated_at")
       .eq("edition_id", edition.id),
     loadFinalists(db, edition.id),
+    loadRules(db, edition),
   ]);
   if (ballotsResult.error || nominationsResult.error) {
     console.error(`[${LOG}] apuração:`, ballotsResult.error ?? nominationsResult.error);
@@ -374,55 +443,61 @@ export async function getCommitteeView(): Promise<CommitteeView> {
   const personByUser = new Map(people.filter((person) => person.user_id).map((person) => [person.user_id!, person]));
   const ballotById = new Map(ballots.map((ballot) => [ballot.id, ballot]));
   const ballotByUser = new Map(ballots.map((ballot) => [ballot.voter_user_id, ballot]));
-  const filledByBallot = new Map<string, number>();
+  const filledByBallot = new Map<string, AwardHubKey[]>();
   for (const nomination of nominations) {
     if (isNominationComplete(nomination)) {
-      filledByBallot.set(nomination.ballot_id, (filledByBallot.get(nomination.ballot_id) ?? 0) + 1);
+      filledByBallot.set(nomination.ballot_id, [...(filledByBallot.get(nomination.ballot_id) ?? []), nomination.hub]);
     }
   }
 
   const participation: ParticipationRow[] = people
-    .filter((person) => person.is_active && person.user_id)
+    .filter((person) => person.is_active && person.user_id && resolveParticipant(person, rules).voteHubs.length > 0)
     .map((person) => {
       const ballot = ballotByUser.get(person.user_id!);
-      const filled = ballot ? (filledByBallot.get(ballot.id) ?? 0) : 0;
+      const hubs = resolveParticipant(person, rules).voteHubs;
+      const filled = ballot ? (filledByBallot.get(ballot.id) ?? []).filter((hub) => hubs.includes(hub)).length : 0;
       return {
-        person: toAwardPerson(person),
+        person: toAwardPerson(person, rules),
+        hubs,
+        total: hubs.length * AWARD_CATEGORY_KEYS.length,
         status: ballot?.submitted_at ? "enviou" : ballot && filled > 0 ? "rascunho" : "pendente",
         filled,
         submitted_at: ballot?.submitted_at ?? null,
       };
     });
 
-  const tallies = Object.fromEntries(AWARD_CATEGORY_KEYS.map((key) => [key, [] as NomineeTally[]])) as Record<
-    AwardCategoryKey,
-    NomineeTally[]
-  >;
+  const tallies = Object.fromEntries(
+    AWARD_HUB_KEYS.map((hub) => [hub, Object.fromEntries(AWARD_CATEGORY_KEYS.map((key) => [key, [] as NomineeTally[]]))])
+  ) as HubTallies;
   const tallyIndex = new Map<string, NomineeTally>();
   for (const nomination of nominations) {
     const ballot = ballotById.get(nomination.ballot_id);
     const nominee = personById.get(nomination.nominee_employee_id);
     if (!ballot?.submitted_at || !nominee) continue;
-    const key = `${nomination.category}:${nominee.id}`;
-    let tally = tallyIndex.get(key);
-    if (!tally) {
-      tally = { person: toAwardPerson(nominee), count: 0, testimonies: [] };
-      tallyIndex.set(key, tally);
-      tallies[nomination.category].push(tally);
-    }
     const voter =
       (ballot.voter_employee_id ? personById.get(ballot.voter_employee_id) : undefined) ??
       personByUser.get(ballot.voter_user_id);
+    // Quem saiu deste hub nas configurações deixa de contar aqui.
+    if (voter && !resolveParticipant(voter, rules).voteHubs.includes(nomination.hub)) continue;
+    const key = `${slotKey(nomination.hub, nomination.category)}:${nominee.id}`;
+    let tally = tallyIndex.get(key);
+    if (!tally) {
+      tally = { person: toAwardPerson(nominee, rules), count: 0, testimonies: [] };
+      tallyIndex.set(key, tally);
+      tallies[nomination.hub][nomination.category].push(tally);
+    }
     tally.count += 1;
     tally.testimonies.push({
       id: nomination.id,
       justification: nomination.justification,
-      voter: voter ? toAwardPerson(voter) : null,
+      voter: voter ? toAwardPerson(voter, rules) : null,
       updated_at: nomination.updated_at,
     });
   }
-  for (const key of AWARD_CATEGORY_KEYS) {
-    tallies[key].sort((a, b) => b.count - a.count || a.person.short_name.localeCompare(b.person.short_name, "pt-BR"));
+  for (const hub of AWARD_HUB_KEYS) {
+    for (const key of AWARD_CATEGORY_KEYS) {
+      tallies[hub][key].sort((a, b) => b.count - a.count || a.person.short_name.localeCompare(b.person.short_name, "pt-BR"));
+    }
   }
 
   return {
@@ -431,7 +506,8 @@ export async function getCommitteeView(): Promise<CommitteeView> {
     participation,
     tallies,
     finalists,
-    people: people.filter((person) => person.is_active).map(toAwardPerson),
+    people: people.filter((person) => person.is_active).map((person) => toAwardPerson(person, rules)),
+    overrides: [...rules.overrides.values()],
   };
 }
 
@@ -440,6 +516,7 @@ const editionSchema = z.object({
   voting_opens_at: isoDateTime.optional(),
   voting_closes_at: isoDateTime.optional(),
   partners_eligible: z.boolean().optional(),
+  area_hubs: z.record(z.string().trim().min(1).max(120), z.enum(AWARD_HUB_KEYS, { error: "Hub inválido." })).optional(),
   publish: z.boolean().optional(),
 });
 
@@ -457,6 +534,7 @@ export async function updateEdition(input: unknown): Promise<AwardEdition> {
     voting_opens_at: value.voting_opens_at === undefined ? edition.voting_opens_at : value.voting_opens_at,
     voting_closes_at: value.voting_closes_at === undefined ? edition.voting_closes_at : value.voting_closes_at,
     partners_eligible: value.partners_eligible ?? edition.partners_eligible,
+    area_hubs: value.area_hubs ?? edition.area_hubs,
     results_published_at: edition.results_published_at,
   };
   if (
@@ -471,8 +549,8 @@ export async function updateEdition(input: unknown): Promise<AwardEdition> {
       throw new RhHttpError("Só dá para publicar depois que a votação encerrar.", 409, "NOT_CLOSED");
     }
     const winners = (await loadFinalists(db, edition.id)).filter((finalist) => finalist.is_winner);
-    if (new Set(winners.map((winner) => winner.category)).size < AWARD_CATEGORY_KEYS.length) {
-      throw new RhHttpError("Defina o vencedor dos 5 valores antes de publicar.", 409, "MISSING_WINNERS");
+    if (new Set(winners.map((winner) => slotKey(winner.hub, winner.category))).size < TOTAL_AWARDS) {
+      throw new RhHttpError("Defina o vencedor dos 5 valores de cada hub antes de publicar.", 409, "MISSING_WINNERS");
     }
     next.results_published_at = new Date().toISOString();
   } else if (value.publish === false) {
@@ -493,7 +571,8 @@ export async function updateEdition(input: unknown): Promise<AwardEdition> {
 }
 
 const finalistCreateSchema = z.object({
-  category: z.enum(AWARD_CATEGORY_KEYS),
+  hub: z.enum(AWARD_HUB_KEYS, { error: "Hub inválido." }),
+  category: z.enum(AWARD_CATEGORY_KEYS, { error: "Valor inválido." }),
   employee_id: z.string().uuid(),
 });
 
@@ -504,7 +583,20 @@ export async function addFinalist(input: unknown): Promise<AwardFinalist> {
   const db = createAwardsAdminClient();
   const edition = await requireCurrentEdition(db);
 
-  const current = (await loadFinalists(db, edition.id)).filter((finalist) => finalist.category === parsed.data.category);
+  const { data: employee, error: employeeError } = await db
+    .from("hr_employees")
+    .select("id, department, position")
+    .eq("id", parsed.data.employee_id)
+    .maybeSingle();
+  if (employeeError) throw new RhHttpError("Falha ao conferir o colaborador.", 500, "QUERY_FAILED");
+  const rules = await loadRules(db, edition);
+  if (!employee || resolveParticipant(employee as Pick<EmployeeLite, "id" | "department" | "position">, rules).hub !== parsed.data.hub) {
+    throw new RhHttpError(`Essa pessoa não é do ${awardHub(parsed.data.hub).name}.`, 400, "WRONG_HUB");
+  }
+
+  const current = (await loadFinalists(db, edition.id)).filter(
+    (finalist) => finalist.hub === parsed.data.hub && finalist.category === parsed.data.category
+  );
   if (current.some((finalist) => finalist.employee_id === parsed.data.employee_id)) {
     throw new RhHttpError("Essa pessoa já é finalista neste valor.", 409, "DUPLICATE");
   }
@@ -515,6 +607,7 @@ export async function addFinalist(input: unknown): Promise<AwardFinalist> {
     .from("hr_award_finalists")
     .insert({
       edition_id: edition.id,
+      hub: parsed.data.hub,
       category: parsed.data.category,
       employee_id: parsed.data.employee_id,
       created_by: manager.profileId,
@@ -538,7 +631,7 @@ const finalistUpdateSchema = z.object({
     .optional(),
 });
 
-/** Marca o vencedor (desmarca o anterior do mesmo valor) e/ou grava a homenagem. */
+/** Marca o vencedor (desmarca o anterior do mesmo valor no hub) e/ou grava a homenagem. */
 export async function updateFinalist(id: string, input: unknown): Promise<AwardFinalist[]> {
   const parsed = finalistUpdateSchema.safeParse(input);
   if (!parsed.success) {
@@ -548,7 +641,7 @@ export async function updateFinalist(id: string, input: unknown): Promise<AwardF
   const db = createAwardsAdminClient();
   const { data: finalist, error: readError } = await db
     .from("hr_award_finalists")
-    .select("id, edition_id, category")
+    .select("id, edition_id, hub, category")
     .eq("id", id)
     .maybeSingle();
   if (readError) throw new RhHttpError("Falha ao carregar o finalista.", 500, "QUERY_FAILED");
@@ -559,6 +652,7 @@ export async function updateFinalist(id: string, input: unknown): Promise<AwardF
       .from("hr_award_finalists")
       .update({ is_winner: false, updated_by: manager.profileId })
       .eq("edition_id", finalist.edition_id)
+      .eq("hub", finalist.hub)
       .eq("category", finalist.category)
       .neq("id", id)
       .eq("is_winner", true);
@@ -585,26 +679,105 @@ export async function removeFinalist(id: string): Promise<void> {
   }
 }
 
-/** Telão da festa: finalistas em ordem alfabética (sem ranking) e o vencedor de cada valor. */
-export async function getRevealData(): Promise<{ edition: AwardEdition; categories: RevealCategory[] }> {
+const participantSchema = z.object({
+  hub: z.enum(AWARD_HUB_KEYS, { error: "Hub inválido." }).nullable(),
+  vote_hubs: z.array(z.enum(AWARD_HUB_KEYS, { error: "Hub inválido." })),
+  can_compete: z.boolean(),
+});
+
+/**
+ * Grava a exceção de uma pessoa (hub, onde vota, se concorre). Se ficar igual
+ * à regra da área, apaga a exceção e devolve null.
+ */
+export async function saveParticipant(employeeId: string, input: unknown): Promise<ParticipantOverride | null> {
+  const parsed = participantSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new RhHttpError(parsed.error.issues[0]?.message ?? "Dados inválidos.", 400, "INVALID_INPUT");
+  }
+  const manager = await requireHrManager();
+  const db = createAwardsAdminClient();
+  const edition = await requireCurrentEdition(db);
+  const { data: employee, error: employeeError } = await db
+    .from("hr_employees")
+    .select("id, department, position")
+    .eq("id", employeeId)
+    .maybeSingle();
+  if (employeeError) throw new RhHttpError("Falha ao conferir o colaborador.", 500, "QUERY_FAILED");
+  if (!employee) throw new RhHttpError("Colaborador não encontrado.", 404, "NOT_FOUND");
+
+  const override: ParticipantOverride = {
+    employee_id: employeeId,
+    hub: parsed.data.hub,
+    vote_hubs: AWARD_HUB_KEYS.filter((hub) => parsed.data.vote_hubs.includes(hub)),
+    can_compete: parsed.data.hub !== null && parsed.data.can_compete,
+  };
+  const standard = defaultParticipant(
+    employee as Pick<EmployeeLite, "id" | "department" | "position">,
+    buildAwardRules(edition, [])
+  );
+  if (
+    standard.hub === override.hub &&
+    standard.canCompete === override.can_compete &&
+    standard.voteHubs.join() === override.vote_hubs.join()
+  ) {
+    await resetParticipant(employeeId);
+    return null;
+  }
+  const { error } = await db
+    .from("hr_award_participants")
+    .upsert({ edition_id: edition.id, ...override, updated_by: manager.profileId }, { onConflict: "edition_id,employee_id" });
+  if (error) {
+    console.error(`[${LOG}] participante:`, error);
+    throw new RhHttpError("Não foi possível salvar.", 500, "SAVE_FAILED");
+  }
+  return override;
+}
+
+/** Tira a exceção: a pessoa volta a seguir a regra da área. */
+export async function resetParticipant(employeeId: string): Promise<void> {
   await requireHrManager();
   const db = createAwardsAdminClient();
   const edition = await requireCurrentEdition(db);
-  const [people, finalists] = await Promise.all([loadPeopleDirectory(db, LOG), loadFinalists(db, edition.id)]);
-  const byId = new Map(people.map((person) => [person.id, toAwardPerson(person)]));
-
-  const categories = AWARD_CATEGORIES.map((category) => {
-    const own = finalists.filter((finalist) => finalist.category === category.key && byId.has(finalist.employee_id));
-    const winner = own.find((finalist) => finalist.is_winner) ?? null;
-    return {
-      category,
-      finalists: own
-        .map((finalist) => byId.get(finalist.employee_id)!)
-        .sort((a, b) => a.short_name.localeCompare(b.short_name, "pt-BR")),
-      winner: winner ? byId.get(winner.employee_id)! : null,
-      citation: winner?.citation ?? null,
-    };
-  });
-  return { edition, categories };
+  const { error } = await db
+    .from("hr_award_participants")
+    .delete()
+    .eq("edition_id", edition.id)
+    .eq("employee_id", employeeId);
+  if (error) {
+    console.error(`[${LOG}] participante:`, error);
+    throw new RhHttpError("Não foi possível salvar.", 500, "SAVE_FAILED");
+  }
 }
 
+/** Telão da festa: por hub, finalistas em ordem alfabética (sem ranking) e o vencedor de cada valor. */
+export async function getRevealData(): Promise<{ edition: AwardEdition; hubs: RevealHub[] }> {
+  await requireHrManager();
+  const db = createAwardsAdminClient();
+  const edition = await requireCurrentEdition(db);
+  const [people, finalists, rules] = await Promise.all([
+    loadPeopleDirectory(db, LOG),
+    loadFinalists(db, edition.id),
+    loadRules(db, edition),
+  ]);
+  const byId = new Map(people.map((person) => [person.id, toAwardPerson(person, rules)]));
+  const areas = hubAreas(edition.area_hubs ?? {});
+
+  const hubs = AWARD_HUBS.map((hub) => ({
+    hub: { ...hub, departments: areas[hub.key] },
+    categories: AWARD_CATEGORIES.map((category) => {
+      const own = finalists.filter(
+        (finalist) => finalist.hub === hub.key && finalist.category === category.key && byId.has(finalist.employee_id)
+      );
+      const winner = own.find((finalist) => finalist.is_winner) ?? null;
+      return {
+        category,
+        finalists: own
+          .map((finalist) => byId.get(finalist.employee_id)!)
+          .sort((a, b) => a.short_name.localeCompare(b.short_name, "pt-BR")),
+        winner: winner ? byId.get(winner.employee_id)! : null,
+        citation: winner?.citation ?? null,
+      };
+    }),
+  }));
+  return { edition, hubs };
+}

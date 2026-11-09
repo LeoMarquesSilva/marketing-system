@@ -11,36 +11,43 @@ import {
   AWARDS_COMMITTEE_PATH,
   AWARDS_LOGO_SRC,
   awardSealSrc,
-  type AwardCategory,
   type AwardCategoryKey,
   type AwardEdition,
+  type AwardHub,
   type AwardPerson,
   type RevealCategory,
+  type RevealHub,
 } from "@/lib/rh/bp-awards/types";
 import { cn } from "@/lib/utils";
 
-type RevealData = { edition: AwardEdition; categories: RevealCategory[] } | null;
+type RevealData = { edition: AwardEdition; hubs: RevealHub[] } | null;
 
 type Slide =
   | { kind: "opening" }
-  | { kind: "value"; item: RevealCategory; index: number }
-  | { kind: "finalists"; item: RevealCategory; index: number }
-  | { kind: "suspense"; item: RevealCategory; index: number }
-  | { kind: "winner"; item: RevealCategory; index: number }
+  | { kind: "hub"; group: RevealHub }
+  | { kind: "value"; hub: AwardHub; item: RevealCategory }
+  | { kind: "finalists"; hub: AwardHub; item: RevealCategory }
+  | { kind: "suspense"; hub: AwardHub; item: RevealCategory }
+  | { kind: "winner"; hub: AwardHub; item: RevealCategory }
+  | { kind: "hubClosing"; group: RevealHub }
   | { kind: "closing" };
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 /** Fotos do telão: até ~36% da altura de uma tela 4K. */
 const PORTRAIT_PIXELS = 800;
 
-function buildSlides(categories: RevealCategory[]): Slide[] {
+function buildSlides(hubs: RevealHub[]): Slide[] {
   const slides: Slide[] = [{ kind: "opening" }];
-  categories.forEach((item, index) => {
-    slides.push({ kind: "value", item, index });
-    if (item.finalists.length > 0) slides.push({ kind: "finalists", item, index });
-    slides.push({ kind: "suspense", item, index });
-    slides.push({ kind: "winner", item, index });
-  });
+  for (const group of hubs) {
+    slides.push({ kind: "hub", group });
+    for (const item of group.categories) {
+      slides.push({ kind: "value", hub: group.hub, item });
+      if (item.finalists.length > 0) slides.push({ kind: "finalists", hub: group.hub, item });
+      slides.push({ kind: "suspense", hub: group.hub, item });
+      slides.push({ kind: "winner", hub: group.hub, item });
+    }
+    slides.push({ kind: "hubClosing", group });
+  }
   slides.push({ kind: "closing" });
   return slides;
 }
@@ -77,21 +84,37 @@ function Kicker({ children }: { children: React.ReactNode }) {
   );
 }
 
-function valueLabel(category: AwardCategory, index: number): string {
-  return `Valor ${index + 1} de 5 · ${category.name}`;
+/** Selo do valor como medalha na foto. */
+function Medal({ categoryKey, className }: { categoryKey: AwardCategoryKey; className: string }) {
+  return (
+    <span className="absolute -bottom-[0.8vh] -right-[1.5vh] block rounded-full bg-[var(--aw-navy)] p-[0.4vh]">
+      <Seal categoryKey={categoryKey} className={className} />
+    </span>
+  );
 }
 
 export function RevealClient({ data }: { data: RevealData }) {
-  const slides = useMemo(() => buildSlides(data?.categories ?? []), [data]);
+  const slides = useMemo(() => buildSlides(data?.hubs ?? []), [data]);
   const [index, setIndex] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
   const [chromeVisible, setChromeVisible] = useState(true);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const missingWinners = (data?.categories ?? []).filter((item) => !item.winner).length;
+  const hubGroups = data?.hubs ?? [];
+  const missingWinners = hubGroups.flatMap((group) => group.categories).filter((item) => !item.winner).length;
 
   const next = useCallback(() => setIndex((current) => Math.min(current + 1, slides.length - 1)), [slides.length]);
   const prev = useCallback(() => setIndex((current) => Math.max(current - 1, 0)), []);
+
+  /** Pula para a capa de um hub (botões e teclas 1, 2, 3), se a ordem mudar na festa. */
+  const jumpToHub = useCallback(
+    (position: number) => {
+      let seen = -1;
+      const target = slides.findIndex((slide) => slide.kind === "hub" && ++seen === position);
+      if (target >= 0) setIndex(target);
+    },
+    [slides]
+  );
 
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
@@ -122,6 +145,8 @@ export function RevealClient({ data }: { data: RevealData }) {
         setIndex(slides.length - 1);
       } else if (event.key.toLowerCase() === "f") {
         toggleFullscreen();
+      } else if (["1", "2", "3"].includes(event.key)) {
+        jumpToHub(Number(event.key) - 1);
       }
     };
     document.addEventListener("fullscreenchange", onFullscreen);
@@ -133,7 +158,7 @@ export function RevealClient({ data }: { data: RevealData }) {
       window.removeEventListener("mousemove", wake);
       if (hideTimer.current) clearTimeout(hideTimer.current);
     };
-  }, [next, prev, slides.length, toggleFullscreen, wake]);
+  }, [jumpToHub, next, prev, slides.length, toggleFullscreen, wake]);
 
   if (!data) {
     return (
@@ -151,7 +176,9 @@ export function RevealClient({ data }: { data: RevealData }) {
   }
 
   const slide = slides[index];
-  const allPhotos = data.categories.flatMap((item) => item.finalists.concat(item.winner ? [item.winner] : []));
+  const allItems = data.hubs.flatMap((group) => group.categories);
+  const allPhotos = allItems.flatMap((item) => item.finalists.concat(item.winner ? [item.winner] : []));
+  const sealKeys = data.hubs[0]?.categories.map((item) => item.category.key) ?? [];
 
   return (
     <div
@@ -170,8 +197,8 @@ export function RevealClient({ data }: { data: RevealData }) {
             <img key={`${person.id}-${photoIndex}`} src={awardPhotoUrl(person.avatar_url, PORTRAIT_PIXELS)!} alt="" />
           ) : null
         )}
-        {data.categories.map((item) => (
-          <Seal key={item.category.key} categoryKey={item.category.key} />
+        {sealKeys.map((key) => (
+          <Seal key={key} categoryKey={key} />
         ))}
       </div>
 
@@ -185,7 +212,7 @@ export function RevealClient({ data }: { data: RevealData }) {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.45, ease: EASE }}
         >
-          <SlideContent slide={slide} edition={data.edition} categories={data.categories} />
+          <SlideContent slide={slide} edition={data.edition} hubs={data.hubs} />
         </motion.section>
       </AnimatePresence>
 
@@ -209,6 +236,18 @@ export function RevealClient({ data }: { data: RevealData }) {
           )}
         </div>
         <div className="flex items-center gap-3">
+          <div className="hidden items-center gap-1.5 lg:flex" role="group" aria-label="Ir para o hub">
+            {hubGroups.map((group, position) => (
+              <button
+                key={group.hub.key}
+                type="button"
+                className={cn(styles.secondary, "min-h-10 px-3 text-sm")}
+                onClick={() => jumpToHub(position)}
+              >
+                {group.hub.shortName}
+              </button>
+            ))}
+          </div>
           <span className="text-sm tabular-nums text-[var(--aw-mist)]">
             {index + 1}/{slides.length}
           </span>
@@ -232,14 +271,42 @@ export function RevealClient({ data }: { data: RevealData }) {
   );
 }
 
+function HubWinners({ group }: { group: RevealHub }) {
+  const winners = group.categories.filter((item) => item.winner);
+  return (
+    <ul className="mt-[5vh] flex flex-wrap items-start justify-center gap-x-[1.5vw] gap-y-[4vh]">
+      {winners.map((item, position) => (
+        <motion.li
+          key={item.category.key}
+          className="flex w-[clamp(10rem,25vh,18rem)] flex-col items-center"
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, delay: 0.2 + position * 0.15, ease: EASE }}
+        >
+          <span className="relative">
+            <Portrait person={item.winner!} className="size-[clamp(7rem,17vh,13rem)] ring-2 ring-[var(--aw-gold)]" />
+            <Medal categoryKey={item.category.key} className="w-[7vh]" />
+          </span>
+          <span className="mt-[2.5vh] text-[clamp(0.95rem,2.4vh,1.5rem)] font-bold leading-tight text-[var(--aw-ivory)]">
+            {item.winner!.short_name}
+          </span>
+          <span className="mt-1 text-[clamp(0.7rem,1.5vh,0.95rem)] font-bold tracking-[0.04em] text-[var(--aw-gold-bright)] uppercase">
+            {item.category.name}
+          </span>
+        </motion.li>
+      ))}
+    </ul>
+  );
+}
+
 function SlideContent({
   slide,
   edition,
-  categories,
+  hubs,
 }: {
   slide: Slide;
   edition: AwardEdition;
-  categories: RevealCategory[];
+  hubs: RevealHub[];
 }) {
   switch (slide.kind) {
     case "opening":
@@ -264,26 +331,71 @@ function SlideContent({
             <Kicker>Premiação CIVIL · {edition.year}</Kicker>
           </motion.div>
           <p className="mt-[5vh] text-[clamp(0.85rem,1.7vh,1.05rem)] text-[var(--aw-dim)]">
-            Setas ou passador para avançar · F para tela cheia
+            Setas ou passador para avançar · F para tela cheia · 1, 2, 3 para ir a um hub
           </p>
+        </>
+      );
+
+    case "hub":
+      return (
+        <>
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.9, ease: EASE }}
+          >
+            <Kicker>Premiação CIVIL</Kicker>
+          </motion.div>
+          <motion.h1
+            className={cn(styles.display, "mt-[3vh] text-[clamp(3rem,13vh,9rem)] text-[var(--aw-ivory)]")}
+            initial={{ opacity: 0, filter: "blur(10px)" }}
+            animate={{ opacity: 1, filter: "blur(0px)" }}
+            transition={{ duration: 1.2, delay: 0.15, ease: EASE }}
+          >
+            {slide.group.hub.name}
+          </motion.h1>
+          {slide.group.hub.departments.length > 1 && (
+            <motion.p
+              className="mt-[3vh] text-[clamp(1rem,2.8vh,1.75rem)] font-light text-[var(--aw-mist)]"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 1, delay: 0.6, ease: EASE }}
+            >
+              {slide.group.hub.departments.join(" · ")}
+            </motion.p>
+          )}
+          <ul className="mt-[6vh] flex items-center justify-center gap-[2vw]">
+            {slide.group.categories.map((item, position) => (
+              <motion.li
+                key={item.category.key}
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.7, delay: 0.7 + position * 0.12, ease: EASE }}
+              >
+                <Seal categoryKey={item.category.key} className="w-[15vh]" />
+              </motion.li>
+            ))}
+          </ul>
         </>
       );
 
     case "value":
       return (
         <>
+          <Kicker>{slide.hub.name}</Kicker>
           <motion.div
+            className="mt-[3vh]"
             initial={{ opacity: 0, scale: 0.9, filter: "blur(8px)" }}
             animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
             transition={{ duration: 1.1, ease: EASE }}
           >
-            <Seal categoryKey={slide.item.category.key} className="w-[44vh]" />
+            <Seal categoryKey={slide.item.category.key} className="w-[38vh]" />
           </motion.div>
-          <h1 className={cn(styles.display, "mt-[4vh] text-[clamp(2.25rem,7vh,5rem)] text-[var(--aw-ivory)]")}>
+          <h1 className={cn(styles.display, "mt-[3vh] text-[clamp(2.25rem,7vh,5rem)] text-[var(--aw-ivory)]")}>
             {slide.item.category.name}
           </h1>
           <motion.p
-            className="mt-[2.5vh] max-w-[62ch] text-[clamp(1rem,2.6vh,1.65rem)] font-light leading-relaxed text-[var(--aw-mist)]"
+            className="mt-[2vh] max-w-[62ch] text-[clamp(1rem,2.5vh,1.6rem)] font-light leading-relaxed text-[var(--aw-mist)]"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.45, ease: EASE }}
@@ -296,7 +408,9 @@ function SlideContent({
     case "finalists":
       return (
         <>
-          <Kicker>{valueLabel(slide.item.category, slide.index)}</Kicker>
+          <Kicker>
+            {slide.hub.name} · {slide.item.category.name}
+          </Kicker>
           <h1 className={cn(styles.display, "mt-[2.5vh] text-[clamp(2.25rem,7vh,5rem)] text-[var(--aw-ivory)]")}>
             {slide.item.finalists.length === 1 ? "O finalista" : "Os finalistas"}
           </h1>
@@ -323,7 +437,9 @@ function SlideContent({
     case "suspense":
       return (
         <>
+          <Kicker>{slide.hub.name}</Kicker>
           <motion.div
+            className="mt-[3vh]"
             initial={{ opacity: 0 }}
             animate={{ opacity: 0.9 }}
             transition={{ duration: 1.2, ease: EASE }}
@@ -346,7 +462,9 @@ function SlideContent({
       if (!winner) {
         return (
           <>
-            <Kicker>{valueLabel(slide.item.category, slide.index)}</Kicker>
+            <Kicker>
+              {slide.hub.name} · {slide.item.category.name}
+            </Kicker>
             <h1 className={cn(styles.display, "mt-[3vh] text-[clamp(2.25rem,7vh,5rem)] text-[var(--aw-mist)]")}>
               Vencedor ainda não definido
             </h1>
@@ -389,7 +507,7 @@ function SlideContent({
             transition={{ duration: 0.9, delay: 0.5, ease: EASE }}
           >
             <p className="mt-[4vh] text-[clamp(0.9rem,1.9vh,1.25rem)] font-bold tracking-[0.06em] text-[var(--aw-gold-bright)] uppercase">
-              {slide.item.category.name}
+              {slide.hub.shortName} · {slide.item.category.name}
             </p>
             <h1 className={cn(styles.display, "mt-[1vh] text-[clamp(2.5rem,8.5vh,6rem)] text-[var(--aw-ivory)]")}>
               {winner.short_name}
@@ -410,42 +528,56 @@ function SlideContent({
       );
     }
 
-    case "closing": {
-      const winners = categories.filter((item) => item.winner);
+    case "hubClosing":
+      return (
+        <>
+          <Kicker>{slide.group.hub.name}</Kicker>
+          <h1 className={cn(styles.display, "mt-[2.5vh] text-[clamp(2rem,6.5vh,4.5rem)] text-[var(--aw-ivory)]")}>
+            Parabéns aos vencedores!
+          </h1>
+          <HubWinners group={slide.group} />
+        </>
+      );
+
+    case "closing":
       return (
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={AWARDS_LOGO_SRC} alt="Bismarchi | Pires Awards" width={900} height={869} className="h-[20vh] w-auto" />
-          <h1 className={cn(styles.display, "mt-[3vh] text-[clamp(2rem,6vh,4.25rem)] text-[var(--aw-ivory)]")}>Parabéns!</h1>
-          <ul className="mt-[5vh] flex flex-wrap items-start justify-center gap-x-[1.5vw] gap-y-[4vh]">
-            {winners.map((item, position) => (
-              <motion.li
-                key={item.category.key}
-                className="flex w-[clamp(10rem,25vh,18rem)] flex-col items-center"
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.7, delay: 0.2 + position * 0.15, ease: EASE }}
-              >
-                <span className="relative">
-                  <Portrait person={item.winner!} className="size-[clamp(7rem,17vh,13rem)] ring-2 ring-[var(--aw-gold)]" />
-                  <span className="absolute -bottom-[0.8vh] -right-[1.5vh] block rounded-full bg-[var(--aw-navy)] p-[0.4vh]">
-                    <Seal categoryKey={item.category.key} className="w-[7vh]" />
-                  </span>
-                </span>
-                <span className="mt-[2.5vh] text-[clamp(0.95rem,2.4vh,1.5rem)] font-bold leading-tight text-[var(--aw-ivory)]">
-                  {item.winner!.short_name}
-                </span>
-                <span className="mt-1 text-[clamp(0.7rem,1.5vh,0.95rem)] font-bold tracking-[0.04em] text-[var(--aw-gold-bright)] uppercase">
-                  {item.category.name}
-                </span>
-              </motion.li>
+          <img src={AWARDS_LOGO_SRC} alt="Bismarchi | Pires Awards" width={900} height={869} className="h-[17vh] w-auto" />
+          <h1 className={cn(styles.display, "mt-[2vh] text-[clamp(1.75rem,5vh,3.5rem)] text-[var(--aw-ivory)]")}>Parabéns!</h1>
+          <div className="mt-[3.5vh] grid w-full max-w-[150vh] grid-cols-3 gap-x-[2.5vw] text-left">
+            {hubs.map((group) => (
+              <section key={group.hub.key} aria-label={group.hub.name}>
+                <h2 className="border-b border-[var(--aw-line)] pb-[1vh] text-center text-[clamp(0.85rem,2vh,1.35rem)] font-bold tracking-[0.04em] text-[var(--aw-ivory)] uppercase">
+                  {group.hub.name}
+                </h2>
+                <ul className="mt-[1.8vh] space-y-[1.5vh]">
+                  {group.categories
+                    .filter((item) => item.winner)
+                    .map((item) => (
+                      <li key={item.category.key} className="flex items-center gap-[1.2vh]">
+                        <span className="relative shrink-0">
+                          <Portrait person={item.winner!} className="size-[8vh] ring-1 ring-[var(--aw-gold)]" />
+                        </span>
+                        <Seal categoryKey={item.category.key} className="-ml-[2.4vh] mt-[3.5vh] w-[3.6vh] shrink-0 rounded-full bg-[var(--aw-navy)]" />
+                        <span className="min-w-0">
+                          <span className="block truncate text-[clamp(0.85rem,2.1vh,1.35rem)] font-bold leading-tight text-[var(--aw-ivory)]">
+                            {item.winner!.short_name}
+                          </span>
+                          <span className="block truncate text-[clamp(0.7rem,1.4vh,0.9rem)] font-bold tracking-[0.03em] text-[var(--aw-gold-bright)] uppercase">
+                            {item.category.name}
+                          </span>
+                        </span>
+                      </li>
+                    ))}
+                </ul>
+              </section>
             ))}
-          </ul>
-          <p className="mt-[5vh] text-[clamp(0.95rem,2.2vh,1.4rem)] text-[var(--aw-mist)]">
+          </div>
+          <p className="mt-[3.5vh] text-[clamp(0.9rem,2vh,1.3rem)] text-[var(--aw-mist)]">
             Obrigado a todos que fazem parte destes 10 anos.
           </p>
         </>
       );
-    }
   }
 }

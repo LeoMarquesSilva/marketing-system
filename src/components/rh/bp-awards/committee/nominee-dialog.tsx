@@ -15,6 +15,7 @@ import { MAX_FINALISTS, type AwardCategory, type AwardFinalist, type NomineeTall
 export function NomineeDialog({
   tally,
   category,
+  hubName,
   finalist,
   finalistCount,
   busy,
@@ -25,6 +26,7 @@ export function NomineeDialog({
 }: {
   tally: NomineeTally | null;
   category: AwardCategory;
+  hubName: string;
   finalist: AwardFinalist | null;
   finalistCount: number;
   busy: boolean;
@@ -49,7 +51,7 @@ export function NomineeDialog({
                 {[tally.person.department, tally.person.position].filter(Boolean).join(" · ")}
               </DialogDescription>
               <p className="mt-1 text-sm font-medium text-[#285f7a]">
-                {tally.count} {tally.count === 1 ? "indicação" : "indicações"} em {category.name}
+                {tally.count} {tally.count === 1 ? "indicação" : "indicações"} em {category.name} · {hubName}
                 {finalist?.is_winner ? " · vencedor" : finalist ? " · finalista" : ""}
               </p>
             </div>

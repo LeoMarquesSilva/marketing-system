@@ -82,12 +82,12 @@ export function BpAwardsInvite() {
         <div className="space-y-3 px-6 pb-2 pt-6">
           <DialogTitle className="text-xl">BP Awards: sua indicação está aberta</DialogTitle>
           <DialogDescription className="text-[0.95rem] leading-6 text-foreground/80">
-            Indique quem representa cada valor do CIVIL e conte uma situação concreta. Os vencedores serão revelados na festa
-            de 10 anos. Leva uns 10 minutos e salva sozinho.
+            Indique quem do seu hub representa cada valor do CIVIL e conte uma situação concreta. Os vencedores serão
+            revelados na festa de 10 anos. Salva sozinho, então dá para parar e continuar depois.
           </DialogDescription>
           <p className="text-sm text-muted-foreground">
             {status.closesAt ? `Até ${formatAwardDateTime(status.closesAt)}.` : null}
-            {status.filled > 0 ? ` Você já preencheu ${status.filled} de 5 valores.` : null}
+            {status.filled > 0 ? ` Você já preencheu ${status.filled} de ${status.total} indicações.` : null}
           </p>
         </div>
         <DialogFooter className="gap-2 px-6 pb-6 pt-4 sm:gap-2">

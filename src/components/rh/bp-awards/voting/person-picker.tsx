@@ -97,6 +97,7 @@ export function PersonPicker({
         />
       </div>
 
+      {areas.length > 1 && (
       <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]" role="group" aria-label="Filtrar por área">
         {[null, ...areas].map((option) => {
           const active = area === option;
@@ -118,6 +119,7 @@ export function PersonPicker({
           );
         })}
       </div>
+      )}
 
       {visible.length === 0 ? (
         <p className="rounded-lg border border-dashed border-[var(--aw-line-soft)] px-4 py-8 text-center text-sm text-[var(--aw-mist)]">

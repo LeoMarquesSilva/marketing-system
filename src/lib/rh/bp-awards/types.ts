@@ -1,8 +1,9 @@
 /**
  * Bismarchi | Pires Awards (Pessoas e Cultura > BP Awards).
  *
- * Premiação CIVIL da festa de 10 anos: cada colaborador ativo indica, com
- * login, quem mais representa cada valor e descreve uma situação concreta.
+ * Premiação CIVIL da festa de 10 anos, separada em três hubs: cada
+ * colaborador ativo indica, com login, quem do seu hub mais representa cada
+ * valor e descreve uma situação concreta.
  * O comitê (quem tem RH) escolhe finalistas e vencedores; a revelação é no
  * telão da festa e o resultado só aparece para todos depois de publicado.
  */
@@ -90,6 +91,8 @@ export interface AwardEdition {
   voting_closes_at: string | null;
   partners_eligible: boolean;
   results_published_at: string | null;
+  /** De qual hub é cada área; o RH ajusta em Configurações. */
+  area_hubs: AreaHubs;
 }
 
 export function resolveAwardPhase(
@@ -112,10 +115,143 @@ export const AWARD_PHASE_LABEL: Record<AwardPhase, string> = {
   publicada: "Resultado publicado",
 };
 
+/* ------------------------------------------------------------------- hubs */
+
+/**
+ * Cada hub tem as suas 5 premiações e o colaborador só indica colegas do
+ * próprio hub. Sócios patrimoniais (departamento "Sócio") não estão em hub:
+ * votam nos três e não concorrem. O RH ajusta tudo isso em Configurações:
+ * a área de cada hub e as exceções por pessoa.
+ */
+export const AWARD_HUB_KEYS = ["empresarial", "reestruturacao", "operacoes"] as const;
+export type AwardHubKey = (typeof AWARD_HUB_KEYS)[number];
+
+export interface AwardHub {
+  key: AwardHubKey;
+  name: string;
+  /** Nome sem o "Hub", para botões e abas. */
+  shortName: string;
+  /** Áreas (hr_employees.department) que formam o hub por padrão. */
+  departments: string[];
+}
+
+export const AWARD_HUBS: AwardHub[] = [
+  {
+    key: "empresarial",
+    name: "Hub Empresarial",
+    shortName: "Empresarial",
+    departments: ["Cível", "Trabalhista", "Contratos", "Recuperação de Crédito", "Tributário"],
+  },
+  { key: "reestruturacao", name: "Hub Reestruturação", shortName: "Reestruturação", departments: ["Reestruturação"] },
+  { key: "operacoes", name: "Hub Operações Legais", shortName: "Operações Legais", departments: ["Operações Legais"] },
+];
+
+export function awardHub(key: AwardHubKey): AwardHub {
+  return AWARD_HUBS.find((hub) => hub.key === key)!;
+}
+
+export function isAwardHubKey(value: unknown): value is AwardHubKey {
+  return typeof value === "string" && (AWARD_HUB_KEYS as readonly string[]).includes(value);
+}
+
+function normalizeArea(value: string | null): string {
+  return (value ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
+}
+
+/** Área → hub. */
+export type AreaHubs = Record<string, AwardHubKey>;
+
+export const DEFAULT_AREA_HUBS: AreaHubs = Object.fromEntries(
+  AWARD_HUBS.flatMap((hub) => hub.departments.map((department) => [department, hub.key]))
+);
+
+/** Hub da área do colaborador (null = área fora dos hubs, como os sócios patrimoniais). */
+export function hubOfDepartment(department: string | null, areaHubs: AreaHubs = DEFAULT_AREA_HUBS): AwardHubKey | null {
+  const area = normalizeArea(department);
+  if (!area) return null;
+  for (const [key, hub] of Object.entries(areaHubs)) {
+    if (normalizeArea(key) === area) return hub;
+  }
+  return null;
+}
+
+/** Áreas de cada hub, para mostrar nas telas. */
+export function hubAreas(areaHubs: AreaHubs): Record<AwardHubKey, string[]> {
+  const result = Object.fromEntries(AWARD_HUB_KEYS.map((hub) => [hub, [] as string[]])) as Record<AwardHubKey, string[]>;
+  for (const [area, hub] of Object.entries(areaHubs)) result[hub]?.push(area);
+  for (const hub of AWARD_HUB_KEYS) result[hub].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  return result;
+}
+
+/** Sócio patrimonial: departamento "Sócio". */
+export function isEquityPartner(person: { department: string | null }): boolean {
+  return normalizeArea(person.department) === "socio";
+}
+
 /** Sócio patrimonial (departamento "Sócio") ou sócio de área (cargo). */
 export function isPartner(person: { department: string | null; position: string | null }): boolean {
-  if ((person.department ?? "").trim().toLowerCase() === "sócio") return true;
+  if (isEquityPartner(person)) return true;
   return /^s[óo]ci[oa]\b/i.test((person.position ?? "").trim());
+}
+
+/** Exceção por pessoa, definida em Configurações: substitui a regra da área. */
+export interface ParticipantOverride {
+  employee_id: string;
+  hub: AwardHubKey | null;
+  vote_hubs: AwardHubKey[];
+  can_compete: boolean;
+}
+
+export interface AwardRules {
+  areaHubs: AreaHubs;
+  partnersEligible: boolean;
+  overrides: Map<string, ParticipantOverride>;
+}
+
+export function buildAwardRules(
+  edition: Pick<AwardEdition, "area_hubs" | "partners_eligible">,
+  overrides: ParticipantOverride[]
+): AwardRules {
+  return {
+    areaHubs: edition.area_hubs ?? {},
+    partnersEligible: edition.partners_eligible,
+    overrides: new Map(overrides.map((override) => [override.employee_id, override])),
+  };
+}
+
+export interface ResolvedParticipant {
+  /** Hub a que pertence (onde pode ser indicado); null = fora dos hubs. */
+  hub: AwardHubKey | null;
+  /** Hubs em que indica; vazio = não vota. */
+  voteHubs: AwardHubKey[];
+  canCompete: boolean;
+  /** A pessoa tem exceção própria em vez da regra da área. */
+  adjusted: boolean;
+}
+
+type ParticipantPerson = { id: string; department: string | null; position: string | null };
+
+/** O que vale para a pessoa sem exceção: a regra da área. */
+export function defaultParticipant(person: ParticipantPerson, rules: AwardRules): ResolvedParticipant {
+  const hub = hubOfDepartment(person.department, rules.areaHubs);
+  const equity = isEquityPartner(person);
+  return {
+    hub,
+    voteHubs: equity ? [...AWARD_HUB_KEYS] : hub ? [hub] : [],
+    canCompete: hub !== null && !equity && (rules.partnersEligible || !isPartner(person)),
+    adjusted: false,
+  };
+}
+
+export function resolveParticipant(person: ParticipantPerson, rules: AwardRules): ResolvedParticipant {
+  const override = rules.overrides.get(person.id);
+  if (!override) return defaultParticipant(person, rules);
+  return {
+    hub: override.hub,
+    voteHubs: AWARD_HUB_KEYS.filter((hub) => override.vote_hubs.includes(hub)),
+    canCompete: override.hub !== null && override.can_compete,
+    adjusted: true,
+  };
 }
 
 /** Colaborador do cadastro como aparece nas telas do BP Awards. */
@@ -127,12 +263,20 @@ export interface AwardPerson {
   department: string | null;
   position: string | null;
   avatar_url: string | null;
+  /** Hub da área; null para quem está fora dos hubs. */
+  hub: AwardHubKey | null;
 }
 
 export interface AwardNominationDraft {
+  hub: AwardHubKey;
   category: AwardCategoryKey;
   nominee_employee_id: string;
   justification: string;
+}
+
+/** Chave de uma indicação na cédula: um valor dentro de um hub. */
+export function slotKey(hub: AwardHubKey, category: AwardCategoryKey): string {
+  return `${hub}:${category}`;
 }
 
 export function isNominationComplete(nomination: Pick<AwardNominationDraft, "justification"> | undefined): boolean {
@@ -147,10 +291,14 @@ export type VoterView =
       phase: AwardPhase;
       /** Pré-visualização do RH: votação simulada aberta, nada é salvo. */
       preview: boolean;
-      /** false = usuário sem cadastro de colaborador ativo (não vota). */
+      /** false = usuário sem cadastro de colaborador ativo em algum hub (não vota). */
       eligible: boolean;
       voterFirstName: string;
-      /** Quem pode ser indicado (sem a própria pessoa e, se for o caso, sem sócios). */
+      /** Hubs em que indica: o da área, os três para sócio patrimonial, ou a exceção definida pelo RH. */
+      hubs: AwardHubKey[];
+      /** Áreas de cada hub nesta edição. */
+      hubAreas: Record<AwardHubKey, string[]>;
+      /** Quem pode ser indicado nos hubs do votante (sem a própria pessoa e, se for o caso, sem sócios). */
       candidates: AwardPerson[];
       nominations: AwardNominationDraft[];
       submittedAt: string | null;
@@ -159,6 +307,7 @@ export type VoterView =
     };
 
 export interface AwardWinner {
+  hub: AwardHubKey;
   category: AwardCategoryKey;
   person: AwardPerson;
   citation: string | null;
@@ -169,6 +318,8 @@ export interface AwardInviteStatus {
   pending: boolean;
   closesAt: string | null;
   filled: number;
+  /** Indicações esperadas: 5 por hub (15 para sócio patrimonial). */
+  total: number;
 }
 
 /* ---------------------------------------------------------------- comitê */
@@ -177,9 +328,13 @@ export type ParticipationStatus = "enviou" | "rascunho" | "pendente";
 
 export interface ParticipationRow {
   person: AwardPerson;
+  /** Hubs em que a pessoa vota. */
+  hubs: AwardHubKey[];
   status: ParticipationStatus;
-  /** Valores preenchidos no rascunho (0–5). */
+  /** Indicações preenchidas no rascunho. */
   filled: number;
+  /** Indicações esperadas (5 por hub). */
+  total: number;
   submitted_at: string | null;
 }
 
@@ -197,8 +352,11 @@ export interface NomineeTally {
   testimonies: NominationTestimony[];
 }
 
+export type HubTallies = Record<AwardHubKey, Record<AwardCategoryKey, NomineeTally[]>>;
+
 export interface AwardFinalist {
   id: string;
+  hub: AwardHubKey;
   category: AwardCategoryKey;
   employee_id: string;
   is_winner: boolean;
@@ -209,24 +367,25 @@ export interface CommitteeView {
   edition: AwardEdition;
   phase: AwardPhase;
   participation: ParticipationRow[];
-  tallies: Record<AwardCategoryKey, NomineeTally[]>;
+  tallies: HubTallies;
   finalists: AwardFinalist[];
   people: AwardPerson[];
+  overrides: ParticipantOverride[];
 }
 
-export interface EditionUpdateInput {
-  voting_opens_at?: string | null;
-  voting_closes_at?: string | null;
-  partners_eligible?: boolean;
-  /** true publica o resultado agora; false volta a esconder. */
-  publish?: boolean;
-}
+/** Vencedores esperados: 5 valores em cada hub. */
+export const TOTAL_AWARDS = AWARD_HUB_KEYS.length * AWARD_CATEGORY_KEYS.length;
 
 export interface RevealCategory {
   category: AwardCategory;
   finalists: AwardPerson[];
   winner: AwardPerson | null;
   citation: string | null;
+}
+
+export interface RevealHub {
+  hub: AwardHub;
+  categories: RevealCategory[];
 }
 
 /* --------------------------------------------------------------- identidade */

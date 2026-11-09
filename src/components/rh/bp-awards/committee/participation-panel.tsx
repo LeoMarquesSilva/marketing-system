@@ -6,7 +6,7 @@ import { AwardAvatar } from "@/components/rh/bp-awards/award-avatar";
 import { Input } from "@/components/ui/input";
 import { AreaIcon, getAreaIconStyle } from "@/lib/area-icons";
 import { formatAwardDateTime } from "@/lib/rh/bp-awards/format";
-import type { ParticipationRow, ParticipationStatus } from "@/lib/rh/bp-awards/types";
+import { AWARD_HUBS, type AwardHubKey, type ParticipationRow, type ParticipationStatus } from "@/lib/rh/bp-awards/types";
 import { cn } from "@/lib/utils";
 
 const STATUS: Record<ParticipationStatus, { label: string; icon: typeof CircleCheck; className: string }> = {
@@ -22,6 +22,18 @@ const FILTERS: Array<{ key: ParticipationStatus | "todos"; label: string }> = [
   { key: "enviou", label: "Enviaram" },
 ];
 
+/** Grupos da participação: os três hubs e quem vota sem pertencer a um hub (sócios patrimoniais e exceções). */
+type GroupKey = AwardHubKey | "socios";
+
+const GROUPS: Array<{ key: GroupKey; label: string; note?: string }> = [
+  ...AWARD_HUBS.map((hub) => ({ key: hub.key as GroupKey, label: hub.name })),
+  { key: "socios", label: "Fora dos hubs", note: "sócios patrimoniais e exceções" },
+];
+
+function groupOf(row: ParticipationRow): GroupKey {
+  return row.person.hub ?? "socios";
+}
+
 function normalize(value: string): string {
   return value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
@@ -29,31 +41,39 @@ function normalize(value: string): string {
 /** Quem já votou, por área e por pessoa (a pesquisa é identificada). */
 export function ParticipationPanel({ rows }: { rows: ParticipationRow[] }) {
   const [filter, setFilter] = useState<ParticipationStatus | "todos">("todos");
+  const [group, setGroup] = useState<GroupKey | "todos">("todos");
   const [query, setQuery] = useState("");
 
-  const byArea = useMemo(() => {
-    const map = new Map<string, { total: number; sent: number; draft: number }>();
-    for (const row of rows) {
-      const area = row.person.department ?? "Sem área";
-      const entry = map.get(area) ?? { total: 0, sent: 0, draft: 0 };
-      entry.total += 1;
-      if (row.status === "enviou") entry.sent += 1;
-      if (row.status === "rascunho") entry.draft += 1;
-      map.set(area, entry);
-    }
-    return [...map.entries()].sort((a, b) => b[1].total - a[1].total || a[0].localeCompare(b[0], "pt-BR"));
+  const byGroup = useMemo(() => {
+    const tally = (list: ParticipationRow[]) => ({
+      total: list.length,
+      sent: list.filter((row) => row.status === "enviou").length,
+      draft: list.filter((row) => row.status === "rascunho").length,
+    });
+    return GROUPS.map((item) => {
+      const own = rows.filter((row) => groupOf(row) === item.key);
+      const areas = [...new Set(own.map((row) => row.person.department ?? "Sem área"))]
+        .map((area) => ({ area, ...tally(own.filter((row) => (row.person.department ?? "Sem área") === area)) }))
+        .sort((a, b) => b.total - a.total || a.area.localeCompare(b.area, "pt-BR"));
+      return { ...item, ...tally(own), areas };
+    }).filter((item) => item.total > 0);
   }, [rows]);
 
   const counts = useMemo(() => {
-    const result: Record<ParticipationStatus | "todos", number> = { todos: rows.length, enviou: 0, rascunho: 0, pendente: 0 };
-    for (const row of rows) result[row.status] += 1;
+    const result: Record<ParticipationStatus | "todos", number> = { todos: 0, enviou: 0, rascunho: 0, pendente: 0 };
+    for (const row of rows) {
+      if (group !== "todos" && groupOf(row) !== group) continue;
+      result[row.status] += 1;
+      result.todos += 1;
+    }
     return result;
-  }, [rows]);
+  }, [rows, group]);
 
   const visible = useMemo(() => {
     const terms = normalize(query).split(/\s+/).filter(Boolean);
     const order: Record<ParticipationStatus, number> = { pendente: 0, rascunho: 1, enviou: 2 };
     return rows
+      .filter((row) => group === "todos" || groupOf(row) === group)
       .filter((row) => filter === "todos" || row.status === filter)
       .filter((row) => {
         if (!terms.length) return true;
@@ -64,41 +84,56 @@ export function ParticipationPanel({ rows }: { rows: ParticipationRow[] }) {
         (a, b) =>
           order[a.status] - order[b.status] || a.person.short_name.localeCompare(b.person.short_name, "pt-BR")
       );
-  }, [rows, filter, query]);
+  }, [rows, filter, group, query]);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
       <section aria-labelledby="participacao-area" className="rounded-lg border border-[#dce9eb] bg-white p-4 shadow-xs">
         <h2 id="participacao-area" className="text-sm font-semibold text-foreground">
-          Por área
+          Por hub
         </h2>
-        <ul className="mt-3 space-y-3.5">
-          {byArea.map(([area, entry]) => {
-            const sentPct = entry.total ? (entry.sent / entry.total) * 100 : 0;
-            const draftPct = entry.total ? (entry.draft / entry.total) * 100 : 0;
+        <div className="mt-3 space-y-5">
+          {byGroup.map((item) => {
+            const sentPct = item.total ? (item.sent / item.total) * 100 : 0;
+            const draftPct = item.total ? (item.draft / item.total) * 100 : 0;
             return (
-              <li key={area}>
-                <div className="flex items-center gap-2.5">
-                  <span className={cn("grid size-7 shrink-0 place-items-center rounded-md ring-1", getAreaIconStyle(area))}>
-                    <AreaIcon area={area} className="size-3.5" aria-hidden />
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{area}</span>
-                  <span className="text-sm tabular-nums text-muted-foreground">
-                    {entry.sent}/{entry.total}
+              <section key={item.key} aria-label={item.label}>
+                <div className="flex items-baseline justify-between gap-2">
+                  <h3 className="min-w-0 truncate text-sm font-semibold">
+                    {item.label}
+                    {item.note && <span className="ml-1.5 text-xs font-normal text-muted-foreground">{item.note}</span>}
+                  </h3>
+                  <span className="text-sm font-semibold tabular-nums text-[#285f7a]">
+                    {item.sent}/{item.total}
                   </span>
                 </div>
                 <div
-                  className="mt-1.5 flex h-1.5 overflow-hidden rounded-full bg-[#eef3f5]"
+                  className="mt-1.5 flex h-2 overflow-hidden rounded-full bg-[#eef3f5]"
                   role="img"
-                  aria-label={`${entry.sent} enviaram e ${entry.draft} em rascunho, de ${entry.total}`}
+                  aria-label={`${item.sent} enviaram e ${item.draft} em rascunho, de ${item.total}`}
                 >
                   <span className="bg-[#347796]" style={{ width: `${sentPct}%` }} />
                   <span className="bg-[#47cdd0]/60" style={{ width: `${draftPct}%` }} />
                 </div>
-              </li>
+                {item.key !== "socios" && item.areas.length > 1 && (
+                  <ul className="mt-2.5 space-y-1.5">
+                    {item.areas.map((entry) => (
+                      <li key={entry.area} className="flex items-center gap-2">
+                        <span className={cn("grid size-6 shrink-0 place-items-center rounded-md ring-1", getAreaIconStyle(entry.area))}>
+                          <AreaIcon area={entry.area} className="size-3" aria-hidden />
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-sm text-foreground/80">{entry.area}</span>
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          {entry.sent}/{entry.total}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
             );
           })}
-        </ul>
+        </div>
         <p className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <span className="size-2 rounded-full bg-[#347796]" aria-hidden />
@@ -127,6 +162,24 @@ export function ParticipationPanel({ rows }: { rows: ParticipationRow[] }) {
               aria-label="Buscar pessoa ou área"
             />
           </div>
+        </div>
+        <div className="flex gap-1.5 overflow-x-auto border-b border-[#dce9eb] px-4 py-2.5" role="group" aria-label="Filtrar por hub">
+          {[{ key: "todos" as const, label: "Todos os hubs" }, ...GROUPS].map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              aria-pressed={group === item.key}
+              onClick={() => setGroup(item.key)}
+              className={cn(
+                "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-150",
+                group === item.key
+                  ? "border-[#347796] bg-[#e8f4f8] text-[#285f7a]"
+                  : "border-[#dce9eb] text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
         <div className="flex gap-1 overflow-x-auto border-b border-[#dce9eb] px-2" role="group" aria-label="Filtrar por situação">
           {FILTERS.map(({ key, label }) => (
@@ -167,7 +220,7 @@ export function ParticipationPanel({ rows }: { rows: ParticipationRow[] }) {
                     {row.status === "enviou" && row.submitted_at
                       ? formatAwardDateTime(row.submitted_at)
                       : row.status === "rascunho"
-                        ? `${row.filled} de 5 valores`
+                        ? `${row.filled} de ${row.total} indicações`
                         : ""}
                   </span>
                   <span

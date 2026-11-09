@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
   CalendarClock,
@@ -22,28 +23,32 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatAwardDateTime } from "@/lib/rh/bp-awards/format";
 import {
-  AWARD_CATEGORY_KEYS,
+  AWARD_HUBS,
   AWARD_PHASE_LABEL,
   AWARDS_REVEAL_PATH,
   AWARDS_SYMBOL_SRC,
   AWARDS_VOTING_PATH,
+  TOTAL_AWARDS,
   resolveAwardPhase,
+  slotKey,
   type AwardEdition,
   type AwardFinalist,
   type AwardPhase,
   type CommitteeView,
+  type ParticipantOverride,
 } from "@/lib/rh/bp-awards/types";
 import { cn } from "@/lib/utils";
-import { EditionDialog } from "./edition-dialog";
 import { ParticipationPanel } from "./participation-panel";
 import { requestJson } from "./request";
+import { SettingsPanel } from "./settings-panel";
 import { TallyPanel } from "./tally-panel";
 
-type Tab = "apuracao" | "participacao";
+type Tab = "apuracao" | "participacao" | "configuracoes";
 
 const TABS: Array<{ key: Tab; label: string; icon: LucideIcon }> = [
   { key: "apuracao", label: "Apuração", icon: Trophy },
   { key: "participacao", label: "Participação", icon: UsersRound },
+  { key: "configuracoes", label: "Configurações", icon: Settings2 },
 ];
 
 const PHASE_STYLE: Record<AwardPhase, string> = {
@@ -59,12 +64,14 @@ function daysUntil(iso: string): number {
 }
 
 export function CommitteeClient({ initial }: { initial: CommitteeView }) {
+  const router = useRouter();
   const [edition, setEdition] = useState<AwardEdition>(initial.edition);
+  const [overrides, setOverrides] = useState<ParticipantOverride[]>(initial.overrides);
   const [finalists, setFinalists] = useState<AwardFinalist[]>(initial.finalists);
   const phase = resolveAwardPhase(edition);
-  const [tab, setTab] = useState<Tab>(phase === "apuracao" || phase === "publicada" ? "apuracao" : "participacao");
-  const [configOpen, setConfigOpen] = useState(false);
-  const [configKey, setConfigKey] = useState(0);
+  const [tab, setTab] = useState<Tab>(
+    phase === "apuracao" || phase === "publicada" ? "apuracao" : phase === "aberta" ? "participacao" : "configuracoes"
+  );
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
@@ -75,22 +82,29 @@ export function CommitteeClient({ initial }: { initial: CommitteeView }) {
     const draft = participation.filter((row) => row.status === "rascunho").length;
     return { total: participation.length, sent, draft, pending: participation.length - sent - draft };
   }, [participation]);
-  const winners = new Set(finalists.filter((finalist) => finalist.is_winner).map((finalist) => finalist.category));
-  const allWinners = winners.size === AWARD_CATEGORY_KEYS.length;
+  const winners = new Set(
+    finalists.filter((finalist) => finalist.is_winner).map((finalist) => slotKey(finalist.hub, finalist.category))
+  );
+  const allWinners = winners.size === TOTAL_AWARDS;
 
   const nextStep: Record<AwardPhase, string> = {
-    rascunho: "Defina as datas de abertura e encerramento para liberar a votação.",
+    rascunho: "Votação fechada. Ajuste os hubs e, quando for soltar, defina as datas em Configurações.",
     agendada: edition.voting_opens_at
       ? `A votação abre em ${formatAwardDateTime(edition.voting_opens_at)}. Quem entrar no sistema verá o convite.`
       : "",
     aberta: `${stats.sent} de ${stats.total} colaboradores já enviaram. Use Participação para lembrar quem falta.`,
     apuracao: allWinners
-      ? "Os 5 vencedores estão definidos. Revise as homenagens e ensaie a revelação no telão."
-      : `Escolha até 3 finalistas e o vencedor de cada valor (${winners.size} de 5 definidos).`,
+      ? `Os ${TOTAL_AWARDS} vencedores estão definidos. Revise as homenagens e ensaie a revelação no telão.`
+      : `Escolha até 3 finalistas e o vencedor de cada valor, em cada hub (${winners.size} de ${TOTAL_AWARDS} definidos).`,
     publicada: edition.results_published_at
       ? `Resultado publicado em ${formatAwardDateTime(edition.results_published_at)}: todos veem os vencedores na página do BP Awards.`
       : "",
   };
+
+  /** Área, hub e exceções mudam participação e apuração, que vêm do servidor. */
+  function refreshAfterSettings() {
+    router.refresh();
+  }
 
   async function setPublished(publish: boolean) {
     setPublishing(true);
@@ -137,22 +151,12 @@ export function CommitteeClient({ initial }: { initial: CommitteeView }) {
                     ? `${formatAwardDateTime(edition.voting_opens_at)} até ${formatAwardDateTime(edition.voting_closes_at)}`
                     : "Datas da votação não definidas"}
                 </span>
-                <span>{edition.partners_eligible ? "Sócios concorrem" : "Sócios votam, mas não concorrem"}</span>
+                <span>{AWARD_HUBS.length} hubs, 5 premiações em cada</span>
+                <span>{edition.partners_eligible ? "Sócios de área concorrem" : "Sócios votam, mas não concorrem"}</span>
               </p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setConfigKey((key) => key + 1);
-                setConfigOpen(true);
-              }}
-            >
-              <Settings2 className="size-4" aria-hidden />
-              Configurar
-            </Button>
             <Button asChild variant="outline">
               <Link href={`${AWARDS_VOTING_PATH}?previa=1`} target="_blank" rel="noopener">
                 <ExternalLink className="size-4" aria-hidden />
@@ -200,11 +204,11 @@ export function CommitteeClient({ initial }: { initial: CommitteeView }) {
         <KpiCard
           icon={Trophy}
           label="Vencedores definidos"
-          value={`${winners.size}/5`}
+          value={`${winners.size}/${TOTAL_AWARDS}`}
           hint={
             phase === "aberta" && edition.voting_closes_at
               ? `Votação fecha em ${daysUntil(edition.voting_closes_at)} ${daysUntil(edition.voting_closes_at) === 1 ? "dia" : "dias"}`
-              : "Um por valor do CIVIL"
+              : "5 valores em cada um dos 3 hubs"
           }
         />
       </div>
@@ -232,7 +236,21 @@ export function CommitteeClient({ initial }: { initial: CommitteeView }) {
           ))}
         </div>
 
-        {tab === "apuracao" ? (
+        {tab === "configuracoes" ? (
+          <SettingsPanel
+            edition={edition}
+            overrides={overrides}
+            people={initial.people}
+            onEdition={(next) => {
+              setEdition(next);
+              refreshAfterSettings();
+            }}
+            onOverrides={(next) => {
+              setOverrides(next);
+              refreshAfterSettings();
+            }}
+          />
+        ) : tab === "apuracao" ? (
           <TallyPanel
             tallies={initial.tallies}
             finalists={finalists}
@@ -245,14 +263,6 @@ export function CommitteeClient({ initial }: { initial: CommitteeView }) {
         )}
       </div>
 
-      <EditionDialog
-        key={configKey}
-        edition={edition}
-        open={configOpen}
-        onOpenChange={setConfigOpen}
-        onSaved={setEdition}
-      />
-
       <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
@@ -264,7 +274,9 @@ export function CommitteeClient({ initial }: { initial: CommitteeView }) {
             </DialogDescription>
           </DialogHeader>
           {phase !== "publicada" && !allWinners && (
-            <p className="text-sm text-amber-800">Faltam vencedores: {5 - winners.size} de 5 valores ainda sem definição.</p>
+            <p className="text-sm text-amber-800">
+              Faltam vencedores: {TOTAL_AWARDS - winners.size} de {TOTAL_AWARDS} premiações ainda sem definição.
+            </p>
           )}
           {publishError && (
             <p className="text-sm text-red-600" role="alert">
