@@ -8,6 +8,8 @@ export interface CamposDaTarefa {
   dataFatal: string | null;
   hora: string | null;
   horaFim: string | null;
+  /** SESSÃO DE JULGAMENTO: data limite no VIOS; nos outros tipos, null. */
+  dataLimite?: string | null;
   responsavel: string;
   revisor: string | null;
   fluxoDatas: DataDoFluxo[];
@@ -36,6 +38,8 @@ export function mudancasNaTarefa(antes: CamposDaTarefa, depois: CamposDaTarefa):
   anotar(depois.dataFatal ? "Enviar no VIOS" : "Data no VIOS", dia(antes.data, "sem data"), dia(depois.data, "sem data"));
   anotar("Horário", antes.hora ?? "sem horário", depois.hora ?? "sem horário");
   anotar("Hora final", antes.horaFim ?? "sem hora final", depois.horaFim ?? "sem hora final");
+  // Só a SESSÃO DE JULGAMENTO tem data limite própria; sem ela gravada, era a própria data.
+  if (depois.dataLimite) anotar("Data limite", dia(antes.dataLimite ?? antes.data, "sem data"), dia(depois.dataLimite, "sem data"));
   pessoas("Responsável", separarNomes(antes.responsavel), separarNomes(depois.responsavel), "sem responsável");
   pessoas("Revisor", separarNomes(antes.revisor), separarNomes(depois.revisor), "sem revisor");
 

@@ -313,6 +313,8 @@ export interface AgendamentoResumo {
   hora: string | null;
   /** COMPROMISSO: Hora final HH:MM (null nos antigos: o robô pôs 1 hora depois, ou 00:00 antes de 05/11/2026). */
   horaFim: string | null;
+  /** SESSÃO DE JULGAMENTO: data limite no VIOS (AAAA-MM-DD); nos outros tipos e nas antigas, null (é a própria data). */
+  dataLimite: string | null;
   responsavel: string;
   revisor: string | null;
   observacao: string | null;

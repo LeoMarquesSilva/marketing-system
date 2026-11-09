@@ -76,12 +76,12 @@ import type {
 } from "./types";
 
 const COLUNAS_AGENDAMENTO =
-  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, hora, hora_fim, responsavel, revisor, observacao, fluxo_datas, ajustes, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, vios_tarefas, envio_erro, enviado_em";
+  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, hora, hora_fim, data_limite, responsavel, revisor, observacao, fluxo_datas, ajustes, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, vios_tarefas, envio_erro, enviado_em";
 
 type AgendamentoRow = {
   id: string; publicacao_id: string; ordem: number; etiqueta: EtiquetaAgendamento; tarefa: string; tarefa_id: string | null;
   data: string; data_fatal: string | null; dias_prazo: number | null; contagem_prazo: ContagemPrazo | null; hora: string | null;
-  hora_fim: string | null; responsavel: string; revisor: string | null;
+  hora_fim: string | null; data_limite: string | null; responsavel: string; revisor: string | null;
   observacao: string | null; fluxo_datas: DataDoFluxo[] | null; ajustes: AjusteNaTarefa[] | null; envio_status: EnvioStatus;
   envio_simulado: boolean | null; sama_agendamento_id: string | null; vios_tarefa_id: string | null;
   vios_tarefas: TarefaNoVios[] | null; envio_erro: string | null; enviado_em: string | null;
@@ -100,6 +100,7 @@ function agendamentoResumo(row: AgendamentoRow): AgendamentoResumo {
     contagemPrazo: row.contagem_prazo,
     hora: row.hora,
     horaFim: row.hora_fim ?? null,
+    dataLimite: row.data_limite ?? null,
     responsavel: row.responsavel,
     revisor: row.revisor,
     observacao: row.observacao,
@@ -463,6 +464,7 @@ async function cienciaParaGravar(
     contagemPrazo: null,
     hora: null,
     horaFim: null,
+    dataLimite: null,
     responsavel: ciencia.responsaveis.map((pessoa) => pessoa.nome).join(", "),
     responsavelId: ciencia.responsaveis.map((pessoa) => pessoa.id ?? "").join(","),
     revisor: null,
@@ -559,6 +561,7 @@ export async function salvarVistagem(
       contagem_prazo: item.contagemPrazo,
       hora: item.hora,
       hora_fim: item.horaFim,
+      data_limite: item.dataLimite,
       responsavel: item.responsavel,
       responsavel_id: item.responsavelId,
       revisor: item.revisor,
@@ -999,6 +1002,7 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
         dataFatal: edicao.dataFatal,
         hora: edicao.hora,
         horaFim: edicao.horaFim,
+        dataLimite: edicao.dataLimite,
         responsavel: edicao.responsavel,
         revisor: edicao.revisor,
         observacao: row.observacao,
@@ -1030,6 +1034,7 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
       dataFatal: row.data_fatal,
       hora: row.hora,
       horaFim: row.hora_fim,
+      dataLimite: row.data_limite,
       responsavel: row.responsavel,
       revisor: row.revisor,
       fluxoDatas: row.fluxo_datas ?? [],
@@ -1039,6 +1044,7 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
       dataFatal: item.dataFatal,
       hora: item.hora,
       horaFim: item.horaFim,
+      dataLimite: item.dataLimite,
       responsavel: item.responsavel,
       revisor: item.revisor,
       fluxoDatas: item.fluxoDatas,
@@ -1058,6 +1064,7 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
       contagem_prazo: mesmaFatal ? row.contagem_prazo : null,
       hora: item.hora,
       hora_fim: item.horaFim,
+      data_limite: item.dataLimite,
       responsavel: item.responsavel,
       responsavel_id: item.responsavelId,
       revisor: item.revisor,

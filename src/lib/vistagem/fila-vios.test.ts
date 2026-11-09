@@ -38,6 +38,19 @@ describe("fila do robô", () => {
     ]);
   });
 
+  it("SESSÃO DE JULGAMENTO: a data limite vai ao robô só quando difere da data", () => {
+    const sessao: AgendamentoParaFila = { ...ITENS[1], etiqueta: "COMPROMISSO", tarefa: "SESSÃO DE JULGAMENTO", tarefa_id: "406", data: "2026-11-19", hora: "09:00", hora_fim: "18:00", data_limite: "2026-11-25" };
+    const igual: AgendamentoParaFila = { ...sessao, id: "ag-3", data_limite: "2026-11-19" };
+    const [grupo] = linhasParaFila(PUBLICACAO, [sessao, igual], { simular: false, modo: "intimacao" });
+    expect(grupo.linha.lancamento?.tarefas.map((t) => [t.data, t.data_limite])).toEqual([
+      ["19/11/2026", "25/11/2026"],
+      ["19/11/2026", null],
+    ]);
+    // Na pasta o robô põe a data limite igual à data: a outra vai escrita na descrição.
+    const [naPasta] = linhasParaFila(PUBLICACAO, [sessao], { simular: false, modo: "pasta" });
+    expect(naPasta.linha.observacao).toBe("Publicação de 15/10/2026\nHorário: 09:00 às 18:00\nData limite: 25/11/2026");
+  });
+
   it("na intimação: uma linha com todas as tarefas, ligada pelo ID de comunicação", () => {
     const [grupo, ...resto] = linhasParaFila(PUBLICACAO, ITENS, { simular: true, modo: "intimacao" });
     expect(resto).toHaveLength(0);
@@ -58,6 +71,7 @@ describe("fila do robô", () => {
           data: "16/10/2026",
           hora: null,
           hora_fim: null,
+          data_limite: null,
           responsavel: "Maria Heloiza Gois Ponce",
           revisor: "Giovanna Pereira de Souza",
           observacao: "Publicação de 15/10/2026\nlaudo",
@@ -72,6 +86,7 @@ describe("fila do robô", () => {
           data: "19/10/2026",
           hora: null,
           hora_fim: null,
+          data_limite: null,
           responsavel: "Giovanna Pereira de Souza",
           revisor: null,
           observacao: "Publicação de 15/10/2026",

@@ -29,6 +29,7 @@ function agendamento(campos: Partial<AgendamentoResumo>): AgendamentoResumo {
     contagemPrazo: "uteis",
     hora: null,
     horaFim: null,
+    dataLimite: null,
     responsavel: "Letícia Zamarion Julio",
     revisor: "Pamela Klava Senna Patricio",
     observacao: null,
