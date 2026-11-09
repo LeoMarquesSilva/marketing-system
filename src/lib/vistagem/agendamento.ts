@@ -62,6 +62,8 @@ export interface AgendamentoEntrada {
   hora?: string | null;
   /** COMPROMISSO: HH:MM em que termina (Hora final no VIOS); sem ela, 1 hora depois da inicial. */
   horaFim?: string | null;
+  /** SESSÃO DE JULGAMENTO: data limite no VIOS (AAAA-MM-DD), a data para conclusão ou depois; sem ela, a mesma data. */
+  dataLimite?: string | null;
   responsavel: string;
   revisor?: string | null;
   observacao?: string | null;
@@ -83,6 +85,8 @@ export interface AgendamentoValidado {
   hora: string | null;
   /** COMPROMISSO: Hora final no VIOS (HH:MM, depois da inicial); nas outras classes, null. */
   horaFim: string | null;
+  /** SESSÃO DE JULGAMENTO: data limite no VIOS (a data para conclusão ou depois); nos outros tipos, null. */
+  dataLimite: string | null;
   responsavel: string;
   responsavelId: string;
   revisor: string | null;
@@ -328,6 +332,22 @@ export function observacaoObrigatoria(nomeDaTarefa: string | null | undefined): 
 }
 
 /**
+ * Tipos de tarefa em que a data limite do VIOS pode ser diferente da data para conclusão. Na SESSÃO DE JULGAMENTO a
+ * sessão é num dia e o prazo da tarefa pode ir além (pedido de 09/11/2026); começa igual e a pessoa ajusta. Nos outros
+ * tipos a data limite é a própria data. Recebe o nome como está no VIOS.
+ */
+export function pedeDataLimite(nomeDaTarefa: string | null | undefined): boolean {
+  return chaveNome(nomeDaTarefa) === "SESSAO DE JULGAMENTO";
+}
+
+/** Data limite que vai para o VIOS: a pedida, se for válida e não antes da data; senão, a própria data. */
+export function dataLimiteDaTarefa(nomeDaTarefa: string | null | undefined, data: string, pedida: string | null | undefined): string | null {
+  if (!pedeDataLimite(nomeDaTarefa) || !dataValida(data)) return null;
+  const limite = pedida?.trim() || "";
+  return dataValida(limite) && limite >= data ? limite : data;
+}
+
+/**
  * Confere a vistagem antes de gravar: ao menos uma tarefa; cada uma com etiqueta,
  * tarefa da lista travada, data válida e responsável/revisor entre os usuários do VIOS
  * (revisor obrigatório no Prazo, opcional no Compromisso e ignorado na Providência).
@@ -394,6 +414,13 @@ export function validarAgendamentos(
       erros.push(`${n}: a hora final tem de ser depois da hora do compromisso.`);
     }
     const horaFim = compromisso && hora ? (horaValida(horaFimPedida) && horaFimPedida > hora ? horaFimPedida : horaFinalPadrao(hora)) : null;
+    // SESSÃO DE JULGAMENTO: a data limite pode ir além da data para conclusão, nunca antes dela.
+    const nomeVios = tarefa?.nomeVios ?? tarefa?.nome ?? null;
+    const limitePedido = entrada.dataLimite?.trim() || "";
+    if (pedeDataLimite(nomeVios) && limitePedido && dataValida(data) && (!dataValida(limitePedido) || limitePedido < data)) {
+      erros.push(`${n}: a data limite tem de ser a data para conclusão ou depois.`);
+    }
+    const dataLimite = dataLimiteDaTarefa(nomeVios, data, limitePedido);
     // Pode haver mais de um responsável (ex.: tipos com responsáveis fixos no VIOS), separados por vírgula.
     const nomesResponsaveis = separarNomes(entrada.responsavel);
     const encontrados = nomesResponsaveis.map((nome) => usuarioPorChave.get(chaveNome(nome)));
@@ -467,6 +494,7 @@ export function validarAgendamentos(
       contagemPrazo,
       hora,
       horaFim,
+      dataLimite,
       responsavel: responsavel.map((usuario) => usuario.nome).join(", "),
       responsavelId: responsavel.map((usuario) => usuario.id).join(","),
       revisor: revisor?.nome ?? null,

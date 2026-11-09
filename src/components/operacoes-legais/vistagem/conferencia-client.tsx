@@ -218,6 +218,7 @@ export function TabelaTarefas({ agendamentos, comEnvio, compacta = false }: { ag
                 <span className="tabular-nums text-foreground">
                   {formatarData(item.data)}
                   {!item.dataFatal && item.hora ? ` às ${item.hora}${item.horaFim ? ` até ${item.horaFim}` : ""}` : ""}
+                  {item.dataLimite && item.dataLimite !== item.data ? ` · limite ${formatarData(item.dataLimite)}` : ""}
                 </span>
                 {item.dataFatal ? (
                   <span className="mt-0.5 block text-xs text-muted-foreground">

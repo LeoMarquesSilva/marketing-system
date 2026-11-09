@@ -266,6 +266,7 @@ describe("resultadoDaSugestao", () => {
     contagemPrazo: "uteis",
     hora: null,
     horaFim: null,
+    dataLimite: null,
     responsavel: "Advogada",
     responsavelId: "1",
     revisor: "Auxiliar",

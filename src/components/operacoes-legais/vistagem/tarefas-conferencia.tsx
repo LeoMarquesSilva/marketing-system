@@ -348,6 +348,7 @@ export function CartoesTarefas({
                       <CalendarDays className="size-4 text-[#3e84a8]" aria-hidden />
                       {formatarData(item.data)}
                       {item.hora ? ` às ${item.hora}${item.horaFim ? ` até ${item.horaFim}` : ""}` : ""}
+                      {item.dataLimite && item.dataLimite !== item.data ? ` · limite ${formatarData(item.dataLimite)}` : ""}
                     </dd>
                   </div>
                 ) : null}

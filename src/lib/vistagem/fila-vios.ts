@@ -33,6 +33,8 @@ export interface TarefaDoLancamento {
   hora: string | null;
   /** HH:MM (Hora final no VIOS); só no Compromisso. */
   hora_fim: string | null;
+  /** DD/MM/AAAA (Data limite no VIOS); só na SESSÃO DE JULGAMENTO, quando difere da data. Sem ela, a própria data. */
+  data_limite: string | null;
   responsavel: string;
   revisor: string | null;
   observacao: string;
@@ -97,6 +99,8 @@ export interface AgendamentoParaFila {
   hora: string | null;
   /** HH:MM em que o Compromisso termina; null nos antigos (o robô usa 1 hora depois). */
   hora_fim?: string | null;
+  /** AAAA-MM-DD; só na SESSÃO DE JULGAMENTO. */
+  data_limite?: string | null;
   responsavel: string;
   revisor: string | null;
   observacao: string | null;
@@ -149,7 +153,17 @@ export function linhasParaFila(
     return itens.map((item) => ({
       linha: base(
         item,
-        montarObservacaoVios(publicacao.data_publicacao, [item.hora ? `Horário: ${item.hora}${item.hora_fim ? ` às ${item.hora_fim}` : ""}` : null, item.observacao].filter(Boolean).join("\n") || null)
+        montarObservacaoVios(
+          publicacao.data_publicacao,
+          [
+            item.hora ? `Horário: ${item.hora}${item.hora_fim ? ` às ${item.hora_fim}` : ""}` : null,
+            // Na pasta o robô põe a data limite igual à data: a outra, pedida na Sessão de Julgamento, vai escrita.
+            item.data_limite && item.data_limite !== item.data ? `Data limite: ${paraDataVios(item.data_limite)}` : null,
+            item.observacao,
+          ]
+            .filter(Boolean)
+            .join("\n") || null
+        )
       ),
       agendamentos: [item.id],
     }));
@@ -177,6 +191,7 @@ export function linhasParaFila(
               data: paraDataVios(item.data),
               hora: item.hora ?? null,
               hora_fim: item.hora ? item.hora_fim ?? null : null,
+              data_limite: item.data_limite && item.data_limite !== item.data ? paraDataVios(item.data_limite) : null,
               responsavel: item.responsavel,
               revisor: item.revisor,
               observacao: cienciaNf ? "" : montarObservacaoVios(publicacao.data_publicacao, item.observacao),
