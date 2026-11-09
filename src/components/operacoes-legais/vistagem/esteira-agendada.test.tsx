@@ -12,6 +12,7 @@ function item(publicacao: Partial<ConferenciaItem["publicacao"]>): ConferenciaIt
       centralErro: null,
       ...publicacao,
     } as ConferenciaItem["publicacao"],
+    areaProcesso: null,
     agendamentos: [],
     inconsistencias: [],
     vistadoPor: "Ana Souza",

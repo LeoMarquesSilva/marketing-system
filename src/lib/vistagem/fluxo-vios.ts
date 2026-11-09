@@ -114,6 +114,22 @@ export function diasDoPrazo(prazo: string | null | undefined): number | null {
 /** O VIOS encadeia poucos níveis (Recurso › Embargos › Revisar); o limite só protege de ciclo na árvore. */
 const NIVEIS_DO_FLUXO = 4;
 
+/**
+ * A árvore como vale para uma pasta: o VIOS só cria os tipos disponíveis para a área dela ("disponível para as áreas"
+ * na árvore de tarefas). O RECURSO ESPECIAL tem dois INFORMAR CLIENTE + INTERESSE RECURSAL + GUIA, o 414 e o 426; a
+ * pasta Cível só recebe o 414. `tiposDaArea` são os ids da lista de tarefas da área no catálogo; sem ela, fica a árvore inteira.
+ */
+export function arvoreDaArea(arvore: Map<number, TipoNaArvore>, tiposDaArea: (string | number)[] | null): Map<number, TipoNaArvore> {
+  if (!tiposDaArea?.length) return arvore;
+  const naArea = new Set(tiposDaArea.map(Number));
+  return new Map(
+    [...arvore].map(([id, tipo]) => [
+      id,
+      { ...tipo, criacao: tipo.criacao.filter((filho) => naArea.has(filho)), conclusao: tipo.conclusao.filter((filho) => naArea.has(filho)) },
+    ])
+  );
+}
+
 /** Fluxo de um tipo de tarefa (id do VIOS); null se o VIOS não cria nada junto nem depois. */
 export function montarFluxo(id: string, arvore: Map<number, TipoNaArvore>): FluxoDaTarefa | null {
   const tipo = arvore.get(Number(id));

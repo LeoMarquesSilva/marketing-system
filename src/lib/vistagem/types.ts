@@ -396,6 +396,8 @@ export interface ResultadoCentral {
 
 export interface ConferenciaItem {
   publicacao: PublicacaoResumo;
+  /** Área da pasta no VIOS: decide o que o fluxo automático cria (os tipos disponíveis para a área). */
+  areaProcesso: string | null;
   agendamentos: AgendamentoResumo[];
   inconsistencias: InconsistenciaResumo[];
   /** Quem vistou primeiro (quem analisou a publicação; a devolução volta para essa pessoa). */
