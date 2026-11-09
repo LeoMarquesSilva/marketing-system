@@ -17,6 +17,14 @@ export function vaiParaCentral(publicacao: { pastaCi: string | null; pendencia: 
   return !publicacao.pastaCi && publicacao.pendencia !== "varias_pastas";
 }
 
+/**
+ * Etiqueta "Abertura de pasta" nas telas: as publicações sem pasta que estão ou já foram para esse caminho. A duplicidade e
+ * a captada também não têm pasta, mas por outro motivo; a descartada saiu da esteira.
+ */
+export function ehAberturaDePasta(publicacao: { status: string; pastaCi: string | null; pendencia: string | null }): boolean {
+  return !["duplicidade", "captada", "descartada"].includes(publicacao.status) && vaiParaCentral(publicacao);
+}
+
 /** Opção da coluna "ÁREA / EQUIPE" para um escritório; a lista não tem Operações Legais, que vai em "DEPARTAMENTO". */
 const AREAS_DA_CENTRAL = new Set([
   "CÍVEL",

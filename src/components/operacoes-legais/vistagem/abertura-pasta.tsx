@@ -5,12 +5,22 @@ import { CircleAlert, ExternalLink, FolderPlus, LoaderCircle, RotateCcw, ShieldA
 import { Button } from "@/components/ui/button";
 import { authFetch } from "@/lib/auth-fetch";
 import { ROTULO_ETIQUETA } from "@/lib/vistagem/agendamento";
-import { linkDoItemNaCentral } from "@/lib/vistagem/central";
+import { ehAberturaDePasta, linkDoItemNaCentral } from "@/lib/vistagem/central";
 import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
 import type { ConferenciaItem, PublicacaoResumo } from "@/lib/vistagem/types";
 import { IconeTribunal, LogoGrupo, SeloArea } from "./marcas";
 import { formatarData, formatarDataHora } from "./publicacao-ui";
 import { Painel, PainelTopo, Selo, Vazio } from "./ui";
+
+/** Etiqueta da publicação sem pasta no VIOS, ao lado do selo de risco. Só visual; não aparece nas outras. */
+export function SeloAberturaDePasta({ publicacao }: { publicacao: Pick<PublicacaoResumo, "status" | "pastaCi" | "pendencia"> }) {
+  if (!ehAberturaDePasta(publicacao)) return null;
+  return (
+    <Selo tom="alerta" icone={FolderPlus}>
+      Abertura de pasta
+    </Selo>
+  );
+}
 
 /** Item da Central do SharePoint (abre em nova aba). */
 export function LinkItemCentral({ itemId }: { itemId: string }) {

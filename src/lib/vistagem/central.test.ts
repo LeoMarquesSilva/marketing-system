@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { camposDaCentral, dataEnviarNaCentral, linkDoItemNaCentral, motivoDaCentral, processoNaCentral, vaiParaCentral, type PublicacaoParaCentral, type TarefaParaCentral } from "./central";
+import { camposDaCentral, dataEnviarNaCentral, ehAberturaDePasta, linkDoItemNaCentral, motivoDaCentral, processoNaCentral, vaiParaCentral, type PublicacaoParaCentral, type TarefaParaCentral } from "./central";
 
 const publicacao: PublicacaoParaCentral = {
   numero_processo: "1000000-00.2026.5.02.0001",
@@ -42,6 +42,26 @@ describe("vaiParaCentral", () => {
 
   it("com várias pastas não é abertura, mesmo sem uma escolhida", () => {
     expect(vaiParaCentral({ pastaCi: null, pendencia: "varias_pastas" })).toBe(false);
+  });
+});
+
+describe("ehAberturaDePasta", () => {
+  it("marca a publicação sem pasta em todo o caminho até a Central", () => {
+    for (const status of ["triagem_pendente", "juridico_vistar", "controladoria_vistar", "abertura_pasta"]) {
+      expect(ehAberturaDePasta({ status, pastaCi: null, pendencia: "sem_pasta" })).toBe(true);
+    }
+  });
+
+  it("não marca quem tem pasta, nem com a pendência antiga", () => {
+    expect(ehAberturaDePasta({ status: "juridico_vistar", pastaCi: "123", pendencia: null })).toBe(false);
+    expect(ehAberturaDePasta({ status: "juridico_vistar", pastaCi: "123", pendencia: "sem_pasta" })).toBe(false);
+  });
+
+  it("não marca quem está sem pasta por outro motivo", () => {
+    expect(ehAberturaDePasta({ status: "duplicidade", pastaCi: null, pendencia: null })).toBe(false);
+    expect(ehAberturaDePasta({ status: "captada", pastaCi: null, pendencia: null })).toBe(false);
+    expect(ehAberturaDePasta({ status: "descartada", pastaCi: null, pendencia: "sem_pasta" })).toBe(false);
+    expect(ehAberturaDePasta({ status: "triagem_pendente", pastaCi: null, pendencia: "varias_pastas" })).toBe(false);
   });
 });
 

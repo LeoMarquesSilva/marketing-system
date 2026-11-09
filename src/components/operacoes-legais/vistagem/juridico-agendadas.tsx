@@ -12,7 +12,7 @@ import { compararTarefa } from "@/lib/vistagem/check";
 import { nomeCurto, partesDaData } from "@/lib/vistagem/como-fica-no-vios";
 import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
 import type { AgendadasJuridicoResposta, AgendamentoResumo, ConferenciaItem } from "@/lib/vistagem/types";
-import { SituacaoNaCentral } from "./abertura-pasta";
+import { SeloAberturaDePasta, SituacaoNaCentral } from "./abertura-pasta";
 import { DetalheAgendada } from "./agendada-detalhe";
 import { AvatarPessoa } from "./combobox-busca";
 import {
@@ -281,6 +281,7 @@ function CartaoAgendada({ item, fotos, hoje, onAbrir }: { item: ConferenciaItem;
                   Risco
                 </Selo>
               ) : null}
+              <SeloAberturaDePasta publicacao={publicacao} />
               {devolucoes ? (
                 <Selo tom="alerta" icone={Undo2}>
                   Devolvida{devolucoes > 1 ? ` ${devolucoes}×` : ""}
