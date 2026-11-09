@@ -1,10 +1,10 @@
-import { Montserrat } from "next/font/google";
+import localFont from "next/font/local";
 import type { ReactNode } from "react";
 
 /** Montserrat substitui a Gotham do site institucional (mesma escolha do NPS). */
-const sans = Montserrat({
-  subsets: ["latin"],
-  weight: ["200", "300", "400", "500", "600"],
+const sans = localFont({
+  src: "../../../fonts/montserrat-latin-variable.woff2",
+  weight: "200 600",
   variable: "--font-fc-sans",
   display: "swap",
 });

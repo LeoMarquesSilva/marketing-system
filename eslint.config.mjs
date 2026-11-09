@@ -21,6 +21,21 @@ const eslintConfig = defineConfig([
     // Scripts Node.js usam require(); não fazem parte do bundle.
     "scripts/**",
   ]),
+  {
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "next/font/google",
+              message: "Use next/font/local com os arquivos de src/fonts: o build não pode depender do Google Fonts.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

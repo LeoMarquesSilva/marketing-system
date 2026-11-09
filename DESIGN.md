@@ -28,6 +28,7 @@ Vermelho, amber, verde e azul informativo ficam reservados para estados semantic
 - UI, tabelas e formularios: Geist Sans.
 - Numeros tecnicos e duracoes: Geist Mono.
 - Pontos institucionais curtos: Baloo Bhaiijaan 2 por `font-brand`.
+- Arquivos de fonte ficam em `src/fonts` e entram por `next/font/local`; nao usar `next/font/google` (o build nao pode depender do Google Fonts).
 - Texto operacional minimo: 12 px.
 - Letter spacing: sempre `0`.
 - Cada tela autenticada possui um unico `h1`, fornecido pelo header global.
