@@ -137,11 +137,13 @@ export interface ResultadoDaProxima {
  */
 export async function completarProximaCapa(): Promise<ResultadoDaProxima> {
   const limite = new Date(Date.now() - DIAS_ENTRE_CONSULTAS * 24 * 60 * 60 * 1000).toISOString();
+  // Consulta que falhou (DataJud fora do ar, 504, recusa) volta para a fila em uma hora, não em uma semana.
+  const limiteDaFalha = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const { data, error } = await db()
     .from("proc_processos")
     .select("id, situacao, datajud_consultado_em")
     .not("cnj", "is", null)
-    .or(`datajud_consultado_em.is.null,datajud_consultado_em.lt.${limite}`)
+    .or(`datajud_consultado_em.is.null,datajud_consultado_em.lt.${limite},and(datajud_erro.like.Não foi possível*,datajud_consultado_em.lt.${limiteDaFalha})`)
     .limit(2000);
   if (error) falhou("listar os processos para o DataJud", error);
   const fila = ((data ?? []) as { id: string; situacao: string | null; datajud_consultado_em: string | null }[]).sort(
