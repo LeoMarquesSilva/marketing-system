@@ -11,17 +11,25 @@ import { advogadosDoEscritorioCitados, ESCRITORIO_CIVEL_INSOLVENCIA, ESCRITORIO_
  * - DataJud (CNJ, lento e instável): sistema, data de ajuizamento e assuntos, quando responde;
  * - triagem do Orquestra e pastas vivas do grupo: área, cliente, responsável e auxiliar.
  * Sem valor em nenhuma fonte, vai R$ 0,01 e a ATUALIZAÇÃO DE CADASTRO corrige (decisão do usuário, 10/11/2026).
+ * A controladoria edita qualquer campo (lápis): a edição fica gravada na publicação e vale por cima das fontes.
  */
 
-export type FonteDaCapa = "cnj" | "djen" | "esaj" | "datajud" | "triagem" | "pastas" | "regra" | "falta";
+export type FonteDaCapa = "cnj" | "djen" | "esaj" | "datajud" | "triagem" | "pastas" | "regra" | "editado" | "falta";
 
 export interface CampoDaCapa {
+  chave: ChaveDaCapa;
   campo: string;
+  grupo: GrupoDaCapa;
+  /** O VIOS não grava a pasta sem ele. */
+  obrigatorio: boolean;
   valor: string | null;
   fonte: FonteDaCapa;
-  /** Precisa de conferência antes de abrir (palpite, regra provável ou campo vazio). */
+  /** Precisa de conferência antes de abrir (palpite, regra provável ou obrigatório vazio). */
   conferir: boolean;
   nota?: string;
+  /** Editado pela controladoria: o que as fontes tinham (para desfazer) e quem editou. */
+  original?: { valor: string | null; fonte: FonteDaCapa };
+  editado?: { por: string | null; em: string };
 }
 
 export interface Cnj {
@@ -53,7 +61,7 @@ const JUSTICA: Record<string, string> = {
   "2": "Conselho Nacional de Justiça",
   "3": "Superior Tribunal de Justiça",
   "4": "Justiça Federal",
-  "5": "Justiça do Trabalho",
+  "5": "Justiça Trabalhista",
   "6": "Justiça Eleitoral",
   "7": "Justiça Militar da União",
   "8": "Justiça Estadual",
@@ -99,6 +107,7 @@ export interface ComunicacaoDjen {
   nomeClasse?: string | null;
   codigoClasse?: string | number | null;
   data_disponibilizacao?: string | null;
+  tipoComunicacao?: string | null;
   destinatarios?: { nome?: string | null; polo?: string | null }[] | null;
   destinatarioadvogados?: { advogado?: { nome?: string | null; numero_oab?: string | null; uf_oab?: string | null } | null }[] | null;
 }
@@ -119,6 +128,10 @@ export interface CapaDoDjen {
   ativas: string[];
   passivas: string[];
   advogados: AdvogadoNaCapa[];
+  /** Data (AAAA-MM-DD) da "Lista de distribuição" no DJEN, quando houver. */
+  distribuicao: string | null;
+  /** Data (AAAA-MM-DD) da comunicação mais antiga. */
+  primeiraComunicacao: string | null;
 }
 
 /** Junta as comunicações do processo: órgão e classe da mais recente, todas as partes e advogados (sem repetir). */
@@ -152,6 +165,9 @@ export function capaDoDjen(itens: ComunicacaoDjen[]): CapaDoDjen {
     ativas: [...polos].filter(([, polo]) => polo === "A").map(([nome]) => nome),
     passivas: [...polos].filter(([, polo]) => polo === "P").map(([nome]) => nome),
     advogados: [...advogados.values()],
+    distribuicao:
+      ordenadas.filter((item) => /distribui/i.test(item.tipoComunicacao ?? "")).at(-1)?.data_disponibilizacao?.slice(0, 10) ?? null,
+    primeiraComunicacao: ordenadas.at(-1)?.data_disponibilizacao?.slice(0, 10) ?? null,
   };
 }
 
@@ -238,6 +254,7 @@ export function dataDoDataJud(valor: string | null | undefined): string | null {
   return d.length >= 8 ? `${d.slice(6, 8)}/${d.slice(4, 6)}/${d.slice(0, 4)}` : null;
 }
 
+
 // -------------------------------------------------------------------------------------------------------------- regras
 
 const sem = (texto: string | null | undefined) => chaveNome(texto).replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
@@ -264,11 +281,35 @@ export function acaoDoVios(classe: string | null | undefined): { acao: string; c
   return { acao: minusculas.charAt(0).toLocaleUpperCase("pt-BR") + minusculas.slice(1), conferida: false };
 }
 
+/** Como o VIOS chama as partes em cada tipo de ação (o padrão é Autor x Réu). */
+const TIPOS_DAS_PARTES: { acao: RegExp; ativa: string; passiva: string }[] = [
+  { acao: /^AGRAVO/, ativa: "Agravante", passiva: "Agravado" },
+  { acao: /^APELACAO/, ativa: "Apelante", passiva: "Apelado" },
+  { acao: /^EMBARGOS/, ativa: "Embargante", passiva: "Embargado" },
+  { acao: /^(CUMPRIMENTO|EXECUCAO|LIQUIDACAO)/, ativa: "Exequente", passiva: "Executado" },
+  { acao: /^RECLAMACAO TRABALHISTA/, ativa: "Reclamante", passiva: "Reclamado" },
+  { acao: /^(FALENCIA|RECUPERACAO|HABILITACAO|IMPUGNACAO|TUTELA)/, ativa: "Requerente", passiva: "Requerido" },
+];
+
+export function tiposDasPartes(acao: string | null | undefined): { ativa: string; passiva: string } {
+  const chave = sem(acao);
+  const tipo = TIPOS_DAS_PARTES.find((item) => item.acao.test(chave));
+  return tipo ? { ativa: tipo.ativa, passiva: tipo.passiva } : { ativa: "Autor", passiva: "Réu" };
+}
+
+/** Fase do VIOS: 2º grau é Recursal; cumprimento e execução, Execução; liquidação, Liquidação; o resto, Conhecimento. */
+export function faseDoVios(cnj: Cnj | null, classe: string | null | undefined, acao: string | null | undefined): { fase: string; certa: boolean } {
+  if (cnj?.grau === "SEGUNDO GRAU") return { fase: "Recursal", certa: true };
+  if (/^LIQUIDACAO/.test(sem(classe))) return { fase: "Liquidação", certa: true };
+  if (/^(CUMPRIMENTO|EXECUCAO)/.test(sem(acao)) || /^(CUMPRIMENTO|EXECUCAO)/.test(sem(classe))) return { fase: "Execução", certa: true };
+  return { fase: "Conhecimento", certa: false };
+}
+
 /** "2ª Câmara Reservada de Direito Empresarial" → { vara: "2ª", tipo: "Câmara Reservada de Direito Empresarial" }. */
 export function separarVara(orgao: string | null | undefined): { vara: string | null; tipo: string | null } {
   const texto = orgao?.trim();
   if (!texto) return { vara: null, tipo: null };
-  const achado = texto.match(/^(\d{1,3})\s*[ªºa°]\s+(.+)$/i);
+  const achado = texto.match(/^0*(\d{1,3})\s*[ªºa°]\s+(.+)$/i);
   return achado ? { vara: `${achado[1]}ª`, tipo: achado[2].trim() } : { vara: null, tipo: texto };
 }
 
@@ -281,23 +322,63 @@ export function cidadeDoOrgao(orgao: string | null | undefined): string | null {
   return achado ? achado[1].trim() : null;
 }
 
+/** "Estado de São Paulo", "Estado do Rio de Janeiro", "Estado da Bahia". */
+const ESTADO_DA_UF: Record<string, string> = {
+  AC: "do Acre", AL: "de Alagoas", AP: "do Amapá", AM: "do Amazonas", BA: "da Bahia", CE: "do Ceará", ES: "do Espírito Santo",
+  GO: "de Goiás", MA: "do Maranhão", MT: "de Mato Grosso", MS: "de Mato Grosso do Sul", MG: "de Minas Gerais", PA: "do Pará",
+  PB: "da Paraíba", PR: "do Paraná", PE: "de Pernambuco", PI: "do Piauí", RJ: "do Rio de Janeiro", RN: "do Rio Grande do Norte",
+  RS: "do Rio Grande do Sul", RO: "de Rondônia", RR: "de Roraima", SC: "de Santa Catarina", SE: "de Sergipe", SP: "de São Paulo",
+  TO: "do Tocantins",
+};
+
+/** O órgão como o VIOS escreve (conferido no TJSP, CI 61365, e no TRT2, CI 61361). */
+export function orgaoDoVios(cnj: Cnj | null): string | null {
+  if (!cnj?.tribunal) return null;
+  const regiao = Number(cnj.digitos.slice(14, 16));
+  if (cnj.tribunal === "TJDFT") return "Tribunal de Justiça do Distrito Federal e dos Territórios";
+  if (cnj.tribunal.startsWith("TJ") && cnj.uf && ESTADO_DA_UF[cnj.uf]) return `Tribunal de Justiça do Estado ${ESTADO_DA_UF[cnj.uf]}`;
+  if (cnj.tribunal.startsWith("TRT")) return `${cnj.tribunal} - Tribunal Regional do Trabalho da ${regiao}ª Região`;
+  if (cnj.tribunal.startsWith("TRF")) return `Tribunal Regional Federal da ${regiao}ª Região`;
+  if (cnj.tribunal === "STJ") return "Superior Tribunal de Justiça";
+  return cnj.tribunal;
+}
+
 const SISTEMA_DO_DATAJUD: [RegExp, string][] = [
-  [/^PJE/, "PJe"],
+  [/^PJE/, "pje"],
   [/SAJ/, "E-saj"],
   [/EPROC/, "E-PROC"],
-  [/PROJUDI/, "Projudi"],
+  [/PROJUDI/, "projudi"],
+  [/THEMIS/, "Themis"],
 ];
 
-/** Sistema do tribunal: o do DataJud quando veio; senão, o provável pelo tribunal e pelo número. */
+/**
+ * Sistema do tribunal, com o nome da lista do VIOS: o do DataJud quando veio; senão, o provável pelo tribunal e o número.
+ * TJMG: desde 2026 as pastas novas estão no eproc (65 de 94 no 1º grau, no SIOE em 10/11/2026); antes, no PJe.
+ */
 export function sistemaDoTribunal(cnj: Cnj | null, doDataJud: string | null | undefined): { sistema: string; provavel: boolean } | null {
   const chave = sem(doDataJud).replace(/\s/g, "");
   const doCnj = SISTEMA_DO_DATAJUD.find(([regex]) => regex.test(chave));
   if (doCnj) return { sistema: doCnj[1], provavel: false };
   if (!cnj) return null;
-  if (cnj.tribunal?.startsWith("TRT") || cnj.tribunal === "TJMG") return { sistema: "PJe", provavel: true };
+  if (cnj.tribunal === "TJMG") return { sistema: cnj.ano >= 2026 ? "E-PROC" : "pje", provavel: true };
+  if (cnj.tribunal?.startsWith("TRT")) return { sistema: "pje", provavel: true };
   if (cnj.tribunal === "TJSC" || cnj.tribunal === "TJRS" || cnj.tribunal === "TRF4") return { sistema: "E-PROC", provavel: true };
   // No TJSP, os processos novos do eproc vêm com o número começando em 4; os do e-SAJ, não.
   if (cnj.tribunal === "TJSP") return { sistema: cnj.digitos.startsWith("4") && cnj.ano >= 2025 ? "E-PROC" : "E-saj", provavel: true };
+  return null;
+}
+
+/**
+ * Matéria da lista do VIOS pelo assunto do tribunal. O VIOS guarda só a folha ("RECUPERACAO JUDICIAL E FALENCIA");
+ * o e-SAJ manda o caminho ("DIREITO CIVIL - Empresas - Recuperação judicial e Falência") e o DataJud, a folha.
+ */
+export function materiaDoVios(assuntos: string[], materias: readonly string[]): string | null {
+  const porChave = new Map(materias.map((materia) => [sem(materia), materia]));
+  for (const assunto of assuntos) {
+    const folha = assunto.split(/\s+[-|]\s+|\|/).pop() ?? assunto;
+    const achada = porChave.get(sem(folha)) ?? porChave.get(sem(assunto));
+    if (achada) return achada;
+  }
   return null;
 }
 
@@ -326,6 +407,117 @@ export function parteDoCliente(cliente: string | null | undefined, capa: Pick<Ca
   return passiva ? { nome: passiva, polo: "P" } : null;
 }
 
+// --------------------------------------------------------------------------------------------------------------- campos
+
+export type GrupoDaCapa = "processo" | "partes" | "escritorio";
+export type ListaDoVios = "usuarios" | "materias" | "sistemas";
+
+export interface DefinicaoDoCampo {
+  rotulo: string;
+  grupo: GrupoDaCapa;
+  /** O VIOS não grava a pasta sem ele. */
+  obrigatorio?: boolean;
+  /** Lista fechada: edita num seletor. */
+  opcoes?: readonly string[];
+  /** Sugestões ao editar (pode escrever outro valor). */
+  sugestoes?: readonly string[];
+  /** Sugestões de uma lista do VIOS (o SAMA guarda a cópia). */
+  lista?: ListaDoVios;
+  /** Texto longo (várias partes): edita numa caixa maior. */
+  longo?: boolean;
+}
+
+const UFS = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SE", "SP", "TO"] as const;
+const ESCRITORIO_ATUAL = "BISMARCHI PIRES SOCIEDADE DE ADVOGADOS";
+
+/**
+ * Os campos do "Cadastro de Processo (Simplificado)" do VIOS que a abertura preenche, por grupo.
+ * Obrigatórios: os 21 que a função de gravar do VIOS confere (VerificaFormProc, lida em 10/11/2026); "0,00" conta como
+ * vazio no valor. As listas fechadas são as opções da própria tela, com a grafia do VIOS.
+ */
+export const CAMPOS_DA_CAPA = {
+  cnj: { rotulo: "N.º CNJ", grupo: "processo", obrigatorio: true },
+  jurisdicao: { rotulo: "Jurisdição atual", grupo: "processo", obrigatorio: true, opcoes: ["PRIMEIRO GRAU", "SEGUNDO GRAU", "CNJ", "STF", "STJ", "TST"] },
+  justica: {
+    rotulo: "Justiça",
+    grupo: "processo",
+    obrigatorio: true,
+    opcoes: ["Justiça Estadual", "Justiça Trabalhista", "Justiça Federal", "Superior Tribunal de Justiça", "Supremo Tribunal Federal", "Justiça Eleitoral", "Justiça Militar da União", "Justiça Militar Estadual", "Justiça Desportiva", "Conselho Nacional de Justiça", "Administrativa", "Proveniente de Migração"],
+  },
+  sistema: { rotulo: "Sistema do tribunal", grupo: "processo", obrigatorio: true, lista: "sistemas" },
+  orgao: { rotulo: "Comarca / Tribunal / Órgão adm.", grupo: "processo", obrigatorio: true },
+  uf: { rotulo: "UF", grupo: "processo", obrigatorio: true, opcoes: UFS },
+  cidade: { rotulo: "Cidade", grupo: "processo", obrigatorio: true },
+  vara: { rotulo: "Órgão julgador (vara/câmara)", grupo: "processo" },
+  tipoVara: { rotulo: "Tipo de órgão julgador", grupo: "processo" },
+  acao: { rotulo: "Ação", grupo: "processo", obrigatorio: true },
+  fase: { rotulo: "Fase", grupo: "processo", obrigatorio: true, opcoes: ["Conhecimento", "Recursal", "Execução", "Liquidação", "Suspenso", "Arquivado Definitivamente"] },
+  dataAcao: { rotulo: "Data da ação / distribuição", grupo: "processo", obrigatorio: true },
+  valor: { rotulo: "Valor da ação (R$)", grupo: "processo", obrigatorio: true },
+  situacao: { rotulo: "Situação do processo", grupo: "processo", obrigatorio: true, opcoes: ["Ativo", "Suspenso", "Arquivado definitivamente", "Encerrado - Ex-Cliente"] },
+  segredo: { rotulo: "Em segredo de justiça?", grupo: "processo", opcoes: ["Não", "Sim"] },
+
+  cliente: { rotulo: "Cliente", grupo: "partes", obrigatorio: true },
+  polo: { rotulo: "Polo do cliente", grupo: "partes", obrigatorio: true, opcoes: ["Ativo", "Passivo", "Terceiro"] },
+  tipoParteAtiva: {
+    rotulo: "Tipo da parte ativa",
+    grupo: "partes",
+    opcoes: ["Autor", "Agravante", "Apelante", "Arrematante", "Cliente", "Concedente", "Confrontante", "Consignante", "Contratante", "Deprecante", "Embargante", "Excipiente", "Exequente", "Impetrante", "Impugnante", "Inquerente", "Interpelante", "Inventariante", "Notificante", "Opoente", "Ordenante", "PROMOVENTE", "Reclamante", "Reconvinte", "Recorrente", "Recuperanda", "Requerente", "Suscitante"],
+  },
+  tipoPartePassiva: {
+    rotulo: "Tipo da parte passiva",
+    grupo: "partes",
+    opcoes: ["Réu", "Agravado", "Apelado", "AVERIGUADA", "Consignatário", "Contrário", "Contratada", "Deprecado", "Devedor", "Embargado", "Excepto", "EXECUTADA", "Executado", "Falida", "Impetrado", "Impugnado", "Inquirido", "Interpelado", "Inventariado", "Notificado", "Opositor", "Opostos", "Ordenado", "PROMOVIDO", "Reclamado", "Reconvido", "Recorrido", "REQUERENTE - Réu", "REQUERIDA", "Requerido", "Suscitado", "Vítima"],
+  },
+  partesAtivas: { rotulo: "Partes ativas", grupo: "partes", longo: true },
+  partesPassivas: { rotulo: "Partes passivas", grupo: "partes", longo: true },
+  advogadoContrario: { rotulo: "Advogado da parte contrária", grupo: "partes" },
+  oabContrario: { rotulo: "OAB do advogado da parte contrária", grupo: "partes" },
+
+  escritorio: { rotulo: "Escritório atual", grupo: "escritorio", obrigatorio: true, opcoes: [ESCRITORIO_ATUAL] },
+  departamento: {
+    rotulo: "Departamento",
+    grupo: "escritorio",
+    obrigatorio: true,
+    opcoes: ["Cível", "Insolvência", "Trabalhista", "Recuperação de Crédito", "Comercial", "Contratos", "Distressed Deals", "Financeiro", "Operações Legais", "Tributário"],
+  },
+  area: {
+    rotulo: "Área",
+    grupo: "escritorio",
+    obrigatorio: true,
+    opcoes: ["Cível", "Cível | Insolvência", "Insolvência", "Trabalhista", "Recuperação de Crédito", "Contratos", "Operações Legais", "Special Situations", "Tributário", "Não informada"],
+  },
+  responsavel: { rotulo: "Advogado responsável", grupo: "escritorio", obrigatorio: true, lista: "usuarios" },
+  auxiliar: { rotulo: "Auxiliar", grupo: "escritorio", obrigatorio: true, lista: "usuarios" },
+  etiqueta: { rotulo: "Etiquetas", grupo: "escritorio", obrigatorio: true },
+  materias: { rotulo: "Matéria", grupo: "escritorio", obrigatorio: true, lista: "materias" },
+} as const satisfies Record<string, DefinicaoDoCampo>;
+
+export type ChaveDaCapa = keyof typeof CAMPOS_DA_CAPA;
+export const CHAVES_DA_CAPA = Object.keys(CAMPOS_DA_CAPA) as ChaveDaCapa[];
+export const GRUPOS_DA_CAPA: { id: GrupoDaCapa; titulo: string }[] = [
+  { id: "processo", titulo: "Processo" },
+  { id: "partes", titulo: "Partes e cliente" },
+  { id: "escritorio", titulo: "Escritório" },
+];
+
+export const ehChaveDaCapa = (chave: unknown): chave is ChaveDaCapa => typeof chave === "string" && Object.hasOwn(CAMPOS_DA_CAPA, chave);
+
+/** Um campo editado pela controladoria (fica por cima do que veio das fontes; "desfazer" apaga). */
+export interface AjusteDaCapa {
+  valor: string | null;
+  por: string | null;
+  porNome: string | null;
+  em: string;
+}
+export type AjustesDaCapa = Partial<Record<ChaveDaCapa, AjusteDaCapa>>;
+
+export interface ListasDoVios {
+  usuarios: string[];
+  materias: string[];
+  sistemas: string[];
+}
+
 export interface ParDaPasta {
   responsavel: string | null;
   auxiliar: string | null;
@@ -343,6 +535,8 @@ export interface DadosDaCapa {
   grupo: string | null;
   cliente: string | null;
   par: ParDaPasta | null;
+  /** Demanda de risco: a pasta leva também a etiqueta "Demanda de risco". */
+  demandaRisco?: boolean;
 }
 
 export interface StatusDaFonte {
@@ -355,64 +549,183 @@ export interface StatusDaFonte {
 export interface CapaParaAbertura {
   dados: DadosDaCapa;
   fontes: { djen: StatusDaFonte; esaj: StatusDaFonte | null };
+  ajustes: AjustesDaCapa;
+  /** Falso enquanto a coluna das edições não existe no banco (a capa abre, mas não grava edição). */
+  podeEditar: boolean;
+  listas: ListasDoVios;
   geradaEm: string;
 }
 
-const lista = (nomes: string[], limite = 3) => (nomes.length ? `${nomes.slice(0, limite).join("; ")}${nomes.length > limite ? ` e mais ${nomes.length - limite}` : ""}` : null);
+const lista = (nomes: string[]) => (nomes.length ? nomes.join("; ") : null);
 const reais = (valor: number) => valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const naLista = (valor: string, opcoes: readonly string[]) => opcoes.find((opcao) => sem(opcao) === sem(valor)) ?? valor;
 
-/** Os campos da tela de cadastro do VIOS, na ordem dela, com o valor e a fonte de cada um. */
-export function montarCapa(dados: DadosDaCapa): CampoDaCapa[] {
+type Preenchimento = { valor: string | null | undefined; fonte: FonteDaCapa; conferir?: boolean; nota?: string };
+
+/**
+ * Os campos da capa, com o valor, a fonte de cada um e o que falta conferir. As edições da controladoria ficam por
+ * cima das fontes (fonte "editado"); um obrigatório vazio fica para conferir.
+ */
+export function montarCapa(dados: DadosDaCapa, extras: { ajustes?: AjustesDaCapa; listas?: Partial<ListasDoVios> } = {}): CampoDaCapa[] {
   const cnj = lerCnj(dados.numero);
   const { djen, esaj, datajud } = dados;
-  const campos: CampoDaCapa[] = [];
-  const add = (campo: string, valor: string | null | undefined, fonte: FonteDaCapa, conferir = false, nota?: string) =>
-    campos.push({ campo, valor: valor?.trim() ? valor.trim() : null, fonte: valor?.trim() ? fonte : "falta", conferir: conferir || !valor?.trim(), ...(nota ? { nota } : {}) });
+  const listas = { usuarios: [], materias: [], sistemas: [], ...extras.listas };
+  const preenchido: Partial<Record<ChaveDaCapa, Preenchimento>> = {};
+  const por = (chave: ChaveDaCapa, valor: Preenchimento["valor"], fonte: FonteDaCapa, conferir = false, nota?: string) => {
+    preenchido[chave] = { valor, fonte, conferir, nota };
+  };
+  const segundoGrau = cnj?.grau === "SEGUNDO GRAU";
 
-  add("N.º CNJ", dados.numero, "cnj");
-  add("Jurisdição", cnj?.grau, "cnj");
-  add("Justiça", cnj?.justica, "cnj");
-  add("Órgão (tribunal)", cnj?.tribunal ?? djen?.tribunal, cnj?.tribunal ? "cnj" : "djen");
-  add("UF", cnj?.uf, "cnj");
+  por("cnj", dados.numero, "cnj");
+  por("jurisdicao", cnj?.grau, "cnj");
+  por("justica", cnj?.justica, "cnj");
+  const orgaoConferido = cnj?.tribunal === "TJSP";
+  por("orgao", orgaoDoVios(cnj) ?? djen?.tribunal, cnj?.tribunal ? "cnj" : "djen", !orgaoConferido, orgaoConferido ? undefined : "nome como no VIOS: conferir");
+  por("uf", cnj?.uf, "cnj");
 
   const orgao = esaj?.orgaoJulgador ?? esaj?.vara ?? djen?.orgao ?? null;
   const fonteOrgao: FonteDaCapa = esaj?.orgaoJulgador || esaj?.vara ? "esaj" : "djen";
-  const cidade = cnj?.grau === "SEGUNDO GRAU" && cnj.uf ? CAPITAL[cnj.uf] ?? null : cidadeDoOrgao(esaj?.foro ?? djen?.orgao) ?? cidadeDoOrgao(orgao);
-  add("Cidade", cidade, cnj?.grau === "SEGUNDO GRAU" ? "regra" : fonteOrgao, true, cnj?.grau === "SEGUNDO GRAU" ? "2º grau: a capital do estado" : undefined);
+  const cidade = segundoGrau && cnj?.uf ? CAPITAL[cnj.uf] ?? null : cidadeDoOrgao(esaj?.foro ?? djen?.orgao) ?? cidadeDoOrgao(orgao);
+  por("cidade", cidade, segundoGrau ? "regra" : fonteOrgao, !segundoGrau, segundoGrau ? "2º grau: a capital do estado" : undefined);
   const { vara, tipo } = separarVara(orgao);
-  add("Vara", vara, fonteOrgao, true);
-  add("Tipo de vara / órgão julgador", tipo, fonteOrgao, true);
+  por("vara", vara, fonteOrgao, true);
+  por("tipoVara", tipo, fonteOrgao, true);
 
   const classe = esaj?.classe ?? djen?.classe ?? datajud?.classe ?? null;
   const acao = acaoDoVios(classe);
-  add("Ação", acao?.acao, esaj?.classe ? "esaj" : djen?.classe ? "djen" : "datajud", !acao?.conferida, acao && !acao.conferida ? `classe do tribunal: ${classe}` : undefined);
-  add("Fase", cnj?.grau === "SEGUNDO GRAU" ? "Recursal" : null, "regra", cnj?.grau !== "SEGUNDO GRAU", cnj?.grau === "SEGUNDO GRAU" ? "2º grau" : "escolher na lista do VIOS");
+  por("acao", acao?.acao, esaj?.classe ? "esaj" : djen?.classe ? "djen" : "datajud", !acao?.conferida, acao && !acao.conferida ? `classe do tribunal: ${classe}` : undefined);
+  const fase = faseDoVios(cnj, classe, acao?.acao);
+  por("fase", fase.fase, "regra", !fase.certa, fase.certa ? (segundoGrau ? "2º grau" : "pela ação") : "provável: conferir");
 
   const sistema = sistemaDoTribunal(cnj, datajud?.sistema);
-  add("Sistema do tribunal", sistema?.sistema, sistema && !sistema.provavel ? "datajud" : "regra", sistema?.provavel ?? true, sistema?.provavel ? "provável, pelo tribunal e o número" : undefined);
+  por(
+    "sistema",
+    sistema ? naLista(sistema.sistema, listas.sistemas) : null,
+    sistema && !sistema.provavel ? "datajud" : "regra",
+    sistema?.provavel ?? true,
+    sistema?.provavel ? "provável, pelo tribunal e o número" : undefined
+  );
   const ajuizamento = esaj?.distribuicao ?? dataDoDataJud(datajud?.ajuizamento);
-  add("Data da ação", ajuizamento, esaj?.distribuicao ? "esaj" : "datajud");
+  if (ajuizamento) por("dataAcao", ajuizamento, esaj?.distribuicao ? "esaj" : "datajud");
+  else if (djen?.distribuicao) por("dataAcao", dataDoDataJud(djen.distribuicao), "djen", true, "data da lista de distribuição no DJEN");
+  else por("dataAcao", dataDoDataJud(djen?.primeiraComunicacao), "djen", true, "1ª comunicação no DJEN (não é a distribuição)");
+  if (esaj?.valor != null) por("valor", reais(esaj.valor), "esaj");
+  else por("valor", "0,01", "regra", true, "nenhuma fonte trouxe: a ATUALIZAÇÃO DE CADASTRO corrige");
+  por("segredo", "Não", "regra");
+  por("situacao", "Ativo", "regra");
 
-  if (esaj?.valor != null) add("Valor da ação (R$)", reais(esaj.valor), "esaj");
-  else campos.push({ campo: "Valor da ação (R$)", valor: "0,01", fonte: "regra", conferir: true, nota: "nenhuma fonte trouxe: a ATUALIZAÇÃO DE CADASTRO corrige" });
-
-  add("Partes ativas", lista(djen?.ativas ?? []), "djen");
-  add("Partes passivas", lista(djen?.passivas ?? []), "djen");
   const parte = parteDoCliente(dados.cliente, djen ?? { ativas: [], passivas: [] });
-  add("Polo do cliente", parte ? (parte.polo === "A" ? "Ativo" : "Passivo") : null, "djen", !parte, parte ? `como "${parte.nome}" no DJEN` : "o cliente não aparece entre as partes");
-  add("Cliente", dados.cliente, "triagem", true, "escolher a pessoa no VIOS (CPF/CNPJ)");
-  const contrarios = (djen?.advogados ?? []).filter((advogado) => !advogado.doEscritorio).map((advogado) => `${advogado.nome} (OAB ${advogado.oab}/${advogado.uf})`);
-  add("Advogado da parte contrária", lista(contrarios, 2), "djen", true);
+  por("polo", parte ? (parte.polo === "A" ? "Ativo" : "Passivo") : null, "djen", !parte, parte ? `como "${parte.nome}" no DJEN` : "o cliente não aparece entre as partes");
+  por("cliente", dados.cliente, "triagem", true, "escolher a pessoa no VIOS (CPF/CNPJ)");
+  const tipos = tiposDasPartes(acao?.acao);
+  por("tipoParteAtiva", tipos.ativa, "regra", true, "pela ação");
+  por("partesAtivas", lista(djen?.ativas ?? []), "djen");
+  por("tipoPartePassiva", tipos.passiva, "regra", true, "pela ação");
+  por("partesPassivas", lista(djen?.passivas ?? []), "djen");
+  const contrarios = (djen?.advogados ?? []).filter((advogado) => !advogado.doEscritorio);
+  const [contrario] = contrarios;
+  por("advogadoContrario", contrario?.nome, "djen", true, contrarios.length > 1 ? `o 1º de ${contrarios.length} advogados de fora no DJEN` : undefined);
+  por("oabContrario", contrario ? `${contrario.oab}/${contrario.uf}` : null, "djen", true);
 
-  add("Departamento", departamentoDaArea(dados.area), "triagem");
-  add("Área", dados.area, "triagem");
-  add("Advogado responsável", dados.par?.responsavel, "pastas", true, dados.par ? `par de ${dados.par.pastas} pasta(s) viva(s) do grupo na área` : "sem pasta viva do grupo na área");
-  add("Auxiliar", dados.par?.auxiliar, "pastas", true);
-  add("Etiqueta", dados.grupo ? `Carteira ${dados.grupo.replace(/^grupo\s+/i, "")}` : null, "regra", true, "confirmar o nome da etiqueta no VIOS");
-  const assuntos = esaj?.assunto ? [esaj.assunto] : datajud?.assuntos ?? [];
-  add("Matérias", lista(assuntos), esaj?.assunto ? "esaj" : "datajud", true);
-  campos.push({ campo: "Situação", valor: "Ativo", fonte: "regra", conferir: false });
-  return campos;
+  por("escritorio", ESCRITORIO_ATUAL, "regra");
+  por("departamento", departamentoDaArea(dados.area), "triagem");
+  por("area", dados.area, "triagem");
+  por("responsavel", dados.par?.responsavel, "pastas", true, dados.par ? `par de ${dados.par.pastas} pasta(s) viva(s) do grupo na área` : "sem pasta viva do grupo na área");
+  por("auxiliar", dados.par?.auxiliar, "pastas", true);
+  const etiquetas = [dados.grupo ? `Carteira ${dados.grupo.replace(/^grupo\s+/i, "")}` : null, dados.demandaRisco ? "Demanda de risco" : null].filter(Boolean) as string[];
+  por("etiqueta", etiquetas.join("; "), "regra", true, "Carteira + grupo (confirmar o nome no VIOS)" + (dados.demandaRisco ? "; demanda de risco" : ""));
+  const assuntos = [esaj?.assunto, ...(datajud?.assuntos ?? [])].filter((assunto): assunto is string => Boolean(assunto));
+  const materia = materiaDoVios(assuntos, listas.materias);
+  por(
+    "materias",
+    materia ?? (listas.materias.length ? null : assuntos[0]),
+    esaj?.assunto ? "esaj" : "datajud",
+    true,
+    materia ? `pelo assunto: ${assuntos[0]}` : assuntos.length ? `assunto sem matéria igual no VIOS: ${assuntos[0]}` : undefined
+  );
+
+  return CHAVES_DA_CAPA.map((chave) => {
+    const definicao: DefinicaoDoCampo = CAMPOS_DA_CAPA[chave];
+    const fonte = preenchido[chave] ?? { valor: null, fonte: "falta" as const };
+    const valor = fonte.valor?.trim() ? fonte.valor.trim() : null;
+    const base: CampoDaCapa = {
+      chave,
+      campo: definicao.rotulo,
+      grupo: definicao.grupo,
+      obrigatorio: Boolean(definicao.obrigatorio),
+      valor,
+      fonte: valor ? fonte.fonte : "falta",
+      conferir: Boolean(fonte.conferir) || (!valor && Boolean(definicao.obrigatorio)),
+      ...(fonte.nota ? { nota: fonte.nota } : {}),
+    };
+    const ajuste = extras.ajustes?.[chave];
+    if (!ajuste) return base;
+    const editado = ajuste.valor?.trim() ? ajuste.valor.trim() : null;
+    return {
+      ...base,
+      valor: editado,
+      fonte: "editado",
+      conferir: !editado && base.obrigatorio,
+      nota: undefined,
+      original: { valor: base.valor, fonte: base.fonte },
+      editado: { por: ajuste.porNome, em: ajuste.em },
+    };
+  });
+}
+
+/** O que impede ou pede atenção antes de abrir: obrigatórios vazios, campos para conferir e editados. */
+export function resumoDaCapa(campos: CampoDaCapa[]) {
+  return {
+    faltando: campos.filter((campo) => campo.obrigatorio && !campo.valor),
+    conferir: campos.filter((campo) => campo.conferir && !(campo.obrigatorio && !campo.valor)),
+    editados: campos.filter((campo) => campo.fonte === "editado"),
+  };
+}
+
+/** A capa no formato da fila do robô (vios_agendamentos.abertura.capa): texto por campo; etiquetas e matérias em lista. */
+export type CapaDoVios = Record<Exclude<ChaveDaCapa, "etiqueta" | "materias">, string | null> & { etiquetas: string[]; materias: string[] };
+
+const emLista = (valor: string | null) => (valor ?? "").split(";").map((item) => item.trim()).filter(Boolean);
+
+export function capaParaOVios(campos: CampoDaCapa[]): CapaDoVios {
+  const valor = (chave: ChaveDaCapa) => campos.find((campo) => campo.chave === chave)?.valor ?? null;
+  const texto = Object.fromEntries(
+    CHAVES_DA_CAPA.filter((chave) => chave !== "etiqueta" && chave !== "materias").map((chave) => [chave, valor(chave)])
+  ) as Omit<CapaDoVios, "etiquetas" | "materias">;
+  return { ...texto, etiquetas: emLista(valor("etiqueta")), materias: emLista(valor("materias")) };
+}
+
+/** O que impede mandar a capa ao robô: obrigatórios vazios e formatos que o VIOS não aceita. */
+export function problemasParaOVios(capa: CapaDoVios): string[] {
+  const problemas: string[] = [];
+  if (capa.valor && !/^\d{1,3}(\.\d{3})*,\d{2}$/.test(capa.valor)) problemas.push("Valor da ação: escreva como 1.234,56");
+  if (capa.dataAcao && !/^\d{2}\/\d{2}\/\d{4}$/.test(capa.dataAcao)) problemas.push("Data da ação: escreva como DD/MM/AAAA");
+  if (capa.cnj && !/^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$/.test(capa.cnj)) problemas.push("N.º CNJ fora do formato");
+  return problemas;
+}
+
+/** Um pedido de abertura ao robô (linha operacao abrir_pasta da fila do SAMA). */
+export interface PedidoDeAbertura {
+  id: string;
+  status: "pendente" | "enviado" | "processando" | "concluido" | "erro";
+  erro: string | null;
+  simulado: boolean;
+  autor: string | null;
+  criadoEm: string;
+  atualizadoEm: string | null;
+  resultado: {
+    preenchidos?: Record<string, string>;
+    nao_encontrados?: { campo: string; pedido: string; motivo?: string; parecidas?: string[] }[];
+    recusaria?: string[];
+    avisos?: string[];
+    ci?: string | null;
+  } | null;
+}
+
+/** Rótulo do campo que o robô devolveu (ele chama as etiquetas de "etiquetas"). */
+export function rotuloDoCampoDoRobo(campo: string): string {
+  const chave = campo === "etiquetas" ? "etiqueta" : campo;
+  return ehChaveDaCapa(chave) ? CAMPOS_DA_CAPA[chave].rotulo : campo;
 }
 
 export const ROTULO_DA_FONTE: Record<FonteDaCapa, string> = {
@@ -423,5 +736,6 @@ export const ROTULO_DA_FONTE: Record<FonteDaCapa, string> = {
   triagem: "Triagem",
   pastas: "Pastas do grupo",
   regra: "Regra",
-  falta: "Falta",
+  editado: "Editado",
+  falta: "Sem fonte",
 };
