@@ -130,7 +130,9 @@ function CartaoDaParte({ parte, partes, onEditar, onExcluir }: { parte: Parte; p
     <li className="px-4 py-3">
       <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
         <div className="min-w-0 flex-1 space-y-1">
-          <p className="break-words text-sm font-semibold text-foreground">{parte.nome}</p>
+          <Link href={`/operacoes-legais/pessoas/${parte.pessoaId}`} title="Abrir o cadastro da pessoa" className="block break-words text-sm font-semibold text-foreground underline-offset-4 hover:text-[#285f7a] hover:underline">
+            {parte.nome}
+          </Link>
           <div className="flex flex-wrap items-center gap-1">
             <Selo tom={parte.papel === "parte" ? "marca" : "ia"}>{parte.papel === "parte" ? (parte.vinculo ?? "Parte") : rotuloDoPapel(parte.papel)}</Selo>
             {parte.devedor ? <Selo tom="escuro">Devedor</Selo> : null}
@@ -325,7 +327,7 @@ function Ficha({ id }: { id: string }) {
           ))}
 
           <Painel>
-            <PainelTopo titulo="Partes e contatos" descricao="Documento, endereços, contatos, sócios, fiadores e advogados. A primeira carga vem do VIOS só com os nomes.">
+            <PainelTopo titulo="Partes e contatos" descricao="Quem participa do processo. Documento, endereços e contatos são do cadastro de Pessoas e valem em todos os processos de cada uma.">
               <Button size="sm" variant="outline" onClick={() => setDialogo({ tipo: "parte", parte: null, polo: "passivo" })}>
                 <Plus /> Incluir
               </Button>

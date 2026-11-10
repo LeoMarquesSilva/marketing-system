@@ -93,6 +93,8 @@ export interface Parte {
 
 /** O que a tela manda para criar ou salvar uma parte (com a pessoa, os endereços e os contatos). */
 export interface ParteEntrada {
+  /** Pessoa já cadastrada escolhida na busca: a parte aponta para ela em vez de criar outra. */
+  pessoaId?: string | null;
   polo: PoloParte;
   papel: PapelParte;
   vinculo: string | null;
@@ -212,4 +214,103 @@ export interface SituacaoImportacao {
   gravacaoSimulada: boolean;
   recorte: { areas: string[] | null; grupos: string[] | null };
   totalProcessos: number;
+}
+
+/* ----------------------------------------------------------------- pessoas */
+
+export interface PessoaResumo {
+  id: string;
+  nome: string;
+  documento: string | null;
+  tipo: "fisica" | "juridica" | null;
+  categoria: string | null;
+  grupoCliente: string | null;
+  viosCi: string | null;
+  oab: string | null;
+  origem: OrigemDado;
+  processos: number;
+  enderecos: number;
+  contatos: number;
+}
+
+export interface VinculoPessoa {
+  id: string;
+  tipo: string;
+  observacao: string | null;
+  /** "de": esta pessoa é sócia/fiadora/advogada da outra; "para": a outra é que é desta. */
+  direcao: "de" | "para";
+  outraId: string;
+  outraNome: string;
+  outraDocumento: string | null;
+}
+
+export interface ProcessoDaPessoa {
+  parteId: string;
+  processoId: string;
+  ci: string | null;
+  cnj: string | null;
+  acao: string | null;
+  situacao: string | null;
+  polo: PoloParte;
+  papel: PapelParte;
+  vinculo: string | null;
+  devedor: boolean;
+}
+
+export interface UnificacaoRegistrada {
+  id: string;
+  nome: string;
+  documento: string | null;
+  automatica: boolean;
+  autor: string | null;
+  quando: string;
+}
+
+export interface PessoaDetalhe extends PessoaResumo {
+  nomeFantasia: string | null;
+  observacao: string | null;
+  etiquetas: string[];
+  listaEnderecos: Endereco[];
+  listaContatos: Contato[];
+  vinculos: VinculoPessoa[];
+  listaProcessos: ProcessoDaPessoa[];
+  /** Outras pessoas que parecem a mesma (mesmo documento ou mesmo nome sem documento conflitante). */
+  parecidas: PessoaResumo[];
+  unificacoes: UnificacaoRegistrada[];
+  viosSincronizadoEm: string | null;
+}
+
+export interface PessoaEntrada {
+  nome: string;
+  documento: string | null;
+  tipo: "fisica" | "juridica" | null;
+  nomeFantasia: string | null;
+  oab: string | null;
+  observacao: string | null;
+  enderecos: Endereco[];
+  contatos: Contato[];
+}
+
+export interface GrupoDePessoas {
+  motivo: "documento" | "nome";
+  pessoas: PessoaResumo[];
+}
+
+export interface ResumoPessoas {
+  total: number;
+  comDocumento: number;
+  ligadasAoVios: number;
+  gruposDuplicados: number;
+  ultimaCarga: { quando: string; resumo: string; erro: string | null } | null;
+}
+
+export interface ResultadoCargaPessoas {
+  noVios: number;
+  pessoas: number;
+  ligadas: number;
+  unificadas: number;
+  importadas: number;
+  homonimas: number;
+  atualizadas: number;
+  avisos: string[];
 }

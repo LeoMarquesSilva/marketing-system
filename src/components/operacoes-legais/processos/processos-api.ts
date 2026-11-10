@@ -12,13 +12,19 @@ function comCorpo(metodo: string, corpo?: unknown): RequestInit {
   return { method: metodo, headers: corpo === undefined ? undefined : { "Content-Type": "application/json" }, body: corpo === undefined ? undefined : JSON.stringify(corpo) };
 }
 
+function criarApi(base: string) {
+  return {
+    get: async <T,>(caminho = "") => ler<T>(await authFetch(`${base}${caminho}`)),
+    post: async <T,>(caminho: string, corpo?: unknown) => ler<T>(await authFetch(`${base}${caminho}`, comCorpo("POST", corpo))),
+    patch: async <T,>(caminho: string, corpo: unknown) => ler<T>(await authFetch(`${base}${caminho}`, comCorpo("PATCH", corpo))),
+    put: async <T,>(caminho: string, corpo: unknown) => ler<T>(await authFetch(`${base}${caminho}`, comCorpo("PUT", corpo))),
+    del: async <T,>(caminho: string) => ler<T>(await authFetch(`${base}${caminho}`, comCorpo("DELETE"))),
+  };
+}
+
 /** Chamadas das telas de Processos; erro vem como Error com a mensagem da rota. */
 export const processosApi = {
-  get: async <T,>(caminho = "") => ler<T>(await authFetch(`${BASE}${caminho}`)),
-  post: async <T,>(caminho: string, corpo?: unknown) => ler<T>(await authFetch(`${BASE}${caminho}`, comCorpo("POST", corpo))),
-  patch: async <T,>(caminho: string, corpo: unknown) => ler<T>(await authFetch(`${BASE}${caminho}`, comCorpo("PATCH", corpo))),
-  put: async <T,>(caminho: string, corpo: unknown) => ler<T>(await authFetch(`${BASE}${caminho}`, comCorpo("PUT", corpo))),
-  del: async <T,>(caminho: string) => ler<T>(await authFetch(`${BASE}${caminho}`, comCorpo("DELETE"))),
+  ...criarApi(BASE),
   enviarArquivo: async <T,>(caminho: string, arquivo: File) => {
     const formulario = new FormData();
     formulario.append("arquivo", arquivo);
@@ -37,6 +43,9 @@ export const processosApi = {
     URL.revokeObjectURL(url);
   },
 };
+
+/** Chamadas das telas de Pessoas (o cadastro único que Processos usa). */
+export const pessoasApi = criarApi("/api/operacoes-legais/pessoas");
 
 export function mensagemDeErro(erro: unknown): string {
   return erro instanceof Error ? erro.message : "Não foi possível concluir a operação.";
