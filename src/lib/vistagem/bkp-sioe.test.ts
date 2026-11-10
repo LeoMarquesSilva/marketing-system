@@ -134,7 +134,8 @@ describe("linhaDoBkp", () => {
       inconsistencia_subtipo: "DATA / HORÁRIO - (P/A)",
       inconsistencias_juridico: null,
       inconsistencia_juridico_descricao: null,
-      check_pub: null,
+      // CHECK leva o "O que está errado", como a lista guardava.
+      check_pub: "Prazo do fluxo não foi conferido.",
       publicacao_esocial: "Sentença – Conhecimento",
     });
   });
@@ -162,7 +163,7 @@ describe("linhaDoBkp", () => {
       ],
       FERIADOS
     );
-    expect(linha).toMatchObject({ inconsistencias_tipo: "AGENDAMENTO", inconsistencia_subtipo: "RESPONSÁVEL - (P/A)", inconsistencias_juridico: null });
+    expect(linha).toMatchObject({ inconsistencias_tipo: "AGENDAMENTO", inconsistencia_subtipo: "RESPONSÁVEL - (P/A)", inconsistencias_juridico: null, check_pub: "b" });
   });
 
   it("devolução da vistagem do jurídico continua como inconsistência do jurídico, fora da eficiência de Ops Legais", () => {
@@ -178,6 +179,7 @@ describe("linhaDoBkp", () => {
       inconsistencia_subtipo: null,
       inconsistencias_juridico: "FORA DO WORKFLOW",
       inconsistencia_juridico_descricao: "Preencher a observação.",
+      check_pub: null,
     });
   });
 
@@ -195,8 +197,19 @@ describe("linhaDoBkp", () => {
       eficiencia: "DESVIO",
       inconsistencias_tipo: "AGENDAMENTO",
       inconsistencia_subtipo: "DATA / HORÁRIO - (P/A)",
-      check_pub: "Corrigido no VIOS.",
+      // O erro do check e, depois, a nota do check OK.
+      check_pub: "b — Check: Corrigido no VIOS.",
     });
+    // Sem erro, só a nota; nota igual ao erro não repete.
+    expect(linhaDoBkp(publicacao({ checkNota: "Ok, conferido." }), [], [], FERIADOS).check_pub).toBe("Ok, conferido.");
+    expect(
+      linhaDoBkp(
+        publicacao({ checkNota: "b" }),
+        [],
+        [{ origem: "agendamento", tipo: "AGENDAMENTO", subtipo: "DESCRIÇÃO - (P/A)", descricao: "b", criadoEm: "2026-11-05T02:00:00Z" }],
+        FERIADOS
+      ).check_pub
+    ).toBe("b");
   });
 
   it("duplicidade confirmada: tipo DUPLICIDADE, sem vistador", () => {

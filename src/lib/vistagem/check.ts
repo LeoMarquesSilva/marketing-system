@@ -205,11 +205,35 @@ export function descricaoSugerida(agendamentos: AgendamentoResumo[], ids?: strin
     .join("\n");
 }
 
+/** Quem aparece em "Checada por" no check automático: não há pessoa (checado_por fica vazio). */
+export const CHECK_AUTOMATICO = "Check automático";
+const PREFIXO_CHECK_AUTOMATICO = "Check automático:";
+
+/** O check foi o automático do Orquestra (sem pessoa), pela nota que ele grava. */
+export function foiCheckAutomatico(checadoPor: string | null, nota: string | null): boolean {
+  return !checadoPor && Boolean(nota?.startsWith(PREFIXO_CHECK_AUTOMATICO));
+}
+
+/**
+ * Check automático (pedido de 09/11/2026): a publicação com uma tarefa só, a CIÊNCIA NF (Nada a Fazer), gravada de
+ * verdade no VIOS (não simulada), com o CI devolvido pelo robô e a data e o responsável iguais ao pedido, vira
+ * "Check OK" sem passar pela controladoria. Devolve a nota do check; null quando a publicação segue para o check manual
+ * (outra tarefa junto, simulação, robô sem o CI ou sem os dados, ou alguma divergência).
+ */
+export function notaDoCheckAutomatico(agendamentos: AgendamentoResumo[]): string | null {
+  if (agendamentos.length !== 1) return null;
+  const [tarefa] = agendamentos;
+  if (!ehCienciaNf(tarefa.tarefa) || tarefa.envioStatus !== "concluido" || tarefa.envioSimulado) return null;
+  const comparacao = compararTarefa(tarefa);
+  if (!comparacao.ci || comparacao.situacao !== "confere") return null;
+  return `${PREFIXO_CHECK_AUTOMATICO} CIÊNCIA NF única agendada no VIOS (CI ${comparacao.ci}), com a data e o responsável do pedido.`;
+}
+
 /** Tipo de agendamento para o filtro do Check: a Ciência NF à parte; as outras pela classe (Prazo, Providência, Compromisso). */
 export type TipoDeAgendamento = "CIENCIA_NF" | "PRAZO" | "PROVIDENCIA" | "COMPROMISSO";
 
 export const TIPOS_DE_AGENDAMENTO: { valor: TipoDeAgendamento; rotulo: string; descricao: string }[] = [
-  { valor: "CIENCIA_NF", rotulo: "Ciência NF", descricao: "Ciência de publicação não fatal" },
+  { valor: "CIENCIA_NF", rotulo: "Ciência NF", descricao: "Ciência Nada a Fazer" },
   { valor: "PRAZO", rotulo: "Prazo", descricao: "Com data fatal" },
   { valor: "PROVIDENCIA", rotulo: "Providência", descricao: "Sem a Ciência NF e a Ciência dos Agendamentos" },
   { valor: "COMPROMISSO", rotulo: "Compromisso", descricao: "Audiência, sessão de julgamento, perícia…" },
