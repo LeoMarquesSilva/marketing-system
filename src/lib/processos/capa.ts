@@ -89,7 +89,51 @@ export interface RegistroDataJud {
   classe?: { nome?: string | null } | null;
   orgaoJulgador?: { nome?: string | null; codigoMunicipioIBGE?: number | null } | null;
   dataHoraUltimaAtualizacao?: string | null;
-  movimentos?: { nome?: string | null; dataHora?: string | null; complementosTabelados?: { nome?: string | null }[] | null }[] | null;
+  movimentos?: { codigo?: number | null; nome?: string | null; dataHora?: string | null; complementosTabelados?: { nome?: string | null }[] | null }[] | null;
+}
+
+/** Um andamento para a linha do tempo do processo (proc_andamentos). */
+export interface AndamentoNovo {
+  quando: string;
+  fonte: "datajud";
+  titulo: string;
+  detalhe: string | null;
+  grau: string | null;
+  codigo: number | null;
+  chave: string;
+}
+
+/** "2025-07-14T10:20:30.000Z" ou "20250714102030" → ISO; null se não for data. */
+export function dataHoraDoDataJud(valor: string | null | undefined): string | null {
+  const texto = (valor ?? "").trim();
+  if (!texto) return null;
+  if (/^\d{14}$/.test(texto)) {
+    const iso = `${texto.slice(0, 4)}-${texto.slice(4, 6)}-${texto.slice(6, 8)}T${texto.slice(8, 10)}:${texto.slice(10, 12)}:${texto.slice(12, 14)}Z`;
+    return Number.isNaN(Date.parse(iso)) ? null : new Date(iso).toISOString();
+  }
+  const data = Date.parse(texto);
+  return Number.isNaN(data) ? null : new Date(data).toISOString();
+}
+
+/**
+ * Todos os movimentos do DataJud (de todas as instâncias que o tribunal enviou) como andamentos da linha do
+ * tempo. A chave junta instância, código, data e nome: a mesma consulta repetida não duplica nada.
+ */
+export function andamentosDoDataJud(registros: RegistroDataJud[]): AndamentoNovo[] {
+  const vistos = new Map<string, AndamentoNovo>();
+  for (const registro of registros) {
+    const grau = registro.grau?.trim() || null;
+    for (const movimento of registro.movimentos ?? []) {
+      const quando = dataHoraDoDataJud(movimento.dataHora);
+      const titulo = movimento.nome?.trim();
+      if (!quando || !titulo) continue;
+      const complementos = (movimento.complementosTabelados ?? []).map((item) => item.nome?.trim()).filter((nome): nome is string => Boolean(nome));
+      const codigo = typeof movimento.codigo === "number" ? movimento.codigo : null;
+      const chave = ["datajud", grau ?? "", codigo ?? "", quando, titulo.toLowerCase()].join("|");
+      if (!vistos.has(chave)) vistos.set(chave, { quando, fonte: "datajud", titulo, detalhe: complementos.length ? complementos.join(" · ") : null, grau, codigo, chave });
+    }
+  }
+  return [...vistos.values()].sort((a, b) => b.quando.localeCompare(a.quando));
 }
 
 /** "20260129205622", "2026-01-29T20:56:22Z" ou "2026-01-29" → "2026-01-29". */

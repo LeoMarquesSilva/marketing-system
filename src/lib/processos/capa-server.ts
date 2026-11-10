@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { SugestaoNova } from "./autos-types";
-import { indiceDoDataJud, lerCnjDaCapa, registroAtual, sugestoesDaCapa, type RegistroDataJud } from "./capa";
+import { andamentosDoDataJud, indiceDoDataJud, lerCnjDaCapa, registroAtual, sugestoesDaCapa, type RegistroDataJud } from "./capa";
 import { ProcessosError } from "./errors";
 import { detalharProcesso } from "./processos-server";
 import { db, falhou } from "./server";
@@ -83,6 +83,8 @@ export interface ResultadoDaCapa {
   /** O DataJud tinha o processo. */
   achou: boolean;
   sugestoes: number;
+  /** Andamentos novos na linha do tempo. */
+  andamentos: number;
   /** Por que não veio nada do DataJud (as regras do número valem mesmo assim). */
   aviso: string | null;
 }
@@ -109,12 +111,38 @@ export async function completarCapa(processoId: string): Promise<ResultadoDaCapa
   const municipio = await municipioDoIbge(registroAtual(registros)?.orgaoJulgador?.codigoMunicipioIBGE);
   const sugestoes = sugestoesDaCapa({ valores: processo.valores, datajud: registros, municipio, consultadoEm: agora.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) });
   const gravadas = await gravar(processoId, sugestoes);
+  const andamentos = await guardarAndamentos(processoId, registros);
   const { error } = await db()
     .from("proc_processos")
     .update({ datajud_consultado_em: agora.toISOString(), datajud_erro: registros.length ? null : aviso })
     .eq("id", processoId);
   if (error) console.error("[processos] registrar a consulta ao DataJud:", error.message);
-  return { achou: registros.length > 0, sugestoes: gravadas, aviso };
+  return { achou: registros.length > 0, sugestoes: gravadas, andamentos, aviso };
+}
+
+/**
+ * Guarda todos os movimentos do DataJud na linha do tempo (proc_andamentos), sem duplicar. Movimento do tribunal
+ * é fato, não sugestão: entra direto. Falha aqui não derruba a capa (a linha do tempo é complemento).
+ */
+async function guardarAndamentos(processoId: string, registros: RegistroDataJud[]): Promise<number> {
+  const andamentos = andamentosDoDataJud(registros);
+  if (!andamentos.length) return 0;
+  let novos = 0;
+  for (let inicio = 0; inicio < andamentos.length; inicio += 500) {
+    const { data, error } = await db()
+      .from("proc_andamentos")
+      .upsert(
+        andamentos.slice(inicio, inicio + 500).map((item) => ({ processo_id: processoId, ...item })),
+        { onConflict: "processo_id,chave", ignoreDuplicates: true }
+      )
+      .select("id");
+    if (error) {
+      console.error("[processos] guardar os andamentos do DataJud:", error.message);
+      return novos;
+    }
+    novos += data?.length ?? 0;
+  }
+  return novos;
 }
 
 /** Intervalo entre duas consultas do mesmo processo pelo robô. */
