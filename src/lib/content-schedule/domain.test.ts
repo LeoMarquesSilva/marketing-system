@@ -68,7 +68,7 @@ describe("findAutomaticSlotMatch", () => {
     ])).toEqual({ status: "matched", slotId: "available", distanceDays: 1 });
   });
 
-  it("não confunde Marketing com Legal Ops ao comparar área de conteúdo", () => {
+  it("não confunde Marketing com Operações Legais ao comparar área de conteúdo (aceita o nome antigo)", () => {
     expect(findAutomaticSlotMatch(event, [slot({ area: "Marketing" })])).toEqual({ status: "not_found" });
     expect(normalizeScheduleArea("Operações Legais (Legal Ops)")).toBe("operacoes legais");
     expect(normalizeScheduleArea("Distressed Deals - Special Situations")).toBe("special situations");

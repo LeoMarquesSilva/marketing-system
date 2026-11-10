@@ -371,7 +371,7 @@ export const NAV_FRONTS: NavFront[] = [
         id: "operacoes-legais",
         label: "Visão geral",
         title: "Operações Legais",
-        shortLabel: "Legal Ops",
+        shortLabel: "Operações Legais",
         icon: Scale,
         pages: [{ href: "/operacoes-legais", label: "Operações Legais" }],
       },

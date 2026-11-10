@@ -47,3 +47,11 @@ describe("classificação de Recuperação de Crédito", () => {
     expect(parseClassifiedArea(response)).toBe("Reestruturação");
   });
 });
+
+describe("classificação de Operações Legais", () => {
+  it("usa o nome Operações Legais e aceita o nome antigo com Legal Ops", () => {
+    expect(parseClassifiedArea("Operações Legais")).toBe("Operações Legais");
+    expect(parseClassifiedArea("Operações Legais (Legal Ops)")).toBe("Operações Legais");
+    expect(parseClassifiedArea('"Legal Ops"')).toBe("Operações Legais");
+  });
+});

@@ -5,7 +5,8 @@ export const LEGAL_AREAS = [
   "Reestruturação",
   "Recuperação de Crédito",
   "Societário e Contratos",
-  "Operações Legais (Legal Ops)",
+  // Até 10/11/2026 era "Operações Legais (Legal Ops)": o nome antigo segue aceito como alias.
+  "Operações Legais",
 ] as const;
 
 export type LegalArea = (typeof LEGAL_AREAS)[number];
@@ -19,7 +20,7 @@ const DEPARTMENT_TO_LEGAL_AREAS: Record<string, LegalArea[]> = {
   "Recuperação de Crédito": ["Recuperação de Crédito"],
   "Societário e Contratos": ["Societário e Contratos"],
   Contratos: ["Societário e Contratos"],
-  "Operações Legais": ["Operações Legais (Legal Ops)"],
+  "Operações Legais": ["Operações Legais"],
 };
 
 /** Departamentos com visão de todas as áreas (sócios, marketing, etc.). */
@@ -127,7 +128,7 @@ export const AREA_COLORS: Record<string, string> = {
     "bg-orange-100 text-orange-800 dark:bg-orange-950/60 dark:text-orange-300 border-orange-200/60",
   "Societário e Contratos":
     "bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 border-sky-200/60",
-  "Operações Legais (Legal Ops)":
+  "Operações Legais":
     "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200/60",
   // Legado — área inativa, só para exibir posts antigos.
   "Distressed Deals":
@@ -148,7 +149,7 @@ export const AREA_DOT_COLORS: Record<string, string> = {
   Reestruturação: "bg-rose-500",
   "Recuperação de Crédito": "bg-orange-500",
   "Societário e Contratos": "bg-sky-500",
-  "Operações Legais (Legal Ops)": "bg-emerald-500",
+  "Operações Legais": "bg-emerald-500",
   "Distressed Deals": "bg-orange-500",
 };
 
