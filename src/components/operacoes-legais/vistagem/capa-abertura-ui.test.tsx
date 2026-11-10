@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import type { CapaParaAbertura } from "@/lib/vistagem/capa-abertura";
-import { CapaDaAberturaView, ResumoDaCapaView, type EstadoDataJud } from "./capa-abertura-ui";
+import type { CapaParaAbertura, PedidoDeAbertura } from "@/lib/vistagem/capa-abertura";
+import { BlocoDoRobo, CapaDaAberturaView, ResumoDaCapaView, type EstadoDataJud } from "./capa-abertura-ui";
 
 // O que a rota devolveu para o agravo 2266041-23 (Grupo Lira) no teste local de 10/11/2026.
 const CAPA: CapaParaAbertura = {
@@ -120,5 +120,61 @@ describe("ResumoDaCapaView", () => {
   it("enquanto busca, avisa; com erro, mostra o erro", () => {
     expect(resumo({ capa: null })).toContain("Montando a capa");
     expect(resumo({ capa: null, erro: "Publicação não encontrada." })).toContain("Publicação não encontrada.");
+  });
+});
+
+describe("BlocoDoRobo", () => {
+  const pedido = (extra: Partial<PedidoDeAbertura>): PedidoDeAbertura => ({
+    id: "p1",
+    status: "concluido",
+    erro: null,
+    simulado: true,
+    autor: "Vinicius Schmockel Marques",
+    criadoEm: "2026-11-10T19:00:00.000Z",
+    atualizadoEm: null,
+    resultado: null,
+    ...extra,
+  });
+  const bloco = (pedidos: PedidoDeAbertura[], faltando = 0, extra: Partial<{ enviando: boolean; erro: string }> = {}) =>
+    renderToStaticMarkup(<BlocoDoRobo abertura={{ pedidos, enviando: false, erro: "", ...extra }} faltando={faltando} onSimular={vi.fn()} />);
+
+  it("sem obrigatório, o botão fica travado e diz por quê", () => {
+    const html = bloco([], 2);
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>.*Simular a abertura no VIOS/);
+    expect(html).toContain("Preencha os obrigatórios do VIOS para simular.");
+  });
+
+  it("na fila ou rodando, avisa e não deixa pedir de novo", () => {
+    expect(bloco([pedido({ status: "pendente" })])).toContain("Na fila do robô");
+    const rodando = bloco([pedido({ status: "processando" })]);
+    expect(rodando).toContain("O robô está preenchendo o cadastro no VIOS");
+    expect(rodando).toMatch(/<button[^>]*disabled/);
+  });
+
+  it("simulação sem pendência: tudo certo", () => {
+    const html = bloco([pedido({ resultado: { preenchidos: { cnj: "x", fase: "Recursal" }, nao_encontrados: [], recusaria: [] } })]);
+    expect(html).toContain("Simulação ok: 2 campos preenchidos e o VIOS aceitaria gravar");
+    expect(html).toContain("Nada foi gravado no VIOS.");
+  });
+
+  it("simulação com pendência: o que não achou e o que o VIOS recusaria", () => {
+    const html = bloco([
+      pedido({
+        resultado: {
+          preenchidos: { cnj: "x" },
+          nao_encontrados: [{ campo: "tipoVara", pedido: "CÂMARA CÍVEL", parecidas: ["Câmara Cível Especializada"] }],
+          recusaria: ["Fase"],
+        },
+      }),
+    ]);
+    expect(html).toContain("2 pendência(s)");
+    expect(html).toContain("Tipo de órgão julgador");
+    expect(html).toContain("Câmara Cível Especializada");
+    expect(html).toContain("O VIOS recusaria: Fase.");
+  });
+
+  it("erro do robô e erro ao pedir aparecem", () => {
+    expect(bloco([pedido({ status: "erro", erro: "Capa sem obrigatórios do VIOS: auxiliar." })])).toContain("Capa sem obrigatórios do VIOS: auxiliar.");
+    expect(bloco([], 0, { erro: "Já há um pedido de abertura desta publicação na fila do robô." })).toContain("Já há um pedido");
   });
 });

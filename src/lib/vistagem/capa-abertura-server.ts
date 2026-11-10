@@ -1,13 +1,17 @@
 import "server-only";
 
-import { chaveNome, usuarioPorSigla } from "./agendamento";
+import { chaveNome, paraDataVios, usuarioPorSigla } from "./agendamento";
 import {
   aliasDoDataJud,
   CAMPOS_DA_CAPA,
   capaDoDjen,
+  capaParaOVios,
   ehChaveDaCapa,
   lerCapaDoEsaj,
   lerCnj,
+  montarCapa,
+  problemasParaOVios,
+  resumoDaCapa,
   urlDoEsaj,
   type AjustesDaCapa,
   type CapaDoDataJud,
@@ -18,13 +22,21 @@ import {
   type DefinicaoDoCampo,
   type ListasDoVios,
   type ParDaPasta,
+  type PedidoDeAbertura,
   type StatusDaFonte,
 } from "./capa-abertura";
 import { VistagemError } from "./errors";
 import { buscarPastasVios } from "./pastas-vios";
-import { carregarCatalogoProcessos, carregarMateriasVios, carregarSistemasVios, type CatalogoArea } from "./sama";
-import { admin, falhou } from "./server";
-import { carregarTodasAsPastas } from "./sioe";
+import {
+  aberturasDaPublicacao,
+  carregarCatalogoProcessos,
+  carregarMateriasVios,
+  carregarSistemasVios,
+  enfileirarAberturaDePasta,
+  type CatalogoArea,
+} from "./sama";
+import { admin, falhou, hojeEmSaoPaulo } from "./server";
+import { buscarPastasPorCnj, carregarTodasAsPastas } from "./sioe";
 import { escritorioDaAreaDoProcesso, pastaAtiva } from "./triagem";
 import type { SugestaoTriagem } from "./sugestao-triagem";
 
@@ -261,4 +273,46 @@ export async function numeroDaPublicacao(id: string): Promise<string> {
   if (error) falhou("carregar a publicação", error);
   if (!data) throw new VistagemError("Publicação não encontrada.", 404);
   return (data.numero_processo ?? data.numero_processo_original) as string;
+}
+
+/** Os pedidos de abertura da publicação ao robô (o mais novo primeiro). */
+export async function pedidosDeAbertura(id: string): Promise<PedidoDeAbertura[]> {
+  return aberturasDaPublicacao(id);
+}
+
+/**
+ * Pede ao robô a abertura da pasta com a capa como está (fontes + edições da controladoria). Fase 2: só simulação.
+ * Recusa se faltar obrigatório do VIOS, se a publicação já tiver pasta (aqui ou no SIOE) ou se já houver pedido na fila.
+ */
+export async function pedirAberturaDaPasta(id: string, authUserId: string): Promise<PedidoDeAbertura[]> {
+  const { data: publicacao, error } = await admin().from("vistagem_publicacoes").select("pendencia, pasta_ci").eq("id", id).maybeSingle();
+  if (error) falhou("carregar a publicação", error);
+  if (!publicacao) throw new VistagemError("Publicação não encontrada.", 404);
+  if (publicacao.pendencia !== "sem_pasta" || publicacao.pasta_ci) throw new VistagemError("Esta publicação já tem pasta.", 409);
+
+  const capa = await capaParaAbertura(id);
+  const campos = montarCapa(capa.dados, { ajustes: capa.ajustes, listas: capa.listas });
+  const { faltando } = resumoDaCapa(campos);
+  if (faltando.length) throw new VistagemError(`Preencha os obrigatórios do VIOS: ${faltando.map((campo) => campo.campo).join(", ")}.`, 422);
+  const paraOVios = capaParaOVios(campos);
+  const problemas = problemasParaOVios(paraOVios);
+  if (problemas.length) throw new VistagemError(`${problemas.join("; ")}.`, 422);
+
+  const cnj = lerCnj(capa.dados.numero);
+  const noSioe = cnj ? (await buscarPastasPorCnj([cnj.digitos])).get(cnj.digitos) ?? [] : [];
+  if (noSioe.length) throw new VistagemError(`O processo já tem pasta no VIOS: CI ${noSioe.map((pasta) => pasta.ci).join(", ")}.`, 409);
+
+  const anteriores = await aberturasDaPublicacao(id);
+  if (anteriores.some((pedido) => ["pendente", "enviado", "processando"].includes(pedido.status))) {
+    throw new VistagemError("Já há um pedido de abertura desta publicação na fila do robô.", 409);
+  }
+  const { data: usuario } = await admin().from("users").select("name").eq("auth_id", authUserId).maybeSingle();
+  await enfileirarAberturaDePasta({
+    publicacaoId: id,
+    capa: paraOVios,
+    autor: (usuario?.name as string | null) ?? "Controladoria",
+    data: paraDataVios(hojeEmSaoPaulo()),
+    simular: true,
+  });
+  return aberturasDaPublicacao(id);
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ElementType, type KeyboardEvent, type ReactNode } from "react";
 import {
+  Bot,
   Check,
   CircleAlert,
   CircleCheck,
@@ -30,11 +31,22 @@ import {
   type FonteDaCapa,
   type GrupoDaCapa,
   type ListasDoVios,
+  type PedidoDeAbertura,
+  rotuloDoCampoDoRobo,
   type StatusDaFonte,
 } from "@/lib/vistagem/capa-abertura";
 import { Aviso, campoClasse, Secao } from "./ui";
 
 export type EstadoDataJud = { carregando: true } | { carregando: false; resultado: (CapaDoDataJud & { ms: number }) | null; erro: string | null };
+
+/** Os pedidos de abertura ao robô (o mais novo primeiro) e o envio de um novo. */
+export interface EstadoDaAbertura {
+  pedidos: PedidoDeAbertura[];
+  enviando: boolean;
+  erro: string;
+}
+
+const NA_FILA = new Set<PedidoDeAbertura["status"]>(["pendente", "enviado", "processando"]);
 
 /** Grava ou desfaz a edição de um campo; devolve a mensagem de erro (ou null). */
 export type AoEditarCampo = (chave: ChaveDaCapa, edicao: { valor: string } | { desfazer: true }) => Promise<string | null>;
@@ -95,7 +107,38 @@ export function CapaParaAberturaDePasta({ publicacaoId }: { publicacaoId: string
   const [datajud, setDatajud] = useState<EstadoDataJud>({ carregando: true });
   const [recarga, setRecarga] = useState(0);
   const [aberta, setAberta] = useState(false);
+  const [abertura, setAbertura] = useState<EstadoDaAbertura>({ pedidos: [], enviando: false, erro: "" });
   const url = `/api/operacoes-legais/vistagem/publicacoes/${publicacaoId}/capa`;
+  const naFila = abertura.pedidos[0] ? NA_FILA.has(abertura.pedidos[0].status) : false;
+
+  // Pedidos ao robô: lê ao abrir e, enquanto o último estiver na fila, de novo a cada 10 s.
+  useEffect(() => {
+    let cancelado = false;
+    const ler = () =>
+      authFetch(`${url}/abrir`)
+        .then((resposta) => lerJson<{ pedidos: PedidoDeAbertura[] }>(resposta, "Falha ao consultar o robô"))
+        .then((corpo) => {
+          if (!cancelado) setAbertura((atual) => ({ ...atual, pedidos: corpo.pedidos }));
+        })
+        .catch(() => undefined);
+    void ler();
+    const relogio = naFila ? setInterval(ler, 10_000) : null;
+    return () => {
+      cancelado = true;
+      if (relogio) clearInterval(relogio);
+    };
+  }, [url, naFila]);
+
+  async function simular() {
+    setAbertura((atual) => ({ ...atual, enviando: true, erro: "" }));
+    try {
+      const resposta = await authFetch(`${url}/abrir`, { method: "POST" });
+      const corpo = await lerJson<{ pedidos: PedidoDeAbertura[] }>(resposta, "Falha ao pedir a abertura");
+      setAbertura({ pedidos: corpo.pedidos, enviando: false, erro: "" });
+    } catch (e) {
+      setAbertura((atual) => ({ ...atual, enviando: false, erro: e instanceof Error ? e.message : "Falha ao pedir a abertura." }));
+    }
+  }
 
   // A tela monta um destes por publicação (key): o estado começa vazio; "Buscar de novo" zera antes de recarregar.
   function buscarDeNovo() {
@@ -145,7 +188,15 @@ export function CapaParaAberturaDePasta({ publicacaoId }: { publicacaoId: string
 
   return (
     <>
-      <ResumoDaCapaView capa={capa} erro={erro} datajud={datajud} onAbrir={() => setAberta(true)} onBuscarDeNovo={buscarDeNovo} />
+      <ResumoDaCapaView
+        capa={capa}
+        erro={erro}
+        datajud={datajud}
+        onAbrir={() => setAberta(true)}
+        onBuscarDeNovo={buscarDeNovo}
+        abertura={abertura}
+        onSimular={simular}
+      />
       <Dialog open={aberta} onOpenChange={setAberta}>
         <DialogContent
           className="flex max-h-[92dvh] flex-col gap-0 p-0 sm:max-w-6xl"
@@ -183,12 +234,16 @@ export function ResumoDaCapaView({
   datajud,
   onAbrir,
   onBuscarDeNovo,
+  abertura,
+  onSimular,
 }: {
   capa: CapaParaAbertura | null;
   erro: string;
   datajud: EstadoDataJud;
   onAbrir: () => void;
   onBuscarDeNovo: () => void;
+  abertura?: EstadoDaAbertura;
+  onSimular?: () => void;
 }) {
   const campos = useMemo(() => (capa ? camposDaCapa(capa, datajud) : []), [capa, datajud]);
   const { faltando, conferir, editados } = resumoDaCapa(campos);
@@ -256,10 +311,89 @@ export function ResumoDaCapaView({
             <FileText />
             Conferir e editar a capa
           </Button>
-          <p className="text-[11px] text-muted-foreground">Prévia: nada é gravado no VIOS ainda.</p>
+          {abertura && onSimular ? (
+            <BlocoDoRobo abertura={abertura} faltando={faltando.length} onSimular={onSimular} />
+          ) : (
+            <p className="text-[11px] text-muted-foreground">Prévia: nada é gravado no VIOS ainda.</p>
+          )}
         </div>
       )}
     </Secao>
+  );
+}
+
+/** O robô: pede a simulação da abertura (preenche o cadastro no VIOS sem gravar) e mostra o último pedido. */
+export function BlocoDoRobo({ abertura, faltando, onSimular }: { abertura: EstadoDaAbertura; faltando: number; onSimular: () => void }) {
+  const [ultimo] = abertura.pedidos;
+  const naFila = ultimo ? NA_FILA.has(ultimo.status) : false;
+  return (
+    <div className="space-y-2 border-t border-[#e6eef0] pt-3">
+      <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-normal text-[#285f7a]">
+        <Bot className="size-3.5" aria-hidden />
+        Robô
+      </p>
+      <Button type="button" className="w-full" size="sm" onClick={onSimular} disabled={Boolean(faltando) || naFila || abertura.enviando}>
+        {abertura.enviando ? <LoaderCircle className="animate-spin" /> : <Bot />}
+        Simular a abertura no VIOS
+      </Button>
+      <p className="text-[11px] text-muted-foreground">
+        {faltando
+          ? "Preencha os obrigatórios do VIOS para simular."
+          : "O robô preenche o cadastro do processo no VIOS com esta capa e não grava: é só o teste da abertura."}
+      </p>
+      {abertura.erro ? <Aviso tom="erro">{abertura.erro}</Aviso> : null}
+      {ultimo ? <PedidoDoRobo pedido={ultimo} /> : null}
+    </div>
+  );
+}
+
+function PedidoDoRobo({ pedido }: { pedido: PedidoDeAbertura }) {
+  const quandoPediu = quando(pedido.criadoEm);
+  if (NA_FILA.has(pedido.status)) {
+    return (
+      <p className="flex items-center gap-2 rounded-md border border-[#dce9eb] bg-[#f6f9fa] px-3 py-2 text-xs text-[#285f7a]" role="status">
+        <LoaderCircle className="size-3.5 shrink-0 animate-spin" aria-hidden />
+        {pedido.status === "processando" ? "O robô está preenchendo o cadastro no VIOS…" : `Na fila do robô (pedido em ${quandoPediu})…`}
+      </p>
+    );
+  }
+  if (pedido.status === "erro") {
+    return (
+      <Aviso tom="erro" titulo={`O robô parou (pedido em ${quandoPediu})`}>
+        {pedido.erro ?? "Erro sem mensagem."}
+      </Aviso>
+    );
+  }
+  const resultado = pedido.resultado ?? {};
+  const preenchidos = Object.keys(resultado.preenchidos ?? {}).length;
+  const faltou = resultado.nao_encontrados ?? [];
+  const recusaria = resultado.recusaria ?? [];
+  const tudoCerto = !faltou.length && !recusaria.length;
+  return (
+    <Aviso
+      tom={tudoCerto ? "sucesso" : "alerta"}
+      titulo={
+        tudoCerto
+          ? `Simulação ok: ${preenchidos} campos preenchidos e o VIOS aceitaria gravar`
+          : `Simulação: ${preenchidos} campos preenchidos, ${faltou.length + recusaria.length} pendência(s)`
+      }
+    >
+      <span className="block text-xs">
+        {pedido.simulado ? "Nada foi gravado no VIOS." : "Pedido de verdade."} Pedido em {quandoPediu}
+        {pedido.autor ? ` por ${pedido.autor}` : ""}.
+      </span>
+      {faltou.length ? (
+        <ul className="mt-1 space-y-0.5 text-xs">
+          {faltou.map((item) => (
+            <li key={`${item.campo}-${item.pedido}`}>
+              <span className="font-medium">{rotuloDoCampoDoRobo(item.campo)}</span>: {item.motivo ?? `"${item.pedido}" não está na lista do VIOS`}
+              {item.parecidas?.length ? ` (parecidas: ${item.parecidas.slice(0, 3).join("; ")})` : ""}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {recusaria.length ? <span className="mt-1 block text-xs">O VIOS recusaria: {recusaria.join(", ")}.</span> : null}
+    </Aviso>
   );
 }
 

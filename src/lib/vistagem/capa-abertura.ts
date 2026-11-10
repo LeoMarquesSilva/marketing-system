@@ -682,6 +682,52 @@ export function resumoDaCapa(campos: CampoDaCapa[]) {
   };
 }
 
+/** A capa no formato da fila do robô (vios_agendamentos.abertura.capa): texto por campo; etiquetas e matérias em lista. */
+export type CapaDoVios = Record<Exclude<ChaveDaCapa, "etiqueta" | "materias">, string | null> & { etiquetas: string[]; materias: string[] };
+
+const emLista = (valor: string | null) => (valor ?? "").split(";").map((item) => item.trim()).filter(Boolean);
+
+export function capaParaOVios(campos: CampoDaCapa[]): CapaDoVios {
+  const valor = (chave: ChaveDaCapa) => campos.find((campo) => campo.chave === chave)?.valor ?? null;
+  const texto = Object.fromEntries(
+    CHAVES_DA_CAPA.filter((chave) => chave !== "etiqueta" && chave !== "materias").map((chave) => [chave, valor(chave)])
+  ) as Omit<CapaDoVios, "etiquetas" | "materias">;
+  return { ...texto, etiquetas: emLista(valor("etiqueta")), materias: emLista(valor("materias")) };
+}
+
+/** O que impede mandar a capa ao robô: obrigatórios vazios e formatos que o VIOS não aceita. */
+export function problemasParaOVios(capa: CapaDoVios): string[] {
+  const problemas: string[] = [];
+  if (capa.valor && !/^\d{1,3}(\.\d{3})*,\d{2}$/.test(capa.valor)) problemas.push("Valor da ação: escreva como 1.234,56");
+  if (capa.dataAcao && !/^\d{2}\/\d{2}\/\d{4}$/.test(capa.dataAcao)) problemas.push("Data da ação: escreva como DD/MM/AAAA");
+  if (capa.cnj && !/^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$/.test(capa.cnj)) problemas.push("N.º CNJ fora do formato");
+  return problemas;
+}
+
+/** Um pedido de abertura ao robô (linha operacao abrir_pasta da fila do SAMA). */
+export interface PedidoDeAbertura {
+  id: string;
+  status: "pendente" | "enviado" | "processando" | "concluido" | "erro";
+  erro: string | null;
+  simulado: boolean;
+  autor: string | null;
+  criadoEm: string;
+  atualizadoEm: string | null;
+  resultado: {
+    preenchidos?: Record<string, string>;
+    nao_encontrados?: { campo: string; pedido: string; motivo?: string; parecidas?: string[] }[];
+    recusaria?: string[];
+    avisos?: string[];
+    ci?: string | null;
+  } | null;
+}
+
+/** Rótulo do campo que o robô devolveu (ele chama as etiquetas de "etiquetas"). */
+export function rotuloDoCampoDoRobo(campo: string): string {
+  const chave = campo === "etiquetas" ? "etiqueta" : campo;
+  return ehChaveDaCapa(chave) ? CAMPOS_DA_CAPA[chave].rotulo : campo;
+}
+
 export const ROTULO_DA_FONTE: Record<FonteDaCapa, string> = {
   cnj: "Número CNJ",
   djen: "DJEN",

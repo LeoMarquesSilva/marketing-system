@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   acaoDoVios,
   capaDoDjen,
+  capaParaOVios,
   cidadeDoOrgao,
   lerCapaDoEsaj,
   faseDoVios,
@@ -10,7 +11,9 @@ import {
   montarCapa,
   orgaoDoVios,
   parteDoCliente,
+  problemasParaOVios,
   resumoDaCapa,
+  rotuloDoCampoDoRobo,
   separarVara,
   sistemaDoTribunal,
   urlDoEsaj,
@@ -239,5 +242,48 @@ describe("montarCapa", () => {
     expect(valorDe(campos, "dataAcao")).toMatchObject({ valor: "20/10/2026", fonte: "datajud" });
     expect(valorDe(campos, "sistema")).toMatchObject({ valor: "E-PROC", fonte: "datajud", conferir: false });
     expect(valorDe(campos, "jurisdicao")?.valor).toBe("PRIMEIRO GRAU");
+  });
+});
+
+describe("capa para o robô", () => {
+  const base = {
+    numero: "2266041-23.2026.8.26.0000",
+    djen: capaDoDjen(DJEN_AGRAVO),
+    esaj: lerCapaDoEsaj(ESAJ_2G),
+    datajud: null,
+    area: "Insolvência",
+    grupo: "Lira",
+    cliente: "Lira Alimentos Industria e Comercio Ltda",
+    par: { responsavel: "Manuela Lutke", auxiliar: "Pedro Vittale Rossi", pastas: 4 },
+    demandaRisco: true,
+  };
+  const listas = { materias: ["RECUPERACAO JUDICIAL E FALENCIA"], sistemas: ["E-saj"], usuarios: [] };
+
+  it("vai como texto por campo, com etiquetas e matérias em lista", () => {
+    const capa = capaParaOVios(montarCapa(base, { listas }));
+    expect(capa).toMatchObject({
+      cnj: "2266041-23.2026.8.26.0000",
+      jurisdicao: "SEGUNDO GRAU",
+      orgao: "Tribunal de Justiça do Estado de São Paulo",
+      valor: "729.764,00",
+      polo: "Passivo",
+      responsavel: "Manuela Lutke",
+      etiquetas: ["Carteira Lira", "Demanda de risco"],
+      materias: ["RECUPERACAO JUDICIAL E FALENCIA"],
+    });
+    expect(capa).not.toHaveProperty("etiqueta");
+    expect(problemasParaOVios(capa)).toEqual([]);
+  });
+
+  it("formato que o VIOS não aceita não vai para o robô", () => {
+    const capa = capaParaOVios(montarCapa(base, { listas }));
+    expect(problemasParaOVios({ ...capa, valor: "729764" })).toEqual(["Valor da ação: escreva como 1.234,56"]);
+    expect(problemasParaOVios({ ...capa, dataAcao: "2026-11-06" })).toEqual(["Data da ação: escreva como DD/MM/AAAA"]);
+  });
+
+  it("o rótulo do campo que o robô devolve é o da capa", () => {
+    expect(rotuloDoCampoDoRobo("etiquetas")).toBe("Etiquetas");
+    expect(rotuloDoCampoDoRobo("fase")).toBe("Fase");
+    expect(rotuloDoCampoDoRobo("outro")).toBe("outro");
   });
 });
