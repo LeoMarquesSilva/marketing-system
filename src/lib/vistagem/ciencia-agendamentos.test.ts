@@ -125,6 +125,17 @@ describe("cienciaDosAgendamentos", () => {
     expect(cienciaDosAgendamentos([tarefa("CIÊNCIA NF", "9"), tarefa("CIÊNCIA NF", "9")], opcoes("Insolvência"))).toBeNull();
   });
 
+  it("VERIFICAR RENÚNCIA, como a CIÊNCIA NF, não pede a Ciência (nem escolhe o responsável)", () => {
+    expect(cienciaDosAgendamentos([tarefa("VERIFICAR RENÚNCIA", "320")], opcoes("Cível"))).toBeNull();
+    expect(cienciaDosAgendamentos([tarefa("Verificar Renuncia", "320"), tarefa("CIÊNCIA NF", "796")], opcoes("Recuperação de Crédito"))).toBeNull();
+    const outra = { id: "300", nome: "Outra Advogada" };
+    expect(
+      cienciaDosAgendamentos([tarefa("VERIFICAR RENÚNCIA", "320"), tarefa("INFORMAR CLIENTE", "414", { responsaveis: [outra] })], opcoes("Cível"))
+    ).toEqual({ responsaveis: [outra], revisorNoLugarDe: [] });
+    // As outras de renúncia continuam pedindo a Ciência.
+    expect(cienciaDosAgendamentos([tarefa("RENÚNCIA", "736")], opcoes("Cível"))).toEqual({ responsaveis: [ADVOGADA], revisorNoLugarDe: [] });
+  });
+
   it("com CIÊNCIA NF e outra tarefa, a Ciência vai para quem faz o Enviar da outra", () => {
     const outra = { id: "300", nome: "Outra Advogada" };
     const resultado = cienciaDosAgendamentos(

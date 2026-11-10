@@ -1059,7 +1059,7 @@ function Conferencia() {
         tom: "info",
         texto:
           `${corpo.consultadas} tarefa(s) consultada(s): ${corpo.concluidas} concluída(s) pelo robô, ${corpo.erros} com erro.` +
-          (corpo.checadasSozinhas ? ` ${corpo.checadasSozinhas} CIÊNCIA NF única com check automático.` : ""),
+          (corpo.checadasSozinhas ? ` ${corpo.checadasSozinhas} com check automático (CIÊNCIA NF ou VERIFICAR RENÚNCIA única).` : ""),
       });
       await carregar();
     } catch (e) {

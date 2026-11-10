@@ -1443,7 +1443,7 @@ export async function atualizarEnvios(): Promise<{ consultadas: number; concluid
   if (error) falhou("carregar os envios em andamento", error);
   const pendentes = (data ?? []) as { id: string; publicacao_id: string; sama_agendamento_id: string; envio_status: EnvioStatus; envio_erro: string | null }[];
   const resumo = { consultadas: pendentes.length, concluidas: 0, erros: 0 };
-  if (!pendentes.length) return { ...resumo, checadasSozinhas: await checarCienciasNfSozinho() };
+  if (!pendentes.length) return { ...resumo, checadasSozinhas: await checarSozinho() };
 
   const fila = await consultarFilaSama(pendentes.map((item) => item.sama_agendamento_id));
   const agora = new Date().toISOString();
@@ -1477,16 +1477,17 @@ export async function atualizarEnvios(): Promise<{ consultadas: number; concluid
       await db.from("vistagem_publicacoes").update({ status: "agendado" }).eq("id", publicacaoId).eq("status", "pronto_para_agendar");
     }
   }
-  return { ...resumo, checadasSozinhas: await checarCienciasNfSozinho() };
+  return { ...resumo, checadasSozinhas: await checarSozinho() };
 }
 
 /**
- * Check automático da CIÊNCIA NF única (pedido de 09/11/2026): das publicações agendadas no VIOS aguardando o check, as
- * que têm só a CIÊNCIA NF, gravada com o CI e conferindo com o pedido (notaDoCheckAutomatico), ficam "Check OK" sem a
- * controladoria, como no check manual (inclusive o BKP), com quem checou vazio. Roda junto com a atualização dos envios
- * (cron da Kurier e Conferência); um erro aqui não atrapalha os envios. Devolve quantas foram checadas.
+ * Check automático da tarefa única (CIÊNCIA NF, pedido de 09/11/2026; VERIFICAR RENÚNCIA, de 10/11/2026): das
+ * publicações agendadas no VIOS aguardando o check, as que têm só uma delas, gravada com o CI e conferindo com o pedido
+ * (notaDoCheckAutomatico), ficam "Check OK" sem a controladoria, como no check manual (inclusive o BKP), com quem
+ * checou vazio. Roda junto com a atualização dos envios (cron da Kurier e Conferência); um erro aqui não atrapalha os
+ * envios. Devolve quantas foram checadas.
  */
-async function checarCienciasNfSozinho(): Promise<number> {
+async function checarSozinho(): Promise<number> {
   try {
     const db = admin();
     const { data, error } = await db.from("vistagem_publicacoes").select("id").eq("status", "agendado").limit(1000);
@@ -1516,7 +1517,7 @@ async function checarCienciasNfSozinho(): Promise<number> {
     if (checadas.length) await registrarNoBkpSemFalhar(checadas);
     return checadas.length;
   } catch (erro) {
-    console.error("[vistagem] check automático da CIÊNCIA NF:", erro instanceof Error ? erro.message : erro);
+    console.error("[vistagem] check automático (CIÊNCIA NF / VERIFICAR RENÚNCIA):", erro instanceof Error ? erro.message : erro);
     return 0;
   }
 }
