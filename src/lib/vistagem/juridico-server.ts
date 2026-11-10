@@ -630,16 +630,16 @@ async function nomesDosUsuarios(ids: (string | null)[]): Promise<Map<string, str
 }
 
 // ---------------------------------------------------------------------------
-// Histórico da publicação (botão "Histórico" da Conferência)
+// Histórico da publicação (botão "Histórico" da Conferência, do Check e, nas transferidas, da Vistagem)
 // ---------------------------------------------------------------------------
 
 const COLUNAS_HISTORICO =
-  "status, created_at, linha_arquivo, data_publicacao, triada_em, pasta_ci, pasta_vinculo, escritorio_responsavel, pendencia, triagem_resolvida_por, triagem_resolvida_em, duplicidade_resultado, duplicidade_revisada_por, duplicidade_revisada_em, transferido_de, transferido_por, transferido_em, transferencia_motivo, vistado_por, vistado_em, observacao_vistagem, devolvido_por, devolvido_em, devolucao_motivo, devolucoes, revistado_por, revistado_em, conferido_por, conferido_em, central_item_id, central_enviada_em, central_erro, central_tentativa_em, checado_por, checado_em, check_nota, arquivo:vistagem_kurier_arquivos(origem)";
+  "status, created_at, linha_arquivo, data_publicacao, triada_em, pasta_ci, pasta_vinculo, escritorio_responsavel, demanda_risco, pendencia, triagem_resolvida_por, triagem_resolvida_em, duplicidade_resultado, duplicidade_revisada_por, duplicidade_revisada_em, transferido_de, transferido_por, transferido_em, transferencia_motivo, vistado_por, vistado_em, observacao_vistagem, devolvido_por, devolvido_em, devolucao_motivo, devolucoes, revistado_por, revistado_em, conferido_por, conferido_em, central_item_id, central_enviada_em, central_erro, central_tentativa_em, checado_por, checado_em, check_nota, arquivo:vistagem_kurier_arquivos(origem)";
 
 type HistoricoRow = {
   status: PublicacaoStatus; created_at: string; linha_arquivo: number | null; data_publicacao: string | null;
   triada_em: string | null; pasta_ci: string | null; pasta_vinculo: string | null; escritorio_responsavel: string | null;
-  pendencia: Pendencia | null; triagem_resolvida_por: string | null; triagem_resolvida_em: string | null;
+  demanda_risco: boolean | null; pendencia: Pendencia | null; triagem_resolvida_por: string | null; triagem_resolvida_em: string | null;
   duplicidade_resultado: DuplicidadeResultado | null; duplicidade_revisada_por: string | null; duplicidade_revisada_em: string | null;
   transferido_de: string | null; transferido_por: string | null; transferido_em: string | null; transferencia_motivo: string | null;
   vistado_por: string | null; vistado_em: string | null; observacao_vistagem: string | null;
@@ -655,8 +655,11 @@ type TarefaDoHistoricoRow = {
   envio_simulado: boolean | null; envio_erro: string | null; enviado_em: string | null; envio_atualizado_em: string | null;
 };
 
-/** O que aconteceu com a publicação, em ordem: das colunas de quem fez e quando, das tarefas e das inconsistências. */
-export async function historicoDaPublicacao(id: string): Promise<HistoricoPublicacao> {
+/**
+ * O que aconteceu com a publicação, em ordem: das colunas de quem fez e quando, das tarefas e das inconsistências.
+ * O jurídico só vê o das publicações da sua área (e de risco, se vista as de risco); a controladoria vê todas.
+ */
+export async function historicoDaPublicacao(id: string, areas: AreasVistagem = null, veRisco = true): Promise<HistoricoPublicacao> {
   const db = admin();
   const [publicacao, tarefas, inconsistencias] = await Promise.all([
     db.from("vistagem_publicacoes").select(COLUNAS_HISTORICO).eq("id", id).maybeSingle(),
@@ -671,6 +674,7 @@ export async function historicoDaPublicacao(id: string): Promise<HistoricoPublic
   if (tarefas.error) falhou("carregar as tarefas do histórico", tarefas.error);
   const row = publicacao.data as unknown as HistoricoRow | null;
   if (!row) throw new VistagemError("Publicação não encontrada.", 404);
+  garantirArea(row, areas, veRisco);
   const nomes = await nomesDosUsuarios([
     row.triagem_resolvida_por, row.duplicidade_revisada_por, row.transferido_por, row.vistado_por,
     row.devolvido_por, row.revistado_por, row.conferido_por, row.checado_por,
