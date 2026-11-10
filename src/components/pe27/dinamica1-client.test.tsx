@@ -45,9 +45,29 @@ const board: Pe27Board = {
   can_edit: false,
   levers: [],
   conductors: [],
-  files: { presentation_url: "/x", groups_sheet_url: "/y" },
+  files: { presentation_url: "/x", groups_sheet_url: "/y", dinamica1_groups_sheet_url: "/z" },
   groups: [
-    group("missao", "missao", { proposal: "Impactar a sociedade por meio dos clientes." }),
+    group("missao", "missao", {
+      proposal: "Impactar a sociedade por meio dos clientes.",
+      members: [
+        {
+          id: "m1",
+          name: "Daniel Pressatto",
+          short_name: "Daniel Pressatto",
+          avatar_url: null,
+          area: "Trabalhista",
+          is_area_partner: true,
+        },
+        {
+          id: "m2",
+          name: "Samuel Willian",
+          short_name: "Samuel Willian",
+          avatar_url: null,
+          area: "Operações Legais",
+          is_area_partner: false,
+        },
+      ],
+    }),
     group("valores", "valores"),
     group("d2", null, { dynamic: 2, dimension: "clientes" }),
   ],
@@ -68,6 +88,10 @@ describe("matriz da Dinâmica 1", () => {
     expect(html).toContain("só no rascunho");
     expect(html).toContain("No rascunho: Comunicação prejudicada em detrimento do cargo");
     expect(html).toContain("Impactar a sociedade por meio dos clientes.");
+    // Integrantes do grupo da Dinâmica 1, com o sócio de área marcado
+    expect(html).toContain("Grupo missao · 2 pessoas");
+    expect(html).toContain("Trabalhista · Sócio de área");
+    expect(html).toContain("Samuel Willian");
     // Valores separados pelas letras do CIVIL
     expect(html).toContain("Cliente no centro");
     expect(html).toContain("Inteligência em resultados");

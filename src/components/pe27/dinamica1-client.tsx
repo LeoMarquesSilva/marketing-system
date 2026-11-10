@@ -19,7 +19,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils";
 import { PE27_NORTE } from "@/lib/pe27/conteudo";
 import { THEME_LABELS, THEMES, type Direction, type Pe27Board, type Pe27Group, type Pe27Reflection, type Theme } from "@/lib/pe27/types";
-import { plural } from "./shared";
+import { PersonLine, plural } from "./shared";
 
 const THEME_ICONS: Record<Theme, LucideIcon> = {
   visao: Telescope,
@@ -194,53 +194,65 @@ function ThemeRow({
   const Icon = THEME_ICONS[theme];
   const statement = THEME_STATEMENT[theme];
   const photoCount = group ? (group.poster_url ? 1 : 0) + group.sketch_urls.length : 0;
+  const members = group?.members ?? [];
 
   return (
     <section aria-labelledby={`pe27-d1-${theme}`} className="overflow-hidden rounded-lg border border-[#dce9eb] bg-white">
       <div className="grid lg:grid-cols-[260px_minmax(0,1fr)_minmax(0,1fr)]">
-        {/* Tema */}
-        <div className="flex gap-3 border-b border-[#e6eef0] bg-[#fbfdfd] px-4 py-4 sm:px-5 lg:flex-col lg:border-r lg:border-b-0">
-          <div className="flex items-center gap-3">
+        {/* Tema, quem estava no grupo e as fotos */}
+        <div className="space-y-4 border-b border-[#e6eef0] bg-[#fbfdfd] px-4 py-4 sm:px-5 lg:border-r lg:border-b-0">
+          <div className="flex items-start gap-3">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-[#e4f0f6] text-[#2c6a89]" aria-hidden>
               <Icon className="size-5" />
             </span>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h2 id={`pe27-d1-${theme}`} className="text-lg leading-6 font-semibold text-foreground">
                 {THEME_LABELS[theme]}
               </h2>
-              <p className="text-xs text-muted-foreground">{group?.name ?? "Grupo sem registro"}</p>
+              <p className="text-xs text-muted-foreground">
+                {group ? `${group.name.split(" · ")[0]} · ${plural(members.length, "pessoa", "pessoas")}` : "Grupo sem registro"}
+              </p>
             </div>
-          </div>
-          <div className="hidden space-y-1 lg:block">
-            <p className="text-xs font-semibold text-[#285f7a]">{statement.label}</p>
-            <p className="text-xs leading-5 text-muted-foreground">{statement.text}</p>
-          </div>
-          {group && photoCount > 0 && (
-            <button
-              type="button"
-              onClick={() => onOpenPhotos(group)}
-              className="group ml-auto flex shrink-0 items-center gap-2 self-start rounded-md outline-none focus-visible:ring-[3px] focus-visible:ring-[#47cdd0]/40 lg:ml-0 lg:mt-auto"
-              aria-label={`Ver o cartaz e os rascunhos do ${group.name}`}
-            >
-              {group.poster_url && (
-                <span className="relative block h-16 w-12 overflow-hidden rounded-md border border-[#dce9eb] bg-[#f4f7f8]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
+            {group && photoCount > 0 && (
+              <button
+                type="button"
+                onClick={() => onOpenPhotos(group)}
+                className="group relative block h-16 w-12 shrink-0 overflow-hidden rounded-md border border-[#dce9eb] bg-[#f4f7f8] outline-none focus-visible:ring-[3px] focus-visible:ring-[#47cdd0]/40"
+                aria-label={`Ver o cartaz e os rascunhos do ${group.name} (${plural(photoCount, "foto", "fotos")})`}
+                title={`Ver ${plural(photoCount, "foto", "fotos")}`}
+              >
+                {group.poster_url && (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={group.poster_url}
                     alt=""
                     className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
                   />
-                </span>
-              )}
-              <span className="hidden text-left text-xs leading-5 sm:block">
-                <span className="flex items-center gap-1 font-medium text-[#285f7a] group-hover:text-[#1c4a60]">
+                )}
+                <span className="absolute inset-x-0 bottom-0 flex items-center justify-center bg-[#04202f]/75 py-0.5 text-white">
                   <Expand className="size-3" aria-hidden />
-                  Ver fotos
                 </span>
-                <span className="text-muted-foreground">{plural(photoCount, "foto", "fotos")}</span>
-              </span>
-            </button>
+              </button>
+            )}
+          </div>
+
+          {members.length > 0 && (
+            <ul className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-1" aria-label={`Quem estava no ${group?.name ?? "grupo"}`}>
+              {members.map((member) => (
+                <li key={member.id} className="min-w-0">
+                  <PersonLine person={member} detail={member.is_area_partner ? `${member.area} · Sócio de área` : member.area} />
+                </li>
+              ))}
+            </ul>
           )}
+
+          <details className="group/texto">
+            <summary className="cursor-pointer list-none text-xs font-semibold text-[#285f7a] outline-none hover:text-[#1c4a60] focus-visible:ring-[3px] focus-visible:ring-[#47cdd0]/30 [&::-webkit-details-marker]:hidden">
+              {statement.label}
+              <span className="ml-1 font-normal text-muted-foreground group-open/texto:hidden">(mostrar)</span>
+            </summary>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">{statement.text}</p>
+          </details>
         </div>
 
         {/* Aproximou × afastou */}
@@ -334,7 +346,17 @@ export function Pe27Dinamica1({ board }: { board: Pe27Board }) {
           })
         )}
 
-        <p className="text-xs text-muted-foreground">Quem estava em cada grupo da Dinâmica 1: não informado.</p>
+        <p className="text-xs text-muted-foreground">
+          Grupos conforme a folha da Dinâmica 1 (diferentes dos da Dinâmica 2).{" "}
+          <a
+            href={board.files.dinamica1_groups_sheet_url}
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-[#285f7a] underline-offset-4 hover:underline"
+          >
+            Ver a folha dos grupos
+          </a>
+        </p>
 
         {photos && <GroupPhotosDialog key={photos.id} group={photos} onClose={() => setPhotos(null)} />}
       </div>

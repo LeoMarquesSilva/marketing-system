@@ -166,4 +166,5 @@ export const PE27_CONDUCAO: Array<{ role: string; employeeId?: string; userId?: 
 export const PE27_FILES = {
   presentation: "workshop-05nov/apresentacao-workshop-pe27.pptx",
   groupsSheet: "workshop-05nov/dinamica2-grupos.jpg",
+  groupsSheetDinamica1: "workshop-05nov/dinamica1-grupos.jpg",
 } as const;

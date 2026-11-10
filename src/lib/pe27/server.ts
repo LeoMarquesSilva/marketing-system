@@ -221,6 +221,7 @@ export async function loadPe27Board(): Promise<Pe27Board> {
     files: {
       presentation_url: fileUrl(PE27_FILES.presentation, true),
       groups_sheet_url: fileUrl(PE27_FILES.groupsSheet),
+      dinamica1_groups_sheet_url: fileUrl(PE27_FILES.groupsSheetDinamica1),
     },
   };
 }

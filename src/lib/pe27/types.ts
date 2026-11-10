@@ -142,7 +142,7 @@ export interface Pe27Board {
   levers: Pe27Lever[];
   reflections: Pe27Reflection[];
   conductors: Pe27Conductor[];
-  files: { presentation_url: string; groups_sheet_url: string };
+  files: { presentation_url: string; groups_sheet_url: string; dinamica1_groups_sheet_url: string };
 }
 
 /** Texto da meta/alavanca para busca de temas comuns (sem acento, minúsculo). */

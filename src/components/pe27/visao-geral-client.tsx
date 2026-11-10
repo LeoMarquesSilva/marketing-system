@@ -356,9 +356,17 @@ function MaterialBlock({ board }: { board: Pe27Board }) {
       newTab: false,
     },
     {
+      href: board.files.dinamica1_groups_sheet_url,
+      icon: FileImage,
+      label: "Grupos da Dinâmica 1",
+      detail: "Quem ficou com cada tema",
+      action: ArrowRight,
+      newTab: true,
+    },
+    {
       href: board.files.groups_sheet_url,
       icon: FileImage,
-      label: "Folha dos grupos",
+      label: "Grupos da Dinâmica 2",
       detail: "Quem ficou em cada dimensão",
       action: ArrowRight,
       newTab: true,
