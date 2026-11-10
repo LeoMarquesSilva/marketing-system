@@ -19,6 +19,8 @@ import {
   type Pe27Goal,
   type Pe27Group,
   type Pe27Lever,
+  type Pe27Reflection,
+  type Theme,
 } from "./types";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
@@ -31,7 +33,7 @@ export class Pe27HttpError extends Error {
   constructor(
     message: string,
     public status: number,
-    public code: string
+    public code: string,
   ) {
     super(message);
     this.name = "Pe27HttpError";
@@ -68,11 +70,7 @@ async function requirePe27Viewer(db: SupabaseClient): Promise<Pe27Viewer> {
     data: { user },
   } = await ssr.auth.getUser();
   if (!user) throw new Pe27HttpError("Não autenticado.", 401, "UNAUTHENTICATED");
-  const { data, error } = await db
-    .from("users")
-    .select("id, name, role, permissions, is_active")
-    .eq("auth_id", user.id)
-    .maybeSingle();
+  const { data, error } = await db.from("users").select("id, name, role, permissions, is_active").eq("auth_id", user.id).maybeSingle();
   if (error || !data) throw new Pe27HttpError("Não foi possível validar o acesso.", 500, "ACCESS_LOOKUP_FAILED");
   if (data.is_active === false) throw new Pe27HttpError("Usuário inativo.", 403, "FORBIDDEN");
   const profile = { role: data.role as string | null, permissions: (data.permissions as string[] | null) ?? null };
@@ -114,19 +112,23 @@ export async function loadPe27Board(): Promise<Pe27Board> {
   const db = createPe27AdminClient();
   const viewer = await requirePe27Viewer(db);
 
-  const [groupsResult, membersResult, leversResult, goalsResult, people] = await Promise.all([
+  const [groupsResult, membersResult, leversResult, goalsResult, reflectionsResult, people] = await Promise.all([
     db
       .from("strategic_plan_groups")
-      .select("id, dynamic, dimension, name, poster_title, poster_path, sort")
+      .select("id, dynamic, dimension, theme, name, poster_title, poster_path, sketch_paths, proposal, notes, sort")
       .eq("cycle", PE27_CYCLE)
       .order("dynamic")
       .order("sort"),
     db.from("strategic_plan_group_members").select("id, group_id, employee_id, name, area, is_area_partner, sort").order("sort"),
     db.from("strategic_plan_levers").select(LEVER_COLUMNS).eq("cycle", PE27_CYCLE),
     db.from("strategic_plan_goals").select(GOAL_COLUMNS),
+    db
+      .from("strategic_plan_reflections")
+      .select("id, group_id, direction, position, text, detail, facet, source, transcription_note")
+      .order("position"),
     loadPeopleDirectory(db, LOG),
   ]);
-  for (const result of [groupsResult, membersResult, leversResult, goalsResult]) {
+  for (const result of [groupsResult, membersResult, leversResult, goalsResult, reflectionsResult]) {
     if (result.error) {
       console.error(`[${LOG}] leitura:`, result.error);
       throw new Pe27HttpError("Falha ao carregar o PE27.", 500, "QUERY_FAILED");
@@ -144,7 +146,10 @@ export async function loadPe27Board(): Promise<Pe27Board> {
   for (const item of PE27_CONDUCAO) if (item.userId) userIds.add(item.userId);
   const usersById = new Map<string, { name: string; avatar_url: string | null }>();
   if (userIds.size) {
-    const { data, error } = await db.from("users").select("id, name, avatar_url, photo_onedrive_url").in("id", [...userIds]);
+    const { data, error } = await db
+      .from("users")
+      .select("id, name, avatar_url, photo_onedrive_url")
+      .in("id", [...userIds]);
     if (error) console.error(`[${LOG}] usuários:`, error);
     for (const user of data ?? []) {
       usersById.set(user.id as string, {
@@ -153,12 +158,16 @@ export async function loadPe27Board(): Promise<Pe27Board> {
       });
     }
   }
-  const firstName = (id: string | null) => (id ? usersById.get(id)?.name.split(/\s+/)[0] ?? null : null);
+  const firstName = (id: string | null) => (id ? (usersById.get(id)?.name.split(/\s+/)[0] ?? null) : null);
 
   const groups: Pe27Group[] = (groupsResult.data ?? []).map((group) => ({
     id: group.id as string,
     dynamic: group.dynamic as number,
     dimension: (group.dimension as Dimension | null) ?? null,
+    theme: (group.theme as Theme | null) ?? null,
+    proposal: (group.proposal as string | null) ?? null,
+    notes: (group.notes as string | null) ?? null,
+    sketch_urls: ((group.sketch_paths as string[] | null) ?? []).map((path) => fileUrl(path)),
     name: group.name as string,
     poster_title: (group.poster_title as string | null) ?? null,
     poster_url: group.poster_path ? fileUrl(group.poster_path as string) : null,
@@ -200,10 +209,14 @@ export async function loadPe27Board(): Promise<Pe27Board> {
     return user ? [{ role: item.role, name: user.name, short_name: user.name, avatar_url: user.avatar_url }] : [];
   });
 
+  const groupIds = new Set(groups.map((group) => group.id));
+  const reflections = ((reflectionsResult.data ?? []) as Pe27Reflection[]).filter((item) => groupIds.has(item.group_id));
+
   return {
     can_edit: viewer.canEdit,
     groups,
     levers,
+    reflections,
     conductors,
     files: {
       presentation_url: fileUrl(PE27_FILES.presentation, true),
@@ -281,7 +294,7 @@ async function resolveMerge(
   table: "strategic_plan_levers" | "strategic_plan_goals",
   id: string,
   status: Decision | undefined,
-  mergedInto: string | null | undefined
+  mergedInto: string | null | undefined,
 ): Promise<{ merged_into?: string | null }> {
   if (status === undefined && mergedInto === undefined) return {};
   if (status !== undefined && status !== "juntada") return { merged_into: null };

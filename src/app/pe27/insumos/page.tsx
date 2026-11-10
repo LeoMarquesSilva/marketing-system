@@ -5,7 +5,7 @@ import { loadPe27Board, Pe27HttpError } from "@/lib/pe27/server";
 import { DIMENSIONS, type Dimension, type Pe27Board } from "@/lib/pe27/types";
 
 export const metadata: Metadata = {
-  title: "Insumos do workshop · PE27 — ORQESTRAI",
+  title: "Dinâmica 2 · PE27 — ORQESTRAI",
   robots: { index: false, follow: false },
 };
 

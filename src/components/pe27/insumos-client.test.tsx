@@ -9,6 +9,7 @@ function board(canEdit: boolean): Pe27Board {
     groups: [],
     conductors: [],
     files: { presentation_url: "/x", groups_sheet_url: "/y" },
+    reflections: [],
     levers: [
       {
         id: "l1",

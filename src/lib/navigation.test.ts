@@ -53,7 +53,11 @@ describe("catálogo de navegação", () => {
   });
 
   it("consultor só com o PE27 vê no menu apenas o PE27", () => {
-    expect(visibleHrefs({ role: null, permissions: ["/pe27"], department: "Consultoria Estratégica" })).toEqual(["/pe27", "/pe27/insumos"]);
+    expect(visibleHrefs({ role: null, permissions: ["/pe27"], department: "Consultoria Estratégica" })).toEqual([
+      "/pe27",
+      "/pe27/dinamica-1",
+      "/pe27/insumos",
+    ]);
   });
 });
 

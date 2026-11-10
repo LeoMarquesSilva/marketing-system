@@ -102,8 +102,7 @@ export const PE27_NORTE = {
 /** Provocações entregues a cada grupo na Dinâmica 2 (pergunta central + 7). */
 export const PE27_PROVOCACOES: Record<Dimension, { central: string; perguntas: string[] }> = {
   clientes: {
-    central:
-      "Como queremos ser reconhecidos pelos nossos clientes em 2030 e por que eles escolherão o Bismarchi e Pires?",
+    central: "Como queremos ser reconhecidos pelos nossos clientes em 2030 e por que eles escolherão o Bismarchi e Pires?",
     perguntas: [
       "Qual o perfil dos clientes que queremos atender em 2030?",
       "Como comunicar com esses clientes?",

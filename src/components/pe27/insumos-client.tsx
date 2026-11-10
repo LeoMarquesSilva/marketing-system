@@ -1,7 +1,18 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Expand, ExternalLink, Eye, Image as ImageIcon, LoaderCircle, MessageSquareQuote, Pencil, Plus, Target, Trash2 } from "lucide-react";
+import {
+  Expand,
+  ExternalLink,
+  Eye,
+  Image as ImageIcon,
+  LoaderCircle,
+  MessageSquareQuote,
+  Pencil,
+  Plus,
+  Target,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -535,67 +546,67 @@ function ItemDialog({
               </p>
             </section>
           ) : (
-          <fieldset className="space-y-3">
-            <legend className="text-sm font-semibold text-foreground">Decisão dos sócios</legend>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5" role="radiogroup" aria-label="Decisão">
-              {DECISIONS.map((option) => {
-                const selected = status === option;
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    onClick={() => setStatus(option)}
-                    className={cn(
-                      "flex min-h-11 items-center justify-center gap-2 rounded-md border px-2 text-sm font-medium transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-[#47cdd0]/30",
-                      selected
-                        ? "border-[#347796] bg-[#347796] text-white"
-                        : "border-[#dce9eb] bg-white text-foreground hover:border-[#47cdd0]/60",
-                    )}
-                  >
-                    {DECISION_ACTIONS[option]}
-                  </button>
-                );
-              })}
-            </div>
-
-            {status === "juntada" && (
-              <div className="space-y-1.5">
-                <Label htmlFor="pe27-merge">Juntar com</Label>
-                <Select value={mergedInto} onValueChange={setMergedInto}>
-                  <SelectTrigger id="pe27-merge" className="w-full">
-                    <SelectValue placeholder={isLever ? "Escolha a alavanca que fica" : "Escolha a meta que fica"} />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-80">
-                    {mergeOptions.map((groupOption) => (
-                      <SelectGroup key={groupOption.dimension}>
-                        <SelectLabel>{DIMENSION_LABELS[groupOption.dimension]}</SelectLabel>
-                        {groupOption.options.map((option) => (
-                          <SelectItem key={option.id} value={option.id}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">O item continua registrado, apontando para o que ficou no plano.</p>
+            <fieldset className="space-y-3">
+              <legend className="text-sm font-semibold text-foreground">Decisão dos sócios</legend>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5" role="radiogroup" aria-label="Decisão">
+                {DECISIONS.map((option) => {
+                  const selected = status === option;
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => setStatus(option)}
+                      className={cn(
+                        "flex min-h-11 items-center justify-center gap-2 rounded-md border px-2 text-sm font-medium transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-[#47cdd0]/30",
+                        selected
+                          ? "border-[#347796] bg-[#347796] text-white"
+                          : "border-[#dce9eb] bg-white text-foreground hover:border-[#47cdd0]/60",
+                      )}
+                    >
+                      {DECISION_ACTIONS[option]}
+                    </button>
+                  );
+                })}
               </div>
-            )}
 
-            <div className="space-y-1.5">
-              <Label htmlFor="pe27-decision-note">Observação da decisão</Label>
-              <Textarea
-                id="pe27-decision-note"
-                value={decisionNote}
-                onChange={(event) => setDecisionNote(event.target.value)}
-                maxLength={2000}
-                rows={3}
-                placeholder="O que foi decidido e por quê (opcional)"
-              />
-            </div>
-          </fieldset>
+              {status === "juntada" && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="pe27-merge">Juntar com</Label>
+                  <Select value={mergedInto} onValueChange={setMergedInto}>
+                    <SelectTrigger id="pe27-merge" className="w-full">
+                      <SelectValue placeholder={isLever ? "Escolha a alavanca que fica" : "Escolha a meta que fica"} />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-80">
+                      {mergeOptions.map((groupOption) => (
+                        <SelectGroup key={groupOption.dimension}>
+                          <SelectLabel>{DIMENSION_LABELS[groupOption.dimension]}</SelectLabel>
+                          {groupOption.options.map((option) => (
+                            <SelectItem key={option.id} value={option.id}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">O item continua registrado, apontando para o que ficou no plano.</p>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label htmlFor="pe27-decision-note">Observação da decisão</Label>
+                <Textarea
+                  id="pe27-decision-note"
+                  value={decisionNote}
+                  onChange={(event) => setDecisionNote(event.target.value)}
+                  maxLength={2000}
+                  rows={3}
+                  placeholder="O que foi decidido e por quê (opcional)"
+                />
+              </div>
+            </fieldset>
           )}
 
           {/* Texto e dados */}

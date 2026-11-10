@@ -151,7 +151,10 @@ export const NAV_FRONTS: NavFront[] = [
         icon: Compass,
         pages: [
           { href: PE27_KEY, label: "Visão geral" },
-          { href: `${PE27_KEY}/insumos`, label: "Insumos do workshop" },
+          // Dinâmica 1: o que aproximou e afastou da Visão, Missão, Valores e Propósito.
+          { href: `${PE27_KEY}/dinamica-1`, label: "Dinâmica 1 · Aproximou e afastou" },
+          // Dinâmica 2: alavancas e metas por dimensão, com a decisão dos sócios.
+          { href: `${PE27_KEY}/insumos`, label: "Dinâmica 2 · Alavancas e metas" },
         ],
       },
     ],
