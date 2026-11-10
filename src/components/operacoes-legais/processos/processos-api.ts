@@ -1,4 +1,6 @@
 import { authFetch } from "@/lib/auth-fetch";
+import { TAMANHO_MAXIMO_AUTOS, type AutosDoProcesso, type DocumentoAutos } from "@/lib/processos/autos-types";
+import { supabase } from "@/utils/supabase/client";
 
 const BASE = "/api/operacoes-legais/processos";
 
@@ -46,6 +48,45 @@ export const processosApi = {
 
 /** Chamadas das telas de Pessoas (o cadastro único que Processos usa). */
 export const pessoasApi = criarApi("/api/operacoes-legais/pessoas");
+
+/**
+ * Anexa o PDF dos autos: pede a URL assinada, sobe o arquivo direto no bucket privado (não passa pela
+ * Vercel) e registra o documento no processo.
+ */
+export async function anexarAutos(processoId: string, arquivo: File): Promise<{ documento: DocumentoAutos; autos: AutosDoProcesso }> {
+  if (!/\.pdf$/i.test(arquivo.name) || (arquivo.type && arquivo.type !== "application/pdf")) throw new Error("Envie os autos em PDF.");
+  if (arquivo.size > TAMANHO_MAXIMO_AUTOS) throw new Error("O arquivo passa de 200 MB. Divida o PDF e anexe as partes.");
+  const upload = await processosApi.post<{ bucket: string; path: string; token: string }>(`/${processoId}/autos/upload`, { nome: arquivo.name, tamanho: arquivo.size });
+  const { error } = await supabase.storage.from(upload.bucket).uploadToSignedUrl(upload.path, upload.token, arquivo, { contentType: "application/pdf" });
+  if (error) throw new Error(`Não foi possível enviar o arquivo: ${error.message}`);
+  return processosApi.post<{ documento: DocumentoAutos; autos: AutosDoProcesso }>(`/${processoId}/autos/documentos`, { path: upload.path, nome: arquivo.name });
+}
+
+/**
+ * Abre o PDF dos autos em outra aba, na página indicada. A aba abre já no clique (antes da URL assinada
+ * chegar), senão o navegador bloqueia como pop-up.
+ */
+export async function abrirAutos(documentoId: string, pagina?: number | null): Promise<void> {
+  const aba = window.open("about:blank", "_blank");
+  try {
+    const { url } = await processosApi.get<{ url: string }>(`/autos/documentos/${documentoId}`);
+    const destino = pagina ? `${url}#page=${pagina}` : url;
+    if (aba) {
+      aba.opener = null;
+      aba.location.href = destino;
+    } else {
+      window.location.href = destino;
+    }
+  } catch (erro) {
+    aba?.close();
+    throw erro;
+  }
+}
+
+export function formatarTamanho(bytes: number | null): string {
+  if (!bytes) return "";
+  return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
 
 export function mensagemDeErro(erro: unknown): string {
   return erro instanceof Error ? erro.message : "Não foi possível concluir a operação.";

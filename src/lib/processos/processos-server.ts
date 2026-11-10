@@ -4,7 +4,7 @@ import { COLUNAS_CREDITO, COLUNAS_PROCESSO, campoPorChave, coagirValor, textoDoV
 import { ProcessosError } from "./errors";
 import { ITENS_SANEAMENTO, calcularPreenchimento } from "./preenchimento";
 import { db, emLotes, falhou, gravacaoSimulada, type Ator } from "./server";
-import type { Alteracao, Contato, Endereco, EnvioVios, Parte, ProcessoDetalhe, ProcessoResumo, StatusEnvio } from "./types";
+import type { Alteracao, Contato, Endereco, EnvioVios, OrigemDado, Parte, ProcessoDetalhe, ProcessoResumo, StatusEnvio } from "./types";
 
 const ENVIOS_ABERTOS: StatusEnvio[] = ["pendente", "enviado", "erro"];
 
@@ -210,20 +210,23 @@ export async function carregarParaPlanilha(ids: string[] | null): Promise<{ valo
   return linhas.map((linha) => ({ valores: valoresDaLinha(linha), partes: partesDaLinha(linha) }));
 }
 
-/** Uma linha no histórico do processo que não é troca de campo simples (partes, itens do saneamento). */
-export async function registrarNoHistorico(processoId: string, campo: string, anterior: string | null, novo: string | null, ator: Ator): Promise<void> {
+/**
+ * Uma linha no histórico do processo que não é troca de campo simples (partes, itens do saneamento, autos).
+ * `origem` é "ia" quando a gravação veio de uma sugestão aprovada; o autor continua sendo quem aprovou.
+ */
+export async function registrarNoHistorico(processoId: string, campo: string, anterior: string | null, novo: string | null, ator: Ator, origem: OrigemDado = "manual"): Promise<void> {
   const { error } = await db()
     .from("proc_alteracoes")
-    .insert({ processo_id: processoId, campo, valor_anterior: anterior, valor_novo: novo, origem: "manual", autor_id: ator.authUserId, autor_nome: ator.nome });
+    .insert({ processo_id: processoId, campo, valor_anterior: anterior, valor_novo: novo, origem, autor_id: ator.authUserId, autor_nome: ator.nome });
   if (error) falhou("registrar o histórico", error);
 }
 
 /**
- * Edição do cadastro pela tela. Cada campo alterado vira uma linha no histórico; campo que existe no
- * VIOS entra na fila de gravação (um envio em aberto por campo: editar de novo atualiza o mesmo envio,
- * voltar ao valor do VIOS cancela).
+ * Edição do cadastro pela tela ou por sugestão da IA aprovada (`origem` "ia"). Cada campo alterado vira
+ * uma linha no histórico; campo que existe no VIOS entra na fila de gravação (um envio em aberto por
+ * campo: editar de novo atualiza o mesmo envio, voltar ao valor do VIOS cancela).
  */
-export async function atualizarProcesso(id: string, entrada: Record<string, unknown>, ator: Ator): Promise<ProcessoDetalhe> {
+export async function atualizarProcesso(id: string, entrada: Record<string, unknown>, ator: Ator, origem: OrigemDado = "manual"): Promise<ProcessoDetalhe> {
   const linha = await carregarLinha(id);
   const atuais = valoresDaLinha(linha);
   const patchProcesso: Valores = {};
@@ -260,7 +263,7 @@ export async function atualizarProcesso(id: string, entrada: Record<string, unkn
         campo: mudanca.campo,
         valor_anterior: mudanca.anterior || null,
         valor_novo: mudanca.novo || null,
-        origem: "manual",
+        origem,
         autor_id: ator.authUserId,
         autor_nome: ator.nome,
       }))

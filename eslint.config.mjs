@@ -20,6 +20,10 @@ const eslintConfig = defineConfig([
     "vios-app/**",
     // Scripts Node.js usam require(); não fazem parte do bundle.
     "scripts/**",
+    // Pastas locais dos robôs (perfil do navegador, PDFs em trânsito, capturas): não são código do projeto.
+    "robos/**/perfil/**",
+    "robos/**/downloads/**",
+    "robos/**/diagnostico/**",
   ]),
   {
     rules: {

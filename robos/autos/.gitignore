@@ -1,0 +1,6 @@
+node_modules/
+# Credenciais e sessão do tribunal: só nesta máquina, nunca no repositório.
+.env
+perfil/
+downloads/
+diagnostico/

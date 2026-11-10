@@ -24,6 +24,7 @@ import {
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { AutosDoProcesso } from "@/lib/processos/autos-types";
 import { GRUPOS_CAMPO, camposDoGrupo, estaPreenchido, formatarValor, rotuloDoCampo, type CampoProcesso, type GrupoCampo } from "@/lib/processos/campos";
 import { POLOS, rotuloDoPapel, type Contato, type EnvioVios, type Parte, type ProcessoDetalhe } from "@/lib/processos/types";
 import { cn } from "@/lib/utils";
@@ -33,10 +34,12 @@ import { Celula, LinkPastaVios } from "../vistagem/ficha-pasta";
 import { LogoGrupo, SeloArea } from "../vistagem/marcas";
 import { Aviso, Carregando, Painel, PainelTopo, Selo, Vazio, type TomSelo } from "../vistagem/ui";
 import { AcessoProcessos } from "./acesso-processos";
+import { PainelAutos } from "./autos-painel";
 import { EditarCampos } from "./editar-campos";
 import { EditarParte } from "./editar-parte";
 import { BarraPreenchimento } from "./preenchimento-ui";
 import { formatarDataHora, mensagemDeErro, processosApi } from "./processos-api";
+import { PainelSugestoes } from "./sugestoes-painel";
 
 const ENVIO_ABERTO = new Set(["pendente", "enviado", "erro"]);
 
@@ -49,6 +52,7 @@ const SELO_ENVIO: Record<EnvioVios["status"], { tom: TomSelo; rotulo: string }> 
 };
 
 const ORIGEM: Record<string, string> = { manual: "na tela", vios: "sincronização do VIOS", ia: "sugestão da IA" };
+const CAMPO_DO_HISTORICO: Record<string, string> = { partes: "Partes", saneamento: "Saneamento", autos: "Autos" };
 
 const ICONE_CONTATO = { celular: Phone, telefone: Phone, email: Mail, site: Globe } as const;
 
@@ -184,6 +188,7 @@ type Dialogo = { tipo: "campos"; grupo: GrupoCampo; titulo: string } | { tipo: "
 function Ficha({ id }: { id: string }) {
   const tituloId = useId();
   const [processo, setProcesso] = useState<ProcessoDetalhe | null>(null);
+  const [autos, setAutos] = useState<AutosDoProcesso | null>(null);
   const [erro, setErro] = useState("");
   const [feito, setFeito] = useState("");
   const [dialogo, setDialogo] = useState<Dialogo>(null);
@@ -202,6 +207,30 @@ function Ficha({ id }: { id: string }) {
   useEffect(() => {
     void carregar();
   }, [carregar]);
+
+  // Os autos vêm à parte: se falharem (ex.: migration da Etapa 2 ainda não aplicada), a ficha abre do mesmo jeito.
+  const carregarAutos = useCallback(async () => {
+    try {
+      const resposta = await processosApi.get<{ autos: AutosDoProcesso }>(`/${id}/autos`);
+      setAutos(resposta.autos);
+    } catch {
+      // mantém o que já está na tela
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void carregarAutos();
+  }, [carregarAutos]);
+
+  // Enquanto o robô trabalha ou a IA lê, a ficha se atualiza sozinha; quando o robô entrega, o cadastro também.
+  const emAndamento = Boolean(
+    autos && (autos.pedidos.some((pedido) => pedido.status === "pendente" || pedido.status === "em_andamento" || pedido.status === "aguardando_pessoa") || autos.documentos.some((documento) => documento.leitura === "lendo"))
+  );
+  useEffect(() => {
+    if (!emAndamento) return;
+    const relogio = window.setInterval(() => void carregarAutos(), 15_000);
+    return () => window.clearInterval(relogio);
+  }, [emAndamento, carregarAutos]);
 
   function salvo(atualizado: ProcessoDetalhe, mensagem: string) {
     setProcesso(atualizado);
@@ -322,6 +351,19 @@ function Ficha({ id }: { id: string }) {
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem] xl:items-start">
         <div className="min-w-0 space-y-4">
+          {autos ? (
+            <PainelSugestoes
+              processo={processo}
+              autos={autos}
+              onErro={setErro}
+              onDecidido={(decisao, mensagem) => {
+                setProcesso(decisao.processo);
+                setAutos(decisao.autos);
+                setErro("");
+                setFeito(mensagem);
+              }}
+            />
+          ) : null}
           {GRUPOS_CAMPO.filter((grupo) => grupo.id !== "credito" && grupo.id !== "andamento" && grupo.id !== "valores").map((grupo) => (
             <GrupoDeCampos key={grupo.id} grupo={grupo.id} titulo={grupo.rotulo} processo={processo} onEditar={() => setDialogo({ tipo: "campos", grupo: grupo.id, titulo: grupo.rotulo })} />
           ))}
@@ -370,6 +412,19 @@ function Ficha({ id }: { id: string }) {
         </div>
 
         <div className="min-w-0 space-y-4">
+          {autos ? (
+            <PainelAutos
+              processoId={processo.id}
+              autos={autos}
+              onAutos={setAutos}
+              onErro={setErro}
+              onFeito={(mensagem) => {
+                setFeito(mensagem);
+                // Anexar, pedir e excluir entram no histórico da ficha.
+                void carregar();
+              }}
+            />
+          ) : null}
           <Painel>
             <PainelTopo titulo="Saneamento" descricao="Lista de campos da equipe de Recuperação de Crédito." />
             <div className="border-b border-[#e6eef0] px-4 py-3">
@@ -440,14 +495,17 @@ function Ficha({ id }: { id: string }) {
               <ul className="max-h-[28rem] divide-y divide-[#e6eef0] overflow-y-auto">
                 {processo.historico.map((item) => (
                   <li key={item.id} className="space-y-0.5 px-4 py-2.5">
-                    <p className="text-sm font-medium text-foreground">{item.campo === "partes" ? "Partes" : item.campo === "saneamento" ? "Saneamento" : rotuloDoCampo(item.campo)}</p>
+                    <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-foreground">
+                      {CAMPO_DO_HISTORICO[item.campo] ?? rotuloDoCampo(item.campo)}
+                      {item.origem === "ia" ? <Selo tom="ia">IA</Selo> : null}
+                    </p>
                     <p className="line-clamp-3 break-words text-xs text-muted-foreground">
                       {item.anterior ? <span className="line-through">{item.anterior}</span> : null}
                       {item.anterior && item.novo ? " → " : ""}
                       {item.novo ? <span className="text-foreground">{item.novo}</span> : item.anterior ? " → vazio" : ""}
                     </p>
                     <p className="text-[11px] text-muted-foreground">
-                      {formatarDataHora(item.quando)} · {item.autor ?? ORIGEM[item.origem] ?? item.origem}
+                      {formatarDataHora(item.quando)} · {item.origem === "ia" && item.autor ? `sugestão da IA aprovada por ${item.autor}` : (item.autor ?? ORIGEM[item.origem] ?? item.origem)}
                     </p>
                   </li>
                 ))}

@@ -45,6 +45,7 @@ export function EditarParte({
   parte,
   outras,
   poloPadrao = "passivo",
+  sugestao,
   onFechar,
   onSalvo,
 }: {
@@ -54,10 +55,15 @@ export function EditarParte({
   /** As partes do processo a que esta pode se referir (sócio de…, advogado de…). */
   outras: Parte[];
   poloPadrao?: Parte["polo"];
+  /**
+   * Conferência de uma sugestão da IA: o formulário abre com `dados` (a parte com o que a IA propôs) e
+   * salvar chama `aprovar`, que grava pela rota da sugestão em vez da rota de partes.
+   */
+  sugestao?: { dados: ParteEntrada; aprovar: (corpo: ParteEntrada) => Promise<void> };
   onFechar: () => void;
   onSalvo: (processo: ProcessoDetalhe) => void;
 }) {
-  const [dados, setDados] = useState<ParteEntrada>(() => inicial(parte, poloPadrao));
+  const [dados, setDados] = useState<ParteEntrada>(() => sugestao?.dados ?? inicial(parte, poloPadrao));
   const [escolhida, setEscolhida] = useState<PessoaResumo | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
@@ -88,6 +94,10 @@ export function EditarParte({
         enderecos: dados.enderecos.filter((item) => item.endereco.trim()),
         contatos: dados.contatos.filter((item) => item.valor.trim()),
       };
+      if (sugestao) {
+        await sugestao.aprovar(corpo);
+        return;
+      }
       const resposta = parte
         ? await processosApi.put<{ processo: ProcessoDetalhe }>(`/partes/${parte.id}`, corpo)
         : await processosApi.post<{ processo: ProcessoDetalhe }>(`/${processoId}/partes`, corpo);
@@ -104,8 +114,12 @@ export function EditarParte({
       onFechar={onFechar}
       ocupado={salvando}
       icone={parte ? UserRoundPen : UserRoundPlus}
-      titulo={parte ? "Editar parte" : "Incluir parte"}
-      descricao="Parte, sócio, fiador ou advogado. Documento, endereços e contatos ficam no cadastro da pessoa e valem em todos os processos dela."
+      titulo={sugestao ? "Conferir a sugestão da IA" : parte ? "Editar parte" : "Incluir parte"}
+      descricao={
+        sugestao
+          ? "Ajuste o que for preciso. Ao aprovar, a parte é gravada como está aqui; documento, endereços e contatos vão para o cadastro da pessoa."
+          : "Parte, sócio, fiador ou advogado. Documento, endereços e contatos ficam no cadastro da pessoa e valem em todos os processos dela."
+      }
       className="sm:max-w-3xl"
       aviso={parte ? "Mudou o CPF/CNPJ para o de alguém já cadastrado? As duas pessoas são unificadas." : escolhida ? "Os endereços e contatos que você incluir são acrescentados aos que a pessoa já tem." : undefined}
       rodape={
@@ -114,7 +128,7 @@ export function EditarParte({
             Cancelar
           </Button>
           <Button onClick={() => void salvar()} disabled={salvando || dados.nome.trim().length < 2}>
-            {salvando ? <LoaderCircle className="animate-spin" /> : null} Salvar
+            {salvando ? <LoaderCircle className="animate-spin" /> : null} {sugestao ? "Aprovar e gravar" : "Salvar"}
           </Button>
         </>
       }

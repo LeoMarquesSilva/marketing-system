@@ -14,7 +14,7 @@ import { Aviso, Campo, Selo } from "../vistagem/ui";
 import { mensagemDeErro, processosApi } from "./processos-api";
 
 /** Valor do banco → texto do controle do formulário. */
-function paraFormulario(item: CampoProcesso, valor: ValorCampo | undefined): string {
+export function paraFormulario(item: CampoProcesso, valor: ValorCampo | undefined): string {
   if (valor === null || valor === undefined) return "";
   if (Array.isArray(valor)) return valor.join("\n");
   if (typeof valor === "boolean") return valor ? "sim" : "nao";
@@ -25,7 +25,7 @@ function paraFormulario(item: CampoProcesso, valor: ValorCampo | undefined): str
 }
 
 /** Texto do controle → o que a rota espera (ela valida e converte de novo). */
-function doFormulario(item: CampoProcesso, texto: string): unknown {
+export function doFormulario(item: CampoProcesso, texto: string): unknown {
   if (item.tipo === "lista") return texto.split("\n").map((linha) => linha.trim()).filter(Boolean);
   if (item.tipo === "booleano") return texto === "sim" ? true : texto === "nao" ? false : null;
   return texto.trim();
@@ -36,7 +36,8 @@ const SIM_NAO = [
   { valor: "nao", rotulo: "Não" },
 ];
 
-function Controle({ item, valor, onChange }: { item: CampoProcesso; valor: string; onChange: (valor: string) => void }) {
+/** O controle certo para o tipo do campo (texto, data, valor, opção…). */
+export function Controle({ item, valor, onChange }: { item: CampoProcesso; valor: string; onChange: (valor: string) => void }) {
   if (!item.editavel) return <Input value={valor} disabled readOnly />;
   switch (item.tipo) {
     case "texto_longo":
