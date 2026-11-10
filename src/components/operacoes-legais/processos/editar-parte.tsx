@@ -9,8 +9,9 @@ import { PAPEIS, POLOS, type Parte, type ParteEntrada, type PessoaResumo, type P
 import { BuscarPessoa } from "../pessoas/buscar-pessoa";
 import { CamposDeContatos, CamposDeEnderecos } from "../pessoas/contatos-form";
 import { DialogoAcao } from "../vistagem/dialogo-acao";
-import { Seletor } from "../vistagem/seletor";
+import { Seletor, SeletorBusca } from "../vistagem/seletor";
 import { Aviso, Campo } from "../vistagem/ui";
+import { useOpcoes } from "./opcoes-client";
 import { mensagemDeErro, processosApi } from "./processos-api";
 
 const OPCOES_POLO = POLOS.map((item) => ({ valor: item.valor, rotulo: item.rotulo }));
@@ -70,6 +71,12 @@ export function EditarParte({
 
   const mudar = (patch: Partial<ParteEntrada>) => setDados((atual) => ({ ...atual, ...patch }));
   const ehParte = dados.papel === "parte";
+  // Tipo de parte (Exequente, Executado…): a lista de Cadastros, só os tipos do polo escolhido.
+  const tiposDeParte = useOpcoes("tipo_parte", null);
+  const opcoesDeTipo = tiposDeParte.opcoes
+    .filter((opcao) => opcao.extra.polo === dados.polo)
+    .map((opcao) => ({ valor: opcao.valor, rotulo: opcao.valor, descricao: typeof opcao.extra.oposta === "string" && opcao.extra.oposta ? `parte oposta: ${opcao.extra.oposta}` : null }));
+  if (dados.vinculo && !opcoesDeTipo.some((opcao) => opcao.valor === dados.vinculo)) opcoesDeTipo.unshift({ valor: dados.vinculo, rotulo: dados.vinculo, descricao: "fora da lista" });
   const referencias = outras.filter((item) => item.papel === "parte" && item.id !== parte?.id).map((item) => ({ valor: item.id, rotulo: item.nome }));
 
   function escolher(pessoa: PessoaResumo) {
@@ -167,8 +174,20 @@ export function EditarParte({
         <Campo rotulo="Polo">
           <Seletor valor={dados.polo} onChange={(valor) => mudar({ polo: valor as ParteEntrada["polo"] })} opcoes={OPCOES_POLO} rotulo="Polo" />
         </Campo>
-        <Campo rotulo={ehParte ? "Tipo de parte" : "Vínculo"} dica={ehParte ? "Como está no VIOS: Exequente, Executado, Requerido…" : "Ex.: sócio administrador, fiador do contrato."}>
-          <Input value={dados.vinculo ?? ""} onChange={(evento) => mudar({ vinculo: evento.target.value })} />
+        <Campo rotulo={ehParte ? "Tipo de parte" : "Vínculo"} dica={ehParte ? "Lista de Cadastros, com os tipos do polo escolhido." : "Ex.: sócio administrador, fiador do contrato."}>
+          {ehParte ? (
+            <SeletorBusca
+              valor={dados.vinculo ?? ""}
+              onChange={(valor) => mudar({ vinculo: valor || null })}
+              opcoes={opcoesDeTipo}
+              todos={{ rotulo: "Não informado" }}
+              placeholder={tiposDeParte.carregando ? "Carregando a lista…" : "Escolha…"}
+              buscaPlaceholder="Buscar na lista…"
+              rotulo="Tipo de parte"
+            />
+          ) : (
+            <Input value={dados.vinculo ?? ""} onChange={(evento) => mudar({ vinculo: evento.target.value })} />
+          )}
         </Campo>
         {ehParte ? (
           <label className="flex items-start gap-2.5 rounded-md border border-[#dce9eb] bg-[#f7fbfc] px-3 py-2.5 text-sm sm:col-span-2">

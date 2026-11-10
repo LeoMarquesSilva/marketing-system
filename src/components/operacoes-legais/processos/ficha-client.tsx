@@ -31,10 +31,10 @@ import { POLOS, rotuloDoPapel, type Contato, type EnvioVios, type Parte, type Pr
 import { cn } from "@/lib/utils";
 import { DialogoAcao } from "../vistagem/dialogo-acao";
 import { BOTAO_FAIXA, FaixaDoProcesso } from "../vistagem/faixa-processo";
-import { Celula, LinkPastaVios } from "../vistagem/ficha-pasta";
-import { LogoGrupo, SeloArea } from "../vistagem/marcas";
+import { Celula } from "../vistagem/ficha-pasta";
 import { Aviso, Carregando, Painel, PainelTopo, Selo, Vazio, type TomSelo } from "../vistagem/ui";
 import { AcessoProcessos } from "./acesso-processos";
+import { CabecalhoDoProcesso } from "./cabecalho-processo";
 import { PainelAutos } from "./autos-painel";
 import { EditarCampos } from "./editar-campos";
 import { EditarParte } from "./editar-parte";
@@ -186,7 +186,7 @@ function CartaoDaParte({ parte, partes, onEditar, onExcluir }: { parte: Parte; p
   );
 }
 
-type Dialogo = { tipo: "campos"; grupo: GrupoCampo; titulo: string } | { tipo: "parte"; parte: Parte | null; polo: Parte["polo"] } | { tipo: "excluir"; parte: Parte } | null;
+type Dialogo = { tipo: "campos"; grupos: GrupoCampo[]; titulo: string } | { tipo: "parte"; parte: Parte | null; polo: Parte["polo"] } | { tipo: "excluir"; parte: Parte } | null;
 
 function Ficha({ id }: { id: string }) {
   const tituloId = useId();
@@ -343,28 +343,7 @@ function Ficha({ id }: { id: string }) {
             </Link>
           </Button>
         </FaixaDoProcesso>
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-4 px-4 py-4">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <LogoGrupo grupo={texto("grupo_cliente")} tamanho="lg" />
-            <div className="min-w-0 space-y-1">
-              <p className="truncate text-base font-semibold text-[#10293a]">{texto("grupo_cliente") ?? texto("cliente") ?? "Sem grupo"}</p>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-                {texto("cliente") ? <span className="truncate">{texto("cliente")}</span> : null}
-                {texto("area") ? <SeloArea area={texto("area") as string} /> : null}
-                {texto("ci") ? <LinkPastaVios ci={texto("ci") as string} /> : null}
-              </div>
-            </div>
-          </div>
-          <Celula rotulo="Advogado responsável" className="min-w-40">
-            <p className="text-sm font-medium text-foreground">{texto("advogado_responsavel") ?? "—"}</p>
-          </Celula>
-          <Celula rotulo="Ação" className="min-w-40 max-w-64">
-            <p className="truncate text-sm font-medium text-foreground" title={texto("acao") ?? undefined}>
-              {texto("acao") ?? "—"}
-            </p>
-          </Celula>
-          <BarraPreenchimento feitos={preenchimento.feitos} total={preenchimento.total} percentual={preenchimento.percentual} className="w-40" />
-        </div>
+        <CabecalhoDoProcesso processo={processo} onEditar={(grupos, titulo) => setDialogo({ tipo: "campos", grupos, titulo })} />
       </Painel>
 
       {feito ? <Aviso tom="sucesso">{feito}</Aviso> : null}
@@ -385,9 +364,6 @@ function Ficha({ id }: { id: string }) {
               }}
             />
           ) : null}
-          {GRUPOS_CAMPO.filter((grupo) => grupo.id !== "credito" && grupo.id !== "andamento" && grupo.id !== "valores").map((grupo) => (
-            <GrupoDeCampos key={grupo.id} grupo={grupo.id} titulo={grupo.rotulo} processo={processo} onEditar={() => setDialogo({ tipo: "campos", grupo: grupo.id, titulo: grupo.rotulo })} />
-          ))}
 
           <Painel>
             <PainelTopo titulo="Partes e contatos" descricao="Quem participa do processo. Documento, endereços e contatos são do cadastro de Pessoas e valem em todos os processos de cada uma.">
@@ -426,9 +402,9 @@ function Ficha({ id }: { id: string }) {
             )}
           </Painel>
 
-          {(["credito", "valores", "andamento"] as const).map((grupo) => {
+          {(["credito", "valores"] as const).map((grupo) => {
             const titulo = GRUPOS_CAMPO.find((item) => item.id === grupo)?.rotulo ?? grupo;
-            return <GrupoDeCampos key={grupo} grupo={grupo} titulo={titulo} processo={processo} onEditar={() => setDialogo({ tipo: "campos", grupo, titulo })} />;
+            return <GrupoDeCampos key={grupo} grupo={grupo} titulo={titulo} processo={processo} onEditar={() => setDialogo({ tipo: "campos", grupos: [grupo], titulo })} />;
           })}
         </div>
 
@@ -546,7 +522,7 @@ function Ficha({ id }: { id: string }) {
         <EditarCampos
           processoId={processo.id}
           titulo={dialogo.titulo}
-          campos={camposDoGrupo(dialogo.grupo)}
+          campos={dialogo.grupos.flatMap((grupo) => camposDoGrupo(grupo))}
           valores={valores}
           gravacaoSimulada={processo.gravacaoSimulada}
           onFechar={() => setDialogo(null)}

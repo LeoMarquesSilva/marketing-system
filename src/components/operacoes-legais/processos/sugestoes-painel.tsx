@@ -119,7 +119,7 @@ function Proposta({ sugestao, processo }: { sugestao: Sugestao; processo: Proces
 }
 
 /** Edição do valor de um campo antes de aprovar. */
-function ConferirCampo({ sugestao, onFechar, aprovar }: { sugestao: Sugestao; onFechar: () => void; aprovar: (corpo: { valor: unknown }) => Promise<void> }) {
+function ConferirCampo({ sugestao, uf, onFechar, aprovar }: { sugestao: Sugestao; uf: string | null; onFechar: () => void; aprovar: (corpo: { valor: unknown }) => Promise<void> }) {
   const item = campoPorChave(sugestao.campo ?? "");
   const [texto, setTexto] = useState(() => (item ? paraFormulario(item, (sugestao.valor as ValorDeCampo).valor) : ""));
   const [salvando, setSalvando] = useState(false);
@@ -159,7 +159,7 @@ function ConferirCampo({ sugestao, onFechar, aprovar }: { sugestao: Sugestao; on
     >
       {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
       <Campo rotulo={item.rotulo}>
-        <Controle item={item} valor={texto} onChange={setTexto} />
+        <Controle item={item} valor={texto} onChange={setTexto} uf={uf} />
       </Campo>
       {sugestao.trecho ? <Trecho sugestao={sugestao} /> : null}
     </DialogoAcao>
@@ -363,6 +363,7 @@ export function PainelSugestoes({
         <ConferirCampo
           key={editando.id}
           sugestao={editando}
+          uf={typeof processo.valores.uf === "string" && processo.valores.uf ? processo.valores.uf : null}
           onFechar={() => setEditando(null)}
           aprovar={(corpo) => decidir(editando, { acao: "aprovar", ...corpo }, "Sugestão aprovada com o seu ajuste e gravada no cadastro.")}
         />

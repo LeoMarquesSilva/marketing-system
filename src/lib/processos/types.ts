@@ -182,6 +182,10 @@ export interface ProcessoDetalhe {
   id: string;
   valores: Valores;
   partes: Parte[];
+  /** Fotos da equipe do processo pela chave do nome (chaveNome da Vistagem). */
+  fotos: Record<string, string>;
+  /** Sigla do VIOS → nome completo (o VIOS guarda o auxiliar pela sigla). */
+  nomesDaEquipe: Record<string, string>;
   historico: Alteracao[];
   envios: EnvioVios[];
   preenchimento: Preenchimento;

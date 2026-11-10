@@ -5,12 +5,13 @@ import { CloudUpload, LoaderCircle, PencilLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { CampoProcesso, ValorCampo, Valores } from "@/lib/processos/campos";
+import { GRUPOS_CAMPO, type CampoProcesso, type ValorCampo, type Valores } from "@/lib/processos/campos";
 import type { ProcessoDetalhe } from "@/lib/processos/types";
 import { CampoData } from "../vistagem/campo-data";
 import { DialogoAcao } from "../vistagem/dialogo-acao";
 import { Seletor } from "../vistagem/seletor";
 import { Aviso, Campo, Selo } from "../vistagem/ui";
+import { ControleDeLista } from "./opcoes-client";
 import { mensagemDeErro, processosApi } from "./processos-api";
 
 /** Valor do banco → texto do controle do formulário. */
@@ -31,14 +32,26 @@ export function doFormulario(item: CampoProcesso, texto: string): unknown {
   return texto.trim();
 }
 
+/** Na edição da capa inteira, os campos vêm separados por grupo (Identificação, Órgão…), com título. */
+function gruposDosCampos(campos: CampoProcesso[]): { id: string; rotulo: string; mostrarTitulo: boolean; campos: CampoProcesso[] }[] {
+  const ids = [...new Set(campos.map((item) => item.grupo))];
+  return ids.map((id) => ({
+    id,
+    rotulo: GRUPOS_CAMPO.find((grupo) => grupo.id === id)?.rotulo ?? id,
+    mostrarTitulo: ids.length > 1,
+    campos: campos.filter((item) => item.grupo === id),
+  }));
+}
+
 const SIM_NAO = [
   { valor: "sim", rotulo: "Sim" },
   { valor: "nao", rotulo: "Não" },
 ];
 
-/** O controle certo para o tipo do campo (texto, data, valor, opção…). */
-export function Controle({ item, valor, onChange }: { item: CampoProcesso; valor: string; onChange: (valor: string) => void }) {
+/** O controle certo para o tipo do campo (texto, data, valor, opção, escolha do cadastro…). */
+export function Controle({ item, valor, onChange, uf = null }: { item: CampoProcesso; valor: string; onChange: (valor: string) => void; uf?: string | null }) {
   if (!item.editavel) return <Input value={valor} disabled readOnly />;
+  if (item.lista) return <ControleDeLista item={item} valor={valor} onChange={onChange} uf={uf} />;
   switch (item.tipo) {
     case "texto_longo":
       return <Textarea value={valor} onChange={(evento) => onChange(evento.target.value)} rows={6} className="text-sm" />;
@@ -84,6 +97,8 @@ export function EditarCampos({
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
 
+  // Cidade e comarca são escolhidas na lista da UF (a do formulário, se a UF estiver sendo editada).
+  const uf = (formulario.uf !== undefined ? formulario.uf : String(valores.uf ?? "")).trim().toUpperCase() || null;
   const alterados = campos.filter((item) => item.editavel && formulario[item.chave] !== iniciais[item.chave]);
   const paraVios = alterados.filter((item) => item.origem === "vios").length;
 
@@ -133,8 +148,11 @@ export function EditarCampos({
       }
     >
       {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
-      <div className="grid gap-x-4 gap-y-4 sm:grid-cols-2">
-        {campos.map((item) => (
+      {gruposDosCampos(campos).map((grupo) => (
+        <section key={grupo.id} className="space-y-3">
+          {grupo.mostrarTitulo ? <h3 className="border-b border-[#e6eef0] pb-1.5 text-xs font-semibold uppercase text-[#285f7a]">{grupo.rotulo}</h3> : null}
+          <div className="grid gap-x-4 gap-y-4 sm:grid-cols-2">
+            {grupo.campos.map((item) => (
           <Campo
             key={item.chave}
             className={item.tipo === "texto_longo" || item.tipo === "lista" ? "sm:col-span-2" : undefined}
@@ -146,12 +164,14 @@ export function EditarCampos({
                 </Selo>
               </span>
             }
-            dica={!item.editavel ? "Vem do VIOS e não é editado aqui." : item.tipo === "lista" ? "Um por linha." : undefined}
+            dica={!item.editavel ? "Vem do VIOS e não é editado aqui." : item.tipo === "lista" && !item.lista ? "Um por linha." : undefined}
           >
-            <Controle item={item} valor={formulario[item.chave] ?? ""} onChange={(valor) => setFormulario((atual) => ({ ...atual, [item.chave]: valor }))} />
+            <Controle item={item} valor={formulario[item.chave] ?? ""} uf={uf} onChange={(valor) => setFormulario((atual) => ({ ...atual, [item.chave]: valor }))} />
           </Campo>
-        ))}
-      </div>
+            ))}
+          </div>
+        </section>
+      ))}
     </DialogoAcao>
   );
 }
