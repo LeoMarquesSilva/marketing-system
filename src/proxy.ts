@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { loginPathWithReturn } from "@/lib/login-redirect";
 
-const PUBLIC_PATHS = ["/login", "/redefinir-senha", "/t", "/nps", "/leituras", "/manuais", "/materiais", "/ficha-cadastral", "/dress-code"];
+// /festa-10-anos: passa aqui só para o WhatsApp ler a prévia do link. A tela continua exigindo
+// login no AuthGuard (que devolve a pessoa para o link depois de entrar) e os dados, na API.
+const PUBLIC_PATHS = ["/login", "/redefinir-senha", "/primeiro-acesso", "/t", "/nps", "/leituras", "/manuais", "/materiais", "/ficha-cadastral", "/dress-code", "/festa-10-anos"];
 const PUBLIC_API_PREFIXES = ["/api/evolution/webhook"];
 
 /** Perfil profissional público (não confundir com /perfil = conta autenticada). */

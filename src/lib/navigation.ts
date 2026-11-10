@@ -21,12 +21,14 @@ import {
   Clapperboard,
   Coffee,
   Columns3,
+  Compass,
   Contact,
   Crosshair,
   Heart,
   House,
   IdCard,
   LayoutDashboard,
+  Link2,
   Mail,
   Megaphone,
   MessageSquareHeart,
@@ -55,6 +57,10 @@ import {
   TEAM_SURVEYS_KEY,
   hasTeamSurveysAccess,
   isTeamSurveysPath,
+  PE27_KEY,
+  hasPe27Access,
+  isPe27Path,
+  isPe27OnlyProfile,
   hasCafeCulturaAccess,
   hasFacilitiesAccess,
   hasIcpAccess,
@@ -132,6 +138,24 @@ export const NAV_FRONTS: NavFront[] = [
         title: "Meu desempenho",
         icon: House,
         pages: [{ href: "/conteudo/inicio", label: "Início" }],
+      },
+    ],
+  },
+  {
+    id: "estrategia",
+    label: "Estratégia",
+    features: [
+      {
+        // Planejamento Estratégico 2027: insumos do workshop, revisão dos sócios e, depois, plano tático. Admin edita; a chave /pe27 dá só leitura.
+        id: "pe27",
+        label: "PE27 · Planejamento 2027",
+        title: "PE27 · Planejamento Estratégico 2027",
+        shortLabel: "PE27",
+        icon: Compass,
+        pages: [
+          { href: PE27_KEY, label: "Visão geral" },
+          { href: `${PE27_KEY}/insumos`, label: "Insumos do workshop" },
+        ],
       },
     ],
   },
@@ -297,14 +321,11 @@ export const NAV_FRONTS: NavFront[] = [
       },
       {
         id: "colaboradores",
-        // Fichas de admissão, atualização cadastral e qualificação jurídica.
+        // Fichas de admissão, atualização cadastral e boas-vindas de quem entra.
         label: "Dados cadastrais",
         shortLabel: "Cadastro",
         icon: IdCard,
-        pages: [
-          { href: "/rh/qualificacoes", label: "Qualificações" },
-          { href: "/rh/fichas-cadastrais", label: "Fichas cadastrais" },
-        ],
+        pages: [{ href: "/rh/fichas-cadastrais", label: "Fichas cadastrais" }],
       },
       {
         id: "organograma",
@@ -354,7 +375,7 @@ export const NAV_FRONTS: NavFront[] = [
         id: "operacoes-legais",
         label: "Visão geral",
         title: "Operações Legais",
-        shortLabel: "Legal Ops",
+        shortLabel: "Operações Legais",
         icon: Scale,
         pages: [{ href: "/operacoes-legais", label: "Operações Legais" }],
       },
@@ -456,6 +477,7 @@ export const NAV_FRONTS: NavFront[] = [
 /** Telas com cabeçalho próprio que não aparecem na sidebar. */
 const EXTRA_HEADERS: Array<{ href: string; eyebrow: string; title: string; icon: LucideIcon }> = [
   { href: "/perfil", eyebrow: "Conta", title: "Meu perfil", icon: User },
+  { href: "/meus-links", eyebrow: "Conta", title: "Meus links", icon: Link2 },
   { href: "/cafe-com-cultura", eyebrow: "Pessoas e Cultura", title: "Café com Cultura", icon: Coffee },
   { href: "/nfc/leituras", eyebrow: "NFC Hub", title: "Leituras que formam trajetórias", icon: Nfc },
 ];
@@ -472,7 +494,6 @@ const ALWAYS_VISIBLE = new Set([
 ]);
 
 const RH_RESTRICTED = new Set([
-  "/rh/qualificacoes",
   "/rh/fichas-cadastrais",
   "/rh/organograma",
   "/rh/boas-praticas",
@@ -495,6 +516,8 @@ const COLLABORATOR_PAGES = new Set([
  * permissões explícitas, colaborador de conteúdo (sem permissões) e legado/admin.
  */
 export function createNavVisibility(profile: NavProfile | null | undefined): (href: string) => boolean {
+  // Consultores externos liberados só no PE27 não veem nem as telas abertas a todos.
+  if (isPe27OnlyProfile(profile)) return (href) => isPe27Path(href);
   const feriasView =
     hasHrAccess(profile?.role, profile?.permissions) || profile?.ferias_view_enabled === true;
   const gustavo = canAccessGustavoContent(profile);
@@ -513,6 +536,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
       if (isVistagemPath(href)) return canSeeVistagemPath(profile, href);
       if (isOpsPlannerPath(href)) return opsPlanner;
       if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
+      if (isPe27Path(href)) return hasPe27Access(profile);
       if (href.startsWith("/operacoes-legais")) return hasOperacoesLegaisAccess(profile);
       if (href === "/icp") return hasIcpAccess(profile);
       if (href === "/conteudo/gustavo") return gustavo;
@@ -528,6 +552,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
     return (href) => {
       if (COLLABORATOR_PAGES.has(href)) return true;
       if (isOpsPlannerPath(href)) return opsPlanner;
+      if (isPe27Path(href)) return hasPe27Access(profile);
       if (href === "/rh/ferias") return feriasView;
       if (href === "/conteudo/gustavo") return gustavo;
       if (href === TEAM_POSTS_PATH) return teamPosts;
@@ -541,6 +566,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
     if (isVistagemPath(href)) return canSeeVistagemPath(profile, href);
     if (isOpsPlannerPath(href)) return opsPlanner;
     if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
+    if (isPe27Path(href)) return hasPe27Access(profile);
     if (href.startsWith("/operacoes-legais/")) return hasOperacoesLegaisAccess(profile);
     switch (href) {
       case "/conteudo/inicio":

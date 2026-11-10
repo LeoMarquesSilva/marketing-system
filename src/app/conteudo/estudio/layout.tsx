@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Kanit, Montserrat } from "next/font/google";
+import localFont from "next/font/local";
 import { studioFontFaceCss } from "@/lib/estudio/server";
 
 /*
@@ -7,8 +7,18 @@ import { studioFontFaceCss } from "@/lib/estudio/server";
  * Neue (licenciadas) pela rota /api/estudio/fontes, só se o arquivo estiver na pasta.
  * Enquanto a Neulis não chegar, os títulos usam a Montserrat Bold.
  */
-const kanit = Kanit({ subsets: ["latin"], weight: ["600"], variable: "--font-estudio-kanit", display: "block" });
-const montserrat = Montserrat({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-estudio-titulo", display: "block" });
+const kanit = localFont({
+  src: "../../../fonts/kanit-600-latin.woff2",
+  weight: "600",
+  variable: "--font-estudio-kanit",
+  display: "block",
+});
+const montserrat = localFont({
+  src: "../../../fonts/montserrat-latin-variable.woff2",
+  weight: "400 700",
+  variable: "--font-estudio-titulo",
+  display: "block",
+});
 
 export const dynamic = "force-dynamic";
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
 import {
   ArrowLeft,
   Bot,
@@ -34,24 +35,30 @@ import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import { ROTULO_ETIQUETA, chaveNome } from "@/lib/vistagem/agendamento";
+import { vaiParaCentral } from "@/lib/vistagem/central";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import { MAX_TEXTO_INCONSISTENCIA, TIPOS_INCONSISTENCIA_JURIDICO } from "@/lib/vistagem/inconsistencias";
-import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, InconsistenciaItem, PublicacaoResumo } from "@/lib/vistagem/types";
+import { podeEditarNaConferencia } from "@/lib/vistagem/ajuste-conferencia";
+import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, InconsistenciaItem, PublicacaoResumo, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
+import { EditarTarefa } from "./editar-tarefa";
 import { FaixaDoProcesso, NA_FAIXA } from "./faixa-processo";
 import { FichaPasta } from "./ficha-pasta";
 import { FichaProcesso, ResumoDaFicha } from "./ficha-processo";
+import { BotaoHistorico } from "./historico-publicacao";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { FiltroData, dataNaLista } from "./filtro-data";
 import { LeitorPublicacao } from "./leitor-publicacao";
 import { IconeArea, IconeTribunal, LogoGrupo } from "./marcas";
 import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
 import { camposDaConferencia, combinaCampos } from "@/lib/vistagem/busca";
+import { SITUACOES_NO_ROBO, situacaoNoRobo, type SituacaoNoRobo } from "@/lib/vistagem/situacao-robo";
 import { ReguaDatas } from "./regua-datas";
 import { SeloResultadoIa, SugestaoNaConferencia } from "./sugestao-ia-ui";
 import { IconeOpcao, Seletor } from "./seletor";
 import { AvatarPessoa } from "./combobox-busca";
-import { CartoesTarefas, ENVIO, LinkVios } from "./tarefas-conferencia";
+import { CartoesTarefas, LinkVios, corDoTextoDoEnvio, envioDaTarefa } from "./tarefas-conferencia";
+import { PainelAberturaDePasta, SeloAberturaDePasta } from "./abertura-pasta";
 import { SeloEsocial, contarPor, formatarData, formatarDataHora, tribunalDe } from "./publicacao-ui";
 import {
   Aviso,
@@ -68,12 +75,22 @@ import {
   TOM_CLASSE,
 } from "./ui";
 
-type Aba = "conferir" | "enviadas" | "inconsistencias";
+type Aba = "conferir" | "enviadas" | "aberturas" | "inconsistencias";
 
 /** Retorno de uma ação da tela (sucesso, alerta, informação ou erro). */
 type Retorno = { tom: "sucesso" | "erro" | "alerta" | "info"; texto: string };
 
 const temErro = (item: ConferenciaItem) => item.agendamentos.some((agendamento) => agendamento.envioStatus === "erro");
+
+/** Ícone de cada situação no filtro Status do robô. */
+const ICONE_SITUACAO: Record<SituacaoNoRobo, LucideIcon> = {
+  erro: CircleAlert,
+  aguardando_vios: Hourglass,
+  com_robo: Bot,
+  na_fila: Inbox,
+  simulada: FileSearch,
+  agendada: CircleCheck,
+};
 
 const processoDe = (item: ConferenciaItem) => item.publicacao.numeroProcesso ?? item.publicacao.numeroProcessoOriginal;
 
@@ -214,6 +231,7 @@ export function TabelaTarefas({ agendamentos, comEnvio, compacta = false }: { ag
                 <span className="tabular-nums text-foreground">
                   {formatarData(item.data)}
                   {!item.dataFatal && item.hora ? ` às ${item.hora}${item.horaFim ? ` até ${item.horaFim}` : ""}` : ""}
+                  {item.dataLimite && item.dataLimite !== item.data ? ` · limite ${formatarData(item.dataLimite)}` : ""}
                 </span>
                 {item.dataFatal ? (
                   <span className="mt-0.5 block text-xs text-muted-foreground">
@@ -236,15 +254,15 @@ export function TabelaTarefas({ agendamentos, comEnvio, compacta = false }: { ag
                         Simulada
                       </Selo>
                     ) : (
-                      <Selo tom={ENVIO[item.envioStatus].tom}>
-                        {ENVIO[item.envioStatus].rotulo}
+                      <Selo tom={envioDaTarefa(item).tom}>
+                        {envioDaTarefa(item).rotulo}
                         {item.envioSimulado ? " (simulação)" : ""}
                       </Selo>
                     )}
                     {item.viosTarefaId ? <LinkVios ci={item.viosTarefaId} /> : null}
                   </div>
                   {simulada ? <span className="mt-1 block text-xs text-muted-foreground">Preenchida no VIOS, não gravada</span> : null}
-                  {item.envioErro ? <span className="mt-1 block whitespace-pre-wrap break-words text-xs text-red-700">{item.envioErro}</span> : null}
+                  {item.envioErro ? <span className={cn("mt-1 block whitespace-pre-wrap break-words text-xs", corDoTextoDoEnvio(item))}>{item.envioErro}</span> : null}
                 </Celula>
               ) : null}
               <FluxoDaTarefaAgendada item={item} />
@@ -304,7 +322,8 @@ function FluxoDaTarefaAgendada({ item }: { item: AgendamentoResumo }) {
                     <span className="text-muted-foreground">{tarefa.responsaveis}</span>
                   </>
                 )}
-                {tarefa.editada ? <Selo tom="marca">alterada pelo jurídico</Selo> : null}
+                {tarefa.editada ? <Selo tom="marca">data alterada</Selo> : null}
+                {tarefa.responsaveisEscolhidos && !tarefa.repetida ? <Selo tom="marca">responsável escolhido</Selo> : null}
                 {tarefa.ajustada ? <Selo tom="marca">{tarefa.ajustada === "hoje" ? "VIOS daria antes de hoje" : "apertada antes da fatal"}</Selo> : null}
                 {!tarefa.repetida && tarefa.data && tarefa.dataVios && tarefa.data !== tarefa.dataVios ? (
                   <span className="text-muted-foreground">VIOS daria {formatarData(tarefa.dataVios)}</span>
@@ -458,6 +477,7 @@ function ItemConferencia({
   onAbrir,
   onVoltar,
   onConcluido,
+  onEditado,
 }: {
   item: ConferenciaItem;
   comEnvio: boolean;
@@ -468,7 +488,13 @@ function ItemConferencia({
   onAbrir: (id: string) => void;
   onVoltar: () => void;
   onConcluido?: (id: string, mensagem: string) => void;
+  /** Tarefa ajustada pelo lápis: a publicação continua aberta, com as tarefas recarregadas. */
+  onEditado: (mensagem: string) => Promise<void>;
 }) {
+  /** Tarefa com o modal do lápis aberto. */
+  const [editando, setEditando] = useState<AgendamentoResumo | null>(null);
+  /** Lista de pessoas e fluxos da pasta para o lápis: carrega no primeiro uso e vale para as outras tarefas da publicação. */
+  const [dadosDoLapis, setDadosDoLapis] = useState<VistagemDetalhe | null>(null);
   const [devolvendo, setDevolvendo] = useState(false);
   const [tipoInconsistencia, setTipoInconsistencia] = useState("");
   const [motivo, setMotivo] = useState("");
@@ -482,6 +508,8 @@ function ItemConferencia({
   const podeReenviar =
     comEnvio && modoReal && item.agendamentos.some((a) => a.envioSimulado && (a.envioStatus === "concluido" || a.envioStatus === "erro"));
   const dialogoAberto = devolvendo || confirmacao !== null;
+  // Sem pasta no VIOS: ao validar, vai como abertura de pasta para a Central do SharePoint, não para o robô.
+  const abertura = vaiParaCentral(publicacao);
 
   /** Roda de novo as tarefas com erro; se o servidor pedir confirmação (pode duplicar no VIOS), abre o modal. */
   async function rodarDeNovo(forcar: boolean) {
@@ -517,7 +545,11 @@ function ItemConferencia({
       onConcluido?.(
         publicacao.id,
         acao === "validar"
-          ? `${corpo.enviadas} tarefa(s) enviada(s) ao robô${corpo.simulado ? " em modo simulação" : ""}.`
+          ? corpo.central
+            ? corpo.central.itemId
+              ? `Sem pasta no VIOS: pedido de abertura de pasta criado na Central do SharePoint (item ${corpo.central.itemId}).`
+              : "Sem pasta no VIOS: a Central do SharePoint não respondeu. Veja em Abertura de pasta."
+            : `${corpo.enviadas} tarefa(s) enviada(s) ao robô${corpo.simulado ? " em modo simulação" : ""}.`
           : acao === "reenviar"
             ? `${corpo.enviadas} tarefa(s) reenviada(s) ao robô para gravar no VIOS.`
             : "Devolvida ao jurídico."
@@ -547,7 +579,7 @@ function ItemConferencia({
             </Button>
             <Button size="sm" className={BOTAO_FAIXA_PRINCIPAL} onClick={() => agir("validar")} disabled={ocupado}>
               {ocupado && !dialogoAberto ? spinner : <Send />}
-              Validar e enviar ao robô
+              {abertura ? "Validar e enviar à Central" : "Validar e enviar ao robô"}
             </Button>
           </>
         ) : null}
@@ -596,6 +628,8 @@ function ItemConferencia({
           </>
         }
       >
+        {/* O que aconteceu com a publicação: triagem, transferência de área, vistagem, devolução, robô. */}
+        <BotaoHistorico publicacaoId={publicacao.id} processo={processo} className={cn(BOTAO_FAIXA, acoes && "mr-1")} />
         {acoes ? <div className="flex flex-wrap items-center gap-2" data-tour="cf-acoes">{acoes}</div> : null}
         {navegacao ? (
           <div className={cn("flex items-center gap-1", acoes && "ml-2 border-l border-white/20 pl-2")}>
@@ -657,6 +691,14 @@ function ItemConferencia({
 
         {/* A coluna inteira tem o fundo das tarefas: com uma tarefa curta, o espaço que sobra embaixo é a própria coluna, não um vazio branco. */}
         <div className="min-w-0 border-t border-[#e6eef0] bg-[#f2f6f7] @4xl:overflow-y-auto @4xl:border-t-0 max-lg:@4xl:max-h-[75dvh]">
+          {abertura && !comEnvio ? (
+            <div className="px-4 pt-4">
+              <Aviso tom="info" titulo="Sem pasta no VIOS">
+                Ao validar, as tarefas não vão para o robô: viram um pedido de abertura de pasta na Central do SharePoint.
+              </Aviso>
+            </div>
+          ) : null}
+
           {publicacao.observacaoVistagem ? (
             <Secao titulo="Observação do jurídico" id={`${base}-observacao`}>
               <p className="whitespace-pre-wrap break-words text-sm text-foreground">{publicacao.observacaoVistagem}</p>
@@ -687,10 +729,34 @@ function ItemConferencia({
               </h3>
               <span className="text-xs text-muted-foreground">{resumoTarefas(item.agendamentos, comEnvio)}</span>
             </div>
-            <CartoesTarefas agendamentos={item.agendamentos} comEnvio={comEnvio} fotos={fotos} hoje={hoje} />
+            <CartoesTarefas
+              agendamentos={item.agendamentos}
+              comEnvio={comEnvio}
+              fotos={fotos}
+              hoje={hoje}
+              onEditar={setEditando}
+              podeEditar={(agendamento) => podeEditarNaConferencia(publicacao.status, agendamento.envioStatus)}
+            />
           </section>
         </div>
       </div>
+
+      {editando ? (
+        <EditarTarefa
+          key={editando.id}
+          publicacaoId={publicacao.id}
+          processo={processo}
+          tarefa={editando}
+          comEnvio={comEnvio}
+          dados={dadosDoLapis}
+          onDados={setDadosDoLapis}
+          onFechar={() => setEditando(null)}
+          onSalva={async (mensagem) => {
+            await onEditado(mensagem);
+            setEditando(null);
+          }}
+        />
+      ) : null}
 
       <DialogoAcao
         aberto={devolvendo}
@@ -912,6 +978,7 @@ function LinhaDaFila({ item, comEnvio, aberta, onAbrir }: { item: ConferenciaIte
             Risco
           </Selo>
         ) : null}
+        <SeloAberturaDePasta publicacao={publicacao} />
         {comEnvio && temErro(item) ? (
           <Selo tom="perigo" icone={CircleAlert}>
             Erro no robô
@@ -952,6 +1019,8 @@ function Conferencia() {
   const [area, setArea] = useState("");
   /** Tribunal; vazio é "Todos os tribunais". */
   const [tribunal, setTribunal] = useState("");
+  /** Enviadas ao robô: situação no robô (erro, aguardando o VIOS…); vazio é "Todos os status". */
+  const [statusRobo, setStatusRobo] = useState("");
   /** Publicação escolhida; sem escolha (ou fora dos filtros), abre a primeira da fila. */
   const [selecionada, setSelecionada] = useState<string | null>(null);
   /** A fila abre recolhida, como na vistagem: a publicação ocupa a largura toda. */
@@ -968,7 +1037,7 @@ function Conferencia() {
       setDados(corpo);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao carregar a conferência.");
-      setDados({ aConferir: [], enviadas: [], envioSimulado: true, fotos: {}, hoje: new Date().toISOString().slice(0, 10) });
+      setDados({ aConferir: [], enviadas: [], aberturas: [], envioSimulado: true, fotos: {}, hoje: new Date().toISOString().slice(0, 10) });
     }
   }, []);
 
@@ -988,7 +1057,9 @@ function Conferencia() {
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao atualizar.");
       setRetorno({
         tom: "info",
-        texto: `${corpo.consultadas} tarefa(s) consultada(s): ${corpo.concluidas} concluída(s) pelo robô, ${corpo.erros} com erro.`,
+        texto:
+          `${corpo.consultadas} tarefa(s) consultada(s): ${corpo.concluidas} concluída(s) pelo robô, ${corpo.erros} com erro.` +
+          (corpo.checadasSozinhas ? ` ${corpo.checadasSozinhas} CIÊNCIA NF única com check automático.` : ""),
       });
       await carregar();
     } catch (e) {
@@ -1000,6 +1071,8 @@ function Conferencia() {
 
   const aConferir = useMemo(() => dados?.aConferir ?? [], [dados]);
   const enviadas = useMemo(() => dados?.enviadas ?? [], [dados]);
+  const aberturas = useMemo(() => dados?.aberturas ?? [], [dados]);
+  const aberturasSemItem = aberturas.filter((item) => !item.publicacao.centralItemId).length;
   // O que a busca olha em cada publicação (inclui as partes do texto): montado uma vez por carga, não a cada letra.
   const camposDeBusca = useMemo(
     () => new Map([...aConferir, ...enviadas].map((item) => [item.publicacao.id, camposDaConferencia(item)])),
@@ -1060,10 +1133,16 @@ function Conferencia() {
   const daArea = (lista ?? []).filter((item) => !areaAtiva || areaDe(item) === areaAtiva);
   const tribunaisDaLista = contarPor(daArea, (item) => tribunalDe(item.publicacao));
   const tribunalAtivo = tribunaisDaLista.some(([nome]) => nome === tribunal) ? tribunal : "";
+  // Status do robô: só em Enviadas ao robô; contado na área e no tribunal escolhidos. O escolhido que sumiu deixa de filtrar.
+  const situacaoDe = (item: ConferenciaItem): SituacaoNoRobo => situacaoNoRobo(item.agendamentos);
+  const doTribunal = daArea.filter((item) => !tribunalAtivo || tribunalDe(item.publicacao) === tribunalAtivo);
+  const situacoesDaLista = aba === "enviadas" ? contarPor(doTribunal, situacaoDe) : [];
+  const statusRoboAtivo = situacoesDaLista.some(([valor]) => valor === statusRobo) ? statusRobo : "";
   const filtrada = daArea.filter(
     (item) =>
       combinaCampos(camposDeBusca.get(item.publicacao.id) ?? [], busca) &&
       (!tribunalAtivo || tribunalDe(item.publicacao) === tribunalAtivo) &&
+      (!statusRoboAtivo || situacaoDe(item) === statusRoboAtivo) &&
       (!dataAtiva || item.publicacao.dataPublicacao === dataAtiva) &&
       (!importacaoAtiva || item.publicacao.dataImportacao === importacaoAtiva)
   );
@@ -1073,6 +1152,7 @@ function Conferencia() {
     setBusca("");
     setArea("");
     setTribunal("");
+    setStatusRobo("");
     setDataPublicacao("");
     setDataImportacao("");
   }
@@ -1132,6 +1212,7 @@ function Conferencia() {
             options={[
               { value: "conferir", label: dados ? `A conferir ${aConferir.length}` : "A conferir" },
               { value: "enviadas", label: dados ? `Enviadas ao robô ${enviadas.length}` : "Enviadas ao robô" },
+              { value: "aberturas", label: !dados ? "Abertura de pasta" : aberturasSemItem ? `Abertura de pasta ${aberturas.length} (${aberturasSemItem} sem item)` : `Abertura de pasta ${aberturas.length}` },
               { value: "inconsistencias", label: "Inconsistências" },
             ]}
             onChange={setAba}
@@ -1139,7 +1220,7 @@ function Conferencia() {
           </div>
         }
       >
-        {aba !== "inconsistencias" ? (
+        {aba !== "inconsistencias" && aba !== "aberturas" ? (
           <>
             {!filaAberta ? (
               <Button type="button" variant="outline" className="hidden lg:inline-flex" onClick={() => setFilaRecolhida(false)} data-tour="cf-fila">
@@ -1183,6 +1264,20 @@ function Conferencia() {
         ) : null}
         {aba === "enviadas" ? (
           <>
+            <Seletor
+              rotulo="Status do robô"
+              className="sm:w-56"
+              valor={statusRoboAtivo}
+              onChange={setStatusRobo}
+              todos={{ rotulo: "Todos os status", contagem: doTribunal.length, icone: <IconeOpcao icone={Bot} /> }}
+              // Na ordem do filtro (primeiro o que pede ação), só as situações que existem na lista.
+              opcoes={SITUACOES_NO_ROBO.flatMap((situacao) => {
+                const quantidade = situacoesDaLista.find(([valor]) => valor === situacao.valor)?.[1];
+                return quantidade
+                  ? [{ valor: situacao.valor, rotulo: situacao.rotulo, descricao: situacao.descricao, contagem: quantidade, icone: <IconeOpcao icone={ICONE_SITUACAO[situacao.valor]} /> }]
+                  : [];
+              })}
+            />
             <Button variant="outline" onClick={atualizarEnvios} disabled={atualizando || rodando}>
               {atualizando ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
               Atualizar status do robô
@@ -1224,6 +1319,18 @@ function Conferencia() {
 
       {aba === "inconsistencias" ? (
         <PainelInconsistencias />
+      ) : aba === "aberturas" && dados ? (
+        <PainelAberturaDePasta
+          itens={aberturas}
+          onTentado={(texto) => {
+            setRetorno({ tom: "sucesso", texto });
+            void carregar();
+          }}
+          onErro={(texto) => {
+            setRetorno({ tom: "erro", texto });
+            void carregar();
+          }}
+        />
       ) : lista === undefined ? (
         <Painel>
           <Carregando rotulo="Carregando a conferência" />
@@ -1335,6 +1442,10 @@ function Conferencia() {
                 onAbrir={abrir}
                 onVoltar={() => setListaNoCelular(true)}
                 onConcluido={concluido}
+                onEditado={async (mensagem) => {
+                  setRetorno({ tom: "sucesso", texto: mensagem });
+                  await carregar();
+                }}
               />
             ) : null}
           </div>

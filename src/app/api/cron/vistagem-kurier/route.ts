@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedCronRequest } from "@/lib/cron-auth";
 import { alertarArquivoAtrasado, situacaoArquivoDoDia } from "@/lib/vistagem/alerta-arquivo-server";
+import { repassarAoBkp } from "@/lib/vistagem/bkp-sioe-server";
+import { repassarPendentesACentral } from "@/lib/vistagem/central-server";
 import { atualizarEnvios } from "@/lib/vistagem/juridico-server";
 import { sincronizarPastasVios } from "@/lib/vistagem/pastas-vios";
 import { sincronizarKurierSharePoint } from "@/lib/vistagem/server";
@@ -19,6 +21,14 @@ export async function GET(request: Request) {
     // Vínculo e auxiliar das pastas (Processos Lista do VIOS) antes de triar o dia.
     const pastasVios = await sincronizarPastasVios().catch((erro: unknown) => ({ erro: erro instanceof Error ? erro.message : String(erro) }));
     const resultado = await sincronizarKurierSharePoint();
+    // Pedido de abertura de pasta que não chegou à Central do SharePoint: tenta de novo antes de regravar o BKP.
+    const central = await repassarPendentesACentral().catch((erro: unknown) => ({ erro: erro instanceof Error ? erro.message : String(erro) }));
+    // Rede de segurança do BKP do SIOE: regrava o que fechou e não entrou na hora (desligado até a troca).
+    const bkp = await repassarAoBkp().catch((erro: unknown) => {
+      const mensagem = erro instanceof Error ? erro.message : String(erro);
+      console.error("[cron/vistagem-kurier] BKP do SIOE", mensagem);
+      return { erro: mensagem };
+    });
     // Publicações sem pasta: dados sugeridos (processo citado, parte cliente ou IA) para a controladoria conferir.
     const sugestoesPasta = await gerarSugestoesDeTriagem(60_000).catch((erro: unknown) => ({ erro: erro instanceof Error ? erro.message : String(erro) }));
     // Sugestão da IA para o Trabalhista já pronta quando o jurídico abrir; o que não couber a tela gera.
@@ -35,9 +45,9 @@ export async function GET(request: Request) {
     const falhas = resultado.resultados.filter((item) => item.situacao === "erro");
     if (falhas.length || resultado.triagem?.erro) {
       console.error("[cron/vistagem-kurier] falhas", { arquivos: falhas, triagem: resultado.triagem?.erro });
-      return NextResponse.json({ success: false, ...resultado, sugestoesIa, sugestoesPasta, envios, pastasVios, alertaArquivo }, { status: 502 });
+      return NextResponse.json({ success: false, ...resultado, central, bkp, sugestoesIa, sugestoesPasta, envios, pastasVios, alertaArquivo }, { status: 502 });
     }
-    return NextResponse.json({ success: true, ...resultado, sugestoesIa, sugestoesPasta, envios, pastasVios, alertaArquivo, finishedAt: new Date().toISOString() });
+    return NextResponse.json({ success: true, ...resultado, central, bkp, sugestoesIa, sugestoesPasta, envios, pastasVios, alertaArquivo, finishedAt: new Date().toISOString() });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao importar a Kurier.";
     console.error("[cron/vistagem-kurier]", message);

@@ -317,7 +317,7 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         id: "fluxo",
         titulo: "Fluxo das tarefas",
         quando: "a tarefa tiver fluxo no VIOS",
-        entao: `o VIOS cria as tarefas do fluxo junto. Revisar fica com o revisor; Protocolar com o responsável e ${PESSOA_FIXA_PROTOCOLAR}.`,
+        entao: `o VIOS cria as tarefas do fluxo junto. Revisar fica com o revisor; Protocolar com o responsável e ${PESSOA_FIXA_PROTOCOLAR}. Se o jurídico escolher outros responsáveis numa tarefa do fluxo, o robô põe os escolhidos.`,
         origem: "vios",
       },
       {

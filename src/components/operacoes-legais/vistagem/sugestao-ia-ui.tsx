@@ -28,7 +28,8 @@ export function SeloIa() {
 
 function detalheDaTarefa(tarefa: TarefaSugerida, fatal: string | null): string | null {
   if (tarefa.classe === "COMPROMISSO") return tarefa.data ? `${formatarData(tarefa.data)}${tarefa.hora ? ` às ${tarefa.hora}` : ""}` : null;
-  if (tarefa.classe !== "PRAZO") return null;
+  // Sem dias nem data: a tarefa não tem prazo próprio (a SENTENÇA).
+  if (tarefa.classe !== "PRAZO" || (!tarefa.dias && !tarefa.data)) return null;
   const prazo = tarefa.dias ? `${tarefa.dias} ${ROTULO_CONTAGEM[tarefa.contagem ?? "uteis"]}` : "data fixada";
   return fatal ? `${prazo} · fatal ${formatarData(fatal)}` : prazo;
 }

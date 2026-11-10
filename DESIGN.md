@@ -28,6 +28,7 @@ Vermelho, amber, verde e azul informativo ficam reservados para estados semantic
 - UI, tabelas e formularios: Geist Sans.
 - Numeros tecnicos e duracoes: Geist Mono.
 - Pontos institucionais curtos: Baloo Bhaiijaan 2 por `font-brand`.
+- Arquivos de fonte ficam em `src/fonts` e entram por `next/font/local`; nao usar `next/font/google` (o build nao pode depender do Google Fonts).
 - Texto operacional minimo: 12 px.
 - Letter spacing: sempre `0`.
 - Cada tela autenticada possui um unico `h1`, fornecido pelo header global.
@@ -38,7 +39,7 @@ Vermelho, amber, verde e azul informativo ficam reservados para estados semantic
 - Sidebar compacta com 72 px e expandida com 268 px ao receber hover ou foco.
 - Sidebar compacta mostra somente o simbolo; expandida mostra somente o logo horizontal.
 - Header com 64 px: icone da funcionalidade, frente como sobretitulo, nome da funcionalidade no `h1` e logo discreto em telas com espaco.
-- Navegacao organizada por frentes (Marketing, Relacionamento / Comercial, Pessoas e Cultura, Operacoes Legais, Facilities, Administracao). Cada item da sidebar e uma funcionalidade; frentes abrem e fecham e a escolha fica salva no navegador.
+- Navegacao organizada por frentes (Estrategia, Marketing, Relacionamento / Comercial, Pessoas e Cultura, Operacoes Legais, Facilities, Administracao). Cada item da sidebar e uma funcionalidade; frentes abrem e fecham e a escolha fica salva no navegador.
 - Funcionalidade com mais de uma pagina (ex.: Metricas de redes sociais) mostra as paginas como abas no header. Nomes, frentes e abas vem de `src/lib/navigation.ts`; nao repetir nomes em outro lugar.
 - Abas do header: no desktop ficam na mesma linha de 64 px, depois de um divisor (telas de lista contam com essa altura); abaixo de `lg` descem para uma segunda linha rolavel. Aba ativa em texto escuro e semibold com traco de 3 px `#347796` na base do header; as outras neutras, com fundo leve no hover. Abas que nao cabem rolam com as bordas esmaecidas, setas para mouse e a ativa sempre a vista. Com abas, o logo horizontal so aparece em `2xl`.
 - Contador de aba: pilula `rounded-full` com o numero (neutra `#eaf2f5`/`#285f7a`; na aba ativa, `#347796` com texto branco; amber so para alerta). Zero nao aparece. Contadores que sao so do header (ex.: filas da Vistagem) nao somam na sidebar; sem abas, o numero vai ao lado do titulo com o resumo ("12 para vistar").

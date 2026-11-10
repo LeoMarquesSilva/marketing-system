@@ -17,6 +17,7 @@ import {
   FileText,
   ListPlus,
   MessageSquareText,
+  Pencil,
   Users,
   Workflow,
   Landmark,
@@ -49,14 +50,21 @@ import {
   contagemPadraoDaArea,
   horaFinalPadrao,
   horaValida,
+  mesmasPessoas,
+  nomesDasPessoas,
+  observacaoObrigatoria,
+  pedeDataLimite,
+  revisorFicaNaTarefa,
   separarNomes,
   type EtiquetaAgendamento,
 } from "@/lib/vistagem/agendamento";
 import { cienciaDosAgendamentos, cienciaQueFica, ehCienciaDosAgendamentos } from "@/lib/vistagem/ciencia-agendamentos";
 import {
   CONTAGENS_PRAZO,
+  ROTULO_CONTAGEM,
   criarCalendario,
   criarCalendarioDePrazo,
+  dataDaTarefaSemPrazo,
   datasDoPrazo,
   fatalPorContagem,
   noRecessoForense,
@@ -71,13 +79,15 @@ import {
   pedeTarefaEsocial,
   type ClassificacaoEsocial,
 } from "@/lib/vistagem/esocial";
-import { CADEIA_PADRAO, cadeiaDoFluxo } from "@/lib/vistagem/fluxo-vios";
+import { CADEIA_PADRAO, cadeiaDoFluxo, semPrazoProprio } from "@/lib/vistagem/fluxo-vios";
 import { emOrdemDeArvore, fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
-import { prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
+import { fataisDoFluxo, prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
 import { fatalSugerida, sugestaoNaListaAtual, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
-import type { DataDoFluxo, PublicacaoResumo, ResolucaoPendencia, TarefaPrevista, VistagemDetalhe } from "@/lib/vistagem/types";
+import { vaiParaCentral } from "@/lib/vistagem/central";
+import type { DataDoFluxo, PublicacaoResumo, ResolucaoPendencia, ResultadoCentral, TarefaPrevista, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
+import { SeloAberturaDePasta } from "./abertura-pasta";
 import { CampoData, CampoHora } from "./campo-data";
 import { ESTILO_CLASSE, ICONE_CLASSE } from "./tarefas-conferencia";
 import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
@@ -116,6 +126,8 @@ interface Linha {
   hora: string;
   /** Compromisso: Hora final no VIOS (HH:MM); começa 1 hora depois da inicial e acompanha até a pessoa mudar. */
   horaFim: string;
+  /** SESSÃO DE JULGAMENTO: data limite no VIOS (AAAA-MM-DD). Vazia = a mesma data para conclusão, e acompanha quando ela muda. */
+  dataLimite: string;
   responsavel: string;
   revisor: string;
   observacao: string;
@@ -123,14 +135,14 @@ interface Linha {
   esocial: boolean;
   /** Veio da sugestão da IA. */
   ia: boolean;
-  /** Datas do Fluxo do VIOS que a pessoa mudou, pela chave do caminho (chaveDoCaminho). */
+  /** Datas e responsáveis do Fluxo do VIOS que a pessoa mudou, pela chave do caminho (chaveDoCaminho). */
   fluxoDatas: Record<string, DataDoFluxo>;
 }
 
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 
 /** Parte do cartão da tarefa ("O que", "Prazo", "Quem"): título pequeno com ícone e os campos embaixo. */
-function BlocoTarefa({ titulo, icone: Icone, acao, children }: { titulo: string; icone: LucideIcon; acao?: ReactNode; children: ReactNode }) {
+export function BlocoTarefa({ titulo, icone: Icone, acao, children }: { titulo: string; icone: LucideIcon; acao?: ReactNode; children: ReactNode }) {
   return (
     <section className="space-y-2">
       <h3 className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] font-semibold uppercase text-[#285f7a]">
@@ -196,6 +208,7 @@ function novaLinha(base: Partial<Linha> = {}): Linha {
     contagemPrazo: "uteis",
     hora: "",
     horaFim: "",
+    dataLimite: "",
     responsavel: "",
     revisor: "",
     observacao: "",
@@ -208,10 +221,22 @@ function novaLinha(base: Partial<Linha> = {}): Linha {
 
 const campo = campoClasse;
 
-function linhaCompleta(linha: Linha): boolean {
+/**
+ * `semFatal`: tarefa de Prazo sem prazo próprio no VIOS (a SENTENÇA), que leva a data dela em vez da fatal.
+ * `pedeObservacao`: tipo em que a Observação é obrigatória (CIÊNCIA NF).
+ * `pedeLimite`: tipo com data limite própria (SESSÃO DE JULGAMENTO), que não pode ficar antes da data.
+ */
+function linhaCompleta(linha: Linha, semFatal: boolean, pedeObservacao = false, pedeLimite = false): boolean {
   if (!linha.tarefa || !linha.responsavel) return false;
-  if (linha.etiqueta === "PRAZO") return Boolean(linha.dataFatal && linha.revisor);
+  if (pedeObservacao && !linha.observacao.trim()) return false;
+  if (pedeLimite && !dataLimiteValida(linha)) return false;
+  if (linha.etiqueta === "PRAZO") return Boolean((semFatal ? linha.data : linha.dataFatal) && linha.revisor);
   return Boolean(linha.data) && (linha.etiqueta !== "COMPROMISSO" || (horaValida(linha.hora) && horaFinalValida(linha)));
+}
+
+/** Data limite vazia (vai a mesma data) ou a data para conclusão ou depois. */
+function dataLimiteValida(linha: Pick<Linha, "data" | "dataLimite">): boolean {
+  return !linha.dataLimite || !linha.data || linha.dataLimite >= linha.data;
 }
 
 /** Hora final vazia (vai 1 hora depois) ou depois da inicial. */
@@ -317,9 +342,12 @@ function ContagemDoPrazo({ rotulo, valor, onChange }: { rotulo: string; valor: C
 /** Classe da tarefa pedida → cor do VIOS no calendário. */
 const TOM_DA_ETIQUETA: Record<Etiqueta, TomDoMarco> = { PRAZO: "prazo", PROVIDENCIA: "providencia", COMPROMISSO: "compromisso" };
 
-/** Quem fica na tarefa, com foto: "Leticia Zamarion Julio, Samuel Willian Silva" vira avatares com o nome curto. */
+/**
+ * Quem fica na tarefa, com foto: "Leticia Zamarion Julio, Samuel Willian Silva" (ou "… + Samuel Willian Silva", do
+ * 3. PROTOCOLAR) vira avatares com o nome curto.
+ */
 function PessoasDaTarefa({ nomes, foto }: { nomes: string | null | undefined; foto: (nome: string) => string | null }) {
-  const lista = separarNomes(nomes ?? "");
+  const lista = nomesDasPessoas(nomes);
   if (!lista.length) return null;
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -333,20 +361,99 @@ function PessoasDaTarefa({ nomes, foto }: { nomes: string | null | undefined; fo
   );
 }
 
+/**
+ * Quem fica numa tarefa do fluxo, com o botão para trocar: abre a busca de pessoas (as mesmas do Responsável). A
+ * escolha vai para o robô no lugar da regra dele; "voltar ao padrão" devolve a regra. Escolher as mesmas pessoas da
+ * regra não conta como mudança.
+ */
+function ResponsaveisDoFluxo({
+  tarefa,
+  pessoas,
+  onMudar,
+}: {
+  tarefa: TarefaPrevista;
+  pessoas: PessoasDoCampo;
+  onMudar: (nomes: string[] | null) => void;
+}) {
+  // Valor do campo enquanto o modal está aberto (null: fechado).
+  const [editando, setEditando] = useState<string | null>(null);
+  const escolhidos = tarefa.responsaveisEscolhidos ?? null;
+  const padrao = tarefa.responsaveisPadrao ?? tarefa.responsaveis;
+  const conhecidas = new Set((pessoas.ampliar?.todas ?? pessoas.opcoes).map((opcao) => chaveNome(opcao.nome)));
+  // Ao abrir, começa com quem já fica; "padrão do VIOS", "Estagiário da pasta"… não são pessoas da lista e ficam de fora.
+  const pessoasDe = (texto: string) => nomesDasPessoas(texto).filter((nome) => conhecidas.has(chaveNome(nome)));
+  const nomes = editando === null ? [] : separarNomes(editando);
+  const rotulo = `Responsáveis de ${tarefa.caminho.join(" › ")}`;
+  const aplicar = () => {
+    if (!nomes.length) return;
+    onMudar(mesmasPessoas(nomes, pessoasDe(padrao)) && pessoasDe(padrao).length === nomesDasPessoas(padrao).length ? null : nomes);
+    setEditando(null);
+  };
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setEditando((escolhidos ?? pessoasDe(tarefa.responsaveis)).join(", "))}
+        title={escolhidos ? `Escolhido na vistagem. Pela regra do robô: ${padrao}` : "Trocar quem fica nesta tarefa"}
+        aria-label={`Trocar os responsáveis de ${tarefa.caminho.join(" › ")}`}
+        className={cn(
+          "group/pessoas inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-[#47cdd0]/10",
+          escolhidos && "bg-[#eef6f8] ring-1 ring-[#347796]/35"
+        )}
+      >
+        {nomesDasPessoas(tarefa.responsaveis).length ? (
+          <PessoasDaTarefa nomes={tarefa.responsaveis} foto={pessoas.foto} />
+        ) : (
+          <span className="text-muted-foreground">escolher responsável</span>
+        )}
+        <Pencil className="size-3 shrink-0 text-muted-foreground opacity-60 group-hover/pessoas:opacity-100" aria-hidden />
+      </button>
+      {escolhidos ? (
+        <button type="button" className="font-medium text-[#347796] underline-offset-4 hover:underline" onClick={() => onMudar(null)}>
+          voltar ao padrão
+        </button>
+      ) : null}
+      <Dialog open={editando !== null} onOpenChange={(aberto) => !aberto && setEditando(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Responsáveis de {tarefa.nome}</DialogTitle>
+            <DialogDescription>
+              Pela regra do robô fica com {padrao}. Os escolhidos aqui o robô põe no VIOS depois de lançar.
+            </DialogDescription>
+          </DialogHeader>
+          {/* Altura para a lista de pessoas abrir dentro do modal. */}
+          <div className="min-h-[19rem]">
+            <CampoResponsaveis pessoas={pessoas} valor={editando ?? ""} onChange={setEditando} rotulo={rotulo} />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditando(null)}>
+              Cancelar
+            </Button>
+            <Button type="button" disabled={!nomes.length} onClick={aplicar}>
+              Aplicar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 /** Data curta da agenda: "qua, 12/11". */
 function diaDaAgenda(iso: string): string {
   const partes = partesDaData(iso);
   return `${partes.semana}, ${partes.dia}/${iso.slice(5, 7)}`;
 }
 
-function FluxoNoVios({
+export function FluxoNoVios({
   previstas,
   principal,
-  fatal,
+  fatais,
   hoje,
   ehDiaUtil,
   onMudarData,
-  foto,
+  onMudarResponsaveis,
+  pessoas,
   classeDe,
 }: {
   previstas: TarefaPrevista[];
@@ -354,23 +461,28 @@ function FluxoNoVios({
   classeDe: (nome: string) => Etiqueta | null;
   /** A tarefa pedida, com a data que vai para o VIOS (no Prazo, o Enviar), a classe e quem fica. */
   principal: { nome: string; data: string | null; etiqueta: Etiqueta; responsaveis: string };
-  /** Foto de cada pessoa (as mesmas dos campos Responsável e Revisor). */
-  foto: (nome: string) => string | null;
-  /** Data fatal do Prazo (só para situar no calendário). */
-  fatal: string | null;
+  /** As pessoas e as fotos dos campos Responsável e Revisor (para trocar quem fica numa tarefa do fluxo). */
+  pessoas: PessoasDoCampo;
+  /** Data fatal do Prazo ou, na tarefa sem prazo próprio, a de cada prazo que ela cria (só para situar no calendário). */
+  fatais: { rotulo: string; data: string; dica: string }[];
   hoje: string;
   ehDiaUtil: (iso: string) => boolean;
   onMudarData: (caminho: string[], data: string | null) => void;
+  /** null volta à regra do robô. */
+  onMudarResponsaveis: (caminho: string[], nomes: string[] | null) => void;
 }) {
   // Aberto por padrão: o calendário é para ser visto; a pessoa recolhe se quiser.
   const [aberto, setAberto] = useState(true);
+  const foto = pessoas.foto;
   const junto = previstas.filter((tarefa) => tarefa.quando === "criacao");
   const aoConcluir = previstas.filter((tarefa) => tarefa.quando === "conclusao");
   const alteradas = junto.filter((tarefa) => tarefa.editada).length;
   const repetidas = junto.filter((tarefa) => tarefa.repetida).length;
+  const pessoasTrocadas = junto.filter((tarefa) => tarefa.responsaveisEscolhidos && !tarefa.repetida).length;
   const resumo = [
     junto.length ? `cria junto ${plural(junto.length, "tarefa", "tarefas")}` : null,
     alteradas ? `${plural(alteradas, "data alterada", "datas alteradas")}` : null,
+    pessoasTrocadas ? `${plural(pessoasTrocadas, "responsável alterado", "responsáveis alterados")}` : null,
     repetidas ? `${plural(repetidas, "Ciência repetida", "Ciências repetidas")} (o robô cancela)` : null,
     aoConcluir.length ? `ao concluir, ${aoConcluir.map((tarefa) => tarefa.nome).join(", ")}` : null,
   ]
@@ -383,11 +495,11 @@ function FluxoNoVios({
   type Item =
     | { tipo: "principal"; chave: string; data: string }
     | { tipo: "fluxo"; chave: string; data: string | null; tarefa: TarefaPrevista }
-    | { tipo: "fatal"; chave: string; data: string };
+    | { tipo: "fatal"; chave: string; data: string; rotulo: string; dica: string };
   const itens: Item[] = [
     ...(principal.data ? [{ tipo: "principal" as const, chave: "principal", data: principal.data }] : []),
     ...emOrdemDeArvore(junto).map((tarefa) => ({ tipo: "fluxo" as const, chave: tarefa.caminho.join(" › "), data: tarefa.data, tarefa })),
-    ...(fatal ? [{ tipo: "fatal" as const, chave: "fatal", data: fatal }] : []),
+    ...fatais.map((fatal) => ({ tipo: "fatal" as const, chave: `fatal ${fatal.rotulo}`, ...fatal })),
   ];
   const numerado = (item: Item): item is Item & { data: string } => Boolean(item.data) && !(item.tipo === "fluxo" && item.tarefa.repetida);
   const numeros = new Map<string, number>();
@@ -404,7 +516,7 @@ function FluxoNoVios({
     item.tipo === "principal" ? tomDaPedida : item.tipo === "fatal" ? "fatal" : tomDoFluxo(item.tarefa);
   const editadaDe = (item: Item) => item.tipo === "fluxo" && item.tarefa.editada;
   // Só o nome da tarefa (sem "Enviar no VIOS:"): a cor e o número já dizem que é a pedida.
-  const nomeDe = (item: Item) => (item.tipo === "principal" ? principal.nome : item.tipo === "fatal" ? "Data fatal" : item.tarefa.nome);
+  const nomeDe = (item: Item) => (item.tipo === "principal" ? principal.nome : item.tipo === "fatal" ? item.rotulo : item.tarefa.nome);
   const marcos: MarcoDoCalendario[] = itens.filter(numerado).map((item) => ({
     chave: item.chave,
     numero: numeros.get(item.chave) ?? 0,
@@ -453,7 +565,7 @@ function FluxoNoVios({
         <ChevronRight className="size-3.5 shrink-0 transition-transform group-open:rotate-90" aria-hidden />
         <Workflow className="size-3.5 shrink-0 text-[#285f7a]" aria-hidden />
         <span className="font-medium text-[#285f7a]">Fluxo das tarefas</span>
-        <span className={cn("truncate", alteradas && "text-[#285f7a]")}>{resumo}</span>
+        <span className={cn("truncate", (alteradas || pessoasTrocadas) && "text-[#285f7a]")}>{resumo}</span>
       </summary>
       <div className="space-y-3 border-t border-[#e6eef0] px-3 py-3">
         {marcos.length ? (
@@ -476,7 +588,8 @@ function FluxoNoVios({
         {itens.length ? (
           <div className="space-y-1.5">
             <p className="text-muted-foreground">
-              O robô coloca os responsáveis. Para priorizar uma tarefa do fluxo, mude a data: o robô grava no VIOS depois de lançar.
+              Para priorizar uma tarefa do fluxo, mude a data; para outra pessoa fazer, clique em quem fica. O robô grava no VIOS depois de
+              lançar.
             </p>
             <ol className="divide-y divide-[#e6eef0] overflow-hidden rounded-md border border-[#e6eef0] bg-white">
               {itens.map((item) => (
@@ -511,14 +624,18 @@ function FluxoNoVios({
                   ) : item.tipo === "fluxo" ? (
                     <>
                       {campoDoFluxo(item.tarefa)}
-                      <PessoasDaTarefa nomes={item.tarefa.responsaveis} foto={foto} />
+                      <ResponsaveisDoFluxo
+                        tarefa={item.tarefa}
+                        pessoas={pessoas}
+                        onMudar={(nomes) => onMudarResponsaveis(item.tarefa.caminho, nomes)}
+                      />
                       {extrasDoFluxo(item.tarefa)}
                     </>
                   ) : (
                     <>
                       <span
                         className="w-[8.5rem] text-right tabular-nums text-muted-foreground"
-                        title={item.tipo === "principal" ? "Muda no campo de data da tarefa, acima." : "Muda no campo Data fatal, acima."}
+                        title={item.tipo === "fatal" ? item.dica : "Muda no campo de data da tarefa, acima."}
                       >
                         {diaDaAgenda(item.data)}
                       </span>
@@ -554,14 +671,70 @@ interface Navegacao {
  * Opções de Responsável e Revisor: as pessoas da área da publicação, com foto, e a lista inteira do VIOS para a
  * exceção (`ampliar`, null quando não há filtro). Quem já está escolhido vale mesmo fora da área.
  */
-interface PessoasDoCampo {
+export interface PessoasDoCampo {
   opcoes: OpcaoBusca[];
   ampliar: { todas: OpcaoBusca[]; area: string } | null;
   foto: (nome: string) => string | null;
 }
 
+/** Responsável e Revisor: só quem é da área da publicação, com foto; a última linha da lista abre todas as pessoas. */
+export function pessoasDoDetalhe(detalhe: VistagemDetalhe | null): PessoasDoCampo {
+  const fotos = detalhe?.fotos ?? {};
+  const filtro = detalhe?.pessoasDaArea ?? null;
+  const daArea = filtro ? new Set(filtro.nomes.map(chaveNome)) : null;
+  const todas = (detalhe?.catalogo?.usuarios ?? []).map((usuario): OpcaoBusca => {
+    const chave = chaveNome(usuario.nome);
+    // Na lista inteira, quem é de fora da área mostra a área dele ao lado do nome.
+    return { ...usuario, foto: fotos[chave] ?? null, detalhe: daArea && !daArea.has(chave) ? detalhe?.areaDasPessoas?.[chave] ?? null : null };
+  });
+  const opcoes = daArea ? todas.filter((opcao) => daArea.has(chaveNome(opcao.nome))) : todas;
+  return {
+    opcoes,
+    ampliar: filtro && opcoes.length < todas.length ? { todas, area: filtro.area } : null,
+    foto: (nome) => fotos[chaveNome(nome)] ?? null,
+  };
+}
+
+/**
+ * Classe de cada tipo de tarefa na lista do VIOS da área, pelo nome original: dá a cor das tarefas do fluxo (nome que
+ * aparece em mais de uma classe fica sem, e a tarefa usa a cor da pedida).
+ */
+export function classeNoCatalogo(catalogo: VistagemDetalhe["catalogo"] | undefined): (nome: string) => Etiqueta | null {
+  const classes = new Map<string, Set<Etiqueta>>();
+  for (const etiqueta of ETIQUETAS_AGENDAMENTO) {
+    for (const tarefa of catalogo?.tarefas[etiqueta] ?? []) {
+      const chave = chaveNome(tarefa.nomeVios ?? tarefa.nome);
+      classes.set(chave, (classes.get(chave) ?? new Set<Etiqueta>()).add(etiqueta));
+    }
+  }
+  return (nome) => {
+    const daTarefa = classes.get(chaveNome(nome));
+    return daTarefa?.size === 1 ? [...daTarefa][0] : null;
+  };
+}
+
+/**
+ * Data e/ou responsáveis de uma tarefa do Fluxo do VIOS mudados pela pessoa; null volta à data do VIOS ou à regra do
+ * robô. O que não vem na mudança fica como estava.
+ */
+export function comMudancaNoFluxo(
+  fluxoDatas: Record<string, DataDoFluxo>,
+  caminho: string[],
+  mudanca: { data?: string | null; responsaveis?: string[] | null }
+): Record<string, DataDoFluxo> {
+  const chave = chaveDoCaminho(caminho);
+  const atual = fluxoDatas[chave];
+  const data = (mudanca.data !== undefined ? mudanca.data : atual?.data) || null;
+  const responsaveis = mudanca.responsaveis !== undefined ? mudanca.responsaveis : atual?.responsaveis ?? null;
+  const novas = { ...fluxoDatas };
+  if (data || responsaveis?.length) {
+    novas[chave] = { caminho, ...(data ? { data } : {}), ...(responsaveis?.length ? { responsaveis } : {}) };
+  } else delete novas[chave];
+  return novas;
+}
+
 /** Um ou mais responsáveis; a fila do robô recebe os nomes separados por vírgula. */
-function CampoResponsaveis({
+export function CampoResponsaveis({
   pessoas,
   valor,
   onChange,
@@ -631,7 +804,8 @@ export function EditorVistagem({
   id: string;
   navegacao: Navegacao | null;
   onAbrir: (id: string) => void;
-  onConcluida: (id: string) => void;
+  /** `central`: a publicação não tem pasta e virou pedido de abertura na Central do SharePoint. */
+  onConcluida: (id: string, central: ResultadoCentral | null) => void;
   onTransferida: (destino: string) => void;
   onVoltar: () => void;
   /** "Agendar Direto" da controladoria: a pendência ainda na triagem, com escritório, grupo, risco e CI escolhidos. */
@@ -684,24 +858,26 @@ export function EditorVistagem({
         const contagemDaArea = contagemPadraoDaArea(dados.publicacao.escritorioResponsavel ?? dados.catalogo?.area);
         setLinhas(
           dados.agendamentos.length
-            ? dados.agendamentos.map((item) =>
-                novaLinha({
+            ? dados.agendamentos.map((item) => {
+                const semPrazo = item.etiqueta === "PRAZO" && semPrazoProprio(dados.fluxos[item.tarefaId ?? ""]);
+                return novaLinha({
                   etiqueta: item.etiqueta,
                   // a lista mostra o tipo junto quando o VIOS tem dois com o mesmo nome
                   tarefa: dados.catalogo?.tarefas[item.etiqueta].find((opcao) => opcao.id === item.tarefaId)?.nome ?? item.tarefa,
-                  data: item.etiqueta === "PRAZO" ? "" : item.data,
-                  dataFatal: item.dataFatal ?? "",
-                  diasPrazo: item.diasPrazo,
+                  data: item.etiqueta === "PRAZO" && !semPrazo ? "" : item.data,
+                  dataFatal: semPrazo ? "" : item.dataFatal ?? "",
+                  diasPrazo: semPrazo ? null : item.diasPrazo,
                   contagemPrazo: item.contagemPrazo ?? contagemDaArea,
                   hora: item.hora ?? "",
                   horaFim: item.horaFim ?? horaFinalPadrao(item.hora),
+                  dataLimite: item.dataLimite && item.dataLimite !== item.data ? item.dataLimite : "",
                   responsavel: item.responsavel,
                   revisor: item.etiqueta === "PROVIDENCIA" ? "" : item.revisor ?? "",
                   observacao: item.observacao ?? "",
                   esocial: tarefaEsocialId !== null && item.tarefaId === tarefaEsocialId,
                   fluxoDatas: Object.fromEntries(item.fluxoDatas.map((datada) => [chaveDoCaminho(datada.caminho), datada])),
-                })
-              )
+                });
+              })
             : [novaLinha({ responsavel: dados.responsavelSugerido ?? "", revisor: dados.revisorSugerido ?? "", contagemPrazo: contagemDaArea })]
         );
         if (dados.sugestaoIa) {
@@ -756,38 +932,35 @@ export function EditorVistagem({
       (caminho === null ? cienciaFica.caminho === null : cienciaFica.caminho !== null && chaveDoCaminho(cienciaFica.caminho) === chaveDoCaminho(caminho)));
   /** Úteis ou Corridos já marcado no Prazo: Corridos na Insolvência, Úteis nas outras áreas. */
   const contagemPadrao = contagemPadraoDaArea(detalhe?.publicacao.escritorioResponsavel ?? detalhe?.catalogo?.area);
-  // Responsável e Revisor: só quem é da área da publicação, com foto; a última linha da lista abre todas as pessoas.
-  const pessoasDoCampo = useMemo((): PessoasDoCampo => {
-    const fotos = detalhe?.fotos ?? {};
-    const filtro = detalhe?.pessoasDaArea ?? null;
-    const daArea = filtro ? new Set(filtro.nomes.map(chaveNome)) : null;
-    const todas = (detalhe?.catalogo?.usuarios ?? []).map((usuario): OpcaoBusca => {
-      const chave = chaveNome(usuario.nome);
-      // Na lista inteira, quem é de fora da área mostra a área dele ao lado do nome.
-      return { ...usuario, foto: fotos[chave] ?? null, detalhe: daArea && !daArea.has(chave) ? detalhe?.areaDasPessoas?.[chave] ?? null : null };
-    });
-    const opcoes = daArea ? todas.filter((opcao) => daArea.has(chaveNome(opcao.nome))) : todas;
-    return {
-      opcoes,
-      ampliar: filtro && opcoes.length < todas.length ? { todas, area: filtro.area } : null,
-      foto: (nome) => fotos[chaveNome(nome)] ?? null,
-    };
-  }, [detalhe]);
-  // Classe de cada tipo de tarefa na lista do VIOS da área, pelo nome original: dá a cor das tarefas do fluxo
-  // (nome que aparece em mais de uma classe fica sem, e a tarefa usa a cor da pedida).
-  const classeDaTarefa = useMemo(() => {
-    const classes = new Map<string, Set<Etiqueta>>();
-    for (const etiqueta of ETIQUETAS_AGENDAMENTO) {
-      for (const tarefa of detalhe?.catalogo?.tarefas[etiqueta] ?? []) {
-        const chave = chaveNome(tarefa.nomeVios ?? tarefa.nome);
-        classes.set(chave, (classes.get(chave) ?? new Set<Etiqueta>()).add(etiqueta));
-      }
-    }
-    return (nome: string): Etiqueta | null => {
-      const daTarefa = classes.get(chaveNome(nome));
-      return daTarefa?.size === 1 ? [...daTarefa][0] : null;
-    };
-  }, [detalhe?.catalogo]);
+  const pessoasDoCampo = useMemo(() => pessoasDoDetalhe(detalhe), [detalhe]);
+  const classeDaTarefa = useMemo(() => classeNoCatalogo(detalhe?.catalogo), [detalhe?.catalogo]);
+
+  /** Tarefa de Prazo sem prazo próprio no VIOS (a SENTENÇA): não pede fatal, e as do fluxo contam da data dela. */
+  function semFatal(linha: Pick<Linha, "etiqueta" | "tarefa">): boolean {
+    if (linha.etiqueta !== "PRAZO" || !detalhe?.catalogo) return false;
+    const id = detalhe.catalogo.tarefas.PRAZO.find((opcao) => opcao.nome === linha.tarefa)?.id;
+    return Boolean(id && semPrazoProprio(detalhe.fluxos[id]));
+  }
+
+  /** O tipo pede Observação (CIÊNCIA NF), pelo nome como está no VIOS: a lista pode mostrar "(tipo 316)" no fim. */
+  function pedeObservacao(linha: Pick<Linha, "etiqueta" | "tarefa">): boolean {
+    const opcao = detalhe?.catalogo?.tarefas[linha.etiqueta].find((item) => item.nome === linha.tarefa);
+    return observacaoObrigatoria(opcao ? opcao.nomeVios ?? opcao.nome : linha.tarefa);
+  }
+
+  /** O tipo tem data limite própria (SESSÃO DE JULGAMENTO), pelo nome como está no VIOS. */
+  function pedeLimite(linha: Pick<Linha, "etiqueta" | "tarefa">): boolean {
+    const opcao = detalhe?.catalogo?.tarefas[linha.etiqueta].find((item) => item.nome === linha.tarefa);
+    return pedeDataLimite(opcao ? opcao.nomeVios ?? opcao.nome : linha.tarefa);
+  }
+
+  function linhaPronta(linha: Linha): boolean {
+    return linhaCompleta(linha, semFatal(linha), pedeObservacao(linha), pedeLimite(linha));
+  }
+
+  function dataSemFatal(): string {
+    return detalhe ? dataDaTarefaSemPrazo(detalhe.publicacao.dataPublicacao, detalhe.hoje, ehDiaUtil) : "";
+  }
 
   function alterar(chave: number, mudanca: Partial<Linha>) {
     setLinhas((atuais) =>
@@ -800,18 +973,15 @@ export function EditorVistagem({
           mudanca.hora !== undefined && mudanca.horaFim === undefined && (!linha.horaFim || linha.horaFim === horaFinalPadrao(linha.hora))
             ? { horaFim: horaFinalPadrao(mudanca.hora) }
             : {};
-        return { ...linha, ...mudanca, ...horaFimAcompanha, ...(outroTipo && !mudanca.fluxoDatas ? { fluxoDatas: {} } : {}) };
+        // A data limite igual à data acompanha a data; a escolhida pela pessoa fica.
+        const limiteAcompanha = mudanca.data !== undefined && mudanca.dataLimite === undefined && linha.dataLimite === linha.data ? { dataLimite: "" } : {};
+        return { ...linha, ...mudanca, ...horaFimAcompanha, ...limiteAcompanha, ...(outroTipo && !mudanca.fluxoDatas ? { fluxoDatas: {} } : {}) };
       })
     );
   }
 
-  /** Data de uma tarefa do Fluxo do VIOS mudada pela pessoa; null volta à data do VIOS. */
-  function mudarDataDoFluxo(linha: Linha, caminho: string[], data: string | null) {
-    const chave = chaveDoCaminho(caminho);
-    const fluxoDatas = { ...linha.fluxoDatas };
-    if (data) fluxoDatas[chave] = { caminho, data };
-    else delete fluxoDatas[chave];
-    alterar(linha.chave, { fluxoDatas });
+  function mudarNoFluxo(linha: Linha, caminho: string[], mudanca: { data?: string | null; responsaveis?: string[] | null }) {
+    alterar(linha.chave, { fluxoDatas: comMudancaNoFluxo(linha.fluxoDatas, caminho, mudanca) });
   }
 
   /** Mais uma tarefa, já com o responsável e o revisor sugeridos da pasta (no topo e no fim da lista). */
@@ -826,12 +996,15 @@ export function EditorVistagem({
   /**
    * Ao escolher a tarefa de Prazo, já marca os dias do prazo legal do recurso (Apelação 15, Recurso Ordinário
    * trabalhista 8…). Não passa por cima de dias escolhidos à mão, lidos da publicação ou de uma fatal digitada; só troca
-   * os que vieram da tarefa anterior.
+   * os que vieram da tarefa anterior. A SENTENÇA não tem prazo próprio: já vem com a data dela, sem dias nem fatal.
    */
   function diasDaTarefa(linha: Linha, nome: string): Partial<Linha> {
     const dataPublicacao = detalhe?.publicacao.dataPublicacao;
     const catalogo = detalhe?.catalogo;
-    if (linha.etiqueta !== "PRAZO" || !dataPublicacao || !catalogo) return {};
+    if (linha.etiqueta !== "PRAZO") return {};
+    if (semFatal({ etiqueta: "PRAZO", tarefa: nome })) return { data: dataSemFatal(), dataFatal: "", diasPrazo: null };
+    const saindo = semFatal(linha) ? { data: "" } : {};
+    if (!dataPublicacao || !catalogo) return saindo;
     const legal = (nomeTarefa: string) => {
       const opcao = nomeTarefa ? catalogo.tarefas.PRAZO.find((item) => item.nome === nomeTarefa) : undefined;
       return opcao ? prazoLegalDaTarefa(opcao.nomeVios ?? opcao.nome, catalogo.area) : null;
@@ -840,10 +1013,10 @@ export function EditorVistagem({
     const anterior = legal(linha.tarefa);
     const vazio = linha.diasPrazo === null && !linha.dataFatal;
     const daTarefaAnterior = anterior !== null && linha.diasPrazo === anterior;
-    if (!vazio && !daTarefaAnterior) return {};
-    if (novo === null) return daTarefaAnterior ? { diasPrazo: null, dataFatal: "" } : {};
+    if (!vazio && !daTarefaAnterior) return saindo;
+    if (novo === null) return daTarefaAnterior ? { ...saindo, diasPrazo: null, dataFatal: "" } : saindo;
     const contagemPrazo = linha.contagemPrazo ?? contagemPadrao;
-    return { diasPrazo: novo, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, novo, contagemPrazo, contaPrazo) };
+    return { ...saindo, diasPrazo: novo, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, novo, contagemPrazo, contaPrazo) };
   }
 
   function trocarEtiqueta(linha: Linha, etiqueta: Etiqueta) {
@@ -851,6 +1024,7 @@ export function EditorVistagem({
     alterar(linha.chave, {
       etiqueta,
       tarefa: "",
+      ...(semFatal(linha) ? { data: "" } : {}),
       revisor:
         etiqueta === "PROVIDENCIA" ? "" : etiqueta === "PRAZO" && !linha.revisor ? detalhe?.revisorSugerido ?? "" : linha.revisor,
     });
@@ -890,18 +1064,20 @@ export function EditorVistagem({
       const opcao = catalogo.tarefas[tarefa.classe].find((item) => item.id === tarefa.tarefaId);
       if (!opcao) return [];
       const prazo = tarefa.classe === "PRAZO";
+      const semPrazo = semFatal({ etiqueta: tarefa.classe, tarefa: opcao.nome });
       return [
         novaLinha({
           etiqueta: tarefa.classe,
           tarefa: opcao.nome,
-          dataFatal: prazo ? fatalSugerida(tarefa, publicacao.dataPublicacao, contaPrazo) ?? "" : "",
-          diasPrazo: prazo ? tarefa.dias : null,
-          contagemPrazo: prazo && tarefa.dias ? tarefa.contagem : null,
-          data: tarefa.classe === "COMPROMISSO" ? tarefa.data ?? "" : "",
+          dataFatal: prazo && !semPrazo ? fatalSugerida(tarefa, publicacao.dataPublicacao, contaPrazo) ?? "" : "",
+          diasPrazo: prazo && !semPrazo ? tarefa.dias : null,
+          contagemPrazo: prazo && !semPrazo && tarefa.dias ? tarefa.contagem : null,
+          data: semPrazo ? dataSemFatal() : tarefa.classe === "COMPROMISSO" ? tarefa.data ?? "" : "",
           hora: tarefa.hora ?? "",
           horaFim: horaFinalPadrao(tarefa.hora),
+          dataLimite: "",
           responsavel: opcao.responsaveis?.length ? opcao.responsaveis.join(", ") : detalhe.responsavelSugerido ?? "",
-          revisor: prazo ? detalhe.revisorSugerido ?? "" : "",
+          revisor: prazo || revisorFicaNaTarefa(opcao.nome) ? detalhe.revisorSugerido ?? "" : "",
           observacao: tarefa.motivo,
           ia: true,
         }),
@@ -925,7 +1101,7 @@ export function EditorVistagem({
     const dataPublicacao = detalhe?.publicacao.dataPublicacao;
     if (!dataPublicacao) return;
     setLinhas((atuais) => {
-      const alvo = atuais.find((linha) => linha.etiqueta === "PRAZO" && !linha.esocial);
+      const alvo = atuais.find((linha) => linha.etiqueta === "PRAZO" && !linha.esocial && !semFatal(linha));
       const contagemPrazo = contagem ?? alvo?.contagemPrazo ?? contagemPadrao;
       const mudanca = { diasPrazo: dias, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, dias, contagemPrazo, contaPrazo) };
       if (alvo) return atuais.map((linha) => (linha === alvo ? { ...linha, ...mudanca } : linha));
@@ -959,12 +1135,13 @@ export function EditorVistagem({
             etiqueta: linha.etiqueta,
             tarefa: linha.tarefa,
             tarefaId: detalhe?.catalogo?.tarefas[linha.etiqueta].find((opcao) => opcao.nome === linha.tarefa)?.id ?? null,
-            data: linha.etiqueta === "PRAZO" ? "" : linha.data,
-            dataFatal: linha.etiqueta === "PRAZO" ? linha.dataFatal : null,
-            diasPrazo: linha.etiqueta === "PRAZO" ? linha.diasPrazo : null,
-            contagemPrazo: linha.etiqueta === "PRAZO" && linha.diasPrazo ? linha.contagemPrazo : null,
+            data: linha.etiqueta === "PRAZO" && !semFatal(linha) ? "" : linha.data,
+            dataFatal: linha.etiqueta === "PRAZO" && !semFatal(linha) ? linha.dataFatal : null,
+            diasPrazo: linha.etiqueta === "PRAZO" && !semFatal(linha) ? linha.diasPrazo : null,
+            contagemPrazo: linha.etiqueta === "PRAZO" && !semFatal(linha) && linha.diasPrazo ? linha.contagemPrazo : null,
             hora: linha.etiqueta === "COMPROMISSO" ? linha.hora : null,
             horaFim: linha.etiqueta === "COMPROMISSO" ? linha.horaFim || null : null,
+            dataLimite: pedeLimite(linha) ? linha.dataLimite || linha.data || null : null,
             responsavel: linha.responsavel,
             revisor: linha.etiqueta === "PROVIDENCIA" ? null : linha.revisor || null,
             observacao: linha.observacao || null,
@@ -974,7 +1151,7 @@ export function EditorVistagem({
       });
       const corpo = await resposta.json();
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao enviar.");
-      onConcluida(id);
+      onConcluida(id, corpo.central ?? null);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao enviar.");
     } finally {
@@ -999,10 +1176,13 @@ export function EditorVistagem({
   }
 
   const { publicacao, catalogo } = detalhe;
+  // Sem pasta no VIOS: passa pela conferência e, validada, vira pedido de abertura de pasta na Central do SharePoint.
+  const abertura = vaiParaCentral(publicacao);
   // Sem o tipo Inserir E-social no VIOS, Acordo homologado e Homologação de cálculo não podem ser enviados.
   const faltaTarefaEsocial = Boolean(detalhe.esocial && pedeTarefaEsocial(esocial) && !detalhe.esocial.tarefa);
-  const completo = linhas.every(linhaCompleta) && !faltaTarefaEsocial;
-  const incompletas = linhas.filter((linha) => !linhaCompleta(linha)).length;
+  const completo = linhas.every(linhaPronta) && !faltaTarefaEsocial;
+  const incompletas = linhas.filter((linha) => !linhaPronta(linha)).length;
+  const faltaObservacao = linhas.some((linha) => pedeObservacao(linha) && !linha.observacao.trim());
   const devolucoes = detalhe.inconsistencias.filter((item) => item.origem === "juridico");
   // Régua da publicação: divulgação → publicação → 1º dia do prazo e, quando já há Prazo, a fatal mais próxima.
   const fatais = linhas.flatMap((linha) => (linha.etiqueta === "PRAZO" && linha.dataFatal ? [linha.dataFatal] : [])).sort();
@@ -1143,6 +1323,12 @@ export function EditorVistagem({
                         sintese={detalhe.sintese}
                         erro={detalhe.sinteseErro}
                         pedidas={detalhe.sintesesPedidas}
+                        materiaVazia={detalhe.materiaVazia}
+                        materiaAtual={detalhe.materiaAtual}
+                        materias={detalhe.materiasVios}
+                        sistemaVazio={detalhe.sistemaVazio}
+                        sistemaAtual={detalhe.sistemaAtual}
+                        sistemas={detalhe.sistemasVios}
                         // Na prévia da controladoria a pasta ainda não está gravada: a síntese fica só para leitura.
                         publicacaoId={resolucao ? null : publicacao.id}
                       />
@@ -1248,14 +1434,16 @@ export function EditorVistagem({
                     const prazo = linha.etiqueta === "PRAZO";
                     const tarefaId = catalogo.tarefas[linha.etiqueta].find((opcao) => opcao.nome === linha.tarefa)?.id ?? null;
                     const fluxo = tarefaId ? detalhe.fluxos[tarefaId] ?? null : null;
+                    // Prazo com fatal; a SENTENÇA é de Prazo (exige revisor), mas leva só a data dela.
+                    const comFatal = prazo && !semFatal(linha);
                     // Sem tarefa escolhida (ou sem o fluxo carregado) mostra o fluxo padrão; o servidor recalcula ao gravar.
                     const cadeiaFluxo = !tarefaId || detalhe.fluxosErro ? CADEIA_PADRAO : cadeiaDoFluxo(fluxo);
                     // Nunca antes de hoje: prazo curto aperta a cadeia (Enviar hoje, Protocolar 1 dia útil antes da fatal).
-                    const cadeia = prazo && linha.dataFatal ? datasDoPrazo(linha.dataFatal, ehDiaUtil, cadeiaFluxo, detalhe.hoje) : null;
+                    const cadeia = comFatal && linha.dataFatal ? datasDoPrazo(linha.dataFatal, ehDiaUtil, cadeiaFluxo, detalhe.hoje) : null;
                     // O VIOS data o fluxo a partir da data que recebe (no Prazo, o Enviar) e do dia do lançamento.
                     const previstas = fluxo
                       ? fluxoPrevisto(
-                          { data: (prazo ? cadeia?.enviar : linha.data) ?? "", responsavel: linha.responsavel, revisor: linha.revisor || null },
+                          { data: (comFatal ? cadeia?.enviar : linha.data) ?? "", responsavel: linha.responsavel, revisor: linha.revisor || null },
                           fluxo,
                           ehDiaUtil,
                           {
@@ -1271,7 +1459,7 @@ export function EditorVistagem({
                         )
                       : [];
                     const cienciaPedidaRepetida = ehCienciaDosAgendamentos(linha.tarefa) && !cienciaFicaEm(linha.chave, null);
-                    const avisos = prazo
+                    const avisos = comFatal
                       ? linha.dataFatal
                         ? avisosDaData(linha.dataFatal, detalhe.hoje).concat(
                             contaPrazo(linha.dataFatal)
@@ -1283,7 +1471,9 @@ export function EditorVistagem({
                         ? avisosDaData(linha.data, detalhe.hoje)
                         : [];
                     const IconeClasse = ICONE_CLASSE[linha.etiqueta];
-                    const pronta = linhaCompleta(linha);
+                    const pronta = linhaPronta(linha);
+                    const observacaoPedida = pedeObservacao(linha);
+                    const limitePedido = pedeLimite(linha);
                     return (
                       <li
                         key={linha.chave}
@@ -1365,6 +1555,7 @@ export function EditorVistagem({
                                           : eraDoTipo
                                             ? { responsavel: detalhe.responsavelSugerido ?? "" }
                                             : {}),
+                                        ...(revisorFicaNaTarefa(nome) && !linha.revisor ? { revisor: detalhe.revisorSugerido ?? "" } : {}),
                                       });
                                       if (nome && linha.etiqueta === "COMPROMISSO") setHorarioDe(linha.chave);
                                     }}
@@ -1376,8 +1567,8 @@ export function EditorVistagem({
                             </div>
                           </BlocoTarefa>
 
-                          <BlocoTarefa titulo={prazo ? "Prazo" : linha.etiqueta === "COMPROMISSO" ? "Data e horário" : "Data"} icone={CalendarDays}>
-                            {prazo ? (
+                          <BlocoTarefa titulo={comFatal ? "Prazo" : linha.etiqueta === "COMPROMISSO" ? "Data e horário" : "Data"} icone={CalendarDays}>
+                            {comFatal ? (
                               <div className="space-y-2">
                                 {/* 1ª linha: os dias do prazo e, ao lado, úteis ou corridos e a data fatal; embaixo, a linha do tempo do VIOS. */}
                                 <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
@@ -1460,6 +1651,7 @@ export function EditorVistagem({
                                       },
                                       { rotulo: "Revisar", rotuloCurto: "Rev.", data: cadeia.revisar },
                                       { rotulo: "Protocolar", rotuloCurto: "Prot.", data: cadeia.protocolar },
+                                      { rotulo: "Data fatal", rotuloCurto: "Fatal", data: linha.dataFatal, tom: "perigo" },
                                     ]}
                                   />
                                 ) : null}
@@ -1480,6 +1672,11 @@ export function EditorVistagem({
                                     onChange={(data) => alterar(linha.chave, { data })}
                                   />
                                 </div>
+                                {prazo ? (
+                                  <p className="min-w-[14rem] flex-1 text-xs text-muted-foreground">
+                                    Sem prazo próprio no VIOS: a data já vem preenchida, e as tarefas do fluxo contam a partir dela.
+                                  </p>
+                                ) : null}
                                 {linha.etiqueta === "COMPROMISSO" ? (
                                   <div className="w-32 space-y-1.5">
                                     <span className="block text-xs font-medium text-muted-foreground">Horário</span>
@@ -1500,6 +1697,21 @@ export function EditorVistagem({
                                       valor={linha.horaFim}
                                       onChange={(horaFim) => alterar(linha.chave, { horaFim })}
                                       invalido={!horaFinalValida(linha)}
+                                    />
+                                  </div>
+                                ) : null}
+                                {limitePedido ? (
+                                  // SESSÃO DE JULGAMENTO: a sessão é num dia e o prazo da tarefa pode ir além. Começa igual à data.
+                                  <div className="w-[11rem] space-y-1.5" title="Vai para a Data limite no VIOS. Começa igual à data e pode ir além dela.">
+                                    <span className="block text-xs font-medium text-muted-foreground">Data limite</span>
+                                    <CampoData
+                                      rotulo={`Data limite da tarefa ${indice + 1} no VIOS`}
+                                      valor={linha.dataLimite || linha.data}
+                                      min={linha.data || undefined}
+                                      ehDiaUtil={ehDiaUtil}
+                                      destacado={Boolean(linha.dataLimite && linha.dataLimite !== linha.data)}
+                                      invalido={!dataLimiteValida(linha)}
+                                      onChange={(dataLimite) => alterar(linha.chave, { dataLimite })}
                                     />
                                   </div>
                                 ) : null}
@@ -1550,6 +1762,7 @@ export function EditorVistagem({
                                   {prazo && detalhe.revisorSugerido && linha.revisor === detalhe.revisorSugerido ? (
                                     <span className="font-normal"> · auxiliar da pasta</span>
                                   ) : null}
+                                  {revisorFicaNaTarefa(linha.tarefa) ? <span className="font-normal"> · fica na tarefa, com o responsável</span> : null}
                                 </span>
                                 <ComboboxBusca
                                   opcoes={pessoasDoCampo.opcoes}
@@ -1567,15 +1780,29 @@ export function EditorVistagem({
                             </div>
                           </BlocoTarefa>
 
-                          <BlocoTarefa titulo="Observação" icone={MessageSquareText} acao={<span className="text-[11px] font-normal text-muted-foreground">opcional · vai na descrição da tarefa no VIOS</span>}>
+                          <BlocoTarefa
+                            titulo="Observação"
+                            icone={MessageSquareText}
+                            acao={
+                              observacaoPedida ? (
+                                <span className="text-[11px] font-normal text-muted-foreground">
+                                  <span className="font-semibold text-red-700">obrigatória</span> · vai como justificativa da CIÊNCIA NF no VIOS
+                                </span>
+                              ) : (
+                                <span className="text-[11px] font-normal text-muted-foreground">opcional · vai na descrição da tarefa no VIOS</span>
+                              )
+                            }
+                          >
                             <Textarea
                               aria-label={`Observação da tarefa ${indice + 1}`}
+                              aria-required={observacaoPedida}
+                              aria-invalid={observacaoPedida && !linha.observacao.trim()}
                               value={linha.observacao}
                               onChange={(evento) => alterar(linha.chave, { observacao: evento.target.value })}
                               maxLength={2000}
                               rows={2}
-                              placeholder="O que fazer e por quê"
-                              className="bg-white"
+                              placeholder={observacaoPedida ? "Por que não há o que agendar" : "O que fazer e por quê"}
+                              className={cn("bg-white", observacaoPedida && !linha.observacao.trim() && "border-red-400")}
                             />
                           </BlocoTarefa>
 
@@ -1584,15 +1811,28 @@ export function EditorVistagem({
                               previstas={previstas}
                               principal={{
                                 nome: linha.tarefa,
-                                data: (prazo ? cadeia?.enviar : linha.data) || null,
+                                data: (comFatal ? cadeia?.enviar : linha.data) || null,
                                 etiqueta: linha.etiqueta,
                                 responsaveis: linha.responsavel,
                               }}
-                              fatal={prazo ? linha.dataFatal || null : null}
-                              foto={pessoasDoCampo.foto}
+                              fatais={
+                                comFatal
+                                  ? linha.dataFatal
+                                    ? [{ rotulo: "Data fatal", data: linha.dataFatal, dica: "Muda no campo Data fatal, acima." }]
+                                    : []
+                                  : prazo
+                                    ? fataisDoFluxo(fluxo, detalhe.publicacao.dataPublicacao, catalogo.area, contagemPadrao, contaPrazo).map((fatal) => ({
+                                        rotulo: `Data fatal · ${fatal.nome}`,
+                                        data: fatal.data,
+                                        dica: `${fatal.dias} ${ROTULO_CONTAGEM[contagemPadrao]} após a publicação (prazo legal). Só para conferir: não vai para o VIOS.`,
+                                      }))
+                                    : []
+                              }
+                              pessoas={pessoasDoCampo}
                               hoje={detalhe.hoje}
                               ehDiaUtil={ehDiaUtil}
-                              onMudarData={(caminho, data) => mudarDataDoFluxo(linha, caminho, data)}
+                              onMudarData={(caminho, data) => mudarNoFluxo(linha, caminho, { data })}
+                              onMudarResponsaveis={(caminho, nomes) => mudarNoFluxo(linha, caminho, { responsaveis: nomes })}
                               classeDe={classeDaTarefa}
                             />
                           ) : null}
@@ -1617,6 +1857,14 @@ export function EditorVistagem({
 
                 <CienciaDoOrquestra linhas={linhas} catalogo={catalogo} detalhe={detalhe} />
 
+                {abertura ? (
+                  <div className="px-4 pb-3">
+                    <Aviso tom="info" titulo="Sem pasta no VIOS">
+                      Ao enviar, as tarefas vão para a conferência da controladoria. Depois de validadas, não vão para o robô: viram um pedido de abertura de pasta na Central do SharePoint, e a controladoria agenda depois de abrir a pasta.
+                    </Aviso>
+                  </div>
+                ) : null}
+
                 {erro ? (
                   <div className="px-4 pb-3">
                     <Aviso tom="erro">{erro}</Aviso>
@@ -1629,7 +1877,7 @@ export function EditorVistagem({
                       ? `${linhas.length} ${linhas.length === 1 ? "tarefa pronta" : "tarefas prontas"} para a conferência.`
                       : faltaTarefaEsocial
                         ? `Falta o tipo ${TAREFA_ESOCIAL} no VIOS.`
-                        : `Complete ${incompletas === 1 ? "a tarefa marcada" : `as ${incompletas} tarefas marcadas`}: tarefa, data${linhas.some((linha) => linha.etiqueta === "PRAZO") ? ", revisor" : ""} e responsável.`}
+                        : `Complete ${incompletas === 1 ? "a tarefa marcada" : `as ${incompletas} tarefas marcadas`}: tarefa, data${linhas.some((linha) => linha.etiqueta === "PRAZO") ? ", revisor" : ""}${faltaObservacao ? ", observação" : ""} e responsável.`}
                   </p>
                   <Button onClick={enviar} disabled={enviando || !completo}>
                     {enviando ? <LoaderCircle className="animate-spin" /> : <Send />}
@@ -2057,12 +2305,18 @@ function Juridico() {
     void carregar(escritorio);
   }
 
-  function concluida(id: string) {
+  function concluida(id: string, central: ResultadoCentral | null) {
     // Segue para a próxima da fila (ou a anterior, se era a última).
     const posicao = ordem.indexOf(id);
     setSelecionada(ordem[posicao + 1] ?? ordem[posicao - 1] ?? null);
     setPublicacoes((publicacoes ?? []).filter((p) => p.id !== id));
-    setAviso("Vistagem enviada para a conferência da controladoria.");
+    setAviso(
+      !central
+        ? "Vistagem enviada para a conferência da controladoria."
+        : central.itemId
+          ? `Sem pasta no VIOS: pedido de abertura de pasta criado na Central do SharePoint (item ${central.itemId}).`
+          : "Vistagem salva. A Central do SharePoint não respondeu: a controladoria vê o pedido na Conferência e o sistema tenta de novo."
+    );
     setPorEscritorio((atual) => {
       const p = (publicacoes ?? []).find((item) => item.id === id);
       const chave = p?.escritorioResponsavel ?? "Sem área";
@@ -2253,6 +2507,7 @@ function Juridico() {
                                   Risco
                                 </Selo>
                               ) : null}
+                              <SeloAberturaDePasta publicacao={publicacao} />
                               {publicacao.devolucaoMotivo || publicacao.devolvidoEm ? <Selo tom="alerta">Devolvida</Selo> : null}
                               {publicacao.transferidoDe ? <Selo tom="marca">Transferida</Selo> : null}
                             </span>

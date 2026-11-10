@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
-import { Montserrat } from "next/font/google";
+import localFont from "next/font/local";
 
-const sans = Montserrat({
-  subsets: ["latin"],
-  weight: ["200", "300", "400", "500", "600", "700"],
+const sans = localFont({
+  src: "../../fonts/montserrat-latin-variable.woff2",
+  weight: "200 700",
   variable: "--font-reading-sans",
   display: "swap",
 });

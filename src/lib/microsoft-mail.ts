@@ -46,9 +46,16 @@ async function tokenGraph(): Promise<string> {
   return corpo.access_token;
 }
 
-export async function enviarEmailMicrosoft(params: { para: string; assunto: string; html: string }): Promise<void> {
+export async function enviarEmailMicrosoft(params: {
+  para: string;
+  assunto: string;
+  html: string;
+  /** Para onde vão as respostas (ex.: a pessoa do RH que enviou). Sem ele, voltam para o remetente. */
+  responderPara?: string | null;
+}): Promise<void> {
   const remetente = process.env.MICROSOFT_MAIL_SENDER?.trim() || DEFAULT_SENDER;
   const token = await tokenGraph();
+  const responderPara = params.responderPara?.trim();
   const resposta = await fetch(`${GRAPH}/users/${encodeURIComponent(remetente)}/sendMail`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -57,6 +64,7 @@ export async function enviarEmailMicrosoft(params: { para: string; assunto: stri
         subject: params.assunto,
         body: { contentType: "HTML", content: params.html },
         toRecipients: [{ emailAddress: { address: params.para } }],
+        ...(responderPara ? { replyTo: [{ emailAddress: { address: responderPara } }] } : {}),
       },
       saveToSentItems: false,
     }),

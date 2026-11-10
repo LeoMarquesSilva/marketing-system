@@ -21,8 +21,8 @@ const MODULES: Array<{ title: string; description: string; icon: typeof Scale; h
     href: "/operacoes-legais/vistagem",
   },
   {
-    title: "Fechamento Legal Ops",
-    description: "Rateio mensal das hours de Ops para as áreas jurídicas.",
+    title: "Fechamento de Operações Legais",
+    description: "Rateio mensal das horas de Operações Legais para as áreas jurídicas.",
     icon: StickyNote,
   },
   {

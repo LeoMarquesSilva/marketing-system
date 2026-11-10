@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, LoaderCircle, PencilLine, TriangleAlert } from "lucide-react";
+import { Check, LoaderCircle, PencilLine, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
@@ -12,13 +12,15 @@ import {
   classeDoProcesso,
   paragrafosDaSintese,
   partesPorPolo,
+  precisaDeMateria,
+  precisaDeSistema,
   valorDaCausa,
   type ParteDoPolo,
 } from "@/lib/vistagem/dados-processo";
 import { lerPublicacao } from "@/lib/vistagem/leitura";
 import { advogadosDoEscritorioCitados } from "@/lib/vistagem/triagem";
-import type { PublicacaoResumo, SintesePedida } from "@/lib/vistagem/types";
-import { AvatarPessoa } from "./combobox-busca";
+import type { MateriaVios, PublicacaoResumo, SintesePedida } from "@/lib/vistagem/types";
+import { AvatarPessoa, ComboboxBusca } from "./combobox-busca";
 import { Celula, LinkPastaVios } from "./ficha-pasta";
 import { Selo, type TomSelo } from "./ui";
 
@@ -279,10 +281,10 @@ function situacaoDoPedido(pedida: SintesePedida): { rotulo: string; tom: TomSelo
   if (pedida.status === "processando") return { rotulo: "Gravando no VIOS", tom: "marca" };
   if (pedida.status !== "concluido") return { rotulo: pedida.simulado ? "Na fila (simulação)" : "Na fila do robô", tom: "neutro" };
   if (pedida.simulado) return { rotulo: "Simulado, não gravou", tom: "alerta" };
-  return { rotulo: pedida.jaEstava ? "Já estava na síntese" : "Gravado no VIOS", tom: "sucesso" };
+  return { rotulo: pedida.jaEstava ? "Já estava no VIOS" : "Gravado no VIOS", tom: "sucesso" };
 }
 
-/** O que já foi pedido ao robô para esta pasta: data, quem pediu, o trecho e a situação. */
+/** O que já foi pedido ao robô para esta pasta: data, quem pediu, o trecho, a Matéria, o Sistema e a situação. */
 function SintesesPedidas({ pedidas }: { pedidas: SintesePedida[] }) {
   return (
     <ul className="space-y-1.5 border-t border-[#c9dde6] pt-2">
@@ -297,9 +299,13 @@ function SintesesPedidas({ pedidas }: { pedidas: SintesePedida[] }) {
                 {pedida.autor ? ` (${pedida.autor})` : ""}
               </span>
             </div>
-            <p className="mt-0.5 line-clamp-2 text-foreground" title={pedida.texto}>
-              {pedida.texto}
-            </p>
+            {pedida.texto.trim() ? (
+              <p className="mt-0.5 line-clamp-2 text-foreground" title={pedida.texto}>
+                {pedida.texto}
+              </p>
+            ) : null}
+            {pedida.materias.length ? <p className="mt-0.5 text-muted-foreground">Matéria: {pedida.materias.map((materia) => materia.nome).join(", ")}</p> : null}
+            {pedida.sistemaTribunal ? <p className="mt-0.5 text-muted-foreground">Sistema do Tribunal: {pedida.sistemaTribunal.nome}</p> : null}
             {pedida.erro ? <p className="mt-0.5 text-red-700">{pedida.erro}</p> : null}
           </li>
         );
@@ -308,49 +314,192 @@ function SintesesPedidas({ pedidas }: { pedidas: SintesePedida[] }) {
   );
 }
 
+/** Rótulo de um campo do cadastro: "*" quando o VIOS exige (está vazio), "(opcional)" quando é só para trocar. */
+function RotuloDoCampo({ nome, obrigatorio }: { nome: string; obrigatorio: boolean }) {
+  return (
+    <p className="text-xs font-medium text-foreground">
+      {nome} {obrigatorio ? <span className="text-red-700">*</span> : <span className="font-normal text-muted-foreground">(opcional)</span>}
+    </p>
+  );
+}
+
+/** Explica o campo: vazio no VIOS (exigido) ou o que está lá hoje, que o robô troca pelo escolhido. */
+function AjudaDoCampo({ nome, obrigatorio, atual }: { nome: string; obrigatorio: boolean; atual: string | null }) {
+  return (
+    <p className="text-[11px] text-muted-foreground">
+      {obrigatorio
+        ? `Este processo está sem ${nome} no VIOS, e o VIOS só grava o cadastro com esse campo preenchido.`
+        : atual
+          ? `No VIOS: ${atual}. Escolha só para trocar.`
+          : "Escolha só para trocar o que está no VIOS."}
+    </p>
+  );
+}
+
+/** O combo de Matéria do VIOS: busca na lista inteira, uma ou mais matérias, com as escolhidas dentro do campo. */
+function CampoMaterias({
+  opcoes,
+  escolhidas,
+  onChange,
+  obrigatorio,
+  atual,
+}: {
+  opcoes: MateriaVios[];
+  escolhidas: MateriaVios[];
+  onChange: (materias: MateriaVios[]) => void;
+  obrigatorio: boolean;
+  atual: string | null;
+}) {
+  const ids = new Set(escolhidas.map((materia) => materia.id));
+  return (
+    <div className="space-y-1">
+      <RotuloDoCampo nome="Matéria" obrigatorio={obrigatorio} />
+      <ComboboxBusca
+        antes={
+          escolhidas.length ? (
+            <ul className="contents" aria-label="Matérias escolhidas">
+              {escolhidas.map((materia) => (
+                <li key={materia.id} className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-md border border-[#dce9eb] bg-[#f7fbfc] pl-2 pr-0.5 text-xs font-medium text-foreground">
+                  <span className="truncate">{materia.nome}</span>
+                  <button
+                    type="button"
+                    className="rounded p-1 text-muted-foreground hover:bg-[#47cdd0]/15 hover:text-foreground"
+                    aria-label={`Tirar ${materia.nome}`}
+                    onMouseDown={(evento) => evento.preventDefault()}
+                    onClick={() => onChange(escolhidas.filter((item) => item.id !== materia.id))}
+                  >
+                    <X className="size-3.5" aria-hidden />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null
+        }
+        opcoes={opcoes.filter((materia) => !ids.has(materia.id))}
+        maxResultados={opcoes.length}
+        valor=""
+        onChange={(nome) => {
+          const materia = opcoes.find((item) => item.nome === nome);
+          if (materia) onChange([...escolhidas, materia]);
+        }}
+        placeholder={escolhidas.length ? "Adicionar outra…" : "Digite para buscar…"}
+        rotulo="Matéria"
+        titulo="Matérias do VIOS"
+      />
+      <AjudaDoCampo nome="Matéria" obrigatorio={obrigatorio} atual={atual} />
+    </div>
+  );
+}
+
+/** O combo de Sistema do Tribunal do VIOS: uma opção, da lista do cadastro. */
+function CampoSistema({
+  opcoes,
+  escolhido,
+  onChange,
+  obrigatorio,
+  atual,
+}: {
+  opcoes: MateriaVios[];
+  escolhido: MateriaVios | null;
+  onChange: (sistema: MateriaVios | null) => void;
+  obrigatorio: boolean;
+  atual: string | null;
+}) {
+  return (
+    <div className="space-y-1">
+      <RotuloDoCampo nome="Sistema do Tribunal" obrigatorio={obrigatorio} />
+      <ComboboxBusca
+        opcoes={opcoes}
+        maxResultados={opcoes.length}
+        valor={escolhido?.nome ?? ""}
+        onChange={(nome) => onChange(opcoes.find((item) => item.nome === nome) ?? null)}
+        permitirVazio
+        placeholder="Digite para buscar…"
+        rotulo="Sistema do Tribunal"
+        titulo="Sistemas do Tribunal do VIOS"
+      />
+      <AjudaDoCampo nome="Sistema do Tribunal" obrigatorio={obrigatorio} atual={atual} />
+    </div>
+  );
+}
+
 /**
  * Síntese do processo da pasta no VIOS, embaixo da ficha. Longa, começa recolhida em umas cinco linhas; aberta,
- * rola dentro do bloco (há sínteses de 20 mil caracteres). Com `publicacaoId`, a pessoa acrescenta um trecho:
- * o robô junta no fim da síntese do VIOS como "dd/mm/aaaa (Nome): texto", quando não houver outro trabalho na fila.
+ * rola dentro do bloco (há sínteses de 20 mil caracteres). Com `publicacaoId`, a pessoa pede "Atualizar cadastro no
+ * VIOS": um trecho que o robô junta no fim da síntese como "dd/mm/aaaa (Nome): texto", a Matéria e/ou o Sistema do
+ * Tribunal, cada um opcional. O robô grava quando não houver outro trabalho na fila. Matéria e Sistema vazios no
+ * VIOS são exigidos, porque o VIOS não grava o cadastro sem eles.
  */
 export function SinteseDoProcesso({
   sintese,
   erro,
   pedidas: pedidasIniciais = [],
   publicacaoId = null,
+  materiaVazia = false,
+  materiaAtual = null,
+  materias = [],
+  sistemaVazio = false,
+  sistemaAtual = null,
+  sistemas = [],
 }: {
   sintese: string | null;
   erro: string | null;
   pedidas?: SintesePedida[];
   /** Publicação da vistagem; sem ela (prévia da controladoria), só leitura. */
   publicacaoId?: string | null;
+  /** A pasta está sem Matéria na base do SIOE. */
+  materiaVazia?: boolean;
+  /** Matéria da pasta na base do SIOE. */
+  materiaAtual?: string | null;
+  /** Opções do campo Matéria do VIOS; sem a lista, o campo não aparece (quem recusa é o VIOS). */
+  materias?: MateriaVios[];
+  /** A pasta está sem Sistema do Tribunal na base do SIOE. */
+  sistemaVazio?: boolean;
+  /** Sistema do Tribunal da pasta na base do SIOE. */
+  sistemaAtual?: string | null;
+  /** Opções do campo Sistema do Tribunal do VIOS; sem a lista, o campo não aparece. */
+  sistemas?: MateriaVios[];
 }) {
   const paragrafos = useMemo(() => paragrafosDaSintese(sintese), [sintese]);
   const [completa, setCompleta] = useState(false);
   const [pedidas, setPedidas] = useState(pedidasIniciais);
   const [escrevendo, setEscrevendo] = useState(false);
   const [trecho, setTrecho] = useState("");
+  const [materiasEscolhidas, setMateriasEscolhidas] = useState<MateriaVios[]>([]);
+  const [sistemaEscolhido, setSistemaEscolhido] = useState<MateriaVios | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [erroEnvio, setErroEnvio] = useState("");
   const longa = paragrafos.length > SINTESE_CURTA.paragrafos || paragrafos.join(" ").length > SINTESE_CURTA.caracteres;
   const recolhida = longa && !completa;
+  const exigirMateria = materias.length > 0 && precisaDeMateria(materiaVazia, pedidas);
+  const exigirSistema = sistemas.length > 0 && precisaDeSistema(sistemaVazio, pedidas);
+  const tamanhoDoTrecho = trecho.trim().length;
+  const algoPedido = tamanhoDoTrecho >= 3 || materiasEscolhidas.length > 0 || Boolean(sistemaEscolhido);
+  const podeEnviar =
+    algoPedido &&
+    (tamanhoDoTrecho === 0 || tamanhoDoTrecho >= 3) &&
+    (!exigirMateria || materiasEscolhidas.length > 0) &&
+    (!exigirSistema || Boolean(sistemaEscolhido)) &&
+    !enviando;
 
-  async function atualizarSintese() {
+  async function atualizarCadastro() {
     setEnviando(true);
     setErroEnvio("");
     try {
       const resposta = await authFetch(`/api/operacoes-legais/vistagem/juridico/${publicacaoId}/sintese`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ texto: trecho }),
+        body: JSON.stringify({ texto: trecho, materias: materiasEscolhidas.map((materia) => materia.id), sistema: sistemaEscolhido?.id ?? null }),
       });
       const corpo = await resposta.json();
-      if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao pedir a atualização da síntese.");
+      if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao pedir a atualização do cadastro no VIOS.");
       setPedidas(corpo.sintesesPedidas ?? []);
       setTrecho("");
+      setMateriasEscolhidas([]);
+      setSistemaEscolhido(null);
       setEscrevendo(false);
     } catch (e) {
-      setErroEnvio(e instanceof Error ? e.message : "Falha ao pedir a atualização da síntese.");
+      setErroEnvio(e instanceof Error ? e.message : "Falha ao pedir a atualização do cadastro no VIOS.");
     } finally {
       setEnviando(false);
     }
@@ -396,41 +545,55 @@ export function SinteseDoProcesso({
                 onClick={() => setEscrevendo(true)}
               >
                 <PencilLine className="size-3.5" aria-hidden />
-                Acrescentar à síntese
+                Atualizar cadastro no VIOS
               </button>
             ) : null}
           </div>
         ) : null}
         {publicacaoId && escrevendo ? (
           <form
-            className="mt-2 space-y-2"
+            className="mt-2 space-y-3"
             onSubmit={(evento) => {
               evento.preventDefault();
-              if (trecho.trim().length >= 3 && !enviando) void atualizarSintese();
+              if (podeEnviar) void atualizarCadastro();
             }}
           >
-            <Textarea
-              value={trecho}
-              onChange={(evento) => setTrecho(evento.target.value)}
-              maxLength={LIMITE_TRECHO_SINTESE}
-              rows={3}
-              placeholder="O que acrescentar à síntese do processo"
-              aria-label="Trecho para acrescentar à síntese"
-              className="bg-white"
-              autoFocus
-            />
             <p className="text-[11px] text-muted-foreground">
-              Vai no fim da síntese do VIOS, com a data de hoje e o seu nome. O robô grava quando não houver outro agendamento na fila; o texto
-              acima muda depois da próxima carga do VIOS.
+              Preencha só o que for mudar no cadastro do processo no VIOS. O robô grava tudo de uma vez quando não houver outro agendamento na fila;
+              o que aparece aqui muda depois da próxima carga do VIOS.
             </p>
+            <div className="space-y-1">
+              <RotuloDoCampo nome="Acrescentar à síntese" obrigatorio={false} />
+              <Textarea
+                value={trecho}
+                onChange={(evento) => setTrecho(evento.target.value)}
+                maxLength={LIMITE_TRECHO_SINTESE}
+                rows={3}
+                placeholder="O que acrescentar à síntese do processo"
+                aria-label="Trecho para acrescentar à síntese"
+                className="bg-white"
+                autoFocus
+              />
+              <p className="text-[11px] text-muted-foreground">
+                {tamanhoDoTrecho > 0 && tamanhoDoTrecho < 3
+                  ? "Escreva ao menos 3 caracteres, ou apague o trecho."
+                  : "Vai no fim da síntese do VIOS, com a data de hoje e o seu nome."}
+              </p>
+            </div>
+            {materias.length ? (
+              <CampoMaterias opcoes={materias} escolhidas={materiasEscolhidas} onChange={setMateriasEscolhidas} obrigatorio={exigirMateria} atual={materiaAtual} />
+            ) : null}
+            {sistemas.length ? (
+              <CampoSistema opcoes={sistemas} escolhido={sistemaEscolhido} onChange={setSistemaEscolhido} obrigatorio={exigirSistema} atual={sistemaAtual} />
+            ) : null}
             {erroEnvio ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{erroEnvio}</p> : null}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" size="sm" onClick={() => setEscrevendo(false)} disabled={enviando}>
                 Cancelar
               </Button>
-              <Button type="submit" size="sm" disabled={trecho.trim().length < 3 || enviando}>
+              <Button type="submit" size="sm" disabled={!podeEnviar}>
                 {enviando ? <LoaderCircle className="animate-spin" /> : <PencilLine />}
-                Atualizar Síntese
+                Atualizar cadastro no VIOS
               </Button>
             </div>
           </form>

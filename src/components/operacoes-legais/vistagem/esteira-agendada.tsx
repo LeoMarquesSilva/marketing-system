@@ -1,9 +1,10 @@
 "use client";
 
 import type { LucideIcon } from "lucide-react";
-import { BadgeCheck, Bot, CalendarCheck, Check, CircleAlert, SearchCheck, Stamp, TriangleAlert, Undo2 } from "lucide-react";
+import { BadgeCheck, Bot, CalendarCheck, Check, CircleAlert, FolderPlus, SearchCheck, Stamp, TriangleAlert, Undo2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { chaveNome } from "@/lib/vistagem/agendamento";
+import { vaiParaCentral } from "@/lib/vistagem/central";
 import type { ConferenciaItem, PublicacaoStatus } from "@/lib/vistagem/types";
 import { AvatarPessoa } from "./combobox-busca";
 import { formatarDataHora } from "./publicacao-ui";
@@ -11,13 +12,15 @@ import type { TomSelo } from "./ui";
 
 /**
  * Esteira da publicação depois da vistagem do jurídico: Vistada → Conferência → Robô → Agendada no VIOS → Checada.
+ * Sem pasta no VIOS, é mais curta: Vistada → Conferência → Central do SharePoint (pedido de abertura de pasta). As que foram
+ * direto para a Central em 09/11/2026, antes de a conferência valer também para elas, ficam sem a Conferência.
  * Tudo vem da situação gravada (status, quem e quando); nada é deduzido.
  */
 
 /** Onde a publicação está, para o filtro da visão Agendadas. */
-export type SituacaoAgendada = "conferencia" | "robo" | "agendada" | "checada" | "revisao";
+export type SituacaoAgendada = "conferencia" | "robo" | "agendada" | "checada" | "revisao" | "central";
 
-export const SITUACOES_AGENDADA: SituacaoAgendada[] = ["conferencia", "robo", "agendada", "checada", "revisao"];
+export const SITUACOES_AGENDADA: SituacaoAgendada[] = ["conferencia", "robo", "agendada", "checada", "revisao", "central"];
 
 export const SITUACAO_AGENDADA: Record<SituacaoAgendada, { rotulo: string; descricao: string; icone: LucideIcon; tom: TomSelo }> = {
   conferencia: { rotulo: "Na conferência", descricao: "A controladoria confere a vistagem", icone: SearchCheck, tom: "neutro" },
@@ -25,6 +28,7 @@ export const SITUACAO_AGENDADA: Record<SituacaoAgendada, { rotulo: string; descr
   agendada: { rotulo: "Agendada no VIOS", descricao: "No VIOS; falta o check da controladoria", icone: CalendarCheck, tom: "sucesso" },
   checada: { rotulo: "Checada", descricao: "A controladoria conferiu no VIOS", icone: BadgeCheck, tom: "sucesso" },
   revisao: { rotulo: "Em revisão", descricao: "Erro apontado no check, aguarda correção", icone: TriangleAlert, tom: "perigo" },
+  central: { rotulo: "Abertura de pasta", descricao: "Sem pasta no VIOS: a controladoria agenda pela Central do SharePoint", icone: FolderPlus, tom: "marca" },
 };
 
 const POR_STATUS: Partial<Record<PublicacaoStatus, SituacaoAgendada>> = {
@@ -33,6 +37,7 @@ const POR_STATUS: Partial<Record<PublicacaoStatus, SituacaoAgendada>> = {
   agendado: "agendada",
   checado: "checada",
   revisar: "revisao",
+  abertura_pasta: "central",
 };
 
 /** Situação da publicação na visão Agendadas; null para um status que não deveria estar nela. */
@@ -50,7 +55,7 @@ export const temErroNoRobo = (item: ConferenciaItem) => item.agendamentos.some((
 
 type EstadoEtapa = "feita" | "atual" | "pendente" | "problema";
 
-type ChaveEtapa = "vistada" | "conferencia" | "robo" | "vios" | "checada";
+type ChaveEtapa = "vistada" | "conferencia" | "robo" | "vios" | "checada" | "central";
 
 export interface EtapaEsteira {
   chave: ChaveEtapa;
@@ -67,10 +72,12 @@ export interface EtapaEsteira {
   devolvida?: boolean;
 }
 
-const ORDEM: ChaveEtapa[] = ["vistada", "conferencia", "robo", "vios", "checada"];
+type ChaveDaEsteiraDoRobo = Exclude<ChaveEtapa, "central">;
+
+const ORDEM: ChaveDaEsteiraDoRobo[] = ["vistada", "conferencia", "robo", "vios", "checada"];
 
 /** Etapa em que a publicação está agora (índice em ORDEM); checada = todas feitas. */
-const ATUAL: Record<SituacaoAgendada, number> = { conferencia: 1, robo: 2, agendada: 4, checada: 5, revisao: 4 };
+const ATUAL: Record<Exclude<SituacaoAgendada, "central">, number> = { conferencia: 1, robo: 2, agendada: 4, checada: 5, revisao: 4 };
 
 /** Primeira data de envio ao robô entre as tarefas (quando a conferência validou e as tarefas foram para a fila). */
 function primeiroEnvio(item: ConferenciaItem): string | null {
@@ -79,10 +86,71 @@ function primeiroEnvio(item: ConferenciaItem): string | null {
 
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 
+/**
+ * Sem pasta no VIOS: a vistagem, a conferência e o pedido na Central. Abrir a pasta e agendar acontece no SharePoint.
+ * `naConferencia`: ainda espera a controladoria; a Central vem depois, sem o robô.
+ */
+function etapasDaCentral(item: ConferenciaItem, naConferencia = false): EtapaEsteira[] {
+  const { publicacao } = item;
+  const chegou = Boolean(publicacao.centralItemId);
+  const etapaConferencia = { chave: "conferencia", rotulo: "Conferência", curto: "Conferência", icone: SearchCheck } as const;
+  const conferida: EtapaEsteira[] = naConferencia
+    ? [{ ...etapaConferencia, estado: "atual", texto: "Na conferência da controladoria", quem: null, quando: null, devolvida: devolucoesDe(item) > 0 }]
+    : item.conferidoPor || publicacao.conferidoEm
+      ? [{ ...etapaConferencia, estado: "feita", texto: "Conferida pela controladoria", quem: item.conferidoPor, quando: publicacao.conferidoEm }]
+      : [];
+  if (naConferencia) {
+    return [
+      { chave: "vistada", rotulo: "Vistada", curto: "Vistada", icone: Stamp, estado: "feita", texto: "Vistada pelo jurídico", quem: item.vistadoPor, quando: publicacao.vistadoEm },
+      ...conferida,
+      {
+        chave: "central",
+        rotulo: "Central do SharePoint",
+        curto: "Central",
+        icone: FolderPlus,
+        estado: "pendente",
+        texto: "Sem pasta no VIOS: depois da conferência vira pedido de abertura de pasta, sem o robô",
+        quem: null,
+        quando: null,
+      },
+    ];
+  }
+  return [
+    {
+      chave: "vistada",
+      rotulo: "Vistada",
+      curto: "Vistada",
+      icone: Stamp,
+      estado: "feita",
+      texto: "Vistada pelo jurídico",
+      quem: item.vistadoPor,
+      quando: publicacao.vistadoEm,
+    },
+    ...conferida,
+    {
+      chave: "central",
+      rotulo: "Central do SharePoint",
+      curto: "Central",
+      icone: FolderPlus,
+      estado: publicacao.centralErro && !chegou ? "problema" : chegou ? "feita" : "atual",
+      texto: chegou
+        ? `Pedido de abertura de pasta criado (item ${publicacao.centralItemId}); a controladoria agenda pela Central`
+        : publicacao.centralErro
+          ? "Não chegou à Central: a controladoria vai tentar de novo"
+          : "Criando o pedido de abertura de pasta",
+      quem: null,
+      quando: publicacao.centralEnviadaEm,
+    },
+  ];
+}
+
 /** As cinco etapas da esteira, com o estado de cada uma, quem e quando (o que estiver gravado). */
 export function etapasDaEsteira(item: ConferenciaItem): EtapaEsteira[] {
   const { publicacao, agendamentos } = item;
-  const situacao = situacaoAgendada(item) ?? "conferencia";
+  const situacaoGravada = situacaoAgendada(item) ?? "conferencia";
+  if (situacaoGravada === "central") return etapasDaCentral(item);
+  if (situacaoGravada === "conferencia" && vaiParaCentral(publicacao)) return etapasDaCentral(item, true);
+  const situacao = situacaoGravada;
   const atual = ATUAL[situacao];
   const estado = (indice: number): EstadoEtapa => (indice < atual ? "feita" : indice === atual ? "atual" : "pendente");
   const total = agendamentos.length;
@@ -96,7 +164,7 @@ export function etapasDaEsteira(item: ConferenciaItem): EtapaEsteira[] {
         .sort((a, b) => b.criadoEm.localeCompare(a.criadoEm))[0] ?? null
     : null;
 
-  const etapas: Record<ChaveEtapa, Omit<EtapaEsteira, "chave" | "estado"> & { estado?: EstadoEtapa }> = {
+  const etapas: Record<ChaveDaEsteiraDoRobo, Omit<EtapaEsteira, "chave" | "estado"> & { estado?: EstadoEtapa }> = {
     vistada: {
       rotulo: "Vistada",
       curto: "Vistada",
@@ -164,7 +232,7 @@ export function etapasDaEsteira(item: ConferenciaItem): EtapaEsteira[] {
 
 /** Bolinha da etapa: feita (✓), atual (ícone em destaque), pendente (ícone apagado) ou problema (alerta). */
 function Marco({ etapa, final, tamanho }: { etapa: EtapaEsteira; final: boolean; tamanho: "sm" | "md" }) {
-  const Icone = etapa.estado === "feita" ? Check : etapa.estado === "problema" ? (etapa.chave === "robo" ? CircleAlert : TriangleAlert) : etapa.icone;
+  const Icone = etapa.estado === "feita" ? Check : etapa.estado === "problema" ? (etapa.chave === "checada" ? TriangleAlert : CircleAlert) : etapa.icone;
   return (
     <span
       className={cn(
@@ -194,16 +262,23 @@ function Marco({ etapa, final, tamanho }: { etapa: EtapaEsteira; final: boolean;
 
 const ESTADO_PARA_LEITOR: Record<EstadoEtapa, string> = { feita: "feita", atual: "agora", pendente: "ainda não", problema: "com problema" };
 
+/** Rótulo curto (celular) e inteiro da etapa com problema. */
+const ROTULO_PROBLEMA: Partial<Record<ChaveEtapa, { curto: string; inteiro: string }>> = {
+  robo: { curto: "Erro", inteiro: "Erro no robô" },
+  checada: { curto: "Revisão", inteiro: "Em revisão" },
+  central: { curto: "Erro", inteiro: "Não chegou" },
+};
+
 /** "05/11, 23:23" → "05/11 às 23:23". */
 const dataEHora = (iso: string | null) => (iso ? formatarDataHora(iso).replace(", ", " às ") : null);
 
 /**
- * Esteira compacta, no cartão da lista: as cinco etapas lado a lado, ligadas por uma linha que se preenche até onde a
+ * Esteira compacta, no cartão da lista: as etapas lado a lado, ligadas por uma linha que se preenche até onde a
  * publicação chegou. Rótulo curto no celular; quem e quando ficam no title (e no detalhe).
  */
 export function EsteiraCompacta({ etapas, className }: { etapas: EtapaEsteira[]; className?: string }) {
   return (
-    <ol aria-label="Esteira da publicação" className={cn("@container grid grid-cols-5", className)}>
+    <ol aria-label="Esteira da publicação" className={cn("@container grid", etapas.length === 2 ? "grid-cols-2" : "grid-cols-5", className)}>
       {etapas.map((etapa, indice) => {
         const proxima = etapas[indice + 1];
         const linhaCheia = proxima && etapa.estado === "feita" && proxima.estado !== "pendente";
@@ -233,9 +308,9 @@ export function EsteiraCompacta({ etapas, className }: { etapas: EtapaEsteira[];
                 etapa.estado === "problema" && "font-semibold text-red-700"
               )}
             >
-              <span className="@xs:hidden">{etapa.estado === "problema" ? (etapa.chave === "robo" ? "Erro" : "Revisão") : etapa.curto}</span>
+              <span className="@xs:hidden">{etapa.estado === "problema" ? (ROTULO_PROBLEMA[etapa.chave]?.curto ?? etapa.curto) : etapa.curto}</span>
               <span className="hidden @xs:inline">
-                {etapa.estado === "problema" ? (etapa.chave === "robo" ? "Erro no robô" : "Em revisão") : etapa.rotulo}
+                {etapa.estado === "problema" ? (ROTULO_PROBLEMA[etapa.chave]?.inteiro ?? etapa.rotulo) : etapa.rotulo}
               </span>
               <span className="sr-only">: {ESTADO_PARA_LEITOR[etapa.estado]}</span>
             </span>

@@ -8,8 +8,8 @@ import { historicoDeConfiguracoes, lerConfiguracoes, type AlteracaoDeConfiguraca
 import { pessoasPorNome } from "./pessoas-server";
 import { IAS_DA_VISTAGEM, ORIGEM_DA_REGRA, REGRAS_DA_ESTEIRA, type EtapaDocumentada, type IaDocumentada, type MetricaDaRegra, type OrigemDaRegra } from "./regras-documentacao";
 import { envioSimulado, modoAgendamento, sinteseSimulada } from "./sama";
-import { PREFIXO_DESCARTE_CONTROLADORIA, admin, falhou, hojeEmSaoPaulo } from "./server";
-import { MOTIVO_EX_CLIENTE_SEM_ESCRITORIO } from "./triagem";
+import { admin, falhou, hojeEmSaoPaulo } from "./server";
+import { MOTIVO_EX_CLIENTE_SEM_ESCRITORIO, PREFIXO_DESCARTE_CONTROLADORIA } from "./triagem";
 import { nomeNoRh, nomesDosVistadores } from "./vistadores";
 import { chaveNome } from "./agendamento";
 

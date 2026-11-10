@@ -30,6 +30,9 @@ export interface ResultadoTriagem {
 
 export const ESCRITORIO_EX_CLIENTE = "Operações Legais";
 
+/** Prefixo do motivo quando quem descarta é a controladoria (os automáticos têm motivo próprio). */
+export const PREFIXO_DESCARTE_CONTROLADORIA = "Descartada pela controladoria: ";
+
 export const MOTIVO_EX_CLIENTE_SEM_ESCRITORIO =
   "Ex-cliente sem advogado do escritório na publicação (Ricardo Viscardi Pires / Gustavo Bismarchi Motta).";
 

@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { compararTarefa, descricaoSugerida, situacaoDoCheck, subtipoSugerido, tiposDoItem } from "./check";
+import {
+  compararTarefa,
+  descricaoSugerida,
+  foiCheckAutomatico,
+  notaDoCheckAutomatico,
+  revisorEstaNaTarefa,
+  situacaoDoCheck,
+  subtipoSugerido,
+  tiposDoItem,
+} from "./check";
 import type { TarefaNoVios } from "./fila-vios";
 import type { AgendamentoResumo } from "./types";
 
@@ -29,6 +38,7 @@ function agendamento(campos: Partial<AgendamentoResumo>): AgendamentoResumo {
     contagemPrazo: "uteis",
     hora: null,
     horaFim: null,
+    dataLimite: null,
     responsavel: "Letícia Zamarion Julio",
     revisor: "Pamela Klava Senna Patricio",
     observacao: null,
@@ -42,6 +52,32 @@ function agendamento(campos: Partial<AgendamentoResumo>): AgendamentoResumo {
     ...campos,
   };
 }
+
+describe("revisorEstaNaTarefa", () => {
+  const sessao = (campos: Partial<AgendamentoResumo>) =>
+    agendamento({ etiqueta: "COMPROMISSO", tarefa: "SESSÃO DE JULGAMENTO", responsavel: "Lorena Lourenço Miranda", revisor: "Vanessa Lanza Sellani", ...campos });
+
+  it("Sessão de Julgamento: acha o revisor entre os responsáveis da tarefa no VIOS", () => {
+    expect(revisorEstaNaTarefa(sessao({ viosTarefas: [gravada({ responsaveis: "Lorena Lourenço Miranda, Vanessa Lanza Sellani" })] }))).toBe(true);
+    // O VIOS não garante a ordem (como no 3. PROTOCOLAR: "Samuel Willian Silva, Lorena Lourenço Miranda").
+    expect(revisorEstaNaTarefa(sessao({ viosTarefas: [gravada({ responsaveis: "Vanessa Lanza Sellani, Lorena Lourenço Miranda" })] }))).toBe(true);
+    expect(revisorEstaNaTarefa(sessao({ viosTarefas: [gravada({ responsaveis: "Lorena Lourenço Miranda" })] }))).toBe(false);
+  });
+
+  it("não responde quando não se aplica ou quando o robô não devolveu os responsáveis", () => {
+    expect(revisorEstaNaTarefa(sessao({ viosTarefas: null }))).toBeNull();
+    expect(revisorEstaNaTarefa(sessao({ viosTarefas: [gravada({ responsaveis: null })] }))).toBeNull();
+    expect(revisorEstaNaTarefa(sessao({ revisor: null }))).toBeNull();
+    expect(revisorEstaNaTarefa(agendamento({}))).toBeNull();
+  });
+
+  it("o revisor na tarefa não muda o resultado da conferência", () => {
+    const comparacao = compararTarefa(sessao({ viosTarefas: [gravada({ responsaveis: "Lorena Lourenço Miranda, Vanessa Lanza Sellani" })] }));
+    expect(comparacao.responsavel.situacao).toBe("confere");
+    expect(comparacao.responsavel.aMais).toEqual(["Vanessa Lanza Sellani"]);
+    expect(comparacao.divergencias).toEqual([]);
+  });
+});
 
 describe("compararTarefa", () => {
   it("confere quando data e responsável batem", () => {
@@ -141,5 +177,48 @@ describe("tiposDoItem", () => {
       })
     ).toEqual(["PRAZO", "PROVIDENCIA", "COMPROMISSO"]);
     expect(tiposDoItem({ agendamentos: [] })).toEqual([]);
+  });
+});
+
+describe("notaDoCheckAutomatico", () => {
+  const cienciaNf = (campos: Partial<AgendamentoResumo> = {}) =>
+    agendamento({
+      etiqueta: "PROVIDENCIA",
+      tarefa: "CIÊNCIA NF",
+      data: "2026-11-10",
+      dataFatal: null,
+      diasPrazo: null,
+      contagemPrazo: null,
+      responsavel: "Ligia Gilberti Lopes",
+      revisor: null,
+      viosTarefaId: "938042",
+      viosTarefas: [gravada({ ci: "938042", tipo: "CIÊNCIA NF", data: "2026-11-10", dataLimite: "2026-11-10", responsaveis: "Ligia Gilberti Lopes" })],
+      ...campos,
+    });
+
+  it("CIÊNCIA NF única, gravada no VIOS com o CI e conferindo: check automático", () => {
+    const nota = notaDoCheckAutomatico([cienciaNf()]);
+    expect(nota).toBe("Check automático: CIÊNCIA NF única agendada no VIOS (CI 938042), com a data e o responsável do pedido.");
+    expect(foiCheckAutomatico(null, nota)).toBe(true);
+    // Check de uma pessoa (ou nota escrita por ela) não é o automático.
+    expect(foiCheckAutomatico("auth-id", nota)).toBe(false);
+    expect(foiCheckAutomatico(null, "Ok, conferido.")).toBe(false);
+  });
+
+  it("fica para a Maria: com outra tarefa junto, outra tarefa sozinha, simulação ou robô sem terminar", () => {
+    expect(notaDoCheckAutomatico([cienciaNf(), cienciaNf({ id: "a2" })])).toBeNull();
+    expect(notaDoCheckAutomatico([cienciaNf(), agendamento({ id: "a2" })])).toBeNull();
+    expect(notaDoCheckAutomatico([agendamento({})])).toBeNull();
+    expect(notaDoCheckAutomatico([cienciaNf({ envioSimulado: true })])).toBeNull();
+    expect(notaDoCheckAutomatico([cienciaNf({ envioStatus: "erro" })])).toBeNull();
+    expect(notaDoCheckAutomatico([])).toBeNull();
+  });
+
+  it("fica para a Maria: sem o retorno do robô (CI ou dados) ou com divergência", () => {
+    expect(notaDoCheckAutomatico([cienciaNf({ viosTarefas: null, viosTarefaId: null })])).toBeNull();
+    // Plano B (direto na pasta) sem o que foi gravado: não dá para conferir sozinho.
+    expect(notaDoCheckAutomatico([cienciaNf({ viosTarefas: null })])).toBeNull();
+    expect(notaDoCheckAutomatico([cienciaNf({ viosTarefas: [gravada({ ci: "938042", tipo: "CIÊNCIA NF", data: "2026-11-11", responsaveis: "Ligia Gilberti Lopes" })] })])).toBeNull();
+    expect(notaDoCheckAutomatico([cienciaNf({ viosTarefas: [gravada({ ci: "938042", tipo: "CIÊNCIA NF", data: "2026-11-10", responsaveis: "Outra Pessoa" })] })])).toBeNull();
   });
 });

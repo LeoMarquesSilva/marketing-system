@@ -62,10 +62,12 @@ export interface AgendamentoEntrada {
   hora?: string | null;
   /** COMPROMISSO: HH:MM em que termina (Hora final no VIOS); sem ela, 1 hora depois da inicial. */
   horaFim?: string | null;
+  /** SESSÃO DE JULGAMENTO: data limite no VIOS (AAAA-MM-DD), a data para conclusão ou depois; sem ela, a mesma data. */
+  dataLimite?: string | null;
   responsavel: string;
   revisor?: string | null;
   observacao?: string | null;
-  /** Datas de tarefas do fluxo que a pessoa mudou (o robô grava no VIOS depois de lançar). */
+  /** Datas e responsáveis de tarefas do fluxo que a pessoa mudou (o robô grava no VIOS depois de lançar). */
   fluxoDatas?: DataDoFluxo[] | null;
 }
 
@@ -83,6 +85,8 @@ export interface AgendamentoValidado {
   hora: string | null;
   /** COMPROMISSO: Hora final no VIOS (HH:MM, depois da inicial); nas outras classes, null. */
   horaFim: string | null;
+  /** SESSÃO DE JULGAMENTO: data limite no VIOS (a data para conclusão ou depois); nos outros tipos, null. */
+  dataLimite: string | null;
   responsavel: string;
   responsavelId: string;
   revisor: string | null;
@@ -95,6 +99,8 @@ export const MAX_AGENDAMENTOS = 10;
 export const MAX_OBSERVACAO = 2000;
 /** O maior fluxo do VIOS cria uns 15 tipos junto (Audiência UNA/Inicial com Contestação e Revisar/Protocolar dela). */
 const MAX_DATAS_DO_FLUXO = 40;
+/** Pessoas numa tarefa do fluxo escolhidas pelo jurídico. */
+const MAX_RESPONSAVEIS_DO_FLUXO = 10;
 
 /** Chave de uma tarefa do fluxo pelo caminho de tipos a partir da agendada (ex.: "EMBARGOS DE DECLARACAO > 2. REVISAR"). */
 export function chaveDoCaminho(caminho: string[]): string {
@@ -242,6 +248,20 @@ export function separarNomes(texto: string | null | undefined): string[] {
     });
 }
 
+/** Mesmas pessoas, sem olhar acento, maiúscula nem ordem. */
+export function mesmasPessoas(a: string[], b: string[]): boolean {
+  const chaves = (lista: string[]) => [...new Set(lista.map(chaveNome))].sort().join("|");
+  return chaves(a) === chaves(b);
+}
+
+/**
+ * SESSÃO DE JULGAMENTO: o fluxo dela não tem "2. REVISAR", então o revisor fica na própria tarefa, junto com o
+ * responsável. É a regra do robô no lançamento (sama-rpa regras-fluxo.js, responsaveisDaTarefaLancada).
+ */
+export function revisorFicaNaTarefa(tarefa: string | null | undefined): boolean {
+  return chaveNome(tarefa) === "SESSAO DE JULGAMENTO";
+}
+
 /** Área do catálogo do SAMA para a pasta: a área do processo no VIOS ou, sem ela, a do escritório. */
 export function areaDoCatalogo(areaProcesso: string | null, escritorio: string | null, areasDisponiveis: string[]): string | null {
   const porChave = new Map(areasDisponiveis.map((area) => [chaveNome(area), area]));
@@ -268,7 +288,7 @@ export function responsavelSugerido(advogadoResponsavel: string | null, usuarios
   return usuarios.find((usuario) => chaveNome(usuario.nome) === chave) ?? null;
 }
 
-function dataValida(iso: string): boolean {
+export function dataValida(iso: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
   const data = new Date(`${iso}T12:00:00Z`);
   return !Number.isNaN(data.getTime()) && data.toISOString().slice(0, 10) === iso;
@@ -304,6 +324,30 @@ export function avisosDaData(iso: string, hoje: string): string[] {
 }
 
 /**
+ * Tipos de tarefa em que a Observação é obrigatória. Na CIÊNCIA NF ela vai para o VIOS como a justificativa de
+ * não agendar nada (pedido de 09/11/2026). Recebe o nome como está no VIOS.
+ */
+export function observacaoObrigatoria(nomeDaTarefa: string | null | undefined): boolean {
+  return chaveNome(nomeDaTarefa) === "CIENCIA NF";
+}
+
+/**
+ * Tipos de tarefa em que a data limite do VIOS pode ser diferente da data para conclusão. Na SESSÃO DE JULGAMENTO a
+ * sessão é num dia e o prazo da tarefa pode ir além (pedido de 09/11/2026); começa igual e a pessoa ajusta. Nos outros
+ * tipos a data limite é a própria data. Recebe o nome como está no VIOS.
+ */
+export function pedeDataLimite(nomeDaTarefa: string | null | undefined): boolean {
+  return chaveNome(nomeDaTarefa) === "SESSAO DE JULGAMENTO";
+}
+
+/** Data limite que vai para o VIOS: a pedida, se for válida e não antes da data; senão, a própria data. */
+export function dataLimiteDaTarefa(nomeDaTarefa: string | null | undefined, data: string, pedida: string | null | undefined): string | null {
+  if (!pedeDataLimite(nomeDaTarefa) || !dataValida(data)) return null;
+  const limite = pedida?.trim() || "";
+  return dataValida(limite) && limite >= data ? limite : data;
+}
+
+/**
  * Confere a vistagem antes de gravar: ao menos uma tarefa; cada uma com etiqueta,
  * tarefa da lista travada, data válida e responsável/revisor entre os usuários do VIOS
  * (revisor obrigatório no Prazo, opcional no Compromisso e ignorado na Providência).
@@ -318,8 +362,15 @@ export function validarAgendamentos(
     cadeiaDaTarefa: (tarefaId: string) => CadeiaDoPrazo | null;
     /** Tarefas que o fluxo do tipo cria junto (chaveDoCaminho), para aceitar só datas delas. */
     caminhosDaTarefa?: (tarefaId: string) => Set<string>;
+    /** Tarefa de Prazo sem prazo próprio no VIOS (a SENTENÇA): vai com a data dela, sem fatal. */
+    semPrazoProprio?: (tarefaId: string) => boolean;
     /** Dia da vistagem: o Enviar do Prazo nunca fica antes dele (prazo curto aperta a cadeia). */
     hoje?: string;
+    /**
+     * Exige a Observação nos tipos que pedem (CIÊNCIA NF). Padrão: sim. A Conferência desliga: ali só se ajusta data
+     * e pessoas, e uma tarefa vistada antes da regra não pode ficar sem ajuste.
+     */
+    exigirObservacao?: boolean;
   }
 ): { ok: true; itens: AgendamentoValidado[] } | { ok: false; erros: string[] } {
   const erros: string[] = [];
@@ -339,16 +390,20 @@ export function validarAgendamentos(
       : opcoes.find((opcao) => chaveNome(opcao.nome) === chaveNome(entrada.tarefa));
     if (!tarefa) erros.push(`${n}: escolha uma tarefa da lista.`);
     const prazo = entrada.etiqueta === "PRAZO";
-    const fatal = prazo && entrada.dataFatal && dataValida(entrada.dataFatal) ? entrada.dataFatal : null;
+    const semFatal = prazo && Boolean(tarefa && contexto.semPrazoProprio?.(tarefa.id));
+    const fatalPedida = prazo && entrada.dataFatal && dataValida(entrada.dataFatal) ? entrada.dataFatal : null;
+    const fatal = semFatal ? null : fatalPedida;
     // No Prazo, o VIOS recebe o Enviar e cria sozinho o Revisar e o Protocolar conforme o
-    // fluxo do tipo de tarefa. Recalculado aqui; não vem da tela.
-    const data = prazo
-      ? fatal && tarefa
-        ? datasDoPrazo(fatal, contexto.ehDiaUtil, contexto.cadeiaDaTarefa(tarefa.id), contexto.hoje ?? null).enviar
-        : ""
-      : entrada.data;
-    if (prazo && !fatal) erros.push(`${n}: escolha a data fatal do prazo.`);
-    if (!prazo && !dataValida(data)) erros.push(`${n}: escolha a data no calendário.`);
+    // fluxo do tipo de tarefa. Recalculado aqui; não vem da tela. Sem prazo próprio, vale a data da tela
+    // (ou, de uma aba aberta antes desta versão, o Enviar da fatal que ela ainda pede).
+    const data =
+      prazo && !(semFatal && entrada.data)
+        ? fatalPedida && tarefa
+          ? datasDoPrazo(fatalPedida, contexto.ehDiaUtil, contexto.cadeiaDaTarefa(tarefa.id), contexto.hoje ?? null).enviar
+          : ""
+        : entrada.data;
+    if (prazo && !semFatal && !fatal) erros.push(`${n}: escolha a data fatal do prazo.`);
+    if ((!prazo || semFatal) && !dataValida(data)) erros.push(`${n}: escolha a data no calendário.`);
     // Audiência, perícia, sessão…: o horário vai junto para o VIOS.
     const compromisso = entrada.etiqueta === "COMPROMISSO";
     const hora = compromisso && horaValida(entrada.hora?.trim()) ? (entrada.hora as string).trim() : null;
@@ -359,6 +414,13 @@ export function validarAgendamentos(
       erros.push(`${n}: a hora final tem de ser depois da hora do compromisso.`);
     }
     const horaFim = compromisso && hora ? (horaValida(horaFimPedida) && horaFimPedida > hora ? horaFimPedida : horaFinalPadrao(hora)) : null;
+    // SESSÃO DE JULGAMENTO: a data limite pode ir além da data para conclusão, nunca antes dela.
+    const nomeVios = tarefa?.nomeVios ?? tarefa?.nome ?? null;
+    const limitePedido = entrada.dataLimite?.trim() || "";
+    if (pedeDataLimite(nomeVios) && limitePedido && dataValida(data) && (!dataValida(limitePedido) || limitePedido < data)) {
+      erros.push(`${n}: a data limite tem de ser a data para conclusão ou depois.`);
+    }
+    const dataLimite = dataLimiteDaTarefa(nomeVios, data, limitePedido);
     // Pode haver mais de um responsável (ex.: tipos com responsáveis fixos no VIOS), separados por vírgula.
     const nomesResponsaveis = separarNomes(entrada.responsavel);
     const encontrados = nomesResponsaveis.map((nome) => usuarioPorChave.get(chaveNome(nome)));
@@ -369,29 +431,57 @@ export function validarAgendamentos(
     const revisor = comRevisor && entrada.revisor?.trim() ? usuarioPorChave.get(chaveNome(entrada.revisor)) : null;
     if (comRevisor && entrada.revisor?.trim() && !revisor) erros.push(`${n}: escolha o revisor na lista de usuários do VIOS.`);
     if (prazo && !entrada.revisor?.trim()) erros.push(`${n}: no Prazo o revisor é obrigatório.`);
-    // Observação opcional: vai na descrição da tarefa no VIOS, abaixo da data da publicação.
+    // Observação: vai na descrição da tarefa no VIOS, abaixo da data da publicação; na CIÊNCIA NF, é a justificativa e é obrigatória.
     const observacao = entrada.observacao?.trim() || null;
     if (observacao && observacao.length > MAX_OBSERVACAO) erros.push(`${n}: observação com mais de ${MAX_OBSERVACAO} caracteres.`);
-    const diasPrazo = prazo && Number.isInteger(entrada.diasPrazo) && (entrada.diasPrazo ?? 0) > 0 ? (entrada.diasPrazo as number) : null;
+    const pedeObservacao = Boolean(tarefa) && contexto.exigirObservacao !== false && observacaoObrigatoria(tarefa?.nomeVios ?? tarefa?.nome);
+    if (pedeObservacao && !observacao) erros.push(`${n}: na CIÊNCIA NF a observação é obrigatória (vai como justificativa no VIOS).`);
+    const diasPrazo = prazo && !semFatal && Number.isInteger(entrada.diasPrazo) && (entrada.diasPrazo ?? 0) > 0 ? (entrada.diasPrazo as number) : null;
     const contagemPrazo = diasPrazo ? CONTAGENS_PRAZO.find((contagem) => contagem === entrada.contagemPrazo) ?? null : null;
     if (diasPrazo && !contagemPrazo) erros.push(`${n}: escolha se o prazo é em dias úteis ou corridos.`);
-    // Datas que a pessoa mudou no fluxo do VIOS: só de tarefas que o fluxo do tipo cria, e com data válida.
+    // O que a pessoa mudou no fluxo do VIOS: só de tarefas que o fluxo do tipo cria, com data válida e/ou
+    // responsáveis da lista de usuários do VIOS (com o nome como está no VIOS, que o robô procura).
+    let pessoaForaDoVios = false;
     const fluxoDatas = (Array.isArray(entrada.fluxoDatas) ? entrada.fluxoDatas : [])
       .filter(
         (item) =>
           Array.isArray(item?.caminho) &&
           item.caminho.length > 0 &&
           item.caminho.length <= 5 &&
-          item.caminho.every((parte) => typeof parte === "string" && parte.trim() && parte.length <= 200) &&
-          dataValida(String(item.data))
+          item.caminho.every((parte) => typeof parte === "string" && parte.trim() && parte.length <= 200)
       )
       .slice(0, MAX_DATAS_DO_FLUXO)
-      .map((item) => ({ caminho: item.caminho.map((parte) => parte.trim()), data: item.data }));
+      .flatMap((item): DataDoFluxo[] => {
+        const dataDoFluxo = item.data && dataValida(String(item.data)) ? item.data : null;
+        const pedidos = (Array.isArray(item.responsaveis) ? item.responsaveis : [])
+          .filter((nome): nome is string => typeof nome === "string" && Boolean(nome.trim()))
+          .slice(0, MAX_RESPONSAVEIS_DO_FLUXO)
+          .map((nome) => usuarioPorChave.get(chaveNome(nome)));
+        if (pedidos.some((usuario) => !usuario)) pessoaForaDoVios = true;
+        const responsaveis = [...new Set(pedidos.flatMap((usuario) => (usuario ? [usuario.nome] : [])))];
+        if (!dataDoFluxo && !responsaveis.length) return [];
+        return [
+          {
+            caminho: item.caminho.map((parte) => parte.trim()),
+            ...(dataDoFluxo ? { data: dataDoFluxo } : {}),
+            ...(responsaveis.length ? { responsaveis } : {}),
+          },
+        ];
+      });
+    if (pessoaForaDoVios) erros.push(`${n}: escolha os responsáveis das tarefas do fluxo na lista de usuários do VIOS.`);
     const caminhos = tarefa && contexto.caminhosDaTarefa ? contexto.caminhosDaTarefa(tarefa.id) : null;
     if (caminhos && fluxoDatas.some((item) => !caminhos.has(chaveDoCaminho(item.caminho)))) {
-      erros.push(`${n}: há data de tarefa do fluxo que esse tipo não cria no VIOS; confira o Fluxo do VIOS.`);
+      erros.push(`${n}: há data ou responsável de tarefa do fluxo que esse tipo não cria no VIOS; confira o Fluxo das tarefas.`);
     }
-    if (!tarefa || !responsavel || !dataValida(data) || (prazo && !revisor) || (compromisso && !hora) || (diasPrazo && !contagemPrazo)) {
+    if (
+      !tarefa ||
+      !responsavel ||
+      !dataValida(data) ||
+      (prazo && !revisor) ||
+      (compromisso && !hora) ||
+      (diasPrazo && !contagemPrazo) ||
+      (pedeObservacao && !observacao)
+    ) {
       return null;
     }
     return {
@@ -404,6 +494,7 @@ export function validarAgendamentos(
       contagemPrazo,
       hora,
       horaFim,
+      dataLimite,
       responsavel: responsavel.map((usuario) => usuario.nome).join(", "),
       responsavelId: responsavel.map((usuario) => usuario.id).join(","),
       revisor: revisor?.nome ?? null,

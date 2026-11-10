@@ -15,6 +15,7 @@ function agendamento(campos: Partial<AgendamentoResumo>): AgendamentoResumo {
     contagemPrazo: null,
     hora: "10:27",
     horaFim: null,
+    dataLimite: null,
     responsavel: "Manoela Brisighello Angotti",
     revisor: null,
     observacao: null,
@@ -64,6 +65,14 @@ describe("agendaNoVios", () => {
     ]);
     expect(agenda.linhas.at(-1)?.hora).toBe("10:27");
     expect(agenda.aoConcluir).toEqual(["CONCLUIR"]);
+  });
+
+  it("antes do robô: na Sessão de Julgamento, o revisor aparece na tarefa, junto com o responsável", () => {
+    const pedida = (campos: Partial<AgendamentoResumo>) => agendaNoVios(agendamento(campos)).linhas.find((linha) => linha.principal)?.responsaveis;
+    expect(pedida({ tarefa: "SESSÃO DE JULGAMENTO", responsavel: "Lorena Miranda", revisor: "Vanessa Sellani" })).toBe("Lorena Miranda, Vanessa Sellani");
+    expect(pedida({ tarefa: "SESSÃO DE JULGAMENTO", responsavel: "Lorena Miranda", revisor: "Lorena Miranda" })).toBe("Lorena Miranda");
+    expect(pedida({ tarefa: "SESSÃO DE JULGAMENTO", responsavel: "Lorena Miranda", revisor: null })).toBe("Lorena Miranda");
+    expect(pedida({ tarefa: "AUDIÊNCIA UNA/INICIAL", responsavel: "Lorena Miranda", revisor: "Vanessa Sellani" })).toBe("Lorena Miranda");
   });
 
   it("depois do robô: as tarefas gravadas, com o CI, e a pedida com o nome da vistagem", () => {

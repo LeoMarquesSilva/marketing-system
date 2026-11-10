@@ -45,6 +45,7 @@ const STATUS: Partial<Record<PublicacaoStatus, { rotulo: string; tom: TomSelo }>
   descartada: { rotulo: "Descartada", tom: "neutro" },
   triagem_pendente: { rotulo: "Pendente na controladoria", tom: "alerta" },
   juridico_vistar: { rotulo: "Jurídico vistar", tom: "sucesso" },
+  abertura_pasta: { rotulo: "Abertura de pasta", tom: "marca" },
 };
 
 export const PENDENCIAS: Record<Pendencia, string> = {

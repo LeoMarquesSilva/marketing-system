@@ -6,6 +6,9 @@ const GRAPH = "https://graph.microsoft.com/v1.0";
 /** Pasta onde o Power Automate deixa o xlsx diário da Kurier. */
 const SITE_KURIER = "bpplaw2.sharepoint.com:/sites/BISMARCHIPIRES";
 const PASTA_KURIER = "Núcleo de Publicações/2023/PUBLIS - KURRIER";
+/** Central do SharePoint: a lista SOLICITAÇÃO DE AGENDAMENTOS E REAGENDAMENTOS, no site CONTROLADORIAJURDICA. */
+const SITE_CENTRAL = "bpplaw2.sharepoint.com,48982ae6-70e4-47ef-94f5-1ae8ec3fbec4,3966f7f5-9dbf-47a8-abab-f35a490b8b11";
+const LISTA_CENTRAL = "d586975b-1c50-49ed-84e3-2cbe94c1e974";
 
 export interface ArquivoSharePoint {
   id: string;
@@ -71,6 +74,22 @@ export async function listarArquivosKurierSharePoint(): Promise<{ token: string;
     proxima = pagina["@odata.nextLink"];
   }
   return { token, siteId: site.id, arquivos };
+}
+
+/** Cria um item na Central do SharePoint; devolve o id. `campos` usa os nomes internos das colunas da lista. */
+export async function criarItemNaCentral(campos: Record<string, string | boolean>): Promise<string> {
+  const token = await tokenGraph();
+  const resposta = await fetch(`${GRAPH}/sites/${SITE_CENTRAL}/lists/${LISTA_CENTRAL}/items`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: campos }),
+    cache: "no-store",
+  });
+  const corpo = (await resposta.json().catch(() => null)) as { id?: string; error?: { message?: string } } | null;
+  if (!resposta.ok || !corpo?.id) {
+    throw new VistagemError(`A Central do SharePoint recusou o item (${resposta.status}): ${corpo?.error?.message ?? "sem detalhe"}`, 502);
+  }
+  return corpo.id;
 }
 
 export async function baixarArquivoSharePoint(siteId: string, itemId: string, token: string): Promise<Uint8Array> {

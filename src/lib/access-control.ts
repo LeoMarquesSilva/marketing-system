@@ -52,6 +52,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/custos-projetos", label: "Custos de projetos" },
   { key: "/icp", label: "ICP (cliente ideal)", manualOnly: true },
   { key: "/rh", label: "RH (férias, dados cadastrais, organograma e boas práticas)", manualOnly: true },
+  { key: "/pe27", label: "PE27 · Planejamento 2027 (só leitura)", manualOnly: true },
   { key: "/admin", label: "Configurações", admin: true },
 ];
 
@@ -67,6 +68,7 @@ export const OPS_PLANNER_KEY = "/operacoes-legais/planner";
 export const TEAM_SURVEYS_KEY = "/operacoes-legais/pesquisas";
 export const ICP_KEY = "/icp";
 export const FACILITIES_KEY = "/facilities";
+export const PE27_KEY = "/pe27";
 export const MANUAL_ONLY_KEYS = ACCESS_SECTIONS.filter((s) => s.manualOnly).map((s) => s.key);
 
 const NON_ADMIN_KEYS = ACCESS_SECTIONS.filter(
@@ -95,10 +97,14 @@ export const ALWAYS_ALLOWED_PATHS = [
   "/entregas",
   // Atualização da própria ficha cadastral (Pessoas e Cultura).
   "/minha-ficha",
+  // Links de boas-vindas da própria área (Pessoas e Cultura).
+  "/meus-links",
   // Votação do BP Awards (o comitê fica em /rh/bp-awards, só com RH).
   "/bp-awards",
   // Resposta às pesquisas com a equipe (o servidor confere se a pessoa está no público).
   "/pesquisa",
+  // Confirmação de presença na festa de 10 anos (o servidor confere se a pessoa é da equipe).
+  "/festa-10-anos",
 ];
 
 /**
@@ -218,6 +224,39 @@ export function hasTeamSurveysAccess(profile: AccessProfile | null | undefined):
 export function isTeamSurveysPath(pathname: string): boolean {
   return pathname === TEAM_SURVEYS_KEY || pathname.startsWith(`${TEAM_SURVEYS_KEY}/`);
 }
+
+/**
+ * PE27 (Planejamento Estratégico 2027): admin ou liberação manual da chave
+ * `/pe27` em Usuários (nunca pelo modo legado). Quem tem só a chave vê e não
+ * edita: decisões e textos ficam com os admins.
+ */
+export function hasPe27Access(profile: AccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  return Boolean(profile.permissions?.includes(PE27_KEY));
+}
+
+export function canEditPe27(profile: AccessProfile | null | undefined): boolean {
+  return isAdminRole(profile);
+}
+
+export function isPe27Path(pathname: string): boolean {
+  return pathname === PE27_KEY || pathname.startsWith(`${PE27_KEY}/`);
+}
+
+/**
+ * Perfil liberado só para o PE27 (ex.: consultores externos Camila Gracioli e
+ * Carlos Zamboni): não enxerga nada além do módulo, nem as telas abertas a
+ * todo usuário logado (Meus Clientes, fotos, calendário editorial…).
+ */
+export function isPe27OnlyProfile(profile: AccessProfile | null | undefined): boolean {
+  if (!profile || isAdminRole(profile)) return false;
+  const permissions = profile.permissions ?? [];
+  return permissions.length > 0 && permissions.every((key) => key === PE27_KEY);
+}
+
+/** Fora do módulo, o perfil só-PE27 abre apenas a troca de senha. */
+const PE27_ONLY_EXTRA_PATHS = ["/alterar-senha"];
 
 /** Painel de Vistagem e agendamento: admin ou liberação manual em Usuários. */
 export function hasVistagemAccess(profile: AccessProfile | null | undefined): boolean {
@@ -342,6 +381,10 @@ export function canAccessPath(
   profile: AccessProfile | null | undefined,
   pathname: string
 ): boolean {
+  if (isPe27OnlyProfile(profile)) {
+    return isPe27Path(pathname) || PE27_ONLY_EXTRA_PATHS.includes(pathname);
+  }
+
   if (ALWAYS_ALLOWED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return true;
   }
@@ -356,6 +399,10 @@ export function canAccessPath(
 
   if (isTeamSurveysPath(pathname)) {
     return hasTeamSurveysAccess(profile);
+  }
+
+  if (isPe27Path(pathname)) {
+    return hasPe27Access(profile);
   }
 
   const isOperacoesLegaisRoute =

@@ -2,7 +2,7 @@ import "server-only";
 
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { resolveEmployeeAvatarUrl } from "@/lib/ferias/filters";
+import { loadPeopleDirectory } from "@/lib/rh/people-directory";
 import { RhHttpError, requireHrManager } from "@/lib/rh/qualifications/server";
 import {
   FEEDBACK_PHOTO_MAX_BYTES,
@@ -164,81 +164,19 @@ export async function listFeedbacks(): Promise<GoodPracticeFeedback[]> {
   return ((data ?? []) as unknown as FeedbackRow[]).map(toFeedback);
 }
 
-const NAME_PARTICLES = new Set(["da", "de", "do", "das", "dos", "e"]);
-
-function nameParts(name: string): string[] {
-  return name.trim().split(/\s+/).filter((part) => !NAME_PARTICLES.has(part.toLowerCase()));
-}
-
-/** "Caio Augusto de Alcântara César Silva" → "Caio Silva". */
-function firstAndLastName(fullName: string): string {
-  const parts = nameParts(fullName);
-  return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1]}` : fullName.trim();
-}
-
-/** Nome do organograma quando é curto; "Renato Rossetti Vallim de Castro" → "Renato Rossetti". */
-function displayName(orgName: string | undefined, fullName: string): string {
-  if (!orgName?.trim()) return firstAndLastName(fullName);
-  const parts = nameParts(orgName);
-  return parts.length > 3 ? `${parts[0]} ${parts[1]}` : orgName.trim();
-}
-
-type EmployeeRow = {
-  id: string;
-  full_name: string;
-  department: string | null;
-  position: string | null;
-  is_active: boolean;
-  user_id: string | null;
-};
-
 /** Cadastro para escolher colaborador e gestor (ativos e ex-colaboradores), com foto e nome curto. */
 export async function listFeedbackPeople(): Promise<FeedbackPerson[]> {
   await requireHrManager();
-  const db = createFeedbackAdminClient();
-  const [employeesResult, orgResult] = await Promise.all([
-    db.from("hr_employees").select("id, full_name, department, position, is_active, user_id").order("full_name"),
-    db.from("org_chart_members").select("employee_id, display_name, photo_url, placement"),
-  ]);
-  if (employeesResult.error) {
-    console.error("[boas-praticas] colaboradores:", employeesResult.error);
-    throw new RhHttpError("Falha ao carregar colaboradores.", 500, "QUERY_FAILED");
-  }
-  if (orgResult.error) console.error("[boas-praticas] organograma:", orgResult.error);
-
-  const employees = ((employeesResult.data ?? []) as EmployeeRow[]).filter(
-    (person) => !/fênix agendador/i.test(person.full_name)
-  );
-  const userIds = [...new Set(employees.map((person) => person.user_id).filter(Boolean))] as string[];
-  const avatarByUser = new Map<string, string>();
-  if (userIds.length) {
-    const { data, error } = await db.from("users").select("id, avatar_url, photo_onedrive_url").in("id", userIds);
-    if (error) console.error("[boas-praticas] fotos:", error);
-    for (const user of data ?? []) {
-      const url = resolveEmployeeAvatarUrl(user.avatar_url as string | null, user.photo_onedrive_url as string | null);
-      if (url) avatarByUser.set(user.id as string, url);
-    }
-  }
-  const orgByEmployee = new Map<string, { display_name: string; photo_url: string | null }>();
-  for (const member of orgResult.data ?? []) {
-    if (member.placement === "hidden") continue;
-    const current = orgByEmployee.get(member.employee_id as string);
-    if (!current || (!current.photo_url && member.photo_url)) {
-      orgByEmployee.set(member.employee_id as string, {
-        display_name: member.display_name as string,
-        photo_url: (member.photo_url as string | null) ?? null,
-      });
-    }
-  }
-
-  return employees.map(({ user_id, ...person }) => {
-    const org = orgByEmployee.get(person.id);
-    return {
-      ...person,
-      short_name: displayName(org?.display_name, person.full_name),
-      avatar_url: (user_id ? avatarByUser.get(user_id) : undefined) ?? org?.photo_url ?? null,
-    };
-  });
+  const people = await loadPeopleDirectory(createFeedbackAdminClient(), "boas-praticas");
+  return people.map(({ id, full_name, short_name, department, position, is_active, avatar_url }) => ({
+    id,
+    full_name,
+    short_name,
+    department,
+    position,
+    is_active,
+    avatar_url,
+  }));
 }
 
 async function readFeedback(db: SupabaseClient, id: string): Promise<GoodPracticeFeedback> {

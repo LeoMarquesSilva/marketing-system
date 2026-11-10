@@ -29,6 +29,7 @@ describe("catálogo de navegação", () => {
     const admin = buildNav({ role: "admin" });
     expect(admin.map((front) => front.label)).toEqual([
       "Visão geral",
+      "Estratégia",
       "Marketing",
       "Relacionamento / Comercial",
       "Pessoas e Cultura",
@@ -41,6 +42,18 @@ describe("catálogo de navegação", () => {
     const marketing = admin.find((front) => front.id === "marketing")!;
     expect(marketing.features.map((feature) => feature.label)).toContain("Gerador de conteúdo");
     expect(marketing.features.map((feature) => feature.label)).toContain("Métricas de redes sociais");
+  });
+
+  it("PE27 aparece para admin e para quem tem a chave, nunca pelo modo legado", () => {
+    expect(visibleHrefs({ role: "admin" })).toEqual(expect.arrayContaining(["/pe27", "/pe27/insumos"]));
+    expect(visibleHrefs({ role: null, permissions: null })).not.toContain("/pe27");
+    expect(visibleHrefs({ role: null, permissions: ["/planner"] })).not.toContain("/pe27");
+    expect(buildNav({ role: null, permissions: ["/planner"] }).some((front) => front.id === "estrategia")).toBe(false);
+    expect(visibleHrefs({ role: null, permissions: ["/planner", "/pe27"] })).toEqual(expect.arrayContaining(["/planner", "/pe27"]));
+  });
+
+  it("consultor só com o PE27 vê no menu apenas o PE27", () => {
+    expect(visibleHrefs({ role: null, permissions: ["/pe27"], department: "Consultoria Estratégica" })).toEqual(["/pe27", "/pe27/insumos"]);
   });
 });
 
@@ -165,8 +178,10 @@ describe("visibilidade por perfil", () => {
   it("permissão /rh libera todas as telas de Pessoas e Cultura do RH", () => {
     const hrefs = visibleHrefs({ role: null, permissions: ["/planner", "/rh"] });
     expect(hrefs).toEqual(
-      expect.arrayContaining(["/rh/ferias", "/rh/qualificacoes", "/rh/fichas-cadastrais", "/rh/organograma", "/rh/boas-praticas", "/rh/bp-awards", "/bp-awards"])
+      expect.arrayContaining(["/rh/ferias", "/rh/fichas-cadastrais", "/rh/organograma", "/rh/boas-praticas", "/rh/bp-awards", "/bp-awards"])
     );
+    // Qualificações saiu do menu: repetia o que já está em Fichas cadastrais.
+    expect(hrefs).not.toContain("/rh/qualificacoes");
     expect(hrefs).not.toContain("/solicitacoes");
   });
 

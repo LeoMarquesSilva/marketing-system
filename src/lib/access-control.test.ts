@@ -9,9 +9,12 @@ import {
   firstAllowedPath,
   hasCafeCulturaAccess,
   hasIcpAccess,
+  canEditPe27,
   hasOperacoesLegaisAccess,
   hasOpsPlannerAccess,
+  hasPe27Access,
   hasTeamSurveysAccess,
+  isPe27OnlyProfile,
   hasVistagemAccess,
   isManualOnlyKey,
   normalizePermissionsInput,
@@ -205,11 +208,11 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath({ role: "admin" }, "/cafe-cultura")).toBe(true);
   });
 
-  it("permissão /rh libera /rh/ferias e /rh/qualificacoes", () => {
+  it("permissão /rh libera /rh/ferias e /rh/fichas-cadastrais", () => {
     const rh = { role: null, permissions: ["/rh"] };
     expect(canAccessPath(rh, "/rh")).toBe(true);
     expect(canAccessPath(rh, "/rh/ferias")).toBe(true);
-    expect(canAccessPath(rh, "/rh/qualificacoes")).toBe(true);
+    expect(canAccessPath(rh, "/rh/fichas-cadastrais")).toBe(true);
     expect(canAccessPath(rh, "/planner")).toBe(false);
   });
 
@@ -219,7 +222,7 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(legado, "/ferias")).toBe(false);
   });
 
-  it("viewer de férias acessa somente Férias, não Qualificações", () => {
+  it("viewer de férias acessa somente Férias, não as outras telas do RH", () => {
     const viewer = {
       role: null,
       permissions: ["/conteudo/roteiros"],
@@ -228,7 +231,7 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(viewer, "/rh")).toBe(true);
     expect(canAccessPath(viewer, "/rh/ferias")).toBe(true);
     expect(canAccessPath(viewer, "/ferias")).toBe(true);
-    expect(canAccessPath(viewer, "/rh/qualificacoes")).toBe(false);
+    expect(canAccessPath(viewer, "/rh/fichas-cadastrais")).toBe(false);
   });
 
   it("gestor só com Meus Clientes nas permissions ainda acessa a rota e não o Planner", () => {
@@ -318,5 +321,37 @@ describe("pesquisas com a equipe", () => {
 
   it("a página de resposta abre para qualquer pessoa logada", () => {
     expect(canAccessPath({ role: null, permissions: ["/planner"] }, "/pesquisa/pe27-operacoes-legais")).toBe(true);
+  });
+});
+
+describe("PE27 (planejamento estratégico)", () => {
+  it("admin abre e edita; a chave /pe27 abre só para ler; o modo legado não abre", () => {
+    expect(hasPe27Access({ role: "admin" })).toBe(true);
+    expect(canEditPe27({ role: "admin" })).toBe(true);
+    expect(canAccessPath({ role: "admin" }, "/pe27/insumos")).toBe(true);
+    expect(canAccessPath({ role: null, permissions: null }, "/pe27")).toBe(false);
+    const comChave = { role: null, permissions: ["/pe27"] };
+    expect(canAccessPath(comChave, "/pe27/insumos")).toBe(true);
+    expect(canEditPe27(comChave)).toBe(false);
+    expect(normalizePermissionsInput(["/pe27"])).toEqual(["/pe27"]);
+    expect(isManualOnlyKey("/pe27")).toBe(true);
+  });
+
+  it("perfil só com o PE27 (consultores) não vê nem as telas abertas a todos", () => {
+    const consultor = { role: null, permissions: ["/pe27"] };
+    expect(isPe27OnlyProfile(consultor)).toBe(true);
+    for (const path of ["/", "/meus-clientes", "/minhas-fotos", "/fotos-eventos", "/conteudo/cronograma", "/perfil", "/planner"]) {
+      expect(canAccessPath(consultor, path)).toBe(false);
+    }
+    expect(canAccessPath(consultor, "/alterar-senha")).toBe(true);
+    expect(firstAllowedPath(consultor)).toBe("/pe27");
+  });
+
+  it("a chave junto com outras não restringe o resto", () => {
+    const socio = { role: null, permissions: ["/planner", "/pe27"] };
+    expect(isPe27OnlyProfile(socio)).toBe(false);
+    expect(isPe27OnlyProfile({ role: "admin", permissions: ["/pe27"] })).toBe(false);
+    expect(canAccessPath(socio, "/meus-clientes")).toBe(true);
+    expect(canAccessPath(socio, "/pe27")).toBe(true);
   });
 });

@@ -15,6 +15,9 @@ import {
   avisosDaData,
   atalhosDePrazo,
   montarObservacaoVios,
+  dataLimiteDaTarefa,
+  observacaoObrigatoria,
+  pedeDataLimite,
   referenciaDaPublicacao,
   responsaveisNaArea,
   separarNomes,
@@ -105,6 +108,7 @@ describe("validarAgendamentos", () => {
           contagemPrazo: "corridos",
           hora: null,
           horaFim: null,
+          dataLimite: null,
           responsavel: "Advogada Exemplo",
           responsavelId: "4",
           revisor: "Revisor Exemplo",
@@ -113,6 +117,104 @@ describe("validarAgendamentos", () => {
           fluxoDatas: [],
         },
       ],
+    });
+  });
+
+  describe("SESSÃO DE JULGAMENTO: data limite própria", () => {
+    const comSessao = {
+      ...contexto,
+      tarefas: { ...contexto.tarefas, COMPROMISSO: [...contexto.tarefas.COMPROMISSO, { id: "406", nome: "SESSÃO DE JULGAMENTO" }] },
+    };
+    const sessao = (extra: Record<string, unknown>) => ({
+      etiqueta: "COMPROMISSO" as const,
+      tarefa: "SESSÃO DE JULGAMENTO",
+      tarefaId: "406",
+      data: "2026-11-19",
+      hora: "09:00",
+      responsavel: "Advogada Exemplo",
+      ...extra,
+    });
+
+    it("reconhece o tipo pelo nome do VIOS", () => {
+      expect(pedeDataLimite("SESSÃO DE JULGAMENTO")).toBe(true);
+      expect(pedeDataLimite("sessao de julgamento")).toBe(true);
+      expect(pedeDataLimite("AUDIÊNCIA DE INSTRUÇÃO")).toBe(false);
+    });
+
+    it("sem escolha, a data limite é a própria data", () => {
+      const resultado = validarAgendamentos([sessao({})], comSessao);
+      expect(resultado.ok && resultado.itens[0].dataLimite).toBe("2026-11-19");
+    });
+
+    it("a escolhida vale quando é a data ou depois", () => {
+      const resultado = validarAgendamentos([sessao({ dataLimite: "2026-11-25" })], comSessao);
+      expect(resultado.ok && resultado.itens[0]).toMatchObject({ data: "2026-11-19", dataLimite: "2026-11-25" });
+    });
+
+    it("antes da data, não passa", () => {
+      const resultado = validarAgendamentos([sessao({ dataLimite: "2026-11-18" })], comSessao);
+      expect(resultado).toEqual({ ok: false, erros: ["Tarefa 1: a data limite tem de ser a data para conclusão ou depois."] });
+    });
+
+    it("nos outros tipos a data limite não existe, mesmo se vier", () => {
+      const resultado = validarAgendamentos([sessao({ tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", dataLimite: "2026-11-25" })], comSessao);
+      expect(resultado.ok && resultado.itens[0].dataLimite).toBeNull();
+    });
+
+    it("dataLimiteDaTarefa: inválida ou antes da data vira a própria data", () => {
+      expect(dataLimiteDaTarefa("SESSÃO DE JULGAMENTO", "2026-11-19", "xx")).toBe("2026-11-19");
+      expect(dataLimiteDaTarefa("SESSÃO DE JULGAMENTO", "2026-11-19", "2026-11-01")).toBe("2026-11-19");
+      expect(dataLimiteDaTarefa("SESSÃO DE JULGAMENTO", "", "2026-11-25")).toBeNull();
+      expect(dataLimiteDaTarefa("PERÍCIA", "2026-11-19", "2026-11-25")).toBeNull();
+    });
+  });
+
+  describe("CIÊNCIA NF: observação obrigatória", () => {
+    const comCiencia = {
+      ...contexto,
+      tarefas: {
+        ...contexto.tarefas,
+        PROVIDENCIA: [
+          ...contexto.tarefas.PROVIDENCIA,
+          { id: "796", nome: "CIÊNCIA NF" },
+          { id: "316", nome: "CIÊNCIA NF (tipo 316)", nomeVios: "CIÊNCIA NF" },
+        ],
+      },
+    };
+    const nf = (extra: Record<string, unknown>) => ({ etiqueta: "PROVIDENCIA" as const, tarefa: "CIÊNCIA NF", data: "2026-11-10", responsavel: "Advogada Exemplo", ...extra });
+
+    it("reconhece o tipo pelo nome do VIOS, sem acento e sem diferença de caixa", () => {
+      expect(observacaoObrigatoria("CIÊNCIA NF")).toBe(true);
+      expect(observacaoObrigatoria(" ciencia nf ")).toBe(true);
+      expect(observacaoObrigatoria("1. CIÊNCIA DOS AGENDAMENTOS")).toBe(false);
+      expect(observacaoObrigatoria(null)).toBe(false);
+    });
+
+    it("sem observação, não passa; só espaços também não", () => {
+      for (const observacao of [undefined, "", "   "]) {
+        const resultado = validarAgendamentos([nf({ observacao })], comCiencia);
+        expect(resultado).toEqual({ ok: false, erros: ["Tarefa 1: na CIÊNCIA NF a observação é obrigatória (vai como justificativa no VIOS)."] });
+      }
+    });
+
+    it("com observação, passa", () => {
+      const resultado = validarAgendamentos([nf({ observacao: " Sem providência: só ciência. " })], comCiencia);
+      expect(resultado.ok && resultado.itens[0]).toMatchObject({ tarefa: "CIÊNCIA NF", tarefaId: "796", observacao: "Sem providência: só ciência." });
+    });
+
+    it("vale também quando a lista mostra o tipo no fim do nome", () => {
+      const resultado = validarAgendamentos([nf({ tarefa: "CIÊNCIA NF (tipo 316)", tarefaId: "316" })], comCiencia);
+      expect(resultado.ok).toBe(false);
+    });
+
+    it("as outras tarefas continuam com a observação opcional", () => {
+      const resultado = validarAgendamentos([nf({ tarefa: "1. CIÊNCIA DOS AGENDAMENTOS" })], comCiencia);
+      expect(resultado.ok).toBe(true);
+    });
+
+    it("a Conferência não exige: ali só se ajusta data e pessoas", () => {
+      const resultado = validarAgendamentos([nf({})], { ...comCiencia, exigirObservacao: false });
+      expect(resultado.ok).toBe(true);
     });
   });
 
@@ -226,6 +328,56 @@ describe("validarAgendamentos", () => {
     );
     expect(semFatal.ok).toBe(false);
     expect(validarAgendamentos([], contexto).ok).toBe(false);
+  });
+
+  it("tarefas do fluxo: aceita data e/ou responsáveis do VIOS (com a grafia de lá) e recusa pessoa fora da lista", () => {
+    const entrada = (fluxoDatas: { caminho: string[]; data?: string; responsaveis?: string[] }[]) => [
+      { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo", fluxoDatas },
+    ];
+    const certo = validarAgendamentos(
+      entrada([
+        { caminho: ["2. REVISAR"], responsaveis: ["revisor exemplo", "Advogada Exemplo", "REVISOR EXEMPLO"] },
+        { caminho: ["3. PROTOCOLAR"], data: "2026-10-30" },
+        { caminho: ["1. CIÊNCIA"], data: "2026-02-30", responsaveis: [] },
+      ]),
+      contexto
+    );
+    expect(certo.ok && certo.itens[0].fluxoDatas).toEqual([
+      { caminho: ["2. REVISAR"], responsaveis: ["Revisor Exemplo", "Advogada Exemplo"] },
+      { caminho: ["3. PROTOCOLAR"], data: "2026-10-30" },
+    ]);
+    const fora = validarAgendamentos(entrada([{ caminho: ["2. REVISAR"], responsaveis: ["Fulano de Tal"] }]), contexto);
+    expect(fora.ok).toBe(false);
+    if (!fora.ok) expect(fora.erros.join(" ")).toMatch(/responsáveis das tarefas do fluxo/);
+    // Caminho que o tipo não cria: recusa também quando só o responsável mudou.
+    const naoCria = validarAgendamentos(entrada([{ caminho: ["INVENTADA"], responsaveis: ["Advogada Exemplo"] }]), {
+      ...contexto,
+      caminhosDaTarefa: () => new Set(["2. REVISAR"]),
+    });
+    expect(naoCria.ok).toBe(false);
+  });
+
+  it("tarefa de Prazo sem prazo próprio vai com a data dela, sem fatal; o revisor continua obrigatório", () => {
+    const semPrazo = { ...contexto, cadeiaDaTarefa: () => null, semPrazoProprio: () => true };
+    const base = { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo" };
+    const certo = validarAgendamentos([{ ...base, data: "2026-11-10", dataFatal: null, diasPrazo: 8 }], semPrazo);
+    expect(certo.ok && certo.itens[0]).toMatchObject({ data: "2026-11-10", dataFatal: null, diasPrazo: null, contagemPrazo: null });
+
+    const semData = validarAgendamentos([{ ...base, data: "", dataFatal: null }], semPrazo);
+    expect(semData.ok).toBe(false);
+    if (!semData.ok) expect(semData.erros.join(" ")).toMatch(/data no calendário/);
+
+    const semRevisor = validarAgendamentos([{ ...base, data: "2026-11-10", dataFatal: null, revisor: "" }], semPrazo);
+    expect(semRevisor.ok).toBe(false);
+
+    // Aba aberta antes da mudança: ainda manda a fatal, e a tarefa vai no Enviar dela.
+    const abaAntiga = validarAgendamentos([{ ...base, data: "", dataFatal: "2026-11-11" }], semPrazo);
+    expect(abaAntiga.ok && abaAntiga.itens[0]).toMatchObject({ data: "2026-11-10", dataFatal: null });
+
+    // As outras tarefas de Prazo continuam pedindo a fatal.
+    const comPrazo = validarAgendamentos([{ ...base, data: "2026-11-10", dataFatal: null }], { ...contexto, semPrazoProprio: () => false });
+    expect(comPrazo.ok).toBe(false);
+    if (!comPrazo.ok) expect(comPrazo.erros.join(" ")).toMatch(/data fatal/);
   });
 
   it("a observação é opcional", () => {

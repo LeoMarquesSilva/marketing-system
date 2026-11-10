@@ -1,4 +1,4 @@
-import { Montserrat } from "next/font/google";
+import localFont from "next/font/local";
 import type { ReactNode } from "react";
 
 /**
@@ -6,9 +6,9 @@ import type { ReactNode } from "react";
  * institucional do escritório (bismarchipires.com.br). Pesos leves (200/300)
  * reproduzem o tratamento GothamLight dos títulos.
  */
-const sans = Montserrat({
-  subsets: ["latin"],
-  weight: ["200", "300", "400", "500", "600"],
+const sans = localFont({
+  src: "../../../fonts/montserrat-latin-variable.woff2",
+  weight: "200 600",
   variable: "--font-nps-sans",
   display: "swap",
 });

@@ -4,6 +4,8 @@
  * vem só da pasta no VIOS.
  */
 
+import type { MateriaVios, SintesePedida } from "./types";
+
 function plano(texto: string | null | undefined): string {
   return String(texto ?? "")
     .normalize("NFD")
@@ -85,8 +87,49 @@ export function partesPorPolo(partes: { nome: string; polo: string }[], cliente:
   return { ativo: doPolo("A"), passivo: doPolo("P") };
 }
 
-/** Tamanho do trecho que se acrescenta à síntese de uma vez ("Atualizar Síntese"). */
+/** Tamanho do trecho que se acrescenta à síntese de uma vez ("Atualizar cadastro no VIOS"). */
 export const LIMITE_TRECHO_SINTESE = 4000;
+
+/** Pedido que vale para o cadastro: na fila ou gravado (o que deu erro ou só foi simulado, não). */
+function pedidoValido(pedida: Pick<SintesePedida, "status" | "simulado">): boolean {
+  return pedida.status !== "erro" && !(pedida.simulado && pedida.status === "concluido");
+}
+
+/**
+ * Exige a Matéria ao atualizar o cadastro: o VIOS não grava o cadastro do processo sem ela. A base do SIOE só muda
+ * na carga seguinte, então um pedido com Matéria que está na fila ou foi gravado já resolve.
+ */
+export function precisaDeMateria(materiaVazia: boolean, pedidas: Pick<SintesePedida, "materias" | "status" | "simulado">[]): boolean {
+  if (!materiaVazia) return false;
+  return !pedidas.some((pedida) => pedida.materias.length > 0 && pedidoValido(pedida));
+}
+
+/** Exige o Sistema do Tribunal ao atualizar o cadastro, pela mesma regra da Matéria (o VIOS também o exige). */
+export function precisaDeSistema(sistemaVazio: boolean, pedidas: Pick<SintesePedida, "sistemaTribunal" | "status" | "simulado">[]): boolean {
+  if (!sistemaVazio) return false;
+  return !pedidas.some((pedida) => Boolean(pedida.sistemaTribunal) && pedidoValido(pedida));
+}
+
+/** Confere o Sistema do Tribunal escolhido na lista do VIOS: o da lista, null sem escolha, ou `fora` se não estiver nela. */
+export function sistemaDaLista(id: unknown, lista: MateriaVios[]): { sistema: MateriaVios | null; fora: boolean } {
+  const valor = typeof id === "string" ? id.trim() : "";
+  if (!valor) return { sistema: null, fora: false };
+  const sistema = lista.find((item) => item.id === valor) ?? null;
+  return { sistema, fora: !sistema };
+}
+
+/** Confere as matérias escolhidas na lista do VIOS. `fora` são os ids que a lista não tem. */
+export function materiasDaLista(ids: unknown, lista: MateriaVios[]): { materias: MateriaVios[]; fora: string[] } {
+  const pedidos = Array.isArray(ids) ? [...new Set(ids.filter((id): id is string => typeof id === "string").map((id) => id.trim()).filter(Boolean))] : [];
+  const porId = new Map(lista.map((materia) => [materia.id, materia]));
+  return {
+    materias: pedidos.flatMap((id) => {
+      const materia = porId.get(id);
+      return materia ? [materia] : [];
+    }),
+    fora: pedidos.filter((id) => !porId.has(id)),
+  };
+}
 
 /** Entidades HTML que o VIOS deixa na síntese (o CSV troca o ";" final por ":", ex.: "&ndash:"). */
 const ENTIDADES: Record<string, string> = {

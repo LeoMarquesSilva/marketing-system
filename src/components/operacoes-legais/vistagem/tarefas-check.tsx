@@ -5,14 +5,14 @@ import type { LucideIcon } from "lucide-react";
 import { Bot, CalendarDays, CircleCheck, Clock, Flag, Info, TriangleAlert, UserCheck, UserRound, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ROTULO_ETIQUETA, chaveNome, nomesDasPessoas } from "@/lib/vistagem/agendamento";
-import { compararTarefa, type ComparacaoDaTarefa, type SituacaoCampo, type SituacaoCheck } from "@/lib/vistagem/check";
+import { ROTULO_ETIQUETA, chaveNome, nomesDasPessoas, revisorFicaNaTarefa } from "@/lib/vistagem/agendamento";
+import { compararTarefa, revisorEstaNaTarefa, type ComparacaoDaTarefa, type SituacaoCampo, type SituacaoCheck } from "@/lib/vistagem/check";
 import { nomeCurto } from "@/lib/vistagem/como-fica-no-vios";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import type { AgendamentoResumo } from "@/lib/vistagem/types";
 import { formatarData } from "./publicacao-ui";
 import { AvatarPessoa } from "./combobox-busca";
-import { AgendaNoVios, DiaNaAgenda, ENVIO, ESTILO_CLASSE, ICONE_CLASSE, LinkVios } from "./tarefas-conferencia";
+import { AgendaNoVios, DiaNaAgenda, ESTILO_CLASSE, ICONE_CLASSE, LinkVios, corDoTextoDoEnvio, envioDaTarefa } from "./tarefas-conferencia";
 import { Selo, TOM_CLASSE } from "./ui";
 
 /**
@@ -169,6 +169,7 @@ function Comparacao({
 }) {
   const { gravada } = comparacao;
   const responsavel = comparacao.responsavel;
+  const revisorNaTarefa = revisorEstaNaTarefa(item);
   return (
     <div className="@container overflow-hidden rounded-md border border-[#e6eef0]">
       <table className="w-full table-fixed border-collapse text-sm @max-sm:block">
@@ -248,10 +249,22 @@ function Comparacao({
             <Linha
               icone={UserCheck}
               rotulo="Revisor"
-              dica="O robô não devolve o revisor da tarefa. No VIOS, aparecem aqui as tarefas Revisar do fluxo e quem está nelas."
-              situacao={null}
+              dica={
+                revisorFicaNaTarefa(item.tarefa)
+                  ? "Na Sessão de Julgamento o revisor fica na própria tarefa, junto com o responsável."
+                  : "O robô não devolve o revisor da tarefa. No VIOS, aparecem aqui as tarefas Revisar do fluxo e quem está nelas."
+              }
+              situacao={revisorNaTarefa ? "confere" : null}
               pedido={<PessoasCurtas texto={item.revisor} fotos={fotos} />}
-              noVios={<RevisoresNoVios item={item} fotos={fotos} hoje={hoje} />}
+              noVios={
+                revisorNaTarefa ? (
+                  <PessoasCurtas texto={item.revisor} fotos={fotos} />
+                ) : revisorNaTarefa === false ? (
+                  <NaoVeio>Não está na tarefa: confira no VIOS</NaoVeio>
+                ) : (
+                  <RevisoresNoVios item={item} fotos={fotos} hoje={hoje} />
+                )
+              }
             />
           ) : null}
         </tbody>
@@ -348,8 +361,8 @@ export function CartoesCheck({
                       Simulada
                     </Selo>
                   ) : item.envioStatus !== "concluido" ? (
-                    <Selo tom={ENVIO[item.envioStatus].tom} icone={Bot}>
-                      {ENVIO[item.envioStatus].rotulo}
+                    <Selo tom={envioDaTarefa(item).tom} icone={Bot}>
+                      {envioDaTarefa(item).rotulo}
                     </Selo>
                   ) : null}
                   {comparacao.ci ? (
@@ -368,7 +381,7 @@ export function CartoesCheck({
                 ) : null}
                 {item.observacao ? <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{item.observacao}</p> : null}
                 {simulada ? <p className="text-xs text-muted-foreground">Preenchida no VIOS, não gravada.</p> : null}
-                {item.envioErro ? <p className="whitespace-pre-wrap break-words text-xs text-red-700">{item.envioErro}</p> : null}
+                {item.envioErro ? <p className={cn("whitespace-pre-wrap break-words text-xs", corDoTextoDoEnvio(item))}>{item.envioErro}</p> : null}
               </div>
             </header>
 

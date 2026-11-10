@@ -12,6 +12,7 @@ import { compararTarefa } from "@/lib/vistagem/check";
 import { nomeCurto, partesDaData } from "@/lib/vistagem/como-fica-no-vios";
 import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
 import type { AgendadasJuridicoResposta, AgendamentoResumo, ConferenciaItem } from "@/lib/vistagem/types";
+import { SeloAberturaDePasta, SituacaoNaCentral } from "./abertura-pasta";
 import { DetalheAgendada } from "./agendada-detalhe";
 import { AvatarPessoa } from "./combobox-busca";
 import {
@@ -28,7 +29,7 @@ import type { NavegacaoNaFila } from "./faixa-processo";
 import { IconeTribunal, LogoGrupo, SeloArea } from "./marcas";
 import { formatarData, formatarDataHora } from "./publicacao-ui";
 import { IconeOpcao, Seletor } from "./seletor";
-import { DiaNaAgenda, ENVIO, ESTILO_CLASSE, ICONE_CLASSE, LinkVios } from "./tarefas-conferencia";
+import { DiaNaAgenda, ESTILO_CLASSE, ICONE_CLASSE, LinkVios, corDoTextoDoEnvio, envioDaTarefa } from "./tarefas-conferencia";
 import { Aviso, Carregando, Painel, Selo, Vazio } from "./ui";
 
 /** Filtro por situação; vazio é "Todas". */
@@ -41,6 +42,7 @@ const NO_FILTRO: Record<SituacaoAgendada, string> = {
   agendada: "Agendadas",
   checada: "Checadas",
   revisao: "Em revisão",
+  central: "Abertura de pasta",
 };
 
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
@@ -151,13 +153,13 @@ function Responsavel({ texto, fotos }: { texto: string; fotos: Record<string, st
   );
 }
 
-/** Uma tarefa no cartão, em uma linha no desktop: classe, nome, data no VIOS, responsável e a situação no robô com o CI. */
-function LinhaTarefa({ item, fotos, hoje }: { item: AgendamentoResumo; fotos: Record<string, string>; hoje: string }) {
+/** Uma tarefa no cartão, em uma linha no desktop: classe, nome, data no VIOS, responsável e a situação no robô com o CI (abertura de pasta não passa pelo robô). */
+function LinhaTarefa({ item, fotos, hoje, semRobo = false }: { item: AgendamentoResumo; fotos: Record<string, string>; hoje: string; semRobo?: boolean }) {
   const Icone = ICONE_CLASSE[item.etiqueta];
   const simulada = item.envioStatus === "concluido" && item.envioSimulado;
   const doFluxo = (item.viosTarefas ?? []).filter((tarefa) => !tarefa.principal).length;
   const ci = item.viosTarefaId ?? item.viosTarefas?.find((tarefa) => tarefa.principal)?.ci ?? null;
-  const envio = ENVIO[item.envioStatus];
+  const envio = envioDaTarefa(item);
   // Pedido × o que o robô gravou: só quando o robô já devolveu a tarefa (sem o dado, não há o que comparar).
   const divergencias = item.viosTarefas?.length ? compararTarefa(item).divergencias : [];
   return (
@@ -199,6 +201,7 @@ function LinhaTarefa({ item, fotos, hoje }: { item: AgendamentoResumo; fotos: Re
           {item.hora ? <span className="text-xs tabular-nums text-muted-foreground">às {item.hora}</span> : null}
         </span>
         <Responsavel texto={item.responsavel} fotos={fotos} />
+        {semRobo ? null : (
         <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           {simulada ? (
             <Selo tom="alerta" icone={Bot}>
@@ -216,8 +219,9 @@ function LinhaTarefa({ item, fotos, hoje }: { item: AgendamentoResumo; fotos: Re
             </span>
           ) : null}
         </span>
+        )}
       </div>
-      {item.envioErro ? <p className="col-span-full whitespace-pre-wrap break-words pl-11 text-xs text-red-700">{item.envioErro}</p> : null}
+      {item.envioErro ? <p className={cn("col-span-full whitespace-pre-wrap break-words pl-11 text-xs", corDoTextoDoEnvio(item))}>{item.envioErro}</p> : null}
     </li>
   );
 }
@@ -233,7 +237,8 @@ function CartaoAgendada({ item, fotos, hoje, onAbrir }: { item: ConferenciaItem;
   const situacao = situacaoAgendada(item);
   const devolucoes = devolucoesDe(item);
   const erroNoRobo = situacao === "robo" && temErroNoRobo(item);
-  const problema = situacao === "revisao" || erroNoRobo;
+  const erroNaCentral = situacao === "central" && !publicacao.centralItemId && Boolean(publicacao.centralErro);
+  const problema = situacao === "revisao" || erroNoRobo || erroNaCentral;
   const apontada =
     situacao === "revisao"
       ? ([...item.inconsistencias]
@@ -276,6 +281,7 @@ function CartaoAgendada({ item, fotos, hoje, onAbrir }: { item: ConferenciaItem;
                   Risco
                 </Selo>
               ) : null}
+              <SeloAberturaDePasta publicacao={publicacao} />
               {devolucoes ? (
                 <Selo tom="alerta" icone={Undo2}>
                   Devolvida{devolucoes > 1 ? ` ${devolucoes}×` : ""}
@@ -327,10 +333,21 @@ function CartaoAgendada({ item, fotos, hoje, onAbrir }: { item: ConferenciaItem;
         </div>
       </div>
 
+      {situacao === "central" && !erroNaCentral ? (
+        <p className="relative z-10 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-[#e6eef0] bg-[#f6fbfb] px-4 py-2 text-xs text-[#285f7a]">
+          <span>Sem pasta no VIOS: a controladoria abre a pasta e agenda pela Central.</span>
+          <SituacaoNaCentral publicacao={publicacao} />
+        </p>
+      ) : null}
+
       {problema ? (
         <p className="flex items-start gap-2 border-t border-red-100 bg-red-50/70 px-4 py-2 text-xs text-red-800">
           <TriangleAlert className="mt-px size-3.5 shrink-0" aria-hidden />
-          {situacao === "revisao" ? (
+          {erroNaCentral ? (
+            <span className="min-w-0">
+              <span className="font-semibold">Não chegou à Central: </span>a controladoria vai tentar de novo.
+            </span>
+          ) : situacao === "revisao" ? (
             <span className="min-w-0">
               <span className="font-semibold">Em revisão: </span>
               {apontada ? `${apontada.descricao}${apontada.criadoPor ? ` (${nomeCurto(apontada.criadoPor)})` : ""}` : "erro apontado no check."}
@@ -345,7 +362,7 @@ function CartaoAgendada({ item, fotos, hoje, onAbrir }: { item: ConferenciaItem;
 
       <ul aria-label={`Tarefas de ${processo}`} className="divide-y divide-[#eef3f5] border-t border-[#e6eef0] bg-[#fcfdfd]">
         {item.agendamentos.length ? (
-          item.agendamentos.map((agendamento) => <LinhaTarefa key={agendamento.id} item={agendamento} fotos={fotos} hoje={hoje} />)
+          item.agendamentos.map((agendamento) => <LinhaTarefa key={agendamento.id} item={agendamento} fotos={fotos} hoje={hoje} semRobo={situacao === "central"} />)
         ) : (
           <li className="px-4 py-2.5 text-xs text-muted-foreground">Nenhuma tarefa nesta vistagem.</li>
         )}
@@ -358,7 +375,7 @@ function CartaoAgendada({ item, fotos, hoje, onAbrir }: { item: ConferenciaItem;
 
 /**
  * Visão do jurídico, só de consulta: o que já foi vistado nos últimos dias, das suas áreas, por dia, e onde cada
- * publicação está na esteira (conferência, robô, agendada no VIOS, checada ou em revisão). Cada cartão abre o detalhe.
+ * publicação está na esteira (conferência, robô, agendada no VIOS, checada, em revisão ou abertura de pasta). Cada cartão abre o detalhe.
  */
 export function AgendadasJuridico({ escritorio, busca }: { escritorio: string; busca: string }) {
   const [dados, setDados] = useState<AgendadasJuridicoResposta | null>(null);

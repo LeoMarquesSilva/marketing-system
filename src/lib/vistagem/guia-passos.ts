@@ -295,7 +295,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alternativa: "vj-tarefa",
       titulo: "O que o VIOS cria junto",
       texto:
-        "Ao escolher a tarefa, aparece o fluxo do VIOS: as tarefas que ele cria junto (como Revisar e Protocolar), com a data e quem fica em cada uma. Para priorizar, mude a data de uma delas: o robô grava a nova data no VIOS (\"voltar à do VIOS\" desfaz).",
+        "Ao escolher a tarefa, aparece o fluxo do VIOS: as tarefas que ele cria junto (como Revisar e Protocolar), com a data e quem fica em cada uma. Para priorizar, mude a data de uma delas: o robô grava a nova data no VIOS (\"voltar à do VIOS\" desfaz). Para outra pessoa fazer, clique em quem fica e escolha os responsáveis (\"voltar ao padrão\" desfaz).",
     },
     {
       id: "enviar",
@@ -303,7 +303,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alternativa: "vj-vazio",
       titulo: "Envie para a conferência",
       texto:
-        "Com todas as tarefas prontas, clique em \"Enviar para conferência\": a controladoria confere e o robô lança no VIOS. Se nada criar a Ciência dos Agendamentos, o Orquestra acrescenta sozinho (menos quando a vistagem é só CIÊNCIA NF), e a próxima publicação abre.",
+        "Com todas as tarefas prontas, clique em \"Enviar para conferência\": a controladoria confere e o robô lança no VIOS (sem pasta no VIOS, depois de conferida vira pedido de abertura de pasta na Central do SharePoint). Se nada criar a Ciência dos Agendamentos, o Orquestra acrescenta sozinho (menos quando a vistagem é só CIÊNCIA NF), e a próxima publicação abre.",
     },
     {
       id: "vistado",
@@ -325,9 +325,9 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
     {
       id: "abas",
       alvo: "cf-abas",
-      titulo: "Três listas",
+      titulo: "Quatro listas",
       texto:
-        "\"A conferir\" traz o que o jurídico vistou e espera a sua conferência. \"Enviadas ao robô\" mostra o que você validou, com o andamento de cada tarefa no VIOS. \"Inconsistências\" reúne as registradas; as contestadas pelo jurídico pedem a sua decisão.",
+        "\"A conferir\" traz o que o jurídico vistou e espera a sua conferência. \"Enviadas ao robô\" mostra o que você validou, com o andamento de cada tarefa no VIOS. \"Abertura de pasta\" lista o que você validou sem pasta no VIOS e foi para a Central do SharePoint em vez do robô. \"Inconsistências\" reúne as registradas; as contestadas pelo jurídico pedem a sua decisão.",
     },
     {
       id: "busca",
@@ -365,7 +365,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alternativa: "cf-vazio",
       titulo: "O que o jurídico pediu",
       texto:
-        "Cada tarefa vem num cartão: o tipo, a data, o responsável e o revisor; no Prazo, uma régua mostra as datas até a fatal. Acima ficam, quando houver, a observação do jurídico e as inconsistências já registradas.",
+        "Cada tarefa vem num cartão: o tipo, a data, o responsável e o revisor; no Prazo, uma régua mostra as datas até a fatal. Acima ficam, quando houver, a observação do jurídico e as inconsistências já registradas. O lápis (Editar) ajusta a data e os responsáveis da tarefa e do fluxo sem devolver ao jurídico: o ajuste fica registrado no cartão e vai para o robô ao validar.",
     },
     {
       id: "fluxo",
@@ -373,7 +373,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alternativa: "cf-tarefas",
       titulo: "O fluxo no VIOS",
       texto:
-        "Em ordem de data, as tarefas que o VIOS cria junto com a pedida e quem fica em cada uma. A data que o jurídico mudou aparece marcada; depois do robô, a lista mostra o que ele gravou, com o CI de cada tarefa.",
+        "Em ordem de data, as tarefas que o VIOS cria junto com a pedida e quem fica em cada uma. A data alterada aparece marcada; depois do robô, a lista mostra o que ele gravou, com o CI de cada tarefa.",
     },
     {
       id: "acoes",

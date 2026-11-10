@@ -33,13 +33,18 @@ export interface TarefaDoLancamento {
   hora: string | null;
   /** HH:MM (Hora final no VIOS); só no Compromisso. */
   hora_fim: string | null;
+  /** DD/MM/AAAA (Data limite no VIOS); só na SESSÃO DE JULGAMENTO, quando difere da data. Sem ela, a própria data. */
+  data_limite: string | null;
   responsavel: string;
   revisor: string | null;
   observacao: string;
   /** Resposta da JUSTIFICATIVA NF (questionário que o VIOS pede depois de lançar a CIÊNCIA NF). */
   justificativa: string | null;
-  /** Tarefas do fluxo com outra data (DD/MM/AAAA), achadas pelo caminho de tipos a partir desta. */
-  fluxo_datas: { caminho: string[]; data: string }[];
+  /**
+   * Tarefas do fluxo com outra data (DD/MM/AAAA) e/ou com os responsáveis escolhidos pelo jurídico, achadas pelo
+   * caminho de tipos a partir desta.
+   */
+  fluxo_datas: { caminho: string[]; data?: string; responsaveis?: string[] }[];
 }
 
 export interface LancamentoFila {
@@ -51,6 +56,11 @@ export interface LancamentoFila {
   comunicacoes_equivalentes: string[];
   /** DD/MM/AAAA; usada pelo robô quando não há ID de comunicação. */
   data_publicacao: string | null;
+  /**
+   * Texto da publicação. O VIOS insere o da intimação sozinho; o robô só usa este se a publicação não chegar a
+   * Intimações do VIOS até as 17h do dia dela e ele tiver de agendar direto na pasta (vai na descrição da tarefa).
+   */
+  texto_publicacao: string | null;
   tarefas: TarefaDoLancamento[];
 }
 
@@ -94,10 +104,12 @@ export interface AgendamentoParaFila {
   hora: string | null;
   /** HH:MM em que o Compromisso termina; null nos antigos (o robô usa 1 hora depois). */
   hora_fim?: string | null;
+  /** AAAA-MM-DD; só na SESSÃO DE JULGAMENTO. */
+  data_limite?: string | null;
   responsavel: string;
   revisor: string | null;
   observacao: string | null;
-  /** Datas do fluxo diferentes das do VIOS (AAAA-MM-DD), que o robô grava depois de lançar. */
+  /** Datas do fluxo diferentes das do VIOS (AAAA-MM-DD) e responsáveis escolhidos, que o robô grava depois de lançar. */
   fluxoDatas?: DataDoFluxo[];
 }
 
@@ -146,7 +158,17 @@ export function linhasParaFila(
     return itens.map((item) => ({
       linha: base(
         item,
-        montarObservacaoVios(publicacao.data_publicacao, [item.hora ? `Horário: ${item.hora}${item.hora_fim ? ` às ${item.hora_fim}` : ""}` : null, item.observacao].filter(Boolean).join("\n") || null)
+        montarObservacaoVios(
+          publicacao.data_publicacao,
+          [
+            item.hora ? `Horário: ${item.hora}${item.hora_fim ? ` às ${item.hora_fim}` : ""}` : null,
+            // Na pasta o robô põe a data limite igual à data: a outra, pedida na Sessão de Julgamento, vai escrita.
+            item.data_limite && item.data_limite !== item.data ? `Data limite: ${paraDataVios(item.data_limite)}` : null,
+            item.observacao,
+          ]
+            .filter(Boolean)
+            .join("\n") || null
+        )
       ),
       agendamentos: [item.id],
     }));
@@ -164,6 +186,7 @@ export function linhasParaFila(
           comunicacao_id: comunicacao,
           comunicacoes_equivalentes: [...new Set((publicacao.comunicacoes_equivalentes ?? []).map(String))].filter((id) => id && id !== comunicacao),
           data_publicacao: publicacao.data_publicacao ? paraDataVios(publicacao.data_publicacao) : null,
+          texto_publicacao: publicacao.teor?.trim() || null,
           tarefas: itens.map((item) => {
             const cienciaNf = chaveNome(item.tarefa) === "CIENCIA NF";
             return {
@@ -174,11 +197,16 @@ export function linhasParaFila(
               data: paraDataVios(item.data),
               hora: item.hora ?? null,
               hora_fim: item.hora ? item.hora_fim ?? null : null,
+              data_limite: item.data_limite && item.data_limite !== item.data ? paraDataVios(item.data_limite) : null,
               responsavel: item.responsavel,
               revisor: item.revisor,
               observacao: cienciaNf ? "" : montarObservacaoVios(publicacao.data_publicacao, item.observacao),
               justificativa: cienciaNf ? item.observacao?.trim() || null : null,
-              fluxo_datas: (item.fluxoDatas ?? []).map((datada) => ({ caminho: datada.caminho, data: paraDataVios(datada.data) })),
+              fluxo_datas: (item.fluxoDatas ?? []).map((datada) => ({
+                caminho: datada.caminho,
+                ...(datada.data ? { data: paraDataVios(datada.data) } : {}),
+                ...(datada.responsaveis?.length ? { responsaveis: datada.responsaveis } : {}),
+              })),
             };
           }),
         },

@@ -53,8 +53,9 @@ function dataPelaRegra(regra: NonNullable<TarefaDoFluxo["regra"]>, dataDoPai: st
  * úteis ou corridos, para a frente ou para trás, a partir do dia do lançamento (`hoje`) ou da data da tarefa pai.
  * Sem a regra lida, só o Revisar e o Protocolar têm data (conta antiga, pela cadeia do fluxo).
  *
- * `datas`: as que o jurídico mudou. A filha de uma tarefa mudada é sugerida a partir da nova data, mas o VIOS a
- * cria pela data dele (`dataVios`); o robô grava no VIOS toda data que ficou diferente (`datasParaOVios`).
+ * `datas`: o que o jurídico mudou (data e/ou responsáveis). A filha de uma tarefa mudada é sugerida a partir da nova
+ * data, mas o VIOS a cria pela data dele (`dataVios`); o robô grava no VIOS toda data que ficou diferente e os
+ * responsáveis escolhidos (`fluxoParaOVios`).
  */
 export function fluxoPrevisto(
   agendamento: Pick<AgendamentoResumo, "data" | "responsavel" | "revisor">,
@@ -72,7 +73,7 @@ export function fluxoPrevisto(
 ): TarefaPrevista[] {
   if (!fluxo) return [];
   const cadeia = cadeiaDoFluxo(fluxo);
-  const pedidas = new Map((opcoes.datas ?? []).map((item) => [chaveDoCaminho(item.caminho), item.data]));
+  const escolhas = new Map((opcoes.datas ?? []).map((item) => [chaveDoCaminho(item.caminho), item]));
   const quem = (tarefa: TarefaDoFluxo) => quemFicaNoFluxo(tarefa.papel, tarefa.responsabilidade ?? null, agendamento);
   // Conta antiga (sem a regra lida): só o Revisar e o Protocolar da agendada, pela cadeia do fluxo.
   const legado = (tarefa: TarefaDoFluxo, dataDoPai: string | null, nivel: number) => {
@@ -89,7 +90,9 @@ export function fluxoPrevisto(
     for (const tarefa of tarefas) {
       const caminho = [...caminhoDoPai, tarefa.nome];
       const dataVios = dataDe(tarefa, viosDoPai, nivel);
-      const pedida = pedidas.get(chaveDoCaminho(caminho)) ?? null;
+      const escolha = escolhas.get(chaveDoCaminho(caminho));
+      const pedida = escolha?.data || null;
+      const escolhidos = escolha?.responsaveis?.length ? escolha.responsaveis : null;
       const apertada =
         !pedida && nivel === 1 && opcoes.apertada
           ? tarefa.papel === "revisor"
@@ -112,7 +115,8 @@ export function fluxoPrevisto(
         dataVios,
         editada: Boolean(pedida),
         ...(ajustada && data !== dataVios ? { ajustada } : {}),
-        responsaveis: quem(tarefa),
+        responsaveis: escolhidos ? escolhidos.join(", ") : quem(tarefa),
+        ...(escolhidos ? { responsaveisEscolhidos: escolhidos, responsaveisPadrao: quem(tarefa) } : {}),
         quando: "criacao",
         classe: tarefa.classe ?? null,
       });
@@ -167,23 +171,34 @@ export function emOrdemDeArvore(previstas: TarefaPrevista[]): TarefaPrevista[] {
 /**
  * Prazo curto a partir de hoje (`datasDoPrazo` com `ajustada`): o Enviar que vai para o VIOS (hoje) e as datas
  * apertadas do Revisar e do Protocolar, até 1 dia útil antes da fatal. Null quando a cadeia do fluxo cabe.
+ *
+ * Com `data` depois de hoje, também null: pela conta da fatal, um Enviar futuro nunca precisa apertar, então só
+ * chega aqui o escolhido à mão na Conferência, que vale como está (senão o robô receberia o de hoje no lugar dele).
  */
 export function prazoApertado(
-  agendamento: { etiqueta: string; dataFatal: string | null },
+  agendamento: { etiqueta: string; dataFatal: string | null; data?: string | null },
   fluxo: FluxoDaTarefa | null,
   ehDiaUtil: (iso: string) => boolean,
   hoje: string
 ): { enviar: string; revisar: string | null; protocolar: string | null } | null {
   if (agendamento.etiqueta !== "PRAZO" || !agendamento.dataFatal) return null;
+  if (agendamento.data && agendamento.data > hoje) return null;
   const datas = datasDoPrazo(agendamento.dataFatal, ehDiaUtil, cadeiaDoFluxo(fluxo), hoje);
   return datas.ajustada ? { enviar: datas.enviar, revisar: datas.revisar, protocolar: datas.protocolar } : null;
 }
 
-/** Datas que o robô grava no VIOS depois de lançar: as do fluxo que ficaram diferentes da que o VIOS dá. */
-export function datasParaOVios(previstas: TarefaPrevista[]): DataDoFluxo[] {
-  return previstas
-    .filter((tarefa) => tarefa.quando === "criacao" && !tarefa.repetida && tarefa.data && tarefa.data !== tarefa.dataVios)
-    .map((tarefa) => ({ caminho: tarefa.caminho, data: tarefa.data as string }));
+/**
+ * O que o robô grava nas tarefas do fluxo depois de lançar: as datas que ficaram diferentes da que o VIOS dá e os
+ * responsáveis escolhidos pelo jurídico (a Ciência repetida o robô cancela: não vai).
+ */
+export function fluxoParaOVios(previstas: TarefaPrevista[]): DataDoFluxo[] {
+  return previstas.flatMap((tarefa) => {
+    if (tarefa.quando !== "criacao" || tarefa.repetida) return [];
+    const data = tarefa.data && tarefa.data !== tarefa.dataVios ? tarefa.data : null;
+    const responsaveis = tarefa.responsaveisEscolhidos?.length ? tarefa.responsaveisEscolhidos : null;
+    if (!data && !responsaveis) return [];
+    return [{ caminho: tarefa.caminho, ...(data ? { data } : {}), ...(responsaveis ? { responsaveis } : {}) }];
+  });
 }
 
 /** Caminhos das tarefas que o fluxo cria junto (para aceitar só datas de tarefas que existem). */

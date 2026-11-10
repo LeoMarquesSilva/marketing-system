@@ -16,7 +16,9 @@ export type PublicacaoStatus =
   | "pronto_para_agendar"
   | "agendado"
   | "checado"
-  | "revisar";
+  | "revisar"
+  /** Sem pasta no VIOS: a vistagem virou pedido de abertura de pasta na Central do SharePoint. */
+  | "abertura_pasta";
 
 export type DuplicidadeResultado = "confirmada" | "nao_duplicidade";
 
@@ -157,6 +159,10 @@ export interface PublicacaoResumo {
   transferenciaMotivo: string | null;
   /** Trabalhista: classificação eSocial escolhida na vistagem (não vai para o VIOS; mesmos valores da BKP). */
   publicacaoEsocial: string | null;
+  /** Pedido de abertura de pasta na Central do SharePoint: o item criado e, se não chegou, o erro. */
+  centralItemId: string | null;
+  centralEnviadaEm: string | null;
+  centralErro: string | null;
   /** Sem pasta no VIOS: dados sugeridos (processo citado, parte cliente ou IA) para a controladoria conferir. */
   sugestaoTriagem: SugestaoTriagem | null;
   teor: string;
@@ -234,12 +240,17 @@ export interface PublicacaoCapturada {
 
 export type EnvioStatus = "nao_enviado" | "pendente" | "enviado" | "processando" | "concluido" | "erro";
 
-/** Data de uma tarefa do fluxo escolhida pelo jurídico (o robô grava no VIOS depois de lançar). */
+/**
+ * O que o jurídico escolheu para uma tarefa do fluxo (o robô grava no VIOS depois de lançar): a data e/ou os
+ * responsáveis. Sem a data, vale a do VIOS; sem os responsáveis, a regra do robô (`quemFicaNoFluxo`).
+ */
 export interface DataDoFluxo {
   /** Tipos desde a tarefa agendada até esta (ex.: ["EMBARGOS DE DECLARAÇÃO", "2. REVISAR"]). */
   caminho: string[];
-  /** AAAA-MM-DD */
-  data: string;
+  /** AAAA-MM-DD; ausente quando só os responsáveis mudaram. */
+  data?: string;
+  /** Nomes dos usuários do VIOS; ausente quando só a data mudou. */
+  responsaveis?: string[];
 }
 
 /** Tarefa que o fluxo automático do VIOS cria com a tarefa agendada, e quem o robô coloca nela. */
@@ -262,10 +273,28 @@ export interface TarefaPrevista {
   /** 1. CIÊNCIA DOS AGENDAMENTOS repetida na vistagem: o robô cancela no VIOS (fica a da primeira tarefa). */
   repetida?: boolean;
   responsaveis: string;
+  /** O jurídico escolheu quem fica (no lugar da regra do robô); os nomes vão para o robô. */
+  responsaveisEscolhidos?: string[];
+  /** Com a escolha do jurídico: quem ficaria pela regra do robô. */
+  responsaveisPadrao?: string;
   /** criacao: o VIOS cria junto com a tarefa; conclusao: quando ela for concluída. */
   quando: "criacao" | "conclusao";
   /** Classe do tipo no VIOS pelas etiquetas (cor no fluxo); ausente ou null quando não foi lida. */
   classe?: "PRAZO" | "PROVIDENCIA" | "COMPROMISSO" | null;
+}
+
+/** Uma mudança feita na Conferência, em texto de tela ("Data fatal", "20/11/2026", "24/11/2026"). */
+export interface MudancaNaTarefa {
+  campo: string;
+  de: string;
+  para: string;
+}
+
+/** Ajuste da controladoria numa tarefa, sem devolver ao jurídico: quem fez, quando e o que mudou. */
+export interface AjusteNaTarefa {
+  por: string | null;
+  em: string;
+  mudancas: MudancaNaTarefa[];
 }
 
 export interface AgendamentoResumo {
@@ -284,6 +313,8 @@ export interface AgendamentoResumo {
   hora: string | null;
   /** COMPROMISSO: Hora final HH:MM (null nos antigos: o robô pôs 1 hora depois, ou 00:00 antes de 05/11/2026). */
   horaFim: string | null;
+  /** SESSÃO DE JULGAMENTO: data limite no VIOS (AAAA-MM-DD); nos outros tipos e nas antigas, null (é a própria data). */
+  dataLimite: string | null;
   responsavel: string;
   revisor: string | null;
   observacao: string | null;
@@ -293,6 +324,8 @@ export interface AgendamentoResumo {
   fluxoDatas: DataDoFluxo[];
   /** O que o fluxo do VIOS vai criar junto e ao concluir (só a lista da Conferência traz). */
   fluxoPrevisto?: TarefaPrevista[];
+  /** Ajustes feitos na Conferência; sem nenhum, a tarefa está como o jurídico vistou. */
+  ajustes?: AjusteNaTarefa[];
   envioStatus: EnvioStatus;
   envioSimulado: boolean | null;
   viosTarefaId: string | null;
@@ -308,7 +341,16 @@ export interface CatalogoVistagem {
   usuarios: { id: string; nome: string }[];
 }
 
-/** Parágrafo que alguém pediu para o robô acrescentar à síntese da pasta no VIOS. */
+/** Opção de um campo de escolha do cadastro de processo no VIOS (Matéria, Sistema do Tribunal). */
+export interface MateriaVios {
+  id: string;
+  nome: string;
+}
+
+/**
+ * Pedido de "Atualizar cadastro no VIOS" para a pasta: o parágrafo da síntese, a Matéria e/ou o Sistema do Tribunal
+ * (cada um opcional; o robô grava os três de uma vez).
+ */
 export interface SintesePedida {
   id: string;
   texto: string;
@@ -320,6 +362,10 @@ export interface SintesePedida {
   simulado: boolean;
   /** O robô achou o parágrafo já na síntese e não gravou de novo. */
   jaEstava: boolean;
+  /** Matéria escolhida no pedido: o robô preenche ou troca a do VIOS. */
+  materias: MateriaVios[];
+  /** Sistema do Tribunal escolhido no pedido: o robô troca o do VIOS. */
+  sistemaTribunal: MateriaVios | null;
   criadoEm: string;
 }
 
@@ -348,6 +394,18 @@ export interface VistagemDetalhe {
   sinteseErro: string | null;
   /** Parágrafos pedidos ao robô para esta pasta (os 10 mais novos). */
   sintesesPedidas: SintesePedida[];
+  /** A pasta está sem Matéria na base do SIOE: o VIOS não grava o cadastro sem ela. */
+  materiaVazia: boolean;
+  /** Matéria da pasta na base do SIOE, como veio do relatório do VIOS (null sem ela). */
+  materiaAtual: string | null;
+  /** Opções do campo Matéria do VIOS (o jurídico pode preencher ou trocar). */
+  materiasVios: MateriaVios[];
+  /** A pasta está sem Sistema do Tribunal na base do SIOE (o VIOS não grava o cadastro sem ele). */
+  sistemaVazio: boolean;
+  /** Sistema do Tribunal da pasta na base do SIOE (null sem ele ou sem a coluna ainda). */
+  sistemaAtual: string | null;
+  /** Opções do campo Sistema do Tribunal do VIOS. */
+  sistemasVios: MateriaVios[];
   /** Feriados (AAAA-MM-DD) para contar os dias úteis do Prazo na tela. */
   feriados: string[];
   /** Fluxo automático do VIOS por id do tipo de tarefa (só os que criam algo). */
@@ -373,8 +431,16 @@ export interface VistagemDetalhe {
   hoje: string;
 }
 
+/** Resultado de criar o pedido na Central do SharePoint: o id do item ou o erro (o cron tenta de novo). */
+export interface ResultadoCentral {
+  itemId: string | null;
+  erro: string | null;
+}
+
 export interface ConferenciaItem {
   publicacao: PublicacaoResumo;
+  /** Área da pasta no VIOS: decide o que o fluxo automático cria (os tipos disponíveis para a área). */
+  areaProcesso: string | null;
   agendamentos: AgendamentoResumo[];
   inconsistencias: InconsistenciaResumo[];
   /** Quem vistou primeiro (quem analisou a publicação; a devolução volta para essa pessoa). */
@@ -403,6 +469,8 @@ export interface SugestaoNaVistagem {
 export interface ConferenciaResposta {
   aConferir: ConferenciaItem[];
   enviadas: ConferenciaItem[];
+  /** Sem pasta no VIOS: vistagens que foram para a Central do SharePoint como abertura de pasta. */
+  aberturas: ConferenciaItem[];
   envioSimulado: boolean;
   /** Foto do advogado, do auxiliar e das pessoas das tarefas (e do fluxo), pela chave do nome (chaveNome); só quem tem foto. */
   fotos: Record<string, string>;

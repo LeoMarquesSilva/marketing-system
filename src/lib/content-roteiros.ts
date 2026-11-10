@@ -177,7 +177,7 @@ export async function resolveNewsArea(
 
   let finalArea = aiArea;
 
-  if (topicMapped && topicMapped !== "Operações Legais (Legal Ops)") {
+  if (topicMapped && topicMapped !== "Operações Legais") {
     const reestruturacaoCluster = [
       "Reestruturação",
       "Societário e Contratos",
@@ -880,12 +880,12 @@ export async function runFetchPipeline(
             continue;
           }
 
-          // Tema de Legal Ops: descarta ruído de release corporativo (captação de
+          // Tema de Operações Legais: descarta ruído de release corporativo (captação de
           // investimento, troca de sede, nomeação de executivo, prêmio) ANTES da
           // IA — são notícias que citam "legaltech"/"departamento jurídico" sem
           // conteúdo educativo aproveitável para o carrossel.
           if (
-            mapTopicAreaToLegalArea(topic.legal_area) === "Operações Legais (Legal Ops)" &&
+            mapTopicAreaToLegalArea(topic.legal_area) === "Operações Legais" &&
             isPressReleaseNoise(title, snippet)
           ) {
             skipped++;
