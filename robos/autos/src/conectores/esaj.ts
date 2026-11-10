@@ -23,6 +23,7 @@ const TELA = {
   login: {
     abaCertificado: "#linkAbaCertificado",
     certificados: "#certificados",
+    recarregarCertificados: "#certificadosRecarregar",
     entrarComCertificado: "#submitCertificado",
     semWebSigner: "#webSignerNaoInstalado, #webSignerNaoSuportado",
     abaCpf: "#linkAbaCpf",
@@ -125,12 +126,34 @@ class ConectorEsaj implements Conector {
       registrar("O e-SAJ não encontrou o Web Signer neste navegador. Instale a extensão Web Signer nesta janela (o próprio e-SAJ oferece o botão) e recarregue a página.");
       return;
     }
-    // O Web Signer preenche a lista de certificados alguns segundos depois de a aba abrir.
-    await pagina.waitForFunction((seletor) => (document.querySelector(seletor) as HTMLSelectElement | null)?.options.length, TELA.login.certificados, { timeout: 30_000 }).catch(() => undefined);
-    const opcoes = await pagina.locator(`${TELA.login.certificados} option`).allTextContents();
-    const escolhido = escolherCertificado(opcoes, config.esaj.certificado);
+    // O Web Signer preenche a lista alguns segundos depois de a aba abrir; até lá ela tem só um aviso, sem
+    // valor. Espera o certificado aparecer (e pede a lista de novo uma vez, se demorar).
+    let opcoes: string[] = [];
+    let escolhido = -1;
+    let recarregou = false;
+    const limite = Date.now() + 30_000;
+    while (Date.now() < limite) {
+      const lidas = await pagina
+        .locator(`${TELA.login.certificados} option`)
+        .evaluateAll((itens) => itens.map((item) => ({ texto: item.textContent ?? "", valor: (item as HTMLOptionElement).value })))
+        .catch(() => [] as { texto: string; valor: string }[]);
+      // Opção sem valor é aviso ("Carregando…", "Selecione…"): fica vazia para não ser escolhida, mantendo o índice.
+      opcoes = lidas.map((item) => (item.valor ? item.texto : ""));
+      escolhido = escolherCertificado(opcoes, config.esaj.certificado);
+      if (escolhido >= 0) break;
+      if (!recarregou && Date.now() > limite - 20_000 && (await visivel(pagina, TELA.login.recarregarCertificados))) {
+        await pagina.locator(TELA.login.recarregarCertificados).click();
+        recarregou = true;
+      }
+      await pagina.waitForTimeout(1_000);
+    }
     if (escolhido < 0) {
-      registrar(opcoes.length ? "Há mais de um certificado na lista (ou nenhum com o nome de ESAJ_CERTIFICADO): escolha o certificado na janela e clique em Entrar." : "A lista de certificados veio vazia: confira o Web Signer e o certificado nesta máquina.");
+      const certificados = opcoes.filter(Boolean).length;
+      registrar(
+        certificados
+          ? `O Web Signer mostrou ${certificados} certificado${certificados === 1 ? "" : "s"}, nenhum (ou mais de um) com o nome de ESAJ_CERTIFICADO: escolha o certificado na janela e clique em Entrar.`
+          : "A lista de certificados ficou vazia: confira o Web Signer e o certificado nesta máquina, ou escolha o certificado na janela."
+      );
       return;
     }
     await pagina.locator(TELA.login.certificados).selectOption({ index: escolhido });

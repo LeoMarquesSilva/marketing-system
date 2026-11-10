@@ -49,7 +49,7 @@ Edite o `.env`:
 
 ### Modos de login no e-SAJ
 
-- `certificado`: o robô abre a aba "Certificado digital", escolhe o certificado cujo nome contém `ESAJ_CERTIFICADO` e clica em Entrar. Se houver mais de um candidato, ou nenhum, ele deixa a escolha para a pessoa. O sistema operacional pode pedir permissão para usar a chave do certificado: autorize na janela.
+- `certificado` (recomendado): o robô abre a aba "Certificado digital", espera o Web Signer carregar a lista (até 30 segundos), escolhe o certificado cujo nome contém `ESAJ_CERTIFICADO` e clica em Entrar. Com o certificado A1 instalado na máquina, o login leva poucos segundos e ninguém precisa clicar. Se houver mais de um candidato, ou nenhum, ele deixa a escolha para a pessoa. O sistema operacional pode pedir permissão para usar a chave do certificado: autorize na janela.
 - `senha`: o robô preenche CPF e senha e para no código de verificação, que o advogado informa na janela.
 - `manual`: o robô só abre a página de login e espera uma pessoa entrar, do jeito que ela preferir.
 
