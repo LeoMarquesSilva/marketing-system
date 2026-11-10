@@ -39,6 +39,7 @@ const BARE_LAYOUT_PATHS = [
   "/rh/bp-awards/revelacao",
   "/pesquisa",
   "/festa-10-anos",
+  "/convite",
 ];
 
 function isBareLayoutPath(pathname: string): boolean {

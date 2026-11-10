@@ -4,10 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { EventPerson } from "./event-person";
 import { DietaryBadge, DietarySummary } from "./dietary-summary";
 import type { DietaryInfo } from "@/lib/rh/registration/types";
-import { Building2, ContactRound, Plus, Trash2 } from "lucide-react";
+import { Building2, ContactRound, Plus, Send, Trash2 } from "lucide-react";
 import { EventGuestImportDialog } from "./event-guest-import-dialog";
 import { EventoRsvpPanel } from "./evento-rsvp-panel";
-import { RSVP_TRANSPORT_LABEL } from "@/lib/event-rsvp";
+import { FESTA_10_ANOS_EVENT_ID, RSVP_TRANSPORT_LABEL } from "@/lib/event-rsvp";
+import { CONVITES_FESTA_PATH } from "@/lib/festa-convite";
 import type { GuestImportSource } from "@/lib/event-guest-import";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -100,9 +101,10 @@ export function EventoConvidadosTab({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold tracking-tight">Convidados</h2><p className="mt-1 text-xs text-muted-foreground">{invites.length} convidados · {invites.filter(guest => guest.confirmationStatus === "confirmado").length} confirmados · {invites.filter(guest => guest.attended).length} presentes</p></div><Button onClick={() => setAdding(value => !value)} aria-expanded={adding}><Plus className="size-4" />{adding ? "Fechar formulário" : "Novo convidado"}</Button></div>
       <EventoRsvpPanel eventId={eventId} refreshKey={rsvpKey} />
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <button type="button" onClick={() => setImportSource("office")} className="flex items-start gap-3 rounded-xl border border-border/60 bg-card p-4 text-left transition-colors hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-primary"><Building2 className="mt-0.5 size-5 shrink-0 text-primary" /><span><span className="block text-sm font-semibold">Adicionar do escritório</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">Selecione todos os colaboradores ou escolha pessoas por nome e área.</span></span></button>
         <button type="button" onClick={() => setImportSource("clients")} className="flex items-start gap-3 rounded-xl border border-border/60 bg-card p-4 text-left transition-colors hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-primary"><ContactRound className="mt-0.5 size-5 shrink-0 text-primary" /><span><span className="block text-sm font-semibold">Importar do Cadastro de clientes</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">Pessoas marcadas para a Festa de 10 anos, com empresa e contato.</span></span></button>
+        {eventId === FESTA_10_ANOS_EVENT_ID && <a href={CONVITES_FESTA_PATH} className="flex items-start gap-3 rounded-xl border border-border/60 bg-card p-4 text-left transition-colors hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-primary"><Send className="mt-0.5 size-5 shrink-0 text-primary" /><span><span className="block text-sm font-semibold">Convites dos clientes</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">Link pessoal de cada cliente, quem envia, quem abriu e quem confirmou.</span></span></a>}
       </div>
       {importSource && <EventGuestImportDialog eventId={eventId} source={importSource} invites={invites} onClose={() => setImportSource(null)} onImported={onImported} />}
       {invites.length > 0 && (

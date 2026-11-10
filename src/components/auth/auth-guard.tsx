@@ -16,7 +16,7 @@ import {
 } from "@/lib/post-login-path";
 import { isQualificationPending } from "@/lib/qualification-requirement";
 
-const PUBLIC_PATHS = ["/login", "/redefinir-senha", "/primeiro-acesso", "/t", "/nps", "/leituras", "/manuais", "/materiais", "/ficha-cadastral", "/dress-code"];
+const PUBLIC_PATHS = ["/login", "/redefinir-senha", "/primeiro-acesso", "/t", "/nps", "/leituras", "/manuais", "/materiais", "/ficha-cadastral", "/dress-code", "/convite"];
 
 /** Perfil profissional público NFC: /perfil/<slug> e /perfil/<slug>/contato. */
 function isPublicProfessionalProfilePath(pathname: string): boolean {

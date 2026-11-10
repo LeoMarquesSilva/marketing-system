@@ -36,6 +36,7 @@ import {
   Newspaper,
   Nfc,
   Palmtree,
+  PartyPopper,
   PenLine,
   Scale,
   Settings,
@@ -466,6 +467,8 @@ const EXTRA_HEADERS: Array<{ href: string; eyebrow: string; title: string; icon:
   { href: "/meus-links", eyebrow: "Conta", title: "Meus links", icon: Link2 },
   { href: "/cafe-com-cultura", eyebrow: "Pessoas e Cultura", title: "Café com Cultura", icon: Coffee },
   { href: "/nfc/leituras", eyebrow: "NFC Hub", title: "Leituras que formam trajetórias", icon: Nfc },
+  // Fora do menu de propósito: os remetentes chegam pelo link; quem organiza, pela aba Convidados do evento.
+  { href: "/convites-festa", eyebrow: "Festa de 10 anos", title: "Convites dos clientes", icon: PartyPopper },
 ];
 
 export type NavProfile = AccessProfile & { department?: string | null };
