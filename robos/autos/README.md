@@ -14,6 +14,14 @@ Conectores prontos: **e-SAJ do TJSP, TJCE, TJAL e TJMS** (`src/conectores/esaj.t
 
 O robô fala só com as rotas `/api/robos/autos` do ORQESTRAI, com um token próprio. Ele **não** recebe a chave do banco.
 
+## Capa pelo DataJud
+
+Com a fila de autos vazia, o robô pede ao ORQESTRAI a capa do próximo processo no DataJud, a API pública do CNJ: justiça e UF (pelo número), jurisdição, cidade, vara, distribuição, processo eletrônico, segredo de justiça e último andamento. O que falta no cadastro vira **sugestão** na ficha, para uma pessoa aprovar, como as sugestões da IA.
+
+O DataJud é lento (20 a 55 segundos por processo, medido em 10/11/2026) e recusa consultas em sequência. Por isso o robô consulta um processo por vez, com pausa de 30 segundos (`PAUSA_CAPA_SEGUNDOS`). Se o DataJud recusar, ele espera 10 minutos. Os ativos e os nunca consultados vêm primeiro; cada processo é consultado de novo uma vez por semana. O piloto inteiro leva cerca de duas horas. `CAPA_DATAJUD=nao` desliga.
+
+Na ficha, o botão **Completar capa** (painel Saneamento) faz a mesma consulta para um processo, na hora.
+
 ## Regras que o robô segue
 
 - **A credencial é do advogado.** Certificado, CPF e senha existem só nesta máquina (arquivo `.env` e pasta `perfil/`, os dois fora do repositório). Nada disso é enviado ao ORQESTRAI, gravado no banco ou escrito em log.

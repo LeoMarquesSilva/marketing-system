@@ -1,13 +1,18 @@
 import "server-only";
 
 import { COLUNAS_SUGESTAO, carregarAutos, descartarSeConcluido, paraSugestao } from "./autos-server";
-import type { AutosDoProcesso, PessoaSugerida, Sugestao } from "./autos-types";
+import type { AutosDoProcesso, PessoaSugerida, Sugestao, ValorDeCampo } from "./autos-types";
 import { ProcessosError } from "./errors";
 import { criarParte, salvarParte } from "./partes-server";
 import { atualizarProcesso, detalharProcesso } from "./processos-server";
 import { db, falhou, type Ator } from "./server";
 import { aplicarNaParte, entradaDaPessoa } from "./sugestoes";
-import type { ProcessoDetalhe } from "./types";
+import type { OrigemAlteracao, ProcessoDetalhe } from "./types";
+
+/** No histórico: "ia" para o que veio dos autos; "datajud" ou "cnj" para a capa das fontes oficiais. */
+function origemDaSugestao(sugestao: Sugestao): OrigemAlteracao {
+  return sugestao.fonte === "datajud" || sugestao.fonte === "cnj" ? sugestao.fonte : "ia";
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -21,15 +26,17 @@ async function carregarSugestao(id: string): Promise<Sugestao & { processoId: st
 
 /**
  * Grava a sugestão no cadastro pelo mesmo caminho da tela (atualizarProcesso, criarParte, salvarParte),
- * com origem "ia" no histórico. `editado` é o que a pessoa ajustou antes de aprovar: o valor do campo
- * ou a parte inteira.
+ * com a fonte dela como origem no histórico. `editado` é o que a pessoa ajustou antes de aprovar: o valor
+ * do campo ou a parte inteira. Os campos `junto` (a data do último andamento) vão na mesma gravação.
  */
 async function gravar(sugestao: Sugestao & { processoId: string }, editado: { valor?: unknown; parte?: unknown }, ator: Ator): Promise<{ processo: ProcessoDetalhe; gravado: unknown }> {
   const { processoId } = sugestao;
   if (sugestao.tipo === "campo") {
-    const valor = editado.valor !== undefined ? editado.valor : (sugestao.valor as { valor: string | number }).valor;
+    const proposto = sugestao.valor as ValorDeCampo;
+    const valor = editado.valor !== undefined ? editado.valor : proposto.valor;
     if (valor === null || valor === "") throw new ProcessosError("Informe o valor a gravar ou recuse a sugestão.", 400);
-    return { processo: await atualizarProcesso(processoId, { [sugestao.campo as string]: valor }, ator, "ia"), gravado: { valor } };
+    const campos = { ...(proposto.junto ?? {}), [sugestao.campo as string]: valor };
+    return { processo: await atualizarProcesso(processoId, campos, ator, origemDaSugestao(sugestao)), gravado: { valor, ...(proposto.junto ? { junto: proposto.junto } : {}) } };
   }
   const atual = await detalharProcesso(processoId);
   if (sugestao.tipo === "parte_nova") {

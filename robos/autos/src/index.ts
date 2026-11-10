@@ -110,6 +110,29 @@ async function principal(): Promise<void> {
   }
 
   registrar(`Robô "${config.nome}" atendendo ${CONECTORES.map((conector) => conector.chave).join(", ")} em ${config.orqestraiUrl}.`);
+  // Com a fila de autos vazia, o robô completa a capa dos processos pelo DataJud, um por vez.
+  let proximaCapa = 0;
+  let capasFeitas = 0;
+  async function completarUmaCapa(): Promise<number> {
+    try {
+      const capa = await fila.proximaCapa();
+      if (capa.nada) return Date.now() + 60 * 60_000;
+      if (capa.recusado) {
+        registrar("DataJud recusou por excesso de consultas: o robô espera 10 min para a próxima capa.");
+        return Date.now() + 10 * 60_000;
+      }
+      capasFeitas += 1;
+      // Uma linha a cada 10 consultas (e na última), para o terminal não encher.
+      if (capasFeitas % 10 === 1 || capa.restantes === 0) {
+        registrar(`Capa pelo DataJud: ${capasFeitas} consultada${capasFeitas === 1 ? "" : "s"} nesta execução; faltam ${capa.restantes}. A última ${capa.achou ? `deixou ${capa.sugestoes} sugest${capa.sugestoes === 1 ? "ão" : "ões"}` : "não está no DataJud"}.`);
+      }
+      return Date.now() + config.pausaCapaMs;
+    } catch (erro) {
+      registrar(`Capa pelo DataJud falhou: ${mensagemLimpa(erro)}`);
+      return Date.now() + 5 * 60_000;
+    }
+  }
+
   while (!encerrando) {
     let pedido: Pedido | null = null;
     try {
@@ -119,6 +142,7 @@ async function principal(): Promise<void> {
     }
     if (!pedido) {
       if (modo === "uma-vez") break;
+      if (config.capaDataJud && Date.now() >= proximaCapa) proximaCapa = await completarUmaCapa();
       await dormir(config.intervaloMs);
       continue;
     }

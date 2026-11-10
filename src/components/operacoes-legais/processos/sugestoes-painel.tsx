@@ -1,9 +1,9 @@
 "use client";
 
 import { useId, useState } from "react";
-import { Check, ExternalLink, LoaderCircle, MapPin, PencilLine, Sparkles, TriangleAlert, X } from "lucide-react";
+import { Check, CheckCheck, ExternalLink, Landmark, LoaderCircle, MapPin, PencilLine, Sparkles, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { AutosDoProcesso, Confianca, ContatoSugerido, EnderecoSugerido, PessoaSugerida, Sugestao } from "@/lib/processos/autos-types";
+import type { AutosDoProcesso, Confianca, ContatoSugerido, EnderecoSugerido, PessoaSugerida, Sugestao, ValorDeCampo } from "@/lib/processos/autos-types";
 import { GRUPOS_CAMPO, campoPorChave, estaPreenchido, formatarValor, rotuloDoCampo } from "@/lib/processos/campos";
 import { ITENS_SANEAMENTO } from "@/lib/processos/preenchimento";
 import { aplicarNaParte, entradaDaPessoa, linhaDoEndereco } from "@/lib/processos/sugestoes";
@@ -37,7 +37,12 @@ function Proposta({ sugestao, processo }: { sugestao: Sugestao; processo: Proces
     return (
       <>
         <p className="text-xs font-medium text-muted-foreground">{rotuloDoCampo(sugestao.campo)}</p>
-        <p className="break-words text-base font-semibold tabular-nums text-[#10293a]">{formatarValor(item, (sugestao.valor as { valor: string | number }).valor)}</p>
+        <p className="break-words text-base font-semibold tabular-nums text-[#10293a]">{formatarValor(item, (sugestao.valor as ValorDeCampo).valor)}</p>
+        {Object.entries((sugestao.valor as ValorDeCampo).junto ?? {}).map(([campo, valor]) => (
+          <p key={campo} className="text-xs text-muted-foreground">
+            {rotuloDoCampo(campo)}: <span className="tabular-nums text-foreground">{formatarValor(campoPorChave(campo), valor)}</span>
+          </p>
+        ))}
         {estaPreenchido(atual) ? <p className="text-xs text-amber-800">Hoje no cadastro: {formatarValor(item, atual)}. Aprovar troca o valor.</p> : null}
       </>
     );
@@ -116,7 +121,7 @@ function Proposta({ sugestao, processo }: { sugestao: Sugestao; processo: Proces
 /** Edição do valor de um campo antes de aprovar. */
 function ConferirCampo({ sugestao, onFechar, aprovar }: { sugestao: Sugestao; onFechar: () => void; aprovar: (corpo: { valor: unknown }) => Promise<void> }) {
   const item = campoPorChave(sugestao.campo ?? "");
-  const [texto, setTexto] = useState(() => (item ? paraFormulario(item, (sugestao.valor as { valor: string | number }).valor) : ""));
+  const [texto, setTexto] = useState(() => (item ? paraFormulario(item, (sugestao.valor as ValorDeCampo).valor) : ""));
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
   if (!item) return null;
@@ -161,7 +166,18 @@ function ConferirCampo({ sugestao, onFechar, aprovar }: { sugestao: Sugestao; on
   );
 }
 
+const FONTE: Record<Exclude<Sugestao["fonte"], undefined>, string> = { autos: "Autos (IA)", datajud: "DataJud", cnj: "Número CNJ" };
+const ehDaCapa = (sugestao: Sugestao) => sugestao.fonte === "datajud" || sugestao.fonte === "cnj";
+
 function Trecho({ sugestao, onAbrir }: { sugestao: Sugestao; onAbrir?: () => void }) {
+  // Capa das fontes oficiais: o "trecho" é a descrição do dado na fonte, sem página de autos.
+  if (ehDaCapa(sugestao)) {
+    return (
+      <figure className="rounded-md border-l-2 border-[#347796]/40 bg-[#f2f8fa] px-3 py-2">
+        <p className="break-words text-sm leading-6 text-foreground">{sugestao.trecho}</p>
+      </figure>
+    );
+  }
   return (
     <figure className="rounded-md border-l-2 border-[#48466e]/40 bg-[#f6f5fa] px-3 py-2">
       <blockquote className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">“{sugestao.trecho}”</blockquote>
@@ -197,6 +213,9 @@ export function PainelSugestoes({
   const [editando, setEditando] = useState<Sugestao | null>(null);
 
   const pendentes = autos.sugestoes.filter((item) => item.situacao === "pendente");
+  // As de capa primeiro (são as que completam o cabeçalho do processo), depois as dos autos.
+  pendentes.sort((a, b) => Number(ehDaCapa(b)) - Number(ehDaCapa(a)));
+  const daCapa = pendentes.filter(ehDaCapa);
   const decididas = autos.sugestoes.filter((item) => item.situacao !== "pendente").sort((a, b) => (b.decididoEm ?? "").localeCompare(a.decididoEm ?? ""));
   if (!pendentes.length && !decididas.length) return null;
 
@@ -204,6 +223,25 @@ export function PainelSugestoes({
     const decisao = await processosApi.post<Decisao>(`/autos/sugestoes/${sugestao.id}`, corpo);
     setEditando(null);
     onDecidido(decisao, mensagem);
+  }
+
+  /** Aprova, uma a uma, as sugestões de capa das fontes oficiais (DataJud e número CNJ). */
+  async function aprovarCapa() {
+    setOcupado("capa");
+    onErro("");
+    let aprovadas = 0;
+    let ultima: Decisao | null = null;
+    try {
+      for (const sugestao of daCapa) {
+        ultima = await processosApi.post<Decisao>(`/autos/sugestoes/${sugestao.id}`, { acao: "aprovar" });
+        aprovadas += 1;
+      }
+    } catch (falha) {
+      onErro(`${aprovadas ? `${aprovadas} aprovada${aprovadas === 1 ? "" : "s"}; ` : ""}${mensagemDeErro(falha)}`);
+    } finally {
+      setOcupado("");
+      if (ultima) onDecidido(ultima, `${aprovadas} sugest${aprovadas === 1 ? "ão" : "ões"} de capa aprovada${aprovadas === 1 ? "" : "s"} e gravada${aprovadas === 1 ? "" : "s"} no cadastro.`);
+    }
   }
 
   async function decidirNaLista(sugestao: Sugestao, acao: "aprovar" | "recusar") {
@@ -237,7 +275,12 @@ export function PainelSugestoes({
 
   return (
     <Painel aria-labelledby={tituloId}>
-      <PainelTopo titulo="Sugestões da IA" id={tituloId} descricao="Lidas nos autos. Nada entra no cadastro antes da sua decisão: confira o trecho, aprove, edite ou recuse.">
+      <PainelTopo titulo="Sugestões" id={tituloId} descricao="Da IA lendo os autos e das fontes oficiais (DataJud e número CNJ). Nada entra no cadastro antes da sua decisão: confira, aprove, edite ou recuse.">
+        {daCapa.length > 1 ? (
+          <Button size="sm" variant="outline" disabled={Boolean(ocupado)} onClick={() => void aprovarCapa()} title="Aprova de uma vez as sugestões do DataJud e do número CNJ">
+            {ocupado === "capa" ? <LoaderCircle className="animate-spin" /> : <CheckCheck />} Aprovar a capa ({daCapa.length})
+          </Button>
+        ) : null}
         {pendentes.length ? (
           <Selo tom="ia" icone={Sparkles}>
             {pendentes.length} a conferir
@@ -260,6 +303,11 @@ export function PainelSugestoes({
                 <div className="min-w-0 space-y-2">
                   <div className="flex flex-wrap items-center gap-1.5">
                     {/* No campo simples o nome do campo já vem logo abaixo: o selo diz a seção da ficha. */}
+                    {sugestao.fonte && sugestao.fonte !== "autos" ? (
+                      <Selo tom="marca" icone={Landmark}>
+                        {FONTE[sugestao.fonte]}
+                      </Selo>
+                    ) : null}
                     <Selo tom="ia">{sugestao.tipo === "campo" ? (ROTULO_GRUPO.get(campoPorChave(sugestao.campo ?? "")?.grupo ?? "") ?? "Cadastro") : (ROTULO_ITEM.get(sugestao.item) ?? "Cadastro")}</Selo>
                     <Selo tom={CONFIANCA[sugestao.confianca].tom}>{CONFIANCA[sugestao.confianca].rotulo}</Selo>
                     {!sugestao.trechoConferido ? (
