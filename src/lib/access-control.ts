@@ -52,6 +52,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/icp", label: "ICP (cliente ideal)", manualOnly: true },
   { key: "/rh", label: "RH (férias, dados cadastrais, organograma e boas práticas)", manualOnly: true },
   { key: "/pe27", label: "PE27 · Planejamento 2027 (só leitura)", manualOnly: true },
+  { key: "/pe27/editar", label: "PE27 · editar decisões, alavancas e metas", manualOnly: true },
   { key: "/admin", label: "Configurações", admin: true },
 ];
 
@@ -67,6 +68,8 @@ export const TEAM_SURVEYS_KEY = "/operacoes-legais/pesquisas";
 export const ICP_KEY = "/icp";
 export const FACILITIES_KEY = "/facilities";
 export const PE27_KEY = "/pe27";
+/** Chave de permissão (não é rota): edição no PE27 para quem não é admin. */
+export const PE27_EDIT_KEY = "/pe27/editar";
 export const MANUAL_ONLY_KEYS = ACCESS_SECTIONS.filter((s) => s.manualOnly).map((s) => s.key);
 
 const NON_ADMIN_KEYS = ACCESS_SECTIONS.filter(
@@ -222,18 +225,20 @@ export function isTeamSurveysPath(pathname: string): boolean {
 }
 
 /**
- * PE27 (Planejamento Estratégico 2027): admin ou liberação manual da chave
- * `/pe27` em Usuários (nunca pelo modo legado). Quem tem só a chave vê e não
- * edita: decisões e textos ficam com os admins.
+ * PE27 (Planejamento Estratégico 2027): admin ou liberação manual em Usuários
+ * (nunca pelo modo legado). A chave `/pe27` só lê; `/pe27/editar` também
+ * decide, edita e cria (consultores Camila e Zamboni, desde 10/11/2026).
  */
 export function hasPe27Access(profile: AccessProfile | null | undefined): boolean {
   if (!profile) return false;
   if (isAdminRole(profile)) return true;
-  return Boolean(profile.permissions?.includes(PE27_KEY));
+  return Boolean(profile.permissions?.some((key) => key === PE27_KEY || key === PE27_EDIT_KEY));
 }
 
 export function canEditPe27(profile: AccessProfile | null | undefined): boolean {
-  return isAdminRole(profile);
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  return Boolean(profile.permissions?.includes(PE27_EDIT_KEY));
 }
 
 export function isPe27Path(pathname: string): boolean {
@@ -248,7 +253,7 @@ export function isPe27Path(pathname: string): boolean {
 export function isPe27OnlyProfile(profile: AccessProfile | null | undefined): boolean {
   if (!profile || isAdminRole(profile)) return false;
   const permissions = profile.permissions ?? [];
-  return permissions.length > 0 && permissions.every((key) => key === PE27_KEY);
+  return permissions.length > 0 && permissions.every((key) => key === PE27_KEY || key === PE27_EDIT_KEY);
 }
 
 /** Fora do módulo, o perfil só-PE27 abre apenas a troca de senha. */
@@ -451,6 +456,8 @@ export function firstAllowedPath(profile: AccessProfile | null | undefined): str
   // Colaborador de conteúdo cai na home de desempenho.
   if (hasContentAccess(allowed) && !allowed.includes("/")) return CONTENT_HOME_PATH;
   const primeiro = allowed.includes("/") ? "/" : allowed[0];
+  // A chave de edição do PE27 não é uma página: entra pela Visão geral do módulo.
+  if (primeiro === PE27_EDIT_KEY) return PE27_KEY;
   // O jurídico entra direto na aba Vistagem, onde está o trabalho dele (a Visão geral fica a uma aba de distância).
   return primeiro === VISTAGEM_KEY ? entradaDaVistagem(profile) : primeiro;
 }

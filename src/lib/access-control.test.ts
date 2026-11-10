@@ -325,6 +325,22 @@ describe("PE27 (planejamento estratégico)", () => {
     expect(firstAllowedPath(consultor)).toBe("/pe27");
   });
 
+  it("a chave /pe27/editar libera decidir e editar, e o perfil continua restrito ao módulo", () => {
+    const consultor = { role: null, permissions: ["/pe27", "/pe27/editar"] };
+    expect(hasPe27Access(consultor)).toBe(true);
+    expect(canEditPe27(consultor)).toBe(true);
+    expect(isPe27OnlyProfile(consultor)).toBe(true);
+    expect(canAccessPath(consultor, "/pe27/insumos")).toBe(true);
+    expect(canAccessPath(consultor, "/meus-clientes")).toBe(false);
+    expect(firstAllowedPath(consultor)).toBe("/pe27");
+    // Só a chave de edição também abre o módulo e entra pela Visão geral.
+    const soEdicao = { role: null, permissions: ["/pe27/editar"] };
+    expect(hasPe27Access(soEdicao)).toBe(true);
+    expect(firstAllowedPath(soEdicao)).toBe("/pe27");
+    expect(normalizePermissionsInput(["/pe27/editar"])).toEqual(["/pe27/editar"]);
+    expect(isManualOnlyKey("/pe27/editar")).toBe(true);
+  });
+
   it("a chave junto com outras não restringe o resto", () => {
     const socio = { role: null, permissions: ["/planner", "/pe27"] };
     expect(isPe27OnlyProfile(socio)).toBe(false);
