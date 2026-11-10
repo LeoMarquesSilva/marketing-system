@@ -28,14 +28,14 @@ const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 const OFFICE_DOMAINS = new Set(["bpplaw.com.br", "bismarchipires.com.br"]);
 const INVITE_SELECT = "id, name, email, hr_employee_id, confirmation_status, transport, responded_at";
 
-function adminClient(): SupabaseClient {
+export function rsvpAdminClient(): SupabaseClient {
   if (!serviceKey) throw new RhHttpError("SUPABASE_SERVICE_ROLE_KEY não configurada.", 503, "SERVICE_UNAVAILABLE");
   return createSupabaseClient(url, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
 }
 
-interface Viewer {
+export interface RsvpViewer {
   profileId: string;
   name: string;
   email: string | null;
@@ -59,7 +59,7 @@ interface InviteRow {
   responded_at: string | null;
 }
 
-async function resolveViewer(db: SupabaseClient): Promise<Viewer> {
+export async function resolveRsvpViewer(db: SupabaseClient): Promise<RsvpViewer> {
   const ssr = await createSsrClient();
   const {
     data: { user },
@@ -91,7 +91,7 @@ function officeLocalPart(email: string | null | undefined): string | null {
 }
 
 /** Colaborador ativo do RH ligado ao login (ou, para quem tem dois logins, com o mesmo nome). */
-async function findEmployee(db: SupabaseClient, viewer: Viewer): Promise<Employee | null> {
+async function findEmployee(db: SupabaseClient, viewer: RsvpViewer): Promise<Employee | null> {
   const byUser = await db
     .from("hr_employees")
     .select("id, full_name, user_id")
@@ -114,7 +114,7 @@ async function findEmployee(db: SupabaseClient, viewer: Viewer): Promise<Employe
 async function findInvite(
   db: SupabaseClient,
   eventId: string,
-  viewer: Viewer,
+  viewer: RsvpViewer,
   employee: Employee | null
 ): Promise<InviteRow | null> {
   const { data, error } = await db
@@ -151,7 +151,7 @@ async function loadDeadline(db: SupabaseClient, eventId: string): Promise<string
 }
 
 /** Primeiro nome como a pessoa é conhecida (organograma), senão o do cadastro. */
-async function greetingName(db: SupabaseClient, employee: Employee | null, viewer: Viewer): Promise<string> {
+async function greetingName(db: SupabaseClient, employee: Employee | null, viewer: RsvpViewer): Promise<string> {
   if (employee) {
     const { data } = await db
       .from("org_chart_members")
@@ -180,7 +180,7 @@ function attendingOf(status: string | undefined): boolean | null {
   return null;
 }
 
-async function buildView(db: SupabaseClient, eventId: string, viewer: Viewer): Promise<RsvpView> {
+async function buildView(db: SupabaseClient, eventId: string, viewer: RsvpViewer): Promise<RsvpView> {
   const employee = await findEmployee(db, viewer);
   const [invite, closesAt, firstName, dietary] = await Promise.all([
     findInvite(db, eventId, viewer, employee),
@@ -202,14 +202,14 @@ async function buildView(db: SupabaseClient, eventId: string, viewer: Viewer): P
 
 /** O que a página de confirmação mostra para quem está logado. */
 export async function getRsvpView(eventId: string): Promise<RsvpView> {
-  const db = adminClient();
-  return buildView(db, eventId, await resolveViewer(db));
+  const db = rsvpAdminClient();
+  return buildView(db, eventId, await resolveRsvpViewer(db));
 }
 
 /** Aviso ao entrar no sistema: a confirmação está aberta e a pessoa (da equipe) ainda não respondeu. */
 export async function getRsvpPending(eventId: string): Promise<{ pending: boolean; closesAt: string | null }> {
-  const db = adminClient();
-  const viewer = await resolveViewer(db);
+  const db = rsvpAdminClient();
+  const viewer = await resolveRsvpViewer(db);
   const closesAt = await loadDeadline(db, eventId);
   if (!isRsvpOpen(closesAt)) return { pending: false, closesAt };
   const employee = await findEmployee(db, viewer);
@@ -219,8 +219,8 @@ export async function getRsvpPending(eventId: string): Promise<{ pending: boolea
 
 /** Grava a resposta no convite do colaborador (cria o convite se ele ainda não estava na lista). */
 export async function saveRsvp(eventId: string, answer: RsvpAnswer): Promise<RsvpView> {
-  const db = adminClient();
-  const viewer = await resolveViewer(db);
+  const db = rsvpAdminClient();
+  const viewer = await resolveRsvpViewer(db);
   const closesAt = await loadDeadline(db, eventId);
   if (!isRsvpOpen(closesAt)) {
     const when = closesAt ? ` em ${formatRsvpDeadline(closesAt)}` : "";
@@ -263,8 +263,8 @@ function statusOf(value: string): RsvpStatus {
 
 /** Painel da organização (aba Convidados do evento): respostas da equipe com foto, área e transporte. */
 export async function getRsvpPanel(eventId: string): Promise<RsvpPanelData> {
-  const db = adminClient();
-  const viewer = await resolveViewer(db);
+  const db = rsvpAdminClient();
+  const viewer = await resolveRsvpViewer(db);
   if (!canAccessPath({ role: viewer.role, permissions: viewer.permissions }, "/eventos")) {
     throw new RhHttpError("Sem acesso a Eventos.", 403, "FORBIDDEN");
   }

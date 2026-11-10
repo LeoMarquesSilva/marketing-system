@@ -106,6 +106,8 @@ export const ALWAYS_ALLOWED_PATHS = [
   "/pesquisa",
   // Confirmação de presença na festa de 10 anos (o servidor confere se a pessoa é da equipe).
   "/festa-10-anos",
+  // Envio dos convites da festa aos clientes: cada remetente vê só os seus (o servidor confere).
+  "/convites-festa",
 ];
 
 /**

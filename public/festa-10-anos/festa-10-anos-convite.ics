@@ -1,0 +1,23 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Bismarchi Pires//ORQESTRAI//PT-BR
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+BEGIN:VEVENT
+UID:festa-10-anos-2026-convite@orqestrai.com.br
+DTSTAMP:20261110T150000Z
+DTSTART:20261217T210000Z
+DTEND:20261218T040000Z
+SUMMARY:Festa de 10 anos · Bismarchi | Pires
+LOCATION:Fazenda Santa Margarida - R. Rubens Gomes Balsas\, 311 - Joaquim
+  Egídio\, Campinas - SP
+DESCRIPTION:Festa de 10 anos do Bismarchi | Pires.\nDress code: esporte fi
+ no (azul e areia) - https://www.orqestrai.com.br/dress-code
+URL:https://www.orqestrai.com.br/dress-code
+BEGIN:VALARM
+TRIGGER:-P1D
+ACTION:DISPLAY
+DESCRIPTION:Amanhã é a festa de 10 anos do Bismarchi | Pires\, às 18h
+END:VALARM
+END:VEVENT
+END:VCALENDAR
