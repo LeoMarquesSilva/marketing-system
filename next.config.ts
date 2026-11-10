@@ -15,8 +15,13 @@ const nextConfig: NextConfig = {
       "@radix-ui/react-label",
     ],
   } as NextConfig["experimental"],
+  // pdfjs-dist (leitura dos autos, no servidor) carrega o worker por import dinâmico: fica fora do bundle.
+  serverExternalPackages: ["pdfjs-dist"],
   // Arquivos do modelo de certificado lidos com fs pela rota (fora de /public).
   outputFileTracingIncludes: {
+    // O worker do pdfjs não é achado pelo rastreamento de arquivos: entra à mão nas rotas que leem os autos.
+    "/api/operacoes-legais/processos/autos/documentos/*/ler": ["./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"],
+    "/api/robos/autos/pedidos/*": ["./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"],
     "/api/certificados/modelo/*": ["./src/lib/certificados/assets/**/*"],
     // Fontes licenciadas dos modelos do Estúdio de peças.
     "/api/estudio/fontes": ["./src/lib/estudio/assets/fonts/**/*"],

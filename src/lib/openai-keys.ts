@@ -10,6 +10,7 @@ export const OPENAI_KEY_ENV = {
   relacionamento: "OPENAI_API_KEY_RELACIONAMENTO",
   facilities: "OPENAI_API_KEY_FACILITIES",
   analisePublicacao: "OPENAI_API_KEY_ANALISE_PUBLICACAO",
+  processos: "OPENAI_API_KEY_PROCESSOS",
 } as const;
 
 export type OpenAIKeyCategory = keyof typeof OPENAI_KEY_ENV;

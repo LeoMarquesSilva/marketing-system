@@ -4,7 +4,8 @@ import { NextResponse } from "next/server";
 import { ProcessosError } from "./errors";
 import { exigirAcessoProcessos, type Ator } from "./server";
 
-function respostaDeErro(error: unknown): NextResponse {
+/** Erro → resposta JSON com o status certo (usada também pelas rotas do robô, que não têm sessão). */
+export function respostaDeErro(error: unknown): NextResponse {
   if (error instanceof ProcessosError) return NextResponse.json({ error: error.message }, { status: error.status });
   const message = error instanceof Error ? error.message : "";
   if (/não autenticado/i.test(message)) return NextResponse.json({ error: message }, { status: 401 });

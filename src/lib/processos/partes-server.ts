@@ -7,7 +7,7 @@ import { chaveNome, tipoPeloDocumento } from "./pessoas";
 import { acrescentarEnderecosEContatos, buscarPorDocumento, esquemaContatos, esquemaEnderecos, gravarEnderecosEContatos, registrarVinculo, unificarPessoas } from "./pessoas-server";
 import { detalharProcesso, registrarNoHistorico } from "./processos-server";
 import { db, falhou, type Ator } from "./server";
-import { PAPEIS, POLOS, rotuloDoPapel, type ParteEntrada, type ProcessoDetalhe } from "./types";
+import { PAPEIS, POLOS, rotuloDoPapel, type OrigemDado, type ParteEntrada, type ProcessoDetalhe } from "./types";
 
 const textoOpcional = z
   .string()
@@ -68,8 +68,12 @@ async function completarPessoa(pessoaId: string, dados: ParteEntrada): Promise<v
  * Inclui alguém no processo. A pessoa é reaproveitada quando a tela indicou uma já cadastrada
  * (`pessoaId`) ou quando o CPF/CNPJ bate com o de alguém do cadastro; só então, sem nenhuma das duas,
  * nasce uma pessoa nova. É o que mantém o cadastro de pessoas sem repetição.
+ *
+ * `origem` "ia": a parte veio de uma sugestão da IA aprovada (fica marcada na parte, na pessoa nova, no
+ * vínculo e no histórico; o autor continua sendo quem aprovou). `noHistorico` troca o texto padrão do
+ * histórico quando quem chama sabe dizer melhor o que entrou.
  */
-export async function criarParte(processoId: string, entrada: unknown, ator: Ator): Promise<ProcessoDetalhe> {
+export async function criarParte(processoId: string, entrada: unknown, ator: Ator, origem: OrigemDado = "manual", noHistorico?: string): Promise<ProcessoDetalhe> {
   const dados = validar(entrada);
   // Confere o processo (404 se não existir) antes de mexer em pessoas.
   await detalharProcesso(processoId);
@@ -83,7 +87,7 @@ export async function criarParte(processoId: string, entrada: unknown, ator: Ato
     pessoaId = randomUUID();
     const { error } = await db()
       .from("proc_pessoas")
-      .insert({ id: pessoaId, nome: dados.nome, nome_chave: chaveNome(dados.nome), documento: dados.documento, tipo: tipoPeloDocumento(dados.documento), oab: dados.oab, observacao: dados.observacao, origem: "manual" });
+      .insert({ id: pessoaId, nome: dados.nome, nome_chave: chaveNome(dados.nome), documento: dados.documento, tipo: tipoPeloDocumento(dados.documento), oab: dados.oab, observacao: dados.observacao, origem });
     if (error) falhou("salvar a pessoa", error);
   }
   const { error: erroParte } = await db()
@@ -96,7 +100,7 @@ export async function criarParte(processoId: string, entrada: unknown, ator: Ato
       vinculo: dados.vinculo,
       devedor: dados.devedor,
       referente_a: dados.referenteA,
-      origem: "manual",
+      origem,
       ordem: Math.floor(Date.now() / 1000),
     });
   if (erroParte) {
@@ -104,8 +108,8 @@ export async function criarParte(processoId: string, entrada: unknown, ator: Ato
     falhou("salvar a parte", erroParte);
   }
   if (!existente) await gravarEnderecosEContatos(pessoaId as string, dados);
-  if (pessoaDeReferencia && dados.papel !== "parte") await registrarVinculo(pessoaId as string, pessoaDeReferencia, dados.papel);
-  await registrarNoHistorico(processoId, "partes", null, `Incluída: ${dados.nome} (${rotuloDoPapel(dados.papel)})${existente ? ", pessoa já cadastrada" : ""}`, ator);
+  if (pessoaDeReferencia && dados.papel !== "parte") await registrarVinculo(pessoaId as string, pessoaDeReferencia, dados.papel, origem);
+  await registrarNoHistorico(processoId, "partes", null, `${noHistorico ?? `Incluída: ${dados.nome} (${rotuloDoPapel(dados.papel)})`}${existente ? ", pessoa já cadastrada" : ""}`, ator, origem);
   return detalharProcesso(processoId);
 }
 
@@ -121,8 +125,10 @@ async function carregarParte(parteId: string): Promise<{ id: string; processo_id
  * Salva a parte e a pessoa dela. Os dados da pessoa (documento, endereços, contatos) valem para todos
  * os processos em que ela aparece. Se o CPF/CNPJ digitado já é de outra pessoa do cadastro, as duas são
  * a mesma: a desta parte é absorvida pela que já tinha o documento.
+ *
+ * `origem` e `noHistorico`: como em criarParte (sugestão da IA aprovada).
  */
-export async function salvarParte(parteId: string, entrada: unknown, ator: Ator): Promise<ProcessoDetalhe> {
+export async function salvarParte(parteId: string, entrada: unknown, ator: Ator, origem: OrigemDado = "manual", noHistorico?: string): Promise<ProcessoDetalhe> {
   const dados = validar(entrada);
   const parte = await carregarParte(parteId);
   const pessoaDeReferencia = await conferirReferencia(parte.processo_id, dados.referenteA, parteId);
@@ -146,8 +152,8 @@ export async function salvarParte(parteId: string, entrada: unknown, ator: Ator)
     if (erroPessoa) falhou("salvar a pessoa", erroPessoa);
     await gravarEnderecosEContatos(pessoaId, dados);
   }
-  if (pessoaDeReferencia && dados.papel !== "parte") await registrarVinculo(pessoaId, pessoaDeReferencia, dados.papel);
-  await registrarNoHistorico(parte.processo_id, "partes", null, `Atualizada: ${dados.nome} (${rotuloDoPapel(dados.papel)})${dona ? `, unificada com ${dona.nome}` : ""}`, ator);
+  if (pessoaDeReferencia && dados.papel !== "parte") await registrarVinculo(pessoaId, pessoaDeReferencia, dados.papel, origem);
+  await registrarNoHistorico(parte.processo_id, "partes", null, `${noHistorico ?? `Atualizada: ${dados.nome} (${rotuloDoPapel(dados.papel)})`}${dona ? `, unificada com ${dona.nome}` : ""}`, ator, origem);
   return detalharProcesso(parte.processo_id);
 }
 
