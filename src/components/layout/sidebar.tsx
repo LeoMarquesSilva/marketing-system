@@ -4,7 +4,7 @@ import { NavLink } from "@/components/layout/nav-link";
 import { usePathname, useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, LogOut, MonitorDown, MoreHorizontal, Smartphone, User } from "lucide-react";
+import { ChevronDown, Link2, LogOut, MonitorDown, MoreHorizontal, Smartphone, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
 import {
@@ -427,6 +427,15 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
                       <User className="h-4 w-4" />
                       Meu perfil
                     </NavLink>
+                    <NavLink
+                      href="/meus-links"
+                      role="menuitem"
+                      onClick={() => setProfileMenuOpen(false)}
+                      className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                    >
+                      <Link2 className="h-4 w-4" />
+                      Meus links
+                    </NavLink>
                     {instalacao.modo && (
                       <button
                         type="button"
@@ -547,6 +556,14 @@ export function Sidebar({ expanded, onExpandedChange }: SidebarProps) {
                 >
                   <User className="h-[18px] w-[18px]" aria-hidden />
                   Meu perfil
+                </NavLink>
+                <NavLink
+                  href="/meus-links"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex min-h-12 items-center gap-2.5 rounded-md px-3 py-2.5 text-sm font-medium text-white/75 outline-none transition-colors hover:bg-white/[0.09] hover:text-white focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
+                >
+                  <Link2 className="h-[18px] w-[18px]" aria-hidden />
+                  Meus links
                 </NavLink>
                 <button
                   type="button"

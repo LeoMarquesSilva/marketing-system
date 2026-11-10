@@ -164,8 +164,10 @@ describe("visibilidade por perfil", () => {
   it("permissão /rh libera todas as telas de Pessoas e Cultura do RH", () => {
     const hrefs = visibleHrefs({ role: null, permissions: ["/planner", "/rh"] });
     expect(hrefs).toEqual(
-      expect.arrayContaining(["/rh/ferias", "/rh/qualificacoes", "/rh/fichas-cadastrais", "/rh/organograma", "/rh/boas-praticas", "/rh/bp-awards", "/bp-awards"])
+      expect.arrayContaining(["/rh/ferias", "/rh/fichas-cadastrais", "/rh/organograma", "/rh/boas-praticas", "/rh/bp-awards", "/bp-awards"])
     );
+    // Qualificações saiu do menu: repetia o que já está em Fichas cadastrais.
+    expect(hrefs).not.toContain("/rh/qualificacoes");
     expect(hrefs).not.toContain("/solicitacoes");
   });
 

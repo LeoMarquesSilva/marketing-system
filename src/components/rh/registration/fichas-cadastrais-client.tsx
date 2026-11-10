@@ -39,6 +39,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { PhoneInput } from "@/components/ui/phone-input";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import { KpiCard } from "@/components/rh/kpi-card";
+import { BoasVindasTab, welcomePendingCount } from "@/components/rh/registration/boas-vindas-tab";
 import { ColaboradoresTab, isEmployeeFichaStatus } from "@/components/rh/registration/colaboradores-tab";
 import { EmployeeRegistrationDialog } from "@/components/rh/registration/employee-registration-dialog";
 import { RegistrationReviewDialog } from "@/components/rh/registration/registration-review-dialog";
@@ -61,9 +62,10 @@ import {
   type RegistrationKind,
   type RegistrationListItem,
 } from "@/lib/rh/registration/types";
+import type { WelcomeOverview } from "@/lib/rh/welcome/types";
 import { cn } from "@/lib/utils";
 
-type Tab = "colaboradores" | "admissoes";
+type Tab = "colaboradores" | "admissoes" | "boas-vindas";
 
 type AdmissionFilter = "abertas" | "pendente" | "recebida" | "sem_vinculo" | "concluidas" | "todas";
 
@@ -76,9 +78,10 @@ const ADMISSION_FILTERS: { value: AdmissionFilter; label: string }[] = [
   { value: "todas", label: "Todas" },
 ];
 
-/** ?aba=admissoes (e o antigo ?origem=admissao) abre direto nas admissões. */
+/** ?aba=admissoes (e o antigo ?origem=admissao) abre direto nas admissões; ?aba=boas-vindas, nas boas-vindas. */
 function parseTab(params: { get(name: string): string | null }): Tab {
   if (params.get("aba") === "admissoes" || params.get("origem") === "admissao") return "admissoes";
+  if (params.get("aba") === "boas-vindas") return "boas-vindas";
   return "colaboradores";
 }
 
@@ -133,14 +136,17 @@ function sortKey(item: RegistrationListItem): number {
 export function FichasCadastraisClient({
   initialItems,
   initialEmployees,
+  initialWelcome,
 }: {
   initialItems: RegistrationListItem[];
   initialEmployees: EmployeeRegistrationRow[];
+  initialWelcome: WelcomeOverview;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [items, setItems] = useState(initialItems);
   const [employeeRows, setEmployeeRows] = useState(initialEmployees);
+  const [welcome, setWelcome] = useState(initialWelcome);
   const [tab, setTab] = useState<Tab>(parseTab(searchParams));
   const statusParam = searchParams.get("ficha_status");
   const initialStatus = isEmployeeFichaStatus(statusParam) ? statusParam : "all";
@@ -244,8 +250,8 @@ export function FichasCadastraisClient({
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-foreground">Fichas cadastrais</h2>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Os dados cadastrais da equipe: quem já atualizou a ficha, o que falta e as admissões em andamento. Tudo
-            passa pela revisão de Pessoas e Cultura antes de ir para o cadastro.
+            Os dados cadastrais da equipe: quem já atualizou a ficha, o que falta, as admissões em andamento e as
+            boas-vindas de quem entra. Tudo passa pela revisão de Pessoas e Cultura antes de ir para o cadastro.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -307,6 +313,7 @@ export function FichasCadastraisClient({
           [
             ["colaboradores", "Colaboradores", kpis.active],
             ["admissoes", "Admissões", kpis.admissionsOpen],
+            ["boas-vindas", "Boas-vindas", welcomePendingCount(welcome)],
           ] as Array<[Tab, string, number]>
         ).map(([key, label, count]) => (
           <button
@@ -333,6 +340,8 @@ export function FichasCadastraisClient({
           initialStatus={initialStatus}
           onOpenEmployee={openEmployee}
         />
+      ) : tab === "boas-vindas" ? (
+        <BoasVindasTab overview={welcome} onChange={setWelcome} />
       ) : (
         <AdmissoesTab
           items={admissions}

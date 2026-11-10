@@ -28,6 +28,7 @@ import {
   House,
   IdCard,
   LayoutDashboard,
+  Link2,
   Mail,
   Megaphone,
   MessageSquareHeart,
@@ -316,14 +317,11 @@ export const NAV_FRONTS: NavFront[] = [
       },
       {
         id: "colaboradores",
-        // Fichas de admissão, atualização cadastral e qualificação jurídica.
+        // Fichas de admissão, atualização cadastral e boas-vindas de quem entra.
         label: "Dados cadastrais",
         shortLabel: "Cadastro",
         icon: IdCard,
-        pages: [
-          { href: "/rh/qualificacoes", label: "Qualificações" },
-          { href: "/rh/fichas-cadastrais", label: "Fichas cadastrais" },
-        ],
+        pages: [{ href: "/rh/fichas-cadastrais", label: "Fichas cadastrais" }],
       },
       {
         id: "organograma",
@@ -462,6 +460,7 @@ export const NAV_FRONTS: NavFront[] = [
 /** Telas com cabeçalho próprio que não aparecem na sidebar. */
 const EXTRA_HEADERS: Array<{ href: string; eyebrow: string; title: string; icon: LucideIcon }> = [
   { href: "/perfil", eyebrow: "Conta", title: "Meu perfil", icon: User },
+  { href: "/meus-links", eyebrow: "Conta", title: "Meus links", icon: Link2 },
   { href: "/cafe-com-cultura", eyebrow: "Pessoas e Cultura", title: "Café com Cultura", icon: Coffee },
   { href: "/nfc/leituras", eyebrow: "NFC Hub", title: "Leituras que formam trajetórias", icon: Nfc },
 ];
@@ -478,7 +477,6 @@ const ALWAYS_VISIBLE = new Set([
 ]);
 
 const RH_RESTRICTED = new Set([
-  "/rh/qualificacoes",
   "/rh/fichas-cadastrais",
   "/rh/organograma",
   "/rh/boas-praticas",

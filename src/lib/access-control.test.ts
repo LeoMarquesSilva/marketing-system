@@ -186,11 +186,11 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath({ role: "admin" }, "/cafe-cultura")).toBe(true);
   });
 
-  it("permissão /rh libera /rh/ferias e /rh/qualificacoes", () => {
+  it("permissão /rh libera /rh/ferias e /rh/fichas-cadastrais", () => {
     const rh = { role: null, permissions: ["/rh"] };
     expect(canAccessPath(rh, "/rh")).toBe(true);
     expect(canAccessPath(rh, "/rh/ferias")).toBe(true);
-    expect(canAccessPath(rh, "/rh/qualificacoes")).toBe(true);
+    expect(canAccessPath(rh, "/rh/fichas-cadastrais")).toBe(true);
     expect(canAccessPath(rh, "/planner")).toBe(false);
   });
 
@@ -200,7 +200,7 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(legado, "/ferias")).toBe(false);
   });
 
-  it("viewer de férias acessa somente Férias, não Qualificações", () => {
+  it("viewer de férias acessa somente Férias, não as outras telas do RH", () => {
     const viewer = {
       role: null,
       permissions: ["/conteudo/roteiros"],
@@ -209,7 +209,7 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(viewer, "/rh")).toBe(true);
     expect(canAccessPath(viewer, "/rh/ferias")).toBe(true);
     expect(canAccessPath(viewer, "/ferias")).toBe(true);
-    expect(canAccessPath(viewer, "/rh/qualificacoes")).toBe(false);
+    expect(canAccessPath(viewer, "/rh/fichas-cadastrais")).toBe(false);
   });
 
   it("gestor só com Meus Clientes nas permissions ainda acessa a rota e não o Planner", () => {

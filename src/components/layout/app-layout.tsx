@@ -23,6 +23,7 @@ const BARE_LAYOUT_PATHS = [
   "/login",
   "/alterar-senha",
   "/redefinir-senha",
+  "/primeiro-acesso",
   "/completar-qualificacao",
   "/t",
   "/nps",

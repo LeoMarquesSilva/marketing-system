@@ -1,5 +1,5 @@
 /**
- * Predicado compartilhado de acesso ao módulo RH (Férias + Qualificações).
+ * Predicado compartilhado de acesso ao módulo RH (Férias, Dados cadastrais, Organograma…).
  *
  * Chave canônica: `/rh`. A chave legada `/ferias` foi migrada e removida —
  * quem ainda tinha só ela já foi atualizado para `/rh` no banco.
