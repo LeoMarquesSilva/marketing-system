@@ -47,6 +47,7 @@ import {
   Trophy,
   Truck,
   User,
+  Wrench,
   Users,
   UsersRound,
   Wallet,
@@ -80,7 +81,12 @@ import {
 } from "@/lib/access-control";
 import { isContentCollaborator } from "@/lib/content-areas";
 import { canAccessGustavoContent } from "@/lib/gustavo-content/access";
-import { FACILITIES_CONTRACTS_PATH, FACILITIES_SUPPLIERS_PATH } from "@/lib/facilities/types";
+import {
+  FACILITIES_ASSETS_PATH,
+  FACILITIES_CONTRACTS_PATH,
+  FACILITIES_MAINTENANCE_PATH,
+  FACILITIES_SUPPLIERS_PATH,
+} from "@/lib/facilities/types";
 import { hasHrAccess } from "@/lib/rh/access";
 import { REELS_APPROVAL_HREF } from "@/hooks/use-reel-deliveries-pending";
 
@@ -434,14 +440,25 @@ export const NAV_FRONTS: NavFront[] = [
         pages: [{ href: "/eventos", label: "Eventos" }],
       },
       {
-        // Cadastro único de fornecedores (o mesmo dos eventos) + contratos com datas-chave.
+        // Cadastro único de terceiros (o mesmo dos eventos), contratos e o valor pago vindo do OPEX.
         id: "fornecedores",
-        label: "Fornecedores e contratos",
+        label: "Fornecedores e prestadores",
+        title: "Gestão de Fornecedores e Prestadores de Serviços",
         shortLabel: "Fornecedores",
         icon: Truck,
         pages: [
-          { href: FACILITIES_SUPPLIERS_PATH, label: "Fornecedores" },
+          { href: FACILITIES_SUPPLIERS_PATH, label: "Fornecedores e prestadores" },
           { href: FACILITIES_CONTRACTS_PATH, label: "Contratos" },
+        ],
+      },
+      {
+        // Ativos e instalações + plano de manutenção (preventiva e corretiva) com histórico.
+        id: "manutencao",
+        label: "Manutenção",
+        icon: Wrench,
+        pages: [
+          { href: FACILITIES_MAINTENANCE_PATH, label: "Plano de manutenção" },
+          { href: FACILITIES_ASSETS_PATH, label: "Ativos e instalações" },
         ],
       },
     ],

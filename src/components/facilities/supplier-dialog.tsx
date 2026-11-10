@@ -3,6 +3,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
+  ArrowRight,
   CalendarClock,
   CalendarRange,
   Download,
@@ -36,7 +37,7 @@ import {
   termProgress,
   todayIso,
 } from "@/lib/facilities/alerts";
-import { facilitiesApi, openSupplierDocument, uploadSupplierFile } from "@/lib/facilities/client";
+import { duplicateNameOf, facilitiesApi, openSupplierDocument, uploadSupplierFile } from "@/lib/facilities/client";
 import {
   ADJUSTMENT_INDEX_LABEL,
   CONTRACT_STATUS_LABEL,
@@ -56,6 +57,7 @@ import {
   type SupplierInput,
 } from "@/lib/facilities/types";
 import { supplierCategoryLabel } from "@/lib/suppliers/categories";
+import { normalizeSupplierName } from "@/lib/suppliers/unique-name";
 import { cn } from "@/lib/utils";
 import { ContractForm, contractMissing, contractToInput, emptyContractInput } from "./contract-form";
 import {
@@ -72,6 +74,7 @@ import {
   SupplierMonogram,
   TermBar,
 } from "./facilities-visuals";
+import { OpexPaidPanel, PartyTypeBadge, ThirdPartyCategoryChip } from "./opex-panel";
 import {
   DocumentForm,
   emptyDocumentDraft,
@@ -259,11 +262,13 @@ function SummaryTab({
   people,
   onOpenService,
   onOpenContract,
+  onSupplierChange,
 }: {
   supplier: FacilitiesSupplier;
   people: FacilitiesPerson[];
   onOpenService: (serviceId: string | null) => void;
   onOpenContract: (contractId: string | null) => void;
+  onSupplierChange: (supplier: FacilitiesSupplier) => void;
 }) {
   const today = todayIso();
   const alerts = supplierAlerts(supplier, today);
@@ -293,10 +298,12 @@ function SummaryTab({
         </section>
       )}
 
+      <OpexPaidPanel supplier={supplier} onSaved={onSupplierChange} />
+
       <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
-        <section className="rounded-md bg-[#f7fbfc] p-4 ring-1 ring-inset ring-[#e6eef0]">
-          <p className="text-xs font-medium text-muted-foreground">Custo mensal</p>
-          <p className="mt-1 text-[28px] font-semibold leading-8 text-[#10293a]">{monthly > 0 ? formatBrl(monthly) : "Eventual"}</p>
+        <section className="rounded-md p-4 ring-1 ring-inset ring-[#e6eef0]">
+          <p className="text-xs font-medium text-muted-foreground">Contratado por mês</p>
+          <p className="mt-1 text-xl font-semibold leading-7 text-[#10293a]">{monthly > 0 ? formatBrl(monthly) : "Eventual"}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {activeServices.length
               ? `${activeServices.length} ${activeServices.length === 1 ? "serviço em uso" : "serviços em uso"}`
@@ -796,6 +803,7 @@ function ContractDetail({
 export function SupplierDialog({
   supplier: initialSupplier,
   initialView,
+  prefill,
   people,
   onClose,
   onSaved,
@@ -804,6 +812,8 @@ export function SupplierDialog({
   /** null = novo fornecedor. */
   supplier: FacilitiesSupplier | null;
   initialView?: SupplierView;
+  /** Novo cadastro já com alguns campos (ex.: nome vindo do OPEX). */
+  prefill?: Partial<SupplierInput>;
   people: FacilitiesPerson[];
   onClose: () => void;
   onSaved: (supplier: FacilitiesSupplier) => void;
@@ -814,7 +824,7 @@ export function SupplierDialog({
     initialView ?? (initialSupplier ? { kind: "supplier", mode: "view", tab: "resumo" } : { kind: "supplier", mode: "edit", tab: "resumo" })
   );
   const [supplierForm, setSupplierForm] = useState<SupplierInput>(() =>
-    initialSupplier ? supplierToInput(initialSupplier) : emptySupplierInput()
+    initialSupplier ? supplierToInput(initialSupplier) : { ...emptySupplierInput(), ...prefill }
   );
   const [serviceForm, setServiceForm] = useState<ServiceInput | null>(() => {
     if (initialView?.kind !== "service" || !initialSupplier) return null;
@@ -831,11 +841,26 @@ export function SupplierDialog({
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Cadastro que já tem o nome digitado (a API recusou criar outro). */
+  const [duplicate, setDuplicate] = useState<FacilitiesSupplier | null>(null);
 
   function go(next: SupplierView) {
     setView(next);
     setConfirmDelete(false);
     setError(null);
+    setDuplicate(null);
+  }
+
+  /** Troca o modal para o cadastro que já existe; o que foi digitado aqui não é salvo. */
+  function openExisting(existing: FacilitiesSupplier) {
+    applySupplier(existing);
+    setSupplierForm(supplierToInput(existing));
+    go({ kind: "supplier", mode: "view", tab: "resumo" });
+  }
+
+  function changeSupplierForm(next: SupplierInput) {
+    setSupplierForm(next);
+    if (duplicate && normalizeSupplierName(next.name) !== normalizeSupplierName(duplicate.name)) setDuplicate(null);
   }
 
   function applySupplier(next: FacilitiesSupplier) {
@@ -877,11 +902,20 @@ export function SupplierDialog({
 
   const saveSupplier = () =>
     run(async () => {
+      setDuplicate(null);
       const missing = supplierMissing(supplierForm);
       if (missing) throw new Error(missing);
-      const saved = supplier
-        ? await facilitiesApi.updateSupplier(supplier.id, supplierForm)
-        : await facilitiesApi.createSupplier(supplierForm);
+      let saved: FacilitiesSupplier;
+      try {
+        saved = supplier
+          ? await facilitiesApi.updateSupplier(supplier.id, supplierForm)
+          : await facilitiesApi.createSupplier(supplierForm);
+      } catch (cause) {
+        const existing = duplicateNameOf(cause);
+        if (!existing) throw cause;
+        setDuplicate(existing);
+        return;
+      }
       applySupplier(saved);
       setSupplierForm(supplierToInput(saved));
       go({ kind: "supplier", mode: "view", tab: "resumo" });
@@ -1036,15 +1070,15 @@ export function SupplierDialog({
   if (view.kind === "supplier" && (view.mode === "edit" || !supplier)) {
     header = (
       <DialogHeader className="gap-1 border-b border-[#e6eef0] px-6 py-5 pr-14 text-left">
-        <DialogTitle className="text-lg">{supplier ? "Editar fornecedor" : "Novo fornecedor"}</DialogTitle>
-        <DialogDescription>Um cadastro por CNPJ/CPF. Serviços, contratos e documentos entram depois de salvar.</DialogDescription>
+        <DialogTitle className="text-lg">{supplier ? `Editar ${supplier.name}` : "Novo fornecedor ou prestador"}</DialogTitle>
+        <DialogDescription>Um cadastro por nome e por CNPJ/CPF. Serviços, contratos e documentos entram depois de salvar.</DialogDescription>
       </DialogHeader>
     );
-    body = <SupplierForm form={supplierForm} people={people} onChange={setSupplierForm} />;
+    body = <SupplierForm form={supplierForm} people={people} supplierId={supplier?.id} onChange={changeSupplierForm} />;
     footer = (
       <>
         <div />
-        {saveButtons(supplier ? "Salvar alterações" : "Cadastrar fornecedor", () => void saveSupplier(), () => {
+        {saveButtons(supplier ? "Salvar alterações" : "Cadastrar", () => void saveSupplier(), () => {
           if (!supplier) return onClose();
           setSupplierForm(supplierToInput(supplier));
           go({ kind: "supplier", mode: "view", tab: "resumo" });
@@ -1063,7 +1097,12 @@ export function SupplierDialog({
                 supplierCategoryLabel(supplier.category)}
             </DialogDescription>
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="inline-flex items-center gap-1 rounded-full bg-[#eef3f5] px-2 py-0.5 text-xs font-medium text-[#285f7a]">
+              <PartyTypeBadge type={supplier.party_type} />
+              <ThirdPartyCategoryChip category={supplier.third_party_category} />
+              <span
+                title="Natureza da despesa"
+                className="inline-flex items-center gap-1 rounded-full bg-[#eef3f5] px-2 py-0.5 text-xs font-medium text-[#285f7a]"
+              >
                 <CategoryGlyph category={supplier.category} className="size-3" />
                 {supplierCategoryLabel(supplier.category)}
               </span>
@@ -1114,7 +1153,13 @@ export function SupplierDialog({
     );
     body =
       view.tab === "resumo" ? (
-        <SummaryTab supplier={supplier} people={people} onOpenService={openService} onOpenContract={(id) => openContract(id)} />
+        <SummaryTab
+          supplier={supplier}
+          people={people}
+          onOpenService={openService}
+          onOpenContract={(id) => openContract(id)}
+          onSupplierChange={applySupplier}
+        />
       ) : view.tab === "servicos" ? (
         <ServicesTab supplier={supplier} onOpen={openService} />
       ) : view.tab === "contratos" ? (
@@ -1223,6 +1268,29 @@ export function SupplierDialog({
           <p role="alert" className="mx-6 mb-3 mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-inset ring-red-200">
             {error}
           </p>
+        )}
+        {duplicate && (
+          <div role="alert" className="mx-6 mb-3 mt-3 space-y-2.5 rounded-md bg-amber-50 px-3 py-3 text-sm ring-1 ring-inset ring-amber-200">
+            <p className="text-amber-900">
+              <span className="font-medium">Este nome já está no cadastro.</span> Para não ter dois registros do mesmo
+              fornecedor, abra o existente e complete o que faltar por lá. Se for outra unidade, mude o nome (ex.: com o bairro).
+            </p>
+            <div className="flex flex-wrap items-center gap-3 rounded-md bg-white px-3 py-2 ring-1 ring-inset ring-amber-200">
+              <SupplierMonogram name={duplicate.name} category={duplicate.category} size="sm" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-medium text-foreground">{duplicate.name}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {[documentLabel(duplicate.document), supplierCategoryLabel(duplicate.category), duplicate.active ? null : "Inativo"]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              </div>
+              <Button type="button" size="sm" className="gap-1.5" disabled={saving} onClick={() => openExisting(duplicate)}>
+                Abrir cadastro existente
+                <ArrowRight className="size-4" aria-hidden />
+              </Button>
+            </div>
+          </div>
         )}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#e6eef0] bg-[#fafcfc] px-6 py-4">{footer}</div>
       </DialogContent>

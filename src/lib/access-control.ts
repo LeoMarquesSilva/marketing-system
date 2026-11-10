@@ -54,7 +54,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/operacoes-legais", label: "Operações Legais", admin: true, manualOnly: true },
   { key: "/operacoes-legais/vistagem", label: "Vistagem de Publicações BP", manualOnly: true },
   { key: "/eventos", label: "Gestão de eventos" },
-  { key: "/facilities", label: "Fornecedores e contratos (Facilities)", manualOnly: true },
+  { key: "/facilities", label: "Facilities (fornecedores, contratos e manutenção)", manualOnly: true },
   { key: "/cafe-cultura", label: "Café com Cultura", manualOnly: true },
   { key: "/email-marketing", label: "E-mail marketing" },
   { key: "/certificados", label: "Certificados" },
@@ -329,7 +329,7 @@ export function hasIcpAccess(profile: AccessProfile | null | undefined): boolean
 }
 
 /**
- * Fornecedores e contratos (valores, contratos e dados de pagamento): admin ou
+ * Facilities: fornecedores, contratos e manutenção (valores, contratos e dados de pagamento): admin ou
  * liberação manual em Usuários. Sem `/facilities` marcado, só admin vê.
  */
 export function hasFacilitiesAccess(profile: AccessProfile | null | undefined): boolean {
