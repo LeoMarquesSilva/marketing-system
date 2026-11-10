@@ -13,7 +13,9 @@ export interface TextoDoPdf {
 type ItemDeTexto = { str?: string; hasEOL?: boolean };
 
 export async function extrairPaginas(bytes: Uint8Array, limite = Number.POSITIVE_INFINITY): Promise<TextoDoPdf> {
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  // Fora do bundle: o Node carrega o pdfjs (e o worker dele) direto de node_modules. Empacotado, o pdfjs não acha
+  // o próprio worker; e marcar o pacote como externo no next.config quebra as telas que usam o pdfjs no navegador.
+  const pdfjs: typeof import("pdfjs-dist/legacy/build/pdf.mjs") = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "pdfjs-dist/legacy/build/pdf.mjs");
   const tarefa = pdfjs.getDocument({
     // O pdfjs fica com o buffer: a cópia mantém o original utilizável por quem chamou.
     data: bytes.slice(),
