@@ -3,8 +3,8 @@ import { join } from "node:path";
 import { setTimeout as dormir } from "node:timers/promises";
 import type { Page } from "playwright";
 import { lerConfig } from "./config.ts";
-import { esajTjsp } from "./conectores/esaj.ts";
-import { lerCnj, nomeDoPdf } from "./conectores/esaj-urls.ts";
+import { conectoresEsaj } from "./conectores/esaj.ts";
+import { lerCnj, nomeDoPdf, tribunalEsajDoCnj } from "./conectores/esaj-urls.ts";
 import { EsperaEsgotada, FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector } from "./conectores/tipos.ts";
 import { Fila, PedidoEncerrado, type Pedido } from "./fila.ts";
 import { abrirNavegador, guardarDiagnostico } from "./navegador.ts";
@@ -16,12 +16,20 @@ import { abrirNavegador, guardarDiagnostico } from "./navegador.ts";
  *
  *   npm run robo          fica rodando e atende a fila
  *   npm run uma-vez       atende o que estiver na fila e sai
- *   npm run login         só abre a sessão do tribunal (para a pessoa concluir o login com calma)
+ *   npm run login [-- TJCE]        só abre a sessão do tribunal (TJSP se não disser qual)
  *   npm run inspecionar -- <CNJ>   abre o processo e descreve a tela, sem baixar
  */
 
-/** Um conector por sistema de tribunal. Os próximos (PJe, eproc, Projudi) entram aqui. */
-const CONECTORES: Conector[] = [esajTjsp];
+/** Um conector por sistema e tribunal ("esaj:TJSP", "esaj:TJCE"…). Os próximos (PJe, eproc, Projudi) entram aqui. */
+const CONECTORES: Conector[] = [...conectoresEsaj];
+
+/** O conector do tribunal pedido na linha de comando ("TJCE"), ou do tribunal do número do processo; TJSP se nada disser. */
+function conectorDaLinhaDeComando(cnj?: string): Conector {
+  const sigla = (cnj ? tribunalEsajDoCnj(cnj)?.sigla : undefined) ?? argumentos.find((item) => /^TJ[A-Z]{2,3}$/.test(item)) ?? "TJSP";
+  const conector = CONECTORES.find((item) => item.chave === `esaj:${sigla}`);
+  if (!conector) throw new Error(`Este robô ainda não atende o ${sigla}. Atende: ${CONECTORES.map((item) => item.chave.split(":")[1]).join(", ")}.`);
+  return conector;
+}
 
 const argumentos = process.argv.slice(2);
 const modo = argumentos.includes("--login") ? "login" : argumentos.includes("--inspecionar") ? "inspecionar" : argumentos.includes("--uma-vez") ? "uma-vez" : "continuo";
@@ -84,7 +92,7 @@ async function principal(): Promise<void> {
   }
 
   if (modo === "login") {
-    await CONECTORES[0].entrar(ambientePara(null));
+    await conectorDaLinhaDeComando().entrar(ambientePara(null));
     registrar("Sessão do tribunal aberta e guardada no perfil do robô.");
     await fechar();
     return;
@@ -94,7 +102,7 @@ async function principal(): Promise<void> {
     const cnj = argumentos.find((item) => lerCnj(item));
     if (!cnj) throw new Error("Informe o número do processo: npm run inspecionar -- 0000000-00.0000.8.26.0000");
     try {
-      await CONECTORES[0].inspecionar?.(ambientePara(null), cnj);
+      await conectorDaLinhaDeComando(cnj).inspecionar?.(ambientePara(null), cnj);
     } finally {
       await fechar();
     }

@@ -2,11 +2,12 @@ import { open, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Page } from "playwright";
 import type { Pedido } from "../fila.ts";
-import { ESAJ_TJSP, comecaComoPdf, ehPaginaDeLogin, ehPaginaDoProcesso, escolherCertificado, lerCnj, urlDaConsulta, urlDeLogin, type NumeroCnj } from "./esaj-urls.ts";
+import { TRIBUNAIS_ESAJ, comecaComoPdf, ehPaginaDeLogin, ehPaginaDoProcesso, escolherCertificado, lerCnj, urlDaConsulta, urlDeLogin, type NumeroCnj, type TribunalEsaj } from "./esaj-urls.ts";
 import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector } from "./tipos.ts";
 
 /**
- * Conector do e-SAJ (Softplan). Primeiro tribunal: TJSP.
+ * Conector do e-SAJ (Softplan), um por tribunal: TJSP, TJCE, TJAL e TJMS (ver TRIBUNAIS_ESAJ). O login é
+ * por tribunal: cada um tem a própria sessão, e o robô entra em cada um na primeira vez que precisar.
  *
  * O caminho é o de um advogado no portal: entra, consulta o processo pelo número, abre "Visualizar autos"
  * (pasta digital), marca todos os documentos e pede o PDF em arquivo único.
@@ -111,57 +112,71 @@ async function sessaoAberta(pagina: Page, base: string): Promise<boolean> {
 }
 
 class ConectorEsaj implements Conector {
-  constructor(
-    readonly chave: string,
-    private readonly base: string,
-    private readonly tribunal: string
-  ) {}
+  readonly chave: string;
+  private readonly base: string;
+  private readonly tribunal: string;
+
+  constructor(private readonly esaj: TribunalEsaj) {
+    this.chave = `esaj:${esaj.sigla}`;
+    this.base = esaj.base;
+    this.tribunal = esaj.sigla;
+  }
 
   /* ------------------------------------------------------------------ login */
 
-  private async iniciarComCertificado(ambiente: Ambiente): Promise<void> {
-    const { pagina, config, registrar } = ambiente;
-    await pagina.locator(TELA.login.abaCertificado).click();
-    if (await visivel(pagina, TELA.login.semWebSigner)) {
-      registrar("O e-SAJ não encontrou o Web Signer neste navegador. Instale a extensão Web Signer nesta janela (o próprio e-SAJ oferece o botão) e recarregue a página.");
-      return;
-    }
-    // O Web Signer preenche a lista alguns segundos depois de a aba abrir; até lá ela tem só um aviso, sem
-    // valor. Espera o certificado aparecer (e pede a lista de novo uma vez, se demorar).
-    let opcoes: string[] = [];
-    let escolhido = -1;
-    let recarregou = false;
-    const limite = Date.now() + 30_000;
-    while (Date.now() < limite) {
-      const lidas = await pagina
-        .locator(`${TELA.login.certificados} option`)
-        .evaluateAll((itens) => itens.map((item) => ({ texto: item.textContent ?? "", valor: (item as HTMLOptionElement).value })))
-        .catch(() => [] as { texto: string; valor: string }[]);
-      // Opção sem valor é aviso ("Carregando…", "Selecione…"): fica vazia para não ser escolhida, mantendo o índice.
-      opcoes = lidas.map((item) => (item.valor ? item.texto : ""));
-      escolhido = escolherCertificado(opcoes, config.esaj.certificado);
-      if (escolhido >= 0) break;
-      if (!recarregou && Date.now() > limite - 20_000 && (await visivel(pagina, TELA.login.recarregarCertificados))) {
-        await pagina.locator(TELA.login.recarregarCertificados).click();
-        recarregou = true;
-      }
-      await pagina.waitForTimeout(1_000);
-    }
-    if (escolhido < 0) {
-      const certificados = opcoes.filter(Boolean).length;
-      registrar(
-        certificados
-          ? `O Web Signer mostrou ${certificados} certificado${certificados === 1 ? "" : "s"}, nenhum (ou mais de um) com o nome de ESAJ_CERTIFICADO: escolha o certificado na janela e clique em Entrar.`
-          : "A lista de certificados ficou vazia: confira o Web Signer e o certificado nesta máquina, ou escolha o certificado na janela."
-      );
-      return;
-    }
+  /**
+   * Se o certificado de ESAJ_CERTIFICADO já está na lista do Web Signer, escolhe e clica em Entrar.
+   * Devolve quantos certificados a lista mostra e se clicou. Opção sem valor é aviso ("Carregando…",
+   * "Selecione…") e fica vazia para não ser escolhida, mantendo o índice.
+   */
+  private async escolherNaLista(ambiente: Ambiente): Promise<{ certificados: number; clicou: boolean }> {
+    const { pagina, config } = ambiente;
+    const lidas = await pagina
+      .locator(`${TELA.login.certificados} option`)
+      .evaluateAll((itens) => itens.map((item) => ({ texto: item.textContent ?? "", valor: (item as HTMLOptionElement).value })))
+      .catch(() => [] as { texto: string; valor: string }[]);
+    const opcoes = lidas.map((item) => (item.valor ? item.texto : ""));
+    const certificados = opcoes.filter(Boolean).length;
+    const escolhido = escolherCertificado(opcoes, config.esaj.certificado);
+    if (escolhido < 0) return { certificados, clicou: false };
     await pagina.locator(TELA.login.certificados).selectOption({ index: escolhido });
     const entrar = pagina.locator(TELA.login.entrarComCertificado);
     await entrar.waitFor({ state: "visible", timeout: 10_000 });
     await pagina.waitForFunction((seletor) => !(document.querySelector(seletor) as HTMLInputElement | null)?.disabled, TELA.login.entrarComCertificado, { timeout: 10_000 }).catch(() => undefined);
     await entrar.click();
-    registrar("Certificado escolhido. Se o sistema pedir permissão para usar a chave do certificado, autorize na janela.");
+    return { certificados, clicou: true };
+  }
+
+  private async iniciarComCertificado(ambiente: Ambiente): Promise<void> {
+    const { pagina, registrar } = ambiente;
+    await pagina.locator(TELA.login.abaCertificado).click();
+    if (await visivel(pagina, TELA.login.semWebSigner)) {
+      registrar("O e-SAJ não encontrou o Web Signer neste navegador. Instale a extensão Web Signer nesta janela (o próprio e-SAJ oferece o botão) e recarregue a página.");
+      return;
+    }
+    // O Web Signer preenche a lista alguns segundos depois de a aba abrir; na primeira vez num tribunal
+    // pode levar quase um minuto (ou pedir para autorizar o site). Espera o certificado aparecer e pede a
+    // lista de novo uma vez, se demorar.
+    let resultado = { certificados: 0, clicou: false };
+    let recarregou = false;
+    const inicio = Date.now();
+    while (Date.now() - inicio < 60_000) {
+      resultado = await this.escolherNaLista(ambiente);
+      if (resultado.clicou) {
+        registrar("Certificado escolhido. Se o sistema pedir permissão para usar a chave do certificado, autorize na janela.");
+        return;
+      }
+      if (!recarregou && Date.now() - inicio > 20_000 && (await visivel(pagina, TELA.login.recarregarCertificados))) {
+        await pagina.locator(TELA.login.recarregarCertificados).click();
+        recarregou = true;
+      }
+      await pagina.waitForTimeout(1_000);
+    }
+    registrar(
+      resultado.certificados
+        ? `O Web Signer mostrou ${resultado.certificados} certificado${resultado.certificados === 1 ? "" : "s"}, nenhum (ou mais de um) com o nome de ESAJ_CERTIFICADO: escolha o certificado na janela e clique em Entrar.`
+        : "A lista de certificados ainda está vazia: se o Web Signer pedir para autorizar o site, autorize na janela. O robô escolhe o certificado assim que ele aparecer."
+    );
   }
 
   private async iniciarComSenha(ambiente: Ambiente): Promise<void> {
@@ -208,10 +223,22 @@ class ConectorEsaj implements Conector {
     } else if (await temCaptcha(pagina)) {
       await ambiente.aguardarPessoa("captcha", "O e-SAJ mostrou um CAPTCHA. Resolva o desafio e conclua o login na janela do robô.", dentro);
     } else {
+      // No modo certificado o robô segue tentando enquanto espera: se a pessoa só autorizar o Web Signer
+      // no site, ele mesmo escolhe o certificado quando a lista aparecer (no máximo uma vez a cada 15 s).
+      let ultimaTentativa = Date.now();
+      const resolvido = async () => {
+        if (await dentro()) return true;
+        if (config.esaj.login === "certificado" && ehPaginaDeLogin(pagina.url()) && Date.now() - ultimaTentativa > 15_000) {
+          ultimaTentativa = Date.now();
+          const { clicou } = await this.escolherNaLista(ambiente).catch(() => ({ certificados: 0, clicou: false }));
+          if (clicou) registrar("O certificado apareceu na lista: escolhido.");
+        }
+        return false;
+      };
       await ambiente.aguardarPessoa(
         "login",
-        "Conclua o login do e-SAJ na janela do robô (certificado ou CPF e senha). Se o e-SAJ pedir, instale a extensão Web Signer nessa janela e volte à página de login. O robô segue sozinho depois.",
-        dentro
+        "Conclua o login do e-SAJ na janela do robô (certificado ou CPF e senha). Se o Web Signer pedir para autorizar o site, autorize; se o e-SAJ pedir a extensão, instale nessa janela e volte à página de login. O robô segue sozinho depois.",
+        resolvido
       );
     }
     registrar("Login concluído.");
@@ -221,7 +248,7 @@ class ConectorEsaj implements Conector {
 
   private async abrirProcesso(ambiente: Ambiente, cnj: NumeroCnj): Promise<void> {
     const { pagina } = ambiente;
-    const consulta = urlDaConsulta(this.base, cnj);
+    const consulta = urlDaConsulta(this.esaj, cnj);
     await pagina.goto(consulta, { waitUntil: "domcontentloaded" });
     if (ehPaginaDeLogin(pagina.url())) {
       await this.entrar(ambiente);
@@ -358,4 +385,5 @@ class ConectorEsaj implements Conector {
   }
 }
 
-export const esajTjsp: Conector = new ConectorEsaj("esaj:TJSP", ESAJ_TJSP, "TJSP");
+/** Um conector por tribunal do e-SAJ, na ordem de TRIBUNAIS_ESAJ. */
+export const conectoresEsaj: Conector[] = TRIBUNAIS_ESAJ.map((tribunal) => new ConectorEsaj(tribunal));

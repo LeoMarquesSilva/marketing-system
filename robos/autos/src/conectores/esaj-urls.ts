@@ -1,9 +1,38 @@
 /**
  * Endereços e pequenas conferências do e-SAJ, sem navegador (o que dá para testar sozinho).
- * O formulário de consulta é o mesmo em todos os tribunais do e-SAJ; muda a base.
+ * O e-SAJ é o mesmo sistema (Softplan) em todos os tribunais que o usam: mudam o endereço e o caminho da
+ * consulta de cada grau (cpopg ou cpopg5 no 1º, cposg ou cposg5 no 2º).
  */
 
-export const ESAJ_TJSP = "https://esaj.tjsp.jus.br";
+export interface TribunalEsaj {
+  sigla: string;
+  base: string;
+  primeiroGrau: "cpopg" | "cpopg5";
+  segundoGrau: "cposg" | "cposg5";
+}
+
+/** Tribunais em que o robô já baixa autos pelo e-SAJ. Endereços conferidos na consulta pública em 10/11/2026. */
+export const TRIBUNAIS_ESAJ: TribunalEsaj[] = [
+  { sigla: "TJSP", base: "https://esaj.tjsp.jus.br", primeiroGrau: "cpopg", segundoGrau: "cposg" },
+  { sigla: "TJCE", base: "https://esaj.tjce.jus.br", primeiroGrau: "cpopg", segundoGrau: "cposg5" },
+  // No TJAL o 2º grau fica em cposg5 (o cposg devolve página em branco).
+  { sigla: "TJAL", base: "https://www2.tjal.jus.br", primeiroGrau: "cpopg", segundoGrau: "cposg5" },
+  { sigla: "TJMS", base: "https://esaj.tjms.jus.br", primeiroGrau: "cpopg5", segundoGrau: "cposg5" },
+];
+
+export function tribunalEsaj(sigla: string): TribunalEsaj {
+  const tribunal = TRIBUNAIS_ESAJ.find((item) => item.sigla === sigla);
+  if (!tribunal) throw new Error(`Tribunal sem e-SAJ mapeado: ${sigla}.`);
+  return tribunal;
+}
+
+/** Sigla do tribunal estadual pelo J.TR do CNJ (8.26 → TJSP), só para os que têm e-SAJ mapeado. */
+export function tribunalEsajDoCnj(cnj: string): TribunalEsaj | null {
+  const digitos = cnj.replace(/\D/g, "");
+  if (digitos.length !== 20 || digitos[13] !== "8") return null;
+  const sigla = ({ "26": "TJSP", "06": "TJCE", "02": "TJAL", "12": "TJMS" } as Record<string, string>)[digitos.slice(14, 16)];
+  return sigla ? tribunalEsaj(sigla) : null;
+}
 
 export interface NumeroCnj {
   /** 0000000-00.0000.0.00.0000 */
@@ -31,13 +60,14 @@ export function ehPaginaDeLogin(url: string): boolean {
   return /\/sajcas\/login/i.test(url);
 }
 
-/** Consulta de processos por número unificado: cpopg (1º grau) ou cposg (2º grau). */
-export function urlDaConsulta(base: string, cnj: NumeroCnj): string {
+/** Consulta de processos por número unificado, no caminho do grau certo daquele tribunal. */
+export function urlDaConsulta(tribunal: TribunalEsaj, cnj: NumeroCnj): string {
+  const { base } = tribunal;
   const numero = encodeURIComponent(cnj.mascarado);
   if (cnj.segundoGrau) {
-    return `${base}/cposg/search.do?conversationId=&paginaConsulta=0&cbPesquisa=NUMPROC&numeroDigitoAnoUnificado=${cnj.numeroDigitoAno}&foroNumeroUnificado=${cnj.foro}&dePesquisaNuUnificado=${numero}&dePesquisaNuUnificado=UNIFICADO&dePesquisa=&tipoNuProcesso=UNIFICADO`;
+    return `${base}/${tribunal.segundoGrau}/search.do?conversationId=&paginaConsulta=0&cbPesquisa=NUMPROC&numeroDigitoAnoUnificado=${cnj.numeroDigitoAno}&foroNumeroUnificado=${cnj.foro}&dePesquisaNuUnificado=${numero}&dePesquisaNuUnificado=UNIFICADO&dePesquisa=&tipoNuProcesso=UNIFICADO`;
   }
-  return `${base}/cpopg/search.do?conversationId=&cbPesquisa=NUMPROC&numeroDigitoAnoUnificado=${cnj.numeroDigitoAno}&foroNumeroUnificado=${cnj.foro}&dadosConsulta.valorConsultaNuUnificado=${numero}&dadosConsulta.valorConsultaNuUnificado=UNIFICADO&dadosConsulta.valorConsulta=&dadosConsulta.tipoNuProcesso=UNIFICADO`;
+  return `${base}/${tribunal.primeiroGrau}/search.do?conversationId=&cbPesquisa=NUMPROC&numeroDigitoAnoUnificado=${cnj.numeroDigitoAno}&foroNumeroUnificado=${cnj.foro}&dadosConsulta.valorConsultaNuUnificado=${numero}&dadosConsulta.valorConsultaNuUnificado=UNIFICADO&dadosConsulta.valorConsulta=&dadosConsulta.tipoNuProcesso=UNIFICADO`;
 }
 
 /**
