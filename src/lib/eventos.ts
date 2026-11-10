@@ -5,6 +5,17 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "@/utils/supabase/client";
 import { SUPPLIER_CATEGORY_LABELS } from "@/lib/suppliers/categories";
+import {
+  createKeyedSingleFlight,
+  fillEmptyContactPatch,
+  findOrCreateSupplier,
+  normalizeSupplierName,
+  pickExistingSupplier,
+  SupplierNameTakenError,
+  supplierRenameConflictMessage,
+  type SupplierNameCandidate,
+} from "@/lib/eventos-fornecedor-unico";
+import { findSupplierNameConflict, supplierUniqueViolation } from "@/lib/suppliers/unique-name";
 import { isRsvpTransport, type RsvpTransport } from "@/lib/event-rsvp";
 
 export type EventStatus = "nao_iniciada" | "em_andamento" | "concluida" | "cancelada";
@@ -1905,9 +1916,56 @@ export async function deleteSupplier(id: string): Promise<boolean> {
   return !error;
 }
 
-export async function upsertSupplier(
+export type SupplierSaveResult =
+  | {
+      ok: true;
+      supplier: EventSupplier;
+      /** true quando já havia cadastro com esse nome e ele foi usado no lugar de um novo. */
+      reused: boolean;
+    }
+  | {
+      ok: false;
+      message: string;
+      /** "name": o aviso é do campo Nome (outro cadastro já usa esse nome). */
+      field?: "name";
+    };
+
+const SUPPLIER_SAVE_FAILED: SupplierSaveResult = {
+  ok: false,
+  message: "Não foi possível salvar o prestador. Tente de novo.",
+};
+
+/** Envios simultâneos do mesmo nome (cliques repetidos em "Salvar") viram uma gravação só. */
+const supplierCreation = createKeyedSingleFlight<SupplierSaveResult>();
+
+async function fetchSupplierNameCandidates(): Promise<SupplierNameCandidate[]> {
+  const { data, error } = await supabase.from("event_suppliers").select("id, name, document, created_at");
+  if (error) throw new Error(`Falha ao procurar fornecedor: ${error.message}`);
+  return (data ?? []) as SupplierNameCandidate[];
+}
+
+async function findSupplierRowByName(name: string): Promise<SupplierRow | null> {
+  const picked = pickExistingSupplier(await fetchSupplierNameCandidates(), name);
+  if (!picked) return null;
+  const { data: row, error: rowError } = await supabase
+    .from("event_suppliers")
+    .select("*")
+    .eq("id", picked.id)
+    .single();
+  if (rowError) throw new Error(`Falha ao carregar fornecedor: ${rowError.message}`);
+  return row as SupplierRow;
+}
+
+/**
+ * Salva o prestador. Na criação, se já existir cadastro com o mesmo nome
+ * (sem diferenciar maiúscula, acento e espaços), usa o existente e só
+ * completa os contatos vazios; categoria e demais dados dele não mudam.
+ * Na edição, renomear para o nome de outro cadastro é recusado com aviso
+ * (o banco também recusa, pelo índice event_suppliers_name_unique).
+ */
+export async function saveSupplier(
   supplier: Partial<EventSupplier> & { name: string }
-): Promise<EventSupplier | null> {
+): Promise<SupplierSaveResult> {
   const payload = {
     name: supplier.name,
     category: supplier.category ?? "outros",
@@ -1922,19 +1980,83 @@ export async function upsertSupplier(
     portfolio_link: supplier.portfolioLink ?? null,
     whatsapp_link: supplier.whatsappLink ?? null,
   };
+  const name = supplier.name.trim();
+  if (!normalizeSupplierName(name)) return { ok: false, field: "name", message: "Informe o nome do prestador" };
+
   if (supplier.id) {
-    const { data, error } = await supabase
-      .from("event_suppliers")
-      .update(payload)
-      .eq("id", supplier.id)
-      .select("*")
-      .single();
-    if (error) return null;
-    return rowToSupplier(data as SupplierRow);
+    const id = supplier.id;
+    const renameConflict = async (): Promise<SupplierSaveResult | null> => {
+      const other = findSupplierNameConflict(await fetchSupplierNameCandidates(), name, id);
+      return other ? { ok: false, field: "name", message: supplierRenameConflictMessage(other) } : null;
+    };
+    try {
+      const conflict = await renameConflict();
+      if (conflict) return conflict;
+      const { data, error } = await supabase
+        .from("event_suppliers")
+        .update({ ...payload, name })
+        .eq("id", id)
+        .select("*")
+        .single();
+      if (error) {
+        // O nome foi ocupado entre a conferência e a gravação.
+        if (supplierUniqueViolation(error) === "name") {
+          return (
+            (await renameConflict()) ?? {
+              ok: false,
+              field: "name",
+              message: "Já existe outro cadastro com este nome. Use um nome que diferencie, como a unidade.",
+            }
+          );
+        }
+        console.error("Erro ao atualizar prestador:", error);
+        return SUPPLIER_SAVE_FAILED;
+      }
+      return { ok: true, supplier: rowToSupplier(data as SupplierRow), reused: false };
+    } catch (error) {
+      console.error("Erro ao atualizar prestador:", error);
+      return SUPPLIER_SAVE_FAILED;
+    }
   }
-  const { data, error } = await supabase.from("event_suppliers").insert(payload).select("*").single();
-  if (error) return null;
-  return rowToSupplier(data as SupplierRow);
+
+  return supplierCreation(normalizeSupplierName(name), async () => {
+    try {
+      const result = await findOrCreateSupplier<SupplierRow>(name, {
+        findExisting: findSupplierRowByName,
+        create: async () => {
+          const { data, error } = await supabase
+            .from("event_suppliers")
+            .insert({ ...payload, name })
+            .select("*")
+            .single();
+          if (error) {
+            // Outro servidor, aba ou Facilities gravou o mesmo nome no meio do caminho.
+            if (supplierUniqueViolation(error) === "name") throw new SupplierNameTakenError(name);
+            console.error("Erro ao cadastrar prestador:", error);
+            return null;
+          }
+          return data as SupplierRow;
+        },
+        complete: async (existing) => {
+          const patch = fillEmptyContactPatch(existing, payload);
+          if (Object.keys(patch).length === 0) return existing;
+          const { data, error } = await supabase
+            .from("event_suppliers")
+            .update({ ...patch, updated_at: new Date().toISOString() })
+            .eq("id", existing.id)
+            .select("*")
+            .single();
+          return error ? existing : (data as SupplierRow);
+        },
+      });
+      return result
+        ? { ok: true, supplier: rowToSupplier(result.supplier), reused: result.reused }
+        : SUPPLIER_SAVE_FAILED;
+    } catch (error) {
+      console.error("Erro ao salvar prestador:", error);
+      return SUPPLIER_SAVE_FAILED;
+    }
+  });
 }
 
 export async function linkSupplierToEvent(

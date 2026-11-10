@@ -86,7 +86,7 @@ interface EventoBudgetDialogProps {
   item?: EventBudgetItem | null;
   onSuccess?: () => void;
   onSupplierPicked?: (supplier: EventSupplier) => void;
-  onSupplierCreated?: (supplier: EventSupplier) => void;
+  onSupplierCreated?: (supplier: EventSupplier, info: { reused: boolean }) => void;
 }
 
 export function EventoBudgetDialog({
@@ -404,9 +404,9 @@ export function EventoBudgetDialog({
       open={createSupplierOpen}
       onOpenChange={setCreateSupplierOpen}
       initialName={supplierPrefillName}
-      onSuccess={(supplier) => {
+      onSuccess={(supplier, info) => {
         form.setValue("vendor_name", supplier.name);
-        onSupplierCreated?.(supplier);
+        onSupplierCreated?.(supplier, info);
       }}
     />
     </>

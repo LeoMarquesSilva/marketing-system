@@ -430,13 +430,21 @@ export function EventoDetailClient({
     setIsBusy(false);
   }
 
-  async function handleSupplierCreated(supplier: EventSupplier) {
+  async function handleSupplierCreated(supplier: EventSupplier, info?: { reused: boolean }) {
     setIsBusy(true);
     await linkSupplierToEvent(event.id, supplier.id);
     await reloadCatalogSuppliers();
     await reloadSuppliers();
-    await registerHistory("fornecedor", "Prestador cadastrado e vinculado ao evento", { supplierId: supplier.id });
-    setActionFeedback({ type: "success", text: "Prestador cadastrado e vinculado ao evento." });
+    if (info?.reused) {
+      await registerHistory("fornecedor", "Prestador já cadastrado vinculado ao evento", { supplierId: supplier.id });
+      setActionFeedback({
+        type: "success",
+        text: `"${supplier.name}" já estava cadastrado: o evento foi vinculado ao cadastro existente.`,
+      });
+    } else {
+      await registerHistory("fornecedor", "Prestador cadastrado e vinculado ao evento", { supplierId: supplier.id });
+      setActionFeedback({ type: "success", text: "Prestador cadastrado e vinculado ao evento." });
+    }
     setIsBusy(false);
   }
 
