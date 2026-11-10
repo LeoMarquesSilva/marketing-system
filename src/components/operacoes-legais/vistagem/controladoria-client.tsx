@@ -705,7 +705,7 @@ function DetalhePendencia({
         {/* A coluna da resolução tem o fundo até o fim, como a das tarefas na Conferência. */}
         <div className="min-w-0 border-t border-[#e6eef0] bg-[#f2f6f7] @4xl:overflow-y-auto @4xl:border-l @4xl:border-t-0">
           {publicacao.pendencia === "sem_pasta" ? <VerificacaoSemPasta publicacao={publicacao} /> : null}
-          {/* Abertura automática de pasta, Fase 1: a capa que iria para o VIOS, só para conferir. */}
+          {/* Abertura automática de pasta: o resumo da capa que iria para o VIOS; a capa inteira abre num diálogo, com o lápis. */}
           {publicacao.pendencia === "sem_pasta" ? <CapaParaAberturaDePasta key={`capa-${publicacao.id}`} publicacaoId={publicacao.id} /> : null}
           <Resolucao key={publicacao.id} publicacao={publicacao} onResolvida={resolvida} onAgendar={agendar} />
         </div>
