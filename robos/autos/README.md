@@ -2,7 +2,7 @@
 
 Baixa os autos dos processos no tribunal e entrega o PDF ao ORQESTRAI, onde a IA lê e deixa sugestões para uma pessoa aprovar. Roda **fora da Vercel**, numa máquina do escritório, com Node e Playwright.
 
-Primeiro conector: **e-SAJ do TJSP**. Os próximos (PJe, eproc, Projudi) entram em `src/conectores/`, um por sistema de tribunal.
+Conectores prontos: **e-SAJ do TJSP, TJCE, TJAL e TJMS** (`src/conectores/esaj.ts`; endereços em `TRIBUNAIS_ESAJ`, em `esaj-urls.ts`). Os próximos (PJe, eproc, Projudi) entram em `src/conectores/`, um por sistema de tribunal.
 
 ## Como funciona
 
@@ -64,7 +64,7 @@ A sessão do e-SAJ vale enquanto o Chrome do robô estiver aberto: o tribunal us
    npm run login
    ```
 
-   O Chrome do robô abre na página de login do e-SAJ.
+   O Chrome do robô abre na página de login do e-SAJ do TJSP. Para outro tribunal: `npm run login -- TJCE`. Cada tribunal tem a própria sessão; no dia a dia o robô entra em cada um quando aparece o primeiro pedido dele.
 3. Só na primeira vez, com certificado: se o e-SAJ avisar que o Web Signer não está instalado, clique no botão do próprio aviso, instale a extensão **nesta janela** e recarregue a página. A extensão fica no perfil do robô.
 4. Conclua o login. O terminal mostra "Sessão do tribunal aberta" e o navegador fecha. Esse passo serve para instalar a extensão e conferir que o certificado funciona; o login vale de novo a cada início do robô.
 5. Antes de baixar de verdade, vale conferir se a tela do tribunal está como o conector espera:

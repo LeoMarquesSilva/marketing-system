@@ -40,8 +40,14 @@ describe("roboDoProcesso", () => {
     expect(robo.motivo).toContain("eproc do TJSP");
   });
 
-  it("não atende e-SAJ de outro tribunal nem processo sem CNJ", () => {
-    expect(roboDoProcesso("0001234-56.2020.8.06.0001", "E-saj").disponivel).toBe(false);
+  it("atende o e-SAJ do TJCE, do TJAL e do TJMS", () => {
+    expect(roboDoProcesso("0001234-56.2020.8.06.0001", "E-saj")).toMatchObject({ tribunal: "TJCE", sistema: "esaj", disponivel: true });
+    expect(roboDoProcesso("0001234-56.2020.8.02.0001", null)).toMatchObject({ tribunal: "TJAL", sistema: "esaj", disponivel: true });
+    expect(roboDoProcesso("0001234-56.2020.8.12.0001", "E-saj")).toMatchObject({ tribunal: "TJMS", disponivel: true });
+  });
+
+  it("não atende e-SAJ de tribunal sem conector nem processo sem CNJ", () => {
+    expect(roboDoProcesso("0001234-56.2020.8.04.0001", "E-saj").disponivel).toBe(false);
     expect(roboDoProcesso("0001234-56.2020.8.13.0024", "pje").motivo).toContain("PJe do TJMG");
     expect(roboDoProcesso("123", "E-saj")).toMatchObject({ disponivel: false, cnj: null });
   });

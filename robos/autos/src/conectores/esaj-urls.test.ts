@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { ESAJ_TJSP, comecaComoPdf, ehPaginaDeLogin, ehPaginaDoProcesso, escolherCertificado, lerCnj, nomeDoPdf, urlDaConsulta, urlDeLogin } from "./esaj-urls";
+import { comecaComoPdf, ehPaginaDeLogin, ehPaginaDoProcesso, escolherCertificado, lerCnj, nomeDoPdf, tribunalEsaj, tribunalEsajDoCnj, urlDaConsulta, urlDeLogin } from "./esaj-urls";
+
+const TJSP = tribunalEsaj("TJSP");
 
 describe("lerCnj", () => {
   it("separa o número, o foro e o grau", () => {
@@ -11,17 +13,17 @@ describe("lerCnj", () => {
 
 describe("endereços do e-SAJ", () => {
   it("consulta o 1º grau no cpopg e o 2º grau no cposg", () => {
-    const primeiro = urlDaConsulta(ESAJ_TJSP, lerCnj("1012345-67.2024.8.26.0114")!);
+    const primeiro = urlDaConsulta(TJSP, lerCnj("1012345-67.2024.8.26.0114")!);
     expect(primeiro).toContain("https://esaj.tjsp.jus.br/cpopg/search.do?");
     expect(primeiro).toContain("numeroDigitoAnoUnificado=1012345-67.2024&foroNumeroUnificado=0114");
     expect(primeiro).toContain("dadosConsulta.valorConsultaNuUnificado=1012345-67.2024.8.26.0114");
-    const segundo = urlDaConsulta(ESAJ_TJSP, lerCnj("2001234-56.2025.8.26.0000")!);
+    const segundo = urlDaConsulta(TJSP, lerCnj("2001234-56.2025.8.26.0000")!);
     expect(segundo).toContain("/cposg/search.do?");
     expect(segundo).toContain("dePesquisaNuUnificado=2001234-56.2025.8.26.0000");
   });
 
   it("reconhece a página de login", () => {
-    expect(ehPaginaDeLogin(urlDeLogin(ESAJ_TJSP))).toBe(true);
+    expect(ehPaginaDeLogin(urlDeLogin(TJSP.base))).toBe(true);
     expect(ehPaginaDeLogin("https://esaj.tjsp.jus.br/esaj/portal.do?servico=740000")).toBe(false);
   });
 
@@ -35,6 +37,24 @@ describe("endereços do e-SAJ", () => {
 
   it("dá nome ao PDF pelo número do processo", () => {
     expect(nomeDoPdf(lerCnj("10123456720248260114")!)).toBe("Autos 1012345-67.2024.8.26.0114.pdf");
+  });
+});
+
+describe("tribunais do e-SAJ", () => {
+  it("acha o tribunal pelo J.TR do número", () => {
+    expect(tribunalEsajDoCnj("0001234-56.2024.8.06.0001")?.sigla).toBe("TJCE");
+    expect(tribunalEsajDoCnj("0001234-56.2024.8.02.0001")?.sigla).toBe("TJAL");
+    expect(tribunalEsajDoCnj("0001234-56.2024.8.12.0001")?.sigla).toBe("TJMS");
+    expect(tribunalEsajDoCnj("0001234-56.2024.8.13.0001")).toBeNull();
+    expect(tribunalEsajDoCnj("0001234-56.2024.5.02.0001")).toBeNull();
+  });
+
+  it("usa o endereço e o caminho de cada grau do tribunal", () => {
+    expect(urlDaConsulta(tribunalEsaj("TJCE"), lerCnj("0001234-56.2024.8.06.0001")!)).toContain("https://esaj.tjce.jus.br/cpopg/search.do?");
+    expect(urlDaConsulta(tribunalEsaj("TJCE"), lerCnj("0001234-56.2024.8.06.0000")!)).toContain("https://esaj.tjce.jus.br/cposg5/search.do?");
+    expect(urlDaConsulta(tribunalEsaj("TJAL"), lerCnj("0001234-56.2024.8.02.0001")!)).toContain("https://www2.tjal.jus.br/cpopg/search.do?");
+    expect(urlDaConsulta(tribunalEsaj("TJMS"), lerCnj("0001234-56.2024.8.12.0001")!)).toContain("https://esaj.tjms.jus.br/cpopg5/search.do?");
+    expect(urlDeLogin(tribunalEsaj("TJCE").base)).toBe("https://esaj.tjce.jus.br/sajcas/login?service=https%3A%2F%2Fesaj.tjce.jus.br%2Fesaj%2Fj_spring_cas_security_check");
   });
 });
 
