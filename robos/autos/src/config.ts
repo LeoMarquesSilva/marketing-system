@@ -19,6 +19,10 @@ export interface Config {
   pausaEntrePedidosMs: number;
   esperaPessoaMs: number;
   geracaoPdfMs: number;
+  /** Com a fila de autos vazia, completa a capa dos processos pelo DataJud (CAPA_DATAJUD=nao desliga). */
+  capaDataJud: boolean;
+  /** Pausa entre duas consultas ao DataJud. */
+  pausaCapaMs: number;
   esaj: { login: ModoDeLogin; certificado: string; usuario: string; senha: string };
   pastas: { perfil: string; downloads: string; diagnostico: string };
 }
@@ -54,6 +58,8 @@ export function lerConfig(): Config {
     pausaEntrePedidosMs: numero("PAUSA_ENTRE_PEDIDOS_SEGUNDOS", 20) * 1000,
     esperaPessoaMs: numero("ESPERA_PESSOA_MINUTOS", 15) * 60_000,
     geracaoPdfMs: numero("GERACAO_PDF_MINUTOS", 20) * 60_000,
+    capaDataJud: !/^(nao|não|0|false)$/i.test(texto("CAPA_DATAJUD")),
+    pausaCapaMs: numero("PAUSA_CAPA_SEGUNDOS", 30) * 1000,
     esaj: { login, certificado: texto("ESAJ_CERTIFICADO"), usuario: texto("ESAJ_USUARIO"), senha: texto("ESAJ_SENHA") },
     pastas: { perfil: pasta("perfil"), downloads: pasta("downloads"), diagnostico: pasta("diagnostico") },
   };

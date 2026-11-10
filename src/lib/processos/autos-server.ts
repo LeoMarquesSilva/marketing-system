@@ -27,7 +27,7 @@ export const COLUNAS_PEDIDO =
 export const COLUNAS_DOCUMENTO =
   "id, processo_id, nome, storage_path, tamanho_bytes, paginas, origem, pedido_id, leitura_status, leitura_erro, leitura_iniciada_em, lido_em, paginas_lidas, paginas_sem_texto, enviado_por_nome, criado_em, arquivo_removido_em";
 export const COLUNAS_SUGESTAO =
-  "id, processo_id, documento_id, tipo, campo, parte_id, item, chave, resumo, valor, pagina, trecho, trecho_conferido, confianca, situacao, decidido_por_nome, decidido_em, criado_em";
+  "id, processo_id, documento_id, fonte, tipo, campo, parte_id, item, chave, resumo, valor, pagina, trecho, trecho_conferido, confianca, situacao, decidido_por_nome, decidido_em, criado_em";
 
 export function paraPedido(linha: Linha): PedidoAutos {
   return {
@@ -72,6 +72,7 @@ export function paraSugestao(linha: Linha): Sugestao {
   return {
     id: linha.id as string,
     documentoId: (linha.documento_id as string | null) ?? null,
+    fonte: (linha.fonte as Sugestao["fonte"]) ?? "autos",
     tipo: linha.tipo as Sugestao["tipo"],
     campo: (linha.campo as string | null) ?? null,
     parteId: (linha.parte_id as string | null) ?? null,

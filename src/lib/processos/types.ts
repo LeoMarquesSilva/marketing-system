@@ -28,6 +28,8 @@ export const TIPOS_CONTATO = [
 export type TipoContato = (typeof TIPOS_CONTATO)[number]["valor"];
 
 export type OrigemDado = "manual" | "vios" | "ia";
+/** No histórico do processo: também as fontes oficiais de sugestões aprovadas (DataJud e o número CNJ). */
+export type OrigemAlteracao = OrigemDado | "datajud" | "cnj";
 
 export function rotuloDoPolo(polo: string): string {
   return POLOS.find((item) => item.valor === polo)?.rotulo ?? polo;
@@ -113,7 +115,7 @@ export interface Alteracao {
   campo: string;
   anterior: string | null;
   novo: string | null;
-  origem: OrigemDado;
+  origem: OrigemAlteracao;
   autor: string | null;
   quando: string;
 }

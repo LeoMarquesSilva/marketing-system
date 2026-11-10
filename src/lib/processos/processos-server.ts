@@ -4,7 +4,7 @@ import { COLUNAS_CREDITO, COLUNAS_PROCESSO, campoPorChave, coagirValor, textoDoV
 import { ProcessosError } from "./errors";
 import { ITENS_SANEAMENTO, calcularPreenchimento } from "./preenchimento";
 import { db, emLotes, falhou, gravacaoSimulada, type Ator } from "./server";
-import type { Alteracao, Contato, Endereco, EnvioVios, OrigemDado, Parte, ProcessoDetalhe, ProcessoResumo, StatusEnvio } from "./types";
+import type { Alteracao, Contato, Endereco, EnvioVios, OrigemAlteracao, Parte, ProcessoDetalhe, ProcessoResumo, StatusEnvio } from "./types";
 
 const ENVIOS_ABERTOS: StatusEnvio[] = ["pendente", "enviado", "erro"];
 
@@ -102,7 +102,10 @@ export async function listarProcessos(): Promise<ProcessoResumo[]> {
 
   return linhas.map((linha) => {
     const valores = valoresDaLinha(linha);
-    const preenchimento = calcularPreenchimento(valores, partesDaLinha(linha), (linha.itens_nao_aplicaveis as string[] | null) ?? []);
+    const partes = partesDaLinha(linha);
+    const preenchimento = calcularPreenchimento(valores, partes, (linha.itens_nao_aplicaveis as string[] | null) ?? []);
+    // As partes ficam em proc_partes; os campos de texto do processo só vêm preenchidos de algumas cargas.
+    const nomesDoPolo = (polo: Parte["polo"]) => partes.filter((parte) => parte.papel === "parte" && parte.polo === polo).map((parte) => parte.nome).join("; ") || null;
     return {
       id: linha.id as string,
       ci: texto(valores.ci),
@@ -116,8 +119,8 @@ export async function listarProcessos(): Promise<ProcessoResumo[]> {
       uf: texto(valores.uf),
       comarca: texto(valores.comarca_tribunal),
       advogadoResponsavel: texto(valores.advogado_responsavel),
-      parteAtiva: texto(valores.parte_ativa),
-      partePassiva: texto(valores.parte_passiva),
+      parteAtiva: nomesDoPolo("ativo") ?? texto(valores.parte_ativa),
+      partePassiva: nomesDoPolo("passivo") ?? texto(valores.parte_passiva),
       valorAcao: typeof valores.valor_acao === "number" ? valores.valor_acao : null,
       etiquetas: Array.isArray(valores.etiquetas) ? valores.etiquetas : [],
       pendentesVios: pendentes.get(linha.id as string) ?? 0,
@@ -214,7 +217,7 @@ export async function carregarParaPlanilha(ids: string[] | null): Promise<{ valo
  * Uma linha no histórico do processo que não é troca de campo simples (partes, itens do saneamento, autos).
  * `origem` é "ia" quando a gravação veio de uma sugestão aprovada; o autor continua sendo quem aprovou.
  */
-export async function registrarNoHistorico(processoId: string, campo: string, anterior: string | null, novo: string | null, ator: Ator, origem: OrigemDado = "manual"): Promise<void> {
+export async function registrarNoHistorico(processoId: string, campo: string, anterior: string | null, novo: string | null, ator: Ator, origem: OrigemAlteracao = "manual"): Promise<void> {
   const { error } = await db()
     .from("proc_alteracoes")
     .insert({ processo_id: processoId, campo, valor_anterior: anterior, valor_novo: novo, origem, autor_id: ator.authUserId, autor_nome: ator.nome });
@@ -226,7 +229,7 @@ export async function registrarNoHistorico(processoId: string, campo: string, an
  * uma linha no histórico; campo que existe no VIOS entra na fila de gravação (um envio em aberto por
  * campo: editar de novo atualiza o mesmo envio, voltar ao valor do VIOS cancela).
  */
-export async function atualizarProcesso(id: string, entrada: Record<string, unknown>, ator: Ator, origem: OrigemDado = "manual"): Promise<ProcessoDetalhe> {
+export async function atualizarProcesso(id: string, entrada: Record<string, unknown>, ator: Ator, origem: OrigemAlteracao = "manual"): Promise<ProcessoDetalhe> {
   const linha = await carregarLinha(id);
   const atuais = valoresDaLinha(linha);
   const patchProcesso: Valores = {};

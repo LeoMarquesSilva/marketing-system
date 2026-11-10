@@ -56,6 +56,21 @@ export class Fila {
     await this.chamar(`/pedidos/${pedidoId}`, { acao: "aguardar_pessoa", motivo });
   }
 
+  /**
+   * Com a fila de autos vazia: pede ao ORQESTRAI a capa do próximo processo no DataJud (uma consulta por
+   * chamada, que pode levar até um minuto). As sugestões ficam na ficha para aprovação.
+   */
+  async proximaCapa(): Promise<{ nada: boolean; recusado: boolean; achou: boolean; sugestoes: number; restantes: number }> {
+    const resposta = await fetch(`${this.config.orqestraiUrl}/api/robos/autos/capa`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${this.config.token}` },
+      signal: AbortSignal.timeout(130_000),
+    });
+    const dados = (await resposta.json().catch(() => null)) as ({ nada: boolean; recusado: boolean; achou: boolean; sugestoes: number; restantes: number } & { error?: string }) | null;
+    if (!resposta.ok || !dados) throw new Error(`ORQESTRAI respondeu ${resposta.status}: ${dados?.error ?? "sem detalhe"}`);
+    return dados;
+  }
+
   async seguir(pedidoId: string): Promise<void> {
     await this.chamar(`/pedidos/${pedidoId}`, { acao: "seguir" });
   }

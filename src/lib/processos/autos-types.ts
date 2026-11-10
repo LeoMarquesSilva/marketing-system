@@ -94,8 +94,17 @@ export interface PessoaSugerida {
 }
 
 /** O que vai em proc_sugestoes.valor, conforme o tipo. */
+/**
+ * Valor de um campo. `junto`: outros campos gravados na mesma aprovação (o texto do último andamento leva a
+ * data dele).
+ */
+export interface ValorDeCampo {
+  valor: string | number | boolean;
+  junto?: Record<string, string | number | boolean>;
+}
+
 export type ValorSugestao =
-  | { valor: string | number }
+  | ValorDeCampo
   | PessoaSugerida
   | { documento: string }
   | { oab: string }
@@ -103,7 +112,12 @@ export type ValorSugestao =
   | ContatoSugerido;
 
 /** Sugestão pronta para gravar em proc_sugestoes (ainda sem id nem decisão). */
+/** De onde veio a sugestão: IA lendo os autos, DataJud (API pública do CNJ) ou o próprio número CNJ. */
+export type FonteSugestao = "autos" | "datajud" | "cnj";
+
 export interface SugestaoNova {
+  /** Ausente: "autos" (as sugestões da leitura do PDF). */
+  fonte?: FonteSugestao;
   tipo: TipoSugestao;
   campo: string | null;
   parteId: string | null;

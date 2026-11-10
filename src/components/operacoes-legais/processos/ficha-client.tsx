@@ -22,6 +22,7 @@ import {
   TriangleAlert,
   UserRoundSearch,
   Users,
+  Landmark,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AutosDoProcesso } from "@/lib/processos/autos-types";
@@ -51,7 +52,9 @@ const SELO_ENVIO: Record<EnvioVios["status"], { tom: TomSelo; rotulo: string }> 
   cancelado: { tom: "neutro", rotulo: "Cancelado" },
 };
 
-const ORIGEM: Record<string, string> = { manual: "na tela", vios: "sincronização do VIOS", ia: "sugestão da IA" };
+const ORIGEM: Record<string, string> = { manual: "na tela", vios: "sincronização do VIOS", ia: "sugestão da IA", datajud: "sugestão do DataJud", cnj: "sugestão pelo número CNJ" };
+/** Selo no histórico para o que veio de sugestão aprovada. */
+const SELO_ORIGEM: Record<string, string> = { ia: "IA", datajud: "DataJud", cnj: "CNJ" };
 const CAMPO_DO_HISTORICO: Record<string, string> = { partes: "Partes", saneamento: "Saneamento", autos: "Autos" };
 
 const ICONE_CONTATO = { celular: Phone, telefone: Phone, email: Mail, site: Globe } as const;
@@ -231,6 +234,24 @@ function Ficha({ id }: { id: string }) {
     const relogio = window.setInterval(() => void carregarAutos(), 15_000);
     return () => window.clearInterval(relogio);
   }, [emAndamento, carregarAutos]);
+
+  /** Consulta o DataJud: a capa que falta vira sugestão na ficha (nada é gravado sem aprovação). */
+  async function completarCapa() {
+    setOcupado("capa");
+    setErro("");
+    try {
+      const resposta = await processosApi.post<{ capa: { achou: boolean; sugestoes: number; aviso: string | null }; autos: AutosDoProcesso }>(`/${id}/capa`);
+      setAutos(resposta.autos);
+      const { sugestoes, aviso } = resposta.capa;
+      setFeito(
+        `${sugestoes ? `${sugestoes} sugest${sugestoes === 1 ? "ão" : "ões"} de capa para conferir (DataJud e número CNJ).` : "Nada novo para a capa: o que o DataJud tem já está no cadastro."}${aviso ? ` ${aviso}` : ""}`
+      );
+    } catch (falha) {
+      setErro(mensagemDeErro(falha));
+    } finally {
+      setOcupado("");
+    }
+  }
 
   function salvo(atualizado: ProcessoDetalhe, mensagem: string) {
     setProcesso(atualizado);
@@ -426,7 +447,11 @@ function Ficha({ id }: { id: string }) {
             />
           ) : null}
           <Painel>
-            <PainelTopo titulo="Saneamento" descricao="Lista de campos da equipe de Recuperação de Crédito." />
+            <PainelTopo titulo="Saneamento" descricao="Lista de campos da equipe de Recuperação de Crédito.">
+              <Button size="sm" variant="outline" disabled={Boolean(ocupado)} onClick={() => void completarCapa()} title="Consulta o DataJud e o número CNJ e sugere a capa que falta: justiça, jurisdição, cidade, vara, distribuição, último andamento">
+                {ocupado === "capa" ? <LoaderCircle className="animate-spin" /> : <Landmark />} Completar capa
+              </Button>
+            </PainelTopo>
             <div className="border-b border-[#e6eef0] px-4 py-3">
               <BarraPreenchimento feitos={preenchimento.feitos} total={preenchimento.total} percentual={preenchimento.percentual} />
             </div>
@@ -497,7 +522,7 @@ function Ficha({ id }: { id: string }) {
                   <li key={item.id} className="space-y-0.5 px-4 py-2.5">
                     <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-foreground">
                       {CAMPO_DO_HISTORICO[item.campo] ?? rotuloDoCampo(item.campo)}
-                      {item.origem === "ia" ? <Selo tom="ia">IA</Selo> : null}
+                      {SELO_ORIGEM[item.origem] ? <Selo tom="ia">{SELO_ORIGEM[item.origem]}</Selo> : null}
                     </p>
                     <p className="line-clamp-3 break-words text-xs text-muted-foreground">
                       {item.anterior ? <span className="line-through">{item.anterior}</span> : null}
@@ -505,7 +530,7 @@ function Ficha({ id }: { id: string }) {
                       {item.novo ? <span className="text-foreground">{item.novo}</span> : item.anterior ? " → vazio" : ""}
                     </p>
                     <p className="text-[11px] text-muted-foreground">
-                      {formatarDataHora(item.quando)} · {item.origem === "ia" && item.autor ? `sugestão da IA aprovada por ${item.autor}` : (item.autor ?? ORIGEM[item.origem] ?? item.origem)}
+                      {formatarDataHora(item.quando)} · {SELO_ORIGEM[item.origem] && item.autor ? `${ORIGEM[item.origem]} aprovada por ${item.autor}` : (item.autor ?? ORIGEM[item.origem] ?? item.origem)}
                     </p>
                   </li>
                 ))}
