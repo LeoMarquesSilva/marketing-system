@@ -987,7 +987,7 @@ export function Pe27Insumos({ initialBoard, initialDimension }: { initialBoard: 
                 onClick={() =>
                   setCreating({
                     kind: "lever",
-                    dimension: dimension ?? "clientes",
+                    dimension: dimension ?? DIMENSIONS[0],
                   })
                 }
               >

@@ -306,7 +306,7 @@ function NorteBlock() {
 function StructureBlock({ board }: { board: Pe27Board }) {
   const goals = board.levers.reduce((sum, lever) => sum + lever.goals.length, 0);
   const levels = [
-    { label: "Dimensões", detail: "Clientes, Pessoas e Acionistas", value: String(DIMENSIONS.length) },
+    { label: "Dimensões", detail: "Acionistas, Clientes e Pessoas", value: String(DIMENSIONS.length) },
     { label: "Alavancas de valor", detail: "Sugeridas pelos grupos", value: String(board.levers.length) },
     { label: "Metas estratégicas", detail: "Sugeridas pelos grupos", value: String(goals) },
     { label: "Metas de esforço", detail: "Plano tático, a partir de 23/11", value: "—" },

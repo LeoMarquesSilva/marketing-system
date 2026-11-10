@@ -5,7 +5,8 @@ export const PE27_INSUMOS_PATH = "/pe27/insumos";
 export const PE27_DINAMICA1_PATH = "/pe27/dinamica-1";
 export const PE27_CYCLE = "PE27";
 
-export const DIMENSIONS = ["clientes", "pessoas", "acionistas"] as const;
+/** Ordem de exibição em todo o módulo: Acionistas primeiro (pedido de 10/11/2026). */
+export const DIMENSIONS = ["acionistas", "clientes", "pessoas"] as const;
 export type Dimension = (typeof DIMENSIONS)[number];
 
 export const DIMENSION_LABELS: Record<Dimension, string> = {
