@@ -142,7 +142,7 @@ export function LinhaDoTempo({ processoId, onConsultado }: { processoId: string;
         <div className="rounded-md border border-dashed border-[#b9d3dd] bg-white/60 px-4 py-6 text-center text-sm text-muted-foreground">
           {filtro === "prazo" || filtro === "providencia"
             ? "Os prazos e as providências entram nesta linha do tempo quando esses módulos chegarem ao ORQESTRAI."
-            : linha?.erroDataJud
+            : linha?.erroDataJud && !aviso
               ? `Nada na linha do tempo ainda. Última consulta ao DataJud: ${linha.erroDataJud}`
               : "Nada na linha do tempo ainda. Use “Atualizar pelo DataJud” para trazer os andamentos do tribunal."}
         </div>
