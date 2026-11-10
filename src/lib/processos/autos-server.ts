@@ -117,7 +117,10 @@ export async function carregarAutos(processoId: string): Promise<AutosDoProcesso
     segredoJustica: processo.segredo,
     pedidos: ((pedidos.data ?? []) as Linha[]).map(paraPedido),
     documentos: ((documentos.data ?? []) as Linha[]).map(paraDocumento),
-    sugestoes: ((sugestoes.data ?? []) as Linha[]).map(paraSugestao),
+    // Ordem estável: página, depois a ordem de criação e o texto (várias sugestões nascem no mesmo instante).
+    sugestoes: ((sugestoes.data ?? []) as Linha[])
+      .map(paraSugestao)
+      .sort((a, b) => (a.pagina ?? Infinity) - (b.pagina ?? Infinity) || a.criadoEm.localeCompare(b.criadoEm) || a.resumo.localeCompare(b.resumo)),
     iaConfigurada: iaConfigurada(),
   };
 }

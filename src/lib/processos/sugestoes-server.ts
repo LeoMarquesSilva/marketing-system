@@ -34,12 +34,12 @@ async function gravar(sugestao: Sugestao & { processoId: string }, editado: { va
   const atual = await detalharProcesso(processoId);
   if (sugestao.tipo === "parte_nova") {
     const entrada = editado.parte ?? entradaDaPessoa(sugestao.valor as PessoaSugerida, atual.partes);
-    return { processo: await criarParte(processoId, entrada, ator, "ia"), gravado: entrada };
+    return { processo: await criarParte(processoId, entrada, ator, "ia", `Incluída pela sugestão: ${sugestao.resumo}`), gravado: entrada };
   }
   const parte = atual.partes.find((item) => item.id === sugestao.parteId);
   if (!parte) throw new ProcessosError("A parte desta sugestão não está mais no processo. Recuse a sugestão.", 409);
   const entrada = editado.parte ?? aplicarNaParte(parte, sugestao.tipo, sugestao.valor);
-  return { processo: await salvarParte(parte.id, entrada, ator, "ia"), gravado: entrada };
+  return { processo: await salvarParte(parte.id, entrada, ator, "ia", sugestao.resumo), gravado: entrada };
 }
 
 /**

@@ -4,7 +4,7 @@ import { useId, useState } from "react";
 import { Check, ExternalLink, LoaderCircle, MapPin, PencilLine, Sparkles, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { AutosDoProcesso, Confianca, ContatoSugerido, EnderecoSugerido, PessoaSugerida, Sugestao } from "@/lib/processos/autos-types";
-import { campoPorChave, estaPreenchido, formatarValor, rotuloDoCampo } from "@/lib/processos/campos";
+import { GRUPOS_CAMPO, campoPorChave, estaPreenchido, formatarValor, rotuloDoCampo } from "@/lib/processos/campos";
 import { ITENS_SANEAMENTO } from "@/lib/processos/preenchimento";
 import { aplicarNaParte, entradaDaPessoa, linhaDoEndereco } from "@/lib/processos/sugestoes";
 import { TIPOS_CONTATO, rotuloDoPapel, type ParteEntrada, type ProcessoDetalhe } from "@/lib/processos/types";
@@ -23,6 +23,7 @@ const CONFIANCA: Record<Confianca, { tom: TomSelo; rotulo: string }> = {
 };
 
 const ROTULO_ITEM = new Map(ITENS_SANEAMENTO.map((item) => [item.chave, item.rotulo]));
+const ROTULO_GRUPO = new Map<string, string>(GRUPOS_CAMPO.map((grupo) => [grupo.id, grupo.rotulo]));
 const ROTULO_CONTATO = new Map<string, string>(TIPOS_CONTATO.map((item) => [item.valor, item.rotulo]));
 
 /** O que a sugestão propõe, em destaque: o valor do campo, o dado da parte ou a pessoa nova. */
@@ -256,7 +257,8 @@ export function PainelSugestoes({
               <li key={sugestao.id} className="grid gap-3 px-4 py-3.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
                 <div className="min-w-0 space-y-2">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <Selo tom="ia">{ROTULO_ITEM.get(sugestao.item) ?? "Cadastro"}</Selo>
+                    {/* No campo simples o nome do campo já vem logo abaixo: o selo diz a seção da ficha. */}
+                    <Selo tom="ia">{sugestao.tipo === "campo" ? (ROTULO_GRUPO.get(campoPorChave(sugestao.campo ?? "")?.grupo ?? "") ?? "Cadastro") : (ROTULO_ITEM.get(sugestao.item) ?? "Cadastro")}</Selo>
                     <Selo tom={CONFIANCA[sugestao.confianca].tom}>{CONFIANCA[sugestao.confianca].rotulo}</Selo>
                     {!sugestao.trechoConferido ? (
                       <Selo tom="alerta" icone={TriangleAlert}>

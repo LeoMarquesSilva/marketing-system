@@ -1,0 +1,26 @@
+{
+  "name": "orqestrai-robo-autos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Robô que baixa os autos no tribunal e entrega ao ORQESTRAI. Roda fora da Vercel.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "robo": "tsx --env-file=.env src/index.ts",
+    "login": "tsx --env-file=.env src/index.ts --login",
+    "uma-vez": "tsx --env-file=.env src/index.ts --uma-vez",
+    "inspecionar": "tsx --env-file=.env src/index.ts --inspecionar",
+    "tsc": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.98.0",
+    "playwright": "^1.65.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
