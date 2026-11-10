@@ -34,6 +34,7 @@ import {
   ToolLogo,
 } from "@/components/rh/registration/welcome-ui";
 import { audienceGroupLabel, audienceLabel, groupLinksByAudience, linksForAudience } from "@/lib/rh/welcome/audience";
+import { corporateEmail } from "@/lib/rh/welcome/corporate-email";
 import { buildWelcomeEmail } from "@/lib/rh/welcome/email";
 import {
   WELCOME_EMPLOYMENT_TYPES,
@@ -96,7 +97,10 @@ function ConcluirForm({
   onDone: (result: CompleteResult) => void;
 }) {
   const resend = !!employee.record;
-  const [email, setEmail] = useState(employee.record?.emailTo ?? employee.email ?? "");
+  // Quem já entra no ORQESTRAI recebe no e-mail de login; o do VIOS pode ser antigo.
+  const [email, setEmail] = useState(
+    corporateEmail(employee.record?.emailTo ?? employee.loginEmail ?? employee.email ?? "")
+  );
   const [employmentType, setEmploymentType] = useState("");
   const [audience, setAudience] = useState<string | null>(
     employee.placedInOrgChart ? employee.suggestedAudience : (employee.record?.audienceKey ?? employee.suggestedAudience)
@@ -116,7 +120,7 @@ function ConcluirForm({
     const origin = typeof window !== "undefined" ? window.location.origin : "https://orqestrai.com.br";
     return buildWelcomeEmail({
       fullName: employee.fullName,
-      loginEmail: email.trim() || "e-mail corporativo",
+      loginEmail: corporateEmail(email) || "e-mail corporativo",
       access: setupAccess
         ? { kind: "setup", url: `${origin}/primeiro-acesso?token=gerado-no-envio` }
         : { kind: "login", url: `${origin}/meus-links` },
@@ -134,7 +138,7 @@ function ConcluirForm({
       body: JSON.stringify({
         action: "complete",
         employeeId: employee.employeeId,
-        email: email.trim(),
+        email: corporateEmail(email),
         audienceKey: audience,
         employmentType: needsEmploymentType ? employmentType : null,
       }),
@@ -188,9 +192,12 @@ function ConcluirForm({
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
+              onBlur={() => setEmail((current) => corporateEmail(current))}
               placeholder="nome@bismarchipires.com.br"
             />
-            <p className="text-xs text-muted-foreground">É o login do ORQESTRAI e para onde vai o e-mail.</p>
+            <p className="text-xs text-muted-foreground">
+              É o login do ORQESTRAI e para onde vai o e-mail. Sempre @bismarchipires.com.br.
+            </p>
           </div>
 
           {needsEmploymentType && (
@@ -283,7 +290,7 @@ function ConcluirForm({
             </p>
             <p className="flex items-start gap-2">
               <Mail className="mt-0.5 size-3.5 shrink-0 text-[#285f7a]" aria-hidden />
-              Envia o e-mail de {SENDER}. As respostas chegam para você.
+              Envia o e-mail de {SENDER}, sem resposta: para dúvidas, ele orienta a falar com Pessoas e Cultura.
             </p>
             <p className="flex items-start gap-2">
               <MailCheck className="mt-0.5 size-3.5 shrink-0 text-[#285f7a]" aria-hidden />

@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { AudienceIcon, AudienceSelect, audienceIconStyle, ToolLogo } from "@/components/rh/registration/welcome-ui";
 import { AUDIENCE_ALL, audienceLabel, groupLinksByAudience } from "@/lib/rh/welcome/audience";
+import { toolLogoFor } from "@/lib/rh/welcome/tool-logos";
 import type { WelcomeLink, WelcomeLinkInput } from "@/lib/rh/welcome/types";
 import { cn } from "@/lib/utils";
 
@@ -222,7 +223,7 @@ export function WelcomeLinksDialog({
                           rel="noreferrer"
                           className="mt-0.5 inline-flex items-center gap-1 text-xs text-[#285f7a] hover:underline"
                         >
-                          {hostOf(link.url)}
+                          {toolLogoFor(link.url)?.name ?? hostOf(link.url)}
                           <ExternalLink className="size-3" aria-hidden />
                         </a>
                       </div>

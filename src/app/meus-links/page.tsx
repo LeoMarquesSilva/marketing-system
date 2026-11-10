@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ExternalLink, KeyRound, Loader2, PartyPopper } from "lucide-react";
 import { AudienceIcon, audienceIconStyle, ToolLogo } from "@/components/rh/registration/welcome-ui";
+import { toolLogoFor } from "@/lib/rh/welcome/tool-logos";
 import type { MyWelcomeLinks, WelcomeLink } from "@/lib/rh/welcome/types";
 import { cn } from "@/lib/utils";
 
@@ -26,7 +27,9 @@ function LinkCard({ link }: { link: WelcomeLink }) {
             <ExternalLink className="size-3.5 shrink-0 opacity-50" aria-hidden />
           </span>
           {link.description && <span className="mt-0.5 block text-sm text-muted-foreground">{link.description}</span>}
-          <span className="mt-1 block truncate text-xs text-muted-foreground/80">{hostOf(link.url)}</span>
+          <span className="mt-1 block truncate text-xs text-muted-foreground/80">
+            {toolLogoFor(link.url)?.name ?? hostOf(link.url)}
+          </span>
         </span>
       </a>
       {link.internalNote && (
@@ -53,7 +56,7 @@ function WelcomeIntro({ firstName, justCreated }: { firstName: string | null; ju
           {firstName ? `Olá, ${firstName}!` : "Olá!"}
         </p>
         <h1 className="mt-2 text-2xl font-light lowercase tracking-wide text-white sm:text-3xl">
-          seja muito bem-vindo(a) ao time bp
+          seja muito bem-vindo(a) ao time bismarchi | pires
         </h1>
       </div>
       <div className="space-y-3 px-6 py-5 text-sm leading-relaxed text-muted-foreground sm:px-8">
@@ -67,7 +70,7 @@ function WelcomeIntro({ firstName, justCreated }: { firstName: string | null; ju
           <strong className="font-semibold text-foreground">Meus links</strong>.
         </p>
         <p className="text-foreground">
-          Desejamos a você uma excelente jornada no time BP, com muito aprendizado, desenvolvimento e novas conquistas!{" "}
+          Desejamos a você uma excelente jornada no time Bismarchi | Pires, com muito aprendizado, desenvolvimento e novas conquistas!{" "}
           <span className="font-semibold text-[#9C7434]">#SomosÚnicos</span>
         </p>
       </div>
