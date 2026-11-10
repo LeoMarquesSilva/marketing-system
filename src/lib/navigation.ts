@@ -39,6 +39,7 @@ import {
   PartyPopper,
   PenLine,
   Scale,
+  Gavel,
   Settings,
   Sparkles,
   Ticket,
@@ -397,6 +398,18 @@ export const NAV_FRONTS: NavFront[] = [
         configuracoes: { href: "/operacoes-legais/vistagem/configuracoes", label: "Configurações" },
         // O jurídico vê a Visão geral e a Vistagem, mas entra pela Vistagem (como no firstAllowedPath).
         entrada: entradaDaVistagem,
+      },
+      {
+        // Cadastro de processos do ORQESTRAI (1º módulo do sistema que substitui o VIOS). Só admin por enquanto.
+        id: "processos",
+        label: "Processos",
+        shortLabel: "Processos",
+        icon: Gavel,
+        pages: [
+          { href: "/operacoes-legais/processos", label: "Processos" },
+          { href: "/operacoes-legais/processos/saneamento", label: "Saneamento" },
+        ],
+        configuracoes: { href: "/operacoes-legais/processos/importacao", label: "Importação e VIOS" },
       },
       {
         // Escuta do time (1º uso: PE27); a resposta fica em /pesquisa/<link>, aberta ao público de cada pesquisa.
