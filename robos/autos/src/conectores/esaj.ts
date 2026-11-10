@@ -1,8 +1,8 @@
 import { open, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { BrowserContext, Download, Page } from "playwright";
+import type { Page } from "playwright";
 import type { Pedido } from "../fila.ts";
-import { ESAJ_TJSP, comecaComoPdf, ehPaginaDeLogin, escolherCertificado, lerCnj, urlDaConsulta, urlDeLogin, type NumeroCnj } from "./esaj-urls.ts";
+import { ESAJ_TJSP, comecaComoPdf, ehPaginaDeLogin, ehPaginaDoProcesso, escolherCertificado, lerCnj, urlDaConsulta, urlDeLogin, type NumeroCnj } from "./esaj-urls.ts";
 import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector } from "./tipos.ts";
 
 /**
@@ -32,7 +32,7 @@ const TELA = {
     codigoDeVerificacao: "#modalTokenDuploFator",
   },
   processo: {
-    numero: "#numeroProcesso",
+    cabecalho: "#numeroProcesso, #containerDadosPrincipaisProcesso",
     pasta: "#linkPasta",
     semResultado: "#mensagemRetorno",
     incidentes: "#modalIncidentes",
@@ -41,11 +41,14 @@ const TELA = {
     etiquetas: ".unj-tag, [id*='egredo']",
   },
   pasta: {
-    selecionarTodos: ["#selecionarButton", "input[value*='elecionar todos' i]", "button:has-text('Selecionar todos')"],
-    pedirPdf: ["#salvarButton", "input[value*='Baixar PDF' i]", "button:has-text('Baixar PDF')", "input[value*='ersão para impressão' i]"],
-    arquivoUnico: ["#opcao1", "input[type=radio][value='1']", "label:has-text('Arquivo único')"],
-    continuar: ["#botaoContinuar", "input[value='Continuar' i]", "button:has-text('Continuar')"],
-    baixar: ["#btnDownloadDocumento", "input[value*='Salvar o documento' i]", "button:has-text('Salvar o documento')"],
+    selecionarTodos: ["#selecionarButton", "input[aria-label='Selecionar todas']"],
+    /** Documentos marcados na árvore da pasta digital. */
+    marcados: ".jstree-checked",
+    pedirPdf: ["#salvarButton", "input[aria-label='Versão para impressão']"],
+    arquivoUnico: "#opcao1",
+    continuar: ["#botaoContinuar"],
+    // Só este: enquanto o PDF é montado há outro botão "Salvar o documento", desabilitado (#btnAguardarProcessamento).
+    baixar: "#btnDownloadDocumento",
   },
 } as const;
 
@@ -82,34 +85,6 @@ async function clicar(ambiente: Ambiente, pagina: Page, candidatos: readonly str
   throw new FalhaDoConector(`A tela do e-SAJ mudou ou não carregou: não achei como ${etapa}. Diagnóstico guardado em ${captura}.`);
 }
 
-/** Espera o download começar em qualquer aba (o PDF pode abrir na pasta digital ou numa aba nova). */
-function esperarDownload(contexto: BrowserContext, limiteMs: number): { promessa: Promise<Download>; parar: () => void } {
-  let parar = () => {};
-  const promessa = new Promise<Download>((resolver, rejeitar) => {
-    const paginas = new Set<Page>();
-    const aoBaixar = (download: Download) => {
-      parar();
-      resolver(download);
-    };
-    const ouvir = (pagina: Page) => {
-      paginas.add(pagina);
-      pagina.on("download", aoBaixar);
-    };
-    const relogio = setTimeout(() => {
-      parar();
-      rejeitar(new FalhaDoConector("O tribunal não entregou o PDF dentro do tempo de espera."));
-    }, limiteMs);
-    parar = () => {
-      clearTimeout(relogio);
-      contexto.off("page", ouvir);
-      for (const pagina of paginas) pagina.off("download", aoBaixar);
-    };
-    contexto.pages().forEach(ouvir);
-    contexto.on("page", ouvir);
-  });
-  return { promessa, parar };
-}
-
 async function conferirPdf(arquivo: string): Promise<void> {
   const { size } = await stat(arquivo);
   const leitor = await open(arquivo, "r");
@@ -121,6 +96,17 @@ async function conferirPdf(arquivo: string): Promise<void> {
     await leitor.close();
   }
   if (size > TAMANHO_MAXIMO) throw new FalhaDoConector(`O PDF dos autos tem ${Math.round(size / (1024 * 1024))} MB e passa do limite de 200 MB. Baixe em partes e anexe à mão.`);
+}
+
+/**
+ * Há sessão aberta no e-SAJ? Não basta a página ter saído do login (a pessoa pode ter ido instalar a
+ * extensão, por exemplo), e nem toda página do portal mostra o nome do usuário: vale o cookie de sessão
+ * do login central (CAS), que só existe depois de o tribunal aceitar o login.
+ */
+async function sessaoAberta(pagina: Page, base: string): Promise<boolean> {
+  if (ehPaginaDeLogin(pagina.url())) return false;
+  const cookies = await pagina.context().cookies(base).catch(() => []);
+  return cookies.some((cookie) => cookie.name === "CASTGC" && cookie.value.length > 0);
 }
 
 class ConectorEsaj implements Conector {
@@ -171,8 +157,11 @@ class ConectorEsaj implements Conector {
   async entrar(ambiente: Ambiente): Promise<void> {
     const { pagina, config, registrar } = ambiente;
     await pagina.goto(urlDeLogin(this.base), { waitUntil: "domcontentloaded" });
-    const dentro = async () => !ehPaginaDeLogin(pagina.url());
+    await pagina.waitForLoadState("load").catch(() => undefined);
+    const dentro = () => sessaoAberta(pagina, this.base);
     if (await dentro()) return;
+    // Com a sessão válida o tribunal redireciona para o portal; se ficou no login (ou em outro lugar), volta a ele.
+    if (!ehPaginaDeLogin(pagina.url())) await pagina.goto(urlDeLogin(this.base), { waitUntil: "domcontentloaded" });
 
     registrar(`Sessão do e-SAJ do ${this.tribunal} fechada: iniciando o login (${config.esaj.login}).`);
     if (await temCaptcha(pagina)) {
@@ -186,7 +175,7 @@ class ConectorEsaj implements Conector {
       registrar(erro instanceof FalhaDoConector ? erro.message : "Não consegui iniciar o login sozinho; fica com a pessoa.");
     }
     // Dá tempo de o tribunal responder antes de chamar alguém.
-    await pagina.waitForURL((url) => !ehPaginaDeLogin(url.toString()), { timeout: 20_000 }).catch(() => undefined);
+    if (config.esaj.login !== "manual") await pagina.waitForURL((url) => !ehPaginaDeLogin(url.toString()), { timeout: 20_000 }).catch(() => undefined);
     if (await dentro()) {
       registrar("Login concluído.");
       return;
@@ -196,7 +185,11 @@ class ConectorEsaj implements Conector {
     } else if (await temCaptcha(pagina)) {
       await ambiente.aguardarPessoa("captcha", "O e-SAJ mostrou um CAPTCHA. Resolva o desafio e conclua o login na janela do robô.", dentro);
     } else {
-      await ambiente.aguardarPessoa("login", "Conclua o login do e-SAJ na janela do robô (certificado ou CPF e senha). O robô segue sozinho depois.", dentro);
+      await ambiente.aguardarPessoa(
+        "login",
+        "Conclua o login do e-SAJ na janela do robô (certificado ou CPF e senha). Se o e-SAJ pedir, instale a extensão Web Signer nessa janela e volte à página de login. O robô segue sozinho depois.",
+        dentro
+      );
     }
     registrar("Login concluído.");
   }
@@ -221,17 +214,16 @@ class ConectorEsaj implements Conector {
       await pagina.locator(TELA.processo.escolherIncidente).click();
       await pagina.waitForLoadState("domcontentloaded");
     }
+    const chegou = async () => ehPaginaDoProcesso(pagina.url(), (await pagina.locator(TELA.processo.cabecalho).allTextContents().catch(() => [])).join(" "), cnj);
     // 1º grau: lista com o principal e os incidentes. Só segue se houver um único com o número exato.
-    if (!(await pagina.locator(TELA.processo.numero).count())) {
+    if (!(await chegou())) {
       const iguais = pagina.locator(TELA.processo.lista).filter({ hasText: cnj.mascarado });
       if ((await iguais.count()) === 1) {
         await iguais.first().click();
         await pagina.waitForLoadState("domcontentloaded");
       }
     }
-
-    const numero = await pagina.locator(TELA.processo.numero).first().textContent({ timeout: 10_000 }).catch(() => null);
-    if (numero?.includes(cnj.mascarado)) return;
+    if (await chegou()) return;
 
     const aviso = (await pagina.locator(TELA.processo.semResultado).first().textContent().catch(() => null))?.replace(/\s+/g, " ").trim();
     if (aviso) {
@@ -251,6 +243,7 @@ class ConectorEsaj implements Conector {
     if (!(await link.count())) throw new FalhaDoConector("O processo não tem pasta digital no e-SAJ (processo físico ou sem autos disponíveis).");
     const destino = (await link.getAttribute("href")) ?? "";
     if (/senha/i.test(destino)) {
+      if (!(await sessaoAberta(pagina, this.base))) throw new FalhaDoConector("A sessão do e-SAJ caiu no meio do pedido. O robô faz o login de novo na próxima tentativa.");
       throw new FalhaDoConector("O e-SAJ pede a senha do processo para abrir os autos: o advogado do certificado não está habilitado neste processo. Anexe o PDF à mão.");
     }
     const janela = contexto.waitForEvent("page", { timeout: 25_000 }).catch(() => null);
@@ -268,50 +261,34 @@ class ConectorEsaj implements Conector {
   /* --------------------------------------------------------------- download */
 
   private async baixarDaPasta(ambiente: Ambiente, pasta: Page, destino: string): Promise<void> {
-    const { contexto, config, registrar } = ambiente;
+    const { config, registrar } = ambiente;
     if (await temCaptcha(pasta)) {
       await ambiente.aguardarPessoa("captcha", "A pasta digital mostrou um CAPTCHA. Resolva o desafio na janela do robô.", async () => !(await temCaptcha(pasta)));
     }
-    await clicar(ambiente, pasta, TELA.pasta.selecionarTodos, "selecionar todos os documentos da pasta digital", 60_000);
-    await clicar(ambiente, pasta, TELA.pasta.pedirPdf, "pedir o PDF dos autos");
-    await clicar(ambiente, pasta, TELA.pasta.arquivoUnico, "escolher o PDF em arquivo único");
-    const download = esperarDownload(contexto, config.geracaoPdfMs);
     try {
-      let arquivo: Download | null = null;
-      download.promessa.then(
-        (baixado) => {
-          arquivo = baixado;
-        },
-        () => undefined
-      );
-      await clicar(ambiente, pasta, TELA.pasta.continuar, "confirmar a geração do PDF");
+      // Cada etapa espera a tela reagir à anterior: clicar em sequência, sem esperar, deixa a pasta digital no meio do caminho.
+      await clicar(ambiente, pasta, TELA.pasta.selecionarTodos, "selecionar todos os documentos da pasta digital", 60_000);
+      await pasta.locator(TELA.pasta.marcados).first().waitFor({ state: "attached", timeout: 30_000 });
+      await pasta.waitForTimeout(1_000);
+      await clicar(ambiente, pasta, TELA.pasta.pedirPdf, "pedir o PDF dos autos");
+      const continuar = pasta.locator(TELA.pasta.continuar[0]);
+      await continuar.waitFor({ state: "visible", timeout: 30_000 });
+      await pasta.locator(TELA.pasta.arquivoUnico).check();
+      await pasta.waitForTimeout(500);
+      await continuar.click();
       registrar("O tribunal está montando o PDF dos autos (pode levar alguns minutos).");
-      // Quando o arquivo fica pronto, o e-SAJ mostra o botão de salvar; em alguns casos o download começa sozinho.
-      const inicio = Date.now();
-      let clicou = false;
-      while (!arquivo && Date.now() - inicio < config.geracaoPdfMs) {
-        if (!clicou) {
-          for (const seletor of TELA.pasta.baixar) {
-            const botao = pasta.locator(seletor).first();
-            if (await botao.isVisible().catch(() => false)) {
-              await botao.click();
-              clicou = true;
-              break;
-            }
-          }
-        }
-        await pasta.waitForTimeout(1_000);
-      }
-      const baixado: Download = arquivo ?? (await download.promessa);
-      const falha = await baixado.failure();
+      const baixar = pasta.locator(TELA.pasta.baixar);
+      await baixar.waitFor({ state: "visible", timeout: config.geracaoPdfMs });
+      await pasta.waitForTimeout(500);
+      // O e-SAJ devolve o PDF como anexo na própria pasta digital.
+      const [arquivo] = await Promise.all([pasta.waitForEvent("download", { timeout: 120_000 }), baixar.click()]);
+      const falha = await arquivo.failure();
       if (falha) throw new FalhaDoConector(`O download do PDF foi interrompido (${falha}).`);
-      await baixado.saveAs(destino);
+      await arquivo.saveAs(destino);
     } catch (erro) {
       if (erro instanceof FalhaDoConector) throw erro;
       const captura = await ambiente.diagnostico(pasta, "baixar o PDF");
-      throw new FalhaDoConector(`O download dos autos falhou na pasta digital. Diagnóstico guardado em ${captura}.`);
-    } finally {
-      download.parar();
+      throw new FalhaDoConector(`O download dos autos não terminou na pasta digital. Diagnóstico guardado em ${captura}.`);
     }
     await conferirPdf(destino);
   }

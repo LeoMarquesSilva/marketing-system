@@ -4,6 +4,7 @@ import { z } from "zod";
 import { openAIKey } from "@/lib/openai-keys";
 import {
   BUCKET_AUTOS,
+  DIAS_DE_GUARDA_PADRAO,
   PEDIDO_ABERTO,
   TAMANHO_MAXIMO_AUTOS,
   type AutosDoProcesso,
@@ -24,7 +25,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const COLUNAS_PEDIDO =
   "id, processo_id, cnj, sistema, tribunal, status, motivo_espera, erro, segredo_liberado, tentativas, robo, pedido_por_nome, criado_em, atualizado_em, concluido_em";
 export const COLUNAS_DOCUMENTO =
-  "id, processo_id, nome, storage_path, tamanho_bytes, paginas, origem, pedido_id, leitura_status, leitura_erro, leitura_iniciada_em, lido_em, paginas_lidas, paginas_sem_texto, enviado_por_nome, criado_em";
+  "id, processo_id, nome, storage_path, tamanho_bytes, paginas, origem, pedido_id, leitura_status, leitura_erro, leitura_iniciada_em, lido_em, paginas_lidas, paginas_sem_texto, enviado_por_nome, criado_em, arquivo_removido_em";
 export const COLUNAS_SUGESTAO =
   "id, processo_id, documento_id, tipo, campo, parte_id, item, chave, resumo, valor, pagina, trecho, trecho_conferido, confianca, situacao, decidido_por_nome, decidido_em, criado_em";
 
@@ -63,6 +64,7 @@ function paraDocumento(linha: Linha): DocumentoAutos {
     paginasSemTexto: (linha.paginas_sem_texto as number | null) ?? null,
     autor: (linha.enviado_por_nome as string | null) ?? null,
     criadoEm: linha.criado_em as string,
+    arquivoRemovidoEm: (linha.arquivo_removido_em as string | null) ?? null,
   };
 }
 
@@ -86,6 +88,12 @@ export function paraSugestao(linha: Linha): Sugestao {
     decididoEm: (linha.decidido_em as string | null) ?? null,
     criadoEm: linha.criado_em as string,
   };
+}
+
+/** Dias de guarda do PDF enquanto houver sugestão a conferir. */
+export function diasDeGuarda(): number {
+  const dias = Number(process.env.PROCESSOS_AUTOS_DIAS);
+  return Number.isFinite(dias) && dias > 0 ? dias : DIAS_DE_GUARDA_PADRAO;
 }
 
 /** A leitura pela IA depende de uma chave da OpenAI no servidor. */
@@ -122,6 +130,7 @@ export async function carregarAutos(processoId: string): Promise<AutosDoProcesso
       .map(paraSugestao)
       .sort((a, b) => (a.pagina ?? Infinity) - (b.pagina ?? Infinity) || a.criadoEm.localeCompare(b.criadoEm) || a.resumo.localeCompare(b.resumo)),
     iaConfigurada: iaConfigurada(),
+    diasDeGuarda: diasDeGuarda(),
   };
 }
 
@@ -284,7 +293,9 @@ export async function registrarDocumento(
   return paraDocumento(data as Linha);
 }
 
-export async function carregarDocumento(documentoId: string): Promise<{ id: string; processoId: string; nome: string; caminho: string; leitura: string; leituraIniciadaEm: string | null }> {
+export async function carregarDocumento(
+  documentoId: string
+): Promise<{ id: string; processoId: string; nome: string; caminho: string; leitura: string; leituraIniciadaEm: string | null; arquivoRemovidoEm: string | null }> {
   if (!UUID.test(documentoId)) throw new ProcessosError("Documento não encontrado.", 404);
   const { data, error } = await db().from("proc_documentos").select(COLUNAS_DOCUMENTO).eq("id", documentoId).maybeSingle();
   if (error) falhou("carregar o documento", error);
@@ -296,12 +307,62 @@ export async function carregarDocumento(documentoId: string): Promise<{ id: stri
     caminho: data.storage_path as string,
     leitura: data.leitura_status as string,
     leituraIniciadaEm: (data.leitura_iniciada_em as string | null) ?? null,
+    arquivoRemovidoEm: (data.arquivo_removido_em as string | null) ?? null,
   };
+}
+
+/* ------------------------------------------------- o PDF é temporário */
+
+/** Exclui o PDF do bucket e marca o documento. O registro e as sugestões (com página e trecho) continuam. */
+async function descartarArquivo(documento: { id: string; caminho: string }): Promise<void> {
+  const { error: erroArquivo } = await db().storage.from(BUCKET_AUTOS).remove([documento.caminho]);
+  if (erroArquivo) falhou("excluir o PDF dos autos", erroArquivo);
+  const { error } = await db().from("proc_documentos").update({ arquivo_removido_em: new Date().toISOString() }).eq("id", documento.id).is("arquivo_removido_em", null);
+  if (error) falhou("registrar o descarte do PDF", error);
+}
+
+/**
+ * Descarta o PDF quando não resta nada a conferir nele: leitura concluída e nenhuma sugestão pendente.
+ * Chamado depois da leitura e depois de cada decisão. Falha aqui não desfaz a decisão: o descarte por
+ * prazo (descartarVencidos) recolhe o que sobrar.
+ */
+export async function descartarSeConcluido(documentoId: string): Promise<boolean> {
+  try {
+    const documento = await carregarDocumento(documentoId);
+    if (documento.arquivoRemovidoEm || documento.leitura !== "lida") return false;
+    const { count, error } = await db().from("proc_sugestoes").select("id", { count: "exact", head: true }).eq("documento_id", documentoId).eq("situacao", "pendente");
+    if (error) falhou("contar as sugestões pendentes", error);
+    if (count) return false;
+    await descartarArquivo(documento);
+    return true;
+  } catch (erro) {
+    console.error("[processos] descarte do PDF:", erro instanceof Error ? erro.message : erro);
+    return false;
+  }
+}
+
+/** Descarta os PDFs com o prazo de guarda vencido (cron diário), tenham ou não sugestões pendentes. */
+export async function descartarVencidos(): Promise<{ descartados: number; falhas: number }> {
+  const limite = new Date(Date.now() - diasDeGuarda() * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await db().from("proc_documentos").select("id, storage_path").is("arquivo_removido_em", null).neq("leitura_status", "lendo").lt("criado_em", limite).limit(500);
+  if (error) falhou("listar os PDFs vencidos", error);
+  let descartados = 0;
+  let falhas = 0;
+  for (const linha of data ?? []) {
+    try {
+      await descartarArquivo({ id: linha.id as string, caminho: linha.storage_path as string });
+      descartados += 1;
+    } catch {
+      falhas += 1;
+    }
+  }
+  return { descartados, falhas };
 }
 
 /** URL assinada de 10 minutos para abrir o PDF no navegador (a tela acrescenta #page=N). */
 export async function urlDoDocumento(documentoId: string): Promise<string> {
   const documento = await carregarDocumento(documentoId);
+  if (documento.arquivoRemovidoEm) throw new ProcessosError("O PDF destes autos já foi descartado. Ficaram as sugestões, com página e trecho; para ver o documento, abra o processo no tribunal.", 410);
   const { data, error } = await db().storage.from(BUCKET_AUTOS).createSignedUrl(documento.caminho, 600);
   if (error || !data) falhou("abrir o documento", error);
   return data.signedUrl;
@@ -313,8 +374,10 @@ export async function excluirDocumento(documentoId: string, ator: Ator): Promise
   const banco = db();
   const { error: erroSugestoes } = await banco.from("proc_sugestoes").delete().eq("documento_id", documentoId).eq("situacao", "pendente");
   if (erroSugestoes) falhou("remover as sugestões do documento", erroSugestoes);
-  const { error: erroArquivo } = await banco.storage.from(BUCKET_AUTOS).remove([documento.caminho]);
-  if (erroArquivo) console.error("[processos] remover o arquivo dos autos:", erroArquivo.message);
+  if (!documento.arquivoRemovidoEm) {
+    const { error: erroArquivo } = await banco.storage.from(BUCKET_AUTOS).remove([documento.caminho]);
+    if (erroArquivo) console.error("[processos] remover o arquivo dos autos:", erroArquivo.message);
+  }
   const { error } = await banco.from("proc_documentos").delete().eq("id", documentoId);
   if (error) falhou("excluir o documento", error);
   await registrarNoHistorico(documento.processoId, "autos", documento.nome, "Excluído", ator);

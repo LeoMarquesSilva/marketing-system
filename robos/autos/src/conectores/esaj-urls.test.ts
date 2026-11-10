@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ESAJ_TJSP, comecaComoPdf, ehPaginaDeLogin, escolherCertificado, lerCnj, nomeDoPdf, urlDaConsulta, urlDeLogin } from "./esaj-urls";
+import { ESAJ_TJSP, comecaComoPdf, ehPaginaDeLogin, ehPaginaDoProcesso, escolherCertificado, lerCnj, nomeDoPdf, urlDaConsulta, urlDeLogin } from "./esaj-urls";
 
 describe("lerCnj", () => {
   it("separa o número, o foro e o grau", () => {
@@ -23,6 +23,14 @@ describe("endereços do e-SAJ", () => {
   it("reconhece a página de login", () => {
     expect(ehPaginaDeLogin(urlDeLogin(ESAJ_TJSP))).toBe(true);
     expect(ehPaginaDeLogin("https://esaj.tjsp.jus.br/esaj/portal.do?servico=740000")).toBe(false);
+  });
+
+  it("reconhece a página do processo, principal ou incidente", () => {
+    const cnj = lerCnj("0001234-56.2026.8.26.0114")!;
+    expect(ehPaginaDoProcesso("https://esaj.tjsp.jus.br/cpopg/show.do?processo.codigo=XX&processo.foro=114&processo.numero=0001234-56.2026.8.26.0114", "", cnj)).toBe(true);
+    expect(ehPaginaDoProcesso("https://esaj.tjsp.jus.br/cposg/show.do?processo.codigo=XX", "Agravo 0001234-56.2026.8.26.0114", cnj)).toBe(true);
+    expect(ehPaginaDoProcesso("https://esaj.tjsp.jus.br/cpopg/show.do?processo.codigo=XX&processo.numero=1009876-54.2025.8.26.0114", "1009876-54.2025.8.26.0114", cnj)).toBe(false);
+    expect(ehPaginaDoProcesso("https://esaj.tjsp.jus.br/cpopg/search.do?numero=0001234-56.2026.8.26.0114", "", cnj)).toBe(false);
   });
 
   it("dá nome ao PDF pelo número do processo", () => {

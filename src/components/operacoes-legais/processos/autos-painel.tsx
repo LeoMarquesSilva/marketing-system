@@ -206,9 +206,10 @@ export function PainelAutos({
             const estaLendo = lendoAgora(documento, lendo);
             const selo = estaLendo ? LEITURA.lendo : documento.leitura === "lendo" ? LEITURA.erro : LEITURA[documento.leitura];
             const pendentes = pendentesPorDocumento.get(documento.id) ?? 0;
+            const descartado = Boolean(documento.arquivoRemovidoEm);
             const detalhes = [
               documento.paginas ? `${documento.paginas} pág.` : null,
-              formatarTamanho(documento.tamanhoBytes),
+              descartado ? null : formatarTamanho(documento.tamanhoBytes),
               documento.origem === "robo" ? "baixado pelo robô" : `anexado${documento.autor ? ` por ${documento.autor}` : ""}`,
               formatarDataHora(documento.criadoEm),
             ].filter(Boolean);
@@ -217,14 +218,20 @@ export function PainelAutos({
                 <div className="flex items-start gap-2">
                   <FileText className="mt-0.5 size-4 shrink-0 text-[#3e84a8]" aria-hidden />
                   <div className="min-w-0 flex-1">
-                    <button
-                      type="button"
-                      className="block max-w-full truncate text-left text-sm font-medium text-[#347796] underline decoration-[#347796]/40 underline-offset-4 hover:text-[#285f7a] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[#47cdd0]/30"
-                      title={`Abrir ${documento.nome}`}
-                      onClick={() => void abrirAutos(documento.id).catch((falha) => onErro(mensagemDeErro(falha)))}
-                    >
-                      {documento.nome}
-                    </button>
+                    {descartado ? (
+                      <p className="truncate text-sm font-medium text-foreground" title={documento.nome}>
+                        {documento.nome}
+                      </p>
+                    ) : (
+                      <button
+                        type="button"
+                        className="block max-w-full truncate text-left text-sm font-medium text-[#347796] underline decoration-[#347796]/40 underline-offset-4 hover:text-[#285f7a] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[#47cdd0]/30"
+                        title={`Abrir ${documento.nome}`}
+                        onClick={() => void abrirAutos(documento.id).catch((falha) => onErro(mensagemDeErro(falha)))}
+                      >
+                        {documento.nome}
+                      </button>
+                    )}
                     <p className="text-xs text-muted-foreground">{detalhes.join(" · ")}</p>
                   </div>
                   <Button size="icon-xs" variant="ghost" aria-label={`Excluir ${documento.nome}`} title="Excluir" disabled={estaLendo || Boolean(ocupado)} onClick={() => setExcluir(documento)}>
@@ -236,7 +243,8 @@ export function PainelAutos({
                     {selo.rotulo}
                   </Selo>
                   {pendentes ? <Selo tom="ia">{pendentes} a conferir</Selo> : null}
-                  {!estaLendo && autos.iaConfigurada ? (
+                  {descartado ? <Selo tom="neutro">PDF descartado em {formatarDataHora(documento.arquivoRemovidoEm).slice(0, 10)}</Selo> : null}
+                  {!estaLendo && !descartado && autos.iaConfigurada ? (
                     <Button size="xs" variant="ghost" className="text-xs" disabled={Boolean(lendo) || Boolean(ocupado)} onClick={() => void ler(documento)}>
                       <Sparkles /> {documento.leitura === "lida" || documento.leitura === "sem_texto" ? "Ler de novo" : "Ler com a IA"}
                     </Button>
@@ -251,6 +259,9 @@ export function PainelAutos({
       ) : (
         <p className="px-4 py-4 text-sm text-muted-foreground">Nenhum PDF ainda. {robo.disponivel ? "Peça ao robô ou anexe o arquivo." : "Anexe o arquivo dos autos."}</p>
       )}
+      <p className="border-t border-[#e6eef0] px-4 py-2.5 text-xs text-muted-foreground">
+        O PDF é temporário: sai do ORQESTRAI quando a última sugestão dele é decidida ou depois de {autos.diasDeGuarda} dias. Ficam as sugestões, com página e trecho.
+      </p>
       {!autos.iaConfigurada ? <p className="border-t border-[#e6eef0] px-4 py-2.5 text-xs text-amber-800">A leitura pela IA está desligada: falta a chave da OpenAI no servidor.</p> : null}
 
       {liberar ? (
@@ -291,7 +302,7 @@ export function PainelAutos({
           icone={Trash2}
           tom="perigo"
           titulo="Excluir o PDF?"
-          descricao={`${excluir.nome} sai do processo, com as sugestões dele que ainda não foram decididas.`}
+          descricao={`${excluir.nome} sai da lista do processo, com as sugestões dele que ainda não foram decididas.`}
           rodape={
             <>
               <Button variant="outline" onClick={() => setExcluir(null)} disabled={ocupado === "excluir"}>

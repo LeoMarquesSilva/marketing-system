@@ -115,6 +115,7 @@ describe("documentos, OAB e contatos", () => {
   it("compara nomes sem acento, pontuação nem tipo societário", () => {
     expect(normalizarNome("Credora Elétrica Ltda.")).toBe(normalizarNome("CREDORA ELETRICA LTDA"));
     expect(normalizarNome("Banco Alfa S/A")).toBe(normalizarNome("BANCO ALFA S.A. - EM RECUPERAÇÃO JUDICIAL"));
+    expect(normalizarNome("J.b. Exemplo & Cia Ltda - Epp")).toBe(normalizarNome("J.B EXEMPLO E CIA LTDA"));
   });
 });
 
@@ -233,6 +234,54 @@ describe("montarSugestoes", () => {
     expect(sugestoes).toHaveLength(1);
     expect(sugestoes[0]).toMatchObject({ tipo: "parte_nova", item: "advogado_executado", trechoConferido: true });
     expect(sugestoes[0].valor).toMatchObject({ papel: "advogado", oab: "SP 123.456", polo: "passivo", referenteNome: "Auto Peças Brasil Ltda" });
+  });
+
+  it("junta as grafias do mesmo endereço numa proposta só, a mais completa", () => {
+    const paginas = [
+      "Executada com sede na Av. Joaquim Exemplo Ramos, nº 3.177, bairro Jardim, Vila Modelo.",
+      "Endereço: R JOAQUIM EXEMPLO RAMOS 3177, JARDIM, VILA MODELO, MT, CEP 13000-000. Filial na Rodovia MT 999, Km 12, saída para Vila Distante.",
+    ];
+    const lido = leitura({
+      enderecos: [
+        { pessoa: "Auto Peças Brasil Ltda", endereco: "Av. Joaquim Exemplo Ramos, nº 3.177, bairro Jardim", cidade: "Vila Modelo", uf: null, cep: null, pagina: 1, trecho: "com sede na Av. Joaquim Exemplo Ramos, nº 3.177, bairro Jardim", confianca: "alta" },
+        { pessoa: "Auto Peças Brasil Ltda", endereco: "R JOAQUIM EXEMPLO RAMOS 3177, JARDIM", cidade: "VILA MODELO", uf: "MT", cep: "13000-000", pagina: 2, trecho: "R JOAQUIM EXEMPLO RAMOS 3177, JARDIM, VILA MODELO, MT", confianca: "alta" },
+        { pessoa: "Auto Peças Brasil Ltda", endereco: "Rodovia MT 999, Km 12, saída para Vila Distante", cidade: null, uf: "MT", cep: null, pagina: 2, trecho: "Filial na Rodovia MT 999, Km 12, saída para Vila Distante", confianca: "alta" },
+      ],
+    });
+    const sugestoes = montarSugestoes(lido, contexto(), paginas);
+    expect(sugestoes.map((item) => (item.valor as { endereco: string }).endereco)).toEqual(["R JOAQUIM EXEMPLO RAMOS 3177, JARDIM", "Rodovia MT 999, Km 12, saída para Vila Distante"]);
+    expect(sugestoes[0]).toMatchObject({ pagina: 2, valor: { cep: "13000-000", uf: "MT" } });
+  });
+
+  it("fica com no máximo três propostas por campo, as mais confiáveis e das primeiras páginas", () => {
+    const paginas = ["total de R$ 100,00", "nota de R$ 20,00", "nota de R$ 30,00", "nota de R$ 40,00", "nota de R$ 50,00"];
+    const lido = leitura({
+      campos: [
+        { campo: "valor_original", valor: "50.00", pagina: 5, trecho: "nota de R$ 50,00", confianca: "alta" },
+        { campo: "valor_original", valor: "40.00", pagina: 4, trecho: "nota de R$ 40,00", confianca: "media" },
+        { campo: "valor_original", valor: "30.00", pagina: 3, trecho: "nota de R$ 30,00", confianca: "alta" },
+        { campo: "valor_original", valor: "20.00", pagina: 2, trecho: "nota de R$ 20,00", confianca: "alta" },
+        { campo: "valor_original", valor: "100.00", pagina: 1, trecho: "total de R$ 100,00", confianca: "alta" },
+      ],
+    });
+    expect(montarSugestoes(lido, contexto(), paginas).map((item) => (item.valor as { valor: number }).valor)).toEqual([100, 20, 30]);
+  });
+
+  it("reconhece o mesmo advogado pela OAB e a filial do cliente pela raiz do CNPJ", () => {
+    const paginas = ["Pelo executado: MARINA COSTA LOPES, OAB/MG 999.111.", "Marina Souza Lopes - OAB/MG 999.111. Exequente CREDORA ELETRICA INDUSTRIA LTDA, CNPJ 11.222.333/0002-62."];
+    const lido = leitura({
+      pessoas: [
+        { nome: "MARINA COSTA LOPES", papel: "advogado", referente_a: "Auto Pecas Brasil Ltda", documento: null, oab: "MG 999111", pagina: 1, trecho: "Pelo executado: MARINA COSTA LOPES, OAB/MG 999.111", confianca: "media" },
+        { nome: "Marina Souza Lopes", papel: "advogado", referente_a: "AUTO PECAS BRASIL", documento: null, oab: "OAB/MG 999.111", pagina: 2, trecho: "Marina Souza Lopes - OAB/MG 999.111", confianca: "alta" },
+        { nome: "CREDORA ELETRICA INDUSTRIA LTDA", papel: "parte_ativa", referente_a: null, documento: "11.222.333/0002-62", oab: null, pagina: 2, trecho: "Exequente CREDORA ELETRICA INDUSTRIA LTDA, CNPJ 11.222.333/0002-62", confianca: "alta" },
+        { nome: "Outra Credora S.A.", papel: "parte_ativa", referente_a: null, documento: null, oab: null, pagina: 2, trecho: "Exequente CREDORA ELETRICA INDUSTRIA", confianca: "alta" },
+      ],
+    });
+    const comDocumento = [{ ...CREDOR, documento: "11.222.333/0001-81" }, DEVEDOR];
+    const sugestoes = montarSugestoes(lido, contexto({}, comDocumento), paginas);
+    // a filial é o próprio cliente (já tem CNPJ) e parte nova no polo do cliente não é proposta
+    expect(sugestoes).toHaveLength(1);
+    expect(sugestoes[0].valor).toMatchObject({ papel: "advogado", nome: "Marina Souza Lopes", oab: "MG 999.111" });
   });
 
   it("não repete endereço nem contato que a parte já tem", () => {

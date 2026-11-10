@@ -5,7 +5,7 @@ import { generateObject } from "ai";
 import { openAIKey } from "@/lib/openai-keys";
 import { OPENAI_DEFAULT_MODEL, isOpenAIReasoningModel } from "@/lib/openai-models";
 import { custoDaChamada } from "@/lib/vistagem/sugestao-ia";
-import { carregarDocumento } from "./autos-server";
+import { carregarDocumento, descartarSeConcluido } from "./autos-server";
 import { BUCKET_AUTOS, type SugestaoNova } from "./autos-types";
 import { ProcessosError } from "./errors";
 import { extrairPaginas, type TextoDoPdf } from "./leitura-pdf";
@@ -103,6 +103,7 @@ async function gravarSugestoes(processoId: string, documentoId: string, sugestoe
  */
 export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeitura> {
   const documento = await carregarDocumento(documentoId);
+  if (documento.arquivoRemovidoEm) throw new ProcessosError("O PDF destes autos já foi descartado. Peça de novo ao robô ou anexe o arquivo para uma nova leitura.", 409);
   const apiKey = openAIKey("processos");
   if (!apiKey) throw new ProcessosError("A chave da OpenAI não está configurada: o PDF fica guardado e pode ser lido depois.", 503);
 
@@ -190,6 +191,8 @@ export async function lerDocumento(documentoId: string): Promise<ResultadoDaLeit
       leitura_custo_us: Math.round(custoUS * 10000) / 10000,
       lido_em: new Date().toISOString(),
     });
+    // Nada a conferir neste PDF (nenhuma sugestão pendente): ele já pode sair do armazenamento.
+    if (!naoLidos) await descartarSeConcluido(documentoId);
     return { situacao: "lida", paginas: texto.total, paginasLidas, sugestoes: gravadas, aviso };
   } catch (erro) {
     const mensagem = erro instanceof ProcessosError ? erro.message : "A leitura falhou. Tente de novo.";

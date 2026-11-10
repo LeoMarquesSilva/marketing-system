@@ -5,6 +5,9 @@ import type { PapelParte, PoloParte, TipoContato } from "./types";
 export const BUCKET_AUTOS = "processos-autos";
 /** Mesmo limite do bucket (migration 20261110160000). */
 export const TAMANHO_MAXIMO_AUTOS = 200 * 1024 * 1024;
+/** Por quantos dias o PDF fica guardado quando ainda há sugestão sem decisão (PROCESSOS_AUTOS_DIAS troca). */
+export const DIAS_DE_GUARDA_PADRAO = 7;
+
 
 /* ---------------------------------------------------------------- pedidos */
 
@@ -52,6 +55,8 @@ export interface DocumentoAutos {
   paginasSemTexto: number | null;
   autor: string | null;
   criadoEm: string;
+  /** O PDF já saiu do armazenamento (ficam o registro e as sugestões, com página e trecho). */
+  arquivoRemovidoEm: string | null;
 }
 
 /* -------------------------------------------------------------- sugestões */
@@ -133,4 +138,6 @@ export interface AutosDoProcesso {
   sugestoes: Sugestao[];
   /** Há chave de IA configurada no servidor (sem ela, o PDF é guardado mas não é lido). */
   iaConfigurada: boolean;
+  /** Dias que o PDF fica guardado enquanto houver sugestão sem decisão. */
+  diasDeGuarda: number;
 }

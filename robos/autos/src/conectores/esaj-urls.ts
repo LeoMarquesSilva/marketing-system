@@ -40,6 +40,21 @@ export function urlDaConsulta(base: string, cnj: NumeroCnj): string {
   return `${base}/cpopg/search.do?conversationId=&cbPesquisa=NUMPROC&numeroDigitoAnoUnificado=${cnj.numeroDigitoAno}&foroNumeroUnificado=${cnj.foro}&dadosConsulta.valorConsultaNuUnificado=${numero}&dadosConsulta.valorConsultaNuUnificado=UNIFICADO&dadosConsulta.valorConsulta=&dadosConsulta.tipoNuProcesso=UNIFICADO`;
 }
 
+/**
+ * A consulta chegou à página do processo pedido? Vale para o processo principal e para incidente
+ * (cumprimento de sentença), que não tem o mesmo cabeçalho: o número vem no endereço ou no texto do topo.
+ */
+export function ehPaginaDoProcesso(url: string, cabecalho: string, cnj: NumeroCnj): boolean {
+  if (!/\/show\.do/i.test(url)) return false;
+  let endereco = url;
+  try {
+    endereco = decodeURIComponent(url);
+  } catch {
+    // endereço com % solto: compara como veio
+  }
+  return endereco.includes(cnj.mascarado) || cabecalho.includes(cnj.mascarado);
+}
+
 /** O arquivo baixado é mesmo um PDF? (o tribunal às vezes devolve uma página de erro em HTML) */
 export function comecaComoPdf(inicio: Uint8Array): boolean {
   return inicio.length >= 5 && String.fromCharCode(...inicio.slice(0, 5)) === "%PDF-";

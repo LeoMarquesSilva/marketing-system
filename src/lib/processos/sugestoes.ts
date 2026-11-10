@@ -157,6 +157,8 @@ export function normalizarNome(nome: string | null | undefined): string {
   return semAcento(nome ?? "")
     .toUpperCase()
     .replace(/[^A-Z0-9 ]/g, " ")
+    // "Fulano & Cia" e "Fulano e Cia" são o mesmo nome
+    .replace(/ E /g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/ (EM RECUPERACAO JUDICIAL|EM LIQUIDACAO|EM LIQUIDACAO EXTRAJUDICIAL)$/, "")
@@ -265,9 +267,33 @@ function chaveDoEndereco(endereco: { endereco: string }): string {
   return compactar(endereco.endereco);
 }
 
+const SEM_PESO_NO_ENDERECO = new Set(["RUA", "AVENIDA", "RODOVIA", "ESTRADA", "TRAVESSA", "ALAMEDA", "PRACA", "BAIRRO", "NUMERO", "SALA", "CONJUNTO", "APARTAMENTO", "BLOCO", "CENTRO", "LADO", "SAIDA", "PARA"]);
+
+/** Palavras do logradouro e números do endereço, para reconhecer o mesmo lugar escrito de outro jeito. */
+function marcasDoEndereco(endereco: string): { palavras: Set<string>; numeros: Set<string> } {
+  const texto = semAcento(endereco).toUpperCase().replace(/(\d)\.(\d)/g, "$1$2");
+  return {
+    palavras: new Set((texto.match(/[A-Z]{4,}/g) ?? []).filter((palavra) => !SEM_PESO_NO_ENDERECO.has(palavra))),
+    numeros: new Set(texto.match(/\d+/g) ?? []),
+  };
+}
+
+/**
+ * O mesmo endereço, ainda que com outra grafia ("Av. Joaquim Ramos, nº 3.177" e "R JOAQUIM RAMOS 3177"):
+ * texto igual ou contido, ou o mesmo número (ou o mesmo "km") com duas palavras do logradouro em comum.
+ */
 function mesmoEndereco(a: { endereco: string }, b: { endereco: string }): boolean {
   const [x, y] = [chaveDoEndereco(a), chaveDoEndereco(b)];
-  return x === y || (x.length >= 12 && y.includes(x)) || (y.length >= 12 && x.includes(y));
+  if (x === y || (x.length >= 12 && y.includes(x)) || (y.length >= 12 && x.includes(y))) return true;
+  const [ma, mb] = [marcasDoEndereco(a.endereco), marcasDoEndereco(b.endereco)];
+  const emComum = [...ma.palavras].filter((palavra) => mb.palavras.has(palavra)).length;
+  const mesmoNumero = [...ma.numeros].some((numero) => mb.numeros.has(numero));
+  return mesmoNumero && emComum >= 2;
+}
+
+/** Quanto do endereço veio preenchido: entre duas grafias do mesmo lugar, fica a mais completa. */
+function completude(endereco: EnderecoSugerido): number {
+  return (endereco.cep ? 4 : 0) + (endereco.uf ? 2 : 0) + (endereco.cidade ? 1 : 0);
 }
 
 /* ------------------------------------------------------------ quem é quem */
@@ -301,6 +327,9 @@ function acharParte(partes: Parte[], nome: string | null | undefined, documento?
   if (doc) {
     const pelaChave = partes.find((parte) => chaveDoDocumento(parte.documento) === doc);
     if (pelaChave) return pelaChave;
+    // Mesma raiz de CNPJ (8 primeiros caracteres): é a mesma empresa, matriz ou filial.
+    const daEmpresa = doc.length === 14 ? partes.find((parte) => chaveDoDocumento(parte.documento).length === 14 && chaveDoDocumento(parte.documento).slice(0, 8) === doc.slice(0, 8)) : undefined;
+    if (daEmpresa) return daEmpresa;
   }
   const alvo = normalizarNome(nome);
   return alvo.length < 3 ? undefined : partes.find((parte) => normalizarNome(parte.nome) === alvo);
@@ -320,8 +349,8 @@ export function instrucoesDaLeitura(): string {
     "- `confianca`: alta = o dado está explícito e sem ambiguidade; media = exigiu interpretação; baixa = texto truncado, ilegível ou ambíguo.",
     "",
     "campos (um item por dado encontrado):",
-    "- valor_original: valor do crédito na origem (valor nominal do título, do contrato ou das parcelas vencidas), sem juros, multa nem correção. Não é o valor da causa atualizado.",
-    "- data_origem_debito: data em que o débito nasceu (vencimento do título ou da primeira parcela não paga).",
+    "- valor_original: o valor TOTAL do crédito cobrado, na origem (soma dos títulos ou das parcelas vencidas), sem juros, multa nem correção, como a petição inicial ou a planilha de cálculo apresentam. Não é o valor da causa atualizado, e não é o valor de cada nota fiscal, duplicata ou parcela: sem o total no trecho, não devolva nada.",
+    "- data_origem_debito: data em que o débito nasceu, isto é, o vencimento mais antigo entre os títulos ou parcelas não pagos, quando o texto permite afirmar qual é. Não devolva o vencimento de cada título.",
     "- natureza_credito: só quando os autos dizem expressamente que o crédito é concursal ou extraconcursal em recuperação judicial ou falência do devedor. Valores: concursal | extraconcursal.",
     "- data_citacao: data em que o devedor foi efetivamente citado (aviso de recebimento positivo, certidão do oficial de justiça, comparecimento espontâneo). Não é a data do despacho que manda citar.",
     "- data_acordo e valor_acordo: acordo celebrado entre as partes (petição conjunta, termo ou homologação). Proposta não aceita não conta.",
@@ -339,6 +368,7 @@ export function instrucoesDaLeitura(): string {
     "- Só do devedor, dos sócios e administradores dele e dos fiadores e avalistas; do advogado do devedor, só os contatos (telefone e e-mail).",
     "- Não inclua endereço nem contato do credor, do escritório do credor, de fórum, cartório ou órgão público.",
     "- `pessoa`: o nome exatamente como está em `pessoas` ou na lista de partes cadastradas.",
+    "- Telefone e e-mail que aparecem na assinatura, no rodapé ou no timbre de uma petição são do advogado que assina, não da parte: use o nome do advogado em `pessoa`.",
     "- Inclua todos os endereços encontrados, também os antigos e os de tentativas de citação frustradas.",
     "- contatos: tipo celular, telefone, email ou site; telefone com DDD; `whatsapp` verdadeiro só se o texto disser.",
   ].join("\n");
@@ -374,6 +404,9 @@ export function entradaDaLeitura(contexto: ContextoDaLeitura, bloco: BlocoDeText
 /* ------------------------------------------------------- resposta → sugestões */
 
 const PESO_CONFIANCA: Record<Confianca, number> = { alta: 3, media: 2, baixa: 1 };
+
+/** Um campo recebe no máximo este número de propostas diferentes (as mais confiáveis, depois as das primeiras páginas). */
+const MAXIMO_POR_CAMPO = 3;
 
 /** Papéis em ordem de importância: a mesma pessoa pode aparecer como executada e como sócia. */
 const ORDEM_DE_PAPEL: PapelLido[] = ["parte_passiva", "parte_ativa", "fiador", "avalista", "corresponsavel", "socio", "administrador", "representante", "advogado"];
@@ -509,6 +542,8 @@ export function montarSugestoes(leitura: LeituraDosAutos, contexto: ContextoDaLe
     // Advogado, sócio ou fiador do lado do credor não entra: o saneamento é sobre o devedor.
     const ehParte = lida.papel === "parte_ativa" || lida.papel === "parte_passiva";
     if (!ehParte && referente && doCredor(referente)) continue;
+    // Parte nova no polo do cliente também não: as partes do cliente vêm do cadastro do VIOS.
+    if (ehParte && (lida.papel === "parte_ativa" ? "ativo" : "passivo") === credor) continue;
     const papel: PapelParte = lida.papel === "parte_ativa" || lida.papel === "parte_passiva" ? "parte" : lida.papel;
     const polo: PoloParte = lida.papel === "parte_ativa" ? "ativo" : lida.papel === "parte_passiva" ? "passivo" : (referente?.polo ?? poloDevedor);
     const pessoa: PessoaSugerida = {
@@ -522,14 +557,17 @@ export function montarSugestoes(leitura: LeituraDosAutos, contexto: ContextoDaLe
       enderecos: [],
       contatos: [],
     };
-    const chave = chaveDaNova(nome);
+    // O mesmo advogado com o nome transcrito de dois jeitos: vale a OAB.
+    const mesmaOab = oab ? [...novas].find(([, nova]) => chaveDaOab(nova.pessoa.oab) === chaveDaOab(oab))?.[0] : undefined;
+    const chave = mesmaOab ?? chaveDaNova(nome);
     const anterior = novas.get(chave);
     if (!anterior) {
       novas.set(chave, { pessoa, origem: lida, papel: lida.papel });
       continue;
     }
     // A mesma pessoa em outro bloco: fica o papel mais importante e junta o que cada menção trouxe.
-    const troca = ORDEM_DE_PAPEL.indexOf(lida.papel) < ORDEM_DE_PAPEL.indexOf(anterior.papel);
+    const troca =
+      ORDEM_DE_PAPEL.indexOf(lida.papel) < ORDEM_DE_PAPEL.indexOf(anterior.papel) || (lida.papel === anterior.papel && PESO_CONFIANCA[lida.confianca] > PESO_CONFIANCA[anterior.origem.confianca]);
     const base = troca ? pessoa : anterior.pessoa;
     const outra = troca ? anterior.pessoa : pessoa;
     novas.set(chave, {
@@ -540,24 +578,39 @@ export function montarSugestoes(leitura: LeituraDosAutos, contexto: ContextoDaLe
   }
 
   // Endereços e contatos: de quem já está no processo (um por sugestão) ou junto da pessoa nova.
+  // O mesmo endereço aparece várias vezes nos autos, com grafias diferentes: fica uma proposta por lugar, a mais completa.
+  const enderecosPropostos = new Map<string, { endereco: EnderecoSugerido; origem: Origem }[]>();
+  const acharNova = (nome: string) => novas.get(chaveDaNova(nome));
   for (const lido of leitura.enderecos) {
     const endereco = normalizarEndereco(lido);
     if (!endereco) continue;
     const existente = acharParte(partes, lido.pessoa);
     if (existente) {
       if (doCredor(existente) || existente.papel === "advogado" || existente.enderecos.some((item) => mesmoEndereco(item, endereco))) continue;
-      incluir(lido, {
+      const lista = enderecosPropostos.get(existente.id) ?? [];
+      enderecosPropostos.set(existente.id, lista);
+      const igual = lista.findIndex((item) => mesmoEndereco(item.endereco, endereco));
+      const conferido = conferidor.trecho(lido.pagina, lido.trecho).conferido;
+      if (igual < 0) lista.push({ endereco, origem: lido });
+      else if (conferido && completude(endereco) > completude(lista[igual].endereco)) lista[igual] = { endereco, origem: lido };
+      continue;
+    }
+    const nova = acharNova(lido.pessoa);
+    if (nova && nova.pessoa.papel !== "advogado" && !nova.pessoa.enderecos.some((item) => mesmoEndereco(item, endereco))) nova.pessoa.enderecos.push(endereco);
+  }
+  for (const [parteId, lista] of enderecosPropostos) {
+    const existente = partes.find((parte) => parte.id === parteId);
+    if (!existente) continue;
+    for (const { endereco, origem: origemDoEndereco } of lista) {
+      incluir(origemDoEndereco, {
         tipo: "parte_endereco",
-        parteId: existente.id,
+        parteId,
         item: itemDaParte(existente, "endereco"),
-        chave: `parte_endereco:${existente.id}:${chaveDoEndereco(endereco)}`,
+        chave: `parte_endereco:${parteId}:${chaveDoEndereco(endereco)}`,
         resumo: `Endereço de ${existente.nome}: ${linhaDoEndereco(endereco)}`,
         valor: endereco,
       });
-      continue;
     }
-    const nova = novas.get(chaveDaNova(lido.pessoa));
-    if (nova && nova.pessoa.papel !== "advogado" && !nova.pessoa.enderecos.some((item) => mesmoEndereco(item, endereco))) nova.pessoa.enderecos.push(endereco);
   }
 
   for (const lido of leitura.contatos) {
@@ -577,7 +630,7 @@ export function montarSugestoes(leitura: LeituraDosAutos, contexto: ContextoDaLe
       });
       continue;
     }
-    const nova = novas.get(chaveDaNova(lido.pessoa));
+    const nova = acharNova(lido.pessoa);
     if (nova && !nova.pessoa.contatos.some((item) => chaveDoContato(item) === chaveDoContato(contato))) nova.pessoa.contatos.push(contato);
   }
 
@@ -592,6 +645,17 @@ export function montarSugestoes(leitura: LeituraDosAutos, contexto: ContextoDaLe
       valor: pessoa,
       deveConter: pessoa.documento ?? undefined,
     });
+  }
+
+  // Campo de valor único com muitas propostas (um valor por nota fiscal, por exemplo): ficam as melhores.
+  const porCampo = new Map<string, SugestaoNova[]>();
+  for (const sugestao of sugestoes.values()) {
+    if (sugestao.tipo === "campo" && sugestao.campo) porCampo.set(sugestao.campo, [...(porCampo.get(sugestao.campo) ?? []), sugestao]);
+  }
+  for (const lista of porCampo.values()) {
+    const nota = (item: SugestaoNova) => PESO_CONFIANCA[item.confianca] * 10 + (item.trechoConferido ? 5 : 0);
+    lista.sort((a, b) => nota(b) - nota(a) || (a.pagina ?? Infinity) - (b.pagina ?? Infinity));
+    for (const sobra of lista.slice(MAXIMO_POR_CAMPO)) sugestoes.delete(sobra.chave);
   }
 
   return [...sugestoes.values()].sort((a, b) => (a.pagina ?? Infinity) - (b.pagina ?? Infinity));

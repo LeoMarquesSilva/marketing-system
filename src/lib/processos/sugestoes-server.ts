@@ -1,6 +1,6 @@
 import "server-only";
 
-import { COLUNAS_SUGESTAO, carregarAutos, paraSugestao } from "./autos-server";
+import { COLUNAS_SUGESTAO, carregarAutos, descartarSeConcluido, paraSugestao } from "./autos-server";
 import type { AutosDoProcesso, PessoaSugerida, Sugestao } from "./autos-types";
 import { ProcessosError } from "./errors";
 import { criarParte, salvarParte } from "./partes-server";
@@ -78,5 +78,7 @@ export async function decidirSugestao(id: string, entrada: Record<string, unknow
   } else {
     processo = await detalharProcesso(sugestao.processoId);
   }
+  // Era a última sugestão a conferir neste PDF: ele sai do armazenamento (ficam a página e o trecho).
+  if (sugestao.documentoId) await descartarSeConcluido(sugestao.documentoId);
   return { processo, autos: await carregarAutos(sugestao.processoId) };
 }

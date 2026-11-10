@@ -10,6 +10,7 @@ Primeiro conector: **e-SAJ do TJSP**. Os próximos (PJe, eproc, Projudi) entram 
 2. O robô pergunta ao ORQESTRAI pelo próximo pedido (`POST /api/robos/autos/proximo`), abre o tribunal com a sessão do advogado, consulta o processo, abre a pasta digital e pede o PDF em arquivo único.
 3. O PDF sobe direto ao bucket privado `processos-autos` por URL assinada e o pedido é concluído. O arquivo não fica na máquina do robô.
 4. O ORQESTRAI lê o PDF com a IA e mostra as sugestões na ficha. Nada é gravado sem aprovação.
+5. O PDF é temporário também no ORQESTRAI: sai do bucket quando a última sugestão dele é decidida, ou depois de 7 dias (`PROCESSOS_AUTOS_DIAS`). Ficam as sugestões, com a página e o trecho de onde saíram.
 
 O robô fala só com as rotas `/api/robos/autos` do ORQESTRAI, com um token próprio. Ele **não** recebe a chave do banco.
 
@@ -24,7 +25,7 @@ O robô fala só com as rotas `/api/robos/autos` do ORQESTRAI, com um token pró
 ## O que precisa na máquina
 
 - Node 20.11 ou mais novo.
-- Google Chrome instalado (o robô abre o Chrome com um perfil só dele, em `perfil/`).
+- Google Chrome instalado. O robô abre o Chrome como um navegador comum, com um perfil só dele (em `perfil/`), e se conecta a ele por uma porta de depuração local (127.0.0.1, sorteada a cada execução). Aberto pelo modo de automação do Playwright, o Chrome não deixa instalar extensão, e o login por certificado precisa da extensão Web Signer.
 - Para login com certificado: o **Web Signer** da Softplan instalado no sistema, a extensão Web Signer instalada **no perfil do robô** (passo 3 abaixo) e o certificado do advogado disponível na máquina (no macOS, no Acesso às Chaves).
 
 ## Instalação
@@ -52,7 +53,7 @@ Edite o `.env`:
 - `senha`: o robô preenche CPF e senha e para no código de verificação, que o advogado informa na janela.
 - `manual`: o robô só abre a página de login e espera uma pessoa entrar, do jeito que ela preferir.
 
-Em todos os modos a sessão fica guardada em `perfil/`. Enquanto ela valer, o robô não pede login de novo.
+A sessão do e-SAJ vale enquanto o Chrome do robô estiver aberto: o tribunal usa um cookie de sessão, que se perde quando o navegador fecha. Por isso cada vez que o robô é iniciado há um login (no modo `certificado`, ele mesmo faz; nos outros, espera a pessoa). Deixar o robô rodando (`npm run robo`) evita logins repetidos.
 
 ## Primeiro uso
 
@@ -65,7 +66,7 @@ Em todos os modos a sessão fica guardada em `perfil/`. Enquanto ela valer, o ro
 
    O Chrome do robô abre na página de login do e-SAJ.
 3. Só na primeira vez, com certificado: se o e-SAJ avisar que o Web Signer não está instalado, clique no botão do próprio aviso, instale a extensão **nesta janela** e recarregue a página. A extensão fica no perfil do robô.
-4. Conclua o login. O terminal mostra "Sessão do tribunal aberta" e o navegador fecha.
+4. Conclua o login. O terminal mostra "Sessão do tribunal aberta" e o navegador fecha. Esse passo serve para instalar a extensão e conferir que o certificado funciona; o login vale de novo a cada início do robô.
 5. Antes de baixar de verdade, vale conferir se a tela do tribunal está como o conector espera:
 
    ```bash
@@ -94,6 +95,7 @@ Na ficha do processo, o painel **Autos** mostra a situação do pedido: na fila,
 | "A tela do e-SAJ mudou ou não carregou" | O tribunal mudou a página. A mensagem aponta a captura guardada em `diagnostico/`; ajuste os seletores em `src/conectores/esaj.ts` (constante `TELA`). |
 | "não mostrou o processo" | Número de outro sistema (processos novos do TJSP estão no eproc), segredo de justiça sem acesso do advogado, ou número com mais de um processo. |
 | PDF com mais de 200 MB | Passa do limite do bucket. Baixe em partes e anexe à mão. |
+| "O navegador do robô não respondeu" | Ficou uma janela do Chrome do robô aberta de uma execução anterior. Feche-a e rode de novo. |
 | "ORQESTRAI respondeu 401" ou 503 | `ROBO_AUTOS_TOKEN` diferente do servidor, ou não configurado nele. |
 
 `diagnostico/` guarda capturas e HTML das telas do tribunal, que podem conter dados de processos. A pasta fica só na máquina do robô e fora do repositório; apague o que não for mais útil.

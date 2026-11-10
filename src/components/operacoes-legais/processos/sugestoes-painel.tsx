@@ -218,6 +218,8 @@ export function PainelSugestoes({
     }
   }
 
+  // O PDF é temporário: depois de descartado, a conferência é pelo trecho (o link some).
+  const comPdf = new Set(autos.documentos.filter((documento) => !documento.arquivoRemovidoEm).map((documento) => documento.id));
   const abrir = (sugestao: Sugestao) => {
     if (sugestao.documentoId) void abrirAutos(sugestao.documentoId, sugestao.pagina).catch((falha) => onErro(mensagemDeErro(falha)));
   };
@@ -269,7 +271,7 @@ export function PainelSugestoes({
                   <div className="space-y-0.5">
                     <Proposta sugestao={sugestao} processo={processo} />
                   </div>
-                  {sugestao.trecho ? <Trecho sugestao={sugestao} onAbrir={sugestao.documentoId ? () => abrir(sugestao) : undefined} /> : null}
+                  {sugestao.trecho ? <Trecho sugestao={sugestao} onAbrir={sugestao.documentoId && comPdf.has(sugestao.documentoId) ? () => abrir(sugestao) : undefined} /> : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-2 lg:flex-col lg:items-stretch">
                   <Button size="sm" disabled={Boolean(ocupado) || parteSumiu} onClick={() => void decidirNaLista(sugestao, "aprovar")}>

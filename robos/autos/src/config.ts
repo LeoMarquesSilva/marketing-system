@@ -14,6 +14,7 @@ export interface Config {
   token: string;
   nome: string;
   navegadorCanal: string;
+  navegadorExecutavel: string;
   intervaloMs: number;
   pausaEntrePedidosMs: number;
   esperaPessoaMs: number;
@@ -47,7 +48,8 @@ export function lerConfig(): Config {
     orqestraiUrl,
     token,
     nome: texto("ROBO_NOME") || hostname(),
-    navegadorCanal: texto("NAVEGADOR_CANAL") || "chrome",
+    navegadorCanal: (texto("NAVEGADOR_CANAL") || "chrome").toLowerCase(),
+    navegadorExecutavel: texto("NAVEGADOR_EXECUTAVEL"),
     intervaloMs: numero("INTERVALO_SEGUNDOS", 30) * 1000,
     pausaEntrePedidosMs: numero("PAUSA_ENTRE_PEDIDOS_SEGUNDOS", 20) * 1000,
     esperaPessoaMs: numero("ESPERA_PESSOA_MINUTOS", 15) * 60_000,

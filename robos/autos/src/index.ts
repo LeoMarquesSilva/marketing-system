@@ -40,13 +40,13 @@ function mensagemLimpa(erro: unknown): string {
 async function principal(): Promise<void> {
   const config = lerConfig();
   const fila = new Fila(config);
-  const { contexto, pagina } = await abrirNavegador(config);
+  const { contexto, pagina, fechar } = await abrirNavegador(config);
   let encerrando = false;
   const encerrar = async () => {
     if (encerrando) return;
     encerrando = true;
     registrar("Encerrando o robô.");
-    await contexto.close().catch(() => undefined);
+    await fechar();
     process.exit(0);
   };
   process.on("SIGINT", () => void encerrar());
@@ -86,15 +86,18 @@ async function principal(): Promise<void> {
   if (modo === "login") {
     await CONECTORES[0].entrar(ambientePara(null));
     registrar("Sessão do tribunal aberta e guardada no perfil do robô.");
-    await contexto.close();
+    await fechar();
     return;
   }
 
   if (modo === "inspecionar") {
     const cnj = argumentos.find((item) => lerCnj(item));
     if (!cnj) throw new Error("Informe o número do processo: npm run inspecionar -- 0000000-00.0000.8.26.0000");
-    await CONECTORES[0].inspecionar?.(ambientePara(null), cnj);
-    await contexto.close();
+    try {
+      await CONECTORES[0].inspecionar?.(ambientePara(null), cnj);
+    } finally {
+      await fechar();
+    }
     return;
   }
 
@@ -143,7 +146,7 @@ async function principal(): Promise<void> {
     }
     if (!encerrando) await dormir(config.pausaEntrePedidosMs);
   }
-  await contexto.close().catch(() => undefined);
+  await fechar();
 }
 
 principal().catch((erro) => {
