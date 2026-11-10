@@ -8,7 +8,7 @@ import { EventLinkedAlbums } from "./event-linked-albums";
 import { useRouter, useSearchParams } from "next/navigation";
 import { EventWorkspaceHeader } from "./event-workspace-header";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/eventos/event-menu";
-import { ClipboardList, CheckSquare, ListChecks, Wallet, Truck, Users, Megaphone, Paperclip, ChartLine, History, Loader2, MousePointerClick, ChevronDown, X } from "lucide-react";
+import { ClipboardList, CheckSquare, ListChecks, Wallet, Truck, Users, Megaphone, Paperclip, ChartLine, History, Loader2, MousePointerClick, ChevronDown, Stamp, CalendarClock, Utensils, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EventoFormDialog } from "@/components/eventos/evento-form-dialog";
 import { EventoBudgetDialog } from "@/components/eventos/evento-budget-dialog";
@@ -17,6 +17,11 @@ import { EventoResumoTab } from "@/components/eventos/evento-resumo-tab";
 import { EventoTarefasTab } from "@/components/eventos/evento-tarefas-tab";
 import { EventoChecklistTab } from "@/components/eventos/evento-checklist-tab";
 import { EventoOrcamentoTab } from "@/components/eventos/evento-orcamento-tab";
+import { EventoAprovacoesTab } from "@/components/eventos/evento-aprovacoes-tab";
+import { EventoCronogramaTab } from "@/components/eventos/evento-cronograma-tab";
+import { EventoCardapioTab } from "@/components/eventos/evento-cardapio-tab";
+import type { EventApproval } from "@/lib/eventos-orcamento";
+import { fetchEventApprovals } from "@/lib/eventos-orcamento-db";
 import { EventoFornecedoresTab } from "@/components/eventos/evento-fornecedores-tab";
 import { EventoConvidadosTab } from "@/components/eventos/evento-convidados-tab";
 import { EventoComunicacaoTab } from "@/components/eventos/evento-comunicacao-tab";
@@ -61,6 +66,7 @@ import {
   upsertEventPostmortem,
   insertSupplierQuote,
   updateEventTask,
+  updateEventBudgetItem,
   updateEventHistoryPayload,
   updateEventAttachmentVisibility,
   type EventAttachment,
@@ -85,6 +91,9 @@ type TabId =
   | "resumo"
   | "tarefas"
   | "checklist"
+  | "aprovacoes"
+  | "cronograma"
+  | "cardapio"
   | "orcamento"
   | "fornecedores"
   | "convidados"
@@ -141,11 +150,22 @@ export function EventoDetailClient({
   const [attachments, setAttachments] = useState(initialAttachments);
   const [postmortem, setPostmortem] = useState(initialPostmortem);
   const [history, setHistory] = useState(initialHistory);
+  // Aprovações: carregadas aqui para a aba mostrar quantas esperam decisão.
+  const [approvals, setApprovals] = useState<EventApproval[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchEventApprovals(event.id).then((list) => {
+      if (!cancelled) setApprovals(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [event.id]);
 
   const router = useRouter();
   const searchParams = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  const tabIds: TabId[] = ["resumo", "tarefas", "checklist", "orcamento", "fornecedores", "convidados", "comunicacao", "arquivos", "rastreamento", "pos_evento", "historico"];
+  const tabIds: TabId[] = ["resumo", "tarefas", "checklist", "aprovacoes", "cronograma", "cardapio", "orcamento", "fornecedores", "convidados", "comunicacao", "arquivos", "rastreamento", "pos_evento", "historico"];
   const tab: TabId = requestedTab === "planner" ? "tarefas" : tabIds.includes(requestedTab as TabId) ? requestedTab as TabId : "resumo";
   function setTab(next: TabId, taskId?: string) {
     const params = new URLSearchParams(searchParams.toString());
@@ -637,10 +657,14 @@ export function EventoDetailClient({
     }
   }
 
+  const pendingApprovals = approvals.filter((approval) => approval.status === "pendente").length;
   const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
     { id: "resumo", label: "Visão geral", icon: <ClipboardList className="h-4 w-4" /> },
     { id: "tarefas", label: "Planner", icon: <CheckSquare className="h-4 w-4" /> },
     { id: "checklist", label: "Checklist", icon: <ListChecks className="h-4 w-4" /> },
+    { id: "aprovacoes", label: pendingApprovals ? `Aprovações (${pendingApprovals})` : "Aprovações", icon: <Stamp className="h-4 w-4" /> },
+    { id: "cronograma", label: "Cronograma", icon: <CalendarClock className="h-4 w-4" /> },
+    { id: "cardapio", label: "Comidas e bebidas", icon: <Utensils className="h-4 w-4" /> },
     { id: "orcamento", label: "Orçamento", icon: <Wallet className="h-4 w-4" /> },
     { id: "fornecedores", label: "Prestadores", icon: <Truck className="h-4 w-4" /> },
     { id: "convidados", label: "Convidados", icon: <Users className="h-4 w-4" /> },
@@ -685,7 +709,7 @@ export function EventoDetailClient({
       )}
 
       <nav aria-label="Seções do evento" className="flex items-center gap-1 overflow-x-auto border-b border-border/70 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {tabs.filter(t => ["resumo", "tarefas", "checklist", "orcamento", "fornecedores", "convidados", "arquivos"].includes(t.id)).map(t => <button key={t.id} type="button" aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)} className={cn("inline-flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-primary", tab === t.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}><span className="hidden sm:inline-flex">{t.icon}</span>{t.label}{t.id === "checklist" && <span className={cn("rounded-md px-1.5 py-0.5 text-xs tabular-nums", tab === t.id ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{tasks.filter(task => task.status !== "concluida").length}</span>}</button>)}
+        {tabs.filter(t => ["resumo", "tarefas", "checklist", "aprovacoes", "cronograma", "cardapio", "orcamento", "fornecedores", "convidados", "arquivos"].includes(t.id)).map(t => <button key={t.id} type="button" aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)} className={cn("inline-flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-primary", tab === t.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}><span className="hidden sm:inline-flex">{t.icon}</span>{t.label}{t.id === "checklist" && <span className={cn("rounded-md px-1.5 py-0.5 text-xs tabular-nums", tab === t.id ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{tasks.filter(task => task.status !== "concluida").length}</span>}</button>)}
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className={cn("min-h-11", ["comunicacao", "rastreamento", "pos_evento", "historico"].includes(tab) && "text-primary bg-primary/5")}>{["comunicacao", "rastreamento", "pos_evento", "historico"].includes(tab) ? tabs.find(t => t.id === tab)?.label : "Mais"}<ChevronDown className="size-3.5" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end">{tabs.filter(t => ["comunicacao", "rastreamento", "pos_evento", "historico"].includes(t.id)).map(t => <DropdownMenuItem key={t.id} onSelect={() => setTab(t.id)}>{t.icon}{t.label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
       </nav>
       {tab === "resumo" && (
@@ -710,9 +734,35 @@ export function EventoDetailClient({
         />
       )}
       {tab === "checklist" && <EventoChecklistTab eventId={event.id} tasks={tasks} budgetItems={budgetItems} users={users} attachments={attachments} taskContext={{ event, history, onAddFollowUp: handleTaskFollowUp, onEditFollowUp: handleEditTaskFollowUp, onDeleteFollowUp: handleDeleteTaskFollowUp, onToggleFollowUp: handleToggleTaskFollowUp, onLinkAttachment: handleLinkTaskAttachment }} isBusy={isBusy} onAddTask={handleAddTask} onUpdateTask={handleTaskFieldUpdate} onDeleteTask={handleDeleteTask} onImportBudget={handleImportChecklistBudget} onOpenBudget={item => { setEditingBudget(item); setBudgetDialogOpen(true); }} />}
+      {tab === "aprovacoes" && (
+        <EventoAprovacoesTab
+          eventId={event.id}
+          approvals={approvals}
+          onChange={setApprovals}
+          tasks={tasks}
+          attachments={attachments}
+          users={users}
+          currentUserId={profile?.id ?? null}
+          onHistory={(label, payload) => void registerHistory("aprovacao", label, payload)}
+        />
+      )}
+      {tab === "cronograma" && (
+        <EventoCronogramaTab eventId={event.id} onHistory={(label, payload) => void registerHistory("cronograma", label, payload)} />
+      )}
+      {tab === "cardapio" && (
+        <EventoCardapioTab eventId={event.id} users={users} onHistory={(label, payload) => void registerHistory("cardapio", label, payload)} />
+      )}
       {tab === "orcamento" && (
         <EventoOrcamentoTab
+          eventId={event.id}
           budgetItems={budgetItems}
+          invites={invites}
+          onRaiseAmount={async (item, amount) => {
+            const ok = await updateEventBudgetItem(item.id, { amountPlanned: amount, amountQuoted: amount });
+            if (!ok) return;
+            await reloadBudget();
+            await registerHistory("orcamento", `Transporte atualizado para ${amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`, { id: item.id, amount });
+          }}
           onCreate={() => {
             setEditingBudget(null);
             setBudgetDialogOpen(true);

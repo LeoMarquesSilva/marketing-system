@@ -12,6 +12,10 @@ export type EventKind = "evento" | "campanha";
 export type EventTaskStatus = "pendente" | "em_andamento" | "concluida";
 export type EventTaskPhase = "pre_evento" | "dia_evento" | "pos_evento";
 export type BudgetPaymentStatus = "pendente" | "parcial" | "pago";
+/** Quem cuida da despesa: vem no pacote da produtora do evento ou o escritório contrata direto. */
+export type BudgetManagedBy = "produtora" | "escritorio";
+/** Situação da linha: cotada aguardando aprovação, aprovada (comprometida) ou descartada. */
+export type BudgetApprovalStatus = "em_analise" | "aprovado" | "descartado";
 export type EventStageStatus =
   | "ideia_cadastrada"
   | "em_validacao"
@@ -121,9 +125,19 @@ export interface EventBudgetItem {
   receiptLink: string | null;
   approvedByUserId: string | null;
   notes: string | null;
+  managedBy: BudgetManagedBy;
+  approvalStatus: BudgetApprovalStatus;
+  /** Ponto de atenção curto, mostrado em destaque no orçamento. */
+  attentionNote: string | null;
+  /** Despesa cobrada por veículo (transporte): valor de cada um e quantas pessoas leva. */
+  unitAmount?: number | null;
+  unitSeats?: number | null;
   sortOrder: number;
   createdAt: string;
 }
+
+/** Campos novos do orçamento: opcionais ao criar (o banco assume "escritorio" e "aprovado"). */
+type BudgetOptionalFields = "managedBy" | "approvalStatus" | "attentionNote";
 
 export interface EventSupplier {
   id: string;
@@ -517,6 +531,17 @@ export const BUDGET_PAYMENT_LABEL: Record<BudgetPaymentStatus, string> = {
   pago: "Pago",
 };
 
+export const BUDGET_MANAGED_LABEL: Record<BudgetManagedBy, string> = {
+  escritorio: "Por nossa conta (contratamos direto)",
+  produtora: "Pacote da produtora",
+};
+
+export const BUDGET_APPROVAL_LABEL: Record<BudgetApprovalStatus, string> = {
+  em_analise: "Em análise",
+  aprovado: "Aprovado",
+  descartado: "Descartado",
+};
+
 export const COMMUNICATION_CHANNEL_LABEL: Record<EventCommunicationChannel, string> = {
   feedz: "Feedz",
   whatsapp: "WhatsApp",
@@ -614,6 +639,11 @@ type BudgetRow = {
   receipt_link: string | null;
   approved_by_user_id: string | null;
   notes: string | null;
+  managed_by?: string | null;
+  approval_status?: string | null;
+  attention_note?: string | null;
+  unit_amount?: number | string | null;
+  unit_seats?: number | null;
   sort_order: number;
   created_at: string;
 };
@@ -829,6 +859,11 @@ function rowToBudget(row: BudgetRow): EventBudgetItem {
     receiptLink: row.receipt_link,
     approvedByUserId: row.approved_by_user_id,
     notes: row.notes,
+    managedBy: row.managed_by === "produtora" ? "produtora" : "escritorio",
+    approvalStatus: row.approval_status === "em_analise" || row.approval_status === "descartado" ? row.approval_status : "aprovado",
+    attentionNote: row.attention_note?.trim() || null,
+    unitAmount: row.unit_amount != null ? Number(row.unit_amount) : null,
+    unitSeats: row.unit_seats ?? null,
     sortOrder: row.sort_order,
     createdAt: row.created_at,
   };
@@ -1712,7 +1747,7 @@ export async function fetchEventBudgetItems(
 }
 
 export async function insertEventBudgetItem(
-  input: Omit<EventBudgetItem, "id" | "createdAt">
+  input: Omit<EventBudgetItem, "id" | "createdAt" | BudgetOptionalFields> & Partial<Pick<EventBudgetItem, BudgetOptionalFields>>
 ): Promise<EventBudgetItem | null> {
   const { data, error } = await supabase
     .from("event_budget_items")
@@ -1732,6 +1767,9 @@ export async function insertEventBudgetItem(
       receipt_link: input.receiptLink,
       approved_by_user_id: input.approvedByUserId,
       notes: input.notes,
+      managed_by: input.managedBy ?? "escritorio",
+      approval_status: input.approvalStatus ?? "aprovado",
+      attention_note: input.attentionNote ?? null,
       sort_order: input.sortOrder,
     })
     .select()
@@ -1765,6 +1803,11 @@ export async function updateEventBudgetItem(
   if (partial.receiptLink !== undefined) payload.receipt_link = partial.receiptLink;
   if (partial.approvedByUserId !== undefined) payload.approved_by_user_id = partial.approvedByUserId;
   if (partial.notes !== undefined) payload.notes = partial.notes;
+  if (partial.managedBy != null) payload.managed_by = partial.managedBy;
+  if (partial.approvalStatus != null) payload.approval_status = partial.approvalStatus;
+  if (partial.attentionNote !== undefined) payload.attention_note = partial.attentionNote;
+  if (partial.unitAmount !== undefined) payload.unit_amount = partial.unitAmount;
+  if (partial.unitSeats !== undefined) payload.unit_seats = partial.unitSeats;
   if (partial.sortOrder != null) payload.sort_order = partial.sortOrder;
 
   const { error } = await supabase.from("event_budget_items").update(payload).eq("id", id);

@@ -7,7 +7,7 @@ import { supabase } from "@/utils/supabase/client";
 import { importEventBudgetChecklist, insertEventTask, updateEventTask } from "./eventos";
 
 const task = (partial: Partial<EventTask>): EventTask => ({ id: "t1", eventId: "e1", title: "Conferir montagem", description: null, assigneeId: null, dueDate: null, status: "pendente", phase: null, sortOrder: 0, marketingRequestId: null, createdAt: "", updatedAt: "", ...partial });
-const expense = (partial: Partial<EventBudgetItem> = {}): EventBudgetItem => ({ id: "b1", eventId: "e1", category: "decoracao", description: "Arranjos", vendorName: null, amountPlanned: 100, amountQuoted: null, amountActual: null, paymentStatus: "pendente", dueDate: null, paymentDueDate: null, paymentPaidDate: null, invoiceLink: null, receiptLink: null, approvedByUserId: null, notes: "Conferir cores", sortOrder: 0, createdAt: "", ...partial });
+const expense = (partial: Partial<EventBudgetItem> = {}): EventBudgetItem => ({ id: "b1", eventId: "e1", category: "decoracao", description: "Arranjos", vendorName: null, amountPlanned: 100, amountQuoted: null, amountActual: null, paymentStatus: "pendente", dueDate: null, paymentDueDate: null, paymentPaidDate: null, invoiceLink: null, receiptLink: null, approvedByUserId: null, notes: "Conferir cores", managedBy: "escritorio", approvalStatus: "aprovado", attentionNote: null, sortOrder: 0, createdAt: "", ...partial });
 
 describe("checklist por categoria", () => {
   it("agrupa categorias sem duplicar por acento, espaços ou caixa e conserva tarefas antigas", () => {

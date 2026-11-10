@@ -38,10 +38,14 @@ import { EventoSupplierDialog } from "@/components/eventos/evento-supplier-dialo
 import { SupplierSelectSearch } from "@/components/eventos/supplier-select-search";
 import { TermHint } from "@/components/eventos/term-hint";
 import {
+  BUDGET_APPROVAL_LABEL,
   BUDGET_CATEGORIES,
+  BUDGET_MANAGED_LABEL,
   BUDGET_PAYMENT_LABEL,
   insertEventBudgetItem,
   updateEventBudgetItem,
+  type BudgetApprovalStatus,
+  type BudgetManagedBy,
   type BudgetPaymentStatus,
   type EventBudgetItem,
   type EventSupplier,
@@ -66,6 +70,9 @@ const schema = z.object({
   receipt_link: z.string().optional(),
   approved_by_user_id: z.string().optional(),
   notes: z.string().optional(),
+  managed_by: z.enum(["produtora", "escritorio"]),
+  approval_status: z.enum(["em_analise", "aprovado", "descartado"]),
+  attention_note: z.string().max(240, "Use até 240 caracteres").optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -98,7 +105,7 @@ export function EventoBudgetDialog({
   const [supplierPrefillName, setSupplierPrefillName] = useState("");
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { category: "outros", amount_planned: "", payment_status: "pendente" },
+    defaultValues: { category: "outros", amount_planned: "", payment_status: "pendente", managed_by: "escritorio", approval_status: "aprovado" },
   });
 
   useEffect(() => {
@@ -119,6 +126,9 @@ export function EventoBudgetDialog({
         receipt_link: item.receiptLink ?? "",
         approved_by_user_id: item.approvedByUserId ?? "__none__",
         notes: item.notes ?? "",
+        managed_by: item.managedBy,
+        approval_status: item.approvalStatus,
+        attention_note: item.attentionNote ?? "",
       });
     } else {
       form.reset({
@@ -136,6 +146,9 @@ export function EventoBudgetDialog({
         receipt_link: "",
         approved_by_user_id: "__none__",
         notes: "",
+        managed_by: "escritorio",
+        approval_status: "aprovado",
+        attention_note: "",
       });
     }
   }, [open, item, form]);
@@ -159,6 +172,9 @@ export function EventoBudgetDialog({
           ? values.approved_by_user_id
           : null,
       notes: values.notes?.trim() || null,
+      managedBy: values.managed_by,
+      approvalStatus: values.approval_status,
+      attentionNote: values.attention_note?.trim() || null,
     };
 
     let ok = false;
@@ -233,6 +249,41 @@ export function EventoBudgetDialog({
                 <FormItem>
                   <FormLabel>Descrição <span className="text-red-500">*</span></FormLabel>
                   <FormControl><Input {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <FormField control={form.control} name="managed_by" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Quem cuida</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        {(Object.keys(BUDGET_MANAGED_LABEL) as BudgetManagedBy[]).map((key) => (
+                          <SelectItem key={key} value={key}>{BUDGET_MANAGED_LABEL[key]}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="approval_status" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Situação</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        {(Object.keys(BUDGET_APPROVAL_LABEL) as BudgetApprovalStatus[]).map((key) => (
+                          <SelectItem key={key} value={key}>{BUDGET_APPROVAL_LABEL[key]}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )} />
+              </div>
+              <FormField control={form.control} name="attention_note" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Ponto de atenção</FormLabel>
+                  <FormControl><Input {...field} value={field.value ?? ""} placeholder="Ex.: entrega prevista para depois do evento" /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
