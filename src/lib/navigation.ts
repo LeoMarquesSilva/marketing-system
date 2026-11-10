@@ -17,6 +17,7 @@ import {
   CalendarClock,
   CalendarRange,
   Camera,
+  ChartNoAxesColumn,
   ClipboardList,
   Clapperboard,
   Coffee,
@@ -53,6 +54,9 @@ import {
 } from "lucide-react";
 import {
   TEAM_POSTS_PATH,
+  HOME_PATH,
+  MARKETING_DASHBOARD_PATH,
+  canSeeHome,
   canSeeTeamPosts,
   TEAM_SURVEYS_KEY,
   hasTeamSurveysAccess,
@@ -125,17 +129,11 @@ export const NAV_FRONTS: NavFront[] = [
     untitled: true,
     features: [
       {
-        id: "dashboard",
-        label: "Dashboard",
-        icon: LayoutDashboard,
-        pages: [{ href: "/", label: "Dashboard" }],
-      },
-      {
+        // Tela inicial de todo mundo: a pessoa, as pendências dela, atalhos e a equipe.
         id: "inicio",
         label: "Início",
-        title: "Meu desempenho",
         icon: House,
-        pages: [{ href: "/conteudo/inicio", label: "Início" }],
+        pages: [{ href: HOME_PATH, label: "Início" }],
       },
     ],
   },
@@ -170,6 +168,22 @@ export const NAV_FRONTS: NavFront[] = [
         icon: Columns3,
         pages: [
           { href: "/planner", label: "Quadro" },
+      {
+        // Números do Planner (solicitações, SLA, timesheet): era a rota "/" até 10/11/2026.
+        id: "dashboard",
+        label: "Dashboard",
+        title: "Dashboard de marketing",
+        icon: LayoutDashboard,
+        pages: [{ href: MARKETING_DASHBOARD_PATH, label: "Dashboard" }],
+      },
+      {
+        // Desempenho no Instagram dos posts que a pessoa pediu (colaborador de conteúdo).
+        id: "meu-desempenho",
+        label: "Meu desempenho",
+        shortLabel: "Desempenho",
+        icon: ChartNoAxesColumn,
+        pages: [{ href: "/conteudo/inicio", label: "Meu desempenho" }],
+      },
           { href: "/solicitacoes", label: "Solicitações" },
           { href: "/vios-tarefas", label: "Tarefas do VIOS" },
         ],
@@ -535,6 +549,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
     };
   }
 
+      if (href === HOME_PATH) return canSeeHome(profile);
   if (isContentCollaborator(profile)) {
     return (href) => {
       if (COLLABORATOR_PAGES.has(href)) return true;
@@ -554,6 +569,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
     if (isPe27Path(href)) return hasPe27Access(profile);
     if (href.startsWith("/operacoes-legais/")) return hasOperacoesLegaisAccess(profile);
     switch (href) {
+      if (href === HOME_PATH) return canSeeHome(profile);
       case "/conteudo/inicio":
         return false;
       case "/nfc":
@@ -571,6 +587,8 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
       case TEAM_POSTS_PATH:
         return teamPosts;
       case "/rh/ferias":
+      case HOME_PATH:
+        return canSeeHome(profile);
         return isAdmin || feriasView;
       case "/admin":
         return isAdmin;

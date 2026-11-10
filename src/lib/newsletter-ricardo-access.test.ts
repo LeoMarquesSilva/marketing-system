@@ -63,7 +63,7 @@ describe("acesso do perfil tipo Ricardo à Newsletter", () => {
     ).toBe(true);
   });
 
-  it("cai na home de conteúdo como primeira rota", () => {
+  it("cai na tela de desempenho como primeira rota", () => {
     expect(firstAllowedPath(RICARDO_LIKE)).toBe("/conteudo/inicio");
   });
 
