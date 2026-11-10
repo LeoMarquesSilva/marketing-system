@@ -2,6 +2,10 @@ import "server-only";
 
 import { COLUNAS_CREDITO, COLUNAS_PROCESSO, campoPorChave, coagirValor, textoDoValor, type ValorCampo, type Valores } from "./campos";
 import { ProcessosError } from "./errors";
+import { chaveNome, usuarioPorSigla } from "@/lib/vistagem/agendamento";
+import { pessoasPorNome } from "@/lib/vistagem/pessoas-server";
+import { carregarCatalogoProcessos } from "@/lib/vistagem/sama";
+import { conferirEscolhas } from "./opcoes-server";
 import { ITENS_SANEAMENTO, calcularPreenchimento } from "./preenchimento";
 import { db, emLotes, falhou, gravacaoSimulada, type Ator } from "./server";
 import type { Alteracao, Contato, Endereco, EnvioVios, OrigemAlteracao, Parte, ProcessoDetalhe, ProcessoResumo, StatusEnvio } from "./types";
@@ -158,6 +162,47 @@ async function carregarLinha(id: string): Promise<Linha> {
   return data as unknown as Linha;
 }
 
+/** Parece sigla de usuário do VIOS ("ANG", "FVA"), não um nome. */
+const SIGLA = /^[A-ZÀ-Ý]{2,5}$/;
+
+/**
+ * Equipe do processo para o cabeçalho: o VIOS guarda o auxiliar pela sigla ("ANG"); o nome completo vem do catálogo de
+ * usuários do VIOS (o mesmo da Vistagem), primeiro o da área do processo. Fotos pelo nome completo. É enfeite: se o
+ * catálogo ou as fotos falharem, a ficha abre com a sigla e as iniciais.
+ */
+async function equipeDoProcesso(valores: Valores): Promise<{ fotos: Record<string, string>; nomesDaEquipe: Record<string, string> }> {
+  const auxiliares = (Array.isArray(valores.auxiliares) ? valores.auxiliares : []).filter((nome): nome is string => typeof nome === "string" && Boolean(nome));
+  const nomesDaEquipe: Record<string, string> = {};
+  const siglas = auxiliares.filter((nome) => SIGLA.test(nome.trim()));
+  if (siglas.length) {
+    try {
+      const areas = await carregarCatalogoProcessos();
+      const daArea = areas.find((item) => chaveNome(item.area) === chaveNome(typeof valores.area === "string" ? valores.area : ""))?.usuarios ?? [];
+      const todos = [...new Map(areas.flatMap((item) => item.usuarios).map((usuario) => [usuario.id, usuario])).values()];
+      for (const sigla of siglas) {
+        const nome = usuarioPorSigla(sigla, daArea)?.nome ?? usuarioPorSigla(sigla, todos)?.nome;
+        if (nome) nomesDaEquipe[sigla] = nome;
+      }
+    } catch (erro) {
+      console.error("[processos] siglas dos auxiliares", erro instanceof Error ? erro.message : erro);
+    }
+    // Sem o catálogo do VIOS (ou sigla que ele não resolveu): a sigla pelo nome de quem está ativo no RH.
+    const faltam = siglas.filter((sigla) => !nomesDaEquipe[sigla]);
+    if (faltam.length) {
+      const { data, error } = await db().from("hr_employees").select("id, full_name").eq("is_active", true).limit(5000);
+      if (error) console.error("[processos] siglas dos auxiliares (RH)", error.message);
+      const ativos = ((data ?? []) as { id: string; full_name: string | null }[]).filter((pessoa) => pessoa.full_name).map((pessoa) => ({ id: pessoa.id, nome: pessoa.full_name as string }));
+      for (const sigla of faltam) {
+        const nome = usuarioPorSigla(sigla, ativos)?.nome;
+        if (nome) nomesDaEquipe[sigla] = nome;
+      }
+    }
+  }
+  const equipe = [valores.advogado_responsavel, ...auxiliares.map((nome) => nomesDaEquipe[nome] ?? nome)].filter((nome): nome is string => typeof nome === "string" && Boolean(nome));
+  const fotos = equipe.length ? await pessoasPorNome(equipe).then((pessoas) => pessoas.fotos, () => ({})) : {};
+  return { fotos, nomesDaEquipe };
+}
+
 export async function detalharProcesso(id: string): Promise<ProcessoDetalhe> {
   const linha = await carregarLinha(id);
   const [historico, envios] = await Promise.all([
@@ -169,10 +214,13 @@ export async function detalharProcesso(id: string): Promise<ProcessoDetalhe> {
   const valores = valoresDaLinha(linha);
   const partes = partesDaLinha(linha);
   const naoAplicaveis = (linha.itens_nao_aplicaveis as string[] | null) ?? [];
+  const { fotos, nomesDaEquipe } = await equipeDoProcesso(valores);
   return {
     id,
     valores,
     partes,
+    fotos,
+    nomesDaEquipe,
     historico: (historico.data ?? []).map(
       (item): Alteracao => ({
         id: item.id as string,
@@ -236,12 +284,19 @@ export async function atualizarProcesso(id: string, entrada: Record<string, unkn
   const patchCredito: Valores = {};
   const mudancas: { campo: string; anterior: string; novo: string; vios: boolean }[] = [];
 
+  const alterados: Record<string, ValorCampo> = {};
   for (const [chave, bruto] of Object.entries(entrada)) {
     const item = campoPorChave(chave);
     if (!item) throw new ProcessosError(`Campo desconhecido: ${chave}.`, 400);
     if (!item.editavel) throw new ProcessosError(`O campo "${item.rotulo}" não pode ser editado aqui.`, 400);
     const valor = coagirValor(item, bruto);
     if (valor === undefined) throw new ProcessosError(`Valor inválido para "${item.rotulo}".`, 400);
+    if (textoDoValor(item, atuais[chave]) !== textoDoValor(item, valor)) alterados[chave] = valor;
+  }
+  // Campo de escolha só aceita opção ativa do cadastro (só os alterados: valor antigo fora da lista não trava).
+  const conferidos = await conferirEscolhas(alterados);
+  for (const [chave, valor] of Object.entries(conferidos)) {
+    const item = campoPorChave(chave)!;
     const anterior = textoDoValor(item, atuais[chave]);
     const novo = textoDoValor(item, valor);
     if (anterior === novo) continue;

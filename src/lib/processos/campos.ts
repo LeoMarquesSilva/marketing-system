@@ -40,9 +40,11 @@ export interface CampoProcesso {
   /** Está na lista de campos da equipe de Rec. Crédito (entra no saneamento e na planilha). */
   naLista?: boolean;
   opcoes?: { valor: string; rotulo: string }[];
+  /** Campo de escolha: as opções vêm do cadastro desta lista (proc_opcoes), como nos Cadastros do VIOS. */
+  lista?: string;
 }
 
-type Extra = Partial<Pick<CampoProcesso, "tabela" | "editavel" | "colunasVios" | "colunaSioe" | "naLista" | "opcoes">>;
+type Extra = Partial<Pick<CampoProcesso, "tabela" | "editavel" | "colunasVios" | "colunaSioe" | "naLista" | "opcoes" | "lista">>;
 
 function campo(chave: string, rotulo: string, grupo: GrupoCampo, tipo: TipoCampo, origem: OrigemCampo, extra: Extra = {}): CampoProcesso {
   return { chave, rotulo, grupo, tipo, origem, tabela: "processo", editavel: true, ...extra };
@@ -60,29 +62,31 @@ export const CAMPOS: CampoProcesso[] = [
   campo("cnj", "N.º CNJ", "identificacao", "texto", "vios", { colunaSioe: "nro_cnj", naLista: true }),
   campo("outros_numeros", "Outros números do processo", "identificacao", "lista", "vios", { naLista: true }),
   campo("pasta_interna", "Pasta interna", "identificacao", "texto", "vios", { colunasVios: ["Pasta Interna"] }),
-  campo("vinculo", "Vínculo", "identificacao", "texto", "vios", { colunasVios: ["Vínculo"] }),
+  campo("vinculo", "Vínculo", "identificacao", "texto", "vios", { lista: "vinculo", colunasVios: ["Vínculo"] }),
 
   // Classificação
-  campo("departamento", "Departamento", "classificacao", "texto", "vios", { colunasVios: ["Departamento"], colunaSioe: "departamento" }),
-  campo("area", "Área", "classificacao", "texto", "vios", { colunasVios: ["Área"], colunaSioe: "area", naLista: true }),
-  campo("materia", "Matéria", "classificacao", "texto", "vios", { colunasVios: ["Matéria", "Matérias"], colunaSioe: "materia" }),
-  campo("acao", "Ação", "classificacao", "texto", "vios", { colunasVios: ["Ação"], colunaSioe: "acao", naLista: true }),
-  campo("fase", "Fase", "classificacao", "texto", "vios", { colunasVios: ["Fase", "Fase processual"], colunaSioe: "fase_processual", naLista: true }),
+  campo("departamento", "Departamento", "classificacao", "texto", "vios", { lista: "departamento", colunasVios: ["Departamento"], colunaSioe: "departamento" }),
+  campo("area", "Área", "classificacao", "texto", "vios", { lista: "area", colunasVios: ["Área"], colunaSioe: "area", naLista: true }),
+  campo("materia", "Matéria", "classificacao", "texto", "vios", { lista: "materia", colunasVios: ["Matéria", "Matérias"], colunaSioe: "materia" }),
+  campo("acao", "Ação", "classificacao", "texto", "vios", { lista: "acao", colunasVios: ["Ação"], colunaSioe: "acao", naLista: true }),
+  campo("fase", "Fase", "classificacao", "texto", "vios", { lista: "fase", colunasVios: ["Fase", "Fase processual"], colunaSioe: "fase_processual", naLista: true }),
   campo("situacao", "Situação do processo", "classificacao", "texto", "vios", {
+    lista: "situacao",
     colunasVios: ["Situação do Processo", "Situação"],
     colunaSioe: "situacao_processo",
     naLista: true,
   }),
-  campo("etiquetas", "Etiquetas", "classificacao", "lista", "vios", { colunaSioe: "etiquetas", naLista: true }),
-  campo("jurisdicao_atual", "Jurisdição atual", "classificacao", "texto", "vios", { colunasVios: ["Jurisdição", "Jurisdição Atual"], naLista: true }),
+  campo("etiquetas", "Etiquetas", "classificacao", "lista", "vios", { lista: "etiquetas", colunaSioe: "etiquetas", naLista: true }),
+  campo("jurisdicao_atual", "Jurisdição atual", "classificacao", "texto", "vios", { lista: "jurisdicao", colunasVios: ["Jurisdição", "Jurisdição Atual"], naLista: true }),
 
   // Responsáveis e cliente
   campo("advogado_responsavel", "Advogado responsável", "responsaveis", "texto", "vios", {
+    lista: "colaboradores",
     colunasVios: ["Advogado responsável"],
     colunaSioe: "advogado_responsavel",
     naLista: true,
   }),
-  campo("auxiliares", "Auxiliares", "responsaveis", "lista", "vios", { colunasVios: ["Aux.", "Auxiliares"], naLista: true }),
+  campo("auxiliares", "Auxiliares", "responsaveis", "lista", "vios", { lista: "colaboradores", colunasVios: ["Aux.", "Auxiliares"], naLista: true }),
   campo("grupo_cliente", "Grupo do cliente", "responsaveis", "texto", "vios", {
     editavel: false,
     colunasVios: ["Grupo Cliente"],
@@ -90,20 +94,21 @@ export const CAMPOS: CampoProcesso[] = [
     naLista: true,
   }),
   campo("cliente", "Cliente", "responsaveis", "texto", "vios", { editavel: false, colunasVios: ["Cliente"], colunaSioe: "cliente" }),
-  campo("polo_cliente", "Polo do cliente", "responsaveis", "texto", "vios", { colunasVios: ["Polo do cliente"], naLista: true }),
+  campo("polo_cliente", "Polo do cliente", "responsaveis", "texto", "vios", { lista: "polo_cliente", colunasVios: ["Polo do cliente"], naLista: true }),
   campo("contrato_cliente", "Contrato do cliente", "responsaveis", "texto", "vios", { colunasVios: ["Contrato do cliente"] }),
 
   // Órgão
-  campo("justica", "Justiça", "orgao", "texto", "vios", { colunasVios: ["Justiça", "Tipo de Justiça"], naLista: true }),
-  campo("sistema_tribunal", "Sistema do tribunal", "orgao", "texto", "vios", { colunasVios: ["Sistema do Tribunal"], colunaSioe: "sistema_tribunal" }),
-  campo("uf", "UF", "orgao", "texto", "vios", { colunasVios: ["UF"], naLista: true }),
-  campo("cidade", "Cidade", "orgao", "texto", "vios", { colunasVios: ["Cidade"], naLista: true }),
+  campo("justica", "Justiça", "orgao", "texto", "vios", { lista: "justica", colunasVios: ["Justiça", "Tipo de Justiça"], naLista: true }),
+  campo("sistema_tribunal", "Sistema do tribunal", "orgao", "texto", "vios", { lista: "sistema_tribunal", colunasVios: ["Sistema do Tribunal"], colunaSioe: "sistema_tribunal" }),
+  campo("uf", "UF", "orgao", "texto", "vios", { lista: "uf", colunasVios: ["UF"], naLista: true }),
+  campo("cidade", "Cidade", "orgao", "texto", "vios", { lista: "cidade", colunasVios: ["Cidade"], naLista: true }),
   campo("comarca_tribunal", "Comarca / Tribunal / Órgão adm.", "orgao", "texto", "vios", {
+    lista: "comarca",
     colunasVios: ["Comarcas / Tribunais / Órgãos Adm."],
     naLista: true,
   }),
-  campo("orgao_julgador", "Órgão julgador (vara/câmara)", "orgao", "texto", "vios", { colunasVios: ["Órgão Julgador (Vara/Camara)"] }),
-  campo("tipo_orgao_julgador", "Tipo de órgão julgador", "orgao", "texto", "vios", { colunasVios: ["Tipo de órgão julgador (vara/camara)"] }),
+  campo("orgao_julgador", "Órgão julgador (vara/câmara)", "orgao", "texto", "vios", { lista: "orgao_julgador", colunasVios: ["Órgão Julgador (Vara/Camara)"] }),
+  campo("tipo_orgao_julgador", "Tipo de órgão julgador", "orgao", "texto", "vios", { lista: "tipo_orgao_julgador", colunasVios: ["Tipo de órgão julgador (vara/camara)"] }),
   campo("magistrado", "Magistrado", "orgao", "texto", "vios", { colunasVios: ["Magistrado"] }),
 
   // Datas
