@@ -1,5 +1,5 @@
 import { chaveNome, nomesDasPessoas, revisorFicaNaTarefa } from "./agendamento";
-import { ehCienciaDosAgendamentos, ehCienciaNf } from "./ciencia-agendamentos";
+import { ehCienciaDosAgendamentos, ehCienciaNf, ehVerificarRenuncia } from "./ciencia-agendamentos";
 import type { TarefaNoVios } from "./fila-vios";
 import type { AgendamentoResumo, ConferenciaItem } from "./types";
 
@@ -214,19 +214,28 @@ export function foiCheckAutomatico(checadoPor: string | null, nota: string | nul
   return !checadoPor && Boolean(nota?.startsWith(PREFIXO_CHECK_AUTOMATICO));
 }
 
+/** Tipo da tarefa única que pode ter o check automático; null para os outros tipos. */
+function tipoDoCheckAutomatico(tarefa: string): string | null {
+  if (ehCienciaNf(tarefa)) return "CIÊNCIA NF";
+  if (ehVerificarRenuncia(tarefa)) return "VERIFICAR RENÚNCIA";
+  return null;
+}
+
 /**
- * Check automático (pedido de 09/11/2026): a publicação com uma tarefa só, a CIÊNCIA NF (Nada a Fazer), gravada de
- * verdade no VIOS (não simulada), com o CI devolvido pelo robô e a data e o responsável iguais ao pedido, vira
- * "Check OK" sem passar pela controladoria. Devolve a nota do check; null quando a publicação segue para o check manual
- * (outra tarefa junto, simulação, robô sem o CI ou sem os dados, ou alguma divergência).
+ * Check automático: a publicação com uma tarefa só, a CIÊNCIA NF (Nada a Fazer, pedido de 09/11/2026) ou a VERIFICAR
+ * RENÚNCIA (pedido de 10/11/2026), gravada de verdade no VIOS (não simulada), com o CI devolvido pelo robô e a data e o
+ * responsável iguais ao pedido, vira "Check OK" sem passar pela controladoria. Devolve a nota do check; null quando a
+ * publicação segue para o check manual (outra tarefa junto, simulação, robô sem o CI ou sem os dados, ou alguma
+ * divergência).
  */
 export function notaDoCheckAutomatico(agendamentos: AgendamentoResumo[]): string | null {
   if (agendamentos.length !== 1) return null;
   const [tarefa] = agendamentos;
-  if (!ehCienciaNf(tarefa.tarefa) || tarefa.envioStatus !== "concluido" || tarefa.envioSimulado) return null;
+  const tipo = tipoDoCheckAutomatico(tarefa.tarefa);
+  if (!tipo || tarefa.envioStatus !== "concluido" || tarefa.envioSimulado) return null;
   const comparacao = compararTarefa(tarefa);
   if (!comparacao.ci || comparacao.situacao !== "confere") return null;
-  return `${PREFIXO_CHECK_AUTOMATICO} CIÊNCIA NF única agendada no VIOS (CI ${comparacao.ci}), com a data e o responsável do pedido.`;
+  return `${PREFIXO_CHECK_AUTOMATICO} ${tipo} única agendada no VIOS (CI ${comparacao.ci}), com a data e o responsável do pedido.`;
 }
 
 /** Tipo de agendamento para o filtro do Check: a Ciência NF à parte; as outras pela classe (Prazo, Providência, Compromisso). */
