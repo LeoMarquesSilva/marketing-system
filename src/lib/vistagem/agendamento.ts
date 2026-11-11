@@ -58,6 +58,8 @@ export interface AgendamentoEntrada {
   diasPrazo?: number | null;
   /** PRAZO com atalho: dias úteis ou corridos, escolhido no modal. */
   contagemPrazo?: ContagemPrazo | null;
+  /** PRAZO: de onde vieram os dias ou a fatal (botões, calendário, prazo legal, publicação, IA). */
+  origemPrazo?: string | null;
   /** COMPROMISSO: HH:MM da audiência, perícia, sessão… (obrigatório). */
   hora?: string | null;
   /** COMPROMISSO: HH:MM em que termina (Hora final no VIOS); sem ela, 1 hora depois da inicial. */
@@ -81,6 +83,8 @@ export interface AgendamentoValidado {
   diasPrazo: number | null;
   /** Só com diasPrazo; sem atalho (fatal no calendário), null. */
   contagemPrazo: ContagemPrazo | null;
+  /** Só no Prazo com fatal; sem saber de onde veio, null. */
+  origemPrazo: OrigemPrazo | null;
   /** COMPROMISSO: HH:MM; nas outras classes, null. */
   hora: string | null;
   /** COMPROMISSO: Hora final no VIOS (HH:MM, depois da inicial); nas outras classes, null. */
@@ -93,6 +97,32 @@ export interface AgendamentoValidado {
   revisorId: string | null;
   observacao: string | null;
   fluxoDatas: DataDoFluxo[];
+}
+
+/**
+ * De onde vieram os dias ou a data fatal do Prazo, para a Conferência saber (pedido de 11/11/2026): os botões de dias,
+ * a data no calendário, o prazo legal que a tarefa traz sozinha, o "Usar N dias" do leitor da publicação ou a sugestão
+ * da IA.
+ */
+export const ORIGENS_PRAZO = ["atalho", "calendario", "tarefa", "publicacao", "sugestao_ia"] as const;
+export type OrigemPrazo = (typeof ORIGENS_PRAZO)[number];
+
+export const ROTULO_ORIGEM_PRAZO: Record<OrigemPrazo, string> = {
+  atalho: "Escolhido nos botões de dias",
+  calendario: "Data fatal escolhida no calendário",
+  tarefa: "Prazo legal da tarefa, preenchido sozinho",
+  publicacao: "Dias lidos na publicação",
+  sugestao_ia: "Da sugestão da IA",
+};
+
+/** Origens que só existem com os dias marcados: sem eles, a fatal foi mudada no calendário depois. */
+const ORIGENS_COM_DIAS: readonly OrigemPrazo[] = ["atalho", "tarefa", "publicacao"];
+
+/** A origem que vale gravar: só as conhecidas, e as de dias só com os dias marcados. */
+export function origemDoPrazo(origem: unknown, diasPrazo: number | null): OrigemPrazo | null {
+  const valida = ORIGENS_PRAZO.find((item) => item === origem) ?? null;
+  if (!valida) return null;
+  return ORIGENS_COM_DIAS.includes(valida) && !diasPrazo ? null : valida;
 }
 
 export const MAX_AGENDAMENTOS = 10;
@@ -448,6 +478,7 @@ export function validarAgendamentos(
     const diasPrazo = prazo && !semFatal && Number.isInteger(entrada.diasPrazo) && (entrada.diasPrazo ?? 0) > 0 ? (entrada.diasPrazo as number) : null;
     const contagemPrazo = diasPrazo ? CONTAGENS_PRAZO.find((contagem) => contagem === entrada.contagemPrazo) ?? null : null;
     if (diasPrazo && !contagemPrazo) erros.push(`${n}: escolha se o prazo é em dias úteis ou corridos.`);
+    const origemPrazo = fatal ? origemDoPrazo(entrada.origemPrazo, diasPrazo) : null;
     // O que a pessoa mudou no fluxo do VIOS: só de tarefas que o fluxo do tipo cria, com data válida e/ou
     // responsáveis da lista de usuários do VIOS (com o nome como está no VIOS, que o robô procura).
     let pessoaForaDoVios = false;
@@ -501,6 +532,7 @@ export function validarAgendamentos(
       dataFatal: fatal,
       diasPrazo,
       contagemPrazo,
+      origemPrazo,
       hora,
       horaFim,
       dataLimite,

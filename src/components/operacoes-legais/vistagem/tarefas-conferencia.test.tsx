@@ -14,6 +14,7 @@ function agendamento(campos: Partial<AgendamentoResumo> = {}): AgendamentoResumo
     dataFatal: null,
     diasPrazo: null,
     contagemPrazo: null,
+    origemPrazo: null,
     hora: null,
     horaFim: null,
     dataLimite: null,
@@ -113,5 +114,34 @@ describe("CartoesTarefas: prazo apertado", () => {
 
   it("com o Enviar vistado ainda valendo, nada muda", () => {
     expect(cartoes(prazo({ data: "2026-11-12", enviarHoje: null }), { hoje: "2026-11-11" })).not.toContain("que já passou");
+  });
+});
+
+describe("CartoesTarefas: de onde veio o prazo (pedido de 11/11/2026)", () => {
+  const prazo = (extra: Partial<AgendamentoResumo> = {}) =>
+    agendamento({ etiqueta: "PRAZO", tarefa: "APRESENTAR/IMPUGNAR CÁLCULOS", tarefaId: "500", data: "2027-01-22", dataFatal: "2027-01-27", revisor: "Lucas Sebinel Miranda", ...extra });
+  const texto = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+
+  it("embaixo dos dias, diz se foi nos botões de dias", () => {
+    const html = texto(cartoes(prazo({ diasPrazo: 30, contagemPrazo: "uteis", origemPrazo: "atalho" })));
+    expect(html).toContain("30 dias úteis após a publicação Escolhido nos botões de dias");
+  });
+
+  it("data escolhida no calendário: sem dias, só a origem", () => {
+    const html = texto(cartoes(prazo({ origemPrazo: "calendario" })));
+    expect(html).toContain("Data fatal escolhida no calendário");
+    expect(html).not.toContain("após a publicação");
+  });
+
+  it("as outras origens têm o seu texto", () => {
+    expect(texto(cartoes(prazo({ diasPrazo: 15, contagemPrazo: "uteis", origemPrazo: "tarefa" })))).toContain("Prazo legal da tarefa, preenchido sozinho");
+    expect(texto(cartoes(prazo({ diasPrazo: 30, contagemPrazo: "uteis", origemPrazo: "publicacao" })))).toContain("Dias lidos na publicação");
+    expect(texto(cartoes(prazo({ diasPrazo: 30, contagemPrazo: "uteis", origemPrazo: "sugestao_ia" })))).toContain("Da sugestão da IA");
+  });
+
+  it("vistada antes desta mudança (sem origem): fica como era", () => {
+    const html = texto(cartoes(prazo({ diasPrazo: 30, contagemPrazo: "uteis" })));
+    expect(html).toContain("30 dias úteis após a publicação");
+    expect(html).not.toMatch(/botões de dias|calendário|preenchido sozinho|lidos na publicação|sugestão da IA/);
   });
 });

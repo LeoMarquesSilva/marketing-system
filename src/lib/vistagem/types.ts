@@ -1,3 +1,4 @@
+import type { OrigemPrazo } from "./agendamento";
 import type { ContagemPrazo } from "./dias-uteis";
 import type { TarefaNoVios } from "./fila-vios";
 import type { FluxoDaTarefa } from "./fluxo-vios";
@@ -309,6 +310,8 @@ export interface AgendamentoResumo {
   diasPrazo: number | null;
   /** Contagem do atalho de dias (úteis/corridos); null sem atalho. */
   contagemPrazo: ContagemPrazo | null;
+  /** Prazo: de onde vieram os dias ou a fatal (botões, calendário…); null nas antigas e fora do Prazo. */
+  origemPrazo: OrigemPrazo | null;
   /** COMPROMISSO: horário HH:MM. */
   hora: string | null;
   /** COMPROMISSO: Hora final HH:MM (null nos antigos: o robô pôs 1 hora depois, ou 00:00 antes de 05/11/2026). */

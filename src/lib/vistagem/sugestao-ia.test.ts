@@ -264,6 +264,7 @@ describe("resultadoDaSugestao", () => {
     dataFatal: "2026-11-16",
     diasPrazo: 5,
     contagemPrazo: "uteis",
+    origemPrazo: null,
     hora: null,
     horaFim: null,
     dataLimite: null,

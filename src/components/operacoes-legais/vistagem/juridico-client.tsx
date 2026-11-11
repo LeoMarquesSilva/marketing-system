@@ -59,6 +59,7 @@ import {
   revisorFicaNaTarefa,
   separarNomes,
   type EtiquetaAgendamento,
+  type OrigemPrazo,
 } from "@/lib/vistagem/agendamento";
 import { cienciaDosAgendamentos, cienciaQueFica, ehCienciaDosAgendamentos } from "@/lib/vistagem/ciencia-agendamentos";
 import {
@@ -125,6 +126,8 @@ interface Linha {
   diasPrazo: number | null;
   /** Prazo pelo atalho de dias: úteis ou corridos (escolhido no modal). */
   contagemPrazo: ContagemPrazo | null;
+  /** Prazo: de onde vieram os dias ou a fatal (a Conferência mostra). */
+  origemPrazo: OrigemPrazo | null;
   /** Compromisso: horário HH:MM (Hora tarefa no VIOS). */
   hora: string;
   /** Compromisso: Hora final no VIOS (HH:MM); começa 1 hora depois da inicial e acompanha até a pessoa mudar. */
@@ -209,6 +212,7 @@ function novaLinha(base: Partial<Linha> = {}): Linha {
     dataFatal: "",
     diasPrazo: null,
     contagemPrazo: "uteis",
+    origemPrazo: null,
     hora: "",
     horaFim: "",
     dataLimite: "",
@@ -870,6 +874,7 @@ export function EditorVistagem({
                   data: item.etiqueta === "PRAZO" && !semPrazo ? "" : item.data,
                   dataFatal: semPrazo ? "" : item.dataFatal ?? "",
                   diasPrazo: semPrazo ? null : item.diasPrazo,
+                  origemPrazo: semPrazo ? null : item.origemPrazo ?? null,
                   contagemPrazo: item.contagemPrazo ?? contagemDaArea,
                   hora: item.hora ?? "",
                   horaFim: item.horaFim ?? horaFinalPadrao(item.hora),
@@ -1005,7 +1010,7 @@ export function EditorVistagem({
     const dataPublicacao = detalhe?.publicacao.dataPublicacao;
     const catalogo = detalhe?.catalogo;
     if (linha.etiqueta !== "PRAZO") return {};
-    if (semFatal({ etiqueta: "PRAZO", tarefa: nome })) return { data: dataSemFatal(), dataFatal: "", diasPrazo: null };
+    if (semFatal({ etiqueta: "PRAZO", tarefa: nome })) return { data: dataSemFatal(), dataFatal: "", diasPrazo: null, origemPrazo: null };
     const saindo = semFatal(linha) ? { data: "" } : {};
     if (!dataPublicacao || !catalogo) return saindo;
     const legal = (nomeTarefa: string) => {
@@ -1017,9 +1022,9 @@ export function EditorVistagem({
     const vazio = linha.diasPrazo === null && !linha.dataFatal;
     const daTarefaAnterior = anterior !== null && linha.diasPrazo === anterior;
     if (!vazio && !daTarefaAnterior) return saindo;
-    if (novo === null) return daTarefaAnterior ? { ...saindo, diasPrazo: null, dataFatal: "" } : saindo;
+    if (novo === null) return daTarefaAnterior ? { ...saindo, diasPrazo: null, dataFatal: "", origemPrazo: null } : saindo;
     const contagemPrazo = linha.contagemPrazo ?? contagemPadrao;
-    return { ...saindo, diasPrazo: novo, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, novo, contagemPrazo, contaPrazo) };
+    return { ...saindo, diasPrazo: novo, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, novo, contagemPrazo, contaPrazo), origemPrazo: "tarefa" };
   }
 
   /** Data que o tipo já traz (CIÊNCIA NF: dia útil seguinte), pelo nome como está no VIOS. */
@@ -1095,6 +1100,7 @@ export function EditorVistagem({
           dataFatal: prazo && !semPrazo ? fatalSugerida(tarefa, publicacao.dataPublicacao, contaPrazo) ?? "" : "",
           diasPrazo: prazo && !semPrazo ? tarefa.dias : null,
           contagemPrazo: prazo && !semPrazo && tarefa.dias ? tarefa.contagem : null,
+          origemPrazo: prazo && !semPrazo ? "sugestao_ia" : null,
           data: semPrazo ? dataSemFatal() : tarefa.classe === "COMPROMISSO" ? tarefa.data ?? "" : dataPadrao(tarefa.classe, opcao.nome) ?? "",
           hora: tarefa.hora ?? "",
           horaFim: horaFinalPadrao(tarefa.hora),
@@ -1126,7 +1132,7 @@ export function EditorVistagem({
     setLinhas((atuais) => {
       const alvo = atuais.find((linha) => linha.etiqueta === "PRAZO" && !linha.esocial && !semFatal(linha));
       const contagemPrazo = contagem ?? alvo?.contagemPrazo ?? contagemPadrao;
-      const mudanca = { diasPrazo: dias, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, dias, contagemPrazo, contaPrazo) };
+      const mudanca = { diasPrazo: dias, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, dias, contagemPrazo, contaPrazo), origemPrazo: "publicacao" as const };
       if (alvo) return atuais.map((linha) => (linha === alvo ? { ...linha, ...mudanca } : linha));
       if (atuais.length >= 10) return atuais;
       return [...atuais, novaLinha({ ...mudanca, responsavel: detalhe?.responsavelSugerido ?? "", revisor: detalhe?.revisorSugerido ?? "" })];
@@ -1162,6 +1168,7 @@ export function EditorVistagem({
             dataFatal: linha.etiqueta === "PRAZO" && !semFatal(linha) ? linha.dataFatal : null,
             diasPrazo: linha.etiqueta === "PRAZO" && !semFatal(linha) ? linha.diasPrazo : null,
             contagemPrazo: linha.etiqueta === "PRAZO" && !semFatal(linha) && linha.diasPrazo ? linha.contagemPrazo : null,
+            origemPrazo: linha.etiqueta === "PRAZO" && !semFatal(linha) ? linha.origemPrazo : null,
             hora: linha.etiqueta === "COMPROMISSO" ? linha.hora : null,
             horaFim: linha.etiqueta === "COMPROMISSO" ? linha.horaFim || null : null,
             dataLimite: pedeLimite(linha) ? linha.dataLimite || linha.data || null : null,
@@ -1626,9 +1633,10 @@ export function EditorVistagem({
                                           alterar(
                                             linha.chave,
                                             linha.diasPrazo === dias
-                                              ? { diasPrazo: null, dataFatal: "" }
+                                              ? { diasPrazo: null, dataFatal: "", origemPrazo: null }
                                               : {
                                                   diasPrazo: dias,
+                                                  origemPrazo: "atalho",
                                                   dataFatal: fatalPorContagem(publicacao.dataPublicacao, dias, linha.contagemPrazo ?? contagemPadrao, contaPrazo),
                                                 }
                                           )
@@ -1662,7 +1670,7 @@ export function EditorVistagem({
                                         rotulo={`Data fatal da tarefa ${indice + 1}`}
                                         valor={linha.dataFatal}
                                         ehDiaUtil={contaPrazo}
-                                        onChange={(data) => alterar(linha.chave, { dataFatal: data, diasPrazo: null })}
+                                        onChange={(data) => alterar(linha.chave, { dataFatal: data, diasPrazo: null, origemPrazo: data ? "calendario" : null })}
                                       />
                                     </div>
                                   </div>

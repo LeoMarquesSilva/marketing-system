@@ -5,7 +5,7 @@ import type { LucideIcon } from "lucide-react";
 import { ArrowRight, Bot, CalendarClock, CalendarDays, ChevronDown, CircleCheckBig, ClipboardList, CornerDownRight, ExternalLink, Hourglass, Pencil, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { ROTULO_ETIQUETA, chaveNome, nomesDasPessoas } from "@/lib/vistagem/agendamento";
+import { ROTULO_ETIQUETA, ROTULO_ORIGEM_PRAZO, chaveNome, nomesDasPessoas } from "@/lib/vistagem/agendamento";
 import { agendaNoVios, nomeCurto, partesDaData } from "@/lib/vistagem/como-fica-no-vios";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
 import type { AgendamentoResumo, AjusteNaTarefa, EnvioStatus, MudancaNaTarefa } from "@/lib/vistagem/types";
@@ -366,10 +366,16 @@ export function CartoesTarefas({
                       {formatarData(item.enviarHoje)}) e põe o Revisar e o Protocolar antes da fatal. Não precisa editar.
                     </p>
                   ) : null}
-                  {item.diasPrazo && item.contagemPrazo ? (
-                    <p className="text-[11px] text-muted-foreground">
-                      {item.diasPrazo} {ROTULO_CONTAGEM[item.contagemPrazo]} após a publicação
-                    </p>
+                  {(item.diasPrazo && item.contagemPrazo) || item.origemPrazo ? (
+                    <div className="text-[11px] leading-snug text-muted-foreground">
+                      {item.diasPrazo && item.contagemPrazo ? (
+                        <p>
+                          {item.diasPrazo} {ROTULO_CONTAGEM[item.contagemPrazo]} após a publicação
+                        </p>
+                      ) : null}
+                      {/* De onde veio o prazo (pedido de 11/11/2026): botões de dias, calendário, prazo legal, publicação ou IA. */}
+                      {item.origemPrazo ? <p className="text-muted-foreground/80">{ROTULO_ORIGEM_PRAZO[item.origemPrazo]}</p> : null}
+                    </div>
                   ) : null}
                 </div>
               ) : null}

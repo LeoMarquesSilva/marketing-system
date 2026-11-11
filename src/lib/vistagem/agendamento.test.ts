@@ -18,6 +18,7 @@ import {
   dataLimiteDaTarefa,
   dataPadraoDaTarefa,
   observacaoObrigatoria,
+  origemDoPrazo,
   pedeDataLimite,
   referenciaDaPublicacao,
   responsaveisNaArea,
@@ -107,6 +108,7 @@ describe("validarAgendamentos", () => {
           dataFatal: "2026-11-02",
           diasPrazo: 15,
           contagemPrazo: "corridos",
+          origemPrazo: null,
           hora: null,
           horaFim: null,
           dataLimite: null,
@@ -279,6 +281,31 @@ describe("validarAgendamentos", () => {
     );
     expect(resultado.ok).toBe(true);
     expect(resultado.ok && resultado.itens[0]).toMatchObject({ etiqueta: "PROVIDENCIA", revisor: null, revisorId: null });
+  });
+
+  it("guarda de onde veio o prazo (pedido de 11/11/2026), só no Prazo com fatal e coerente com os dias", () => {
+    const prazo = { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo", observacao: "ver teor" };
+    const origem = (entrada: Record<string, unknown>) => {
+      const resultado = validarAgendamentos([{ ...prazo, ...entrada }], contexto);
+      return resultado.ok ? resultado.itens[0].origemPrazo : "inválido";
+    };
+    expect(origem({ diasPrazo: 15, contagemPrazo: "uteis", origemPrazo: "atalho" })).toBe("atalho");
+    expect(origem({ origemPrazo: "calendario" })).toBe("calendario");
+    // a IA pode dar a fatal sem os dias
+    expect(origem({ origemPrazo: "sugestao_ia" })).toBe("sugestao_ia");
+    // botões, prazo legal e publicação sem os dias marcados: a fatal mudou depois, não se sabe
+    expect(origem({ origemPrazo: "atalho" })).toBeNull();
+    expect(origem({ origemPrazo: "qualquer" })).toBeNull();
+    expect(origem({})).toBeNull();
+    expect(origemDoPrazo("publicacao", 30)).toBe("publicacao");
+    expect(origemDoPrazo("tarefa", null)).toBeNull();
+    // fora do Prazo, nada
+    const providencia = validarAgendamentos(
+      [{ etiqueta: "PROVIDENCIA", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", tarefaId: "321", data: "2026-11-10", responsavel: "Advogada Exemplo", origemPrazo: "calendario" }],
+      contexto
+    );
+    expect(providencia.ok).toBe(true);
+    expect(providencia.ok && providencia.itens[0].origemPrazo).toBeNull();
   });
 
   it("atalho de dias exige a contagem (úteis ou corridos); fatal no calendário não", () => {

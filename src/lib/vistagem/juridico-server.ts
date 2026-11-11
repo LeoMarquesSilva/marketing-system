@@ -14,6 +14,7 @@ import {
   type EtiquetaAgendamento,
   type OpcaoTarefa,
   type OpcaoVios,
+  type OrigemPrazo,
 } from "./agendamento";
 import { openAIKey } from "@/lib/openai-keys";
 import { enviarDoPrazo, mudancasNaTarefa, podeEditarNaConferencia, type CamposDaTarefa } from "./ajuste-conferencia";
@@ -80,11 +81,11 @@ import type {
 } from "./types";
 
 const COLUNAS_AGENDAMENTO =
-  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, hora, hora_fim, data_limite, responsavel, revisor, observacao, fluxo_datas, ajustes, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, vios_tarefas, envio_erro, enviado_em";
+  "id, publicacao_id, ordem, etiqueta, tarefa, tarefa_id, data, data_fatal, dias_prazo, contagem_prazo, origem_prazo, hora, hora_fim, data_limite, responsavel, revisor, observacao, fluxo_datas, ajustes, envio_status, envio_simulado, sama_agendamento_id, vios_tarefa_id, vios_tarefas, envio_erro, enviado_em";
 
 type AgendamentoRow = {
   id: string; publicacao_id: string; ordem: number; etiqueta: EtiquetaAgendamento; tarefa: string; tarefa_id: string | null;
-  data: string; data_fatal: string | null; dias_prazo: number | null; contagem_prazo: ContagemPrazo | null; hora: string | null;
+  data: string; data_fatal: string | null; dias_prazo: number | null; contagem_prazo: ContagemPrazo | null; origem_prazo: OrigemPrazo | null; hora: string | null;
   hora_fim: string | null; data_limite: string | null; responsavel: string; revisor: string | null;
   observacao: string | null; fluxo_datas: DataDoFluxo[] | null; ajustes: AjusteNaTarefa[] | null; envio_status: EnvioStatus;
   envio_simulado: boolean | null; sama_agendamento_id: string | null; vios_tarefa_id: string | null;
@@ -102,6 +103,7 @@ function agendamentoResumo(row: AgendamentoRow): AgendamentoResumo {
     dataFatal: row.data_fatal,
     diasPrazo: row.dias_prazo,
     contagemPrazo: row.contagem_prazo,
+    origemPrazo: row.origem_prazo ?? null,
     hora: row.hora,
     horaFim: row.hora_fim ?? null,
     dataLimite: row.data_limite ?? null,
@@ -477,6 +479,7 @@ async function cienciaParaGravar(
     dataFatal: null,
     diasPrazo: null,
     contagemPrazo: null,
+    origemPrazo: null,
     hora: null,
     horaFim: null,
     dataLimite: null,
@@ -574,6 +577,7 @@ export async function salvarVistagem(
       data_fatal: item.dataFatal,
       dias_prazo: item.diasPrazo,
       contagem_prazo: item.contagemPrazo,
+      origem_prazo: item.origemPrazo,
       hora: item.hora,
       hora_fim: item.horaFim,
       data_limite: item.dataLimite,
@@ -1186,6 +1190,7 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
       data_fatal: item.dataFatal,
       dias_prazo: mesmaFatal ? row.dias_prazo : null,
       contagem_prazo: mesmaFatal ? row.contagem_prazo : null,
+      origem_prazo: mesmaFatal ? row.origem_prazo : null,
       hora: item.hora,
       hora_fim: item.horaFim,
       data_limite: item.dataLimite,

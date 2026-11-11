@@ -49,6 +49,7 @@ export async function POST(request: Request, context: RouteContext) {
         dataFatal: texto(valor.dataFatal, 10),
         diasPrazo: typeof valor.diasPrazo === "number" ? valor.diasPrazo : null,
         contagemPrazo: CONTAGENS_PRAZO.find((contagem) => contagem === valor.contagemPrazo) ?? null,
+        origemPrazo: texto(valor.origemPrazo, 20),
         hora: texto(valor.hora, 5),
         horaFim: texto(valor.horaFim, 5),
         dataLimite: texto(valor.dataLimite, 10),
