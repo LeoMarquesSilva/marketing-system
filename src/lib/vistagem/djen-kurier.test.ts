@@ -53,9 +53,8 @@ describe("compararDjenKurier", () => {
     expect(dia10).toMatchObject({ djen: 2, kurier: 2, nosDois: 2, cobertura: 1 });
     expect(dia10.soDjen).toEqual([]);
     expect(dia10.soKurier).toEqual([]);
-    // 11/11: o DJEN trouxe uma que a Kurier não trouxe.
-    expect(dia11).toMatchObject({ djen: 1, kurier: 0, nosDois: 0, cobertura: null });
-    expect(dia11.soDjen.map((item) => item.id)).toEqual([3]);
+    // 11/11: sem nenhuma publicação da Kurier no dia, não se compara.
+    expect(dia11).toMatchObject({ comKurier: false, djen: 1, kurier: 0, nosDois: 0, soDjen: [], cobertura: null });
   });
 
   it("sem o ID, casa pelo processo no mesmo dia; o que sobra fica só de um lado", () => {
@@ -79,6 +78,12 @@ describe("compararDjenKurier", () => {
     const dias = compararDjenKurier([], [kurier("k1", 1, "2026-11-10", "0001")], DIAS, new Set(["2026-11-11"]));
     expect(dias[1]).toMatchObject({ buscado: false, kurier: 1, nosDois: 0, soKurier: [], cobertura: null });
     expect(totaisDaConferencia(dias)).toEqual({ djen: 0, kurier: 0, nosDois: 0, soDjen: 0, soKurier: 0, cobertura: null });
+  });
+
+  it("dia sem nenhuma publicação da Kurier não se compara: nada fica só no DJEN e o dia sai dos totais", () => {
+    const dias = compararDjenKurier([djen(1, "2026-11-10", "0001"), djen(2, "2026-11-11", "0002")], [kurier("k2", 2, "2026-11-11", "0002")], DIAS, BUSCADOS);
+    expect(dias[1]).toMatchObject({ comKurier: false, djen: 1, kurier: 0, soDjen: [], cobertura: null });
+    expect(totaisDaConferencia(dias)).toMatchObject({ djen: 1, kurier: 1, nosDois: 1, soDjen: 0 });
   });
 
   it("totais: somam os dias buscados e dão a cobertura da Kurier pelo DJEN", () => {

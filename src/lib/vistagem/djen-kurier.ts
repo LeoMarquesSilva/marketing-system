@@ -47,6 +47,11 @@ export interface DiaDaConferencia {
   data: string;
   /** Houve busca no DJEN para este dia (sem busca, os números do DJEN não valem). */
   buscado: boolean;
+  /**
+   * Houve publicação da Kurier neste dia. Sem nenhuma, o arquivo do dia não foi importado (antes de 03/11/2026 não
+   * há Kurier no Orquestra): o dia não se compara e fica fora dos totais.
+   */
+  comKurier: boolean;
   djen: number;
   kurier: number;
   nosDois: number;
@@ -113,19 +118,20 @@ export function compararDjenKurier(
     return {
       data,
       buscado,
+      comKurier: daKurier.length > 0,
       djen: doDjen.length,
       kurier: daKurier.length,
       nosDois,
-      soDjen: doDjen.filter((item) => !casadas.has(item.id)),
+      soDjen: daKurier.length ? doDjen.filter((item) => !casadas.has(item.id)) : [],
       soKurier,
       cobertura: buscado && daKurier.length ? nosDois / daKurier.length : null,
     };
   });
 }
 
-/** Soma dos dias buscados (os sem busca não entram). */
+/** Soma dos dias que se comparam: com busca no DJEN e com publicação da Kurier. */
 export function totaisDaConferencia(dias: DiaDaConferencia[]): ConferenciaDjenKurier["totais"] {
-  const buscados = dias.filter((dia) => dia.buscado);
+  const buscados = dias.filter((dia) => dia.buscado && dia.comKurier);
   const soma = (campo: (dia: DiaDaConferencia) => number) => buscados.reduce((total, dia) => total + campo(dia), 0);
   const kurier = soma((dia) => dia.kurier);
   const nosDois = soma((dia) => dia.nosDois);

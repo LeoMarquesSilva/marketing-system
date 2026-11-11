@@ -192,6 +192,7 @@ export function ConferenciaDjenKurierView({
                 <tbody className="divide-y divide-[#eef3f5]">
                   {dados.dias.map((dia) => {
                     const divergencias = dia.soDjen.length + dia.soKurier.length;
+                    const compara = dia.buscado && dia.comKurier;
                     return (
                       <tr
                         key={dia.data}
@@ -201,13 +202,17 @@ export function ConferenciaDjenKurierView({
                       >
                         <td className="px-4 py-2">
                           <DataDoDia data={dia.data} />
-                          {!dia.buscado ? <Selo className="ml-2 px-1.5 py-0 text-[11px]">sem busca no DJEN</Selo> : null}
+                          {!dia.buscado ? (
+                            <Selo className="ml-2 px-1.5 py-0 text-[11px]">sem busca no DJEN</Selo>
+                          ) : !dia.comKurier ? (
+                            <Selo className="ml-2 px-1.5 py-0 text-[11px]">sem Kurier</Selo>
+                          ) : null}
                         </td>
                         <td className="px-3 py-2 text-right">{dia.buscado ? dia.djen : "—"}</td>
                         <td className="px-3 py-2 text-right">{dia.kurier}</td>
-                        <td className="px-3 py-2 text-right">{dia.buscado ? dia.nosDois : "—"}</td>
-                        <td className={cn("px-3 py-2 text-right", dia.soKurier.length && "font-semibold text-red-700")}>{dia.buscado ? dia.soKurier.length : "—"}</td>
-                        <td className="px-3 py-2 text-right">{dia.buscado ? dia.soDjen.length : "—"}</td>
+                        <td className="px-3 py-2 text-right">{compara ? dia.nosDois : "—"}</td>
+                        <td className={cn("px-3 py-2 text-right", dia.soKurier.length && "font-semibold text-red-700")}>{compara ? dia.soKurier.length : "—"}</td>
+                        <td className="px-3 py-2 text-right">{compara ? dia.soDjen.length : "—"}</td>
                         <td className="px-4 py-2 text-right">{porcento(dia.cobertura)}</td>
                       </tr>
                     );
@@ -218,7 +223,7 @@ export function ConferenciaDjenKurierView({
             <p className="border-t border-[#e6eef0] px-4 py-2 text-[11px] text-muted-foreground">
               O par é pelo ID de comunicação do DJEN (a Kurier traz o mesmo); sem ele, pelo processo no mesmo dia. O dia de hoje só fica completo na
               Kurier com o arquivo de amanhã. A Kurier traz também comunicações do mesmo processo endereçadas a outros advogados (em geral
-              marcadas como duplicidade ou descartada), que o DJEN, buscando pela OAB, não traz. Clique num dia com diferença para ver quais.
+              marcadas como duplicidade ou descartada), que o DJEN, buscando pela OAB, não traz. Dia sem nenhuma publicação da Kurier (o arquivo não foi importado; antes de 03/11/2026 não há Kurier no Orquestra) não se compara e fica fora dos totais. Clique num dia com diferença para ver quais.
             </p>
           </>
         )}

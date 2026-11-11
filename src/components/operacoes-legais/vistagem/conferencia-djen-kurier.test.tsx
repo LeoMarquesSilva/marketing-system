@@ -29,8 +29,10 @@ const DADOS: ConferenciaDjenKurier = {
         { id: "k9", djenId: 999, data: "2026-11-11", processo: "5555555-55.2026.5.02.0001", tribunal: "TRT2", nomeLocalizado: "RICARDO VISCARDI PIRES", status: "descartada" },
       ],
       cobertura: 0.5,
+      comKurier: true,
     },
-    { data: "2026-11-10", buscado: false, djen: 0, kurier: 4, nosDois: 0, soDjen: [], soKurier: [], cobertura: null },
+    { data: "2026-11-09", buscado: true, comKurier: false, djen: 120, kurier: 0, nosDois: 0, soDjen: [], soKurier: [], cobertura: null },
+    { data: "2026-11-10", buscado: false, comKurier: true, djen: 0, kurier: 4, nosDois: 0, soDjen: [], soKurier: [], cobertura: null },
   ],
   totais: { djen: 3, kurier: 2, nosDois: 1, soDjen: 1, soKurier: 1, cobertura: 0.5 },
   ultimaBusca: { em: "2026-11-11T11:00:00.000Z", origem: "cron", erro: null },
@@ -64,6 +66,7 @@ describe("ConferenciaDjenKurierView", () => {
     expect(texto).toContain("1 de 2 publicações da Kurier também no DJEN");
     expect(texto).toContain("11/nov qua");
     expect(texto).toContain("sem busca no DJEN");
+    expect(texto).toContain("sem Kurier");
     expect(texto).toContain("automática");
   });
 
