@@ -40,6 +40,7 @@ import { cn } from "@/lib/utils";
 import { ROTULO_ETIQUETA, chaveNome } from "@/lib/vistagem/agendamento";
 import { vaiParaCentral } from "@/lib/vistagem/central";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
+import { ROTULO_AJUSTE_CURTO } from "@/lib/vistagem/fluxo-previsto";
 import { MAX_TEXTO_INCONSISTENCIA, TIPOS_INCONSISTENCIA_JURIDICO } from "@/lib/vistagem/inconsistencias";
 import { podeEditarNaConferencia } from "@/lib/vistagem/ajuste-conferencia";
 import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, InconsistenciaItem, PublicacaoResumo, VistagemDetalhe } from "@/lib/vistagem/types";
@@ -344,7 +345,7 @@ function FluxoDaTarefaAgendada({ item }: { item: AgendamentoResumo }) {
                 )}
                 {tarefa.editada ? <Selo tom="marca">data alterada</Selo> : null}
                 {tarefa.responsaveisEscolhidos && !tarefa.repetida ? <Selo tom="marca">responsável escolhido</Selo> : null}
-                {tarefa.ajustada ? <Selo tom="marca">{tarefa.ajustada === "hoje" ? "VIOS daria antes de hoje" : "apertada antes da fatal"}</Selo> : null}
+                {tarefa.ajustada ? <Selo tom="marca">{ROTULO_AJUSTE_CURTO[tarefa.ajustada]}</Selo> : null}
                 {!tarefa.repetida && tarefa.data && tarefa.dataVios && tarefa.data !== tarefa.dataVios ? (
                   <span className="text-muted-foreground">VIOS daria {formatarData(tarefa.dataVios)}</span>
                 ) : null}

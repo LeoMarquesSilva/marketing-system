@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { criarCalendario } from "./dias-uteis";
+import { criarCalendario, datasDoPrazo } from "./dias-uteis";
 import { ESTAGIARIO_DA_PASTA, caminhosDoFluxo, emOrdemDeArvore, fluxoParaOVios, fluxoPrevisto, prazoApertado, quemFicaNoFluxo } from "./fluxo-previsto";
-import { montarFluxo, type BaseDaData, type RegraDePrazo, type ResponsabilidadeDoTipo, type TipoNaArvore } from "./fluxo-vios";
+import { arvoreDaArea, cadeiaDoFluxo, montarFluxo, type BaseDaData, type RegraDePrazo, type ResponsabilidadeDoTipo, type TipoNaArvore } from "./fluxo-vios";
 
 const uteis = (dias: number, negativo = false): RegraDePrazo => ({ dias, negativo, corridos: false });
 const tipo = (
@@ -298,5 +298,53 @@ describe("prazoApertado", () => {
   it("o prazo que cabe não aperta, nem outra classe de tarefa", () => {
     expect(prazoApertado({ etiqueta: "PRAZO", dataFatal: "2026-12-10" }, embargos, ehDiaUtil, "2026-11-06")).toBeNull();
     expect(prazoApertado({ etiqueta: "PROVIDENCIA", dataFatal: null }, embargos, ehDiaUtil, "2026-11-06")).toBeNull();
+  });
+});
+
+describe("regra da insolvência no fluxo e no robô (pedido de 11/11/2026)", () => {
+  // CONTESTAÇÃO compartilhada (prazo de 12 dias no VIOS, Protocolar 2 dias úteis depois do Enviar). Fatal 23/11/2026.
+  const arvore = new Map(ARVORE).set(5, tipo("CONTESTAÇÃO", uteis(12), [[321, "atual"], [314, "pai"], [313, "pai"]]));
+  const todos = [...arvore.keys()];
+  const contestacao = (area: string) => montarFluxo("5", arvoreDaArea(arvore, todos, area));
+  const prazo = { etiqueta: "PRAZO", dataFatal: "2026-11-23" };
+  const naInsolvencia = contestacao("Insolvência");
+  const doFluxo = (previstas: ReturnType<typeof fluxoPrevisto>, nome: string) => previstas.find((tarefa) => tarefa.nome === nome);
+
+  it("vistada em 11/11: Enviar 13/11 e Revisar 16/11 pelo VIOS; o Protocolar fica em 19/11 e o robô grava", () => {
+    const enviar = datasDoPrazo(prazo.dataFatal, ehDiaUtil, cadeiaDoFluxo(naInsolvencia), "2026-11-11").enviar;
+    expect(enviar).toBe("2026-11-13");
+    const ajuste = prazoApertado({ ...prazo, data: enviar }, naInsolvencia, ehDiaUtil, "2026-11-11");
+    expect(ajuste).toEqual({ enviar: "2026-11-13", revisar: null, protocolar: "2026-11-19", motivo: "antecipada" });
+    const previstas = fluxoPrevisto({ ...pessoas, data: enviar }, naInsolvencia, ehDiaUtil, { hoje: "2026-11-11", apertada: ajuste });
+    expect(doFluxo(previstas, "2. REVISAR")).toMatchObject({ data: "2026-11-16", dataVios: "2026-11-16" });
+    expect(doFluxo(previstas, "2. REVISAR")?.ajustada).toBeUndefined();
+    expect(doFluxo(previstas, "3. PROTOCOLAR")).toMatchObject({ data: "2026-11-19", dataVios: "2026-11-17", ajustada: "antecipada", editada: false });
+    expect(fluxoParaOVios(previstas)).toEqual([{ caminho: ["3. PROTOCOLAR"], data: "2026-11-19" }]);
+  });
+
+  it("no Cível nada muda: Enviar 17/11, Revisar 18/11, Protocolar 19/11, como o VIOS cria", () => {
+    const civel = contestacao("Cível");
+    expect(datasDoPrazo(prazo.dataFatal, ehDiaUtil, cadeiaDoFluxo(civel), "2026-11-11").enviar).toBe("2026-11-17");
+    expect(prazoApertado({ ...prazo, data: "2026-11-17" }, civel, ehDiaUtil, "2026-11-11")).toBeNull();
+  });
+
+  it("vistada antes da regra (Enviar 17/11): o Protocolar do VIOS já é o 19/11 e o robô não grava nada", () => {
+    const ajuste = prazoApertado({ ...prazo, data: "2026-11-17" }, naInsolvencia, ehDiaUtil, "2026-11-11");
+    const previstas = fluxoPrevisto({ ...pessoas, data: "2026-11-17" }, naInsolvencia, ehDiaUtil, { hoje: "2026-11-11", apertada: ajuste });
+    expect(doFluxo(previstas, "3. PROTOCOLAR")).toMatchObject({ data: "2026-11-19", dataVios: "2026-11-19" });
+    expect(doFluxo(previstas, "3. PROTOCOLAR")?.ajustada).toBeUndefined();
+    expect(fluxoParaOVios(previstas)).toEqual([]);
+  });
+
+  it("sem tempo para antecipar (vistada em 17/11), aperta como o prazo curto", () => {
+    expect(prazoApertado(prazo, naInsolvencia, ehDiaUtil, "2026-11-17")).toEqual({ enviar: "2026-11-17", revisar: "2026-11-18", protocolar: "2026-11-19" });
+  });
+
+  it("o Enviar escolhido à mão na Conferência vale como está, e o Protocolar continua 1 dia útil antes da fatal", () => {
+    expect(prazoApertado({ ...prazo, data: "2026-11-12" }, naInsolvencia, ehDiaUtil, "2026-11-11")).toMatchObject({
+      enviar: "2026-11-12",
+      protocolar: "2026-11-19",
+      motivo: "antecipada",
+    });
   });
 });

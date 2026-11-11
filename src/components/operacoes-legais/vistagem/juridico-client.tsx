@@ -85,7 +85,7 @@ import {
   type ClassificacaoEsocial,
 } from "@/lib/vistagem/esocial";
 import { CADEIA_PADRAO, cadeiaDoFluxo, semPrazoProprio } from "@/lib/vistagem/fluxo-vios";
-import { emOrdemDeArvore, fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
+import { ROTULO_AJUSTE, emOrdemDeArvore, fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
 import { fataisDoFluxo, prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
 import { fatalSugerida, sugestaoNaListaAtual, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
@@ -562,7 +562,7 @@ export function FluxoNoVios({
       </span>
     ) : tarefa.ajustada ? (
       <span className="text-muted-foreground">
-        {tarefa.ajustada === "hoje" ? "o VIOS daria antes de hoje: vai hoje" : "apertada para caber antes da fatal"}
+        {ROTULO_AJUSTE[tarefa.ajustada]}
         {tarefa.dataVios ? ` (VIOS: ${formatarData(tarefa.dataVios)})` : ""}
       </span>
     ) : tarefa.data && tarefa.dataVios && tarefa.data !== tarefa.dataVios ? (
@@ -1496,7 +1496,12 @@ export function EditorVistagem({
                           {
                             hoje: detalhe.hoje,
                             datas: Object.values(linha.fluxoDatas),
-                            apertada: cadeia?.ajustada ? { revisar: cadeia.revisar, protocolar: cadeia.protocolar } : null,
+                            // Regra da insolvência: o VIOS cria o Protocolar 2 dias depois do Enviar antecipado; ele fica 1 dia útil antes da fatal.
+                            apertada: cadeia?.ajustada
+                              ? { revisar: cadeia.revisar, protocolar: cadeia.protocolar }
+                              : cadeia && cadeiaFluxo?.antecipada
+                                ? { revisar: null, protocolar: cadeia.protocolar, motivo: "antecipada" }
+                                : null,
                           }
                         ).map((tarefa) =>
                           // Uma Ciência só por vistagem: fica a da primeira tarefa; as outras o robô cancela.
@@ -1707,6 +1712,12 @@ export function EditorVistagem({
                                 {tarefaId && !cadeiaFluxo ? (
                                   <p className="text-xs text-muted-foreground">
                                     O VIOS não cria Revisar nem Protocolar para esta tarefa: ela vai com a data do protocolo (1 dia útil antes da fatal).
+                                  </p>
+                                ) : null}
+                                {cadeiaFluxo?.antecipada && cadeia && !cadeia.ajustada ? (
+                                  <p className="text-xs text-muted-foreground">
+                                    Regra da insolvência: o Enviar e o Revisar vão {cadeiaFluxo.antecipada} dias úteis antes; o Protocolar e a fatal não
+                                    mudam (o robô grava o Protocolar no VIOS).
                                   </p>
                                 ) : null}
                               </div>

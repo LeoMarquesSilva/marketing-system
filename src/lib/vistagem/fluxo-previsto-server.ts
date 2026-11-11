@@ -16,9 +16,13 @@ export function catalogoDaPublicacao(areas: CatalogoArea[], publicacao: AreaDaPu
   return catalogoDaArea(areas, areaDoCatalogo(publicacao.area_processo, publicacao.escritorio_responsavel, areas.map((item) => item.area)));
 }
 
-/** A árvore do VIOS como vale para a pasta da publicação: só os tipos da lista de tarefas da área dela. */
+/**
+ * A árvore do VIOS como vale para a pasta da publicação: só os tipos da lista de tarefas da área dela e, na
+ * Insolvência e na Cível | Insolvência, a antecipação do Enviar e do Revisar (`ANTECIPACAO_INSOLVENCIA`).
+ */
 export function arvoreDaPublicacao(arvore: Map<number, TipoNaArvore>, areas: CatalogoArea[], publicacao: AreaDaPublicacao): Map<number, TipoNaArvore> {
-  return arvoreDaArea(arvore, catalogoDaPublicacao(areas, publicacao)?.etapas.map((etapa) => etapa.id) ?? null);
+  const catalogo = catalogoDaPublicacao(areas, publicacao);
+  return arvoreDaArea(arvore, catalogo?.etapas.map((etapa) => etapa.id) ?? null, catalogo?.area ?? null);
 }
 
 /**
