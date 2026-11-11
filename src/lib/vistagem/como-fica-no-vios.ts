@@ -1,4 +1,4 @@
-import { revisorFicaNaTarefa, separarNomes } from "./agendamento";
+import { paraDataVios, revisorFicaNaTarefa, separarNomes } from "./agendamento";
 import type { AgendamentoResumo } from "./types";
 
 /** Uma linha do "Fluxo das tarefas" (como fica no VIOS): a tarefa pedida ou uma que o fluxo cria junto com ela. */
@@ -18,6 +18,8 @@ export interface LinhaNoVios {
   /** O jurídico mudou a data que o VIOS daria. */
   editada: boolean;
   dataVios: string | null;
+  /** Prazo apertado: a tarefa pedida vai com o Enviar de hoje; a nota diz qual era o vistado. */
+  nota: string | null;
 }
 
 export interface AgendaNoVios {
@@ -73,6 +75,7 @@ export function agendaNoVios(item: AgendamentoResumo): AgendaNoVios {
           ci: tarefa.ci,
           editada: false,
           dataVios: null,
+          nota: null,
         }))
         .sort(ordenar),
     };
@@ -80,7 +83,8 @@ export function agendaNoVios(item: AgendamentoResumo): AgendaNoVios {
   const pedida: LinhaNoVios = {
     chave: `pedida-${item.id}`,
     nome: item.tarefa,
-    data: item.data || null,
+    // Prazo apertado: o robô lança com o Enviar de hoje (o vistado já passou).
+    data: item.enviarHoje ?? (item.data || null),
     hora: item.hora,
     responsaveis: revisorFicaNaTarefa(item.tarefa) && item.revisor ? separarNomes(`${item.responsavel},${item.revisor}`).join(", ") : item.responsavel,
     principal: true,
@@ -88,6 +92,7 @@ export function agendaNoVios(item: AgendamentoResumo): AgendaNoVios {
     ci: null,
     editada: false,
     dataVios: null,
+    nota: item.enviarHoje && item.data ? `vistado para ${paraDataVios(item.data)}, que já passou: vai hoje` : null,
   };
   const doFluxo: LinhaNoVios[] = (item.fluxoPrevisto ?? [])
     .filter((tarefa) => tarefa.quando === "criacao")
@@ -102,6 +107,7 @@ export function agendaNoVios(item: AgendamentoResumo): AgendaNoVios {
       ci: null,
       editada: tarefa.editada,
       dataVios: tarefa.dataVios,
+      nota: null,
     }));
   return { gravada: false, aoConcluir, linhas: [pedida, ...doFluxo].sort(ordenar) };
 }

@@ -212,6 +212,7 @@ export function AgendaNoVios({ item, fotos, hoje }: { item: AgendamentoResumo; f
                       criada por {linha.criadaPor}
                     </p>
                   ) : null}
+                  {linha.nota ? <p className="text-[11px] text-amber-800">Data ajustada · {linha.nota}</p> : null}
                   {dataMudou ? (
                     <p className="text-[11px] text-amber-800">
                       Data alterada{linha.dataVios ? ` · o VIOS daria ${formatarData(linha.dataVios)}` : ""}
