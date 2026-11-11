@@ -700,8 +700,8 @@ function camposDaTriagem(resultado: ReturnType<typeof triar>) {
 /**
  * Cruza as publicações captadas com a base de processos do SIOE: uma pasta só (ou uma só ativa entre várias)
  * vai para "juridico_vistar" no escritório do advogado responsável; sem pasta ou com mais de uma ativa fica em
- * "triagem_pendente" para a controladoria. Com `incluirSemPasta`, as pendentes sem pasta e com várias pastas
- * são triadas de novo (a pasta pode ter sido aberta ou encerrada).
+ * "triagem_pendente" para a controladoria. Com `incluirSemPasta`, as pendentes sem pasta, com várias pastas, sem
+ * área e sem grupo são triadas de novo (a pasta pode ter sido aberta, encerrada ou corrigida no VIOS).
  */
 export async function triarPublicacoes(
   filtro: { ids?: string[]; arquivoId?: string; incluirSemPasta?: boolean } = {}
@@ -709,7 +709,7 @@ export async function triarPublicacoes(
   const db = admin();
   let consulta = db.from("vistagem_publicacoes").select("id, processo_digitos, teor").limit(2000);
   consulta = filtro.incluirSemPasta
-    ? consulta.or("status.eq.captada,and(status.eq.triagem_pendente,pendencia.in.(sem_pasta,varias_pastas))")
+    ? consulta.or("status.eq.captada,and(status.eq.triagem_pendente,pendencia.in.(sem_pasta,varias_pastas,sem_area,sem_grupo))")
     : consulta.eq("status", "captada");
   if (filtro.ids?.length) consulta = consulta.in("id", filtro.ids);
   if (filtro.arquivoId) consulta = consulta.eq("kurier_arquivo_id", filtro.arquivoId);

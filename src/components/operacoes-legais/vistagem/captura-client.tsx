@@ -506,41 +506,40 @@ function Captura() {
             {/* Para onde foi cada publicação: os botões filtram a lista e já contam com a busca, a área e o tribunal. */}
             <div className="space-y-3 border-b border-[#e6eef0] bg-[#fafcfc] px-4 py-3" data-tour="vg-gestao-filtros">
               <div role="radiogroup" aria-label="Filtrar por situação" className="flex flex-wrap gap-1.5">
-                {(["todas", ...SITUACOES_CAPTURA] as Filtro[])
-                  .filter((valor) => valor !== "captada" || contagem.captada > 0 || filtro === "captada")
-                  .map((valor) => {
-                    const info = valor === "todas" ? { rotulo: "Todas", icone: Layers } : SITUACAO_CAPTURA[valor];
-                    const marcado = filtro === valor;
-                    const Icone = info.icone;
-                    return (
-                      <button
-                        key={valor}
-                        type="button"
-                        role="radio"
-                        aria-checked={marcado}
-                        onClick={() => setFiltro(valor)}
+                {/* Todas as situações aparecem sempre, mesmo com 0 (pedido de 11/11/2026). */}
+                {(["todas", ...SITUACOES_CAPTURA] as Filtro[]).map((valor) => {
+                  const info = valor === "todas" ? { rotulo: "Todas", icone: Layers } : SITUACAO_CAPTURA[valor];
+                  const marcado = filtro === valor;
+                  const Icone = info.icone;
+                  return (
+                    <button
+                      key={valor}
+                      type="button"
+                      role="radio"
+                      aria-checked={marcado}
+                      onClick={() => setFiltro(valor)}
+                      className={cn(
+                        "inline-flex h-9 items-center gap-1.5 rounded-md border px-2.5 text-sm transition-colors duration-150",
+                        "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[#47cdd0]/30",
+                        marcado
+                          ? "border-[#347796] bg-[#347796] font-medium text-white"
+                          : "border-[#dce9eb] bg-white text-muted-foreground hover:border-[#3e84a8]/40 hover:text-foreground",
+                        !marcado && valor !== "todas" && contagem[valor] === 0 && "opacity-60"
+                      )}
+                    >
+                      <Icone className="size-4" aria-hidden />
+                      {info.rotulo}
+                      <span
                         className={cn(
-                          "inline-flex h-9 items-center gap-1.5 rounded-md border px-2.5 text-sm transition-colors duration-150",
-                          "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[#47cdd0]/30",
-                          marcado
-                            ? "border-[#347796] bg-[#347796] font-medium text-white"
-                            : "border-[#dce9eb] bg-white text-muted-foreground hover:border-[#3e84a8]/40 hover:text-foreground",
-                          !marcado && valor !== "todas" && contagem[valor] === 0 && "opacity-60"
+                          "rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums",
+                          marcado ? "bg-white/20 text-white" : "bg-[#eef4f6] text-[#285f7a]"
                         )}
                       >
-                        <Icone className="size-4" aria-hidden />
-                        {info.rotulo}
-                        <span
-                          className={cn(
-                            "rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums",
-                            marcado ? "bg-white/20 text-white" : "bg-[#eef4f6] text-[#285f7a]"
-                          )}
-                        >
-                          {contagem[valor]}
-                        </span>
-                      </button>
-                    );
-                  })}
+                        {contagem[valor]}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Busca
