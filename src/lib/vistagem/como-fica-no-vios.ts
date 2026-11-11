@@ -20,6 +20,8 @@ export interface LinhaNoVios {
   dataVios: string | null;
   /** Prazo apertado: a tarefa pedida vai com o Enviar de hoje; a nota diz qual era o vistado. */
   nota: string | null;
+  /** 1. CIÊNCIA DOS AGENDAMENTOS repetida na vistagem: o VIOS cria, mas só a da primeira tarefa fica. */
+  repetida: boolean;
 }
 
 export interface AgendaNoVios {
@@ -56,7 +58,9 @@ function ordenar(a: LinhaNoVios, b: LinhaNoVios): number {
  * Como a tarefa fica no VIOS, em ordem de data: a pedida (Enviar, no Prazo) e as que o fluxo cria junto. Depois do
  * robô, são as tarefas gravadas, com o CI; antes, a previsão do fluxo com as datas e quem fica em cada uma.
  */
-export function agendaNoVios(item: AgendamentoResumo): AgendaNoVios {
+export function agendaNoVios(
+  item: Pick<AgendamentoResumo, "id" | "tarefa" | "data" | "hora" | "responsavel" | "revisor" | "enviarHoje" | "fluxoPrevisto" | "viosTarefas">
+): AgendaNoVios {
   const aoConcluir = (item.fluxoPrevisto ?? []).filter((tarefa) => tarefa.quando === "conclusao").map((tarefa) => tarefa.nome);
   const gravadas = item.viosTarefas ?? [];
   if (gravadas.length) {
@@ -76,6 +80,7 @@ export function agendaNoVios(item: AgendamentoResumo): AgendaNoVios {
           editada: false,
           dataVios: null,
           nota: null,
+          repetida: false,
         }))
         .sort(ordenar),
     };
@@ -93,6 +98,7 @@ export function agendaNoVios(item: AgendamentoResumo): AgendaNoVios {
     editada: false,
     dataVios: null,
     nota: item.enviarHoje && item.data ? `vistado para ${paraDataVios(item.data)}, que já passou: vai hoje` : null,
+    repetida: false,
   };
   const doFluxo: LinhaNoVios[] = (item.fluxoPrevisto ?? [])
     .filter((tarefa) => tarefa.quando === "criacao")
@@ -108,6 +114,7 @@ export function agendaNoVios(item: AgendamentoResumo): AgendaNoVios {
       editada: tarefa.editada,
       dataVios: tarefa.dataVios,
       nota: null,
+      repetida: Boolean(tarefa.repetida),
     }));
   return { gravada: false, aoConcluir, linhas: [pedida, ...doFluxo].sort(ordenar) };
 }

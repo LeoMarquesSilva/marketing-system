@@ -10,6 +10,7 @@ import {
   CloudDownload,
   Copy,
   FileSpreadsheet,
+  GitCompareArrows,
   Inbox,
   Landmark,
   Layers,
@@ -20,6 +21,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { Segmented } from "@/components/facilities/form-parts";
 import { Button } from "@/components/ui/button";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
@@ -32,6 +34,7 @@ import { SeloAberturaDePasta } from "./abertura-pasta";
 import { FaixaArquivoDoDia, useArquivoDoDia } from "./aviso-arquivo-do-dia";
 import { DetalheCaptura, SITUACAO_CAPTURA, SITUACOES_CAPTURA, SeloSituacaoCaptura, detalheDaSituacao, situacaoNaCaptura, type SituacaoCaptura } from "./captura-detalhe";
 import { ColarPublicacoes, type ResultadoColagem } from "./colar-publicacoes";
+import { ConferenciaDjenKurierPainel } from "./conferencia-djen-kurier";
 import { IconeArea, IconeTribunal, LogoGrupo } from "./marcas";
 import { contarPor, formatarData, formatarDataHora, tribunalDe } from "./publicacao-ui";
 import { IconeOpcao, Seletor } from "./seletor";
@@ -675,10 +678,31 @@ function Captura() {
   );
 }
 
+type AbaDaGestao = "arquivos" | "djen";
+
+/** Gestão das publicações: os arquivos da Kurier e, ao lado, a conferência DJEN × Kurier (estudo de 11/11/2026). */
+function GestaoDasPublicacoes() {
+  const [aba, setAba] = useState<AbaDaGestao>("arquivos");
+  return (
+    <div className="space-y-4">
+      <Segmented
+        label="Gestão das publicações"
+        value={aba}
+        options={[
+          { value: "arquivos", label: "Arquivos da Kurier", icon: FileSpreadsheet },
+          { value: "djen", label: "Conferência DJEN × Kurier", icon: GitCompareArrows },
+        ]}
+        onChange={setAba}
+      />
+      {aba === "djen" ? <ConferenciaDjenKurierPainel /> : <Captura />}
+    </div>
+  );
+}
+
 export function CapturaClient() {
   return (
     <AcessoOperacoesLegais>
-      <Captura />
+      <GestaoDasPublicacoes />
     </AcessoOperacoesLegais>
   );
 }
