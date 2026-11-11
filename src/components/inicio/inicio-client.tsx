@@ -19,6 +19,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   ExternalLink,
+  Flag,
   Handshake,
   IdCard,
   ImagePlus,
@@ -117,14 +118,15 @@ function longToday(): string {
 }
 
 /** Prazo em dia de calendário de Brasília: "Até 13 nov · faltam 3 dias". */
-function deadlineInfo(deadline: string, today: string): { label: string; priority: boolean } | null {
+function deadlineInfo(deadline: string, today: string): { label: string; chip: string; priority: boolean } | null {
   const date = new Date(deadline);
   if (Number.isNaN(date.getTime())) return null;
   const day = todayInBrasilia(date);
   const left = daysBetween(today, day);
   if (left < 0) return null;
   const when = left === 0 ? "encerra hoje" : left === 1 ? "encerra amanhã" : `faltam ${left} dias`;
-  return { label: `Até ${shortDate(day, today)} · ${when}`, priority: left <= PRIORITY_DAYS };
+  const chip = left === 0 ? "Hoje" : left === 1 ? "Amanhã" : shortDate(day, today);
+  return { label: `Até ${shortDate(day, today)} · ${when}`, chip, priority: left <= PRIORITY_DAYS };
 }
 
 function countdown(target: string, today: string): string {
@@ -231,6 +233,7 @@ function StatTile({
   tone,
   href,
   onClick,
+  tall,
 }: {
   icon: LucideIcon;
   value: number | null;
@@ -238,10 +241,13 @@ function StatTile({
   tone: string;
   href?: string;
   onClick?: () => void;
+  /** Em pé (ícone em cima, número embaixo): acompanha a altura de um painel vizinho. */
+  tall?: boolean;
 }) {
   const className = cn(
     SURFACE,
-    "group flex min-h-[76px] w-full items-center gap-4 px-4 py-3.5 text-left outline-none transition-shadow hover:shadow-[0_6px_18px_rgba(4,32,47,0.08)] focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
+    "group flex w-full gap-4 px-4 text-left outline-none transition-shadow hover:shadow-[0_6px_18px_rgba(4,32,47,0.08)] focus-visible:ring-2 focus-visible:ring-[#47cdd0]",
+    tall ? "h-full min-h-[112px] flex-col justify-between py-4" : "min-h-[76px] items-center py-3.5"
   );
   const body = (
     <>
@@ -252,14 +258,76 @@ function StatTile({
         <span className="block text-2xl font-semibold leading-none text-[#0d2a38]">
           {value === null ? <span className="inline-block h-6 w-8 animate-pulse rounded bg-[#eaf2f5]" /> : value}
         </span>
-        <span className="mt-1.5 block truncate text-sm text-[#3b5560]">{label}</span>
+        <span className={cn("mt-1.5 block text-sm text-[#3b5560]", !tall && "truncate")}>{label}</span>
       </span>
-      <ChevronRight className="size-4 shrink-0 text-[#7b929c] transition-transform group-hover:translate-x-0.5" aria-hidden />
+      {!tall && <ChevronRight className="size-4 shrink-0 text-[#7b929c] transition-transform group-hover:translate-x-0.5" aria-hidden />}
     </>
   );
   if (href?.startsWith("#")) return <a href={href} className={className}>{body}</a>;
   if (href) return <Link href={href} className={className}>{body}</Link>;
   return <button type="button" onClick={onClick} className={className}>{body}</button>;
+}
+
+/** Cores dos segmentos do painel (azul de ação, ciano, índigo e neutro da marca). */
+const SEGMENT_COLORS = ["#347796", "#47cdd0", "#48466e", "#9fb2ba"];
+
+/** Total com barra dividida e uma linha por parte (ex.: publicações em cada fila da Vistagem). */
+function BreakdownMeter({ item, className }: { item: HomePending; className?: string }) {
+  const parts = item.breakdown ?? [];
+  const total = parts.reduce((sum, part) => sum + part.value, 0);
+  const percent = (value: number) => (total > 0 ? Math.round((value / total) * 100) : 0);
+  return (
+    <section className={cn(SURFACE, "flex flex-col px-5 py-4", className)}>
+      <header className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700">
+            <Bell className="size-5" aria-hidden />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-[#0d2a38]">Publicações na Vistagem</h2>
+            <p className="text-xs text-[#5a717b]">Quanto falta em cada fila</p>
+          </div>
+        </div>
+        <Link href={item.href} className={TEXT_LINK}>
+          Abrir a Vistagem
+          <ArrowRight className="size-3.5" aria-hidden />
+        </Link>
+      </header>
+      <p className="mt-3 flex items-baseline gap-2">
+        <span className="text-3xl font-semibold leading-none text-[#0d2a38]">{total}</span>
+        <span className="text-sm text-[#5a717b]">{plural(total, "publicação nas filas", "publicações nas filas")}</span>
+      </p>
+      <div
+        role="img"
+        aria-label={parts.map((part) => `${part.label}: ${part.value}`).join(", ")}
+        className="mt-3 flex h-2.5 gap-0.5 overflow-hidden rounded-full bg-[#eaf2f5]"
+      >
+        {parts.map((part, index) =>
+          part.value > 0 ? (
+            <span
+              key={part.label}
+              className="min-w-1.5"
+              style={{ flexGrow: part.value, backgroundColor: SEGMENT_COLORS[index % SEGMENT_COLORS.length] }}
+            />
+          ) : null
+        )}
+      </div>
+      <ul className="mt-3 grid grid-cols-1 gap-x-8 gap-y-1.5 text-sm sm:grid-cols-2">
+        {parts.map((part, index) => (
+          <li key={part.label} className="flex items-center gap-2">
+            <span
+              className="size-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: SEGMENT_COLORS[index % SEGMENT_COLORS.length] }}
+              aria-hidden
+            />
+            <span className="min-w-0 flex-1 truncate text-[#3b5560]">{part.label}</span>
+            <span className="font-semibold tabular-nums text-[#0d2a38]">{part.value}</span>
+            <span className="w-9 text-right text-xs tabular-nums text-[#5a717b]">{percent(part.value)}%</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
 /* ------------------------------------------------------------ pendências */
@@ -283,21 +351,27 @@ function PendingList({ pending, today }: { pending: HomePending[]; today: string
         const deadline = item.deadline ? deadlineInfo(item.deadline, today) : null;
         return (
           <li key={item.id}>
-            <Link href={item.href} className="group -mx-2 flex min-h-[68px] items-center gap-3.5 rounded-md px-2 py-3 outline-none transition-colors hover:bg-[#f4fafb] focus-visible:bg-[#f4fafb]">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700">
-                <Icon className="size-5" aria-hidden />
+            <Link href={item.href} className="group -mx-2 flex min-h-[52px] items-center gap-3 rounded-md px-2 py-2 outline-none transition-colors hover:bg-[#f4fafb] focus-visible:bg-[#f4fafb]">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-[#f1f5f6] text-[#3b5560]">
+                <Icon className="size-4" aria-hidden />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold leading-snug text-[#0d2a38]">{item.title}</span>
-                {(item.detail || deadline) && (
-                  <span className="mt-0.5 block text-xs text-[#5a717b]">
-                    {[deadline?.label, item.detail].filter(Boolean).join(" · ")}
-                  </span>
-                )}
+                <span className="block truncate text-sm font-medium text-[#0d2a38]">{item.title}</span>
+                {item.detail && <span className="block truncate text-xs text-[#5a717b]">{item.detail}</span>}
               </span>
-              {deadline?.priority && (
-                <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">Prioridade</span>
+              {deadline && (
+                <span
+                  title={deadline.label}
+                  className={cn(
+                    "inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold",
+                    deadline.priority ? "bg-amber-100 text-amber-800" : "bg-[#eaf2f5] text-[#285f7a]"
+                  )}
+                >
+                  <CalendarDays className="size-3.5" aria-hidden />
+                  {deadline.chip}
+                </span>
               )}
+              {deadline?.priority && <Flag className="size-4 shrink-0 fill-amber-500 text-amber-600" aria-label="Prioridade" />}
               <ChevronRight className="size-4 shrink-0 text-[#7b929c] transition-transform group-hover:translate-x-0.5" aria-hidden />
             </Link>
           </li>
@@ -1163,6 +1237,37 @@ export function InicioClient() {
 
       <Favorites fronts={fronts} data={data} />
 
+      {publications?.breakdown ? (
+        <div className="grid gap-4 lg:grid-cols-12">
+          <BreakdownMeter item={publications} className="lg:col-span-6" />
+          <div className="grid gap-4 sm:grid-cols-3 lg:col-span-6">
+            <StatTile
+              tall
+              icon={ClipboardCheck}
+              value={data ? data.pending.length : null}
+              label={data?.pending.length === 1 ? "Pendência para você" : "Pendências para você"}
+              tone="bg-[#e8f8f8] text-[#1f6f72]"
+              href="#pendencias"
+            />
+            <StatTile
+              tall
+              icon={CalendarDays}
+              value={agendaCount}
+              label={agendaCount === 1 ? "Data na agenda" : "Datas na agenda"}
+              tone="bg-[#eef1f8] text-[#48466e]"
+              href="#agenda"
+            />
+            <StatTile
+              tall
+              icon={Layers}
+              value={moduleCount}
+              label={moduleCount === 1 ? "Módulo disponível" : "Módulos disponíveis"}
+              tone="bg-[#eaf2f7] text-[#285f7a]"
+              onClick={() => setModulesOpen("all")}
+            />
+          </div>
+        </div>
+      ) : (
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile
           icon={ClipboardCheck}
@@ -1203,6 +1308,7 @@ export function InicioClient() {
           onClick={() => setModulesOpen("all")}
         />
       </div>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-12">
         <Block

@@ -21,6 +21,8 @@ export interface HomePending {
   /** Prazo (ISO), quando existe. */
   deadline: string | null;
   count: number | null;
+  /** Como o total se divide (ex.: publicações por fila da Vistagem). */
+  breakdown?: Array<{ label: string; value: number }>;
 }
 
 /** Aniversário sem o ano: a idade de ninguém vai para a tela. */
