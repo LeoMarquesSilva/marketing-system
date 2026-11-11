@@ -137,7 +137,7 @@ describe("visibilidade por perfil", () => {
         "/meus-clientes",
       ])
     );
-    expect(hrefs).not.toContain("/");
+    expect(hrefs).toContain("/");
     expect(hrefs).not.toContain("/painel-marketing");
     expect(hrefs).not.toContain("/planner");
     expect(frontIds({ role: null, permissions: null, department: "Trabalhista" })).not.toContain("pessoas");
@@ -163,7 +163,7 @@ describe("visibilidade por perfil", () => {
     expect(hrefs).toEqual(
       expect.arrayContaining(["/conteudo/inicio", "/conteudo/boletim", "/conteudo/reels", "/conteudo/roteiros"])
     );
-    expect(hrefs).not.toContain("/");
+    expect(hrefs).toContain("/");
     expect(hrefs).not.toContain("/painel-marketing");
     expect(hrefs).not.toContain("/conteudo/gustavo");
   });

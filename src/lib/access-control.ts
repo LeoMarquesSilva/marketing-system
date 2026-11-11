@@ -466,10 +466,10 @@ export function canAccessPath(
 }
 
 /**
- * A tela inicial ("/") está em lançamento: por enquanto só admin enxerga
- * (decisão do usuário em 10/11/2026). Para liberar a todos, trocar para false.
+ * Trava de lançamento da tela inicial ("/"): com true, só admin enxerga. Ficou
+ * ligada de 10 a 11/11/2026; desde então a tela é de todos (decisão do usuário).
  */
-export const HOME_ADMIN_ONLY = true;
+export const HOME_ADMIN_ONLY = false;
 
 /** Quem abre a tela inicial. O perfil liberado só para o PE27 nunca abre. */
 export function canSeeHome(profile: AccessProfile | null | undefined): boolean {

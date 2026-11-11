@@ -134,9 +134,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       return null;
     }
 
-    // Comportamento legado (colaborador de conteúdo).
-    if (profile && isContentCollaborator(profile) && !isPublic && !isCollaboratorRoute) {
-      return "/conteudo/inicio";
+    // Comportamento legado (colaborador de conteúdo): fora das telas dele, volta para a tela inicial.
+    const naTelaInicial = pathname === "/" && canAccessPath(profile, pathname);
+    if (profile && isContentCollaborator(profile) && !isPublic && !isCollaboratorRoute && !naTelaInicial) {
+      return resolvePostLoginPathFromProfile(profile);
     }
 
     // Tela inicial: por enquanto só para quem a enxerga (mesmo no modo legado).

@@ -56,7 +56,7 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(vistador, "/operacoes-legais/vistagem/juridico")).toBe(true);
     expect(canAccessPath(vistador, "/operacoes-legais")).toBe(false);
     expect(canAccessPath(vistador, "/planner")).toBe(false);
-    expect(firstAllowedPath(vistador)).toBe("/operacoes-legais/vistagem");
+    expect(firstAllowedPath(vistador)).toBe("/");
   });
 
   it("o jurídico abre a Visão geral e a aba Vistagem; sem papel ou admin é controladoria", () => {
@@ -74,8 +74,8 @@ describe("access-control permissions catalog", () => {
     ]) {
       expect(canAccessPath(juridico, aba)).toBe(false);
     }
-    // A entrada no sistema e pelo menu continuam sendo a aba Vistagem.
-    expect(firstAllowedPath(juridico)).toBe("/operacoes-legais/vistagem/juridico");
+    // Entra pela tela inicial; no menu, a entrada da Vistagem continua sendo a aba Vistagem.
+    expect(firstAllowedPath(juridico)).toBe("/");
     expect(entradaDaVistagem(juridico)).toBe("/operacoes-legais/vistagem/juridico");
     expect(entradaDaVistagem({ role: null, permissions: ["/operacoes-legais/vistagem"] })).toBe("/operacoes-legais/vistagem");
     expect(papelVistagem({ role: null, permissions: ["/operacoes-legais/vistagem"], vistagem_papel: null })).toBe("controladoria");
@@ -114,13 +114,13 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath({ role: null, permissions: ["/", "/planner"] }, "/icp")).toBe(false);
   });
 
-  it("perfil só com ICP cai direto no ICP e não vê o resto", () => {
+  it("perfil só com ICP entra pela tela inicial e não vê o resto", () => {
     const icpOnly = { role: null, permissions: ["/icp"] };
     expect(canAccessPath(icpOnly, "/icp")).toBe(true);
-    expect(canAccessPath(icpOnly, "/")).toBe(false);
+    expect(canAccessPath(icpOnly, "/")).toBe(true);
     expect(canAccessPath(icpOnly, "/painel-marketing")).toBe(false);
     expect(canAccessPath(icpOnly, "/planner")).toBe(false);
-    expect(firstAllowedPath(icpOnly)).toBe("/icp");
+    expect(firstAllowedPath(icpOnly)).toBe("/");
   });
 
   it("perfil ICP + conteúdo vê ICP, conteúdo e fotos, mas não gerencia a galeria", () => {
@@ -135,7 +135,7 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(perfil, "/fotos-eventos")).toBe(true);
     expect(canAccessPath(perfil, "/fotos-colaboradores")).toBe(false);
     expect(canAccessPath(perfil, "/planner")).toBe(false);
-    expect(firstAllowedPath(perfil)).toBe("/conteudo/inicio");
+    expect(firstAllowedPath(perfil)).toBe("/");
   });
 
   it("libera Meus Clientes para qualquer autenticado", () => {
@@ -352,18 +352,19 @@ describe("PE27 (planejamento estratégico)", () => {
 });
 
 describe("tela inicial e dashboard de marketing", () => {
-  it("em lançamento, a tela inicial abre só para admin", () => {
+  it("a tela inicial abre para todos os perfis, menos o liberado só no PE27", () => {
     expect(canAccessPath({ role: "admin" }, "/")).toBe(true);
-    expect(firstAllowedPath({ role: "admin" })).toBe("/");
-    expect(canAccessPath({ role: null, permissions: ["/conteudo/roteiros"] }, "/")).toBe(false);
-    expect(canAccessPath({ role: null, permissions: null, department: "Trabalhista" }, "/")).toBe(false);
-    expect(canAccessPath({ role: "designer", permissions: null }, "/")).toBe(false);
+    expect(canAccessPath({ role: null, permissions: ["/conteudo/roteiros"] }, "/")).toBe(true);
+    expect(canAccessPath({ role: null, permissions: null, department: "Trabalhista" }, "/")).toBe(true);
+    expect(canAccessPath({ role: "designer", permissions: null }, "/")).toBe(true);
     expect(canAccessPath({ role: null, permissions: ["/pe27"] }, "/")).toBe(false);
   });
 
-  it("quem tinha o dashboard marcado entra pelo dashboard de marketing", () => {
-    expect(firstAllowedPath({ role: null, permissions: ["/", "/planner"] })).toBe("/painel-marketing");
-    expect(firstAllowedPath({ role: "designer", permissions: null })).toBe("/painel-marketing");
+  it("todo mundo entra pela tela inicial; o perfil só-PE27, pelo módulo", () => {
+    expect(firstAllowedPath({ role: "admin" })).toBe("/");
+    expect(firstAllowedPath({ role: null, permissions: ["/", "/planner"] })).toBe("/");
+    expect(firstAllowedPath({ role: "designer", permissions: null })).toBe("/");
+    expect(firstAllowedPath({ role: null, permissions: ["/pe27"] })).toBe("/pe27");
   });
 
   it("a chave antiga do dashboard continua liberando o dashboard de marketing", () => {
