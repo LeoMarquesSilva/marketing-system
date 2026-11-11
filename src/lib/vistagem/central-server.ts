@@ -3,19 +3,50 @@ import "server-only";
 import { registrarNoBkpSemFalhar } from "./bkp-sioe-server";
 import { camposDaCentral, type PublicacaoParaCentral, type TarefaParaCentral } from "./central";
 import { VistagemError } from "./errors";
+import { carregarBaseDoFluxo, comFluxoPrevisto } from "./fluxo-previsto-server";
 import { admin, falhou, hojeEmSaoPaulo } from "./server";
 import { criarItemNaCentral } from "./sharepoint";
 import type { ResultadoCentral } from "./types";
 
 const COLUNAS =
-  "numero_processo, processo_sufixo, numero_processo_original, grupo_cliente, cliente, escritorio_responsavel, demanda_risco, teor, observacao_vistagem, publicacao_esocial, sugestao_triagem, vistado_por, revistado_por";
+  "numero_processo, processo_sufixo, numero_processo_original, grupo_cliente, cliente, escritorio_responsavel, area_processo, demanda_risco, teor, observacao_vistagem, publicacao_esocial, sugestao_triagem, vistado_por, revistado_por";
 
-const COLUNAS_TAREFA = "etiqueta, tarefa, data, data_fatal, dias_prazo, contagem_prazo, hora, hora_fim, responsavel, revisor, observacao, fluxo_datas";
+const COLUNAS_TAREFA =
+  "id, ordem, tarefa_id, etiqueta, tarefa, data, data_fatal, dias_prazo, contagem_prazo, hora, hora_fim, responsavel, revisor, observacao, fluxo_datas";
 
 /** Duas chamadas ao mesmo tempo (a tela e o cron) não criam dois itens: a segunda espera este intervalo. */
 const INTERVALO_ENTRE_TENTATIVAS_MS = 2 * 60_000;
 
-type LinhaDaPublicacao = PublicacaoParaCentral & { vistado_por: string | null; revistado_por: string | null };
+type LinhaDaPublicacao = PublicacaoParaCentral & { area_processo: string | null; vistado_por: string | null; revistado_por: string | null };
+
+type LinhaDaTarefa = TarefaParaCentral & { id: string; ordem: number; tarefa_id: string | null };
+
+/**
+ * As tarefas com a árvore do fluxo do VIOS (datas e quem fica em cada uma), como a Conferência mostra: quem abre a
+ * pasta agenda o Enviar, o Revisar, o Protocolar e as outras sem ter de refazer a conta. Sem a árvore, vão como estão.
+ */
+async function tarefasComFluxo(publicacao: LinhaDaPublicacao, tarefas: LinhaDaTarefa[], hoje: string): Promise<TarefaParaCentral[]> {
+  const base = await carregarBaseDoFluxo("da Central do SharePoint");
+  if (!base) return tarefas;
+  const previstas = comFluxoPrevisto(
+    tarefas.map((tarefa) => ({
+      id: tarefa.id,
+      ordem: tarefa.ordem,
+      tarefa: tarefa.tarefa,
+      tarefaId: tarefa.tarefa_id,
+      etiqueta: tarefa.etiqueta,
+      data: tarefa.data,
+      dataFatal: tarefa.data_fatal,
+      responsavel: tarefa.responsavel,
+      revisor: tarefa.revisor,
+      fluxoDatas: tarefa.fluxo_datas ?? [],
+    })),
+    publicacao,
+    base,
+    hoje
+  );
+  return tarefas.map((tarefa, indice) => ({ ...tarefa, fluxo_previsto: previstas[indice].fluxoPrevisto, enviar_hoje: previstas[indice].enviarHoje }));
+}
 
 /**
  * Cria na Central do SharePoint o pedido de abertura de pasta de uma publicação com status "abertura_pasta". O trabalho
@@ -49,10 +80,12 @@ export async function enviarParaCentral(id: string): Promise<ResultadoCentral> {
     const { data: tarefas, error: erroTarefas } = await db.from("vistagem_agendamentos").select(COLUNAS_TAREFA).eq("publicacao_id", id).order("ordem", { ascending: true });
     if (erroTarefas) throw new VistagemError(`Não foi possível ler as tarefas: ${erroTarefas.message}`, 500);
     const autor = publicacao.revistado_por ?? publicacao.vistado_por;
-    const { data: pessoa } = autor ? await db.from("users").select("name").eq("auth_id", autor).maybeSingle() : { data: null };
-    const itemId = await criarItemNaCentral(
-      camposDaCentral(publicacao, (tarefas ?? []) as unknown as TarefaParaCentral[], { vistadoPor: pessoa?.name ?? null, hoje: hojeEmSaoPaulo(), agora })
-    );
+    const hoje = hojeEmSaoPaulo();
+    const [{ data: pessoa }, comFluxo] = await Promise.all([
+      autor ? db.from("users").select("name").eq("auth_id", autor).maybeSingle() : Promise.resolve({ data: null }),
+      tarefasComFluxo(publicacao, (tarefas ?? []) as unknown as LinhaDaTarefa[], hoje),
+    ]);
+    const itemId = await criarItemNaCentral(camposDaCentral(publicacao, comFluxo, { vistadoPor: pessoa?.name ?? null, hoje, agora }));
     const { error: erroGravar } = await db
       .from("vistagem_publicacoes")
       .update({ central_item_id: itemId, central_enviada_em: new Date().toISOString(), central_erro: null })

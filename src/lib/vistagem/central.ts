@@ -1,7 +1,8 @@
 import { paraDataVios, type EtiquetaAgendamento } from "./agendamento";
 import { escritorioNoBkp, tiposDoAgendamento } from "./bkp-sioe";
 import { ehCienciaDosAgendamentos, ehCienciaNf } from "./ciencia-agendamentos";
-import type { DataDoFluxo } from "./types";
+import { agendaNoVios, partesDaData, type LinhaNoVios } from "./como-fica-no-vios";
+import type { DataDoFluxo, TarefaPrevista } from "./types";
 
 /**
  * "Central do SharePoint": a lista SOLICITAÇÃO DE AGENDAMENTOS E REAGENDAMENTOS (site CONTROLADORIAJURDICA). Publicação
@@ -85,6 +86,13 @@ export interface TarefaParaCentral {
   revisor: string | null;
   observacao: string | null;
   fluxo_datas: DataDoFluxo[] | null;
+  /**
+   * O que o fluxo do VIOS cria com a tarefa, com a data e quem fica em cada uma (`comFluxoPrevisto`). Sem a árvore do
+   * VIOS (falhou a leitura), vai só o que o jurídico mudou no fluxo (`fluxo_datas`).
+   */
+  fluxo_previsto?: TarefaPrevista[] | null;
+  /** Prazo apertado: o Enviar vistado já passou, e a tarefa vai com o de hoje. */
+  enviar_hoje?: string | null;
 }
 
 /** Número como a lista guarda, com o incidente junto ("1413501-21.2026.8.12.0000/50002"). */
@@ -97,16 +105,62 @@ export function processoNaCentral(publicacao: Pick<PublicacaoParaCentral, "numer
  * "DATA - ENVIAR": no fluxo antigo vinha da "DATA - PRIMEIRO PRAZO/PROVIDÊNCIA". A Ciência dos Agendamentos, que o
  * Orquestra põe sozinho no dia do lançamento, não conta; nunca fica no passado, como no envio ao robô.
  */
-export function dataEnviarNaCentral(tarefas: Pick<TarefaParaCentral, "tarefa" | "data">[], hoje: string): string {
+export function dataEnviarNaCentral(tarefas: Pick<TarefaParaCentral, "tarefa" | "data" | "enviar_hoje">[], hoje: string): string {
   const pedidas = tarefas.filter((tarefa) => !ehCienciaDosAgendamentos(tarefa.tarefa));
-  const primeira = (pedidas.length ? pedidas : tarefas).map((tarefa) => tarefa.data).sort()[0];
+  const primeira = (pedidas.length ? pedidas : tarefas).map((tarefa) => tarefa.enviar_hoje ?? tarefa.data).sort()[0];
   return primeira && primeira > hoje ? primeira : hoje;
+}
+
+/** "20/11/2026 (sex)": quem agenda à mão confere o dia da semana. */
+function diaComSemana(iso: string): string {
+  return `${paraDataVios(iso)} (${partesDaData(iso).semana})`;
+}
+
+/** Uma tarefa da árvore: data, nome e quem fica, com o que difere do VIOS (quem agenda à mão precisa repetir). */
+function linhaDoFluxo(linha: LinhaNoVios, etiqueta: EtiquetaAgendamento): string {
+  const nome = linha.principal ? `${linha.nome} (${etiqueta === "PRAZO" ? "Enviar" : "esta tarefa"})` : linha.nome;
+  const notas = [
+    linha.criadaPor ? `criada por ${linha.criadaPor}` : null,
+    linha.nota,
+    !linha.principal && linha.data && linha.dataVios && linha.data !== linha.dataVios ? `o VIOS daria ${paraDataVios(linha.dataVios)}: mudar a data` : null,
+    linha.repetida ? "repetida nesta vistagem: cancelar no VIOS (fica a da primeira tarefa)" : null,
+  ].filter(Boolean);
+  const partes = [
+    `${linha.data ? diaComSemana(linha.data) : "data do VIOS"}${linha.hora ? ` às ${linha.hora}` : ""}`,
+    nome,
+    linha.responsaveis?.trim() || "responsável padrão do VIOS",
+  ];
+  // As que nascem de outra do fluxo ficam um nível para dentro, como na árvore da tela.
+  const recuo = linha.criadaPor ? "     " : "   ";
+  return `${recuo}- ${partes.join(" | ")}${notas.length ? ` (${notas.join("; ")})` : ""}`;
+}
+
+/** A árvore do fluxo da tarefa, em ordem de data: a pedida (no Prazo, o Enviar), o Revisar, o Protocolar e as outras. */
+function arvoreDaTarefa(tarefa: TarefaParaCentral, indice: number): string[] {
+  const agenda = agendaNoVios({
+    id: String(indice),
+    tarefa: tarefa.tarefa,
+    data: tarefa.data,
+    hora: tarefa.hora,
+    responsavel: tarefa.responsavel,
+    revisor: tarefa.revisor,
+    enviarHoje: tarefa.enviar_hoje ?? null,
+    fluxoPrevisto: tarefa.fluxo_previsto ?? [],
+    viosTarefas: null,
+  });
+  // Só a tarefa pedida, sem fluxo: a linha de cima já diz tudo.
+  if (agenda.linhas.length < 2 && !agenda.aoConcluir.length) return [];
+  return [
+    "   Fluxo no VIOS (data | tarefa | responsável):",
+    ...agenda.linhas.map((linha) => linhaDoFluxo(linha, tarefa.etiqueta)),
+    ...(agenda.aoConcluir.length ? [`   Ao concluir, o VIOS cria: ${agenda.aoConcluir.join(", ")} (responsável padrão do VIOS)`] : []),
+  ];
 }
 
 function linhaDaTarefa(tarefa: TarefaParaCentral, indice: number): string {
   const partes = [`${indice + 1}. ${ROTULO_TAREFA[tarefa.etiqueta]} - ${tarefa.tarefa}`];
   if (tarefa.etiqueta === "PRAZO") {
-    partes.push(`Enviar: ${paraDataVios(tarefa.data)}`);
+    partes.push(`Enviar: ${paraDataVios(tarefa.enviar_hoje ?? tarefa.data)}`);
     if (tarefa.data_fatal) {
       const contagem = tarefa.dias_prazo ? ` (${tarefa.dias_prazo} dias ${tarefa.contagem_prazo === "corridos" ? "corridos" : "úteis"})` : "";
       partes.push(`Fatal: ${paraDataVios(tarefa.data_fatal)}${contagem}`);
@@ -119,7 +173,8 @@ function linhaDaTarefa(tarefa: TarefaParaCentral, indice: number): string {
   if (tarefa.revisor) partes.push(`Revisor: ${tarefa.revisor}`);
   const linhas = [partes.join(" | ")];
   if (tarefa.observacao?.trim()) linhas.push(`   Observação: ${tarefa.observacao.trim()}`);
-  // Datas e responsáveis do fluxo que o jurídico trocou: quem agenda à mão precisa repetir.
+  if (tarefa.fluxo_previsto?.length) return [...linhas, ...arvoreDaTarefa(tarefa, indice)].join("\n");
+  // Sem a árvore do VIOS: as datas e os responsáveis do fluxo que o jurídico trocou (quem agenda à mão precisa repetir).
   for (const ajuste of tarefa.fluxo_datas ?? []) {
     const nome = ajuste.caminho.at(-1) ?? "fluxo";
     const detalhes = [ajuste.data ? paraDataVios(ajuste.data) : null, ajuste.responsaveis?.length ? ajuste.responsaveis.join(", ") : null].filter(Boolean);

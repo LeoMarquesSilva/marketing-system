@@ -2,8 +2,6 @@ import "server-only";
 
 import {
   ETIQUETAS_AGENDAMENTO,
-  areaDoCatalogo,
-  chaveDoCaminho,
   nomesDasPessoas,
   pessoasDaArea,
   responsavelSugerido,
@@ -23,14 +21,15 @@ import { CHECK_AUTOMATICO, foiCheckAutomatico, notaDoCheckAutomatico } from "./c
 import { registrarNoBkpSemFalhar } from "./bkp-sioe-server";
 import { vaiParaCentral } from "./central";
 import { enviarParaCentral } from "./central-server";
-import { cienciaDosAgendamentos, cienciaQueFica, ehCienciaDosAgendamentos, ehReestruturacao } from "./ciencia-agendamentos";
+import { cienciaDosAgendamentos, ehCienciaDosAgendamentos, ehReestruturacao } from "./ciencia-agendamentos";
 import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./dias-uteis";
 import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
 import { areaComSugestaoIa, fatalSugerida, resultadoDaSugestao, sugestaoNaListaAtual, type ResultadoSugestao, type SugestaoIa } from "./sugestao-ia";
 import { carregarFeriados } from "./feriados";
 import { lerConfiguracoes } from "./configuracoes-server";
-import { arvoreDaArea, cadeiaDoFluxo, montarFluxo, semPrazoProprio, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
+import { cadeiaDoFluxo, montarFluxo, semPrazoProprio, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
 import { caminhosDoFluxo, fluxoParaOVios, fluxoPrevisto, prazoApertado } from "./fluxo-previsto";
+import { arvoreDaPublicacao, carregarBaseDoFluxo, catalogoDaPublicacao, comFluxoPrevisto, type AreaDaPublicacao } from "./fluxo-previsto-server";
 import { buscarPastasVios } from "./pastas-vios";
 import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
@@ -45,7 +44,6 @@ import {
   carregarCatalogoProcessos,
   carregarMateriasVios,
   carregarSistemasVios,
-  catalogoDaArea,
   consultarFilaSama,
   enfileirarNoSama,
   enfileirarSintese,
@@ -174,19 +172,6 @@ function comResponsaveisDaArea(tarefas: OpcaoTarefa[], usuarios: OpcaoVios[]): O
     const responsaveis = responsaveisNaArea(tarefa.responsaveis, usuarios);
     return responsaveis.length ? { ...tarefa, responsaveis } : { id: tarefa.id, nome: tarefa.nome, ...(tarefa.nomeVios ? { nomeVios: tarefa.nomeVios } : {}) };
   });
-}
-
-function catalogoDaPublicacao(areas: CatalogoArea[], publicacao: Pick<PublicacaoComArea, "area_processo" | "escritorio_responsavel">): CatalogoArea | null {
-  return catalogoDaArea(areas, areaDoCatalogo(publicacao.area_processo, publicacao.escritorio_responsavel, areas.map((item) => item.area)));
-}
-
-/** A árvore do VIOS como vale para a pasta da publicação: só os tipos da lista de tarefas da área dela. */
-function arvoreDaPublicacao(
-  arvore: Map<number, TipoNaArvore>,
-  areas: CatalogoArea[],
-  publicacao: Pick<PublicacaoComArea, "area_processo" | "escritorio_responsavel">
-): Map<number, TipoNaArvore> {
-  return arvoreDaArea(arvore, catalogoDaPublicacao(areas, publicacao)?.etapas.map((etapa) => etapa.id) ?? null);
 }
 
 export function catalogoParaPublicacao(
@@ -928,12 +913,25 @@ export async function listarAgendadasJuridico(escritorio: string | null, areas: 
   const resposta = (itens: ConferenciaItem[], fotos: Record<string, string>) => ({ itens, fotos, hoje: hojeEmSaoPaulo(), dias: DIAS_AGENDADAS });
   if (areas && (!areas.length || (escritorio && !areas.includes(escritorio)))) return resposta([], {});
   const vistadoDesde = new Date(Date.now() - DIAS_AGENDADAS * 86_400_000).toISOString();
-  const itens = await itensDeConferencia(["controladoria_vistar", "pronto_para_agendar", "agendado", "checado", "revisar", "abertura_pasta"], 300, false, "vistado_em", {
+  const lidos = await itensDeConferencia(["controladoria_vistar", "pronto_para_agendar", "agendado", "checado", "revisar", "abertura_pasta"], 300, false, "vistado_em", {
     escritorios: escritorio ? [escritorio] : areas,
     vistadoDesde,
     semRisco: !veRisco,
   });
+  // A abertura de pasta não passa pelo robô: o detalhe mostra a árvore prevista (datas e quem fica), que a Central agenda.
+  const base = lidos.some((item) => item.publicacao.status === "abertura_pasta") ? await carregarBaseDoFluxo("das Agendadas") : null;
+  const hoje = hojeEmSaoPaulo();
+  const itens = base
+    ? lidos.map((item) =>
+        item.publicacao.status === "abertura_pasta" ? { ...item, agendamentos: comFluxoPrevisto(item.agendamentos, areaDoItem(item), base, hoje) } : item
+      )
+    : lidos;
   return resposta(itens, await fotosDosItens(itens, "visão Agendadas"));
+}
+
+/** Área que decide a árvore do fluxo de um item da conferência. */
+function areaDoItem(item: ConferenciaItem): AreaDaPublicacao {
+  return { area_processo: item.areaProcesso, escritorio_responsavel: item.publicacao.escritorioResponsavel };
 }
 
 /** Texto da publicação na Conferência: 9 em cada 10 cabem inteiras; as maiores têm o "Ver texto completo". */
@@ -941,57 +939,32 @@ const LIMITE_TEOR_CONFERENCIA = 12_000;
 
 export async function listarConferencia(): Promise<ConferenciaResposta> {
   const ficha = { limiteTeor: LIMITE_TEOR_CONFERENCIA, comAuxiliar: true, comSugestaoIa: true };
-  const [aConferirSemFluxo, enviadasSemFluxo, aberturas, fluxo] = await Promise.all([
+  const [aConferirSemFluxo, enviadasSemFluxo, aberturasSemFluxo, base] = await Promise.all([
     itensDeConferencia(["controladoria_vistar"], 300, true, "vistado_em", ficha),
     itensDeConferencia(["pronto_para_agendar", "agendado"], 100, false, "conferido_em", ficha),
     itensDeConferencia(["abertura_pasta"], 100, false, "vistado_em", { limiteTeor: 300 }),
     // Sem a árvore do VIOS, a conferência mostra só as tarefas pedidas.
-    Promise.all([carregarArvoreVios(), carregarFeriados(), carregarCatalogoProcessos()]).catch((erro: unknown) => {
-      console.error("[vistagem] fluxo previsto da conferência", erro instanceof Error ? erro.message : erro);
-      return null;
-    }),
+    carregarBaseDoFluxo("da conferência"),
   ]);
   // O que o fluxo do VIOS cria com cada tarefa, para a controladoria validar tudo (não só o Enviar).
   const comFluxo = (itens: ConferenciaItem[]): ConferenciaItem[] => {
-    if (!fluxo) return itens;
-    const [arvoreInteira, feriados, catalogos] = fluxo;
-    const ehDiaUtil = criarCalendario(feriados);
-    const ehDiaDePrazo = criarCalendarioDePrazo(feriados);
+    if (!base) return itens;
+    const ehDiaUtil = criarCalendario(base.feriados);
+    const ehDiaDePrazo = criarCalendarioDePrazo(base.feriados);
     const hoje = hojeEmSaoPaulo();
-    return itens.map((item) => {
-      const arvore = arvoreDaPublicacao(arvoreInteira, catalogos, {
-        area_processo: item.areaProcesso,
-        escritorio_responsavel: item.publicacao.escritorioResponsavel,
-      });
-      return {
-        ...item,
-        // Com o calendário, a fatal da sugestão sai como o jurídico viu na tela.
-        sugestaoIa: item.sugestaoIa
-          ? sugestaoNaVistagem(item.sugestaoIa.sugestao, item.sugestaoIa.resultado, item.publicacao.dataPublicacao, ehDiaDePrazo)
-          : item.sugestaoIa,
-        agendamentos: marcarCienciaRepetida(item.agendamentos, arvore).map(({ cienciaFica, ...agendamento }) => {
-          const fluxoDaTarefa = agendamento.tarefaId ? montarFluxo(agendamento.tarefaId, arvore) : null;
-          // Prazo curto (ou validado noutro dia): o Enviar vai hoje e o Revisar e o Protocolar ficam antes da fatal.
-          const apertada = prazoApertado(agendamento, fluxoDaTarefa, ehDiaUtil, hoje);
-          return {
-            ...agendamento,
-            enviarHoje: apertada && apertada.enviar !== agendamento.data ? apertada.enviar : null,
-            fluxoPrevisto: fluxoPrevisto(apertada ? { ...agendamento, data: apertada.enviar } : agendamento, fluxoDaTarefa, ehDiaUtil, {
-              hoje,
-              datas: agendamento.fluxoDatas,
-              apertada,
-            }).map((tarefa) =>
-              tarefa.quando === "criacao" && ehCienciaDosAgendamentos(tarefa.nome) && !cienciaFica(tarefa.caminho)
-                ? { ...tarefa, repetida: true }
-                : tarefa
-            ),
-          };
-        }),
-      };
-    });
+    return itens.map((item) => ({
+      ...item,
+      // Com o calendário, a fatal da sugestão sai como o jurídico viu na tela.
+      sugestaoIa: item.sugestaoIa
+        ? sugestaoNaVistagem(item.sugestaoIa.sugestao, item.sugestaoIa.resultado, item.publicacao.dataPublicacao, ehDiaDePrazo)
+        : item.sugestaoIa,
+      agendamentos: comFluxoPrevisto(item.agendamentos, areaDoItem(item), base, hoje, ehDiaUtil),
+    }));
   };
   const aConferir = comFluxo(aConferirSemFluxo);
   const enviadas = comFluxo(enviadasSemFluxo);
+  // Abertura de pasta: a árvore com as datas e quem fica em cada tarefa, que a controladoria agenda à mão pela Central.
+  const aberturas = comFluxo(aberturasSemFluxo);
   const fotos = await fotosDosItens([...aConferir, ...enviadas, ...aberturas], "conferência");
   return { aConferir, enviadas, aberturas, envioSimulado: envioSimulado(), fotos, hoje: hojeEmSaoPaulo() };
 }
@@ -1226,29 +1199,6 @@ async function comunicacoesEquivalentes(publicacao: PublicacaoComArea): Promise<
   return (data ?? [])
     .filter((row) => row.id !== publicacao.id && row.djen_id_comunicacao)
     .map((row) => String(row.djen_id_comunicacao));
-}
-
-/**
- * Uma Ciência dos Agendamentos só por vistagem (`cienciaQueFica`): diz, para cada tarefa, se a Ciência num caminho
- * do fluxo dela é a que fica; as outras o robô cancela no VIOS.
- */
-function marcarCienciaRepetida<T extends { id: string; ordem: number; tarefa: string; tarefaId: string | null }>(
-  agendamentos: T[],
-  arvore: Map<number, TipoNaArvore>
-): (T & { cienciaFica: (caminho: string[]) => boolean })[] {
-  const ordenados = [...agendamentos].sort((a, b) => a.ordem - b.ordem);
-  const fica = cienciaQueFica(
-    ordenados.map((agendamento) => ({
-      chave: agendamento.id,
-      nome: agendamento.tarefa,
-      fluxo: agendamento.tarefaId ? montarFluxo(agendamento.tarefaId, arvore) : null,
-    }))
-  );
-  return agendamentos.map((agendamento) => ({
-    ...agendamento,
-    cienciaFica: (caminho: string[]) =>
-      !fica || (fica.chave === agendamento.id && fica.caminho !== null && chaveDoCaminho(fica.caminho) === chaveDoCaminho(caminho)),
-  }));
 }
 
 /**

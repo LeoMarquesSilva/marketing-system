@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { camposDaCentral, dataEnviarNaCentral, ehAberturaDePasta, linkDoItemNaCentral, motivoDaCentral, processoNaCentral, vaiParaCentral, type PublicacaoParaCentral, type TarefaParaCentral } from "./central";
+import type { TarefaPrevista } from "./types";
 
 const publicacao: PublicacaoParaCentral = {
   numero_processo: "1000000-00.2026.5.02.0001",
@@ -140,6 +141,73 @@ describe("motivoDaCentral", () => {
   it("repete as datas e os responsáveis do fluxo que o jurídico trocou", () => {
     const motivo = motivoDaCentral(publicacao, [{ ...prazo, fluxo_datas: [{ caminho: ["CONTESTAÇÃO", "2. REVISAR"], data: "2026-11-21", responsaveis: ["Bruno Lima"] }] }], "Ana Souza");
     expect(motivo).toContain("   Fluxo, 2. REVISAR: 21/11/2026 | Bruno Lima");
+  });
+
+  describe("com a árvore do fluxo", () => {
+    const previsto = (nome: string, data: string | null, responsaveis: string, extra: Partial<TarefaPrevista> = {}): TarefaPrevista => ({
+      nome,
+      caminho: ["CONTESTAÇÃO", nome],
+      nivel: 1,
+      data,
+      dataVios: data,
+      editada: false,
+      responsaveis,
+      quando: "criacao",
+      ...extra,
+    });
+    const fluxo: TarefaPrevista[] = [
+      previsto("3. PROTOCOLAR", "2026-11-25", "Ana Souza + Samuel"),
+      previsto("2. REVISAR", "2026-11-24", "Bruno Lima"),
+      previsto("ENVIAR CUSTAS", "2026-11-23", "Carla Dias", { caminho: ["CONTESTAÇÃO", "3. PROTOCOLAR", "ENVIAR CUSTAS"], nivel: 2 }),
+      previsto("ARQUIVAR", null, "", { quando: "conclusao" }),
+    ];
+
+    it("lista o Enviar, o Revisar, o Protocolar e as outras, em ordem de data, com quem fica em cada uma", () => {
+      const motivo = motivoDaCentral(publicacao, [{ ...prazo, fluxo_previsto: fluxo }], "Ana Souza");
+      expect(motivo).toContain(
+        [
+          "1. PRAZO - CONTESTAÇÃO | Enviar: 20/11/2026 | Fatal: 25/11/2026 (15 dias úteis) | Responsável: Ana Souza | Revisor: Bruno Lima",
+          "   Observação: Conferir o endereço",
+          "   Fluxo no VIOS (data | tarefa | responsável):",
+          "   - 20/11/2026 (sex) | CONTESTAÇÃO (Enviar) | Ana Souza",
+          "     - 23/11/2026 (seg) | ENVIAR CUSTAS | Carla Dias (criada por 3. PROTOCOLAR)",
+          "   - 24/11/2026 (ter) | 2. REVISAR | Bruno Lima",
+          "   - 25/11/2026 (qua) | 3. PROTOCOLAR | Ana Souza + Samuel",
+          "   Ao concluir, o VIOS cria: ARQUIVAR (responsável padrão do VIOS)",
+        ].join("\n")
+      );
+    });
+
+    it("aponta a data que difere do VIOS e a Ciência repetida", () => {
+      const motivo = motivoDaCentral(
+        publicacao,
+        [
+          {
+            ...prazo,
+            fluxo_previsto: [
+              previsto("2. REVISAR", "2026-11-21", "Bruno Lima", { dataVios: "2026-11-24", editada: true }),
+              previsto("1. CIÊNCIA DOS AGENDAMENTOS", "2026-11-09", "Ana Souza", { repetida: true }),
+            ],
+          },
+        ],
+        "Ana Souza"
+      );
+      expect(motivo).toContain("   - 21/11/2026 (sáb) | 2. REVISAR | Bruno Lima (o VIOS daria 24/11/2026: mudar a data)");
+      expect(motivo).toContain("1. CIÊNCIA DOS AGENDAMENTOS | Ana Souza (repetida nesta vistagem: cancelar no VIOS");
+    });
+
+    it("prazo apertado vai com o Enviar de hoje, dizendo qual era o vistado", () => {
+      const apertado = { ...prazo, data: "2026-11-05", enviar_hoje: "2026-11-09", fluxo_previsto: [previsto("2. REVISAR", "2026-11-10", "Bruno Lima")] };
+      const motivo = motivoDaCentral(publicacao, [apertado], "Ana Souza");
+      expect(motivo).toContain("1. PRAZO - CONTESTAÇÃO | Enviar: 09/11/2026 |");
+      expect(motivo).toContain("   - 09/11/2026 (seg) | CONTESTAÇÃO (Enviar) | Ana Souza (vistado para 05/11/2026, que já passou: vai hoje)");
+      expect(dataEnviarNaCentral([apertado], "2026-11-09")).toBe("2026-11-09");
+    });
+
+    it("tarefa sem fluxo fica só com a linha dela", () => {
+      const motivo = motivoDaCentral(publicacao, [{ ...ciencia, fluxo_previsto: [] }], "Ana Souza");
+      expect(motivo).not.toContain("Fluxo no VIOS");
+    });
   });
 
   it("mostra o cliente sugerido na triagem e o eSocial identificado", () => {

@@ -42,7 +42,7 @@ import { podeEditarNaConferencia } from "@/lib/vistagem/ajuste-conferencia";
 import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, InconsistenciaItem, PublicacaoResumo, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { EditarTarefa } from "./editar-tarefa";
-import { FaixaDoProcesso, NA_FAIXA } from "./faixa-processo";
+import { FaixaDoProcesso, NA_FAIXA, type NavegacaoNaFila } from "./faixa-processo";
 import { FichaPasta } from "./ficha-pasta";
 import { FichaProcesso, ResumoDaFicha } from "./ficha-processo";
 import { BotaoHistorico } from "./historico-publicacao";
@@ -59,6 +59,7 @@ import { IconeOpcao, Seletor } from "./seletor";
 import { AvatarPessoa } from "./combobox-busca";
 import { CartoesTarefas, LinkVios, corDoTextoDoEnvio, envioDaTarefa } from "./tarefas-conferencia";
 import { PainelAberturaDePasta, SeloAberturaDePasta } from "./abertura-pasta";
+import { DetalheAgendada } from "./agendada-detalhe";
 import { SeloEsocial, contarPor, formatarData, formatarDataHora, tribunalDe } from "./publicacao-ui";
 import {
   Aviso,
@@ -1027,6 +1028,8 @@ function Conferencia() {
   const [filaRecolhida, setFilaRecolhida] = useState(true);
   /** No celular a fila e a publicação não cabem juntas: mostra a fila só quando pedida. */
   const [listaNoCelular, setListaNoCelular] = useState(false);
+  /** Abertura de pasta aberta no detalhe (tarefas, fluxo, datas e responsáveis). */
+  const [aberturaAberta, setAberturaAberta] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
     setErro("");
@@ -1073,6 +1076,17 @@ function Conferencia() {
   const enviadas = useMemo(() => dados?.enviadas ?? [], [dados]);
   const aberturas = useMemo(() => dados?.aberturas ?? [], [dados]);
   const aberturasSemItem = aberturas.filter((item) => !item.publicacao.centralItemId).length;
+  // Setas do detalhe da abertura: andam na ordem da lista.
+  const indiceAbertura = aberturaAberta ? aberturas.findIndex((item) => item.publicacao.id === aberturaAberta) : -1;
+  const navegacaoAbertura: NavegacaoNaFila | null =
+    indiceAbertura >= 0
+      ? {
+          posicao: indiceAbertura + 1,
+          total: aberturas.length,
+          anterior: aberturas[indiceAbertura - 1]?.publicacao.id ?? null,
+          proxima: aberturas[indiceAbertura + 1]?.publicacao.id ?? null,
+        }
+      : null;
   // O que a busca olha em cada publicação (inclui as partes do texto): montado uma vez por carga, não a cada letra.
   const camposDeBusca = useMemo(
     () => new Map([...aConferir, ...enviadas].map((item) => [item.publicacao.id, camposDaConferencia(item)])),
@@ -1322,6 +1336,7 @@ function Conferencia() {
       ) : aba === "aberturas" && dados ? (
         <PainelAberturaDePasta
           itens={aberturas}
+          onAbrir={setAberturaAberta}
           onTentado={(texto) => {
             setRetorno({ tom: "sucesso", texto });
             void carregar();
@@ -1451,6 +1466,16 @@ function Conferencia() {
           </div>
         </div>
       )}
+
+      {/* Abertura de pasta: as tarefas com a árvore do fluxo, datas e responsáveis, como a Central recebeu. Só consulta. */}
+      <DetalheAgendada
+        item={aba === "aberturas" && indiceAbertura >= 0 ? aberturas[indiceAbertura] : null}
+        fotos={dados?.fotos ?? {}}
+        hoje={dados?.hoje ?? new Date().toISOString().slice(0, 10)}
+        navegacao={navegacaoAbertura}
+        onAbrir={setAberturaAberta}
+        onFechar={() => setAberturaAberta(null)}
+      />
     </div>
   );
 }
