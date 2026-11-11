@@ -54,10 +54,10 @@ import {
   Wand2,
 } from "lucide-react";
 import {
-  TEAM_POSTS_PATH,
   HOME_PATH,
   MARKETING_DASHBOARD_PATH,
   canSeeHome,
+  TEAM_POSTS_PATH,
   canSeeTeamPosts,
   TEAM_SURVEYS_KEY,
   hasTeamSurveysAccess,
@@ -169,12 +169,6 @@ export const NAV_FRONTS: NavFront[] = [
     label: "Marketing",
     features: [
       {
-        id: "planner",
-        label: "Planner",
-        icon: Columns3,
-        pages: [
-          { href: "/planner", label: "Quadro" },
-      {
         // Números do Planner (solicitações, SLA, timesheet): era a rota "/" até 10/11/2026.
         id: "dashboard",
         label: "Dashboard",
@@ -190,6 +184,12 @@ export const NAV_FRONTS: NavFront[] = [
         icon: ChartNoAxesColumn,
         pages: [{ href: "/conteudo/inicio", label: "Meu desempenho" }],
       },
+      {
+        id: "planner",
+        label: "Planner",
+        icon: Columns3,
+        pages: [
+          { href: "/planner", label: "Quadro" },
           { href: "/solicitacoes", label: "Solicitações" },
           { href: "/vios-tarefas", label: "Tarefas do VIOS" },
         ],
@@ -549,6 +549,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
     const rhFull = allowed.includes("/rh");
     const contentAccess = allowed.some((key) => key.startsWith("/conteudo"));
     return (href) => {
+      if (href === HOME_PATH) return canSeeHome(profile);
       if (ALWAYS_VISIBLE.has(href)) return true;
       if (href === "/fotos-colaboradores") return isCollaboratorPhotosManager(profile);
       if (isFacilitiesPath(href)) return hasFacilitiesAccess(profile);
@@ -566,9 +567,9 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
     };
   }
 
-      if (href === HOME_PATH) return canSeeHome(profile);
   if (isContentCollaborator(profile)) {
     return (href) => {
+      if (href === HOME_PATH) return canSeeHome(profile);
       if (COLLABORATOR_PAGES.has(href)) return true;
       if (isPe27Path(href)) return hasPe27Access(profile);
       if (href === "/rh/ferias") return feriasView;
@@ -586,7 +587,8 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
     if (isPe27Path(href)) return hasPe27Access(profile);
     if (href.startsWith("/operacoes-legais/")) return hasOperacoesLegaisAccess(profile);
     switch (href) {
-      if (href === HOME_PATH) return canSeeHome(profile);
+      case HOME_PATH:
+        return canSeeHome(profile);
       case "/conteudo/inicio":
         return false;
       case "/nfc":
@@ -604,8 +606,6 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
       case TEAM_POSTS_PATH:
         return teamPosts;
       case "/rh/ferias":
-      case HOME_PATH:
-        return canSeeHome(profile);
         return isAdmin || feriasView;
       case "/admin":
         return isAdmin;
