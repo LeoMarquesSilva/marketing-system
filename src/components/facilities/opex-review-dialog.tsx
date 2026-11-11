@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { opexApi, type OpexNameRow } from "@/lib/facilities/client";
 import { companyTokens, suggestOpexNames } from "@/lib/facilities/opex";
 import type { FacilitiesSupplier } from "@/lib/facilities/types";
-import { supplierCategoryLabel } from "@/lib/suppliers/categories";
+import { expenseNatureLabel } from "@/lib/suppliers/categories";
 import { cn } from "@/lib/utils";
 import { formatBrl, SupplierMonogram } from "./facilities-visuals";
 import { Segmented } from "./form-parts";
@@ -243,7 +243,7 @@ function SupplierCell({ supplier }: { supplier: FacilitiesSupplier }) {
       <SupplierMonogram name={supplier.name} category={supplier.category} size="sm" />
       <span className="min-w-0">
         <span className="block truncate text-sm font-semibold text-foreground">{supplier.name}</span>
-        <span className="block truncate text-xs text-muted-foreground">{supplierCategoryLabel(supplier.category)}</span>
+        <span className="block truncate text-xs text-muted-foreground">{expenseNatureLabel(supplier.expense_nature)}</span>
       </span>
     </span>
   );

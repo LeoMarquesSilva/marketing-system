@@ -9,6 +9,7 @@ import {
   CalendarClock,
   ChevronDown,
   ChevronRight,
+  CircleHelp,
   FileCheck2,
   FileSignature,
   FileX2,
@@ -26,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { contractAlerts, isActionable, monthlyCost, supplierAlerts, todayIso, type FacilitiesAlert } from "@/lib/facilities/alerts";
+import { contractAlerts, isActionable, supplierAlerts, todayIso, type FacilitiesAlert } from "@/lib/facilities/alerts";
 import { opexApi, type OpexNameRow } from "@/lib/facilities/client";
 import {
   FACILITIES_CONTRACTS_PATH,
@@ -37,7 +38,7 @@ import {
   type SupplierInput,
 } from "@/lib/facilities/types";
 import { onlyDigits } from "@/lib/masks-br";
-import { PARTY_TYPE_LABEL, PARTY_TYPES, SUPPLIER_CATEGORY_DEFS, supplierCategoryLabel } from "@/lib/suppliers/categories";
+import { EXPENSE_NATURE_DEFS, eventTypeLabel, expenseNatureLabel, PARTY_TYPE_LABEL, PARTY_TYPES } from "@/lib/suppliers/categories";
 import { cn } from "@/lib/utils";
 import {
   AlertPill,
@@ -86,6 +87,9 @@ function percent(part: number, total: number): string {
 }
 
 const paid = (supplier: FacilitiesSupplier) => supplier.opex?.total12m ?? 0;
+const NO_NATURE = "__sem_natureza__";
+const natureOf = (supplier: FacilitiesSupplier) => supplier.expense_nature ?? NO_NATURE;
+const natureLabel = (key: string) => (key === NO_NATURE ? "Natureza não informada" : expenseNatureLabel(key));
 
 /* ---------------------------------------------------------------- visão geral */
 
@@ -182,7 +186,6 @@ function SpendOverview({
   activeCount,
   inactiveCount,
   partyCounts,
-  contracted,
   vigentes,
   withFile,
   autoRenew,
@@ -201,7 +204,6 @@ function SpendOverview({
   activeCount: number;
   inactiveCount: number;
   partyCounts: { prestador: number; fornecedor: number; ambos: number; semTipo: number };
-  contracted: number;
   vigentes: number;
   withFile: number;
   autoRenew: number;
@@ -293,7 +295,7 @@ function SpendOverview({
                         type="button"
                         aria-pressed={isSelected}
                         onClick={() => onSelect(isSelected ? ALL : row.key)}
-                        title={`${supplierCategoryLabel(row.key)}: ${formatBrl(row.paid)} pagos em 12 meses a ${row.suppliers} ${row.suppliers === 1 ? "cadastro" : "cadastros"}`}
+                        title={`${natureLabel(row.key)}: ${formatBrl(row.paid)} pagos em 12 meses a ${row.suppliers} ${row.suppliers === 1 ? "cadastro" : "cadastros"}`}
                         className={cn(
                           "grid w-full grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-3 rounded-md px-2 py-1.5 text-left transition-colors duration-150 sm:grid-cols-[2rem_minmax(0,11rem)_minmax(0,1fr)_7.5rem]",
                           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/50",
@@ -302,7 +304,7 @@ function SpendOverview({
                       >
                         <CategoryTile category={row.key} size="sm" />
                         <span className="min-w-0">
-                          <span className="block truncate text-sm font-medium text-foreground">{supplierCategoryLabel(row.key)}</span>
+                          <span className="block truncate text-sm font-medium text-foreground">{natureLabel(row.key)}</span>
                           <span className="block text-xs text-muted-foreground sm:hidden">
                             {row.suppliers} {row.suppliers === 1 ? "cadastro" : "cadastros"}
                           </span>
@@ -356,7 +358,6 @@ function SpendOverview({
                 {withFile === vigentes ? "todos com arquivo" : `${withFile} de ${vigentes} com arquivo`} · {autoRenew} renovam sozinhos
               </span>
             </span>
-            {contracted > 0 && <span className="mt-1 block">{formatBrl(contracted, { compact: true })} por mês em serviços contratados</span>}
           </SideStat>
           <Link
             href={FACILITIES_CONTRACTS_PATH}
@@ -443,17 +444,11 @@ function ValueCell({ supplier, maxPaid }: { supplier: FacilitiesSupplier; maxPai
       </>
     );
   }
-  const monthly = monthlyCost(supplier.services);
+  if (!supplier.active) return null;
   return (
-    <>
-      {monthly > 0 ? (
-        <span className="text-sm tabular-nums text-foreground" title="Valor contratado nos serviços; ainda sem pagamento ligado do OPEX">
-          {formatBrl(monthly)}
-          <span className="ml-1 text-xs text-muted-foreground">/mês contratado</span>
-        </span>
-      ) : null}
-      {supplier.active && supplier.opex_names.length === 0 && <span className="text-xs text-muted-foreground">sem nome do OPEX</span>}
-    </>
+    <span className="text-xs text-muted-foreground">
+      {supplier.opex_names.length === 0 ? "sem nome do OPEX" : "sem pagamento em 12 meses"}
+    </span>
   );
 }
 
@@ -498,7 +493,9 @@ function SupplierRow({
                 </span>
               )}
             </span>
-            <span className="block truncate text-xs text-muted-foreground">{subtitle || supplierCategoryLabel(supplier.category)}</span>
+            <span className="block truncate text-xs text-muted-foreground">
+              {subtitle || eventTypeLabel(supplier.category) || expenseNatureLabel(supplier.expense_nature)}
+            </span>
           </span>
         </span>
 
@@ -596,10 +593,10 @@ export function FornecedoresClient({
       const value = paid(supplier);
       if (value <= 0) continue;
       total += value;
-      const row = spend.get(supplier.category) ?? { key: supplier.category, paid: 0, suppliers: 0 };
+      const row = spend.get(natureOf(supplier)) ?? { key: natureOf(supplier), paid: 0, suppliers: 0 };
       row.paid += value;
       row.suppliers++;
-      spend.set(supplier.category, row);
+      spend.set(natureOf(supplier), row);
       for (const dep of supplier.opex?.byDepartment ?? []) {
         if (dep.tipo === "indireto") split.rateado += dep.valor;
         else if (dep.tipo === "area_juridica") split.direto += dep.valor;
@@ -627,7 +624,6 @@ export function FornecedoresClient({
         ambos: active.filter((s) => s.party_type === "ambos").length,
         semTipo: active.filter((s) => !s.party_type).length,
       },
-      contracted: active.reduce((sum, s) => sum + monthlyCost(s.services), 0),
       vigentes: vigentes.length,
       withFile,
       autoRenew: vigentes.filter(({ c }) => c.auto_renew).length,
@@ -641,7 +637,7 @@ export function FornecedoresClient({
       suppliers.filter(
         (s) =>
           (status === "todos" || (status === "ativos" ? s.active : !s.active)) &&
-          (category === ALL || s.category === category) &&
+          (category === ALL || natureOf(s) === category) &&
           (partyType === ALL || (partyType === NO_TYPE ? !s.party_type : s.party_type === partyType)) &&
           (area === ALL || s.areas.includes(area) || s.services.some((service) => service.area === area)) &&
           matches(s, query.trim())
@@ -652,20 +648,21 @@ export function FornecedoresClient({
   // Blocos por natureza da despesa, do que mais recebeu para o que menos recebeu.
   const groups = useMemo(() => {
     const map = new Map<string, FacilitiesSupplier[]>();
-    for (const s of filtered) map.set(s.category, [...(map.get(s.category) ?? []), s]);
+    for (const s of filtered) map.set(natureOf(s), [...(map.get(natureOf(s)) ?? []), s]);
     return [...map.entries()]
       .map(([key, items]) => ({
         key,
         items: items.sort(
           (a, b) =>
-            paid(b) - paid(a) || monthlyCost(b.services) - monthlyCost(a.services) || a.name.localeCompare(b.name, "pt-BR")
+            paid(b) - paid(a) || a.name.localeCompare(b.name, "pt-BR")
         ),
         paid: items.reduce((sum, s) => sum + paid(s), 0),
       }))
-      .sort((a, b) => b.paid - a.paid || b.items.length - a.items.length);
+      .sort((a, b) => Number(a.key === NO_NATURE) - Number(b.key === NO_NATURE) || b.paid - a.paid || b.items.length - a.items.length);
   }, [filtered]);
 
-  const usedCategories = SUPPLIER_CATEGORY_DEFS.filter((def) => suppliers.some((s) => s.category === def.key));
+  const usedCategories = EXPENSE_NATURE_DEFS.filter((def) => suppliers.some((s) => s.expense_nature === def.key));
+  const withoutNature = suppliers.filter((s) => s.active && !s.expense_nature).length;
   const hasFilters = Boolean(query) || category !== ALL || partyType !== ALL || area !== ALL || status !== "ativos";
 
   function replaceParam(id: string | null) {
@@ -712,7 +709,6 @@ export function FornecedoresClient({
         activeCount={overview.activeCount}
         inactiveCount={overview.inactiveCount}
         partyCounts={overview.partyCounts}
-        contracted={overview.contracted}
         vigentes={overview.vigentes}
         withFile={overview.withFile}
         autoRenew={overview.autoRenew}
@@ -751,6 +747,7 @@ export function FornecedoresClient({
             </SelectTrigger>
             <SelectContent className="max-h-80">
               <SelectItem value={ALL}>Todas as naturezas</SelectItem>
+              {withoutNature > 0 && <SelectItem value={NO_NATURE}>Natureza não informada ({withoutNature})</SelectItem>}
               {usedCategories.map((def) => (
                 <SelectItem key={def.key} value={def.key}>
                   <span className="flex items-center gap-2">
@@ -836,12 +833,21 @@ export function FornecedoresClient({
               className="overflow-hidden rounded-lg border border-[#dce9eb] bg-white shadow-[0_1px_2px_rgba(16,41,58,0.05)]"
             >
               <header className="flex items-center gap-3 border-b border-[#e6eef0] bg-[#f7fbfc] px-4 py-3">
-                <CategoryTile category={group.key} size="sm" />
+                {group.key === NO_NATURE ? (
+                  <span className="grid size-8 shrink-0 place-items-center rounded-md bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200">
+                    <CircleHelp className="size-4" aria-hidden />
+                  </span>
+                ) : (
+                  <CategoryTile category={group.key} size="sm" />
+                )}
                 <div className="min-w-0 flex-1">
                   <h2 id={`grupo-${group.key}`} className="truncate text-sm font-semibold text-foreground">
-                    {supplierCategoryLabel(group.key)}
+                    {natureLabel(group.key)}
                     <span className="ml-2 font-normal tabular-nums text-muted-foreground">{group.items.length}</span>
                   </h2>
+                  {group.key === NO_NATURE && (
+                    <p className="text-xs text-muted-foreground">Vieram dos eventos. Abra cada um e escolha uma das 11 naturezas da despesa.</p>
+                  )}
                 </div>
                 {group.paid > 0 && (
                   <p className="text-right text-xs text-muted-foreground">

@@ -1,8 +1,8 @@
-/** Facilities > Fornecedores e contratos: tipos compartilhados entre servidor e telas. */
+/** Facilities > Gestão de Fornecedores e Prestadores de Serviços: tipos compartilhados entre servidor e telas. */
 
 import type { OpexSummary } from "./opex";
 import type { MaintenancePeriodicity, MaintenanceType } from "./maintenance";
-import type { PartyType } from "@/lib/suppliers/categories";
+import type { ExpenseNature, PartyType } from "@/lib/suppliers/categories";
 
 export const FACILITIES_SUPPLIERS_PATH = "/facilities/fornecedores";
 export const FACILITIES_CONTRACTS_PATH = "/facilities/contratos";
@@ -223,8 +223,10 @@ export interface FacilitiesSupplier {
   legal_name: string | null;
   document: string | null;
   person_type: "pj" | "pf" | null;
-  /** Natureza da despesa (ou categoria de evento). */
+  /** Tipo usado pelo módulo de eventos (buffet, decoração...); não é a natureza da despesa. */
   category: string;
+  /** Natureza da despesa (lista do gestor); null = "Não informada". */
+  expense_nature: ExpenseNature | null;
   party_type: PartyType | null;
   third_party_category: string | null;
   /** Nomes do fornecedor no OPEX/SIOE, confirmados por uma pessoa. */
@@ -256,7 +258,7 @@ export interface SupplierInput {
   name: string;
   legal_name: string;
   document: string;
-  category: string;
+  expense_nature: ExpenseNature | "";
   party_type: PartyType | "";
   third_party_category: string;
   opex_names: string[];
@@ -411,6 +413,8 @@ export interface MaintenanceDocument {
 export interface MaintenancePlan {
   id: string;
   asset_id: string | null;
+  /** Categoria (campo do gestor): a do equipamento, ou escolhida no serviço geral. */
+  category: AssetCategory | null;
   title: string;
   maintenance_type: MaintenanceType;
   periodicity: MaintenancePeriodicity;
@@ -432,6 +436,7 @@ export interface MaintenanceSupplierOption {
   id: string;
   name: string;
   category: string;
+  expense_nature: ExpenseNature | null;
   party_type: PartyType | null;
   contracts: Array<{ id: string; title: string }>;
 }
@@ -459,6 +464,7 @@ export interface AssetInput {
 
 export interface PlanInput {
   asset_id: string | null;
+  category: AssetCategory | "";
   title: string;
   maintenance_type: MaintenanceType;
   periodicity: MaintenancePeriodicity;

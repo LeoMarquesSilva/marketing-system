@@ -30,7 +30,8 @@ export type MaintenancePeriodicity = (typeof MAINTENANCE_PERIODICITIES)[number];
 
 export const PERIODICITY_INFO: Record<MaintenancePeriodicity, { label: string; hint: string }> = {
   pontual: { label: "Pontual", hint: "Conforme a necessidade" },
-  emergencial: { label: "Emergencial", hint: "Imprevisto que não espera" },
+  // O gestor deixou a aplicação da emergencial em branco.
+  emergencial: { label: "Emergencial", hint: "" },
   semanal: { label: "Semanal", hint: "Verificações frequentes" },
   quinzenal: { label: "Quinzenal", hint: "Inspeções recorrentes" },
   mensal: { label: "Mensal", hint: "Manutenções de rotina" },

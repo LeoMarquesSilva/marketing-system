@@ -5,7 +5,7 @@ import { Building2, CircleDollarSign, Contact, FileUp, Link2, MapPinned, Message
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { StarRatingInput } from "@/components/eventos/star-rating-input";
 import {
@@ -26,10 +26,12 @@ import {
 } from "@/lib/facilities/types";
 import { isValidCNPJ, isValidCPF, maskCpfCnpj, maskPhoneBR, onlyDigits } from "@/lib/masks-br";
 import {
+  EXPENSE_NATURE_DEFS,
+  isExpenseNature,
   PARTY_TYPE_LABEL,
   PARTY_TYPES,
-  supplierCategoriesFor,
   THIRD_PARTY_CATEGORY_DEFS,
+  type ExpenseNature,
   type PartyType,
 } from "@/lib/suppliers/categories";
 import { OpexNamesField } from "./opex-names-field";
@@ -44,7 +46,7 @@ export function emptySupplierInput(): SupplierInput {
     name: "",
     legal_name: "",
     document: "",
-    category: "",
+    expense_nature: "",
     party_type: "",
     third_party_category: "",
     opex_names: [],
@@ -67,7 +69,7 @@ export function supplierToInput(supplier: FacilitiesSupplier): SupplierInput {
     name: supplier.name,
     legal_name: supplier.legal_name ?? "",
     document: supplier.document ? maskCpfCnpj(supplier.document) : "",
-    category: supplier.category,
+    expense_nature: isExpenseNature(supplier.expense_nature) ? supplier.expense_nature : "",
     party_type: supplier.party_type ?? "",
     third_party_category: supplier.third_party_category ?? "",
     opex_names: supplier.opex_names,
@@ -87,7 +89,7 @@ export function supplierToInput(supplier: FacilitiesSupplier): SupplierInput {
 
 export function supplierMissing(form: SupplierInput): string | null {
   if (!form.name.trim()) return "Informe o nome do fornecedor.";
-  if (!form.category) return "Escolha a natureza da despesa.";
+  if (!form.expense_nature) return "Escolha a natureza da despesa.";
   const digits = onlyDigits(form.document);
   if (digits && digits.length !== 11 && digits.length !== 14) return "CNPJ ou CPF incompleto.";
   return null;
@@ -100,30 +102,32 @@ function documentHint(document: string): string | null {
   return null;
 }
 
-/** Natureza da despesa (lista do gestor de Facilities) ou categoria de evento. */
-export function CategorySelect({ id, value, onChange }: { id?: string; value: string; onChange: (value: string) => void }) {
-  const groups = [
-    { label: "Natureza da despesa", items: supplierCategoriesFor("facilities") },
-    { label: "Fornecedor de evento", items: supplierCategoriesFor("eventos").filter((c) => c.group === "eventos") },
-  ];
+/** Natureza da despesa: só as 11 da lista do gestor, com os exemplos dele. */
+export function ExpenseNatureSelect({
+  id,
+  value,
+  onChange,
+}: {
+  id?: string;
+  value: ExpenseNature | "";
+  onChange: (value: ExpenseNature) => void;
+}) {
   return (
-    <Select value={value || undefined} onValueChange={onChange}>
+    <Select value={value || undefined} onValueChange={(next) => onChange(next as ExpenseNature)}>
       <SelectTrigger id={id} className="h-10 w-full bg-white text-sm">
-        <SelectValue placeholder="Onde o dinheiro é aplicado" />
+        <SelectValue placeholder="Onde o dinheiro está sendo aplicado" />
       </SelectTrigger>
-      <SelectContent className="max-h-80">
-        {groups.map((group) => (
-          <SelectGroup key={group.label}>
-            <SelectLabel>{group.label}</SelectLabel>
-            {group.items.map((category) => (
-              <SelectItem key={category.key} value={category.key} title={category.examples}>
-                <span className="flex items-center gap-2">
-                  <CategoryGlyph category={category.key} className="size-4 text-[#285f7a]" />
-                  {category.label}
-                </span>
-              </SelectItem>
-            ))}
-          </SelectGroup>
+      <SelectContent className="max-h-96">
+        {EXPENSE_NATURE_DEFS.map((nature) => (
+          <SelectItem key={nature.key} value={nature.key} title={nature.examples}>
+            <span className="flex items-center gap-2">
+              <CategoryGlyph category={nature.key} className="size-4 shrink-0 text-[#285f7a]" />
+              <span>
+                {nature.label}
+                <span className="ml-2 text-xs text-muted-foreground">{nature.examples}</span>
+              </span>
+            </span>
+          </SelectItem>
         ))}
       </SelectContent>
     </Select>
@@ -234,14 +238,12 @@ export function SupplierForm({
             onChange={(value) => set("party_type", value)}
           />
         </Field>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Categoria do terceiro" htmlFor="sup-third" hint="O que ele fornece ou qual serviço presta.">
-            <ThirdPartyCategorySelect id="sup-third" value={form.third_party_category} onChange={(value) => set("third_party_category", value)} />
-          </Field>
-          <Field label="Natureza da despesa *" htmlFor="sup-category" hint="Onde o dinheiro é aplicado.">
-            <CategorySelect id="sup-category" value={form.category} onChange={(value) => set("category", value)} />
-          </Field>
-        </div>
+        <Field label="Categoria do terceiro" htmlFor="sup-third" hint="O que ele fornece ou qual serviço presta.">
+          <ThirdPartyCategorySelect id="sup-third" value={form.third_party_category} onChange={(value) => set("third_party_category", value)} />
+        </Field>
+        <Field label="Natureza da despesa *" htmlFor="sup-nature" hint="Onde o dinheiro está sendo aplicado.">
+          <ExpenseNatureSelect id="sup-nature" value={form.expense_nature} onChange={(value) => set("expense_nature", value)} />
+        </Field>
         <Field
           label="Nome no OPEX"
           hint="Como o fornecedor aparece nos pagamentos do financeiro (SIOE). É daqui que vem o valor pago."
@@ -341,18 +343,11 @@ export function ServiceForm({ form, onChange }: { form: ServiceInput; onChange: 
         <Field label="Descrição *" htmlFor="svc-desc" hint="Ex.: Internet fibra, Celular da recepção, Licença do Legal One.">
           <Input id="svc-desc" value={form.description} onChange={(e) => set("description", e.target.value)} />
         </Field>
-        <Field label="Quem paga a conta" hint="O valor pago de verdade vem do OPEX; aqui fica o combinado.">
-          <Segmented
-            label="Rateio do custo"
-            value={form.shared_cost ? "indireto" : "direto"}
-            options={[
-              { value: "indireto", label: "Indireto (rateado entre as áreas)" },
-              { value: "direto", label: "Direto de uma área" },
-            ]}
-            onChange={(value) => set("shared_cost", value === "indireto")}
-          />
-        </Field>
-        <Field label={form.shared_cost ? "Área que contrata (opcional)" : "Área *"} htmlFor="svc-area">
+        <Field
+          label="Área que usa (opcional)"
+          htmlFor="svc-area"
+          hint="Se é rateado ou de uma área só, quem diz é o OPEX, pelo departamento em que o financeiro lança o pagamento."
+        >
           <Select value={form.area || NONE} onValueChange={(value) => set("area", value === NONE ? "" : value)}>
             <SelectTrigger id="svc-area" className="h-10 w-full bg-white text-sm sm:w-1/2">
               <SelectValue placeholder="—" />

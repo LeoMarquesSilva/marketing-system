@@ -22,7 +22,6 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { DatePickerField } from "@/components/ui/date-picker-field";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatShortDate, todayIso } from "@/lib/facilities/alerts";
 import { maintenanceApi, openMaintenanceDocument, uploadMaintenanceFile } from "@/lib/facilities/client";
@@ -30,7 +29,6 @@ import { MAINTENANCE_TYPE_LABEL, nextDueAfter, PERIODICITY_INFO, planSituation }
 import {
   ASSET_CATEGORY_LABEL,
   FACILITIES_SUPPLIERS_PATH,
-  MAINTENANCE_DOCUMENT_KINDS,
   MAINTENANCE_DOCUMENT_LABEL,
   type FacilitiesPerson,
   type FacilityAsset,
@@ -41,10 +39,19 @@ import {
   type PlanInput,
   type RecordInput,
 } from "@/lib/facilities/types";
-import { cn } from "@/lib/utils";
 import { formatBrl, PersonAvatar, SupplierMonogram } from "./facilities-visuals";
 import { Field, FormSection, Segmented } from "./form-parts";
-import { emptyPlanInput, emptyRecordInput, PlanForm, planMissing, planToInput, SupplierPicker } from "./maintenance-forms";
+import {
+  DocumentKindSelect,
+  emptyPlanInput,
+  emptyRecordInput,
+  FileInput,
+  PlanForm,
+  planMissing,
+  planToInput,
+  SupplierPicker,
+  type StagedDocument,
+} from "./maintenance-forms";
 import { AssetTile, dateOrDash, periodicityText, SituationBadge } from "./maintenance-visuals";
 
 type View = "view" | "edit" | "record" | "document";
@@ -58,35 +65,6 @@ interface DocumentDraft {
 }
 
 const emptyDocument = (): DocumentDraft => ({ kind: "laudo", title: "", mode: "arquivo", file: null, external_url: "" });
-
-function DocumentKindSelect({ value, onChange }: { value: MaintenanceDocumentKind; onChange: (value: MaintenanceDocumentKind) => void }) {
-  return (
-    <Select value={value} onValueChange={(next) => onChange(next as MaintenanceDocumentKind)}>
-      <SelectTrigger className="h-10 w-full bg-white text-sm" aria-label="Tipo de documento">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {MAINTENANCE_DOCUMENT_KINDS.map((kind) => (
-          <SelectItem key={kind} value={kind}>
-            {MAINTENANCE_DOCUMENT_LABEL[kind]}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
-function FileInput({ file, onChange }: { file: File | null; onChange: (file: File | null) => void }) {
-  return (
-    <label className="flex cursor-pointer items-center gap-3 rounded-md border border-dashed border-[#c9dde1] bg-white px-3 py-3 text-sm hover:bg-[#f6fafb] focus-within:ring-2 focus-within:ring-[#47cdd0]/50">
-      <Paperclip className="size-4 shrink-0 text-[#3e84a8]" aria-hidden />
-      <span className={cn("min-w-0 flex-1 truncate", file ? "text-foreground" : "text-muted-foreground")}>
-        {file ? file.name : "Escolher arquivo (PDF, imagem ou Word, até 50 MB)"}
-      </span>
-      <input type="file" className="sr-only" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" onChange={(e) => onChange(e.target.files?.[0] ?? null)} />
-    </label>
-  );
-}
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -165,6 +143,7 @@ export function PlanDialog({
   const [record, setRecord] = useState<RecordInput | null>(null);
   const [recordFile, setRecordFile] = useState<{ kind: MaintenanceDocumentKind; file: File | null }>({ kind: "ordem_servico", file: null });
   const [doc, setDoc] = useState<DocumentDraft>(emptyDocument);
+  const [stagedDocs, setStagedDocs] = useState<StagedDocument[]>([]);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -202,8 +181,14 @@ export function PlanDialog({
     run(async () => {
       const missing = planMissing(form);
       if (missing) throw new Error(missing);
-      const saved = plan ? await maintenanceApi.updatePlan(plan.id, form) : await maintenanceApi.createPlan(form);
+      let saved = plan ? await maintenanceApi.updatePlan(plan.id, form) : await maintenanceApi.createPlan(form);
       apply(saved);
+      // Documentos escolhidos no formulário sobem agora que o plano existe.
+      for (const staged of stagedDocs) {
+        saved = await uploadMaintenanceFile({ planId: saved.id, recordId: null, kind: staged.kind, title: "", file: staged.file });
+        apply(saved);
+      }
+      setStagedDocs([]);
       setForm(planToInput(saved));
       go("view");
     });
@@ -306,7 +291,9 @@ export function PlanDialog({
         assets={assets}
         suppliers={suppliers}
         people={people}
-        isNew={!plan}
+        documents={stagedDocs}
+        onDocumentsChange={setStagedDocs}
+        existingDocuments={plan?.documents.length ?? 0}
         onAssetCreated={onAssetCreated}
         onSupplierCreated={onSupplierCreated}
       />
@@ -342,7 +329,7 @@ export function PlanDialog({
                 onChange={(value) => setRecord({ ...record, cost: value === "" ? null : Number(value) })}
               />
             </Field>
-            <Field label="Prestador" className="sm:col-span-2">
+            <Field label="Fornecedor" className="sm:col-span-2">
               <SupplierPicker
                 value={record.supplier_id}
                 suppliers={suppliers}
@@ -425,39 +412,18 @@ export function PlanDialog({
           <div className="min-w-0 space-y-1.5">
             <DialogTitle className="text-lg">{plan.title}</DialogTitle>
             <DialogDescription className="mt-0">
-              {asset ? [asset.name, asset.location, ASSET_CATEGORY_LABEL[asset.category]].filter(Boolean).join(" · ") : "Serviço geral, sem equipamento"}
+              {asset ? [asset.name, asset.location].filter(Boolean).join(" · ") : "Serviço geral, sem equipamento"}
             </DialogDescription>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <SituationBadge situation={situation} days={days} />
-              <span className="rounded-full bg-[#eef3f5] px-2 py-0.5 text-xs font-medium text-[#285f7a]">{MAINTENANCE_TYPE_LABEL[plan.maintenance_type]}</span>
-              <span className="rounded-full bg-[#eeedf5] px-2 py-0.5 text-xs font-medium text-[#48466e]" title={PERIODICITY_INFO[plan.periodicity].hint}>
-                {periodicityText(plan)}
-              </span>
-            </div>
+            <SituationBadge situation={situation} days={days} />
           </div>
         </div>
       </DialogHeader>
     );
     body = (
       <div className="space-y-6 px-6 py-5">
-        <section className="grid grid-cols-2 gap-px overflow-hidden rounded-md bg-[#e6eef0] ring-1 ring-[#e6eef0] sm:grid-cols-3">
-          <div className="bg-[#f7fbfc] p-4">
-            <p className="text-xs text-muted-foreground">Próxima manutenção</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-[#10293a]">{dateOrDash(plan.next_due_on)}</p>
-          </div>
-          <div className="bg-white p-4">
-            <p className="text-xs text-muted-foreground">Última</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-[#10293a]">{dateOrDash(plan.last_done_on)}</p>
-          </div>
-          <div className="col-span-2 bg-white p-4 sm:col-span-1">
-            <p className="text-xs text-muted-foreground">Custo estimado</p>
-            <p className="mt-1 text-xl font-semibold tabular-nums text-[#10293a]">{plan.estimated_cost != null ? formatBrl(plan.estimated_cost) : "—"}</p>
-            {spent > 0 && <p className="text-xs text-muted-foreground">{formatBrl(spent)} gastos no histórico</p>}
-          </div>
-        </section>
-
-        <section className="grid gap-4 sm:grid-cols-3">
-          <Fact label="Prestador">
+        {/* Os campos do gestor, na ordem da tabela dele (Documentos fica no bloco próprio, abaixo). */}
+        <section className="grid gap-x-6 gap-y-4 rounded-md bg-[#f7fbfc] p-4 ring-1 ring-inset ring-[#e6eef0] sm:grid-cols-2">
+          <Fact label="Fornecedor">
             {supplier ? (
               <Link href={`${FACILITIES_SUPPLIERS_PATH}?fornecedor=${supplier.id}`} className="flex items-center gap-2 hover:underline">
                 <SupplierMonogram name={supplier.name} category={supplier.category} size="sm" />
@@ -467,7 +433,25 @@ export function PlanDialog({
               <span className="text-muted-foreground">Não definido</span>
             )}
           </Fact>
-          <Fact label="Contrato vinculado">{contract ? contract.title : <span className="text-muted-foreground">Sem contrato</span>}</Fact>
+          <Fact label="Equipamento/Instalação">
+            {asset ? [asset.name, asset.location].filter(Boolean).join(" · ") : <span className="text-muted-foreground">Não informado</span>}
+          </Fact>
+          <Fact label="Categoria">
+            {plan.category ? ASSET_CATEGORY_LABEL[plan.category] : <span className="text-muted-foreground">Não informada</span>}
+          </Fact>
+          <Fact label="Tipo de manutenção">{MAINTENANCE_TYPE_LABEL[plan.maintenance_type]}</Fact>
+          <Fact label="Periodicidade">
+            {periodicityText(plan)}
+            {PERIODICITY_INFO[plan.periodicity].hint && (
+              <span className="ml-1.5 text-xs text-muted-foreground">{PERIODICITY_INFO[plan.periodicity].hint}</span>
+            )}
+          </Fact>
+          <Fact label="Última manutenção">
+            <span className="tabular-nums">{dateOrDash(plan.last_done_on)}</span>
+          </Fact>
+          <Fact label="Próxima manutenção">
+            <span className="font-semibold tabular-nums">{dateOrDash(plan.next_due_on)}</span>
+          </Fact>
           <Fact label="Responsável interno">
             {owner ? (
               <span className="flex items-center gap-2">
@@ -477,6 +461,14 @@ export function PlanDialog({
             ) : (
               <span className="text-muted-foreground">Ninguém definido</span>
             )}
+          </Fact>
+          <Fact label="Custo estimado">
+            <span className="tabular-nums">{plan.estimated_cost != null ? formatBrl(plan.estimated_cost) : "—"}</span>
+            {spent > 0 && <span className="ml-1.5 text-xs text-muted-foreground">{formatBrl(spent)} gastos no histórico</span>}
+          </Fact>
+          <Fact label="Contrato vinculado">{contract ? contract.title : <span className="text-muted-foreground">Sem contrato</span>}</Fact>
+          <Fact label="Status">
+            <SituationBadge situation={situation} days={days} />
           </Fact>
         </section>
 

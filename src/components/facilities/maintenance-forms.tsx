@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import { Box, CalendarDays, Check, ChevronsUpDown, ClipboardList, HardHat, Loader2, Plus, Search, Sparkles, UserRound } from "lucide-react";
+import { Box, CalendarDays, Check, ChevronsUpDown, ClipboardList, HardHat, Loader2, Paperclip, Plus, Search, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { DatePickerField } from "@/components/ui/date-picker-field";
@@ -11,9 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { duplicateNameOf, facilitiesApi, maintenanceApi } from "@/lib/facilities/client";
 import {
-  isOneOff,
   MAINTENANCE_PERIODICITIES,
-  MAINTENANCE_TEMPLATES,
   MAINTENANCE_TYPE_LABEL,
   MAINTENANCE_TYPES,
   nextDueAfter,
@@ -25,19 +23,22 @@ import {
   ASSET_CATEGORIES,
   ASSET_CATEGORY_LABEL,
   CRITICALITY_LABEL,
+  MAINTENANCE_DOCUMENT_KINDS,
+  MAINTENANCE_DOCUMENT_LABEL,
   type AssetCategory,
   type AssetInput,
   type Criticality,
   type FacilitiesPerson,
   type FacilitiesSupplier,
   type FacilityAsset,
+  type MaintenanceDocumentKind,
   type MaintenancePlan,
   type MaintenanceSupplierOption,
   type PlanInput,
   type RecordInput,
 } from "@/lib/facilities/types";
 import { maskCpfCnpj, maskPhoneBR } from "@/lib/masks-br";
-import { PARTY_TYPE_SHORT, supplierCategoryLabel } from "@/lib/suppliers/categories";
+import { expenseNatureLabel, PARTY_TYPE_SHORT } from "@/lib/suppliers/categories";
 import { normalizeSupplierName, pickExistingSupplier } from "@/lib/suppliers/unique-name";
 import { cn } from "@/lib/utils";
 import { formatShortDate, todayIso } from "@/lib/facilities/alerts";
@@ -262,6 +263,7 @@ function toSupplierOption(supplier: FacilitiesSupplier): MaintenanceSupplierOpti
     id: supplier.id,
     name: supplier.name,
     category: supplier.category,
+    expense_nature: supplier.expense_nature,
     party_type: supplier.party_type,
     contracts: supplier.contracts.filter((c) => c.status !== "encerrado").map((c) => ({ id: c.id, title: c.title })),
   };
@@ -291,7 +293,7 @@ export function SupplierPicker({
 
   // Quem já cuida de manutenção aparece primeiro.
   const sorted = useMemo(() => {
-    const isMaintenance = (s: MaintenanceSupplierOption) => s.category === "manutencao" || s.category === "limpeza";
+    const isMaintenance = (s: MaintenanceSupplierOption) => s.expense_nature === "manutencao" || s.expense_nature === "limpeza";
     return [...suppliers].sort((a, b) => Number(isMaintenance(b)) - Number(isMaintenance(a)) || a.name.localeCompare(b.name, "pt-BR"));
   }, [suppliers]);
   const search = normalizeSupplierName(query);
@@ -324,17 +326,11 @@ export function SupplierPicker({
         document: draft.document,
         phone: draft.phone,
         contact_name: draft.contact_name,
-        category: "manutencao",
+        expense_nature: "manutencao",
         party_type: "prestador",
         third_party_category: "manutencao",
       });
-      const option: MaintenanceSupplierOption = {
-        id: saved.id,
-        name: saved.name,
-        category: saved.category,
-        party_type: saved.party_type,
-        contracts: [],
-      };
+      const option = toSupplierOption(saved);
       onCreated(option);
       onChange(option.id);
       setCreating(false);
@@ -358,7 +354,7 @@ export function SupplierPicker({
           <Input value={draft.contact_name} onChange={(e) => setDraft({ ...draft, contact_name: e.target.value })} placeholder="Pessoa de contato" aria-label="Pessoa de contato" className="sm:col-span-2" />
         </div>
         <p className="text-xs text-muted-foreground">
-          Entra no cadastro de fornecedores e prestadores como prestador de manutenção. Contrato, documentos e nome no OPEX você completa por lá.
+          Entra no cadastro de fornecedores como prestador de serviços de manutenção (natureza: Manutenção e obras). Contrato, documentos e nome no OPEX você completa por lá.
         </p>
         {sameName && (
           <div role="alert" className="flex flex-wrap items-center gap-3 rounded-md bg-amber-50 px-3 py-2 text-sm ring-1 ring-inset ring-amber-200">
@@ -409,7 +405,7 @@ export function SupplierPicker({
                 <span className="min-w-0 flex-1 truncate text-foreground">{selected.name}</span>
               </>
             ) : (
-              <span className="min-w-0 flex-1 truncate text-muted-foreground">Quem faz a manutenção</span>
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">Escolher fornecedor</span>
             )}
             <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
           </button>
@@ -447,7 +443,7 @@ export function SupplierPicker({
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm text-foreground">{s.name}</span>
                   <span className="block truncate text-xs text-muted-foreground">
-                    {[s.party_type ? PARTY_TYPE_SHORT[s.party_type] : null, supplierCategoryLabel(s.category)].filter(Boolean).join(" · ")}
+                    {[s.party_type ? PARTY_TYPE_SHORT[s.party_type] : null, s.expense_nature ? expenseNatureLabel(s.expense_nature) : null].filter(Boolean).join(" · ")}
                   </span>
                 </span>
                 {s.id === value && <Check className="size-4 text-[#285f7a]" aria-hidden />}
@@ -488,6 +484,7 @@ export function SupplierPicker({
 export function emptyPlanInput(preset?: Partial<PlanInput>): PlanInput {
   return {
     asset_id: null,
+    category: "",
     title: "",
     maintenance_type: "preventiva",
     periodicity: "mensal",
@@ -507,6 +504,7 @@ export function emptyPlanInput(preset?: Partial<PlanInput>): PlanInput {
 export function planToInput(plan: MaintenancePlan): PlanInput {
   return {
     asset_id: plan.asset_id,
+    category: plan.category ?? "",
     title: plan.title,
     maintenance_type: plan.maintenance_type,
     periodicity: plan.periodicity,
@@ -528,13 +526,106 @@ export function planMissing(form: PlanInput): string | null {
   return null;
 }
 
+export function DocumentKindSelect({ value, onChange }: { value: MaintenanceDocumentKind; onChange: (value: MaintenanceDocumentKind) => void }) {
+  return (
+    <Select value={value} onValueChange={(next) => onChange(next as MaintenanceDocumentKind)}>
+      <SelectTrigger className="h-10 w-full bg-white text-sm" aria-label="Tipo de documento">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {MAINTENANCE_DOCUMENT_KINDS.map((kind) => (
+          <SelectItem key={kind} value={kind}>
+            {MAINTENANCE_DOCUMENT_LABEL[kind]}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+export function FileInput({ file, onChange }: { file: File | null; onChange: (file: File | null) => void }) {
+  return (
+    <label className="flex cursor-pointer items-center gap-3 rounded-md border border-dashed border-[#c9dde1] bg-white px-3 py-2.5 text-sm hover:bg-[#f6fafb] focus-within:ring-2 focus-within:ring-[#47cdd0]/50">
+      <Paperclip className="size-4 shrink-0 text-[#3e84a8]" aria-hidden />
+      <span className={cn("min-w-0 flex-1 truncate", file ? "text-foreground" : "text-muted-foreground")}>
+        {file ? file.name : "Escolher arquivo (PDF, imagem ou Word, até 50 MB)"}
+      </span>
+      <input
+        type="file"
+        className="sr-only"
+        accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+        onChange={(e) => {
+          onChange(e.target.files?.[0] ?? null);
+          e.target.value = "";
+        }}
+      />
+    </label>
+  );
+}
+
+/** Documento escolhido no formulário: sobe depois que o plano é salvo. */
+export interface StagedDocument {
+  kind: MaintenanceDocumentKind;
+  file: File;
+}
+
+function StagedDocumentsField({
+  value,
+  onChange,
+  existing,
+}: {
+  value: StagedDocument[];
+  onChange: (value: StagedDocument[]) => void;
+  existing: number;
+}) {
+  const [kind, setKind] = useState<MaintenanceDocumentKind>("laudo");
+  return (
+    <div className="space-y-2">
+      {existing > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {existing} {existing === 1 ? "documento já está" : "documentos já estão"} no plano.
+        </p>
+      )}
+      {value.length > 0 && (
+        <ul className="space-y-1">
+          {value.map((doc, index) => (
+            <li key={`${doc.file.name}-${index}`} className="flex items-center gap-2 rounded-md bg-[#f7fbfc] px-3 py-1.5 text-sm ring-1 ring-inset ring-[#e6eef0]">
+              <Paperclip className="size-3.5 shrink-0 text-[#3e84a8]" aria-hidden />
+              <span className="min-w-0 flex-1 truncate">{doc.file.name}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{MAINTENANCE_DOCUMENT_LABEL[doc.kind]}</span>
+              <button
+                type="button"
+                aria-label={`Tirar ${doc.file.name}`}
+                onClick={() => onChange(value.filter((_, i) => i !== index))}
+                className="rounded px-1 text-xs text-red-700 hover:underline"
+              >
+                Tirar
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="grid gap-2 sm:grid-cols-[11rem_minmax(0,1fr)]">
+        <DocumentKindSelect value={kind} onChange={setKind} />
+        <FileInput file={null} onChange={(file) => file && onChange([...value, { kind, file }])} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Plano de manutenção com os campos do gestor de Facilities, na ordem da tabela
+ * dele; a dica de cada campo é a coluna "Informação" da tabela.
+ */
 export function PlanForm({
   form,
   onChange,
   assets,
   suppliers,
   people,
-  isNew,
+  documents,
+  onDocumentsChange,
+  existingDocuments,
   onAssetCreated,
   onSupplierCreated,
 }: {
@@ -543,57 +634,76 @@ export function PlanForm({
   assets: FacilityAsset[];
   suppliers: MaintenanceSupplierOption[];
   people: FacilitiesPerson[];
-  isNew: boolean;
+  documents: StagedDocument[];
+  onDocumentsChange: (documents: StagedDocument[]) => void;
+  existingDocuments: number;
   onAssetCreated: (asset: FacilityAsset) => void;
   onSupplierCreated: (supplier: MaintenanceSupplierOption) => void;
 }) {
   const set = <K extends keyof PlanInput>(key: K, value: PlanInput[K]) => onChange({ ...form, [key]: value });
   const supplier = suppliers.find((s) => s.id === form.supplier_id);
+  const asset = form.asset_id ? assets.find((a) => a.id === form.asset_id) : undefined;
   const computedNext =
     form.last_done_on && !form.next_due_on ? nextDueAfter(form.last_done_on, form.periodicity, form.custom_interval_days) : null;
 
+  function chooseAsset(id: string | null, list: FacilityAsset[] = assets) {
+    const chosen = id ? list.find((a) => a.id === id) : undefined;
+    onChange({ ...form, asset_id: id, category: chosen ? chosen.category : form.category });
+  }
+
   return (
     <div>
-      {isNew && (
-        <section className="border-b border-[#eef3f5] px-6 py-4">
-          <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-            <Sparkles className="size-3.5 text-[#48466e]" aria-hidden />
-            Modelos comuns (preenchem o que será feito e a periodicidade)
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {MAINTENANCE_TEMPLATES.map((template) => {
-              const selected = form.title === template.title;
-              return (
-                <button
-                  key={template.title}
-                  type="button"
-                  title={template.note}
-                  aria-pressed={selected}
-                  onClick={() =>
-                    onChange({ ...form, title: template.title, periodicity: template.periodicity, maintenance_type: "preventiva", custom_interval_days: null })
-                  }
-                  className={cn(
-                    "rounded-full px-2.5 py-1 text-xs ring-1 ring-inset transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]/60",
-                    selected ? "bg-[#347796] text-white ring-[#347796]" : "bg-white text-[#285f7a] ring-[#c9dde1] hover:bg-[#f2f8f9]"
-                  )}
-                >
-                  {template.title}
-                  <span className={cn("ml-1", selected ? "text-white/80" : "text-muted-foreground")}>· {PERIODICITY_INFO[template.periodicity].label.toLowerCase()}</span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      <FormSection icon={HardHat} title="O que será feito">
+      <FormSection icon={HardHat} title="O que, onde e por quem">
+        <Field label="O que será feito *" htmlFor="plan-title">
+          <Input id="plan-title" value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="Ex.: Limpeza de filtros e higienização" />
+        </Field>
+        <Field label="Fornecedor" hint="Empresa responsável pela manutenção.">
+          <SupplierPicker
+            value={form.supplier_id}
+            suppliers={suppliers}
+            onChange={(id) => onChange({ ...form, supplier_id: id, contract_id: id === form.supplier_id ? form.contract_id : null })}
+            onCreated={onSupplierCreated}
+          />
+        </Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Manutenção *" htmlFor="plan-title" className="sm:col-span-2">
-            <Input id="plan-title" value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="Ex.: Limpeza de filtros e higienização" />
+          <Field label="Equipamento/Instalação" hint="Item que receberá a manutenção.">
+            <AssetPicker
+              value={form.asset_id}
+              assets={assets}
+              onChange={(id) => chooseAsset(id)}
+              onCreated={(created) => {
+                onAssetCreated(created);
+                chooseAsset(created.id, [...assets, created]);
+              }}
+            />
           </Field>
-          <Field label="Equipamento / instalação" className="sm:col-span-2">
-            <AssetPicker value={form.asset_id} assets={assets} onChange={(id) => set("asset_id", id)} onCreated={onAssetCreated} />
+          <Field label="Categoria" htmlFor="plan-category" hint={asset ? "A do equipamento escolhido." : "Ar-condicionado, elevador, elétrica, TI etc."}>
+            <Select
+              value={form.category || NONE}
+              disabled={Boolean(asset)}
+              onValueChange={(next) => set("category", next === NONE ? "" : (next as AssetCategory))}
+            >
+              <SelectTrigger id="plan-category" className="h-10 w-full bg-white text-sm">
+                <SelectValue placeholder="Não informada" />
+              </SelectTrigger>
+              <SelectContent className="max-h-80">
+                <SelectItem value={NONE}>Não informada</SelectItem>
+                {ASSET_CATEGORIES.map((category) => (
+                  <SelectItem key={category} value={category}>
+                    <span className="flex items-center gap-2">
+                      <AssetTile category={category} size="sm" className="size-6 [&_svg]:size-3.5" />
+                      {ASSET_CATEGORY_LABEL[category]}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
+        </div>
+      </FormSection>
+
+      <FormSection icon={CalendarDays} title="Tipo, periodicidade e datas">
+        <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Tipo de manutenção">
             <Segmented<MaintenanceType>
               label="Tipo de manutenção"
@@ -621,7 +731,7 @@ export function PlanForm({
                   <SelectItem key={p} value={p}>
                     <span className="flex items-baseline gap-2">
                       {PERIODICITY_INFO[p].label}
-                      <span className="text-xs text-muted-foreground">{PERIODICITY_INFO[p].hint}</span>
+                      {PERIODICITY_INFO[p].hint && <span className="text-xs text-muted-foreground">{PERIODICITY_INFO[p].hint}</span>}
                     </span>
                   </SelectItem>
                 ))}
@@ -629,7 +739,7 @@ export function PlanForm({
             </Select>
           </Field>
           {form.periodicity === "personalizada" && (
-            <Field label="A cada quantos dias *" htmlFor="plan-days">
+            <Field label="A cada quantos dias *" htmlFor="plan-days" hint="Intervalo definido pelo responsável." className="sm:col-start-2">
               <Input
                 id="plan-days"
                 type="number"
@@ -640,12 +750,7 @@ export function PlanForm({
               />
             </Field>
           )}
-        </div>
-      </FormSection>
-
-      <FormSection icon={CalendarDays} title="Quando">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Última manutenção" htmlFor="plan-last">
+          <Field label="Última manutenção" htmlFor="plan-last" hint="Data da última execução.">
             <DatePickerField id="plan-last" value={form.last_done_on} onChange={(value) => set("last_done_on", value)} />
           </Field>
           <Field
@@ -653,42 +758,39 @@ export function PlanForm({
             htmlFor="plan-next"
             hint={
               computedNext
-                ? `Se ficar em branco: ${formatShortDate(computedNext)} (última + ${PERIODICITY_INFO[form.periodicity].label.toLowerCase()}).`
-                : isOneOff(form.periodicity)
-                  ? "Data combinada para fazer."
-                  : "Em branco, o sistema calcula pela última manutenção."
+                ? `Data prevista para execução. Em branco, fica ${formatShortDate(computedNext)} (última + ${PERIODICITY_INFO[form.periodicity].label.toLowerCase()}).`
+                : "Data prevista para execução."
             }
           >
             <DatePickerField id="plan-next" value={form.next_due_on} onChange={(value) => set("next_due_on", value)} />
           </Field>
-          {!isNew && (
-            <Field label="Status" className="sm:col-span-2">
-              <Segmented<PlanInput["status"]>
-                label="Status"
-                value={form.status}
-                options={[
-                  { value: "ativo", label: "Ativo" },
-                  { value: "pausado", label: "Pausado" },
-                  { value: "concluido", label: "Concluído" },
-                ]}
-                onChange={(value) => set("status", value)}
-              />
-            </Field>
-          )}
         </div>
       </FormSection>
 
-      <FormSection icon={UserRound} title="Quem faz e quanto custa">
+      <FormSection icon={UserRound} title="Acompanhamento">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Prestador" className="sm:col-span-2">
-            <SupplierPicker
-              value={form.supplier_id}
-              suppliers={suppliers}
-              onChange={(id) => onChange({ ...form, supplier_id: id, contract_id: id === form.supplier_id ? form.contract_id : null })}
-              onCreated={onSupplierCreated}
+          <Field label="Responsável interno" htmlFor="plan-owner" hint="Colaborador responsável pelo acompanhamento.">
+            <PersonSelect id="plan-owner" value={form.responsible_user_id} people={people} onChange={(id) => set("responsible_user_id", id)} />
+          </Field>
+          <Field label="Custo estimado" htmlFor="plan-cost" hint="Valor previsto (por vez).">
+            <CurrencyInput
+              id="plan-cost"
+              value={form.estimated_cost == null ? "" : String(form.estimated_cost)}
+              onChange={(value) => set("estimated_cost", value === "" ? null : Number(value))}
             />
           </Field>
-          <Field label="Contrato vinculado" htmlFor="plan-contract" hint={!supplier ? "Escolha o prestador primeiro." : supplier.contracts.length ? undefined : "Este prestador não tem contrato vigente no cadastro."}>
+          <Field
+            label="Contrato vinculado"
+            htmlFor="plan-contract"
+            className="sm:col-span-2"
+            hint={
+              !supplier
+                ? "Contrato ou SLA relacionado. Escolha o fornecedor primeiro."
+                : supplier.contracts.length
+                  ? "Contrato ou SLA relacionado."
+                  : "Este fornecedor não tem contrato vigente no cadastro."
+            }
+          >
             <Select
               value={form.contract_id ?? NONE}
               disabled={!supplier || !supplier.contracts.length}
@@ -707,15 +809,20 @@ export function PlanForm({
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Custo estimado (por vez)" htmlFor="plan-cost">
-            <CurrencyInput
-              id="plan-cost"
-              value={form.estimated_cost == null ? "" : String(form.estimated_cost)}
-              onChange={(value) => set("estimated_cost", value === "" ? null : Number(value))}
-            />
+          <Field label="Documentos" className="sm:col-span-2" hint="Laudos, notas fiscais, certificados e ordens de serviço.">
+            <StagedDocumentsField value={documents} onChange={onDocumentsChange} existing={existingDocuments} />
           </Field>
-          <Field label="Responsável interno" htmlFor="plan-owner" className="sm:col-span-2" hint="Quem acompanha e registra a execução.">
-            <PersonSelect id="plan-owner" value={form.responsible_user_id} people={people} onChange={(id) => set("responsible_user_id", id)} />
+          <Field label="Status" className="sm:col-span-2" hint="Situação atual da manutenção.">
+            <Segmented<PlanInput["status"]>
+              label="Status"
+              value={form.status}
+              options={[
+                { value: "ativo", label: "Ativo" },
+                { value: "pausado", label: "Pausado" },
+                { value: "concluido", label: "Concluído" },
+              ]}
+              onChange={(value) => set("status", value)}
+            />
           </Field>
           <Field label="Observações" htmlFor="plan-notes" className="sm:col-span-2">
             <Textarea id="plan-notes" rows={3} value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Checklist, acesso ao local, garantia…" />

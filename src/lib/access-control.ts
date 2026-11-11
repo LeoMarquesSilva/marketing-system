@@ -54,7 +54,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/operacoes-legais", label: "Operações Legais", admin: true, manualOnly: true },
   { key: "/operacoes-legais/vistagem", label: "Vistagem de Publicações BP", manualOnly: true },
   { key: "/eventos", label: "Gestão de eventos" },
-  { key: "/facilities", label: "Facilities (fornecedores, contratos e manutenção)", manualOnly: true },
+  { key: "/facilities", label: "Gestão de Fornecedores e Prestadores de Serviços (Facilities)", manualOnly: true },
   { key: "/cafe-cultura", label: "Café com Cultura", manualOnly: true },
   { key: "/email-marketing", label: "E-mail marketing" },
   { key: "/certificados", label: "Certificados" },
