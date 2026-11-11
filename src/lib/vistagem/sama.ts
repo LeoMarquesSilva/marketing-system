@@ -14,7 +14,7 @@ import type { MateriaVios, SintesePedida } from "./types";
  * relidos do VIOS pelo robô todo domingo à noite, e a fila vios_agendamentos que o
  * sama-rpa consome a cada 2 minutos para criar a tarefa no VIOS.
  */
-function sama(): SupabaseClient {
+export function sama(): SupabaseClient {
   const url = process.env.SAMA_SUPABASE_URL?.trim();
   const key = process.env.SAMA_SUPABASE_SERVICE_ROLE_KEY?.trim();
   if (!url || !key) throw new VistagemError("SAMA não configurado (SAMA_SUPABASE_URL/SAMA_SUPABASE_SERVICE_ROLE_KEY).", 500);
