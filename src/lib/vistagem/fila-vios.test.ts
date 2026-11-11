@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { cisDoResultado, linhasParaFila, modoDaPublicacao, tarefasViosDoResultado, type AgendamentoParaFila, type PublicacaoParaFila } from "./fila-vios";
+import {
+  cisDoResultado,
+  linhasParaFila,
+  modoDaPublicacao,
+  podeTerGravadoNoVios,
+  tarefasViosDoResultado,
+  type AgendamentoParaFila,
+  type PublicacaoParaFila,
+} from "./fila-vios";
 
 const PUBLICACAO: PublicacaoParaFila = {
   data_publicacao: "2026-10-15",
@@ -214,5 +222,24 @@ describe("onde agendar cada publicação", () => {
     expect(modoDaPublicacao({ origem: "upload" }, "intimacao")).toBe("intimacao");
     expect(modoDaPublicacao(null, "intimacao")).toBe("intimacao");
     expect(modoDaPublicacao({ origem: "sharepoint" }, "pasta")).toBe("pasta");
+  });
+});
+
+describe("Rodar novamente: erro em que o robô pode já ter gravado no VIOS", () => {
+  it("pede confirmação no aviso do robô depois de gravar", () => {
+    expect(podeTerGravadoNoVios("ATENÇÃO: o lançamento já tinha sido enviado — confira no VIOS (processo CI 55658) antes de reenviar.")).toBe(true);
+  });
+
+  it("pede confirmação quando a fila do SAMA desistiu do caso no meio (0922156-75, 10/11/2026)", () => {
+    expect(
+      podeTerGravadoNoVios("Execução interrompida (RPA reiniciou ou travou). Conferir manualmente no VIOS antes de reenviar.")
+    ).toBe(true);
+  });
+
+  it("não pede quando o robô nem começou ou falhou antes de gravar", () => {
+    expect(podeTerGravadoNoVios("Excedeu 3 tentativas de envio ao RPA.")).toBe(false);
+    expect(podeTerGravadoNoVios("Tipo de tarefa não encontrado no VIOS.")).toBe(false);
+    expect(podeTerGravadoNoVios(null)).toBe(false);
+    expect(podeTerGravadoNoVios("")).toBe(false);
   });
 });

@@ -34,7 +34,7 @@ import { buscarPastasVios } from "./pastas-vios";
 import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
 import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
-import { linhasParaFila, modoDaPublicacao, type TarefaNoVios } from "./fila-vios";
+import { linhasParaFila, modoDaPublicacao, podeTerGravadoNoVios, type TarefaNoVios } from "./fila-vios";
 import { LIMITE_TRECHO_SINTESE, materiasDaLista, precisaDeMateria, precisaDeSistema, sistemaDaLista } from "./dados-processo";
 import { buscarPastaPorCi, buscarSinteseDaPasta, cadastroDaPasta, semMateria, semSistema, type CadastroDaPasta } from "./sioe";
 import { ESCRITORIOS, type PastaSioe, type Pendencia } from "./triagem";
@@ -1297,9 +1297,6 @@ export async function reenviarGravando(id: string): Promise<{ enviadas: number }
   return { enviadas: simuladas.length };
 }
 
-/** Erro depois que o robô clicou em Gravar/lançou: rodar de novo pode duplicar a tarefa no VIOS. */
-const ERRO_DEPOIS_DE_GRAVAR = /^\s*ATENÇÃO/i;
-
 /**
  * Roda de novo no robô as tarefas da publicação que deram erro (aba Enviadas ao robô).
  * Se o erro diz que o robô pode ter gravado no VIOS antes de falhar, só roda com confirmação.
@@ -1321,7 +1318,7 @@ export async function rodarNovamente(
   if (error) falhou("carregar as tarefas com erro", error);
   const comErro = (data ?? []) as AgendamentoRow[];
   if (!comErro.length) throw new VistagemError("Não há tarefas com erro para rodar de novo.", 422);
-  if (!forcar && comErro.some((item) => ERRO_DEPOIS_DE_GRAVAR.test(item.envio_erro ?? ""))) {
+  if (!forcar && comErro.some((item) => podeTerGravadoNoVios(item.envio_erro))) {
     return {
       precisaConfirmar:
         "O robô pode ter gravado no VIOS antes do erro. Confira no VIOS se a tarefa já existe: rodar de novo pode duplicá-la. Rodar mesmo assim?",
