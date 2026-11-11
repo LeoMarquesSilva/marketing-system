@@ -25,6 +25,7 @@ import {
   Compass,
   Contact,
   Crosshair,
+  Film,
   Heart,
   House,
   IdCard,
@@ -64,6 +65,9 @@ import {
   isTeamSurveysPath,
   PE27_KEY,
   hasPe27Access,
+  DOCUMENTARIO_KEY,
+  hasDocumentarioAccess,
+  isDocumentarioPath,
   isPe27Path,
   isPe27OnlyProfile,
   hasCafeCulturaAccess,
@@ -214,6 +218,22 @@ export const NAV_FRONTS: NavFront[] = [
         shortLabel: "Estúdio",
         icon: Wand2,
         pages: [{ href: "/conteudo/estudio", label: "Estúdio de peças" }],
+      },
+      {
+        // Minidocumentário dos 10 anos ("O que construímos juntos"): projeto, aprovação dos sócios,
+        // gravações, roteiro do dia e acervo histórico. Só admin e quem tiver a chave /documentario.
+        id: "documentario",
+        label: "Minidocumentário 10 anos",
+        title: "Minidocumentário · O que construímos juntos",
+        shortLabel: "Documentário",
+        icon: Film,
+        pages: [
+          { href: DOCUMENTARIO_KEY, label: "Projeto" },
+          { href: `${DOCUMENTARIO_KEY}/aprovacao`, label: "Aprovação dos sócios" },
+          { href: `${DOCUMENTARIO_KEY}/gravacoes`, label: "Gravações" },
+          { href: `${DOCUMENTARIO_KEY}/dia`, label: "Dia da gravação" },
+          { href: `${DOCUMENTARIO_KEY}/acervo`, label: "Acervo" },
+        ],
       },
       {
         // Item próprio: é onde o colaborador aprova o vídeo que gravou, com contador de pendências.
@@ -567,6 +587,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
       if (isOpsPlannerPath(href)) return opsPlanner;
       if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
       if (isPe27Path(href)) return hasPe27Access(profile);
+      if (isDocumentarioPath(href)) return hasDocumentarioAccess(profile);
       if (href.startsWith("/operacoes-legais")) return hasOperacoesLegaisAccess(profile);
       if (href === "/icp") return hasIcpAccess(profile);
       if (href === "/conteudo/gustavo") return gustavo;
@@ -584,6 +605,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
       if (COLLABORATOR_PAGES.has(href)) return true;
       if (isOpsPlannerPath(href)) return opsPlanner;
       if (isPe27Path(href)) return hasPe27Access(profile);
+      if (isDocumentarioPath(href)) return hasDocumentarioAccess(profile);
       if (href === "/rh/ferias") return feriasView;
       if (href === "/conteudo/gustavo") return gustavo;
       if (href === TEAM_POSTS_PATH) return teamPosts;
@@ -598,6 +620,7 @@ export function createNavVisibility(profile: NavProfile | null | undefined): (hr
     if (isOpsPlannerPath(href)) return opsPlanner;
     if (isTeamSurveysPath(href)) return hasTeamSurveysAccess(profile);
     if (isPe27Path(href)) return hasPe27Access(profile);
+    if (isDocumentarioPath(href)) return hasDocumentarioAccess(profile);
     if (href.startsWith("/operacoes-legais/")) return hasOperacoesLegaisAccess(profile);
     switch (href) {
       case HOME_PATH:

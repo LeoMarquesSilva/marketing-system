@@ -9,8 +9,6 @@ const TrafegoPagoTabs = nextDynamic(
   { loading: () => <TrafegoPagoLoading /> }
 );
 
-export const dynamic = "force-dynamic";
-
 // O nome da tela já vem do cabeçalho global (h1); aqui só as abas e o conteúdo.
 export default function TrafegoPagoPage() {
   return (

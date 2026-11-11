@@ -1,3 +1,5 @@
+import type { OrigemPrazo } from "./agendamento";
+import type { AlteracaoDaVistagem } from "./alterar-vistagem";
 import type { ContagemPrazo } from "./dias-uteis";
 import type { TarefaNoVios } from "./fila-vios";
 import type { FluxoDaTarefa } from "./fluxo-vios";
@@ -140,6 +142,8 @@ export interface PublicacaoResumo {
   valorAcaoAtualizado: number | null;
   escritorioResponsavel: string | null;
   demandaRisco: boolean | null;
+  /** Etiquetas da pasta no VIOS (retrato da triagem, pelo SIOE), ex.: "RC-Insolvência". */
+  etiquetas: string[];
   pendencia: Pendencia | null;
   pastasCandidatas: PastaSioe[];
   triadaEm: string | null;
@@ -151,6 +155,8 @@ export interface PublicacaoResumo {
   devolvidoEm: string | null;
   /** Vistada de novo depois da devolução (vistadoEm continua sendo a primeira vistagem). */
   revistadoEm: string | null;
+  /** Reaberta por quem vistou para alterar antes da Conferência (pedido de 11/11/2026). */
+  reabertaEm?: string | null;
   checadoEm: string | null;
   checkNota: string | null;
   /** Última transferência para a fila de outra área (escritório de origem, quando e por quê). */
@@ -267,9 +273,10 @@ export interface TarefaPrevista {
   editada: boolean;
   /**
    * O Orquestra mudou a data que o VIOS daria, e o robô grava no VIOS: "fatal", Revisar/Protocolar apertado para
-   * caber antes da fatal (prazo curto a partir de hoje); "hoje", a regra do VIOS dava antes de hoje.
+   * caber antes da fatal (prazo curto a partir de hoje); "hoje", a regra do VIOS dava antes de hoje; "antecipada",
+   * regra da insolvência (o Enviar e o Revisar vão 2 dias úteis antes e o Protocolar fica 1 dia útil antes da fatal).
    */
-  ajustada?: "fatal" | "hoje";
+  ajustada?: "fatal" | "hoje" | "antecipada";
   /** 1. CIÊNCIA DOS AGENDAMENTOS repetida na vistagem: o robô cancela no VIOS (fica a da primeira tarefa). */
   repetida?: boolean;
   responsaveis: string;
@@ -309,6 +316,8 @@ export interface AgendamentoResumo {
   diasPrazo: number | null;
   /** Contagem do atalho de dias (úteis/corridos); null sem atalho. */
   contagemPrazo: ContagemPrazo | null;
+  /** Prazo: de onde vieram os dias ou a fatal (botões, calendário…); null nas antigas e fora do Prazo. */
+  origemPrazo: OrigemPrazo | null;
   /** COMPROMISSO: horário HH:MM. */
   hora: string | null;
   /** COMPROMISSO: Hora final HH:MM (null nos antigos: o robô pôs 1 hora depois, ou 00:00 antes de 05/11/2026). */
@@ -461,6 +470,8 @@ export interface ConferenciaItem {
   auxiliar?: string | null;
   /** Sugestão da IA que o jurídico tinha na vistagem e o que fez com ela (só a conferência traz; null sem sugestão). */
   sugestaoIa?: SugestaoNaVistagem | null;
+  /** Só na visão Vistado do jurídico, antes da Conferência: se quem vê pode reabrir a vistagem para alterar e, se não, por quê. */
+  alteracao?: AlteracaoDaVistagem;
 }
 
 export interface SugestaoNaVistagem {

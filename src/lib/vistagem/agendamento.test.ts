@@ -16,7 +16,9 @@ import {
   atalhosDePrazo,
   montarObservacaoVios,
   dataLimiteDaTarefa,
+  dataPadraoDaTarefa,
   observacaoObrigatoria,
+  origemDoPrazo,
   pedeDataLimite,
   referenciaDaPublicacao,
   responsaveisNaArea,
@@ -106,6 +108,7 @@ describe("validarAgendamentos", () => {
           dataFatal: "2026-11-02",
           diasPrazo: 15,
           contagemPrazo: "corridos",
+          origemPrazo: null,
           hora: null,
           horaFim: null,
           dataLimite: null,
@@ -182,6 +185,18 @@ describe("validarAgendamentos", () => {
       },
     };
     const nf = (extra: Record<string, unknown>) => ({ etiqueta: "PROVIDENCIA" as const, tarefa: "CIÊNCIA NF", data: "2026-11-10", responsavel: "Advogada Exemplo", ...extra });
+
+    it("já vem com o dia útil seguinte ao da vistagem (pedido de 11/11/2026); os outros tipos começam vazios", () => {
+      const ehDiaUtil = criarCalendario(["2026-11-20"]);
+      expect(dataPadraoDaTarefa("CIÊNCIA NF", "2026-11-11", ehDiaUtil)).toBe("2026-11-12");
+      // sexta → segunda
+      expect(dataPadraoDaTarefa(" ciencia nf ", "2026-11-13", ehDiaUtil)).toBe("2026-11-16");
+      // quinta, com a sexta 20/11 feriado → segunda
+      expect(dataPadraoDaTarefa("CIÊNCIA NF", "2026-11-19", ehDiaUtil)).toBe("2026-11-23");
+      expect(dataPadraoDaTarefa("1. CIÊNCIA DOS AGENDAMENTOS", "2026-11-11", ehDiaUtil)).toBeNull();
+      expect(dataPadraoDaTarefa("SUBSÍDIOS / PROCURAÇÃO", "2026-11-11", ehDiaUtil)).toBeNull();
+      expect(dataPadraoDaTarefa(null, "2026-11-11", ehDiaUtil)).toBeNull();
+    });
 
     it("reconhece o tipo pelo nome do VIOS, sem acento e sem diferença de caixa", () => {
       expect(observacaoObrigatoria("CIÊNCIA NF")).toBe(true);
@@ -266,6 +281,31 @@ describe("validarAgendamentos", () => {
     );
     expect(resultado.ok).toBe(true);
     expect(resultado.ok && resultado.itens[0]).toMatchObject({ etiqueta: "PROVIDENCIA", revisor: null, revisorId: null });
+  });
+
+  it("guarda de onde veio o prazo (pedido de 11/11/2026), só no Prazo com fatal e coerente com os dias", () => {
+    const prazo = { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo", observacao: "ver teor" };
+    const origem = (entrada: Record<string, unknown>) => {
+      const resultado = validarAgendamentos([{ ...prazo, ...entrada }], contexto);
+      return resultado.ok ? resultado.itens[0].origemPrazo : "inválido";
+    };
+    expect(origem({ diasPrazo: 15, contagemPrazo: "uteis", origemPrazo: "atalho" })).toBe("atalho");
+    expect(origem({ origemPrazo: "calendario" })).toBe("calendario");
+    // a IA pode dar a fatal sem os dias
+    expect(origem({ origemPrazo: "sugestao_ia" })).toBe("sugestao_ia");
+    // botões, prazo legal e publicação sem os dias marcados: a fatal mudou depois, não se sabe
+    expect(origem({ origemPrazo: "atalho" })).toBeNull();
+    expect(origem({ origemPrazo: "qualquer" })).toBeNull();
+    expect(origem({})).toBeNull();
+    expect(origemDoPrazo("publicacao", 30)).toBe("publicacao");
+    expect(origemDoPrazo("tarefa", null)).toBeNull();
+    // fora do Prazo, nada
+    const providencia = validarAgendamentos(
+      [{ etiqueta: "PROVIDENCIA", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", tarefaId: "321", data: "2026-11-10", responsavel: "Advogada Exemplo", origemPrazo: "calendario" }],
+      contexto
+    );
+    expect(providencia.ok).toBe(true);
+    expect(providencia.ok && providencia.itens[0].origemPrazo).toBeNull();
   });
 
   it("atalho de dias exige a contagem (úteis ou corridos); fatal no calendário não", () => {

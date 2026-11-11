@@ -52,6 +52,13 @@ describe("catálogo de navegação", () => {
     expect(visibleHrefs({ role: null, permissions: ["/planner", "/pe27"] })).toEqual(expect.arrayContaining(["/planner", "/pe27"]));
   });
 
+  it("Minidocumentário aparece para admin e para quem tem a chave, nunca pelo modo legado", () => {
+    expect(visibleHrefs({ role: "admin" })).toEqual(expect.arrayContaining(["/documentario", "/documentario/dia", "/documentario/acervo"]));
+    expect(visibleHrefs({ role: null, permissions: null })).not.toContain("/documentario");
+    expect(visibleHrefs({ role: null, permissions: ["/planner", "/eventos"] })).not.toContain("/documentario");
+    expect(visibleHrefs({ role: null, permissions: ["/conteudo/roteiros", "/documentario"] })).toEqual(expect.arrayContaining(["/documentario", "/documentario/aprovacao"]));
+  });
+
   it("consultor só com o PE27 vê no menu apenas o PE27", () => {
     expect(visibleHrefs({ role: null, permissions: ["/pe27"], department: "Consultoria Estratégica" })).toEqual([
       "/pe27",
@@ -151,7 +158,7 @@ describe("visibilidade por perfil", () => {
         "/meus-clientes",
       ])
     );
-    expect(hrefs).not.toContain("/");
+    expect(hrefs).toContain("/");
     expect(hrefs).not.toContain("/painel-marketing");
     expect(hrefs).not.toContain("/planner");
     expect(frontIds({ role: null, permissions: null, department: "Trabalhista" })).not.toContain("pessoas");
@@ -177,7 +184,7 @@ describe("visibilidade por perfil", () => {
     expect(hrefs).toEqual(
       expect.arrayContaining(["/conteudo/inicio", "/conteudo/boletim", "/conteudo/reels", "/conteudo/roteiros"])
     );
-    expect(hrefs).not.toContain("/");
+    expect(hrefs).toContain("/");
     expect(hrefs).not.toContain("/painel-marketing");
     expect(hrefs).not.toContain("/conteudo/gustavo");
   });

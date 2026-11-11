@@ -63,8 +63,8 @@ describe("acesso do perfil tipo Ricardo à Newsletter", () => {
     ).toBe(true);
   });
 
-  it("cai na tela de desempenho como primeira rota", () => {
-    expect(firstAllowedPath(RICARDO_LIKE)).toBe("/conteudo/inicio");
+  it("entra pela tela inicial", () => {
+    expect(firstAllowedPath(RICARDO_LIKE)).toBe("/");
   });
 
   it("como Sócio enxerga todas as áreas jurídicas, inclusive Reestruturação", () => {

@@ -58,6 +58,18 @@ describe("montarHistorico", () => {
     expect(eventos[3].detalhes).toEqual(["CIÊNCIA NF · 10/11/2026 · Ligia"]);
   });
 
+  it("reabertura para alterar antes da Conferência aparece com quem reabriu (pedido de 11/11/2026)", () => {
+    const eventos = montarHistorico(
+      base({
+        reabertura: { por: "Ana", em: "2026-11-09T12:30:00Z" },
+        vistagem: { por: "Ana", em: "2026-11-09T12:40:00Z", observacao: null },
+      })
+    );
+    expect(eventos.map((evento) => evento.tipo)).toEqual(["chegada", "triagem", "reabertura", "vistagem"]);
+    expect(eventos[2]).toMatchObject({ titulo: "Vistagem reaberta para alterar, antes da Conferência", por: "Ana" });
+    expect(montarHistorico(base()).some((evento) => evento.tipo === "reabertura")).toBe(false);
+  });
+
   it("põe tudo em ordem de tempo", () => {
     const eventos = montarHistorico(
       base({

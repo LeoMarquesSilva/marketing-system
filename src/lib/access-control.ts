@@ -68,6 +68,8 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/rh", label: "RH (férias, dados cadastrais, organograma e boas práticas)", manualOnly: true },
   { key: "/pe27", label: "PE27 · Planejamento 2027 (só leitura)", manualOnly: true },
   { key: "/pe27/editar", label: "PE27 · editar decisões, alavancas e metas", manualOnly: true },
+  { key: "/documentario", label: "Minidocumentário 10 anos (ver e aprovar)", manualOnly: true },
+  { key: "/documentario/editar", label: "Minidocumentário 10 anos · editar, gravar e subir acervo", manualOnly: true },
   { key: "/admin", label: "Configurações", admin: true },
 ];
 
@@ -86,6 +88,10 @@ export const FACILITIES_KEY = "/facilities";
 export const PE27_KEY = "/pe27";
 /** Chave de permissão (não é rota): edição no PE27 para quem não é admin. */
 export const PE27_EDIT_KEY = "/pe27/editar";
+/** Minidocumentário dos 10 anos: contém tópicos biográficos dos sócios. */
+export const DOCUMENTARIO_KEY = "/documentario";
+/** Chave de permissão (não é rota): editar, conduzir a gravação e subir acervo. */
+export const DOCUMENTARIO_EDIT_KEY = "/documentario/editar";
 export const MANUAL_ONLY_KEYS = ACCESS_SECTIONS.filter((s) => s.manualOnly).map((s) => s.key);
 
 const NON_ADMIN_KEYS = ACCESS_SECTIONS.filter(
@@ -276,6 +282,27 @@ export function isPe27OnlyProfile(profile: AccessProfile | null | undefined): bo
   return permissions.length > 0 && permissions.every((key) => key === PE27_KEY || key === PE27_EDIT_KEY);
 }
 
+/**
+ * Minidocumentário dos 10 anos: admin ou liberação manual em Usuários (nunca pelo
+ * modo legado). `/documentario` vê e registra as próprias decisões (sócios);
+ * `/documentario/editar` também edita, conduz a gravação e sobe o acervo.
+ */
+export function hasDocumentarioAccess(profile: AccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  return Boolean(profile.permissions?.some((key) => key === DOCUMENTARIO_KEY || key === DOCUMENTARIO_EDIT_KEY));
+}
+
+export function canEditDocumentario(profile: AccessProfile | null | undefined): boolean {
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  return Boolean(profile.permissions?.includes(DOCUMENTARIO_EDIT_KEY));
+}
+
+export function isDocumentarioPath(pathname: string): boolean {
+  return pathname === DOCUMENTARIO_KEY || pathname.startsWith(`${DOCUMENTARIO_KEY}/`);
+}
+
 /** Fora do módulo, o perfil só-PE27 abre apenas a troca de senha. */
 const PE27_ONLY_EXTRA_PATHS = ["/alterar-senha"];
 
@@ -428,6 +455,10 @@ export function canAccessPath(
     return hasPe27Access(profile);
   }
 
+  if (isDocumentarioPath(pathname)) {
+    return hasDocumentarioAccess(profile);
+  }
+
   const isOperacoesLegaisRoute =
     pathname === OPERACOES_LEGAIS_KEY || pathname.startsWith(`${OPERACOES_LEGAIS_KEY}/`);
   if (isOperacoesLegaisRoute) {
@@ -490,10 +521,10 @@ export function canAccessPath(
 }
 
 /**
- * A tela inicial ("/") está em lançamento: por enquanto só admin enxerga
- * (decisão do usuário em 10/11/2026). Para liberar a todos, trocar para false.
+ * Trava de lançamento da tela inicial ("/"): com true, só admin enxerga. Ficou
+ * ligada de 10 a 11/11/2026; desde então a tela é de todos (decisão do usuário).
  */
-export const HOME_ADMIN_ONLY = true;
+export const HOME_ADMIN_ONLY = false;
 
 /** Quem abre a tela inicial. O perfil liberado só para o PE27 nunca abre. */
 export function canSeeHome(profile: AccessProfile | null | undefined): boolean {
@@ -516,6 +547,7 @@ export function firstAllowedPath(profile: AccessProfile | null | undefined): str
   const primeiro = allowed.includes(MARKETING_DASHBOARD_PATH) ? MARKETING_DASHBOARD_PATH : allowed[0];
   // A chave de edição do PE27 não é uma página: entra pela Visão geral do módulo.
   if (primeiro === PE27_EDIT_KEY) return PE27_KEY;
+  if (primeiro === DOCUMENTARIO_EDIT_KEY) return DOCUMENTARIO_KEY;
   // O jurídico entra direto na aba Vistagem, onde está o trabalho dele.
   return primeiro === VISTAGEM_KEY ? entradaDaVistagem(profile) : primeiro;
 }

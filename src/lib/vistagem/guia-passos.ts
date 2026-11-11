@@ -240,14 +240,14 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alternativa: "vj-vazio",
       titulo: "Sua fila",
       texto:
-        "Aqui ficam as publicações da sua área que esperam vistagem, agrupadas pelo grupo do cliente, com as de demanda de risco primeiro. Clique em uma para abrir; os selos avisam se é de risco, se foi devolvida pela controladoria ou transferida de outra área.",
+        "Aqui ficam as publicações da sua área que esperam vistagem, agrupadas pelo grupo do cliente, com as de demanda de risco primeiro. Clique em uma para abrir; os selos avisam se é de risco, se a pasta tem a etiqueta RC-Insolvência, se foi devolvida pela controladoria ou transferida de outra área.",
     },
     {
       id: "filtros",
       alvo: "vj-filtros",
       titulo: "Busca e filtros",
       texto:
-        "Busque por processo, cliente ou CI e filtre por área, recebimento, grupo, tribunal e risco. \"Limpar\" volta a mostrar a fila inteira.",
+        "Busque por processo, cliente ou CI e filtre por área, recebimento, grupo, tribunal, etiqueta da pasta no VIOS e risco. \"Limpar\" volta a mostrar a fila inteira.",
     },
     {
       id: "publicacao",

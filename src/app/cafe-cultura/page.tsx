@@ -8,8 +8,6 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export const dynamic = "force-dynamic";
-
 export default function CafeCulturaAdminPage() {
   return (
     <Suspense fallback={<div className="min-h-[48vh] animate-pulse rounded-3xl bg-muted/40" />}>

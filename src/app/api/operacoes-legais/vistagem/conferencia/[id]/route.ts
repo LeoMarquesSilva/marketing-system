@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { reenviarParaCentral } from "@/lib/vistagem/central-server";
 import { exigirAcessoVistagem, respostaDeErro } from "@/lib/vistagem/http";
-import { devolverVistagem, editarTarefaNaConferencia, reenviarGravando, rodarNovamente, validarVistagem } from "@/lib/vistagem/juridico-server";
+import {
+  devolverVistagem,
+  editarTarefaNaConferencia,
+  marcarConferenciaAberta,
+  reenviarGravando,
+  rodarNovamente,
+  validarVistagem,
+} from "@/lib/vistagem/juridico-server";
 import type { DataDoFluxo } from "@/lib/vistagem/types";
 
 export const dynamic = "force-dynamic";
@@ -18,13 +25,15 @@ function texto(valor: unknown, limite: number): string | null {
  * acao=editar → ajusta data e responsáveis de uma tarefa, sem devolver (o robô lê a tarefa ao validar);
  * acao=reenviar → grava no VIOS as tarefas que só passaram em simulação;
  * acao=rodar_novamente (forcar opcional) → roda de novo no robô as tarefas que deram erro;
- * acao=central → cria de novo na Central do SharePoint o pedido de abertura de pasta que não chegou.
+ * acao=central → cria de novo na Central do SharePoint o pedido de abertura de pasta que não chegou;
+ * acao=abrir → a controladoria está com a publicação aberta: por alguns minutos o jurídico não reabre a vistagem.
  */
 export async function POST(request: Request, context: RouteContext) {
   try {
     const authUserId = await exigirAcessoVistagem();
     const { id } = await context.params;
     const corpo = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+    if (corpo?.acao === "abrir") return NextResponse.json(await marcarConferenciaAberta(id, authUserId));
     if (corpo?.acao === "validar") return NextResponse.json(await validarVistagem(id, authUserId));
     if (corpo?.acao === "editar") {
       return NextResponse.json(
@@ -57,7 +66,7 @@ export async function POST(request: Request, context: RouteContext) {
       );
       return NextResponse.json({ ok: true });
     }
-    return NextResponse.json({ error: "Informe acao: validar, devolver, editar, reenviar, rodar_novamente ou central." }, { status: 400 });
+    return NextResponse.json({ error: "Informe acao: abrir, validar, devolver, editar, reenviar, rodar_novamente ou central." }, { status: 400 });
   } catch (error) {
     return respostaDeErro(error, "Não foi possível concluir a conferência.");
   }

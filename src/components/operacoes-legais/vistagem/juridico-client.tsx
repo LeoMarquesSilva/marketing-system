@@ -30,6 +30,7 @@ import {
   Send,
   ShieldAlert,
   ShieldCheck,
+  Tag,
   Trash2,
   TriangleAlert,
   X,
@@ -39,6 +40,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
+import { avisarContagensVistagem } from "@/hooks/use-vistagem-contagens";
 import { cn } from "@/lib/utils";
 import {
   ETIQUETAS_AGENDAMENTO,
@@ -52,12 +54,15 @@ import {
   horaValida,
   mesmasPessoas,
   nomesDasPessoas,
+  dataPadraoDaTarefa,
   observacaoObrigatoria,
   pedeDataLimite,
   revisorFicaNaTarefa,
   separarNomes,
   type EtiquetaAgendamento,
+  type OrigemPrazo,
 } from "@/lib/vistagem/agendamento";
+import { reabertaParaAlterar } from "@/lib/vistagem/alterar-vistagem";
 import { cienciaDosAgendamentos, cienciaQueFica, ehCienciaDosAgendamentos } from "@/lib/vistagem/ciencia-agendamentos";
 import {
   CONTAGENS_PRAZO,
@@ -80,7 +85,7 @@ import {
   type ClassificacaoEsocial,
 } from "@/lib/vistagem/esocial";
 import { CADEIA_PADRAO, cadeiaDoFluxo, semPrazoProprio } from "@/lib/vistagem/fluxo-vios";
-import { emOrdemDeArvore, fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
+import { ROTULO_AJUSTE, emOrdemDeArvore, fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
 import { fataisDoFluxo, prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
 import { fatalSugerida, sugestaoNaListaAtual, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
@@ -108,7 +113,8 @@ import { contarPor, formatarData, formatarDataHora, tribunalDe } from "./publica
 import { ReguaDatas, diaDaSemana, relativoAHoje } from "./regua-datas";
 import { IconeOpcao, Seletor, SeletorBusca } from "./seletor";
 import { CartaoSugestaoIa, SeloIa, type EstadoSugestao } from "./sugestao-ia-ui";
-import { Aviso, Busca, Carregando, Painel, Selo, Vazio, campoClasse, linhaLista } from "./ui";
+import { Aviso, Busca, Carregando, ICONE_ETIQUETA_DESTAQUE, Painel, Selo, SelosDeEtiqueta, Vazio, campoClasse, linhaLista } from "./ui";
+import { etiquetasEmDestaque } from "@/lib/vistagem/etiquetas";
 
 type Etiqueta = EtiquetaAgendamento;
 
@@ -123,6 +129,8 @@ interface Linha {
   diasPrazo: number | null;
   /** Prazo pelo atalho de dias: úteis ou corridos (escolhido no modal). */
   contagemPrazo: ContagemPrazo | null;
+  /** Prazo: de onde vieram os dias ou a fatal (a Conferência mostra). */
+  origemPrazo: OrigemPrazo | null;
   /** Compromisso: horário HH:MM (Hora tarefa no VIOS). */
   hora: string;
   /** Compromisso: Hora final no VIOS (HH:MM); começa 1 hora depois da inicial e acompanha até a pessoa mudar. */
@@ -207,6 +215,7 @@ function novaLinha(base: Partial<Linha> = {}): Linha {
     dataFatal: "",
     diasPrazo: null,
     contagemPrazo: "uteis",
+    origemPrazo: null,
     hora: "",
     horaFim: "",
     dataLimite: "",
@@ -553,7 +562,7 @@ export function FluxoNoVios({
       </span>
     ) : tarefa.ajustada ? (
       <span className="text-muted-foreground">
-        {tarefa.ajustada === "hoje" ? "o VIOS daria antes de hoje: vai hoje" : "apertada para caber antes da fatal"}
+        {ROTULO_AJUSTE[tarefa.ajustada]}
         {tarefa.dataVios ? ` (VIOS: ${formatarData(tarefa.dataVios)})` : ""}
       </span>
     ) : tarefa.data && tarefa.dataVios && tarefa.data !== tarefa.dataVios ? (
@@ -868,6 +877,7 @@ export function EditorVistagem({
                   data: item.etiqueta === "PRAZO" && !semPrazo ? "" : item.data,
                   dataFatal: semPrazo ? "" : item.dataFatal ?? "",
                   diasPrazo: semPrazo ? null : item.diasPrazo,
+                  origemPrazo: semPrazo ? null : item.origemPrazo ?? null,
                   contagemPrazo: item.contagemPrazo ?? contagemDaArea,
                   hora: item.hora ?? "",
                   horaFim: item.horaFim ?? horaFinalPadrao(item.hora),
@@ -1003,7 +1013,7 @@ export function EditorVistagem({
     const dataPublicacao = detalhe?.publicacao.dataPublicacao;
     const catalogo = detalhe?.catalogo;
     if (linha.etiqueta !== "PRAZO") return {};
-    if (semFatal({ etiqueta: "PRAZO", tarefa: nome })) return { data: dataSemFatal(), dataFatal: "", diasPrazo: null };
+    if (semFatal({ etiqueta: "PRAZO", tarefa: nome })) return { data: dataSemFatal(), dataFatal: "", diasPrazo: null, origemPrazo: null };
     const saindo = semFatal(linha) ? { data: "" } : {};
     if (!dataPublicacao || !catalogo) return saindo;
     const legal = (nomeTarefa: string) => {
@@ -1015,9 +1025,29 @@ export function EditorVistagem({
     const vazio = linha.diasPrazo === null && !linha.dataFatal;
     const daTarefaAnterior = anterior !== null && linha.diasPrazo === anterior;
     if (!vazio && !daTarefaAnterior) return saindo;
-    if (novo === null) return daTarefaAnterior ? { ...saindo, diasPrazo: null, dataFatal: "" } : saindo;
+    if (novo === null) return daTarefaAnterior ? { ...saindo, diasPrazo: null, dataFatal: "", origemPrazo: null } : saindo;
     const contagemPrazo = linha.contagemPrazo ?? contagemPadrao;
-    return { ...saindo, diasPrazo: novo, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, novo, contagemPrazo, contaPrazo) };
+    return { ...saindo, diasPrazo: novo, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, novo, contagemPrazo, contaPrazo), origemPrazo: "tarefa" };
+  }
+
+  /** Data que o tipo já traz (CIÊNCIA NF: dia útil seguinte), pelo nome como está no VIOS. */
+  function dataPadrao(etiqueta: Etiqueta, tarefa: string): string | null {
+    if (!detalhe || !tarefa || etiqueta === "PRAZO") return null;
+    const opcao = detalhe.catalogo?.tarefas[etiqueta].find((item) => item.nome === tarefa);
+    return dataPadraoDaTarefa(opcao ? opcao.nomeVios ?? opcao.nome : tarefa, detalhe.hoje, ehDiaUtil);
+  }
+
+  /**
+   * Ao escolher a tarefa, já põe a data que o tipo traz (CIÊNCIA NF: dia útil seguinte, pedido de 11/11/2026). Não passa
+   * por cima de data escolhida à mão; só troca a que veio do tipo anterior, e a tira ao trocar para um tipo sem data.
+   */
+  function dataDoTipo(linha: Linha, nome: string): Partial<Linha> {
+    const anterior = dataPadrao(linha.etiqueta, linha.tarefa);
+    const veioDoTipo = anterior !== null && linha.data === anterior;
+    if (linha.data && !veioDoTipo) return {};
+    const nova = dataPadrao(linha.etiqueta, nome);
+    if (nova) return { data: nova };
+    return veioDoTipo ? { data: "" } : {};
   }
 
   function trocarEtiqueta(linha: Linha, etiqueta: Etiqueta) {
@@ -1025,7 +1055,7 @@ export function EditorVistagem({
     alterar(linha.chave, {
       etiqueta,
       tarefa: "",
-      ...(semFatal(linha) ? { data: "" } : {}),
+      ...(semFatal(linha) ? { data: "" } : dataDoTipo(linha, "")),
       revisor:
         etiqueta === "PROVIDENCIA" ? "" : etiqueta === "PRAZO" && !linha.revisor ? detalhe?.revisorSugerido ?? "" : linha.revisor,
     });
@@ -1073,7 +1103,8 @@ export function EditorVistagem({
           dataFatal: prazo && !semPrazo ? fatalSugerida(tarefa, publicacao.dataPublicacao, contaPrazo) ?? "" : "",
           diasPrazo: prazo && !semPrazo ? tarefa.dias : null,
           contagemPrazo: prazo && !semPrazo && tarefa.dias ? tarefa.contagem : null,
-          data: semPrazo ? dataSemFatal() : tarefa.classe === "COMPROMISSO" ? tarefa.data ?? "" : "",
+          origemPrazo: prazo && !semPrazo ? "sugestao_ia" : null,
+          data: semPrazo ? dataSemFatal() : tarefa.classe === "COMPROMISSO" ? tarefa.data ?? "" : dataPadrao(tarefa.classe, opcao.nome) ?? "",
           hora: tarefa.hora ?? "",
           horaFim: horaFinalPadrao(tarefa.hora),
           dataLimite: "",
@@ -1104,7 +1135,7 @@ export function EditorVistagem({
     setLinhas((atuais) => {
       const alvo = atuais.find((linha) => linha.etiqueta === "PRAZO" && !linha.esocial && !semFatal(linha));
       const contagemPrazo = contagem ?? alvo?.contagemPrazo ?? contagemPadrao;
-      const mudanca = { diasPrazo: dias, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, dias, contagemPrazo, contaPrazo) };
+      const mudanca = { diasPrazo: dias, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, dias, contagemPrazo, contaPrazo), origemPrazo: "publicacao" as const };
       if (alvo) return atuais.map((linha) => (linha === alvo ? { ...linha, ...mudanca } : linha));
       if (atuais.length >= 10) return atuais;
       return [...atuais, novaLinha({ ...mudanca, responsavel: detalhe?.responsavelSugerido ?? "", revisor: detalhe?.revisorSugerido ?? "" })];
@@ -1140,6 +1171,7 @@ export function EditorVistagem({
             dataFatal: linha.etiqueta === "PRAZO" && !semFatal(linha) ? linha.dataFatal : null,
             diasPrazo: linha.etiqueta === "PRAZO" && !semFatal(linha) ? linha.diasPrazo : null,
             contagemPrazo: linha.etiqueta === "PRAZO" && !semFatal(linha) && linha.diasPrazo ? linha.contagemPrazo : null,
+            origemPrazo: linha.etiqueta === "PRAZO" && !semFatal(linha) ? linha.origemPrazo : null,
             hora: linha.etiqueta === "COMPROMISSO" ? linha.hora : null,
             horaFim: linha.etiqueta === "COMPROMISSO" ? linha.horaFim || null : null,
             dataLimite: pedeLimite(linha) ? linha.dataLimite || linha.data || null : null,
@@ -1212,6 +1244,12 @@ export function EditorVistagem({
             <ArrowLeft />
             Voltar à lista
           </Button>
+
+          {publicacao.status === "juridico_vistar" && reabertaParaAlterar({ reabertaEm: publicacao.reabertaEm ?? null, devolvidoEm: publicacao.devolvidoEm }) ? (
+            <Aviso tom="info" titulo={`Vistagem reaberta para alterar em ${formatarDataHora(publicacao.reabertaEm ?? null)}`}>
+              As tarefas estão como foram vistadas. Altere o que precisar e vista de novo: a publicação volta para a Conferência.
+            </Aviso>
+          ) : null}
 
           {devolucoes.length ? (
             <div className="space-y-2">
@@ -1458,7 +1496,12 @@ export function EditorVistagem({
                           {
                             hoje: detalhe.hoje,
                             datas: Object.values(linha.fluxoDatas),
-                            apertada: cadeia?.ajustada ? { revisar: cadeia.revisar, protocolar: cadeia.protocolar } : null,
+                            // Regra da insolvência: o VIOS cria o Protocolar 2 dias depois do Enviar antecipado; ele fica 1 dia útil antes da fatal.
+                            apertada: cadeia?.ajustada
+                              ? { revisar: cadeia.revisar, protocolar: cadeia.protocolar }
+                              : cadeia && cadeiaFluxo?.antecipada
+                                ? { revisar: null, protocolar: cadeia.protocolar, motivo: "antecipada" }
+                                : null,
                           }
                         ).map((tarefa) =>
                           // Uma Ciência só por vistagem: fica a da primeira tarefa; as outras o robô cancela.
@@ -1559,6 +1602,7 @@ export function EditorVistagem({
                                       alterar(linha.chave, {
                                         tarefa: nome,
                                         ...diasDaTarefa(linha, nome),
+                                        ...dataDoTipo(linha, nome),
                                         ...(fixos.length
                                           ? { responsavel: fixos.join(", ") }
                                           : eraDoTipo
@@ -1603,9 +1647,10 @@ export function EditorVistagem({
                                           alterar(
                                             linha.chave,
                                             linha.diasPrazo === dias
-                                              ? { diasPrazo: null, dataFatal: "" }
+                                              ? { diasPrazo: null, dataFatal: "", origemPrazo: null }
                                               : {
                                                   diasPrazo: dias,
+                                                  origemPrazo: "atalho",
                                                   dataFatal: fatalPorContagem(publicacao.dataPublicacao, dias, linha.contagemPrazo ?? contagemPadrao, contaPrazo),
                                                 }
                                           )
@@ -1639,7 +1684,7 @@ export function EditorVistagem({
                                         rotulo={`Data fatal da tarefa ${indice + 1}`}
                                         valor={linha.dataFatal}
                                         ehDiaUtil={contaPrazo}
-                                        onChange={(data) => alterar(linha.chave, { dataFatal: data, diasPrazo: null })}
+                                        onChange={(data) => alterar(linha.chave, { dataFatal: data, diasPrazo: null, origemPrazo: data ? "calendario" : null })}
                                       />
                                     </div>
                                   </div>
@@ -1667,6 +1712,12 @@ export function EditorVistagem({
                                 {tarefaId && !cadeiaFluxo ? (
                                   <p className="text-xs text-muted-foreground">
                                     O VIOS não cria Revisar nem Protocolar para esta tarefa: ela vai com a data do protocolo (1 dia útil antes da fatal).
+                                  </p>
+                                ) : null}
+                                {cadeiaFluxo?.antecipada && cadeia && !cadeia.ajustada ? (
+                                  <p className="text-xs text-muted-foreground">
+                                    Regra da insolvência: o Enviar e o Revisar vão {cadeiaFluxo.antecipada} dias úteis antes; o Protocolar e a fatal não
+                                    mudam (o robô grava o Protocolar no VIOS).
                                   </p>
                                 ) : null}
                               </div>
@@ -2165,6 +2216,8 @@ function Juridico() {
   const [risco, setRisco] = useState<FiltroRisco>("");
   /** Tribunal; vazio é "Todos os tribunais". */
   const [tribunal, setTribunal] = useState("");
+  /** Etiqueta da pasta no VIOS (ex.: RC-Insolvência); vazio é "Todas as etiquetas". */
+  const [etiqueta, setEtiqueta] = useState("");
   /** Dia em que a publicação chegou no Orquestra (AAAA-MM-DD); vazio é "Todas as datas". */
   const [dataImportacao, setDataImportacao] = useState("");
   /** A fila abre sempre recolhida (a publicação ocupa a tela); o botão à esquerda do número do processo mostra. */
@@ -2209,6 +2262,14 @@ function Juridico() {
   const grupoAtivo = gruposDaFila.some(([nome]) => nome === grupo) ? grupo : "";
   const tribunaisDaFila = useMemo(() => contarPor(publicacoes ?? [], tribunalDe), [publicacoes]);
   const tribunalAtivo = tribunaisDaFila.some(([nome]) => nome === tribunal) ? tribunal : "";
+  // Etiquetas das pastas da fila, com as de selo (RC-Insolvência) primeiro.
+  const etiquetasDaFila = useMemo(() => {
+    const contagem = new Map<string, number>();
+    for (const publicacao of publicacoes ?? []) for (const nome of publicacao.etiquetas ?? []) contagem.set(nome, (contagem.get(nome) ?? 0) + 1);
+    const emDestaque = (nome: string) => Number(etiquetasEmDestaque([nome]).length > 0);
+    return [...contagem.entries()].sort((a, b) => emDestaque(b[0]) - emDestaque(a[0]) || a[0].localeCompare(b[0], "pt-BR"));
+  }, [publicacoes]);
+  const etiquetaAtiva = etiquetasDaFila.some(([nome]) => nome === etiqueta) ? etiqueta : "";
   const importacoesDaFila = useMemo(() => (publicacoes ?? []).map((publicacao) => publicacao.dataImportacao), [publicacoes]);
   const importacaoAtiva = dataNaLista(dataImportacao, importacoesDaFila);
   // O que a busca olha em cada publicação (inclui as partes do texto): montado uma vez por carga, não a cada letra.
@@ -2218,12 +2279,13 @@ function Juridico() {
       if (importacaoAtiva && publicacao.dataImportacao !== importacaoAtiva) return false;
       if (grupoAtivo && (publicacao.grupoCliente?.trim() || SEM_GRUPO) !== grupoAtivo) return false;
       if (tribunalAtivo && tribunalDe(publicacao) !== tribunalAtivo) return false;
+      if (etiquetaAtiva && !(publicacao.etiquetas ?? []).includes(etiquetaAtiva)) return false;
       if (risco === "risco" && !publicacao.demandaRisco) return false;
       if (risco === "normal" && publicacao.demandaRisco) return false;
       return combinaCampos(camposDeBusca.get(publicacao.id) ?? [], busca);
     });
-  }, [publicacoes, busca, grupoAtivo, tribunalAtivo, risco, importacaoAtiva, camposDeBusca]);
-  const filtrosAtivos = Boolean(busca.trim() || grupoAtivo || tribunalAtivo || risco || importacaoAtiva);
+  }, [publicacoes, busca, grupoAtivo, tribunalAtivo, etiquetaAtiva, risco, importacaoAtiva, camposDeBusca]);
+  const filtrosAtivos = Boolean(busca.trim() || grupoAtivo || tribunalAtivo || etiquetaAtiva || risco || importacaoAtiva);
   const grupos = useMemo(() => agruparFila(filtradas), [filtradas]);
   // Mesma ordem da lista: é por ela que o editor anda para a anterior e a próxima.
   const ordem = useMemo(() => grupos.flatMap((item) => item.publicacoes.map((publicacao) => publicacao.id)), [grupos]);
@@ -2256,6 +2318,17 @@ function Juridico() {
     document.querySelector("[data-fila-vistagem] [aria-current=true]")?.scrollIntoView({ block: "nearest" });
   }, [aberta]);
   const riscos = (publicacoes ?? []).filter((publicacao) => publicacao.demandaRisco).length;
+
+  /** Vistagem reaberta no Vistado: volta para "A vistar" sem filtros que a escondam, com ela aberta. */
+  function reaberta(id: string) {
+    setVisao("fila");
+    setGrupo("");
+    setRisco("");
+    setTribunal("");
+    setDataImportacao("");
+    setAviso("Vistagem reaberta: altere o que precisar e vista de novo para ela voltar à Conferência.");
+    void carregar(escritorio).then(() => setSelecionada(id));
+  }
 
   function abrir(id: string) {
     setSelecionada(id);
@@ -2303,6 +2376,7 @@ function Juridico() {
     setBusca("");
     setGrupo("");
     setTribunal("");
+    setEtiqueta("");
     setRisco("");
     setDataImportacao("");
   }
@@ -2319,6 +2393,7 @@ function Juridico() {
     const posicao = ordem.indexOf(id);
     setSelecionada(ordem[posicao + 1] ?? ordem[posicao - 1] ?? null);
     setPublicacoes((publicacoes ?? []).filter((p) => p.id !== id));
+    avisarContagensVistagem();
     setAviso(
       !central
         ? "Vistagem enviada para a conferência da controladoria."
@@ -2336,7 +2411,7 @@ function Juridico() {
   return (
     <div className="space-y-4">
       {/* Uma linha só: "A vistar / Vistado", Risco / Normal (só para quem vista os dois), área, recebimento,
-          grupo, tribunal e a busca, do tamanho do conteúdo (sem nada escolhido, só o ícone e o nome do filtro).
+          grupo, tribunal, etiqueta da pasta e a busca, do tamanho do conteúdo (sem nada escolhido, só o ícone e o nome do filtro).
           Em tela estreita, os filtros descem de linha. */}
       <div className="flex flex-wrap items-center gap-2" data-tour="vj-filtros">
         <div data-tour="vj-visao">
@@ -2396,6 +2471,21 @@ function Juridico() {
               rotuloVazio={<CampoVazio icone={<IconeOpcao icone={Landmark} />} texto="Tribunal" />}
               opcoes={tribunaisDaFila.map(([nome, quantidade]) => ({ valor: nome, rotulo: nome, descricao: descricaoDoTribunal(nome), contagem: quantidade, icone: <IconeTribunal sigla={nome} /> }))}
             />
+            <SeletorBusca
+              rotulo="Etiqueta da pasta"
+              className={FILTRO_COMPACTO}
+              buscaPlaceholder="Buscar etiqueta…"
+              valor={etiquetaAtiva}
+              onChange={setEtiqueta}
+              todos={{ rotulo: "Todas as etiquetas", contagem: publicacoes?.length, icone: <IconeOpcao icone={Tag} /> }}
+              rotuloVazio={<CampoVazio icone={<IconeOpcao icone={Tag} />} texto="Etiqueta" />}
+              opcoes={etiquetasDaFila.map(([nome, quantidade]) => ({
+                valor: nome,
+                rotulo: nome,
+                contagem: quantidade,
+                icone: <IconeOpcao icone={Tag} className={etiquetasEmDestaque([nome]).length ? ICONE_ETIQUETA_DESTAQUE : undefined} />,
+              }))}
+            />
           </>
         ) : null}
         <Busca
@@ -2421,7 +2511,7 @@ function Juridico() {
       {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
 
       {visao === "agendadas" ? (
-        <AgendadasJuridico key={escritorio} escritorio={escritorio} busca={busca} />
+        <AgendadasJuridico key={escritorio} escritorio={escritorio} busca={busca} onReaberta={reaberta} />
       ) : (
         /* No desktop, lista e publicação rolam cada uma no seu painel (o main do app não deixa usar sticky). */
         <div
@@ -2516,8 +2606,10 @@ function Juridico() {
                                   Risco
                                 </Selo>
                               ) : null}
+                              <SelosDeEtiqueta etiquetas={publicacao.etiquetas} />
                               <SeloAberturaDePasta publicacao={publicacao} />
                               {publicacao.devolucaoMotivo || publicacao.devolvidoEm ? <Selo tom="alerta">Devolvida</Selo> : null}
+                              {reabertaParaAlterar({ reabertaEm: publicacao.reabertaEm ?? null, devolvidoEm: publicacao.devolvidoEm }) ? <Selo tom="marca">Reaberta</Selo> : null}
                               {publicacao.transferidoDe ? <Selo tom="marca">Transferida</Selo> : null}
                             </span>
                             <span className="block truncate text-sm text-foreground">{publicacao.cliente ?? "—"}</span>

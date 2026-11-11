@@ -29,6 +29,8 @@ import { Segmented } from "@/components/facilities/form-parts";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
+import { avisarContagensVistagem } from "@/hooks/use-vistagem-contagens";
+import { sincronizarEnvios } from "@/lib/vistagem/envios-client";
 import { cn } from "@/lib/utils";
 import { chaveNome } from "@/lib/vistagem/agendamento";
 import { camposDaConferencia, combinaCampos } from "@/lib/vistagem/busca";
@@ -58,7 +60,7 @@ import { SeloEsocial, contarPor, tribunalDe } from "./publicacao-ui";
 import { IconeOpcao, Seletor } from "./seletor";
 import { CartoesCheck, SeloSituacao } from "./tarefas-check";
 import { ICONE_CLASSE } from "./tarefas-conferencia";
-import { Aviso, BarraAba, Busca, Campo, Carregando, Painel, Secao, Selo, Vazio, linhaLista } from "./ui";
+import { Aviso, BarraAba, Busca, Campo, Carregando, Painel, Secao, Selo, SelosDeEtiqueta, Vazio, linhaLista } from "./ui";
 
 type Aba = "aChecar" | "revisar" | "checadas";
 
@@ -231,6 +233,9 @@ function ItemCheck({
         numero={processo}
         tribunal={publicacao.tribunal}
         tituloId={`${base}-titulo`}
+        // Demanda de risco: a faixa fica vermelha, como na vistagem (pedido de 11/11/2026); o selo já está na ficha da pasta.
+        risco={Boolean(publicacao.demandaRisco)}
+        seloDeRisco={false}
         selos={
           <>
             <SeloEsocial publicacao={publicacao} />
@@ -453,6 +458,7 @@ function LinhaDoCheck({
             Risco
           </Selo>
         ) : null}
+        <SelosDeEtiqueta etiquetas={publicacao.etiquetas} />
         <SeloSituacao situacao={situacao} />
         {abertas ? <Selo tom="alerta">{plural(abertas, "inconsistência", "inconsistências")}</Selo> : null}
       </span>
@@ -526,19 +532,22 @@ function Check() {
     }
   }, []);
 
-  /** Traz antes o andamento do robô, para entrar aqui o que acabou de ser gravado no VIOS. */
-  const sincronizarECarregar = useCallback(async () => {
-    await authFetch("/api/operacoes-legais/vistagem/envios", { method: "POST" }).catch(() => null);
-    await carregar();
-  }, [carregar]);
+  /** Traz antes o andamento do robô, para entrar aqui o que acabou de ser gravado no VIOS (ao abrir, só se faz mais de 1 min). */
+  const sincronizarECarregar = useCallback(
+    async (forcar: boolean) => {
+      await sincronizarEnvios(forcar);
+      await carregar();
+    },
+    [carregar]
+  );
 
   useEffect(() => {
-    void sincronizarECarregar();
+    void sincronizarECarregar(false);
   }, [sincronizarECarregar]);
 
   async function atualizar() {
     setAtualizando(true);
-    await sincronizarECarregar();
+    await sincronizarECarregar(true);
     setAtualizando(false);
   }
 
@@ -643,6 +652,7 @@ function Check() {
         : atual
     );
     void carregar();
+    avisarContagensVistagem();
   }
 
   const fotos = dados?.fotos ?? {};

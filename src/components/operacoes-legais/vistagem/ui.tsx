@@ -2,9 +2,10 @@
 
 import type { ComponentProps, ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
-import { CircleAlert, CircleCheck, Info, LoaderCircle, Search, TriangleAlert } from "lucide-react";
+import { CircleAlert, CircleCheck, Info, LoaderCircle, Search, Tag, TriangleAlert } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { etiquetasEmDestaque } from "@/lib/vistagem/etiquetas";
 
 /**
  * Peças visuais da Vistagem, no padrão do Orquestra (DESIGN.md e Facilities): superfície branca
@@ -179,7 +180,7 @@ export function Indicador({
 
 /* --------------------------------------------------------------- selos */
 
-export type TomSelo = "neutro" | "marca" | "escuro" | "perigo" | "alerta" | "sucesso" | "ia";
+export type TomSelo = "neutro" | "marca" | "escuro" | "perigo" | "alerta" | "sucesso" | "ia" | "etiqueta";
 
 const TOM_SELO: Record<TomSelo, string> = {
   neutro: "bg-slate-100 text-slate-700 ring-slate-200",
@@ -190,18 +191,52 @@ const TOM_SELO: Record<TomSelo, string> = {
   sucesso: "bg-emerald-50 text-emerald-800 ring-emerald-200",
   // Interface em índigo deriva de --orquestrai-indigo (DESIGN.md).
   ia: "bg-[#eeedf5] text-[#48466e] ring-[#48466e]/15",
+  // Etiqueta da pasta em destaque (RC-Insolvência): o índigo cheio, que é tom de categoria e não de estado.
+  etiqueta: "bg-[#48466e] text-white ring-[#48466e]",
 };
+
+/** Ícone da etiqueta em destaque nas opções do filtro, na mesma cor do selo. */
+export const ICONE_ETIQUETA_DESTAQUE = "bg-[#48466e] text-white ring-[#48466e]";
 
 /** Classe da tarefa, igual em todas as abas (vermelho, âmbar e verde ficam para estados). */
 export const TOM_CLASSE: Record<"PRAZO" | "PROVIDENCIA" | "COMPROMISSO", TomSelo> = { PRAZO: "escuro", PROVIDENCIA: "marca", COMPROMISSO: "ia" };
 
 /** Estado, classe ou contagem: o único uso de `rounded-full` além de avatar. */
-export function Selo({ tom = "neutro", icone: Icone, className, children }: { tom?: TomSelo; icone?: LucideIcon; className?: string; children: ReactNode }) {
+export function Selo({
+  tom = "neutro",
+  icone: Icone,
+  className,
+  titulo,
+  children,
+}: {
+  tom?: TomSelo;
+  icone?: LucideIcon;
+  className?: string;
+  /** Dica ao passar o mouse. */
+  titulo?: string;
+  children: ReactNode;
+}) {
   return (
-    <span className={cn("inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset", TOM_SELO[tom], className)}>
+    <span title={titulo} className={cn("inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset", TOM_SELO[tom], className)}>
       {Icone ? <Icone className="size-3 shrink-0" aria-hidden /> : null}
       <span className="truncate">{children}</span>
     </span>
+  );
+}
+
+/**
+ * Etiquetas da pasta no VIOS que a Vistagem destaca (ETIQUETAS_EM_DESTAQUE, ex.: RC-Insolvência), uma por selo.
+ * Sem nenhuma, não mostra nada.
+ */
+export function SelosDeEtiqueta({ etiquetas }: { etiquetas: readonly string[] | null | undefined }) {
+  return (
+    <>
+      {etiquetasEmDestaque(etiquetas ?? []).map((etiqueta) => (
+        <Selo key={etiqueta} tom="etiqueta" icone={Tag} titulo={"Etiqueta da pasta no VIOS: " + etiqueta}>
+          {etiqueta}
+        </Selo>
+      ))}
+    </>
   );
 }
 

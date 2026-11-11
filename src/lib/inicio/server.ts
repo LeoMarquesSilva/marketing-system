@@ -163,10 +163,16 @@ async function loadPending(viewer: ViewerRow): Promise<HomePending[]> {
         id: "vistagem",
         kind: "vistagem",
         title: total === 1 ? "1 publicação nas filas da Vistagem" : `${total} publicações nas filas da Vistagem`,
-        detail: `Triagem ${publications.triagem} · Duplicidades ${publications.duplicidades} · Conferência ${publications.conferencia} · Check ${publications.check}`,
+        detail: null,
         href: VISTAGEM_KEY,
         deadline: null,
         count: total,
+        breakdown: [
+          { label: "Triagem", value: publications.triagem },
+          { label: "Duplicidades", value: publications.duplicidades },
+          { label: "Conferência", value: publications.conferencia },
+          { label: "Check", value: publications.check },
+        ],
       });
     }
   }

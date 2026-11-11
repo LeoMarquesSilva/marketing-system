@@ -6,7 +6,7 @@ import { authFetch } from "@/lib/auth-fetch";
 import type { Pendencia } from "@/lib/vistagem/triagem";
 import type { PublicacaoResumo, PublicacaoStatus } from "@/lib/vistagem/types";
 import { LogoGrupo, SeloArea } from "./marcas";
-import { Selo, type TomSelo } from "./ui";
+import { Selo, SelosDeEtiqueta, type TomSelo } from "./ui";
 
 export function formatarData(iso: string | null): string {
   if (!iso) return "—";
@@ -67,6 +67,7 @@ export function DadosPasta({ publicacao }: { publicacao: PublicacaoResumo }) {
           Demanda de risco
         </Selo>
       ) : null}
+      <SelosDeEtiqueta etiquetas={publicacao.etiquetas} />
       {publicacao.pendencia ? <Selo tom="alerta">{PENDENCIAS[publicacao.pendencia]}</Selo> : null}
       {publicacao.pastaCi ? (
         <span className="tabular-nums text-foreground">

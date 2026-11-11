@@ -33,16 +33,20 @@ import { Button } from "@/components/ui/button";
 import { ContextoDoProcesso, DialogoAcao, EscolhaEmCartoes, type OpcaoEmCartao } from "./dialogo-acao";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
+import { RENOVAR_CONFERENCIA_MS } from "@/lib/vistagem/alterar-vistagem";
+import { avisarContagensVistagem } from "@/hooks/use-vistagem-contagens";
+import { marcarEnviosSincronizados, sincronizarEnvios } from "@/lib/vistagem/envios-client";
 import { cn } from "@/lib/utils";
 import { ROTULO_ETIQUETA, chaveNome } from "@/lib/vistagem/agendamento";
 import { vaiParaCentral } from "@/lib/vistagem/central";
 import { ROTULO_CONTAGEM } from "@/lib/vistagem/dias-uteis";
+import { ROTULO_AJUSTE_CURTO } from "@/lib/vistagem/fluxo-previsto";
 import { MAX_TEXTO_INCONSISTENCIA, TIPOS_INCONSISTENCIA_JURIDICO } from "@/lib/vistagem/inconsistencias";
 import { podeEditarNaConferencia } from "@/lib/vistagem/ajuste-conferencia";
 import type { AgendamentoResumo, ConferenciaItem, ConferenciaResposta, InconsistenciaItem, PublicacaoResumo, VistagemDetalhe } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { EditarTarefa } from "./editar-tarefa";
-import { FaixaDoProcesso, NA_FAIXA } from "./faixa-processo";
+import { FaixaDoProcesso, NA_FAIXA, type NavegacaoNaFila } from "./faixa-processo";
 import { FichaPasta } from "./ficha-pasta";
 import { FichaProcesso, ResumoDaFicha } from "./ficha-processo";
 import { BotaoHistorico } from "./historico-publicacao";
@@ -59,6 +63,7 @@ import { IconeOpcao, Seletor } from "./seletor";
 import { AvatarPessoa } from "./combobox-busca";
 import { CartoesTarefas, LinkVios, corDoTextoDoEnvio, envioDaTarefa } from "./tarefas-conferencia";
 import { PainelAberturaDePasta, SeloAberturaDePasta } from "./abertura-pasta";
+import { DetalheAgendada } from "./agendada-detalhe";
 import { SeloEsocial, contarPor, formatarData, formatarDataHora, tribunalDe } from "./publicacao-ui";
 import {
   Aviso,
@@ -70,6 +75,7 @@ import {
   PainelTopo,
   Secao,
   Selo,
+  SelosDeEtiqueta,
   Vazio,
   linhaLista,
   TOM_CLASSE,
@@ -126,6 +132,21 @@ function agruparConferencia(itens: ConferenciaItem[]): GrupoConferencia[] {
 }
 
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
+
+/**
+ * A controladoria está com a publicação aberta na Conferência: por alguns minutos o jurídico não reabre a vistagem (se
+ * as duas agirem ao mesmo tempo, vale a decisão da controladoria; pedido de 11/11/2026). Devolve como a publicação está
+ * agora; sem resposta (rede), null.
+ */
+async function marcarAbertaNaConferencia(id: string): Promise<{ status: string; vistadoEm: string | null; revistadoEm: string | null } | null> {
+  const resposta = await authFetch(`/api/operacoes-legais/vistagem/conferencia/${id}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ acao: "abrir" }),
+  }).catch(() => null);
+  if (!resposta?.ok) return null;
+  return resposta.json().catch(() => null);
+}
 
 /** Roda de novo no robô as tarefas com erro da publicação; devolve a confirmação pedida pelo servidor, se houver. */
 async function pedirRodarNovamente(id: string, forcar: boolean): Promise<{ enviadas?: number; simulado?: boolean; precisaConfirmar?: string }> {
@@ -324,7 +345,7 @@ function FluxoDaTarefaAgendada({ item }: { item: AgendamentoResumo }) {
                 )}
                 {tarefa.editada ? <Selo tom="marca">data alterada</Selo> : null}
                 {tarefa.responsaveisEscolhidos && !tarefa.repetida ? <Selo tom="marca">responsável escolhido</Selo> : null}
-                {tarefa.ajustada ? <Selo tom="marca">{tarefa.ajustada === "hoje" ? "VIOS daria antes de hoje" : "apertada antes da fatal"}</Selo> : null}
+                {tarefa.ajustada ? <Selo tom="marca">{ROTULO_AJUSTE_CURTO[tarefa.ajustada]}</Selo> : null}
                 {!tarefa.repetida && tarefa.data && tarefa.dataVios && tarefa.data !== tarefa.dataVios ? (
                   <span className="text-muted-foreground">VIOS daria {formatarData(tarefa.dataVios)}</span>
                 ) : null}
@@ -611,6 +632,9 @@ function ItemConferencia({
         numero={processo}
         tribunal={publicacao.tribunal}
         tituloId={`${base}-titulo`}
+        // Demanda de risco: a faixa fica vermelha, como na vistagem (pedido de 11/11/2026); o selo já está na ficha da pasta.
+        risco={Boolean(publicacao.demandaRisco)}
+        seloDeRisco={false}
         selos={
           <>
             <SeloEsocial publicacao={publicacao} />
@@ -978,6 +1002,7 @@ function LinhaDaFila({ item, comEnvio, aberta, onAbrir }: { item: ConferenciaIte
             Risco
           </Selo>
         ) : null}
+        <SelosDeEtiqueta etiquetas={publicacao.etiquetas} />
         <SeloAberturaDePasta publicacao={publicacao} />
         {comEnvio && temErro(item) ? (
           <Selo tom="perigo" icone={CircleAlert}>
@@ -1027,6 +1052,8 @@ function Conferencia() {
   const [filaRecolhida, setFilaRecolhida] = useState(true);
   /** No celular a fila e a publicação não cabem juntas: mostra a fila só quando pedida. */
   const [listaNoCelular, setListaNoCelular] = useState(false);
+  /** Abertura de pasta aberta no detalhe (tarefas, fluxo, datas e responsáveis). */
+  const [aberturaAberta, setAberturaAberta] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
     setErro("");
@@ -1042,10 +1069,8 @@ function Conferencia() {
   }, []);
 
   useEffect(() => {
-    // Traz o andamento do robô antes de listar, para não mostrar "na fila" o que já foi processado.
-    void authFetch("/api/operacoes-legais/vistagem/envios", { method: "POST" })
-      .catch(() => null)
-      .finally(() => void carregar());
+    // Traz o andamento do robô antes de listar, para não mostrar "na fila" o que já foi processado (só se faz mais de 1 min).
+    void sincronizarEnvios().finally(() => void carregar());
   }, [carregar]);
 
   async function atualizarEnvios() {
@@ -1055,6 +1080,7 @@ function Conferencia() {
       const resposta = await authFetch("/api/operacoes-legais/vistagem/envios", { method: "POST" });
       const corpo = await resposta.json();
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao atualizar.");
+      marcarEnviosSincronizados();
       setRetorno({
         tom: "info",
         texto:
@@ -1073,6 +1099,17 @@ function Conferencia() {
   const enviadas = useMemo(() => dados?.enviadas ?? [], [dados]);
   const aberturas = useMemo(() => dados?.aberturas ?? [], [dados]);
   const aberturasSemItem = aberturas.filter((item) => !item.publicacao.centralItemId).length;
+  // Setas do detalhe da abertura: andam na ordem da lista.
+  const indiceAbertura = aberturaAberta ? aberturas.findIndex((item) => item.publicacao.id === aberturaAberta) : -1;
+  const navegacaoAbertura: NavegacaoNaFila | null =
+    indiceAbertura >= 0
+      ? {
+          posicao: indiceAbertura + 1,
+          total: aberturas.length,
+          anterior: aberturas[indiceAbertura - 1]?.publicacao.id ?? null,
+          proxima: aberturas[indiceAbertura + 1]?.publicacao.id ?? null,
+        }
+      : null;
   // O que a busca olha em cada publicação (inclui as partes do texto): montado uma vez por carga, não a cada letra.
   const camposDeBusca = useMemo(
     () => new Map([...aConferir, ...enviadas].map((item) => [item.publicacao.id, camposDaConferencia(item)])),
@@ -1120,6 +1157,7 @@ function Conferencia() {
     setRetorno({ tom: "sucesso", texto: mensagem });
     void carregar();
     setDados((atual) => (atual ? { ...atual, aConferir: atual.aConferir.filter((item) => item.publicacao.id !== id) } : atual));
+    avisarContagensVistagem();
   }
 
   const lista = aba === "conferir" ? dados?.aConferir : aba === "enviadas" ? dados?.enviadas : [];
@@ -1181,6 +1219,38 @@ function Conferencia() {
   }
 
   const idAberta = aberta?.publicacao.id ?? null;
+  // Publicação aberta em "A conferir": marca na hora e renova enquanto a aba estiver à vista, para o jurídico não reabrir
+  // a vistagem enquanto a controladoria confere. Se o jurídico reabriu ou vistou de novo antes, recarrega a lista.
+  const aConferirAberta = aba === "conferir" && aberta?.publicacao.status === "controladoria_vistar" ? aberta.publicacao : null;
+  const idAConferir = aConferirAberta?.id ?? null;
+  const vistagemAberta = aConferirAberta ? `${aConferirAberta.vistadoEm ?? ""}|${aConferirAberta.revistadoEm ?? ""}` : "";
+  useEffect(() => {
+    if (!idAConferir) return;
+    let cancelado = false;
+    const marcar = async () => {
+      if (document.visibilityState === "hidden") return;
+      const atual = await marcarAbertaNaConferencia(idAConferir);
+      if (cancelado || !atual) return;
+      const mudou = atual.status !== "controladoria_vistar" || `${atual.vistadoEm ?? ""}|${atual.revistadoEm ?? ""}` !== vistagemAberta;
+      if (!mudou) return;
+      setRetorno({
+        tom: "info",
+        texto:
+          atual.status === "juridico_vistar"
+            ? "O jurídico reabriu esta vistagem para alterar antes da conferência. A lista foi recarregada."
+            : "Esta vistagem mudou desde que a lista foi carregada. A lista foi recarregada.",
+      });
+      void carregar();
+    };
+    void marcar();
+    const timer = window.setInterval(() => void marcar(), RENOVAR_CONFERENCIA_MS);
+    document.addEventListener("visibilitychange", marcar);
+    return () => {
+      cancelado = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", marcar);
+    };
+  }, [idAConferir, vistagemAberta, carregar]);
   useEffect(() => {
     // Ao andar pelas setas, a fila acompanha a publicação aberta.
     document.querySelector("[data-fila-conferencia] [aria-current=true]")?.scrollIntoView({ block: "nearest" });
@@ -1322,6 +1392,7 @@ function Conferencia() {
       ) : aba === "aberturas" && dados ? (
         <PainelAberturaDePasta
           itens={aberturas}
+          onAbrir={setAberturaAberta}
           onTentado={(texto) => {
             setRetorno({ tom: "sucesso", texto });
             void carregar();
@@ -1451,6 +1522,16 @@ function Conferencia() {
           </div>
         </div>
       )}
+
+      {/* Abertura de pasta: as tarefas com a árvore do fluxo, datas e responsáveis, como a Central recebeu. Só consulta. */}
+      <DetalheAgendada
+        item={aba === "aberturas" && indiceAbertura >= 0 ? aberturas[indiceAbertura] : null}
+        fotos={dados?.fotos ?? {}}
+        hoje={dados?.hoje ?? new Date().toISOString().slice(0, 10)}
+        navegacao={navegacaoAbertura}
+        onAbrir={setAberturaAberta}
+        onFechar={() => setAberturaAberta(null)}
+      />
     </div>
   );
 }

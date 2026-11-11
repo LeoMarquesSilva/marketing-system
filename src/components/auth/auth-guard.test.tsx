@@ -122,3 +122,42 @@ describe("AuthGuard — check-in do Café com Cultura", () => {
     expect(markup).not.toContain("Redirecionando...");
   });
 });
+
+describe("AuthGuard — telas liberadas para toda a equipe", () => {
+  // Advogado de área sem permissões marcadas (modo legado): antes voltava para a
+  // tela inicial ao abrir a confirmação da festa, a votação e as pesquisas.
+  it.each(["/festa-10-anos", "/bp-awards", "/pesquisa/abc", "/convites-festa"])(
+    "não redireciona colaborador de conteúdo sem permissões em %s",
+    (pathname) => {
+      route.pathname = pathname;
+      authState.user = { id: "colab-legado" };
+      authState.profile = { department: "Trabalhista", permissions: [] };
+      authState.loading = false;
+
+      const markup = renderToStaticMarkup(
+        <AuthGuard>
+          <p>Tela da equipe</p>
+        </AuthGuard>
+      );
+
+      expect(markup).toContain("Tela da equipe");
+      expect(markup).not.toContain("Redirecionando...");
+    }
+  );
+
+  it("continua mandando o colaborador de conteúdo sem permissões de volta fora das telas dele", () => {
+    route.pathname = "/eventos";
+    authState.user = { id: "colab-legado" };
+    authState.profile = { department: "Trabalhista", permissions: [] };
+    authState.loading = false;
+
+    const markup = renderToStaticMarkup(
+      <AuthGuard>
+        <p>Módulo de eventos</p>
+      </AuthGuard>
+    );
+
+    expect(markup).not.toContain("Módulo de eventos");
+    expect(markup).toContain("Redirecionando...");
+  });
+});

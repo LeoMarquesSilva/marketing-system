@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { GitCompareArrows, ListTodo, TriangleAlert, Undo2, X } from "lucide-react";
+import { GitCompareArrows, ListTodo, Lock, PencilLine, TriangleAlert, Undo2, X } from "lucide-react";
 import { Segmented } from "@/components/facilities/form-parts";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import type { AlteracaoDaVistagem } from "@/lib/vistagem/alterar-vistagem";
 import { compararTarefa } from "@/lib/vistagem/check";
 import type { ConferenciaItem } from "@/lib/vistagem/types";
 import { SituacaoNaCentral } from "./abertura-pasta";
@@ -35,6 +36,64 @@ function TituloBloco({ id, children, acao }: { id: string; children: string; aca
 type VistaTarefas = "pedido" | "vios";
 
 /**
+ * Antes da Conferência, quem vistou reabre a vistagem para alterar (pedido de 11/11/2026): a publicação volta para
+ * "A vistar" com as tarefas como estão. Se não pode (outra pessoa, já conferida ou a controladoria conferindo agora),
+ * diz por quê.
+ */
+function AlterarVistagem({ alteracao, onAlterar }: { alteracao: AlteracaoDaVistagem; onAlterar: () => Promise<void> }) {
+  const [confirmando, setConfirmando] = useState(false);
+  const [ocupado, setOcupado] = useState(false);
+  const [erro, setErro] = useState("");
+  if (!alteracao.pode) {
+    return (
+      <p className="flex items-start gap-2 rounded-md border border-[#dce9eb] bg-[#f7fbfc] px-3 py-2.5 text-sm text-muted-foreground">
+        <Lock className="mt-0.5 size-4 shrink-0" aria-hidden />
+        <span>{alteracao.texto}</span>
+      </p>
+    );
+  }
+  async function alterar() {
+    setOcupado(true);
+    setErro("");
+    try {
+      await onAlterar();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível reabrir a vistagem.");
+      setOcupado(false);
+      setConfirmando(false);
+    }
+  }
+  return (
+    <Aviso
+      tom="info"
+      titulo="A controladoria ainda não conferiu"
+      acao={
+        confirmando ? (
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" onClick={alterar} disabled={ocupado}>
+              {ocupado ? "Reabrindo…" : "Reabrir e alterar"}
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={() => setConfirmando(false)} disabled={ocupado}>
+              Cancelar
+            </Button>
+          </div>
+        ) : (
+          <Button type="button" size="sm" variant="outline" onClick={() => setConfirmando(true)}>
+            <PencilLine />
+            Alterar vistagem
+          </Button>
+        )
+      }
+    >
+      {confirmando
+        ? "A publicação volta para A vistar com as tarefas como estão e sai da Conferência até você vistar de novo."
+        : "Se precisar mudar algo, dá para reabrir a vistagem enquanto a controladoria não confere."}
+      {erro ? <span className="mt-1 block text-red-700">{erro}</span> : null}
+    </Aviso>
+  );
+}
+
+/**
  * Detalhe de uma publicação da visão Agendadas, num modal centralizado e só de leitura: a esteira com quem fez cada
  * etapa e quando, a ficha da pasta e do processo, as observações, as inconsistências e as tarefas (como foram pedidas,
  * com o fluxo, ou o pedido × o que o robô gravou no VIOS).
@@ -46,6 +105,7 @@ export function DetalheAgendada({
   navegacao,
   onAbrir,
   onFechar,
+  onAlterar,
 }: {
   item: ConferenciaItem | null;
   fotos: Record<string, string>;
@@ -53,6 +113,8 @@ export function DetalheAgendada({
   navegacao: NavegacaoNaFila | null;
   onAbrir: (id: string) => void;
   onFechar: () => void;
+  /** Visão Vistado do jurídico: reabre a vistagem para alterar, antes da Conferência. */
+  onAlterar?: (id: string) => Promise<void>;
 }) {
   // A escolha "Como foi pedido" × "Pedido × VIOS" segue ao andar pelas setas.
   const [vista, setVista] = useState<VistaTarefas>("pedido");
@@ -64,7 +126,17 @@ export function DetalheAgendada({
           aria-describedby={`agendada-${item.publicacao.id}-descricao`}
           className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl lg:max-w-3xl"
         >
-          <Conteudo item={item} fotos={fotos} hoje={hoje} navegacao={navegacao} onAbrir={onAbrir} onFechar={onFechar} vista={vista} onVista={setVista} />
+          <Conteudo
+            item={item}
+            fotos={fotos}
+            hoje={hoje}
+            navegacao={navegacao}
+            onAbrir={onAbrir}
+            onFechar={onFechar}
+            onAlterar={onAlterar}
+            vista={vista}
+            onVista={setVista}
+          />
         </DialogContent>
       ) : null}
     </Dialog>
@@ -78,6 +150,7 @@ function Conteudo({
   navegacao,
   onAbrir,
   onFechar,
+  onAlterar,
   vista,
   onVista,
 }: {
@@ -87,6 +160,7 @@ function Conteudo({
   navegacao: NavegacaoNaFila | null;
   onAbrir: (id: string) => void;
   onFechar: () => void;
+  onAlterar?: (id: string) => Promise<void>;
   vista: VistaTarefas;
   onVista: (vista: VistaTarefas) => void;
 }) {
@@ -152,6 +226,10 @@ function Conteudo({
               <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
               <span>A controladoria apontou erro no check. A publicação fica em revisão até ser corrigida no VIOS e checada de novo.</span>
             </p>
+          ) : null}
+
+          {item.alteracao && onAlterar ? (
+            <AlterarVistagem key={publicacao.id} alteracao={item.alteracao} onAlterar={() => onAlterar(publicacao.id)} />
           ) : null}
 
           <section aria-labelledby={`${base}-esteira`} className="space-y-3">

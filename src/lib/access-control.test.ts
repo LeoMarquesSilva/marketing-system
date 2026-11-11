@@ -10,6 +10,8 @@ import {
   hasCafeCulturaAccess,
   hasIcpAccess,
   canEditPe27,
+  canEditDocumentario,
+  hasDocumentarioAccess,
   hasOperacoesLegaisAccess,
   hasOpsPlannerAccess,
   hasPe27Access,
@@ -57,7 +59,7 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(vistador, "/operacoes-legais/vistagem/juridico")).toBe(true);
     expect(canAccessPath(vistador, "/operacoes-legais")).toBe(false);
     expect(canAccessPath(vistador, "/planner")).toBe(false);
-    expect(firstAllowedPath(vistador)).toBe("/operacoes-legais/vistagem");
+    expect(firstAllowedPath(vistador)).toBe("/");
   });
 
   it("libera o Planner de Operações Legais para admin, membro de espaço ou chave marcada", () => {
@@ -96,8 +98,8 @@ describe("access-control permissions catalog", () => {
     ]) {
       expect(canAccessPath(juridico, aba)).toBe(false);
     }
-    // A entrada no sistema e pelo menu continuam sendo a aba Vistagem.
-    expect(firstAllowedPath(juridico)).toBe("/operacoes-legais/vistagem/juridico");
+    // Entra pela tela inicial; no menu, a entrada da Vistagem continua sendo a aba Vistagem.
+    expect(firstAllowedPath(juridico)).toBe("/");
     expect(entradaDaVistagem(juridico)).toBe("/operacoes-legais/vistagem/juridico");
     expect(entradaDaVistagem({ role: null, permissions: ["/operacoes-legais/vistagem"] })).toBe("/operacoes-legais/vistagem");
     expect(papelVistagem({ role: null, permissions: ["/operacoes-legais/vistagem"], vistagem_papel: null })).toBe("controladoria");
@@ -136,13 +138,13 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath({ role: null, permissions: ["/", "/planner"] }, "/icp")).toBe(false);
   });
 
-  it("perfil só com ICP cai direto no ICP e não vê o resto", () => {
+  it("perfil só com ICP entra pela tela inicial e não vê o resto", () => {
     const icpOnly = { role: null, permissions: ["/icp"] };
     expect(canAccessPath(icpOnly, "/icp")).toBe(true);
-    expect(canAccessPath(icpOnly, "/")).toBe(false);
+    expect(canAccessPath(icpOnly, "/")).toBe(true);
     expect(canAccessPath(icpOnly, "/painel-marketing")).toBe(false);
     expect(canAccessPath(icpOnly, "/planner")).toBe(false);
-    expect(firstAllowedPath(icpOnly)).toBe("/icp");
+    expect(firstAllowedPath(icpOnly)).toBe("/");
   });
 
   it("perfil ICP + conteúdo vê ICP, conteúdo e fotos, mas não gerencia a galeria", () => {
@@ -157,7 +159,7 @@ describe("access-control permissions catalog", () => {
     expect(canAccessPath(perfil, "/fotos-eventos")).toBe(true);
     expect(canAccessPath(perfil, "/fotos-colaboradores")).toBe(false);
     expect(canAccessPath(perfil, "/planner")).toBe(false);
-    expect(firstAllowedPath(perfil)).toBe("/conteudo/inicio");
+    expect(firstAllowedPath(perfil)).toBe("/");
   });
 
   it("libera Meus Clientes para qualquer autenticado", () => {
@@ -325,6 +327,23 @@ describe("pesquisas com a equipe", () => {
   });
 });
 
+describe("Minidocumentário 10 anos", () => {
+  it("admin abre e edita; /documentario vê e aprova; /documentario/editar edita; o modo legado não abre", () => {
+    expect(hasDocumentarioAccess({ role: "admin" })).toBe(true);
+    expect(canEditDocumentario({ role: "admin" })).toBe(true);
+    expect(canAccessPath({ role: null, permissions: null }, "/documentario")).toBe(false);
+    expect(canAccessPath({ role: null, permissions: ["/planner", "/eventos"] }, "/documentario/acervo")).toBe(false);
+    const socio = { role: null, permissions: ["/conteudo/roteiros", "/documentario"] };
+    expect(canAccessPath(socio, "/documentario/aprovacao")).toBe(true);
+    expect(canEditDocumentario(socio)).toBe(false);
+    const producao = { role: null, permissions: ["/documentario", "/documentario/editar"] };
+    expect(canEditDocumentario(producao)).toBe(true);
+    expect(firstAllowedPath({ role: null, permissions: ["/documentario/editar"] })).toBe("/");
+    expect(isManualOnlyKey("/documentario")).toBe(true);
+    expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/documentario");
+  });
+});
+
 describe("PE27 (planejamento estratégico)", () => {
   it("admin abre e edita; a chave /pe27 abre só para ler; o modo legado não abre", () => {
     expect(hasPe27Access({ role: "admin" })).toBe(true);
@@ -374,18 +393,19 @@ describe("PE27 (planejamento estratégico)", () => {
 });
 
 describe("tela inicial e dashboard de marketing", () => {
-  it("em lançamento, a tela inicial abre só para admin", () => {
+  it("a tela inicial abre para todos os perfis, menos o liberado só no PE27", () => {
     expect(canAccessPath({ role: "admin" }, "/")).toBe(true);
-    expect(firstAllowedPath({ role: "admin" })).toBe("/");
-    expect(canAccessPath({ role: null, permissions: ["/conteudo/roteiros"] }, "/")).toBe(false);
-    expect(canAccessPath({ role: null, permissions: null, department: "Trabalhista" }, "/")).toBe(false);
-    expect(canAccessPath({ role: "designer", permissions: null }, "/")).toBe(false);
+    expect(canAccessPath({ role: null, permissions: ["/conteudo/roteiros"] }, "/")).toBe(true);
+    expect(canAccessPath({ role: null, permissions: null, department: "Trabalhista" }, "/")).toBe(true);
+    expect(canAccessPath({ role: "designer", permissions: null }, "/")).toBe(true);
     expect(canAccessPath({ role: null, permissions: ["/pe27"] }, "/")).toBe(false);
   });
 
-  it("quem tinha o dashboard marcado entra pelo dashboard de marketing", () => {
-    expect(firstAllowedPath({ role: null, permissions: ["/", "/planner"] })).toBe("/painel-marketing");
-    expect(firstAllowedPath({ role: "designer", permissions: null })).toBe("/painel-marketing");
+  it("todo mundo entra pela tela inicial; o perfil só-PE27, pelo módulo", () => {
+    expect(firstAllowedPath({ role: "admin" })).toBe("/");
+    expect(firstAllowedPath({ role: null, permissions: ["/", "/planner"] })).toBe("/");
+    expect(firstAllowedPath({ role: "designer", permissions: null })).toBe("/");
+    expect(firstAllowedPath({ role: null, permissions: ["/pe27"] })).toBe("/pe27");
   });
 
   it("a chave antiga do dashboard continua liberando o dashboard de marketing", () => {

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
-import { z } from "zod";
+import type { GoalCreate, GoalPatch, LeverCreate, LeverPatch } from "./schemas";
 import { createClient as createSsrClient } from "@/utils/supabase/server";
 import { canEditPe27, hasPe27Access } from "@/lib/access-control";
 import { resolveEmployeeAvatarUrl } from "@/lib/ferias/filters";
@@ -9,7 +9,6 @@ import { loadPeopleDirectory } from "@/lib/rh/people-directory";
 import { RhHttpError } from "@/lib/rh/qualifications/server";
 import { PE27_CONDUCAO, PE27_FILES } from "./conteudo";
 import {
-  DECISIONS,
   DIMENSIONS,
   PE27_CYCLE,
   type Decision,
@@ -246,48 +245,8 @@ export async function signedPe27FileUrl(path: string, download: boolean): Promis
 
 /* ------------------------------------------------------------------ escrita */
 
-const optionalText = (max: number) =>
-  z
-    .string()
-    .trim()
-    .max(max)
-    .nullable()
-    .optional()
-    .transform((value) => (value === undefined ? undefined : value || null));
-
-const decisionFields = {
-  status: z.enum(DECISIONS).optional(),
-  merged_into: z.string().uuid().nullable().optional(),
-  decision_note: optionalText(2000),
-};
-
-export const leverPatchSchema = z.object({
-  title: z.string().trim().min(1, "Escreva a alavanca.").max(200).optional(),
-  dimension: z.enum(DIMENSIONS).optional(),
-  ...decisionFields,
-});
-
-export const leverCreateSchema = z.object({
-  dimension: z.enum(DIMENSIONS),
-  title: z.string().trim().min(1, "Escreva a alavanca.").max(200),
-});
-
-export const goalPatchSchema = z.object({
-  text: z.string().trim().min(1, "Escreva a meta.").max(300).optional(),
-  lever_id: z.string().uuid().optional(),
-  baseline: optionalText(200),
-  target: optionalText(200),
-  data_source: optionalText(200),
-  ...decisionFields,
-});
-
-export const goalCreateSchema = z.object({
-  lever_id: z.string().uuid(),
-  text: z.string().trim().min(1, "Escreva a meta.").max(300),
-});
-
-type LeverPatch = z.infer<typeof leverPatchSchema>;
-type GoalPatch = z.infer<typeof goalPatchSchema>;
+// Validação em ./schemas (sem server-only, para os testes); reexportada para as rotas.
+export { goalCreateSchema, goalPatchSchema, leverCreateSchema, leverPatchSchema } from "./schemas";
 
 /** "Juntada" precisa dizer com quem; qualquer outra decisão limpa o vínculo. */
 async function resolveMerge(
@@ -335,7 +294,7 @@ export async function updateLever(id: string, patch: LeverPatch): Promise<void> 
   if (!data?.length) throw new Pe27HttpError("Alavanca não encontrada.", 404, "NOT_FOUND");
 }
 
-export async function createLever(input: z.infer<typeof leverCreateSchema>): Promise<string> {
+export async function createLever(input: LeverCreate): Promise<string> {
   const db = createPe27AdminClient();
   const viewer = await requirePe27Editor(db);
   const { data: last } = await db
@@ -408,7 +367,7 @@ export async function updateGoal(id: string, patch: GoalPatch): Promise<void> {
   if (!data?.length) throw new Pe27HttpError("Meta não encontrada.", 404, "NOT_FOUND");
 }
 
-export async function createGoal(input: z.infer<typeof goalCreateSchema>): Promise<string> {
+export async function createGoal(input: GoalCreate): Promise<string> {
   const db = createPe27AdminClient();
   const viewer = await requirePe27Editor(db);
   const { data: lever } = await db
