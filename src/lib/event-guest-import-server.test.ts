@@ -12,13 +12,15 @@ describe("guest source integration", () => {
     expect(mocks.clients).toHaveBeenCalledWith({ authUserId: "auth-id", viewAll: true });
   });
   it("includes active employees without a system account and uses linked portraits", async () => {
-    mocks.active.mockReturnValue({ order: async () => ({ data: [
+    mocks.active.mockReturnValue({ eq: mocks.active, order: async () => ({ data: [
       { id: "employee1", user_id: null, full_name: "Ana", email: null, department: "Jurídico" },
       { id: "employee2", user_id: "user2", full_name: "Bruno", email: "b@example.com", department: "Marketing" },
     ], error: null }) });
     mocks.admin.mockReturnValue({ from: (table: string) => ({ select: () => table === "hr_employees" ? { eq: mocks.active } : { in: async () => ({ data: [{ id: "user2", avatar_url: "/portrait.jpg" }], error: null }) } }) });
     const result = await fetchGuestCandidates("office", "auth-id");
     expect(mocks.active).toHaveBeenCalledWith("is_active", true);
+    // Conta de automação (robô do VIOS) não entra como convidado.
+    expect(mocks.active).toHaveBeenCalledWith("is_automation", false);
     expect(result).toHaveLength(2);
     expect(result[0]).toMatchObject({ name: "Ana", email: null });
     expect(result[1]).toMatchObject({ name: "Bruno", avatarUrl: "/portrait.jpg" });

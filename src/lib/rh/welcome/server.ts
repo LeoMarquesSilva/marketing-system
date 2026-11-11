@@ -171,7 +171,7 @@ export async function getWelcomeOverview(): Promise<WelcomeOverview> {
 
   const [links, employeesResult, completionsResult] = await Promise.all([
     loadLinks(admin),
-    admin.from("hr_employees").select(EMPLOYEE_SELECT).eq("is_active", true).order("full_name"),
+    admin.from("hr_employees").select(EMPLOYEE_SELECT).eq("is_active", true).eq("is_automation", false).order("full_name"),
     admin.from("hr_onboarding_completions").select("*"),
   ]);
   if (employeesResult.error) throw new RhHttpError("Falha ao carregar os colaboradores.", 500, "QUERY_FAILED");
