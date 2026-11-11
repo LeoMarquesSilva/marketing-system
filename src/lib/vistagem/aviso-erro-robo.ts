@@ -1,6 +1,6 @@
 /**
  * Aviso no WhatsApp quando o robô do SAMA erra um agendamento da vistagem (pedido de 11/11/2026): vai para o grupo
- * "OPERAÇÕES LEGAIS - GERAL" com o erro resumido e o número do processo da publicação.
+ * "Operações Legais BP" com o erro resumido e o número do processo da publicação.
  */
 
 export interface ErroDoRobo {

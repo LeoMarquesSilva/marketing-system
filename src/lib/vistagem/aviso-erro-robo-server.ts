@@ -3,8 +3,11 @@ import "server-only";
 import { evolutionFetch, getEvolutionConfig } from "@/lib/evolution-whatsapp";
 import { mensagemErrosDoRobo, type ErroDoRobo } from "./aviso-erro-robo";
 
-/** Grupo "OPERAÇÕES LEGAIS - GERAL": o número da "RESPONSUM - BP" (a instância dos avisos de automação) está nele. */
-const GRUPO_OPERACOES_LEGAIS = "120363402540466773@g.us";
+/**
+ * Grupo "Operações Legais BP" (troca pedida em 11/11/2026; antes era o "OPERAÇÕES LEGAIS - GERAL"): o número da
+ * "RESPONSUM - BP" (a instância dos avisos de automação) está nele.
+ */
+const GRUPO_OPERACOES_LEGAIS = "5519988419115-1588086023@g.us";
 const INSTANCIA_AVISOS = "RESPONSUM - BP";
 
 /**
