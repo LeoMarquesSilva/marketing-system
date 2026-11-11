@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 import { isContentCollaborator } from "@/lib/content-areas";
-import { resolveAllowedSections, canAccessPath, isTeamPostsPath } from "@/lib/access-control";
+import { ALWAYS_ALLOWED_PATHS, resolveAllowedSections, canAccessPath, isTeamPostsPath } from "@/lib/access-control";
 import {
   canAccessGustavoContent,
   isGustavoContentPath,
@@ -59,9 +59,12 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     (p) => pathname === p || pathname.startsWith(p + "/")
   );
   const isGustavoContentRoute = isGustavoContentPath(pathname);
+  // Telas de toda a equipe (confirmação da festa, votação, pesquisas): valem também
+  // para o colaborador de conteúdo sem permissões marcadas.
+  const isAlwaysAllowed = ALWAYS_ALLOWED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
   const isCollaboratorRoute =
     !isGustavoContentRoute &&
-    COLLABORATOR_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
+    (isAlwaysAllowed || COLLABORATOR_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/")));
   const isFeriasRoute =
     pathname === "/rh" ||
     pathname === "/rh/ferias" ||
