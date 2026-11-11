@@ -233,6 +233,9 @@ function ItemCheck({
         numero={processo}
         tribunal={publicacao.tribunal}
         tituloId={`${base}-titulo`}
+        // Demanda de risco: a faixa fica vermelha, como na vistagem (pedido de 11/11/2026); o selo já está na ficha da pasta.
+        risco={Boolean(publicacao.demandaRisco)}
+        seloDeRisco={false}
         selos={
           <>
             <SeloEsocial publicacao={publicacao} />
