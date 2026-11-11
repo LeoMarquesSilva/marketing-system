@@ -9,7 +9,7 @@ import { criarItemNaCentral } from "./sharepoint";
 import type { ResultadoCentral } from "./types";
 
 const COLUNAS =
-  "numero_processo, processo_sufixo, numero_processo_original, grupo_cliente, cliente, escritorio_responsavel, area_processo, demanda_risco, teor, observacao_vistagem, publicacao_esocial, sugestao_triagem, vistado_por, revistado_por";
+  "numero_processo, processo_sufixo, numero_processo_original, grupo_cliente, cliente, escritorio_responsavel, area_processo, demanda_risco, teor, observacao_vistagem, publicacao_esocial, sugestao_triagem, vistado_por, revistado_por, data_publicacao";
 
 const COLUNAS_TAREFA =
   "id, ordem, tarefa_id, etiqueta, tarefa, data, data_fatal, dias_prazo, contagem_prazo, hora, hora_fim, responsavel, revisor, observacao, fluxo_datas";
@@ -17,7 +17,13 @@ const COLUNAS_TAREFA =
 /** Duas chamadas ao mesmo tempo (a tela e o cron) não criam dois itens: a segunda espera este intervalo. */
 const INTERVALO_ENTRE_TENTATIVAS_MS = 2 * 60_000;
 
-type LinhaDaPublicacao = PublicacaoParaCentral & { area_processo: string | null; vistado_por: string | null; revistado_por: string | null };
+type LinhaDaPublicacao = PublicacaoParaCentral & {
+  area_processo: string | null;
+  vistado_por: string | null;
+  revistado_por: string | null;
+  /** Conta o prazo marcado no calendário (regra da insolvência). */
+  data_publicacao: string | null;
+};
 
 type LinhaDaTarefa = TarefaParaCentral & { id: string; ordem: number; tarefa_id: string | null };
 
@@ -37,6 +43,7 @@ async function tarefasComFluxo(publicacao: LinhaDaPublicacao, tarefas: LinhaDaTa
       etiqueta: tarefa.etiqueta,
       data: tarefa.data,
       dataFatal: tarefa.data_fatal,
+      diasPrazo: tarefa.dias_prazo,
       responsavel: tarefa.responsavel,
       revisor: tarefa.revisor,
       fluxoDatas: tarefa.fluxo_datas ?? [],

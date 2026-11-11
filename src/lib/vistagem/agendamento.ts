@@ -397,8 +397,11 @@ export function validarAgendamentos(
     tarefas: Record<EtiquetaAgendamento, OpcaoTarefa[]>;
     usuarios: OpcaoVios[];
     ehDiaUtil: (iso: string) => boolean;
-    /** Cadeia do fluxo do VIOS para o tipo de tarefa (null: o VIOS não cria Protocolar). */
-    cadeiaDaTarefa: (tarefaId: string) => CadeiaDoPrazo | null;
+    /**
+     * Cadeia do fluxo do VIOS para o tipo de tarefa (null: o VIOS não cria Protocolar). Recebe o prazo marcado: a regra
+     * da insolvência só antecipa o Enviar com 10 dias ou mais (`fluxoDoPrazo`).
+     */
+    cadeiaDaTarefa: (tarefaId: string, prazo: { dataFatal: string | null; diasPrazo: number | null }) => CadeiaDoPrazo | null;
     /** Tarefas que o fluxo do tipo cria junto (chaveDoCaminho), para aceitar só datas delas. */
     caminhosDaTarefa?: (tarefaId: string) => Set<string>;
     /** Tarefa de Prazo sem prazo próprio no VIOS (a SENTENÇA): vai com a data dela, sem fatal. */
@@ -438,7 +441,15 @@ export function validarAgendamentos(
     const data =
       prazo && !(semFatal && entrada.data)
         ? fatalPedida && tarefa
-          ? datasDoPrazo(fatalPedida, contexto.ehDiaUtil, contexto.cadeiaDaTarefa(tarefa.id), contexto.hoje ?? null).enviar
+          ? datasDoPrazo(
+              fatalPedida,
+              contexto.ehDiaUtil,
+              contexto.cadeiaDaTarefa(tarefa.id, {
+                dataFatal: fatalPedida,
+                diasPrazo: Number.isInteger(entrada.diasPrazo) && (entrada.diasPrazo ?? 0) > 0 ? (entrada.diasPrazo as number) : null,
+              }),
+              contexto.hoje ?? null
+            ).enviar
           : ""
         : entrada.data;
     if (prazo && !semFatal && !fatal) erros.push(`${n}: escolha a data fatal do prazo.`);

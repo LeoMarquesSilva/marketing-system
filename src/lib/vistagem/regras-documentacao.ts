@@ -289,7 +289,7 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         id: "antecipacao-insolvencia",
         titulo: "Enviar e Revisar antes na insolvência",
         quando:
-          "a pasta for de Insolvência ou Cível | Insolvência e a tarefa, compartilhada com outras áreas, tiver prazo de 10 dias ou mais no VIOS (Protocolar 2 dias depois do Enviar)",
+          "a pasta for de Insolvência ou Cível | Insolvência, a tarefa, compartilhada com outras áreas, tiver prazo de 10 dias ou mais no VIOS (Protocolar 2 dias depois do Enviar) e o prazo marcado na vistagem também for de 10 dias ou mais (com a fatal no calendário, contado da publicação até ela, na contagem da área)",
         entao:
           "o Enviar e o Revisar vão 2 dias úteis antes e o Protocolar e a fatal não mudam, como na MANIFESTAÇÃO - FLUXO D5 (Enviar 5 dias úteis antes da fatal, Revisar 4, Protocolar 1). O robô grava o Protocolar no VIOS. As tarefas próprias da insolvência já vêm assim do VIOS.",
         origem: "codigo",

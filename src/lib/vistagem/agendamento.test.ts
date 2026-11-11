@@ -348,6 +348,20 @@ describe("validarAgendamentos", () => {
     expect(semProtocolar.ok && semProtocolar.itens[0].data).toBe("2026-10-30");
   });
 
+  it("passa o prazo marcado (fatal e dias) para a cadeia: a regra da insolvência só antecipa com 10 dias ou mais", () => {
+    const pedidos: unknown[] = [];
+    const cadeiaDaTarefa = (_tarefaId: string, prazo: { dataFatal: string | null; diasPrazo: number | null }) => {
+      pedidos.push(prazo);
+      return CADEIA_PADRAO;
+    };
+    const base = { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo" };
+    validarAgendamentos([{ ...base, diasPrazo: 5, contagemPrazo: "uteis" }, base], { ...contexto, cadeiaDaTarefa });
+    expect(pedidos).toEqual([
+      { dataFatal: "2026-11-02", diasPrazo: 5 },
+      { dataFatal: "2026-11-02", diasPrazo: null },
+    ]);
+  });
+
   it("recusa tarefa fora da lista, data inválida, responsável desconhecido e lista vazia", () => {
     const resultado = validarAgendamentos(
       [{ etiqueta: "PROVIDENCIA", tarefa: "AGRAVO INVENTADO", data: "2026-02-30", responsavel: "Fulano" }],

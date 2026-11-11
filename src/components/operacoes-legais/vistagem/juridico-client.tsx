@@ -85,7 +85,7 @@ import {
   type ClassificacaoEsocial,
 } from "@/lib/vistagem/esocial";
 import { CADEIA_PADRAO, cadeiaDoFluxo, semPrazoProprio } from "@/lib/vistagem/fluxo-vios";
-import { ROTULO_AJUSTE, emOrdemDeArvore, fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
+import { ROTULO_AJUSTE, emOrdemDeArvore, fluxoDoPrazo, fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
 import { fataisDoFluxo, prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
 import { fatalSugerida, sugestaoNaListaAtual, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
@@ -1480,7 +1480,14 @@ export function EditorVistagem({
                   {linhas.map((linha, indice) => {
                     const prazo = linha.etiqueta === "PRAZO";
                     const tarefaId = catalogo.tarefas[linha.etiqueta].find((opcao) => opcao.nome === linha.tarefa)?.id ?? null;
-                    const fluxo = tarefaId ? detalhe.fluxos[tarefaId] ?? null : null;
+                    // Regra da insolvência: só antecipa o Enviar com prazo marcado de 10 dias ou mais (como o servidor ao gravar).
+                    const fluxo = tarefaId
+                      ? fluxoDoPrazo(
+                          detalhe.fluxos[tarefaId] ?? null,
+                          { dataFatal: linha.dataFatal || null, diasPrazo: linha.diasPrazo },
+                          { dataPublicacao: detalhe.publicacao.dataPublicacao, contagem: contagemPadrao, ehDiaDePrazo: contaPrazo }
+                        )
+                      : null;
                     // Prazo com fatal; a SENTENÇA é de Prazo (exige revisor), mas leva só a data dela.
                     const comFatal = prazo && !semFatal(linha);
                     // Sem tarefa escolhida (ou sem o fluxo carregado) mostra o fluxo padrão; o servidor recalcula ao gravar.

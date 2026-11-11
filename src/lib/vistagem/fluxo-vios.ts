@@ -100,14 +100,18 @@ export const CADEIA_PADRAO: CadeiaDoPrazo = { revisar: 1, protocolar: 2 };
 /**
  * Regra da insolvência (pedido de 11/11/2026): o tipo de tarefa compartilhado com outras áreas segue no VIOS o fluxo
  * comum (Revisar 1 dia útil e Protocolar 2 depois do Enviar: Enviar D-3, Revisar D-2, Protocolar D-1). Numa pasta de
- * Insolvência ou Cível | Insolvência, quando o prazo do tipo no VIOS é de 10 dias ou mais, o Enviar e o Revisar vão
- * 2 dias úteis antes e o Protocolar e a fatal ficam: Enviar D-5, Revisar D-4, Protocolar D-1, igual às tarefas
- * próprias da insolvência (MANIFESTAÇÃO - FLUXO D5, Protocolar 4 dias depois do Enviar), que já vêm certas do VIOS.
+ * Insolvência ou Cível | Insolvência, quando o prazo do tipo no VIOS é de 10 dias ou mais E o prazo marcado na
+ * vistagem também (correção de 11/11/2026: com 5 dias, nada muda), o Enviar e o Revisar vão 2 dias úteis antes e o
+ * Protocolar e a fatal ficam: Enviar D-5, Revisar D-4, Protocolar D-1, igual às tarefas próprias da insolvência
+ * (MANIFESTAÇÃO - FLUXO D5, Protocolar 4 dias depois do Enviar), que já vêm certas do VIOS.
+ * A árvore da área marca o tipo (`antecipaEnviar`); o prazo marcado decide em `fluxoDoPrazo` (fluxo-previsto.ts).
  */
 export const ANTECIPACAO_INSOLVENCIA = {
   areas: ["INSOLVENCIA", "CIVEL | INSOLVENCIA"],
   /** Prazo do tipo no VIOS (aba Prazos) a partir do qual vale. */
   prazoMinimo: 10,
+  /** Prazo marcado na vistagem (dias do atalho ou, com a fatal no calendário, da publicação até ela) a partir do qual vale. */
+  prazoMarcadoMinimo: 10,
   /** Dias úteis que o Enviar e o Revisar vêm antes. */
   dias: 2,
 } as const;

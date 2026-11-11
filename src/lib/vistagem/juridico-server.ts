@@ -30,8 +30,8 @@ import { areaComSugestaoIa, fatalSugerida, resultadoDaSugestao, sugestaoNaListaA
 import { carregarFeriados } from "./feriados";
 import { lerConfiguracoes } from "./configuracoes-server";
 import { cadeiaDoFluxo, montarFluxo, semPrazoProprio, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
-import { caminhosDoFluxo, fluxoParaOVios, fluxoPrevisto, prazoApertado } from "./fluxo-previsto";
-import { arvoreDaPublicacao, carregarBaseDoFluxo, catalogoDaPublicacao, comFluxoPrevisto, type AreaDaPublicacao } from "./fluxo-previsto-server";
+import { caminhosDoFluxo, fluxoDoPrazo, fluxoParaOVios, fluxoPrevisto, prazoApertado } from "./fluxo-previsto";
+import { arvoreDaPublicacao, carregarBaseDoFluxo, catalogoDaPublicacao, comFluxoPrevisto, prazoDaPublicacao, type AreaDaPublicacao } from "./fluxo-previsto-server";
 import { buscarPastasVios } from "./pastas-vios";
 import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
@@ -523,11 +523,12 @@ export async function salvarVistagem(
   // A data do Prazo depende do fluxo do VIOS (dias do 3. PROTOCOLAR): sem ele, não grava.
   const [feriados, arvoreInteira] = await Promise.all([carregarFeriados(), carregarArvoreVios()]);
   const arvore = arvoreDaPublicacao(arvoreInteira, catalogos, publicacao);
+  const daPublicacao = prazoDaPublicacao(publicacao, catalogos, feriados);
   const validacao = validarAgendamentos(entrada.agendamentos, {
     tarefas: catalogo.tarefas,
     usuarios: catalogo.usuarios,
     ehDiaUtil: criarCalendario(feriados),
-    cadeiaDaTarefa: (tarefaId) => cadeiaDoFluxo(montarFluxo(tarefaId, arvore)),
+    cadeiaDaTarefa: (tarefaId, prazo) => cadeiaDoFluxo(fluxoDoPrazo(montarFluxo(tarefaId, arvore), prazo, daPublicacao)),
     caminhosDaTarefa: (tarefaId) => caminhosDoFluxo(montarFluxo(tarefaId, arvore)),
     semPrazoProprio: (tarefaId) => semPrazoProprio(montarFluxo(tarefaId, arvore)),
     hoje: hojeEmSaoPaulo(),
@@ -1072,7 +1073,7 @@ async function comAlteracao(itens: ConferenciaItem[], authUserId: string, ehAdmi
 
 /** Área que decide a árvore do fluxo de um item da conferência. */
 function areaDoItem(item: ConferenciaItem): AreaDaPublicacao {
-  return { area_processo: item.areaProcesso, escritorio_responsavel: item.publicacao.escritorioResponsavel };
+  return { area_processo: item.areaProcesso, escritorio_responsavel: item.publicacao.escritorioResponsavel, data_publicacao: item.publicacao.dataPublicacao };
 }
 
 /** Texto da publicação na Conferência: 9 em cada 10 cabem inteiras; as maiores têm o "Ver texto completo". */
@@ -1261,7 +1262,15 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
       tarefas: { ...catalogo.tarefas, [row.etiqueta]: [{ id: row.tarefa_id ?? "", nome: row.tarefa }] },
       usuarios: catalogo.usuarios,
       ehDiaUtil: criarCalendario(feriados),
-      cadeiaDaTarefa: (tarefaId) => cadeiaDoFluxo(montarFluxo(tarefaId, arvore)),
+      // A Conferência não manda os dias do prazo: valem os da vistagem enquanto a fatal for a mesma (como ao gravar).
+      cadeiaDaTarefa: (tarefaId, prazo) =>
+        cadeiaDoFluxo(
+          fluxoDoPrazo(
+            montarFluxo(tarefaId, arvore),
+            { dataFatal: prazo.dataFatal, diasPrazo: prazo.dataFatal === row.data_fatal ? row.dias_prazo : null },
+            prazoDaPublicacao(publicacao, catalogos, feriados)
+          )
+        ),
       caminhosDaTarefa: (tarefaId) => caminhosDoFluxo(montarFluxo(tarefaId, arvore)),
       semPrazoProprio: (tarefaId) => semPrazoProprio(montarFluxo(tarefaId, arvore)),
       hoje,
@@ -1360,10 +1369,13 @@ async function datasDoFluxoParaOVios(publicacao: PublicacaoComArea, itens: Agend
   try {
     const [arvoreInteira, feriados, catalogos] = await Promise.all([carregarArvoreVios(), carregarFeriados(), carregarCatalogoProcessos()]);
     const arvore = arvoreDaPublicacao(arvoreInteira, catalogos, publicacao);
+    const daPublicacao = prazoDaPublicacao(publicacao, catalogos, feriados);
     const ehDiaUtil = criarCalendario(feriados);
     const hoje = hojeEmSaoPaulo();
     for (const item of aConferir) {
-      const fluxoDaTarefa = item.tarefa_id ? montarFluxo(item.tarefa_id, arvore) : null;
+      const fluxoDaTarefa = item.tarefa_id
+        ? fluxoDoPrazo(montarFluxo(item.tarefa_id, arvore), { dataFatal: item.data_fatal, diasPrazo: item.dias_prazo }, daPublicacao)
+        : null;
       const apertada = prazoApertado({ etiqueta: item.etiqueta, dataFatal: item.data_fatal, data: item.data }, fluxoDaTarefa, ehDiaUtil, hoje);
       if (!apertada && !item.fluxo_datas?.length) continue;
       const previstas = fluxoPrevisto(apertada ? { ...item, data: apertada.enviar } : item, fluxoDaTarefa, ehDiaUtil, {
