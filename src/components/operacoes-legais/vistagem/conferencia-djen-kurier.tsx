@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { partesDaData } from "@/lib/vistagem/como-fica-no-vios";
 import {
   ADVOGADOS_DJEN,
+  INICIO_DA_CONFERENCIA,
   chaveDoAdvogado,
   type ConferenciaDjenKurier,
   type DiaDaConferencia,
@@ -18,7 +19,10 @@ import type { PublicacaoStatus } from "@/lib/vistagem/types";
 import { formatarDataHora } from "./publicacao-ui";
 import { Aviso, Carregando, Indicador, Indicadores, Painel, PainelTopo, Selo } from "./ui";
 
-type Periodo = "7" | "14" | "30";
+type Periodo = "7" | "14" | "30" | "tudo";
+
+/** "01/10/2026" */
+const INICIO_POR_EXTENSO = INICIO_DA_CONFERENCIA.split("-").reverse().join("/");
 
 const porcento = (valor: number | null) => (valor === null ? "—" : `${(valor * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`);
 const siglaDoAdvogado = new Map(ADVOGADOS_DJEN.map((advogado) => [chaveDoAdvogado(advogado), advogado.sigla]));
@@ -37,7 +41,7 @@ function DataDoDia({ data }: { data: string }) {
  * com o que a Kurier trouxe, dia a dia. Só estudo, para decidir no futuro se dá para tirar a Kurier.
  */
 export function ConferenciaDjenKurierPainel() {
-  const [periodo, setPeriodo] = useState<Periodo>("14");
+  const [periodo, setPeriodo] = useState<Periodo>("tudo");
   const [dados, setDados] = useState<ConferenciaDjenKurier | null>(null);
   const [erro, setErro] = useState("");
   const [buscando, setBuscando] = useState(false);
@@ -66,7 +70,7 @@ export function ConferenciaDjenKurierPainel() {
       const resposta = await authFetch("/api/operacoes-legais/vistagem/djen-kurier", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ buscar: 2, dias: Number(periodo) }),
+        body: JSON.stringify({ buscar: 2, dias: periodo === "tudo" ? "tudo" : Number(periodo) }),
       });
       const corpo = await resposta.json();
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao buscar no DJEN.");
@@ -129,9 +133,10 @@ export function ConferenciaDjenKurierView({
             label="Período"
             value={periodo}
             options={[
-              { value: "7", label: "7 dias" },
-              { value: "14", label: "14 dias" },
+              { value: "tudo", label: `Desde ${INICIO_POR_EXTENSO.slice(0, 5)}` },
               { value: "30", label: "30 dias" },
+              { value: "14", label: "14 dias" },
+              { value: "7", label: "7 dias" },
             ]}
             onChange={onPeriodo}
           />
@@ -206,6 +211,15 @@ export function ConferenciaDjenKurierView({
                             <Selo className="ml-2 px-1.5 py-0 text-[11px]">sem busca no DJEN</Selo>
                           ) : !dia.comKurier ? (
                             <Selo className="ml-2 px-1.5 py-0 text-[11px]">sem Kurier</Selo>
+                          ) : dia.emAberto ? (
+                            <Selo tom="alerta" className="ml-2 px-1.5 py-0 text-[11px]">
+                              em aberto
+                            </Selo>
+                          ) : null}
+                          {dia.doBkp ? (
+                            <Selo tom="marca" className="ml-2 px-1.5 py-0 text-[11px]">
+                              BKP {dia.doBkp}
+                            </Selo>
                           ) : null}
                         </td>
                         <td className="px-3 py-2 text-right">{dia.buscado ? dia.djen : "—"}</td>
@@ -220,11 +234,24 @@ export function ConferenciaDjenKurierView({
                 </tbody>
               </table>
             </div>
-            <p className="border-t border-[#e6eef0] px-4 py-2 text-[11px] text-muted-foreground">
-              O par é pelo ID de comunicação do DJEN (a Kurier traz o mesmo); sem ele, pelo processo no mesmo dia. O dia de hoje só fica completo na
-              Kurier com o arquivo de amanhã. A Kurier traz também comunicações do mesmo processo endereçadas a outros advogados (em geral
-              marcadas como duplicidade ou descartada), que o DJEN, buscando pela OAB, não traz. Dia sem nenhuma publicação da Kurier (o arquivo não foi importado; antes de 03/11/2026 não há Kurier no Orquestra) não se compara e fica fora dos totais. Clique num dia com diferença para ver quais.
-            </p>
+            <div className="space-y-1 border-t border-[#e6eef0] px-4 py-2 text-[11px] text-muted-foreground">
+              <p>
+                O estudo começa em {INICIO_POR_EXTENSO}. O par é pelo ID de comunicação do DJEN (a Kurier traz o mesmo); sem ele, pelo processo no
+                mesmo dia. A Kurier traz também comunicações do mesmo processo endereçadas a outros advogados (em geral marcadas como duplicidade
+                ou descartada), que o DJEN, buscando pela OAB, não traz.
+              </p>
+              <p>
+                <strong className="font-medium text-foreground">BKP:</strong> a Kurier só está inteira no Orquestra a partir de 09/11/2026 (as
+                limpezas do piloto deixaram só o Trabalhista). Antes disso, o que falta vem do BKP de publicações do SIOE (lista do SharePoint),
+                que não tem o ID: ali o par é pelo processo no mesmo dia, e cada processo conta uma vez por dia.
+              </p>
+              <p>
+                <strong className="font-medium text-foreground">Em aberto:</strong> cada arquivo da Kurier traz o dia anterior e o próprio dia,
+                então o dia só fecha com o arquivo seguinte; até lá, fica fora dos totais. Dia sem nenhuma publicação da Kurier também não se
+                compara. Clique num dia com diferença para ver quais.
+              </p>
+              {dados.erroBkp ? <p className="text-red-700">Não deu para ler o BKP do SIOE ({dados.erroBkp}): os dias antes de 09/11 estão incompletos.</p> : null}
+            </div>
           </>
         )}
       </Painel>
@@ -247,12 +274,15 @@ function DivergenciasDoDia({ dia }: { dia: DiaDaConferencia }) {
                 <li key={item.id} className="py-1.5">
                   <p className="font-medium tabular-nums text-foreground">{item.processo ?? "sem número"}</p>
                   <p className="text-xs text-muted-foreground">
-                    {[
-                      item.tribunal,
-                      item.nomeLocalizado,
-                      item.djenId ? `ID ${item.djenId}` : "sem ID de comunicação",
-                      SITUACAO_ATUAL[item.status as PublicacaoStatus] ?? item.status,
-                    ]
+                    {(item.fonte === "bkp"
+                      ? [item.tribunal, "BKP do SIOE", item.status]
+                      : [
+                          item.tribunal,
+                          item.nomeLocalizado,
+                          item.djenId ? `ID ${item.djenId}` : "sem ID de comunicação",
+                          SITUACAO_ATUAL[item.status as PublicacaoStatus] ?? item.status,
+                        ]
+                    )
                       .filter(Boolean)
                       .join(" · ")}
                   </p>

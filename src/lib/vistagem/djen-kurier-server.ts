@@ -1,13 +1,17 @@
 import "server-only";
 
+import { getSioeClient } from "@/lib/sioe-sync-server";
 import {
   ADVOGADOS_DJEN,
+  INICIO_DA_CONFERENCIA,
   chaveDoAdvogado,
   comunicacaoDaApi,
   compararDjenKurier,
   diaAnterior,
+  diasDesdeOInicio,
   diasDoPeriodo,
   totaisDaConferencia,
+  tribunalDoProcesso,
   type ComunicacaoDjenGuardada,
   type ConferenciaDjenKurier,
   type ItemDaApiDjen,
@@ -122,37 +126,98 @@ export async function sincronizarDjen(
   return { dias: completos, totais, gravadas, erro };
 }
 
-/** A conferência dos últimos `quantos` dias (até hoje), com as divergências de cada dia. */
-export async function conferenciaDjenKurier(quantos: number): Promise<ConferenciaDjenKurier> {
-  if (!Number.isInteger(quantos) || quantos < 1 || quantos > 90) throw new VistagemError("Período inválido (1 a 90 dias).", 400);
+/** Lê de mil em mil, até acabar. */
+async function lerPaginas(
+  rotulo: string,
+  pagina: (inicio: number) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>
+): Promise<Record<string, unknown>[]> {
+  const linhas: Record<string, unknown>[] = [];
+  for (let inicio = 0; ; inicio += 1000) {
+    const { data, error } = await pagina(inicio);
+    if (error) falhou(`ler ${rotulo}`, error);
+    linhas.push(...((data ?? []) as Record<string, unknown>[]));
+    if (!data || data.length < 1000) break;
+  }
+  return linhas;
+}
+
+/** Os tipos de agendamento do BKP ('["CIÊNCIA NF"]') como texto. */
+function tiposDoBkp(valor: unknown): string {
+  const texto = String(valor ?? "").trim();
+  if (!texto) return "sem tipo";
+  try {
+    const lista = JSON.parse(texto) as unknown;
+    if (Array.isArray(lista)) return lista.map(String).join(", ") || "sem tipo";
+  } catch {
+    // Não é JSON: fica o texto.
+  }
+  return texto;
+}
+
+/**
+ * A Kurier do BKP de publicações do SIOE (só as linhas da lista do SharePoint; as gravadas pelo Orquestra já estão no
+ * Orquestra). Falhar aqui não derruba a conferência: ela sai só com o Orquestra, com o aviso.
+ */
+async function kurierDoBkp(de: string, ate: string): Promise<{ itens: PublicacaoKurier[]; erro: string | null }> {
+  try {
+    const sioe = getSioeClient();
+    const linhas = await lerPaginas("o BKP de publicações do SIOE", (inicio) =>
+      sioe
+        .from("sp_publicacoes")
+        .select("sp_id, data_divulgacao, numero_processo, tipo_agendamento")
+        .eq("origem", "sharepoint")
+        .gte("data_divulgacao", de)
+        .lte("data_divulgacao", ate)
+        .order("sp_id")
+        .range(inicio, inicio + 999)
+    );
+    const itens = linhas
+      .filter((linha) => /^\d{4}-\d{2}-\d{2}/.test(String(linha.data_divulgacao ?? "")))
+      .map((linha) => {
+        const processo = (linha.numero_processo as string | null) ?? null;
+        return {
+          id: `bkp:${linha.sp_id}`,
+          djenId: null,
+          data: String(linha.data_divulgacao).slice(0, 10),
+          processo,
+          tribunal: tribunalDoProcesso(processo),
+          nomeLocalizado: null,
+          status: tiposDoBkp(linha.tipo_agendamento),
+          fonte: "bkp" as const,
+        };
+      });
+    return { itens, erro: null };
+  } catch (falha) {
+    const erro = falha instanceof Error ? falha.message : String(falha);
+    console.error("[vistagem] conferência DJEN × Kurier: BKP do SIOE", erro);
+    return { itens: [], erro };
+  }
+}
+
+/**
+ * A conferência dos últimos `periodo` dias (até hoje), ou de todo o estudo ("tudo", desde INICIO_DA_CONFERENCIA), com
+ * as divergências de cada dia. Nenhum dia antes do início do estudo entra.
+ */
+export async function conferenciaDjenKurier(periodo: number | "tudo"): Promise<ConferenciaDjenKurier> {
+  if (periodo !== "tudo" && (!Number.isInteger(periodo) || periodo < 1 || periodo > 90)) {
+    throw new VistagemError("Período inválido (1 a 90 dias, ou todo o estudo).", 400);
+  }
   const db = admin();
-  const dias = diasDoPeriodo(hojeEmSaoPaulo(), quantos);
+  const hoje = hojeEmSaoPaulo();
+  const dias = diasDoPeriodo(hoje, periodo === "tudo" ? diasDesdeOInicio(hoje) : periodo).filter((dia) => dia >= INICIO_DA_CONFERENCIA);
+  if (!dias.length) dias.push(hoje);
   // Dois dias de folga antes do período: o par pelo ID pode estar num dia vizinho.
   const de = diasDoPeriodo(dias[dias.length - 1], 3)[2];
   const ate = dias[0];
 
-  /** Lê de mil em mil, até acabar. */
-  const lerPaginas = async (
-    rotulo: string,
-    pagina: (inicio: number) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>
-  ): Promise<Record<string, unknown>[]> => {
-    const linhas: Record<string, unknown>[] = [];
-    for (let inicio = 0; ; inicio += 1000) {
-      const { data, error } = await pagina(inicio);
-      if (error) falhou(`ler ${rotulo}`, error);
-      linhas.push(...((data ?? []) as Record<string, unknown>[]));
-      if (!data || data.length < 1000) break;
-    }
-    return linhas;
-  };
-
-  const [djenLinhas, kurierLinhas, buscas] = await Promise.all([
+  const [djenLinhas, kurierLinhas, bkp, buscas, ultimoArquivo] = await Promise.all([
     lerPaginas("as comunicações do DJEN", (inicio) =>
       db
         .from("vistagem_djen_comunicacoes")
         .select("id, data_disponibilizacao, numero_processo, sigla_tribunal, tipo_comunicacao, nome_orgao, nome_classe, advogados, ativo, link")
         .gte("data_disponibilizacao", de)
         .lte("data_disponibilizacao", ate)
+        .order("id")
         .range(inicio, inicio + 999)
     ),
     lerPaginas("as publicações da Kurier", (inicio) =>
@@ -162,11 +227,21 @@ export async function conferenciaDjenKurier(quantos: number): Promise<Conferenci
         .eq("origem", "kurier")
         .gte("data_divulgacao", de)
         .lte("data_divulgacao", ate)
+        .order("id")
         .range(inicio, inicio + 999)
     ),
-    db.from("vistagem_djen_buscas").select("executada_em, origem, dias, erro").order("executada_em", { ascending: false }).limit(200),
+    kurierDoBkp(de, ate),
+    db.from("vistagem_djen_buscas").select("executada_em, origem, dias, erro").order("executada_em", { ascending: false }).limit(1000),
+    db
+      .from("vistagem_kurier_arquivos")
+      .select("data_arquivo")
+      .eq("origem", "sharepoint")
+      .order("data_arquivo", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
   if (buscas.error) falhou("ler as buscas no DJEN", buscas.error);
+  if (ultimoArquivo.error) falhou("ler o último arquivo da Kurier", ultimoArquivo.error);
 
   const djen: ComunicacaoDjenGuardada[] = djenLinhas.map((linha) => ({
     id: Number(linha.id),
@@ -188,15 +263,18 @@ export async function conferenciaDjenKurier(quantos: number): Promise<Conferenci
     tribunal: (linha.tribunal as string | null) ?? null,
     nomeLocalizado: (linha.nome_localizado as string | null) ?? null,
     status: String(linha.status),
+    fonte: "orquestra",
   }));
   const registros = (buscas.data ?? []) as { executada_em: string; origem: string; dias: string[] | null; erro: string | null }[];
   const diasBuscados = new Set(registros.flatMap((registro) => registro.dias ?? []));
+  const ultimoArquivoKurier = (ultimoArquivo.data as { data_arquivo: string | null } | null)?.data_arquivo?.slice(0, 10) ?? null;
 
-  const porDia = compararDjenKurier(djen, kurier, dias, diasBuscados);
+  const porDia = compararDjenKurier(djen, [...kurier, ...bkp.itens], dias, diasBuscados, { ultimoArquivoKurier });
   const [ultima] = registros;
   return {
     dias: porDia,
     totais: totaisDaConferencia(porDia),
     ultimaBusca: ultima ? { em: ultima.executada_em, origem: ultima.origem, erro: ultima.erro } : null,
+    erroBkp: bkp.erro,
   };
 }
