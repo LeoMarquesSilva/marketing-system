@@ -127,7 +127,7 @@ export async function requireOperacoesLegaisAccess(authUserId: string) {
  */
 export async function requireVistagemAccess(
   authUserId: string
-): Promise<{ papel: PapelVistagem; areas: string[] | null; veRisco: boolean }> {
+): Promise<{ papel: PapelVistagem; areas: string[] | null; veRisco: boolean; admin: boolean }> {
   const supabase = getAdminClient();
   const { data, error } = await supabase
     .from("users")
@@ -151,5 +151,6 @@ export async function requireVistagemAccess(
     papel,
     areas: juridico ? ((data.vistagem_areas as string[] | null) ?? []) : null,
     veRisco: !juridico || data.vistagem_risco !== false,
+    admin: (data.role as string | null | undefined)?.toLowerCase() === "admin",
   };
 }

@@ -1,6 +1,6 @@
 /**
  * Alterar a vistagem depois de vistar (pedido de 11/11/2026): enquanto a controladoria não agiu na Conferência, quem
- * vistou pode reabrir a publicação, que volta para "A vistar" com as tarefas como estão. Se a controladoria estiver
+ * vistou (ou um admin) pode reabrir a publicação, que volta para "A vistar" com as tarefas como estão. Se a controladoria estiver
  * conferindo ao mesmo tempo, vale a decisão dela: a publicação aberta na Conferência fica "segura" por alguns minutos
  * (o navegador da controladoria renova enquanto ela estiver na tela), e nesse tempo não dá para reabrir.
  */
@@ -34,10 +34,15 @@ export function inicioDaConferenciaSegura(agora: number): string {
   return new Date(agora - CONFERENCIA_SEGURA_MS).toISOString();
 }
 
-/** Se a pessoa pode reabrir a vistagem para alterar e, se não, por quê (em português, para a tela). */
-export function alteracaoDaVistagem(situacao: SituacaoDaVistagem, authUserId: string, agora: number): AlteracaoDaVistagem {
+/**
+ * Se a pessoa pode reabrir a vistagem para alterar e, se não, por quê (em português, para a tela). Admin pode reabrir a
+ * vistagem de outra pessoa (pedido de 11/11/2026); a prioridade da controladoria vale para todos.
+ */
+export function alteracaoDaVistagem(situacao: SituacaoDaVistagem, authUserId: string, agora: number, admin = false): AlteracaoDaVistagem {
   if (situacao.status !== "controladoria_vistar") return { pode: false, texto: "A controladoria já conferiu esta vistagem." };
-  if (!situacao.quemVistou || situacao.quemVistou !== authUserId) return { pode: false, texto: "Só quem vistou pode alterar a vistagem." };
+  if (!admin && (!situacao.quemVistou || situacao.quemVistou !== authUserId)) {
+    return { pode: false, texto: "Só quem vistou (ou um admin) pode alterar a vistagem." };
+  }
   if (situacao.ajustada) {
     return { pode: false, texto: "A controladoria já ajustou esta vistagem na Conferência. Para mudar, peça que ela devolva." };
   }

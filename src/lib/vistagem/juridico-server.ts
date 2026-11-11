@@ -23,7 +23,7 @@ import { registrarNoBkpSemFalhar } from "./bkp-sioe-server";
 import { vaiParaCentral } from "./central";
 import { enviarParaCentral } from "./central-server";
 import { cienciaDosAgendamentos, ehCienciaDosAgendamentos, ehReestruturacao } from "./ciencia-agendamentos";
-import { alteracaoDaVistagem, inicioDaConferenciaSegura } from "./alterar-vistagem";
+import { alteracaoDaVistagem, inicioDaConferenciaSegura, reabertaParaAlterar } from "./alterar-vistagem";
 import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./dias-uteis";
 import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
 import { areaComSugestaoIa, fatalSugerida, resultadoDaSugestao, sugestaoNaListaAtual, type ResultadoSugestao, type SugestaoIa } from "./sugestao-ia";
@@ -596,7 +596,10 @@ export async function salvarVistagem(
   // Depois de uma devolução, "vistado por" continua com quem analisou primeiro (é quem errou); a nova vistagem
   // fica em revistado_por/em. Na primeira vistagem, grava quem vistou.
   const agora = new Date().toISOString();
-  const revistagem = Boolean(publicacao.vistado_por && (publicacao.devolucoes ?? 0) > 0);
+  const reabertaPorOutro =
+    Boolean(publicacao.vistado_por && publicacao.vistado_por !== authUserId) &&
+    reabertaParaAlterar({ reabertaEm: publicacao.reaberta_em ?? null, devolvidoEm: publicacao.devolvido_em });
+  const revistagem = Boolean(publicacao.vistado_por && ((publicacao.devolucoes ?? 0) > 0 || reabertaPorOutro));
   const quemVistou = revistagem
     ? { revistado_por: authUserId, revistado_em: agora }
     : { vistado_por: authUserId, vistado_em: agora, revistado_por: null, revistado_em: null };
@@ -625,7 +628,13 @@ export async function salvarVistagem(
  * como estão, enquanto a controladoria não agiu na Conferência. Se ela estiver com a publicação aberta, ou já ajustou,
  * vale a decisão dela: a reabertura é recusada, inclusive se ela abrir no meio do caminho (a marca entra no filtro).
  */
-export async function reabrirVistagem(id: string, authUserId: string, areas: AreasVistagem = null, veRisco = true): Promise<void> {
+export async function reabrirVistagem(
+  id: string,
+  authUserId: string,
+  areas: AreasVistagem = null,
+  veRisco = true,
+  ehAdmin = false
+): Promise<void> {
   const publicacao = await carregarPublicacao(id);
   garantirArea(publicacao, areas, veRisco);
   const db = admin();
@@ -646,7 +655,8 @@ export async function reabrirVistagem(id: string, authUserId: string, areas: Are
       conferenciaAbertaEm: linha?.conferencia_aberta_em ?? null,
     },
     authUserId,
-    agora
+    agora,
+    ehAdmin
   );
   if (!alteracao.pode) throw new VistagemError(alteracao.texto, 409);
   const { data: reaberta, error } = await db
@@ -1008,7 +1018,8 @@ export async function listarAgendadasJuridico(
   escritorio: string | null,
   areas: AreasVistagem = null,
   veRisco = true,
-  authUserId: string | null = null
+  authUserId: string | null = null,
+  ehAdmin = false
 ): Promise<AgendadasJuridicoResposta> {
   const resposta = (itens: ConferenciaItem[], fotos: Record<string, string>) => ({ itens, fotos, hoje: hojeEmSaoPaulo(), dias: DIAS_AGENDADAS });
   if (areas && (!areas.length || (escritorio && !areas.includes(escritorio)))) return resposta([], {});
@@ -1026,11 +1037,11 @@ export async function listarAgendadasJuridico(
         item.publicacao.status === "abertura_pasta" ? { ...item, agendamentos: comFluxoPrevisto(item.agendamentos, areaDoItem(item), base, hoje) } : item
       )
     : lidos;
-  return resposta(authUserId ? await comAlteracao(itens, authUserId) : itens, await fotosDosItens(itens, "visão Agendadas"));
+  return resposta(authUserId ? await comAlteracao(itens, authUserId, ehAdmin) : itens, await fotosDosItens(itens, "visão Agendadas"));
 }
 
 /** Nas que ainda aguardam a Conferência: se quem vê pode reabrir a vistagem para alterar e, se não, por quê. */
-async function comAlteracao(itens: ConferenciaItem[], authUserId: string): Promise<ConferenciaItem[]> {
+async function comAlteracao(itens: ConferenciaItem[], authUserId: string, ehAdmin: boolean): Promise<ConferenciaItem[]> {
   const ids = itens.filter((item) => item.publicacao.status === "controladoria_vistar").map((item) => item.publicacao.id);
   if (!ids.length) return itens;
   const { data, error } = await admin()
@@ -1052,7 +1063,8 @@ async function comAlteracao(itens: ConferenciaItem[], authUserId: string): Promi
         conferenciaAbertaEm: marca.conferencia_aberta_em,
       },
       authUserId,
-      agora
+      agora,
+      ehAdmin
     );
     return { ...item, alteracao };
   });

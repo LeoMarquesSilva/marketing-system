@@ -27,6 +27,18 @@ describe("alterar a vistagem antes da Conferência (pedido de 11/11/2026)", () =
     expect(alteracaoDaVistagem(situacao({ quemVistou: null }), ADVOGADA, AGORA).pode).toBe(false);
   });
 
+  it("admin pode alterar a vistagem de outra pessoa, mas a controladoria continua valendo", () => {
+    expect(alteracaoDaVistagem(situacao({ quemVistou: "outra-pessoa" }), "admin-1", AGORA, true)).toEqual({ pode: true });
+    expect(alteracaoDaVistagem(situacao({ quemVistou: "outra-pessoa" }), "admin-1", AGORA)).toEqual({
+      pode: false,
+      texto: "Só quem vistou (ou um admin) pode alterar a vistagem.",
+    });
+    expect(alteracaoDaVistagem(situacao({ status: "pronto_para_agendar" }), "admin-1", AGORA, true).pode).toBe(false);
+    expect(alteracaoDaVistagem(situacao({ ajustada: true }), "admin-1", AGORA, true).pode).toBe(false);
+    const conferindo = situacao({ conferenciaAbertaEm: new Date(AGORA - 60_000).toISOString() });
+    expect(alteracaoDaVistagem(conferindo, "admin-1", AGORA, true).pode).toBe(false);
+  });
+
   it("com ajuste da controladoria na Conferência, não", () => {
     const resultado = alteracaoDaVistagem(situacao({ ajustada: true }), ADVOGADA, AGORA);
     expect(resultado.pode).toBe(false);

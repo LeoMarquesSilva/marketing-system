@@ -11,6 +11,8 @@ export interface PerfilVistagem {
   papel: PapelVistagem;
   areas: string[] | null;
   veRisco: boolean;
+  /** Admin do Orquestra: pode, por exemplo, reabrir a vistagem de outra pessoa antes da Conferência. */
+  admin: boolean;
 }
 
 /** Usuário da controladoria (todas as abas); o jurídico recebe 403. Devolve o id de auth. */
@@ -30,8 +32,8 @@ export async function exigirAdminVistagem(): Promise<string> {
 /** Qualquer usuário da Vistagem (controladoria ou jurídico), para as rotas da aba Jurídico. */
 export async function exigirPerfilVistagem(): Promise<PerfilVistagem> {
   const user = await requireAuthenticatedUser();
-  const { papel, areas, veRisco } = await requireVistagemAccess(user.id);
-  return { authUserId: user.id, papel, areas, veRisco };
+  const { papel, areas, veRisco, admin } = await requireVistagemAccess(user.id);
+  return { authUserId: user.id, papel, areas, veRisco, admin };
 }
 
 export function respostaDeErro(error: unknown, mensagemPadrao: string): NextResponse {
