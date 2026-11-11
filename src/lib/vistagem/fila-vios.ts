@@ -228,6 +228,16 @@ export function linhasParaFila(
   ];
 }
 
+/**
+ * Erro em que o robô pode já ter gravado no VIOS: rodar de novo sem conferir duplica a tarefa.
+ * - "ATENÇÃO…": o próprio robô avisa que falhou depois de clicar em Gravar ou de lançar.
+ * - "Execução interrompida…": a fila do SAMA desiste do caso parado em "processando" (o robô reiniciou no
+ *   meio); ninguém sabe até onde ele foi. Ex.: 0922156-75 em 10/11/2026, com as 3 tarefas criadas no VIOS.
+ */
+export function podeTerGravadoNoVios(erro: string | null | undefined): boolean {
+  return /^\s*(ATENÇÃO|Execução interrompida)/i.test(erro ?? "");
+}
+
 /** Tarefa como ficou no VIOS depois do lançamento: a pedida (principal) ou uma que o fluxo criou junto. */
 export interface TarefaNoVios {
   ci: string;

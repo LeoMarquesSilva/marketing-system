@@ -26,16 +26,30 @@ const DADOS: ConferenciaDjenKurier = {
         },
       ],
       soKurier: [
-        { id: "k9", djenId: 999, data: "2026-11-11", processo: "5555555-55.2026.5.02.0001", tribunal: "TRT2", nomeLocalizado: "RICARDO VISCARDI PIRES", status: "descartada" },
+        {
+          id: "k9",
+          djenId: 999,
+          data: "2026-11-11",
+          processo: "5555555-55.2026.5.02.0001",
+          tribunal: "TRT2",
+          nomeLocalizado: "RICARDO VISCARDI PIRES",
+          status: "descartada",
+          fonte: "orquestra",
+        },
+        { id: "bkp:77", djenId: null, data: "2026-11-11", processo: "1004200-12.2026.8.13.0672", tribunal: "TJMG", nomeLocalizado: null, status: "PRAZO", fonte: "bkp" },
       ],
       cobertura: 0.5,
       comKurier: true,
+      emAberto: false,
+      doBkp: 1,
     },
-    { data: "2026-11-09", buscado: true, comKurier: false, djen: 120, kurier: 0, nosDois: 0, soDjen: [], soKurier: [], cobertura: null },
-    { data: "2026-11-10", buscado: false, comKurier: true, djen: 0, kurier: 4, nosDois: 0, soDjen: [], soKurier: [], cobertura: null },
+    { data: "2026-11-09", buscado: true, comKurier: false, emAberto: false, djen: 120, kurier: 0, doBkp: 0, nosDois: 0, soDjen: [], soKurier: [], cobertura: null },
+    { data: "2026-11-10", buscado: false, comKurier: true, emAberto: false, djen: 0, kurier: 4, doBkp: 0, nosDois: 0, soDjen: [], soKurier: [], cobertura: null },
+    { data: "2026-11-12", buscado: true, comKurier: true, emAberto: true, djen: 5, kurier: 3, doBkp: 0, nosDois: 3, soDjen: [], soKurier: [], cobertura: 1 },
   ],
   totais: { djen: 3, kurier: 2, nosDois: 1, soDjen: 1, soKurier: 1, cobertura: 0.5 },
   ultimaBusca: { em: "2026-11-11T11:00:00.000Z", origem: "cron", erro: null },
+  erroBkp: null,
 };
 
 const tela = (props: Partial<Parameters<typeof ConferenciaDjenKurierView>[0]> = {}) =>
@@ -67,15 +81,26 @@ describe("ConferenciaDjenKurierView", () => {
     expect(texto).toContain("11/nov qua");
     expect(texto).toContain("sem busca no DJEN");
     expect(texto).toContain("sem Kurier");
+    expect(texto).toContain("em aberto");
+    expect(texto).toContain("BKP 1");
+    expect(texto).toContain("O estudo começa em 01/10/2026");
+    expect(texto).toContain("Desde 01/10");
     expect(texto).toContain("automática");
+    expect(texto).not.toContain("Não deu para ler o BKP do SIOE");
+  });
+
+  it("avisa quando não deu para ler o BKP do SIOE", () => {
+    expect(tela({ dados: { ...DADOS, erroBkp: "timeout" } })).toContain("Não deu para ler o BKP do SIOE (timeout)");
   });
 
   it("o dia aberto lista o que ficou só de um lado", () => {
     const texto = tela({ aberto: "2026-11-11" });
-    expect(texto).toContain("Só na Kurier · o DJEN não trouxe (1)");
+    expect(texto).toContain("Só na Kurier · o DJEN não trouxe (2)");
     expect(texto).toContain("5555555-55.2026.5.02.0001");
     expect(texto).toContain("RICARDO VISCARDI PIRES");
     expect(texto).toContain("Descartada");
+    expect(texto).toContain("1004200-12.2026.8.13.0672");
+    expect(texto).toContain("TJMG · BKP do SIOE · PRAZO");
     expect(texto).toContain("Só no DJEN · a Kurier não trouxe (1)");
     expect(texto).toContain("GBM + RVP");
   });
