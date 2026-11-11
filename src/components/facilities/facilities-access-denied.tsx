@@ -12,7 +12,7 @@ export function FacilitiesAcessoNegado() {
           <p className="font-semibold text-foreground">Acesso restrito</p>
           <p className="mt-1 text-sm text-muted-foreground">
             Fornecedores, contratos e manutenção têm valores e dados de pagamento. Peça a um administrador para liberar
-            &quot;Facilities (fornecedores, contratos e manutenção)&quot; em Usuários.
+            &quot;Gestão de Fornecedores e Prestadores de Serviços (Facilities)&quot; em Usuários.
           </p>
         </div>
       </CardContent>

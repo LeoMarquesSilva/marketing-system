@@ -5,7 +5,7 @@ import { z } from "zod";
 import { createClient as createSsrClient } from "@/utils/supabase/server";
 import { hasFacilitiesAccess } from "@/lib/access-control";
 import { onlyDigits } from "@/lib/masks-br";
-import { PARTY_TYPES } from "@/lib/suppliers/categories";
+import { EXPENSE_NATURE_KEYS, eventTypeLabel, PARTY_TYPES } from "@/lib/suppliers/categories";
 import {
   duplicateSupplierNameMessage,
   findSupplierNameConflict,
@@ -98,7 +98,7 @@ export async function requireFacilitiesUser(): Promise<FacilitiesUser> {
 /* ------------------------------------------------------------------ leitura */
 
 const SUPPLIER_COLUMNS =
-  "id, name, legal_name, document, person_type, category, party_type, third_party_category, opex_names, areas, contact_name, phone, email, website_link, whatsapp_link, city, rating, notes, active, responsible_user_id, source, created_at, updated_at";
+  "id, name, legal_name, document, person_type, category, expense_nature, party_type, third_party_category, opex_names, areas, contact_name, phone, email, website_link, whatsapp_link, city, rating, notes, active, responsible_user_id, source, created_at, updated_at";
 const OPEX_COLUMNS = "fornecedor, mes, departamento, departamento_tipo, grupo_conta, plano_contas, valor_pago";
 const SERVICE_COLUMNS =
   "id, supplier_id, description, area, shared_cost, payer, periodicity, due_day, amount, payment_method, payment_details, fiscal_document, notes, active";
@@ -333,7 +333,7 @@ const supplierSchema = z.object({
     .transform(onlyDigits)
     .refine((value) => value === "" || value.length === 11 || value.length === 14, "CNPJ ou CPF incompleto.")
     .transform((value) => value || null),
-  category: z.string().trim().min(1, "Escolha a natureza da despesa.").max(60),
+  expense_nature: z.enum(EXPENSE_NATURE_KEYS, { message: "Escolha a natureza da despesa." }),
   party_type: optionalEnum(PARTY_TYPES),
   third_party_category: optionalText(60),
   opex_names: z.array(z.string().trim().min(1).max(200)).max(10).transform((names) => [...new Set(names)]),
@@ -463,6 +463,17 @@ function supplierRow(input: unknown) {
   return { ...value, person_type: value.document ? (value.document.length === 14 ? "pj" : "pf") : null };
 }
 
+/**
+ * A coluna category é o tipo usado pelos eventos. Cadastro novo e cadastro que
+ * não é de evento acompanham a natureza; o de evento (buffet...) mantém o tipo.
+ */
+async function eventCategoryFor(db: SupabaseClient, id: string | null, nature: string): Promise<string> {
+  if (!id) return nature;
+  const { data } = await db.from("event_suppliers").select("category").eq("id", id).maybeSingle();
+  const current = (data?.category as string | undefined) ?? null;
+  return current && eventTypeLabel(current) ? current : nature;
+}
+
 /* ------------------------------------------------------------ fornecedores */
 
 export async function createSupplier(input: unknown): Promise<FacilitiesSupplier> {
@@ -471,7 +482,11 @@ export async function createSupplier(input: unknown): Promise<FacilitiesSupplier
   const row = supplierRow(input);
   await assertDocumentAvailable(db, row.document);
   await assertNameAvailable(db, row.name);
-  const { data, error } = await db.from("event_suppliers").insert(row).select("id").single();
+  const { data, error } = await db
+    .from("event_suppliers")
+    .insert({ ...row, category: row.expense_nature })
+    .select("id")
+    .single();
   if (error || !data) {
     await throwIfUniqueViolation(db, error, row);
     console.error("[facilities] cria fornecedor:", error);
@@ -486,7 +501,11 @@ export async function updateSupplier(id: string, input: unknown): Promise<Facili
   const row = supplierRow(input);
   await assertDocumentAvailable(db, row.document, id);
   await assertNameAvailable(db, row.name, id);
-  const { error } = await db.from("event_suppliers").update({ ...row, updated_at: new Date().toISOString() }).eq("id", id);
+  const category = await eventCategoryFor(db, id, row.expense_nature);
+  const { error } = await db
+    .from("event_suppliers")
+    .update({ ...row, category, updated_at: new Date().toISOString() })
+    .eq("id", id);
   if (error) {
     await throwIfUniqueViolation(db, error, row, id);
     console.error("[facilities] atualiza fornecedor:", error);

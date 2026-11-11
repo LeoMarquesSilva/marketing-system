@@ -56,7 +56,7 @@ import {
   type SupplierDocument,
   type SupplierInput,
 } from "@/lib/facilities/types";
-import { supplierCategoryLabel } from "@/lib/suppliers/categories";
+import { eventTypeLabel, expenseNatureLabel } from "@/lib/suppliers/categories";
 import { normalizeSupplierName } from "@/lib/suppliers/unique-name";
 import { cn } from "@/lib/utils";
 import { ContractForm, contractMissing, contractToInput, emptyContractInput } from "./contract-form";
@@ -302,11 +302,11 @@ function SummaryTab({
 
       <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
         <section className="rounded-md p-4 ring-1 ring-inset ring-[#e6eef0]">
-          <p className="text-xs font-medium text-muted-foreground">Contratado por mês</p>
-          <p className="mt-1 text-xl font-semibold leading-7 text-[#10293a]">{monthly > 0 ? formatBrl(monthly) : "Eventual"}</p>
+          {/* O valor principal é o pago no OPEX (acima); aqui só o combinado de cada serviço. */}
+          <p className="text-xs font-medium text-muted-foreground">Serviços contratados</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {activeServices.length
-              ? `${activeServices.length} ${activeServices.length === 1 ? "serviço em uso" : "serviços em uso"}`
+              ? `${activeServices.length} ${activeServices.length === 1 ? "serviço em uso" : "serviços em uso"}${monthly > 0 ? ` · ${formatBrl(monthly)} por mês no combinado` : ""}`
               : "Nenhum serviço registrado"}
           </p>
           {activeServices.length > 0 ? (
@@ -1094,18 +1094,30 @@ export function SupplierDialog({
             <DialogTitle className="truncate text-lg">{supplier.name}</DialogTitle>
             <DialogDescription className="mt-0 truncate">
               {[displayLegalName(supplier.legal_name), documentLabel(supplier.document)].filter(Boolean).join(" · ") ||
-                supplierCategoryLabel(supplier.category)}
+                "Sem CNPJ/CPF no cadastro"}
             </DialogDescription>
+            {/* As três classificações do gestor: tipo, categoria do terceiro e natureza da despesa. */}
             <div className="flex flex-wrap items-center gap-1.5">
               <PartyTypeBadge type={supplier.party_type} />
               <ThirdPartyCategoryChip category={supplier.third_party_category} />
-              <span
-                title="Natureza da despesa"
-                className="inline-flex items-center gap-1 rounded-full bg-[#eef3f5] px-2 py-0.5 text-xs font-medium text-[#285f7a]"
-              >
-                <CategoryGlyph category={supplier.category} className="size-3" />
-                {supplierCategoryLabel(supplier.category)}
-              </span>
+              {supplier.expense_nature ? (
+                <span
+                  title="Natureza da despesa"
+                  className="inline-flex items-center gap-1 rounded-full bg-[#eef3f5] px-2 py-0.5 text-xs font-medium text-[#285f7a]"
+                >
+                  <CategoryGlyph category={supplier.expense_nature} className="size-3" />
+                  {expenseNatureLabel(supplier.expense_nature)}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-200">
+                  Natureza da despesa não informada
+                </span>
+              )}
+              {eventTypeLabel(supplier.category) && (
+                <span title="Tipo usado na Gestão de eventos" className="text-xs text-muted-foreground">
+                  Evento: {eventTypeLabel(supplier.category)}
+                </span>
+              )}
               {supplier.areas.map((area) => (
                 <AreaChip key={area} area={area} />
               ))}
@@ -1280,7 +1292,7 @@ export function SupplierDialog({
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium text-foreground">{duplicate.name}</p>
                 <p className="truncate text-xs text-muted-foreground">
-                  {[documentLabel(duplicate.document), supplierCategoryLabel(duplicate.category), duplicate.active ? null : "Inativo"]
+                  {[documentLabel(duplicate.document), expenseNatureLabel(duplicate.expense_nature), duplicate.active ? null : "Inativo"]
                     .filter(Boolean)
                     .join(" · ")}
                 </p>

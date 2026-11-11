@@ -8,6 +8,7 @@ import {
   FacilitiesHttpError,
   listFacilitiesPeople,
   money,
+  optionalEnum,
   optionalInt,
   optionalIsoDate,
   optionalText,
@@ -33,7 +34,7 @@ import {
 const ASSET_COLUMNS =
   "id, name, category, location, manufacturer, model, asset_tag, installed_on, warranty_until, criticality, notes, active";
 const PLAN_COLUMNS =
-  "id, asset_id, title, maintenance_type, periodicity, custom_interval_days, supplier_id, contract_id, responsible_user_id, estimated_cost, last_done_on, next_due_on, status, notes";
+  "id, asset_id, category, title, maintenance_type, periodicity, custom_interval_days, supplier_id, contract_id, responsible_user_id, estimated_cost, last_done_on, next_due_on, status, notes";
 const RECORD_COLUMNS = "id, plan_id, done_on, cost, supplier_id, notes, created_at";
 const DOCUMENT_COLUMNS = "id, plan_id, record_id, kind, title, storage_path, file_name, external_url, created_at";
 
@@ -86,7 +87,7 @@ async function loadPlan(db: SupabaseClient, id: string): Promise<MaintenancePlan
 /** Fornecedores e prestadores ativos, com os contratos vigentes (para vincular ao plano). */
 async function loadSupplierOptions(db: SupabaseClient): Promise<MaintenanceSupplierOption[]> {
   const [suppliers, contracts] = await Promise.all([
-    db.from("event_suppliers").select("id, name, category, party_type").eq("active", true).order("name"),
+    db.from("event_suppliers").select("id, name, category, expense_nature, party_type").eq("active", true).order("name"),
     db.from("supplier_contracts").select("id, supplier_id, title").neq("status", "encerrado").order("title"),
   ]);
   if (suppliers.error) fail("carregar os prestadores", suppliers.error);
@@ -168,6 +169,7 @@ export async function deleteAsset(id: string): Promise<void> {
 const planSchema = z
   .object({
     asset_id: z.string().uuid().nullable(),
+    category: optionalEnum(ASSET_CATEGORIES),
     title: z.string().trim().min(1, "Diga o que será feito.").max(200),
     maintenance_type: z.enum(MAINTENANCE_TYPES),
     periodicity: z.enum(MAINTENANCE_PERIODICITIES),
@@ -195,10 +197,17 @@ const planSchema = z
       (value.last_done_on ? nextDueAfter(value.last_done_on, value.periodicity, value.custom_interval_days) : null),
   }));
 
+/** Com equipamento, a categoria do plano é a dele (a tela só mostra); sem, vale a escolhida. */
+async function withAssetCategory<T extends { asset_id: string | null; category: string | null }>(db: SupabaseClient, row: T): Promise<T> {
+  if (!row.asset_id) return row;
+  const { data } = await db.from("facility_assets").select("category").eq("id", row.asset_id).maybeSingle();
+  return data ? { ...row, category: data.category as string } : row;
+}
+
 export async function createPlan(input: unknown): Promise<MaintenancePlan> {
   const user = await requireFacilitiesUser();
   const db = createFacilitiesAdminClient();
-  const row = parse(planSchema, input);
+  const row = await withAssetCategory(db, parse(planSchema, input));
   const { data, error } = await db
     .from("maintenance_plans")
     .insert({ ...row, created_by: user.profileId, updated_by: user.profileId })
@@ -211,7 +220,8 @@ export async function createPlan(input: unknown): Promise<MaintenancePlan> {
 export async function updatePlan(id: string, input: unknown): Promise<MaintenancePlan> {
   const user = await requireFacilitiesUser();
   const db = createFacilitiesAdminClient();
-  const { error } = await db.from("maintenance_plans").update({ ...parse(planSchema, input), updated_by: user.profileId }).eq("id", id);
+  const row = await withAssetCategory(db, parse(planSchema, input));
+  const { error } = await db.from("maintenance_plans").update({ ...row, updated_by: user.profileId }).eq("id", id);
   if (error) fail("salvar o plano", error);
   return loadPlan(db, id);
 }

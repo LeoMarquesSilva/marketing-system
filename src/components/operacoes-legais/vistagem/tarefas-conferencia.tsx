@@ -107,7 +107,14 @@ function marcosDoPrazo(item: AgendamentoResumo): MarcoRegua[] {
   );
   const meio: MarcoRegua[] = cadeia.map((tarefa) => ({ rotulo: rotuloCurto(tarefa.nome), data: tarefa.data, dica: tarefa.nome }));
   return [
-    { rotulo: "Enviar · no VIOS", data: item.data, tom: "marca", dica: "Data da tarefa que vai para o VIOS." },
+    item.enviarHoje
+      ? {
+          rotulo: "Enviar · no VIOS",
+          data: item.enviarHoje,
+          tom: "marca",
+          dica: `Vistado para ${formatarData(item.data)}, que já passou: o robô lança hoje.`,
+        }
+      : { rotulo: "Enviar · no VIOS", data: item.data, tom: "marca", dica: "Data da tarefa que vai para o VIOS." },
     ...meio.sort((a, b) => (a.data ?? "").localeCompare(b.data ?? "")),
     { rotulo: "Fatal", data: item.dataFatal, tom: "perigo" },
   ];
@@ -205,6 +212,7 @@ export function AgendaNoVios({ item, fotos, hoje }: { item: AgendamentoResumo; f
                       criada por {linha.criadaPor}
                     </p>
                   ) : null}
+                  {linha.nota ? <p className="text-[11px] text-amber-800">Data ajustada · {linha.nota}</p> : null}
                   {dataMudou ? (
                     <p className="text-[11px] text-amber-800">
                       Data alterada{linha.dataVios ? ` · o VIOS daria ${formatarData(linha.dataVios)}` : ""}
@@ -352,6 +360,12 @@ export function CartoesTarefas({
               {prazoComFatal ? (
                 <div className="space-y-1.5 rounded-md border border-[#e6eef0] bg-white px-3 py-2">
                   <ReguaDatas rotulo={`Datas de ${item.tarefa}`} hoje={hoje} marcos={marcosDoPrazo(item)} />
+                  {item.enviarHoje ? (
+                    <p className="text-[11px] text-amber-800">
+                      Vistado com o Enviar em {formatarData(item.data)}, que já passou: o robô lança com o Enviar de hoje (
+                      {formatarData(item.enviarHoje)}) e põe o Revisar e o Protocolar antes da fatal. Não precisa editar.
+                    </p>
+                  ) : null}
                   {item.diasPrazo && item.contagemPrazo ? (
                     <p className="text-[11px] text-muted-foreground">
                       {item.diasPrazo} {ROTULO_CONTAGEM[item.contagemPrazo]} após a publicação

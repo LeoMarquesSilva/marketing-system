@@ -48,7 +48,6 @@ import {
   Trophy,
   Truck,
   User,
-  Wrench,
   Users,
   UsersRound,
   Wallet,
@@ -457,25 +456,18 @@ export const NAV_FRONTS: NavFront[] = [
         pages: [{ href: "/eventos", label: "Eventos" }],
       },
       {
-        // Cadastro único de terceiros (o mesmo dos eventos), contratos e o valor pago vindo do OPEX.
+        // Módulo do gestor de Facilities (10/11/2026), com os três cadastros na ordem dele:
+        // fornecedores (quem presta), ativos e instalações (o que recebe manutenção) e
+        // plano de manutenção (o que, por quem, com qual periodicidade e quando). Contratos junto.
         id: "fornecedores",
-        label: "Fornecedores e prestadores",
-        title: "Gestão de Fornecedores e Prestadores de Serviços",
+        label: "Gestão de Fornecedores e Prestadores de Serviços",
         shortLabel: "Fornecedores",
         icon: Truck,
         pages: [
-          { href: FACILITIES_SUPPLIERS_PATH, label: "Fornecedores e prestadores" },
-          { href: FACILITIES_CONTRACTS_PATH, label: "Contratos" },
-        ],
-      },
-      {
-        // Ativos e instalações + plano de manutenção (preventiva e corretiva) com histórico.
-        id: "manutencao",
-        label: "Manutenção",
-        icon: Wrench,
-        pages: [
-          { href: FACILITIES_MAINTENANCE_PATH, label: "Plano de manutenção" },
+          { href: FACILITIES_SUPPLIERS_PATH, label: "Fornecedores" },
           { href: FACILITIES_ASSETS_PATH, label: "Ativos e instalações" },
+          { href: FACILITIES_MAINTENANCE_PATH, label: "Plano de manutenção" },
+          { href: FACILITIES_CONTRACTS_PATH, label: "Contratos" },
         ],
       },
     ],

@@ -5,9 +5,11 @@
  *
  * - Tipo de terceiro: fornecedor (produtos), prestador de serviços ou ambos.
  * - Categoria do terceiro: o que ele fornece ou qual serviço presta.
- * - Natureza da despesa (coluna category): onde o dinheiro é aplicado. A lista
- *   de Facilities é a do gestor; os fornecedores de evento mantêm a categoria
- *   de evento (buffet, brindes...), que os orçamentos dos eventos usam.
+ * - Natureza da despesa (coluna expense_nature): onde o dinheiro é aplicado,
+ *   só as 11 da lista do gestor; vazia = "Não informada".
+ *
+ * A coluna category continua sendo o tipo usado pelo módulo de eventos (buffet,
+ * brindes...); não é natureza da despesa.
  */
 
 import type { LucideIcon } from "lucide-react";
@@ -57,7 +59,7 @@ export const SUPPLIER_CATEGORY_DEFS: SupplierCategoryDef[] = [
   { key: "copa", label: "Copa e insumos", group: "facilities", icon: Coffee, examples: "Café, água, alimentos e materiais" },
   { key: "limpeza", label: "Limpeza e conservação", group: "facilities", icon: SprayCan, examples: "Produtos e serviços de limpeza" },
   { key: "manutencao", label: "Manutenção e obras", group: "facilities", icon: Wrench, examples: "Elétrica, hidráulica, ar-condicionado, reformas" },
-  { key: "outros", label: "Outros", group: "facilities", icon: Package, examples: "Despesas que não se encaixam nas anteriores" },
+  { key: "outros", label: "Outros", group: "facilities", icon: Package, examples: "Despesas não enquadradas nas categorias anteriores" },
   { key: "brindes", label: "Brindes", group: "eventos", icon: Gift },
   { key: "catering", label: "Catering", group: "eventos", icon: Coffee },
   { key: "buffet", label: "Buffet", group: "eventos", icon: UtensilsCrossed },
@@ -95,6 +97,40 @@ export function isEventSupplierCategory(key: string): boolean {
   return !def || def.group === "eventos" || SHARED_KEYS.has(key);
 }
 
+/* ------------------------------------------------------- natureza da despesa */
+
+/** As 11 naturezas da lista do gestor, na ordem dele. */
+export const EXPENSE_NATURE_KEYS = [
+  "servicos_profissionais",
+  "tecnologia",
+  "imovel",
+  "consumo",
+  "beneficios",
+  "informatica",
+  "transporte",
+  "copa",
+  "limpeza",
+  "manutencao",
+  "outros",
+] as const;
+export type ExpenseNature = (typeof EXPENSE_NATURE_KEYS)[number];
+
+export const EXPENSE_NATURE_DEFS: SupplierCategoryDef[] = EXPENSE_NATURE_KEYS.map((key) => BY_KEY.get(key)!);
+
+export function isExpenseNature(key: string | null | undefined): key is ExpenseNature {
+  return Boolean(key) && (EXPENSE_NATURE_KEYS as readonly string[]).includes(key!);
+}
+
+export function expenseNatureLabel(key: string | null | undefined): string {
+  return isExpenseNature(key) ? supplierCategoryLabel(key) : "Não informada";
+}
+
+/** Tipo de fornecedor de evento (buffet, decoração...), quando o cadastro veio dos eventos. */
+export function eventTypeLabel(category: string | null | undefined): string | null {
+  const def = category ? BY_KEY.get(category) : undefined;
+  return def?.group === "eventos" ? def.label : null;
+}
+
 /* ------------------------------------------------------------ tipo de terceiro */
 
 export const PARTY_TYPES = ["fornecedor", "prestador", "ambos"] as const;
@@ -102,7 +138,7 @@ export type PartyType = (typeof PARTY_TYPES)[number];
 export const PARTY_TYPE_LABEL: Record<PartyType, string> = {
   fornecedor: "Fornecedor",
   prestador: "Prestador de serviços",
-  ambos: "Fornecedor e prestador",
+  ambos: "Ambos",
 };
 export const PARTY_TYPE_SHORT: Record<PartyType, string> = {
   fornecedor: "Fornecedor",

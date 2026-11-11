@@ -116,7 +116,7 @@ function input(name: string, document = "") {
     name,
     legal_name: "",
     document,
-    category: "manutencao",
+    expense_nature: "manutencao",
     party_type: "prestador",
     third_party_category: "",
     opex_names: [],
@@ -135,7 +135,7 @@ function input(name: string, document = "") {
 }
 
 function supplierRow(id: string, name: string, document: string | null = null): Row {
-  return { id, name, document, category: "outros", opex_names: [], areas: [], active: true, created_at: "2026-10-27T10:00:00Z" };
+  return { id, name, document, category: "outros", expense_nature: "outros", opex_names: [], areas: [], active: true, created_at: "2026-10-27T10:00:00Z" };
 }
 
 async function rejection(promise: Promise<unknown>) {

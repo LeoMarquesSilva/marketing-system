@@ -195,7 +195,12 @@ function FormularioDaTarefa({
     (!prazo || Boolean(form.revisor)) &&
     (!compromisso || (horaValida(form.hora) && horaFimOk));
 
+  // Prazo apertado: o Enviar vistado já passou e o formulário abre com o de hoje (é o que o robô lança).
+  const enviarVistadoPassou = comFatal && dataInicial !== tarefa.data && tarefa.data < hoje;
   const avisos = [
+    ...(enviarVistadoPassou && form.data === dataInicial
+      ? [`O Enviar vistado (${formatarData(tarefa.data)}) já passou: vai hoje (${formatarData(dataInicial)}), com o Revisar e o Protocolar antes da fatal.`]
+      : []),
     ...(comFatal && form.dataFatal
       ? [
           ...avisosDaData(form.dataFatal, hoje).map((texto) => `Data fatal: ${texto.toLowerCase()}`),
