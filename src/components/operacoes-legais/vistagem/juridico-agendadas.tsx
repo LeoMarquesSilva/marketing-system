@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Bot, CalendarCheck, CalendarDays, ChevronRight, CircleAlert, Flag, Layers, Search, ShieldAlert, TriangleAlert, Undo2, Workflow } from "lucide-react";
+import { Bot, CalendarCheck, CalendarDays, ChevronRight, CircleAlert, Flag, Layers, PencilLine, Search, ShieldAlert, TriangleAlert, Undo2, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
@@ -287,6 +287,11 @@ function CartaoAgendada({ item, fotos, hoje, onAbrir }: { item: ConferenciaItem;
                   Devolvida{devolucoes > 1 ? ` ${devolucoes}×` : ""}
                 </Selo>
               ) : null}
+              {item.alteracao?.pode ? (
+                <Selo tom="marca" icone={PencilLine}>
+                  Dá para alterar
+                </Selo>
+              ) : null}
             </p>
             {/* Estreito, o cliente desce para baixo do grupo: os dois cabem sem cortar o grupo. */}
             <p className="flex min-w-0 flex-col text-sm @lg:flex-row @lg:items-baseline @lg:gap-2">
@@ -377,7 +382,16 @@ function CartaoAgendada({ item, fotos, hoje, onAbrir }: { item: ConferenciaItem;
  * Visão do jurídico, só de consulta: o que já foi vistado nos últimos dias, das suas áreas, por dia, e onde cada
  * publicação está na esteira (conferência, robô, agendada no VIOS, checada, em revisão ou abertura de pasta). Cada cartão abre o detalhe.
  */
-export function AgendadasJuridico({ escritorio, busca }: { escritorio: string; busca: string }) {
+export function AgendadasJuridico({
+  escritorio,
+  busca,
+  onReaberta,
+}: {
+  escritorio: string;
+  busca: string;
+  /** Vistagem reaberta para alterar: a tela do jurídico volta para "A vistar" com ela aberta. */
+  onReaberta?: (id: string) => void;
+}) {
   const [dados, setDados] = useState<AgendadasJuridicoResposta | null>(null);
   const [erro, setErro] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("");
@@ -405,6 +419,15 @@ export function AgendadasJuridico({ escritorio, busca }: { escritorio: string; b
   }, [escritorio]);
 
   const itens = useMemo(() => dados?.itens ?? [], [dados]);
+
+  /** Reabre a vistagem para alterar (antes da Conferência); o erro aparece no próprio quadro do detalhe. */
+  async function reabrir(id: string) {
+    const resposta = await authFetch(`/api/operacoes-legais/vistagem/juridico/${id}/reabrir`, { method: "POST" });
+    const corpo = (await resposta.json().catch(() => ({}))) as { error?: string };
+    if (!resposta.ok) throw new Error(corpo.error ?? "Não foi possível reabrir a vistagem.");
+    setAberta(null);
+    onReaberta?.(id);
+  }
   const fotos = dados?.fotos ?? {};
   const hoje = dados?.hoje ?? hojeDoNavegador();
 
@@ -537,7 +560,15 @@ export function AgendadasJuridico({ escritorio, busca }: { escritorio: string; b
         </>
       )}
 
-      <DetalheAgendada item={itemAberto} fotos={fotos} hoje={hoje} navegacao={navegacao} onAbrir={setAberta} onFechar={() => setAberta(null)} />
+      <DetalheAgendada
+        item={itemAberto}
+        fotos={fotos}
+        hoje={hoje}
+        navegacao={navegacao}
+        onAbrir={setAberta}
+        onFechar={() => setAberta(null)}
+        onAlterar={onReaberta ? reabrir : undefined}
+      />
     </div>
   );
 }

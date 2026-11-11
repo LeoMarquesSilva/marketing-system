@@ -33,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { ContextoDoProcesso, DialogoAcao, EscolhaEmCartoes, type OpcaoEmCartao } from "./dialogo-acao";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
+import { RENOVAR_CONFERENCIA_MS } from "@/lib/vistagem/alterar-vistagem";
 import { avisarContagensVistagem } from "@/hooks/use-vistagem-contagens";
 import { marcarEnviosSincronizados, sincronizarEnvios } from "@/lib/vistagem/envios-client";
 import { cn } from "@/lib/utils";
@@ -129,6 +130,21 @@ function agruparConferencia(itens: ConferenciaItem[]): GrupoConferencia[] {
 }
 
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
+
+/**
+ * A controladoria está com a publicação aberta na Conferência: por alguns minutos o jurídico não reabre a vistagem (se
+ * as duas agirem ao mesmo tempo, vale a decisão da controladoria; pedido de 11/11/2026). Devolve como a publicação está
+ * agora; sem resposta (rede), null.
+ */
+async function marcarAbertaNaConferencia(id: string): Promise<{ status: string; vistadoEm: string | null; revistadoEm: string | null } | null> {
+  const resposta = await authFetch(`/api/operacoes-legais/vistagem/conferencia/${id}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ acao: "abrir" }),
+  }).catch(() => null);
+  if (!resposta?.ok) return null;
+  return resposta.json().catch(() => null);
+}
 
 /** Roda de novo no robô as tarefas com erro da publicação; devolve a confirmação pedida pelo servidor, se houver. */
 async function pedirRodarNovamente(id: string, forcar: boolean): Promise<{ enviadas?: number; simulado?: boolean; precisaConfirmar?: string }> {
@@ -1200,6 +1216,38 @@ function Conferencia() {
   }
 
   const idAberta = aberta?.publicacao.id ?? null;
+  // Publicação aberta em "A conferir": marca na hora e renova enquanto a aba estiver à vista, para o jurídico não reabrir
+  // a vistagem enquanto a controladoria confere. Se o jurídico reabriu ou vistou de novo antes, recarrega a lista.
+  const aConferirAberta = aba === "conferir" && aberta?.publicacao.status === "controladoria_vistar" ? aberta.publicacao : null;
+  const idAConferir = aConferirAberta?.id ?? null;
+  const vistagemAberta = aConferirAberta ? `${aConferirAberta.vistadoEm ?? ""}|${aConferirAberta.revistadoEm ?? ""}` : "";
+  useEffect(() => {
+    if (!idAConferir) return;
+    let cancelado = false;
+    const marcar = async () => {
+      if (document.visibilityState === "hidden") return;
+      const atual = await marcarAbertaNaConferencia(idAConferir);
+      if (cancelado || !atual) return;
+      const mudou = atual.status !== "controladoria_vistar" || `${atual.vistadoEm ?? ""}|${atual.revistadoEm ?? ""}` !== vistagemAberta;
+      if (!mudou) return;
+      setRetorno({
+        tom: "info",
+        texto:
+          atual.status === "juridico_vistar"
+            ? "O jurídico reabriu esta vistagem para alterar antes da conferência. A lista foi recarregada."
+            : "Esta vistagem mudou desde que a lista foi carregada. A lista foi recarregada.",
+      });
+      void carregar();
+    };
+    void marcar();
+    const timer = window.setInterval(() => void marcar(), RENOVAR_CONFERENCIA_MS);
+    document.addEventListener("visibilitychange", marcar);
+    return () => {
+      cancelado = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", marcar);
+    };
+  }, [idAConferir, vistagemAberta, carregar]);
   useEffect(() => {
     // Ao andar pelas setas, a fila acompanha a publicação aberta.
     document.querySelector("[data-fila-conferencia] [aria-current=true]")?.scrollIntoView({ block: "nearest" });

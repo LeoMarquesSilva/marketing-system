@@ -23,6 +23,7 @@ import { registrarNoBkpSemFalhar } from "./bkp-sioe-server";
 import { vaiParaCentral } from "./central";
 import { enviarParaCentral } from "./central-server";
 import { cienciaDosAgendamentos, ehCienciaDosAgendamentos, ehReestruturacao } from "./ciencia-agendamentos";
+import { alteracaoDaVistagem, inicioDaConferenciaSegura } from "./alterar-vistagem";
 import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./dias-uteis";
 import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
 import { areaComSugestaoIa, fatalSugerida, resultadoDaSugestao, sugestaoNaListaAtual, type ResultadoSugestao, type SugestaoIa } from "./sugestao-ia";
@@ -619,6 +620,76 @@ export async function salvarVistagem(
   return { central: null };
 }
 
+/**
+ * Quem vistou reabre a vistagem para alterar (pedido de 11/11/2026): a publicação volta para "A vistar" com as tarefas
+ * como estão, enquanto a controladoria não agiu na Conferência. Se ela estiver com a publicação aberta, ou já ajustou,
+ * vale a decisão dela: a reabertura é recusada, inclusive se ela abrir no meio do caminho (a marca entra no filtro).
+ */
+export async function reabrirVistagem(id: string, authUserId: string, areas: AreasVistagem = null, veRisco = true): Promise<void> {
+  const publicacao = await carregarPublicacao(id);
+  garantirArea(publicacao, areas, veRisco);
+  const db = admin();
+  const [marcas, tarefas] = await Promise.all([
+    db.from("vistagem_publicacoes").select("vistado_por, revistado_por, conferencia_aberta_em").eq("id", id).maybeSingle(),
+    db.from("vistagem_agendamentos").select("ajustes").eq("publicacao_id", id),
+  ]);
+  if (marcas.error) falhou("conferir quem vistou", marcas.error);
+  if (tarefas.error) falhou("conferir os ajustes da Conferência", tarefas.error);
+  const linha = marcas.data as { vistado_por: string | null; revistado_por: string | null; conferencia_aberta_em: string | null } | null;
+  const ajustada = ((tarefas.data ?? []) as { ajustes: AjusteNaTarefa[] | null }[]).some((tarefa) => (tarefa.ajustes ?? []).length > 0);
+  const agora = Date.now();
+  const alteracao = alteracaoDaVistagem(
+    {
+      status: publicacao.status,
+      quemVistou: linha?.revistado_por ?? linha?.vistado_por ?? null,
+      ajustada,
+      conferenciaAbertaEm: linha?.conferencia_aberta_em ?? null,
+    },
+    authUserId,
+    agora
+  );
+  if (!alteracao.pode) throw new VistagemError(alteracao.texto, 409);
+  const { data: reaberta, error } = await db
+    .from("vistagem_publicacoes")
+    .update({ status: "juridico_vistar", reaberta_por: authUserId, reaberta_em: new Date(agora).toISOString() })
+    .eq("id", id)
+    .eq("status", "controladoria_vistar")
+    .or(`conferencia_aberta_em.is.null,conferencia_aberta_em.lt.${inicioDaConferenciaSegura(agora)}`)
+    .select("id")
+    .maybeSingle();
+  if (error) falhou("reabrir a vistagem", error);
+  if (!reaberta) throw new VistagemError("A controladoria acabou de abrir ou conferir esta publicação, e a decisão dela vale. Recarregue a página.", 409);
+}
+
+/** Marca a publicação como aberta na Conferência (só enquanto aguarda a conferência). Devolve se marcou. */
+async function segurarNaConferencia(id: string, authUserId: string): Promise<boolean> {
+  const { data, error } = await admin()
+    .from("vistagem_publicacoes")
+    .update({ conferencia_aberta_por: authUserId, conferencia_aberta_em: new Date().toISOString() })
+    .eq("id", id)
+    .eq("status", "controladoria_vistar")
+    .select("id")
+    .maybeSingle();
+  if (error) falhou("marcar a publicação na Conferência", error);
+  return Boolean(data);
+}
+
+/**
+ * A controladoria abriu a publicação na Conferência (a tela renova enquanto ela estiver aberta): por alguns minutos o
+ * jurídico não reabre a vistagem. Devolve como a publicação está agora, para a tela recarregar se o jurídico mexeu antes.
+ */
+export async function marcarConferenciaAberta(
+  id: string,
+  authUserId: string
+): Promise<{ status: PublicacaoStatus; vistadoEm: string | null; revistadoEm: string | null }> {
+  await segurarNaConferencia(id, authUserId);
+  const { data, error } = await admin().from("vistagem_publicacoes").select("status, vistado_em, revistado_em").eq("id", id).maybeSingle();
+  if (error) falhou("ler a publicação na Conferência", error);
+  if (!data) throw new VistagemError("Publicação não encontrada.", 404);
+  const linha = data as { status: PublicacaoStatus; vistado_em: string | null; revistado_em: string | null };
+  return { status: linha.status, vistadoEm: linha.vistado_em, revistadoEm: linha.revistado_em };
+}
+
 // ---------------------------------------------------------------------------
 // Conferência da controladoria
 // ---------------------------------------------------------------------------
@@ -636,7 +707,7 @@ async function nomesDosUsuarios(ids: (string | null)[]): Promise<Map<string, str
 // ---------------------------------------------------------------------------
 
 const COLUNAS_HISTORICO =
-  "status, created_at, linha_arquivo, data_publicacao, triada_em, pasta_ci, pasta_vinculo, escritorio_responsavel, demanda_risco, pendencia, triagem_resolvida_por, triagem_resolvida_em, duplicidade_resultado, duplicidade_revisada_por, duplicidade_revisada_em, transferido_de, transferido_por, transferido_em, transferencia_motivo, vistado_por, vistado_em, observacao_vistagem, devolvido_por, devolvido_em, devolucao_motivo, devolucoes, revistado_por, revistado_em, conferido_por, conferido_em, central_item_id, central_enviada_em, central_erro, central_tentativa_em, checado_por, checado_em, check_nota, arquivo:vistagem_kurier_arquivos(origem)";
+  "status, created_at, linha_arquivo, data_publicacao, triada_em, pasta_ci, pasta_vinculo, escritorio_responsavel, demanda_risco, pendencia, triagem_resolvida_por, triagem_resolvida_em, duplicidade_resultado, duplicidade_revisada_por, duplicidade_revisada_em, transferido_de, transferido_por, transferido_em, transferencia_motivo, vistado_por, vistado_em, observacao_vistagem, devolvido_por, devolvido_em, devolucao_motivo, devolucoes, revistado_por, revistado_em, reaberta_por, reaberta_em, conferido_por, conferido_em, central_item_id, central_enviada_em, central_erro, central_tentativa_em, checado_por, checado_em, check_nota, arquivo:vistagem_kurier_arquivos(origem)";
 
 type HistoricoRow = {
   status: PublicacaoStatus; created_at: string; linha_arquivo: number | null; data_publicacao: string | null;
@@ -646,7 +717,8 @@ type HistoricoRow = {
   transferido_de: string | null; transferido_por: string | null; transferido_em: string | null; transferencia_motivo: string | null;
   vistado_por: string | null; vistado_em: string | null; observacao_vistagem: string | null;
   devolvido_por: string | null; devolvido_em: string | null; devolucao_motivo: string | null; devolucoes: number | null;
-  revistado_por: string | null; revistado_em: string | null; conferido_por: string | null; conferido_em: string | null;
+  revistado_por: string | null; revistado_em: string | null; reaberta_por?: string | null; reaberta_em?: string | null;
+  conferido_por: string | null; conferido_em: string | null;
   central_item_id: string | null; central_enviada_em: string | null; central_erro: string | null; central_tentativa_em: string | null;
   checado_por: string | null; checado_em: string | null; check_nota: string | null;
   arquivo?: ArquivoDaPublicacao | ArquivoDaPublicacao[] | null;
@@ -679,7 +751,7 @@ export async function historicoDaPublicacao(id: string, areas: AreasVistagem = n
   garantirArea(row, areas, veRisco);
   const nomes = await nomesDosUsuarios([
     row.triagem_resolvida_por, row.duplicidade_revisada_por, row.transferido_por, row.vistado_por,
-    row.devolvido_por, row.revistado_por, row.conferido_por, row.checado_por,
+    row.devolvido_por, row.revistado_por, row.reaberta_por ?? null, row.conferido_por, row.checado_por,
   ]);
   const nome = (authId: string | null) => (authId ? nomes.get(authId) || null : null);
   const marca = (por: string | null, em: string | null) => (em ? { por: nome(por), em } : null);
@@ -709,6 +781,7 @@ export async function historicoDaPublicacao(id: string, areas: AreasVistagem = n
     vistagem: vistagem ? { ...vistagem, observacao: row.observacao_vistagem } : null,
     devolucao: devolucao ? { ...devolucao, motivo: row.devolucao_motivo, total: row.devolucoes ?? 1 } : null,
     revistagem: marca(row.revistado_por, row.revistado_em),
+    reabertura: marca(row.reaberta_por ?? null, row.reaberta_em ?? null),
     conferencia: marca(row.conferido_por, row.conferido_em),
     central: temCentral
       ? { itemId: row.central_item_id, enviadaEm: row.central_enviada_em, erro: row.central_erro, tentativaEm: row.central_tentativa_em }
@@ -931,7 +1004,12 @@ export const DIAS_AGENDADAS = 30;
  * O que o jurídico já vistou nos últimos dias, das suas áreas: na conferência, com o robô, agendado,
  * checado ou em revisão, com as tarefas e a situação de cada uma no VIOS, e as fotos de quem aparece.
  */
-export async function listarAgendadasJuridico(escritorio: string | null, areas: AreasVistagem = null, veRisco = true): Promise<AgendadasJuridicoResposta> {
+export async function listarAgendadasJuridico(
+  escritorio: string | null,
+  areas: AreasVistagem = null,
+  veRisco = true,
+  authUserId: string | null = null
+): Promise<AgendadasJuridicoResposta> {
   const resposta = (itens: ConferenciaItem[], fotos: Record<string, string>) => ({ itens, fotos, hoje: hojeEmSaoPaulo(), dias: DIAS_AGENDADAS });
   if (areas && (!areas.length || (escritorio && !areas.includes(escritorio)))) return resposta([], {});
   const vistadoDesde = new Date(Date.now() - DIAS_AGENDADAS * 86_400_000).toISOString();
@@ -948,7 +1026,36 @@ export async function listarAgendadasJuridico(escritorio: string | null, areas: 
         item.publicacao.status === "abertura_pasta" ? { ...item, agendamentos: comFluxoPrevisto(item.agendamentos, areaDoItem(item), base, hoje) } : item
       )
     : lidos;
-  return resposta(itens, await fotosDosItens(itens, "visão Agendadas"));
+  return resposta(authUserId ? await comAlteracao(itens, authUserId) : itens, await fotosDosItens(itens, "visão Agendadas"));
+}
+
+/** Nas que ainda aguardam a Conferência: se quem vê pode reabrir a vistagem para alterar e, se não, por quê. */
+async function comAlteracao(itens: ConferenciaItem[], authUserId: string): Promise<ConferenciaItem[]> {
+  const ids = itens.filter((item) => item.publicacao.status === "controladoria_vistar").map((item) => item.publicacao.id);
+  if (!ids.length) return itens;
+  const { data, error } = await admin()
+    .from("vistagem_publicacoes")
+    .select("id, vistado_por, revistado_por, conferencia_aberta_em")
+    .in("id", ids);
+  if (error) falhou("conferir quem vistou", error);
+  type Marca = { id: string; vistado_por: string | null; revistado_por: string | null; conferencia_aberta_em: string | null };
+  const marcas = new Map(((data ?? []) as Marca[]).map((linha) => [linha.id, linha]));
+  const agora = Date.now();
+  return itens.map((item) => {
+    const marca = marcas.get(item.publicacao.id);
+    if (!marca) return item;
+    const alteracao = alteracaoDaVistagem(
+      {
+        status: item.publicacao.status,
+        quemVistou: marca.revistado_por ?? marca.vistado_por,
+        ajustada: item.agendamentos.some((agendamento) => (agendamento.ajustes ?? []).length > 0),
+        conferenciaAbertaEm: marca.conferencia_aberta_em,
+      },
+      authUserId,
+      agora
+    );
+    return { ...item, alteracao };
+  });
 }
 
 /** Área que decide a árvore do fluxo de um item da conferência. */
@@ -1180,6 +1287,10 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
   );
   if (!mudancas.length) return { mudancas: 0 };
 
+  // Segura a publicação na Conferência antes de gravar: o jurídico não reabre a vistagem no meio do ajuste.
+  if (publicacao.status === "controladoria_vistar" && !(await segurarNaConferencia(id, authUserId))) {
+    throw new VistagemError("O jurídico reabriu esta vistagem para alterar. Recarregue a página.", 409);
+  }
   const nomes = await nomesDosUsuarios([authUserId]);
   // Outra fatal: "5 dias úteis após a publicação" não vale mais (como a fatal digitada na vistagem).
   const mesmaFatal = item.dataFatal === row.data_fatal;

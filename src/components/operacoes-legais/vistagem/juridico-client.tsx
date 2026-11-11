@@ -61,6 +61,7 @@ import {
   type EtiquetaAgendamento,
   type OrigemPrazo,
 } from "@/lib/vistagem/agendamento";
+import { reabertaParaAlterar } from "@/lib/vistagem/alterar-vistagem";
 import { cienciaDosAgendamentos, cienciaQueFica, ehCienciaDosAgendamentos } from "@/lib/vistagem/ciencia-agendamentos";
 import {
   CONTAGENS_PRAZO,
@@ -1242,6 +1243,12 @@ export function EditorVistagem({
             Voltar à lista
           </Button>
 
+          {publicacao.status === "juridico_vistar" && reabertaParaAlterar({ reabertaEm: publicacao.reabertaEm ?? null, devolvidoEm: publicacao.devolvidoEm }) ? (
+            <Aviso tom="info" titulo={`Vistagem reaberta para alterar em ${formatarDataHora(publicacao.reabertaEm ?? null)}`}>
+              As tarefas estão como foram vistadas. Altere o que precisar e vista de novo: a publicação volta para a Conferência.
+            </Aviso>
+          ) : null}
+
           {devolucoes.length ? (
             <div className="space-y-2">
               <Aviso tom="alerta" titulo={`Devolvida pela controladoria em ${formatarDataHora(publicacao.devolvidoEm)}`} />
@@ -2288,6 +2295,17 @@ function Juridico() {
   }, [aberta]);
   const riscos = (publicacoes ?? []).filter((publicacao) => publicacao.demandaRisco).length;
 
+  /** Vistagem reaberta no Vistado: volta para "A vistar" sem filtros que a escondam, com ela aberta. */
+  function reaberta(id: string) {
+    setVisao("fila");
+    setGrupo("");
+    setRisco("");
+    setTribunal("");
+    setDataImportacao("");
+    setAviso("Vistagem reaberta: altere o que precisar e vista de novo para ela voltar à Conferência.");
+    void carregar(escritorio).then(() => setSelecionada(id));
+  }
+
   function abrir(id: string) {
     setSelecionada(id);
     setListaNoCelular(false);
@@ -2453,7 +2471,7 @@ function Juridico() {
       {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
 
       {visao === "agendadas" ? (
-        <AgendadasJuridico key={escritorio} escritorio={escritorio} busca={busca} />
+        <AgendadasJuridico key={escritorio} escritorio={escritorio} busca={busca} onReaberta={reaberta} />
       ) : (
         /* No desktop, lista e publicação rolam cada uma no seu painel (o main do app não deixa usar sticky). */
         <div
@@ -2550,6 +2568,7 @@ function Juridico() {
                               ) : null}
                               <SeloAberturaDePasta publicacao={publicacao} />
                               {publicacao.devolucaoMotivo || publicacao.devolvidoEm ? <Selo tom="alerta">Devolvida</Selo> : null}
+                              {reabertaParaAlterar({ reabertaEm: publicacao.reabertaEm ?? null, devolvidoEm: publicacao.devolvidoEm }) ? <Selo tom="marca">Reaberta</Selo> : null}
                               {publicacao.transferidoDe ? <Selo tom="marca">Transferida</Selo> : null}
                             </span>
                             <span className="block truncate text-sm text-foreground">{publicacao.cliente ?? "—"}</span>

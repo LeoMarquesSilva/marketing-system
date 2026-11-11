@@ -1,4 +1,5 @@
 import type { OrigemPrazo } from "./agendamento";
+import type { AlteracaoDaVistagem } from "./alterar-vistagem";
 import type { ContagemPrazo } from "./dias-uteis";
 import type { TarefaNoVios } from "./fila-vios";
 import type { FluxoDaTarefa } from "./fluxo-vios";
@@ -152,6 +153,8 @@ export interface PublicacaoResumo {
   devolvidoEm: string | null;
   /** Vistada de novo depois da devolução (vistadoEm continua sendo a primeira vistagem). */
   revistadoEm: string | null;
+  /** Reaberta por quem vistou para alterar antes da Conferência (pedido de 11/11/2026). */
+  reabertaEm?: string | null;
   checadoEm: string | null;
   checkNota: string | null;
   /** Última transferência para a fila de outra área (escritório de origem, quando e por quê). */
@@ -464,6 +467,8 @@ export interface ConferenciaItem {
   auxiliar?: string | null;
   /** Sugestão da IA que o jurídico tinha na vistagem e o que fez com ela (só a conferência traz; null sem sugestão). */
   sugestaoIa?: SugestaoNaVistagem | null;
+  /** Só na visão Vistado do jurídico, antes da Conferência: se quem vê pode reabrir a vistagem para alterar e, se não, por quê. */
+  alteracao?: AlteracaoDaVistagem;
 }
 
 export interface SugestaoNaVistagem {

@@ -17,6 +17,7 @@ export type TipoEvento =
   | "vistagem"
   | "devolucao"
   | "revistagem"
+  | "reabertura"
   | "inconsistencia"
   | "ajuste"
   | "conferencia"
@@ -104,6 +105,8 @@ export interface DadosDoHistorico {
   /** Última devolução e quantas houve. */
   devolucao: (Marca & { motivo: string | null; total: number }) | null;
   revistagem: Marca | null;
+  /** Quem vistou reabriu a vistagem para alterar antes da Conferência (a última vez). */
+  reabertura?: Marca | null;
   conferencia: Marca | null;
   central: { itemId: string | null; enviadaEm: string | null; erro: string | null; tentativaEm: string | null } | null;
   check: (Marca & { nota: string | null }) | null;
@@ -239,6 +242,9 @@ export function montarHistorico(dados: DadosDoHistorico): EventoHistorico[] {
         dados.devolucao.total > 1 && `Foi devolvida ${dados.devolucao.total} vezes; aqui aparece a última.`
       ),
     });
+  }
+  if (dados.reabertura) {
+    eventos.push({ tipo: "reabertura", em: dados.reabertura.em, titulo: "Vistagem reaberta para alterar, antes da Conferência", por: dados.reabertura.por, detalhes: [] });
   }
   if (dados.revistagem) {
     eventos.push({ tipo: "revistagem", em: dados.revistagem.em, titulo: "Vistada de novo", por: dados.revistagem.por, detalhes: tarefasNaVistagem });

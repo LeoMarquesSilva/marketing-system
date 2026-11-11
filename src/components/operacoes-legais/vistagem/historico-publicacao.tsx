@@ -46,6 +46,7 @@ const VISUAL: Record<TipoEvento, { icone: LucideIcon; tom: keyof typeof TOM }> =
   vistagem: { icone: Signature, tom: "marca" },
   devolucao: { icone: Undo2, tom: "alerta" },
   revistagem: { icone: Signature, tom: "marca" },
+  reabertura: { icone: PencilLine, tom: "alerta" },
   inconsistencia: { icone: TriangleAlert, tom: "alerta" },
   ajuste: { icone: PencilLine, tom: "marca" },
   conferencia: { icone: ClipboardCheck, tom: "marca" },
