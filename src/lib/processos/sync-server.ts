@@ -7,6 +7,7 @@ import { baixarArquivoPorCaminho } from "@/lib/vistagem/sharepoint";
 import { COLUNAS_PROCESSO, type ValorCampo, type Valores } from "./campos";
 import { ProcessosError } from "./errors";
 import { juntarFontes, lerCsvProcessos, lerEtiquetasSioe, registroDoSioe } from "./import-vios";
+import { chaveNome } from "./pessoas";
 import { listarEnvios } from "./processos-server";
 import { db, emLotes, falhou, gravacaoSimulada, type Ator } from "./server";
 import { chaveDaParte, estaNoRecorte, lerRecorte, mesclarComVios, type Recorte } from "./sincronizacao";
@@ -90,7 +91,8 @@ async function incluirPartes(porProcesso: Map<string, { partes: ParteImportada[]
       if (chaves.has(chave)) return;
       chaves.add(chave);
       const pessoaId = randomUUID();
-      pessoas.push({ id: pessoaId, nome: parte.nome });
+      // Nasce só com o nome; a carga de pessoas liga ao cadastro do VIOS e junta com quem já existe.
+      pessoas.push({ id: pessoaId, nome: parte.nome, nome_chave: chaveNome(parte.nome), origem: "vios" });
       partes.push({ processo_id: processoId, pessoa_id: pessoaId, polo: parte.polo, papel: "parte", vinculo: parte.tipo, devedor: parte.polo === devedor, origem: "vios", ordem });
     });
   }
@@ -275,6 +277,7 @@ export async function situacaoDaImportacao(): Promise<SituacaoImportacao> {
     db()
       .from("proc_sync_execucoes")
       .select("id, origem, status, arquivo, lidos, no_recorte, criados, atualizados, confirmados, colunas_ignoradas, erro, executado_por_nome, iniciado_em, concluido_em")
+      .neq("origem", "pessoas")
       .order("iniciado_em", { ascending: false })
       .limit(15),
     db().from("proc_processos").select("id", { count: "exact", head: true }),

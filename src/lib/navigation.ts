@@ -41,6 +41,7 @@ import {
   PenLine,
   Scale,
   Gavel,
+  BookUser,
   Settings,
   Sparkles,
   Ticket,
@@ -429,6 +430,17 @@ export const NAV_FRONTS: NavFront[] = [
           { href: "/operacoes-legais/processos/saneamento", label: "Saneamento" },
         ],
         configuracoes: { href: "/operacoes-legais/processos/importacao", label: "Importação e VIOS" },
+      },
+      {
+        // Cadastro único de pessoas (clientes, partes, sócios, fiadores, advogados), usado por Processos.
+        id: "cadastro-pessoas",
+        label: "Pessoas",
+        shortLabel: "Pessoas",
+        icon: BookUser,
+        pages: [
+          { href: "/operacoes-legais/pessoas", label: "Pessoas" },
+          { href: "/operacoes-legais/pessoas/duplicadas", label: "Repetidas" },
+        ],
       },
       {
         // Escuta do time (1º uso: PE27); a resposta fica em /pesquisa/<link>, aberta ao público de cada pesquisa.

@@ -1,26 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { LoaderCircle, Plus, Trash2, UserRoundPen, UserRoundPlus } from "lucide-react";
+import { LoaderCircle, UserRoundCheck, UserRoundPen, UserRoundPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { PAPEIS, POLOS, TIPOS_CONTATO, type Contato, type Endereco, type Parte, type ParteEntrada, type ProcessoDetalhe } from "@/lib/processos/types";
+import { PAPEIS, POLOS, type Parte, type ParteEntrada, type PessoaResumo, type ProcessoDetalhe } from "@/lib/processos/types";
+import { BuscarPessoa } from "../pessoas/buscar-pessoa";
+import { CamposDeContatos, CamposDeEnderecos } from "../pessoas/contatos-form";
 import { DialogoAcao } from "../vistagem/dialogo-acao";
 import { Seletor } from "../vistagem/seletor";
-import { Aviso, Campo, Secao } from "../vistagem/ui";
+import { Aviso, Campo } from "../vistagem/ui";
 import { mensagemDeErro, processosApi } from "./processos-api";
 
 const OPCOES_POLO = POLOS.map((item) => ({ valor: item.valor, rotulo: item.rotulo }));
 const OPCOES_PAPEL = PAPEIS.map((item) => ({ valor: item.valor, rotulo: item.rotulo }));
-const OPCOES_CONTATO = TIPOS_CONTATO.map((item) => ({ valor: item.valor, rotulo: item.rotulo }));
-
-const ENDERECO_VAZIO: Endereco = { endereco: "", cidade: null, uf: null, cep: null, observacao: null };
-const CONTATO_VAZIO: Contato = { tipo: "celular", valor: "", whatsapp: false, observacao: null };
 
 function inicial(parte: Parte | null, poloPadrao: Parte["polo"]): ParteEntrada {
   if (!parte) {
-    return { polo: poloPadrao, papel: "parte", vinculo: null, devedor: false, referenteA: null, nome: "", documento: null, oab: null, observacao: null, enderecos: [], contatos: [] };
+    return { pessoaId: null, polo: poloPadrao, papel: "parte", vinculo: null, devedor: false, referenteA: null, nome: "", documento: null, oab: null, observacao: null, enderecos: [], contatos: [] };
   }
   return {
     polo: parte.polo,
@@ -38,8 +36,9 @@ function inicial(parte: Parte | null, poloPadrao: Parte["polo"]): ParteEntrada {
 }
 
 /**
- * Inclusão e edição de quem participa do processo: a parte, o sócio, o fiador ou o advogado, com os
- * endereços e os contatos da pessoa. É aqui que entram as informações novas da lista da equipe.
+ * Inclusão e edição de quem participa do processo: a parte, o sócio, o fiador ou o advogado. Os dados
+ * da pessoa (documento, endereços, contatos) são do cadastro de Pessoas e valem para todos os
+ * processos em que ela aparece. Na inclusão, a busca reaproveita quem já está cadastrado.
  */
 export function EditarParte({
   processoId,
@@ -59,6 +58,7 @@ export function EditarParte({
   onSalvo: (processo: ProcessoDetalhe) => void;
 }) {
   const [dados, setDados] = useState<ParteEntrada>(() => inicial(parte, poloPadrao));
+  const [escolhida, setEscolhida] = useState<PessoaResumo | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
 
@@ -66,8 +66,15 @@ export function EditarParte({
   const ehParte = dados.papel === "parte";
   const referencias = outras.filter((item) => item.papel === "parte" && item.id !== parte?.id).map((item) => ({ valor: item.id, rotulo: item.nome }));
 
-  const mudarEndereco = (indice: number, patch: Partial<Endereco>) => mudar({ enderecos: dados.enderecos.map((item, i) => (i === indice ? { ...item, ...patch } : item)) });
-  const mudarContato = (indice: number, patch: Partial<Contato>) => mudar({ contatos: dados.contatos.map((item, i) => (i === indice ? { ...item, ...patch } : item)) });
+  function escolher(pessoa: PessoaResumo) {
+    setEscolhida(pessoa);
+    mudar({ pessoaId: pessoa.id, nome: pessoa.nome, documento: pessoa.documento, oab: pessoa.oab });
+  }
+
+  function desfazerEscolha() {
+    setEscolhida(null);
+    mudar({ pessoaId: null, nome: "", documento: null, oab: null });
+  }
 
   async function salvar() {
     setSalvando(true);
@@ -98,8 +105,9 @@ export function EditarParte({
       ocupado={salvando}
       icone={parte ? UserRoundPen : UserRoundPlus}
       titulo={parte ? "Editar parte" : "Incluir parte"}
-      descricao="Parte, sócio, fiador ou advogado, com documento, endereços e contatos."
+      descricao="Parte, sócio, fiador ou advogado. Documento, endereços e contatos ficam no cadastro da pessoa e valem em todos os processos dela."
       className="sm:max-w-3xl"
+      aviso={parte ? "Mudou o CPF/CNPJ para o de alguém já cadastrado? As duas pessoas são unificadas." : escolhida ? "Os endereços e contatos que você incluir são acrescentados aos que a pessoa já tem." : undefined}
       rodape={
         <>
           <Button variant="outline" onClick={onFechar} disabled={salvando}>
@@ -112,12 +120,32 @@ export function EditarParte({
       }
     >
       {erro ? <Aviso tom="erro">{erro}</Aviso> : null}
+
+      {!parte ? (
+        escolhida ? (
+          <div className="flex items-center gap-3 rounded-md border border-[#47cdd0]/30 bg-[#f2fbfb] px-3 py-2.5">
+            <UserRoundCheck className="size-5 shrink-0 text-[#285f7a]" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-foreground">{escolhida.nome}</p>
+              <p className="truncate text-xs tabular-nums text-muted-foreground">
+                Já cadastrada · {escolhida.documento ?? "sem CPF/CNPJ"} · {escolhida.processos} processo{escolhida.processos === 1 ? "" : "s"}
+              </p>
+            </div>
+            <Button size="sm" variant="ghost" onClick={desfazerEscolha}>
+              <X /> Trocar
+            </Button>
+          </div>
+        ) : (
+          <BuscarPessoa onEscolher={escolher} ignorar={[]} />
+        )
+      ) : null}
+
       <div className="grid gap-4 sm:grid-cols-2">
-        <Campo rotulo="Nome ou razão social" className="sm:col-span-2">
-          <Input value={dados.nome} onChange={(evento) => mudar({ nome: evento.target.value })} autoFocus />
+        <Campo rotulo="Nome ou razão social" className="sm:col-span-2" dica={escolhida ? "O nome é o do cadastro; para mudar, edite a pessoa." : undefined}>
+          <Input value={dados.nome} onChange={(evento) => mudar({ nome: evento.target.value })} disabled={Boolean(escolhida)} />
         </Campo>
         <Campo rotulo="CPF/CNPJ">
-          <Input value={dados.documento ?? ""} onChange={(evento) => mudar({ documento: evento.target.value })} inputMode="numeric" className="tabular-nums" />
+          <Input value={dados.documento ?? ""} onChange={(evento) => mudar({ documento: evento.target.value })} inputMode="numeric" className="tabular-nums" disabled={Boolean(escolhida?.documento)} />
         </Campo>
         <Campo rotulo="Papel no processo">
           <Seletor valor={dados.papel} onChange={(valor) => mudar({ papel: valor as ParteEntrada["papel"] })} opcoes={OPCOES_PAPEL} rotulo="Papel no processo" />
@@ -137,7 +165,7 @@ export function EditarParte({
             </span>
           </label>
         ) : (
-          <Campo rotulo="Referente a" className="sm:col-span-2" dica="A parte de quem esta pessoa é sócia, fiadora ou advogada.">
+          <Campo rotulo="Referente a" className="sm:col-span-2" dica="A parte de quem esta pessoa é sócia, fiadora ou advogada. O vínculo fica também no cadastro das duas pessoas.">
             <Seletor valor={dados.referenteA ?? ""} onChange={(valor) => mudar({ referenteA: valor || null })} opcoes={referencias} todos={{ rotulo: "Não indicado" }} rotulo="Referente a" />
           </Campo>
         )}
@@ -148,72 +176,8 @@ export function EditarParte({
         ) : null}
       </div>
 
-      <Secao
-        titulo="Endereços"
-        className="-mx-6 px-6"
-        acao={
-          <Button size="sm" variant="outline" onClick={() => mudar({ enderecos: [...dados.enderecos, { ...ENDERECO_VAZIO }] })}>
-            <Plus /> Endereço
-          </Button>
-        }
-      >
-        {dados.enderecos.length ? (
-          <ul className="space-y-3">
-            {dados.enderecos.map((item, indice) => (
-              <li key={indice} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_9rem_4.5rem_7.5rem_auto] sm:items-center">
-                <Input value={item.endereco} onChange={(evento) => mudarEndereco(indice, { endereco: evento.target.value })} placeholder="Rua, número, complemento, bairro" aria-label={`Endereço ${indice + 1}`} />
-                <Input value={item.cidade ?? ""} onChange={(evento) => mudarEndereco(indice, { cidade: evento.target.value })} placeholder="Cidade" aria-label={`Cidade do endereço ${indice + 1}`} />
-                <Input value={item.uf ?? ""} onChange={(evento) => mudarEndereco(indice, { uf: evento.target.value.toUpperCase().slice(0, 2) })} placeholder="UF" aria-label={`UF do endereço ${indice + 1}`} />
-                <Input value={item.cep ?? ""} onChange={(evento) => mudarEndereco(indice, { cep: evento.target.value })} placeholder="CEP" inputMode="numeric" aria-label={`CEP do endereço ${indice + 1}`} />
-                <Button size="icon-sm" variant="ghost" aria-label={`Remover o endereço ${indice + 1}`} onClick={() => mudar({ enderecos: dados.enderecos.filter((_, i) => i !== indice) })}>
-                  <Trash2 />
-                </Button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-muted-foreground">Nenhum endereço. Inclua todos os que forem identificados.</p>
-        )}
-      </Secao>
-
-      <Secao
-        titulo="Contatos"
-        className="-mx-6 px-6"
-        acao={
-          <Button size="sm" variant="outline" onClick={() => mudar({ contatos: [...dados.contatos, { ...CONTATO_VAZIO }] })}>
-            <Plus /> Contato
-          </Button>
-        }
-      >
-        {dados.contatos.length ? (
-          <ul className="space-y-3">
-            {dados.contatos.map((item, indice) => {
-              const telefone = item.tipo === "celular" || item.tipo === "telefone";
-              return (
-                <li key={indice} className="grid gap-2 sm:grid-cols-[9rem_minmax(0,1fr)_auto_auto] sm:items-center">
-                  <Seletor valor={item.tipo} onChange={(valor) => mudarContato(indice, { tipo: valor as Contato["tipo"] })} opcoes={OPCOES_CONTATO} rotulo={`Tipo do contato ${indice + 1}`} />
-                  <Input
-                    value={item.valor}
-                    onChange={(evento) => mudarContato(indice, { valor: evento.target.value })}
-                    placeholder={item.tipo === "email" ? "nome@empresa.com.br" : item.tipo === "site" ? "www.empresa.com.br" : "(11) 90000-0000"}
-                    inputMode={telefone ? "tel" : item.tipo === "email" ? "email" : "url"}
-                    aria-label={`Contato ${indice + 1}`}
-                  />
-                  <label className={`flex items-center gap-1.5 text-sm ${telefone ? "text-foreground" : "invisible"}`}>
-                    <input type="checkbox" className="size-4 accent-[#347796]" checked={item.whatsapp} disabled={!telefone} onChange={(evento) => mudarContato(indice, { whatsapp: evento.target.checked })} />
-                    WhatsApp
-                  </label>
-                  <Button size="icon-sm" variant="ghost" aria-label={`Remover o contato ${indice + 1}`} onClick={() => mudar({ contatos: dados.contatos.filter((_, i) => i !== indice) })}>
-                    <Trash2 />
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <p className="text-sm text-muted-foreground">Nenhum contato. Celular, telefone, e-mail ou site.</p>
-        )}
-      </Secao>
+      <CamposDeEnderecos enderecos={dados.enderecos} onChange={(enderecos) => mudar({ enderecos })} />
+      <CamposDeContatos contatos={dados.contatos} onChange={(contatos) => mudar({ contatos })} />
 
       <Campo rotulo="Observação">
         <Textarea value={dados.observacao ?? ""} onChange={(evento) => mudar({ observacao: evento.target.value })} rows={2} className="text-sm" />
