@@ -10,14 +10,17 @@ const PUBLICACAO: PublicacaoParaFila = {
   pasta_ci: "58866",
 };
 
+/** Sem o CI da pasta, a publicação colada ainda vai pela linha antiga (uma por tarefa). */
+const SEM_CI: PublicacaoParaFila = { ...PUBLICACAO, pasta_ci: null };
+
 const ITENS: AgendamentoParaFila[] = [
   { id: "ag-1", etiqueta: "PRAZO", tarefa: "MANIFESTAÇÃO - FLUXO D1", tarefa_id: "136", data: "2026-10-16", hora: null, responsavel: "Maria Heloiza Gois Ponce", revisor: "Giovanna Pereira de Souza", observacao: "laudo" },
   { id: "ag-2", etiqueta: "PROVIDENCIA", tarefa: "ACOMPANHAMENTO PROCESSUAL DIÁRIO", tarefa_id: "731", data: "2026-10-19", hora: null, responsavel: "Giovanna Pereira de Souza", revisor: null, observacao: null },
 ];
 
 describe("fila do robô", () => {
-  it("na pasta: uma linha por tarefa, com a data da publicação na descrição e sem o teor", () => {
-    const linhas = linhasParaFila(PUBLICACAO, ITENS, { simular: false, modo: "pasta" });
+  it("na pasta sem o CI: uma linha por tarefa, com a data da publicação na descrição e sem o teor", () => {
+    const linhas = linhasParaFila(SEM_CI, ITENS, { simular: false, modo: "pasta" });
     expect(linhas.map((l) => l.agendamentos)).toEqual([["ag-1"], ["ag-2"]]);
     expect(linhas[0].linha.observacao).toBe("Publicação de 15/10/2026\nlaudo");
     expect(linhas[1].linha.observacao).toBe("Publicação de 15/10/2026");
@@ -27,7 +30,7 @@ describe("fila do robô", () => {
 
   it("compromisso vai com a etiqueta COMPROMISSO do VIOS e o horário", () => {
     const audiencia: AgendamentoParaFila = { ...ITENS[1], etiqueta: "COMPROMISSO", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefa_id: "54", hora: "14:30", hora_fim: "15:30" };
-    const [naPasta] = linhasParaFila(PUBLICACAO, [audiencia], { simular: false, modo: "pasta" });
+    const [naPasta] = linhasParaFila(SEM_CI, [audiencia], { simular: false, modo: "pasta" });
     expect(naPasta.linha).toMatchObject({ tipo: "Compromisso", etiqueta_id: "205" });
     // a fila da pasta não tem coluna de hora: vai na descrição
     expect(naPasta.linha.observacao).toBe("Publicação de 15/10/2026\nHorário: 14:30 às 15:30");
@@ -47,7 +50,7 @@ describe("fila do robô", () => {
       ["19/11/2026", null],
     ]);
     // Na pasta o robô põe a data limite igual à data: a outra vai escrita na descrição.
-    const [naPasta] = linhasParaFila(PUBLICACAO, [sessao], { simular: false, modo: "pasta" });
+    const [naPasta] = linhasParaFila(SEM_CI, [sessao], { simular: false, modo: "pasta" });
     expect(naPasta.linha.observacao).toBe("Publicação de 15/10/2026\nHorário: 09:00 às 18:00\nData limite: 25/11/2026");
   });
 
@@ -113,6 +116,31 @@ describe("fila do robô", () => {
     ]);
     const [semObservacao] = linhasParaFila(PUBLICACAO, [{ ...ciencia, observacao: null }], { simular: false, modo: "intimacao" });
     expect(semObservacao.linha.lancamento?.tarefas[0]).toMatchObject({ observacao: "", justificativa: null });
+  });
+
+  it("colada à mão (pasta, com o CI): a linha do lançamento, marcada para agendar direto na pasta", () => {
+    const [grupo, ...resto] = linhasParaFila(PUBLICACAO, ITENS, { simular: false, modo: "pasta" });
+    expect(resto).toHaveLength(0);
+    expect(grupo.agendamentos).toEqual(["ag-1", "ag-2"]);
+    expect(grupo.linha).toMatchObject({ ci_pasta: "58866", pasta: "0000952-37.2026.5.17.0141" });
+    expect(grupo.linha.lancamento).toMatchObject({
+      agendar_na_pasta: true,
+      publicacao_colada: true,
+      // O robô põe o texto na descrição de cada tarefa (descricaoNaPasta).
+      texto_publicacao: "PROCESSO:0000952 TEXTO: Intimem-se as partes.",
+    });
+    // Na intimação não vai a marca: o robô procura a intimação primeiro.
+    expect(linhasParaFila(PUBLICACAO, ITENS, { simular: false, modo: "intimacao" })[0].linha.lancamento).not.toHaveProperty("agendar_na_pasta");
+  });
+
+  it("colada à mão: na CIÊNCIA NF a observação vai na JUSTIFICATIVA NF, não na descrição (0100488-57, 11/11/2026)", () => {
+    const ciencia: AgendamentoParaFila = { ...ITENS[1], tarefa: "CIÊNCIA NF", tarefa_id: "316", observacao: "Intimação da reclamada por edital, que não é cliente." };
+    const [grupo] = linhasParaFila(PUBLICACAO, [ciencia], { simular: false, modo: "pasta" });
+    expect(grupo.linha.lancamento?.tarefas[0]).toMatchObject({
+      tarefa: "CIÊNCIA NF",
+      observacao: "",
+      justificativa: "Intimação da reclamada por edital, que não é cliente.",
+    });
   });
 
   it("leva os IDs das duplicadas da mesma publicação, sem repetir o próprio", () => {
