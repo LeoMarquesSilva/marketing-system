@@ -8,7 +8,8 @@ function board(canEdit: boolean): Pe27Board {
     can_edit: canEdit,
     groups: [],
     conductors: [],
-    files: { presentation_url: "/x", groups_sheet_url: "/y" },
+    files: { presentation_url: "/x", groups_sheet_url: "/y", dinamica1_groups_sheet_url: "/z" },
+    reflections: [],
     levers: [
       {
         id: "l1",

@@ -21,9 +21,23 @@ export interface AccessSection {
   alwaysAllowed?: boolean;
 }
 
+/** Tela inicial de todo usuário logado (dados da pessoa, pendências, atalhos e equipe). */
+export const HOME_PATH = "/";
+/** Dashboard do Planner de marketing: até 10/11/2026 era a rota "/". */
+export const MARKETING_DASHBOARD_PATH = "/painel-marketing";
+/** Chave antiga do dashboard, ainda gravada em `users.permissions` de quem não foi salvo de novo. */
+const LEGACY_DASHBOARD_KEY = "/";
+
+/** Troca a chave antiga do dashboard ("/") pela rota nova, sem duplicar. */
+function withCurrentKeys(keys: string[]): string[] {
+  if (!keys.includes(LEGACY_DASHBOARD_KEY)) return keys;
+  const mapped = keys.map((key) => (key === LEGACY_DASHBOARD_KEY ? MARKETING_DASHBOARD_PATH : key));
+  return [...new Set(mapped)];
+}
+
 /** Seções do sistema (chave = rota base usada no menu e nas rotas). */
 export const ACCESS_SECTIONS: AccessSection[] = [
-  { key: "/", label: "Dashboard" },
+  { key: MARKETING_DASHBOARD_PATH, label: "Dashboard de marketing" },
   { key: "/planner", label: "Planner de Marketing (quadro)" },
   { key: "/solicitacoes", label: "Planner de Marketing (solicitações)" },
   { key: "/conteudo/roteiros", label: "Gerador de conteúdo (posts)" },
@@ -41,7 +55,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/operacoes-legais/vistagem", label: "Vistagem de Publicações BP", manualOnly: true },
   { key: "/operacoes-legais/planner", label: "Planner de Operações Legais", manualOnly: true },
   { key: "/eventos", label: "Gestão de eventos" },
-  { key: "/facilities", label: "Fornecedores e contratos (Facilities)", manualOnly: true },
+  { key: "/facilities", label: "Facilities (fornecedores, contratos e manutenção)", manualOnly: true },
   { key: "/cafe-cultura", label: "Café com Cultura", manualOnly: true },
   { key: "/email-marketing", label: "E-mail marketing" },
   { key: "/certificados", label: "Certificados" },
@@ -53,6 +67,7 @@ export const ACCESS_SECTIONS: AccessSection[] = [
   { key: "/icp", label: "ICP (cliente ideal)", manualOnly: true },
   { key: "/rh", label: "RH (férias, dados cadastrais, organograma e boas práticas)", manualOnly: true },
   { key: "/pe27", label: "PE27 · Planejamento 2027 (só leitura)", manualOnly: true },
+  { key: "/pe27/editar", label: "PE27 · editar decisões, alavancas e metas", manualOnly: true },
   { key: "/admin", label: "Configurações", admin: true },
 ];
 
@@ -69,6 +84,8 @@ export const TEAM_SURVEYS_KEY = "/operacoes-legais/pesquisas";
 export const ICP_KEY = "/icp";
 export const FACILITIES_KEY = "/facilities";
 export const PE27_KEY = "/pe27";
+/** Chave de permissão (não é rota): edição no PE27 para quem não é admin. */
+export const PE27_EDIT_KEY = "/pe27/editar";
 export const MANUAL_ONLY_KEYS = ACCESS_SECTIONS.filter((s) => s.manualOnly).map((s) => s.key);
 
 const NON_ADMIN_KEYS = ACCESS_SECTIONS.filter(
@@ -105,6 +122,8 @@ export const ALWAYS_ALLOWED_PATHS = [
   "/pesquisa",
   // Confirmação de presença na festa de 10 anos (o servidor confere se a pessoa é da equipe).
   "/festa-10-anos",
+  // Envio dos convites da festa aos clientes: cada remetente vê só os seus (o servidor confere).
+  "/convites-festa",
 ];
 
 /**
@@ -226,18 +245,20 @@ export function isTeamSurveysPath(pathname: string): boolean {
 }
 
 /**
- * PE27 (Planejamento Estratégico 2027): admin ou liberação manual da chave
- * `/pe27` em Usuários (nunca pelo modo legado). Quem tem só a chave vê e não
- * edita: decisões e textos ficam com os admins.
+ * PE27 (Planejamento Estratégico 2027): admin ou liberação manual em Usuários
+ * (nunca pelo modo legado). A chave `/pe27` só lê; `/pe27/editar` também
+ * decide, edita e cria (consultores Camila e Zamboni, desde 10/11/2026).
  */
 export function hasPe27Access(profile: AccessProfile | null | undefined): boolean {
   if (!profile) return false;
   if (isAdminRole(profile)) return true;
-  return Boolean(profile.permissions?.includes(PE27_KEY));
+  return Boolean(profile.permissions?.some((key) => key === PE27_KEY || key === PE27_EDIT_KEY));
 }
 
 export function canEditPe27(profile: AccessProfile | null | undefined): boolean {
-  return isAdminRole(profile);
+  if (!profile) return false;
+  if (isAdminRole(profile)) return true;
+  return Boolean(profile.permissions?.includes(PE27_EDIT_KEY));
 }
 
 export function isPe27Path(pathname: string): boolean {
@@ -252,7 +273,7 @@ export function isPe27Path(pathname: string): boolean {
 export function isPe27OnlyProfile(profile: AccessProfile | null | undefined): boolean {
   if (!profile || isAdminRole(profile)) return false;
   const permissions = profile.permissions ?? [];
-  return permissions.length > 0 && permissions.every((key) => key === PE27_KEY);
+  return permissions.length > 0 && permissions.every((key) => key === PE27_KEY || key === PE27_EDIT_KEY);
 }
 
 /** Fora do módulo, o perfil só-PE27 abre apenas a troca de senha. */
@@ -328,7 +349,7 @@ export function hasIcpAccess(profile: AccessProfile | null | undefined): boolean
 }
 
 /**
- * Fornecedores e contratos (valores, contratos e dados de pagamento): admin ou
+ * Facilities: fornecedores, contratos e manutenção (valores, contratos e dados de pagamento): admin ou
  * liberação manual em Usuários. Sem `/facilities` marcado, só admin vê.
  */
 export function hasFacilitiesAccess(profile: AccessProfile | null | undefined): boolean {
@@ -352,9 +373,9 @@ export function isManualOnlyKey(key: string): boolean {
  */
 export function normalizePermissionsInput(raw: unknown): string[] | null {
   if (!Array.isArray(raw)) return null;
-  const keys = raw
-    .filter((k): k is string => typeof k === "string")
-    .filter((k) => VALID_PERMISSION_KEYS.has(k));
+  const keys = withCurrentKeys(raw.filter((k): k is string => typeof k === "string")).filter((k) =>
+    VALID_PERMISSION_KEYS.has(k)
+  );
   // Mantém ordem do catálogo para UI estável.
   const ordered = ALL_KEYS.filter((k) => keys.includes(k));
   return ordered.length > 0 ? ordered : null;
@@ -371,7 +392,7 @@ export function resolveAllowedSections(
   // Admin nunca é limitado pelo catálogo (acesso total, inclusive rotas futuras).
   if (isAdminRole(profile)) return null;
   if (profile.permissions && profile.permissions.length > 0) {
-    return profile.permissions;
+    return withCurrentKeys(profile.permissions);
   }
   return null;
 }
@@ -384,6 +405,8 @@ export function canAccessPath(
   if (isPe27OnlyProfile(profile)) {
     return isPe27Path(pathname) || PE27_ONLY_EXTRA_PATHS.includes(pathname);
   }
+
+  if (pathname === HOME_PATH) return canSeeHome(profile);
 
   if (ALWAYS_ALLOWED_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return true;
@@ -463,19 +486,37 @@ export function canAccessPath(
     return true;
   }
 
-  const match = (key: string) =>
-    key === "/" ? pathname === "/" : pathname === key || pathname.startsWith(key + "/");
-  return allowed.some(match);
+  return allowed.some((key) => pathname === key || pathname.startsWith(key + "/"));
 }
 
-/** Primeira rota permitida (para redirecionar). */
+/**
+ * A tela inicial ("/") está em lançamento: por enquanto só admin enxerga
+ * (decisão do usuário em 10/11/2026). Para liberar a todos, trocar para false.
+ */
+export const HOME_ADMIN_ONLY = true;
+
+/** Quem abre a tela inicial. O perfil liberado só para o PE27 nunca abre. */
+export function canSeeHome(profile: AccessProfile | null | undefined): boolean {
+  if (!profile || isPe27OnlyProfile(profile)) return false;
+  return HOME_ADMIN_ONLY ? isAdminRole(profile) : true;
+}
+
+/**
+ * Para onde a pessoa vai ao entrar (e quando tenta abrir o que não pode): a
+ * tela inicial, para quem a enxerga; os demais seguem entrando pela primeira
+ * seção liberada, como antes dela existir.
+ */
 export function firstAllowedPath(profile: AccessProfile | null | undefined): string {
+  if (isPe27OnlyProfile(profile)) return PE27_KEY;
+  if (canSeeHome(profile)) return HOME_PATH;
   const allowed = resolveAllowedSections(profile);
-  if (!allowed || allowed.length === 0) return "/";
-  // Colaborador de conteúdo cai na home de desempenho.
-  if (hasContentAccess(allowed) && !allowed.includes("/")) return CONTENT_HOME_PATH;
-  const primeiro = allowed.includes("/") ? "/" : allowed[0];
-  // O jurídico entra direto na aba Vistagem, onde está o trabalho dele (a Visão geral fica a uma aba de distância).
+  if (!allowed || allowed.length === 0) return MARKETING_DASHBOARD_PATH;
+  // Colaborador de conteúdo cai na tela de desempenho.
+  if (hasContentAccess(allowed) && !allowed.includes(MARKETING_DASHBOARD_PATH)) return CONTENT_HOME_PATH;
+  const primeiro = allowed.includes(MARKETING_DASHBOARD_PATH) ? MARKETING_DASHBOARD_PATH : allowed[0];
+  // A chave de edição do PE27 não é uma página: entra pela Visão geral do módulo.
+  if (primeiro === PE27_EDIT_KEY) return PE27_KEY;
+  // O jurídico entra direto na aba Vistagem, onde está o trabalho dele.
   return primeiro === VISTAGEM_KEY ? entradaDaVistagem(profile) : primeiro;
 }
 

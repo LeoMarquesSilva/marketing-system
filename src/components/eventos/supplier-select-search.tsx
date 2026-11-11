@@ -6,6 +6,7 @@ import { ChevronDown, Plus, Search, Truck, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SUPPLIER_CATEGORY_LABEL, type EventSupplier } from "@/lib/eventos";
+import { normalizeSupplierName } from "@/lib/eventos-fornecedor-unico";
 import { cn } from "@/lib/utils";
 
 const DISPLAY_LIMIT = 20;
@@ -31,14 +32,20 @@ export function SupplierSelectSearch({
   const [search, setSearch] = useState("");
 
   const selected = useMemo(
-    () => suppliers.find((s) => s.name.toLowerCase() === value.trim().toLowerCase()),
+    () => suppliers.find((s) => normalizeSupplierName(s.name) === normalizeSupplierName(value)),
     [suppliers, value]
   );
 
+  // Sem diferenciar acento: "pao de acucar" acha "Pão de Açúcar" e evita cadastrar de novo.
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const base = !q ? suppliers : suppliers.filter((s) => s.name.toLowerCase().includes(q));
+    const q = normalizeSupplierName(search);
+    const base = !q ? suppliers : suppliers.filter((s) => normalizeSupplierName(s.name).includes(q));
     return base.slice(0, DISPLAY_LIMIT);
+  }, [suppliers, search]);
+
+  const exactMatch = useMemo(() => {
+    const q = normalizeSupplierName(search);
+    return q ? suppliers.find((s) => normalizeSupplierName(s.name) === q) ?? null : null;
   }, [suppliers, search]);
 
   function handleSelect(supplier: EventSupplier) {
@@ -49,6 +56,11 @@ export function SupplierSelectSearch({
   }
 
   function handleCreate() {
+    // Nome digitado igual a um cadastro existente: usa o existente em vez de abrir "Novo prestador".
+    if (exactMatch) {
+      handleSelect(exactMatch);
+      return;
+    }
     onCreateNew(search.trim());
     setOpen(false);
     setSearch("");
@@ -138,8 +150,12 @@ export function SupplierSelectSearch({
               onClick={handleCreate}
               className="w-full flex items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-violet-700 transition-colors hover:bg-violet-50"
             >
-              <Plus className="h-4 w-4" />
-              {search.trim() ? (
+              {exactMatch ? <Truck className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+              {exactMatch ? (
+                <span className="truncate">
+                  Usar &quot;<strong>{exactMatch.name}</strong>&quot;, que já está cadastrado
+                </span>
+              ) : search.trim() ? (
                 <span className="truncate">
                   Cadastrar novo fornecedor &quot;<strong>{search.trim()}</strong>&quot;
                 </span>

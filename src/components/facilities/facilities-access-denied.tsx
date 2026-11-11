@@ -11,8 +11,8 @@ export function FacilitiesAcessoNegado() {
         <div>
           <p className="font-semibold text-foreground">Acesso restrito</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Fornecedores e contratos têm valores e dados de pagamento. Peça a um administrador para liberar
-            &quot;Fornecedores e contratos (Facilities)&quot; em Usuários.
+            Fornecedores, contratos e manutenção têm valores e dados de pagamento. Peça a um administrador para liberar
+            &quot;Facilities (fornecedores, contratos e manutenção)&quot; em Usuários.
           </p>
         </div>
       </CardContent>

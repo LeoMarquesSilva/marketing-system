@@ -221,4 +221,24 @@ describe("notaDoCheckAutomatico", () => {
     expect(notaDoCheckAutomatico([cienciaNf({ viosTarefas: [gravada({ ci: "938042", tipo: "CIÊNCIA NF", data: "2026-11-11", responsaveis: "Ligia Gilberti Lopes" })] })])).toBeNull();
     expect(notaDoCheckAutomatico([cienciaNf({ viosTarefas: [gravada({ ci: "938042", tipo: "CIÊNCIA NF", data: "2026-11-10", responsaveis: "Outra Pessoa" })] })])).toBeNull();
   });
+
+  it("VERIFICAR RENÚNCIA única segue a mesma regra da CIÊNCIA NF", () => {
+    const verificarRenuncia = (campos: Partial<AgendamentoResumo> = {}) =>
+      cienciaNf({
+        tarefa: "VERIFICAR RENÚNCIA",
+        responsavel: "Marina Silva Pinelli",
+        viosTarefaId: "940100",
+        viosTarefas: [gravada({ ci: "940100", tipo: "VERIFICAR RENÚNCIA", data: "2026-11-10", dataLimite: "2026-11-11", responsaveis: "Marina Silva Pinelli" })],
+        ...campos,
+      });
+    expect(notaDoCheckAutomatico([verificarRenuncia()])).toBe(
+      "Check automático: VERIFICAR RENÚNCIA única agendada no VIOS (CI 940100), com a data e o responsável do pedido."
+    );
+    // Com a Ciência dos Agendamentos (as vistadas antes de 10/11) ou outra tarefa junto, fica para o check manual.
+    expect(notaDoCheckAutomatico([verificarRenuncia(), agendamento({ id: "a2", tarefa: "1. CIÊNCIA DOS AGENDAMENTOS" })])).toBeNull();
+    expect(notaDoCheckAutomatico([verificarRenuncia({ responsavel: "Outra Pessoa" })])).toBeNull();
+    expect(notaDoCheckAutomatico([verificarRenuncia({ envioSimulado: true })])).toBeNull();
+    // Os outros tipos de renúncia não entram.
+    expect(notaDoCheckAutomatico([verificarRenuncia({ tarefa: "RENÚNCIA / SUBSTABELECIMENTO" })])).toBeNull();
+  });
 });

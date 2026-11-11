@@ -21,7 +21,7 @@ import {
 } from "@/lib/post-login-path";
 import { isQualificationPending } from "@/lib/qualification-requirement";
 
-const PUBLIC_PATHS = ["/login", "/redefinir-senha", "/primeiro-acesso", "/t", "/nps", "/leituras", "/manuais", "/materiais", "/ficha-cadastral", "/dress-code"];
+const PUBLIC_PATHS = ["/login", "/redefinir-senha", "/primeiro-acesso", "/t", "/nps", "/leituras", "/manuais", "/materiais", "/ficha-cadastral", "/dress-code", "/convite"];
 
 /** Perfil profissional público NFC: /perfil/<slug> e /perfil/<slug>/contato. */
 function isPublicProfessionalProfilePath(pathname: string): boolean {
@@ -142,6 +142,11 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     // Comportamento legado (colaborador de conteúdo).
     if (profile && isContentCollaborator(profile) && !isPublic && !isCollaboratorRoute) {
       return "/conteudo/inicio";
+    }
+
+    // Tela inicial: por enquanto só para quem a enxerga (mesmo no modo legado).
+    if (profile && pathname === "/" && !canAccessPath(profile, pathname)) {
+      return resolvePostLoginPathFromProfile(profile);
     }
 
     // Fotos colaboradores: só usuários autorizados (mesmo no modo legado).

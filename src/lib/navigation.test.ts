@@ -38,7 +38,7 @@ describe("catálogo de navegação", () => {
       "Administração",
     ]);
     const facilities = admin.find((front) => front.id === "facilities")!;
-    expect(facilities.features.map((feature) => feature.label)).toEqual(["Gestão de eventos", "Fornecedores e contratos"]);
+    expect(facilities.features.map((feature) => feature.label)).toEqual(["Gestão de eventos", "Fornecedores e prestadores", "Manutenção"]);
     const marketing = admin.find((front) => front.id === "marketing")!;
     expect(marketing.features.map((feature) => feature.label)).toContain("Gerador de conteúdo");
     expect(marketing.features.map((feature) => feature.label)).toContain("Métricas de redes sociais");
@@ -53,7 +53,11 @@ describe("catálogo de navegação", () => {
   });
 
   it("consultor só com o PE27 vê no menu apenas o PE27", () => {
-    expect(visibleHrefs({ role: null, permissions: ["/pe27"], department: "Consultoria Estratégica" })).toEqual(["/pe27", "/pe27/insumos"]);
+    expect(visibleHrefs({ role: null, permissions: ["/pe27"], department: "Consultoria Estratégica" })).toEqual([
+      "/pe27",
+      "/pe27/dinamica-1",
+      "/pe27/insumos",
+    ]);
   });
 });
 
@@ -61,6 +65,7 @@ describe("visibilidade por perfil", () => {
   it("admin vê tudo menos a home do colaborador de conteúdo", () => {
     const hrefs = visibleHrefs({ role: "admin" });
     expect(hrefs).toContain("/");
+    expect(hrefs).toContain("/painel-marketing");
     expect(hrefs).not.toContain("/conteudo/inicio");
     for (const href of ["/nfc", "/icp", "/operacoes-legais", "/operacoes-legais/planner", "/operacoes-legais/planner/gestao", "/operacoes-legais/vistagem", "/operacoes-legais/vistagem/controladoria", "/operacoes-legais/vistagem/duplicidades", "/operacoes-legais/vistagem/juridico", "/operacoes-legais/vistagem/conferencia", "/operacoes-legais/vistagem/check", "/rh/organograma", "/rh/boas-praticas", "/admin", "/fotos-colaboradores"]) {
       expect(hrefs).toContain(href);
@@ -147,6 +152,7 @@ describe("visibilidade por perfil", () => {
       ])
     );
     expect(hrefs).not.toContain("/");
+    expect(hrefs).not.toContain("/painel-marketing");
     expect(hrefs).not.toContain("/planner");
     expect(frontIds({ role: null, permissions: null, department: "Trabalhista" })).not.toContain("pessoas");
   });
@@ -172,6 +178,7 @@ describe("visibilidade por perfil", () => {
       expect.arrayContaining(["/conteudo/inicio", "/conteudo/boletim", "/conteudo/reels", "/conteudo/roteiros"])
     );
     expect(hrefs).not.toContain("/");
+    expect(hrefs).not.toContain("/painel-marketing");
     expect(hrefs).not.toContain("/conteudo/gustavo");
   });
 

@@ -17,6 +17,7 @@ import {
   isAudienceKey,
   linksForAudience,
 } from "./audience";
+import { corporateEmail, emailLookupVariants } from "./corporate-email";
 import { buildWelcomeEmail } from "./email";
 import {
   WELCOME_EMPLOYMENT_TYPES,
@@ -188,7 +189,7 @@ export async function getWelcomeOverview(): Promise<WelcomeOverview> {
       employees.map((row) => row.id)
     ),
     userIds.length
-      ? admin.from("users").select("id, auth_id, avatar_url, photo_onedrive_url").in("id", userIds)
+      ? admin.from("users").select("id, auth_id, email, avatar_url, photo_onedrive_url").in("id", userIds)
       : Promise.resolve({ data: [], error: null }),
     loadLastSignIns(admin),
     loadUserNames(
@@ -202,6 +203,7 @@ export async function getWelcomeOverview(): Promise<WelcomeOverview> {
       row.id as string,
       {
         authId: (row.auth_id as string | null) ?? null,
+        email: corporateEmail(row.email as string | null) || null,
         avatarUrl: resolveEmployeeAvatarUrl(row.avatar_url as string | null, row.photo_onedrive_url as string | null),
       },
     ])
@@ -215,7 +217,8 @@ export async function getWelcomeOverview(): Promise<WelcomeOverview> {
     return {
       employeeId: employee.id,
       fullName: employee.full_name,
-      email: employee.email,
+      email: corporateEmail(employee.email) || null,
+      loginEmail: user?.authId ? (user.email ?? null) : null,
       avatarUrl: user?.avatarUrl ?? null,
       department: employee.department,
       position: employee.position,
@@ -254,13 +257,21 @@ async function loadActor(admin: SupabaseClient, profileId: string): Promise<Acto
 async function ensureUserRow(admin: SupabaseClient, employee: EmployeeRow, email: string): Promise<string> {
   if (employee.user_id) return employee.user_id;
 
-  const { data: existing, error } = await admin
-    .from("users")
-    .select("id")
-    .ilike("email", email.replace(/[\\%_]/g, (c) => `\\${c}`))
-    .limit(1)
-    .maybeSingle();
-  if (error) throw new RhHttpError("Não foi possível verificar o usuário.", 500, "QUERY_FAILED");
+  // Procura também no domínio antigo: há cadastros gravados como @bpplaw.com.br.
+  let existing: { id: string } | null = null;
+  for (const variant of emailLookupVariants(email)) {
+    const { data, error } = await admin
+      .from("users")
+      .select("id")
+      .ilike("email", variant.replace(/[\\%_]/g, (c) => `\\${c}`))
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new RhHttpError("Não foi possível verificar o usuário.", 500, "QUERY_FAILED");
+    if (data) {
+      existing = data as { id: string };
+      break;
+    }
+  }
 
   let userId: string | null = null;
   if (existing) {
@@ -395,7 +406,8 @@ export async function completeOnboarding(
   if (!employee) throw new RhHttpError("Colaborador não encontrado.", 404, "NOT_FOUND");
   if (!employee.is_active) throw new RhHttpError("O colaborador está inativo no VIOS.", 409, "INACTIVE");
 
-  const email = input.email.trim().toLowerCase();
+  // Sempre @bismarchipires.com.br: cadastro antigo com @bpplaw.com.br vira o domínio atual.
+  const email = corporateEmail(input.email);
   if (!EMAIL_RE.test(email)) throw new RhHttpError("Informe o e-mail corporativo.", 400, "INVALID_EMAIL");
 
   const employmentType = input.employmentType?.trim() || null;
@@ -435,7 +447,8 @@ export async function completeOnboarding(
     sendError = "Microsoft 365 não configurado neste ambiente: o e-mail não foi enviado.";
   } else {
     try {
-      await enviarEmailMicrosoft({ para: email, assunto: subject, html, responderPara: actor.email });
+      // E-mail sem resposta: o texto orienta a falar com Pessoas e Cultura.
+      await enviarEmailMicrosoft({ para: email, assunto: subject, html });
     } catch (error) {
       console.error("[boas-vindas] falha ao enviar:", error);
       sendError = "O Microsoft 365 não aceitou o envio agora. Tente reenviar em alguns minutos.";

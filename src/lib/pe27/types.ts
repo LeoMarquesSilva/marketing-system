@@ -2,9 +2,11 @@
 
 export const PE27_PATH = "/pe27";
 export const PE27_INSUMOS_PATH = "/pe27/insumos";
+export const PE27_DINAMICA1_PATH = "/pe27/dinamica-1";
 export const PE27_CYCLE = "PE27";
 
-export const DIMENSIONS = ["clientes", "pessoas", "acionistas"] as const;
+/** Ordem de exibição em todo o módulo: Acionistas primeiro (pedido de 10/11/2026). */
+export const DIMENSIONS = ["acionistas", "clientes", "pessoas"] as const;
 export type Dimension = (typeof DIMENSIONS)[number];
 
 export const DIMENSION_LABELS: Record<Dimension, string> = {
@@ -12,6 +14,19 @@ export const DIMENSION_LABELS: Record<Dimension, string> = {
   pessoas: "Pessoas",
   acionistas: "Acionistas",
 };
+
+/** Temas da Dinâmica 1 (um por grupo): o que nos aproximou e afastou de cada um. */
+export const THEMES = ["visao", "missao", "valores", "proposito"] as const;
+export type Theme = (typeof THEMES)[number];
+
+export const THEME_LABELS: Record<Theme, string> = {
+  visao: "Visão",
+  missao: "Missão",
+  valores: "Valores",
+  proposito: "Propósito",
+};
+
+export type Direction = "aproximou" | "afastou";
 
 /** Decisão dos sócios sobre cada alavanca ou meta (revisão de 11/11). */
 export const DECISIONS = ["em_analise", "mantida", "ajustada", "juntada", "descartada"] as const;
@@ -55,6 +70,13 @@ export interface Pe27Group {
   id: string;
   dynamic: number;
   dimension: Dimension | null;
+  /** Tema do grupo na Dinâmica 1. */
+  theme: Theme | null;
+  /** Texto proposto pelo grupo (ex.: proposta de missão). */
+  proposal: string | null;
+  notes: string | null;
+  /** Rotas internas das fotos dos rascunhos. */
+  sketch_urls: string[];
   name: string;
   poster_title: string | null;
   /** Rota interna que abre a foto do cartaz (link assinado). */
@@ -95,6 +117,21 @@ export interface Pe27Lever {
   goals: Pe27Goal[];
 }
 
+/** Item da matriz aproximou × afastou da Dinâmica 1. */
+export interface Pe27Reflection {
+  id: string;
+  group_id: string;
+  direction: Direction;
+  position: number;
+  text: string;
+  /** Como está no rascunho, quando diz mais que o cartaz. */
+  detail: string | null;
+  /** Recorte dentro do tema (Valores: a letra do CIVIL). */
+  facet: string | null;
+  source: "cartaz" | "rascunho";
+  transcription_note: string | null;
+}
+
 export interface Pe27Conductor extends Pe27Person {
   role: string;
 }
@@ -104,16 +141,14 @@ export interface Pe27Board {
   can_edit: boolean;
   groups: Pe27Group[];
   levers: Pe27Lever[];
+  reflections: Pe27Reflection[];
   conductors: Pe27Conductor[];
-  files: { presentation_url: string; groups_sheet_url: string };
+  files: { presentation_url: string; groups_sheet_url: string; dinamica1_groups_sheet_url: string };
 }
 
 /** Texto da meta/alavanca para busca de temas comuns (sem acento, minúsculo). */
 export function normalizeForSearch(text: string): string {
-  return text
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase();
+  return text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
 export function formatPe27DateTime(iso: string): string {

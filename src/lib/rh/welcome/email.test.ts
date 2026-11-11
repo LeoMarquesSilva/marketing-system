@@ -11,7 +11,7 @@ const BASE = {
 describe("buildWelcomeEmail", () => {
   it("assunto e saudação usam o primeiro nome", () => {
     const { subject, html } = buildWelcomeEmail(BASE);
-    expect(subject).toBe("Boas-vindas ao time BP, Maria!");
+    expect(subject).toBe("Boas-vindas ao time Bismarchi | Pires, Maria!");
     expect(html).toContain("Olá, Maria!");
     expect(firstNameOf("  Ana  Paula ")).toBe("Ana");
   });
@@ -46,6 +46,15 @@ describe("buildWelcomeEmail", () => {
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
     expect(html).toContain("&quot;a&quot;@b.com");
+  });
+
+  it("é sem resposta: manda falar com Pessoas e Cultura e usa o nome Bismarchi | Pires", () => {
+    const { html } = buildWelcomeEmail(BASE);
+    expect(html).not.toMatch(/responda este e-mail/i);
+    expect(html).toContain("Fale com a equipe de Pessoas e Cultura");
+    expect(html).toContain("Não responda");
+    expect(html).toContain("time Bismarchi | Pires");
+    expect(html).not.toMatch(/time BP|bpplaw/i);
   });
 
   it("usa o logo do escritório servido pelo www", () => {

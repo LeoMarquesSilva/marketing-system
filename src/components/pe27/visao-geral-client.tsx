@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Check, Download, FileImage, Presentation } from "lucide-react";
+import { ArrowRight, ArrowUpDown, Check, Download, FileImage, Presentation } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PE27_CYCLE_STEPS, PE27_NORTE, cycleStepStates, todayInBrasilia, type StepState } from "@/lib/pe27/conteudo";
-import { DIMENSION_LABELS, DIMENSIONS, PE27_INSUMOS_PATH, type Dimension, type Pe27Board } from "@/lib/pe27/types";
+import { DIMENSION_LABELS, DIMENSIONS, PE27_DINAMICA1_PATH, PE27_INSUMOS_PATH, type Dimension, type Pe27Board } from "@/lib/pe27/types";
 import { DIMENSION_TONES, DimensionTile, PersonFace, PersonLine, ProgressBar, countDecisions, findSharedThemes, plural } from "./shared";
 
 const WEEKDAYS = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
@@ -158,6 +158,36 @@ function DimensionRow({ dimension, board }: { dimension: Dimension; board: Pe27B
   );
 }
 
+function Dinamica1Row({ board }: { board: Pe27Board }) {
+  const groups = board.groups.filter((group) => group.dynamic === 1);
+  if (groups.length === 0) return null;
+  const close = board.reflections.filter((item) => item.direction === "aproximou").length;
+  const away = board.reflections.filter((item) => item.direction === "afastou").length;
+  return (
+    <li>
+      <Link
+        href={PE27_DINAMICA1_PATH}
+        className="group flex items-center gap-3 px-4 py-4 transition-colors outline-none hover:bg-[#f7fbfb] focus-visible:bg-[#f7fbfb] focus-visible:ring-[3px] focus-visible:ring-[#47cdd0]/30 focus-visible:ring-inset sm:gap-5 sm:px-5"
+      >
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-[#e4f0f6] text-[#2c6a89]" aria-hidden>
+          <ArrowUpDown className="size-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-foreground group-hover:text-[#285f7a]">Dinâmica 1 · Missão, Visão, Valores e Propósito</p>
+          <p className="text-xs text-muted-foreground">
+            {plural(groups.length, "grupo", "grupos")} · <span className="font-medium text-emerald-800">{close} aproximaram</span> ·{" "}
+            <span className="font-medium text-rose-800">{away} afastaram</span>
+          </p>
+        </div>
+        <ArrowRight
+          className="hidden size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-[#285f7a] sm:block"
+          aria-hidden
+        />
+      </Link>
+    </li>
+  );
+}
+
 function InsumosPanel({ board }: { board: Pe27Board }) {
   const counts = countDecisions(board.levers);
   return (
@@ -167,7 +197,7 @@ function InsumosPanel({ board }: { board: Pe27Board }) {
           <h2 id="pe27-insumos" className="text-base font-semibold text-foreground">
             Insumos do workshop
           </h2>
-          <p className="text-sm text-muted-foreground">Dinâmica 2 de 05/11, transcrita das fotos dos cartazes de cada grupo.</p>
+          <p className="text-sm text-muted-foreground">Dinâmicas 1 e 2 de 05/11, transcritas das fotos dos cartazes de cada grupo.</p>
         </div>
         <p className="text-sm text-muted-foreground">
           No plano até agora:{" "}
@@ -177,6 +207,8 @@ function InsumosPanel({ board }: { board: Pe27Board }) {
         </p>
       </div>
       <ul className="divide-y divide-[#eef3f4]">
+        <Dinamica1Row board={board} />
+        <li className="bg-[#fbfdfd] px-4 py-2 text-xs font-semibold text-[#285f7a] sm:px-5">Dinâmica 2 · Alavancas e metas por dimensão</li>
         {DIMENSIONS.map((dimension) => (
           <DimensionRow key={dimension} dimension={dimension} board={board} />
         ))}
@@ -274,7 +306,7 @@ function NorteBlock() {
 function StructureBlock({ board }: { board: Pe27Board }) {
   const goals = board.levers.reduce((sum, lever) => sum + lever.goals.length, 0);
   const levels = [
-    { label: "Dimensões", detail: "Clientes, Pessoas e Acionistas", value: String(DIMENSIONS.length) },
+    { label: "Dimensões", detail: "Acionistas, Clientes e Pessoas", value: String(DIMENSIONS.length) },
     { label: "Alavancas de valor", detail: "Sugeridas pelos grupos", value: String(board.levers.length) },
     { label: "Metas estratégicas", detail: "Sugeridas pelos grupos", value: String(goals) },
     { label: "Metas de esforço", detail: "Plano tático, a partir de 23/11", value: "—" },
@@ -324,9 +356,17 @@ function MaterialBlock({ board }: { board: Pe27Board }) {
       newTab: false,
     },
     {
+      href: board.files.dinamica1_groups_sheet_url,
+      icon: FileImage,
+      label: "Grupos da Dinâmica 1",
+      detail: "Quem ficou com cada tema",
+      action: ArrowRight,
+      newTab: true,
+    },
+    {
       href: board.files.groups_sheet_url,
       icon: FileImage,
-      label: "Folha dos grupos",
+      label: "Grupos da Dinâmica 2",
       detail: "Quem ficou em cada dimensão",
       action: ArrowRight,
       newTab: true,

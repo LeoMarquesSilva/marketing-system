@@ -91,7 +91,8 @@ import { SeloAberturaDePasta } from "./abertura-pasta";
 import { CampoData, CampoHora } from "./campo-data";
 import { ESTILO_CLASSE, ICONE_CLASSE } from "./tarefas-conferencia";
 import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
-import { FaixaDoProcesso, NA_FAIXA } from "./faixa-processo";
+import { BOTAO_FAIXA, FaixaDoProcesso, NA_FAIXA } from "./faixa-processo";
+import { BotaoHistorico } from "./historico-publicacao";
 import { CalendarioDoFluxo, ItemDaLegenda, NumeroDoMarco, tomDaTarefaDoFluxo, type MarcoDoCalendario, type TomDoMarco } from "./calendario-fluxo";
 import { nomeCurto as nomeCurtoDaPessoa, partesDaData } from "@/lib/vistagem/como-fica-no-vios";
 import { FichaPasta } from "./ficha-pasta";
@@ -1265,6 +1266,14 @@ export function EditorVistagem({
                 ) : null
               }
             >
+              {/* Só nas transferidas de outra área: o que aconteceu com a publicação antes de chegar a esta. */}
+              {publicacao.transferidoDe && !resolucao ? (
+                <BotaoHistorico
+                  publicacaoId={publicacao.id}
+                  processo={publicacao.numeroProcesso ?? publicacao.numeroProcessoOriginal}
+                  className={cn(BOTAO_FAIXA, navegacao && "mr-1")}
+                />
+              ) : null}
               {navegacao ? (
                 <>
                   <Button

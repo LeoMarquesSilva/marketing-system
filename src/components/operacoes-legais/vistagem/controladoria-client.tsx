@@ -43,6 +43,7 @@ import { linkPastaVios } from "@/lib/vistagem/vios-links";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { SeloAberturaDePasta } from "./abertura-pasta";
 import { AvisoArquivoDoDia } from "./aviso-arquivo-do-dia";
+import { CapaParaAberturaDePasta } from "./capa-abertura-ui";
 import { FiltroData, dataNaLista } from "./filtro-data";
 import { EditorVistagem } from "./juridico-client";
 import { LeitorPublicacao } from "./leitor-publicacao";
@@ -704,6 +705,8 @@ function DetalhePendencia({
         {/* A coluna da resolução tem o fundo até o fim, como a das tarefas na Conferência. */}
         <div className="min-w-0 border-t border-[#e6eef0] bg-[#f2f6f7] @4xl:overflow-y-auto @4xl:border-l @4xl:border-t-0">
           {publicacao.pendencia === "sem_pasta" ? <VerificacaoSemPasta publicacao={publicacao} /> : null}
+          {/* Abertura automática de pasta: o resumo da capa que iria para o VIOS; a capa inteira abre num diálogo, com o lápis. */}
+          {publicacao.pendencia === "sem_pasta" ? <CapaParaAberturaDePasta key={`capa-${publicacao.id}`} publicacaoId={publicacao.id} /> : null}
           <Resolucao key={publicacao.id} publicacao={publicacao} onResolvida={resolvida} onAgendar={agendar} />
         </div>
       </div>

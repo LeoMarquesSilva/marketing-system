@@ -65,7 +65,10 @@ export interface WelcomeRecord {
 export interface WelcomeEmployee {
   employeeId: string;
   fullName: string;
+  /** E-mail do cadastro do RH, já no domínio @bismarchipires.com.br. */
   email: string | null;
+  /** E-mail de login de quem já tem acesso ao ORQESTRAI (é o que o modal sugere). */
+  loginEmail: string | null;
   avatarUrl: string | null;
   department: string | null;
   position: string | null;

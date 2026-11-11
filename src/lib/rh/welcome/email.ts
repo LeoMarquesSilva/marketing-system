@@ -60,15 +60,15 @@ export function buildWelcomeEmail(input: WelcomeEmailInput): { subject: string; 
   const isSetup = input.access.kind === "setup";
 
   const accessIntro = isSetup
-    ? "Crie a sua senha para entrar. Assim que você entrar, a página <strong style=\"color:" +
+    ? "Clique no botão, crie a sua senha na hora e pronto: você já entra, direto na página <strong style=\"color:" +
       NAVY +
-      ";\">Meus links</strong> abre com tudo o que você precisa para começar."
+      ";\">Meus links</strong>, com tudo o que precisa para começar."
     : "Entre com o seu login. A página <strong style=\"color:" +
       NAVY +
       ";\">Meus links</strong> reúne tudo o que você precisa para começar.";
   const accessButton = isSetup ? "Criar minha senha" : "Entrar no ORQESTRAI";
   const accessNote = isSetup
-    ? `Seu login: <strong style="color:${TEXT};">${login}</strong><br>O link vale por ${WELCOME_SETUP_VALIDITY_DAYS} dias e funciona uma vez só.`
+    ? `Seu login: <strong style="color:${TEXT};">${login}</strong><br>O botão vale por ${WELCOME_SETUP_VALIDITY_DAYS} dias e funciona uma vez só. Depois, entre com o seu login e a senha que você criou.`
     : `Seu login: <strong style="color:${TEXT};">${login}</strong><br>Se não lembrar a senha, use “Esqueci minha senha” na tela de entrada.`;
 
   const findRows = WHAT_YOU_FIND.map(
@@ -86,7 +86,7 @@ export function buildWelcomeEmail(input: WelcomeEmailInput): { subject: string; 
 <meta name="x-apple-disable-message-reformatting">
 <meta name="color-scheme" content="light">
 <meta name="supported-color-schemes" content="light">
-<title>Boas-vindas ao time BP</title>
+<title>Boas-vindas ao time Bismarchi | Pires</title>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600;700&display=swap" rel="stylesheet">
 <!--[if mso]><style>* { font-family: Arial, Helvetica, sans-serif !important; }</style><![endif]-->
 <style>
@@ -108,7 +108,7 @@ export function buildWelcomeEmail(input: WelcomeEmailInput): { subject: string; 
 
     <tr><td class="px" bgcolor="${NAVY}" style="background:${NAVY};padding:40px 44px 42px 44px;font-family:${font};">
       <p style="margin:0 0 12px 0;font-size:14px;line-height:20px;font-weight:600;color:${GOLD};">Olá, ${name}!</p>
-      <h1 class="titulo" style="margin:0;font-size:30px;line-height:38px;font-weight:300;letter-spacing:0.5px;text-transform:lowercase;color:#ffffff;">seja muito bem-vindo(a)<br>ao time bp</h1>
+      <h1 class="titulo" style="margin:0;font-size:30px;line-height:38px;font-weight:300;letter-spacing:0.5px;text-transform:lowercase;color:#ffffff;">seja muito bem-vindo(a)<br>ao time bismarchi | pires</h1>
     </td></tr>
 
     <tr><td class="px" style="padding:36px 44px 0 44px;font-family:${font};color:${TEXT};">
@@ -136,11 +136,11 @@ export function buildWelcomeEmail(input: WelcomeEmailInput): { subject: string; 
     <tr><td class="px" style="padding:28px 44px 0 44px;">
       <p style="margin:0 0 8px 0;font-family:${font};font-size:11px;line-height:16px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:${GOLD_TEXT};">O que você encontra lá</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${findRows}</table>
-      <p style="margin:8px 0 0 0;font-family:${font};font-size:14px;line-height:22px;color:#3A4248;">Depois, é só voltar quando precisar: Meus links fica no menu do seu perfil. Se ficar alguma dúvida, responda este e-mail.</p>
+      <p style="margin:8px 0 0 0;font-family:${font};font-size:14px;line-height:22px;color:#3A4248;">Depois, é só voltar quando precisar: Meus links fica no menu do seu perfil. Ficou com alguma dúvida? Fale com a equipe de Pessoas e Cultura.</p>
     </td></tr>
 
     <tr><td class="px" style="padding:32px 44px 0 44px;font-family:${font};color:${TEXT};">
-      <p style="margin:0 0 10px 0;font-size:15px;line-height:25px;">Desejamos a você uma excelente jornada no time BP, com muito aprendizado, desenvolvimento e novas conquistas!</p>
+      <p style="margin:0 0 10px 0;font-size:15px;line-height:25px;">Desejamos a você uma excelente jornada no time Bismarchi | Pires, com muito aprendizado, desenvolvimento e novas conquistas!</p>
       <p style="margin:0;font-size:15px;line-height:22px;font-weight:700;color:${GOLD_TEXT};">#SomosÚnicos</p>
     </td></tr>
 
@@ -157,7 +157,7 @@ export function buildWelcomeEmail(input: WelcomeEmailInput): { subject: string; 
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;">
     <tr><td align="center" style="padding:20px 24px 8px 24px;font-family:${font};font-size:11px;line-height:17px;color:#8A8F94;">
-      Uso interno. Este e-mail foi enviado pelo ORQESTRAI a pedido de Pessoas e Cultura.
+      Uso interno. E-mail automático enviado pelo ORQESTRAI a pedido de Pessoas e Cultura.<br>Não responda: as respostas não são lidas. Para falar com a gente, procure Pessoas e Cultura.
     </td></tr>
   </table>
 <!--[if mso]></td></tr></table><![endif]-->
@@ -166,6 +166,8 @@ export function buildWelcomeEmail(input: WelcomeEmailInput): { subject: string; 
 </body>
 </html>`;
 
-  const subject = firstName ? `Boas-vindas ao time BP, ${firstName}!` : "Boas-vindas ao time BP!";
+  const subject = firstName
+    ? `Boas-vindas ao time Bismarchi | Pires, ${firstName}!`
+    : "Boas-vindas ao time Bismarchi | Pires!";
   return { subject, html };
 }

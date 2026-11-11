@@ -102,8 +102,7 @@ export const PE27_NORTE = {
 /** Provocações entregues a cada grupo na Dinâmica 2 (pergunta central + 7). */
 export const PE27_PROVOCACOES: Record<Dimension, { central: string; perguntas: string[] }> = {
   clientes: {
-    central:
-      "Como queremos ser reconhecidos pelos nossos clientes em 2030 e por que eles escolherão o Bismarchi e Pires?",
+    central: "Como queremos ser reconhecidos pelos nossos clientes em 2030 e por que eles escolherão o Bismarchi e Pires?",
     perguntas: [
       "Qual o perfil dos clientes que queremos atender em 2030?",
       "Como comunicar com esses clientes?",
@@ -167,4 +166,5 @@ export const PE27_CONDUCAO: Array<{ role: string; employeeId?: string; userId?: 
 export const PE27_FILES = {
   presentation: "workshop-05nov/apresentacao-workshop-pe27.pptx",
   groupsSheet: "workshop-05nov/dinamica2-grupos.jpg",
+  groupsSheetDinamica1: "workshop-05nov/dinamica1-grupos.jpg",
 } as const;

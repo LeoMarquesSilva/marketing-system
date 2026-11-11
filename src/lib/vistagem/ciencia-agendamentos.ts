@@ -5,8 +5,8 @@ import type { FluxoDaTarefa, TarefaDoFluxo } from "./fluxo-vios";
  * "1. CIÊNCIA DOS AGENDAMENTOS" em todo agendamento: quando nenhuma tarefa agendada para a publicação é a Ciência
  * e o fluxo automático do VIOS de nenhuma delas a cria, o Orquestra acrescenta uma (o robô lança junto).
  * Vai para quem faz o Enviar da primeira tarefa; na Reestruturação, estagiário (cargo no RH do Orquestra) dá
- * lugar ao revisor. CIÊNCIA NF e SESSÃO DE JULGAMENTO ficam de fora: vistagem só com elas não leva a Ciência dos
- * Agendamentos (nem contam como primeira tarefa para escolher o responsável).
+ * lugar ao revisor. CIÊNCIA NF, VERIFICAR RENÚNCIA e SESSÃO DE JULGAMENTO ficam de fora: vistagem só com elas não
+ * leva a Ciência dos Agendamentos (nem contam como primeira tarefa para escolher o responsável).
  */
 
 export interface PessoaDaTarefa {
@@ -32,9 +32,17 @@ export function ehCienciaNf(nome: string | null | undefined): boolean {
   return chaveNome(nome) === "CIENCIA NF";
 }
 
-/** Tarefas que não pedem a Ciência dos Agendamentos: CIÊNCIA NF e SESSÃO DE JULGAMENTO (pedido de 06/11/2026). */
+/** VERIFICAR RENÚNCIA (Providência): segue a CIÊNCIA NF, sem a Ciência dos Agendamentos e com o check automático (pedido de 10/11/2026). */
+export function ehVerificarRenuncia(nome: string | null | undefined): boolean {
+  return chaveNome(nome) === "VERIFICAR RENUNCIA";
+}
+
+/**
+ * Tarefas que não pedem a Ciência dos Agendamentos: CIÊNCIA NF e SESSÃO DE JULGAMENTO (pedido de 06/11/2026) e
+ * VERIFICAR RENÚNCIA (pedido de 10/11/2026).
+ */
 export function naoPedeCiencia(nome: string | null | undefined): boolean {
-  return ehCienciaNf(nome) || chaveNome(nome) === "SESSAO DE JULGAMENTO";
+  return ehCienciaNf(nome) || ehVerificarRenuncia(nome) || chaveNome(nome) === "SESSAO DE JULGAMENTO";
 }
 
 /** O fluxo automático do VIOS (em qualquer nível do que cria junto) já cria a Ciência dos Agendamentos? */
