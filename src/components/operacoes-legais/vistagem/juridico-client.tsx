@@ -39,6 +39,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
+import { avisarContagensVistagem } from "@/hooks/use-vistagem-contagens";
 import { cn } from "@/lib/utils";
 import {
   ETIQUETAS_AGENDAMENTO,
@@ -2319,6 +2320,7 @@ function Juridico() {
     const posicao = ordem.indexOf(id);
     setSelecionada(ordem[posicao + 1] ?? ordem[posicao - 1] ?? null);
     setPublicacoes((publicacoes ?? []).filter((p) => p.id !== id));
+    avisarContagensVistagem();
     setAviso(
       !central
         ? "Vistagem enviada para a conferência da controladoria."

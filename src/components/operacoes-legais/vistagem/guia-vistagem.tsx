@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { ArrowLeft, ArrowRight, CircleHelp, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/auth-context";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import { guiasVistos, moduloDaRota, type ModuloGuia, type PassoGuia } from "@/lib/vistagem/guia";
@@ -26,6 +27,35 @@ function lerLocal(): Record<string, string> {
   } catch {
     return {};
   }
+}
+
+/** Sem acesso à Vistagem (401/403): o guia não abre. */
+const SEM_ACESSO = Symbol("sem-acesso");
+/**
+ * Guias vistos segundo o banco, lidos uma vez por usuário e carga da página: cada leitura é uma função na Vercel, e a
+ * troca de aba pedia de novo. Só a resposta boa fica guardada; falha ou sem acesso pergunta outra vez na próxima aba.
+ */
+let vistosDoBanco: { usuario: string; resposta: Promise<unknown> } | null = null;
+
+function lerVistosDoBanco(usuario: string): Promise<unknown> {
+  if (vistosDoBanco?.usuario === usuario) return vistosDoBanco.resposta;
+  const esquecer = () => {
+    if (vistosDoBanco?.usuario === usuario) vistosDoBanco = null;
+  };
+  const resposta = (async () => {
+    try {
+      const retorno = await authFetch("/api/operacoes-legais/vistagem/guia", { cache: "no-store" });
+      if (retorno.ok) return ((await retorno.json()) as { vistos?: unknown }).vistos ?? null;
+      esquecer();
+      return retorno.status === 401 || retorno.status === 403 ? SEM_ACESSO : null;
+    } catch {
+      // Sem resposta do servidor: vale o que o navegador guardou.
+      esquecer();
+      return null;
+    }
+  })();
+  vistosDoBanco = { usuario, resposta };
+  return resposta;
 }
 
 function gravarLocal(modulo: ModuloGuia) {
@@ -248,6 +278,7 @@ function CartaoDoGuia({
  */
 export function GuiaDaVistagem() {
   const pathname = usePathname();
+  const usuario = useAuth().user?.id ?? null;
   const modulo = moduloDaRota(pathname);
   const passos = modulo ? PASSOS_GUIA[modulo] : [];
   const [ativo, setAtivo] = useState(false);
@@ -262,18 +293,14 @@ export function GuiaDaVistagem() {
   useEffect(() => {
     setAtivo(false);
     setIndice(0);
-    if (!modulo || !PASSOS_GUIA[modulo].length) return;
+    if (!usuario || !modulo || !PASSOS_GUIA[modulo].length) return;
     let cancelado = false;
     let espera: number | undefined;
     (async () => {
-      let doBanco: unknown = null;
-      try {
-        const resposta = await authFetch("/api/operacoes-legais/vistagem/guia", { cache: "no-store" });
-        if (resposta.ok) doBanco = ((await resposta.json()) as { vistos?: unknown }).vistos ?? null;
-        else if (resposta.status === 401 || resposta.status === 403) return;
-      } catch {
-        // Sem resposta do servidor: vale o que o navegador guardou.
-      }
+      // Já visto neste navegador: nem pergunta ao banco.
+      if (guiasVistos(lerLocal())[modulo]) return;
+      const doBanco = await lerVistosDoBanco(usuario);
+      if (doBanco === SEM_ACESSO) return;
       if (cancelado || guiasVistos(doBanco, lerLocal())[modulo]) return;
       // Abre quando a tela assenta: os elementos dos passos param de aparecer (a fila carrega, a primeira publicação
       // abre). Sem isso, os passos da publicação aberta caíam no meio da tela enquanto ela ainda carregava.
@@ -303,7 +330,7 @@ export function GuiaDaVistagem() {
       cancelado = true;
       if (espera) window.clearTimeout(espera);
     };
-  }, [modulo]);
+  }, [modulo, usuario]);
 
   const fechar = useCallback(() => {
     setAtivo(false);

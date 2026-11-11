@@ -29,6 +29,8 @@ import { Segmented } from "@/components/facilities/form-parts";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
+import { avisarContagensVistagem } from "@/hooks/use-vistagem-contagens";
+import { sincronizarEnvios } from "@/lib/vistagem/envios-client";
 import { cn } from "@/lib/utils";
 import { chaveNome } from "@/lib/vistagem/agendamento";
 import { camposDaConferencia, combinaCampos } from "@/lib/vistagem/busca";
@@ -526,19 +528,22 @@ function Check() {
     }
   }, []);
 
-  /** Traz antes o andamento do robô, para entrar aqui o que acabou de ser gravado no VIOS. */
-  const sincronizarECarregar = useCallback(async () => {
-    await authFetch("/api/operacoes-legais/vistagem/envios", { method: "POST" }).catch(() => null);
-    await carregar();
-  }, [carregar]);
+  /** Traz antes o andamento do robô, para entrar aqui o que acabou de ser gravado no VIOS (ao abrir, só se faz mais de 1 min). */
+  const sincronizarECarregar = useCallback(
+    async (forcar: boolean) => {
+      await sincronizarEnvios(forcar);
+      await carregar();
+    },
+    [carregar]
+  );
 
   useEffect(() => {
-    void sincronizarECarregar();
+    void sincronizarECarregar(false);
   }, [sincronizarECarregar]);
 
   async function atualizar() {
     setAtualizando(true);
-    await sincronizarECarregar();
+    await sincronizarECarregar(true);
     setAtualizando(false);
   }
 
@@ -643,6 +648,7 @@ function Check() {
         : atual
     );
     void carregar();
+    avisarContagensVistagem();
   }
 
   const fotos = dados?.fotos ?? {};

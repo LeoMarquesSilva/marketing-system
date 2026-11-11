@@ -32,6 +32,7 @@ import { Segmented } from "@/components/facilities/form-parts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { authFetch } from "@/lib/auth-fetch";
+import { avisarContagensVistagem } from "@/hooks/use-vistagem-contagens";
 import { cn } from "@/lib/utils";
 import { camposDaPublicacao, combinaCampos } from "@/lib/vistagem/busca";
 import { clienteNoTexto, pastaSugerida, verificacoesSemPasta, type SituacaoVerificacao } from "@/lib/vistagem/controladoria";
@@ -974,6 +975,7 @@ function Controladoria() {
     setSelecionada(ordem[posicao + 1] ?? ordem[posicao - 1] ?? null);
     setDados((atual) => (atual ? { ...atual, pendentes: atual.pendentes.filter((p) => p.id !== id) } : atual));
     setAviso({ tom: "sucesso", texto: `${publicacao ? numeroProcesso(publicacao) : "Publicação"} ${resultado}.` });
+    avisarContagensVistagem();
   }
 
   // "Agendar Direto": abre a vistagem com a pendência ainda na triagem; nada muda até as tarefas serem enviadas.

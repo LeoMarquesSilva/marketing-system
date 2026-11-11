@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import { MinhaFichaClient } from "./minha-ficha-client";
 
-export const dynamic = "force-dynamic";
-
 export const metadata: Metadata = {
   title: "Minha ficha cadastral — Bismarchi | Pires",
   description: "Atualização da ficha cadastral — Pessoas e Cultura, Bismarchi | Pires.",
