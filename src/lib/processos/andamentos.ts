@@ -45,7 +45,8 @@ export function rotuloDoGrau(grau: string | null | undefined): string | null {
 export function porMes(andamentos: Andamento[]): { mes: string; itens: Andamento[] }[] {
   const grupos = new Map<string, Andamento[]>();
   for (const andamento of [...andamentos].sort((a, b) => b.quando.localeCompare(a.quando))) {
-    const mes = new Date(andamento.quando).toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "America/Sao_Paulo" });
+    // Hora do tribunal como veio do DataJud (marcada UTC): o mês é o da data que está lá.
+    const mes = new Date(andamento.quando).toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
     grupos.set(mes, [...(grupos.get(mes) ?? []), andamento]);
   }
   return [...grupos].map(([mes, itens]) => ({ mes, itens }));

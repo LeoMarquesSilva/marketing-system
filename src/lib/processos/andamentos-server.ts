@@ -22,7 +22,8 @@ export async function linhaDoTempo(processoId: string): Promise<LinhaDoTempo> {
   const texto = processo.data.ultimo_andamento_texto as string | null;
   const data = processo.data.ultimo_andamento_data as string | null;
   if (texto && data) {
-    const quando = new Date(`${data}T12:00:00-03:00`).toISOString();
+    // Só a data (sem hora): meio-dia, no mesmo padrão de hora "como veio" do DataJud.
+    const quando = `${data}T12:00:00.000Z`;
     // O DataJud pode já ter o mesmo movimento no mesmo dia: não repete.
     const repetido = andamentos.some((item) => item.quando.slice(0, 10) === data && item.titulo.toLowerCase() === texto.split(" - ")[0].trim().toLowerCase());
     if (!repetido) andamentos.push({ id: "vios-ultimo", quando, fonte: "vios", titulo: texto, detalhe: null, grau: null });

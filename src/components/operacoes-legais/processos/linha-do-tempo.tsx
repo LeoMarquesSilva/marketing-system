@@ -26,8 +26,9 @@ export interface CapaConsultada {
 
 function dataDoAndamento(andamento: Andamento): { dia: string; hora: string | null } {
   const data = new Date(andamento.quando);
-  const dia = data.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Sao_Paulo" });
-  const hora = data.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
+  // O DataJud manda a hora local do tribunal marcada como UTC: mostrar como veio (converter atrasaria 3 h e trocaria o dia).
+  const dia = data.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
+  const hora = data.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
   // Andamento do VIOS só tem a data; DataJud sem hora chega à meia-noite.
   return { dia, hora: andamento.fonte === "vios" || hora === "00:00" ? null : hora };
 }
