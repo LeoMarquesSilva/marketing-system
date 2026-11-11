@@ -54,6 +54,7 @@ import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { QuemAcessaAVistagem } from "./acessos-vistagem";
 import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
 import { CartaoEditavel, Interruptor } from "./configuracoes-ui";
+import { FluxoDoViosCartao } from "./fluxo-vios-cartao";
 import { IconeArea } from "./marcas";
 import { formatarDataHora } from "./publicacao-ui";
 import { Aviso, Carregando, Painel, PainelTopo, Selo } from "./ui";
@@ -939,6 +940,7 @@ function Configuracoes() {
               onPadrao={() => void salvar("etiquetasDeRisco", painel.padroes.etiquetasDeRisco)}
             />
             <HoraDoAlerta painel={painel} salvando={salvando} onSalvar={(hora) => void salvar("horaArquivoEsperado", hora)} />
+            <FluxoDoViosCartao />
           </div>
           <div className="xl:col-span-2">
             <QuemAcessaAVistagem />

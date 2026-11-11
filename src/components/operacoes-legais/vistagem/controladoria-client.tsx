@@ -67,8 +67,9 @@ import {
 } from "./ui";
 
 /**
- * As abas seguem o que chega da triagem: sem pasta (possível abertura), mais de uma pasta e, quando houver, dados
- * faltando. Os ex-clientes não aparecem aqui: a controladoria os vista na fila Operações Legais do Jurídico.
+ * As abas seguem o que chega da triagem: sem pasta (possível abertura), mais de uma pasta e dados faltando (sem área
+ * ou grupo). Aparecem sempre, mesmo vazias (pedido de 11/11/2026). Os ex-clientes não aparecem aqui: a controladoria
+ * os vista na fila Operações Legais do Jurídico.
  */
 type Aba = "sem_pasta" | "varias_pastas" | "dados";
 
@@ -906,7 +907,6 @@ function Controladoria() {
 
   // Sem escolha, abre a primeira aba que tem pendência.
   const abaAtiva: Aba = aba ?? ABAS.find((item) => porAba[item.valor] > 0)?.valor ?? "sem_pasta";
-  const abasVisiveis = ABAS.filter((item) => item.valor !== "dados" || porAba.dados > 0 || abaAtiva === "dados");
 
   // O que a busca olha em cada publicação (inclui as partes do texto): montado uma vez por carga, não a cada letra.
   const camposDeBusca = useMemo(() => new Map((dados?.pendentes ?? []).map((p) => [p.id, camposDaPublicacao(p)])), [dados]);
@@ -1014,7 +1014,7 @@ function Controladoria() {
             <Segmented
               label="Tipo de pendência"
               value={abaAtiva}
-              options={abasVisiveis.map((item) => ({
+              options={ABAS.map((item) => ({
                 value: item.valor,
                 label: dados ? `${item.rotulo} ${porAba[item.valor]}` : item.rotulo,
                 icon: ICONE_ABA[item.valor],

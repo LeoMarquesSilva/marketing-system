@@ -324,6 +324,11 @@ export interface AgendamentoResumo {
   fluxoDatas: DataDoFluxo[];
   /** O que o fluxo do VIOS vai criar junto e ao concluir (só a lista da Conferência traz). */
   fluxoPrevisto?: TarefaPrevista[];
+  /**
+   * Prazo apertado (só a lista da Conferência traz): o Enviar vistado já passou (ou é hoje e o prazo é curto) e o robô
+   * lança com este, o de hoje, apertando o Revisar e o Protocolar antes da fatal. Null quando vai o Enviar vistado.
+   */
+  enviarHoje?: string | null;
   /** Ajustes feitos na Conferência; sem nenhum, a tarefa está como o jurídico vistou. */
   ajustes?: AjusteNaTarefa[];
   envioStatus: EnvioStatus;

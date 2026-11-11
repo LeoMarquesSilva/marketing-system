@@ -975,6 +975,7 @@ export async function listarConferencia(): Promise<ConferenciaResposta> {
           const apertada = prazoApertado(agendamento, fluxoDaTarefa, ehDiaUtil, hoje);
           return {
             ...agendamento,
+            enviarHoje: apertada && apertada.enviar !== agendamento.data ? apertada.enviar : null,
             fluxoPrevisto: fluxoPrevisto(apertada ? { ...agendamento, data: apertada.enviar } : agendamento, fluxoDaTarefa, ehDiaUtil, {
               hoje,
               datas: agendamento.fluxoDatas,
