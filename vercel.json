@@ -54,6 +54,14 @@
     {
       "path": "/api/cron/vistagem-kurier?tentativa=2",
       "schedule": "0 12 * * 1-5"
+    },
+    {
+      "path": "/api/cron/vistagem-djen",
+      "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/cron/vistagem-djen?rodada=noite",
+      "schedule": "0 23 * * *"
     }
   ]
 }
