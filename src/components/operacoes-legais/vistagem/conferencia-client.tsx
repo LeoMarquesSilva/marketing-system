@@ -33,6 +33,8 @@ import { Button } from "@/components/ui/button";
 import { ContextoDoProcesso, DialogoAcao, EscolhaEmCartoes, type OpcaoEmCartao } from "./dialogo-acao";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
+import { avisarContagensVistagem } from "@/hooks/use-vistagem-contagens";
+import { marcarEnviosSincronizados, sincronizarEnvios } from "@/lib/vistagem/envios-client";
 import { cn } from "@/lib/utils";
 import { ROTULO_ETIQUETA, chaveNome } from "@/lib/vistagem/agendamento";
 import { vaiParaCentral } from "@/lib/vistagem/central";
@@ -1045,10 +1047,8 @@ function Conferencia() {
   }, []);
 
   useEffect(() => {
-    // Traz o andamento do robô antes de listar, para não mostrar "na fila" o que já foi processado.
-    void authFetch("/api/operacoes-legais/vistagem/envios", { method: "POST" })
-      .catch(() => null)
-      .finally(() => void carregar());
+    // Traz o andamento do robô antes de listar, para não mostrar "na fila" o que já foi processado (só se faz mais de 1 min).
+    void sincronizarEnvios().finally(() => void carregar());
   }, [carregar]);
 
   async function atualizarEnvios() {
@@ -1058,6 +1058,7 @@ function Conferencia() {
       const resposta = await authFetch("/api/operacoes-legais/vistagem/envios", { method: "POST" });
       const corpo = await resposta.json();
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao atualizar.");
+      marcarEnviosSincronizados();
       setRetorno({
         tom: "info",
         texto:
@@ -1134,6 +1135,7 @@ function Conferencia() {
     setRetorno({ tom: "sucesso", texto: mensagem });
     void carregar();
     setDados((atual) => (atual ? { ...atual, aConferir: atual.aConferir.filter((item) => item.publicacao.id !== id) } : atual));
+    avisarContagensVistagem();
   }
 
   const lista = aba === "conferir" ? dados?.aConferir : aba === "enviadas" ? dados?.enviadas : [];

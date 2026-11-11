@@ -1,4 +1,4 @@
-import { CONTAGENS_PRAZO, DIAS_PRAZO, DIAS_PRAZO_TRABALHISTA, datasDoPrazo, type ContagemPrazo } from "./dias-uteis";
+import { CONTAGENS_PRAZO, DIAS_PRAZO, DIAS_PRAZO_TRABALHISTA, datasDoPrazo, somarDiasUteis, type ContagemPrazo } from "./dias-uteis";
 import type { CadeiaDoPrazo } from "./fluxo-vios";
 import type { DataDoFluxo } from "./types";
 
@@ -329,6 +329,15 @@ export function avisosDaData(iso: string, hoje: string): string[] {
  */
 export function observacaoObrigatoria(nomeDaTarefa: string | null | undefined): boolean {
   return chaveNome(nomeDaTarefa) === "CIENCIA NF";
+}
+
+/**
+ * Data que o tipo de tarefa já traz ao ser escolhido. A CIÊNCIA NF vai para o dia útil seguinte ao da vistagem
+ * (pedido de 11/11/2026; era o que o jurídico preenchia à mão), como o Inserir E-social. Os outros tipos começam
+ * vazios (null). Recebe o nome como está no VIOS.
+ */
+export function dataPadraoDaTarefa(nomeDaTarefa: string | null | undefined, hoje: string, ehDiaUtil: (iso: string) => boolean): string | null {
+  return chaveNome(nomeDaTarefa) === "CIENCIA NF" ? somarDiasUteis(hoje, 1, ehDiaUtil) : null;
 }
 
 /**

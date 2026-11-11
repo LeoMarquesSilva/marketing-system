@@ -3,14 +3,24 @@
 import { useEffect, useRef, useState } from "react";
 import { lerContagens, type ContagensVistagem } from "@/lib/vistagem/contagens";
 
-/** Com a aba do navegador visível, os números se renovam a cada 2 minutos. */
-const INTERVALO_MS = 2 * 60 * 1000;
-/** Trocar de aba da Vistagem renova os números, mas nunca antes de 15 s da última consulta. */
-const MINIMO_MS = 15 * 1000;
+/**
+ * Com a aba do navegador visível, os números se renovam a cada 5 minutos (o que outra pessoa fez). Cada consulta é
+ * uma função na Vercel; com 2 minutos e a troca de aba, eram ~250 consultas em 12 h.
+ */
+const INTERVALO_MS = 5 * 60 * 1000;
+/** Trocar de aba da Vistagem renova os números, mas nunca antes de 1 minuto da última consulta. */
+const MINIMO_MS = 60 * 1000;
 const CONFERIR_MS = 30 * 1000;
+/** Ação da própria pessoa renova na hora, juntando ações seguidas: no máximo uma consulta a cada 10 s. */
+const JUNTAR_MS = 10 * 1000;
 
-/** Evento que uma tela da Vistagem pode disparar depois de mexer numa publicação, para os números mudarem na hora. */
+/** Evento que uma tela da Vistagem dispara depois de mexer numa publicação, para os números mudarem na hora. */
 export const EVENTO_CONTAGENS_VISTAGEM = "vistagem:contagens";
+
+/** Avisa o cabeçalho que uma publicação mudou de aba (vistada, conferida, checada, resolvida na triagem). */
+export function avisarContagensVistagem(): void {
+  window.dispatchEvent(new Event(EVENTO_CONTAGENS_VISTAGEM));
+}
 
 /**
  * Quanto falta para zerar cada aba da Vistagem (números do cabeçalho). Só consulta enquanto a pessoa está na
@@ -45,7 +55,14 @@ export function useVistagemContagens(ativo: boolean, rota: string): ContagensVis
       if (Date.now() - carregadoEm.current >= idade) void buscar();
     };
     const conferir = () => seVelho(INTERVALO_MS);
-    const naHora = () => void buscar();
+    let juntando: number | undefined;
+    const naHora = () => {
+      if (juntando !== undefined) return;
+      juntando = window.setTimeout(() => {
+        juntando = undefined;
+        void buscar();
+      }, Math.max(0, carregadoEm.current + JUNTAR_MS - Date.now()));
+    };
 
     atualizarSeVelho.current = seVelho;
     const timer = window.setInterval(conferir, CONFERIR_MS);
@@ -59,6 +76,7 @@ export function useVistagemContagens(ativo: boolean, rota: string): ContagensVis
       emAndamento.current = false;
       atualizarSeVelho.current = () => {};
       window.clearInterval(timer);
+      if (juntando !== undefined) window.clearTimeout(juntando);
       document.removeEventListener("visibilitychange", conferir);
       window.removeEventListener(EVENTO_CONTAGENS_VISTAGEM, naHora);
     };

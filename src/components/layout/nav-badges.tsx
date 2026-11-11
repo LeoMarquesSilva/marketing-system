@@ -37,7 +37,7 @@ export function NavBadgesProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [pendingAlterations, setPendingAlterations] = useState(0);
   const whatsappUnread = useWhatsappUnreadCount();
-  const reelPending = useReelDeliveriesPendingCount(Boolean(profile));
+  const reelPending = useReelDeliveriesPendingCount(profile?.id ?? null);
   // Filas da Vistagem: só enquanto a pessoa está no módulo (é onde as abas aparecem).
   const vistagem = useVistagemContagens(Boolean(papelVistagem(profile)) && isVistagemPath(pathname), pathname);
 

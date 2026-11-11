@@ -39,6 +39,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { authFetch } from "@/lib/auth-fetch";
+import { avisarContagensVistagem } from "@/hooks/use-vistagem-contagens";
 import { cn } from "@/lib/utils";
 import {
   ETIQUETAS_AGENDAMENTO,
@@ -52,6 +53,7 @@ import {
   horaValida,
   mesmasPessoas,
   nomesDasPessoas,
+  dataPadraoDaTarefa,
   observacaoObrigatoria,
   pedeDataLimite,
   revisorFicaNaTarefa,
@@ -1020,12 +1022,32 @@ export function EditorVistagem({
     return { ...saindo, diasPrazo: novo, contagemPrazo, dataFatal: fatalPorContagem(dataPublicacao, novo, contagemPrazo, contaPrazo) };
   }
 
+  /** Data que o tipo já traz (CIÊNCIA NF: dia útil seguinte), pelo nome como está no VIOS. */
+  function dataPadrao(etiqueta: Etiqueta, tarefa: string): string | null {
+    if (!detalhe || !tarefa || etiqueta === "PRAZO") return null;
+    const opcao = detalhe.catalogo?.tarefas[etiqueta].find((item) => item.nome === tarefa);
+    return dataPadraoDaTarefa(opcao ? opcao.nomeVios ?? opcao.nome : tarefa, detalhe.hoje, ehDiaUtil);
+  }
+
+  /**
+   * Ao escolher a tarefa, já põe a data que o tipo traz (CIÊNCIA NF: dia útil seguinte, pedido de 11/11/2026). Não passa
+   * por cima de data escolhida à mão; só troca a que veio do tipo anterior, e a tira ao trocar para um tipo sem data.
+   */
+  function dataDoTipo(linha: Linha, nome: string): Partial<Linha> {
+    const anterior = dataPadrao(linha.etiqueta, linha.tarefa);
+    const veioDoTipo = anterior !== null && linha.data === anterior;
+    if (linha.data && !veioDoTipo) return {};
+    const nova = dataPadrao(linha.etiqueta, nome);
+    if (nova) return { data: nova };
+    return veioDoTipo ? { data: "" } : {};
+  }
+
   function trocarEtiqueta(linha: Linha, etiqueta: Etiqueta) {
     // No Prazo o revisor é obrigatório: sugere o auxiliar da pasta se ainda estiver vazio. Providência não tem revisor.
     alterar(linha.chave, {
       etiqueta,
       tarefa: "",
-      ...(semFatal(linha) ? { data: "" } : {}),
+      ...(semFatal(linha) ? { data: "" } : dataDoTipo(linha, "")),
       revisor:
         etiqueta === "PROVIDENCIA" ? "" : etiqueta === "PRAZO" && !linha.revisor ? detalhe?.revisorSugerido ?? "" : linha.revisor,
     });
@@ -1073,7 +1095,7 @@ export function EditorVistagem({
           dataFatal: prazo && !semPrazo ? fatalSugerida(tarefa, publicacao.dataPublicacao, contaPrazo) ?? "" : "",
           diasPrazo: prazo && !semPrazo ? tarefa.dias : null,
           contagemPrazo: prazo && !semPrazo && tarefa.dias ? tarefa.contagem : null,
-          data: semPrazo ? dataSemFatal() : tarefa.classe === "COMPROMISSO" ? tarefa.data ?? "" : "",
+          data: semPrazo ? dataSemFatal() : tarefa.classe === "COMPROMISSO" ? tarefa.data ?? "" : dataPadrao(tarefa.classe, opcao.nome) ?? "",
           hora: tarefa.hora ?? "",
           horaFim: horaFinalPadrao(tarefa.hora),
           dataLimite: "",
@@ -1559,6 +1581,7 @@ export function EditorVistagem({
                                       alterar(linha.chave, {
                                         tarefa: nome,
                                         ...diasDaTarefa(linha, nome),
+                                        ...dataDoTipo(linha, nome),
                                         ...(fixos.length
                                           ? { responsavel: fixos.join(", ") }
                                           : eraDoTipo
@@ -2319,6 +2342,7 @@ function Juridico() {
     const posicao = ordem.indexOf(id);
     setSelecionada(ordem[posicao + 1] ?? ordem[posicao - 1] ?? null);
     setPublicacoes((publicacoes ?? []).filter((p) => p.id !== id));
+    avisarContagensVistagem();
     setAviso(
       !central
         ? "Vistagem enviada para a conferência da controladoria."

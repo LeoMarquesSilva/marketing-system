@@ -175,13 +175,23 @@ function comResponsaveisDaArea(tarefas: OpcaoTarefa[], usuarios: OpcaoVios[]): O
   });
 }
 
+/**
+ * Lista de tarefas já montada de cada área. Montar custa de 4 a 9 ms de CPU por área (normaliza o nome de todos os
+ * usuários para cada tarefa); listas e o cron pediam isso para cada publicação. A chave é o objeto da área, que o
+ * cache do catálogo (sama.ts, 10 min) reaproveita: quando o catálogo é relido, a área é outra e a lista é montada de novo.
+ * Quem recebe a lista só lê; não altere o objeto devolvido.
+ */
+const catalogoMontado = new WeakMap<CatalogoArea, CatalogoVistagem>();
+
 export function catalogoParaPublicacao(
   areas: CatalogoArea[],
   publicacao: Pick<PublicacaoComArea, "area_processo" | "escritorio_responsavel">
 ): CatalogoVistagem | null {
   const catalogo = catalogoDaPublicacao(areas, publicacao);
   if (!catalogo) return null;
-  return {
+  const pronto = catalogoMontado.get(catalogo);
+  if (pronto) return pronto;
+  const montado: CatalogoVistagem = {
     area: catalogo.area,
     atualizadoEm: catalogo.atualizadoEm,
     tarefas: {
@@ -191,6 +201,8 @@ export function catalogoParaPublicacao(
     },
     usuarios: catalogo.usuarios,
   };
+  catalogoMontado.set(catalogo, montado);
+  return montado;
 }
 
 // ---------------------------------------------------------------------------
@@ -796,10 +808,15 @@ async function auxiliaresDasPastas(linhas: (PublicacaoRow & { area_processo: str
   if (!comPasta.length) return mapa;
   try {
     const [pastas, areas] = await Promise.all([buscarPastasVios(comPasta.map((row) => row.pasta_ci as string)), carregarCatalogoProcessos()]);
+    // Basta a lista de usuários da área (não a lista de tarefas montada), e cada sigla é procurada uma vez por área.
+    const nomePorSigla = new Map<string, string | null>();
     for (const row of comPasta) {
       const sigla = pastas.get(row.pasta_ci as string)?.auxiliarSigla ?? null;
-      const usuarios = sigla ? catalogoParaPublicacao(areas, row)?.usuarios : null;
-      const nome = usuarios ? usuarioPorSigla(sigla, usuarios)?.nome : null;
+      const area = sigla ? catalogoDaPublicacao(areas, row) : null;
+      if (!sigla || !area) continue;
+      const chave = `${area.area}\u0000${sigla}`;
+      if (!nomePorSigla.has(chave)) nomePorSigla.set(chave, usuarioPorSigla(sigla, area.usuarios)?.nome ?? null);
+      const nome = nomePorSigla.get(chave);
       if (nome) mapa.set(row.id, nome);
     }
   } catch (erro) {

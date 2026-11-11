@@ -16,6 +16,7 @@ import {
   atalhosDePrazo,
   montarObservacaoVios,
   dataLimiteDaTarefa,
+  dataPadraoDaTarefa,
   observacaoObrigatoria,
   pedeDataLimite,
   referenciaDaPublicacao,
@@ -182,6 +183,18 @@ describe("validarAgendamentos", () => {
       },
     };
     const nf = (extra: Record<string, unknown>) => ({ etiqueta: "PROVIDENCIA" as const, tarefa: "CIÊNCIA NF", data: "2026-11-10", responsavel: "Advogada Exemplo", ...extra });
+
+    it("já vem com o dia útil seguinte ao da vistagem (pedido de 11/11/2026); os outros tipos começam vazios", () => {
+      const ehDiaUtil = criarCalendario(["2026-11-20"]);
+      expect(dataPadraoDaTarefa("CIÊNCIA NF", "2026-11-11", ehDiaUtil)).toBe("2026-11-12");
+      // sexta → segunda
+      expect(dataPadraoDaTarefa(" ciencia nf ", "2026-11-13", ehDiaUtil)).toBe("2026-11-16");
+      // quinta, com a sexta 20/11 feriado → segunda
+      expect(dataPadraoDaTarefa("CIÊNCIA NF", "2026-11-19", ehDiaUtil)).toBe("2026-11-23");
+      expect(dataPadraoDaTarefa("1. CIÊNCIA DOS AGENDAMENTOS", "2026-11-11", ehDiaUtil)).toBeNull();
+      expect(dataPadraoDaTarefa("SUBSÍDIOS / PROCURAÇÃO", "2026-11-11", ehDiaUtil)).toBeNull();
+      expect(dataPadraoDaTarefa(null, "2026-11-11", ehDiaUtil)).toBeNull();
+    });
 
     it("reconhece o tipo pelo nome do VIOS, sem acento e sem diferença de caixa", () => {
       expect(observacaoObrigatoria("CIÊNCIA NF")).toBe(true);
