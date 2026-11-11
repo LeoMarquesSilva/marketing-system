@@ -38,7 +38,7 @@ import { ConferenciaDjenKurierPainel } from "./conferencia-djen-kurier";
 import { IconeArea, IconeTribunal, LogoGrupo } from "./marcas";
 import { contarPor, formatarData, formatarDataHora, tribunalDe } from "./publicacao-ui";
 import { IconeOpcao, Seletor } from "./seletor";
-import { Aviso, BarraAba, Busca, Carregando, Painel, PainelTopo, Selo, Vazio, linhaLista, type TomSelo } from "./ui";
+import { Aviso, BarraAba, Busca, Carregando, Painel, PainelTopo, Selo, SelosDeEtiqueta, Vazio, linhaLista, type TomSelo } from "./ui";
 
 type Filtro = "todas" | SituacaoCaptura;
 
@@ -630,6 +630,7 @@ function Captura() {
                                   Risco
                                 </Selo>
                               ) : null}
+                              <SelosDeEtiqueta etiquetas={publicacao.etiquetas} />
                               <SeloAberturaDePasta publicacao={publicacao} />
                             </span>
                             <span className="block truncate text-sm text-foreground">

@@ -60,7 +60,7 @@ import { SeloEsocial, contarPor, tribunalDe } from "./publicacao-ui";
 import { IconeOpcao, Seletor } from "./seletor";
 import { CartoesCheck, SeloSituacao } from "./tarefas-check";
 import { ICONE_CLASSE } from "./tarefas-conferencia";
-import { Aviso, BarraAba, Busca, Campo, Carregando, Painel, Secao, Selo, Vazio, linhaLista } from "./ui";
+import { Aviso, BarraAba, Busca, Campo, Carregando, Painel, Secao, Selo, SelosDeEtiqueta, Vazio, linhaLista } from "./ui";
 
 type Aba = "aChecar" | "revisar" | "checadas";
 
@@ -458,6 +458,7 @@ function LinhaDoCheck({
             Risco
           </Selo>
         ) : null}
+        <SelosDeEtiqueta etiquetas={publicacao.etiquetas} />
         <SeloSituacao situacao={situacao} />
         {abertas ? <Selo tom="alerta">{plural(abertas, "inconsistência", "inconsistências")}</Selo> : null}
       </span>

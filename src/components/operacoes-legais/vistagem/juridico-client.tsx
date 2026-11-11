@@ -30,6 +30,7 @@ import {
   Send,
   ShieldAlert,
   ShieldCheck,
+  Tag,
   Trash2,
   TriangleAlert,
   X,
@@ -112,7 +113,8 @@ import { contarPor, formatarData, formatarDataHora, tribunalDe } from "./publica
 import { ReguaDatas, diaDaSemana, relativoAHoje } from "./regua-datas";
 import { IconeOpcao, Seletor, SeletorBusca } from "./seletor";
 import { CartaoSugestaoIa, SeloIa, type EstadoSugestao } from "./sugestao-ia-ui";
-import { Aviso, Busca, Carregando, Painel, Selo, Vazio, campoClasse, linhaLista } from "./ui";
+import { Aviso, Busca, Carregando, ICONE_ETIQUETA_DESTAQUE, Painel, Selo, SelosDeEtiqueta, Vazio, campoClasse, linhaLista } from "./ui";
+import { etiquetasEmDestaque } from "@/lib/vistagem/etiquetas";
 
 type Etiqueta = EtiquetaAgendamento;
 
@@ -2203,6 +2205,8 @@ function Juridico() {
   const [risco, setRisco] = useState<FiltroRisco>("");
   /** Tribunal; vazio é "Todos os tribunais". */
   const [tribunal, setTribunal] = useState("");
+  /** Etiqueta da pasta no VIOS (ex.: RC-Insolvência); vazio é "Todas as etiquetas". */
+  const [etiqueta, setEtiqueta] = useState("");
   /** Dia em que a publicação chegou no Orquestra (AAAA-MM-DD); vazio é "Todas as datas". */
   const [dataImportacao, setDataImportacao] = useState("");
   /** A fila abre sempre recolhida (a publicação ocupa a tela); o botão à esquerda do número do processo mostra. */
@@ -2247,6 +2251,14 @@ function Juridico() {
   const grupoAtivo = gruposDaFila.some(([nome]) => nome === grupo) ? grupo : "";
   const tribunaisDaFila = useMemo(() => contarPor(publicacoes ?? [], tribunalDe), [publicacoes]);
   const tribunalAtivo = tribunaisDaFila.some(([nome]) => nome === tribunal) ? tribunal : "";
+  // Etiquetas das pastas da fila, com as de selo (RC-Insolvência) primeiro.
+  const etiquetasDaFila = useMemo(() => {
+    const contagem = new Map<string, number>();
+    for (const publicacao of publicacoes ?? []) for (const nome of publicacao.etiquetas ?? []) contagem.set(nome, (contagem.get(nome) ?? 0) + 1);
+    const emDestaque = (nome: string) => Number(etiquetasEmDestaque([nome]).length > 0);
+    return [...contagem.entries()].sort((a, b) => emDestaque(b[0]) - emDestaque(a[0]) || a[0].localeCompare(b[0], "pt-BR"));
+  }, [publicacoes]);
+  const etiquetaAtiva = etiquetasDaFila.some(([nome]) => nome === etiqueta) ? etiqueta : "";
   const importacoesDaFila = useMemo(() => (publicacoes ?? []).map((publicacao) => publicacao.dataImportacao), [publicacoes]);
   const importacaoAtiva = dataNaLista(dataImportacao, importacoesDaFila);
   // O que a busca olha em cada publicação (inclui as partes do texto): montado uma vez por carga, não a cada letra.
@@ -2256,12 +2268,13 @@ function Juridico() {
       if (importacaoAtiva && publicacao.dataImportacao !== importacaoAtiva) return false;
       if (grupoAtivo && (publicacao.grupoCliente?.trim() || SEM_GRUPO) !== grupoAtivo) return false;
       if (tribunalAtivo && tribunalDe(publicacao) !== tribunalAtivo) return false;
+      if (etiquetaAtiva && !(publicacao.etiquetas ?? []).includes(etiquetaAtiva)) return false;
       if (risco === "risco" && !publicacao.demandaRisco) return false;
       if (risco === "normal" && publicacao.demandaRisco) return false;
       return combinaCampos(camposDeBusca.get(publicacao.id) ?? [], busca);
     });
-  }, [publicacoes, busca, grupoAtivo, tribunalAtivo, risco, importacaoAtiva, camposDeBusca]);
-  const filtrosAtivos = Boolean(busca.trim() || grupoAtivo || tribunalAtivo || risco || importacaoAtiva);
+  }, [publicacoes, busca, grupoAtivo, tribunalAtivo, etiquetaAtiva, risco, importacaoAtiva, camposDeBusca]);
+  const filtrosAtivos = Boolean(busca.trim() || grupoAtivo || tribunalAtivo || etiquetaAtiva || risco || importacaoAtiva);
   const grupos = useMemo(() => agruparFila(filtradas), [filtradas]);
   // Mesma ordem da lista: é por ela que o editor anda para a anterior e a próxima.
   const ordem = useMemo(() => grupos.flatMap((item) => item.publicacoes.map((publicacao) => publicacao.id)), [grupos]);
@@ -2352,6 +2365,7 @@ function Juridico() {
     setBusca("");
     setGrupo("");
     setTribunal("");
+    setEtiqueta("");
     setRisco("");
     setDataImportacao("");
   }
@@ -2386,7 +2400,7 @@ function Juridico() {
   return (
     <div className="space-y-4">
       {/* Uma linha só: "A vistar / Vistado", Risco / Normal (só para quem vista os dois), área, recebimento,
-          grupo, tribunal e a busca, do tamanho do conteúdo (sem nada escolhido, só o ícone e o nome do filtro).
+          grupo, tribunal, etiqueta da pasta e a busca, do tamanho do conteúdo (sem nada escolhido, só o ícone e o nome do filtro).
           Em tela estreita, os filtros descem de linha. */}
       <div className="flex flex-wrap items-center gap-2" data-tour="vj-filtros">
         <div data-tour="vj-visao">
@@ -2445,6 +2459,21 @@ function Juridico() {
               todos={{ rotulo: "Todos os tribunais", contagem: publicacoes?.length, icone: <IconeOpcao icone={Landmark} /> }}
               rotuloVazio={<CampoVazio icone={<IconeOpcao icone={Landmark} />} texto="Tribunal" />}
               opcoes={tribunaisDaFila.map(([nome, quantidade]) => ({ valor: nome, rotulo: nome, descricao: descricaoDoTribunal(nome), contagem: quantidade, icone: <IconeTribunal sigla={nome} /> }))}
+            />
+            <SeletorBusca
+              rotulo="Etiqueta da pasta"
+              className={FILTRO_COMPACTO}
+              buscaPlaceholder="Buscar etiqueta…"
+              valor={etiquetaAtiva}
+              onChange={setEtiqueta}
+              todos={{ rotulo: "Todas as etiquetas", contagem: publicacoes?.length, icone: <IconeOpcao icone={Tag} /> }}
+              rotuloVazio={<CampoVazio icone={<IconeOpcao icone={Tag} />} texto="Etiqueta" />}
+              opcoes={etiquetasDaFila.map(([nome, quantidade]) => ({
+                valor: nome,
+                rotulo: nome,
+                contagem: quantidade,
+                icone: <IconeOpcao icone={Tag} className={etiquetasEmDestaque([nome]).length ? ICONE_ETIQUETA_DESTAQUE : undefined} />,
+              }))}
             />
           </>
         ) : null}
@@ -2566,6 +2595,7 @@ function Juridico() {
                                   Risco
                                 </Selo>
                               ) : null}
+                              <SelosDeEtiqueta etiquetas={publicacao.etiquetas} />
                               <SeloAberturaDePasta publicacao={publicacao} />
                               {publicacao.devolucaoMotivo || publicacao.devolvidoEm ? <Selo tom="alerta">Devolvida</Selo> : null}
                               {reabertaParaAlterar({ reabertaEm: publicacao.reabertaEm ?? null, devolvidoEm: publicacao.devolvidoEm }) ? <Selo tom="marca">Reaberta</Selo> : null}

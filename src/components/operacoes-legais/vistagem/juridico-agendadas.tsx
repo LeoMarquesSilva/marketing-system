@@ -30,7 +30,7 @@ import { IconeTribunal, LogoGrupo, SeloArea } from "./marcas";
 import { formatarData, formatarDataHora } from "./publicacao-ui";
 import { IconeOpcao, Seletor } from "./seletor";
 import { DiaNaAgenda, ESTILO_CLASSE, ICONE_CLASSE, LinkVios, corDoTextoDoEnvio, envioDaTarefa } from "./tarefas-conferencia";
-import { Aviso, Carregando, Painel, Selo, Vazio } from "./ui";
+import { Aviso, Carregando, Painel, Selo, SelosDeEtiqueta, Vazio } from "./ui";
 
 /** Filtro por situação; vazio é "Todas". */
 type Filtro = "" | SituacaoAgendada;
@@ -281,6 +281,7 @@ function CartaoAgendada({ item, fotos, hoje, onAbrir }: { item: ConferenciaItem;
                   Risco
                 </Selo>
               ) : null}
+              <SelosDeEtiqueta etiquetas={publicacao.etiquetas} />
               <SeloAberturaDePasta publicacao={publicacao} />
               {devolucoes ? (
                 <Selo tom="alerta" icone={Undo2}>

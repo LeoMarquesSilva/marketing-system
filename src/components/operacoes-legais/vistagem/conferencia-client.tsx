@@ -74,6 +74,7 @@ import {
   PainelTopo,
   Secao,
   Selo,
+  SelosDeEtiqueta,
   Vazio,
   linhaLista,
   TOM_CLASSE,
@@ -1000,6 +1001,7 @@ function LinhaDaFila({ item, comEnvio, aberta, onAbrir }: { item: ConferenciaIte
             Risco
           </Selo>
         ) : null}
+        <SelosDeEtiqueta etiquetas={publicacao.etiquetas} />
         <SeloAberturaDePasta publicacao={publicacao} />
         {comEnvio && temErro(item) ? (
           <Selo tom="perigo" icone={CircleAlert}>

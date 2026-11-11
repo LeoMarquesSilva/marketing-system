@@ -142,6 +142,8 @@ export interface PublicacaoResumo {
   valorAcaoAtualizado: number | null;
   escritorioResponsavel: string | null;
   demandaRisco: boolean | null;
+  /** Etiquetas da pasta no VIOS (retrato da triagem, pelo SIOE), ex.: "RC-Insolvência". */
+  etiquetas: string[];
   pendencia: Pendencia | null;
   pastasCandidatas: PastaSioe[];
   triadaEm: string | null;
