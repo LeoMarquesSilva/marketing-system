@@ -35,6 +35,7 @@ import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
 import { validarInconsistencia, type InconsistenciaEntrada } from "./inconsistencias";
 import { linhasParaFila, modoDaPublicacao, podeTerGravadoNoVios, type TarefaNoVios } from "./fila-vios";
+import { avisarErrosDoRobo } from "./aviso-erro-robo-server";
 import { LIMITE_TRECHO_SINTESE, materiasDaLista, precisaDeMateria, precisaDeSistema, sistemaDaLista } from "./dados-processo";
 import { buscarPastaPorCi, buscarSinteseDaPasta, cadastroDaPasta, semMateria, semSistema, type CadastroDaPasta } from "./sioe";
 import { ESCRITORIOS, type PastaSioe, type Pendencia } from "./triagem";
@@ -1379,23 +1380,40 @@ export async function devolverVistagem(id: string, entrada: InconsistenciaEntrad
   if (!atualizada) throw new VistagemError("A publicação foi alterada por outra pessoa. Recarregue a página.", 409);
 }
 
-/** Lê na fila do SAMA o andamento das tarefas enviadas; publicação com todas concluídas vira "agendado". */
-export async function atualizarEnvios(): Promise<{ consultadas: number; concluidas: number; erros: number; checadasSozinhas: number }> {
+/**
+ * Lê na fila do SAMA o andamento das tarefas enviadas; publicação com todas concluídas vira "agendado". Tarefa que
+ * acabou de dar erro (fora da simulação) é avisada no WhatsApp de Operações Legais, uma mensagem por rodada.
+ */
+export async function atualizarEnvios(): Promise<{
+  consultadas: number;
+  concluidas: number;
+  erros: number;
+  checadasSozinhas: number;
+  avisoErros?: { enviado: boolean; motivo?: string };
+}> {
   const db = admin();
   const { data, error } = await db
     .from("vistagem_agendamentos")
-    .select("id, publicacao_id, sama_agendamento_id, envio_status, envio_erro")
+    .select("id, publicacao_id, sama_agendamento_id, envio_status, envio_erro, envio_simulado")
     .in("envio_status", ["pendente", "enviado", "processando"])
     .not("sama_agendamento_id", "is", null)
     .limit(1000);
   if (error) falhou("carregar os envios em andamento", error);
-  const pendentes = (data ?? []) as { id: string; publicacao_id: string; sama_agendamento_id: string; envio_status: EnvioStatus; envio_erro: string | null }[];
+  const pendentes = (data ?? []) as {
+    id: string;
+    publicacao_id: string;
+    sama_agendamento_id: string;
+    envio_status: EnvioStatus;
+    envio_erro: string | null;
+    envio_simulado: boolean | null;
+  }[];
   const resumo = { consultadas: pendentes.length, concluidas: 0, erros: 0 };
   if (!pendentes.length) return { ...resumo, checadasSozinhas: await checarSozinho() };
 
   const fila = await consultarFilaSama(pendentes.map((item) => item.sama_agendamento_id));
   const agora = new Date().toISOString();
   const publicacoesTocadas = new Set<string>();
+  const errosNovos: { publicacaoId: string; erro: string | null }[] = [];
   for (const item of pendentes) {
     const atual = fila.get(item.sama_agendamento_id);
     // O texto também conta: pendente esperando o VIOS ("Aguardando a disponibilidade…", próxima tentativa) muda só ele.
@@ -1405,7 +1423,8 @@ export async function atualizarEnvios(): Promise<{ consultadas: number; concluid
     publicacoesTocadas.add(item.publicacao_id);
     // Lançamento pela intimação: uma linha da fila para várias tarefas, cada uma com o seu CI.
     const viosTarefaId = atual.cisPorAgendamento.size ? atual.cisPorAgendamento.get(item.id) ?? null : atual.viosTarefaId;
-    await db
+    // Só grava se ninguém mudou antes (o cron e o botão Atualizar podem rodar juntos): quem grava o erro é quem avisa.
+    const { data: gravada } = await db
       .from("vistagem_agendamentos")
       .update({
         envio_status: atual.status,
@@ -1415,7 +1434,10 @@ export async function atualizarEnvios(): Promise<{ consultadas: number; concluid
         envio_erro: atual.erro,
         envio_atualizado_em: agora,
       })
-      .eq("id", item.id);
+      .eq("id", item.id)
+      .eq("envio_status", item.envio_status)
+      .select("id");
+    if (atual.status === "erro" && gravada?.length && !item.envio_simulado) errosNovos.push({ publicacaoId: item.publicacao_id, erro: atual.erro });
   }
 
   for (const publicacaoId of publicacoesTocadas) {
@@ -1425,7 +1447,23 @@ export async function atualizarEnvios(): Promise<{ consultadas: number; concluid
       await db.from("vistagem_publicacoes").update({ status: "agendado" }).eq("id", publicacaoId).eq("status", "pronto_para_agendar");
     }
   }
-  return { ...resumo, checadasSozinhas: await checarSozinho() };
+  const avisoErros = errosNovos.length ? await avisarErrosNovos(errosNovos) : undefined;
+  return { ...resumo, checadasSozinhas: await checarSozinho(), ...(avisoErros ? { avisoErros } : {}) };
+}
+
+/** Número do processo de cada publicação com erro novo e o aviso no WhatsApp. Nunca lança. */
+async function avisarErrosNovos(erros: { publicacaoId: string; erro: string | null }[]): Promise<{ enviado: boolean; motivo?: string }> {
+  try {
+    const ids = [...new Set(erros.map((item) => item.publicacaoId))];
+    const { data, error } = await admin().from("vistagem_publicacoes").select("id, numero_processo").in("id", ids);
+    if (error) throw new Error(error.message);
+    const numeros = new Map(((data ?? []) as { id: string; numero_processo: string | null }[]).map((row) => [row.id, row.numero_processo]));
+    return await avisarErrosDoRobo(erros.map((item) => ({ numeroProcesso: numeros.get(item.publicacaoId) ?? null, erro: item.erro })));
+  } catch (erro) {
+    const motivo = erro instanceof Error ? erro.message : String(erro);
+    console.error("[vistagem] aviso de erro do robô:", motivo);
+    return { enviado: false, motivo };
+  }
 }
 
 /**
