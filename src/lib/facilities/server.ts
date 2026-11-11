@@ -5,6 +5,15 @@ import { z } from "zod";
 import { createClient as createSsrClient } from "@/utils/supabase/server";
 import { hasFacilitiesAccess } from "@/lib/access-control";
 import { onlyDigits } from "@/lib/masks-br";
+import { EXPENSE_NATURE_KEYS, eventTypeLabel, PARTY_TYPES } from "@/lib/suppliers/categories";
+import {
+  duplicateSupplierNameMessage,
+  findSupplierNameConflict,
+  supplierUniqueViolation,
+  type SupplierNameCandidate,
+} from "@/lib/suppliers/unique-name";
+import { todayIso } from "./alerts";
+import { summarizeOpex, type OpexPayment } from "./opex";
 import {
   ADJUSTMENT_INDEXES,
   CONTRACT_STATUSES,
@@ -28,16 +37,21 @@ export class FacilitiesHttpError extends Error {
   constructor(
     message: string,
     public status: number,
-    public code: string
+    public code: string,
+    /** Dados extras que vão na resposta (ex.: o cadastro que já tem o nome). */
+    public details?: Record<string, unknown>
   ) {
     super(message);
     this.name = "FacilitiesHttpError";
   }
 }
 
-export function toFacilitiesApiError(error: unknown): { status: number; body: { error: string; code: string } } {
+export function toFacilitiesApiError(error: unknown): {
+  status: number;
+  body: { error: string; code: string } & Record<string, unknown>;
+} {
   if (error instanceof FacilitiesHttpError) {
-    return { status: error.status, body: { error: error.message, code: error.code } };
+    return { status: error.status, body: { ...error.details, error: error.message, code: error.code } };
   }
   console.error("[facilities]", error);
   return { status: 500, body: { error: "Erro interno.", code: "INTERNAL" } };
@@ -45,7 +59,7 @@ export function toFacilitiesApiError(error: unknown): { status: number; body: { 
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder.supabase.co";
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-const SIGNED_URL_SECONDS = 10 * 60;
+export const SIGNED_URL_SECONDS = 10 * 60;
 
 export function createFacilitiesAdminClient(): SupabaseClient {
   if (!serviceKey) {
@@ -84,7 +98,8 @@ export async function requireFacilitiesUser(): Promise<FacilitiesUser> {
 /* ------------------------------------------------------------------ leitura */
 
 const SUPPLIER_COLUMNS =
-  "id, name, legal_name, document, person_type, category, areas, contact_name, phone, email, website_link, whatsapp_link, city, rating, notes, active, responsible_user_id, source, created_at, updated_at";
+  "id, name, legal_name, document, person_type, category, expense_nature, party_type, third_party_category, opex_names, areas, contact_name, phone, email, website_link, whatsapp_link, city, rating, notes, active, responsible_user_id, source, created_at, updated_at";
+const OPEX_COLUMNS = "fornecedor, mes, departamento, departamento_tipo, grupo_conta, plano_contas, valor_pago";
 const SERVICE_COLUMNS =
   "id, supplier_id, description, area, shared_cost, payer, periodicity, due_day, amount, payment_method, payment_details, fiscal_document, notes, active";
 const CONTRACT_COLUMNS =
@@ -92,7 +107,7 @@ const CONTRACT_COLUMNS =
 const DOCUMENT_COLUMNS =
   "id, supplier_id, contract_id, kind, title, storage_path, file_name, content_type, size_bytes, external_url, valid_until, created_at";
 
-type SupplierRow = Omit<FacilitiesSupplier, "services" | "contracts" | "documents" | "events_count">;
+type SupplierRow = Omit<FacilitiesSupplier, "services" | "contracts" | "documents" | "events_count" | "opex">;
 type DocumentRow = Omit<SupplierDocument, "has_file"> & { storage_path: string | null };
 
 const toNumber = (value: unknown): number | null => (value === null || value === undefined ? null : Number(value));
@@ -139,15 +154,128 @@ async function loadSuppliers(db: SupabaseClient, ids?: string[]): Promise<Facili
     eventsCount.set(row.supplier_id, (eventsCount.get(row.supplier_id) ?? 0) + 1);
   }
 
-  return ((suppliers.data ?? []) as unknown as SupplierRow[]).map((row) => ({
+  const rows = (suppliers.data ?? []) as unknown as SupplierRow[];
+  const opexByName = await loadOpexPayments(db, [...new Set(rows.flatMap((row) => row.opex_names ?? []))]);
+  const today = todayIso();
+
+  return rows.map((row) => ({
     ...row,
     areas: row.areas ?? [],
+    opex_names: row.opex_names ?? [],
     rating: toNumber(row.rating),
+    opex: summarizeOpex((row.opex_names ?? []).flatMap((name) => opexByName.get(name) ?? []), today),
     services: servicesBy.get(row.id) ?? [],
     contracts: contractsBy.get(row.id) ?? [],
     documents: documentsBy.get(row.id) ?? [],
     events_count: eventsCount.get(row.id) ?? 0,
   }));
+}
+
+/** Primeiro dia do mês, `months` meses atrás (inclui o mês corrente). */
+function opexWindowStart(months: number): string {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (months - 1), 1)).toISOString().slice(0, 10);
+}
+
+/** Pagamentos do OPEX dos últimos 12 meses, agrupados pelo nome do fornecedor no SIOE. */
+async function loadOpexPayments(db: SupabaseClient, names?: string[]): Promise<Map<string, OpexPayment[]>> {
+  const byName = new Map<string, OpexPayment[]>();
+  if (names && names.length === 0) return byName;
+  const since = opexWindowStart(12);
+  for (let from = 0; ; from += 1000) {
+    let query = db.from("opex_supplier_payments").select(OPEX_COLUMNS).gte("mes", since);
+    // Lista curta vai pelo filtro; o cadastro inteiro lê a janela toda (menos idas ao banco).
+    if (names && names.length <= 60) query = query.in("fornecedor", names);
+    const { data, error } = await query.order("fornecedor").order("mes").range(from, from + 999);
+    if (error) {
+      console.error("[facilities] opex:", error);
+      throw new FacilitiesHttpError("Falha ao carregar os pagamentos do OPEX.", 500, "QUERY_FAILED");
+    }
+    for (const row of (data ?? []) as unknown as OpexPayment[]) {
+      if (names && !names.includes(row.fornecedor)) continue;
+      byName.set(row.fornecedor, [...(byName.get(row.fornecedor) ?? []), { ...row, valor_pago: Number(row.valor_pago) }]);
+    }
+    if (!data || data.length < 1000) break;
+  }
+  return byName;
+}
+
+/** Grupos do plano de contas que são pagamento a pessoas (sócios, associados, comissões), não a fornecedores. */
+const PEOPLE_ACCOUNT_GROUPS = [
+  "DISTRIBUI",
+  "REMUNERA",
+  "COMISS",
+  "ENCARGOS SOCIAIS",
+  "OUTROS CUSTOS COM PESSOAS",
+  "OUTRAS RECEITAS OPERACIONAIS",
+];
+
+export interface OpexNameRow {
+  fornecedor: string;
+  total: number;
+  mainAccount: string;
+  departments: string[];
+  /** Fornecedor do cadastro que já usa este nome. */
+  linkedTo: { id: string; name: string } | null;
+}
+
+/** Nomes do OPEX dos últimos 12 meses, para ligar ao cadastro ("verificar nomes"). Sem pagamentos a pessoas. */
+export async function listOpexNames(): Promise<{ names: OpexNameRow[]; syncedAt: string | null }> {
+  await requireFacilitiesUser();
+  const db = createFacilitiesAdminClient();
+  const [byName, linked, lastRun] = await Promise.all([
+    loadOpexPayments(db),
+    db.from("event_suppliers").select("id, name, opex_names"),
+    db.from("opex_sync_runs").select("finished_at").eq("status", "ok").order("finished_at", { ascending: false }).limit(1).maybeSingle(),
+  ]);
+  const linkedBy = new Map<string, { id: string; name: string }>();
+  for (const row of (linked.data ?? []) as Array<{ id: string; name: string; opex_names: string[] }>) {
+    for (const name of row.opex_names ?? []) linkedBy.set(name, { id: row.id, name: row.name });
+  }
+
+  const names: OpexNameRow[] = [];
+  for (const [fornecedor, payments] of byName) {
+    const total = payments.reduce((sum, p) => sum + p.valor_pago, 0);
+    if (total <= 0) continue;
+    const people = payments
+      .filter((p) => PEOPLE_ACCOUNT_GROUPS.some((group) => p.grupo_conta.toUpperCase().startsWith(group)))
+      .reduce((sum, p) => sum + p.valor_pago, 0);
+    if (people / total >= 0.8 && !linkedBy.has(fornecedor)) continue;
+    const accounts = new Map<string, number>();
+    for (const p of payments) accounts.set(`${p.grupo_conta} / ${p.plano_contas}`, (accounts.get(`${p.grupo_conta} / ${p.plano_contas}`) ?? 0) + p.valor_pago);
+    names.push({
+      fornecedor,
+      total,
+      mainAccount: [...accounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "",
+      departments: [...new Set(payments.map((p) => p.departamento))].slice(0, 4),
+      linkedTo: linkedBy.get(fornecedor) ?? null,
+    });
+  }
+  names.sort((a, b) => b.total - a.total);
+  return { names, syncedAt: (lastRun.data?.finished_at as string | null) ?? null };
+}
+
+/** Quando os pagamentos do OPEX foram copiados pela última vez. */
+export async function getOpexSyncedAt(): Promise<string | null> {
+  await requireFacilitiesUser();
+  const { data } = await createFacilitiesAdminClient()
+    .from("opex_sync_runs")
+    .select("finished_at")
+    .eq("status", "ok")
+    .order("finished_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data?.finished_at as string | null) ?? null;
+}
+
+/** Liga (ou desliga) nomes do OPEX a um fornecedor, sem passar pelo formulário inteiro. */
+export async function setOpexNames(supplierId: string, input: unknown): Promise<FacilitiesSupplier> {
+  await requireFacilitiesUser();
+  const db = createFacilitiesAdminClient();
+  const names = parse(z.array(z.string().trim().min(1).max(200)).max(10), input);
+  const { error } = await db.from("event_suppliers").update({ opex_names: [...new Set(names)] }).eq("id", supplierId);
+  if (error) throw new FacilitiesHttpError("Não foi possível ligar o nome do OPEX.", 500, "WRITE_FAILED");
+  return loadSupplier(db, supplierId);
 }
 
 async function loadSupplier(db: SupabaseClient, id: string): Promise<FacilitiesSupplier> {
@@ -175,13 +303,13 @@ export async function listFacilitiesPeople(): Promise<FacilitiesPerson[]> {
 
 /* -------------------------------------------------------------- validação */
 
-const optionalText = (max: number) =>
+export const optionalText = (max: number) =>
   z
     .string()
     .trim()
     .max(max, "Texto muito longo.")
     .transform((value) => value || null);
-const optionalIsoDate = z
+export const optionalIsoDate = z
   .string()
   .trim()
   .transform((value) => value || null)
@@ -192,10 +320,10 @@ const optionalUrl = z
   .max(1000)
   .transform((value) => value || null)
   .refine((value) => value === null || /^https?:\/\//i.test(value), "O link precisa começar com http:// ou https://.");
-const optionalEnum = <T extends readonly [string, ...string[]]>(values: T) =>
+export const optionalEnum = <T extends readonly [string, ...string[]]>(values: T) =>
   z.union([z.enum(values), z.literal("")]).transform((value) => (value === "" ? null : value));
-const optionalInt = (min: number, max: number) => z.number().int().min(min).max(max).nullable();
-const money = z.number().min(0, "Valor não pode ser negativo.").max(99_999_999).nullable();
+export const optionalInt = (min: number, max: number) => z.number().int().min(min).max(max).nullable();
+export const money = z.number().min(0, "Valor não pode ser negativo.").max(99_999_999).nullable();
 
 const supplierSchema = z.object({
   name: z.string().trim().min(1, "Informe o nome do fornecedor.").max(160),
@@ -205,7 +333,10 @@ const supplierSchema = z.object({
     .transform(onlyDigits)
     .refine((value) => value === "" || value.length === 11 || value.length === 14, "CNPJ ou CPF incompleto.")
     .transform((value) => value || null),
-  category: z.string().trim().min(1, "Escolha a categoria.").max(60),
+  expense_nature: z.enum(EXPENSE_NATURE_KEYS, { message: "Escolha a natureza da despesa." }),
+  party_type: optionalEnum(PARTY_TYPES),
+  third_party_category: optionalText(60),
+  opex_names: z.array(z.string().trim().min(1).max(200)).max(10).transform((names) => [...new Set(names)]),
   areas: z.array(z.string().trim().min(1).max(80)).max(20),
   contact_name: optionalText(160),
   phone: optionalText(40),
@@ -270,7 +401,7 @@ const documentBaseSchema = z.object({
   valid_until: optionalIsoDate,
 });
 
-function parse<T extends z.ZodTypeAny>(schema: T, input: unknown): z.output<T> {
+export function parse<T extends z.ZodTypeAny>(schema: T, input: unknown): z.output<T> {
   const parsed = schema.safeParse(input);
   if (!parsed.success) {
     throw new FacilitiesHttpError(parsed.error.issues[0]?.message ?? "Dados inválidos.", 400, "INVALID_INPUT");
@@ -288,9 +419,59 @@ async function assertDocumentAvailable(db: SupabaseClient, document: string | nu
   }
 }
 
+/**
+ * Um nome, um cadastro (sem diferenciar maiúscula, acento e espaços). Achando
+ * outro com o mesmo nome, devolve 409 com o cadastro inteiro em `existing`,
+ * para a tela oferecer abri-lo em vez de criar um segundo.
+ */
+async function assertNameAvailable(db: SupabaseClient, name: string, exceptId?: string) {
+  const { data, error } = await db.from("event_suppliers").select("id, name, document, created_at");
+  if (error) {
+    console.error("[facilities] procura nome:", error);
+    throw new FacilitiesHttpError("Não foi possível conferir se o fornecedor já existe.", 500, "QUERY_FAILED");
+  }
+  const existing = findSupplierNameConflict((data ?? []) as SupplierNameCandidate[], name, exceptId);
+  if (!existing) return;
+  throw new FacilitiesHttpError(duplicateSupplierNameMessage(existing), 409, "DUPLICATE_NAME", {
+    existing: await loadSupplier(db, existing.id),
+  });
+}
+
+/**
+ * Gravação recusada pelo banco por nome ou CNPJ repetido (outra pessoa salvou
+ * o mesmo fornecedor entre a conferência e a gravação): mensagem em português.
+ */
+async function throwIfUniqueViolation(
+  db: SupabaseClient,
+  error: { code?: string; message?: string; details?: string } | null,
+  row: { name: string; document: string | null },
+  exceptId?: string
+) {
+  const violation = supplierUniqueViolation(error);
+  if (violation === "name") {
+    await assertNameAvailable(db, row.name, exceptId);
+    throw new FacilitiesHttpError("Já existe um cadastro com este nome.", 409, "DUPLICATE_NAME");
+  }
+  if (violation === "document") {
+    await assertDocumentAvailable(db, row.document, exceptId);
+    throw new FacilitiesHttpError("Já existe um fornecedor com este CNPJ/CPF.", 409, "DUPLICATE_DOCUMENT");
+  }
+}
+
 function supplierRow(input: unknown) {
   const value = parse(supplierSchema, input);
   return { ...value, person_type: value.document ? (value.document.length === 14 ? "pj" : "pf") : null };
+}
+
+/**
+ * A coluna category é o tipo usado pelos eventos. Cadastro novo e cadastro que
+ * não é de evento acompanham a natureza; o de evento (buffet...) mantém o tipo.
+ */
+async function eventCategoryFor(db: SupabaseClient, id: string | null, nature: string): Promise<string> {
+  if (!id) return nature;
+  const { data } = await db.from("event_suppliers").select("category").eq("id", id).maybeSingle();
+  const current = (data?.category as string | undefined) ?? null;
+  return current && eventTypeLabel(current) ? current : nature;
 }
 
 /* ------------------------------------------------------------ fornecedores */
@@ -300,8 +481,14 @@ export async function createSupplier(input: unknown): Promise<FacilitiesSupplier
   const db = createFacilitiesAdminClient();
   const row = supplierRow(input);
   await assertDocumentAvailable(db, row.document);
-  const { data, error } = await db.from("event_suppliers").insert(row).select("id").single();
+  await assertNameAvailable(db, row.name);
+  const { data, error } = await db
+    .from("event_suppliers")
+    .insert({ ...row, category: row.expense_nature })
+    .select("id")
+    .single();
   if (error || !data) {
+    await throwIfUniqueViolation(db, error, row);
     console.error("[facilities] cria fornecedor:", error);
     throw new FacilitiesHttpError("Não foi possível cadastrar o fornecedor.", 500, "WRITE_FAILED");
   }
@@ -313,8 +500,14 @@ export async function updateSupplier(id: string, input: unknown): Promise<Facili
   const db = createFacilitiesAdminClient();
   const row = supplierRow(input);
   await assertDocumentAvailable(db, row.document, id);
-  const { error } = await db.from("event_suppliers").update({ ...row, updated_at: new Date().toISOString() }).eq("id", id);
+  await assertNameAvailable(db, row.name, id);
+  const category = await eventCategoryFor(db, id, row.expense_nature);
+  const { error } = await db
+    .from("event_suppliers")
+    .update({ ...row, category, updated_at: new Date().toISOString() })
+    .eq("id", id);
   if (error) {
+    await throwIfUniqueViolation(db, error, row, id);
     console.error("[facilities] atualiza fornecedor:", error);
     throw new FacilitiesHttpError("Não foi possível salvar o fornecedor.", 500, "WRITE_FAILED");
   }
@@ -439,7 +632,7 @@ export async function deleteContract(id: string): Promise<FacilitiesSupplier> {
 
 /* -------------------------------------------------------------- documentos */
 
-function safeFileName(name: string): string {
+export function safeFileName(name: string): string {
   const dot = name.lastIndexOf(".");
   const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
   const base =

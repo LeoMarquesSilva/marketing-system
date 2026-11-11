@@ -139,6 +139,11 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       return "/conteudo/inicio";
     }
 
+    // Tela inicial: por enquanto só para quem a enxerga (mesmo no modo legado).
+    if (profile && pathname === "/" && !canAccessPath(profile, pathname)) {
+      return resolvePostLoginPathFromProfile(profile);
+    }
+
     // Fotos colaboradores: só usuários autorizados (mesmo no modo legado).
     if (
       profile &&

@@ -1,7 +1,13 @@
-/** Facilities > Fornecedores e contratos: tipos compartilhados entre servidor e telas. */
+/** Facilities > Gestão de Fornecedores e Prestadores de Serviços: tipos compartilhados entre servidor e telas. */
+
+import type { OpexSummary } from "./opex";
+import type { MaintenancePeriodicity, MaintenanceType } from "./maintenance";
+import type { ExpenseNature, PartyType } from "@/lib/suppliers/categories";
 
 export const FACILITIES_SUPPLIERS_PATH = "/facilities/fornecedores";
 export const FACILITIES_CONTRACTS_PATH = "/facilities/contratos";
+export const FACILITIES_MAINTENANCE_PATH = "/facilities/manutencao";
+export const FACILITIES_ASSETS_PATH = "/facilities/manutencao/ativos";
 
 /** Bucket privado: upload e download só por URL assinada gerada no servidor. */
 export const FACILITIES_BUCKET = "FACILITIES-CONTRATOS";
@@ -217,7 +223,16 @@ export interface FacilitiesSupplier {
   legal_name: string | null;
   document: string | null;
   person_type: "pj" | "pf" | null;
+  /** Tipo usado pelo módulo de eventos (buffet, decoração...); não é a natureza da despesa. */
   category: string;
+  /** Natureza da despesa (lista do gestor); null = "Não informada". */
+  expense_nature: ExpenseNature | null;
+  party_type: PartyType | null;
+  third_party_category: string | null;
+  /** Nomes do fornecedor no OPEX/SIOE, confirmados por uma pessoa. */
+  opex_names: string[];
+  /** O que foi pago segundo o OPEX (null sem vínculo ou sem pagamento no período). */
+  opex: OpexSummary | null;
   areas: string[];
   contact_name: string | null;
   phone: string | null;
@@ -243,7 +258,10 @@ export interface SupplierInput {
   name: string;
   legal_name: string;
   document: string;
-  category: string;
+  expense_nature: ExpenseNature | "";
+  party_type: PartyType | "";
+  third_party_category: string;
+  opex_names: string[];
   areas: string[];
   contact_name: string;
   phone: string;
@@ -308,4 +326,162 @@ export interface ContractExtraction {
   contracting_party: string | null;
   supplier_document: string | null;
   summary: string | null;
+}
+
+/* ------------------------------------------------------------ manutenção */
+
+export const ASSET_CATEGORIES = [
+  "ar_condicionado",
+  "eletrica",
+  "hidraulica",
+  "elevador",
+  "gerador",
+  "ti_rede",
+  "seguranca_incendio",
+  "alarme_cftv",
+  "mobiliario",
+  "predial",
+  "outros",
+] as const;
+export type AssetCategory = (typeof ASSET_CATEGORIES)[number];
+export const ASSET_CATEGORY_LABEL: Record<AssetCategory, string> = {
+  ar_condicionado: "Ar-condicionado",
+  eletrica: "Elétrica",
+  hidraulica: "Hidráulica",
+  elevador: "Elevador",
+  gerador: "Gerador e nobreak",
+  ti_rede: "TI e rede",
+  seguranca_incendio: "Combate a incêndio",
+  alarme_cftv: "Alarme e CFTV",
+  mobiliario: "Móveis e eletrodomésticos",
+  predial: "Predial (pintura, piso, forro)",
+  outros: "Outros",
+};
+
+export const CRITICALITY_LABEL = { alta: "Alta", media: "Média", baixa: "Baixa" } as const;
+export type Criticality = keyof typeof CRITICALITY_LABEL;
+
+export const MAINTENANCE_DOCUMENT_KINDS = ["laudo", "nota_fiscal", "ordem_servico", "certificado", "pmoc", "orcamento", "outro"] as const;
+export type MaintenanceDocumentKind = (typeof MAINTENANCE_DOCUMENT_KINDS)[number];
+export const MAINTENANCE_DOCUMENT_LABEL: Record<MaintenanceDocumentKind, string> = {
+  laudo: "Laudo",
+  nota_fiscal: "Nota fiscal",
+  ordem_servico: "Ordem de serviço",
+  certificado: "Certificado",
+  pmoc: "PMOC",
+  orcamento: "Orçamento",
+  outro: "Outro",
+};
+
+export interface FacilityAsset {
+  id: string;
+  name: string;
+  category: AssetCategory;
+  location: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  asset_tag: string | null;
+  installed_on: string | null;
+  warranty_until: string | null;
+  criticality: Criticality;
+  notes: string | null;
+  active: boolean;
+}
+
+export interface MaintenanceRecord {
+  id: string;
+  plan_id: string;
+  done_on: string;
+  cost: number | null;
+  supplier_id: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface MaintenanceDocument {
+  id: string;
+  plan_id: string;
+  record_id: string | null;
+  kind: MaintenanceDocumentKind;
+  title: string | null;
+  file_name: string | null;
+  has_file: boolean;
+  external_url: string | null;
+  created_at: string;
+}
+
+export interface MaintenancePlan {
+  id: string;
+  asset_id: string | null;
+  /** Categoria (campo do gestor): a do equipamento, ou escolhida no serviço geral. */
+  category: AssetCategory | null;
+  title: string;
+  maintenance_type: MaintenanceType;
+  periodicity: MaintenancePeriodicity;
+  custom_interval_days: number | null;
+  supplier_id: string | null;
+  contract_id: string | null;
+  responsible_user_id: string | null;
+  estimated_cost: number | null;
+  last_done_on: string | null;
+  next_due_on: string | null;
+  status: "ativo" | "pausado" | "concluido";
+  notes: string | null;
+  records: MaintenanceRecord[];
+  documents: MaintenanceDocument[];
+}
+
+/** Fornecedor resumido para as telas de manutenção (nome, categoria e contratos vigentes). */
+export interface MaintenanceSupplierOption {
+  id: string;
+  name: string;
+  category: string;
+  expense_nature: ExpenseNature | null;
+  party_type: PartyType | null;
+  contracts: Array<{ id: string; title: string }>;
+}
+
+export interface MaintenanceData {
+  assets: FacilityAsset[];
+  plans: MaintenancePlan[];
+  suppliers: MaintenanceSupplierOption[];
+  people: FacilitiesPerson[];
+}
+
+export interface AssetInput {
+  name: string;
+  category: AssetCategory;
+  location: string;
+  manufacturer: string;
+  model: string;
+  asset_tag: string;
+  installed_on: string;
+  warranty_until: string;
+  criticality: Criticality;
+  notes: string;
+  active: boolean;
+}
+
+export interface PlanInput {
+  asset_id: string | null;
+  category: AssetCategory | "";
+  title: string;
+  maintenance_type: MaintenanceType;
+  periodicity: MaintenancePeriodicity;
+  custom_interval_days: number | null;
+  supplier_id: string | null;
+  contract_id: string | null;
+  responsible_user_id: string | null;
+  estimated_cost: number | null;
+  last_done_on: string;
+  next_due_on: string;
+  status: "ativo" | "pausado" | "concluido";
+  notes: string;
+}
+
+export interface RecordInput {
+  done_on: string;
+  cost: number | null;
+  supplier_id: string | null;
+  notes: string;
 }

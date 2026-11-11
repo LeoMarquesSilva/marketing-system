@@ -74,7 +74,7 @@ describe("access-control permissions catalog", () => {
     ]) {
       expect(canAccessPath(juridico, aba)).toBe(false);
     }
-    // A página inicial e a entrada pelo menu continuam sendo a aba Vistagem.
+    // A entrada no sistema e pelo menu continuam sendo a aba Vistagem.
     expect(firstAllowedPath(juridico)).toBe("/operacoes-legais/vistagem/juridico");
     expect(entradaDaVistagem(juridico)).toBe("/operacoes-legais/vistagem/juridico");
     expect(entradaDaVistagem({ role: null, permissions: ["/operacoes-legais/vistagem"] })).toBe("/operacoes-legais/vistagem");
@@ -118,6 +118,7 @@ describe("access-control permissions catalog", () => {
     const icpOnly = { role: null, permissions: ["/icp"] };
     expect(canAccessPath(icpOnly, "/icp")).toBe(true);
     expect(canAccessPath(icpOnly, "/")).toBe(false);
+    expect(canAccessPath(icpOnly, "/painel-marketing")).toBe(false);
     expect(canAccessPath(icpOnly, "/planner")).toBe(false);
     expect(firstAllowedPath(icpOnly)).toBe("/icp");
   });
@@ -347,5 +348,29 @@ describe("PE27 (planejamento estratégico)", () => {
     expect(isPe27OnlyProfile({ role: "admin", permissions: ["/pe27"] })).toBe(false);
     expect(canAccessPath(socio, "/meus-clientes")).toBe(true);
     expect(canAccessPath(socio, "/pe27")).toBe(true);
+  });
+});
+
+describe("tela inicial e dashboard de marketing", () => {
+  it("em lançamento, a tela inicial abre só para admin", () => {
+    expect(canAccessPath({ role: "admin" }, "/")).toBe(true);
+    expect(firstAllowedPath({ role: "admin" })).toBe("/");
+    expect(canAccessPath({ role: null, permissions: ["/conteudo/roteiros"] }, "/")).toBe(false);
+    expect(canAccessPath({ role: null, permissions: null, department: "Trabalhista" }, "/")).toBe(false);
+    expect(canAccessPath({ role: "designer", permissions: null }, "/")).toBe(false);
+    expect(canAccessPath({ role: null, permissions: ["/pe27"] }, "/")).toBe(false);
+  });
+
+  it("quem tinha o dashboard marcado entra pelo dashboard de marketing", () => {
+    expect(firstAllowedPath({ role: null, permissions: ["/", "/planner"] })).toBe("/painel-marketing");
+    expect(firstAllowedPath({ role: "designer", permissions: null })).toBe("/painel-marketing");
+  });
+
+  it("a chave antiga do dashboard continua liberando o dashboard de marketing", () => {
+    expect(canAccessPath({ role: null, permissions: ["/", "/planner"] }, "/painel-marketing")).toBe(true);
+    expect(canAccessPath({ role: null, permissions: ["/planner"] }, "/painel-marketing")).toBe(false);
+    expect(normalizePermissionsInput(["/", "/planner"])).toEqual(["/painel-marketing", "/planner"]);
+    expect(normalizePermissionsInput(["/", "/painel-marketing"])).toEqual(["/painel-marketing"]);
+    expect(ACCESS_PRESETS["Marketing completo"]).toContain("/painel-marketing");
   });
 });

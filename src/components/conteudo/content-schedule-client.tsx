@@ -8,6 +8,7 @@ import type {
 import {
   AlertCircle,
   BarChart3,
+  BellRing,
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
@@ -56,6 +57,7 @@ import {
 import { AreaIcon } from "@/lib/area-icons";
 import { ContentScheduleCalendar } from "./content-schedule-calendar";
 import { ContentScheduleAssigneeReview } from "./content-schedule-assignee-review";
+import { ContentScheduleFollowups } from "./content-schedule-followups";
 import { ContentScheduleManagerTour } from "./content-schedule-manager-tour";
 import {
   ContentScheduleSlotDetails,
@@ -72,7 +74,7 @@ import type {
 export { AreaMark, CollaboratorAvatar } from "./content-schedule-visuals";
 
 type Format = ScheduleFormat;
-type ScheduleView = "calendar" | "list" | "assignees";
+type ScheduleView = "calendar" | "list" | "assignees" | "followups";
 type Collaborator = ScheduleCollaborator;
 type ScheduleSlot = ScheduleSlotView;
 type PendingLink = {
@@ -547,7 +549,7 @@ export function ContentScheduleClient() {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
     const views: ScheduleView[] = canReviewAssignees
-      ? ["calendar", "list", "assignees"]
+      ? ["calendar", "list", "assignees", "followups"]
       : ["calendar", "list"];
     const currentIndex = views.indexOf(view);
     const nextIndex = event.key === "Home"
@@ -642,11 +644,12 @@ export function ContentScheduleClient() {
             <Button id="schedule-tab-calendar" aria-controls="schedule-panel-calendar" role="tab" tabIndex={view === "calendar" ? 0 : -1} aria-selected={view === "calendar"} variant="ghost" size="sm" className={cn(view === "calendar" && "bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")} onClick={() => setView("calendar")}><CalendarDays />Calendário</Button>
             <Button id="schedule-tab-list" aria-controls="schedule-panel-list" role="tab" tabIndex={view === "list" ? 0 : -1} aria-selected={view === "list"} variant="ghost" size="sm" className={cn(view === "list" && "bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")} onClick={() => setView("list")}><List />Lista</Button>
             {canReviewAssignees && <Button id="schedule-tab-assignees" aria-controls="schedule-panel-assignees" role="tab" tabIndex={view === "assignees" ? 0 : -1} aria-selected={view === "assignees"} variant="ghost" size="sm" className={cn(view === "assignees" && "bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")} onClick={() => setView("assignees")}><UsersRound />Responsáveis</Button>}
+            {canReviewAssignees && <Button id="schedule-tab-followups" aria-controls="schedule-panel-followups" role="tab" tabIndex={view === "followups" ? 0 : -1} aria-selected={view === "followups"} variant="ghost" size="sm" className={cn(view === "followups" && "bg-[#183f50] text-white hover:bg-[#183f50] hover:text-white")} onClick={() => setView("followups")}><BellRing />Acompanhamento</Button>}
           </div>
           <p className="text-xs text-slate-500">A entrada padrão é o calendário; use a lista para ajustes pontuais.</p>
         </div>
 
-        {view !== "assignees" && <div role="tabpanel" id={`schedule-panel-${view}`} aria-labelledby={`schedule-tab-${view}`}>
+        {view !== "assignees" && view !== "followups" && <div role="tabpanel" id={`schedule-panel-${view}`} aria-labelledby={`schedule-tab-${view}`}>
         <div data-tour="schedule-filters" className="grid gap-2 border-b border-[#dce9eb] p-3 sm:grid-cols-2 sm:p-4 xl:grid-cols-[minmax(220px,1fr)_repeat(4,minmax(140px,180px))]">
           <div className="relative sm:col-span-2 xl:col-span-1"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar pessoa ou conteúdo" className="pl-9" aria-label="Buscar no cronograma" /></div>
           <AreaSelect value={area} onChange={setArea} areas={data?.areas ?? []} allLabel="Todas as áreas" />
@@ -676,6 +679,12 @@ export function ContentScheduleClient() {
         )}
         </div>
         </div>}
+
+        {view === "followups" && canReviewAssignees && (
+          <div role="tabpanel" id="schedule-panel-followups" aria-labelledby="schedule-tab-followups">
+            <ContentScheduleFollowups month={month} />
+          </div>
+        )}
 
         {view === "assignees" && canReviewAssignees && (
           <div role="tabpanel" id="schedule-panel-assignees" aria-labelledby="schedule-tab-assignees">

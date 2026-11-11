@@ -97,3 +97,21 @@ describe("envio esperando a publicação chegar ao VIOS", () => {
     expect(html).not.toContain("text-red-700\">Aguardando");
   });
 });
+
+describe("CartoesTarefas: prazo apertado", () => {
+  // 4001306-33 (11/11/2026): vistado à noite com o Enviar em 10/11; validado no dia seguinte, o robô lança hoje.
+  const prazo = (extra: Partial<AgendamentoResumo> = {}) =>
+    agendamento({ etiqueta: "PRAZO", tarefa: "MANIFESTAÇÃO - FLUXO D5", tarefaId: "612", data: "2026-11-10", dataFatal: "2026-11-16", revisor: "Lucas Sebinel Miranda", ...extra });
+  const texto = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+
+  it("a régua mostra o Enviar de hoje e o cartão diz por quê", () => {
+    const html = texto(cartoes(prazo({ enviarHoje: "2026-11-11" }), { hoje: "2026-11-11" }));
+    expect(html).toContain("Vistado com o Enviar em 10/11/2026, que já passou");
+    expect(html).toContain("(11/11/2026)");
+    expect(html).toContain("Não precisa editar.");
+  });
+
+  it("com o Enviar vistado ainda valendo, nada muda", () => {
+    expect(cartoes(prazo({ data: "2026-11-12", enviarHoje: null }), { hoje: "2026-11-11" })).not.toContain("que já passou");
+  });
+});

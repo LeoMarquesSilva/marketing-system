@@ -5,6 +5,7 @@ import { chaveNome, classeDasEtiquetas, type EtapaVios, type OpcaoVios } from ".
 import { VistagemError } from "./errors";
 import { cisDoResultado, tarefasViosDoResultado, type LinhaFilaSama, type ModoAgendamento, type TarefaNoVios } from "./fila-vios";
 import type { BaseDaData, ResponsabilidadeDoTipo, TipoNaArvore } from "./fluxo-vios";
+import type { CapaDoVios, PedidoDeAbertura } from "./capa-abertura";
 import type { MateriaVios, SintesePedida } from "./types";
 
 /**
@@ -13,7 +14,7 @@ import type { MateriaVios, SintesePedida } from "./types";
  * relidos do VIOS pelo robô todo domingo à noite, e a fila vios_agendamentos que o
  * sama-rpa consome a cada 2 minutos para criar a tarefa no VIOS.
  */
-function sama(): SupabaseClient {
+export function sama(): SupabaseClient {
   const url = process.env.SAMA_SUPABASE_URL?.trim();
   const key = process.env.SAMA_SUPABASE_SERVICE_ROLE_KEY?.trim();
   if (!url || !key) throw new VistagemError("SAMA não configurado (SAMA_SUPABASE_URL/SAMA_SUPABASE_SERVICE_ROLE_KEY).", 500);
@@ -263,6 +264,66 @@ export async function enfileirarSintese(pedido: {
     .single();
   if (error || !data) throw new VistagemError(`Falha ao colocar a atualização do cadastro na fila do robô: ${error?.message ?? "sem retorno"}`, 502);
   return data.id as string;
+}
+
+/**
+ * Abertura de pasta: pede ao robô que preencha o cadastro de processo com a capa conferida pela controladoria
+ * (coluna abertura, migração 20261110000015 do sama-rpa). Fase 2: sempre simulação.
+ */
+export async function enfileirarAberturaDePasta(pedido: {
+  publicacaoId: string;
+  capa: CapaDoVios;
+  autor: string;
+  data: string;
+  simular: boolean;
+}): Promise<string> {
+  const { data, error } = await sama()
+    .from("vios_agendamentos")
+    .insert({
+      operacao: "abrir_pasta",
+      status: "pendente",
+      tipo: "ABERTURA DE PASTA",
+      tarefa: "Abrir pasta no VIOS",
+      observacao: "",
+      responsavel: pedido.autor,
+      data: pedido.data,
+      pasta: pedido.capa.cnj ?? "",
+      pasta_tipo: "Processo",
+      simular: pedido.simular,
+      abertura: { publicacao_id: pedido.publicacaoId, capa: pedido.capa },
+    })
+    .select("id")
+    .single();
+  if (error?.code === "PGRST204" || /abertura/.test(error?.message ?? "")) {
+    throw new VistagemError("A fila do robô ainda não aceita abertura de pasta (falta rodar a SQL 0015 do SAMA).", 503);
+  }
+  if (error || !data) throw new VistagemError(`Falha ao colocar a abertura de pasta na fila do robô: ${error?.message ?? "sem retorno"}`, 502);
+  return data.id as string;
+}
+
+/** Pedidos de abertura de uma publicação, do mais novo para o mais antigo. Sem a coluna no SAMA, nenhum. */
+export async function aberturasDaPublicacao(publicacaoId: string): Promise<PedidoDeAbertura[]> {
+  const { data, error } = await sama()
+    .from("vios_agendamentos")
+    .select("id, status, erro, simular, responsavel, resultado, criado_em, atualizado_em")
+    .eq("operacao", "abrir_pasta")
+    .eq("abertura->>publicacao_id", publicacaoId)
+    .order("criado_em", { ascending: false })
+    .limit(5);
+  if (error) {
+    if (/abertura/.test(error.message)) return [];
+    throw new VistagemError(`Falha ao consultar os pedidos de abertura no robô: ${error.message}`, 502);
+  }
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    id: row.id as string,
+    status: row.status as PedidoDeAbertura["status"],
+    erro: (row.erro as string | null) ?? null,
+    simulado: row.simular === true,
+    autor: (row.responsavel as string | null) ?? null,
+    criadoEm: row.criado_em as string,
+    atualizadoEm: (row.atualizado_em as string | null) ?? null,
+    resultado: (row.resultado as PedidoDeAbertura["resultado"]) ?? null,
+  }));
 }
 
 function comoMateria(valor: unknown): MateriaVios | null {

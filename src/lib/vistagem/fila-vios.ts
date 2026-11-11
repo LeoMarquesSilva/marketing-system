@@ -61,6 +61,14 @@ export interface LancamentoFila {
    * Intimações do VIOS até as 17h do dia dela e ele tiver de agendar direto na pasta (vai na descrição da tarefa).
    */
   texto_publicacao: string | null;
+  /**
+   * Agendar direto na pasta, sem procurar a intimação: a publicação colada à mão não está em Intimações do VIOS. O robô
+   * cria as tarefas no processo (CI da pasta), com o texto da publicação na descrição, e faz o resto como no lançamento
+   * (fluxo, responsáveis, Ciência repetida e a JUSTIFICATIVA NF). É o mesmo caminho do plano B das 17h.
+   */
+  agendar_na_pasta?: boolean;
+  /** A publicação foi colada à mão: o robô avisa isso (e não "não chegou ao VIOS até as 17h", do plano B). */
+  publicacao_colada?: boolean;
   tarefas: TarefaDoLancamento[];
 }
 
@@ -120,11 +128,14 @@ const TIPO_NA_FILA: Record<EtiquetaAgendamento, string> = { PRAZO: "Prazo", PROV
 
 /**
  * Linhas da fila do robô para as tarefas de uma publicação, com os agendamentos de cada uma.
- * - pasta: uma linha por tarefa, com o teor da publicação na descrição.
  * - intimação: uma linha com todas as tarefas (depois de lançada, a intimação sai da lista do
  *   VIOS); a descrição leva só o cabeçalho e a observação, porque o VIOS insere o texto da intimação.
  *   Na CIÊNCIA NF a observação vai na JUSTIFICATIVA NF e a descrição fica só com o texto da
  *   intimação (modelo da Maria: CI 934338, 03/11/2026).
+ * - pasta (publicação colada à mão): a mesma linha, marcada para agendar direto na pasta. O robô põe o texto da
+ *   publicação na descrição e a observação da CIÊNCIA NF na JUSTIFICATIVA NF, como na intimação (pedido de 11/11/2026:
+ *   a linha antiga, uma por tarefa, ia sem o texto e com a justificativa na descrição).
+ * - pasta sem o CI da pasta (não acontece na vistagem: sem pasta, a publicação vai para a abertura): a linha antiga.
  */
 export function linhasParaFila(
   publicacao: PublicacaoParaFila,
@@ -153,7 +164,7 @@ export function linhasParaFila(
     simular: opcoes.simular,
   });
 
-  if (opcoes.modo === "pasta") {
+  if (opcoes.modo === "pasta" && !publicacao.pasta_ci) {
     // A fila da pasta não tem coluna de hora: o horário do Compromisso vai na descrição.
     return itens.map((item) => ({
       linha: base(
@@ -187,6 +198,7 @@ export function linhasParaFila(
           comunicacoes_equivalentes: [...new Set((publicacao.comunicacoes_equivalentes ?? []).map(String))].filter((id) => id && id !== comunicacao),
           data_publicacao: publicacao.data_publicacao ? paraDataVios(publicacao.data_publicacao) : null,
           texto_publicacao: publicacao.teor?.trim() || null,
+          ...(opcoes.modo === "pasta" ? { agendar_na_pasta: true, publicacao_colada: true } : {}),
           tarefas: itens.map((item) => {
             const cienciaNf = chaveNome(item.tarefa) === "CIENCIA NF";
             return {
