@@ -10,6 +10,8 @@ import {
   hasCafeCulturaAccess,
   hasIcpAccess,
   canEditPe27,
+  canEditDocumentario,
+  hasDocumentarioAccess,
   hasOperacoesLegaisAccess,
   hasPe27Access,
   hasTeamSurveysAccess,
@@ -300,6 +302,23 @@ describe("pesquisas com a equipe", () => {
 
   it("a página de resposta abre para qualquer pessoa logada", () => {
     expect(canAccessPath({ role: null, permissions: ["/planner"] }, "/pesquisa/pe27-operacoes-legais")).toBe(true);
+  });
+});
+
+describe("Minidocumentário 10 anos", () => {
+  it("admin abre e edita; /documentario vê e aprova; /documentario/editar edita; o modo legado não abre", () => {
+    expect(hasDocumentarioAccess({ role: "admin" })).toBe(true);
+    expect(canEditDocumentario({ role: "admin" })).toBe(true);
+    expect(canAccessPath({ role: null, permissions: null }, "/documentario")).toBe(false);
+    expect(canAccessPath({ role: null, permissions: ["/planner", "/eventos"] }, "/documentario/acervo")).toBe(false);
+    const socio = { role: null, permissions: ["/conteudo/roteiros", "/documentario"] };
+    expect(canAccessPath(socio, "/documentario/aprovacao")).toBe(true);
+    expect(canEditDocumentario(socio)).toBe(false);
+    const producao = { role: null, permissions: ["/documentario", "/documentario/editar"] };
+    expect(canEditDocumentario(producao)).toBe(true);
+    expect(firstAllowedPath({ role: null, permissions: ["/documentario/editar"] })).toBe("/");
+    expect(isManualOnlyKey("/documentario")).toBe(true);
+    expect(ACCESS_PRESETS["Marketing completo"]).not.toContain("/documentario");
   });
 });
 

@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { canAccessPath } from "@/lib/access-control";
 import { normalizeFollowUpResponsibleNames } from "@/lib/event-followup-responsibles";
 import { EventLinkedAlbums } from "./event-linked-albums";
+import { DocumentarioEventCard } from "@/components/documentario/event-card";
 import { useRouter, useSearchParams } from "next/navigation";
 import { EventWorkspaceHeader } from "./event-workspace-header";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/eventos/event-menu";
@@ -705,6 +706,7 @@ export function EventoDetailClient({
           Atualizando dados do evento...
         </div>
       )}
+      {tab === "resumo" && profile && canAccessPath(profile, "/documentario") && <DocumentarioEventCard eventId={event.id} />}
       {tab === "resumo" && alertMessages.length > 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
           <p className="text-xs font-semibold text-amber-700 mb-1">Alertas</p>
