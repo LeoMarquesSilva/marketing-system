@@ -7,6 +7,7 @@ import {
   ArrowRight,
   Bell,
   BookOpen,
+  Bot,
   Building2,
   Cake,
   CalendarClock,
@@ -21,6 +22,7 @@ import {
   Handshake,
   IdCard,
   ImagePlus,
+  KanbanSquare,
   Layers,
   LayoutGrid,
   Link2,
@@ -47,7 +49,14 @@ import { NavBadgePill, sumBadges, useNavBadges } from "@/components/layout/nav-b
 import { ToolLogo } from "@/components/rh/registration/welcome-ui";
 import { useAuth } from "@/contexts/auth-context";
 import { daysBetween, greeting, shortDate, tenureLabel, todayInBrasilia } from "@/lib/inicio/dates";
-import { MAX_FAVORITES, linkFavoriteKey, moduleFavoriteKey, takeLegacyFavorites } from "@/lib/inicio/favorites";
+import {
+  MAX_FAVORITES,
+  linkFavoriteKey,
+  moduleFavoriteKey,
+  systemFavoriteKey,
+  takeLegacyFavorites,
+} from "@/lib/inicio/favorites";
+import { OFFICE_SYSTEMS, type OfficeSystem } from "@/lib/inicio/systems";
 import type {
   HomeBirthday,
   HomeData,
@@ -759,10 +768,30 @@ type FavoriteOption = {
   href: string;
   external: boolean;
   icon?: LucideIcon;
+  /** Endereço de uma ferramenta: o logo vem do próprio sistema (VIOS, Responsum…). */
   logoUrl?: string;
+  /** Logo guardado em /public (sistemas do escritório). */
+  logoSrc?: string;
+};
+
+const SYSTEMS_GROUP = "Sistemas do escritório";
+const SYSTEM_ICON: Record<OfficeSystem["icon"], LucideIcon> = {
+  metas: Target,
+  crm: Handshake,
+  leads: UserPlus,
+  ia: Bot,
+  projetos: KanbanSquare,
 };
 
 function FavoriteGlyph({ option, size }: { option: FavoriteOption; size: number }) {
+  if (option.logoSrc) {
+    return (
+      <span className="flex shrink-0 items-center justify-center overflow-hidden rounded-md border bg-white" style={{ width: size, height: size }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={option.logoSrc} alt="" className="size-[78%] object-contain" />
+      </span>
+    );
+  }
   if (option.logoUrl) return <ToolLogo url={option.logoUrl} size={size} className="rounded-md" />;
   const Icon = option.icon ?? Star;
   return (
@@ -927,6 +956,15 @@ function Favorites({ fronts, data, className }: { fronts: VisibleNavFront[]; dat
           icon: feature.icon,
         }))
       ),
+      ...OFFICE_SYSTEMS.map((system) => ({
+        key: systemFavoriteKey(system.id),
+        label: system.title,
+        group: SYSTEMS_GROUP,
+        href: system.url,
+        external: true,
+        icon: SYSTEM_ICON[system.icon],
+        logoSrc: system.logo,
+      })),
       ...(links ?? []).map((link) => ({
         key: linkFavoriteKey(link.id),
         label: link.title,
@@ -939,13 +977,15 @@ function Favorites({ fronts, data, className }: { fronts: VisibleNavFront[]; dat
     [fronts, links]
   );
 
-  // Quem nunca personalizou começa com os primeiros módulos e ferramentas liberados.
+  // Quem nunca personalizou começa com os primeiros módulos, as ferramentas da área e os sistemas do escritório.
   const keys = useMemo(
     () =>
       saved ??
-      [...options.filter((option) => !option.external).slice(0, 4), ...options.filter((option) => option.external).slice(0, 2)].map(
-        (option) => option.key
-      ),
+      [
+        ...options.filter((option) => !option.external).slice(0, 4),
+        ...options.filter((option) => option.external && option.group !== SYSTEMS_GROUP).slice(0, 2),
+        ...options.filter((option) => option.group === SYSTEMS_GROUP),
+      ].map((option) => option.key),
     [saved, options]
   );
   const favorites = keys.flatMap((key) => options.find((option) => option.key === key) ?? []);
@@ -972,12 +1012,12 @@ function Favorites({ fronts, data, className }: { fronts: VisibleNavFront[]; dat
       {favorites.length === 0 ? (
         <p className="px-5 py-6 text-sm text-muted-foreground">Nenhum favorito escolhido. Use Personalizar para montar os seus atalhos.</p>
       ) : (
-        <ul className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        <ul className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
           {favorites.map((option) => {
             const body = (
               <>
                 <FavoriteGlyph option={option} size={36} />
-                <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[#0d2a38]">{option.label}</span>
+                <span className="line-clamp-2 min-w-0 flex-1 text-sm font-semibold leading-snug text-[#0d2a38]">{option.label}</span>
               </>
             );
             return (
@@ -1121,6 +1161,8 @@ export function InicioClient() {
     <div className="mx-auto max-w-[1360px] space-y-5">
       <Hero data={data} loading={loading} />
 
+      <Favorites fronts={fronts} data={data} />
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile
           icon={ClipboardCheck}
@@ -1231,12 +1273,9 @@ export function InicioClient() {
         </Block>
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-12">
-        <Favorites fronts={fronts} data={data} className="lg:col-span-7 xl:col-span-8" />
-        <Block icon={BookOpen} title="Manuais e documentos" hint="O que vale para todo o escritório" className="lg:col-span-5 xl:col-span-4">
-          <OfficeDocuments data={data} />
-        </Block>
-      </div>
+      <Block icon={BookOpen} title="Manuais e documentos" hint="O que vale para todo o escritório">
+        <OfficeDocuments data={data} />
+      </Block>
 
       <ModulesDialog fronts={fronts} open={modulesOpen} onClose={() => setModulesOpen(null)} />
       {data?.canManageBirthdayArts && artsOpen && (

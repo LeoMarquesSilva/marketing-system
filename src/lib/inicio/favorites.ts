@@ -5,12 +5,13 @@
  */
 
 /** Quantos atalhos cabem na faixa de favoritos. */
-export const MAX_FAVORITES = 8;
+export const MAX_FAVORITES = 12;
 
 export const moduleFavoriteKey = (featureId: string) => `m:${featureId}`;
 export const linkFavoriteKey = (linkId: string) => `l:${linkId}`;
+export const systemFavoriteKey = (systemId: string) => `s:${systemId}`;
 
-const KEY_FORMAT = /^[ml]:[A-Za-z0-9_-]{1,80}$/;
+const KEY_FORMAT = /^[mls]:[A-Za-z0-9_-]{1,80}$/;
 
 /** Lista válida de favoritos (sem repetidos, no limite); null quando a entrada não é uma lista. */
 export function sanitizeFavorites(value: unknown): string[] | null {
