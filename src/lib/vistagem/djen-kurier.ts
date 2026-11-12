@@ -106,6 +106,11 @@ export interface DiaDaConferencia {
   kurier: number;
   /** Quantas publicações da Kurier do dia vieram do BKP do SIOE (uma por processo). */
   doBkp: number;
+  /**
+   * A Kurier do dia por arquivo (data do arquivo e quantas; "BKP" para o BKP do SIOE), do mais antigo ao mais novo:
+   * o dia costuma vir em duas partes, uma no arquivo da véspera e o resto no arquivo do dia.
+   */
+  porArquivo: { arquivo: string; quantas: number }[];
   nosDois: number;
   pares: ParDaConferencia[];
   soDjen: ComunicacaoDjenGuardada[];
@@ -263,6 +268,7 @@ export function compararDjenKurier(
       djen: doDjen.length,
       kurier: daKurier.length,
       doBkp: daKurier.filter((item) => item.fonte === "bkp").length,
+      porArquivo: contarPorArquivo(daKurier),
       nosDois: pares.length,
       pares,
       soDjen: daKurier.length ? doDjen.filter((item) => !casadas.has(item.id)) : [],
@@ -286,6 +292,23 @@ export function proximoDiaDaSemana(dia: string): string {
     if (proximo.getUTCDay() !== 0 && proximo.getUTCDay() !== 6) return proximo.toISOString().slice(0, 10);
   }
 }
+
+/** Quantas publicações vieram em cada arquivo da Kurier ("BKP" para o BKP do SIOE; "sem arquivo" quando não se sabe). */
+function contarPorArquivo(publicacoes: PublicacaoKurier[]): { arquivo: string; quantas: number }[] {
+  const contagem = new Map<string, number>();
+  for (const item of publicacoes) {
+    const chave = item.fonte === "bkp" ? "BKP" : (item.arquivo ?? "sem arquivo");
+    contagem.set(chave, (contagem.get(chave) ?? 0) + 1);
+  }
+  // Datas primeiro (da mais antiga), depois o BKP e o "sem arquivo".
+  return [...contagem.entries()].map(([arquivo, quantas]) => ({ arquivo, quantas })).sort((a, b) => a.arquivo.localeCompare(b.arquivo));
+}
+
+/** "arq. 11/11: 53 + arq. 12/11: 53": de qual arquivo da Kurier veio cada parte do dia (ou "BKP: 74"). */
+export const partesDaKurier = (porArquivo: { arquivo: string; quantas: number }[]) =>
+  porArquivo
+    .map(({ arquivo, quantas }) => `${/^\d{4}-\d{2}-\d{2}$/.test(arquivo) ? `arq. ${arquivo.slice(8, 10)}/${arquivo.slice(5, 7)}` : arquivo}: ${quantas}`)
+    .join(" + ");
 
 /** A data de publicação que mais aparece nas publicações da Kurier do dia (todas costumam ter a mesma). */
 function publicacaoMaisComum(publicacoes: PublicacaoKurier[]): string | null {

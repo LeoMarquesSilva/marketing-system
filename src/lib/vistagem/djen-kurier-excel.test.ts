@@ -38,6 +38,11 @@ const resumo = (extra: Partial<ResumoDoDia> = {}): ResumoDoDia => ({
   djen: 3,
   kurier: 3,
   doBkp: 1,
+  porArquivo: [
+    { arquivo: "2026-11-11", quantas: 1 },
+    { arquivo: "2026-11-12", quantas: 1 },
+    { arquivo: "BKP", quantas: 1 },
+  ],
   nosDois: 2,
   soDjen: 1,
   soKurier: 1,
@@ -69,7 +74,7 @@ const DIA_11: DetalheDoDia = {
   ],
 };
 const DIA_12: DetalheDoDia = {
-  resumo: resumo({ data: "2026-11-12", publicacao: "2026-11-13", comKurier: false, emAberto: true, djen: 1, kurier: 0, doBkp: 0, nosDois: 0, soDjen: 0, soKurier: 0, cobertura: null }),
+  resumo: resumo({ data: "2026-11-12", publicacao: "2026-11-13", comKurier: false, emAberto: true, djen: 1, kurier: 0, doBkp: 0, porArquivo: [], nosDois: 0, soDjen: 0, soKurier: 0, cobertura: null }),
   pares: [],
   soKurier: [],
   soDjen: [{ djen: comunicacao(888, "3333333-33.2026.8.26.0100", { data: "2026-11-12" }), kurierEmOutrosDias: ["2026-11-11"] }],
@@ -149,7 +154,7 @@ describe("planilhaDaConferencia", () => {
     expect(publicacoes[1]["Kurier: arquivo de"]).toBe("12/11/2026");
     expect(livro.Sheets["Publicações"]["!autofilter"]).toBeTruthy();
     const resumoPorDia = XLSX.utils.sheet_to_json<Record<string, unknown>>(livro.Sheets["Resumo por dia"], { raw: false });
-    expect(resumoPorDia[1]).toMatchObject({ Publicação: "12/11/2026", Cobertura: "66.7%" });
+    expect(resumoPorDia[1]).toMatchObject({ Publicação: "12/11/2026", Cobertura: "66.7%", "Kurier por arquivo": "arq. 11/11: 1 + arq. 12/11: 1 + BKP: 1" });
     const comoLer = XLSX.utils.sheet_to_json<string[]>(livro.Sheets["Como ler"], { header: 1 }).flat().join(" ");
     expect(comoLer).toContain("O que o DJEN disponibilizou hoje só chega na Kurier no arquivo de amanhã");
   });

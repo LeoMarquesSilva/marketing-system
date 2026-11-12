@@ -6,6 +6,7 @@ import {
   diasDesdeOInicio,
   detalhesDosDias,
   diasDoPeriodo,
+  partesDaKurier,
   periodoDoBkp,
   proximoDiaDaSemana,
   resumoDoDia,
@@ -195,6 +196,29 @@ describe("compararDjenKurier", () => {
       ["bkp:3", "bkp", [3, 4]],
     ]);
     expect(resumoDoDia(dia10)).toMatchObject({ nosDois: 3, soDjen: 0, soKurier: 0 });
+  });
+
+  it("conta a Kurier do dia por arquivo: o dia costuma vir em duas partes", () => {
+    const [, dia10] = compararDjenKurier(
+      [],
+      [
+        kurier("k1", 1, "2026-11-10", "0001"),
+        { ...kurier("k2", 2, "2026-11-10", "0002"), arquivo: "2026-11-10" },
+        { ...kurier("k3", 3, "2026-11-10", "0003"), arquivo: "2026-11-10" },
+        // A mesma comunicação de novo no arquivo seguinte conta uma vez só.
+        { ...kurier("k1-de-novo", 1, "2026-11-10", "0001"), arquivo: "2026-11-11" },
+        bkp(9, "2026-11-10", "0009"),
+      ],
+      DIAS,
+      BUSCADOS
+    );
+    expect(dia10.kurier).toBe(4);
+    expect(dia10.porArquivo).toEqual([
+      { arquivo: "2026-11-10", quantas: 2 },
+      { arquivo: "2026-11-11", quantas: 1 },
+      { arquivo: "BKP", quantas: 1 },
+    ]);
+    expect(partesDaKurier(dia10.porArquivo)).toBe("arq. 10/11: 2 + arq. 11/11: 1 + BKP: 1");
   });
 });
 

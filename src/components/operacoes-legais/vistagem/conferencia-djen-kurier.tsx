@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
 import { partesDaData } from "@/lib/vistagem/como-fica-no-vios";
-import { ADVOGADOS_DJEN, INICIO_DA_CONFERENCIA, chaveDoAdvogado, type ConferenciaDjenKurier } from "@/lib/vistagem/djen-kurier";
+import { ADVOGADOS_DJEN, INICIO_DA_CONFERENCIA, chaveDoAdvogado, partesDaKurier, type ConferenciaDjenKurier } from "@/lib/vistagem/djen-kurier";
 import { formatarDataHora } from "./publicacao-ui";
 import { Aviso, Carregando, Indicador, Indicadores, Painel, PainelTopo, Selo } from "./ui";
 
@@ -18,8 +18,6 @@ const INICIO_POR_EXTENSO = INICIO_DA_CONFERENCIA.split("-").reverse().join("/");
 const URL_DA_CONFERENCIA = "/api/operacoes-legais/vistagem/djen-kurier";
 
 const porcento = (valor: number | null) => (valor === null ? "—" : `${(valor * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`);
-/** "2026-11-11" → "11/11" */
-const ddmm = (data: string) => `${data.slice(8, 10)}/${data.slice(5, 7)}`;
 
 /** A tela nunca fica carregando para sempre: depois de 1 minuto, mostra o erro. */
 const ESPERA_MAXIMA_MS = 60_000;
@@ -239,7 +237,7 @@ export function ConferenciaDjenKurierView({
                         ) : !dia.comKurier ? (
                           dia.emAberto ? (
                             <Selo tom="alerta" className="ml-2 px-1.5 py-0 text-[11px]">
-                              Kurier chega em {ddmm(dia.publicacao)}
+                              aguardando a Kurier
                             </Selo>
                           ) : (
                             <Selo className="ml-2 px-1.5 py-0 text-[11px]">sem Kurier</Selo>
@@ -249,17 +247,21 @@ export function ConferenciaDjenKurierView({
                             em aberto
                           </Selo>
                         ) : null}
-                        {dia.doBkp ? (
-                          <Selo tom="marca" className="ml-2 px-1.5 py-0 text-[11px]">
-                            BKP {dia.doBkp}
-                          </Selo>
-                        ) : null}
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">
                         <DataDoDia data={dia.data} />
                       </td>
                       <td className="px-3 py-2 text-right">{dia.buscado ? dia.djen : "—"}</td>
-                      <td className="px-3 py-2 text-right">{dia.comKurier ? dia.kurier : "—"}</td>
+                      <td className="px-3 py-2 text-right">
+                        {dia.comKurier ? (
+                          <>
+                            {dia.kurier}
+                            <span className="block whitespace-nowrap text-[11px] text-muted-foreground">{partesDaKurier(dia.porArquivo)}</span>
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-right">{compara ? dia.nosDois : "—"}</td>
                       <td className={cn("px-3 py-2 text-right", compara && dia.soKurier && "font-semibold text-red-700")}>{compara ? dia.soKurier : "—"}</td>
                       <td className="px-3 py-2 text-right">{compara ? dia.soDjen : "—"}</td>
@@ -272,9 +274,10 @@ export function ConferenciaDjenKurierView({
           </div>
           <div className="space-y-1 border-t border-[#e6eef0] px-4 py-2 text-[11px] text-muted-foreground">
             <p>
-              <strong className="font-medium text-foreground">Cada linha é um dia de publicação</strong>, o dia em que a Kurier entrega: o arquivo da
-              manhã traz as publicações do dia, que o DJEN disponibilizou no dia útil anterior. A primeira linha é a de amanhã: o DJEN já tem o
-              que disponibilizou hoje, e a Kurier dele chega no arquivo de amanhã.
+              <strong className="font-medium text-foreground">Cada linha é um dia de publicação</strong> (disponibilizado no DJEN no dia útil
+              anterior). A Kurier costuma entregar o dia em duas partes: uma no arquivo da véspera e o resto no arquivo do dia. Embaixo do
+              número da Kurier está quanto veio em cada arquivo (ex.: “arq. 11/11: 53 + arq. 12/11: 53”). A primeira linha é a de amanhã: o
+              DJEN já tem o que disponibilizou hoje, e a Kurier dele ainda vai chegar.
             </p>
             <p>
               O estudo começa em {INICIO_POR_EXTENSO}. O par é pelo ID de comunicação do DJEN (a Kurier traz o mesmo); sem ele, pelo processo no
@@ -284,9 +287,9 @@ export function ConferenciaDjenKurierView({
               processo e dia.
             </p>
             <p>
-              <strong className="font-medium text-foreground">Em aberto</strong> e <strong className="font-medium text-foreground">Kurier chega em</strong>{" "}
-              ficam fora dos totais até chegar o arquivo da Kurier. Para ver o que é o quê (nos dois, só na Kurier, só no DJEN) e por quê,
-              use “Baixar Excel”.
+              <strong className="font-medium text-foreground">Em aberto</strong> e{" "}
+              <strong className="font-medium text-foreground">aguardando a Kurier</strong> ficam fora dos totais até chegar o próximo arquivo da
+              Kurier. Para ver o que é o quê (nos dois, só na Kurier, só no DJEN) e por quê, use “Baixar Excel”.
             </p>
             {dados.erroBkp ? <p className="text-red-700">Não deu para ler o BKP do SIOE ({dados.erroBkp}): os dias antes de 09/11 estão incompletos.</p> : null}
           </div>
