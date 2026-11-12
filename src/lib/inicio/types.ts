@@ -25,25 +25,30 @@ export interface HomePending {
   breakdown?: Array<{ label: string; value: number }>;
 }
 
-/** Aniversário sem o ano: a idade de ninguém vai para a tela. */
-export interface HomeBirthday extends HomePerson {
+/**
+ * Uma comemoração da equipe como aparece na tela inicial: aniversário (sem o
+ * ano de nascimento: a idade de ninguém vai para a tela) ou aniversário de empresa.
+ */
+export interface HomeCelebration extends HomePerson {
+  kind: "aniversario" | "empresa";
+  /** Ano em que a comemoração cai (a arte e as felicitações são por ano). */
+  year: number;
   day: number;
   month: number;
-  /** Dias até o aniversário (0 = hoje). */
+  /** Dias até a data: 0 = hoje; negativo = já passou, ainda na semana de felicitações. */
   inDays: number;
-  /** Arte de aniversário que o Marketing subiu para este ano (link assinado). */
+  /** Anos de casa que completa (só no aniversário de empresa). */
+  years: number | null;
+  /** Arte que o Marketing subiu para este ano (link assinado). */
   artUrl: string | null;
+  likes: number;
+  /** Quem está logado já parabenizou. */
+  liked: boolean;
+  comments: number;
 }
 
-/** Aniversário de empresa: a pessoa completa mais um ano de casa. */
-export interface HomeWorkAnniversary extends HomePerson {
-  day: number;
-  month: number;
-  inDays: number;
-  /** Anos de casa que completa. */
-  years: number;
-  artUrl: string | null;
-}
+export type HomeBirthday = HomeCelebration;
+export type HomeWorkAnniversary = HomeCelebration & { years: number };
 
 export interface HomeNewcomer extends HomePerson {
   /** Data de admissão (YYYY-MM-DD). */
@@ -82,6 +87,8 @@ export interface HomeData {
   newcomers: HomeNewcomer[];
   /** Quem completa ano de casa nos próximos 30 dias. */
   workAnniversaries: HomeWorkAnniversary[];
+  /** Quem comemorou nos últimos 7 dias (ainda dá para parabenizar). */
+  recentCelebrations: HomeCelebration[];
   /** Quem está logado pode subir as artes de aniversário (Marketing e admin). */
   canManageBirthdayArts: boolean;
   /** Ferramentas da área da pessoa (as mesmas de Meus links). */
