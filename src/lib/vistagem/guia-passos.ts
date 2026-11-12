@@ -405,7 +405,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alvo: "ck-busca",
       titulo: "Achar uma publicação",
       texto:
-        "Busque por processo, cliente, parte, pessoa ou CI. Ao lado, filtre por área, tribunal, tipo de agendamento (Ciência NF, Prazo, Providência ou Compromisso) e datas.",
+        "Busque por processo, cliente, parte, pessoa ou CI. Nas Checadas, a lista mostra um dia de importação por vez (hoje, ao abrir; troque em \"Data da importação\"), e a busca procura em todas as checadas, de qualquer dia. Ao lado, filtre por área, tribunal, tipo de agendamento (Ciência NF, Prazo, Providência ou Compromisso) e datas.",
     },
     {
       id: "fila",

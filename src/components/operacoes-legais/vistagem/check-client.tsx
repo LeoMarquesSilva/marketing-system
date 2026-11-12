@@ -33,7 +33,7 @@ import { avisarContagensVistagem } from "@/hooks/use-vistagem-contagens";
 import { sincronizarEnvios } from "@/lib/vistagem/envios-client";
 import { cn } from "@/lib/utils";
 import { chaveNome } from "@/lib/vistagem/agendamento";
-import { camposDaConferencia, combinaCampos } from "@/lib/vistagem/busca";
+import { MINIMO_BUSCA_NO_BANCO, camposDoCheck, combinaCampos, normalizarBusca } from "@/lib/vistagem/busca";
 import {
   TIPOS_DE_AGENDAMENTO,
   compararTarefa,
@@ -46,13 +46,13 @@ import {
 } from "@/lib/vistagem/check";
 import { SUBTIPOS_AGENDAMENTO_EM_USO, TIPOS_INCONSISTENCIA_AGENDAMENTO } from "@/lib/vistagem/inconsistencias";
 import { descricaoDoTribunal } from "@/lib/vistagem/tribunais";
-import type { AgendamentoResumo, CheckResposta, ConferenciaItem } from "@/lib/vistagem/types";
+import type { AgendamentoResumo, CheckBuscaResposta, CheckResposta, ConferenciaItem } from "@/lib/vistagem/types";
 import { AcessoOperacoesLegais } from "../acesso-operacoes-legais";
 import { AvatarPessoa } from "./combobox-busca";
 import { ContextoDoProcesso, DialogoAcao, EscolhaEmCartoes, type OpcaoEmCartao } from "./dialogo-acao";
 import { AutoriaNaFaixa, BOTAO_FAIXA, BOTAO_FAIXA_PRINCIPAL, FaixaDoProcesso, SetasDaFila, type NavegacaoNaFila } from "./faixa-processo";
 import { FilaPorArea, agruparPorArea, areaDaPublicacao, ordemDaFila } from "./fila-por-area";
-import { FiltroData, dataNaLista } from "./filtro-data";
+import { EscolhaDoDia, FiltroData, dataNaLista, rotuloDaData } from "./filtro-data";
 import { CartaoInconsistencia } from "./inconsistencias-ui";
 import { IconeArea, IconeTribunal, LogoGrupo } from "./marcas";
 import { PublicacaoNaVistagem } from "./publicacao-na-vistagem";
@@ -518,19 +518,68 @@ function Check() {
   /** No celular a fila e a publicação não cabem juntas: mostra a fila só quando pedida. */
   const [listaNoCelular, setListaNoCelular] = useState(false);
   const rolagemDaFila = useRef<HTMLDivElement>(null);
+  /** Dia de importação das Checadas pedido ao servidor; vazio é hoje. Fica num ref para o Atualizar manter o dia. */
+  const diaDasChecadas = useRef("");
+  /** Trocando o dia das Checadas: a lista espera a resposta. */
+  const [trocandoDia, setTrocandoDia] = useState(false);
+  /** Busca nas Checadas que foi ao banco (todas as checadas, de qualquer dia). */
+  const [noBanco, setNoBanco] = useState<(CheckBuscaResposta & { busca: string }) | null>(null);
+  const [buscandoNoBanco, setBuscandoNoBanco] = useState(false);
+  const [erroDaBusca, setErroDaBusca] = useState("");
 
   const carregar = useCallback(async () => {
     setErro("");
     try {
-      const resposta = await authFetch("/api/operacoes-legais/vistagem/check");
+      const dia = diaDasChecadas.current;
+      const resposta = await authFetch(`/api/operacoes-legais/vistagem/check${dia ? `?importacao=${dia}` : ""}`);
       const corpo = await resposta.json();
       if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao carregar o check.");
       setDados(corpo);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Falha ao carregar o check.");
-      setDados({ aChecar: [], revisar: [], checadas: [], fotos: {}, hoje: hojeDoNavegador() });
+      const hoje = hojeDoNavegador();
+      setDados({ aChecar: [], revisar: [], checadas: [], importacao: diaDasChecadas.current || hoje, importacoes: [], fotos: {}, hoje });
     }
   }, []);
+
+  async function trocarDiaDasChecadas(dia: string) {
+    diaDasChecadas.current = dia;
+    setSelecionada(null);
+    setTrocandoDia(true);
+    await carregar();
+    setTrocandoDia(false);
+  }
+
+  // Nas Checadas, a busca procura em todas as checadas, no banco: a lista da tela tem só um dia de importação.
+  const buscaNasChecadas = aba === "checadas" && normalizarBusca(busca).length >= MINIMO_BUSCA_NO_BANCO;
+  useEffect(() => {
+    if (!buscaNasChecadas) {
+      setBuscandoNoBanco(false);
+      setErroDaBusca("");
+      return;
+    }
+    const texto = busca.trim();
+    const controle = new AbortController();
+    setBuscandoNoBanco(true);
+    // Espera a pessoa parar de digitar: uma consulta por busca, não por letra.
+    const espera = setTimeout(async () => {
+      try {
+        const resposta = await authFetch(`/api/operacoes-legais/vistagem/check/busca?q=${encodeURIComponent(texto)}`, { signal: controle.signal });
+        const corpo = await resposta.json();
+        if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao buscar nas checadas.");
+        setNoBanco({ ...(corpo as CheckBuscaResposta), busca: texto });
+        setErroDaBusca("");
+      } catch (e) {
+        if (controle.signal.aborted) return;
+        setErroDaBusca(e instanceof Error ? e.message : "Falha ao buscar nas checadas.");
+      }
+      if (!controle.signal.aborted) setBuscandoNoBanco(false);
+    }, 400);
+    return () => {
+      clearTimeout(espera);
+      controle.abort();
+    };
+  }, [buscaNasChecadas, busca]);
 
   /** Traz antes o andamento do robô, para entrar aqui o que acabou de ser gravado no VIOS (ao abrir, só se faz mais de 1 min). */
   const sincronizarECarregar = useCallback(
@@ -551,12 +600,12 @@ function Check() {
     setAtualizando(false);
   }
 
-  const todas = useMemo(() => [...(dados?.aChecar ?? []), ...(dados?.revisar ?? []), ...(dados?.checadas ?? [])], [dados]);
-  // O que a busca olha em cada publicação (inclui as partes do texto): montado uma vez por carga, não a cada letra.
-  const camposDeBusca = useMemo(
-    () => new Map(todas.map((item) => [item.publicacao.id, [...camposDaConferencia(item), item.checadoPor ?? ""]])),
-    [todas]
+  const todas = useMemo(
+    () => [...(dados?.aChecar ?? []), ...(dados?.revisar ?? []), ...(dados?.checadas ?? []), ...(noBanco?.itens ?? [])],
+    [dados, noBanco]
   );
+  // O que a busca olha em cada publicação (inclui as partes do texto): montado uma vez por carga, não a cada letra.
+  const camposDeBusca = useMemo(() => new Map(todas.map((item) => [item.publicacao.id, camposDoCheck(item)])), [todas]);
   // Pedido × VIOS de cada publicação: também uma vez por carga.
   const situacoes = useMemo(() => new Map(todas.map((item) => [item.publicacao.id, situacaoDoCheck(item)])), [todas]);
   const situacaoDe = (item: ConferenciaItem): SituacaoCheck => situacoes.get(item.publicacao.id) ?? "conferir";
@@ -564,11 +613,17 @@ function Check() {
   const tiposPorItem = useMemo(() => new Map(todas.map((item) => [item.publicacao.id, tiposDoItem(item)])), [todas]);
   const tiposDe = (item: ConferenciaItem): TipoDeAgendamento[] => tiposPorItem.get(item.publicacao.id) ?? [];
 
-  const lista = dados?.[aba];
+  // Buscando nas Checadas, a lista é o que o banco achou (enquanto a próxima resposta não chega, a anterior, filtrada
+  // pela busca atual). Sem busca, as checadas do dia de importação escolhido.
+  // Busca nova que não continua a anterior (apagou ou trocou a palavra): espera o banco, para não mostrar "nada".
+  const resultadoServe = Boolean(noBanco) && (!buscandoNoBanco || normalizarBusca(busca).startsWith(normalizarBusca(noBanco?.busca ?? "")));
+  const lista = buscaNasChecadas ? (resultadoServe ? noBanco?.itens : undefined) : aba === "checadas" && trocandoDia ? undefined : dados?.[aba];
+  // As checadas do dia já são de uma importação só: o dia se escolhe no servidor, não filtra a lista.
+  const checadasDoDia = aba === "checadas" && !buscaNasChecadas;
   const datasDaLista = (lista ?? []).map((item) => item.publicacao.dataPublicacao);
   const dataAtiva = dataNaLista(dataPublicacao, datasDaLista);
   const importacoesDaLista = (lista ?? []).map((item) => item.publicacao.dataImportacao);
-  const importacaoAtiva = dataNaLista(dataImportacao, importacoesDaLista);
+  const importacaoAtiva = checadasDoDia ? "" : dataNaLista(dataImportacao, importacoesDaLista);
   // Área e tribunal escolhidos que sumiram da lista (outra aba, já checadas) deixam de filtrar.
   const areasDaLista = contarPor(lista ?? [], areaDaPublicacao);
   const areaAtiva = areasDaLista.some(([nome]) => nome === area) ? area : "";
@@ -603,7 +658,8 @@ function Check() {
   const ids = ordem.map((item) => item.publicacao.id);
   // Buscar não troca o processo aberto: os resultados aparecem na fila e a pessoa escolhe. Os outros filtros, sim.
   const buscando = busca.trim() !== "";
-  const fixaNaBusca = buscando && selecionada ? ((lista ?? []).find((item) => item.publicacao.id === selecionada) ?? null) : null;
+  const fixaNaBusca =
+    buscando && selecionada ? ([...(lista ?? []), ...(dados?.[aba] ?? [])].find((item) => item.publicacao.id === selecionada) ?? null) : null;
   const indiceAberta = selecionada && ids.includes(selecionada) ? ids.indexOf(selecionada) : fixaNaBusca ? -1 : ids.length ? 0 : -1;
   const aberta = indiceAberta >= 0 ? ordem[indiceAberta] : fixaNaBusca;
   // Aberta fora dos resultados: sem setas (elas andam pelos resultados).
@@ -655,7 +711,10 @@ function Check() {
     avisarContagensVistagem();
   }
 
-  const fotos = dados?.fotos ?? {};
+  const fotos = useMemo(() => ({ ...(dados?.fotos ?? {}), ...(noBanco?.fotos ?? {}) }), [dados, noBanco]);
+  const hoje = dados?.hoje ?? hojeDoNavegador();
+  const diaDaLista = dados?.importacao ?? hoje;
+  const rotuloDoDia = diaDaLista === hoje ? "de hoje" : `de ${rotuloDaData(diaDaLista)}`;
 
   return (
     <div className="space-y-4">
@@ -705,7 +764,7 @@ function Check() {
             if (evento.key === "Enter" && ids[0]) abrir(ids[0]);
             if (evento.key === "Escape") mudarBusca("");
           }}
-          placeholder="Buscar processo, cliente, parte, pessoa ou CI"
+          placeholder={aba === "checadas" ? "Buscar em todas as checadas: processo, cliente, pessoa ou CI" : "Buscar processo, cliente, parte, pessoa ou CI"}
           aria-label="Buscar publicação"
         />
         <Seletor
@@ -748,8 +807,37 @@ function Check() {
           }))}
         />
         <FiltroData rotulo="Data Publicação" datas={datasDaLista} valor={dataAtiva} onChange={setDataPublicacao} />
-        <FiltroData rotulo="Data da importação" datas={importacoesDaLista} valor={importacaoAtiva} onChange={setDataImportacao} />
+        {checadasDoDia ? (
+          // Nas Checadas, um dia de importação por vez (hoje, ao abrir): trocar o dia busca no servidor.
+          <EscolhaDoDia
+            rotulo="Data da importação"
+            dias={dados?.importacoes ?? []}
+            valor={diaDaLista}
+            hoje={hoje}
+            onChange={(dia) => void trocarDiaDasChecadas(dia)}
+            desabilitado={!dados || trocandoDia}
+          />
+        ) : (
+          <FiltroData rotulo="Data da importação" datas={importacoesDaLista} valor={importacaoAtiva} onChange={setDataImportacao} />
+        )}
       </BarraAba>
+
+      {buscaNasChecadas ? (
+        <Aviso tom={erroDaBusca ? "erro" : "info"}>
+          {erroDaBusca ? (
+            erroDaBusca
+          ) : buscandoNoBanco ? (
+            <span className="inline-flex items-center gap-1.5">
+              <LoaderCircle className="size-3.5 animate-spin" aria-hidden />
+              Buscando em todas as checadas, de qualquer dia de importação…
+            </span>
+          ) : noBanco?.maisResultados ? (
+            "Busca em todas as checadas. Vieram as 100 mais recentes que batem: escreva mais da busca para achar outras."
+          ) : (
+            "Busca em todas as checadas, de qualquer dia de importação. Limpe a busca para voltar ao dia escolhido."
+          )}
+        </Aviso>
+      ) : null}
 
       {retorno ? (
         <Aviso
@@ -778,13 +866,28 @@ function Check() {
 
       {lista === undefined ? (
         <Painel>
-          <Carregando rotulo="Carregando o check" />
+          <Carregando rotulo={buscaNasChecadas ? "Buscando em todas as checadas" : trocandoDia ? "Carregando as checadas do dia" : "Carregando o check"} />
+        </Painel>
+      ) : lista.length === 0 && buscaNasChecadas ? (
+        <Painel data-tour="ck-vazio">
+          <Vazio icone={SearchX} titulo="Nenhuma checada com essa busca.">
+            A busca procurou em todas as checadas, de qualquer dia.{" "}
+            <Button variant="link" className="h-auto p-0" onClick={() => mudarBusca("")}>
+              Limpar a busca
+            </Button>
+          </Vazio>
         </Painel>
       ) : lista.length === 0 ? (
         <Painel data-tour="ck-vazio">
-          <Vazio icone={aba === "checadas" ? CircleCheck : ListChecks} titulo={VAZIO[aba].titulo}>
-            {VAZIO[aba].texto}
-          </Vazio>
+          {aba === "checadas" ? (
+            <Vazio icone={CircleCheck} titulo={`Nenhuma publicação checada da importação ${rotuloDoDia}.`}>
+              Escolha outro dia em Data da importação, ou busque pelo processo, cliente, pessoa ou CI para procurar em todas as checadas.
+            </Vazio>
+          ) : (
+            <Vazio icone={ListChecks} titulo={VAZIO[aba].titulo}>
+              {VAZIO[aba].texto}
+            </Vazio>
+          )}
         </Painel>
       ) : filtrada.length === 0 && !(buscando && aberta) ? (
         <Painel>
@@ -811,7 +914,13 @@ function Check() {
             abertaForaDosResultados={Boolean(aberta) && indiceAberta < 0}
             onLimparBusca={() => mudarBusca("")}
             onRecolher={() => setFilaRecolhida(true)}
-            rotulo={buscando ? "Resultados da busca" : `Publicações: ${ABAS.find((item) => item.valor === aba)?.rotulo.toLowerCase()}`}
+            rotulo={
+              buscaNasChecadas
+                ? "Resultados em todas as checadas"
+                : buscando
+                  ? "Resultados da busca"
+                  : `Publicações: ${ABAS.find((item) => item.valor === aba)?.rotulo.toLowerCase()}`
+            }
             rolagem={rolagemDaFila}
             className={cn(aberta && !listaNoCelular && "hidden lg:flex", !filaAberta && "lg:hidden")}
             linha={(item) => (
@@ -833,7 +942,7 @@ function Check() {
                 item={aberta}
                 aba={aba}
                 fotos={fotos}
-                hoje={dados?.hoje ?? hojeDoNavegador()}
+                hoje={hoje}
                 navegacao={navegacao}
                 onAbrir={abrir}
                 onVoltar={() => setListaNoCelular(true)}

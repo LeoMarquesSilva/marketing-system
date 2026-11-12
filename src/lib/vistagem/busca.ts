@@ -64,3 +64,39 @@ export function camposDaConferencia(item: ConferenciaItem): string[] {
     ...item.agendamentos.flatMap((agendamento) => [agendamento.tarefa, agendamento.responsavel, agendamento.revisor, agendamento.viosTarefaId]),
   ].filter((campo): campo is string => Boolean(campo));
 }
+
+/** No Check, também quem checou. A tela e a busca no banco usam a mesma lista, para acharem a mesma coisa. */
+export function camposDoCheck(item: ConferenciaItem): string[] {
+  return item.checadoPor ? [...camposDaConferencia(item), item.checadoPor] : camposDaConferencia(item);
+}
+
+/** A busca nas Checadas vai ao banco a partir deste tamanho; abaixo disso, procura só no que está na tela. */
+export const MINIMO_BUSCA_NO_BANCO = 3;
+
+/** Letras que a busca acha com ou sem acento (o banco já ignora maiúsculas, inclusive nas acentuadas). */
+const VARIANTES: Record<string, string> = {
+  a: "aáàâãä",
+  e: "eéèêë",
+  i: "iíìîï",
+  o: "oóòôõö",
+  u: "uúùûü",
+  c: "cç",
+  n: "nñ",
+};
+
+/**
+ * Expressão regular do banco (`imatch`) para uma palavra da busca: "insolvencia" acha "Insolvência". Letras e números
+ * entram como estão; qualquer outro sinal vira "qualquer caractere". O banco só separa as candidatas: o resultado
+ * ainda passa pelo `combinaCampos`, que é quem decide.
+ */
+export function padraoDoTermo(termo: string): string {
+  return [...normalizarBusca(termo)]
+    .map((letra) => (VARIANTES[letra] ? `[${VARIANTES[letra]}]` : /[a-z0-9]/.test(letra) ? letra : "."))
+    .join("");
+}
+
+/** Os dígitos da palavra, quando são 4 ou mais (número do processo, CI): valem também sem a pontuação. */
+export function digitosDoTermo(termo: string): string | null {
+  const digitos = termo.replace(/\D/g, "");
+  return digitos.length >= 4 ? digitos : null;
+}
