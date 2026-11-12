@@ -308,9 +308,9 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
     {
       id: "vistado",
       alvo: "vj-visao",
-      titulo: "Acompanhe o que já vistou",
+      titulo: "Acompanhe o que a área vistou",
       texto:
-        "Em \"Vistado\" você vê o que vistou nos últimos 30 dias e onde cada publicação está: na conferência, com o robô, agendada no VIOS, checada ou em revisão. \"A vistar\" volta para a fila.",
+        "Em \"Vistado\" você vê tudo o que a sua área vistou nos últimos 30 dias, por qualquer pessoa e inclusive as demandas de risco, e onde cada publicação está: na conferência, com o robô, agendada no VIOS, checada ou em revisão. \"A vistar\" volta para a fila.",
     },
     {
       id: "resumo",
@@ -481,7 +481,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alvo: "cg-risco",
       titulo: "Etiquetas de risco",
       texto:
-        "Pasta com uma destas etiquetas no VIOS vira demanda de risco: destaque vermelho, filtro próprio e só quem vista risco vê. Vale para as próximas triagens; \"Voltar ao padrão\" desfaz.",
+        "Pasta com uma destas etiquetas no VIOS vira demanda de risco: destaque vermelho, filtro próprio e só quem vista risco a recebe para vistar (no Vistado, a área toda acompanha). Vale para as próximas triagens; \"Voltar ao padrão\" desfaz.",
     },
     {
       id: "alerta",

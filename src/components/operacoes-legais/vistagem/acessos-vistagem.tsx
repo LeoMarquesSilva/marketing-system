@@ -208,7 +208,7 @@ function DialogoDoAcesso({
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-foreground">Vê as demandas de risco</p>
-                  <p className="text-xs text-muted-foreground">Desligado, vê só as publicações sem risco; as de risco ficam com quem vista risco.</p>
+                  <p className="text-xs text-muted-foreground">Desligado, a fila A vistar traz só as publicações sem risco; as de risco ficam com quem vista risco. No Vistado, vê tudo o que a área vistou.</p>
                 </div>
                 <Interruptor ligado={veRisco} onChange={setVeRisco} rotulo="Vê as demandas de risco" />
               </div>

@@ -824,7 +824,6 @@ async function itensDeConferencia(
     vistadoDesde?: string;
     limiteTeor?: number;
     comAuxiliar?: boolean;
-    semRisco?: boolean;
     /** Põe no item a sugestão da IA da vistagem (a fatal pelos dias só sai depois, com o calendário). */
     comSugestaoIa?: boolean;
   } = {}
@@ -837,7 +836,6 @@ async function itensDeConferencia(
     .limit(limite);
   if (filtro.escritorios) consulta = consulta.in("escritorio_responsavel", filtro.escritorios);
   if (filtro.vistadoDesde) consulta = consulta.gte("vistado_em", filtro.vistadoDesde);
-  if (filtro.semRisco) consulta = consulta.not("demanda_risco", "is", true);
   const { data, error } = await consulta;
   if (error) falhou("carregar a conferência", error);
   const linhas = (data ?? []) as (PublicacaoRow & {
@@ -1012,13 +1010,13 @@ export async function transferirPublicacao(
 export const DIAS_AGENDADAS = 30;
 
 /**
- * O que o jurídico já vistou nos últimos dias, das suas áreas: na conferência, com o robô, agendado,
+ * O que as áreas do usuário vistaram nos últimos dias, por qualquer pessoa: na conferência, com o robô, agendado,
  * checado ou em revisão, com as tarefas e a situação de cada uma no VIOS, e as fotos de quem aparece.
+ * Inclui as demandas de risco: "não vista risco" tira as de risco só da fila (A vistar); quem é da área acompanha tudo.
  */
 export async function listarAgendadasJuridico(
   escritorio: string | null,
   areas: AreasVistagem = null,
-  veRisco = true,
   authUserId: string | null = null,
   ehAdmin = false
 ): Promise<AgendadasJuridicoResposta> {
@@ -1028,7 +1026,6 @@ export async function listarAgendadasJuridico(
   const lidos = await itensDeConferencia(["controladoria_vistar", "pronto_para_agendar", "agendado", "checado", "revisar", "abertura_pasta"], 300, false, "vistado_em", {
     escritorios: escritorio ? [escritorio] : areas,
     vistadoDesde,
-    semRisco: !veRisco,
   });
   // A abertura de pasta não passa pelo robô: o detalhe mostra a árvore prevista (datas e quem fica), que a Central agenda.
   const base = lidos.some((item) => item.publicacao.status === "abertura_pasta") ? await carregarBaseDoFluxo("das Agendadas") : null;

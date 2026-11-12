@@ -371,7 +371,7 @@ function EtiquetasDeRisco({ painel, onEditar, onPadrao }: { painel: PainelDeRegr
       tour="cg-risco"
       icone={ShieldAlert}
       titulo="Etiquetas de demanda de risco"
-      descricao="Pasta com uma destas etiquetas no VIOS vira demanda de risco: cabeçalho vermelho, filtro próprio e só quem vista risco vê. Vale para as próximas triagens."
+      descricao="Pasta com uma destas etiquetas no VIOS vira demanda de risco: cabeçalho vermelho, filtro próprio e só quem vista risco a recebe para vistar (no Vistado, a área toda acompanha). Vale para as próximas triagens."
       acao={
         <Button size="sm" variant="outline" onClick={onEditar}>
           <Pencil />
