@@ -7,6 +7,8 @@ import { loadPeopleDirectory, type DirectoryPerson } from "@/lib/rh/people-direc
 import { RhHttpError } from "@/lib/rh/qualifications/server";
 import { getDietaryByUserIds } from "@/lib/rh/registration/server";
 import { formatDietary } from "@/lib/rh/registration/types";
+import { resolveEmployeeAvatarUrl } from "@/lib/ferias/filters";
+import { DIETARY_NO_RESTRICTION, dietarySummary, dietaryText, parseDietaryChoice, type DietaryChoice } from "@/lib/festa-convite";
 import {
   RSVP_PAGE_BY_EVENT,
   firstNameOf,
@@ -26,7 +28,8 @@ const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 
 /** O e-mail do convite pode estar num domínio e o do login no outro. */
 const OFFICE_DOMAINS = new Set(["bpplaw.com.br", "bismarchipires.com.br"]);
-const INVITE_SELECT = "id, name, email, hr_employee_id, confirmation_status, transport, responded_at";
+const INVITE_SELECT =
+  "id, name, email, hr_employee_id, confirmation_status, transport, responded_at, plus_one_allowed, plus_one, plus_one_name, dietary_info, dietary_restrictions";
 
 export function rsvpAdminClient(): SupabaseClient {
   if (!serviceKey) throw new RhHttpError("SUPABASE_SERVICE_ROLE_KEY não configurada.", 503, "SERVICE_UNAVAILABLE");
@@ -57,6 +60,21 @@ interface InviteRow {
   confirmation_status: string;
   transport: string | null;
   responded_at: string | null;
+  plus_one_allowed: boolean | null;
+  plus_one: boolean | null;
+  plus_one_name: string | null;
+  dietary_info: unknown;
+  dietary_restrictions: string | null;
+}
+
+/** Restrições gravadas no próprio convite: {"guest": ..., "plusOne": ...} (mesmo formato do convite dos clientes). */
+function storedDietary(row: InviteRow | null): { guest: DietaryChoice | null; plusOne: DietaryChoice | null } {
+  const info = (row?.dietary_info ?? null) as { guest?: unknown; plusOne?: unknown } | null;
+  if (!info || typeof info !== "object") return { guest: null, plusOne: null };
+  return {
+    guest: info.guest ? (parseDietaryChoice(info.guest) ?? null) : null,
+    plusOne: info.plusOne ? (parseDietaryChoice(info.plusOne) ?? null) : null,
+  };
 }
 
 export async function resolveRsvpViewer(db: SupabaseClient): Promise<RsvpViewer> {
@@ -188,6 +206,8 @@ async function buildView(db: SupabaseClient, eventId: string, viewer: RsvpViewer
     greetingName(db, employee, viewer),
     dietaryOf(db, employee),
   ]);
+  const stored = storedDietary(invite);
+  const going = invite?.confirmation_status === "confirmado";
   return {
     eligible: Boolean(employee || invite),
     firstName,
@@ -197,6 +217,13 @@ async function buildView(db: SupabaseClient, eventId: string, viewer: RsvpViewer
     transport: isRsvpTransport(invite?.transport) ? invite.transport : null,
     respondedAt: invite?.responded_at ?? null,
     dietary,
+    // Sem ficha cadastral (ex.: consultor convidado pela lista): a restrição é perguntada na página.
+    askDietary: !employee,
+    ownDietary: stored.guest,
+    plusOneAllowed: Boolean(invite?.plus_one_allowed),
+    plusOne: invite?.responded_at && going ? Boolean(invite.plus_one) : null,
+    plusOneName: going && invite?.plus_one ? invite.plus_one_name : null,
+    plusOneDietary: going && invite?.plus_one ? stored.plusOne : null,
   };
 }
 
@@ -231,14 +258,32 @@ export async function saveRsvp(eventId: string, answer: RsvpAnswer): Promise<Rsv
   if (!employee && !invite) {
     throw new RhHttpError("Esta confirmação é só para a equipe do escritório.", 403, "NOT_INVITED");
   }
+  const plusOneAllowed = Boolean(invite?.plus_one_allowed);
+  if (answer.plusOne && !plusOneAllowed) {
+    throw new RhHttpError("O acompanhante não está previsto no seu convite. Fale com a organização da festa.", 403, "PLUS_ONE_NOT_ALLOWED");
+  }
 
   const now = new Date().toISOString();
+  const withCompanion = answer.attending && answer.plusOne;
+  // Quem não tem ficha cadastral informa a própria restrição aqui; a do acompanhante vale para todos.
+  const own = answer.attending && !employee ? (answer.dietary ?? DIETARY_NO_RESTRICTION) : null;
+  const companion = withCompanion ? (answer.plusOneDietary ?? DIETARY_NO_RESTRICTION) : null;
+  const companionFields =
+    plusOneAllowed || !employee
+      ? {
+          plus_one: withCompanion,
+          plus_one_name: withCompanion ? answer.plusOneName : null,
+          dietary_info: own || companion ? { guest: own, plusOne: companion } : null,
+          dietary_restrictions: dietarySummary(own, companion),
+        }
+      : {};
   const payload = {
     confirmation_status: answer.attending ? "confirmado" : "recusado",
     transport: answer.attending ? answer.transport : null,
     responded_at: now,
     hr_employee_id: employee?.id ?? invite?.hr_employee_id ?? null,
     updated_at: now,
+    ...companionFields,
   };
   const { error } = invite
     ? await db.from("event_invites").update(payload).eq("id", invite.id)
@@ -286,6 +331,24 @@ export async function getRsvpPanel(eventId: string): Promise<RsvpPanelData> {
   const personOf = (row: InviteRow): DirectoryPerson | undefined =>
     (row.hr_employee_id ? byId.get(row.hr_employee_id) : undefined) ?? byName.get(normalizeName(row.name));
 
+  // Convidados sem ficha no RH (ex.: consultores): foto e área vêm do login.
+  const outsiders = rows.filter((row) => !personOf(row)).map((row) => row.name);
+  const loginByName = new Map<string, { avatar: string | null; department: string | null }>();
+  if (outsiders.length) {
+    const { data: logins, error: loginsError } = await db
+      .from("users")
+      .select("name, department, avatar_url, photo_onedrive_url")
+      .in("name", outsiders)
+      .eq("is_active", true);
+    if (loginsError) console.error(`[${LOG}] convidados sem ficha:`, loginsError);
+    for (const login of logins ?? []) {
+      loginByName.set(normalizeName(login.name as string), {
+        avatar: resolveEmployeeAvatarUrl(login.avatar_url as string | null, (login.photo_onedrive_url as string | null) ?? null),
+        department: (login.department as string | null) ?? null,
+      });
+    }
+  }
+
   const attendingUserIds = rows
     .filter((row) => row.confirmation_status === "confirmado")
     .map((row) => personOf(row)?.user_id)
@@ -299,16 +362,23 @@ export async function getRsvpPanel(eventId: string): Promise<RsvpPanelData> {
     const person = personOf(row);
     const status = statusOf(row.confirmation_status);
     const info = status === "confirmado" && person?.user_id ? dietary.get(person.user_id) : undefined;
+    const login = person ? undefined : loginByName.get(normalizeName(row.name));
+    const stored = storedDietary(row);
+    const going = status === "confirmado";
+    const companion = going && row.plus_one && row.plus_one_name ? row.plus_one_name : null;
+    const ownStored = going && stored.guest ? dietaryText(stored.guest) || "Nenhuma restrição" : null;
     return {
       inviteId: row.id,
       name: person?.full_name ?? row.name,
       shortName: person?.short_name ?? row.name,
-      department: person?.department ?? null,
-      avatarUrl: person?.avatar_url ?? null,
+      department: person?.department ?? login?.department ?? null,
+      avatarUrl: person?.avatar_url ?? login?.avatar ?? null,
       status,
       transport: isRsvpTransport(row.transport) ? row.transport : null,
       respondedAt: row.responded_at,
-      dietary: info ? formatDietary(info) || null : null,
+      dietary: info ? formatDietary(info) || null : ownStored,
+      plusOneName: companion,
+      plusOneDietary: companion ? dietaryText(stored.plusOne) || null : null,
     };
   });
   people.sort((a, b) => a.shortName.localeCompare(b.shortName, "pt-BR"));

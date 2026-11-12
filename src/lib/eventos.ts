@@ -208,6 +208,8 @@ export interface EventInvite {
   transport: RsvpTransport | null;
   /** Quando o próprio colaborador respondeu pela página de confirmação. */
   respondedAt: string | null;
+  /** Leva 1 acompanhante (convite dos clientes ou sócio de área na confirmação da equipe). */
+  plusOne?: boolean | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -708,6 +710,7 @@ type InviteRow = {
   notes: string | null;
   transport?: string | null;
   responded_at?: string | null;
+  plus_one?: boolean | null;
   created_at: string;
   updated_at: string;
 };
@@ -936,6 +939,7 @@ function rowToInvite(row: InviteRow): EventInvite {
     notes: row.notes,
     transport: isRsvpTransport(row.transport) ? row.transport : null,
     respondedAt: row.responded_at ?? null,
+    plusOne: row.plus_one ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

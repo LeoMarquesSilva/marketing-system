@@ -3,6 +3,7 @@
  * A resposta fica no próprio convite (`event_invites`): confirmação + transporte.
  * Este arquivo é usado no navegador e no servidor.
  */
+import { parseDietaryChoice, type DietaryChoice } from "@/lib/festa-convite";
 
 export type RsvpTransport = "ida_volta" | "so_ida" | "so_volta" | "nao";
 
@@ -58,16 +59,35 @@ export function formatRsvpDeadline(closesAt: string, withTime = false): string {
 export interface RsvpAnswer {
   attending: boolean;
   transport: RsvpTransport | null;
+  /** Leva 1 acompanhante (só quem tem o acompanhante previsto no convite). */
+  plusOne: boolean;
+  plusOneName: string | null;
+  plusOneDietary: DietaryChoice | null;
+  /** Restrição alimentar da própria pessoa, só para quem não tem ficha cadastral (ex.: consultores). */
+  dietary: DietaryChoice | null;
 }
 
-/** Valida o que vem do formulário: quem vai escolhe o transporte; quem não vai, não. */
+const NOT_GOING: RsvpAnswer = { attending: false, transport: null, plusOne: false, plusOneName: null, plusOneDietary: null, dietary: null };
+const MAX_COMPANION_NAME = 80;
+
+/**
+ * Valida o que vem do formulário: quem vai escolhe o transporte; quem não vai, não.
+ * Acompanhante é opcional; se vier, o nome é obrigatório. O servidor confere se ele está previsto.
+ */
 export function parseRsvpAnswer(body: unknown): RsvpAnswer | null {
   if (!body || typeof body !== "object") return null;
-  const { attending, transport } = body as { attending?: unknown; transport?: unknown };
+  const { attending, transport, plusOne, plusOneName, plusOneDietary, dietary } = body as Record<string, unknown>;
   if (typeof attending !== "boolean") return null;
-  if (!attending) return { attending: false, transport: null };
+  if (!attending) return { ...NOT_GOING };
   if (!isRsvpTransport(transport)) return null;
-  return { attending: true, transport };
+  if (plusOne !== undefined && typeof plusOne !== "boolean") return null;
+  const withCompanion = plusOne === true;
+  const name = withCompanion && typeof plusOneName === "string" ? plusOneName.replace(/\s+/g, " ").trim().slice(0, MAX_COMPANION_NAME) : null;
+  if (withCompanion && (!name || name.length < 2)) return null;
+  const companionDietary = withCompanion ? parseDietaryChoice(plusOneDietary) : null;
+  const ownDietary = dietary === undefined || dietary === null ? null : parseDietaryChoice(dietary);
+  if (companionDietary === undefined || ownDietary === undefined) return null;
+  return { attending: true, transport, plusOne: withCompanion, plusOneName: name, plusOneDietary: companionDietary, dietary: ownDietary };
 }
 
 /** O que a página mostra para quem está logado. */
@@ -83,6 +103,15 @@ export interface RsvpView {
   respondedAt: string | null;
   /** Restrição alimentar da ficha cadastral; null = ficha sem a informação. */
   dietary: string | null;
+  /** Sem ficha cadastral (ex.: consultor): a restrição alimentar é perguntada aqui. */
+  askDietary: boolean;
+  /** Restrição informada nesta página por quem não tem ficha. */
+  ownDietary: DietaryChoice | null;
+  /** Pode levar 1 acompanhante (definido pela organização). */
+  plusOneAllowed: boolean;
+  plusOne: boolean | null;
+  plusOneName: string | null;
+  plusOneDietary: DietaryChoice | null;
 }
 
 export type RsvpStatus = "confirmado" | "recusado" | "sem_resposta";
@@ -99,6 +128,10 @@ export interface RsvpPerson {
   respondedAt: string | null;
   /** Restrição alimentar da ficha (só quem vai). */
   dietary: string | null;
+  /** Nome do acompanhante (só quem vai e levará alguém). */
+  plusOneName: string | null;
+  /** Restrição alimentar do acompanhante. */
+  plusOneDietary: string | null;
 }
 
 export interface RsvpPanelData {
@@ -113,17 +146,28 @@ export interface RsvpCounts {
   confirmed: number;
   declined: number;
   pending: number;
+  /** Acompanhantes de quem vai. */
+  companions: number;
+  /** Pessoas na festa: quem confirmou + acompanhantes. */
+  headcount: number;
+  /** Lugares no micro-ônibus (o acompanhante segue a escolha de quem o leva). */
   outbound: number;
   returning: number;
+  /** Pessoas que usam o micro-ônibus em algum trecho. */
+  riders: number;
 }
 
 export function countRsvp(people: RsvpPerson[]): RsvpCounts {
-  const counts: RsvpCounts = { confirmed: 0, declined: 0, pending: 0, outbound: 0, returning: 0 };
+  const counts: RsvpCounts = { confirmed: 0, declined: 0, pending: 0, companions: 0, headcount: 0, outbound: 0, returning: 0, riders: 0 };
   for (const person of people) {
     if (person.status === "confirmado") {
+      const seats = person.plusOneName ? 2 : 1;
       counts.confirmed += 1;
-      if (usesOutbound(person.transport)) counts.outbound += 1;
-      if (usesReturn(person.transport)) counts.returning += 1;
+      counts.companions += seats - 1;
+      counts.headcount += seats;
+      if (usesOutbound(person.transport)) counts.outbound += seats;
+      if (usesReturn(person.transport)) counts.returning += seats;
+      if (usesOutbound(person.transport) || usesReturn(person.transport)) counts.riders += seats;
     } else if (person.status === "recusado") counts.declined += 1;
     else counts.pending += 1;
   }
