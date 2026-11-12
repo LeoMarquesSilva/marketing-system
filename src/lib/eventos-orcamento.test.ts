@@ -152,6 +152,11 @@ describe("transporte por veículo", () => {
     expect(plan).toMatchObject({ vehiclesNow: 2, costNow: 5400, shortfall: 2700, reserve: 0, seatsLeft: 23 });
   });
 
+  it("o acompanhante ocupa lugar no ônibus de quem o leva", () => {
+    const plan = transportPlan(line, [...team("ida_volta", 22), { guestType: "colaborador", transport: "ida_volta", respondedAt: "2026-11-12", plusOne: true }]);
+    expect(plan).toMatchObject({ outbound: 24, inbound: 24, vehiclesNow: 1, seatsLeft: 0 });
+  });
+
   it("não calcula sem valor ou sem lugares por veículo", () => {
     expect(transportPlan({ amountPlanned: 2700 }, team("ida_volta", 3))).toBeNull();
   });

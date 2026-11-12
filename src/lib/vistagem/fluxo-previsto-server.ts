@@ -1,19 +1,34 @@
 import "server-only";
 
-import { areaDoCatalogo, chaveDoCaminho } from "./agendamento";
+import { areaDoCatalogo, chaveDoCaminho, contagemPadraoDaArea } from "./agendamento";
 import { cienciaQueFica, ehCienciaDosAgendamentos } from "./ciencia-agendamentos";
-import { criarCalendario } from "./dias-uteis";
+import { criarCalendario, criarCalendarioDePrazo } from "./dias-uteis";
 import { carregarFeriados } from "./feriados";
-import { fluxoPrevisto, prazoApertado } from "./fluxo-previsto";
+import { fluxoDoPrazo, fluxoPrevisto, prazoApertado, type PrazoDaPublicacao } from "./fluxo-previsto";
 import { arvoreDaArea, montarFluxo, type TipoNaArvore } from "./fluxo-vios";
 import { carregarArvoreVios, carregarCatalogoProcessos, catalogoDaArea, type CatalogoArea } from "./sama";
 import type { AgendamentoResumo, TarefaPrevista } from "./types";
 
-/** O que decide a lista de tarefas (e a árvore) de uma publicação: a área da pasta ou, sem ela, a do escritório. */
-export type AreaDaPublicacao = { area_processo: string | null; escritorio_responsavel: string | null };
+/**
+ * O que decide a lista de tarefas (e a árvore) de uma publicação: a área da pasta ou, sem ela, a do escritório. A data
+ * da publicação conta o prazo marcado no calendário (regra da insolvência, `fluxoDoPrazo`).
+ */
+export type AreaDaPublicacao = { area_processo: string | null; escritorio_responsavel: string | null; data_publicacao?: string | null };
 
 export function catalogoDaPublicacao(areas: CatalogoArea[], publicacao: AreaDaPublicacao): CatalogoArea | null {
   return catalogoDaArea(areas, areaDoCatalogo(publicacao.area_processo, publicacao.escritorio_responsavel, areas.map((item) => item.area)));
+}
+
+/**
+ * Como contar o prazo marcado com a fatal no calendário: o dia da publicação e a contagem padrão da área, como a tela
+ * da vistagem (o escritório ou, sem ele, a área do catálogo).
+ */
+export function prazoDaPublicacao(publicacao: AreaDaPublicacao, areas: CatalogoArea[], feriados: string[]): PrazoDaPublicacao {
+  return {
+    dataPublicacao: publicacao.data_publicacao ?? null,
+    contagem: contagemPadraoDaArea(publicacao.escritorio_responsavel ?? catalogoDaPublicacao(areas, publicacao)?.area),
+    ehDiaDePrazo: criarCalendarioDePrazo(feriados),
+  };
 }
 
 /**
@@ -66,7 +81,8 @@ export async function carregarBaseDoFluxo(onde: string): Promise<BaseDoFluxo | n
   }
 }
 
-type TarefaParaPrever = Pick<AgendamentoResumo, "id" | "ordem" | "tarefa" | "tarefaId" | "etiqueta" | "data" | "dataFatal" | "responsavel" | "revisor" | "fluxoDatas">;
+type TarefaParaPrever = Pick<AgendamentoResumo, "id" | "ordem" | "tarefa" | "tarefaId" | "etiqueta" | "data" | "dataFatal" | "responsavel" | "revisor" | "fluxoDatas"> &
+  Partial<Pick<AgendamentoResumo, "diasPrazo">>;
 
 /**
  * O que o fluxo do VIOS cria com cada tarefa da vistagem, com a data e quem fica em cada uma (`fluxoPrevisto`), e o
@@ -81,9 +97,10 @@ export function comFluxoPrevisto<T extends TarefaParaPrever>(
   ehDiaUtil: (iso: string) => boolean = criarCalendario(base.feriados)
 ): (T & { enviarHoje: string | null; fluxoPrevisto: TarefaPrevista[] })[] {
   const arvore = arvoreDaPublicacao(base.arvore, base.catalogos, publicacao);
+  const daPublicacao = prazoDaPublicacao(publicacao, base.catalogos, base.feriados);
   return marcarCienciaRepetida(agendamentos, arvore).map(({ cienciaFica, ...resto }) => {
     const agendamento = resto as unknown as T;
-    const fluxoDaTarefa = agendamento.tarefaId ? montarFluxo(agendamento.tarefaId, arvore) : null;
+    const fluxoDaTarefa = agendamento.tarefaId ? fluxoDoPrazo(montarFluxo(agendamento.tarefaId, arvore), agendamento, daPublicacao) : null;
     // Prazo curto (ou validado noutro dia): o Enviar vai hoje e o Revisar e o Protocolar ficam antes da fatal.
     const apertada = prazoApertado(agendamento, fluxoDaTarefa, ehDiaUtil, hoje);
     return {

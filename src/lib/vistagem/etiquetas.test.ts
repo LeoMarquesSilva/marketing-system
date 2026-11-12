@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { etiquetasEmDestaque, listaDeEtiquetas, temEtiqueta } from "./etiquetas";
+import { etiquetasEmDestaque, listaDeEtiquetas, pedeDiasCorridos, temEtiqueta } from "./etiquetas";
 
 describe("listaDeEtiquetas", () => {
   it("separa o texto do VIOS pelo |", () => {
@@ -34,6 +34,16 @@ describe("etiquetasEmDestaque", () => {
 
   it("aceita outra lista de destaque", () => {
     expect(etiquetasEmDestaque(["Crédito Ativo", "Crítico"], ["Crítico"])).toEqual(["Crítico"]);
+  });
+});
+
+describe("pedeDiasCorridos", () => {
+  it("só a RC-Insolvência pede dias corridos", () => {
+    expect(pedeDiasCorridos(["Carteira GPR", "Crédito Ativo", "RC-Insolvência"])).toBe(true);
+    expect(pedeDiasCorridos(["rc - insolvencia"])).toBe(true);
+    expect(pedeDiasCorridos(["Carteira GPR", "Demanda de risco"])).toBe(false);
+    expect(pedeDiasCorridos([])).toBe(false);
+    expect(pedeDiasCorridos(null)).toBe(false);
   });
 });
 

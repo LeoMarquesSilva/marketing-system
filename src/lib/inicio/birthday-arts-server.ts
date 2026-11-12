@@ -22,6 +22,8 @@ import {
 const LOG = "artes-aniversario";
 /** Validade do link assinado (a tela pede outro a cada visita). */
 const ART_URL_SECONDS = 60 * 60;
+/** Largura da arte na tela (o modal mostra em até ~600 px; o dobro cobre telas de alta densidade). */
+const ART_SCREEN_WIDTH = 1200;
 const EXTENSION: Record<BirthdayArtType, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
 
 export class BirthdayArtHttpError extends Error {
@@ -74,18 +76,23 @@ export async function signedArtUrls(
   const wantedKeys = new Set(wanted.map((item) => artKey(item.employeeId, item.kind, item.year)));
   const rows = (data ?? []).filter((row) => wantedKeys.has(artKey(row.employee_id as string, row.kind as BirthdayArtKind, row.year as number)));
   if (rows.length === 0) return result;
-  const { data: signed, error: signError } = await db.storage
-    .from(BIRTHDAY_ARTS_BUCKET)
-    .createSignedUrls(rows.map((row) => row.storage_path as string), ART_URL_SECONDS);
-  if (signError) {
-    console.error(`[${LOG}] links:`, signError.message);
-    return result;
-  }
-  const byPath = new Map((signed ?? []).map((entry) => [entry.path, entry.signedUrl]));
-  for (const row of rows) {
-    const url = byPath.get(row.storage_path as string);
-    if (url) result.set(artKey(row.employee_id as string, row.kind as BirthdayArtKind, row.year as number), url);
-  }
+  // As artes sobem em tamanho de impressão (2000 px ou mais): a tela pede a versão reduzida.
+  // Se a redução falhar para um arquivo, vai o original.
+  const bucket = db.storage.from(BIRTHDAY_ARTS_BUCKET);
+  await Promise.all(
+    rows.map(async (row) => {
+      const path = row.storage_path as string;
+      const reduced = await bucket.createSignedUrl(path, ART_URL_SECONDS, {
+        transform: { width: ART_SCREEN_WIDTH, quality: 80, resize: "contain" },
+      });
+      const signed = reduced.data?.signedUrl ? reduced : await bucket.createSignedUrl(path, ART_URL_SECONDS);
+      if (signed.error || !signed.data?.signedUrl) {
+        console.error(`[${LOG}] link:`, signed.error?.message);
+        return;
+      }
+      result.set(artKey(row.employee_id as string, row.kind as BirthdayArtKind, row.year as number), signed.data.signedUrl);
+    })
+  );
   return result;
 }
 

@@ -272,6 +272,8 @@ export interface TransportAnswer {
   /** ida_volta | so_ida | so_volta | nao | null (ainda não respondeu). */
   transport: string | null;
   respondedAt: string | null;
+  /** O acompanhante segue a escolha de transporte de quem o leva. */
+  plusOne?: boolean | null;
 }
 
 export interface TransportTier {
@@ -319,8 +321,9 @@ export function transportPlan(
   const unitAmount = line.unitAmount ?? 0;
   if (seats <= 0 || unitAmount <= 0) return null;
   const team = answers.filter((answer) => answer.guestType === "colaborador");
-  const outbound = team.filter((answer) => answer.transport === "ida_volta" || answer.transport === "so_ida").length;
-  const inbound = team.filter((answer) => answer.transport === "ida_volta" || answer.transport === "so_volta").length;
+  const seatsTaken = (list: TransportAnswer[]) => list.reduce((sum, answer) => sum + (answer.plusOne ? 2 : 1), 0);
+  const outbound = seatsTaken(team.filter((answer) => answer.transport === "ida_volta" || answer.transport === "so_ida"));
+  const inbound = seatsTaken(team.filter((answer) => answer.transport === "ida_volta" || answer.transport === "so_volta"));
   const waiting = team.filter((answer) => !answer.respondedAt).length;
   const peak = Math.max(outbound, inbound);
   const vehiclesFor = (people: number) => Math.ceil(people / seats);

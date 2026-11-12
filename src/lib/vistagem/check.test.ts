@@ -65,6 +65,23 @@ describe("revisorEstaNaTarefa", () => {
     expect(revisorEstaNaTarefa(sessao({ viosTarefas: [gravada({ responsaveis: "Lorena Lourenço Miranda" })] }))).toBe(false);
   });
 
+  it("audiência do Trabalhista: também procura o revisor (adv. auxiliar) na tarefa; em outra área, não", () => {
+    // 0012645-71 (12/11/2026): a AUDIÊNCIA UNA/INICIAL ficou só com a Pamela, sem a Lorena.
+    const audiencia = agendamento({
+      etiqueta: "COMPROMISSO",
+      tarefa: "AUDIÊNCIA UNA/INICIAL",
+      responsavel: "Pamela Klava Senna Patricio",
+      revisor: "Lorena Lourenço Miranda",
+      viosTarefas: [gravada({ responsaveis: "Pamela Klava Senna Patricio" })],
+    });
+    expect(revisorEstaNaTarefa(audiencia, "Trabalhista")).toBe(false);
+    expect(
+      revisorEstaNaTarefa({ ...audiencia, viosTarefas: [gravada({ responsaveis: "Pamela Klava Senna Patricio, Lorena Lourenço Miranda" })] }, "Trabalhista")
+    ).toBe(true);
+    expect(revisorEstaNaTarefa(audiencia, "Cível")).toBeNull();
+    expect(revisorEstaNaTarefa(audiencia)).toBeNull();
+  });
+
   it("não responde quando não se aplica ou quando o robô não devolveu os responsáveis", () => {
     expect(revisorEstaNaTarefa(sessao({ viosTarefas: null }))).toBeNull();
     expect(revisorEstaNaTarefa(sessao({ viosTarefas: [gravada({ responsaveis: null })] }))).toBeNull();

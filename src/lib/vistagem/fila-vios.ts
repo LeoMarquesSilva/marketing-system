@@ -1,4 +1,4 @@
-import { chaveNome, ETIQUETA_VIOS, montarObservacaoVios, paraDataVios, referenciaDaPublicacao, type EtiquetaAgendamento } from "./agendamento";
+import { chaveNome, ETIQUETA_VIOS, montarObservacaoVios, paraDataVios, referenciaDaPublicacao, revisorFicaNaTarefa, type EtiquetaAgendamento } from "./agendamento";
 import type { DataDoFluxo } from "./types";
 
 /**
@@ -37,6 +37,11 @@ export interface TarefaDoLancamento {
   data_limite: string | null;
   responsavel: string;
   revisor: string | null;
+  /**
+   * O revisor fica na própria tarefa, junto com o responsável (`revisorFicaNaTarefa`: Sessão de Julgamento e
+   * audiências do Trabalhista). O robô junta os dois na tarefa lançada.
+   */
+  revisor_na_tarefa: boolean;
   observacao: string;
   /** Resposta da JUSTIFICATIVA NF (questionário que o VIOS pede depois de lançar a CIÊNCIA NF). */
   justificativa: string | null;
@@ -97,6 +102,8 @@ export interface PublicacaoParaFila {
   djen_id_comunicacao: number | null;
   teor: string | null;
   pasta_ci: string | null;
+  /** Área da publicação: nas audiências do Trabalhista o revisor vai na tarefa (`revisor_na_tarefa`). */
+  escritorio_responsavel?: string | null;
   /** IDs de comunicação das outras publicações do mesmo grupo de duplicidade. */
   comunicacoes_equivalentes?: (number | string)[];
 }
@@ -212,6 +219,7 @@ export function linhasParaFila(
               data_limite: item.data_limite && item.data_limite !== item.data ? paraDataVios(item.data_limite) : null,
               responsavel: item.responsavel,
               revisor: item.revisor,
+              revisor_na_tarefa: Boolean(item.revisor) && revisorFicaNaTarefa(item.tarefa, publicacao.escritorio_responsavel),
               observacao: cienciaNf ? "" : montarObservacaoVios(publicacao.data_publicacao, item.observacao),
               justificativa: cienciaNf ? item.observacao?.trim() || null : null,
               fluxo_datas: (item.fluxoDatas ?? []).map((datada) => ({

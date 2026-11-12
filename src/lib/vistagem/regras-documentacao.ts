@@ -219,7 +219,7 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         id: "quem-ve",
         titulo: "Quem vê a fila",
         quando: "a pessoa tiver o papel jurídico (Configurações › Quem acessa a Vistagem)",
-        entao: "ela só vê a Visão geral e a aba Vistagem, das áreas marcadas para ela; sem \"vê as demandas de risco\", as de risco não aparecem.",
+        entao: "ela só vê a Visão geral e a aba Vistagem, das áreas marcadas para ela; sem \"vista as demandas de risco\", as de risco não entram na fila A vistar dela, mas ela as vê no Vistado, na Visão geral e no Histórico, como o resto da área.",
         origem: "codigo",
       },
       {
@@ -274,7 +274,7 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
       {
         id: "corridos",
         titulo: "Dias corridos",
-        quando: "a decisão disser que o prazo é em dias corridos, ou a área for Insolvência (já vem marcado Corridos)",
+        quando: "a decisão disser que o prazo é em dias corridos, ou a área for Insolvência, ou a pasta tiver a etiqueta RC-Insolvência (já vem marcado Corridos)",
         entao: "conta todos os dias (menos o recesso); se vencer em dia sem expediente, passa para o próximo dia útil.",
         origem: "codigo",
       },
@@ -289,7 +289,7 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         id: "antecipacao-insolvencia",
         titulo: "Enviar e Revisar antes na insolvência",
         quando:
-          "a pasta for de Insolvência ou Cível | Insolvência e a tarefa, compartilhada com outras áreas, tiver prazo de 10 dias ou mais no VIOS (Protocolar 2 dias depois do Enviar)",
+          "a pasta for de Insolvência ou Cível | Insolvência, a tarefa, compartilhada com outras áreas, tiver prazo de 10 dias ou mais no VIOS (Protocolar 2 dias depois do Enviar) e o prazo marcado na vistagem também for de 10 dias ou mais (com a fatal no calendário, contado da publicação até ela, na contagem da área)",
         entao:
           "o Enviar e o Revisar vão 2 dias úteis antes e o Protocolar e a fatal não mudam, como na MANIFESTAÇÃO - FLUXO D5 (Enviar 5 dias úteis antes da fatal, Revisar 4, Protocolar 1). O robô grava o Protocolar no VIOS. As tarefas próprias da insolvência já vêm assim do VIOS.",
         origem: "codigo",
@@ -326,8 +326,15 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         id: "fluxo",
         titulo: "Fluxo das tarefas",
         quando: "a tarefa tiver fluxo no VIOS",
-        entao: `o VIOS cria as tarefas do fluxo junto. Revisar fica com o revisor; Protocolar com o responsável e ${PESSOA_FIXA_PROTOCOLAR}. Se o jurídico escolher outros responsáveis numa tarefa do fluxo, o robô põe os escolhidos.`,
+        entao: `o VIOS cria as tarefas do fluxo junto. Revisar fica com o revisor; Protocolar com o responsável e ${PESSOA_FIXA_PROTOCOLAR}. Se o jurídico escolher outros responsáveis numa tarefa do fluxo, o robô põe os escolhidos. Tarefa que o VIOS cria sem ninguém (ex.: Inserir Pauta numa pasta sem estagiário) fica com o responsável da vistagem, e não com o usuário do robô.`,
         origem: "vios",
+      },
+      {
+        id: "revisor-na-tarefa",
+        titulo: "Revisor na própria tarefa",
+        quando: "a tarefa for SESSÃO DE JULGAMENTO, ou uma audiência (AUDIÊNCIA UNA/INICIAL, AUDIÊNCIA DE JULGAMENTO…) no Trabalhista",
+        entao: "o robô lança a tarefa com o responsável e o revisor (o advogado auxiliar) juntos; nas outras, a tarefa fica só com o responsável.",
+        origem: "codigo",
       },
       {
         id: "robo",

@@ -144,6 +144,7 @@ export async function ensureEventRoster(
       .from("hr_employees")
       .select("user_id")
       .eq("is_active", true)
+      .eq("is_automation", false)
       .not("user_id", "is", null),
     admin
       .from("event_participants")

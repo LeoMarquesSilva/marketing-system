@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { criarCalendario, datasDoPrazo } from "./dias-uteis";
-import { ESTAGIARIO_DA_PASTA, caminhosDoFluxo, emOrdemDeArvore, fluxoParaOVios, fluxoPrevisto, prazoApertado, quemFicaNoFluxo } from "./fluxo-previsto";
+import {
+  ESTAGIARIO_DA_PASTA,
+  caminhosDoFluxo,
+  emOrdemDeArvore,
+  fluxoDoPrazo,
+  fluxoParaOVios,
+  fluxoPrevisto,
+  prazoApertado,
+  prazoMarcadoLongo,
+  quemFicaNoFluxo,
+} from "./fluxo-previsto";
 import { arvoreDaArea, cadeiaDoFluxo, montarFluxo, type BaseDaData, type RegraDePrazo, type ResponsabilidadeDoTipo, type TipoNaArvore } from "./fluxo-vios";
 
 const uteis = (dias: number, negativo = false): RegraDePrazo => ({ dias, negativo, corridos: false });
@@ -232,8 +242,10 @@ describe("quem fica nas tarefas do fluxo (regra do robô, sama-rpa regras-fluxo.
     expect(quemFicaNoFluxo("responsavel", resp([], null), pessoas)).toBe("Vanessa Lanza Sellani");
   });
 
-  it("estagiário da pasta (Inserir Pauta, Habilitação): o estagiário, como o VIOS cria", () => {
-    expect(quemFicaNoFluxo("responsavel", resp([], marcacoes({ estagiario: true })), pessoas)).toBe(ESTAGIARIO_DA_PASTA);
+  it("estagiário da pasta (Inserir Pauta, Habilitação): o estagiário, como o VIOS cria; sem estagiário, o responsável", () => {
+    expect(quemFicaNoFluxo("responsavel", resp([], marcacoes({ estagiario: true })), pessoas)).toBe(
+      `${ESTAGIARIO_DA_PASTA} (sem estagiário, Vanessa Lanza Sellani)`
+    );
   });
 
   it("regra do advogado com fixos ou estagiário: o responsável da vistagem e quem o VIOS põe", () => {
@@ -271,7 +283,7 @@ describe("quem fica nas tarefas do fluxo (regra do robô, sama-rpa regras-fluxo.
     );
     expect(previstas.map((tarefa) => [tarefa.nome, tarefa.responsaveis])).toEqual([
       ["1. CIÊNCIA DOS AGENDAMENTOS", "Pamela Klava Senna Patricio"],
-      ["HABILITAÇÃO PROCESSUAL", ESTAGIARIO_DA_PASTA],
+      ["HABILITAÇÃO PROCESSUAL", `${ESTAGIARIO_DA_PASTA} (sem estagiário, Pamela Klava Senna Patricio)`],
       ["VERIFICAR ATA", LARISSA],
     ]);
   });
@@ -338,6 +350,42 @@ describe("regra da insolvência no fluxo e no robô (pedido de 11/11/2026)", () 
 
   it("sem tempo para antecipar (vistada em 17/11), aperta como o prazo curto", () => {
     expect(prazoApertado(prazo, naInsolvencia, ehDiaUtil, "2026-11-17")).toEqual({ enviar: "2026-11-17", revisar: "2026-11-18", protocolar: "2026-11-19" });
+  });
+
+  describe("só com prazo marcado de 10 dias ou mais (correção de 11/11/2026)", () => {
+    // Publicação de 11/11/2026; calendário do prazo com a Consciência Negra (20/11).
+    const daPublicacao = (contagem: "uteis" | "corridos") => ({ dataPublicacao: "2026-11-11", contagem, ehDiaDePrazo: ehDiaUtil });
+    const enviarCom = (prazoMarcado: { dataFatal: string; diasPrazo?: number | null }, contagem: "uteis" | "corridos" = "corridos") =>
+      datasDoPrazo(prazoMarcado.dataFatal, ehDiaUtil, cadeiaDoFluxo(fluxoDoPrazo(naInsolvencia, prazoMarcado, daPublicacao(contagem))), "2026-11-11").enviar;
+
+    it("prazo de 5 dias (o teste do AGRAVO RETIDO/INTERNO): fica como o VIOS cria", () => {
+      expect(enviarCom({ dataFatal: "2026-11-23", diasPrazo: 5 })).toBe("2026-11-17");
+      const curto = fluxoDoPrazo(naInsolvencia, { dataFatal: "2026-11-23", diasPrazo: 5 }, daPublicacao("corridos"));
+      expect(curto?.antecipaEnviar).toBeUndefined();
+      expect(prazoApertado({ ...prazo, data: "2026-11-17" }, curto, ehDiaUtil, "2026-11-11")).toBeNull();
+    });
+
+    it("prazo de 10 dias ou mais pelos botões: antecipa", () => {
+      expect(enviarCom({ dataFatal: "2026-11-23", diasPrazo: 10 })).toBe("2026-11-13");
+      expect(enviarCom({ dataFatal: "2026-11-23", diasPrazo: 15 })).toBe("2026-11-13");
+      expect(prazoMarcadoLongo({ dataFatal: "2026-11-23", diasPrazo: 9 }, null)).toBe(false);
+    });
+
+    it("fatal no calendário: conta da publicação até ela, na contagem da área", () => {
+      // 10 dias corridos de 11/11 vencem no sábado 21/11 e passam para 23/11; 10 dias úteis vão até 26/11.
+      expect(prazoMarcadoLongo({ dataFatal: "2026-11-23" }, daPublicacao("corridos"))).toBe(true);
+      expect(prazoMarcadoLongo({ dataFatal: "2026-11-19" }, daPublicacao("corridos"))).toBe(false);
+      expect(prazoMarcadoLongo({ dataFatal: "2026-11-23" }, daPublicacao("uteis"))).toBe(false);
+      expect(prazoMarcadoLongo({ dataFatal: "2026-11-26" }, daPublicacao("uteis"))).toBe(true);
+      expect(enviarCom({ dataFatal: "2026-11-23" }, "corridos")).toBe("2026-11-13");
+      expect(enviarCom({ dataFatal: "2026-11-23" }, "uteis")).toBe("2026-11-17");
+    });
+
+    it("sem os dias nem a data da publicação, fica como o VIOS cria; nas outras áreas não há o que tirar", () => {
+      expect(prazoMarcadoLongo({ dataFatal: "2026-11-23" }, null)).toBe(false);
+      const civel = contestacao("Cível");
+      expect(fluxoDoPrazo(civel, { dataFatal: "2026-11-23", diasPrazo: 15 }, null)).toBe(civel);
+    });
   });
 
   it("o Enviar escolhido à mão na Conferência vale como está, e o Protocolar continua 1 dia útil antes da fatal", () => {

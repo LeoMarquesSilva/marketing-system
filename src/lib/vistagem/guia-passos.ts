@@ -287,7 +287,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alternativa: "vj-vazio",
       titulo: "Preencha a tarefa",
       texto:
-        "No Prazo, clique nos dias (úteis ou corridos) ou digite a fatal; nos recursos, os dias do prazo legal já vêm marcados, e na Insolvência a contagem já vem em Corridos. O VIOS recebe a data do Enviar, antes da fatal, e o revisor é obrigatório. Providência não tem revisor; Compromisso pede data, horário e hora final. A observação vai na descrição da tarefa no VIOS.",
+        "No Prazo, clique nos dias (úteis ou corridos) ou digite a fatal; nos recursos, os dias do prazo legal já vêm marcados, e na Insolvência e nas pastas com a etiqueta RC-Insolvência a contagem já vem em Corridos. O VIOS recebe a data do Enviar, antes da fatal, e o revisor é obrigatório. Providência não tem revisor; Compromisso pede data, horário e hora final. A observação vai na descrição da tarefa no VIOS.",
     },
     {
       id: "fluxo",
@@ -308,9 +308,9 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
     {
       id: "vistado",
       alvo: "vj-visao",
-      titulo: "Acompanhe o que já vistou",
+      titulo: "Acompanhe o que a área vistou",
       texto:
-        "Em \"Vistado\" você vê o que vistou nos últimos 30 dias e onde cada publicação está: na conferência, com o robô, agendada no VIOS, checada ou em revisão. \"A vistar\" volta para a fila.",
+        "Em \"Vistado\" você vê tudo o que a sua área vistou nos últimos 30 dias, por qualquer pessoa e inclusive as demandas de risco, e onde cada publicação está: na conferência, com o robô, agendada no VIOS, checada ou em revisão. \"A vistar\" volta para a fila.",
     },
     {
       id: "resumo",
@@ -481,7 +481,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alvo: "cg-risco",
       titulo: "Etiquetas de risco",
       texto:
-        "Pasta com uma destas etiquetas no VIOS vira demanda de risco: destaque vermelho, filtro próprio e só quem vista risco vê. Vale para as próximas triagens; \"Voltar ao padrão\" desfaz.",
+        "Pasta com uma destas etiquetas no VIOS vira demanda de risco: destaque vermelho, filtro próprio e só quem vista risco a recebe para vistar (para ver, a área toda vê). Vale para as próximas triagens; \"Voltar ao padrão\" desfaz.",
     },
     {
       id: "alerta",

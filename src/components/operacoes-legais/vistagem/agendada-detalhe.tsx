@@ -317,7 +317,7 @@ function Conteudo({
           </div>
           <div className="sm:px-3">
             {vistaAtiva === "vios" ? (
-              <CartoesCheck agendamentos={agendamentos} fotos={fotos} hoje={hoje} />
+              <CartoesCheck agendamentos={agendamentos} fotos={fotos} hoje={hoje} area={publicacao.escritorioResponsavel} />
             ) : (
               <CartoesTarefas agendamentos={agendamentos} comEnvio={situacao !== "central"} fotos={fotos} hoje={hoje} />
             )}

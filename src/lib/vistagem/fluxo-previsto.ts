@@ -1,7 +1,52 @@
 import { chaveDoCaminho, separarNomes } from "./agendamento";
-import { datasDoPrazo, somarDiasCorridos, somarDiasUteis } from "./dias-uteis";
-import { PESSOA_FIXA_PROTOCOLAR, cadeiaDoFluxo, cadeiaDoVios, type FluxoDaTarefa, type PapelNoFluxo, type ResponsabilidadeDoTipo, type TarefaDoFluxo } from "./fluxo-vios";
+import { datasDoPrazo, fatalPorContagem, somarDiasCorridos, somarDiasUteis, type ContagemPrazo } from "./dias-uteis";
+import {
+  ANTECIPACAO_INSOLVENCIA,
+  PESSOA_FIXA_PROTOCOLAR,
+  cadeiaDoFluxo,
+  cadeiaDoVios,
+  type FluxoDaTarefa,
+  type PapelNoFluxo,
+  type ResponsabilidadeDoTipo,
+  type TarefaDoFluxo,
+} from "./fluxo-vios";
 import type { AgendamentoResumo, DataDoFluxo, TarefaPrevista } from "./types";
+
+/** O prazo marcado na tarefa: os dias do atalho (botões, prazo legal, "Usar N dias", IA) ou, sem eles, só a fatal. */
+export interface PrazoMarcado {
+  dataFatal: string | null;
+  diasPrazo?: number | null;
+}
+
+/** Como contar o prazo da publicação quando a fatal foi escolhida no calendário. */
+export interface PrazoDaPublicacao {
+  dataPublicacao: string | null;
+  /** Contagem padrão da área (`contagemPadraoDaArea`): corridos na Insolvência, úteis nas outras. */
+  contagem: ContagemPrazo;
+  /** Calendário do prazo (`criarCalendarioDePrazo`: dia útil e fora do recesso). */
+  ehDiaDePrazo: (iso: string) => boolean;
+}
+
+/**
+ * Prazo marcado de 10 dias ou mais (`ANTECIPACAO_INSOLVENCIA.prazoMarcadoMinimo`): pelos dias do atalho ou, com a
+ * fatal no calendário, se ela vai até onde iria um prazo de 10 dias contado da publicação, na contagem da área.
+ * Sem os dias nem a data da publicação, não dá para saber: fica como o VIOS cria.
+ */
+export function prazoMarcadoLongo(prazo: PrazoMarcado, publicacao: PrazoDaPublicacao | null): boolean {
+  const minimo = ANTECIPACAO_INSOLVENCIA.prazoMarcadoMinimo;
+  if (prazo.diasPrazo) return prazo.diasPrazo >= minimo;
+  if (!prazo.dataFatal || !publicacao?.dataPublicacao) return false;
+  return prazo.dataFatal >= fatalPorContagem(publicacao.dataPublicacao, minimo, publicacao.contagem, publicacao.ehDiaDePrazo);
+}
+
+/**
+ * O fluxo da tarefa para o prazo marcado: a antecipação da insolvência (`antecipaEnviar`, posta pela árvore da área)
+ * só fica com prazo de 10 dias ou mais; com menos (ex.: 5 dias), o Enviar, o Revisar e o Protocolar são os do VIOS.
+ */
+export function fluxoDoPrazo(fluxo: FluxoDaTarefa | null, prazo: PrazoMarcado, publicacao: PrazoDaPublicacao | null): FluxoDaTarefa | null {
+  if (!fluxo?.antecipaEnviar || prazoMarcadoLongo(prazo, publicacao)) return fluxo;
+  return { criacao: fluxo.criacao, conclusao: fluxo.conclusao };
+}
 
 /** O Orquestra não sabe o nome do estagiário da pasta: o VIOS põe quem está na pasta. */
 export const ESTAGIARIO_DA_PASTA = "Estagiário da pasta";
@@ -11,7 +56,8 @@ export const ESTAGIARIO_DA_PASTA = "Estagiário da pasta";
  * regras-fluxo.js), com o que o VIOS põe pelo cadastro do tipo.
  * - 2. REVISAR: o revisor da vistagem; 3. PROTOCOLAR: o responsável e o Samuel.
  * - Tipo que o VIOS dá a pessoas fixas ou ao estagiário da pasta, sem a regra do advogado: fica como o VIOS cria
- *   (Larissa no Verificar Ata, o estagiário no Inserir Pauta e na Habilitação).
+ *   (Larissa no Verificar Ata, o estagiário no Inserir Pauta e na Habilitação). Pasta sem estagiário: o VIOS cria sem
+ *   ninguém e o robô põe o responsável da vistagem (senão a tarefa caía no usuário do robô, o Fênix; 12/11/2026).
  * - Regra do advogado com outra: o responsável da vistagem e quem o VIOS põe.
  * - Só a regra do auxiliar: o revisor da vistagem. Só a do advogado, nenhuma, ou cadastro não lido: o responsável.
  * Com só os fixos lidos (catálogo antigo), ficam os fixos: é o que o VIOS cria quando o tipo não tem a regra do advogado.
@@ -30,7 +76,10 @@ export function quemFicaNoFluxo(
   // O coordenador e o grupo o Orquestra não sabe quem são: aparecem como "padrão do VIOS" quando são só eles.
   const doVios = [...fixos, ...(regras.estagiario ? [ESTAGIARIO_DA_PASTA] : [])];
   const outraRegra = regras.estagiario || regras.coordenador || regras.grupo || fixos.length > 0;
-  if (outraRegra && !regras.advogado && !regras.auxiliar) return doVios.length ? doVios.join(", ") : "padrão do VIOS";
+  if (outraRegra && !regras.advogado && !regras.auxiliar) {
+    if (!fixos.length && regras.estagiario) return `${ESTAGIARIO_DA_PASTA} (sem estagiário, ${responsavel})`;
+    return doVios.length ? doVios.join(", ") : "padrão do VIOS";
+  }
   if (outraRegra && regras.advogado) return separarNomes([responsavel, ...doVios].join(",")).join(", ");
   if (regras.auxiliar && !regras.advogado) return pessoas.revisor || "auxiliar da pasta";
   return responsavel;

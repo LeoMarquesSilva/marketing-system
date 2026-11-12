@@ -343,7 +343,7 @@ function ItemCheck({
                   .join(" · ")}
               </span>
             </div>
-            <CartoesCheck agendamentos={item.agendamentos} fotos={fotos} hoje={hoje} onApontar={checada ? undefined : (agendamento) => apontarErro(agendamento)} />
+            <CartoesCheck agendamentos={item.agendamentos} fotos={fotos} hoje={hoje} area={item.publicacao.escritorioResponsavel} onApontar={checada ? undefined : (agendamento) => apontarErro(agendamento)} />
           </section>
         </div>
       </div>

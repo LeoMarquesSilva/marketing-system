@@ -4,10 +4,10 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { CalendarDays, LoaderCircle, Pencil, Save, TriangleAlert, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authFetch } from "@/lib/auth-fetch";
-import { avisosDaData, chaveDoCaminho, contagemPadraoDaArea, horaFinalPadrao, horaValida, pedeDataLimite, revisorFicaNaTarefa } from "@/lib/vistagem/agendamento";
+import { avisosDaData, chaveDoCaminho, contagemPadraoDaPublicacao, horaFinalPadrao, horaValida, pedeDataLimite, revisorFicaNaTarefa } from "@/lib/vistagem/agendamento";
 import { mudancasNaTarefa, type CamposDaTarefa } from "@/lib/vistagem/ajuste-conferencia";
 import { ROTULO_CONTAGEM, criarCalendario, criarCalendarioDePrazo, datasDoPrazo, noRecessoForense } from "@/lib/vistagem/dias-uteis";
-import { caminhosDoFluxo, fluxoPrevisto, prazoApertado } from "@/lib/vistagem/fluxo-previsto";
+import { caminhosDoFluxo, fluxoDoPrazo, fluxoPrevisto, prazoApertado } from "@/lib/vistagem/fluxo-previsto";
 import { CADEIA_PADRAO, cadeiaDoFluxo, semPrazoProprio } from "@/lib/vistagem/fluxo-vios";
 import { fataisDoFluxo } from "@/lib/vistagem/prazo-legal";
 import type { AgendamentoResumo, DataDoFluxo, VistagemDetalhe } from "@/lib/vistagem/types";
@@ -124,7 +124,7 @@ function FormularioDaTarefa({
   onSalva: (mensagem: string) => Promise<void>;
 }) {
   const { hoje } = dados;
-  const fluxo = tarefa.tarefaId ? dados.fluxos[tarefa.tarefaId] ?? null : null;
+  const fluxoDoTipo = tarefa.tarefaId ? dados.fluxos[tarefa.tarefaId] ?? null : null;
   const ehDiaUtil = useMemo(() => criarCalendario(dados.feriados), [dados.feriados]);
   const contaPrazo = useMemo(() => criarCalendarioDePrazo(dados.feriados), [dados.feriados]);
   const pessoas = useMemo(() => pessoasDoDetalhe(dados), [dados]);
@@ -132,15 +132,24 @@ function FormularioDaTarefa({
 
   const prazo = tarefa.etiqueta === "PRAZO";
   // A SENTENÇA é de Prazo (exige revisor), mas leva só a data dela.
-  const comFatal = prazo && !semPrazoProprio(fluxo);
+  const comFatal = prazo && !semPrazoProprio(fluxoDoTipo);
   const compromisso = tarefa.etiqueta === "COMPROMISSO";
   const comRevisor = tarefa.etiqueta !== "PROVIDENCIA";
   // SESSÃO DE JULGAMENTO: a data limite no VIOS pode ir além da data (a tarefa guarda o nome como está no VIOS).
   const comLimite = pedeDataLimite(tarefa.tarefa);
-  const contagemDaArea = contagemPadraoDaArea(dados.publicacao.escritorioResponsavel ?? dados.catalogo?.area);
+  // Corridos na Insolvência e nas pastas RC-Insolvência, como na vistagem.
+  const contagemDaArea = contagemPadraoDaPublicacao(dados.publicacao.escritorioResponsavel ?? dados.catalogo?.area, dados.publicacao.etiquetas);
+  // Regra da insolvência: só antecipa o Enviar com prazo marcado de 10 dias ou mais. Os dias da vistagem valem enquanto
+  // a fatal for a mesma; mudada aqui, conta da publicação até a nova (como o servidor ao gravar).
+  const fluxoPara = (dataFatal: string | null) =>
+    fluxoDoPrazo(
+      fluxoDoTipo,
+      { dataFatal, diasPrazo: dataFatal === tarefa.dataFatal ? tarefa.diasPrazo : null },
+      { dataPublicacao: dados.publicacao.dataPublicacao, contagem: contagemDaArea, ehDiaDePrazo: contaPrazo }
+    );
 
   // Validada noutro dia, com prazo curto, o Enviar que vai para o VIOS é o de hoje (como no robô): a tela mostra esse.
-  const [dataInicial] = useState(() => prazoApertado(tarefa, fluxo, ehDiaUtil, hoje)?.enviar ?? tarefa.data);
+  const [dataInicial] = useState(() => prazoApertado(tarefa, fluxoPara(tarefa.dataFatal), ehDiaUtil, hoje)?.enviar ?? tarefa.data);
   const [inicial] = useState<Formulario>(() => ({
     data: dataInicial,
     dataFatal: tarefa.dataFatal ?? "",
@@ -156,12 +165,12 @@ function FormularioDaTarefa({
   const [erro, setErro] = useState("");
   const alterar = (mudanca: Partial<Formulario>) => setForm((atual) => ({ ...atual, ...mudanca }));
 
-  const enviarPelaFatal = (fatal: string) => datasDoPrazo(fatal, ehDiaUtil, dados.fluxosErro ? CADEIA_PADRAO : cadeiaDoFluxo(fluxo), hoje).enviar;
+  const enviarPelaFatal = (fatal: string) => datasDoPrazo(fatal, ehDiaUtil, dados.fluxosErro ? CADEIA_PADRAO : cadeiaDoFluxo(fluxoPara(fatal)), hoje).enviar;
   const enviarDaConta = comFatal && form.dataFatal ? enviarPelaFatal(form.dataFatal) : null;
   const enviarAMao = Boolean(enviarDaConta && form.data && form.data !== enviarDaConta);
 
   // Só o que o fluxo deste tipo cria (uma data antiga de tarefa que saiu do fluxo não trava o salvamento).
-  const caminhos = useMemo(() => caminhosDoFluxo(fluxo), [fluxo]);
+  const caminhos = useMemo(() => caminhosDoFluxo(fluxoDoTipo), [fluxoDoTipo]);
   const campos = (valor: Formulario): CamposDaTarefa => ({
     data: valor.data,
     dataFatal: comFatal ? valor.dataFatal || null : null,
@@ -174,6 +183,7 @@ function FormularioDaTarefa({
   });
   const mudancas = mudancasNaTarefa(campos(inicial), campos(form));
 
+  const fluxo = fluxoPara(form.dataFatal || null);
   const apertada = comFatal && form.dataFatal ? prazoApertado({ etiqueta: tarefa.etiqueta, dataFatal: form.dataFatal, data: form.data }, fluxo, ehDiaUtil, hoje) : null;
   const dataNoVios = apertada?.enviar ?? form.data;
   // A Ciência repetida o servidor já marcou, olhando as outras tarefas da vistagem: o robô cancela, e ela não se edita.
@@ -364,7 +374,7 @@ function FormularioDaTarefa({
             <div className="space-y-1.5">
               <span className="block text-xs font-medium text-muted-foreground">
                 {prazo ? "Revisor (obrigatório)" : "Revisor (opcional)"}
-                {revisorFicaNaTarefa(tarefa.tarefa) ? <span className="font-normal"> · fica na tarefa, com o responsável</span> : null}
+                {revisorFicaNaTarefa(tarefa.tarefa, dados.publicacao.escritorioResponsavel ?? dados.catalogo?.area) ? <span className="font-normal"> · fica na tarefa, com o responsável</span> : null}
               </span>
               <ComboboxBusca
                 opcoes={pessoas.opcoes}

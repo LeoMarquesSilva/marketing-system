@@ -1,5 +1,6 @@
 import { CONTAGENS_PRAZO, DIAS_PRAZO, DIAS_PRAZO_TRABALHISTA, datasDoPrazo, somarDiasUteis, type ContagemPrazo } from "./dias-uteis";
 import type { CadeiaDoPrazo } from "./fluxo-vios";
+import { pedeDiasCorridos } from "./etiquetas";
 import type { DataDoFluxo } from "./types";
 
 /**
@@ -285,11 +286,17 @@ export function mesmasPessoas(a: string[], b: string[]): boolean {
 }
 
 /**
- * SESSÃO DE JULGAMENTO: o fluxo dela não tem "2. REVISAR", então o revisor fica na própria tarefa, junto com o
- * responsável. É a regra do robô no lançamento (sama-rpa regras-fluxo.js, responsaveisDaTarefaLancada).
+ * O revisor fica na própria tarefa, junto com o responsável:
+ * - SESSÃO DE JULGAMENTO: o fluxo dela não tem "2. REVISAR";
+ * - audiência no Trabalhista (AUDIÊNCIA UNA/INICIAL, AUDIÊNCIA DE JULGAMENTO…): o advogado auxiliar vai à audiência
+ *   (pedido de 12/11/2026: na 0012645-71 o robô deixou só a Pamela, sem a Lorena).
+ * O Orquestra manda a decisão ao robô em `revisor_na_tarefa` (fila-vios.ts); o robô junta o revisor
+ * (sama-rpa regras-fluxo.js, responsaveisDaTarefaLancada).
  */
-export function revisorFicaNaTarefa(tarefa: string | null | undefined): boolean {
-  return chaveNome(tarefa) === "SESSAO DE JULGAMENTO";
+export function revisorFicaNaTarefa(tarefa: string | null | undefined, area: string | null | undefined = null): boolean {
+  const tipo = chaveNome(tarefa);
+  if (tipo === "SESSAO DE JULGAMENTO") return true;
+  return chaveNome(area) === "TRABALHISTA" && /^AUDIENCIA\b/.test(tipo);
 }
 
 /** Área do catálogo do SAMA para a pasta: a área do processo no VIOS ou, sem ela, a do escritório. */
@@ -309,6 +316,14 @@ export function areaDoCatalogo(areaProcesso: string | null, escritorio: string |
  */
 export function contagemPadraoDaArea(area: string | null | undefined): ContagemPrazo {
   return chaveNome(area) === "INSOLVENCIA" ? "corridos" : "uteis";
+}
+
+/**
+ * Como o Prazo começa marcado na publicação: a contagem da área (`contagemPadraoDaArea`) ou, se a pasta tiver uma
+ * etiqueta de dias corridos (RC-Insolvência), dias corridos em qualquer área. O jurídico pode trocar na tarefa.
+ */
+export function contagemPadraoDaPublicacao(area: string | null | undefined, etiquetas?: readonly string[] | null): ContagemPrazo {
+  return pedeDiasCorridos(etiquetas) ? "corridos" : contagemPadraoDaArea(area);
 }
 
 /** Responsável sugerido: o advogado responsável da pasta, se for usuário do VIOS. */
@@ -397,8 +412,11 @@ export function validarAgendamentos(
     tarefas: Record<EtiquetaAgendamento, OpcaoTarefa[]>;
     usuarios: OpcaoVios[];
     ehDiaUtil: (iso: string) => boolean;
-    /** Cadeia do fluxo do VIOS para o tipo de tarefa (null: o VIOS não cria Protocolar). */
-    cadeiaDaTarefa: (tarefaId: string) => CadeiaDoPrazo | null;
+    /**
+     * Cadeia do fluxo do VIOS para o tipo de tarefa (null: o VIOS não cria Protocolar). Recebe o prazo marcado: a regra
+     * da insolvência só antecipa o Enviar com 10 dias ou mais (`fluxoDoPrazo`).
+     */
+    cadeiaDaTarefa: (tarefaId: string, prazo: { dataFatal: string | null; diasPrazo: number | null }) => CadeiaDoPrazo | null;
     /** Tarefas que o fluxo do tipo cria junto (chaveDoCaminho), para aceitar só datas delas. */
     caminhosDaTarefa?: (tarefaId: string) => Set<string>;
     /** Tarefa de Prazo sem prazo próprio no VIOS (a SENTENÇA): vai com a data dela, sem fatal. */
@@ -438,7 +456,15 @@ export function validarAgendamentos(
     const data =
       prazo && !(semFatal && entrada.data)
         ? fatalPedida && tarefa
-          ? datasDoPrazo(fatalPedida, contexto.ehDiaUtil, contexto.cadeiaDaTarefa(tarefa.id), contexto.hoje ?? null).enviar
+          ? datasDoPrazo(
+              fatalPedida,
+              contexto.ehDiaUtil,
+              contexto.cadeiaDaTarefa(tarefa.id, {
+                dataFatal: fatalPedida,
+                diasPrazo: Number.isInteger(entrada.diasPrazo) && (entrada.diasPrazo ?? 0) > 0 ? (entrada.diasPrazo as number) : null,
+              }),
+              contexto.hoje ?? null
+            ).enviar
           : ""
         : entrada.data;
     if (prazo && !semFatal && !fatal) erros.push(`${n}: escolha a data fatal do prazo.`);

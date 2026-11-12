@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -16,18 +16,23 @@ import {
   Loader2,
   PartyPopper,
   Shirt,
+  User,
+  UserPlus,
   UtensilsCrossed,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   RSVP_TRANSPORT_LABEL,
+  firstNameOf,
   formatRsvpDeadline,
   usesOutbound,
   usesReturn,
   type RsvpTransport,
   type RsvpView,
 } from "@/lib/event-rsvp";
+import { DIETARY_NO_RESTRICTION, dietaryText, type DietaryChoice } from "@/lib/festa-convite";
+import { DietaryPicker, FIELD, dietaryReady } from "./convite-client";
 import { FESTA_ICS_PATH, googleCalendarUrl, outlookCalendarUrl } from "@/lib/festa-10-anos-agenda";
 import {
   CALENDAR_BUTTON,
@@ -53,22 +58,34 @@ const TRANSPORT_OPTIONS: TransportOption[] = [
   { value: "nao", icon: Car, title: "Não vou usar", hint: "Vou e volto por conta própria" },
 ];
 
-function transportSentence(transport: RsvpTransport | null): string {
-  if (transport === "ida_volta") return "Você vai e volta com a gente, saindo do escritório.";
-  if (transport === "so_ida") return "Você vai com a gente, saindo do escritório, e volta por conta própria.";
-  if (transport === "so_volta") return "Você vai por conta própria e volta com a gente ao final da festa.";
-  return "Você vai e volta por conta própria.";
+function transportSentence(transport: RsvpTransport | null, withCompanion = false): string {
+  const who = withCompanion ? "Vocês vão" : "Você vai";
+  if (transport === "ida_volta") return `${who} e ${withCompanion ? "voltam" : "volta"} com a gente, saindo do escritório.`;
+  if (transport === "so_ida") return `${who} com a gente, saindo do escritório, e ${withCompanion ? "voltam" : "volta"} por conta própria.`;
+  if (transport === "so_volta") return `${who} por conta própria e ${withCompanion ? "voltam" : "volta"} com a gente ao final da festa.`;
+  return `${who} e ${withCompanion ? "voltam" : "volta"} por conta própria.`;
 }
 
-function Shell({ firstName, children }: { firstName?: string; children: ReactNode }) {
+type CompanionFields = Pick<RsvpView, "plusOne" | "plusOneName" | "plusOneDietary" | "ownDietary">;
+
+function Shell({
+  firstName,
+  title = "Confirme sua presença",
+  message = "Nossa festa de 10 anos está chegando, e queremos celebrar esse marco ao lado de todos que fazem parte da nossa história.",
+  children,
+}: {
+  firstName?: string;
+  title?: string;
+  message?: string;
+  children: ReactNode;
+}) {
   return (
     <FestaShell
-      title="Confirme sua presença"
+      title={title}
       intro={
         <p>
           {firstName ? <strong className="font-semibold text-[#0d1e2e]">Olá, {firstName}! </strong> : null}
-          Nossa festa de 10 anos está chegando, e queremos celebrar esse marco ao lado de todos que fazem parte da
-          nossa história.
+          {message}
         </p>
       }
       footer={
@@ -111,12 +128,16 @@ function Summary({
   preview,
   onEdit,
 }: {
-  view: Pick<RsvpView, "attending" | "transport" | "respondedAt" | "open" | "closesAt" | "dietary">;
+  view: Pick<RsvpView, "attending" | "transport" | "respondedAt" | "open" | "closesAt" | "dietary" | "askDietary" | "plusOneAllowed"> &
+    CompanionFields;
   preview: boolean;
   onEdit: () => void;
 }) {
   const going = view.attending === true;
   const usesBus = usesOutbound(view.transport) || usesReturn(view.transport);
+  const companion = going && view.plusOne && view.plusOneName ? view.plusOneName : null;
+  const ownDietary = view.askDietary ? dietaryText(view.ownDietary) : "";
+  const companionDietary = companion ? dietaryText(view.plusOneDietary) : "";
   return (
     <Card className="text-center">
       <span className="mx-auto grid size-16 place-items-center rounded-full bg-gradient-to-b from-[#d9b877] to-[#bf9650] text-white shadow-[0_10px_24px_-12px_rgba(120,86,30,0.75)]">
@@ -133,6 +154,27 @@ function Summary({
 
       {going && (
         <div className="mx-auto mt-5 max-w-sm space-y-3 text-left">
+          {view.plusOneAllowed && (
+            <div className="flex items-start gap-3 rounded-2xl border border-[#e6d8bc] bg-white/70 px-4 py-3">
+              <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#f1e6d3] text-[#9c7434]" aria-hidden>
+                {companion ? <UserPlus className="size-[18px]" /> : <User className="size-[18px]" />}
+              </span>
+              <span>
+                <span className="block text-[15px] font-semibold text-[#0d1e2e]">
+                  {companion ? `Você e ${companion}` : "Sem acompanhante"}
+                </span>
+                <span className="mt-0.5 block text-[13px] leading-5 text-[#5c6168]">
+                  {companion
+                    ? companionDietary
+                      ? `Restrição de ${firstNameOf(companion)}: ${companionDietary}.`
+                      : `${firstNameOf(companion)} já está na lista de entrada.`
+                    : view.open
+                      ? "Seu convite vale para você e mais 1 acompanhante. Para incluir, toque em Alterar resposta."
+                      : "Seu convite valia para você e mais 1 acompanhante."}
+                </span>
+              </span>
+            </div>
+          )}
           <div className="flex items-start gap-3 rounded-2xl border border-[#e6d8bc] bg-white/70 px-4 py-3">
             <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#f1e6d3] text-[#9c7434]" aria-hidden>
               {usesBus ? <Bus className="size-[18px]" /> : <Car className="size-[18px]" />}
@@ -141,9 +183,20 @@ function Summary({
               <span className="block text-[15px] font-semibold text-[#0d1e2e]">
                 {usesBus && view.transport ? `Micro-ônibus: ${RSVP_TRANSPORT_LABEL[view.transport].toLowerCase()}` : "Sem micro-ônibus"}
               </span>
-              <span className="mt-0.5 block text-[13px] leading-5 text-[#5c6168]">{transportSentence(view.transport)}</span>
+              <span className="mt-0.5 block text-[13px] leading-5 text-[#5c6168]">{transportSentence(view.transport, Boolean(companion))}</span>
             </span>
           </div>
+          {view.askDietary && (
+            <div className="flex items-start gap-3 rounded-2xl border border-[#e6d8bc] bg-white/70 px-4 py-3">
+              <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#f1e6d3] text-[#9c7434]" aria-hidden>
+                <UtensilsCrossed className="size-[18px]" />
+              </span>
+              <span>
+                <span className="block text-[15px] font-semibold text-[#0d1e2e]">Restrição alimentar</span>
+                <span className="mt-0.5 block text-[13px] leading-5 text-[#5c6168]">{ownDietary || "Nenhuma restrição"}</span>
+              </span>
+            </div>
+          )}
           {!usesBus && (
             <p className="rounded-2xl bg-[#0d1e2e] px-4 py-3 text-center text-[13px] font-semibold leading-5 text-[#f3e7d3]">
               Se beber, não dirija!
@@ -212,7 +265,7 @@ function Summary({
   );
 }
 
-export function ConfirmarPresencaClient({ preview }: { preview: boolean }) {
+export function ConfirmarPresencaClient({ preview, previewCompanion = false }: { preview: boolean; previewCompanion?: boolean }) {
   const [view, setView] = useState<RsvpView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attending, setAttending] = useState<boolean | null>(null);
@@ -220,32 +273,103 @@ export function ConfirmarPresencaClient({ preview }: { preview: boolean }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [previewAnswer, setPreviewAnswer] = useState<{ attending: boolean; transport: RsvpTransport | null } | null>(null);
+  const [previewAnswer, setPreviewAnswer] = useState<
+    ({ attending: boolean; transport: RsvpTransport | null } & CompanionFields) | null
+  >(null);
+  const [plusOne, setPlusOne] = useState<boolean | null>(null);
+  const [plusOneName, setPlusOneName] = useState("");
+  const [plusOneDietary, setPlusOneDietary] = useState<DietaryChoice>(DIETARY_NO_RESTRICTION);
+  const [ownDietary, setOwnDietary] = useState<DietaryChoice>(DIETARY_NO_RESTRICTION);
+  const fieldId = useId();
+
+  const fillForm = useCallback((answer: Pick<RsvpView, "respondedAt" | "attending" | "transport"> & CompanionFields) => {
+    const answered = Boolean(answer.respondedAt);
+    setAttending(answered ? answer.attending : null);
+    setTransport(answered ? answer.transport : null);
+    setPlusOne(answered && answer.attending ? answer.plusOne : null);
+    setPlusOneName(answer.plusOneName ?? "");
+    setPlusOneDietary(answer.plusOneDietary ?? DIETARY_NO_RESTRICTION);
+    setOwnDietary(answer.ownDietary ?? DIETARY_NO_RESTRICTION);
+  }, []);
 
   const load = useCallback(async () => {
     setLoadError(null);
     try {
-      const data = await requestJson<RsvpView>(API);
+      const loaded = await requestJson<RsvpView>(API);
+      // Prévia da pergunta do acompanhante para quem organiza (nada é gravado na prévia).
+      const data = previewCompanion ? { ...loaded, plusOneAllowed: true } : loaded;
       setView(data);
-      setAttending(data.respondedAt ? data.attending : null);
-      setTransport(data.respondedAt ? data.transport : null);
+      fillForm(data);
       setEditing(!data.respondedAt);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Não foi possível carregar.");
     }
-  }, []);
+  }, [fillForm, previewCompanion]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const ready = attending === false || (attending === true && transport !== null);
+  const plusOneAllowed = view?.plusOneAllowed ?? false;
+  const askDietary = view?.askDietary ?? false;
+  const companionOk =
+    !plusOneAllowed ||
+    plusOne === false ||
+    (plusOne === true && plusOneName.trim().length >= 2 && dietaryReady(plusOneDietary));
+  const ready =
+    attending === false ||
+    (attending === true && transport !== null && companionOk && (!askDietary || dietaryReady(ownDietary)));
+
+  const clean = (choice: DietaryChoice): DietaryChoice => ({ ...choice, notes: choice.notes?.trim() || null });
 
   const submit = async () => {
     if (!ready || attending === null) return;
+    const withCompanion = attending && plusOneAllowed && plusOne === true;
+    await send({
+      attending,
+      transport: attending ? transport : null,
+      plusOne: withCompanion,
+      plusOneName: withCompanion ? plusOneName.replace(/\s+/g, " ").trim() : null,
+      plusOneDietary: withCompanion ? clean(plusOneDietary) : null,
+      dietary: attending && askDietary ? clean(ownDietary) : null,
+    });
+  };
+
+  /** Quem já confirmou só responde sobre o acompanhante: presença e micro-ônibus continuam como estavam. */
+  const companionReady =
+    plusOne === false || (plusOne === true && plusOneName.trim().length >= 2 && dietaryReady(plusOneDietary));
+  const submitCompanion = async () => {
+    if (!view || !companionReady) return;
+    const withCompanion = plusOne === true;
+    await send({
+      attending: true,
+      transport: view.transport ?? "nao",
+      plusOne: withCompanion,
+      plusOneName: withCompanion ? plusOneName.replace(/\s+/g, " ").trim() : null,
+      plusOneDietary: withCompanion ? clean(plusOneDietary) : null,
+      dietary: view.askDietary ? view.ownDietary : null,
+    });
+  };
+
+  const send = async (body: {
+    attending: boolean;
+    transport: RsvpTransport | null;
+    plusOne: boolean;
+    plusOneName: string | null;
+    plusOneDietary: DietaryChoice | null;
+    dietary: DietaryChoice | null;
+  }) => {
+    const { attending } = body;
     setSaveError(null);
     if (preview) {
-      setPreviewAnswer({ attending, transport: attending ? transport : null });
+      setPreviewAnswer({
+        attending,
+        transport: body.transport,
+        plusOne: body.plusOne,
+        plusOneName: body.plusOneName,
+        plusOneDietary: body.plusOneDietary,
+        ownDietary: body.dietary,
+      });
       setEditing(false);
       return;
     }
@@ -253,7 +377,7 @@ export function ConfirmarPresencaClient({ preview }: { preview: boolean }) {
     try {
       const data = await requestJson<RsvpView>(API, {
         method: "POST",
-        body: JSON.stringify({ attending, transport: attending ? transport : null }),
+        body: JSON.stringify(body),
       });
       setView(data);
       setEditing(false);
@@ -308,6 +432,143 @@ export function ConfirmarPresencaClient({ preview }: { preview: boolean }) {
   const answered = preview ? Boolean(previewAnswer) : Boolean(view.respondedAt);
   const canEdit = view.open || preview;
 
+  // Confirmou antes de o acompanhante ser liberado (ex.: sócios de área): pergunta só pelo acompanhante.
+  const companionStep =
+    !editing &&
+    !(preview && previewAnswer) &&
+    (view.open || preview) &&
+    view.plusOneAllowed &&
+    view.attending === true &&
+    Boolean(view.respondedAt) &&
+    view.plusOne === null;
+
+  if (companionStep) {
+    const usesBus = usesOutbound(view.transport) || usesReturn(view.transport);
+    return (
+      <Shell
+        firstName={view.firstName}
+        title="Leve um acompanhante"
+        message="Sua presença na festa de 10 anos já está confirmada, e o seu convite agora vale para você e mais 1 pessoa."
+      >
+        <Card>
+          {preview && (
+            <p className="mb-5 rounded-full bg-[#f1e6d3] px-4 py-2 text-center text-xs font-semibold text-[#7a5a26]">
+              Prévia: as respostas não são gravadas.
+            </p>
+          )}
+          <p className="mx-auto flex w-fit items-center gap-2 rounded-full bg-[#eef6ee] px-4 py-1.5 text-[13px] font-semibold text-[#2f6b3a]">
+            <Check className="size-4" strokeWidth={3} aria-hidden />
+            Presença confirmada · 17/12, às 18h
+          </p>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitCompanion();
+            }}
+            className="mt-6 space-y-6"
+          >
+            <fieldset>
+              <legend className="w-full text-center">
+                <span className="block text-xl font-semibold text-[#0d1e2e]">Vai levar um acompanhante?</span>
+                <span className="mx-auto mt-2 block max-w-sm text-[14px] leading-6 text-[#5c6168]">
+                  Se for levar alguém, informe o nome para a lista de entrada e a restrição alimentar, se houver.
+                </span>
+              </legend>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <ChoiceCard
+                  name="acompanhante"
+                  checked={plusOne === true}
+                  onChange={() => setPlusOne(true)}
+                  icon={UserPlus}
+                  title="Sim, com 1 acompanhante"
+                  hint="Informo o nome abaixo"
+                  compact
+                />
+                <ChoiceCard
+                  name="acompanhante"
+                  checked={plusOne === false}
+                  onChange={() => setPlusOne(false)}
+                  icon={User}
+                  title="Não, vou sozinho"
+                  hint="Sem acompanhante"
+                  compact
+                />
+              </div>
+              {plusOne === true && (
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <label htmlFor={`${fieldId}-nome-acompanhante`} className="block text-[14px] font-semibold text-[#0d1e2e]">
+                      Nome completo do acompanhante
+                    </label>
+                    <input
+                      id={`${fieldId}-nome-acompanhante`}
+                      type="text"
+                      value={plusOneName}
+                      onChange={(event) => setPlusOneName(event.target.value)}
+                      maxLength={80}
+                      autoComplete="off"
+                      placeholder="Nome e sobrenome"
+                      className={FIELD}
+                    />
+                    <p className="mt-1.5 text-[12px] leading-5 text-[#5c6168]">O nome vai para a lista de entrada da festa.</p>
+                  </div>
+                  <DietaryPicker
+                    legend={`Restrição alimentar de ${plusOneName.trim() ? firstNameOf(plusOneName) : "seu acompanhante"}`}
+                    value={plusOneDietary}
+                    onChange={setPlusOneDietary}
+                  />
+                </div>
+              )}
+            </fieldset>
+
+            <div className="flex items-start gap-3 rounded-2xl border border-[#e6d8bc] bg-white/70 px-4 py-3">
+              <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#f1e6d3] text-[#9c7434]" aria-hidden>
+                {usesBus ? <Bus className="size-[18px]" /> : <Car className="size-[18px]" />}
+              </span>
+              <span>
+                <span className="block text-[15px] font-semibold text-[#0d1e2e]">
+                  {usesBus && view.transport ? `Micro-ônibus: ${RSVP_TRANSPORT_LABEL[view.transport].toLowerCase()}` : "Sem micro-ônibus"}
+                </span>
+                <span className="mt-0.5 block text-[13px] leading-5 text-[#5c6168]">
+                  {plusOne === true
+                    ? `${transportSentence(view.transport, true)} O acompanhante segue a sua escolha.`
+                    : `${transportSentence(view.transport)} Se levar alguém, o acompanhante segue a mesma escolha.`}
+                </span>
+              </span>
+            </div>
+
+            <div className="flex flex-col items-center gap-3 pt-1">
+              {saveError && (
+                <p className="w-full rounded-2xl bg-[#fbeaea] px-4 py-3 text-center text-sm text-[#8a2b2b]" role="alert">
+                  {saveError}
+                </p>
+              )}
+              <button type="submit" disabled={!companionReady || saving} className={cn(GOLD_BUTTON, "w-full sm:w-auto sm:min-w-72")}>
+                {saving ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Check className="size-4" aria-hidden />}
+                {saving ? "Enviando…" : "Enviar"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSaveError(null);
+                  setEditing(true);
+                }}
+                className={cn("text-sm font-semibold underline-offset-4 hover:underline", GOLD_TEXT)}
+              >
+                Mudar a presença ou o micro-ônibus
+              </button>
+              {view.closesAt && (
+                <p className="text-center text-xs font-semibold text-[#0d1e2e]">
+                  Responda até {formatRsvpDeadline(view.closesAt)}.
+                </p>
+              )}
+            </div>
+          </form>
+        </Card>
+      </Shell>
+    );
+  }
+
   if (answered && !editing) {
     return (
       <Shell firstName={view.firstName}>
@@ -315,8 +576,9 @@ export function ConfirmarPresencaClient({ preview }: { preview: boolean }) {
           view={shownAnswer}
           preview={preview}
           onEdit={() => {
-            setAttending(shownAnswer.attending);
-            setTransport(shownAnswer.transport);
+            fillForm({ ...shownAnswer, respondedAt: shownAnswer.respondedAt ?? "previa" });
+            // Quem pode levar acompanhante e ainda não disse: a pergunta aparece em aberto.
+            if (shownAnswer.attending && shownAnswer.plusOneAllowed && !shownAnswer.plusOne) setPlusOne(null);
             setEditing(true);
           }}
         />
@@ -388,12 +650,71 @@ export function ConfirmarPresencaClient({ preview }: { preview: boolean }) {
                 className="space-y-5"
               >
                 <Ornament />
+                {plusOneAllowed && (
+                  <>
+                    <fieldset>
+                      <legend className="w-full text-center">
+                        <span className="block text-xl font-semibold text-[#0d1e2e]">Vai levar um acompanhante?</span>
+                        <span className="mx-auto mt-2 block max-w-sm text-[14px] leading-6 text-[#5c6168]">
+                          Seu convite vale para você e mais 1 pessoa.
+                        </span>
+                      </legend>
+                      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                        <ChoiceCard
+                          name="acompanhante"
+                          checked={plusOne === true}
+                          onChange={() => setPlusOne(true)}
+                          icon={UserPlus}
+                          title="Sim, com 1 acompanhante"
+                          hint="Informo o nome abaixo"
+                          compact
+                        />
+                        <ChoiceCard
+                          name="acompanhante"
+                          checked={plusOne === false}
+                          onChange={() => setPlusOne(false)}
+                          icon={User}
+                          title="Não, vou sozinho"
+                          hint="Sem acompanhante"
+                          compact
+                        />
+                      </div>
+                      {plusOne === true && (
+                        <div className="mt-4 space-y-4">
+                          <div>
+                            <label htmlFor={`${fieldId}-nome`} className="block text-[14px] font-semibold text-[#0d1e2e]">
+                              Nome completo do acompanhante
+                            </label>
+                            <input
+                              id={`${fieldId}-nome`}
+                              type="text"
+                              value={plusOneName}
+                              onChange={(event) => setPlusOneName(event.target.value)}
+                              maxLength={80}
+                              autoComplete="off"
+                              placeholder="Nome e sobrenome"
+                              className={FIELD}
+                            />
+                            <p className="mt-1.5 text-[12px] leading-5 text-[#5c6168]">O nome vai para a lista de entrada da festa.</p>
+                          </div>
+                          <DietaryPicker
+                            legend={`Restrição alimentar de ${plusOneName.trim() ? firstNameOf(plusOneName) : "seu acompanhante"}`}
+                            value={plusOneDietary}
+                            onChange={setPlusOneDietary}
+                          />
+                        </div>
+                      )}
+                    </fieldset>
+                    <Ornament />
+                  </>
+                )}
                 <fieldset>
                   <legend className="w-full text-center">
                     <span className="block text-xl font-semibold text-[#0d1e2e]">Vai precisar do transporte?</span>
                     <span className="mx-auto mt-2 block max-w-sm text-[14px] leading-6 text-[#5c6168]">
                       Vamos disponibilizar um micro-ônibus com saída do escritório até a festa e retorno ao final do
                       evento.
+                      {plusOneAllowed && plusOne === true ? " A escolha vale para você e seu acompanhante." : ""}
                     </span>
                   </legend>
                   <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -419,7 +740,19 @@ export function ConfirmarPresencaClient({ preview }: { preview: boolean }) {
                   * No dia da festa, o micro-ônibus estará disponível apenas para quem indicar aqui a necessidade de
                   transporte.
                 </p>
-                <DietaryNote dietary={view.dietary} />
+                {askDietary ? (
+                  <div>
+                    <p className="text-center text-xl font-semibold text-[#0d1e2e]">Alguma restrição alimentar?</p>
+                    <p className="mx-auto mt-2 max-w-sm text-center text-[14px] leading-6 text-[#5c6168]">
+                      Marque o que se aplica e nós avisamos o buffet.
+                    </p>
+                    <div className="mt-4">
+                      <DietaryPicker legend={null} value={ownDietary} onChange={setOwnDietary} />
+                    </div>
+                  </div>
+                ) : (
+                  <DietaryNote dietary={view.dietary} />
+                )}
               </motion.div>
             )}
           </AnimatePresence>

@@ -45,7 +45,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmployeeAvatar } from "@/components/ferias/employee-avatar";
-import { BirthdayArtViewer, BirthdayArtsDialog } from "@/components/inicio/birthday-arts-dialog";
+import { BirthdayArtsDialog } from "@/components/inicio/birthday-arts-dialog";
+import { TeamCelebrations } from "@/components/inicio/team-celebrations";
 import { NavBadgePill, sumBadges, useNavBadges } from "@/components/layout/nav-badges";
 import { ToolLogo } from "@/components/rh/registration/welcome-ui";
 import { useAuth } from "@/contexts/auth-context";
@@ -59,12 +60,9 @@ import {
 } from "@/lib/inicio/favorites";
 import { OFFICE_SYSTEMS, type OfficeSystem } from "@/lib/inicio/systems";
 import type {
-  HomeBirthday,
   HomeData,
-  HomeNewcomer,
   HomePending,
   HomePendingKind,
-  HomeWorkAnniversary,
 } from "@/lib/inicio/types";
 import { buildNav, type VisibleNavFeature, type VisibleNavFront } from "@/lib/navigation";
 import { awardPhotoUrl } from "@/lib/rh/bp-awards/format";
@@ -94,10 +92,6 @@ const DEFAULT_FRONT_LOOK = { icon: Layers, tile: "bg-[#eaf2f7]", chip: "bg-[#d4e
 const LEAVE_LABEL: Record<string, string> = { ferias: "Férias", recesso: "Recesso", abono: "Abono" };
 const MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
-/** Quantos aniversariantes cabem na tela antes do "Ver todos". */
-const BIRTHDAYS_ON_SCREEN = 4;
-/** Quantos aniversários de empresa cabem na tela. */
-const WORK_ANNIVERSARIES_ON_SCREEN = 3;
 /** Prazo a até N dias vira "Prioridade". */
 const PRIORITY_DAYS = 3;
 
@@ -593,196 +587,6 @@ function Areas({ fronts, onOpen }: { fronts: VisibleNavFront[]; onOpen: (frontId
         );
       })}
     </ul>
-  );
-}
-
-/* ---------------------------------------------------------------- pessoas */
-
-type ArtView = { url: string; name: string; caption: string };
-
-function PersonRow({
-  person,
-  trailing,
-  highlight,
-  detail,
-  art,
-  onOpenArt,
-}: {
-  person: HomeBirthday | HomeNewcomer | HomeWorkAnniversary;
-  trailing: string;
-  highlight?: boolean;
-  /** Linha de baixo; sem ela, a área (ou o cargo). */
-  detail?: string;
-  art?: ArtView | null;
-  onOpenArt?: (art: ArtView) => void;
-}) {
-  return (
-    <li className="flex items-center gap-3 py-2.5">
-      <EmployeeAvatar name={person.name} avatarUrl={person.avatarUrl} className="h-11 w-11" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-[#0d2a38]">{person.name}</p>
-        <p className="truncate text-xs text-[#5a717b]">{detail ?? person.department ?? person.position ?? ""}</p>
-      </div>
-      {art && onOpenArt && (
-        <button
-          type="button"
-          onClick={() => onOpenArt(art)}
-          className="size-11 shrink-0 overflow-hidden rounded-md border border-[#dce9eb] outline-none transition-shadow hover:shadow-[0_4px_12px_rgba(4,32,47,0.14)] focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
-          aria-label={`Ver a arte de ${person.name}`}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={art.url} alt="" className="size-full object-cover" loading="lazy" />
-        </button>
-      )}
-      <span
-        className={cn(
-          "shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold",
-          highlight ? "bg-[#347796] text-white" : "bg-[#eaf2f5] text-[#285f7a]"
-        )}
-      >
-        {trailing}
-      </span>
-    </li>
-  );
-}
-
-const birthdayArt = (person: HomeBirthday): ArtView | null =>
-  person.artUrl ? { url: person.artUrl, name: person.name, caption: "Aniversário" } : null;
-
-const workArt = (person: HomeWorkAnniversary): ArtView | null =>
-  person.artUrl
-    ? { url: person.artUrl, name: person.name, caption: `Aniversário de empresa · ${person.years} ${plural(person.years, "ano", "anos")}` }
-    : null;
-
-function anniversaryWhen(person: { inDays: number; day: number; month: number }, today: string): string {
-  if (person.inDays === 0) return "Hoje";
-  if (person.inDays === 1) return "Amanhã";
-  return shortDate(`${today.slice(0, 4)}-${String(person.month).padStart(2, "0")}-${String(person.day).padStart(2, "0")}`);
-}
-
-function Team({ data, allOpen, onAllOpenChange }: { data: HomeData; allOpen: boolean; onAllOpenChange: (open: boolean) => void }) {
-  const { birthdays, newcomers, workAnniversaries, today } = data;
-  const [art, setArt] = useState<ArtView | null>(null);
-  /** Arte de quem comemora hoje (aniversário primeiro, depois tempo de casa): abre o bloco em destaque. */
-  const featured =
-    birthdays.filter((person) => person.inDays === 0).map(birthdayArt).find(Boolean) ??
-    workAnniversaries.filter((person) => person.inDays === 0).map(workArt).find(Boolean) ??
-    null;
-  const subheading = "flex items-center gap-1.5 text-xs font-semibold uppercase text-[#48466e]";
-
-  return (
-    <div className="px-5 pb-3">
-      {featured && (
-        <button
-          type="button"
-          onClick={() => setArt(featured)}
-          className="group mb-2 mt-1 block w-full overflow-hidden rounded-lg border border-[#dce9eb] bg-[#f6fafb] text-left outline-none focus-visible:ring-2 focus-visible:ring-[#47cdd0]"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={featured.url} alt={`Arte de ${featured.caption.toLowerCase()} de ${featured.name}`} className="max-h-72 w-full object-contain" />
-          <span className="flex items-center gap-2 border-t border-[#dce9eb] bg-white px-3 py-2 text-sm font-semibold text-[#0d2a38]">
-            <PartyPopper className="size-4 text-[#9c7434]" aria-hidden />
-            Hoje: {featured.name}
-            <span className="ml-auto text-xs font-medium text-[#347796] group-hover:underline">Ver a arte</span>
-          </span>
-        </button>
-      )}
-      {birthdays.length === 0 ? (
-        <p className="py-6 text-sm text-muted-foreground">Nenhum aniversário nos próximos 30 dias.</p>
-      ) : (
-        <ul className="divide-y divide-[#e6eff1]">
-          {birthdays.slice(0, BIRTHDAYS_ON_SCREEN).map((person) => (
-            <PersonRow
-              key={person.id}
-              person={person}
-              trailing={anniversaryWhen(person, today)}
-              highlight={person.inDays === 0}
-              art={birthdayArt(person)}
-              onOpenArt={setArt}
-            />
-          ))}
-        </ul>
-      )}
-      {workAnniversaries.length > 0 && (
-        <div className="mt-2 border-t border-[#e6eff1] pt-3">
-          <p className={subheading}>
-            <Trophy className="size-3.5" aria-hidden />
-            Aniversário de empresa
-          </p>
-          <ul>
-            {workAnniversaries.slice(0, WORK_ANNIVERSARIES_ON_SCREEN).map((person) => (
-              <PersonRow
-                key={person.id}
-                person={person}
-                trailing={anniversaryWhen(person, today)}
-                highlight={person.inDays === 0}
-                detail={`${person.years} ${plural(person.years, "ano", "anos")} de casa${person.department ? ` · ${person.department}` : ""}`}
-                art={workArt(person)}
-                onOpenArt={setArt}
-              />
-            ))}
-          </ul>
-        </div>
-      )}
-      {newcomers.length > 0 && (
-        <div className="mt-2 border-t border-[#e6eff1] pt-3">
-          <p className={subheading}>
-            <UserPlus className="size-3.5" aria-hidden />
-            Chegaram há pouco
-          </p>
-          <ul>
-            {newcomers.map((person) => (
-              <PersonRow key={person.id} person={person} trailing={`desde ${shortDate(person.since, today)}`} />
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <Dialog open={allOpen} onOpenChange={onAllOpenChange}>
-        <DialogContent className="flex max-h-[90dvh] flex-col gap-0 p-0 sm:max-w-lg">
-          <DialogHeader className="border-b border-[#e6eff1] px-6 py-4">
-            <DialogTitle>Aniversários dos próximos 30 dias</DialogTitle>
-            <DialogDescription>Aniversário das pessoas e de tempo de casa.</DialogDescription>
-          </DialogHeader>
-          <div className="overflow-y-auto px-6 py-3">
-            <ul className="divide-y divide-[#e6eff1]">
-              {birthdays.map((person) => (
-                <PersonRow
-                  key={person.id}
-                  person={person}
-                  trailing={anniversaryWhen(person, today)}
-                  highlight={person.inDays === 0}
-                  art={birthdayArt(person)}
-                  onOpenArt={setArt}
-                />
-              ))}
-            </ul>
-            {workAnniversaries.length > 0 && (
-              <>
-                <p className={cn(subheading, "mt-3 border-t border-[#e6eff1] pt-3")}>
-                  <Trophy className="size-3.5" aria-hidden />
-                  Aniversário de empresa
-                </p>
-                <ul className="divide-y divide-[#e6eff1]">
-                  {workAnniversaries.map((person) => (
-                    <PersonRow
-                      key={person.id}
-                      person={person}
-                      trailing={anniversaryWhen(person, today)}
-                      highlight={person.inDays === 0}
-                      detail={`${person.years} ${plural(person.years, "ano", "anos")} de casa${person.department ? ` · ${person.department}` : ""}`}
-                      art={workArt(person)}
-                      onOpenArt={setArt}
-                    />
-                  ))}
-                </ul>
-              </>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-      <BirthdayArtViewer art={art} onClose={() => setArt(null)} />
-    </div>
   );
 }
 
@@ -1349,38 +1153,42 @@ export function InicioClient() {
         >
           <Areas fronts={fronts} onOpen={setModulesOpen} />
         </Block>
-        <Block
-          icon={Cake}
-          title="Próximos aniversários"
-          className="lg:col-span-5 xl:col-span-4"
-          action={
-            <div className="flex shrink-0 items-center gap-3">
-              {data?.canManageBirthdayArts && (
-                <button type="button" onClick={() => setArtsOpen(true)} className={TEXT_LINK}>
-                  <ImagePlus className="size-3.5" aria-hidden />
-                  Artes
-                </button>
-              )}
-              {data &&
-                (data.birthdays.length > BIRTHDAYS_ON_SCREEN || data.workAnniversaries.length > WORK_ANNIVERSARIES_ON_SCREEN) && (
-                  <button type="button" onClick={() => setBirthdaysOpen(true)} className={TEXT_LINK}>
-                    Ver todos
-                    <ArrowRight className="size-3.5" aria-hidden />
-                  </button>
-                )}
-            </div>
-          }
-        >
-          {data ? (
-            <Team data={data} allOpen={birthdaysOpen} onAllOpenChange={setBirthdaysOpen} />
-          ) : error ? null : (
-            <BlockSkeleton />
-          )}
+        <Block icon={BookOpen} title="Manuais e documentos" hint="O que vale para todo o escritório" className="lg:col-span-5 xl:col-span-4">
+          <OfficeDocuments data={data} />
         </Block>
       </div>
 
-      <Block icon={BookOpen} title="Manuais e documentos" hint="O que vale para todo o escritório">
-        <OfficeDocuments data={data} />
+      <Block
+        icon={Cake}
+        title="Aniversários da equipe"
+        hint="Parabenize quem comemora hoje e nesta semana"
+        action={
+          <div className="flex shrink-0 items-center gap-3">
+            {data?.canManageBirthdayArts && (
+              <button type="button" onClick={() => setArtsOpen(true)} className={TEXT_LINK}>
+                <ImagePlus className="size-3.5" aria-hidden />
+                Artes
+              </button>
+            )}
+            {data && data.birthdays.length + data.workAnniversaries.length > 0 && (
+              <button type="button" onClick={() => setBirthdaysOpen(true)} className={TEXT_LINK}>
+                Ver todos
+                <ArrowRight className="size-3.5" aria-hidden />
+              </button>
+            )}
+          </div>
+        }
+      >
+        {data ? (
+          <TeamCelebrations
+            data={data}
+            allOpen={birthdaysOpen}
+            onAllOpenChange={setBirthdaysOpen}
+            onChanged={() => setAttempt((value) => value + 1)}
+          />
+        ) : error ? null : (
+          <BlockSkeleton />
+        )}
       </Block>
 
       <ModulesDialog fronts={fronts} open={modulesOpen} onClose={() => setModulesOpen(null)} />

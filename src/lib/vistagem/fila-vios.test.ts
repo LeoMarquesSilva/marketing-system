@@ -62,6 +62,37 @@ describe("fila do robô", () => {
     expect(naPasta.linha.observacao).toBe("Publicação de 15/10/2026\nHorário: 09:00 às 18:00\nData limite: 25/11/2026");
   });
 
+  it("revisor na tarefa: na Sessão de Julgamento e nas audiências do Trabalhista, com revisor escolhido", () => {
+    const audiencia: AgendamentoParaFila = {
+      ...ITENS[1],
+      id: "ag-a",
+      etiqueta: "COMPROMISSO",
+      tarefa: "AUDIÊNCIA UNA/INICIAL",
+      tarefa_id: "202",
+      hora: "09:30",
+      responsavel: "Pamela Klava Senna Patricio",
+      revisor: "Lorena Lourenço Miranda",
+    };
+    const sessao: AgendamentoParaFila = { ...audiencia, id: "ag-s", tarefa: "SESSÃO DE JULGAMENTO", tarefa_id: "406" };
+    const semRevisor: AgendamentoParaFila = { ...audiencia, id: "ag-r", revisor: null };
+    const marcas = (publicacao: typeof PUBLICACAO) =>
+      linhasParaFila(publicacao, [audiencia, sessao, semRevisor, ITENS[0]], { simular: false, modo: "intimacao" })[0].linha.lancamento?.tarefas.map(
+        (t) => [t.tarefa, t.revisor_na_tarefa]
+      );
+    expect(marcas({ ...PUBLICACAO, escritorio_responsavel: "Trabalhista" })).toEqual([
+      ["AUDIÊNCIA UNA/INICIAL", true],
+      ["SESSÃO DE JULGAMENTO", true],
+      ["AUDIÊNCIA UNA/INICIAL", false],
+      ["MANIFESTAÇÃO - FLUXO D1", false],
+    ]);
+    expect(marcas({ ...PUBLICACAO, escritorio_responsavel: "Cível" })).toEqual([
+      ["AUDIÊNCIA UNA/INICIAL", false],
+      ["SESSÃO DE JULGAMENTO", true],
+      ["AUDIÊNCIA UNA/INICIAL", false],
+      ["MANIFESTAÇÃO - FLUXO D1", false],
+    ]);
+  });
+
   it("na intimação: uma linha com todas as tarefas, ligada pelo ID de comunicação", () => {
     const [grupo, ...resto] = linhasParaFila(PUBLICACAO, ITENS, { simular: true, modo: "intimacao" });
     expect(resto).toHaveLength(0);
@@ -85,6 +116,7 @@ describe("fila do robô", () => {
           data_limite: null,
           responsavel: "Maria Heloiza Gois Ponce",
           revisor: "Giovanna Pereira de Souza",
+          revisor_na_tarefa: false,
           observacao: "Publicação de 15/10/2026\nlaudo",
           justificativa: null,
           fluxo_datas: [],
@@ -100,6 +132,7 @@ describe("fila do robô", () => {
           data_limite: null,
           responsavel: "Giovanna Pereira de Souza",
           revisor: null,
+          revisor_na_tarefa: false,
           observacao: "Publicação de 15/10/2026",
           justificativa: null,
           fluxo_datas: [],

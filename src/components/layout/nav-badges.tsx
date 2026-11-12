@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
-import { hasOpsPlannerAccess, isVistagemPath, papelVistagem } from "@/lib/access-control";
+import { canAccessPath, hasOpsPlannerAccess, isVistagemPath, papelVistagem } from "@/lib/access-control";
 import { fetchCommentStats } from "@/lib/request-comments";
 import { fetchMarketingRequests } from "@/lib/marketing-requests";
 import { ABAS_COM_CONTAGEM, abaDoHref } from "@/lib/vistagem/contagens";
@@ -38,7 +38,8 @@ export function NavBadgesProvider({ children }: { children: React.ReactNode }) {
   const { profile } = useAuth();
   const pathname = usePathname();
   const [pendingAlterations, setPendingAlterations] = useState(0);
-  const whatsappUnread = useWhatsappUnreadCount();
+  // O número do WhatsApp aparece no Tráfego pago: quem não tem a página no menu não consulta (CPU na Vercel).
+  const whatsappUnread = useWhatsappUnreadCount(Boolean(profile) && canAccessPath(profile, "/trafego-pago"));
   const reelPending = useReelDeliveriesPendingCount(profile?.id ?? null);
   // Filas da Vistagem: só enquanto a pessoa está no módulo (é onde as abas aparecem).
   const vistagem = useVistagemContagens(Boolean(papelVistagem(profile)) && isVistagemPath(pathname), pathname);

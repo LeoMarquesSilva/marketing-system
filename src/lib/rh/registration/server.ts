@@ -284,7 +284,8 @@ async function loadMatchCandidates(
     admin
       .from("hr_employees")
       .select("id, full_name, cpf, department, position, employment_type")
-      .eq("is_active", true),
+      .eq("is_active", true)
+      .eq("is_automation", false),
     admin
       .from("hr_registration_forms")
       .select("employee_id")

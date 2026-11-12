@@ -5,6 +5,8 @@ import {
   areaDoCatalogo,
   areasDaPessoa,
   classeDasEtiquetas,
+  contagemPadraoDaArea,
+  contagemPadraoDaPublicacao,
   departamentoNaVistagem,
   nomesDasPessoas,
   escritorioDaArea,
@@ -25,6 +27,7 @@ import {
   separarNomes,
   paraDataVios,
   responsavelSugerido,
+  revisorFicaNaTarefa,
   tarefasPermitidas,
   validarAgendamentos,
   type EtapaVios,
@@ -348,6 +351,20 @@ describe("validarAgendamentos", () => {
     expect(semProtocolar.ok && semProtocolar.itens[0].data).toBe("2026-10-30");
   });
 
+  it("passa o prazo marcado (fatal e dias) para a cadeia: a regra da insolvência só antecipa com 10 dias ou mais", () => {
+    const pedidos: unknown[] = [];
+    const cadeiaDaTarefa = (_tarefaId: string, prazo: { dataFatal: string | null; diasPrazo: number | null }) => {
+      pedidos.push(prazo);
+      return CADEIA_PADRAO;
+    };
+    const base = { etiqueta: "PRAZO" as const, tarefa: "CONTESTAÇÃO", data: "", dataFatal: "2026-11-02", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo" };
+    validarAgendamentos([{ ...base, diasPrazo: 5, contagemPrazo: "uteis" }, base], { ...contexto, cadeiaDaTarefa });
+    expect(pedidos).toEqual([
+      { dataFatal: "2026-11-02", diasPrazo: 5 },
+      { dataFatal: "2026-11-02", diasPrazo: null },
+    ]);
+  });
+
   it("recusa tarefa fora da lista, data inválida, responsável desconhecido e lista vazia", () => {
     const resultado = validarAgendamentos(
       [{ etiqueta: "PROVIDENCIA", tarefa: "AGRAVO INVENTADO", data: "2026-02-30", responsavel: "Fulano" }],
@@ -594,6 +611,27 @@ describe("departamentoNaVistagem", () => {
   });
 });
 
+describe("revisorFicaNaTarefa", () => {
+  it("Sessão de Julgamento, em qualquer área", () => {
+    expect(revisorFicaNaTarefa("SESSÃO DE JULGAMENTO")).toBe(true);
+    expect(revisorFicaNaTarefa("sessao de julgamento", "Recuperação de Crédito")).toBe(true);
+  });
+
+  it("audiências do Trabalhista: o advogado auxiliar fica na tarefa (pedido de 12/11/2026)", () => {
+    for (const tarefa of ["AUDIÊNCIA UNA/INICIAL", "AUDIÊNCIA DE JULGAMENTO", "AUDIÊNCIA DE INSTRUÇÃO"]) {
+      expect(revisorFicaNaTarefa(tarefa, "Trabalhista")).toBe(true);
+    }
+  });
+
+  it("não vale para as audiências de outras áreas nem para as tarefas que só falam de audiência", () => {
+    expect(revisorFicaNaTarefa("AUDIÊNCIA DE INSTRUÇÃO", "Cível")).toBe(false);
+    expect(revisorFicaNaTarefa("AUDIÊNCIA UNA/INICIAL")).toBe(false);
+    for (const tarefa of ["ALERTA DE AUDIÊNCIA/JULGAMENTO", "LEMBRETE AUDIÊNCIA + REGULARIZAÇÃO PROCESSUAL", "ENVIAR ATA DE AUDIÊNCIA", "CONTESTAÇÃO"]) {
+      expect(revisorFicaNaTarefa(tarefa, "Trabalhista")).toBe(false);
+    }
+  });
+});
+
 describe("nomesDasPessoas", () => {
   it("separa por vírgula e pelo ' + ' do Protocolar, sem repetir", () => {
     expect(nomesDasPessoas("Manoela Brisighello Angotti + Daniel Silva, Manoela Brisighello Angotti")).toEqual([
@@ -615,5 +653,20 @@ describe("classeDasEtiquetas", () => {
     expect(classeDasEtiquetas([2])).toBeNull();
     expect(classeDasEtiquetas([])).toBeNull();
     expect(classeDasEtiquetas([1, 204])).toBeNull();
+  });
+});
+
+describe("contagemPadraoDaPublicacao", () => {
+  it("Corridos na Insolvência e Úteis nas outras áreas", () => {
+    expect(contagemPadraoDaArea("Insolvência")).toBe("corridos");
+    expect(contagemPadraoDaPublicacao("Insolvência", [])).toBe("corridos");
+    expect(contagemPadraoDaPublicacao("Recuperação de Crédito", ["Carteira GPR"])).toBe("uteis");
+    expect(contagemPadraoDaPublicacao("Cível | Insolvência", null)).toBe("uteis");
+  });
+
+  it("pasta RC-Insolvência começa em dias corridos em qualquer área", () => {
+    expect(contagemPadraoDaPublicacao("Recuperação de Crédito", ["Carteira GPR", "Crédito Ativo", "RC-Insolvência"])).toBe("corridos");
+    expect(contagemPadraoDaPublicacao("Cível | Insolvência", ["RC-Insolvência"])).toBe("corridos");
+    expect(contagemPadraoDaPublicacao(null, ["RC-Insolvência"])).toBe("corridos");
   });
 });

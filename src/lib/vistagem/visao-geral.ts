@@ -27,20 +27,18 @@ export type EtapaVisao = (typeof ETAPAS_VISAO)[number];
 export const SEM_AREA_VISAO = "Sem área";
 
 /**
- * O que a pessoa enxerga: as áreas (null = todas, a controladoria) e se vê as demandas de risco. É o mesmo recorte da
- * fila do jurídico (`garantirArea` em juridico-server.ts).
+ * O que a pessoa enxerga: as áreas (null = todas, a controladoria). Ver não separa risco de normal: a marca "não vista
+ * risco" só tira as de risco da fila A vistar da pessoa, e a Visão geral mostra a área inteira.
  */
 export interface EscopoDaVisao {
   areas: string[] | null;
-  veRisco: boolean;
 }
 
-export const ESCOPO_COMPLETO: EscopoDaVisao = { areas: null, veRisco: true };
+export const ESCOPO_COMPLETO: EscopoDaVisao = { areas: null };
 
-/** A publicação é das áreas da pessoa e, se ela não vista risco, não é demanda de risco? */
-export function estaNoEscopo(escopo: EscopoDaVisao, publicacao: { area: string | null; risco?: boolean }): boolean {
-  if (escopo.areas && !escopo.areas.includes(publicacao.area ?? "")) return false;
-  return escopo.veRisco || !publicacao.risco;
+/** A publicação é das áreas da pessoa? */
+export function estaNoEscopo(escopo: EscopoDaVisao, publicacao: { area: string | null }): boolean {
+  return !escopo.areas || escopo.areas.includes(publicacao.area ?? "");
 }
 
 export interface DiaDeChegada {
@@ -100,7 +98,7 @@ export interface VisaoGeral {
   hoje: string;
   desde: string;
   dias: PeriodoVisao;
-  /** Recorte de quem pediu: a controladoria vê tudo; o jurídico, só as suas áreas (e sem risco, se não vista risco). */
+  /** Recorte de quem pediu: a controladoria vê tudo; o jurídico, só as suas áreas (normais e de risco). */
   escopo: EscopoDaVisao;
   /** Somas do período (as mesmas do gráfico). No jurídico, zeradas: as linhas do arquivo da Kurier não têm área. */
   chegada: Omit<DiaDeChegada, "data">;
@@ -152,7 +150,7 @@ export interface ChegadaDaVisao {
   status: PublicacaoStatus;
   area: string | null;
   grupo?: string | null;
-  /** Demanda de risco (some da visão de quem não vista risco). */
+  /** Demanda de risco. */
   risco?: boolean;
 }
 
@@ -243,7 +241,7 @@ export function montarVisaoGeral(entrada: {
   const { hoje, dias } = entrada;
   const desde = inicioDoPeriodo(hoje, dias);
   const escopo = entrada.escopo ?? ESCOPO_COMPLETO;
-  // Jurídico: só as publicações das áreas dele (e sem as de risco, se não vista risco).
+  // Jurídico: só as publicações das áreas dele, normais e de risco.
   const restrita = escopo.areas !== null;
   const chegadas = entrada.chegadas.filter((publicacao) => estaNoEscopo(escopo, publicacao));
   const abertas = entrada.abertas.filter((publicacao) => estaNoEscopo(escopo, publicacao));
@@ -356,8 +354,7 @@ export function montarVisaoGeral(entrada: {
   const mapa = entrada.vistadores ?? VISTADORES_POR_AREA;
   for (const nome of areasComVistador(mapa)) if (estaNoEscopo(escopo, { area: nome })) area(nome);
   for (const nome of escopo.areas ?? []) area(nome);
-  // Quem não vista risco não vê as linhas (nem os vistadores) das demandas de risco.
-  const tipos = TIPOS_DE_DEMANDA.filter((tipo) => escopo.veRisco || tipo !== "risco");
+  const tipos = TIPOS_DE_DEMANDA;
 
   // Áreas com mais publicações abertas primeiro; "Sem área" por último.
   const areasOrdenadas = [...areas.values()].sort((a, b) => {
@@ -374,12 +371,11 @@ export function montarVisaoGeral(entrada: {
   for (const daArea of areasOrdenadas) {
     const fila = filaDa(daArea.area);
     if (!temVistador(daArea.area, mapa)) {
-      // Sem vistador cadastrado: uma linha com o total da área (normais e de risco juntas), sem deduzir nomes. Quem não
-      // vista risco só tem as normais.
+      // Sem vistador cadastrado: uma linha com o total da área (normais e de risco juntas), sem deduzir nomes.
       if (!daArea.vistagem) continue;
       vistadores.push({
         area: daArea.area,
-        tipo: escopo.veRisco ? null : "normal",
+        tipo: null,
         nome: null,
         pessoas: [],
         total: daArea.vistagem,

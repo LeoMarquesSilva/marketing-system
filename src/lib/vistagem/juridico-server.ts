@@ -30,8 +30,8 @@ import { areaComSugestaoIa, fatalSugerida, resultadoDaSugestao, sugestaoNaListaA
 import { carregarFeriados } from "./feriados";
 import { lerConfiguracoes } from "./configuracoes-server";
 import { cadeiaDoFluxo, montarFluxo, semPrazoProprio, type FluxoDaTarefa, type TipoNaArvore } from "./fluxo-vios";
-import { caminhosDoFluxo, fluxoParaOVios, fluxoPrevisto, prazoApertado } from "./fluxo-previsto";
-import { arvoreDaPublicacao, carregarBaseDoFluxo, catalogoDaPublicacao, comFluxoPrevisto, type AreaDaPublicacao } from "./fluxo-previsto-server";
+import { caminhosDoFluxo, fluxoDoPrazo, fluxoParaOVios, fluxoPrevisto, prazoApertado } from "./fluxo-previsto";
+import { arvoreDaPublicacao, carregarBaseDoFluxo, catalogoDaPublicacao, comFluxoPrevisto, prazoDaPublicacao, type AreaDaPublicacao } from "./fluxo-previsto-server";
 import { buscarPastasVios } from "./pastas-vios";
 import { pessoasPorNome, type PessoasPorNome } from "./pessoas-server";
 import { VistagemError } from "./errors";
@@ -523,11 +523,12 @@ export async function salvarVistagem(
   // A data do Prazo depende do fluxo do VIOS (dias do 3. PROTOCOLAR): sem ele, não grava.
   const [feriados, arvoreInteira] = await Promise.all([carregarFeriados(), carregarArvoreVios()]);
   const arvore = arvoreDaPublicacao(arvoreInteira, catalogos, publicacao);
+  const daPublicacao = prazoDaPublicacao(publicacao, catalogos, feriados);
   const validacao = validarAgendamentos(entrada.agendamentos, {
     tarefas: catalogo.tarefas,
     usuarios: catalogo.usuarios,
     ehDiaUtil: criarCalendario(feriados),
-    cadeiaDaTarefa: (tarefaId) => cadeiaDoFluxo(montarFluxo(tarefaId, arvore)),
+    cadeiaDaTarefa: (tarefaId, prazo) => cadeiaDoFluxo(fluxoDoPrazo(montarFluxo(tarefaId, arvore), prazo, daPublicacao)),
     caminhosDaTarefa: (tarefaId) => caminhosDoFluxo(montarFluxo(tarefaId, arvore)),
     semPrazoProprio: (tarefaId) => semPrazoProprio(montarFluxo(tarefaId, arvore)),
     hoje: hojeEmSaoPaulo(),
@@ -741,9 +742,10 @@ type TarefaDoHistoricoRow = {
 
 /**
  * O que aconteceu com a publicação, em ordem: das colunas de quem fez e quando, das tarefas e das inconsistências.
- * O jurídico só vê o das publicações da sua área (e de risco, se vista as de risco); a controladoria vê todas.
+ * O jurídico vê o das publicações da sua área, normais e de risco (ver não depende de vistar risco); a controladoria
+ * vê todas.
  */
-export async function historicoDaPublicacao(id: string, areas: AreasVistagem = null, veRisco = true): Promise<HistoricoPublicacao> {
+export async function historicoDaPublicacao(id: string, areas: AreasVistagem = null): Promise<HistoricoPublicacao> {
   const db = admin();
   const [publicacao, tarefas, inconsistencias] = await Promise.all([
     db.from("vistagem_publicacoes").select(COLUNAS_HISTORICO).eq("id", id).maybeSingle(),
@@ -758,7 +760,7 @@ export async function historicoDaPublicacao(id: string, areas: AreasVistagem = n
   if (tarefas.error) falhou("carregar as tarefas do histórico", tarefas.error);
   const row = publicacao.data as unknown as HistoricoRow | null;
   if (!row) throw new VistagemError("Publicação não encontrada.", 404);
-  garantirArea(row, areas, veRisco);
+  garantirArea(row, areas);
   const nomes = await nomesDosUsuarios([
     row.triagem_resolvida_por, row.duplicidade_revisada_por, row.transferido_por, row.vistado_por,
     row.devolvido_por, row.revistado_por, row.reaberta_por ?? null, row.conferido_por, row.checado_por,
@@ -823,7 +825,6 @@ async function itensDeConferencia(
     vistadoDesde?: string;
     limiteTeor?: number;
     comAuxiliar?: boolean;
-    semRisco?: boolean;
     /** Põe no item a sugestão da IA da vistagem (a fatal pelos dias só sai depois, com o calendário). */
     comSugestaoIa?: boolean;
   } = {}
@@ -836,7 +837,6 @@ async function itensDeConferencia(
     .limit(limite);
   if (filtro.escritorios) consulta = consulta.in("escritorio_responsavel", filtro.escritorios);
   if (filtro.vistadoDesde) consulta = consulta.gte("vistado_em", filtro.vistadoDesde);
-  if (filtro.semRisco) consulta = consulta.not("demanda_risco", "is", true);
   const { data, error } = await consulta;
   if (error) falhou("carregar a conferência", error);
   const linhas = (data ?? []) as (PublicacaoRow & {
@@ -1011,13 +1011,13 @@ export async function transferirPublicacao(
 export const DIAS_AGENDADAS = 30;
 
 /**
- * O que o jurídico já vistou nos últimos dias, das suas áreas: na conferência, com o robô, agendado,
+ * O que as áreas do usuário vistaram nos últimos dias, por qualquer pessoa: na conferência, com o robô, agendado,
  * checado ou em revisão, com as tarefas e a situação de cada uma no VIOS, e as fotos de quem aparece.
+ * Inclui as demandas de risco: "não vista risco" tira as de risco só da fila (A vistar); quem é da área acompanha tudo.
  */
 export async function listarAgendadasJuridico(
   escritorio: string | null,
   areas: AreasVistagem = null,
-  veRisco = true,
   authUserId: string | null = null,
   ehAdmin = false
 ): Promise<AgendadasJuridicoResposta> {
@@ -1027,7 +1027,6 @@ export async function listarAgendadasJuridico(
   const lidos = await itensDeConferencia(["controladoria_vistar", "pronto_para_agendar", "agendado", "checado", "revisar", "abertura_pasta"], 300, false, "vistado_em", {
     escritorios: escritorio ? [escritorio] : areas,
     vistadoDesde,
-    semRisco: !veRisco,
   });
   // A abertura de pasta não passa pelo robô: o detalhe mostra a árvore prevista (datas e quem fica), que a Central agenda.
   const base = lidos.some((item) => item.publicacao.status === "abertura_pasta") ? await carregarBaseDoFluxo("das Agendadas") : null;
@@ -1072,7 +1071,7 @@ async function comAlteracao(itens: ConferenciaItem[], authUserId: string, ehAdmi
 
 /** Área que decide a árvore do fluxo de um item da conferência. */
 function areaDoItem(item: ConferenciaItem): AreaDaPublicacao {
-  return { area_processo: item.areaProcesso, escritorio_responsavel: item.publicacao.escritorioResponsavel };
+  return { area_processo: item.areaProcesso, escritorio_responsavel: item.publicacao.escritorioResponsavel, data_publicacao: item.publicacao.dataPublicacao };
 }
 
 /** Texto da publicação na Conferência: 9 em cada 10 cabem inteiras; as maiores têm o "Ver texto completo". */
@@ -1261,7 +1260,15 @@ export async function editarTarefaNaConferencia(id: string, edicao: EdicaoNaConf
       tarefas: { ...catalogo.tarefas, [row.etiqueta]: [{ id: row.tarefa_id ?? "", nome: row.tarefa }] },
       usuarios: catalogo.usuarios,
       ehDiaUtil: criarCalendario(feriados),
-      cadeiaDaTarefa: (tarefaId) => cadeiaDoFluxo(montarFluxo(tarefaId, arvore)),
+      // A Conferência não manda os dias do prazo: valem os da vistagem enquanto a fatal for a mesma (como ao gravar).
+      cadeiaDaTarefa: (tarefaId, prazo) =>
+        cadeiaDoFluxo(
+          fluxoDoPrazo(
+            montarFluxo(tarefaId, arvore),
+            { dataFatal: prazo.dataFatal, diasPrazo: prazo.dataFatal === row.data_fatal ? row.dias_prazo : null },
+            prazoDaPublicacao(publicacao, catalogos, feriados)
+          )
+        ),
       caminhosDaTarefa: (tarefaId) => caminhosDoFluxo(montarFluxo(tarefaId, arvore)),
       semPrazoProprio: (tarefaId) => semPrazoProprio(montarFluxo(tarefaId, arvore)),
       hoje,
@@ -1360,10 +1367,13 @@ async function datasDoFluxoParaOVios(publicacao: PublicacaoComArea, itens: Agend
   try {
     const [arvoreInteira, feriados, catalogos] = await Promise.all([carregarArvoreVios(), carregarFeriados(), carregarCatalogoProcessos()]);
     const arvore = arvoreDaPublicacao(arvoreInteira, catalogos, publicacao);
+    const daPublicacao = prazoDaPublicacao(publicacao, catalogos, feriados);
     const ehDiaUtil = criarCalendario(feriados);
     const hoje = hojeEmSaoPaulo();
     for (const item of aConferir) {
-      const fluxoDaTarefa = item.tarefa_id ? montarFluxo(item.tarefa_id, arvore) : null;
+      const fluxoDaTarefa = item.tarefa_id
+        ? fluxoDoPrazo(montarFluxo(item.tarefa_id, arvore), { dataFatal: item.data_fatal, diasPrazo: item.dias_prazo }, daPublicacao)
+        : null;
       const apertada = prazoApertado({ etiqueta: item.etiqueta, dataFatal: item.data_fatal, data: item.data }, fluxoDaTarefa, ehDiaUtil, hoje);
       if (!apertada && !item.fluxo_datas?.length) continue;
       const previstas = fluxoPrevisto(apertada ? { ...item, data: apertada.enviar } : item, fluxoDaTarefa, ehDiaUtil, {

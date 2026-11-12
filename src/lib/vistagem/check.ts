@@ -100,12 +100,12 @@ function compararResponsavel(pedidoTexto: string, gravada: TarefaNoVios | null):
 }
 
 /**
- * Sessão de Julgamento: o revisor está na tarefa que o robô gravou? Null nas outras tarefas e quando o robô não devolveu
- * os responsáveis. Não vira divergência: o que o robô devolveu é como a tarefa ficou no lançamento, e quem incluir o
- * revisor depois, no VIOS, não apareceria aqui.
+ * Sessão de Julgamento e audiência do Trabalhista (`revisorFicaNaTarefa`): o revisor está na tarefa que o robô gravou?
+ * Null nas outras tarefas e quando o robô não devolveu os responsáveis. Não vira divergência: o que o robô devolveu é
+ * como a tarefa ficou no lançamento, e quem incluir o revisor depois, no VIOS, não apareceria aqui.
  */
-export function revisorEstaNaTarefa(agendamento: AgendamentoResumo): boolean | null {
-  if (!agendamento.revisor || !revisorFicaNaTarefa(agendamento.tarefa)) return null;
+export function revisorEstaNaTarefa(agendamento: AgendamentoResumo, area: string | null = null): boolean | null {
+  if (!agendamento.revisor || !revisorFicaNaTarefa(agendamento.tarefa, area)) return null;
   const noVios = nomesDasPessoas(principalDe(agendamento)?.responsaveis);
   if (!noVios.length) return null;
   return noVios.some((nome) => chaveNome(nome) === chaveNome(agendamento.revisor));

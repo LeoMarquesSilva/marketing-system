@@ -19,7 +19,12 @@ function getAdminClient() {
   return createServiceClient(supabaseUrl, supabaseServiceKey);
 }
 
-export async function requireAuthenticatedUser() {
+/**
+ * Usuário da sessão (cookie), com o token validado localmente (`createClient` do servidor: ver
+ * utils/supabase/usuario-da-sessao.ts). Não confere se está ativo: use quando a próxima consulta já lê `users` e
+ * barra o inativo (ex.: `requireVistagemAccess`, `requireAdminUser`), para não ler a mesma linha duas vezes.
+ */
+export async function requireSessionUser() {
   const supabase = await createPublicClient();
   const {
     data: { user },
@@ -27,6 +32,11 @@ export async function requireAuthenticatedUser() {
   if (!user) {
     throw new Error("Não autenticado.");
   }
+  return user;
+}
+
+export async function requireAuthenticatedUser() {
+  const user = await requireSessionUser();
 
   const admin = getAdminClient();
   const { data: profile, error } = await admin

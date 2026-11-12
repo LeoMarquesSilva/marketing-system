@@ -49,7 +49,7 @@ import {
   avisosDaData,
   chaveDoCaminho,
   chaveNome,
-  contagemPadraoDaArea,
+  contagemPadraoDaPublicacao,
   horaFinalPadrao,
   horaValida,
   mesmasPessoas,
@@ -85,7 +85,7 @@ import {
   type ClassificacaoEsocial,
 } from "@/lib/vistagem/esocial";
 import { CADEIA_PADRAO, cadeiaDoFluxo, semPrazoProprio } from "@/lib/vistagem/fluxo-vios";
-import { ROTULO_AJUSTE, emOrdemDeArvore, fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
+import { ROTULO_AJUSTE, emOrdemDeArvore, fluxoDoPrazo, fluxoPrevisto } from "@/lib/vistagem/fluxo-previsto";
 import { fataisDoFluxo, prazoLegalDaTarefa } from "@/lib/vistagem/prazo-legal";
 import { fatalSugerida, sugestaoNaListaAtual, type SugestaoIa } from "@/lib/vistagem/sugestao-ia";
 import { ESCRITORIOS } from "@/lib/vistagem/triagem";
@@ -865,7 +865,7 @@ export function EditorVistagem({
         const classificacao = classificacaoEsocial(dados.publicacao.publicacaoEsocial) ?? ESOCIAL_PADRAO;
         const tarefaEsocialId = dados.esocial?.tarefa && pedeTarefaEsocial(classificacao) ? dados.esocial.tarefa.id : null;
         setEsocial(classificacao);
-        const contagemDaArea = contagemPadraoDaArea(dados.publicacao.escritorioResponsavel ?? dados.catalogo?.area);
+        const contagemInicial = contagemPadraoDaPublicacao(dados.publicacao.escritorioResponsavel ?? dados.catalogo?.area, dados.publicacao.etiquetas);
         setLinhas(
           dados.agendamentos.length
             ? dados.agendamentos.map((item) => {
@@ -878,7 +878,7 @@ export function EditorVistagem({
                   dataFatal: semPrazo ? "" : item.dataFatal ?? "",
                   diasPrazo: semPrazo ? null : item.diasPrazo,
                   origemPrazo: semPrazo ? null : item.origemPrazo ?? null,
-                  contagemPrazo: item.contagemPrazo ?? contagemDaArea,
+                  contagemPrazo: item.contagemPrazo ?? contagemInicial,
                   hora: item.hora ?? "",
                   horaFim: item.horaFim ?? horaFinalPadrao(item.hora),
                   dataLimite: item.dataLimite && item.dataLimite !== item.data ? item.dataLimite : "",
@@ -889,7 +889,7 @@ export function EditorVistagem({
                   fluxoDatas: Object.fromEntries(item.fluxoDatas.map((datada) => [chaveDoCaminho(datada.caminho), datada])),
                 });
               })
-            : [novaLinha({ responsavel: dados.responsavelSugerido ?? "", revisor: dados.revisorSugerido ?? "", contagemPrazo: contagemDaArea })]
+            : [novaLinha({ responsavel: dados.responsavelSugerido ?? "", revisor: dados.revisorSugerido ?? "", contagemPrazo: contagemInicial })]
         );
         if (dados.sugestaoIa) {
           setSugestao(dados.sugestaoIa);
@@ -941,8 +941,10 @@ export function EditorVistagem({
     !cienciaFica ||
     (cienciaFica.chave === chave &&
       (caminho === null ? cienciaFica.caminho === null : cienciaFica.caminho !== null && chaveDoCaminho(cienciaFica.caminho) === chaveDoCaminho(caminho)));
-  /** Úteis ou Corridos já marcado no Prazo: Corridos na Insolvência, Úteis nas outras áreas. */
-  const contagemPadrao = contagemPadraoDaArea(detalhe?.publicacao.escritorioResponsavel ?? detalhe?.catalogo?.area);
+  /** Úteis ou Corridos já marcado no Prazo: Corridos na Insolvência e nas pastas RC-Insolvência, Úteis nas outras. */
+  const contagemPadrao = contagemPadraoDaPublicacao(detalhe?.publicacao.escritorioResponsavel ?? detalhe?.catalogo?.area, detalhe?.publicacao.etiquetas);
+  /** Área da publicação: nas audiências do Trabalhista o revisor fica na tarefa (`revisorFicaNaTarefa`). */
+  const areaDaPublicacao = detalhe?.publicacao.escritorioResponsavel ?? detalhe?.catalogo?.area ?? null;
   const pessoasDoCampo = useMemo(() => pessoasDoDetalhe(detalhe), [detalhe]);
   const classeDaTarefa = useMemo(() => classeNoCatalogo(detalhe?.catalogo), [detalhe?.catalogo]);
 
@@ -1109,7 +1111,7 @@ export function EditorVistagem({
           horaFim: horaFinalPadrao(tarefa.hora),
           dataLimite: "",
           responsavel: opcao.responsaveis?.length ? opcao.responsaveis.join(", ") : detalhe.responsavelSugerido ?? "",
-          revisor: prazo || revisorFicaNaTarefa(opcao.nome) ? detalhe.revisorSugerido ?? "" : "",
+          revisor: prazo || revisorFicaNaTarefa(opcao.nome, areaDaPublicacao) ? detalhe.revisorSugerido ?? "" : "",
           observacao: tarefa.motivo,
           ia: true,
         }),
@@ -1480,7 +1482,14 @@ export function EditorVistagem({
                   {linhas.map((linha, indice) => {
                     const prazo = linha.etiqueta === "PRAZO";
                     const tarefaId = catalogo.tarefas[linha.etiqueta].find((opcao) => opcao.nome === linha.tarefa)?.id ?? null;
-                    const fluxo = tarefaId ? detalhe.fluxos[tarefaId] ?? null : null;
+                    // Regra da insolvência: só antecipa o Enviar com prazo marcado de 10 dias ou mais (como o servidor ao gravar).
+                    const fluxo = tarefaId
+                      ? fluxoDoPrazo(
+                          detalhe.fluxos[tarefaId] ?? null,
+                          { dataFatal: linha.dataFatal || null, diasPrazo: linha.diasPrazo },
+                          { dataPublicacao: detalhe.publicacao.dataPublicacao, contagem: contagemPadrao, ehDiaDePrazo: contaPrazo }
+                        )
+                      : null;
                     // Prazo com fatal; a SENTENÇA é de Prazo (exige revisor), mas leva só a data dela.
                     const comFatal = prazo && !semFatal(linha);
                     // Sem tarefa escolhida (ou sem o fluxo carregado) mostra o fluxo padrão; o servidor recalcula ao gravar.
@@ -1608,7 +1617,7 @@ export function EditorVistagem({
                                           : eraDoTipo
                                             ? { responsavel: detalhe.responsavelSugerido ?? "" }
                                             : {}),
-                                        ...(revisorFicaNaTarefa(nome) && !linha.revisor ? { revisor: detalhe.revisorSugerido ?? "" } : {}),
+                                        ...(revisorFicaNaTarefa(nome, areaDaPublicacao) && !linha.revisor ? { revisor: detalhe.revisorSugerido ?? "" } : {}),
                                       });
                                       if (nome && linha.etiqueta === "COMPROMISSO") setHorarioDe(linha.chave);
                                     }}
@@ -1822,7 +1831,7 @@ export function EditorVistagem({
                                   {prazo && detalhe.revisorSugerido && linha.revisor === detalhe.revisorSugerido ? (
                                     <span className="font-normal"> · auxiliar da pasta</span>
                                   ) : null}
-                                  {revisorFicaNaTarefa(linha.tarefa) ? <span className="font-normal"> · fica na tarefa, com o responsável</span> : null}
+                                  {revisorFicaNaTarefa(linha.tarefa, areaDaPublicacao) ? <span className="font-normal"> · fica na tarefa, com o responsável</span> : null}
                                 </span>
                                 <ComboboxBusca
                                   opcoes={pessoasDoCampo.opcoes}

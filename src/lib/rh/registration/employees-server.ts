@@ -74,7 +74,9 @@ async function loadRecords(admin: SupabaseClient, employeeIds?: string[]): Promi
     .from("hr_employees")
     .select(
       "id, user_id, full_name, email, department, position, employment_type, admission_date, is_active, cpf, rg, birth_date, gender, oab_number, oab_uf"
-    );
+    )
+    // Contas de robô (ex.: Fênix Agendador) não são pessoas: ficam fora da lista e do perfil da equipe.
+    .eq("is_automation", false);
   if (employeeIds) employeesQuery = employeesQuery.in("id", employeeIds);
   const { data: employeeData, error: employeeError } = await employeesQuery;
   if (employeeError) throw new RhHttpError("Falha ao carregar os colaboradores.", 500, "QUERY_FAILED");

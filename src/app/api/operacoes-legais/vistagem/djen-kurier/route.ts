@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { diasDoPeriodo } from "@/lib/vistagem/djen-kurier";
-import { conferenciaDjenKurier, sincronizarDjen } from "@/lib/vistagem/djen-kurier-server";
+import { conferenciaDjenKurier, excelDaConferencia, sincronizarDjen } from "@/lib/vistagem/djen-kurier-server";
 import { VistagemError } from "@/lib/vistagem/errors";
 import { exigirAcessoVistagem, respostaDeErro } from "@/lib/vistagem/http";
 import { hojeEmSaoPaulo } from "@/lib/vistagem/server";
@@ -11,11 +11,26 @@ export const maxDuration = 300;
 /** O período pedido: um número de dias ou "tudo" (todo o estudo, o padrão). */
 const periodoPedido = (valor: unknown): number | "tudo" => (valor === undefined || valor === null || valor === "tudo" ? "tudo" : Number(valor));
 
-/** Conferência DJEN × Kurier dos últimos `dias` dias, ou de todo o estudo (`dias=tudo`, o padrão). Só leitura. */
+/**
+ * Conferência DJEN × Kurier dos últimos `dias` dias, ou de todo o estudo (`dias=tudo`, o padrão). Com `formato=xlsx`,
+ * o Excel do período: cada publicação (nos dois, só na Kurier, só no DJEN) e o porquê. Só leitura.
+ */
 export async function GET(request: Request) {
   try {
     await exigirAcessoVistagem();
-    return NextResponse.json(await conferenciaDjenKurier(periodoPedido(new URL(request.url).searchParams.get("dias"))));
+    const parametros = new URL(request.url).searchParams;
+    const periodo = periodoPedido(parametros.get("dias"));
+    if (parametros.get("formato") === "xlsx") {
+      const { arquivo, nome } = await excelDaConferencia(periodo);
+      return new NextResponse(new Uint8Array(arquivo), {
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="${nome}"`,
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+    return NextResponse.json(await conferenciaDjenKurier(periodo));
   } catch (error) {
     return respostaDeErro(error, "Não foi possível montar a conferência DJEN × Kurier.");
   }

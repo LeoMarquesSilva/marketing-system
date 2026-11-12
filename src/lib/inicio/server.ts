@@ -24,9 +24,11 @@ import { contarAbasDaVistagem } from "@/lib/vistagem/contagens-server";
 import { exigirPerfilVistagem } from "@/lib/vistagem/http";
 import { canManageBirthdayArts } from "./birthday-arts";
 import { artKey, signedArtUrls } from "./birthday-arts-server";
+import { celebrationKey } from "./celebrations";
+import { celebrationCounts, daysSinceCelebration } from "./celebrations-server";
 import { daysUntilAnniversary, todayInBrasilia } from "./dates";
 import { sanitizeFavorites } from "./favorites";
-import type { HomeBirthday, HomeData, HomeNewcomer, HomePending, HomeWorkAnniversary } from "./types";
+import type { HomeBirthday, HomeCelebration, HomeData, HomeNewcomer, HomePending, HomeWorkAnniversary } from "./types";
 
 const LOG = "inicio";
 const REELS_APPROVAL_HREF = "/conteudo/aprovacao-reels";
@@ -181,7 +183,7 @@ async function loadPending(viewer: ViewerRow): Promise<HomePending[]> {
 
 type EmployeeDates = { id: string; birth_date: string | null; admission_date: string | null };
 
-async function loadTeam(db: SupabaseClient, today: string) {
+async function loadTeam(db: SupabaseClient, today: string, viewerId: string) {
   const [directory, datesResult] = await Promise.all([
     loadPeopleDirectory(db, LOG),
     db.from("hr_employees").select("id, birth_date, admission_date").eq("is_active", true),
@@ -193,6 +195,8 @@ async function loadTeam(db: SupabaseClient, today: string) {
   const birthdays: HomeBirthday[] = [];
   const newcomers: HomeNewcomer[] = [];
   const workAnniversaries: HomeWorkAnniversary[] = [];
+  const recentCelebrations: HomeCelebration[] = [];
+  const social = { likes: 0, liked: false, comments: 0 };
   /** Ano em que a comemoração cai (a arte é por ano). */
   const yearIn = (inDays: number) => Number(addDays(today, inDays).slice(0, 4));
 
@@ -210,7 +214,31 @@ async function loadTeam(db: SupabaseClient, today: string) {
     if (row.birth_date) {
       const inDays = daysUntilAnniversary(row.birth_date, today);
       if (inDays !== null && inDays <= BIRTHDAY_WINDOW_DAYS) {
-        birthdays.push({ ...base, day: Number(row.birth_date.slice(8, 10)), month: Number(row.birth_date.slice(5, 7)), inDays, artUrl: null });
+        birthdays.push({
+          ...base,
+          ...social,
+          kind: "aniversario",
+          year: yearIn(inDays),
+          day: Number(row.birth_date.slice(8, 10)),
+          month: Number(row.birth_date.slice(5, 7)),
+          inDays,
+          years: null,
+          artUrl: null,
+        });
+      }
+      const since = daysSinceCelebration(row.birth_date, today);
+      if (since && since.daysAgo >= 1) {
+        recentCelebrations.push({
+          ...base,
+          ...social,
+          kind: "aniversario",
+          year: since.year,
+          day: Number(row.birth_date.slice(8, 10)),
+          month: Number(row.birth_date.slice(5, 7)),
+          inDays: -since.daysAgo,
+          years: null,
+          artUrl: null,
+        });
       }
     }
     if (row.admission_date && row.admission_date < today) {
@@ -219,10 +247,28 @@ async function loadTeam(db: SupabaseClient, today: string) {
       if (inDays !== null && inDays <= BIRTHDAY_WINDOW_DAYS && years >= 1) {
         workAnniversaries.push({
           ...base,
+          ...social,
+          kind: "empresa",
+          year: yearIn(inDays),
           day: Number(row.admission_date.slice(8, 10)),
           month: Number(row.admission_date.slice(5, 7)),
           inDays,
           years,
+          artUrl: null,
+        });
+      }
+      const since = daysSinceCelebration(row.admission_date, today);
+      const yearsSince = since ? since.year - Number(row.admission_date.slice(0, 4)) : 0;
+      if (since && since.daysAgo >= 1 && yearsSince >= 1) {
+        recentCelebrations.push({
+          ...base,
+          ...social,
+          kind: "empresa",
+          year: since.year,
+          day: Number(row.admission_date.slice(8, 10)),
+          month: Number(row.admission_date.slice(5, 7)),
+          inDays: -since.daysAgo,
+          years: yearsSince,
           artUrl: null,
         });
       }
@@ -236,13 +282,18 @@ async function loadTeam(db: SupabaseClient, today: string) {
   newcomers.sort((a, b) => b.since.localeCompare(a.since) || a.name.localeCompare(b.name, "pt-BR"));
   workAnniversaries.sort((a, b) => a.inDays - b.inDays || a.name.localeCompare(b.name, "pt-BR"));
 
-  const arts = await signedArtUrls(db, [
-    ...birthdays.map((person) => ({ employeeId: person.id, kind: "aniversario" as const, year: yearIn(person.inDays) })),
-    ...workAnniversaries.map((person) => ({ employeeId: person.id, kind: "empresa" as const, year: yearIn(person.inDays) })),
-  ]);
-  for (const person of birthdays) person.artUrl = arts.get(artKey(person.id, "aniversario", yearIn(person.inDays))) ?? null;
-  for (const person of workAnniversaries) person.artUrl = arts.get(artKey(person.id, "empresa", yearIn(person.inDays))) ?? null;
-  return { birthdays, newcomers, workAnniversaries, teamSize: active.size };
+  // Mais recentes primeiro.
+  recentCelebrations.sort((a, b) => b.inDays - a.inDays || a.name.localeCompare(b.name, "pt-BR"));
+
+  const all: HomeCelebration[] = [...birthdays, ...workAnniversaries, ...recentCelebrations];
+  const targets = all.map((item) => ({ employeeId: item.id, kind: item.kind, year: item.year }));
+  const [arts, counts] = await Promise.all([signedArtUrls(db, targets), celebrationCounts(db, targets, viewerId)]);
+  for (const item of all) {
+    item.artUrl = arts.get(artKey(item.id, item.kind, item.year)) ?? null;
+    const count = counts.get(celebrationKey({ employeeId: item.id, kind: item.kind, year: item.year }));
+    if (count) Object.assign(item, count);
+  }
+  return { birthdays, newcomers, workAnniversaries, recentCelebrations, teamSize: active.size };
 }
 
 /** Tudo o que a tela inicial mostra para quem está logado. */
@@ -283,10 +334,16 @@ export async function getHomeData(): Promise<HomeData> {
 
   const [pending, team, links, leaveResult, recessResult, partyResult] = await Promise.all([
     loadPending(viewer),
-    safe<{ birthdays: HomeBirthday[]; newcomers: HomeNewcomer[]; workAnniversaries: HomeWorkAnniversary[]; teamSize: number | null }>(
+    safe<{
+      birthdays: HomeBirthday[];
+      newcomers: HomeNewcomer[];
+      workAnniversaries: HomeWorkAnniversary[];
+      recentCelebrations: HomeCelebration[];
+      teamSize: number | null;
+    }>(
       "equipe",
-      () => loadTeam(db, today),
-      { birthdays: [], newcomers: [], workAnniversaries: [], teamSize: null }
+      () => loadTeam(db, today, viewer.id),
+      { birthdays: [], newcomers: [], workAnniversaries: [], recentCelebrations: [], teamSize: null }
     ),
     safe("links", async () => (await getMyWelcomeLinks()).groups.flatMap((group) => group.links), []),
     employee
@@ -332,6 +389,7 @@ export async function getHomeData(): Promise<HomeData> {
     birthdays: team.birthdays,
     newcomers: team.newcomers,
     workAnniversaries: team.workAnniversaries,
+    recentCelebrations: team.recentCelebrations,
     canManageBirthdayArts: canManageBirthdayArts(viewer),
     links: links.slice(0, MAX_LINKS),
     favorites: sanitizeFavorites(viewer.home_favorites),

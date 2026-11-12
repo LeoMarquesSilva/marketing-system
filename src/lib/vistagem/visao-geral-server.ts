@@ -57,13 +57,12 @@ async function arquivosDoPeriodo(db: SupabaseClient, desde: string) {
 }
 
 /**
- * Publicações já com o recorte do jurídico na consulta, como na fila dele (`listarFilaJuridico`): só as áreas dele e,
- * se não vista risco, sem as demandas de risco. A controladoria passa sem filtro.
+ * Publicações já com o recorte do jurídico na consulta: só as áreas dele, normais e de risco (ver não depende de
+ * vistar risco). A controladoria passa sem filtro.
  */
 function publicacoesNoEscopo(db: SupabaseClient, colunas: string, escopo: EscopoDaVisao) {
   let consulta = db.from("vistagem_publicacoes").select(colunas);
   if (escopo.areas) consulta = consulta.in("escritorio_responsavel", escopo.areas);
-  if (!escopo.veRisco) consulta = consulta.not("demanda_risco", "is", true);
   return consulta;
 }
 
