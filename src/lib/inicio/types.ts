@@ -45,6 +45,8 @@ export interface HomeCelebration extends HomePerson {
   /** Quem está logado já parabenizou. */
   liked: boolean;
   comments: number;
+  /** Reconhecimentos de valor (CIVIL) recebidos. */
+  praises: number;
 }
 
 export type HomeBirthday = HomeCelebration;
@@ -89,6 +91,8 @@ export interface HomeData {
   workAnniversaries: HomeWorkAnniversary[];
   /** Quem comemorou nos últimos 7 dias (ainda dá para parabenizar). */
   recentCelebrations: HomeCelebration[];
+  /** As comemorações de quem está logado, hoje ou na última semana: viram o aviso do topo. */
+  myCelebrations: HomeCelebration[];
   /** Quem está logado pode subir as artes de aniversário (Marketing e admin). */
   canManageBirthdayArts: boolean;
   /** Ferramentas da área da pessoa (as mesmas de Meus links). */
