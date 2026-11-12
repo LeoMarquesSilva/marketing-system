@@ -1,5 +1,6 @@
 import { CONTAGENS_PRAZO, DIAS_PRAZO, DIAS_PRAZO_TRABALHISTA, datasDoPrazo, somarDiasUteis, type ContagemPrazo } from "./dias-uteis";
 import type { CadeiaDoPrazo } from "./fluxo-vios";
+import { pedeDiasCorridos } from "./etiquetas";
 import type { DataDoFluxo } from "./types";
 
 /**
@@ -309,6 +310,14 @@ export function areaDoCatalogo(areaProcesso: string | null, escritorio: string |
  */
 export function contagemPadraoDaArea(area: string | null | undefined): ContagemPrazo {
   return chaveNome(area) === "INSOLVENCIA" ? "corridos" : "uteis";
+}
+
+/**
+ * Como o Prazo começa marcado na publicação: a contagem da área (`contagemPadraoDaArea`) ou, se a pasta tiver uma
+ * etiqueta de dias corridos (RC-Insolvência), dias corridos em qualquer área. O jurídico pode trocar na tarefa.
+ */
+export function contagemPadraoDaPublicacao(area: string | null | undefined, etiquetas?: readonly string[] | null): ContagemPrazo {
+  return pedeDiasCorridos(etiquetas) ? "corridos" : contagemPadraoDaArea(area);
 }
 
 /** Responsável sugerido: o advogado responsável da pasta, se for usuário do VIOS. */

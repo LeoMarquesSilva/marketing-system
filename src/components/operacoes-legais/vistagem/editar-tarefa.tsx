@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { CalendarDays, LoaderCircle, Pencil, Save, TriangleAlert, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authFetch } from "@/lib/auth-fetch";
-import { avisosDaData, chaveDoCaminho, contagemPadraoDaArea, horaFinalPadrao, horaValida, pedeDataLimite, revisorFicaNaTarefa } from "@/lib/vistagem/agendamento";
+import { avisosDaData, chaveDoCaminho, contagemPadraoDaPublicacao, horaFinalPadrao, horaValida, pedeDataLimite, revisorFicaNaTarefa } from "@/lib/vistagem/agendamento";
 import { mudancasNaTarefa, type CamposDaTarefa } from "@/lib/vistagem/ajuste-conferencia";
 import { ROTULO_CONTAGEM, criarCalendario, criarCalendarioDePrazo, datasDoPrazo, noRecessoForense } from "@/lib/vistagem/dias-uteis";
 import { caminhosDoFluxo, fluxoDoPrazo, fluxoPrevisto, prazoApertado } from "@/lib/vistagem/fluxo-previsto";
@@ -137,7 +137,8 @@ function FormularioDaTarefa({
   const comRevisor = tarefa.etiqueta !== "PROVIDENCIA";
   // SESSÃO DE JULGAMENTO: a data limite no VIOS pode ir além da data (a tarefa guarda o nome como está no VIOS).
   const comLimite = pedeDataLimite(tarefa.tarefa);
-  const contagemDaArea = contagemPadraoDaArea(dados.publicacao.escritorioResponsavel ?? dados.catalogo?.area);
+  // Corridos na Insolvência e nas pastas RC-Insolvência, como na vistagem.
+  const contagemDaArea = contagemPadraoDaPublicacao(dados.publicacao.escritorioResponsavel ?? dados.catalogo?.area, dados.publicacao.etiquetas);
   // Regra da insolvência: só antecipa o Enviar com prazo marcado de 10 dias ou mais. Os dias da vistagem valem enquanto
   // a fatal for a mesma; mudada aqui, conta da publicação até a nova (como o servidor ao gravar).
   const fluxoPara = (dataFatal: string | null) =>

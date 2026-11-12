@@ -274,7 +274,7 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
       {
         id: "corridos",
         titulo: "Dias corridos",
-        quando: "a decisão disser que o prazo é em dias corridos, ou a área for Insolvência (já vem marcado Corridos)",
+        quando: "a decisão disser que o prazo é em dias corridos, ou a área for Insolvência, ou a pasta tiver a etiqueta RC-Insolvência (já vem marcado Corridos)",
         entao: "conta todos os dias (menos o recesso); se vencer em dia sem expediente, passa para o próximo dia útil.",
         origem: "codigo",
       },

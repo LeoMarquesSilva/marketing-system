@@ -5,6 +5,8 @@ import {
   areaDoCatalogo,
   areasDaPessoa,
   classeDasEtiquetas,
+  contagemPadraoDaArea,
+  contagemPadraoDaPublicacao,
   departamentoNaVistagem,
   nomesDasPessoas,
   escritorioDaArea,
@@ -629,5 +631,20 @@ describe("classeDasEtiquetas", () => {
     expect(classeDasEtiquetas([2])).toBeNull();
     expect(classeDasEtiquetas([])).toBeNull();
     expect(classeDasEtiquetas([1, 204])).toBeNull();
+  });
+});
+
+describe("contagemPadraoDaPublicacao", () => {
+  it("Corridos na Insolvência e Úteis nas outras áreas", () => {
+    expect(contagemPadraoDaArea("Insolvência")).toBe("corridos");
+    expect(contagemPadraoDaPublicacao("Insolvência", [])).toBe("corridos");
+    expect(contagemPadraoDaPublicacao("Recuperação de Crédito", ["Carteira GPR"])).toBe("uteis");
+    expect(contagemPadraoDaPublicacao("Cível | Insolvência", null)).toBe("uteis");
+  });
+
+  it("pasta RC-Insolvência começa em dias corridos em qualquer área", () => {
+    expect(contagemPadraoDaPublicacao("Recuperação de Crédito", ["Carteira GPR", "Crédito Ativo", "RC-Insolvência"])).toBe("corridos");
+    expect(contagemPadraoDaPublicacao("Cível | Insolvência", ["RC-Insolvência"])).toBe("corridos");
+    expect(contagemPadraoDaPublicacao(null, ["RC-Insolvência"])).toBe("corridos");
   });
 });

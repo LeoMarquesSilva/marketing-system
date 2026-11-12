@@ -49,7 +49,7 @@ import {
   avisosDaData,
   chaveDoCaminho,
   chaveNome,
-  contagemPadraoDaArea,
+  contagemPadraoDaPublicacao,
   horaFinalPadrao,
   horaValida,
   mesmasPessoas,
@@ -865,7 +865,7 @@ export function EditorVistagem({
         const classificacao = classificacaoEsocial(dados.publicacao.publicacaoEsocial) ?? ESOCIAL_PADRAO;
         const tarefaEsocialId = dados.esocial?.tarefa && pedeTarefaEsocial(classificacao) ? dados.esocial.tarefa.id : null;
         setEsocial(classificacao);
-        const contagemDaArea = contagemPadraoDaArea(dados.publicacao.escritorioResponsavel ?? dados.catalogo?.area);
+        const contagemInicial = contagemPadraoDaPublicacao(dados.publicacao.escritorioResponsavel ?? dados.catalogo?.area, dados.publicacao.etiquetas);
         setLinhas(
           dados.agendamentos.length
             ? dados.agendamentos.map((item) => {
@@ -878,7 +878,7 @@ export function EditorVistagem({
                   dataFatal: semPrazo ? "" : item.dataFatal ?? "",
                   diasPrazo: semPrazo ? null : item.diasPrazo,
                   origemPrazo: semPrazo ? null : item.origemPrazo ?? null,
-                  contagemPrazo: item.contagemPrazo ?? contagemDaArea,
+                  contagemPrazo: item.contagemPrazo ?? contagemInicial,
                   hora: item.hora ?? "",
                   horaFim: item.horaFim ?? horaFinalPadrao(item.hora),
                   dataLimite: item.dataLimite && item.dataLimite !== item.data ? item.dataLimite : "",
@@ -889,7 +889,7 @@ export function EditorVistagem({
                   fluxoDatas: Object.fromEntries(item.fluxoDatas.map((datada) => [chaveDoCaminho(datada.caminho), datada])),
                 });
               })
-            : [novaLinha({ responsavel: dados.responsavelSugerido ?? "", revisor: dados.revisorSugerido ?? "", contagemPrazo: contagemDaArea })]
+            : [novaLinha({ responsavel: dados.responsavelSugerido ?? "", revisor: dados.revisorSugerido ?? "", contagemPrazo: contagemInicial })]
         );
         if (dados.sugestaoIa) {
           setSugestao(dados.sugestaoIa);
@@ -941,8 +941,8 @@ export function EditorVistagem({
     !cienciaFica ||
     (cienciaFica.chave === chave &&
       (caminho === null ? cienciaFica.caminho === null : cienciaFica.caminho !== null && chaveDoCaminho(cienciaFica.caminho) === chaveDoCaminho(caminho)));
-  /** Úteis ou Corridos já marcado no Prazo: Corridos na Insolvência, Úteis nas outras áreas. */
-  const contagemPadrao = contagemPadraoDaArea(detalhe?.publicacao.escritorioResponsavel ?? detalhe?.catalogo?.area);
+  /** Úteis ou Corridos já marcado no Prazo: Corridos na Insolvência e nas pastas RC-Insolvência, Úteis nas outras. */
+  const contagemPadrao = contagemPadraoDaPublicacao(detalhe?.publicacao.escritorioResponsavel ?? detalhe?.catalogo?.area, detalhe?.publicacao.etiquetas);
   const pessoasDoCampo = useMemo(() => pessoasDoDetalhe(detalhe), [detalhe]);
   const classeDaTarefa = useMemo(() => classeNoCatalogo(detalhe?.catalogo), [detalhe?.catalogo]);
 

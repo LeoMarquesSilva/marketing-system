@@ -37,6 +37,17 @@ export function etiquetasEmDestaque(etiquetas: readonly string[], destaque: read
   return destaque.filter((etiqueta) => daPasta.has(chave(etiqueta)));
 }
 
+/**
+ * Etiquetas da pasta em que o Prazo já começa marcado em dias corridos na vistagem, como na Insolvência: a
+ * RC-Insolvência é crédito cobrado dentro de uma recuperação judicial ou falência (Lei 11.101, art. 189).
+ */
+export const ETIQUETAS_DIAS_CORRIDOS = ["RC-Insolvência"];
+
+/** A pasta tem etiqueta que pede dias corridos (ETIQUETAS_DIAS_CORRIDOS)? */
+export function pedeDiasCorridos(etiquetas: readonly string[] | null | undefined): boolean {
+  return ETIQUETAS_DIAS_CORRIDOS.some((etiqueta) => temEtiqueta(etiquetas ?? [], etiqueta));
+}
+
 /** A pasta tem a etiqueta? Sem diferença de acento, maiúscula, espaço e hífen. */
 export function temEtiqueta(etiquetas: readonly string[], etiqueta: string): boolean {
   const alvo = chave(etiqueta);
