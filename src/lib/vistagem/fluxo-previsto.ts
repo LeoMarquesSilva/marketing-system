@@ -56,7 +56,8 @@ export const ESTAGIARIO_DA_PASTA = "Estagiário da pasta";
  * regras-fluxo.js), com o que o VIOS põe pelo cadastro do tipo.
  * - 2. REVISAR: o revisor da vistagem; 3. PROTOCOLAR: o responsável e o Samuel.
  * - Tipo que o VIOS dá a pessoas fixas ou ao estagiário da pasta, sem a regra do advogado: fica como o VIOS cria
- *   (Larissa no Verificar Ata, o estagiário no Inserir Pauta e na Habilitação).
+ *   (Larissa no Verificar Ata, o estagiário no Inserir Pauta e na Habilitação). Pasta sem estagiário: o VIOS cria sem
+ *   ninguém e o robô põe o responsável da vistagem (senão a tarefa caía no usuário do robô, o Fênix; 12/11/2026).
  * - Regra do advogado com outra: o responsável da vistagem e quem o VIOS põe.
  * - Só a regra do auxiliar: o revisor da vistagem. Só a do advogado, nenhuma, ou cadastro não lido: o responsável.
  * Com só os fixos lidos (catálogo antigo), ficam os fixos: é o que o VIOS cria quando o tipo não tem a regra do advogado.
@@ -75,7 +76,10 @@ export function quemFicaNoFluxo(
   // O coordenador e o grupo o Orquestra não sabe quem são: aparecem como "padrão do VIOS" quando são só eles.
   const doVios = [...fixos, ...(regras.estagiario ? [ESTAGIARIO_DA_PASTA] : [])];
   const outraRegra = regras.estagiario || regras.coordenador || regras.grupo || fixos.length > 0;
-  if (outraRegra && !regras.advogado && !regras.auxiliar) return doVios.length ? doVios.join(", ") : "padrão do VIOS";
+  if (outraRegra && !regras.advogado && !regras.auxiliar) {
+    if (!fixos.length && regras.estagiario) return `${ESTAGIARIO_DA_PASTA} (sem estagiário, ${responsavel})`;
+    return doVios.length ? doVios.join(", ") : "padrão do VIOS";
+  }
   if (outraRegra && regras.advogado) return separarNomes([responsavel, ...doVios].join(",")).join(", ");
   if (regras.auxiliar && !regras.advogado) return pessoas.revisor || "auxiliar da pasta";
   return responsavel;

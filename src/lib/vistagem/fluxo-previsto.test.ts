@@ -242,8 +242,10 @@ describe("quem fica nas tarefas do fluxo (regra do robô, sama-rpa regras-fluxo.
     expect(quemFicaNoFluxo("responsavel", resp([], null), pessoas)).toBe("Vanessa Lanza Sellani");
   });
 
-  it("estagiário da pasta (Inserir Pauta, Habilitação): o estagiário, como o VIOS cria", () => {
-    expect(quemFicaNoFluxo("responsavel", resp([], marcacoes({ estagiario: true })), pessoas)).toBe(ESTAGIARIO_DA_PASTA);
+  it("estagiário da pasta (Inserir Pauta, Habilitação): o estagiário, como o VIOS cria; sem estagiário, o responsável", () => {
+    expect(quemFicaNoFluxo("responsavel", resp([], marcacoes({ estagiario: true })), pessoas)).toBe(
+      `${ESTAGIARIO_DA_PASTA} (sem estagiário, Vanessa Lanza Sellani)`
+    );
   });
 
   it("regra do advogado com fixos ou estagiário: o responsável da vistagem e quem o VIOS põe", () => {
@@ -281,7 +283,7 @@ describe("quem fica nas tarefas do fluxo (regra do robô, sama-rpa regras-fluxo.
     );
     expect(previstas.map((tarefa) => [tarefa.nome, tarefa.responsaveis])).toEqual([
       ["1. CIÊNCIA DOS AGENDAMENTOS", "Pamela Klava Senna Patricio"],
-      ["HABILITAÇÃO PROCESSUAL", ESTAGIARIO_DA_PASTA],
+      ["HABILITAÇÃO PROCESSUAL", `${ESTAGIARIO_DA_PASTA} (sem estagiário, Pamela Klava Senna Patricio)`],
       ["VERIFICAR ATA", LARISSA],
     ]);
   });

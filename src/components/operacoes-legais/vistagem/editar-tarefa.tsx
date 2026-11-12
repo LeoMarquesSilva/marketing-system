@@ -374,7 +374,7 @@ function FormularioDaTarefa({
             <div className="space-y-1.5">
               <span className="block text-xs font-medium text-muted-foreground">
                 {prazo ? "Revisor (obrigatório)" : "Revisor (opcional)"}
-                {revisorFicaNaTarefa(tarefa.tarefa) ? <span className="font-normal"> · fica na tarefa, com o responsável</span> : null}
+                {revisorFicaNaTarefa(tarefa.tarefa, dados.publicacao.escritorioResponsavel ?? dados.catalogo?.area) ? <span className="font-normal"> · fica na tarefa, com o responsável</span> : null}
               </span>
               <ComboboxBusca
                 opcoes={pessoas.opcoes}

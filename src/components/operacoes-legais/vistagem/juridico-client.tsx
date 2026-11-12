@@ -943,6 +943,8 @@ export function EditorVistagem({
       (caminho === null ? cienciaFica.caminho === null : cienciaFica.caminho !== null && chaveDoCaminho(cienciaFica.caminho) === chaveDoCaminho(caminho)));
   /** Úteis ou Corridos já marcado no Prazo: Corridos na Insolvência e nas pastas RC-Insolvência, Úteis nas outras. */
   const contagemPadrao = contagemPadraoDaPublicacao(detalhe?.publicacao.escritorioResponsavel ?? detalhe?.catalogo?.area, detalhe?.publicacao.etiquetas);
+  /** Área da publicação: nas audiências do Trabalhista o revisor fica na tarefa (`revisorFicaNaTarefa`). */
+  const areaDaPublicacao = detalhe?.publicacao.escritorioResponsavel ?? detalhe?.catalogo?.area ?? null;
   const pessoasDoCampo = useMemo(() => pessoasDoDetalhe(detalhe), [detalhe]);
   const classeDaTarefa = useMemo(() => classeNoCatalogo(detalhe?.catalogo), [detalhe?.catalogo]);
 
@@ -1109,7 +1111,7 @@ export function EditorVistagem({
           horaFim: horaFinalPadrao(tarefa.hora),
           dataLimite: "",
           responsavel: opcao.responsaveis?.length ? opcao.responsaveis.join(", ") : detalhe.responsavelSugerido ?? "",
-          revisor: prazo || revisorFicaNaTarefa(opcao.nome) ? detalhe.revisorSugerido ?? "" : "",
+          revisor: prazo || revisorFicaNaTarefa(opcao.nome, areaDaPublicacao) ? detalhe.revisorSugerido ?? "" : "",
           observacao: tarefa.motivo,
           ia: true,
         }),
@@ -1615,7 +1617,7 @@ export function EditorVistagem({
                                           : eraDoTipo
                                             ? { responsavel: detalhe.responsavelSugerido ?? "" }
                                             : {}),
-                                        ...(revisorFicaNaTarefa(nome) && !linha.revisor ? { revisor: detalhe.revisorSugerido ?? "" } : {}),
+                                        ...(revisorFicaNaTarefa(nome, areaDaPublicacao) && !linha.revisor ? { revisor: detalhe.revisorSugerido ?? "" } : {}),
                                       });
                                       if (nome && linha.etiqueta === "COMPROMISSO") setHorarioDe(linha.chave);
                                     }}
@@ -1829,7 +1831,7 @@ export function EditorVistagem({
                                   {prazo && detalhe.revisorSugerido && linha.revisor === detalhe.revisorSugerido ? (
                                     <span className="font-normal"> · auxiliar da pasta</span>
                                   ) : null}
-                                  {revisorFicaNaTarefa(linha.tarefa) ? <span className="font-normal"> · fica na tarefa, com o responsável</span> : null}
+                                  {revisorFicaNaTarefa(linha.tarefa, areaDaPublicacao) ? <span className="font-normal"> · fica na tarefa, com o responsável</span> : null}
                                 </span>
                                 <ComboboxBusca
                                   opcoes={pessoasDoCampo.opcoes}

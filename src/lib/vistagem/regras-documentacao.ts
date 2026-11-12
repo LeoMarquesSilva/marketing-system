@@ -326,8 +326,15 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         id: "fluxo",
         titulo: "Fluxo das tarefas",
         quando: "a tarefa tiver fluxo no VIOS",
-        entao: `o VIOS cria as tarefas do fluxo junto. Revisar fica com o revisor; Protocolar com o responsável e ${PESSOA_FIXA_PROTOCOLAR}. Se o jurídico escolher outros responsáveis numa tarefa do fluxo, o robô põe os escolhidos.`,
+        entao: `o VIOS cria as tarefas do fluxo junto. Revisar fica com o revisor; Protocolar com o responsável e ${PESSOA_FIXA_PROTOCOLAR}. Se o jurídico escolher outros responsáveis numa tarefa do fluxo, o robô põe os escolhidos. Tarefa que o VIOS cria sem ninguém (ex.: Inserir Pauta numa pasta sem estagiário) fica com o responsável da vistagem, e não com o usuário do robô.`,
         origem: "vios",
+      },
+      {
+        id: "revisor-na-tarefa",
+        titulo: "Revisor na própria tarefa",
+        quando: "a tarefa for SESSÃO DE JULGAMENTO, ou uma audiência (AUDIÊNCIA UNA/INICIAL, AUDIÊNCIA DE JULGAMENTO…) no Trabalhista",
+        entao: "o robô lança a tarefa com o responsável e o revisor (o advogado auxiliar) juntos; nas outras, a tarefa fica só com o responsável.",
+        origem: "codigo",
       },
       {
         id: "robo",

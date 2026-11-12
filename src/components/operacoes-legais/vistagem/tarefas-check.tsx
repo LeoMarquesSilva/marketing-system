@@ -161,15 +161,17 @@ function Comparacao({
   comparacao,
   fotos,
   hoje,
+  area,
 }: {
   item: AgendamentoResumo;
   comparacao: ComparacaoDaTarefa;
   fotos: Record<string, string>;
   hoje: string;
+  area: string | null;
 }) {
   const { gravada } = comparacao;
   const responsavel = comparacao.responsavel;
-  const revisorNaTarefa = revisorEstaNaTarefa(item);
+  const revisorNaTarefa = revisorEstaNaTarefa(item, area);
   return (
     <div className="@container overflow-hidden rounded-md border border-[#e6eef0]">
       <table className="w-full table-fixed border-collapse text-sm @max-sm:block">
@@ -250,8 +252,8 @@ function Comparacao({
               icone={UserCheck}
               rotulo="Revisor"
               dica={
-                revisorFicaNaTarefa(item.tarefa)
-                  ? "Na Sessão de Julgamento o revisor fica na própria tarefa, junto com o responsável."
+                revisorFicaNaTarefa(item.tarefa, area)
+                  ? "Na Sessão de Julgamento e nas audiências do Trabalhista, o revisor fica na própria tarefa, junto com o responsável."
                   : "O robô não devolve o revisor da tarefa. No VIOS, aparecem aqui as tarefas Revisar do fluxo e quem está nelas."
               }
               situacao={revisorNaTarefa ? "confere" : null}
@@ -319,11 +321,14 @@ export function CartoesCheck({
   agendamentos,
   fotos,
   hoje,
+  area = null,
   onApontar,
 }: {
   agendamentos: AgendamentoResumo[];
   fotos: Record<string, string>;
   hoje: string;
+  /** Área da publicação: nas audiências do Trabalhista o revisor fica na tarefa (`revisorFicaNaTarefa`). */
+  area?: string | null;
   onApontar?: (agendamento: AgendamentoResumo) => void;
 }) {
   if (!agendamentos.length) return <p className="px-4 pb-4 text-sm text-muted-foreground">Nenhuma tarefa nesta vistagem.</p>;
@@ -394,7 +399,7 @@ export function CartoesCheck({
                     : "O robô não devolveu o CI nem como a tarefa ficou no VIOS. Procure a tarefa na pasta."}
                 </p>
               ) : null}
-              <Comparacao item={item} comparacao={comparacao} fotos={fotos} hoje={hoje} />
+              <Comparacao item={item} comparacao={comparacao} fotos={fotos} hoje={hoje} area={area} />
               <DatasDoFluxo comparacao={comparacao} hoje={hoje} />
               <AgendaNoVios item={item} fotos={fotos} hoje={hoje} />
               {onApontar && comparacao.situacao === "diverge" ? (

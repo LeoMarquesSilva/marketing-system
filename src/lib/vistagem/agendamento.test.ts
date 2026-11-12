@@ -27,6 +27,7 @@ import {
   separarNomes,
   paraDataVios,
   responsavelSugerido,
+  revisorFicaNaTarefa,
   tarefasPermitidas,
   validarAgendamentos,
   type EtapaVios,
@@ -607,6 +608,27 @@ describe("departamentoNaVistagem", () => {
   it("não mexe nas outras áreas", () => {
     expect(departamentoNaVistagem("Trabalhista", [financeiro])).toBe("Trabalhista");
     expect(departamentoNaVistagem(null, [financeiro])).toBeNull();
+  });
+});
+
+describe("revisorFicaNaTarefa", () => {
+  it("Sessão de Julgamento, em qualquer área", () => {
+    expect(revisorFicaNaTarefa("SESSÃO DE JULGAMENTO")).toBe(true);
+    expect(revisorFicaNaTarefa("sessao de julgamento", "Recuperação de Crédito")).toBe(true);
+  });
+
+  it("audiências do Trabalhista: o advogado auxiliar fica na tarefa (pedido de 12/11/2026)", () => {
+    for (const tarefa of ["AUDIÊNCIA UNA/INICIAL", "AUDIÊNCIA DE JULGAMENTO", "AUDIÊNCIA DE INSTRUÇÃO"]) {
+      expect(revisorFicaNaTarefa(tarefa, "Trabalhista")).toBe(true);
+    }
+  });
+
+  it("não vale para as audiências de outras áreas nem para as tarefas que só falam de audiência", () => {
+    expect(revisorFicaNaTarefa("AUDIÊNCIA DE INSTRUÇÃO", "Cível")).toBe(false);
+    expect(revisorFicaNaTarefa("AUDIÊNCIA UNA/INICIAL")).toBe(false);
+    for (const tarefa of ["ALERTA DE AUDIÊNCIA/JULGAMENTO", "LEMBRETE AUDIÊNCIA + REGULARIZAÇÃO PROCESSUAL", "ENVIAR ATA DE AUDIÊNCIA", "CONTESTAÇÃO"]) {
+      expect(revisorFicaNaTarefa(tarefa, "Trabalhista")).toBe(false);
+    }
   });
 });
 

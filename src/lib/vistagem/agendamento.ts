@@ -286,11 +286,17 @@ export function mesmasPessoas(a: string[], b: string[]): boolean {
 }
 
 /**
- * SESSÃO DE JULGAMENTO: o fluxo dela não tem "2. REVISAR", então o revisor fica na própria tarefa, junto com o
- * responsável. É a regra do robô no lançamento (sama-rpa regras-fluxo.js, responsaveisDaTarefaLancada).
+ * O revisor fica na própria tarefa, junto com o responsável:
+ * - SESSÃO DE JULGAMENTO: o fluxo dela não tem "2. REVISAR";
+ * - audiência no Trabalhista (AUDIÊNCIA UNA/INICIAL, AUDIÊNCIA DE JULGAMENTO…): o advogado auxiliar vai à audiência
+ *   (pedido de 12/11/2026: na 0012645-71 o robô deixou só a Pamela, sem a Lorena).
+ * O Orquestra manda a decisão ao robô em `revisor_na_tarefa` (fila-vios.ts); o robô junta o revisor
+ * (sama-rpa regras-fluxo.js, responsaveisDaTarefaLancada).
  */
-export function revisorFicaNaTarefa(tarefa: string | null | undefined): boolean {
-  return chaveNome(tarefa) === "SESSAO DE JULGAMENTO";
+export function revisorFicaNaTarefa(tarefa: string | null | undefined, area: string | null | undefined = null): boolean {
+  const tipo = chaveNome(tarefa);
+  if (tipo === "SESSAO DE JULGAMENTO") return true;
+  return chaveNome(area) === "TRABALHISTA" && /^AUDIENCIA\b/.test(tipo);
 }
 
 /** Área do catálogo do SAMA para a pasta: a área do processo no VIOS ou, sem ela, a do escritório. */
