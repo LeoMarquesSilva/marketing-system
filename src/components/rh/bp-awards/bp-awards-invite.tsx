@@ -6,6 +6,7 @@ import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/contexts/auth-context";
+import { conviteConferidoHaPouco, marcarConviteConferido } from "@/lib/convite-conferido";
 import { formatAwardDateTime } from "@/lib/rh/bp-awards/format";
 import { AWARDS_LOGO_SRC, AWARDS_VOTING_PATH, type AwardInviteStatus } from "@/lib/rh/bp-awards/types";
 
@@ -34,26 +35,28 @@ function writeStorage(storage: "local" | "session", key: string, value: string) 
 
 /**
  * Convite do BP Awards: enquanto a votação está aberta e o colaborador não
- * enviou, aparece uma vez por dia ao entrar no sistema. Confere o status uma
- * vez por sessão do navegador (cada chamada conta CPU na Vercel).
+ * enviou, aparece uma vez por dia ao entrar no sistema. Confere o status no
+ * servidor no máximo a cada 2 horas, em todas as abas (cada chamada conta CPU
+ * na Vercel; ver convite-conferido.ts).
  */
 export function BpAwardsInvite() {
   const router = useRouter();
   const { profile } = useAuth();
+  const profileId = profile?.id ?? null;
   const [status, setStatus] = useState<AwardInviteStatus | null>(null);
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (!profile) return;
+    if (!profileId) return;
     if (readStorage("local", DISMISSED_KEY) === today()) return;
-    const sessionKey = `${CHECKED_KEY}:${profile.id}`;
-    if (readStorage("session", sessionKey)) return;
+    const sessionKey = `${CHECKED_KEY}:${profileId}`;
+    if (conviteConferidoHaPouco(sessionKey)) return;
     let cancelled = false;
     void fetch("/api/bp-awards/status", { cache: "no-store" })
       .then((response) => (response.ok ? (response.json() as Promise<AwardInviteStatus>) : null))
       .then((data) => {
         if (cancelled || !data) return;
-        writeStorage("session", sessionKey, "1");
+        marcarConviteConferido(sessionKey);
         if (data.pending) {
           setStatus(data);
           setOpen(true);
@@ -63,7 +66,8 @@ export function BpAwardsInvite() {
     return () => {
       cancelled = true;
     };
-  }, [profile]);
+    // Pelo id: o perfil é recriado ao renovar a sessão, e isso não pode perguntar de novo.
+  }, [profileId]);
 
   if (!status) return null;
 

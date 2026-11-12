@@ -2,7 +2,7 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 import type { PapelVistagem } from "@/lib/access-control";
-import { requireAdminUser, requireAuthenticatedUser, requireVistagemAccess } from "@/lib/api-auth";
+import { requireAdminUser, requireSessionUser, requireVistagemAccess } from "@/lib/api-auth";
 import { VistagemError } from "./errors";
 
 /** Quem acessa a Vistagem: id de auth, papel, áreas (null = todas, na controladoria) e se vista demanda de risco. */
@@ -24,14 +24,16 @@ export async function exigirAcessoVistagem(): Promise<string> {
 
 /** Só admin: configurações da Vistagem (regras, vistadores, IA). Devolve o id de auth. */
 export async function exigirAdminVistagem(): Promise<string> {
-  const user = await requireAuthenticatedUser();
+  // `requireAdminUser` já barra o usuário inativo: uma leitura de `users` só (CPU na Vercel).
+  const user = await requireSessionUser();
   await requireAdminUser(user.id);
   return user.id;
 }
 
 /** Qualquer usuário da Vistagem (controladoria ou jurídico), para as rotas da aba Jurídico. */
 export async function exigirPerfilVistagem(): Promise<PerfilVistagem> {
-  const user = await requireAuthenticatedUser();
+  // `requireVistagemAccess` já barra o usuário inativo: uma leitura de `users` só, em vez de duas (CPU na Vercel).
+  const user = await requireSessionUser();
   const { papel, areas, veRisco, admin } = await requireVistagemAccess(user.id);
   return { authUserId: user.id, papel, areas, veRisco, admin };
 }
