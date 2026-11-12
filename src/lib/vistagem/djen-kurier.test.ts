@@ -4,7 +4,9 @@ import {
   compararDjenKurier,
   diaAnterior,
   diasDesdeOInicio,
+  detalheDoDia,
   diasDoPeriodo,
+  resumoDoDia,
   totaisDaConferencia,
   tribunalDoProcesso,
   type ComunicacaoDjenGuardada,
@@ -33,6 +35,7 @@ const kurier = (id: string, djenId: number | null, data: string, processo: strin
   nomeLocalizado: "GUSTAVO BISMARCHI MOTTA",
   status: "juridico_vistar",
   fonte: "orquestra",
+  arquivo: "2026-11-11",
 });
 const bkp = (spId: number, data: string, processo: string, status = "CIÊNCIA NF"): PublicacaoKurier => ({
   id: `bkp:${spId}`,
@@ -43,6 +46,7 @@ const bkp = (spId: number, data: string, processo: string, status = "CIÊNCIA NF
   nomeLocalizado: null,
   status,
   fonte: "bkp",
+  arquivo: "2026-11-06",
 });
 
 describe("dias do período", () => {
@@ -110,13 +114,13 @@ describe("compararDjenKurier", () => {
   it("dia sem busca no DJEN: não acusa nada da Kurier e fica fora dos totais", () => {
     const dias = compararDjenKurier([], [kurier("k1", 1, "2026-11-10", "0001")], DIAS, new Set(["2026-11-11"]));
     expect(dias[1]).toMatchObject({ buscado: false, kurier: 1, nosDois: 0, soKurier: [], cobertura: null });
-    expect(totaisDaConferencia(dias)).toEqual({ djen: 0, kurier: 0, nosDois: 0, soDjen: 0, soKurier: 0, cobertura: null });
+    expect(totaisDaConferencia(dias.map(resumoDoDia))).toEqual({ djen: 0, kurier: 0, nosDois: 0, soDjen: 0, soKurier: 0, cobertura: null });
   });
 
   it("dia sem nenhuma publicação da Kurier não se compara: nada fica só no DJEN e o dia sai dos totais", () => {
     const dias = compararDjenKurier([djen(1, "2026-11-10", "0001"), djen(2, "2026-11-11", "0002")], [kurier("k2", 2, "2026-11-11", "0002")], DIAS, BUSCADOS);
     expect(dias[1]).toMatchObject({ comKurier: false, djen: 1, kurier: 0, soDjen: [], cobertura: null });
-    expect(totaisDaConferencia(dias)).toMatchObject({ djen: 1, kurier: 1, nosDois: 1, soDjen: 0 });
+    expect(totaisDaConferencia(dias.map(resumoDoDia))).toMatchObject({ djen: 1, kurier: 1, nosDois: 1, soDjen: 0 });
   });
 
   it("totais: somam os dias buscados e dão a cobertura da Kurier pelo DJEN", () => {
@@ -126,7 +130,7 @@ describe("compararDjenKurier", () => {
       DIAS,
       BUSCADOS
     );
-    expect(totaisDaConferencia(dias)).toEqual({ djen: 3, kurier: 3, nosDois: 2, soDjen: 1, soKurier: 1, cobertura: 2 / 3 });
+    expect(totaisDaConferencia(dias.map(resumoDoDia))).toEqual({ djen: 3, kurier: 3, nosDois: 2, soDjen: 1, soKurier: 1, cobertura: 2 / 3 });
   });
 
   it("BKP: uma vez por processo e dia, casando com todas as comunicações do processo no dia", () => {
@@ -162,7 +166,58 @@ describe("compararDjenKurier", () => {
     expect(dias[0]).toMatchObject({ data: "2026-11-11", emAberto: true, djen: 2, kurier: 1, nosDois: 1 });
     expect(dias[0].soDjen.map((item) => item.id)).toEqual([3]);
     expect(dias[1]).toMatchObject({ data: "2026-11-10", emAberto: false });
-    expect(totaisDaConferencia(dias)).toEqual({ djen: 1, kurier: 1, nosDois: 1, soDjen: 0, soKurier: 0, cobertura: 1 });
+    expect(totaisDaConferencia(dias.map(resumoDoDia))).toEqual({ djen: 1, kurier: 1, nosDois: 1, soDjen: 0, soKurier: 0, cobertura: 1 });
+  });
+
+  it("os pares dizem como casaram: pelo ID, pelo processo ou pelo BKP", () => {
+    const [, dia10] = compararDjenKurier(
+      [djen(1, "2026-11-10", "0001"), djen(2, "2026-11-10", "0002"), djen(3, "2026-11-10", "0003"), djen(4, "2026-11-10", "0003")],
+      [kurier("k1", 1, "2026-11-10", "0001"), kurier("k2", null, "2026-11-10", "0002"), bkp(3, "2026-11-10", "0003")],
+      DIAS,
+      BUSCADOS
+    );
+    expect(dia10.pares.map((par) => [par.kurier.id, par.como, par.djen.map((item) => item.id)])).toEqual([
+      ["k1", "id", [1]],
+      ["k2", "processo", [2]],
+      ["bkp:3", "bkp", [3, 4]],
+    ]);
+    expect(resumoDoDia(dia10)).toMatchObject({ nosDois: 3, soDjen: 0, soKurier: 0 });
+  });
+});
+
+describe("detalheDoDia", () => {
+  const BUSCADOS = new Set(["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12"]);
+
+  it("separa o que é o quê, diz em que outro dia o outro lado trouxe o processo e de que arquivos veio a Kurier", () => {
+    const detalhe = detalheDoDia(
+      [djen(1, "2026-11-10", "0001"), djen(2, "2026-11-10", "0002"), djen(9, "2026-11-09", "0005")],
+      [
+        kurier("k1", 1, "2026-11-10", "0001"),
+        { ...kurier("k5", 55, "2026-11-10", "0005"), arquivo: "2026-11-10" },
+        kurier("k2-antes", 22, "2026-11-09", "0002"),
+      ],
+      "2026-11-10",
+      BUSCADOS
+    );
+    expect(detalhe.resumo).toMatchObject({ data: "2026-11-10", djen: 2, kurier: 2, nosDois: 1, soDjen: 1, soKurier: 1 });
+    expect(detalhe.pares.map((par) => par.kurier.id)).toEqual(["k1"]);
+    expect(detalhe.soKurier).toEqual([{ kurier: expect.objectContaining({ id: "k5" }), djenEmOutrosDias: ["2026-11-09"] }]);
+    expect(detalhe.soDjen).toEqual([{ djen: expect.objectContaining({ id: 2 }), kurierEmOutrosDias: ["2026-11-09"] }]);
+    expect(detalhe.arquivos).toEqual([
+      { arquivo: "2026-11-10", quantas: 1 },
+      { arquivo: "2026-11-11", quantas: 1 },
+    ]);
+  });
+
+  it("dia ainda sem Kurier: lista o que o DJEN trouxe, para conferir quando a Kurier chegar", () => {
+    const detalhe = detalheDoDia([djen(1, "2026-11-12", "0001"), djen(2, "2026-11-12", "0002")], [kurier("k1", 7, "2026-11-11", "0001")], "2026-11-12", BUSCADOS, {
+      ultimoArquivoKurier: "2026-11-12",
+    });
+    expect(detalhe.resumo).toMatchObject({ comKurier: false, emAberto: true, soDjen: 0 });
+    expect(detalhe.soDjen.map((item) => [item.djen.id, item.kurierEmOutrosDias])).toEqual([
+      [1, ["2026-11-11"]],
+      [2, []],
+    ]);
   });
 });
 

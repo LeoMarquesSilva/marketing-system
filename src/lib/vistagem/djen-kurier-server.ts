@@ -7,13 +7,16 @@ import {
   chaveDoAdvogado,
   comunicacaoDaApi,
   compararDjenKurier,
+  detalheDoDia,
   diaAnterior,
   diasDesdeOInicio,
   diasDoPeriodo,
+  resumoDoDia,
   totaisDaConferencia,
   tribunalDoProcesso,
   type ComunicacaoDjenGuardada,
   type ConferenciaDjenKurier,
+  type DetalheDoDia,
   type ItemDaApiDjen,
   type PublicacaoKurier,
 } from "./djen-kurier";
@@ -164,7 +167,7 @@ async function kurierDoBkp(de: string, ate: string): Promise<{ itens: Publicacao
     const linhas = await lerPaginas("o BKP de publicações do SIOE", (inicio) =>
       sioe
         .from("sp_publicacoes")
-        .select("sp_id, data_divulgacao, numero_processo, tipo_agendamento")
+        .select("sp_id, data_divulgacao, numero_processo, tipo_agendamento, data_recebimento_kurier")
         .eq("origem", "sharepoint")
         .gte("data_divulgacao", de)
         .lte("data_divulgacao", ate)
@@ -184,6 +187,7 @@ async function kurierDoBkp(de: string, ate: string): Promise<{ itens: Publicacao
           nomeLocalizado: null,
           status: tiposDoBkp(linha.tipo_agendamento),
           fonte: "bkp" as const,
+          arquivo: linha.data_recebimento_kurier ? String(linha.data_recebimento_kurier).slice(0, 10) : null,
         };
       });
     return { itens, erro: null };
@@ -194,23 +198,10 @@ async function kurierDoBkp(de: string, ate: string): Promise<{ itens: Publicacao
   }
 }
 
-/**
- * A conferência dos últimos `periodo` dias (até hoje), ou de todo o estudo ("tudo", desde INICIO_DA_CONFERENCIA), com
- * as divergências de cada dia. Nenhum dia antes do início do estudo entra.
- */
-export async function conferenciaDjenKurier(periodo: number | "tudo"): Promise<ConferenciaDjenKurier> {
-  if (periodo !== "tudo" && (!Number.isInteger(periodo) || periodo < 1 || periodo > 90)) {
-    throw new VistagemError("Período inválido (1 a 90 dias, ou todo o estudo).", 400);
-  }
+/** O que a conferência precisa, de `de` até `ate`: o DJEN, a Kurier (Orquestra e BKP), as buscas e os arquivos. */
+async function carregar(de: string, ate: string) {
   const db = admin();
-  const hoje = hojeEmSaoPaulo();
-  const dias = diasDoPeriodo(hoje, periodo === "tudo" ? diasDesdeOInicio(hoje) : periodo).filter((dia) => dia >= INICIO_DA_CONFERENCIA);
-  if (!dias.length) dias.push(hoje);
-  // Dois dias de folga antes do período: o par pelo ID pode estar num dia vizinho.
-  const de = diasDoPeriodo(dias[dias.length - 1], 3)[2];
-  const ate = dias[0];
-
-  const [djenLinhas, kurierLinhas, bkp, buscas, ultimoArquivo] = await Promise.all([
+  const [djenLinhas, kurierLinhas, bkp, buscas, arquivos] = await Promise.all([
     lerPaginas("as comunicações do DJEN", (inicio) =>
       db
         .from("vistagem_djen_comunicacoes")
@@ -223,7 +214,7 @@ export async function conferenciaDjenKurier(periodo: number | "tudo"): Promise<C
     lerPaginas("as publicações da Kurier", (inicio) =>
       db
         .from("vistagem_publicacoes")
-        .select("id, djen_id_comunicacao, data_divulgacao, numero_processo, numero_processo_original, tribunal, nome_localizado, status")
+        .select("id, djen_id_comunicacao, data_divulgacao, numero_processo, numero_processo_original, tribunal, nome_localizado, status, kurier_arquivo_id")
         .eq("origem", "kurier")
         .gte("data_divulgacao", de)
         .lte("data_divulgacao", ate)
@@ -232,16 +223,19 @@ export async function conferenciaDjenKurier(periodo: number | "tudo"): Promise<C
     ),
     kurierDoBkp(de, ate),
     db.from("vistagem_djen_buscas").select("executada_em, origem, dias, erro").order("executada_em", { ascending: false }).limit(1000),
-    db
-      .from("vistagem_kurier_arquivos")
-      .select("data_arquivo")
-      .eq("origem", "sharepoint")
-      .order("data_arquivo", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+    db.from("vistagem_kurier_arquivos").select("id, data_arquivo, origem"),
   ]);
   if (buscas.error) falhou("ler as buscas no DJEN", buscas.error);
-  if (ultimoArquivo.error) falhou("ler o último arquivo da Kurier", ultimoArquivo.error);
+  if (arquivos.error) falhou("ler os arquivos da Kurier", arquivos.error);
+  const arquivosLidos = (arquivos.data ?? []) as { id: string; data_arquivo: string | null; origem: string }[];
+  const dataDoArquivo = new Map(arquivosLidos.map((arquivo) => [arquivo.id, arquivo.data_arquivo?.slice(0, 10) ?? null]));
+  // O último arquivo da Kurier (do SharePoint; o colado à mão não fecha o dia).
+  const ultimoArquivoKurier =
+    arquivosLidos
+      .filter((arquivo) => arquivo.origem === "sharepoint" && arquivo.data_arquivo)
+      .map((arquivo) => String(arquivo.data_arquivo).slice(0, 10))
+      .sort()
+      .at(-1) ?? null;
 
   const djen: ComunicacaoDjenGuardada[] = djenLinhas.map((linha) => ({
     id: Number(linha.id),
@@ -264,17 +258,52 @@ export async function conferenciaDjenKurier(periodo: number | "tudo"): Promise<C
     nomeLocalizado: (linha.nome_localizado as string | null) ?? null,
     status: String(linha.status),
     fonte: "orquestra",
+    arquivo: linha.kurier_arquivo_id ? (dataDoArquivo.get(String(linha.kurier_arquivo_id)) ?? null) : null,
   }));
   const registros = (buscas.data ?? []) as { executada_em: string; origem: string; dias: string[] | null; erro: string | null }[];
-  const diasBuscados = new Set(registros.flatMap((registro) => registro.dias ?? []));
-  const ultimoArquivoKurier = (ultimoArquivo.data as { data_arquivo: string | null } | null)?.data_arquivo?.slice(0, 10) ?? null;
-
-  const porDia = compararDjenKurier(djen, [...kurier, ...bkp.itens], dias, diasBuscados, { ultimoArquivoKurier });
   const [ultima] = registros;
   return {
-    dias: porDia,
-    totais: totaisDaConferencia(porDia),
+    djen,
+    kurier: [...kurier, ...bkp.itens],
+    diasBuscados: new Set(registros.flatMap((registro) => registro.dias ?? [])),
+    ultimoArquivoKurier,
     ultimaBusca: ultima ? { em: ultima.executada_em, origem: ultima.origem, erro: ultima.erro } : null,
     erroBkp: bkp.erro,
   };
+}
+
+/**
+ * A conferência dos últimos `periodo` dias (até hoje), ou de todo o estudo ("tudo", desde INICIO_DA_CONFERENCIA): os
+ * números de cada dia. As listas de um dia vêm em detalheDaConferencia. Nenhum dia antes do início do estudo entra.
+ */
+export async function conferenciaDjenKurier(periodo: number | "tudo"): Promise<ConferenciaDjenKurier> {
+  if (periodo !== "tudo" && (!Number.isInteger(periodo) || periodo < 1 || periodo > 90)) {
+    throw new VistagemError("Período inválido (1 a 90 dias, ou todo o estudo).", 400);
+  }
+  const hoje = hojeEmSaoPaulo();
+  const dias = diasDoPeriodo(hoje, periodo === "tudo" ? diasDesdeOInicio(hoje) : periodo).filter((dia) => dia >= INICIO_DA_CONFERENCIA);
+  if (!dias.length) dias.push(hoje);
+  // Dois dias de folga antes do período: o par pelo ID pode estar num dia vizinho.
+  const dados = await carregar(diasDoPeriodo(dias[dias.length - 1], 3)[2], dias[0]);
+  const porDia = compararDjenKurier(dados.djen, dados.kurier, dias, dados.diasBuscados, { ultimoArquivoKurier: dados.ultimoArquivoKurier }).map(resumoDoDia);
+  return { dias: porDia, totais: totaisDaConferencia(porDia), ultimaBusca: dados.ultimaBusca, erroBkp: dados.erroBkp };
+}
+
+/**
+ * O que é o quê num dia: o que está nos dois, só na Kurier e só no DJEN. Lê cinco dias para cada lado, para mostrar
+ * quando o outro lado trouxe o mesmo processo em outro dia.
+ */
+export async function detalheDaConferencia(dia: string): Promise<DetalheDoDia> {
+  const hoje = hojeEmSaoPaulo();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || dia < INICIO_DA_CONFERENCIA || dia > hoje) {
+    throw new VistagemError(`Dia inválido (de ${INICIO_DA_CONFERENCIA} até hoje).`, 400);
+  }
+  const dados = await carregar(somarDias(dia, -5), [hoje, somarDias(dia, 5)].sort()[0]);
+  return detalheDoDia(dados.djen, dados.kurier, dia, dados.diasBuscados, { ultimoArquivoKurier: dados.ultimoArquivoKurier, erroBkp: dados.erroBkp });
+}
+
+/** `dia` mais `quantos` dias (negativo volta). */
+function somarDias(dia: string, quantos: number): string {
+  const [ano, mes, numero] = dia.split("-").map(Number);
+  return new Date(Date.UTC(ano, mes - 1, numero + quantos)).toISOString().slice(0, 10);
 }

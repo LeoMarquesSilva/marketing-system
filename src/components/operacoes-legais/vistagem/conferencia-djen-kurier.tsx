@@ -11,8 +11,11 @@ import {
   ADVOGADOS_DJEN,
   INICIO_DA_CONFERENCIA,
   chaveDoAdvogado,
+  type ComunicacaoDjenGuardada,
   type ConferenciaDjenKurier,
-  type DiaDaConferencia,
+  type DetalheDoDia,
+  type ParDaConferencia,
+  type PublicacaoKurier,
 } from "@/lib/vistagem/djen-kurier";
 import { SITUACAO_ATUAL } from "@/lib/vistagem/historico";
 import type { PublicacaoStatus } from "@/lib/vistagem/types";
@@ -20,12 +23,16 @@ import { formatarDataHora } from "./publicacao-ui";
 import { Aviso, Carregando, Indicador, Indicadores, Painel, PainelTopo, Selo } from "./ui";
 
 type Periodo = "7" | "14" | "30" | "tudo";
+type Aba = "dois" | "kurier" | "djen";
 
 /** "01/10/2026" */
 const INICIO_POR_EXTENSO = INICIO_DA_CONFERENCIA.split("-").reverse().join("/");
 
 const porcento = (valor: number | null) => (valor === null ? "—" : `${(valor * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`);
 const siglaDoAdvogado = new Map(ADVOGADOS_DJEN.map((advogado) => [chaveDoAdvogado(advogado), advogado.sigla]));
+/** "2026-11-11" → "11/11" */
+const ddmm = (data: string) => `${data.slice(8, 10)}/${data.slice(5, 7)}`;
+const lista = (datas: string[]) => datas.map(ddmm).join(", ");
 
 function DataDoDia({ data }: { data: string }) {
   const partes = partesDaData(data);
@@ -46,6 +53,8 @@ export function ConferenciaDjenKurierPainel() {
   const [erro, setErro] = useState("");
   const [buscando, setBuscando] = useState(false);
   const [aberto, setAberto] = useState<string | null>(null);
+  const [detalhe, setDetalhe] = useState<DetalheDoDia | null>(null);
+  const [erroDetalhe, setErroDetalhe] = useState("");
 
   useEffect(() => {
     let cancelado = false;
@@ -62,6 +71,24 @@ export function ConferenciaDjenKurierPainel() {
       cancelado = true;
     };
   }, [periodo]);
+
+  // O detalhe do dia aberto (o que é o quê), sob demanda.
+  useEffect(() => {
+    if (!aberto) return;
+    let cancelado = false;
+    authFetch(`/api/operacoes-legais/vistagem/djen-kurier?dia=${aberto}`)
+      .then(async (resposta) => {
+        const corpo = await resposta.json();
+        if (!resposta.ok) throw new Error(corpo.error ?? "Falha ao carregar o dia.");
+        if (!cancelado) setDetalhe(corpo as DetalheDoDia);
+      })
+      .catch((e: unknown) => {
+        if (!cancelado) setErroDetalhe(e instanceof Error ? e.message : "Falha ao carregar o dia.");
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [aberto]);
 
   async function buscarAgora() {
     setBuscando(true);
@@ -91,11 +118,18 @@ export function ConferenciaDjenKurierPainel() {
         setPeriodo(valor);
         setDados(null);
         setAberto(null);
+        setDetalhe(null);
       }}
       buscando={buscando}
       onBuscarAgora={buscarAgora}
       aberto={aberto}
-      onAbrir={(data) => setAberto((atual) => (atual === data ? null : data))}
+      onAbrir={(data) => {
+        setDetalhe(null);
+        setErroDetalhe("");
+        setAberto((atual) => (atual === data ? null : data));
+      }}
+      detalhe={detalhe && detalhe.resumo.data === aberto ? detalhe : null}
+      erroDetalhe={erroDetalhe}
     />
   );
 }
@@ -110,6 +144,8 @@ export function ConferenciaDjenKurierView({
   onBuscarAgora,
   aberto,
   onAbrir,
+  detalhe = null,
+  erroDetalhe = "",
 }: {
   dados: ConferenciaDjenKurier | null;
   erro: string;
@@ -119,8 +155,9 @@ export function ConferenciaDjenKurierView({
   onBuscarAgora: () => void;
   aberto: string | null;
   onAbrir: (data: string) => void;
+  detalhe?: DetalheDoDia | null;
+  erroDetalhe?: string;
 }) {
-  const diaAberto = dados?.dias.find((dia) => dia.data === aberto) ?? null;
   return (
     <div className="space-y-4">
       <Painel aria-labelledby="djen-kurier-titulo">
@@ -196,21 +233,27 @@ export function ConferenciaDjenKurierView({
                 </thead>
                 <tbody className="divide-y divide-[#eef3f5]">
                   {dados.dias.map((dia) => {
-                    const divergencias = dia.soDjen.length + dia.soKurier.length;
+                    const temAlgo = dia.djen + dia.kurier > 0;
                     const compara = dia.buscado && dia.comKurier;
                     return (
                       <tr
                         key={dia.data}
-                        className={cn("tabular-nums", divergencias && "cursor-pointer hover:bg-[#f7fbfc]", aberto === dia.data && "bg-[#f2fbfb]")}
-                        onClick={divergencias ? () => onAbrir(dia.data) : undefined}
-                        aria-expanded={divergencias ? aberto === dia.data : undefined}
+                        className={cn("tabular-nums", temAlgo && "cursor-pointer hover:bg-[#f7fbfc]", aberto === dia.data && "bg-[#f2fbfb]")}
+                        onClick={temAlgo ? () => onAbrir(dia.data) : undefined}
+                        aria-expanded={temAlgo ? aberto === dia.data : undefined}
                       >
                         <td className="px-4 py-2">
                           <DataDoDia data={dia.data} />
                           {!dia.buscado ? (
                             <Selo className="ml-2 px-1.5 py-0 text-[11px]">sem busca no DJEN</Selo>
                           ) : !dia.comKurier ? (
-                            <Selo className="ml-2 px-1.5 py-0 text-[11px]">sem Kurier</Selo>
+                            dia.emAberto ? (
+                              <Selo tom="alerta" className="ml-2 px-1.5 py-0 text-[11px]">
+                                aguardando a Kurier
+                              </Selo>
+                            ) : (
+                              <Selo className="ml-2 px-1.5 py-0 text-[11px]">sem Kurier</Selo>
+                            )
                           ) : dia.emAberto ? (
                             <Selo tom="alerta" className="ml-2 px-1.5 py-0 text-[11px]">
                               em aberto
@@ -225,8 +268,8 @@ export function ConferenciaDjenKurierView({
                         <td className="px-3 py-2 text-right">{dia.buscado ? dia.djen : "—"}</td>
                         <td className="px-3 py-2 text-right">{dia.kurier}</td>
                         <td className="px-3 py-2 text-right">{compara ? dia.nosDois : "—"}</td>
-                        <td className={cn("px-3 py-2 text-right", dia.soKurier.length && "font-semibold text-red-700")}>{compara ? dia.soKurier.length : "—"}</td>
-                        <td className="px-3 py-2 text-right">{compara ? dia.soDjen.length : "—"}</td>
+                        <td className={cn("px-3 py-2 text-right", dia.soKurier && "font-semibold text-red-700")}>{compara ? dia.soKurier : "—"}</td>
+                        <td className="px-3 py-2 text-right">{compara ? dia.soDjen : "—"}</td>
                         <td className="px-4 py-2 text-right">{porcento(dia.cobertura)}</td>
                       </tr>
                     );
@@ -236,19 +279,20 @@ export function ConferenciaDjenKurierView({
             </div>
             <div className="space-y-1 border-t border-[#e6eef0] px-4 py-2 text-[11px] text-muted-foreground">
               <p>
+                <strong className="font-medium text-foreground">O dia</strong> é o da disponibilização no DJEN, que é a divulgação na Kurier. O
+                arquivo da Kurier de cada manhã traz o que foi divulgado na véspera (publicado no dia) e, às vezes, parte do próprio dia: por isso
+                as publicações do arquivo de hoje aparecem na linha de ontem, e a linha de hoje fica “aguardando a Kurier”.
+              </p>
+              <p>
                 O estudo começa em {INICIO_POR_EXTENSO}. O par é pelo ID de comunicação do DJEN (a Kurier traz o mesmo); sem ele, pelo processo no
-                mesmo dia. A Kurier traz também comunicações do mesmo processo endereçadas a outros advogados (em geral marcadas como duplicidade
-                ou descartada), que o DJEN, buscando pela OAB, não traz.
+                mesmo dia. A Kurier lida é a da tabela do Orquestra.{" "}
+                <strong className="font-medium text-foreground">BKP:</strong> só nos dias antes de 09/11/2026 (as limpezas do piloto deixaram só o
+                Trabalhista no Orquestra), o que falta vem do BKP de publicações do SIOE (lista do SharePoint), sem o ID: ali o par é pelo
+                processo no mesmo dia, uma vez por processo.
               </p>
               <p>
-                <strong className="font-medium text-foreground">BKP:</strong> a Kurier só está inteira no Orquestra a partir de 09/11/2026 (as
-                limpezas do piloto deixaram só o Trabalhista). Antes disso, o que falta vem do BKP de publicações do SIOE (lista do SharePoint),
-                que não tem o ID: ali o par é pelo processo no mesmo dia, e cada processo conta uma vez por dia.
-              </p>
-              <p>
-                <strong className="font-medium text-foreground">Em aberto:</strong> cada arquivo da Kurier traz o dia anterior e o próprio dia,
-                então o dia só fecha com o arquivo seguinte; até lá, fica fora dos totais. Dia sem nenhuma publicação da Kurier também não se
-                compara. Clique num dia com diferença para ver quais.
+                <strong className="font-medium text-foreground">Em aberto:</strong> o dia só fecha com o arquivo seguinte da Kurier; até lá, fica
+                fora dos totais. Clique num dia para ver o que está nos dois, só na Kurier e só no DJEN, e por quê.
               </p>
               {dados.erroBkp ? <p className="text-red-700">Não deu para ler o BKP do SIOE ({dados.erroBkp}): os dias antes de 09/11 estão incompletos.</p> : null}
             </div>
@@ -256,69 +300,179 @@ export function ConferenciaDjenKurierView({
         )}
       </Painel>
 
-      {diaAberto ? <DivergenciasDoDia dia={diaAberto} /> : null}
+      {aberto ? (
+        erroDetalhe ? (
+          <Aviso tom="erro">{erroDetalhe}</Aviso>
+        ) : detalhe ? (
+          <DetalheDoDiaView key={detalhe.resumo.data} detalhe={detalhe} />
+        ) : (
+          <Painel>
+            <Carregando rotulo="Separando o que é o quê" />
+          </Painel>
+        )
+      ) : null}
     </div>
   );
 }
 
-function DivergenciasDoDia({ dia }: { dia: DiaDaConferencia }) {
+/** Uma publicação da Kurier numa linha: tribunal, quem localizou, situação e o arquivo que a trouxe. */
+function linhaDaKurier(item: PublicacaoKurier): string {
+  return (
+    item.fonte === "bkp"
+      ? [item.tribunal, "BKP do SIOE", item.status, item.arquivo ? `recebida em ${ddmm(item.arquivo)}` : null]
+      : [
+          item.tribunal,
+          item.nomeLocalizado,
+          item.djenId ? `ID ${item.djenId}` : "sem ID de comunicação",
+          SITUACAO_ATUAL[item.status as PublicacaoStatus] ?? item.status,
+          item.arquivo ? `arquivo de ${ddmm(item.arquivo)}` : null,
+        ]
+  )
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** Uma comunicação do DJEN numa linha. */
+function linhaDoDjen(item: ComunicacaoDjenGuardada): string {
+  return [item.tribunal, item.tipo, item.orgao, item.advogados.map((chave) => siglaDoAdvogado.get(chave) ?? chave).join(" + "), `ID ${item.id}`]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** Por que a publicação está nos dois. */
+function motivoDoPar(par: ParDaConferencia): string {
+  if (par.como === "id") return `Mesmo ID de comunicação nos dois (${par.djen.map((item) => item.id).join(", ")}).`;
+  if (par.como === "processo") return "A Kurier veio sem o ID (ou com outro): casou pelo processo, no mesmo dia.";
+  return `Do BKP, que não tem o ID: casou pelo processo, no mesmo dia (${par.djen.length === 1 ? "1 comunicação" : `${par.djen.length} comunicações`} do DJEN).`;
+}
+
+function LinkDoDjen({ item }: { item: ComunicacaoDjenGuardada | undefined }) {
+  if (!item?.link) return null;
+  return (
+    <a href={item.link} target="_blank" rel="noreferrer" className="text-[#347796] hover:underline" aria-label={`Abrir a comunicação ${item.id} no DJEN`}>
+      <ExternalLink className="size-3.5" aria-hidden />
+    </a>
+  );
+}
+
+function ItemDaLista({ processo, link, linhas, motivo }: { processo: string | null; link?: ComunicacaoDjenGuardada; linhas: string[]; motivo: string }) {
+  return (
+    <li className="py-2">
+      <p className="flex items-center gap-1.5 font-medium tabular-nums text-foreground">
+        {processo ?? "sem número"}
+        <LinkDoDjen item={link} />
+      </p>
+      {linhas.map((linha) => (
+        <p key={linha} className="text-xs text-muted-foreground">
+          {linha}
+        </p>
+      ))}
+      <p className="mt-0.5 text-xs text-[#285f7a]">
+        <span className="font-medium">Por quê:</span> {motivo}
+      </p>
+    </li>
+  );
+}
+
+/** O que é o quê num dia: as três listas, com o motivo de cada item. */
+export function DetalheDoDiaView({ detalhe }: { detalhe: DetalheDoDia }) {
+  const { resumo, pares, soKurier, soDjen, arquivos } = detalhe;
+  const [aba, setAba] = useState<Aba>(soKurier.length ? "kurier" : soDjen.length ? "djen" : "dois");
+  const deOnde = arquivos.map((item) => (item.arquivo === "BKP" ? `${item.quantas} do BKP do SIOE` : `${item.quantas} no arquivo de ${ddmm(item.arquivo)}`));
+
   return (
     <Painel aria-labelledby="djen-kurier-dia">
-      <PainelTopo id="djen-kurier-dia" titulo={<>Diferenças de <DataDoDia data={dia.data} /></>} />
-      <div className="grid gap-px bg-[#eef3f5] lg:grid-cols-2">
-        <section className="bg-white px-4 py-3" aria-label="Só na Kurier">
-          <h3 className="text-xs font-semibold uppercase tracking-normal text-red-700">Só na Kurier · o DJEN não trouxe ({dia.soKurier.length})</h3>
-          {dia.soKurier.length ? (
-            <ul className="mt-2 divide-y divide-[#eef3f5] text-sm">
-              {dia.soKurier.map((item) => (
-                <li key={item.id} className="py-1.5">
-                  <p className="font-medium tabular-nums text-foreground">{item.processo ?? "sem número"}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {(item.fonte === "bkp"
-                      ? [item.tribunal, "BKP do SIOE", item.status]
-                      : [
-                          item.tribunal,
-                          item.nomeLocalizado,
-                          item.djenId ? `ID ${item.djenId}` : "sem ID de comunicação",
-                          SITUACAO_ATUAL[item.status as PublicacaoStatus] ?? item.status,
-                        ]
-                    )
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </p>
-                </li>
+      <PainelTopo id="djen-kurier-dia" titulo={<>O que é o quê em <DataDoDia data={resumo.data} /></>}>
+        <Segmented
+          label="Lista"
+          value={aba}
+          options={[
+            { value: "dois", label: `Nos dois (${pares.length})` },
+            { value: "kurier", label: `Só na Kurier (${soKurier.length})` },
+            { value: "djen", label: `Só no DJEN (${soDjen.length})` },
+          ]}
+          onChange={setAba}
+        />
+      </PainelTopo>
+      <div className="space-y-1 border-b border-[#e6eef0] px-4 py-2 text-xs text-muted-foreground">
+        <p>
+          <strong className="font-medium text-foreground">DJEN:</strong>{" "}
+          {resumo.buscado ? `${resumo.djen} comunicações disponibilizadas em ${ddmm(resumo.data)}.` : "dia sem busca no DJEN."}{" "}
+          <strong className="font-medium text-foreground">Kurier:</strong>{" "}
+          {resumo.kurier
+            ? `${resumo.kurier} publicações divulgadas em ${ddmm(resumo.data)}${deOnde.length ? ` (${deOnde.join(", ")})` : ""}.`
+            : resumo.emAberto
+              ? "ainda não chegou: o que foi divulgado neste dia vem no próximo arquivo da Kurier."
+              : "nenhuma publicação divulgada neste dia."}
+        </p>
+        {resumo.emAberto && resumo.kurier ? <p>O dia ainda está em aberto: o resto da Kurier dele vem no próximo arquivo.</p> : null}
+        {detalhe.erroBkp ? <p className="text-red-700">Não deu para ler o BKP do SIOE ({detalhe.erroBkp}).</p> : null}
+      </div>
+
+      <div className="px-4">
+        {aba === "dois" ? (
+          pares.length ? (
+            <ul className="divide-y divide-[#eef3f5] text-sm">
+              {pares.map((par) => (
+                <ItemDaLista
+                  key={par.kurier.id}
+                  processo={par.kurier.processo ?? par.djen[0]?.processo ?? null}
+                  link={par.djen[0]}
+                  linhas={[`Kurier: ${linhaDaKurier(par.kurier)}`, ...par.djen.map((item) => `DJEN: ${linhaDoDjen(item)}`)]}
+                  motivo={motivoDoPar(par)}
+                />
               ))}
             </ul>
           ) : (
-            <p className="mt-2 text-sm text-muted-foreground">Nada: tudo o que a Kurier trouxe o DJEN também trouxe.</p>
-          )}
-        </section>
-        <section className="bg-white px-4 py-3" aria-label="Só no DJEN">
-          <h3 className="text-xs font-semibold uppercase tracking-normal text-[#285f7a]">Só no DJEN · a Kurier não trouxe ({dia.soDjen.length})</h3>
-          {dia.soDjen.length ? (
-            <ul className="mt-2 divide-y divide-[#eef3f5] text-sm">
-              {dia.soDjen.map((item) => (
-                <li key={item.id} className="py-1.5">
-                  <p className="flex items-center gap-1.5 font-medium tabular-nums text-foreground">
-                    {item.processo ?? "sem número"}
-                    {item.link ? (
-                      <a href={item.link} target="_blank" rel="noreferrer" className="text-[#347796] hover:underline" aria-label={`Abrir a comunicação ${item.id} no DJEN`}>
-                        <ExternalLink className="size-3.5" aria-hidden />
-                      </a>
-                    ) : null}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {[item.tribunal, item.tipo, item.orgao, item.advogados.map((chave) => siglaDoAdvogado.get(chave) ?? chave).join(" + "), `ID ${item.id}`]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </p>
-                </li>
+            <p className="py-3 text-sm text-muted-foreground">Nada nos dois neste dia.</p>
+          )
+        ) : aba === "kurier" ? (
+          soKurier.length ? (
+            <ul className="divide-y divide-[#eef3f5] text-sm">
+              {soKurier.map(({ kurier: item, djenEmOutrosDias }) => (
+                <ItemDaLista
+                  key={item.id}
+                  processo={item.processo}
+                  linhas={[`Kurier: ${linhaDaKurier(item)}`]}
+                  motivo={[
+                    item.djenId
+                      ? `O DJEN, buscado pela OAB do Gustavo e do Ricardo, não trouxe a comunicação ${item.djenId}.`
+                      : item.fonte === "bkp"
+                        ? "O DJEN não trouxe este processo neste dia (o BKP não tem o ID)."
+                        : "A Kurier veio sem o ID, e o DJEN não trouxe este processo neste dia.",
+                    djenEmOutrosDias.length ? `O DJEN trouxe este processo em ${lista(djenEmOutrosDias)}.` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                />
               ))}
             </ul>
           ) : (
-            <p className="mt-2 text-sm text-muted-foreground">Nada a mais no DJEN.</p>
-          )}
-        </section>
+            <p className="py-3 text-sm text-muted-foreground">Nada: tudo o que a Kurier trouxe o DJEN também trouxe.</p>
+          )
+        ) : soDjen.length ? (
+          <ul className="divide-y divide-[#eef3f5] text-sm">
+            {soDjen.map(({ djen: item, kurierEmOutrosDias }) => (
+              <ItemDaLista
+                key={item.id}
+                processo={item.processo}
+                link={item}
+                linhas={[`DJEN: ${linhaDoDjen(item)}`]}
+                motivo={[
+                  resumo.comKurier
+                    ? "A Kurier não trouxe esta comunicação (nem o ID, nem o processo) neste dia."
+                    : "A Kurier ainda não trouxe nada deste dia.",
+                  kurierEmOutrosDias.length ? `A Kurier trouxe este processo em ${lista(kurierEmOutrosDias)}.` : null,
+                  resumo.emAberto ? "O dia ainda está em aberto: pode vir no próximo arquivo da Kurier." : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              />
+            ))}
+          </ul>
+        ) : (
+          <p className="py-3 text-sm text-muted-foreground">Nada a mais no DJEN.</p>
+        )}
       </div>
     </Painel>
   );
