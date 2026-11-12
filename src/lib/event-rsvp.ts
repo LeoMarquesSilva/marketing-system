@@ -109,6 +109,7 @@ export interface RsvpView {
   ownDietary: DietaryChoice | null;
   /** Pode levar 1 acompanhante (definido pela organização). */
   plusOneAllowed: boolean;
+  /** null = ainda não disse se leva acompanhante. */
   plusOne: boolean | null;
   plusOneName: string | null;
   plusOneDietary: DietaryChoice | null;

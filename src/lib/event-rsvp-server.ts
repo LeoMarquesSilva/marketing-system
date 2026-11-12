@@ -221,7 +221,8 @@ async function buildView(db: SupabaseClient, eventId: string, viewer: RsvpViewer
     askDietary: !employee,
     ownDietary: stored.guest,
     plusOneAllowed: Boolean(invite?.plus_one_allowed),
-    plusOne: invite?.responded_at && going ? Boolean(invite.plus_one) : null,
+    // null = ainda não disse se leva acompanhante (ex.: sócio que confirmou antes de o acompanhante ser liberado).
+    plusOne: invite?.responded_at && going ? (invite.plus_one ?? null) : null,
     plusOneName: going && invite?.plus_one ? invite.plus_one_name : null,
     plusOneDietary: going && invite?.plus_one ? stored.plusOne : null,
   };

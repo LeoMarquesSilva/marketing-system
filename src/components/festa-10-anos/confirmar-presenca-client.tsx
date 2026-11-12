@@ -68,15 +68,24 @@ function transportSentence(transport: RsvpTransport | null, withCompanion = fals
 
 type CompanionFields = Pick<RsvpView, "plusOne" | "plusOneName" | "plusOneDietary" | "ownDietary">;
 
-function Shell({ firstName, children }: { firstName?: string; children: ReactNode }) {
+function Shell({
+  firstName,
+  title = "Confirme sua presença",
+  message = "Nossa festa de 10 anos está chegando, e queremos celebrar esse marco ao lado de todos que fazem parte da nossa história.",
+  children,
+}: {
+  firstName?: string;
+  title?: string;
+  message?: string;
+  children: ReactNode;
+}) {
   return (
     <FestaShell
-      title="Confirme sua presença"
+      title={title}
       intro={
         <p>
           {firstName ? <strong className="font-semibold text-[#0d1e2e]">Olá, {firstName}! </strong> : null}
-          Nossa festa de 10 anos está chegando, e queremos celebrar esse marco ao lado de todos que fazem parte da
-          nossa história.
+          {message}
         </p>
       }
       footer={
@@ -311,19 +320,47 @@ export function ConfirmarPresencaClient({ preview, previewCompanion = false }: {
     attending === false ||
     (attending === true && transport !== null && companionOk && (!askDietary || dietaryReady(ownDietary)));
 
+  const clean = (choice: DietaryChoice): DietaryChoice => ({ ...choice, notes: choice.notes?.trim() || null });
+
   const submit = async () => {
     if (!ready || attending === null) return;
-    setSaveError(null);
     const withCompanion = attending && plusOneAllowed && plusOne === true;
-    const clean = (choice: DietaryChoice): DietaryChoice => ({ ...choice, notes: choice.notes?.trim() || null });
-    const body = {
+    await send({
       attending,
       transport: attending ? transport : null,
       plusOne: withCompanion,
       plusOneName: withCompanion ? plusOneName.replace(/\s+/g, " ").trim() : null,
       plusOneDietary: withCompanion ? clean(plusOneDietary) : null,
       dietary: attending && askDietary ? clean(ownDietary) : null,
-    };
+    });
+  };
+
+  /** Quem já confirmou só responde sobre o acompanhante: presença e micro-ônibus continuam como estavam. */
+  const companionReady =
+    plusOne === false || (plusOne === true && plusOneName.trim().length >= 2 && dietaryReady(plusOneDietary));
+  const submitCompanion = async () => {
+    if (!view || !companionReady) return;
+    const withCompanion = plusOne === true;
+    await send({
+      attending: true,
+      transport: view.transport ?? "nao",
+      plusOne: withCompanion,
+      plusOneName: withCompanion ? plusOneName.replace(/\s+/g, " ").trim() : null,
+      plusOneDietary: withCompanion ? clean(plusOneDietary) : null,
+      dietary: view.askDietary ? view.ownDietary : null,
+    });
+  };
+
+  const send = async (body: {
+    attending: boolean;
+    transport: RsvpTransport | null;
+    plusOne: boolean;
+    plusOneName: string | null;
+    plusOneDietary: DietaryChoice | null;
+    dietary: DietaryChoice | null;
+  }) => {
+    const { attending } = body;
+    setSaveError(null);
     if (preview) {
       setPreviewAnswer({
         attending,
@@ -394,6 +431,143 @@ export function ConfirmarPresencaClient({ preview, previewCompanion = false }: {
   const shownAnswer = preview && previewAnswer ? { ...view, ...previewAnswer, open: true } : view;
   const answered = preview ? Boolean(previewAnswer) : Boolean(view.respondedAt);
   const canEdit = view.open || preview;
+
+  // Confirmou antes de o acompanhante ser liberado (ex.: sócios de área): pergunta só pelo acompanhante.
+  const companionStep =
+    !editing &&
+    !(preview && previewAnswer) &&
+    (view.open || preview) &&
+    view.plusOneAllowed &&
+    view.attending === true &&
+    Boolean(view.respondedAt) &&
+    view.plusOne === null;
+
+  if (companionStep) {
+    const usesBus = usesOutbound(view.transport) || usesReturn(view.transport);
+    return (
+      <Shell
+        firstName={view.firstName}
+        title="Leve um acompanhante"
+        message="Sua presença na festa de 10 anos já está confirmada, e o seu convite agora vale para você e mais 1 pessoa."
+      >
+        <Card>
+          {preview && (
+            <p className="mb-5 rounded-full bg-[#f1e6d3] px-4 py-2 text-center text-xs font-semibold text-[#7a5a26]">
+              Prévia: as respostas não são gravadas.
+            </p>
+          )}
+          <p className="mx-auto flex w-fit items-center gap-2 rounded-full bg-[#eef6ee] px-4 py-1.5 text-[13px] font-semibold text-[#2f6b3a]">
+            <Check className="size-4" strokeWidth={3} aria-hidden />
+            Presença confirmada · 17/12, às 18h
+          </p>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitCompanion();
+            }}
+            className="mt-6 space-y-6"
+          >
+            <fieldset>
+              <legend className="w-full text-center">
+                <span className="block text-xl font-semibold text-[#0d1e2e]">Vai levar um acompanhante?</span>
+                <span className="mx-auto mt-2 block max-w-sm text-[14px] leading-6 text-[#5c6168]">
+                  Se for levar alguém, informe o nome para a lista de entrada e a restrição alimentar, se houver.
+                </span>
+              </legend>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <ChoiceCard
+                  name="acompanhante"
+                  checked={plusOne === true}
+                  onChange={() => setPlusOne(true)}
+                  icon={UserPlus}
+                  title="Sim, com 1 acompanhante"
+                  hint="Informo o nome abaixo"
+                  compact
+                />
+                <ChoiceCard
+                  name="acompanhante"
+                  checked={plusOne === false}
+                  onChange={() => setPlusOne(false)}
+                  icon={User}
+                  title="Não, vou sozinho"
+                  hint="Sem acompanhante"
+                  compact
+                />
+              </div>
+              {plusOne === true && (
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <label htmlFor={`${fieldId}-nome-acompanhante`} className="block text-[14px] font-semibold text-[#0d1e2e]">
+                      Nome completo do acompanhante
+                    </label>
+                    <input
+                      id={`${fieldId}-nome-acompanhante`}
+                      type="text"
+                      value={plusOneName}
+                      onChange={(event) => setPlusOneName(event.target.value)}
+                      maxLength={80}
+                      autoComplete="off"
+                      placeholder="Nome e sobrenome"
+                      className={FIELD}
+                    />
+                    <p className="mt-1.5 text-[12px] leading-5 text-[#5c6168]">O nome vai para a lista de entrada da festa.</p>
+                  </div>
+                  <DietaryPicker
+                    legend={`Restrição alimentar de ${plusOneName.trim() ? firstNameOf(plusOneName) : "seu acompanhante"}`}
+                    value={plusOneDietary}
+                    onChange={setPlusOneDietary}
+                  />
+                </div>
+              )}
+            </fieldset>
+
+            <div className="flex items-start gap-3 rounded-2xl border border-[#e6d8bc] bg-white/70 px-4 py-3">
+              <span className="grid size-9 shrink-0 place-items-center rounded-full bg-[#f1e6d3] text-[#9c7434]" aria-hidden>
+                {usesBus ? <Bus className="size-[18px]" /> : <Car className="size-[18px]" />}
+              </span>
+              <span>
+                <span className="block text-[15px] font-semibold text-[#0d1e2e]">
+                  {usesBus && view.transport ? `Micro-ônibus: ${RSVP_TRANSPORT_LABEL[view.transport].toLowerCase()}` : "Sem micro-ônibus"}
+                </span>
+                <span className="mt-0.5 block text-[13px] leading-5 text-[#5c6168]">
+                  {plusOne === true
+                    ? `${transportSentence(view.transport, true)} O acompanhante segue a sua escolha.`
+                    : `${transportSentence(view.transport)} Se levar alguém, o acompanhante segue a mesma escolha.`}
+                </span>
+              </span>
+            </div>
+
+            <div className="flex flex-col items-center gap-3 pt-1">
+              {saveError && (
+                <p className="w-full rounded-2xl bg-[#fbeaea] px-4 py-3 text-center text-sm text-[#8a2b2b]" role="alert">
+                  {saveError}
+                </p>
+              )}
+              <button type="submit" disabled={!companionReady || saving} className={cn(GOLD_BUTTON, "w-full sm:w-auto sm:min-w-72")}>
+                {saving ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <Check className="size-4" aria-hidden />}
+                {saving ? "Enviando…" : "Enviar"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSaveError(null);
+                  setEditing(true);
+                }}
+                className={cn("text-sm font-semibold underline-offset-4 hover:underline", GOLD_TEXT)}
+              >
+                Mudar a presença ou o micro-ônibus
+              </button>
+              {view.closesAt && (
+                <p className="text-center text-xs font-semibold text-[#0d1e2e]">
+                  Responda até {formatRsvpDeadline(view.closesAt)}.
+                </p>
+              )}
+            </div>
+          </form>
+        </Card>
+      </Shell>
+    );
+  }
 
   if (answered && !editing) {
     return (
