@@ -1,166 +1,67 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import type { ComunicacaoDjenGuardada, ConferenciaDjenKurier, DetalheDoDia, PublicacaoKurier } from "@/lib/vistagem/djen-kurier";
-import { ConferenciaDjenKurierView, DetalheDoDiaView } from "./conferencia-djen-kurier";
+import type { ConferenciaDjenKurier } from "@/lib/vistagem/djen-kurier";
+import { ConferenciaDjenKurierView } from "./conferencia-djen-kurier";
 
 const DADOS: ConferenciaDjenKurier = {
   dias: [
-    { data: "2026-11-12", buscado: true, comKurier: false, emAberto: true, djen: 115, kurier: 0, doBkp: 0, nosDois: 0, soDjen: 0, soKurier: 0, cobertura: null },
-    { data: "2026-11-11", buscado: true, comKurier: true, emAberto: false, djen: 3, kurier: 2, doBkp: 1, nosDois: 1, soDjen: 1, soKurier: 1, cobertura: 0.5 },
-    { data: "2026-11-09", buscado: true, comKurier: false, emAberto: false, djen: 120, kurier: 0, doBkp: 0, nosDois: 0, soDjen: 0, soKurier: 0, cobertura: null },
-    { data: "2026-11-10", buscado: false, comKurier: true, emAberto: false, djen: 0, kurier: 4, doBkp: 0, nosDois: 0, soDjen: 0, soKurier: 0, cobertura: null },
-    { data: "2026-11-13", buscado: true, comKurier: true, emAberto: true, djen: 5, kurier: 3, doBkp: 0, nosDois: 3, soDjen: 0, soKurier: 0, cobertura: 1 },
+    // Disponibilizado hoje (12/11): publica amanhã, a Kurier ainda não chegou.
+    { data: "2026-11-12", publicacao: "2026-11-13", buscado: true, comKurier: false, emAberto: true, djen: 115, kurier: 0, doBkp: 0, nosDois: 0, soDjen: 0, soKurier: 0, cobertura: null },
+    // Disponibilizado ontem (11/11): publicado hoje, é o que a Kurier entregou.
+    { data: "2026-11-11", publicacao: "2026-11-12", buscado: true, comKurier: true, emAberto: false, djen: 103, kurier: 106, doBkp: 0, nosDois: 101, soDjen: 2, soKurier: 5, cobertura: 101 / 106 },
+    { data: "2026-11-08", publicacao: "2026-11-09", buscado: true, comKurier: false, emAberto: false, djen: 0, kurier: 0, doBkp: 0, nosDois: 0, soDjen: 0, soKurier: 0, cobertura: null },
+    { data: "2026-11-05", publicacao: "2026-11-06", buscado: true, comKurier: true, emAberto: false, djen: 126, kurier: 128, doBkp: 74, nosDois: 110, soDjen: 3, soKurier: 18, cobertura: 110 / 128 },
+    { data: "2026-10-12", publicacao: "2026-10-13", buscado: false, comKurier: true, emAberto: false, djen: 0, kurier: 4, doBkp: 4, nosDois: 0, soDjen: 0, soKurier: 0, cobertura: null },
   ],
-  totais: { djen: 3, kurier: 2, nosDois: 1, soDjen: 1, soKurier: 1, cobertura: 0.5 },
-  ultimaBusca: { em: "2026-11-11T11:00:00.000Z", origem: "cron", erro: null },
+  totais: { djen: 229, kurier: 234, nosDois: 211, soDjen: 5, soKurier: 23, cobertura: 211 / 234 },
+  ultimaBusca: { em: "2026-11-12T11:00:00.000Z", origem: "cron", erro: null },
   erroBkp: null,
 };
-
-const comunicacao = (id: number, processo: string, extra: Partial<ComunicacaoDjenGuardada> = {}): ComunicacaoDjenGuardada => ({
-  id,
-  data: "2026-11-11",
-  processo,
-  tribunal: "TJSP",
-  tipo: "Intimação",
-  orgao: "1ª Vara Cível",
-  classe: null,
-  advogados: ["275477/SP"],
-  ativo: true,
-  link: "https://comunica.pje.jus.br/x",
-  ...extra,
-});
-const publicacao = (id: string, processo: string, extra: Partial<PublicacaoKurier> = {}): PublicacaoKurier => ({
-  id,
-  djenId: null,
-  data: "2026-11-11",
-  processo,
-  tribunal: "TJSP",
-  nomeLocalizado: "GUSTAVO BISMARCHI MOTTA",
-  status: "juridico_vistar",
-  fonte: "orquestra",
-  arquivo: "2026-11-12",
-  ...extra,
-});
-
-const DETALHE: DetalheDoDia = {
-  resumo: DADOS.dias[1],
-  pares: [
-    { kurier: publicacao("k1", "1111111-11.2026.8.26.0100", { djenId: 101 }), djen: [comunicacao(101, "1111111-11.2026.8.26.0100")], como: "id" },
-    {
-      kurier: publicacao("bkp:5", "2222222-22.2026.8.26.0100", { fonte: "bkp", status: "CIÊNCIA NF", nomeLocalizado: null, arquivo: "2026-11-11" }),
-      djen: [comunicacao(201, "2222222-22.2026.8.26.0100"), comunicacao(202, "2222222-22.2026.8.26.0100")],
-      como: "bkp",
-    },
-  ],
-  soKurier: [
-    {
-      kurier: publicacao("k9", "5555555-55.2026.5.02.0001", { djenId: 999, tribunal: "TRT2", nomeLocalizado: "RICARDO VISCARDI PIRES", status: "descartada" }),
-      djenEmOutrosDias: ["2026-11-10"],
-    },
-  ],
-  soDjen: [
-    {
-      djen: comunicacao(777, "0000379-29.2019.5.12.0029", { tribunal: "TRT12", tipo: "Lista de distribuição", advogados: ["275477/SP", "353389/SP"] }),
-      kurierEmOutrosDias: [],
-    },
-  ],
-  arquivos: [
-    { arquivo: "2026-11-11", quantas: 1 },
-    { arquivo: "2026-11-12", quantas: 2 },
-    { arquivo: "BKP", quantas: 1 },
-  ],
-  erroBkp: null,
-};
-
-const semTags = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 
 const tela = (props: Partial<Parameters<typeof ConferenciaDjenKurierView>[0]> = {}) =>
-  semTags(
-    renderToStaticMarkup(
-      <ConferenciaDjenKurierView
-        dados={DADOS}
-        erro=""
-        periodo="14"
-        onPeriodo={vi.fn()}
-        buscando={false}
-        onBuscarAgora={vi.fn()}
-        aberto={null}
-        onAbrir={vi.fn()}
-        {...props}
-      />
-    )
-  );
+  renderToStaticMarkup(
+    <ConferenciaDjenKurierView dados={DADOS} erro="" periodo="tudo" onPeriodo={vi.fn()} buscando={false} onBuscarAgora={vi.fn()} {...props} />
+  )
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ");
 
 describe("ConferenciaDjenKurierView", () => {
-  it("mostra a cobertura, os totais, o quadro por dia e a última busca", () => {
+  it("mostra a cobertura, os totais e o quadro por dia de publicação", () => {
     const texto = tela();
     expect(texto).toContain("Conferência DJEN × Kurier");
     expect(texto).toContain("Não muda nada no fluxo das publicações");
     expect(texto).toContain("Gustavo Bismarchi Motta (OAB 275477/SP)");
     expect(texto).toContain("Ricardo Viscardi Pires (OAB 353389/SP)");
-    expect(texto).toContain("50%");
-    expect(texto).toContain("1 de 2 publicações da Kurier também no DJEN");
-    expect(texto).toContain("11/nov qua");
+    expect(texto).toContain("90,2%");
+    expect(texto).toContain("211 de 234 publicações da Kurier também no DJEN");
+    expect(texto).toContain("Publicação Disponibilizado no DJEN");
+    // A linha de hoje (publicação 12/11) traz o que a Kurier entregou hoje, disponibilizado ontem.
+    expect(texto).toContain("12/nov qui 11/nov qua 103 106 101 5 2");
+    // A de amanhã já tem o DJEN de hoje; a Kurier chega amanhã.
+    expect(texto).toContain("13/nov sex Kurier chega em 13/11 12/nov qui 115 — —");
+    expect(texto).toContain("BKP 74");
     expect(texto).toContain("sem busca no DJEN");
-    expect(texto).toContain("sem Kurier");
-    expect(texto).toContain("aguardando a Kurier");
-    expect(texto).toContain("em aberto");
-    expect(texto).toContain("BKP 1");
-    expect(texto).toContain("O estudo começa em 01/10/2026");
-    expect(texto).toContain("as publicações do arquivo de hoje aparecem na linha de ontem");
-    expect(texto).toContain("A Kurier lida é a da tabela do Orquestra");
+    expect(texto).toContain("Cada linha é um dia de publicação");
+    expect(texto).toContain("Baixar Excel");
     expect(texto).toContain("Desde 01/10");
     expect(texto).toContain("automática");
     expect(texto).not.toContain("Não deu para ler o BKP do SIOE");
   });
 
-  it("avisa quando não deu para ler o BKP do SIOE", () => {
-    expect(tela({ dados: { ...DADOS, erroBkp: "timeout" } })).toContain("Não deu para ler o BKP do SIOE (timeout)");
+  it("dia sem nada nos dois lados não aparece", () => {
+    expect(tela()).not.toContain("09/nov seg");
   });
 
-  it("o dia aberto: carregando, com erro e com o detalhe", () => {
-    expect(tela({ aberto: "2026-11-11" })).toContain("Separando o que é o quê");
-    expect(tela({ aberto: "2026-11-11", erroDetalhe: "Falha ao carregar o dia." })).toContain("Falha ao carregar o dia.");
-    expect(tela({ aberto: "2026-11-11", detalhe: DETALHE })).toContain("O que é o quê em 11/nov qua");
+  it("avisa quando não deu para ler o BKP do SIOE", () => {
+    expect(tela({ dados: { ...DADOS, erroBkp: "o SIOE não respondeu em 20 segundos" } })).toContain(
+      "Não deu para ler o BKP do SIOE (o SIOE não respondeu em 20 segundos)"
+    );
   });
 
   it("enquanto carrega e com erro", () => {
     expect(tela({ dados: null })).toContain("Comparando o DJEN com a Kurier");
-    expect(tela({ dados: null, erro: "Falha ao carregar a conferência." })).toContain("Falha ao carregar a conferência.");
-  });
-});
-
-describe("DetalheDoDiaView", () => {
-  const detalhe = (valor: DetalheDoDia = DETALHE) => semTags(renderToStaticMarkup(<DetalheDoDiaView detalhe={valor} />));
-
-  it("diz de onde veio cada lado e abre no que só a Kurier trouxe, com o motivo", () => {
-    const texto = detalhe();
-    expect(texto).toContain("Nos dois (2)");
-    expect(texto).toContain("Só na Kurier (1)");
-    expect(texto).toContain("Só no DJEN (1)");
-    expect(texto).toContain("3 comunicações disponibilizadas em 11/11");
-    expect(texto).toContain("2 publicações divulgadas em 11/11 (1 no arquivo de 11/11, 2 no arquivo de 12/11, 1 do BKP do SIOE)");
-    expect(texto).toContain("5555555-55.2026.5.02.0001");
-    expect(texto).toContain("Kurier: TRT2 · RICARDO VISCARDI PIRES · ID 999 · Descartada · arquivo de 12/11");
-    expect(texto).toContain("Por quê: O DJEN, buscado pela OAB do Gustavo e do Ricardo, não trouxe a comunicação 999. O DJEN trouxe este processo em 10/11.");
-  });
-
-  it("nos dois: o par e como casou", () => {
-    const texto = detalhe({ ...DETALHE, soKurier: [], soDjen: [] });
-    expect(texto).toContain("Kurier: TJSP · GUSTAVO BISMARCHI MOTTA · ID 101");
-    expect(texto).toContain("DJEN: TJSP · Intimação · 1ª Vara Cível · GBM · ID 101");
-    expect(texto).toContain("Mesmo ID de comunicação nos dois (101).");
-    expect(texto).toContain("Kurier: TJSP · BKP do SIOE · CIÊNCIA NF · recebida em 11/11");
-    expect(texto).toContain("Do BKP, que não tem o ID: casou pelo processo, no mesmo dia (2 comunicações do DJEN).");
-  });
-
-  it("só no DJEN, inclusive no dia que ainda aguarda a Kurier", () => {
-    const texto = detalhe({ ...DETALHE, pares: [], soKurier: [] });
-    expect(texto).toContain("DJEN: TRT12 · Lista de distribuição · 1ª Vara Cível · GBM + RVP · ID 777");
-    expect(texto).toContain("A Kurier não trouxe esta comunicação (nem o ID, nem o processo) neste dia.");
-
-    const aguardando = detalhe({ ...DETALHE, resumo: DADOS.dias[0], pares: [], soKurier: [], arquivos: [] });
-    expect(aguardando).toContain("ainda não chegou: o que foi divulgado neste dia vem no próximo arquivo da Kurier");
-    expect(aguardando).toContain("A Kurier ainda não trouxe nada deste dia. O dia ainda está em aberto");
+    const comErro = tela({ dados: null, erro: "A conferência demorou mais de 1 minuto para responder. Tente de novo em instantes." });
+    expect(comErro).toContain("demorou mais de 1 minuto");
+    expect(comErro).not.toContain("Comparando o DJEN com a Kurier");
   });
 });

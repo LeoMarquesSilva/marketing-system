@@ -4,8 +4,10 @@ import {
   compararDjenKurier,
   diaAnterior,
   diasDesdeOInicio,
-  detalheDoDia,
+  detalhesDosDias,
   diasDoPeriodo,
+  periodoDoBkp,
+  proximoDiaDaSemana,
   resumoDoDia,
   totaisDaConferencia,
   tribunalDoProcesso,
@@ -36,6 +38,7 @@ const kurier = (id: string, djenId: number | null, data: string, processo: strin
   status: "juridico_vistar",
   fonte: "orquestra",
   arquivo: "2026-11-11",
+  publicacao: null,
 });
 const bkp = (spId: number, data: string, processo: string, status = "CIÊNCIA NF"): PublicacaoKurier => ({
   id: `bkp:${spId}`,
@@ -47,6 +50,7 @@ const bkp = (spId: number, data: string, processo: string, status = "CIÊNCIA NF
   status,
   fonte: "bkp",
   arquivo: "2026-11-06",
+  publicacao: null,
 });
 
 describe("dias do período", () => {
@@ -60,6 +64,15 @@ describe("dias do período", () => {
     expect(diasDesdeOInicio("2026-11-11")).toBe(42);
     const dias = diasDoPeriodo("2026-11-11", diasDesdeOInicio("2026-11-11"));
     expect(dias.at(-1)).toBe("2026-10-01");
+  });
+});
+
+describe("periodoDoBkp", () => {
+  it("só lê o SIOE nos dias até 08/11/2026", () => {
+    expect(periodoDoBkp("2026-09-29", "2026-11-12")).toEqual({ de: "2026-09-29", ate: "2026-11-08" });
+    expect(periodoDoBkp("2026-10-01", "2026-10-20")).toEqual({ de: "2026-10-01", ate: "2026-10-20" });
+    expect(periodoDoBkp("2026-11-03", "2026-11-12")).toEqual({ de: "2026-11-03", ate: "2026-11-08" });
+    expect(periodoDoBkp("2026-11-09", "2026-11-12")).toBeNull();
   });
 });
 
@@ -185,39 +198,57 @@ describe("compararDjenKurier", () => {
   });
 });
 
-describe("detalheDoDia", () => {
+describe("data de publicação do dia", () => {
+  it("é a que a Kurier diz; sem Kurier, o dia útil seguinte (por padrão, de segunda a sexta)", () => {
+    const [dia12, dia11] = compararDjenKurier(
+      [djen(1, "2026-11-11", "0001"), djen(2, "2026-11-12", "0002")],
+      [{ ...kurier("k1", 1, "2026-11-11", "0001"), publicacao: "2026-11-12" }],
+      ["2026-11-12", "2026-11-11"],
+      new Set(["2026-11-11", "2026-11-12"])
+    );
+    expect(dia11.publicacao).toBe("2026-11-12");
+    expect(dia12.publicacao).toBe("2026-11-13");
+    const [sexta] = compararDjenKurier([], [], ["2026-11-13"], new Set(), { diaUtilSeguinte: () => "2026-11-17" });
+    expect(sexta.publicacao).toBe("2026-11-17");
+  });
+
+  it("proximoDiaDaSemana pula o fim de semana", () => {
+    expect(proximoDiaDaSemana("2026-11-12")).toBe("2026-11-13");
+    expect(proximoDiaDaSemana("2026-11-13")).toBe("2026-11-16");
+    expect(proximoDiaDaSemana("2026-11-14")).toBe("2026-11-16");
+  });
+});
+
+describe("detalhesDosDias", () => {
   const BUSCADOS = new Set(["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12"]);
 
-  it("separa o que é o quê, diz em que outro dia o outro lado trouxe o processo e de que arquivos veio a Kurier", () => {
-    const detalhe = detalheDoDia(
+  it("separa o que é o quê e diz em que outro dia o outro lado trouxe o processo", () => {
+    const [detalhe] = detalhesDosDias(
       [djen(1, "2026-11-10", "0001"), djen(2, "2026-11-10", "0002"), djen(9, "2026-11-09", "0005")],
-      [
-        kurier("k1", 1, "2026-11-10", "0001"),
-        { ...kurier("k5", 55, "2026-11-10", "0005"), arquivo: "2026-11-10" },
-        kurier("k2-antes", 22, "2026-11-09", "0002"),
-      ],
-      "2026-11-10",
+      [kurier("k1", 1, "2026-11-10", "0001"), kurier("k5", 55, "2026-11-10", "0005"), kurier("k2-antes", 22, "2026-11-09", "0002")],
+      ["2026-11-10"],
       BUSCADOS
     );
     expect(detalhe.resumo).toMatchObject({ data: "2026-11-10", djen: 2, kurier: 2, nosDois: 1, soDjen: 1, soKurier: 1 });
     expect(detalhe.pares.map((par) => par.kurier.id)).toEqual(["k1"]);
     expect(detalhe.soKurier).toEqual([{ kurier: expect.objectContaining({ id: "k5" }), djenEmOutrosDias: ["2026-11-09"] }]);
     expect(detalhe.soDjen).toEqual([{ djen: expect.objectContaining({ id: 2 }), kurierEmOutrosDias: ["2026-11-09"] }]);
-    expect(detalhe.arquivos).toEqual([
-      { arquivo: "2026-11-10", quantas: 1 },
-      { arquivo: "2026-11-11", quantas: 1 },
-    ]);
   });
 
   it("dia ainda sem Kurier: lista o que o DJEN trouxe, para conferir quando a Kurier chegar", () => {
-    const detalhe = detalheDoDia([djen(1, "2026-11-12", "0001"), djen(2, "2026-11-12", "0002")], [kurier("k1", 7, "2026-11-11", "0001")], "2026-11-12", BUSCADOS, {
-      ultimoArquivoKurier: "2026-11-12",
-    });
-    expect(detalhe.resumo).toMatchObject({ comKurier: false, emAberto: true, soDjen: 0 });
-    expect(detalhe.soDjen.map((item) => [item.djen.id, item.kurierEmOutrosDias])).toEqual([
+    const [dia12, dia11] = detalhesDosDias(
+      [djen(1, "2026-11-12", "0001"), djen(2, "2026-11-12", "0002"), djen(7, "2026-11-11", "0001")],
+      [kurier("k1", 7, "2026-11-11", "0001")],
+      ["2026-11-12", "2026-11-11"],
+      BUSCADOS,
+      { ultimoArquivoKurier: "2026-11-12" }
+    );
+    expect(dia12.resumo).toMatchObject({ comKurier: false, emAberto: true, soDjen: 0 });
+    expect(dia12.soDjen.map((item) => [item.djen.id, item.kurierEmOutrosDias])).toEqual([
       [1, ["2026-11-11"]],
       [2, []],
     ]);
+    expect(dia11.pares.map((par) => par.kurier.id)).toEqual(["k1"]);
   });
 });
 

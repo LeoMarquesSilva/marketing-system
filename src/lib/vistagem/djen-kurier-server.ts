@@ -1,25 +1,27 @@
 import "server-only";
 
 import { getSioeClient } from "@/lib/sioe-sync-server";
+import { criarCalendario, feriadosNacionais, somarDiasUteis } from "./dias-uteis";
 import {
   ADVOGADOS_DJEN,
   INICIO_DA_CONFERENCIA,
   chaveDoAdvogado,
   comunicacaoDaApi,
   compararDjenKurier,
-  detalheDoDia,
+  detalhesDosDias,
   diaAnterior,
   diasDesdeOInicio,
   diasDoPeriodo,
+  periodoDoBkp,
   resumoDoDia,
   totaisDaConferencia,
   tribunalDoProcesso,
   type ComunicacaoDjenGuardada,
   type ConferenciaDjenKurier,
-  type DetalheDoDia,
   type ItemDaApiDjen,
   type PublicacaoKurier,
 } from "./djen-kurier";
+import { planilhaDaConferencia } from "./djen-kurier-excel";
 import { VistagemError } from "./errors";
 import { admin, falhou, hojeEmSaoPaulo } from "./server";
 
@@ -157,22 +159,30 @@ function tiposDoBkp(valor: unknown): string {
   return texto;
 }
 
+/** Quanto a leitura do BKP pode levar: o SIOE já ficou 90 s sem responder (12/11/2026), e a tela ficava carregando. */
+const TEMPO_DO_BKP_MS = 20_000;
+
 /**
  * A Kurier do BKP de publicações do SIOE (só as linhas da lista do SharePoint; as gravadas pelo Orquestra já estão no
- * Orquestra). Falhar aqui não derruba a conferência: ela sai só com o Orquestra, com o aviso.
+ * Orquestra), só nos dias até FIM_DO_BKP e em até TEMPO_DO_BKP_MS. Falhar aqui não derruba a conferência: ela sai só
+ * com o Orquestra, com o aviso.
  */
 async function kurierDoBkp(de: string, ate: string): Promise<{ itens: PublicacaoKurier[]; erro: string | null }> {
+  const periodo = periodoDoBkp(de, ate);
+  if (!periodo) return { itens: [], erro: null };
+  const prazo = AbortSignal.timeout(TEMPO_DO_BKP_MS);
   try {
     const sioe = getSioeClient();
     const linhas = await lerPaginas("o BKP de publicações do SIOE", (inicio) =>
       sioe
         .from("sp_publicacoes")
-        .select("sp_id, data_divulgacao, numero_processo, tipo_agendamento, data_recebimento_kurier")
+        .select("sp_id, data_divulgacao, data_publicacao, numero_processo, tipo_agendamento, data_recebimento_kurier")
         .eq("origem", "sharepoint")
-        .gte("data_divulgacao", de)
-        .lte("data_divulgacao", ate)
+        .gte("data_divulgacao", periodo.de)
+        .lte("data_divulgacao", periodo.ate)
         .order("sp_id")
         .range(inicio, inicio + 999)
+        .abortSignal(prazo)
     );
     const itens = linhas
       .filter((linha) => /^\d{4}-\d{2}-\d{2}/.test(String(linha.data_divulgacao ?? "")))
@@ -188,11 +198,16 @@ async function kurierDoBkp(de: string, ate: string): Promise<{ itens: Publicacao
           status: tiposDoBkp(linha.tipo_agendamento),
           fonte: "bkp" as const,
           arquivo: linha.data_recebimento_kurier ? String(linha.data_recebimento_kurier).slice(0, 10) : null,
+          publicacao: linha.data_publicacao ? String(linha.data_publicacao).slice(0, 10) : null,
         };
       });
     return { itens, erro: null };
   } catch (falha) {
-    const erro = falha instanceof Error ? falha.message : String(falha);
+    const erro = prazo.aborted
+      ? `o SIOE não respondeu em ${TEMPO_DO_BKP_MS / 1000} segundos`
+      : falha instanceof Error
+        ? falha.message.slice(0, 200)
+        : String(falha).slice(0, 200);
     console.error("[vistagem] conferência DJEN × Kurier: BKP do SIOE", erro);
     return { itens: [], erro };
   }
@@ -214,7 +229,7 @@ async function carregar(de: string, ate: string) {
     lerPaginas("as publicações da Kurier", (inicio) =>
       db
         .from("vistagem_publicacoes")
-        .select("id, djen_id_comunicacao, data_divulgacao, numero_processo, numero_processo_original, tribunal, nome_localizado, status, kurier_arquivo_id")
+        .select("id, djen_id_comunicacao, data_divulgacao, data_publicacao, numero_processo, numero_processo_original, tribunal, nome_localizado, status, kurier_arquivo_id")
         .eq("origem", "kurier")
         .gte("data_divulgacao", de)
         .lte("data_divulgacao", ate)
@@ -259,6 +274,7 @@ async function carregar(de: string, ate: string) {
     status: String(linha.status),
     fonte: "orquestra",
     arquivo: linha.kurier_arquivo_id ? (dataDoArquivo.get(String(linha.kurier_arquivo_id)) ?? null) : null,
+    publicacao: linha.data_publicacao ? String(linha.data_publicacao).slice(0, 10) : null,
   }));
   const registros = (buscas.data ?? []) as { executada_em: string; origem: string; dias: string[] | null; erro: string | null }[];
   const [ultima] = registros;
@@ -272,38 +288,51 @@ async function carregar(de: string, ate: string) {
   };
 }
 
-/**
- * A conferência dos últimos `periodo` dias (até hoje), ou de todo o estudo ("tudo", desde INICIO_DA_CONFERENCIA): os
- * números de cada dia. As listas de um dia vêm em detalheDaConferencia. Nenhum dia antes do início do estudo entra.
- */
-export async function conferenciaDjenKurier(periodo: number | "tudo"): Promise<ConferenciaDjenKurier> {
+/** Os dias do período (do mais novo ao mais antigo), nunca antes do início do estudo. */
+function diasDoPedido(periodo: number | "tudo", hoje: string): string[] {
   if (periodo !== "tudo" && (!Number.isInteger(periodo) || periodo < 1 || periodo > 90)) {
     throw new VistagemError("Período inválido (1 a 90 dias, ou todo o estudo).", 400);
   }
-  const hoje = hojeEmSaoPaulo();
   const dias = diasDoPeriodo(hoje, periodo === "tudo" ? diasDesdeOInicio(hoje) : periodo).filter((dia) => dia >= INICIO_DA_CONFERENCIA);
-  if (!dias.length) dias.push(hoje);
+  return dias.length ? dias : [hoje];
+}
+
+/** O dia útil seguinte (feriados nacionais do Judiciário), para a publicação do dia que ainda não tem Kurier. */
+function calendarioDaPublicacao(hoje: string): (dia: string) => string {
+  const ano = Number(hoje.slice(0, 4));
+  const ehDiaUtil = criarCalendario([ano - 1, ano, ano + 1].flatMap(feriadosNacionais));
+  return (dia) => somarDiasUteis(dia, 1, ehDiaUtil);
+}
+
+/**
+ * A conferência dos últimos `periodo` dias (até hoje), ou de todo o estudo ("tudo", desde INICIO_DA_CONFERENCIA): os
+ * números de cada dia. O racional de cada publicação vai no Excel (excelDaConferencia).
+ */
+export async function conferenciaDjenKurier(periodo: number | "tudo"): Promise<ConferenciaDjenKurier> {
+  const hoje = hojeEmSaoPaulo();
+  const dias = diasDoPedido(periodo, hoje);
   // Dois dias de folga antes do período: o par pelo ID pode estar num dia vizinho.
   const dados = await carregar(diasDoPeriodo(dias[dias.length - 1], 3)[2], dias[0]);
-  const porDia = compararDjenKurier(dados.djen, dados.kurier, dias, dados.diasBuscados, { ultimoArquivoKurier: dados.ultimoArquivoKurier }).map(resumoDoDia);
+  const porDia = compararDjenKurier(dados.djen, dados.kurier, dias, dados.diasBuscados, {
+    ultimoArquivoKurier: dados.ultimoArquivoKurier,
+    diaUtilSeguinte: calendarioDaPublicacao(hoje),
+  }).map(resumoDoDia);
   return { dias: porDia, totais: totaisDaConferencia(porDia), ultimaBusca: dados.ultimaBusca, erroBkp: dados.erroBkp };
 }
 
 /**
- * O que é o quê num dia: o que está nos dois, só na Kurier e só no DJEN. Lê cinco dias para cada lado, para mostrar
- * quando o outro lado trouxe o mesmo processo em outro dia.
+ * O Excel da conferência do período: cada publicação com a situação (nos dois, só na Kurier, só no DJEN) e o porquê,
+ * o resumo por dia e como ler. Lê cinco dias antes do período, para dizer quando o outro lado trouxe o mesmo processo.
  */
-export async function detalheDaConferencia(dia: string): Promise<DetalheDoDia> {
+export async function excelDaConferencia(periodo: number | "tudo"): Promise<{ arquivo: Buffer; nome: string }> {
   const hoje = hojeEmSaoPaulo();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || dia < INICIO_DA_CONFERENCIA || dia > hoje) {
-    throw new VistagemError(`Dia inválido (de ${INICIO_DA_CONFERENCIA} até hoje).`, 400);
-  }
-  const dados = await carregar(somarDias(dia, -5), [hoje, somarDias(dia, 5)].sort()[0]);
-  return detalheDoDia(dados.djen, dados.kurier, dia, dados.diasBuscados, { ultimoArquivoKurier: dados.ultimoArquivoKurier, erroBkp: dados.erroBkp });
-}
-
-/** `dia` mais `quantos` dias (negativo volta). */
-function somarDias(dia: string, quantos: number): string {
-  const [ano, mes, numero] = dia.split("-").map(Number);
-  return new Date(Date.UTC(ano, mes - 1, numero + quantos)).toISOString().slice(0, 10);
+  const dias = diasDoPedido(periodo, hoje);
+  const dados = await carregar(diasDoPeriodo(dias[dias.length - 1], 6)[5], dias[0]);
+  const detalhes = detalhesDosDias(dados.djen, dados.kurier, dias, dados.diasBuscados, {
+    ultimoArquivoKurier: dados.ultimoArquivoKurier,
+    diaUtilSeguinte: calendarioDaPublicacao(hoje),
+  }).filter((detalhe) => detalhe.resumo.djen + detalhe.resumo.kurier > 0);
+  const de = dias[dias.length - 1].split("-").reverse().join("-");
+  const ate = dias[0].split("-").reverse().join("-");
+  return { arquivo: planilhaDaConferencia(detalhes, { erroBkp: dados.erroBkp }), nome: `conferencia-djen-kurier-${de}-a-${ate}.xlsx` };
 }

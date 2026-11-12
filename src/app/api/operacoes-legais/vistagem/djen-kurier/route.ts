@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { diasDoPeriodo } from "@/lib/vistagem/djen-kurier";
-import { conferenciaDjenKurier, detalheDaConferencia, sincronizarDjen } from "@/lib/vistagem/djen-kurier-server";
+import { conferenciaDjenKurier, excelDaConferencia, sincronizarDjen } from "@/lib/vistagem/djen-kurier-server";
 import { VistagemError } from "@/lib/vistagem/errors";
 import { exigirAcessoVistagem, respostaDeErro } from "@/lib/vistagem/http";
 import { hojeEmSaoPaulo } from "@/lib/vistagem/server";
@@ -12,16 +12,25 @@ export const maxDuration = 300;
 const periodoPedido = (valor: unknown): number | "tudo" => (valor === undefined || valor === null || valor === "tudo" ? "tudo" : Number(valor));
 
 /**
- * Conferência DJEN × Kurier dos últimos `dias` dias, ou de todo o estudo (`dias=tudo`, o padrão). Com `dia=AAAA-MM-DD`,
- * o detalhe do dia: o que está nos dois, só na Kurier e só no DJEN. Só leitura.
+ * Conferência DJEN × Kurier dos últimos `dias` dias, ou de todo o estudo (`dias=tudo`, o padrão). Com `formato=xlsx`,
+ * o Excel do período: cada publicação (nos dois, só na Kurier, só no DJEN) e o porquê. Só leitura.
  */
 export async function GET(request: Request) {
   try {
     await exigirAcessoVistagem();
     const parametros = new URL(request.url).searchParams;
-    const dia = parametros.get("dia");
-    if (dia) return NextResponse.json(await detalheDaConferencia(dia));
-    return NextResponse.json(await conferenciaDjenKurier(periodoPedido(parametros.get("dias"))));
+    const periodo = periodoPedido(parametros.get("dias"));
+    if (parametros.get("formato") === "xlsx") {
+      const { arquivo, nome } = await excelDaConferencia(periodo);
+      return new NextResponse(new Uint8Array(arquivo), {
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="${nome}"`,
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+    return NextResponse.json(await conferenciaDjenKurier(periodo));
   } catch (error) {
     return respostaDeErro(error, "Não foi possível montar a conferência DJEN × Kurier.");
   }

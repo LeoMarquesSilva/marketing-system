@@ -13,6 +13,18 @@
 /** O estudo começa em 01/10/2026 (pedido de 11/11/2026): antes disso não se compara. */
 export const INICIO_DA_CONFERENCIA = "2026-10-01";
 
+/**
+ * Último dia com Kurier no BKP do SIOE que pode faltar no Orquestra: a lista do SharePoint parou antes de 09/11/2026.
+ * Depois disso não se lê o SIOE.
+ */
+export const FIM_DO_BKP = "2026-11-08";
+
+/** O pedaço de `de`–`ate` em que vale ler o BKP do SIOE; null quando o período é todo depois do BKP. */
+export function periodoDoBkp(de: string, ate: string): { de: string; ate: string } | null {
+  const fim = ate < FIM_DO_BKP ? ate : FIM_DO_BKP;
+  return de > fim ? null : { de, ate: fim };
+}
+
 /** Os advogados que a Kurier localiza (os mesmos da triagem): a busca no DJEN é por OAB. */
 export const ADVOGADOS_DJEN = [
   { oab: "275477", uf: "SP", nome: "Gustavo Bismarchi Motta", sigla: "GBM" },
@@ -51,10 +63,12 @@ export interface PublicacaoKurier {
   /** "orquestra" (com o ID do DJEN) ou "bkp" (BKP de publicações do SIOE, sem o ID). */
   fonte: "orquestra" | "bkp";
   /**
-   * Data do arquivo da Kurier que a trouxe (AAAA-MM-DD); null quando não se sabe. O arquivo de um dia traz o que foi
-   * divulgado na véspera (publicado no dia), e às vezes parte do próprio dia.
+   * Data do arquivo da Kurier que a trouxe (AAAA-MM-DD); null quando não se sabe. O arquivo de um dia traz o que é
+   * publicado no dia (divulgado no dia útil anterior), e às vezes parte do que é publicado no dia seguinte.
    */
   arquivo: string | null;
+  /** Data de publicação na Kurier (o dia útil seguinte à divulgação), AAAA-MM-DD; null quando não veio. */
+  publicacao: string | null;
 }
 
 /** Como a publicação da Kurier casou com o DJEN. */
@@ -69,8 +83,13 @@ export interface ParDaConferencia {
 
 /** O dia comparado, com as listas (uso interno e detalhe do dia). */
 export interface DiaDaConferencia {
-  /** AAAA-MM-DD */
+  /** Dia da disponibilização no DJEN (= divulgação na Kurier), AAAA-MM-DD: é por ele que se compara. */
   data: string;
+  /**
+   * Dia da publicação (AAAA-MM-DD): o dia em que a Kurier entrega. É o que a Kurier diz para as publicações do dia;
+   * sem Kurier, o dia útil seguinte à disponibilização.
+   */
+  publicacao: string;
   /** Houve busca no DJEN para este dia (sem busca, os números do DJEN não valem). */
   buscado: boolean;
   /**
@@ -113,15 +132,12 @@ export interface SoNoDjen {
   kurierEmOutrosDias: string[];
 }
 
-/** O que é o quê num dia: o que está nos dois, só na Kurier e só no DJEN, com o motivo de cada um. */
+/** O que é o quê num dia: o que está nos dois, só na Kurier e só no DJEN (é o que vai para o Excel). */
 export interface DetalheDoDia {
   resumo: ResumoDoDia;
   pares: ParDaConferencia[];
   soKurier: SoNaKurier[];
   soDjen: SoNoDjen[];
-  /** Os arquivos da Kurier que trouxeram as publicações do dia (data do arquivo e quantas); "BKP" para o BKP. */
-  arquivos: { arquivo: string; quantas: number }[];
-  erroBkp: string | null;
 }
 
 export interface ConferenciaDjenKurier {
@@ -171,13 +187,14 @@ export function tribunalDoProcesso(processo: string | null | undefined): string 
  * processo e dia, e casa com todas as comunicações do DJEN desse processo no mesmo dia.
  *
  * `ultimoArquivoKurier` é a data do último arquivo da Kurier importado: dele em diante, o dia está em aberto.
+ * `diaUtilSeguinte` dá a publicação do dia que ainda não tem Kurier (sem ele, segunda a sexta, sem feriados).
  */
 export function compararDjenKurier(
   djen: ComunicacaoDjenGuardada[],
   kurier: PublicacaoKurier[],
   dias: string[],
   diasBuscados: Set<string>,
-  { ultimoArquivoKurier = null }: { ultimoArquivoKurier?: string | null } = {}
+  { ultimoArquivoKurier = null, diaUtilSeguinte = proximoDiaDaSemana }: { ultimoArquivoKurier?: string | null; diaUtilSeguinte?: (dia: string) => string } = {}
 ): DiaDaConferencia[] {
   const djenPorId = new Map(djen.map((item) => [item.id, item]));
   // Kurier sem repetir: pelo ID de comunicação, quando tem; senão, cada publicação.
@@ -239,6 +256,7 @@ export function compararDjenKurier(
     }
     return {
       data,
+      publicacao: publicacaoMaisComum(daKurier) ?? diaUtilSeguinte(data),
       buscado,
       comKurier: daKurier.length > 0,
       emAberto: Boolean(ultimoArquivoKurier && data >= ultimoArquivoKurier),
@@ -260,41 +278,65 @@ export function resumoDoDia(dia: DiaDaConferencia): ResumoDoDia {
   return { ...resto, nosDois: pares.length, soDjen: soDjen.length, soKurier: soKurier.length };
 }
 
+/** O próximo dia de segunda a sexta (sem feriados): reserva quando não se passa o calendário. */
+export function proximoDiaDaSemana(dia: string): string {
+  const [ano, mes, numero] = dia.split("-").map(Number);
+  for (let mais = 1; ; mais++) {
+    const proximo = new Date(Date.UTC(ano, mes - 1, numero + mais));
+    if (proximo.getUTCDay() !== 0 && proximo.getUTCDay() !== 6) return proximo.toISOString().slice(0, 10);
+  }
+}
+
+/** A data de publicação que mais aparece nas publicações da Kurier do dia (todas costumam ter a mesma). */
+function publicacaoMaisComum(publicacoes: PublicacaoKurier[]): string | null {
+  const contagem = new Map<string, number>();
+  for (const item of publicacoes) if (item.publicacao) contagem.set(item.publicacao, (contagem.get(item.publicacao) ?? 0) + 1);
+  return [...contagem.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? null;
+}
+
 const porProcesso = <T,>(lista: T[], processo: (item: T) => string | null) =>
   [...lista].sort((a, b) => (processo(a) ?? "").localeCompare(processo(b) ?? ""));
 
 /**
- * O detalhe de um dia: as listas, em ordem de processo, com os outros dias (nos dados recebidos) em que o outro lado
- * trouxe o mesmo processo, e de que arquivos da Kurier vieram as publicações do dia.
+ * O que é o quê em cada dia (para o Excel): as listas, em ordem de processo, com os outros dias (nos dados recebidos)
+ * em que o outro lado trouxe o mesmo processo. No dia sem Kurier, o quadro não compara, mas a lista traz o que o DJEN
+ * trouxe (a Kurier pode ainda não ter chegado).
  */
-export function detalheDoDia(
+export function detalhesDosDias(
   djen: ComunicacaoDjenGuardada[],
   kurier: PublicacaoKurier[],
-  dia: string,
+  dias: string[],
   diasBuscados: Set<string>,
-  opcoes: { ultimoArquivoKurier?: string | null; erroBkp?: string | null } = {}
-): DetalheDoDia {
-  const [completo] = compararDjenKurier(djen, kurier, [dia], diasBuscados, opcoes);
-  const diasDoProcesso = (lista: { data: string; processo: string | null }[], processo: string | null) => {
-    const alvo = digitos(processo);
-    if (!alvo) return [];
-    return [...new Set(lista.filter((item) => item.data !== dia && digitos(item.processo) === alvo).map((item) => item.data))].sort();
+  opcoes: { ultimoArquivoKurier?: string | null; diaUtilSeguinte?: (dia: string) => string } = {}
+): DetalheDoDia[] {
+  const datasPorProcesso = (lista: { data: string; processo: string | null }[]) => {
+    const mapa = new Map<string, Set<string>>();
+    for (const item of lista) {
+      const chave = digitos(item.processo);
+      if (chave) mapa.set(chave, (mapa.get(chave) ?? new Set()).add(item.data));
+    }
+    return mapa;
   };
-  const contagem = new Map<string, number>();
-  for (const item of [...completo.pares.map((par) => par.kurier), ...completo.soKurier]) {
-    const chave = item.fonte === "bkp" ? "BKP" : (item.arquivo ?? "sem arquivo");
-    contagem.set(chave, (contagem.get(chave) ?? 0) + 1);
-  }
-  // Dia sem Kurier: o quadro não compara, mas o detalhe lista o que o DJEN trouxe (a Kurier pode ainda não ter chegado).
-  const soDjen = completo.comKurier ? completo.soDjen : djen.filter((item) => item.data === dia);
-  return {
-    resumo: resumoDoDia(completo),
-    pares: porProcesso(completo.pares, (par) => par.kurier.processo),
-    soKurier: porProcesso(completo.soKurier, (item) => item.processo).map((item) => ({ kurier: item, djenEmOutrosDias: diasDoProcesso(djen, item.processo) })),
-    soDjen: porProcesso(soDjen, (item) => item.processo).map((item) => ({ djen: item, kurierEmOutrosDias: diasDoProcesso(kurier, item.processo) })),
-    arquivos: [...contagem.entries()].map(([arquivo, quantas]) => ({ arquivo, quantas })).sort((a, b) => a.arquivo.localeCompare(b.arquivo)),
-    erroBkp: opcoes.erroBkp ?? null,
-  };
+  const djenPorProcesso = datasPorProcesso(djen);
+  const kurierPorProcesso = datasPorProcesso(kurier);
+  const outrosDias = (mapa: Map<string, Set<string>>, processo: string | null, dia: string) =>
+    [...(mapa.get(digitos(processo)) ?? [])].filter((data) => data !== dia).sort();
+
+  return compararDjenKurier(djen, kurier, dias, diasBuscados, opcoes).map((completo) => {
+    const soDjen = completo.comKurier ? completo.soDjen : djen.filter((item) => item.data === completo.data);
+    return {
+      resumo: resumoDoDia(completo),
+      pares: porProcesso(completo.pares, (par) => par.kurier.processo),
+      soKurier: porProcesso(completo.soKurier, (item) => item.processo).map((item) => ({
+        kurier: item,
+        djenEmOutrosDias: outrosDias(djenPorProcesso, item.processo, completo.data),
+      })),
+      soDjen: porProcesso(soDjen, (item) => item.processo).map((item) => ({
+        djen: item,
+        kurierEmOutrosDias: outrosDias(kurierPorProcesso, item.processo, completo.data),
+      })),
+    };
+  });
 }
 
 /** Soma dos dias que se comparam: com busca no DJEN, com publicação da Kurier e já fechados na Kurier. */
