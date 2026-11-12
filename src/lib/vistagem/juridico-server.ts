@@ -742,9 +742,10 @@ type TarefaDoHistoricoRow = {
 
 /**
  * O que aconteceu com a publicação, em ordem: das colunas de quem fez e quando, das tarefas e das inconsistências.
- * O jurídico só vê o das publicações da sua área (e de risco, se vista as de risco); a controladoria vê todas.
+ * O jurídico vê o das publicações da sua área, normais e de risco (ver não depende de vistar risco); a controladoria
+ * vê todas.
  */
-export async function historicoDaPublicacao(id: string, areas: AreasVistagem = null, veRisco = true): Promise<HistoricoPublicacao> {
+export async function historicoDaPublicacao(id: string, areas: AreasVistagem = null): Promise<HistoricoPublicacao> {
   const db = admin();
   const [publicacao, tarefas, inconsistencias] = await Promise.all([
     db.from("vistagem_publicacoes").select(COLUNAS_HISTORICO).eq("id", id).maybeSingle(),
@@ -759,7 +760,7 @@ export async function historicoDaPublicacao(id: string, areas: AreasVistagem = n
   if (tarefas.error) falhou("carregar as tarefas do histórico", tarefas.error);
   const row = publicacao.data as unknown as HistoricoRow | null;
   if (!row) throw new VistagemError("Publicação não encontrada.", 404);
-  garantirArea(row, areas, veRisco);
+  garantirArea(row, areas);
   const nomes = await nomesDosUsuarios([
     row.triagem_resolvida_por, row.duplicidade_revisada_por, row.transferido_por, row.vistado_por,
     row.devolvido_por, row.revistado_por, row.reaberta_por ?? null, row.conferido_por, row.checado_por,

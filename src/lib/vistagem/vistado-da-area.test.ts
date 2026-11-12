@@ -37,6 +37,10 @@ class Consulta {
     const achadas = this.linhas.filter((linha) => this.filtros.every((filtro) => filtro(linha)));
     return { data: achadas.map((linha) => ({ ...linha })), error: null };
   }
+  async maybeSingle() {
+    const { data, error } = await this.executar();
+    return { data: data[0] ?? null, error };
+  }
   then<T>(resolver: (valor: { data: Linha[]; error: null }) => T) {
     return this.executar().then(resolver);
   }
@@ -50,7 +54,7 @@ vi.mock("./server", async (original) => ({
 }));
 vi.mock("./pessoas-server", () => ({ pessoasPorNome: async () => ({ fotos: {}, areas: {}, rotulos: {} }) }));
 
-const { listarAgendadasJuridico } = await import("./juridico-server");
+const { historicoDaPublicacao, listarAgendadasJuridico } = await import("./juridico-server");
 
 const INSOLVENCIA = ["Cível | Insolvência", "Insolvência"];
 const ontem = () => new Date(Date.now() - 86_400_000).toISOString();
@@ -110,5 +114,16 @@ describe("aba Vistado: o que a área vistou", () => {
   it("a controladoria (sem lista de áreas) vê todas as áreas", async () => {
     const { itens } = await listarAgendadasJuridico(null, null, "controladoria");
     expect(itens).toHaveLength(4);
+  });
+});
+
+describe("Histórico: ver não depende de vistar risco", () => {
+  it("quem não vista risco abre o histórico de uma publicação de risco da sua área", async () => {
+    const historico = await historicoDaPublicacao("p1", INSOLVENCIA);
+    expect(historico).toBeTruthy();
+  });
+
+  it("o de outra área continua fechado", async () => {
+    await expect(historicoDaPublicacao("p4", INSOLVENCIA)).rejects.toThrow("Esta publicação não é de uma área sua.");
   });
 });

@@ -6,8 +6,9 @@ import { TIPOS_DE_DEMANDA, TODAS_AS_AREAS_VISTAGEM, nomeNoRh, vistadoresDa, type
 
 /**
  * Quem acessa a Vistagem e o que cada um enxerga, editado em Vistagem › Configurações (antes ficava em Usuários).
- * A controladoria vê todas as abas e áreas; o jurídico vê a Visão geral e a aba Vistagem, só das áreas marcadas e,
- * se não vista risco, sem as demandas de risco. Liberar o módulo para alguém continua em Usuários (lista de módulos
+ * A controladoria vê todas as abas e áreas; o jurídico vê a Visão geral e a aba Vistagem, só das áreas marcadas. Quem
+ * não vista risco não recebe as demandas de risco na fila A vistar, mas vê tudo o que é da área (Vistado, Visão geral,
+ * Histórico). Liberar o módulo para alguém continua em Usuários (lista de módulos
  * de cada pessoa). Quem grava é `acessos-server.ts`; aqui ficam a validação e as contas, para a tela e o servidor.
  */
 
@@ -28,7 +29,7 @@ export interface AcessoVistagem {
   papel: PapelVistagem;
   /** Só no jurídico: as áreas que a pessoa vista (vazia = não vê nenhuma publicação). */
   areas: string[];
-  /** Só no jurídico: vê as demandas de risco (na controladoria, sempre). */
+  /** Só no jurídico: vista as demandas de risco, isto é, recebe as de risco na fila A vistar (na controladoria, sempre). */
   veRisco: boolean;
   /** Áreas em que a pessoa está cadastrada como vistadora, pelo nome (para conferir com as áreas marcadas). */
   vistadorEm: VistadorEm[];
@@ -69,7 +70,7 @@ export function ondeVista(nome: string, mapa: MapaDeVistadores): VistadorEm[] {
 
 /**
  * O que não bate entre o acesso e a lista de vistadores: no jurídico, área em que a pessoa vista sem estar marcada,
- * ou vistador de risco que não vê as demandas de risco; e jurídico sem área nenhuma.
+ * ou vistador de risco marcado para não vistar as demandas de risco; e jurídico sem área nenhuma.
  */
 export function avisosDoAcesso(acesso: Pick<AcessoVistagem, "papel" | "areas" | "veRisco" | "vistadorEm">): string[] {
   if (acesso.papel !== "juridico") return [];
@@ -81,7 +82,7 @@ export function avisosDoAcesso(acesso: Pick<AcessoVistagem, "papel" | "areas" | 
     avisos.push(`Vistador em ${nomes.join(", ")}, mas ${nomes.length === 1 ? "essa área não está marcada" : "essas áreas não estão marcadas"}.`);
   }
   if (!acesso.veRisco && acesso.vistadorEm.some((item) => item.tipos.includes("risco"))) {
-    avisos.push("Vistador de demandas de risco, mas não vê as demandas de risco.");
+    avisos.push("Vistador de demandas de risco, mas está marcado para não vistar as de risco.");
   }
   return avisos;
 }

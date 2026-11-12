@@ -481,7 +481,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alvo: "cg-risco",
       titulo: "Etiquetas de risco",
       texto:
-        "Pasta com uma destas etiquetas no VIOS vira demanda de risco: destaque vermelho, filtro próprio e só quem vista risco a recebe para vistar (no Vistado, a área toda acompanha). Vale para as próximas triagens; \"Voltar ao padrão\" desfaz.",
+        "Pasta com uma destas etiquetas no VIOS vira demanda de risco: destaque vermelho, filtro próprio e só quem vista risco a recebe para vistar (para ver, a área toda vê). Vale para as próximas triagens; \"Voltar ao padrão\" desfaz.",
     },
     {
       id: "alerta",

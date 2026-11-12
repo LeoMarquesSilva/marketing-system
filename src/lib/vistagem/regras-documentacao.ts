@@ -219,7 +219,7 @@ export const REGRAS_DA_ESTEIRA: EtapaDocumentada[] = [
         id: "quem-ve",
         titulo: "Quem vê a fila",
         quando: "a pessoa tiver o papel jurídico (Configurações › Quem acessa a Vistagem)",
-        entao: "ela só vê a Visão geral e a aba Vistagem, das áreas marcadas para ela; sem \"vê as demandas de risco\", as de risco não aparecem.",
+        entao: "ela só vê a Visão geral e a aba Vistagem, das áreas marcadas para ela; sem \"vista as demandas de risco\", as de risco não entram na fila A vistar dela, mas ela as vê no Vistado, na Visão geral e no Histórico, como o resto da área.",
         origem: "codigo",
       },
       {

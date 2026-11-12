@@ -18,7 +18,7 @@ import { IconeArea } from "./marcas";
 import { Aviso, Carregando, Selo } from "./ui";
 
 /**
- * Quem acessa a Vistagem e o que cada pessoa enxerga (papel, áreas e demandas de risco). Ficava em Usuários; agora
+ * Quem acessa a Vistagem, o que cada pessoa enxerga (papel e áreas) e se vista as demandas de risco. Ficava em Usuários; agora
  * fica junto dos vistadores. Liberar o módulo para alguém continua em Usuários, na lista de módulos da pessoa.
  */
 
@@ -41,11 +41,11 @@ function ChipDaArea({ area }: { area: string }) {
 function SeloDoRisco({ veRisco }: { veRisco: boolean }) {
   return veRisco ? (
     <Selo tom="perigo" icone={ShieldAlert} className="shrink-0">
-      Vê as de risco
+      Vista as de risco
     </Selo>
   ) : (
     <Selo tom="neutro" icone={ShieldCheck} className="shrink-0">
-      Sem as de risco
+      Não vista as de risco
     </Selo>
   );
 }
@@ -207,10 +207,10 @@ function DialogoDoAcesso({
                   <ShieldAlert className="size-4" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-foreground">Vê as demandas de risco</p>
-                  <p className="text-xs text-muted-foreground">Desligado, a fila A vistar traz só as publicações sem risco; as de risco ficam com quem vista risco. No Vistado, vê tudo o que a área vistou.</p>
+                  <p className="text-sm font-medium text-foreground">Vista as demandas de risco</p>
+                  <p className="text-xs text-muted-foreground">Desligado, a fila A vistar traz só as publicações sem risco; as de risco ficam com quem vista risco. Para ver (Vistado, Visão geral, Histórico), não muda nada: vê tudo das áreas marcadas.</p>
                 </div>
-                <Interruptor ligado={veRisco} onChange={setVeRisco} rotulo="Vê as demandas de risco" />
+                <Interruptor ligado={veRisco} onChange={setVeRisco} rotulo="Vista as demandas de risco" />
               </div>
             </>
           ) : null}
@@ -316,7 +316,7 @@ export function QuemAcessaAVistagem() {
     <CartaoEditavel
       icone={KeyRound}
       titulo="Quem acessa a Vistagem"
-      descricao="O que cada pessoa enxerga: a controladoria vê todas as abas e áreas; o jurídico vê a Visão geral e a aba Vistagem, só das áreas marcadas, com ou sem as demandas de risco."
+      descricao="O que cada pessoa enxerga: a controladoria vê todas as abas e áreas; o jurídico vê a Visão geral e a aba Vistagem, só das áreas marcadas. A marca de risco só decide quem vista as demandas de risco."
       acao={
         <Button asChild size="sm" variant="outline" className="shrink-0" title="Liberar ou tirar o módulo de alguém é na lista de módulos da pessoa, em Usuários">
           <Link href="/usuarios">Liberar em Usuários</Link>
