@@ -62,12 +62,6 @@ function emLotes<T>(itens: T[], tamanho = LOTE_INSERCAO): T[][] {
 export function hojeEmSaoPaulo(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
 }
-
-/** Hora de agora em São Paulo (0 a 23). */
-export function horaEmSaoPaulo(): number {
-  return Number(new Intl.DateTimeFormat("en-GB", { timeZone: "America/Sao_Paulo", hour: "2-digit", hourCycle: "h23" }).format(new Date()));
-}
-
 // ---------------------------------------------------------------------------
 // Mapeamento banco → tela
 // ---------------------------------------------------------------------------

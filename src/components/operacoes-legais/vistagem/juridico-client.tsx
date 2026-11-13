@@ -44,12 +44,15 @@ import { avisarContagensVistagem } from "@/hooks/use-vistagem-contagens";
 import { cn } from "@/lib/utils";
 import {
   ETIQUETAS_AGENDAMENTO,
+  HORA_LIMITE_DO_DIA,
   ROTULO_ETIQUETA,
   atalhosDePrazo,
+  avisoDepoisDoHorario,
   avisosDaData,
   chaveDoCaminho,
   chaveNome,
   contagemPadraoDaPublicacao,
+  horaEmSaoPaulo,
   horaFinalPadrao,
   horaValida,
   mesmasPessoas,
@@ -57,6 +60,7 @@ import {
   dataPadraoDaTarefa,
   observacaoObrigatoria,
   pedeDataLimite,
+  primeiroDiaDaTarefa,
   revisorFicaNaTarefa,
   separarNomes,
   type EtiquetaAgendamento,
@@ -258,20 +262,25 @@ function horaFinalValida(linha: Pick<Linha, "hora" | "horaFim">): boolean {
 function ModalHorario({
   linha,
   hoje,
+  primeiroDia,
   ehDiaUtil,
   onConfirmar,
   onFechar,
 }: {
   linha: Linha | null;
   hoje: string;
+  /** Primeira data que se pode escolher: hoje; depois das 18h, o dia útil seguinte. */
+  primeiroDia: string;
   ehDiaUtil: (iso: string) => boolean;
   onConfirmar: (data: string, hora: string) => void;
   onFechar: () => void;
 }) {
   const [data, setData] = useState(linha?.data ?? "");
   const [hora, setHora] = useState(linha?.hora ?? "");
-  const avisos = data ? avisosDaData(data, hoje) : [];
-  const pronto = Boolean(data) && horaValida(hora);
+  const depoisDoHorario = primeiroDia > hoje;
+  const antesDoPermitido = Boolean(depoisDoHorario && data && data < primeiroDia);
+  const avisos = antesDoPermitido ? [avisoDepoisDoHorario(primeiroDia)] : data ? avisosDaData(data, hoje) : [];
+  const pronto = Boolean(data) && horaValida(hora) && !antesDoPermitido;
 
   return (
     <Dialog open={Boolean(linha)} onOpenChange={(aberto) => !aberto && onFechar()}>
@@ -290,7 +299,14 @@ function ModalHorario({
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <span className="block text-xs font-medium text-muted-foreground">Data</span>
-              <CampoData rotulo="Data do compromisso" valor={data} onChange={setData} ehDiaUtil={ehDiaUtil} invalido={!data} />
+              <CampoData
+                rotulo="Data do compromisso"
+                valor={data}
+                onChange={setData}
+                ehDiaUtil={ehDiaUtil}
+                min={depoisDoHorario ? primeiroDia : undefined}
+                invalido={!data || antesDoPermitido}
+              />
             </div>
             <div className="space-y-1.5">
               <span className="block text-xs font-medium text-muted-foreground">Horário</span>
@@ -460,6 +476,7 @@ export function FluxoNoVios({
   principal,
   fatais,
   hoje,
+  primeiroDia,
   ehDiaUtil,
   onMudarData,
   onMudarResponsaveis,
@@ -476,6 +493,8 @@ export function FluxoNoVios({
   /** Data fatal do Prazo ou, na tarefa sem prazo próprio, a de cada prazo que ela cria (só para situar no calendário). */
   fatais: { rotulo: string; data: string; dica: string }[];
   hoje: string;
+  /** Primeira data que se pode escolher para as tarefas do fluxo: hoje; depois das 18h, o dia útil seguinte. */
+  primeiroDia?: string;
   ehDiaUtil: (iso: string) => boolean;
   onMudarData: (caminho: string[], data: string | null) => void;
   /** null volta à regra do robô. */
@@ -543,7 +562,7 @@ export function FluxoNoVios({
       compacto
       rotulo={`Data de ${tarefa.caminho.join(" › ")}`}
       valor={tarefa.data ?? ""}
-      min={hoje}
+      min={primeiroDia ?? hoje}
       ehDiaUtil={ehDiaUtil}
       destacado={tarefa.editada}
       permitirVazio
@@ -919,6 +938,15 @@ export function EditorVistagem({
   }, [id, recarga, consultaPrevia]);
 
   const ehDiaUtil = useMemo(() => criarCalendario(detalhe?.feriados ?? []), [detalhe?.feriados]);
+  // Depois das 18h nada fica para hoje: as datas vão a partir do dia útil seguinte (pedido de 13/11/2026). A hora é
+  // relida a cada minuto, para a trava valer mesmo com a tela aberta desde antes das 18h.
+  const [hora, setHora] = useState(() => horaEmSaoPaulo());
+  useEffect(() => {
+    const relogio = setInterval(() => setHora(horaEmSaoPaulo()), 60_000);
+    return () => clearInterval(relogio);
+  }, []);
+  const primeiroDia = detalhe ? primeiroDiaDaTarefa(detalhe.hoje, hora, ehDiaUtil) : "";
+  const depoisDoHorario = Boolean(detalhe && primeiroDia > detalhe.hoje);
   // A fatal conta só dias úteis fora do recesso forense; Enviar/Revisar/Protocolar seguem o expediente.
   const contaPrazo = useMemo(() => criarCalendarioDePrazo(detalhe?.feriados ?? []), [detalhe?.feriados]);
   /**
@@ -968,11 +996,14 @@ export function EditorVistagem({
   }
 
   function linhaPronta(linha: Linha): boolean {
+    // Depois das 18h, a data escolhida para hoje não deixa vistar (o Prazo com fatal tem o Enviar calculado).
+    const dataEscolhida = linha.etiqueta !== "PRAZO" || semFatal(linha);
+    if (depoisDoHorario && dataEscolhida && linha.data && linha.data < primeiroDia) return false;
     return linhaCompleta(linha, semFatal(linha), pedeObservacao(linha), pedeLimite(linha));
   }
 
   function dataSemFatal(): string {
-    return detalhe ? dataDaTarefaSemPrazo(detalhe.publicacao.dataPublicacao, detalhe.hoje, ehDiaUtil) : "";
+    return detalhe ? dataDaTarefaSemPrazo(detalhe.publicacao.dataPublicacao, primeiroDia, ehDiaUtil) : "";
   }
 
   function alterar(chave: number, mudanca: Partial<Linha>) {
@@ -1475,6 +1506,13 @@ export function EditorVistagem({
                       {esocial} pede a tarefa {TAREFA_ESOCIAL}, mas esse tipo de tarefa não está na lista do VIOS para Trabalhista. Avise a controladoria.
                     </Aviso>
                   ) : null}
+                  {depoisDoHorario ? (
+                    // Pedido de 13/11/2026: depois do expediente, nenhuma tarefa fica para o mesmo dia.
+                    <Aviso tom="alerta" titulo={`Já passou das ${HORA_LIMITE_DO_DIA}h`}>
+                      Nenhuma tarefa pode ficar para hoje: as datas vão a partir de {formatarData(primeiroDia)} ({partesDaData(primeiroDia).semana}), o
+                      próximo dia útil. No calendário, os dias antes dele ficam bloqueados. A data fatal do prazo não muda.
+                    </Aviso>
+                  ) : null}
                 </div>
 
                 {/* Cada tarefa num cartão próprio, sobre o fundo da coluna: fica claro onde uma termina e a outra começa. */}
@@ -1494,8 +1532,9 @@ export function EditorVistagem({
                     const comFatal = prazo && !semFatal(linha);
                     // Sem tarefa escolhida (ou sem o fluxo carregado) mostra o fluxo padrão; o servidor recalcula ao gravar.
                     const cadeiaFluxo = !tarefaId || detalhe.fluxosErro ? CADEIA_PADRAO : cadeiaDoFluxo(fluxo);
-                    // Nunca antes de hoje: prazo curto aperta a cadeia (Enviar hoje, Protocolar 1 dia útil antes da fatal).
-                    const cadeia = comFatal && linha.dataFatal ? datasDoPrazo(linha.dataFatal, ehDiaUtil, cadeiaFluxo, detalhe.hoje) : null;
+                    // Nunca antes de hoje (depois das 18h, do dia útil seguinte): prazo curto aperta a cadeia (Enviar no
+                    // primeiro dia, Protocolar 1 dia útil antes da fatal), como o servidor ao gravar.
+                    const cadeia = comFatal && linha.dataFatal ? datasDoPrazo(linha.dataFatal, ehDiaUtil, cadeiaFluxo, primeiroDia) : null;
                     // O VIOS data o fluxo a partir da data que recebe (no Prazo, o Enviar) e do dia do lançamento.
                     const previstas = fluxo
                       ? fluxoPrevisto(
@@ -1503,7 +1542,7 @@ export function EditorVistagem({
                           fluxo,
                           ehDiaUtil,
                           {
-                            hoje: detalhe.hoje,
+                            hoje: primeiroDia,
                             datas: Object.values(linha.fluxoDatas),
                             // Regra da insolvência: o VIOS cria o Protocolar 2 dias depois do Enviar antecipado; ele fica 1 dia útil antes da fatal.
                             apertada: cadeia?.ajustada
@@ -1529,8 +1568,11 @@ export function EditorVistagem({
                           )
                         : []
                       : linha.data
-                        ? avisosDaData(linha.data, detalhe.hoje)
+                        ? depoisDoHorario && linha.data < primeiroDia
+                          ? [avisoDepoisDoHorario(primeiroDia)]
+                          : avisosDaData(linha.data, detalhe.hoje)
                         : [];
+                    const dataAntesDoPermitido = Boolean(!comFatal && depoisDoHorario && linha.data && linha.data < primeiroDia);
                     const IconeClasse = ICONE_CLASSE[linha.etiqueta];
                     const pronta = linhaPronta(linha);
                     const observacaoPedida = pedeObservacao(linha);
@@ -1738,6 +1780,9 @@ export function EditorVistagem({
                                     rotulo={`Data da tarefa ${indice + 1} no VIOS`}
                                     valor={linha.data}
                                     ehDiaUtil={ehDiaUtil}
+                                    // Depois das 18h, hoje (e antes) fica bloqueado no calendário.
+                                    min={depoisDoHorario ? primeiroDia : undefined}
+                                    invalido={dataAntesDoPermitido}
                                     onChange={(data) => alterar(linha.chave, { data })}
                                   />
                                 </div>
@@ -1899,6 +1944,7 @@ export function EditorVistagem({
                               }
                               pessoas={pessoasDoCampo}
                               hoje={detalhe.hoje}
+                              primeiroDia={primeiroDia}
                               ehDiaUtil={ehDiaUtil}
                               onMudarData={(caminho, data) => mudarNoFluxo(linha, caminho, { data })}
                               onMudarResponsaveis={(caminho, nomes) => mudarNoFluxo(linha, caminho, { responsaveis: nomes })}
@@ -1963,6 +2009,7 @@ export function EditorVistagem({
         key={horarioDe ?? "fechado"}
         linha={linhas.find((linha) => linha.chave === horarioDe) ?? null}
         hoje={detalhe.hoje}
+        primeiroDia={primeiroDia}
         ehDiaUtil={ehDiaUtil}
         onConfirmar={(data, hora) => {
           if (horarioDe !== null) alterar(horarioDe, { data, hora });

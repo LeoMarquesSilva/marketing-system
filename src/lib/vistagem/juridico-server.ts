@@ -2,8 +2,10 @@ import "server-only";
 
 import {
   ETIQUETAS_AGENDAMENTO,
+  horaEmSaoPaulo,
   nomesDasPessoas,
   pessoasDaArea,
+  primeiroDiaDaTarefa,
   responsavelSugerido,
   responsaveisNaArea,
   tarefasPermitidas,
@@ -57,7 +59,7 @@ import {
   sintesesDaPasta,
   type CatalogoArea,
 } from "./sama";
-import { COLUNAS_PUBLICACAO, admin, falhou, hojeEmSaoPaulo, horaEmSaoPaulo, publicacaoResumo, resolverPendencia, type ArquivoDaPublicacao, type PublicacaoRow } from "./server";
+import { COLUNAS_PUBLICACAO, admin, falhou, hojeEmSaoPaulo, publicacaoResumo, resolverPendencia, type ArquivoDaPublicacao, type PublicacaoRow } from "./server";
 import type {
   AgendadasJuridicoResposta,
   AgendamentoResumo,
@@ -527,6 +529,9 @@ export async function salvarVistagem(
   const [feriados, arvoreInteira] = await Promise.all([carregarFeriados(), carregarArvoreVios()]);
   const arvore = arvoreDaPublicacao(arvoreInteira, catalogos, publicacao);
   const daPublicacao = prazoDaPublicacao(publicacao, catalogos, feriados);
+  // Depois das 18h nada fica para hoje: as datas vão a partir do dia útil seguinte (pedido de 13/11/2026).
+  const hoje = hojeEmSaoPaulo();
+  const primeiroDia = primeiroDiaDaTarefa(hoje, horaEmSaoPaulo(), criarCalendario(feriados));
   const validacao = validarAgendamentos(entrada.agendamentos, {
     tarefas: catalogo.tarefas,
     usuarios: catalogo.usuarios,
@@ -534,7 +539,8 @@ export async function salvarVistagem(
     cadeiaDaTarefa: (tarefaId, prazo) => cadeiaDoFluxo(fluxoDoPrazo(montarFluxo(tarefaId, arvore), prazo, daPublicacao)),
     caminhosDaTarefa: (tarefaId) => caminhosDoFluxo(montarFluxo(tarefaId, arvore)),
     semPrazoProprio: (tarefaId) => semPrazoProprio(montarFluxo(tarefaId, arvore)),
-    hoje: hojeEmSaoPaulo(),
+    hoje: primeiroDia,
+    depoisDoHorario: primeiroDia > hoje ? primeiroDia : null,
   });
   if (!validacao.ok) throw new VistagemError(validacao.erros.join(" "));
   // Trabalhista: classificação eSocial (só na publicação, não vai para o VIOS) e, se pedir, a tarefa Inserir E-social.

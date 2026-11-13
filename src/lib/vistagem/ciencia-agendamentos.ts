@@ -1,4 +1,4 @@
-import { chaveNome, escritorioDaArea } from "./agendamento";
+import { HORA_LIMITE_DO_DIA, chaveNome, escritorioDaArea } from "./agendamento";
 import { somarDiasUteis } from "./dias-uteis";
 import type { FluxoDaTarefa, TarefaDoFluxo } from "./fluxo-vios";
 
@@ -28,16 +28,13 @@ export function ehCienciaDosAgendamentos(nome: string | null | undefined): boole
   return chaveNome(nome).replace(/^\d+\s*\.\s*/, "") === "CIENCIA DOS AGENDAMENTOS";
 }
 
-/** A partir desta hora (Brasília), a vistagem já grava a Ciência dos Agendamentos para o dia útil seguinte. */
-export const HORA_CIENCIA_NO_DIA_SEGUINTE = 18;
-
 /**
  * Data da Ciência dos Agendamentos que o Orquestra cria, na hora da vistagem: o próprio dia; às 18h ou depois (ou num
  * dia sem expediente), o dia útil seguinte, porque a Conferência só manda ao robô no próximo dia de trabalho
  * (pedido de 13/11/2026). Sem isso, a Conferência via a data da vistagem, já passada, e ajustava à mão pelo lápis.
  */
 export function dataDaCienciaNaVistagem(hoje: string, hora: number, ehDiaUtil: (iso: string) => boolean): string {
-  return hora >= HORA_CIENCIA_NO_DIA_SEGUINTE || !ehDiaUtil(hoje) ? somarDiasUteis(hoje, 1, ehDiaUtil) : hoje;
+  return hora >= HORA_LIMITE_DO_DIA || !ehDiaUtil(hoje) ? somarDiasUteis(hoje, 1, ehDiaUtil) : hoje;
 }
 
 /**

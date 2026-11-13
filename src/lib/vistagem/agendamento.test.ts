@@ -30,6 +30,9 @@ import {
   revisorFicaNaTarefa,
   tarefasPermitidas,
   validarAgendamentos,
+  avisoDepoisDoHorario,
+  horaEmSaoPaulo,
+  primeiroDiaDaTarefa,
   type EtapaVios,
   type OpcaoVios,
 } from "./agendamento";
@@ -668,5 +671,71 @@ describe("contagemPadraoDaPublicacao", () => {
     expect(contagemPadraoDaPublicacao("Recuperação de Crédito", ["Carteira GPR", "Crédito Ativo", "RC-Insolvência"])).toBe("corridos");
     expect(contagemPadraoDaPublicacao("Cível | Insolvência", ["RC-Insolvência"])).toBe("corridos");
     expect(contagemPadraoDaPublicacao(null, ["RC-Insolvência"])).toBe("corridos");
+  });
+});
+
+describe("depois das 18h, nenhuma tarefa fica para hoje (pedido de 13/11/2026)", () => {
+  // 20/11/2026 (sexta) é feriado.
+  const ehDiaUtil = criarCalendario(["2026-11-20"]);
+  const contexto = {
+    tarefas: {
+      PRAZO: tarefasPermitidas(ETAPAS, "PRAZO"),
+      PROVIDENCIA: tarefasPermitidas(ETAPAS, "PROVIDENCIA"),
+      COMPROMISSO: tarefasPermitidas(ETAPAS, "COMPROMISSO"),
+    },
+    usuarios: USUARIOS,
+    ehDiaUtil,
+    cadeiaDaTarefa: () => CADEIA_PADRAO,
+  };
+  // Sexta, 13/11, às 20h: o primeiro dia é a segunda, 16/11.
+  const depois = { ...contexto, hoje: "2026-11-16", depoisDoHorario: "2026-11-16" };
+  const providencia = (data: string) => ({ etiqueta: "PROVIDENCIA" as const, tarefa: "1. CIÊNCIA DOS AGENDAMENTOS", tarefaId: "321", data, responsavel: "Advogada Exemplo" });
+
+  it("o primeiro dia é hoje até as 17h59 e o dia útil seguinte a partir das 18h", () => {
+    expect(primeiroDiaDaTarefa("2026-11-12", 17, ehDiaUtil)).toBe("2026-11-12");
+    expect(primeiroDiaDaTarefa("2026-11-12", 18, ehDiaUtil)).toBe("2026-11-13");
+    expect(primeiroDiaDaTarefa("2026-11-13", 20, ehDiaUtil)).toBe("2026-11-16");
+    expect(primeiroDiaDaTarefa("2026-11-19", 19, ehDiaUtil)).toBe("2026-11-23");
+    expect(avisoDepoisDoHorario("2026-11-16")).toBe("Já passou das 18h: a data tem de ser a partir de 16/11/2026 (próximo dia útil).");
+  });
+
+  it("a hora é a de São Paulo, não a do computador", () => {
+    expect(horaEmSaoPaulo(new Date("2026-11-13T21:30:00Z"))).toBe(18);
+    expect(horaEmSaoPaulo(new Date("2026-11-14T02:59:00Z"))).toBe(23);
+    expect(horaEmSaoPaulo(new Date("2026-11-13T20:59:00Z"))).toBe(17);
+  });
+
+  it("recusa a data de hoje (ou antes) na Providência e no Compromisso, e aceita a partir do dia útil seguinte", () => {
+    const hoje = validarAgendamentos([providencia("2026-11-13")], depois);
+    expect(hoje.ok).toBe(false);
+    if (!hoje.ok) expect(hoje.erros).toContain("Tarefa 1: Já passou das 18h: a data tem de ser a partir de 16/11/2026 (próximo dia útil).");
+    const compromisso = validarAgendamentos(
+      [{ etiqueta: "COMPROMISSO", tarefa: "AUDIÊNCIA DE INSTRUÇÃO", tarefaId: "54", data: "2026-11-13", hora: "19:00", responsavel: "Advogada Exemplo" }],
+      depois
+    );
+    expect(compromisso.ok).toBe(false);
+    expect(validarAgendamentos([providencia("2026-11-16")], depois).ok).toBe(true);
+  });
+
+  it("recusa data do fluxo antes do primeiro dia", () => {
+    const resultado = validarAgendamentos(
+      [{ ...providencia("2026-11-16"), fluxoDatas: [{ caminho: ["2. REVISAR"], data: "2026-11-13" }] }],
+      depois
+    );
+    expect(resultado.ok).toBe(false);
+    if (!resultado.ok) expect(resultado.erros.join(" ")).toContain("Fluxo das tarefas: Já passou das 18h");
+  });
+
+  it("no Prazo, a fatal não é travada e o Enviar não fica antes do primeiro dia", () => {
+    const resultado = validarAgendamentos(
+      [{ etiqueta: "PRAZO", tarefa: "CONTESTAÇÃO", tarefaId: "900", data: "", dataFatal: "2026-11-17", responsavel: "Advogada Exemplo", revisor: "Revisor Exemplo" }],
+      depois
+    );
+    expect(resultado.ok).toBe(true);
+    if (resultado.ok) expect(resultado.itens[0].data).toBe("2026-11-16");
+  });
+
+  it("antes das 18h (sem a trava), a data de hoje continua valendo", () => {
+    expect(validarAgendamentos([providencia("2026-11-13")], { ...contexto, hoje: "2026-11-13" }).ok).toBe(true);
   });
 });
