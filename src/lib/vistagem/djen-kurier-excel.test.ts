@@ -99,7 +99,7 @@ describe("linhasDaPlanilha", () => {
       "Por quê": "Mesmo ID de comunicação nos dois.",
       "Kurier: ID da comunicação": 101,
       "Kurier: situação": "No jurídico, para vistar",
-      "Kurier: origem": "Orquestra",
+      "Kurier: origem": "ORQESTRAI",
       "DJEN: ID da comunicação": "101",
       "Entra nos totais": "Sim",
     });

@@ -949,7 +949,7 @@ export async function pedirAtualizacaoSintese(
   if (trecho && trecho.length < 3) throw new VistagemError("O trecho da síntese precisa de ao menos 3 caracteres.");
   if (trecho.length > LIMITE_TRECHO_SINTESE) throw new VistagemError(`O trecho passa de ${LIMITE_TRECHO_SINTESE} caracteres.`);
   const autor = (await nomesDosUsuarios([authUserId])).get(authUserId)?.trim();
-  if (!autor) throw new VistagemError("Seu nome não está no cadastro de usuários do Orquestra.", 403);
+  if (!autor) throw new VistagemError("Seu nome não está no cadastro de usuários do ORQESTRAI.", 403);
   // Sem a base ou sem as listas, não trava o pedido: quem recusa é o VIOS, como antes.
   const [pedidas, cadastro, listaDeMaterias, listaDeSistemas] = await Promise.all([
     sintesesDaPasta(publicacao.pasta_ci),

@@ -201,7 +201,7 @@ export function motivoDaCentral(publicacao: PublicacaoParaCentral, tarefas: Tare
     `PUBLICAÇÃO:\n\n${publicacao.teor.trim()}`,
   ];
   const texto = blocos.filter(Boolean).join("\n\n");
-  return texto.length > LIMITE_MOTIVO ? `${texto.slice(0, LIMITE_MOTIVO)}\n\n[Publicação cortada: veja o texto inteiro no Orquestra.]` : texto;
+  return texto.length > LIMITE_MOTIVO ? `${texto.slice(0, LIMITE_MOTIVO)}\n\n[Publicação cortada: veja o texto inteiro no ORQESTRAI.]` : texto;
 }
 
 /** Campos do item, nos nomes internos da lista. `agora`: ISO da criação. */

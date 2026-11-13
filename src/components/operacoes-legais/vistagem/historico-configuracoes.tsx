@@ -21,6 +21,12 @@ import {
   porArea,
   type Diferenca,
 } from "@/lib/vistagem/historico-configuracoes";
+import {
+  agruparPorDia,
+  dataHoraDoMomento,
+  horaDoMomento,
+  tituloDoDia,
+} from "@/lib/vistagem/datas-do-historico";
 import type { PainelDeRegras } from "@/lib/vistagem/regras-server";
 import {
   TODAS_AS_AREAS_VISTAGEM,
@@ -28,7 +34,6 @@ import {
 } from "@/lib/vistagem/vistadores";
 import { AvatarPessoa } from "./combobox-busca";
 import { IconeArea } from "./marcas";
-import { formatarDataHora } from "./publicacao-ui";
 import { Painel } from "./ui";
 
 /**
@@ -65,28 +70,6 @@ const TIPO_CURTO: Record<TipoDeDemanda, string> = {
   normal: "normais",
   risco: "risco",
 };
-
-const FUSO = "America/Sao_Paulo";
-const diaDe = (iso: string) =>
-  new Date(iso).toLocaleDateString("sv-SE", { timeZone: FUSO });
-const horaDe = (iso: string) =>
-  new Intl.DateTimeFormat("pt-BR", {
-    timeZone: FUSO,
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(iso));
-
-function tituloDoDia(dia: string, hoje: string, ontem: string): string {
-  const [ano, mes, numero] = dia.split("-").map(Number);
-  const semana = new Intl.DateTimeFormat("pt-BR", {
-    weekday: "long",
-    timeZone: "UTC",
-  }).format(new Date(Date.UTC(ano, mes - 1, numero)));
-  const data = `${semana}, ${String(numero).padStart(2, "0")}/${String(mes).padStart(2, "0")}`;
-  if (dia === hoje) return `Hoje · ${data}`;
-  if (dia === ontem) return `Ontem · ${data}`;
-  return data;
-}
 
 function IconeDaArea({ area }: { area: string }) {
   if (area === TODAS_AS_AREAS_VISTAGEM) {
@@ -333,15 +316,7 @@ export function HistoricoDasConfiguracoes({
       (comSemMudanca || item.diferencas.length > 0),
   );
 
-  const hoje = diaDe(new Date(agora).toISOString());
-  const ontem = diaDe(new Date(agora - 86_400_000).toISOString());
-  const dias = new Map<string, typeof visiveis>();
-  for (const item of visiveis)
-    dias.set(diaDe(item.alteradoEm), [
-      ...(dias.get(diaDe(item.alteradoEm)) ?? []),
-      item,
-    ]);
-  const porDia = [...dias.entries()];
+  const porDia = agruparPorDia(visiveis, (item) => item.alteradoEm);
 
   if (!itens.length) {
     return (
@@ -418,11 +393,11 @@ export function HistoricoDasConfiguracoes({
         porDia.map(([dia, doDia]) => (
           <section
             key={dia}
-            aria-label={tituloDoDia(dia, hoje, ontem)}
+            aria-label={tituloDoDia(dia, agora)}
             className="space-y-2"
           >
             <h3 className="text-xs font-semibold uppercase tracking-wide text-[#285f7a]">
-              {tituloDoDia(dia, hoje, ontem)}
+              {tituloDoDia(dia, agora)}
             </h3>
             <ol className="space-y-2">
               {doDia.map((item) => {
@@ -449,10 +424,10 @@ export function HistoricoDasConfiguracoes({
                         </p>
                         <time
                           dateTime={item.alteradoEm}
-                          title={formatarDataHora(item.alteradoEm)}
+                          title={dataHoraDoMomento(item.alteradoEm)}
                           className="shrink-0 text-xs tabular-nums text-muted-foreground"
                         >
-                          {horaDe(item.alteradoEm)}
+                          {horaDoMomento(item.alteradoEm)}
                         </time>
                       </div>
                       <div className="px-4 py-3">

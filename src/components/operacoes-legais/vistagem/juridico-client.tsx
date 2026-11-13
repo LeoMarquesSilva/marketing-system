@@ -200,7 +200,7 @@ function CienciaDoOrquestra({
   const varias = linhas.filter((linha) => linha.tarefa).length > 1;
   return (
     <div className="px-4 pb-3">
-      <Aviso tom="info" titulo="O Orquestra cria também a 1. CIÊNCIA DOS AGENDAMENTOS">
+      <Aviso tom="info" titulo="O ORQESTRAI cria também a 1. CIÊNCIA DOS AGENDAMENTOS">
         O fluxo do VIOS {varias ? "destas tarefas" : "desta tarefa"} não cria a Ciência dos Agendamentos: ela vai junto, com a data do
         lançamento (vistada a partir das 18h, no dia útil seguinte), para {ciencia.responsaveis.map((pessoa) => pessoa.nome).join(", ")}
         {ciencia.revisorNoLugarDe.length ? ` (na Reestruturação, o revisor no lugar de ${ciencia.revisorNoLugarDe.join(", ")}, estagiário)` : ""}.

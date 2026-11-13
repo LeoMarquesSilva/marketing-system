@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { comFotosEContexto } from "@/lib/vistagem/historico-server";
 import { exigirPerfilVistagem, respostaDeErro } from "@/lib/vistagem/http";
 import { historicoDaPublicacao } from "@/lib/vistagem/juridico-server";
 
@@ -15,7 +16,7 @@ export async function GET(_request: Request, context: RouteContext) {
   try {
     const { areas } = await exigirPerfilVistagem();
     const { id } = await context.params;
-    return NextResponse.json({ historico: await historicoDaPublicacao(id, areas) });
+    return NextResponse.json({ historico: await comFotosEContexto(id, await historicoDaPublicacao(id, areas)) });
   } catch (error) {
     return respostaDeErro(error, "Não foi possível carregar o histórico da publicação.");
   }

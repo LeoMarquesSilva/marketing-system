@@ -55,7 +55,7 @@ export function FaixaArquivoDoDia({
   }
   return (
     <Aviso tom="erro" titulo={`O arquivo da Kurier de ${data} ainda não chegou`} acao={acao}>
-      O Orquestra tenta de novo entre 9h e 10h. Se não vier, confira o e-mail da Kurier e o Power Automate, ou envie o .xlsx {onde}.
+      O ORQESTRAI tenta de novo entre 9h e 10h. Se não vier, confira o e-mail da Kurier e o Power Automate, ou envie o .xlsx {onde}.
     </Aviso>
   );
 }

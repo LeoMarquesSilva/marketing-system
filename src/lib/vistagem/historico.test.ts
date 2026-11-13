@@ -49,13 +49,15 @@ describe("montarHistorico", () => {
       })
     );
     expect(eventos.map((evento) => evento.tipo)).toEqual(["chegada", "triagem", "transferencia", "vistagem"]);
-    expect(eventos[1].detalhes).toEqual(["Pasta CI 26160 (PROCESSO PRINCIPAL)", "Área: Cível"]);
+    expect(eventos[1]).toMatchObject({ detalhes: [], area: "Cível", pasta: { ci: "26160", vinculo: "PROCESSO PRINCIPAL" } });
     expect(eventos[2]).toMatchObject({
-      titulo: "Transferida de Cível para Cível | Insolvência",
+      titulo: "Transferida de área",
       por: "Ana",
       detalhes: ["Motivo: Empresa com medida de reestruturação."],
+      areaDe: "Cível",
+      area: "Cível | Insolvência",
     });
-    expect(eventos[3].detalhes).toEqual(["CIÊNCIA NF · 10/11/2026 · Ligia"]);
+    expect(eventos[3]).toMatchObject({ detalhes: [], tarefas: [{ tarefa: "CIÊNCIA NF", data: "2026-11-10", responsavel: "Ligia" }] });
   });
 
   it("reabertura para alterar antes da Conferência aparece com quem reabriu (pedido de 11/11/2026)", () => {
@@ -91,10 +93,10 @@ describe("montarHistorico", () => {
       "chegada", "triagem", "vistagem", "devolucao", "inconsistencia", "revistagem", "ajuste", "conferencia",
     ]);
     // Depois da devolução, as tarefas aparecem na nova vistagem, não na primeira.
-    expect(eventos[2].detalhes).toEqual(["Observação: ok"]);
-    expect(eventos[5].detalhes).toEqual(["CIÊNCIA NF · 10/11/2026 · Ligia"]);
+    expect(eventos[2]).toMatchObject({ detalhes: ["Observação: ok"], tarefas: [] });
+    expect(eventos[5].tarefas).toEqual([{ tarefa: "CIÊNCIA NF", data: "2026-11-10", responsavel: "Ligia" }]);
     expect(eventos[3].detalhes).toEqual(["Motivo: data errada", "Foi devolvida 2 vezes; aqui aparece a última."]);
-    expect(eventos[6].detalhes).toEqual(["Data: 10/11 → 11/11"]);
+    expect(eventos[6].mudancas).toEqual([{ campo: "Data", de: "10/11", para: "11/11" }]);
   });
 
   it("junta as tarefas enviadas juntas e mostra o que o robô respondeu em cada uma", () => {
@@ -132,7 +134,7 @@ describe("montarHistorico", () => {
         central: { itemId: "64033", enviadaEm: "2026-11-09T15:00:02Z", erro: null, tentativaEm: null },
       })
     );
-    expect(criada.find((evento) => evento.tipo === "triagem")?.detalhes).toEqual(["Pendência: sem pasta no VIOS", "Área: Cível | Insolvência"]);
+    expect(criada.find((evento) => evento.tipo === "triagem")).toMatchObject({ detalhes: ["Pendência: sem pasta no VIOS"], area: "Cível | Insolvência", pasta: null });
     expect(criada.find((evento) => evento.tipo === "conferencia")?.titulo).toBe("Conferida e enviada à Central (abertura de pasta)");
     expect(criada.find((evento) => evento.tipo === "central")?.detalhes).toEqual(["Item 64033"]);
 
@@ -152,6 +154,6 @@ describe("montarHistorico", () => {
     );
     expect(eventos[0]).toMatchObject({ titulo: "Colada na vistagem", detalhes: ["Publicada em 09/11/2026"] });
     expect(eventos[1].detalhes).toEqual(["Ficou pendente na triagem"]);
-    expect(eventos[2]).toMatchObject({ tipo: "pendencia", por: "Bia", detalhes: ["Pasta CI 26160 (PROCESSO PRINCIPAL)", "Área: Cível | Insolvência"] });
+    expect(eventos[2]).toMatchObject({ tipo: "pendencia", por: "Bia", detalhes: [], area: "Cível | Insolvência", pasta: { ci: "26160", vinculo: "PROCESSO PRINCIPAL" } });
   });
 });

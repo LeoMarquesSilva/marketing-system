@@ -41,6 +41,6 @@ export function mensagemArquivoAtrasado(situacao: ArquivoDoDia): string {
   const [ano, mes, dia] = situacao.hoje.split("-");
   const data = `${dia}/${mes}/${ano}`;
   return situacao.erro
-    ? `⚠️ Vistagem: o arquivo da Kurier de ${data} chegou, mas a importação falhou (${situacao.erro}). Confira na aba Gestão das publicações do Orquestra e reenvie o arquivo.`
-    : `⚠️ Vistagem: o arquivo da Kurier de ${data} ainda não chegou ao Orquestra (nem na 2ª tentativa, entre 9h e 10h). Confira o e-mail da Kurier e o Power Automate; dá para enviar o .xlsx pela aba Gestão das publicações.`;
+    ? `⚠️ Vistagem: o arquivo da Kurier de ${data} chegou, mas a importação falhou (${situacao.erro}). Confira na aba Gestão das publicações do ORQESTRAI e reenvie o arquivo.`
+    : `⚠️ Vistagem: o arquivo da Kurier de ${data} ainda não chegou ao ORQESTRAI (nem na 2ª tentativa, entre 9h e 10h). Confira o e-mail da Kurier e o Power Automate; dá para enviar o .xlsx pela aba Gestão das publicações.`;
 }

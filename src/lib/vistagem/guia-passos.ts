@@ -68,7 +68,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alvo: "vg-gestao-hoje",
       titulo: "O arquivo de hoje",
       texto:
-        "Primeiro, veja se o arquivo da Kurier de hoje chegou: Chegou, Importando, Com erro, Não chegou ou Aguardando. O Orquestra busca sozinho no SharePoint entre 7h e 8h, tenta de novo entre 9h e 10h nos dias úteis, e já faz a triagem.",
+        "Primeiro, veja se o arquivo da Kurier de hoje chegou: Chegou, Importando, Com erro, Não chegou ou Aguardando. O ORQESTRAI busca sozinho no SharePoint entre 7h e 8h, tenta de novo entre 9h e 10h nos dias úteis, e já faz a triagem.",
     },
     {
       id: "buscar",
@@ -303,7 +303,7 @@ export const PASSOS_GUIA: Record<ModuloGuia, PassoGuia[]> = {
       alternativa: "vj-vazio",
       titulo: "Envie para a conferência",
       texto:
-        "Com todas as tarefas prontas, clique em \"Enviar para conferência\": a controladoria confere e o robô lança no VIOS (sem pasta no VIOS, depois de conferida vira pedido de abertura de pasta na Central do SharePoint). Se nada criar a Ciência dos Agendamentos, o Orquestra acrescenta sozinho (menos quando a vistagem é só CIÊNCIA NF, VERIFICAR RENÚNCIA ou SESSÃO DE JULGAMENTO), e a próxima publicação abre.",
+        "Com todas as tarefas prontas, clique em \"Enviar para conferência\": a controladoria confere e o robô lança no VIOS (sem pasta no VIOS, depois de conferida vira pedido de abertura de pasta na Central do SharePoint). Se nada criar a Ciência dos Agendamentos, o ORQESTRAI acrescenta sozinho (menos quando a vistagem é só CIÊNCIA NF, VERIFICAR RENÚNCIA ou SESSÃO DE JULGAMENTO), e a próxima publicação abre.",
     },
     {
       id: "vistado",
