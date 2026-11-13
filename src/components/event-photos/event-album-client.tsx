@@ -31,6 +31,7 @@ import {
   fetchEventAlbum,
   fetchFaceReferences,
   rejectFaceMatch,
+  setPhotosGuestHidden,
   updateEventAlbum,
   uploadEventPhoto,
 } from "@/lib/event-photos/api";
@@ -63,6 +64,7 @@ function PhotoTile({
   index,
   selecting,
   selected,
+  showGuestHidden,
   onOpen,
   onToggle,
 }: {
@@ -70,6 +72,8 @@ function PhotoTile({
   index: number;
   selecting: boolean;
   selected: boolean;
+  /** Marketing vê quais fotos estão fora do link de convidado. */
+  showGuestHidden: boolean;
   onOpen: (index: number) => void;
   onToggle: (id: string) => void;
 }) {
@@ -113,6 +117,15 @@ function PhotoTile({
           aria-hidden="true"
         >
           {selected && <Check className="h-3.5 w-3.5" />}
+        </span>
+      )}
+      {showGuestHidden && photo.guestHidden && (
+        <span
+          className="absolute bottom-1.5 left-1.5 inline-flex items-center gap-1 rounded-full bg-[#04202f]/80 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur-sm"
+          title="Não aparece no link de convidado"
+        >
+          <EyeOff className="h-3 w-3" aria-hidden="true" />
+          Só equipe
         </span>
       )}
     </button>
@@ -254,6 +267,25 @@ export function EventAlbumClient({ slug }: { slug: string }) {
     }
   }
 
+  /** Tira as selecionadas do link de convidado; se todas já estão fora, devolve. */
+  async function toggleGuestHidden() {
+    if (!album || selected.size === 0) return;
+    const ids = [...selected];
+    const hide = !ids.every((id) => photos.find((p) => p.id === id)?.guestHidden);
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = new Set(await setPhotosGuestHidden(album.id, ids, hide));
+      setPhotos((prev) => prev.map((p) => (updated.has(p.id) ? { ...p, guestHidden: hide } : p)));
+      setSelected(new Set());
+      setSelecting(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erro ao atualizar as fotos.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function setCover(photo: EventPhoto) {
     if (!album) return;
     setBusy(true);
@@ -312,6 +344,9 @@ export function EventAlbumClient({ slug }: { slug: string }) {
       : view === "maybe"
         ? photos.filter((p) => maybePhotoIds.has(p.id))
         : photos;
+  const selectedAllGuestHidden =
+    selected.size > 0 && photos.every((p) => !selected.has(p.id) || p.guestHidden);
+  const guestHiddenCount = photos.filter((p) => p.guestHidden).length;
 
   /** Na lista filtrada a foto respondida some: a ampliada passa para a próxima. */
   function advanceAfterReview(remaining: number) {
@@ -473,6 +508,17 @@ export function EventAlbumClient({ slug }: { slug: string }) {
                     }
                   >
                     {selected.size === visiblePhotos.length ? "Limpar" : "Selecionar todas"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={selected.size === 0 || busy}
+                    onClick={() => void toggleGuestHidden()}
+                    title="O link de convidado (Compartilhar) não mostra as fotos escondidas; a equipe continua vendo."
+                  >
+                    {selectedAllGuestHidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                    {selectedAllGuestHidden ? "Mostrar aos convidados" : "Esconder dos convidados"}
                   </Button>
                   <Button
                     type="button"
@@ -662,6 +708,7 @@ export function EventAlbumClient({ slug }: { slug: string }) {
               index={index}
               selecting={selecting}
               selected={selected.has(photo.id)}
+              showGuestHidden={canManage}
               onOpen={setOpenIndex}
               onToggle={toggleSelected}
             />
@@ -704,6 +751,7 @@ export function EventAlbumClient({ slug }: { slug: string }) {
           albumId={album.id}
           albumTitle={album.title}
           isPublished={album.isPublished}
+          guestHiddenCount={guestHiddenCount}
           open={shareOpen}
           onOpenChange={setShareOpen}
         />

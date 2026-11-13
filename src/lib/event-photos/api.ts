@@ -308,6 +308,16 @@ export async function updateAlbumShare(
   return data.share;
 }
 
+/** Tira (hidden=true) ou devolve fotos do link de convidado. */
+export async function setPhotosGuestHidden(albumId: string, photoIds: string[], hidden: boolean): Promise<string[]> {
+  const data = await jsonRequest<{ updatedIds: string[] }>(
+    `/api/event-photos/albums/${albumId}/guest-visibility`,
+    { method: "POST", body: JSON.stringify({ photoIds, hidden }) },
+    "Erro ao atualizar as fotos."
+  );
+  return data.updatedIds;
+}
+
 export async function searchShareLogos(query: string): Promise<Array<{ name: string; logoUrl: string }>> {
   const data = await jsonRequest<{ logos: Array<{ name: string; logoUrl: string }> }>(
     `/api/event-photos/shares/logos?q=${encodeURIComponent(query)}`,

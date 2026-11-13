@@ -144,6 +144,41 @@ export async function updateAlbumShare(
   return share;
 }
 
+/** Refaz na hora as páginas de convidado de um álbum (fotos escondidas ou mostradas). */
+async function revalidateAlbumGalleries(albumId: string): Promise<void> {
+  const db = await getServerDb();
+  const { data } = await db
+    .from("event_photo_album_shares")
+    .select("token")
+    .eq("album_id", albumId)
+    .is("revoked_at", null);
+  for (const row of data ?? []) revalidatePath(galleryPath(row.token as string));
+}
+
+/** Esconde ou mostra fotos no link de convidado (a equipe continua vendo todas no álbum). */
+export async function setPhotosGuestHidden(
+  actor: Actor,
+  albumId: string,
+  input: { photoIds?: unknown; hidden?: unknown }
+): Promise<string[]> {
+  assertManager(actor);
+  if (!Array.isArray(input.photoIds) || input.photoIds.length === 0 || input.photoIds.length > 1000) {
+    throw new PhotoHttpError(400, "Selecione entre 1 e 1000 fotos.");
+  }
+  if (typeof input.hidden !== "boolean") throw new PhotoHttpError(400, "Informe se as fotos ficam escondidas.");
+  const ids = [...new Set(input.photoIds.map(String))];
+  const db = await getServerDb();
+  const { data, error } = await db
+    .from("event_photos")
+    .update({ guest_hidden: input.hidden })
+    .eq("album_id", albumId)
+    .in("id", ids)
+    .select("id");
+  if (error) throw new PhotoHttpError(500, error.message);
+  await revalidateAlbumGalleries(albumId);
+  return (data ?? []).map((row) => row.id as string);
+}
+
 interface GalleryPhotoRow {
   id: string;
   public_url: string;
@@ -185,6 +220,7 @@ export async function loadPublicGallery(token: string): Promise<PublicGallery | 
       .from("event_photos")
       .select("id, public_url, preview_url, original_filename, width, height, size_bytes, created_at")
       .eq("album_id", album.id)
+      .eq("guest_hidden", false)
       .order("created_at")
       .range(from, from + 999);
     if (photosError) throw new Error(photosError.message);

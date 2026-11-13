@@ -22,6 +22,8 @@ export interface EventPhoto {
   width: number | null;
   height: number | null;
   sizeBytes: number | null;
+  /** Fora do link de convidado (ex.: retrato individual de colaborador). */
+  guestHidden: boolean;
   createdAt: string;
 }
 

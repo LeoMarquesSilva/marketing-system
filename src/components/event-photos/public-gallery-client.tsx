@@ -53,6 +53,7 @@ function asEventPhoto(photo: PublicGalleryPhoto): EventPhoto {
     width: photo.width,
     height: photo.height,
     sizeBytes: photo.sizeBytes,
+    guestHidden: false,
     createdAt: "",
   };
 }

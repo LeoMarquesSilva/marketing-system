@@ -193,12 +193,15 @@ export function AlbumShareDialog({
   albumId,
   albumTitle,
   isPublished,
+  guestHiddenCount,
   open,
   onOpenChange,
 }: {
   albumId: string;
   albumTitle: string;
   isPublished: boolean;
+  /** Fotos marcadas como "Só equipe" (fora do link). */
+  guestHiddenCount: number;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -281,6 +284,12 @@ export function AlbumShareDialog({
           <p className="flex items-start gap-1.5 text-xs leading-relaxed text-[#456370]">
             <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#2f8f6a]" aria-hidden />
             A página do convidado mostra só as fotos: nada do reconhecimento facial nem do sistema.
+          </p>
+          <p className="flex items-start gap-1.5 text-xs leading-relaxed text-[#456370]">
+            <EyeOff className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#347796]" aria-hidden />
+            {guestHiddenCount > 0
+              ? `${guestHiddenCount} foto${guestHiddenCount === 1 ? "" : "s"} marcada${guestHiddenCount === 1 ? "" : "s"} como “Só equipe” não aparece${guestHiddenCount === 1 ? "" : "m"} no link. Para mudar, use Selecionar › Esconder/Mostrar aos convidados.`
+              : "Para deixar alguma foto fora do link (ex.: retratos da equipe), use Selecionar › Esconder dos convidados."}
           </p>
         </DialogHeader>
 
