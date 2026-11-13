@@ -15,6 +15,7 @@ import {
   formatRsvpDeadline,
   isRsvpOpen,
   isRsvpTransport,
+  personalDeadline,
   type RsvpAnswer,
   type RsvpPanelData,
   type RsvpPerson,
@@ -29,7 +30,7 @@ const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 /** O e-mail do convite pode estar num domínio e o do login no outro. */
 const OFFICE_DOMAINS = new Set(["bpplaw.com.br", "bismarchipires.com.br"]);
 const INVITE_SELECT =
-  "id, name, email, hr_employee_id, confirmation_status, transport, responded_at, plus_one_allowed, plus_one, plus_one_name, dietary_info, dietary_restrictions";
+  "id, name, email, hr_employee_id, confirmation_status, transport, responded_at, plus_one_allowed, plus_one, plus_one_name, dietary_info, dietary_restrictions, rsvp_closes_at";
 
 export function rsvpAdminClient(): SupabaseClient {
   if (!serviceKey) throw new RhHttpError("SUPABASE_SERVICE_ROLE_KEY não configurada.", 503, "SERVICE_UNAVAILABLE");
@@ -65,6 +66,8 @@ interface InviteRow {
   plus_one_name: string | null;
   dietary_info: unknown;
   dietary_restrictions: string | null;
+  /** Prazo próprio (prorrogação individual); só vale se for mais longo que o do evento. */
+  rsvp_closes_at: string | null;
 }
 
 /** Restrições gravadas no próprio convite: {"guest": ..., "plusOne": ...} (mesmo formato do convite dos clientes). */
@@ -200,7 +203,7 @@ function attendingOf(status: string | undefined): boolean | null {
 
 async function buildView(db: SupabaseClient, eventId: string, viewer: RsvpViewer): Promise<RsvpView> {
   const employee = await findEmployee(db, viewer);
-  const [invite, closesAt, firstName, dietary] = await Promise.all([
+  const [invite, eventClosesAt, firstName, dietary] = await Promise.all([
     findInvite(db, eventId, viewer, employee),
     loadDeadline(db, eventId),
     greetingName(db, employee, viewer),
@@ -208,6 +211,7 @@ async function buildView(db: SupabaseClient, eventId: string, viewer: RsvpViewer
   ]);
   const stored = storedDietary(invite);
   const going = invite?.confirmation_status === "confirmado";
+  const closesAt = personalDeadline(eventClosesAt, invite?.rsvp_closes_at);
   return {
     eligible: Boolean(employee || invite),
     firstName,
@@ -238,10 +242,12 @@ export async function getRsvpView(eventId: string): Promise<RsvpView> {
 export async function getRsvpPending(eventId: string): Promise<{ pending: boolean; closesAt: string | null }> {
   const db = rsvpAdminClient();
   const viewer = await resolveRsvpViewer(db);
-  const closesAt = await loadDeadline(db, eventId);
-  if (!isRsvpOpen(closesAt)) return { pending: false, closesAt };
+  const eventClosesAt = await loadDeadline(db, eventId);
+  if (!eventClosesAt) return { pending: false, closesAt: null };
   const employee = await findEmployee(db, viewer);
   const invite = await findInvite(db, eventId, viewer, employee);
+  const closesAt = personalDeadline(eventClosesAt, invite?.rsvp_closes_at);
+  if (!isRsvpOpen(closesAt)) return { pending: false, closesAt };
   return { pending: Boolean(employee || invite) && !invite?.responded_at, closesAt };
 }
 
@@ -249,13 +255,14 @@ export async function getRsvpPending(eventId: string): Promise<{ pending: boolea
 export async function saveRsvp(eventId: string, answer: RsvpAnswer): Promise<RsvpView> {
   const db = rsvpAdminClient();
   const viewer = await resolveRsvpViewer(db);
-  const closesAt = await loadDeadline(db, eventId);
+  const eventClosesAt = await loadDeadline(db, eventId);
+  const employee = await findEmployee(db, viewer);
+  const invite = await findInvite(db, eventId, viewer, employee);
+  const closesAt = personalDeadline(eventClosesAt, invite?.rsvp_closes_at);
   if (!isRsvpOpen(closesAt)) {
     const when = closesAt ? ` em ${formatRsvpDeadline(closesAt)}` : "";
     throw new RhHttpError(`O prazo para responder terminou${when}. Fale com a organização da festa.`, 409, "CLOSED");
   }
-  const employee = await findEmployee(db, viewer);
-  const invite = await findInvite(db, eventId, viewer, employee);
   if (!employee && !invite) {
     throw new RhHttpError("Esta confirmação é só para a equipe do escritório.", 403, "NOT_INVITED");
   }
