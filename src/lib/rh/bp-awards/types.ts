@@ -16,7 +16,10 @@ export interface AwardCategory {
   /** Letra do CIVIL. */
   letter: string;
   name: string;
-  /** Texto do valor, como na pesquisa aprovada pelo RH. */
+  /**
+   * O que a pessoa demonstra nesse valor, com as palavras definidas pelo RH em
+   * 13/11/2026 (aparece na votação e no telão). Não reescrever.
+   */
   description: string;
 }
 
@@ -26,35 +29,35 @@ export const AWARD_CATEGORIES: AwardCategory[] = [
     letter: "C",
     name: "Cliente no Centro",
     description:
-      "Conhecemos nossos clientes a fundo, entendemos que cada um tem particularidades únicas e entregamos soluções personalizadas com presença, empatia e consistência.",
+      "Demonstra interesse genuíno em conhecer o cliente a fundo, compreendendo suas particularidades e necessidades. Atua com escuta ativa e entrega soluções personalizadas, eficientes e relevantes. Constrói relacionamentos de longo prazo com empatia, presença e consistência.",
   },
   {
     key: "inovacao",
     letter: "I",
     name: "Inovação Constante",
     description:
-      "Somos inquietos, tecnológicos e conectados ao futuro, antecipando tendências e buscando inteligência operacional para transformar desafios em oportunidades.",
+      "Age com curiosidade e inquietude positiva, buscando constantemente novas formas de fazer melhor. Acompanha tendências, propõe melhorias e aplica tecnologia e inteligência operacional para transformar desafios em oportunidades. Mantém atuação moderna e estratégica.",
   },
   {
     key: "valorizacao",
     letter: "V",
     name: "Valorização das Pessoas",
     description:
-      "Nossa cultura é feita por pessoas e para pessoas: valorizamos a diversidade, promovemos um ambiente inclusivo e estimulamos o crescimento dos talentos.",
+      "Trata colegas, clientes e parceiros com respeito, empatia e equidade. Valoriza a diversidade e promove um ambiente colaborativo e inclusivo. Estimula o crescimento dos outros e constrói relações saudáveis e de confiança.",
   },
   {
     key: "inteligencia",
     letter: "I",
     name: "Inteligência em Resultados",
     description:
-      "Entregamos com excelência e rapidez, com soluções inteligentes que realmente fazem a diferença para nossos clientes, com agilidade, qualidade e consistência.",
+      "Entrega com excelência e agilidade, buscando não apenas cumprir metas, mas gerar soluções inteligentes e eficazes. Mantém foco em qualidade, consistência e impacto real para o cliente e para o negócio.",
   },
   {
     key: "liberdade",
     letter: "L",
     name: "Liberdade para Criar",
     description:
-      "Acreditamos que o novo nasce do desafio, estimulando ideias ousadas e criativas com autonomia e segurança.",
+      "Demonstra autonomia e proatividade para propor ideias novas e soluções criativas. Sente-se à vontade para desafiar o status quo com responsabilidade e método. Atua com coragem e visão integrada, contribuindo para o crescimento coletivo.",
   },
 ];
 
