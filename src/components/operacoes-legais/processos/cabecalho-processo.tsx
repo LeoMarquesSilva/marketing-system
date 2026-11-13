@@ -11,6 +11,7 @@ import { AvatarPessoa } from "../vistagem/combobox-busca";
 import { Celula, LinkPastaVios } from "../vistagem/ficha-pasta";
 import { LogoGrupo, SeloArea } from "../vistagem/marcas";
 import { Selo } from "../vistagem/ui";
+import { type CapaConsultada, LinhaDoTempo } from "./linha-do-tempo";
 import { BarraPreenchimento } from "./preenchimento-ui";
 
 /** Grupos de campos que formam a capa do processo (ficam no cabeçalho; o resto fica no corpo da ficha). */
@@ -69,8 +70,8 @@ const CHAVE_PAGINA = "processos:capa-pagina";
 interface PaginaDaCapa {
   chave: string;
   titulo: string;
-  /** Campos que o "Editar" da página abre. */
-  grupos: GrupoCampo[];
+  /** Campos que o "Editar" da página abre (sem campos, a página não tem Editar). */
+  grupos?: GrupoCampo[];
   conteudo: ReactNode;
 }
 
@@ -143,15 +144,17 @@ function PaginasDaCapa({ paginas, onEditar }: { paginas: PaginaDaCapa[]; onEdita
           <Button type="button" size="icon-sm" variant="ghost" className="text-[#347796]" onClick={() => ir(indice + 1)} aria-label="Próxima página da capa">
             <ChevronRight />
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="ml-1 border-[#b9d3dd] bg-white font-semibold text-[#285f7a] hover:border-[#47cdd0] hover:bg-[#e8f8f8] [&_svg]:text-[#347796]"
-            onClick={() => onEditar(paginas[indice].grupos, paginas[indice].titulo)}
-          >
-            <PencilLine /> Editar
-          </Button>
+          {paginas[indice].grupos?.length ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="ml-1 border-[#b9d3dd] bg-white font-semibold text-[#285f7a] hover:border-[#47cdd0] hover:bg-[#e8f8f8] [&_svg]:text-[#347796]"
+              onClick={() => onEditar(paginas[indice].grupos ?? [], paginas[indice].titulo)}
+            >
+              <PencilLine /> Editar
+            </Button>
+          ) : null}
         </div>
       </div>
       <div id={`${id}-pagina`} role="tabpanel" aria-labelledby={`${id}-aba-${paginas[indice].chave}`}>
@@ -232,7 +235,16 @@ function Polo({ rotulo, partes }: { rotulo: string; partes: Parte[] }) {
  * no VIOS e a equipe (com foto), e embaixo, em caixas, o processo (ação, fase, valor, partes) e o órgão com as datas.
  * Todos os campos da capa aparecem aqui, em páginas; cada bloco tem o seu "Editar" e "Editar capa" abre todos de uma vez. Recolhida, fica uma linha de resumo.
  */
-export function CabecalhoDoProcesso({ processo, onEditar }: { processo: ProcessoDetalhe; onEditar: (grupos: GrupoCampo[], titulo: string) => void }) {
+export function CabecalhoDoProcesso({
+  processo,
+  onEditar,
+  onCapaConsultada,
+}: {
+  processo: ProcessoDetalhe;
+  onEditar: (grupos: GrupoCampo[], titulo: string) => void;
+  /** "Atualizar pelo DataJud" na linha do tempo também refaz as sugestões de capa: a ficha atualiza o painel. */
+  onCapaConsultada?: (resultado: CapaConsultada) => void;
+}) {
   /** Título de uma parte do quadro (Processo, Órgão e datas). */
   const subtitulo = (titulo: string) => <h3 className="col-span-full text-[11px] font-semibold uppercase tracking-wide text-[#285f7a]">{titulo}</h3>;
   const { valores, partes, preenchimento, fotos } = processo;
@@ -501,6 +513,11 @@ export function CabecalhoDoProcesso({ processo, onEditar }: { processo: Processo
                     </Celula>
                   </div>
                 ),
+              },
+              {
+                chave: "linha",
+                titulo: "Linha do tempo",
+                conteudo: <LinhaDoTempo processoId={processo.id} onConsultado={onCapaConsultada} />,
               },
             ]}
           />

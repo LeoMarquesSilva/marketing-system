@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",
+    "pdf-lib": "^1.17.1",
     "playwright": "^1.65.0"
   },
   "devDependencies": {

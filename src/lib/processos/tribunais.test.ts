@@ -34,10 +34,11 @@ describe("roboDoProcesso", () => {
     expect(roboDoProcesso("1012345-67.2023.8.26.0100", null)).toMatchObject({ sistema: "esaj", disponivel: true });
   });
 
-  it("respeita o sistema do cadastro: processo do TJSP no eproc ainda não tem robô", () => {
-    const robo = roboDoProcesso("1012345-67.2023.8.26.0100", "E-PROC");
-    expect(robo.disponivel).toBe(false);
-    expect(robo.motivo).toContain("eproc do TJSP");
+  it("respeita o sistema do cadastro: processo do TJSP no eproc vai para o conector do eproc", () => {
+    expect(roboDoProcesso("1012345-67.2023.8.26.0100", "E-PROC")).toMatchObject({ tribunal: "TJSP", sistema: "eproc", disponivel: true, motivo: null });
+    const santaCatarina = roboDoProcesso("5001234-56.2023.8.24.0001", "E-PROC");
+    expect(santaCatarina.disponivel).toBe(false);
+    expect(santaCatarina.motivo).toContain("eproc do TJSC");
   });
 
   it("atende o e-SAJ do TJCE, do TJAL e do TJMS", () => {

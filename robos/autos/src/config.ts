@@ -24,6 +24,15 @@ export interface Config {
   /** Pausa entre duas consultas ao DataJud. */
   pausaCapaMs: number;
   esaj: { login: ModoDeLogin; certificado: string; usuario: string; senha: string };
+  /** eproc (TJSP): login pelo SSO do tribunal. Sem EPROC_LOGIN, vale o modo do e-SAJ. */
+  eproc: { login: ModoDeLogin; usuario: string; senha: string };
+  /**
+   * Fonte do código de 2 fatores, montada pelos donos da conta (ex.: um webhook do n8n que gera o TOTP de cada
+   * tribunal). Com `url` preenchida, o robô busca o código ali, por sistema (`?sistema=eproc`, `?sistema=pdpj`…),
+   * e digita sozinho; sem ela, espera a pessoa. O segredo do 2FA NÃO fica aqui: fica na fonte. Isto só guarda o
+   * endereço e o token de acesso dela.
+   */
+  webhook2fa: { url: string; header: string; token: string };
   pastas: { perfil: string; downloads: string; diagnostico: string };
 }
 
@@ -48,6 +57,10 @@ export function lerConfig(): Config {
   if (login !== "certificado" && login !== "senha" && login !== "manual") throw new Error('ESAJ_LOGIN deve ser "certificado", "senha" ou "manual".');
   if (login === "senha" && (!texto("ESAJ_USUARIO") || !texto("ESAJ_SENHA"))) throw new Error("No modo senha, defina ESAJ_USUARIO e ESAJ_SENHA no .env desta máquina.");
 
+  const loginEproc = (texto("EPROC_LOGIN") || login).toLowerCase();
+  if (loginEproc !== "certificado" && loginEproc !== "senha" && loginEproc !== "manual") throw new Error('EPROC_LOGIN deve ser "certificado", "senha" ou "manual".');
+  if (loginEproc === "senha" && (!texto("EPROC_USUARIO") || !texto("EPROC_SENHA"))) throw new Error("No modo senha do eproc, defina EPROC_USUARIO e EPROC_SENHA no .env desta máquina.");
+
   return {
     orqestraiUrl,
     token,
@@ -61,6 +74,8 @@ export function lerConfig(): Config {
     capaDataJud: !/^(nao|não|0|false)$/i.test(texto("CAPA_DATAJUD")),
     pausaCapaMs: numero("PAUSA_CAPA_SEGUNDOS", 30) * 1000,
     esaj: { login, certificado: texto("ESAJ_CERTIFICADO"), usuario: texto("ESAJ_USUARIO"), senha: texto("ESAJ_SENHA") },
+    eproc: { login: loginEproc, usuario: texto("EPROC_USUARIO"), senha: texto("EPROC_SENHA") },
+    webhook2fa: { url: texto("ROBO_2FA_WEBHOOK_URL"), header: texto("ROBO_2FA_WEBHOOK_HEADER") || "x-robo-token", token: texto("ROBO_2FA_WEBHOOK_TOKEN") },
     pastas: { perfil: pasta("perfil"), downloads: pasta("downloads"), diagnostico: pasta("diagnostico") },
   };
 }

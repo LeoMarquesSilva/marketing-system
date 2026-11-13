@@ -240,7 +240,7 @@ function Ficha({ id }: { id: string }) {
     setOcupado("capa");
     setErro("");
     try {
-      const resposta = await processosApi.post<{ capa: { achou: boolean; sugestoes: number; aviso: string | null }; autos: AutosDoProcesso }>(`/${id}/capa`);
+      const resposta = await processosApi.post<{ capa: { achou: boolean; sugestoes: number; andamentos?: number; aviso: string | null }; autos: AutosDoProcesso }>(`/${id}/capa`);
       setAutos(resposta.autos);
       const { sugestoes, aviso } = resposta.capa;
       setFeito(
@@ -343,7 +343,14 @@ function Ficha({ id }: { id: string }) {
             </Link>
           </Button>
         </FaixaDoProcesso>
-        <CabecalhoDoProcesso processo={processo} onEditar={(grupos, titulo) => setDialogo({ tipo: "campos", grupos, titulo })} />
+        <CabecalhoDoProcesso
+          processo={processo}
+          onEditar={(grupos, titulo) => setDialogo({ tipo: "campos", grupos, titulo })}
+          onCapaConsultada={(resultado) => {
+            setAutos(resultado.autos);
+            void carregar();
+          }}
+        />
       </Painel>
 
       {feito ? <Aviso tom="sucesso">{feito}</Aviso> : null}
