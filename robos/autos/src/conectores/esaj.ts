@@ -1,8 +1,9 @@
-import { open, stat, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Page } from "playwright";
 import type { Pedido } from "../fila.ts";
-import { TRIBUNAIS_ESAJ, comecaComoPdf, ehPaginaDeLogin, ehPaginaDoProcesso, escolherCertificado, lerCnj, urlDaConsulta, urlDeLogin, type NumeroCnj, type TribunalEsaj } from "./esaj-urls.ts";
+import { clicar, conferirPdf, temCaptcha, visivel } from "./comum.ts";
+import { TRIBUNAIS_ESAJ, ehPaginaDeLogin, ehPaginaDoProcesso, escolherCertificado, lerCnj, urlDaConsulta, urlDeLogin, type NumeroCnj, type TribunalEsaj } from "./esaj-urls.ts";
 import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector } from "./tipos.ts";
 
 /**
@@ -17,8 +18,6 @@ import { FalhaDoConector, SegredoDeJustica, type Ambiente, type Conector } from 
  * - não baixa processo em segredo de justiça sem a liberação registrada no pedido;
  * - não tenta senha de processo: se o advogado não tem acesso aos autos, o pedido volta com erro.
  */
-
-const TAMANHO_MAXIMO = 200 * 1024 * 1024;
 
 const TELA = {
   login: {
@@ -35,7 +34,11 @@ const TELA = {
   },
   processo: {
     cabecalho: "#numeroProcesso, #containerDadosPrincipaisProcesso",
-    pasta: "#linkPasta",
+    // 1º grau: #linkPasta, com o endereço da pasta no href. 2º grau (cposg): #pbVisualizarAutos, com href "#"; um
+    // script confere o acesso e abre a pasta em outra janela.
+    pasta: "#linkPasta, #pbVisualizarAutos, a.linkPasta",
+    // 2º grau, advogado sem habilitação: em vez da pasta, o e-SAJ abre o pedido da senha do processo.
+    pedeSenha: "#popupSenhaProcesso, #senhaProcesso",
     semResultado: "#mensagemRetorno",
     incidentes: "#modalIncidentes",
     escolherIncidente: "#botaoEnviarIncidente",
@@ -53,52 +56,6 @@ const TELA = {
     baixar: "#btnDownloadDocumento",
   },
 } as const;
-
-/** Desafio visível na tela (reCAPTCHA, hCaptcha, Turnstile ou imagem). O robô só detecta: quem resolve é a pessoa. */
-async function temCaptcha(pagina: Page): Promise<boolean> {
-  const desafio = pagina.locator(
-    "iframe[src*='recaptcha'][src*='bframe'], iframe[src*='recaptcha'][src*='anchor'], iframe[src*='hcaptcha'], iframe[src*='challenges.cloudflare'], img[src*='captcha' i], input[name*='captcha' i]:not([type=hidden])"
-  );
-  const total = await desafio.count().catch(() => 0);
-  for (let i = 0; i < total; i += 1) {
-    if (await desafio.nth(i).isVisible().catch(() => false)) return true;
-  }
-  return false;
-}
-
-async function visivel(pagina: Page, seletor: string): Promise<boolean> {
-  return pagina.locator(seletor).first().isVisible().catch(() => false);
-}
-
-/** Clica no primeiro candidato que existir na tela; sem nenhum, guarda o diagnóstico e explica em que etapa parou. */
-async function clicar(ambiente: Ambiente, pagina: Page, candidatos: readonly string[], etapa: string, espera = 20_000): Promise<void> {
-  const limite = Date.now() + espera;
-  while (Date.now() < limite) {
-    for (const seletor of candidatos) {
-      const alvo = pagina.locator(seletor).first();
-      if (await alvo.isVisible().catch(() => false)) {
-        await alvo.click();
-        return;
-      }
-    }
-    await pagina.waitForTimeout(500);
-  }
-  const captura = await ambiente.diagnostico(pagina, etapa);
-  throw new FalhaDoConector(`A tela do e-SAJ mudou ou não carregou: não achei como ${etapa}. Diagnóstico guardado em ${captura}.`);
-}
-
-async function conferirPdf(arquivo: string): Promise<void> {
-  const { size } = await stat(arquivo);
-  const leitor = await open(arquivo, "r");
-  try {
-    const inicio = new Uint8Array(5);
-    await leitor.read(inicio, 0, 5, 0);
-    if (!comecaComoPdf(inicio)) throw new FalhaDoConector("O tribunal devolveu um arquivo que não é PDF (provável página de erro). Tente de novo mais tarde.");
-  } finally {
-    await leitor.close();
-  }
-  if (size > TAMANHO_MAXIMO) throw new FalhaDoConector(`O PDF dos autos tem ${Math.round(size / (1024 * 1024))} MB e passa do limite de 200 MB. Baixe em partes e anexe à mão.`);
-}
 
 /**
  * Há sessão aberta no e-SAJ? Não basta a página ter saído do login (a pessoa pode ter ido instalar a
@@ -291,13 +248,25 @@ class ConectorEsaj implements Conector {
     const { pagina, contexto } = ambiente;
     const link = pagina.locator(TELA.processo.pasta).first();
     if (!(await link.count())) throw new FalhaDoConector("O processo não tem pasta digital no e-SAJ (processo físico ou sem autos disponíveis).");
+    const semAcesso = "O e-SAJ pede a senha do processo para abrir os autos: o advogado do certificado não está habilitado neste processo. Anexe o PDF à mão.";
     const destino = (await link.getAttribute("href")) ?? "";
     if (/senha/i.test(destino)) {
       if (!(await sessaoAberta(pagina, this.base))) throw new FalhaDoConector("A sessão do e-SAJ caiu no meio do pedido. O robô faz o login de novo na próxima tentativa.");
-      throw new FalhaDoConector("O e-SAJ pede a senha do processo para abrir os autos: o advogado do certificado não está habilitado neste processo. Anexe o PDF à mão.");
+      throw new FalhaDoConector(semAcesso);
     }
     const janela = contexto.waitForEvent("page", { timeout: 25_000 }).catch(() => null);
     await link.click();
+    // No 2º grau a resposta ao clique é a janela da pasta ou o pedido de senha: vale o que aparecer primeiro.
+    const pediuSenha = pagina
+      .locator(TELA.processo.pedeSenha)
+      .first()
+      .waitFor({ state: "visible", timeout: 25_000 })
+      .then(
+        () => true,
+        () => false
+      );
+    const primeiro = await Promise.race([janela.then((aberta) => (aberta ? "janela" : "nada")), pediuSenha.then((pediu) => (pediu ? "senha" : "nada"))]);
+    if (primeiro === "senha") throw new FalhaDoConector(semAcesso);
     const nova = await janela;
     const pasta = nova ?? pagina;
     await pasta.waitForURL(/pastadigital/i, { timeout: 60_000 }).catch(async () => {
@@ -317,10 +286,10 @@ class ConectorEsaj implements Conector {
     }
     try {
       // Cada etapa espera a tela reagir à anterior: clicar em sequência, sem esperar, deixa a pasta digital no meio do caminho.
-      await clicar(ambiente, pasta, TELA.pasta.selecionarTodos, "selecionar todos os documentos da pasta digital", 60_000);
+      await clicar(ambiente, pasta, TELA.pasta.selecionarTodos, "selecionar todos os documentos da pasta digital", "e-SAJ", 60_000);
       await pasta.locator(TELA.pasta.marcados).first().waitFor({ state: "attached", timeout: 30_000 });
       await pasta.waitForTimeout(1_000);
-      await clicar(ambiente, pasta, TELA.pasta.pedirPdf, "pedir o PDF dos autos");
+      await clicar(ambiente, pasta, TELA.pasta.pedirPdf, "pedir o PDF dos autos", "e-SAJ");
       const continuar = pasta.locator(TELA.pasta.continuar[0]);
       await continuar.waitFor({ state: "visible", timeout: 30_000 });
       await pasta.locator(TELA.pasta.arquivoUnico).check();

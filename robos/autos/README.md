@@ -2,7 +2,7 @@
 
 Baixa os autos dos processos no tribunal e entrega o PDF ao ORQESTRAI, onde a IA lê e deixa sugestões para uma pessoa aprovar. Roda **fora da Vercel**, numa máquina do escritório, com Node e Playwright.
 
-Conectores prontos: **e-SAJ do TJSP, TJCE, TJAL e TJMS** (`src/conectores/esaj.ts`; endereços em `TRIBUNAIS_ESAJ`, em `esaj-urls.ts`). Os próximos (PJe, eproc, Projudi) entram em `src/conectores/`, um por sistema de tribunal.
+Conectores prontos: **e-SAJ do TJSP, TJCE, TJAL e TJMS** (`src/conectores/esaj.ts`; endereços em `TRIBUNAIS_ESAJ`, em `esaj-urls.ts`) e **eproc do TJSP** (`src/conectores/eproc.ts`; instalações em `INSTANCIAS_EPROC_TJSP`, em `eproc-urls.ts`). Os próximos (PJe, Projudi) entram em `src/conectores/`, um por sistema de tribunal.
 
 ## Como funciona
 
@@ -54,6 +54,8 @@ Edite o `.env`:
 | `ESAJ_LOGIN` | `certificado`, `senha` ou `manual` (veja abaixo). |
 | `ESAJ_CERTIFICADO` | Trecho do nome do certificado, como aparece na lista do e-SAJ (modo `certificado`). |
 | `ESAJ_USUARIO`, `ESAJ_SENHA` | Só no modo `senha`. |
+| `EPROC_LOGIN` | Login no eproc do TJSP: `certificado`, `senha` ou `manual`. Sem ela, vale o `ESAJ_LOGIN`. |
+| `EPROC_USUARIO`, `EPROC_SENHA` | Só no modo `senha` do eproc. |
 
 ### Modos de login no e-SAJ
 
@@ -62,6 +64,17 @@ Edite o `.env`:
 - `manual`: o robô só abre a página de login e espera uma pessoa entrar, do jeito que ela preferir.
 
 A sessão do e-SAJ vale enquanto o Chrome do robô estiver aberto: o tribunal usa um cookie de sessão, que se perde quando o navegador fecha. Por isso cada vez que o robô é iniciado há um login (no modo `certificado`, ele mesmo faz; nos outros, espera a pessoa). Deixar o robô rodando (`npm run robo`) evita logins repetidos.
+
+### eproc do TJSP
+
+O eproc do TJSP tem uma instalação por competência (1º grau cível; execução fiscal e Fazenda Pública; 2º grau), todas atrás do mesmo login, o SSO do tribunal. O robô procura o processo nessa ordem (o número com origem `0000` começa pelo 2º grau) e entra pela pesquisa rápida da capa.
+
+- **Login com certificado:** o robô clica em "Certificado digital" e o Chrome mostra a **lista de certificados dele** (janela do próprio navegador, que o robô não toca). A pessoa escolhe o certificado do advogado e clica em OK. Enquanto o Chrome do robô ficar aberto, a sessão vale para todas as instalações.
+- **Login com senha:** o robô preenche usuário e senha e para no código de verificação, se o tribunal pedir.
+- **Os autos:** o eproc não tem botão para baixar o processo inteiro. O robô baixa cada documento da tabela de eventos com a sessão do advogado e monta um PDF único, do evento mais antigo para o mais novo, com um índice na primeira página (evento, documento e página onde começa). Documento que não é PDF nem imagem (vídeo, áudio, página) vira uma página de aviso no lugar.
+- **Acesso à íntegra:** quando o advogado não representa nenhuma parte, o eproc só libera os documentos pela "Acesso à íntegra do processo", que é uma declaração de interesse (Res. CNJ 121/2010) com CAPTCHA. O robô não faz essa declaração: o pedido volta com erro e o PDF é anexado à mão.
+
+Para conferir a tela antes de baixar: `npm run inspecionar -- eproc 0000000-00.0000.8.26.0000`. Para abrir só a sessão: `npm run login -- eproc`.
 
 ## Primeiro uso
 

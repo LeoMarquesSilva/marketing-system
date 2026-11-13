@@ -32,6 +32,7 @@ const SISTEMA_PADRAO: Record<string, SistemaTribunal> = {
 /** Conectores do robô que já existem: sistema → tribunais atendidos (robos/autos/src/conectores). */
 export const CONECTORES_DISPONIVEIS: Partial<Record<SistemaTribunal, string[]>> = {
   esaj: ["TJSP", "TJCE", "TJAL", "TJMS"],
+  eproc: ["TJSP"],
 };
 
 export function digitosDoCnj(cnj: string | null | undefined): string | null {
