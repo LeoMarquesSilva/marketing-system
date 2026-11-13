@@ -55,6 +55,7 @@ import { QuemAcessaAVistagem } from "./acessos-vistagem";
 import { AvatarPessoa, ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
 import { CartaoEditavel, Interruptor } from "./configuracoes-ui";
 import { FluxoDoViosCartao } from "./fluxo-vios-cartao";
+import { HistoricoDasConfiguracoes } from "./historico-configuracoes";
 import { IconeArea } from "./marcas";
 import { formatarDataHora } from "./publicacao-ui";
 import { Aviso, Carregando, Painel, PainelTopo, Selo } from "./ui";
@@ -720,45 +721,6 @@ function TransparenciaDaIa({ painel, ia }: { painel: PainelDeRegras; ia: IaDocum
   );
 }
 
-function Historico({ painel }: { painel: PainelDeRegras }) {
-  if (!painel.historico.length) {
-    return (
-      <Painel>
-        <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
-          <span className="grid size-10 place-items-center rounded-md bg-[#e8f8f8] text-[#3e84a8]">
-            <History className="size-5" aria-hidden />
-          </span>
-          <p className="text-sm font-medium text-foreground">Nenhuma alteração ainda</p>
-          <p className="max-w-md text-sm text-muted-foreground">Tudo segue o padrão do sistema. Cada mudança feita aqui fica registrada com quem mudou e quando.</p>
-        </div>
-      </Painel>
-    );
-  }
-  return (
-    <Painel>
-      <ol className="divide-y divide-[#eef3f5]">
-        {painel.historico.map((item, indice) => (
-          <li key={`${item.chave}-${item.alteradoEm}-${indice}`} className="flex gap-3 px-4 py-3">
-            <AvatarPessoa nome={item.alteradoPor ?? "Admin"} className="size-8" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm text-foreground">
-                <span className="font-medium">{item.alteradoPor ?? "Admin"}</span> mudou{" "}
-                <span className="font-medium">{ROTULO_DA_CHAVE[item.chave as ChaveConfiguracao] ?? item.chave}</span>
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                <span className="line-through decoration-muted-foreground/60">{valorEmTexto(item.chave, item.valorAnterior)}</span>
-                {" → "}
-                <span className="text-foreground">{valorEmTexto(item.chave, item.valorNovo)}</span>
-              </p>
-            </div>
-            <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatarDataHora(item.alteradoEm)}</span>
-          </li>
-        ))}
-      </ol>
-    </Painel>
-  );
-}
-
 /* ------------------------------------------------------------------ tela */
 
 type Secao = "editaveis" | "esteira" | "ia" | "historico";
@@ -958,7 +920,7 @@ function Configuracoes() {
           ))}
         </div>
       ) : (
-        <Historico painel={painel} />
+        <HistoricoDasConfiguracoes painel={painel} />
       )}
 
       {editando === "vistadores" ? (
