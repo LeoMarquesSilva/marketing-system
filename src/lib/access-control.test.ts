@@ -345,6 +345,14 @@ describe("PE27 (planejamento estratégico)", () => {
     expect(firstAllowedPath(consultor)).toBe("/pe27");
   });
 
+  it("os consultores do PE27 abrem a confirmação da festa de 10 anos, e só ela fora do módulo", () => {
+    const consultor = { role: null, permissions: ["/pe27", "/pe27/editar"] };
+    expect(canAccessPath(consultor, "/festa-10-anos")).toBe(true);
+    expect(canAccessPath(consultor, "/festa-10-anos/outra")).toBe(false);
+    expect(canAccessPath(consultor, "/convites-festa")).toBe(false);
+    expect(canAccessPath(consultor, "/eventos")).toBe(false);
+  });
+
   it("a chave /pe27/editar libera decidir e editar, e o perfil continua restrito ao módulo", () => {
     const consultor = { role: null, permissions: ["/pe27", "/pe27/editar"] };
     expect(hasPe27Access(consultor)).toBe(true);

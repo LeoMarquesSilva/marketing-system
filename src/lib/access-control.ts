@@ -299,8 +299,11 @@ export function isDocumentarioPath(pathname: string): boolean {
   return pathname === DOCUMENTARIO_KEY || pathname.startsWith(`${DOCUMENTARIO_KEY}/`);
 }
 
-/** Fora do módulo, o perfil só-PE27 abre apenas a troca de senha. */
-const PE27_ONLY_EXTRA_PATHS = ["/alterar-senha"];
+/**
+ * Fora do módulo, o perfil só-PE27 abre apenas a troca de senha e a confirmação da festa
+ * de 10 anos (os consultores foram convidados e confirmam pela mesma página da equipe).
+ */
+const PE27_ONLY_EXTRA_PATHS = ["/alterar-senha", "/festa-10-anos"];
 
 /** Painel de Vistagem e agendamento: admin ou liberação manual em Usuários. */
 export function hasVistagemAccess(profile: AccessProfile | null | undefined): boolean {
