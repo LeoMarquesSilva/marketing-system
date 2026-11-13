@@ -4,12 +4,14 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/auth-context";
-import { canAccessPath, isVistagemPath, papelVistagem } from "@/lib/access-control";
+import { canAccessPath, hasOpsPlannerAccess, isVistagemPath, papelVistagem } from "@/lib/access-control";
 import { fetchCommentStats } from "@/lib/request-comments";
 import { fetchMarketingRequests } from "@/lib/marketing-requests";
 import { ABAS_COM_CONTAGEM, abaDoHref } from "@/lib/vistagem/contagens";
 import { useWhatsappUnreadCount } from "@/hooks/use-whatsapp-unread";
 import { REELS_APPROVAL_HREF, useReelDeliveriesPendingCount } from "@/hooks/use-reel-deliveries-pending";
+import { authFetch } from "@/lib/auth-fetch";
+import { OPS_PLANNER_PATH } from "@/lib/ops-planner/types";
 import { useVistagemContagens } from "@/hooks/use-vistagem-contagens";
 
 export type NavBadgeTone = "cyan" | "amber";
@@ -41,6 +43,25 @@ export function NavBadgesProvider({ children }: { children: React.ReactNode }) {
   const reelPending = useReelDeliveriesPendingCount(profile?.id ?? null);
   // Filas da Vistagem: só enquanto a pessoa está no módulo (é onde as abas aparecem).
   const vistagem = useVistagemContagens(Boolean(papelVistagem(profile)) && isVistagemPath(pathname), pathname);
+  const [opsDue, setOpsDue] = useState(0);
+  const opsPlanner = hasOpsPlannerAccess(profile);
+
+  useEffect(() => {
+    if (!opsPlanner) return;
+    const load = async () => {
+      try {
+        const response = await authFetch("/api/operacoes-legais/planner/badge");
+        if (!response.ok) return;
+        const data = (await response.json()) as { due?: number };
+        setOpsDue(data.due ?? 0);
+      } catch {
+        // Badge opcional: falhas temporarias nao devem derrubar a navegacao.
+      }
+    };
+    load();
+    const interval = setInterval(load, 60_000);
+    return () => clearInterval(interval);
+  }, [opsPlanner]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -69,6 +90,8 @@ export function NavBadgesProvider({ children }: { children: React.ReactNode }) {
       if (href === "/planner") return { value: pendingAlterations, tone: "amber" };
       if (href === "/trafego-pago") return { value: whatsappUnread, tone: "cyan" };
       if (href === REELS_APPROVAL_HREF) return { value: reelPending, tone: "cyan" };
+      // Minhas tarefas do Planner Ops: atrasadas + vencendo hoje.
+      if (href === OPS_PLANNER_PATH) return { value: opsPlanner ? opsDue : 0, tone: "amber" };
       const abaVistagem = abaDoHref(href);
       if (abaVistagem) {
         const value = vistagem?.[abaVistagem] ?? 0;
@@ -77,7 +100,7 @@ export function NavBadgesProvider({ children }: { children: React.ReactNode }) {
       }
       return EMPTY_BADGE;
     },
-    [pendingAlterations, whatsappUnread, reelPending, vistagem]
+    [pendingAlterations, whatsappUnread, reelPending, vistagem, opsDue, opsPlanner]
   );
 
   return <NavBadgesContext.Provider value={badgeFor}>{children}</NavBadgesContext.Provider>;
