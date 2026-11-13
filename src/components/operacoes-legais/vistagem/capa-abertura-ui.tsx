@@ -18,9 +18,11 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { authFetch } from "@/lib/auth-fetch";
 import { cn } from "@/lib/utils";
+import { chaveNome } from "@/lib/vistagem/agendamento";
 import {
   CAMPOS_DA_CAPA,
   montarCapa,
+  nomesDaLista,
   resumoDaCapa,
   ROTULO_DA_FONTE,
   type CampoDaCapa,
@@ -30,11 +32,13 @@ import {
   type DefinicaoDoCampo,
   type FonteDaCapa,
   type GrupoDaCapa,
+  type ListaDoVios,
   type ListasDoVios,
   type PedidoDeAbertura,
   rotuloDoCampoDoRobo,
   type StatusDaFonte,
 } from "@/lib/vistagem/capa-abertura";
+import { ComboboxBusca, type OpcaoBusca } from "./combobox-busca";
 import { Aviso, campoClasse, Secao } from "./ui";
 
 export type EstadoDataJud = { carregando: true } | { carregando: false; resultado: (CapaDoDataJud & { ms: number }) | null; erro: string | null };
@@ -476,7 +480,6 @@ export function CapaDaAberturaView({
             <CartaoDoGrupo titulo="Escritório" campos={porGrupo("escritorio")} {...{ capa, editando, setEditando, onEditar }} />
           </div>
         </div>
-        <Listas listas={capa.listas} />
       </div>
 
       <footer className="flex flex-wrap items-center gap-x-5 gap-y-1.5 border-t border-[#e6eef0] px-5 py-3 text-xs text-muted-foreground">
@@ -514,19 +517,23 @@ function Fonte({ nome, status, detalhe, vazio }: { nome: string; status: StatusD
   );
 }
 
-/** As listas do VIOS que viram sugestão ao editar (usuários, matérias e sistemas). */
-function Listas({ listas }: { listas: ListasDoVios }) {
-  return (
-    <>
-      {(Object.keys(listas) as (keyof ListasDoVios)[]).map((nome) => (
-        <datalist key={nome} id={`capa-lista-${nome}`}>
-          {listas[nome].map((opcao) => (
-            <option key={opcao} value={opcao} />
-          ))}
-        </datalist>
-      ))}
-    </>
-  );
+const TITULO_DA_LISTA: Record<ListaDoVios, string> = {
+  usuarios: "Usuários do VIOS",
+  materias: "Matérias do VIOS",
+  sistemas: "Sistemas do tribunal",
+  clientes: "Clientes com pasta no VIOS",
+  acoes: "Ações usadas no VIOS",
+  etiquetas: "Etiquetas usadas no VIOS",
+};
+
+/** As opções da lista do campo; nos clientes, os do grupo da publicação primeiro, com o grupo ao lado. */
+export function opcoesDaLista(lista: ListaDoVios, listas: ListasDoVios, grupo: string | null): OpcaoBusca[] {
+  if (lista !== "clientes") return nomesDaLista(listas, lista).map((nome) => ({ id: nome, nome }));
+  const chaveDoGrupo = chaveNome(grupo);
+  const doGrupo = (clienteGrupo: string | null) => Boolean(chaveDoGrupo) && chaveNome(clienteGrupo) === chaveDoGrupo;
+  return [...(listas.clientes ?? [])]
+    .sort((a, b) => Number(doGrupo(b.grupo)) - Number(doGrupo(a.grupo)))
+    .map((cliente) => ({ id: cliente.nome, nome: cliente.nome, detalhe: cliente.grupo?.replace(/^grupo\s+/i, "") ?? null }));
 }
 
 type PropsDoCartao = {
@@ -541,8 +548,16 @@ type PropsDoCartao = {
 function CartaoDoGrupo({ titulo, campos, capa, editando, setEditando, onEditar }: PropsDoCartao) {
   const pendentes = campos.filter((campo) => campo.conferir).length;
   const largos = camposLargos(campos);
+  // Com um campo em edição, a lista de busca dele pode passar da borda do cartão.
+  const comEdicao = campos.some((campo) => campo.chave === editando);
   return (
-    <section aria-label={titulo} className="overflow-hidden rounded-lg border border-[#dce9eb] bg-white shadow-[0_1px_2px_rgba(16,41,58,0.05)]">
+    <section
+      aria-label={titulo}
+      className={cn(
+        "rounded-lg border border-[#dce9eb] bg-white shadow-[0_1px_2px_rgba(16,41,58,0.05)]",
+        comEdicao ? "overflow-visible" : "overflow-hidden"
+      )}
+    >
       <div className="flex items-center justify-between gap-2 border-b border-[#e6eef0] px-4 py-2.5">
         <h3 className="text-xs font-semibold uppercase tracking-normal text-[#285f7a]">{titulo}</h3>
         {pendentes ? <span className="text-[11px] font-medium text-amber-700">{pendentes} para conferir</span> : null}
@@ -558,6 +573,8 @@ function CartaoDoGrupo({ titulo, campos, capa, editando, setEditando, onEditar }
             onEditar={() => setEditando(campo.chave)}
             onFechar={() => setEditando(null)}
             onGravar={onEditar}
+            listas={capa.listas}
+            grupo={capa.dados.grupo}
           />
         ))}
       </div>
@@ -573,6 +590,8 @@ function CampoView({
   onEditar,
   onFechar,
   onGravar,
+  listas,
+  grupo,
 }: {
   campo: CampoDaCapa;
   largo: boolean;
@@ -581,6 +600,8 @@ function CampoView({
   onEditar: () => void;
   onFechar: () => void;
   onGravar: AoEditarCampo;
+  listas: ListasDoVios;
+  grupo: string | null;
 }) {
   const vazioObrigatorio = campo.obrigatorio && !campo.valor;
   const [desfazendo, setDesfazendo] = useState(false);
@@ -624,7 +645,7 @@ function CampoView({
       </div>
 
       {editando ? (
-        <EditorDoCampo campo={campo} onFechar={onFechar} onGravar={onGravar} />
+        <EditorDoCampo campo={campo} listas={listas} grupo={grupo} onFechar={onFechar} onGravar={onGravar} />
       ) : (
         <>
           <p
@@ -637,6 +658,12 @@ function CampoView({
           >
             {campo.valor ? (campo.chave === "valor" ? `R$ ${campo.valor}` : campo.valor) : vazioObrigatorio ? "Obrigatório: preencher" : "Vazio"}
           </p>
+          {campo.foraDaLista?.length ? (
+            <p className="mt-0.5 flex items-start gap-1 text-[11px] leading-snug text-amber-800">
+              <TriangleAlert className="mt-px size-3 shrink-0" aria-hidden />
+              <span>Fora da lista do VIOS: {campo.foraDaLista.join("; ")}. Conferir o cadastro no VIOS.</span>
+            </p>
+          ) : null}
           {campo.editado ? (
             <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-sky-800">
               <span>
@@ -667,9 +694,25 @@ function CampoView({
   );
 }
 
-/** O campo em edição: seletor (lista fechada), sugestões (listas do VIOS) ou texto; Enter grava, Esc cancela. */
-function EditorDoCampo({ campo, onFechar, onGravar }: { campo: CampoDaCapa; onFechar: () => void; onGravar: AoEditarCampo }) {
+/**
+ * O campo em edição: seletor (lista curta), busca na lista do VIOS (clientes, ações, pessoas, matérias, etiquetas) ou
+ * texto; Enter grava, Esc cancela.
+ */
+function EditorDoCampo({
+  campo,
+  listas,
+  grupo,
+  onFechar,
+  onGravar,
+}: {
+  campo: CampoDaCapa;
+  listas: ListasDoVios;
+  grupo: string | null;
+  onFechar: () => void;
+  onGravar: AoEditarCampo;
+}) {
   const definicao: DefinicaoDoCampo = CAMPOS_DA_CAPA[campo.chave];
+  const opcoes = useMemo(() => (definicao.lista ? opcoesDaLista(definicao.lista, listas, grupo) : []), [definicao.lista, listas, grupo]);
   const [valor, setValor] = useState(campo.valor ?? "");
   const [gravando, setGravando] = useState(false);
   const [erro, setErro] = useState("");
@@ -709,6 +752,26 @@ function EditorDoCampo({ campo, onFechar, onGravar }: { campo: CampoDaCapa; onFe
         ))}
       </select>
     );
+  } else if (definicao.lista && opcoes.length) {
+    const comuns = {
+      opcoes,
+      rotulo,
+      titulo: TITULO_DA_LISTA[definicao.lista],
+      permitirOutro: Boolean(definicao.aceitaForaDaLista),
+      autoFocus: true,
+    };
+    controle = definicao.multiplo ? (
+      <EscolhaDeVarios {...comuns} valor={valor} onChange={setValor} />
+    ) : (
+      <ComboboxBusca
+        {...comuns}
+        valor={valor}
+        onChange={setValor}
+        placeholder="Buscar na lista do VIOS"
+        permitirVazio
+        pessoas={definicao.lista === "usuarios"}
+      />
+    );
   } else if (definicao.longo) {
     controle = (
       <textarea
@@ -728,8 +791,6 @@ function EditorDoCampo({ campo, onFechar, onGravar }: { campo: CampoDaCapa; onFe
         aria-label={rotulo}
         className={cn(campoClasse, "h-9")}
         value={valor}
-        list={definicao.lista ? `capa-lista-${definicao.lista}` : undefined}
-        placeholder={definicao.lista ? "Escreva para buscar na lista do VIOS" : undefined}
         onChange={(evento) => setValor(evento.target.value)}
         onKeyDown={teclas}
       />
@@ -754,4 +815,58 @@ function EditorDoCampo({ campo, onFechar, onGravar }: { campo: CampoDaCapa; onFe
     </div>
   );
 }
-
+/** Vários valores ("a; b"): cada um vira uma etiqueta no campo, com o x para tirar; a busca acrescenta. */
+function EscolhaDeVarios({
+  valor,
+  onChange,
+  opcoes,
+  rotulo,
+  titulo,
+  permitirOutro,
+  autoFocus,
+}: {
+  valor: string;
+  onChange: (valor: string) => void;
+  opcoes: OpcaoBusca[];
+  rotulo: string;
+  titulo: string;
+  permitirOutro: boolean;
+  autoFocus: boolean;
+}) {
+  const itens = valor.split(";").map((item) => item.trim()).filter(Boolean);
+  const jaTem = (nome: string) => itens.some((item) => chaveNome(item) === chaveNome(nome));
+  const escolhidos = itens.map((item) => (
+    <span
+      key={item}
+      className="inline-flex max-w-full items-center gap-0.5 rounded-full bg-[#e8f8f8] py-0.5 pl-2 pr-0.5 text-xs font-medium text-[#285f7a] ring-1 ring-inset ring-[#47cdd0]/30"
+    >
+      <span className="truncate">{item}</span>
+      <button
+        type="button"
+        aria-label={`Tirar ${item}`}
+        className="grid size-5 shrink-0 place-items-center rounded-full hover:bg-[#47cdd0]/20"
+        onMouseDown={(evento) => {
+          evento.preventDefault();
+          onChange(itens.filter((outro) => outro !== item).join("; "));
+        }}
+      >
+        <X className="size-3" aria-hidden />
+      </button>
+    </span>
+  ));
+  return (
+    <ComboboxBusca
+      opcoes={opcoes.filter((opcao) => !jaTem(opcao.nome))}
+      valor=""
+      onChange={(nome) => {
+        if (nome && !jaTem(nome)) onChange([...itens, nome].join("; "));
+      }}
+      rotulo={rotulo}
+      titulo={titulo}
+      placeholder={itens.length ? "Acrescentar…" : "Buscar na lista do VIOS"}
+      permitirOutro={permitirOutro}
+      autoFocus={autoFocus}
+      antes={escolhidos.length ? <>{escolhidos}</> : null}
+    />
+  );
+}

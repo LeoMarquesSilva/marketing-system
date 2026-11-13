@@ -9,6 +9,7 @@ import {
   ehChaveDaCapa,
   lerCapaDoEsaj,
   lerCnj,
+  listasDasPastas,
   montarCapa,
   problemasParaOVios,
   resumoDaCapa,
@@ -111,6 +112,18 @@ async function parDasPastasDoGrupo(grupo: string | null, area: string | null, us
   return [...contagem.values()].sort((a, b) => b.pastas - a.pastas)[0] ?? null;
 }
 
+let listasEmCache: { origem: Awaited<ReturnType<typeof carregarTodasAsPastas>>; listas: ReturnType<typeof listasDasPastas> } | null = null;
+
+/**
+ * Clientes, ações e etiquetas das ~35 mil pastas. Montar leva uns 400 ms de CPU: fica guardado enquanto o cache das
+ * pastas (30 min) devolver a mesma lista.
+ */
+async function listasDoProcessoCompleto(): Promise<ReturnType<typeof listasDasPastas>> {
+  const pastas = await carregarTodasAsPastas();
+  if (listasEmCache?.origem !== pastas) listasEmCache = { origem: pastas, listas: listasDasPastas(pastas) };
+  return listasEmCache.listas;
+}
+
 /** Usuários do VIOS sem repetir: a mesma pessoa aparece em várias áreas do catálogo (e a sigla tem de achar uma só). */
 async function usuariosDoVios(): Promise<CatalogoArea["usuarios"]> {
   const catalogo = await carregarCatalogoProcessos().catch(() => [] as CatalogoArea[]);
@@ -149,12 +162,17 @@ export async function capaParaAbertura(id: string): Promise<CapaParaAbertura> {
   const area = data.escritorio_responsavel ?? sugestao?.escritorio ?? null;
   const grupo = data.grupo_cliente ?? sugestao?.grupo ?? null;
   const url = urlDoEsaj(cnj);
-  const [djen, esaj, usuarios, materias, sistemas] = await Promise.all([
+  const [djen, esaj, usuarios, materias, sistemas, doProcessoCompleto] = await Promise.all([
     buscarNoDjen(cnj.digitos),
     url ? buscarNoEsaj(url) : Promise.resolve(null),
     usuariosDoVios(),
     carregarMateriasVios().catch(() => []),
     carregarSistemasVios().catch(() => []),
+    // Clientes, ações e etiquetas como o VIOS grava (Processos Completo, no SIOE). Sem elas, os campos ficam em texto livre.
+    listasDoProcessoCompleto().catch((erro: unknown) => {
+      console.error("[vistagem] listas do Processos Completo", mensagem(erro));
+      return { clientes: [], acoes: [], etiquetas: [] };
+    }),
   ]);
   const par = await parDasPastasDoGrupo(grupo, area, usuarios).catch((erro: unknown) => {
     console.error("[vistagem] par das pastas do grupo", mensagem(erro));
@@ -165,6 +183,7 @@ export async function capaParaAbertura(id: string): Promise<CapaParaAbertura> {
     // O VIOS repete nomes de matéria (ids diferentes): na sugestão, cada nome uma vez.
     materias: [...new Set(materias.map((materia) => materia.nome))],
     sistemas: [...new Set(sistemas.map((sistema) => sistema.nome))],
+    ...doProcessoCompleto,
   };
   return {
     dados: {

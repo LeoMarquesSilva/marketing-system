@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { CapaParaAbertura, PedidoDeAbertura } from "@/lib/vistagem/capa-abertura";
-import { BlocoDoRobo, CapaDaAberturaView, ResumoDaCapaView, type EstadoDataJud } from "./capa-abertura-ui";
+import { BlocoDoRobo, CapaDaAberturaView, opcoesDaLista, ResumoDaCapaView, type EstadoDataJud } from "./capa-abertura-ui";
 
 // O que a rota devolveu para o agravo 2266041-23 (Grupo Lira) no teste local de 10/11/2026.
 const CAPA: CapaParaAbertura = {
@@ -63,8 +63,43 @@ describe("CapaDaAberturaView", () => {
     expect(html).toContain('aria-label="obrigatório"');
     expect(html).toContain("Pastas do grupo");
     expect(html).toContain("consultando (leva até 1 min)");
-    // A lista de usuários do VIOS vira sugestão ao editar.
-    expect(html).toContain('id="capa-lista-usuarios"');
+    // A lista antiga de sugestões (datalist) saiu: cada campo busca na sua lista ao editar.
+    expect(html).not.toContain("capa-lista-");
+  });
+
+  it("marca o que não está na lista do VIOS do campo", () => {
+    const comListas = { ...CAPA, listas: { ...CAPA.listas, clientes: [{ nome: "Outro Cliente Ltda", grupo: "Grupo Lira", pastas: 3 }] } };
+    expect(capa({ capa: comListas })).toContain("Fora da lista do VIOS: Lira Alimentos Industria e Comercio Ltda");
+    // Na lista, o cliente fica sem o aviso.
+    const naLista = { ...CAPA, listas: { ...CAPA.listas, clientes: [{ nome: "Lira Alimentos Industria e Comercio Ltda", grupo: "Grupo Lira", pastas: 40 }] } };
+    expect(capa({ capa: naLista })).not.toContain("Fora da lista do VIOS");
+  });
+});
+
+describe("opcoesDaLista", () => {
+  const listas = {
+    usuarios: ["Manuela Lutke"],
+    materias: [],
+    sistemas: [],
+    clientes: [
+      { nome: "Acme S.A.", grupo: "Grupo Acme", pastas: 2 },
+      { nome: "Lira Alimentos Ltda", grupo: "Grupo Lira", pastas: 40 },
+      { nome: "Sem Grupo Ltda", grupo: null, pastas: 1 },
+    ],
+    acoes: ["Habilitação de Crédito", "Agravo de instrumento"],
+  };
+
+  it("os clientes do grupo da publicação vêm primeiro, com o grupo ao lado", () => {
+    expect(opcoesDaLista("clientes", listas, "Grupo Lira")).toEqual([
+      { id: "Lira Alimentos Ltda", nome: "Lira Alimentos Ltda", detalhe: "Lira" },
+      { id: "Acme S.A.", nome: "Acme S.A.", detalhe: "Acme" },
+      { id: "Sem Grupo Ltda", nome: "Sem Grupo Ltda", detalhe: null },
+    ]);
+  });
+
+  it("as outras listas vêm na ordem em que chegaram", () => {
+    expect(opcoesDaLista("acoes", listas, null).map((opcao) => opcao.nome)).toEqual(["Habilitação de Crédito", "Agravo de instrumento"]);
+    expect(opcoesDaLista("etiquetas", listas, null)).toEqual([]);
   });
 
   it("o campo editado mostra quem editou, o valor de antes e o Desfazer", () => {
