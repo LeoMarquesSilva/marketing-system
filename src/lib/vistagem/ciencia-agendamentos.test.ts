@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { cienciaDosAgendamentos, cienciaQueFica, ehCienciaDosAgendamentos, fluxoCriaCiencia, type TarefaParaCiencia } from "./ciencia-agendamentos";
+import {
+  cienciaDosAgendamentos,
+  cienciaQueFica,
+  dataDaCienciaNaVistagem,
+  dataDaCienciaNoEnvio,
+  ehCienciaDosAgendamentos,
+  fluxoCriaCiencia,
+  type TarefaParaCiencia,
+} from "./ciencia-agendamentos";
+import { criarCalendario } from "./dias-uteis";
 import type { FluxoDaTarefa, TarefaDoFluxo } from "./fluxo-vios";
 
 function noFluxo(nome: string, filhas: TarefaDoFluxo[] = []): TarefaDoFluxo {
@@ -149,5 +158,36 @@ describe("cienciaDosAgendamentos", () => {
     expect(cienciaDosAgendamentos([], opcoes("Trabalhista"))).toBeNull();
     expect(cienciaDosAgendamentos([tarefa("", null)], opcoes("Trabalhista"))).toBeNull();
     expect(cienciaDosAgendamentos([tarefa("INFORMAR CLIENTE", "414", { responsaveis: [] })], opcoes("Trabalhista"))).toBeNull();
+  });
+});
+
+describe("data da Ciência dos Agendamentos (pedido de 13/11/2026)", () => {
+  // 20/11/2026 (sexta) é feriado.
+  const ehDiaUtil = criarCalendario(["2026-11-20"]);
+
+  it("vistada até as 17h59, fica no próprio dia", () => {
+    expect(dataDaCienciaNaVistagem("2026-11-12", 9, ehDiaUtil)).toBe("2026-11-12");
+    expect(dataDaCienciaNaVistagem("2026-11-12", 17, ehDiaUtil)).toBe("2026-11-12");
+  });
+
+  it("vistada às 18h ou depois, vai para o dia útil seguinte", () => {
+    expect(dataDaCienciaNaVistagem("2026-11-12", 18, ehDiaUtil)).toBe("2026-11-13");
+    expect(dataDaCienciaNaVistagem("2026-11-12", 23, ehDiaUtil)).toBe("2026-11-13");
+    // sexta à noite → segunda
+    expect(dataDaCienciaNaVistagem("2026-11-13", 20, ehDiaUtil)).toBe("2026-11-16");
+    // quinta à noite, com a sexta feriado → segunda
+    expect(dataDaCienciaNaVistagem("2026-11-19", 19, ehDiaUtil)).toBe("2026-11-23");
+  });
+
+  it("vistada num dia sem expediente, vai para o próximo dia útil, a qualquer hora", () => {
+    expect(dataDaCienciaNaVistagem("2026-11-14", 10, ehDiaUtil)).toBe("2026-11-16");
+    expect(dataDaCienciaNaVistagem("2026-11-20", 9, ehDiaUtil)).toBe("2026-11-23");
+  });
+
+  it("no envio ao robô, a Ciência com data passada vai com a do envio; a futura e as outras tarefas não mudam", () => {
+    expect(dataDaCienciaNoEnvio("1. CIÊNCIA DOS AGENDAMENTOS", "2026-11-12", "2026-11-13")).toBe("2026-11-13");
+    expect(dataDaCienciaNoEnvio("1. CIÊNCIA DOS AGENDAMENTOS", "2026-11-16", "2026-11-13")).toBe("2026-11-16");
+    expect(dataDaCienciaNoEnvio("1. CIÊNCIA DOS AGENDAMENTOS", "2026-11-13", "2026-11-13")).toBe("2026-11-13");
+    expect(dataDaCienciaNoEnvio("INFORMAR CLIENTE", "2026-11-12", "2026-11-13")).toBe("2026-11-12");
   });
 });

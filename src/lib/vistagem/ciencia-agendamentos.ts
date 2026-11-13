@@ -1,4 +1,5 @@
 import { chaveNome, escritorioDaArea } from "./agendamento";
+import { somarDiasUteis } from "./dias-uteis";
 import type { FluxoDaTarefa, TarefaDoFluxo } from "./fluxo-vios";
 
 /**
@@ -25,6 +26,26 @@ export interface TarefaParaCiencia {
 /** "1. CIÊNCIA DOS AGENDAMENTOS" (Trabalhista, Cível… é o tipo 321; Insolvência, o 619). */
 export function ehCienciaDosAgendamentos(nome: string | null | undefined): boolean {
   return chaveNome(nome).replace(/^\d+\s*\.\s*/, "") === "CIENCIA DOS AGENDAMENTOS";
+}
+
+/** A partir desta hora (Brasília), a vistagem já grava a Ciência dos Agendamentos para o dia útil seguinte. */
+export const HORA_CIENCIA_NO_DIA_SEGUINTE = 18;
+
+/**
+ * Data da Ciência dos Agendamentos que o Orquestra cria, na hora da vistagem: o próprio dia; às 18h ou depois (ou num
+ * dia sem expediente), o dia útil seguinte, porque a Conferência só manda ao robô no próximo dia de trabalho
+ * (pedido de 13/11/2026). Sem isso, a Conferência via a data da vistagem, já passada, e ajustava à mão pelo lápis.
+ */
+export function dataDaCienciaNaVistagem(hoje: string, hora: number, ehDiaUtil: (iso: string) => boolean): string {
+  return hora >= HORA_CIENCIA_NO_DIA_SEGUINTE || !ehDiaUtil(hoje) ? somarDiasUteis(hoje, 1, ehDiaUtil) : hoje;
+}
+
+/**
+ * Data com que a tarefa vai ao VIOS no envio ao robô: a Ciência dos Agendamentos é para o dia do lançamento, então,
+ * se a data gravada já passou (vistada num dia, conferida noutro), vai com a do envio. As outras tarefas não mudam.
+ */
+export function dataDaCienciaNoEnvio(tarefa: string, data: string, hoje: string): string {
+  return ehCienciaDosAgendamentos(tarefa) && data < hoje ? hoje : data;
 }
 
 /** CIÊNCIA NF não pede Ciência dos Agendamentos (nem conta como primeira tarefa para escolher o responsável). */

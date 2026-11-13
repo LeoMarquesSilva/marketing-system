@@ -23,7 +23,7 @@ import { CHECK_AUTOMATICO, foiCheckAutomatico, notaDoCheckAutomatico } from "./c
 import { registrarNoBkpSemFalhar } from "./bkp-sioe-server";
 import { vaiParaCentral } from "./central";
 import { enviarParaCentral } from "./central-server";
-import { cienciaDosAgendamentos, ehCienciaDosAgendamentos, ehReestruturacao } from "./ciencia-agendamentos";
+import { cienciaDosAgendamentos, dataDaCienciaNaVistagem, dataDaCienciaNoEnvio, ehCienciaDosAgendamentos, ehReestruturacao } from "./ciencia-agendamentos";
 import { alteracaoDaVistagem, inicioDaConferenciaSegura, reabertaParaAlterar } from "./alterar-vistagem";
 import { criarCalendario, criarCalendarioDePrazo, type ContagemPrazo } from "./dias-uteis";
 import { RESPONSAVEL_ESOCIAL, pedeEsocial, tarefaEsocialDaLista, validarEsocial } from "./esocial";
@@ -57,7 +57,7 @@ import {
   sintesesDaPasta,
   type CatalogoArea,
 } from "./sama";
-import { COLUNAS_PUBLICACAO, admin, falhou, hojeEmSaoPaulo, publicacaoResumo, resolverPendencia, type ArquivoDaPublicacao, type PublicacaoRow } from "./server";
+import { COLUNAS_PUBLICACAO, admin, falhou, hojeEmSaoPaulo, horaEmSaoPaulo, publicacaoResumo, resolverPendencia, type ArquivoDaPublicacao, type PublicacaoRow } from "./server";
 import type {
   AgendadasJuridicoResposta,
   AgendamentoResumo,
@@ -445,11 +445,12 @@ async function estagiariosNoVios(): Promise<Set<string>> {
 
 /**
  * A "1. CIÊNCIA DOS AGENDAMENTOS" que o Orquestra acrescenta quando nenhuma tarefa é ela e o fluxo do VIOS de nenhuma
- * a cria: Providência no dia, para quem faz o Enviar da primeira tarefa (Reestruturação: estagiário → revisor).
+ * a cria: Providência no dia (vistada às 18h ou depois, no dia útil seguinte), para quem faz o Enviar da primeira
+ * tarefa (Reestruturação: estagiário → revisor).
  */
 async function cienciaParaGravar(
   itens: AgendamentoValidado[],
-  contexto: { arvore: Map<number, TipoNaArvore>; catalogo: CatalogoVistagem; area: string | null }
+  contexto: { arvore: Map<number, TipoNaArvore>; catalogo: CatalogoVistagem; area: string | null; ehDiaUtil: (iso: string) => boolean }
 ): Promise<AgendamentoValidado | null> {
   const estagiarios = ehReestruturacao(contexto.area) ? await estagiariosNoVios() : new Set<string>();
   const ciencia = cienciaDosAgendamentos(
@@ -478,7 +479,7 @@ async function cienciaParaGravar(
     etiqueta: "PROVIDENCIA",
     tarefa: tipo.nomeVios ?? tipo.nome,
     tarefaId: tipo.id,
-    data: hojeEmSaoPaulo(),
+    data: dataDaCienciaNaVistagem(hojeEmSaoPaulo(), horaEmSaoPaulo(), contexto.ehDiaUtil),
     dataFatal: null,
     diasPrazo: null,
     contagemPrazo: null,
@@ -549,6 +550,7 @@ export async function salvarVistagem(
     arvore,
     catalogo,
     area: publicacao.escritorio_responsavel ?? catalogo.area,
+    ehDiaUtil: criarCalendario(feriados),
   });
   const itensParaGravar = ciencia ? [...validacao.itens, ciencia] : validacao.itens;
   // Mede o acerto da IA: o jurídico usou a sugestão como veio, alterou ou não usou.
@@ -1192,13 +1194,15 @@ export async function validarVistagem(id: string, authUserId: string): Promise<{
 
   const simular = envioSimulado();
   try {
-    const filaPorAgendamento = await enfileirarPublicacao(publicacao, agendamentos, simular);
+    const hoje = hojeEmSaoPaulo();
+    const filaPorAgendamento = await enfileirarPublicacao(publicacao, agendamentos, simular, hoje);
     const agora = new Date().toISOString();
     await Promise.all(
       agendamentos.map((item) =>
         db
           .from("vistagem_agendamentos")
           .update({
+            ...dataQueFoiAoVios(item, hoje),
             envio_status: "pendente",
             envio_simulado: simular,
             sama_agendamento_id: filaPorAgendamento.get(item.id),
@@ -1398,21 +1402,34 @@ async function datasDoFluxoParaOVios(publicacao: PublicacaoComArea, itens: Agend
   return mapa;
 }
 
+/**
+ * A data da Ciência dos Agendamentos que foi ao VIOS fica gravada na tarefa (para a gravar junto com o envio): o
+ * Check compara com ela, e a Conferência não precisa ajustar a data à mão.
+ */
+function dataQueFoiAoVios(item: AgendamentoRow, hoje: string): { data?: string } {
+  const data = dataDaCienciaNoEnvio(item.tarefa, item.data, hoje);
+  return data !== item.data ? { data } : {};
+}
+
 /** Põe as tarefas da publicação na fila do robô; devolve o id da linha da fila de cada agendamento. */
-async function enfileirarPublicacao(publicacao: PublicacaoComArea, itens: AgendamentoRow[], simular: boolean): Promise<Map<string, string>> {
+async function enfileirarPublicacao(
+  publicacao: PublicacaoComArea,
+  itens: AgendamentoRow[],
+  simular: boolean,
+  hoje: string
+): Promise<Map<string, string>> {
   const modo = modoDaPublicacao(publicacao.arquivo, modoAgendamento());
   const [equivalentes, datasDoFluxo] = await Promise.all([
     modo === "intimacao" ? comunicacoesEquivalentes(publicacao) : Promise.resolve([] as string[]),
     datasDoFluxoParaOVios(publicacao, itens),
   ]);
-  // A Ciência dos Agendamentos é para o dia do lançamento: validada noutro dia, não vai com data passada.
-  const hoje = hojeEmSaoPaulo();
   const grupos = linhasParaFila(
     { ...publicacao, comunicacoes_equivalentes: equivalentes },
     itens.map((item) => ({
       ...item,
+      // A Ciência dos Agendamentos é para o dia do lançamento: validada noutro dia, não vai com data passada.
       // Prazo curto (ou validado noutro dia): o Enviar vai hoje, nunca no passado.
-      data: ehCienciaDosAgendamentos(item.tarefa) && item.data < hoje ? hoje : (datasDoFluxo.get(item.id)?.enviar ?? item.data),
+      data: ehCienciaDosAgendamentos(item.tarefa) ? dataDaCienciaNoEnvio(item.tarefa, item.data, hoje) : (datasDoFluxo.get(item.id)?.enviar ?? item.data),
       fluxoDatas: datasDoFluxo.get(item.id)?.datas ?? [],
     })),
     { simular, modo }
@@ -1441,13 +1458,15 @@ export async function reenviarGravando(id: string): Promise<{ enviadas: number }
   const simuladas = (data ?? []) as AgendamentoRow[];
   if (!simuladas.length) throw new VistagemError("Não há tarefas simuladas para reenviar.", 422);
 
-  const filaPorAgendamento = await enfileirarPublicacao(publicacao, simuladas, false);
+  const hoje = hojeEmSaoPaulo();
+  const filaPorAgendamento = await enfileirarPublicacao(publicacao, simuladas, false, hoje);
   const agora = new Date().toISOString();
   await Promise.all(
     simuladas.map((item) =>
       db
         .from("vistagem_agendamentos")
         .update({
+          ...dataQueFoiAoVios(item, hoje),
           envio_status: "pendente",
           envio_simulado: false,
           sama_agendamento_id: filaPorAgendamento.get(item.id),
@@ -1491,13 +1510,15 @@ export async function rodarNovamente(
   }
 
   const simular = envioSimulado();
-  const filaPorAgendamento = await enfileirarPublicacao(publicacao, comErro, simular);
+  const hoje = hojeEmSaoPaulo();
+  const filaPorAgendamento = await enfileirarPublicacao(publicacao, comErro, simular, hoje);
   const agora = new Date().toISOString();
   await Promise.all(
     comErro.map((item) =>
       db
         .from("vistagem_agendamentos")
         .update({
+          ...dataQueFoiAoVios(item, hoje),
           envio_status: "pendente",
           envio_simulado: simular,
           sama_agendamento_id: filaPorAgendamento.get(item.id),

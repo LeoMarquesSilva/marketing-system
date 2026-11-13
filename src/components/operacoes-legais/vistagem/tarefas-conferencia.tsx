@@ -386,10 +386,17 @@ export function CartoesTarefas({
                     <Rotulo>{item.etiqueta === "COMPROMISSO" ? "Data e horário" : "Data no VIOS"}</Rotulo>
                     <dd className="flex items-center gap-1.5 text-sm tabular-nums text-foreground">
                       <CalendarDays className="size-4 text-[#3e84a8]" aria-hidden />
-                      {formatarData(item.data)}
+                      {/* Ciência dos Agendamentos com a data já passada: vai com a do envio (pedido de 13/11/2026). */}
+                      {formatarData(item.enviarHoje ?? item.data)}
                       {item.hora ? ` às ${item.hora}${item.horaFim ? ` até ${item.horaFim}` : ""}` : ""}
                       {item.dataLimite && item.dataLimite !== item.data ? ` · limite ${formatarData(item.dataLimite)}` : ""}
                     </dd>
+                    {item.enviarHoje ? (
+                      <p className="text-[11px] text-muted-foreground">
+                        Vistada para {formatarData(item.data)}, que já passou: vai com a data do envio ({formatarData(item.enviarHoje)}). Não
+                        precisa editar.
+                      </p>
+                    ) : null}
                   </div>
                 ) : null}
                 <div className="min-w-0 space-y-1">
