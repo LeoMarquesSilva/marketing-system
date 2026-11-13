@@ -38,6 +38,10 @@ interface EventPhotoLightboxProps {
   onConfirmMe: (photo: EventPhoto) => void;
   onSetCover: (photo: EventPhoto) => void;
   onDelete: (photo: EventPhoto) => void;
+  /** Galeria de convidado com download bloqueado esconde o botão. */
+  allowDownload?: boolean;
+  /** Cor do botão de download (a galeria de convidado usa as cores do escritório). */
+  downloadClassName?: string;
 }
 
 /** "Sou eu" só na dúvida; "Não sou eu" em qualquer marcação. */
@@ -101,6 +105,8 @@ export function EventPhotoLightbox({
   onConfirmMe,
   onSetCover,
   onDelete,
+  allowDownload = true,
+  downloadClassName = "bg-[#347796] text-white hover:bg-[#285f7a]",
 }: EventPhotoLightboxProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const [imageState, setImageState] = useState<{ id: string; status: "ready" | "error" } | null>(null);
@@ -253,12 +259,14 @@ export function EventPhotoLightbox({
           </section>
 
           <footer className="flex flex-wrap items-center justify-center gap-2 px-3 py-3">
-            <Button asChild size="sm" className="gap-1.5 bg-[#347796] text-white hover:bg-[#285f7a]">
-              <a href={eventPhotoDownloadUrl(photo, downloadName)} download={downloadName}>
-                <Download className="h-4 w-4" />
-                Baixar original
-              </a>
-            </Button>
+            {allowDownload && (
+              <Button asChild size="sm" className={`gap-1.5 ${downloadClassName}`}>
+                <a href={eventPhotoDownloadUrl(photo, downloadName)} download={downloadName}>
+                  <Download className="h-4 w-4" />
+                  Baixar original
+                </a>
+              </Button>
+            )}
             <FaceReviewButtons
               match={isMine ? "sure" : isMaybe ? "maybe" : null}
               busy={busy}

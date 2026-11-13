@@ -15,12 +15,14 @@ import {
   Loader2,
   RefreshCw,
   ScanFace,
+  Share2,
   Trash2,
   Upload,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PhotoConfirmDialog } from "@/components/collaborator-photos/photo-confirm-dialog";
+import { AlbumShareDialog } from "@/components/event-photos/album-share-dialog";
 import { EventPhotoLightbox } from "@/components/event-photos/event-photo-lightbox";
 import {
   confirmFaceMatch,
@@ -131,6 +133,7 @@ export function EventAlbumClient({ slug }: { slug: string }) {
   const [dragging, setDragging] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [shareOpen, setShareOpen] = useState(false);
   const [pending, setPending] = useState<PendingConfirm>(null);
   const [busy, setBusy] = useState(false);
   const [myPhotoIds, setMyPhotoIds] = useState<Set<string>>(new Set());
@@ -507,6 +510,12 @@ export function EventAlbumClient({ slug }: { slug: string }) {
                     {album.isPublished ? "Ocultar" : "Publicar"}
                   </Button>
                   {photos.length > 0 && (
+                    <Button type="button" variant="outline" size="sm" onClick={() => setShareOpen(true)}>
+                      <Share2 className="h-4 w-4" />
+                      Compartilhar
+                    </Button>
+                  )}
+                  {photos.length > 0 && (
                     <Button type="button" variant="outline" size="sm" onClick={() => setSelecting(true)}>
                       <CheckSquare className="h-4 w-4" />
                       Selecionar
@@ -689,6 +698,16 @@ export function EventAlbumClient({ slug }: { slug: string }) {
           setPending({ kind: "photos", ids: [photo.id] });
         }}
       />
+
+      {canManage && (
+        <AlbumShareDialog
+          albumId={album.id}
+          albumTitle={album.title}
+          isPublished={album.isPublished}
+          open={shareOpen}
+          onOpenChange={setShareOpen}
+        />
+      )}
 
       <PhotoConfirmDialog
         open={pending !== null}

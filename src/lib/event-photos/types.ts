@@ -30,6 +30,52 @@ export interface EventPhotoAlbumDetail {
   photos: EventPhoto[];
 }
 
+/** Link de convidado (sem login) de um álbum, visto pelo marketing. */
+export interface EventPhotoShare {
+  id: string;
+  albumId: string;
+  token: string;
+  url: string;
+  label: string;
+  logoUrl: string | null;
+  allowDownload: boolean;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  openCount: number;
+  lastOpenedAt: string | null;
+  createdAt: string;
+  createdByName: string | null;
+}
+
+/** Foto como o convidado recebe: só endereços e medidas, nada de reconhecimento facial. */
+export interface PublicGalleryPhoto {
+  id: string;
+  previewUrl: string;
+  originalUrl: string;
+  width: number | null;
+  height: number | null;
+  sizeBytes: number | null;
+  /** Nome no download: <album>-<nnn>.<ext>. */
+  downloadName: string;
+}
+
+export interface PublicGallery {
+  token: string;
+  label: string;
+  logoUrl: string | null;
+  allowDownload: boolean;
+  expiresAt: string | null;
+  album: {
+    slug: string;
+    title: string;
+    description: string | null;
+    eventDate: string | null;
+    location: string | null;
+  };
+  cover: { url: string; shareImageUrl: string } | null;
+  photos: PublicGalleryPhoto[];
+}
+
 export interface FaceStatus {
   consented: boolean;
   consentedAt: string | null;

@@ -40,6 +40,7 @@ const BARE_LAYOUT_PATHS = [
   "/pesquisa",
   "/festa-10-anos",
   "/convite",
+  "/galeria",
 ];
 
 function isBareLayoutPath(pathname: string): boolean {

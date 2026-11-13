@@ -36,6 +36,7 @@
     "@vladmandic/face-api": "^1.7.15",
     "ai": "^6.0.116",
     "class-variance-authority": "^0.7.1",
+    "client-zip": "^2.5.1",
     "clsx": "^2.1.1",
     "csv-parse": "^6.1.0",
     "date-fns": "^4.1.0",
