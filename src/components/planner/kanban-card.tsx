@@ -7,6 +7,7 @@ import { Popover as PopoverPrimitive } from "radix-ui";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { AreaIcon } from "@/lib/area-icons";
+import { cn } from "@/lib/utils";
 import { getTypeColor } from "@/lib/type-icons";
 import { COMPLETION_TYPES } from "@/lib/constants";
 import type { CompletionTypeConfig, StageSlaDays } from "@/lib/app-settings";
@@ -18,7 +19,7 @@ import { fetchCommentsForRequest, type RequestComment } from "@/lib/request-comm
 import { differenceInDays, isPast, parseISO } from "date-fns";
 import { getDeadlineMoment } from "@/lib/marketing-requests";
 import { useTimer } from "@/contexts/timer-context";
-import { useStopwatch } from "@/hooks/use-stopwatch";
+import { useStopwatchState } from "@/hooks/use-stopwatch";
 import { IdentityBriefingStatusBadge } from "@/components/briefings/identity-briefing-status-badge";
 import { getTitleTag } from "@/lib/planner-title-tag";
 
@@ -120,7 +121,9 @@ export function KanbanCard({
 
   const { activeEntry } = useTimer();
   const isTimerActive = activeEntry?.request_id === request.id;
-  const liveElapsed = useStopwatch(isTimerActive ? (activeEntry?.started_at ?? null) : null);
+  const { display: liveElapsed, warning: timerWarning } = useStopwatchState(
+    isTimerActive ? (activeEntry?.started_at ?? null) : null
+  );
 
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({ id: request.id, data: { request } });
@@ -280,12 +283,31 @@ export function KanbanCard({
             {format(new Date(request.requested_at), "dd/MM/yyyy", { locale: ptBR })}
           </span>
           {isTimerActive ? (
-            <span className="flex items-center gap-1 font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+            <span
+              className={cn(
+                "flex items-center gap-1 font-mono font-semibold",
+                timerWarning
+                  ? "text-amber-700 dark:text-amber-400"
+                  : "text-emerald-600 dark:text-emerald-400"
+              )}
+              title={timerWarning ?? undefined}
+            >
               <span className="relative flex h-2 w-2 shrink-0">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                <span
+                  className={cn(
+                    "absolute inline-flex h-full w-full animate-ping rounded-full opacity-75",
+                    timerWarning ? "bg-amber-400" : "bg-emerald-400"
+                  )}
+                />
+                <span
+                  className={cn(
+                    "relative inline-flex h-2 w-2 rounded-full",
+                    timerWarning ? "bg-amber-500" : "bg-emerald-500"
+                  )}
+                />
               </span>
               {liveElapsed}
+              {timerWarning && <span className="sr-only">{timerWarning}</span>}
             </span>
           ) : (
             timeTotal && timeTotal !== "0min" && (

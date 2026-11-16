@@ -1,16 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Pause, Square, Play, ChevronDown, ChevronUp } from "lucide-react";
+import { Pause, Square, Play, ChevronDown, ChevronUp, AlarmClock } from "lucide-react";
 import { useTimer } from "@/contexts/timer-context";
-import { useStopwatch } from "@/hooks/use-stopwatch";
+import { useStopwatchState } from "@/hooks/use-stopwatch";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export function FloatingTimer() {
   const { activeEntry, status, lastRequestTitle, pausedDisplayTime, isLoading, pause, resume, stop } =
     useTimer();
-  const liveElapsed = useStopwatch(activeEntry?.started_at ?? null);
+  const { display: liveElapsed, warning } = useStopwatchState(activeEntry?.started_at ?? null);
   const [collapsed, setCollapsed] = useState(false);
 
   // Visible when running or paused
@@ -20,8 +20,7 @@ export function FloatingTimer() {
   const displayTime = isRunning ? liveElapsed : pausedDisplayTime;
 
   const handlePause = async () => {
-    // Pass the current live elapsed so the frozen display is accurate
-    await pause(liveElapsed);
+    await pause();
   };
 
   return (
@@ -84,6 +83,14 @@ export function FloatingTimer() {
           )}
         </button>
       </div>
+
+      {/* Cronômetro esquecido: aparece mesmo recolhido */}
+      {isRunning && warning && (
+        <div className="flex items-center gap-2 border-t border-amber-200/70 bg-amber-50/90 px-4 py-2 text-[11px] font-medium leading-snug text-amber-800 dark:border-amber-800/40 dark:bg-amber-950/40 dark:text-amber-300">
+          <AlarmClock className="h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>{warning}</span>
+        </div>
+      )}
 
       {/* Body */}
       {!collapsed && (
